@@ -39,7 +39,7 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | **FE type safety** | `tsc` **strict** (already on) | type errors, unused locals/params | ✅ |
 | **FE lint** | **ESLint** flat + **typescript-eslint `recommended-type-checked`** + `eslint-plugin-react-hooks` + `-react-refresh` | floating promises, misused async/await, unsafe `any`, hook-deps, rules-of-hooks, React-Compiler diags | ✅ (1b) |
 | **FE format** | **Prettier** + `eslint-config-prettier` | style drift (deterministic) | ✅ (1b) |
-| **FE unit tests** | **Vitest** (D21 — 2,928 across 170 files, 2026-09-06 post-D70 S4 Build 2 commit 1: the agents gallery section — default-first cards, the placeholder tile, the Talk pin, the card→editor swap — plus the section-registry/menu updates the relocation implies) | logic regressions | ✅ |
+| **FE unit tests** | **Vitest** (D21 — 2,943 across 172 files, 2026-09-07 post-D70 S4 Build 2 commit 2: the agents gallery section + the roleplay half of the agent form — the per-field visibility predicate, the art-binding row, the `agents` media namespace) | logic regressions | ✅ |
 | **FE e2e / a11y** | **Playwright** + `@axe-core/playwright` (D24) | broken user paths, a11y | ✅ (Phase 9 wires the suite) |
 | **BE lint + format** | **ruff** (`E,F,I,ASYNC,B` — `backend/pyproject.toml:87`; formatter) | style, imports, dead code, async footguns, bugbear | ✅ |
 | **BE type check** | **`pyright[nodejs]`** (pinned `==1.1.409`; `basic` → ratchet `strict`) | type errors across the FastAPI service | ✅ (1c) |

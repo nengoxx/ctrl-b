@@ -23,8 +23,8 @@ import { useMediaIndex, type MediaFile, type MediaIndex } from "./useMedia";
 /** The `agents` namespace and its two static role POOLS (ROLEPLAY_PLAN §8.1 / `core/media.py`'s
  *  `AGENTS_ROLES`) — spelled once here rather than at each consumer. */
 export const AGENTS_NS = "agents";
-const AVATARS_ROLE = "avatars";
-const BACKGROUNDS_ROLE = "backgrounds";
+export const AVATARS_ROLE = "avatars";
+export const BACKGROUNDS_ROLE = "backgrounds";
 
 /** One picture an agent is bound to, ready to paint: the mount URL (revision-stamped, so replacing the
  *  file in place moves the cache entry) and its framing point, if the owner set one. */

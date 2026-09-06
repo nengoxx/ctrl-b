@@ -17,7 +17,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // and heavy sub-editors are stubbed, the media registry is not — a group that only the real rows produce
 // is exactly what is under test.
 
-vi.mock("../../src/components/AgentsEditor", () => ({ AgentsEditor: () => null }));
+// D70 §8.4/§9 — the agent-side children ConfTab renders are the globals card + the two roleplay
+// cards (the per-agent list moved to the gallery). `pickRoleplay` stays real: ConfTab reads the
+// Roleplay group's header summary through it.
+vi.mock("../../src/components/AgentGlobals", () => ({ AgentGlobals: () => null }));
+vi.mock("../../src/components/RoleplayEditor", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/components/RoleplayEditor")>();
+  return { ...actual, RoleplayEditor: () => null, LorebookGlobals: () => null };
+});
 vi.mock("../../src/components/MachineEditor", () => ({ MachineEditor: () => null }));
 vi.mock("../../src/components/MemoryEditor", () => ({ MemoryEditor: () => null }));
 vi.mock("../../src/components/SkillsEditor", () => ({ SkillsEditor: () => null }));
@@ -65,6 +72,7 @@ vi.mock("../../src/hooks/useAppearance", () => ({
 vi.mock("../../src/hooks/useActions", () => ({
   useActionSpecs: () => ({ data: [] }),
   agentModeOf: () => "enabled",
+  useAgentToolGrid: () => ({ toolNames: [], toolModes: {} }),
 }));
 vi.mock("../../src/hooks/useAgents", async (importActual) => ({
   ...(await importActual<typeof import("../../src/hooks/useAgents")>()),
@@ -91,20 +99,24 @@ function groups(container: HTMLElement): [string, string][] {
 }
 
 describe("ConfTab · the media groups", () => {
-  it("a theme WITH a namespace renders its gallery and the kit one, in that order", () => {
+  it("a theme WITH a namespace renders its gallery and the always-on ones, in that order", () => {
     setUI({ theme: "gacha" });
     const { container } = render(<ConfTab active />);
     const media = groups(container).filter(([id]) => id.startsWith("media-"));
-    expect(media.map(([id]) => id)).toEqual(["media-gacha", "media-kit"]);
+    // `agents` joined `kit` as an always-on row at D70 §8.1 — an agent's avatar/backdrop libraries
+    // belong to the agent, not to whichever skin paints them.
+    expect(media.map(([id]) => id)).toEqual(["media-gacha", "media-kit", "media-agents"]);
     expect(container.querySelector("[data-testid=gallery-gacha]")).toBeTruthy();
     expect(container.querySelector("[data-testid=gallery-kit]")).toBeTruthy();
+    expect(container.querySelector("[data-testid=gallery-agents]")).toBeTruthy();
   });
 
-  it("a theme WITHOUT one still renders the kit gallery — the always-on row's whole purpose", () => {
+  it("a theme WITHOUT one still renders the always-on galleries — that row's whole purpose", () => {
     setUI({ theme: "vapor" });
     const { container } = render(<ConfTab active />);
     expect(groups(container).filter(([id]) => id.startsWith("media-"))).toEqual([
       ["media-kit", expect.any(String)],
+      ["media-agents", expect.any(String)],
     ]);
     expect(container.querySelector("[data-testid=gallery-gacha]")).toBeNull();
   });

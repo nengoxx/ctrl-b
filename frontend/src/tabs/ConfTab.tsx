@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { AgentGlobals } from "../components/AgentGlobals";
+import { LorebookGlobals, RoleplayEditor, pickRoleplay } from "../components/RoleplayEditor";
 import { AutomationsPanel } from "../components/AutomationsPanel";
 import { ConfGroup } from "../components/ConfGroup";
 import { JsonField } from "../components/JsonField";
@@ -1053,6 +1054,8 @@ export function ConfTab({ active }: Props) {
   // v1.3.1 — the projection is shared with `AgentGlobals` (`pickAgentSection`), which re-uses it to
   // project its own save echo into the exact shape this prop takes.
   const agentCfg: AgentSectionCfg = pickAgentSection(agentSection);
+  // The Roleplay group's header summary — the one fact worth reading off a collapsed group.
+  const roleplayRight = pickRoleplay(settings?.roleplay).enabled ? "on" : "off";
   const skillNames = skillList.map((s) => s.name);
 
   // Memory caps/toggles come off the settings doc (config.yaml `memory.*`); the MemoryEditor edits
@@ -2685,13 +2688,24 @@ export function ConfTab({ active }: Props) {
         <AgentGlobals cfg={agentCfg} />
       </ConfGroup>
 
+      {/* D70 §9 — the roleplay GLOBALS (the mode switch · the character tools · the owner's persona)
+          and the lorebook scan budgets. Both sit right after Agents because that is what they are
+          about; both own their reads and their partial PUTs (see `RoleplayEditor`). */}
+      <ConfGroup id="roleplay" num="15" title="Roleplay" right={roleplayRight} defaultCollapsed>
+        <RoleplayEditor />
+      </ConfGroup>
+
+      <ConfGroup id="lorebooks" num="16" title="Lorebooks" right="scan · budget" defaultCollapsed>
+        <LorebookGlobals />
+      </ConfGroup>
+
       {/* A3 / D49 §D-6 — scheduled automations. The group is the LIST; the editor opens in a sheet the
           panel owns (ConfTab is long enough, and phone width is the primary viewport). The records live
           in SQLite behind `AutomationService`, NOT in config.yaml — so this group has no draft and no
           save bar: every row edit is its own request. */}
       <ConfGroup
         id={AUTOMATIONS_GROUP_ID}
-        num="15"
+        num="17"
         title="Automations"
         right={automationsRight}
         defaultCollapsed
@@ -2701,7 +2715,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="skills"
-        num="16"
+        num="18"
         title="Skills"
         right={`${skillNames.length} discovered`}
         defaultCollapsed
@@ -2711,7 +2725,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="memory"
-        num="17"
+        num="19"
         title="Memory"
         right={memoryCfg.enabled ? "on" : "off"}
         defaultCollapsed
@@ -2721,7 +2735,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="18"
+        num="20"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
@@ -2730,16 +2744,16 @@ export function ConfTab({ active }: Props) {
 
       {/* Hosted Tools group (D35 §F0): when the active layout hosts utils in Conf (3-/2-tab), the Tools
           content renders here as the LAST functional group before Appearance — the group header replaces
-          utils's standalone `.sec`. Numbered 17 (slotting in before the terminal Appearance group, which
+          utils's standalone `.sec`. Numbered 21 (slotting in before the terminal Appearance group, which
           shifts to 18 while hosted); the standalone UtilsTab is unmounted in this layout, so its
           "agent-tools" child group has no duplicate DOM id. */}
       {hostsUtils && (
-        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="19" title="Tools" right="utility tools">
+        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="21" title="Tools" right="utility tools">
           <UtilsContent />
         </ConfGroup>
       )}
 
-      <ConfGroup id="appearance" num={hostsUtils ? "20" : "19"} title="Appearance">
+      <ConfGroup id="appearance" num={hostsUtils ? "22" : "21"} title="Appearance">
         {/* Every row uses the shared `SettingRow` (label + desc + trailing control) so the group has one
             consistent shape; the Palette axis uses the `Swatches` color-chip radiogroup. */}
         <div className="conf-card">
@@ -2940,7 +2954,7 @@ export function ConfTab({ active }: Props) {
           <ConfGroup
             key={ns}
             id={`media-${ns}`}
-            num={String((hostsUtils ? 21 : 20) + i).padStart(2, "0")}
+            num={String((hostsUtils ? 23 : 22) + i).padStart(2, "0")}
             title={def.title}
             right={`media/${ns}/`}
             defaultCollapsed

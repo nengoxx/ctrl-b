@@ -7707,3 +7707,129 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ── D70 §9 — the roleplay half of the AGENT FORM: the marked help line, and the two art-binding rows
+ * (`components/AgentArtRow.tsx`). Both live inside the `.mform` grid, so they take the VALUE column
+ * and the label column keeps its rhythm. Built from the recipes already here — the `.mrow-hint` faint
+ * caveat, the `.mgal-tile` grid tile, the `.mfoot` footer buttons — on the semantic tokens only. ── */
+.kit .mconf .mform .mfhelp {
+  grid-column: 2;
+  margin-top: -4px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.kit .mconf .mform .agart {
+  display: grid;
+  gap: 8px;
+}
+.kit .mconf .mform .agart-now {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.kit .mconf .mform .agart-thumb {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.kit .mconf .mform .agart-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.kit .mconf .mform .agart-none {
+  color: var(--text-3);
+}
+.kit .mconf .mform .agart-name {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+/* The row's actions take the FOOTER-BUTTON recipe (`.mfoot button`) — the same outline pills the form
+ * already ends on, so the two read as one family. */
+.kit .mconf .mform .agart-acts {
+  display: flex;
+  gap: 6px;
+}
+.kit .mconf .mform .agart-acts button {
+  all: unset;
+  flex: 1;
+  cursor: pointer;
+  text-align: center;
+  padding: 7px 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+}
+.kit .mconf .mform .agart-acts button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.kit .mconf .mform .agart-acts button:not(:disabled):active {
+  background: var(--surface-2);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.kit .mconf .mform .agart-acts button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .mconf .mform .agart-fail {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--danger);
+}
+.kit .mconf .mform .agart-fail button {
+  all: unset;
+  cursor: pointer;
+  margin-inline-start: 8px;
+  color: var(--text-2);
+  text-decoration: underline;
+}
+/* The library strip: the gallery's own tile geometry at picker size. */
+.kit .mconf .mform .agart-pick {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.kit .mconf .mform .agart-tile {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.kit .mconf .mform .agart-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.kit .mconf .mform .agart-tile.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.kit .mconf .mform .agart-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

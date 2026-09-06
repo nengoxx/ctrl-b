@@ -1,0 +1,191 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// D70 §9 — the CHARACTER half of the agent form: the per-field visibility predicate, and the fields
+// that have no editor but must survive a save untouched. Drives the REAL `AgentRow` over mocked hook
+// boundaries (the agentsEditorCompaction posture).
+
+const h = vi.hoisted(
+  (): {
+    saveAgent: ReturnType<typeof vi.fn>;
+    roleplayEnabled: boolean;
+    agent: Record<string, unknown>;
+  } => ({
+    saveAgent: vi.fn(),
+    roleplayEnabled: false,
+    agent: {},
+  }),
+);
+
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useMutation: vi.fn(),
+  useQuery: vi.fn(),
+}));
+vi.mock("../../src/hooks/useSettings", () => ({
+  useSaveSettings: () => ({ mutate: vi.fn(), isPending: false }),
+  useProviders: () => ({ data: { providers: {}, verbs: [], warnings: [] } }),
+  useSettings: () => ({ data: { roleplay: { enabled: h.roleplayEnabled } } }),
+}));
+vi.mock("../../src/hooks/useMediaLibrary", () => ({
+  useMediaLibrary: () => ({ sections: [], write: { append: vi.fn() }, ready: false }),
+}));
+vi.mock("../../src/hooks/useAgents", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/hooks/useAgents")>();
+  return {
+    ...actual,
+    useAgent: () => ({
+      data: { name: "lyra", is_default: false, soul: "", agent: h.agent },
+      isLoading: false,
+    }),
+    useSaveAgent: () => ({ mutate: h.saveAgent, isPending: false }),
+    useDeleteAgent: () => ({ mutate: vi.fn(), isPending: false }),
+    useSaveAgentSoul: () => ({ mutate: vi.fn() }),
+  };
+});
+
+import { AgentRow, roleplayFieldVisible } from "../../src/components/AgentsEditor";
+
+/** A specialist as the file API hands it back — every D70 field present, all empty by default. */
+function agentDef(over: Record<string, unknown> = {}) {
+  return {
+    name: "lyra",
+    title: "Lyra",
+    description: "",
+    prompt: "",
+    prompt_append: "",
+    inherit_append: true,
+    duties: "agent",
+    greeting: "",
+    alt_greetings: [] as string[],
+    example_dialogue: "",
+    scenario: "",
+    post_history: "",
+    user_name: "",
+    avatar: "",
+    background: "",
+    voice: "",
+    lorebooks: [] as string[],
+    card: {},
+    model: { provider: null, model: null },
+    tools: "*",
+    skills: "*",
+    privilege: "confirm",
+    compaction: null,
+    max_iterations: 20,
+    max_repeat_calls: 3,
+    max_calls_per_tool: 10,
+    max_stall_iterations: 3,
+    max_subagent_depth: 2,
+    max_concurrent_subagents: 3,
+    ...over,
+  };
+}
+
+function renderRow(over: Record<string, unknown> = {}, enabled = false) {
+  h.agent = agentDef(over);
+  h.roleplayEnabled = enabled;
+  return render(
+    <AgentRow
+      name="lyra"
+      isDefault={false}
+      isResolvedDefault={false}
+      open
+      onToggle={() => undefined}
+      toolNames={[]}
+      toolModes={{}}
+      skillNames={[]}
+      defaultPrompt=""
+    />,
+  );
+}
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+describe("roleplayFieldVisible (the Risu predicate, §9)", () => {
+  it("the mode ON shows every field, whatever it holds", () => {
+    expect(roleplayFieldVisible(true, "")).toBe(true);
+    expect(roleplayFieldVisible(true, {})).toBe(true);
+  });
+
+  it("the mode OFF shows only what is POPULATED — per value SHAPE", () => {
+    expect(roleplayFieldVisible(false, "")).toBe(false);
+    expect(roleplayFieldVisible(false, "   ")).toBe(false); // whitespace is not content
+    expect(roleplayFieldVisible(false, "hi")).toBe(true);
+    expect(roleplayFieldVisible(false, [])).toBe(false);
+    expect(roleplayFieldVisible(false, ["book"])).toBe(true);
+    expect(roleplayFieldVisible(false, {})).toBe(false);
+    expect(roleplayFieldVisible(false, { name: "x" })).toBe(true);
+    expect(roleplayFieldVisible(false, undefined)).toBe(false);
+  });
+});
+
+describe("AgentRow · the roleplay fields on the form", () => {
+  it("mode OFF + everything empty → no roleplay field renders (today's compact form)", () => {
+    renderRow();
+    expect(screen.queryByText("Greeting")).toBeNull();
+    expect(screen.queryByText("Scenario")).toBeNull();
+    expect(screen.queryByLabelText("Voice")).toBeNull();
+    expect(screen.queryByText("Avatar")).toBeNull();
+  });
+
+  it("mode OFF + a POPULATED field → that field alone lights up (an imported card)", () => {
+    renderRow({ greeting: "Hello there.", voice: "af_sky" });
+    expect(screen.getByText("Greeting")).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>("Voice").value).toBe("af_sky");
+    expect(screen.queryByText("Scenario")).toBeNull(); // still empty → still hidden
+  });
+
+  it("mode ON → every field renders, empty or not", () => {
+    renderRow({}, true);
+    for (const label of [
+      "Greeting",
+      "Example dialogue",
+      "Scenario",
+      "Post-history",
+      "Avatar",
+      "Backdrop",
+    ])
+      expect(screen.getByText(label), label).toBeTruthy();
+    expect(screen.getByLabelText("Your name")).toBeTruthy();
+    expect(screen.getByLabelText("Voice")).toBeTruthy();
+  });
+
+  it("DUTIES is always visible — an agent fact, not a roleplay extra", () => {
+    renderRow();
+    expect(screen.getByText("Duties")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Talk" })).toBeTruthy();
+  });
+
+  it("the import STASH gets a read-only line, never an editor", () => {
+    renderRow({ card: { spec: "chara_card_v2", data: { name: "Lyra" } } });
+    expect(screen.getByText(/2 imported fields stashed/)).toBeTruthy();
+  });
+
+  it("alt_greetings and lorebooks have NO editor and survive a save untouched", () => {
+    renderRow({ alt_greetings: ["hi", "hey"], lorebooks: ["lyra-book"], greeting: "Hello." }, true);
+    // No editor for either — they round-trip through `pickFields`, nothing more.
+    expect(screen.queryByText("Alt greetings")).toBeNull();
+    expect(screen.queryByText("Lorebooks")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Voice"), { target: { value: "af_sky" } });
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+
+    const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
+    expect(sent.agent.voice).toBe("af_sky"); // the edit
+    expect(sent.agent.alt_greetings).toEqual(["hi", "hey"]); // …and the untouched neighbours
+    expect(sent.agent.lorebooks).toEqual(["lyra-book"]);
+    expect(sent.agent.greeting).toBe("Hello.");
+  });
+
+  it("the DUTIES pick round-trips through the save payload", () => {
+    renderRow();
+    fireEvent.click(screen.getByRole("button", { name: "Talk" }));
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
+    expect(sent.agent.duties).toBe("conversational");
+  });
+});

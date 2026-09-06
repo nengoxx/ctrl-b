@@ -773,6 +773,65 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
     // ("W6"): the first image in the gallery wins, and a pin was a second way to say the same thing.
     // The three NAMED roles never had one — their stems ARE their bindings.
   },
+  // AGENT ART (D70 / ROLEPLAY_PLAN §8.1) — the FE half of `core/media.py`'s `AGENTS_ROLES`. Two
+  // ordinary D65 libraries the owner manages exactly like any other (upload · arrange · frame ·
+  // retire), and `alwaysOn` because they belong to no theme: an agent's picture is the agent's,
+  // whichever skin is painting it.
+  //
+  // NO `active` RESOLVER on either role, and that is the shape rather than an omission (§2.4: "absent
+  // ⇒ the gallery says nothing about what is in use"). Every other library here answers "which one
+  // paints?" with its own ORDER; these answer it with a BINDING that lives on the AGENT
+  // (`AgentDef.avatar`/`.background` name an entry — the gacha roster deal, exactly), so a first-wins
+  // badge would be a claim about a ladder this namespace does not have. NO `slots` either, for the
+  // same reason: a pin binds an entry to a surface the namespace owns, and here the owner is an agent.
+  //
+  // NO bundled art: ctrl-b ships no character art at all, so a fresh install's libraries are empty and
+  // every agent renders exactly as it did before D70.
+  agents: {
+    title: "Agent art",
+    alwaysOn: true,
+    roles: {
+      avatars: {
+        kind: "pool",
+        label: "Avatars",
+        hint: "Portraits for your agents. Set one on an agent from its editor — this is the library they choose from, and nothing here is used until an agent is bound to it.",
+        bundled: [],
+        // FULL_ART, like every other picture-of-something role (gacha's cast, the shared background):
+        // an avatar is painted at 18px on a who-line and at card size in the gallery, but the FILE the
+        // owner drops is an ordinary photo or portrait, and this bound is about the file.
+        bounds: FULL_ART,
+        // ~SQUARE (§8.2's "avatar ~square"): the destinations are the gallery's card tile and the two
+        // circles (the composer picker's, the who-line's), which is one shape asked for three times.
+        aspect: 1,
+        // FRAMABLE, and the case it exists for is the IMPORT: a card's embedded avatar lands in this
+        // library uncropped at whatever shape the card had — usually a tall portrait — so the point
+        // that decides which part of it the square window keeps is the only control the owner has
+        // over it. An upload goes through the crop step and is centred by construction.
+        framable: true,
+        // ONE window, because there is one: the tile and both circles are square, and previews a
+        // finger apart in aspect teach nothing (`MediaPreviewDef`).
+        previews: [{ label: "gallery card", aspect: 1 }],
+      },
+      backgrounds: {
+        kind: "pool",
+        label: "Backdrops",
+        hint: "The picture behind the chat while an agent is active. Independent of its avatar — a character and its scene are two images.",
+        bundled: [],
+        bounds: FULL_ART,
+        // TALL — the phone-shaped full-bleed backdrop, the shared kit background's own aspect (§8.2's
+        // "background tall"; the S6 backdrop states are what paint it).
+        aspect: 9 / 16,
+        framable: true,
+        // Two windows that genuinely SPAN the destinations §8.3 rules: the operator block's wide band
+        // and the full-bleed backdrop. Taken at the owner's 390px phone, which is the approximation
+        // `MediaPreviewDef` warns about and why the sheet captions them as examples.
+        previews: [
+          { label: "operator backdrop", aspect: 390 / 300 },
+          { label: "full backdrop", aspect: 9 / 16 },
+        ],
+      },
+    },
+  },
 };
 
 /** The namespaces whose galleries the Conf tab renders for `def`: the theme's own LINKED namespace, plus

@@ -67,6 +67,13 @@ vi.mock("../../src/hooks/useDefaultPrompt", () => ({ useDefaultPrompt: () => ({ 
 vi.mock("../../src/hooks/useSettings", () => ({
   useProviders: () => ({ data: { providers: {}, verbs: [], warnings: [] } }),
   useSaveSettings: () => ({ mutate: vi.fn(), isPending: false }),
+  // The form reads the roleplay MODE off the settings doc (§9's visibility predicate).
+  useSettings: () => ({ data: { roleplay: { enabled: false } } }),
+}));
+// The art rows' machinery: the library resolves to nothing here (no `agents` index in this harness),
+// which is exactly the fresh-install state — the rows render "none" and an empty picker.
+vi.mock("../../src/hooks/useMediaLibrary", () => ({
+  useMediaLibrary: () => ({ sections: [], write: { append: vi.fn() }, ready: false }),
 }));
 
 import { AgentsTab } from "../../src/tabs/AgentsTab";

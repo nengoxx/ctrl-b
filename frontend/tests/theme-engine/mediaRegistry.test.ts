@@ -33,19 +33,21 @@ describe("applicableNs", () => {
   // Against the LIVE registry, which since M3 holds the always-on `kit` row — so every expectation here
   // is "the theme's own namespace, then kit". The mechanism itself is exercised against an injected
   // registry below, where the two axes can be varied independently.
+  // TWO always-on rows since D70 §8.1: `kit` (the shared art no theme owns) and `agents` (an agent's
+  // avatar/backdrop libraries, which belong to the AGENT rather than to whichever skin paints them).
   it("renders the active theme's own namespace", () => {
-    expect(applicableNs(gacha)).toEqual(["gacha", "kit"]);
+    expect(applicableNs(gacha)).toEqual(["gacha", "kit", "agents"]);
   });
 
-  it("renders only the always-on row for a theme that links none, and with no theme at all", () => {
-    expect(applicableNs(def({ media: undefined }))).toEqual(["kit"]);
-    expect(applicableNs(undefined)).toEqual(["kit"]);
+  it("renders only the always-on rows for a theme that links none, and with no theme at all", () => {
+    expect(applicableNs(def({ media: undefined }))).toEqual(["kit", "agents"]);
+    expect(applicableNs(undefined)).toEqual(["kit", "agents"]);
   });
 
   it("a link naming a namespace the registry does not hold adds NOTHING", () => {
     // The gallery's first act is to fetch `/api/media/<ns>`; a section that can only ever say "media index
     // unreachable" is worse than no section.
-    expect(applicableNs(def({ media: { ns: "nope" } }))).toEqual(["kit"]);
+    expect(applicableNs(def({ media: { ns: "nope" } }))).toEqual(["kit", "agents"]);
   });
 
   it("an ALWAYS-ON row renders beside the theme's own — and for a theme that links nothing", () => {
@@ -57,14 +59,51 @@ describe("applicableNs", () => {
   });
 
   it("holds the two art namespaces plus the always-on kit row — and EVERY theme sees the kit one", () => {
-    expect(Object.keys(MEDIA_NS)).toEqual(["gacha", "frontier", "kit"]);
+    expect(Object.keys(MEDIA_NS)).toEqual(["gacha", "frontier", "kit", "agents"]);
     // Every LINK a registered theme declares must resolve to a row — a theme linking a namespace this
     // registry does not hold would silently lose its gallery. Since M3 every theme also gets `kit`,
     // including the three that link nothing: their service rows paint icons from it, so the gallery that
     // says what to NAME those files has to be reachable from under them (the draft bug, Opus H2).
     for (const theme of registeredThemes()) {
-      expect(applicableNs(theme)).toEqual([...(theme.media ? [theme.media.ns] : []), "kit"]);
+      expect(applicableNs(theme)).toEqual([
+        ...(theme.media ? [theme.media.ns] : []),
+        "kit",
+        "agents",
+      ]);
     }
+  });
+});
+
+describe("the agents row (D70 §8.1)", () => {
+  it("is ALWAYS-ON and holds exactly the two role folders the backend registry declares", () => {
+    // `AGENTS_ROLES` in core/media.py. Always-on is the mechanism, not a preference: no theme owns
+    // this namespace — an agent's picture is the agent's, whichever skin paints it.
+    expect(MEDIA_NS.agents.alwaysOn).toBe(true);
+    expect(Object.keys(MEDIA_NS.agents.roles)).toEqual(["avatars", "backgrounds"]);
+  });
+
+  it("both roles are FRAMABLE pools, shaped like their destinations, shipping no art", () => {
+    const { avatars, backgrounds } = MEDIA_NS.agents.roles;
+    // Framable because an IMPORTED card's avatar lands uncropped at whatever shape the card had: the
+    // framing point is the only control the owner has over what the square window keeps (§8.2).
+    for (const [name, role] of [
+      ["avatars", avatars],
+      ["backgrounds", backgrounds],
+    ] as const) {
+      expect(role.kind, name).toBe("pool");
+      expect(role.framable, name).toBe(true);
+      expect(role.bundled, name).toEqual([]); // the app ships NO character art
+      // No ladder: which entry paints is a BINDING on the agent, not this library's order, so a
+      // first-wins resolver would claim something untrue (§2.4 — absent ⇒ the gallery says nothing).
+      expect(role.active, name).toBeUndefined();
+      expect(role.previews?.length, name).toBeGreaterThan(0);
+    }
+    expect(avatars.aspect).toBe(1); // the card tile and both circles are one square window
+    expect(backgrounds.aspect).toBe(9 / 16); // the phone-shaped full-bleed backdrop
+  });
+
+  it("has NO slots — the binding lives on the agent, not on a surface this namespace owns", () => {
+    expect(MEDIA_NS.agents.slots).toBeUndefined();
   });
 });
 

@@ -73,6 +73,14 @@ vi.mock("../../src/hooks/useSettings", () => ({
   },
   // The form's backend picker (A11/D48 C7-b) reads the registry catalog from GET /api/providers.
   useProviders: () => ({ data: { providers: {}, verbs: [], warnings: [] } }),
+  // …and the roleplay MODE off the settings doc (D70 §9's visibility predicate). Off here: these
+  // cases are about the call-config fields, which are not roleplay fields.
+  useSettings: () => ({ data: { roleplay: { enabled: false } } }),
+}));
+// The art rows' library + job machine (D70 §8.2). Empty: no `agents` index in this harness, which is
+// the fresh-install state, and no roleplay field renders under the predicate above anyway.
+vi.mock("../../src/hooks/useMediaLibrary", () => ({
+  useMediaLibrary: () => ({ sections: [], write: { append: vi.fn() }, ready: false }),
 }));
 vi.mock("../../src/hooks/useDefaultPrompt", () => ({
   useDefaultPrompt: () => ({ data: "" }),

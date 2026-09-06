@@ -98,7 +98,14 @@ const h = vi.hoisted(() => ({
   settings: null as unknown as ReturnType<typeof makeSettings>,
 }));
 
-vi.mock("../../src/components/AgentsEditor", () => ({ AgentsEditor: () => null }));
+// D70 §8.4/§9 — the agent-side children ConfTab renders are the globals card + the two roleplay
+// cards (the per-agent list moved to the gallery). `pickRoleplay` stays real: ConfTab reads the
+// Roleplay group's header summary through it.
+vi.mock("../../src/components/AgentGlobals", () => ({ AgentGlobals: () => null }));
+vi.mock("../../src/components/RoleplayEditor", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/components/RoleplayEditor")>();
+  return { ...actual, RoleplayEditor: () => null, LorebookGlobals: () => null };
+});
 vi.mock("../../src/components/MachineEditor", () => ({ MachineEditor: () => null }));
 vi.mock("../../src/components/MemoryEditor", () => ({ MemoryEditor: () => null }));
 vi.mock("../../src/components/SkillsEditor", () => ({ SkillsEditor: () => null }));
@@ -167,6 +174,7 @@ vi.mock("../../src/hooks/useAppearance", () => ({
 vi.mock("../../src/hooks/useActions", () => ({
   useActionSpecs: () => ({ data: [] }),
   agentModeOf: () => "enabled",
+  useAgentToolGrid: () => ({ toolNames: [], toolModes: {} }),
 }));
 vi.mock("../../src/hooks/useAgents", async (importActual) => {
   const actual = await importActual<typeof import("../../src/hooks/useAgents")>();

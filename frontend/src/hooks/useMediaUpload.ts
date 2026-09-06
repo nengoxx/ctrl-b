@@ -81,24 +81,32 @@ export function useMediaUpload(args: {
   rows: readonly MediaFile[];
   /** `useMediaLibrary`'s register write, answering how it ended. */
   append: (section: MediaSection, filename: string, fields: LibraryEntry) => Promise<JobOutcome>;
+  /** Called with the STORED filename once the entry is in the library — the one fact a caller that
+   *  uploads on the way to something else needs (D70 §8.2: the agent editor sets the binding it just
+   *  made). Absent for the gallery, which uploads INTO the library and has nowhere else to point.
+   *
+   *  Only on `written`: a registration that failed leaves the bytes on the server but no entry, and
+   *  binding an agent to a picture the library does not list would be a claim the render walks past. */
+  onStored?: (filename: string) => void;
 }): MediaUpload {
-  const { job, section, scope, rows, append } = args;
+  const { job, section, scope, rows, append, onStored } = args;
   const inputRef = useRef<HTMLInputElement>(null);
   const pending = useRef<Pending | null>(null);
   /** Names the SERVER has refused with a 409 this session — our listing did not know about them. */
   const raced = useRef(new Set<string>());
 
-  // The LIVE facts a running job reads — and only these two. Where the job is going is bound into the
+  // The LIVE facts a running job reads — and only these. Where the job is going is bound into the
   // job itself (Emma #1); what is left here is the folder listing a NAME is minted against (which must
-  // be as fresh as possible) and the write queue (which belongs to the tab, not to the gallery).
+  // be as fresh as possible), the write queue (which belongs to the tab, not to the gallery), and the
+  // stored-name callback (which belongs to whatever draft the caller is filling in).
   //
   // Through a ref because a job outlives the render it started in, and because recreating every
   // function below on each new `rows` array would re-arm the hook on every poll. Written in an EFFECT,
   // never during render (the house rule `useOverlayBackGuard` follows): the only readers are event
   // handlers and in-flight promises, neither of which can run before the commit.
-  const state = useRef({ rows, append });
+  const state = useRef({ rows, append, onStored });
   useEffect(() => {
-    state.current = { rows, append };
+    state.current = { rows, append, onStored };
   });
 
   // ── the tail, as PLAIN functions ───────────────────────────────────────────────────────────────
@@ -218,6 +226,9 @@ export function useMediaUpload(args: {
     control.setPhase("register");
     const outcome = await state.current.append(job.section, job.filename, job.fields);
     if (outcome === "written") {
+      // The entry EXISTS now, under this name — the one fact a caller uploading on the way somewhere
+      // else needs (see `onStored`). Read off the ref like everything else a job reads late.
+      state.current.onStored?.(job.filename);
       finish(control);
       return;
     }

@@ -152,7 +152,15 @@ vi.mock("../../src/theme-engine/switchTheme", async (importActual) => {
 });
 
 // Stub the sub-editors (each mounts its own hook tree) + UtilsTab so only Providers/Inference are live.
-vi.mock("../../src/components/AgentsEditor", () => ({ AgentsEditor: () => null }));
+// D70 §8.4/§9 — ConfTab's agent-side children are the GLOBALS card and the two roleplay cards now
+// (the per-agent list moved to the gallery). Stubbed like the old single editor was: none of them is
+// what these Inference/draft-epoch cases are about. `pickRoleplay` stays REAL — ConfTab reads the
+// group's summary through it.
+vi.mock("../../src/components/AgentGlobals", () => ({ AgentGlobals: () => null }));
+vi.mock("../../src/components/RoleplayEditor", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/components/RoleplayEditor")>();
+  return { ...actual, RoleplayEditor: () => null, LorebookGlobals: () => null };
+});
 vi.mock("../../src/components/MachineEditor", () => ({ MachineEditor: () => null }));
 vi.mock("../../src/components/MemoryEditor", () => ({ MemoryEditor: () => null }));
 vi.mock("../../src/components/SkillsEditor", () => ({ SkillsEditor: () => null }));
@@ -207,6 +215,8 @@ vi.mock("../../src/hooks/useAppearance", () => ({
 vi.mock("../../src/hooks/useActions", () => ({
   useActionSpecs: () => ({ data: [] }),
   agentModeOf: () => "enabled",
+  // D70 §9 — the Roleplay group's character-tools grid reads the same derivation the agent form does.
+  useAgentToolGrid: () => ({ toolNames: [], toolModes: {} }),
 }));
 vi.mock("../../src/hooks/useAgents", async (importActual) => {
   const actual = await importActual<typeof import("../../src/hooks/useAgents")>();
