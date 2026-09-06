@@ -75,15 +75,18 @@ def _turns(block: str, user_prefix: str, char_prefix: str) -> list[dict]:
         if body:
             out.append({"role": "system", "name": side or EXAMPLE_ASSISTANT, "content": body})
 
+    # LONGEST resolved prefix wins (S1 Emma round, MED-2): fixed user-first order misfiled a
+    # character line whenever the character's name EXTENDS the user's through a colon (user `Ann`,
+    # char `Ann:archivist` — `Ann:archivist: hi` startswith `Ann:`). Longest-first is decisive for
+    # every distinct pair; identical resolved names are inherently ambiguous and stay user-first —
+    # the stable order below — which the tests pin as the documented limit.
+    prefixes = sorted(
+        ((user_prefix, EXAMPLE_USER), (char_prefix, EXAMPLE_ASSISTANT)),
+        key=lambda p: -len(p[0]),
+    )
     for raw_line in block.splitlines():
         line = raw_line
-        speaker = (
-            EXAMPLE_USER
-            if line.startswith(user_prefix)
-            else EXAMPLE_ASSISTANT
-            if line.startswith(char_prefix)
-            else None
-        )
+        speaker = next((s for prefix, s in prefixes if line.startswith(prefix)), None)
         if speaker is not None:
             if side is not None:  # the previous turn ends here; a preamble keeps riding with the first
                 flush()

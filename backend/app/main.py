@@ -134,6 +134,9 @@ _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 # Python's last-resort handler drops INFO — the D69 presence trail and the D2-A monitor lines
 # were never emitted. No-op when root already has handlers (pytest); journald stamps timestamps.
 logging.basicConfig(level=logging.INFO)
+# httpx logs one INFO line per request; the monitor's tailscale LocalAPI polls alone would put
+# thousands of them a day in the journal, drowning the app's own trail. Its errors still surface.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 

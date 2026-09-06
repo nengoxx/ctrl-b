@@ -133,7 +133,10 @@ def _voice_id(request: Request, body: TtsRequest) -> str | None:
         return body.voice
     if not body.agent:
         return None
-    return request.app.state.settings.resolve_agent(body.agent).voice.strip() or None
+    # As-is, never repaired (S1 Emma round, MED-3): `.strip() or None` silently mapped a whitespace
+    # voice to the global chain — exactly the unknown→default promise F6 rules out — and quietly
+    # fixed padded ids. "" is absent; anything else reaches the upstream and errors like any bad id.
+    return request.app.state.settings.resolve_agent(body.agent).voice or None
 
 
 @router.post("/tts")

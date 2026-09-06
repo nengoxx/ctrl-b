@@ -610,11 +610,22 @@ def normalize_system_messages(messages: list[dict]) -> list[dict]:
             text = _content_text(msg.get("content"))
             if text:
                 escaped = html.escape(text, quote=False)
+                # A named message carries its name INSIDE the frame (S1 Emma round, MED-1): strict
+                # templates render only role+content — the pinned qwen template ignores JSON `name`
+                # (R41 §. strict-template survey) — so a name left only as metadata erases the very
+                # side distinction the example pseudo-messages exist to teach. Quoted-escaped: a
+                # name must not be able to close its own attribute.
+                name = msg.get("name")
+                opener = (
+                    f'{_SYS_UPDATE_OPEN[:-1]} name="{html.escape(str(name), quote=True)}">'
+                    if name
+                    else _SYS_UPDATE_OPEN
+                )
                 out.append(
                     {
                         **msg,
                         "role": "user",
-                        "content": f"{_SYS_UPDATE_OPEN}\n{escaped}\n{_SYS_UPDATE_CLOSE}",
+                        "content": f"{opener}\n{escaped}\n{_SYS_UPDATE_CLOSE}",
                     }
                 )
             continue

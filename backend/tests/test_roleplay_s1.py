@@ -247,6 +247,31 @@ def test_speaker_lines_are_matched_on_the_RESOLVED_names() -> None:
     assert _parsed("<START>\n{{user}}: hi", char="Nyx", user="the patron") == [("example_user", "hi")]
 
 
+def test_the_longest_resolved_prefix_wins() -> None:
+    """S1 Emma round MED-2 (her executable repro): with user `Ann` and character `Ann:archivist`,
+    fixed user-first matching filed the character's line under `example_user` (its label starts
+    with `Ann:`). Longest resolved prefix decides — order-independent for every distinct pair."""
+    assert _parsed("<START>\nAnn: U\nAnn:archivist: A", char="Ann:archivist", user="Ann") == [
+        ("example_user", "U"),
+        ("example_assistant", "A"),
+    ]
+    # …and the mirrored lengths too: a user name that extends the character's.
+    assert _parsed("<START>\nNyx: A\nNyx:junior: U", char="Nyx", user="Nyx:junior") == [
+        ("example_assistant", "A"),
+        ("example_user", "U"),
+    ]
+
+
+def test_identical_names_stay_user_first_as_the_documented_limit() -> None:
+    """Identical resolved user/char names are inherently ambiguous — no rule can recover the side.
+    The stable order files every turn as `example_user`; pinned so the limit is a choice, not
+    drift."""
+    assert _parsed("<START>\nSam: one\nSam: two", char="Sam", user="Sam") == [
+        ("example_user", "one"),
+        ("example_user", "two"),
+    ]
+
+
 # ── 3. example dialogue: where the pseudo-messages sit ──────────────────────────────────────────
 
 
@@ -298,7 +323,8 @@ def test_the_examples_reach_the_wire_as_marked_user_turns_keeping_their_side() -
         assert [m["role"] for m in wire] == ["system", "user", "user", "user"]
         assert wire[0]["content"] == head("You are Nyx.") + "\n\nEXTRA"
         assert [m["name"] for m in wire[1:3]] == ["example_user", "example_assistant"]
-        assert wire[1]["content"] == "<system-update>\nAre you awake?\n</system-update>"
+        # The side rides IN the frame (MED-1): strict templates ignore JSON `name`.
+        assert wire[1]["content"] == '<system-update name="example_user">\nAre you awake?\n</system-update>'
 
 
 # ── 4. per-agent voice resolution (§8.5, ruling 21) ─────────────────────────────────────────────
@@ -323,11 +349,15 @@ def test_the_agents_voice_is_what_the_tts_call_speaks_in() -> None:
         c.app.state.voice = stub
         _agent(c, "nyx", voice="af_nova")
         _agent(c, "plain")
+        _agent(c, "spacey", voice="   ")
         _tts(c, agent="nyx")
         _tts(c, agent="plain")  # no voice set ⇒ the global `voice.tts` chain decides
         _tts(c)  # no agent at all (every pre-D70 client) ⇒ likewise
         _tts(c, agent="nyx", voice="explicit")  # an explicit request voice is the most specific
-        assert [call["voice"] for call in stub.calls] == ["af_nova", None, None, "explicit"]
+        # MED-3: a non-empty value is passed AS-IS — never trimmed, never silently defaulted; a
+        # whitespace id errors upstream like any other bad id ("" alone means absent).
+        _tts(c, agent="spacey")
+        assert [call["voice"] for call in stub.calls] == ["af_nova", None, None, "explicit", "   "]
 
 
 def test_an_invalid_voice_id_reports_through_the_existing_error_path() -> None:
