@@ -132,9 +132,12 @@ user_name: str = ""                 # per-agent {{user}} override; "" → rolepl
 avatar: str = ""                    # media id in the agents/avatars library (§8); "" → none
 background: str = ""                # media id in agents/backgrounds; "" → theme default
 voice: str = ""                     # TTS voice id for this agent (ruling 21); "" → the global
-                                    # voice.tts chain; unknown ids resolve to the default too —
-                                    # a silent no-op, NEVER an error (R67: ST throws; Risu/Agnai
-                                    # fall back — we copy the on-the-object fallback shape)
+                                    # voice.tts chain. A NON-empty id is used as-is: no registry
+                                    # can validate voice ids, so a bad one reports through the
+                                    # existing TTS error path exactly like a bad global voice
+                                    # (Emma F6 — the earlier unknown→default promise required
+                                    # an allowlist nothing can provide; absent→default is the
+                                    # whole fallback contract)
 lorebooks: list[str] = []           # attached book slugs (§6.5)
 card: dict[str, Any] = {}           # import stash: unmapped spec fields + extensions, post-strip
                                     # (§7) — export-ready provenance, never prompt-facing
@@ -213,29 +216,47 @@ measured as load-bearing: act (call the tool) before speaking.
 > one or two lines.
 
 `duties_conversational` — full authority, casual voice; what is REMOVED is only the
-formal-executor shaping (task_plan pushing, brevity mandates, report-style summaries):
+formal-executor shaping (task_plan pushing, brevity mandates, report-style summaries). The
+Emma round's F2 correction is folded: the MECHANICAL rails (tool-over-guessing, carry-through,
+batching, fleet-vs-web routing) are behavior, not voice — dropping them would have violated
+ruling 16's own invariant, so they stay, re-voiced in casual prose:
 
 > This is a conversation first: speak in your own voice and match its tone and rhythm. Never
 > fall into report formatting — no headings, no bullet lists, no closing summaries unless
 > asked. You still have your tools and your full authority to use them: when the conversation
 > calls for a real action (waking or shutting down a machine, checking on something, searching
-> the web), call the tool FIRST, then weave what happened into your reply naturally. Do not
-> describe or promise an action you can simply take, and do not ask permission yourself —
-> risky actions automatically pause for the owner's confirmation. Resolve a host or service
-> the owner names to its stable `id` yourself from the fleet roster when one is provided.
-> Never repeat the same tool call with the same arguments; if a result didn't help, change
-> approach or say so in your own words.
+> the web), call the tool FIRST — prefer checking over guessing — then weave what happened
+> into your reply naturally. Finish what you start: if an action needs several tool calls,
+> keep going until it's done rather than stopping to narrate, and fire independent calls
+> together instead of one at a time. Do not describe or promise an action you can simply
+> take, and do not ask permission yourself — risky actions automatically pause for the
+> owner's confirmation. Use the fleet tools for anything about the machines and web search
+> only when the conversation actually needs the internet. Resolve a host or service the owner
+> names to its stable `id` yourself from the fleet roster when one is provided. Never repeat
+> the same tool call with the same arguments; if a result didn't help, change approach or say
+> so in your own words.
 
-What each drops from the other, named: conversational drops `task_plan` orchestration, the
-carry-through/batching drill, the routing lecture (a one-line id rule stays), and every
-brevity/summary mandate; agent drops nothing (it IS the current behavior). Shared mechanical
-rails in both: act-before-speaking, the confirm system (never self-ask), id resolution, no
-identical-call repeats.
+What each drops from the other, named: conversational drops `task_plan` orchestration and
+every brevity/report/summary mandate — NOTHING mechanical; agent drops nothing (it IS the
+current behavior). Shared rails in both: tool-over-guessing, act-before-speaking,
+carry-through, batching, fleet-vs-web routing, the confirm system (never self-ask), id
+resolution, no identical-call repeats. (R64 §5.4's +0.052 belongs to the paper's FULL rule
+package, not act-first alone — the Emma round's citation check; the rails are part of that
+package, which is exactly why they survive here.)
 
 Head shape: ONE leading system message, two `## `-labelled sections (labels are registry-owned
-framings). `{{original}}` in a persona substitutes the selected duties text at that position
-instead of the appended section (the V2 opt-back-in, honored with our registry text as "the
-original"). **Semantic change, named for the council:** existing SOUL.md specialists today get
+framings). **`{{original}}` semantics — field-specific, per the V2 contract (Emma F3):** the
+spec defines it as "the prompt that would have been used WITHOUT the card". So in the
+persona/SOUL text it substitutes **the complete no-card head** (the default Voice text + the
+selected duties text) and CONSUMES the separate Duties-section emission — substituted once at
+its FIRST occurrence, later occurrences render empty (`safe_substitute` replaces all, so the
+once-rule must be explicit). In `post_history` it substitutes ctrl-b's default post-history
+text — which is empty — so it renders as nothing there; it never injects Duties at the tail.
+**`inference.system_prompt`'s meaning SHIFTS (Emma F13, recorded):** today it replaces the
+whole fused prompt; under this design it is the fallback VOICE only, with Duties appended
+after — an existing override that already contains tool discipline will see that discipline
+duplicated by `duties_agent` until the owner trims it. One release-notes/UI-help line says so;
+a golden assembly case covers override + both append axes. No compatibility branch. **Semantic change, named for the council:** existing SOUL.md specialists today get
 NO technical instructions; after this they get their selected duties section too — the
 R64 §5.4-backed improvement, and `duties` + registry overrides are the levers if any agent
 should not. The assembly golden tests re-pin to the new shape (P3 beats byte-nostalgia; the
@@ -249,9 +270,15 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   framing = registry id `persona_intro`. For every agent: the persona is who the OWNER is.
 - **`example_dialogue`** — parsed on `<START>` boundaries, emitted between the static head and
   live history as `{role:"system", name:"example_user"|"example_assistant"}` pseudo-messages
-  (the 4/4-peer wire shape, R64 §7). Position keeps them clear of the leading-run coalescer;
-  strict-template rendering rides the existing `normalize_system_messages` seam (non-leading
-  system → marked `user`), no new adapter switch. Turn-stable, cached with the head.
+  (ST's verified wire shape, R64 §7 — Lite flattens instead; the earlier "4/4-peer" claim was
+  an overreach, Emma's citation check). **The coalescer rule (Emma F1 — her code check killed
+  the plan's original claim):** messages appended right after the head are still part of the
+  LEADING system run, which `normalize_system_messages` merges name-droppingly. The fix is a
+  one-line boundary rule in the normalizer: **a `name`-carrying system message TERMINATES the
+  leading coalescing run** — the head coalesces up to the first named message, and the named
+  examples fall through to the existing later-system branch, which preserves `name` and
+  re-roles per dialect (marked `user` on strict templates). One focused normalize test: head +
+  two named examples + user history, both dialects. Turn-stable, cached with the head.
   **S1 verification item (coverage audit):** probe that the cloud dialects we actually use
   accept `name` on system messages, and that the qwen/llama.cpp path renders the normalized
   form sanely — R41/R42 cover strict-template systems generally, but named example
@@ -260,10 +287,17 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   one-shot reflection nudge; macro-substituted. Recency is the point (R64 §3); cache cost ~nil
   (everything after the newest message re-prefills anyway). Lorebook `tail` entries share the
   slot, `post_history` last (closest to generation).
-- **`greeting`** — a REAL seeded assistant message persisted at creation of EVERY new thread
-  with that agent (ruling 11; the 4/4 field shape — an empty-state render never reaches the
-  wire and anchors nothing). Macro-substituted at seed time. `alt_greetings` stored; a
-  new-thread greeting picker is a recorded FE seam. **Compaction note (coverage audit):** the
+- **`greeting`** — a REAL seeded assistant message persisted at creation of EVERY new
+  interactive thread with that agent (ruling 11; an empty-state render never reaches the wire
+  and anchors nothing). **The creation seams, enumerated (Emma F5 — today no creation path
+  carries the agent):** ① explicit new-thread creation (`POST /threads`) accepts and persists
+  an optional selected agent, seeding when one is given; ② an auto-created chat thread seeds
+  only AFTER `_auto_route_agent` resolves — never before routing; ③ **automation and subagent
+  threads NEVER seed** (a headless run wants no greeting in its transcript — ruled here);
+  one shared seeding helper serves ①+②, persisting `actor=AGENT` + the resolved agent name
+  so attribution and the who-line read correctly. Macro-substituted at seed time.
+  `alt_greetings` stored; a new-thread greeting picker is a recorded FE seam.
+  **Compaction note (coverage audit):** the
   greeting is ordinary history — a long thread's compactor may fold it into the summary like
   any old turn. By design (the head's persona carries identity, not the greeting); S1 records
   it in a test comment so nobody later "fixes" it into a pin.
@@ -302,9 +336,18 @@ WEBP-EXIF and `.byaf`: recorded non-goals (one importer each in the field).
 
 ### 5.3 Normalization + mapping
 
-V1→V2→V3 ladder (spec defaults), then the §3.1 mapping. Unknown fields + `extensions` land in
-`card` verbatim **after the strip pass** (§7) — the spec's preserve-unknowns MUST, structural
-here via `extra="allow"` (R66: ST fakes it with a hidden form input). Name→slug: the agent-name
+V1→V2→V3 ladder (spec defaults), then the §3.1 mapping. **The card→SOUL composition recipe is
+normative (Emma F4 — two builders must not produce two different SOULs):** SOUL.md =
+`system_prompt` (when non-empty) + blank line + `description` + blank line + `personality` —
+bare concatenation in that order, empty fields skipped, NO labels or headers added (the field's
+cards carry finished prose; framing the author didn't write is editorializing). `{{original}}`
+inside any of them behaves per §4.1's field-specific rule. Two golden imports pin it:
+description+personality only, and all three fields with `{{original}}`. Unknown fields +
+`extensions` land in `card` verbatim **after the strip pass** (§7) — the spec's
+preserve-unknowns MUST, structural here via `extra="allow"` (R66: ST fakes it with a hidden
+form input). **Size caps (Emma F8):** one upload byte cap on the multipart body and one
+decoded-card JSON cap, enforced for EVERY container (the existing cap+1/413 posture); CHARX
+additionally keeps its per-entry / asset-count / total-uncompressed limits. Name→slug: the agent-name
 grammar, collision-suffixed. Imported agents default `duties: conversational` (ruling 2 — cards
 are companions; the toggle flips any of them to full duty). **`AgentDef.description` (the
 auto-router's "when to pick me" text) stays EMPTY on import** (coverage audit): the card's
@@ -368,22 +411,29 @@ style triggers (that one would land on the A3/tool seams, privilege-gated — un
 
 ### 6.3 The scan
 
-At `_static_prefix` build time (once per turn): haystack = the last `lorebooks.scan_depth`
-messages' text + the incoming user message (chat text only — no tool outputs, no attachment
-bodies; the field's default corpus). Active books = `lorebooks.books` ∪ the agent's
+At `_static_prefix` build time (once per turn): haystack = the incoming user message ONCE +
+the last `lorebooks.scan_depth` messages **excluding the just-persisted incoming message**
+(Emma F11: `run_turn` persists the user message before assembly, so a naive
+`history[-scan_depth:]` + incoming would scan the current message twice and one fewer prior
+message). Chat text only — no tool outputs, no attachment bodies (the field's default
+corpus); computed before the first head build, cached with `_static_head`. Active books = `lorebooks.books` ∪ the agent's
 `lorebooks`, slug-deduped (the field's bind-twice-counts-once rule). An entry activates iff
 enabled ∧ (constant ∨ a key matches per its flags) ∧ its secondary gate passes. Matching =
 substring / whole-word toggle, casefold unless `case_sensitive`. No regex in v1.
 
 ### 6.4 Rendering, budget, placement
 
-Activated entries render ONCE each (spec MUST), sorted by `order`, joined into one framed block
-(framing = registry id `lorebook_intro`, phrased as *reference data, not instructions* — the
-Core-Memory convention, R65 §9's security note). Over `budget_chars`: evict lowest `priority`
-(then lowest `order`) until it fits — the V3 eviction model, not ST's refusal (R65 §1.10: ST is
-the outlier). Placement: `head` → one block appended LAST in the static head (most volatile
-block, R65 §9's cache analysis; scan-miss ⇒ nothing); `tail` → the §4.2 tail slot before
-`post_history`.
+The pipeline order is fixed (Emma F10 — "one block" and "two positions" contradicted each
+other): ① activate; ② apply ONE global budget/eviction pass over ALL activated entries —
+over `budget_chars`, evict lowest `priority` (then lowest `order`) until it fits (the V3
+eviction model, not ST's refusal — R65 §1.10: ST is the outlier); ③ PARTITION the survivors
+by `position`, preserving `order` within each; ④ emit **at most one framed head block AND at
+most one framed tail block** (framing = registry id `lorebook_intro`, phrased as *reference
+data, not instructions* — the Core-Memory convention, R65 §9's security note; framing chars
+do NOT count against `budget_chars` — the budget bounds entry content, the framing is a
+constant). Placement: `head` → appended LAST in the static head (most volatile block, R65
+§9's cache analysis; scan-miss ⇒ nothing); `tail` → the §4.2 tail slot before `post_history`.
+Each entry renders ONCE (spec MUST).
 
 ### 6.5 Attachment + import
 
@@ -419,12 +469,16 @@ loader. Shared ground they DO get: the fallible-data framing convention + regist
 
 ## 7. Security posture (SECURITY_MODEL.md lens)
 
-- **Cards are untrusted input that can carry code** (R66 §3: Risu regex scripts — one mode
-  rewrites outbound requests — trigger scripts, CHARX modules; imported promptless in the
-  field). We execute none and warehouse none: import strips the known-executable extension
-  classes (`regex_scripts`, `triggerscript`, Risu module payloads, `virtualscript` — the
-  field's own strip-on-import-AND-export precedent) from the stash and reports the removals.
-  Inert unknown extension data stays (P4).
+- **Cards are untrusted input that can carry code** (R66 §3: Risu scripts — one mode rewrites
+  outbound requests — trigger scripts, CHARX modules; imported promptless in the field). We
+  execute none and warehouse none. **The strip is a concrete normalized-key DENYLIST applied
+  RECURSIVELY before stashing (Emma F7 — prose categories can't drive a sanitizer, and the
+  live Risu key is `customScripts`, not the older `regex_scripts` name):** at minimum
+  `extensions.risuai.customScripts` · `triggerscript` · `virtualscript` · the low-level-access
+  flags (`lowLevelAccess`) · CHARX module/code members — one function, walking every V1/V2/V3/
+  raw-extension shape, reporting the EXACT removed paths in the import report, and reused
+  verbatim on any future export (the field's strip-on-import-AND-export precedent). Inert
+  unknown extension data stays (P4).
 - **Zip handling**: `card.json` size cap, per-asset + total caps, normalized paths (reject
   traversal), bounded entry count — the media 413 conventions applied to a new container.
 - **Images**: only via the existing probe stack + closed type allowlist; never served un-probed.
@@ -433,6 +487,12 @@ loader. Shared ground they DO get: the fallible-data framing convention + regist
   injected text — the import report shows it verbatim. No card text is ever rendered as HTML.
 - **No new execution paths, no privilege changes**: minimal tools + CONFIRM on import; lorebook
   activation adds TEXT only (v1 non-goal pins it).
+- **`agent.yaml` writes move onto the safe chokepoint (Emma F9):** `_scaffold_agent` today
+  writes via `yaml.safe_dump` + `write_text_eol` — umask-dependent permissions, no YAML-1.1
+  quoting, destructive of comments. A card's stash can carry credentials (R67 verified
+  character objects holding provider API keys), so the agent write path routes through the
+  already path-agnostic `edit_config_yaml(..., path=agent.yaml)` (atomic 0600 + `_yaml11_safe`
+  + comment-preserving) — once, for imports AND manual edits alike.
 
 ## 8. Agent art: libraries, upload reuse, and the three-state backdrop
 
@@ -471,17 +531,20 @@ background tall) are config-shaped like the existing per-role crop settings, not
   background simply wins the art resolution for that surface while that agent is active.
 - **`full`** — the same art as the full chat backdrop, **no blur; dimming AND the scroll fade
   kept** (owner-confirmed round 4: "same fade out as the operator image… just the blur" is
-  what changes). The distinction maps onto layers ALREADY separate in the oracle mechanism —
-  the soft face's static blur is one layer, the scrim + the 1→0.28 opacity walk another — so
-  `full` renders the sharp art full-bleed behind the thread with the readability scrim and the
-  ghost-on-scroll opacity walk retained and the blur crossfade absent. §14.11 discipline
-  holds: static art, opacity-only animation, no animated `filter`.
-- **`off`** — no operator image, no background. **This state IS the missing hide switch**: the
-  only controls today are gacha's "Sticky operator art" toggle (scroll BEHAVIOR, not
-  visibility) and the media in-use switches (which retire ART, not the surface) — verified, no
-  overlapping on/off exists, so the three-state subsumes rather than duplicates
-  (`GachaAgent.tsx` keeps plate/scrim/scanline when art resolves null today; `off` hides the
-  art surface itself — the delta is designed in S6, including what happens to the name plate).
+  what changes). Mechanism, stated precisely (Emma's citation check corrected the earlier
+  "layers already separate" claim — in today's oracle each FACE bundles art+scrim+plate and
+  the whole face crossfades): `full` builds its OWN layer arrangement — one sharp full-bleed
+  art layer + a separate readability scrim + the 1→0.28 opacity walk on the wrapper — REUSING
+  the oracle's no-animated-`filter` approach (static rasterization, opacity-only per-frame
+  work, §14.11) rather than its exact face structure, and simply mounting NO blurred layer.
+- **`off`** — **suppresses BOTH the agent's art and the theme's fallback art, regardless of
+  any binding** (Emma F14 killed the contradiction with the absent-art line below — that line
+  now applies to operator/full only). The surface behavior is RULED here, not punted: gacha's
+  oracle block STAYS with its name plate and scanline but paints no picture — exactly today's
+  art-resolved-null presentation, so `off` reuses an existing, tested state rather than
+  inventing chrome removal; the kit layer simply mounts nothing. This state IS the missing
+  hide switch: the only controls today are gacha's "Sticky operator art" toggle (scroll
+  BEHAVIOR) and the media in-use switches (which retire ART) — verified, no overlap.
 - **Orthogonality kept:** `gacha.oracle` (sticky vs scroll) stays a gacha refinement of HOW
   `operator` mode scrolls; the three-state picks WHAT/WHERE. The media in-use switches keep
   governing the theme-fallback tier only.
@@ -497,7 +560,8 @@ background tall) are config-shaped like the existing per-role crop settings, not
   (§8.3 above); **frontier** is the one remaining bespoke agent surface (`FrontierAgent.tsx`)
   — **v1 leaves it exactly as it is** (the setting has no effect there; ruling 18), and the
   integration lands as a separate follow-up cleanup after the phase. `""`/absent art ⇒
-  today's look on every theme regardless of state.
+  today's look on every theme **under `operator`/`full`** (`off` suppresses the fallback too —
+  the F14 correction above).
 
 ### 8.4 The agent gallery — its own settings section (rulings 4 + 17; design evidence = R67)
 
@@ -546,11 +610,13 @@ scope; a per-agent hide flag would be the similar-things trap). Bubble geometry 
 untouched — this is a who-line ornament, not a gutter column, which is exactly why it costs
 no text width (the owner's stated constraint).
 
-**Per-agent voice resolution (ruling 21):** the TTS request path resolves
-`AgentDef.voice` → the global `voice.tts` chain, at the point the existing chain resolves
-today (`provider_registry`'s voice resolution) — the agent identity of the message/thread
-picks the voice for read-aloud, read-along, and auto-TTS alike. Empty or unknown ⇒ the
-global default, silently.
+**Per-agent voice resolution (ruling 21, F6-corrected):** the TTS request path resolves
+`AgentDef.voice` (non-empty → passed as the request's voice) → else the global `voice.tts`
+chain — the agent identity of the message/thread picks the voice for read-aloud, read-along,
+and auto-TTS alike. ABSENT ⇒ the global default. A non-empty-but-invalid id reports through
+the existing TTS error path exactly as a bad global voice does today — no registry can
+validate voice ids, so a silent-unknown-fallback contract is unimplementable (and R67's
+Risu/Agnai precedent is absent-binding⇒no-speech, not unknown⇒default — the citation check).
 
 ## 9. Editor + Conf presentation
 
@@ -581,7 +647,11 @@ field opens EMPTY, with the shipped default beside it as reference. The three ch
    wording forever, silently opting out of every future default improvement. The design that
    gives the owner's UX without the trap: the field renders the default text as its CONTENT
    in a muted style; an edit turns it live (normal style); on save, **text that equals the
-   shipped default stores NOTHING** (normalized comparison — the existing `norm` posture).
+   shipped default stores NOTHING**. Equality is EXACT string equality after only the
+   existing whitespace-only→empty normalization (Emma F15: a `.trim()` comparison would
+   silently discard a deliberate leading/trailing-whitespace delta, which the shipped `norm`
+   posture deliberately preserves); the comparison target is the `default_text` loaded into
+   that modal; and an equal BASE clears only `override` — a set `append` survives untouched.
    So the owner always sees and tweaks real words, and an untouched prompt keeps riding
    upstream defaults. Restore stays "delete the customization" (the shipped rule, unchanged).
 2. **Customized highlight**: beside the existing badge, the field box itself carries a quiet
@@ -611,11 +681,16 @@ Phase 18 doc stays truthful.
 - **S2 — card import (BE):** containers + sniffing + normalization + mapping + strip pass +
   avatar into the library + explicit minimal tools + the import report.
 - **S3 — lorebooks (BE):** storage/CRUD + scan + render/budget + bindings + book import.
-- **S4 — the agents FE:** the gallery section (the AgentsEditor relocation + visual cards,
-  §8.4) · avatar/background set-from-editor via the reused `useImageJob` crop/focus machine
-  (§8.2) · the new marked fields + visibility predicate · the duties toggle · Conf group +
-  persona editor · import UI + report · agent-picker avatars · the who-line avatar swap +
-  its Appearance toggle (§8.5) · the §9a prompt-editor refinements.
+- **S4 — the agents surface (FE + the summary API):** **the BE half first (Emma F12): extend
+  `GET /agents` with a compact per-agent summary map — title · avatar · background · voice —
+  including the resolved default** (today it returns only names + default, and the gallery/
+  picker/who-line/backdrop would otherwise need N full agent+SOUL fetches per mount; media
+  URL/focal resolution stays with the media index) · the gallery section (the AgentsEditor
+  relocation + visual cards, §8.4) · avatar/background set-from-editor via the reused
+  `useImageJob` crop/focus machine (§8.2) · the new marked fields + visibility predicate ·
+  the duties toggle · Conf group + persona editor · import UI + report · agent-picker
+  avatars · the who-line avatar swap + its Appearance toggle (§8.5) · the §9a prompt-editor
+  refinements.
 - **S5 — the lorebook FE:** manager + attachment picker.
 - **S6 — the three-state backdrop (FE/theme):** the appearance setting + gacha oracle
   integration + the kit backdrop layer + the `off`-state surface behavior (§8.3) — in-phase
@@ -643,9 +718,9 @@ voice IS v1 with silent fallback (ruling 21 → §3.1/§8.5). The one standing o
 the gallery tap inversion (§8.4 — tap=edit, Talk=button; presented round 8, not vetoed;
 the S7 device round re-tests the feel either way).
 
-**Next:** the blind Emma design round over this plan + the four dossiers (brief includes the
-§12 citation spot-check) → main-seat rulings on findings → fix wave → owner ratification →
-**D70** → the S0 build brief.
+**Round 1 RAN (§13): BUILD WITH CHANGES, all 15 findings accepted + folded into the body.**
+**Next:** the Emma CONFIRM round on the folded fixes (`--resume latest`, context intact) →
+owner ratification → **D70** → the S0 build brief.
 
 ## 12. Evidence coverage map (the owner's round-6 audit: every section → its backing, gaps named)
 
@@ -683,3 +758,171 @@ were main-seat-audited at landing (implications sections verified against our re
 The blind Emma design round's brief will additionally instruct her to spot-check the plan's
 load-bearing citations against the dossiers — an adversarial second read of the evidence, not
 just the design.
+
+## 13. Council record
+
+### Round 1 — blind Emma design round (2026-09-06; hermes emma lane, sol high, `--ignore-rules`, the full R46 brief incl. the citation spot-check)
+
+**VERDICT: BUILD WITH CHANGES — 14 MED · 1 LOW · HIGH none · open sweep "none".** Main-seat
+rulings: **ALL FIFTEEN ACCEPTED** (her fixes were already lean; F6 took her narrower option A
+— the contract change, not the allowlist). Every fix is FOLDED INTO THE BODY above, each
+marked with its finding number (F1 §4.2 coalescer boundary · F2 §4.1a rails restored ·
+F3/F13 §4.1 {{original}}+override semantics · F4 §5.3 composition recipe · F5 §4.2 greeting
+seams · F6 §3.1/§8.5 voice contract · F7 §7 strip denylist · F8 §5.3 size caps · F9 §7
+agent.yaml chokepoint · F10 §6.4 two-block pipeline · F11 §6.3 scan window · F12 §10-S4
+summary API · F14 §8.3 off-state · F15 §9a equality). Her citation check also corrected four
+plan-text overreaches in place (the "4/4-peer" wire claim → ST-verified; the R67 voice-
+fallback precedent; the R64 §5.4 attribution; the §8.3 "layers already separate" claim).
+
+The review, verbatim:
+
+```
+DESIGN REVIEW
+
+Scope: I treated §1 rulings 1–21 as locked product decisions. This review concerns implementation semantics, integration with today’s code, and whether the slices specify enough to build those decisions correctly.
+
+HIGH: none.
+
+PRIORITIZED FINDINGS
+
+1. MED — Example dialogue will be swallowed by the leading-system coalescer
+
+“emitted between the static head and live history as `{role:"system", name:...}`”
+“Position keeps them clear of the leading-run coalescer”
+
+That position does the opposite. `_static_prefix()` ends with system messages, so immediately following named example-system messages remain part of the leading run; `normalize_system_messages()` merges every consecutive leading system message and drops metadata when there is more than one contributor. The later-system re-role branch never sees them. Scenario: any agent with `example_dialogue` loses `name=example_user/example_assistant` and all turns become undifferentiated text inside the system head. LEAN fix: make a named system message terminate the leading coalescing run, then let the existing later-system branch re-role it while preserving `name`; add one focused normalize test covering static head + two named examples + user history. Confidence: 1.00.
+
+2. MED — The conversational duties text removes operational behavior, not merely formal voice
+
+“duties differ in VOICE only, NEVER capability”
+“conversational drops … the carry-through/batching drill, the routing lecture”
+
+Those statements conflict. The current prompt’s carry-through, batching, tool-over-guessing, and fleet-vs-web routing rules materially shape whether granted tools are used correctly; removing them can make a conversational agent stop after one operation, serialize a batch, or use web search for a fleet request. R64 §5.4 does not establish “action-first” as the sole load-bearing rule: its measured RRP combined five rules plus hard function-call enforcement, including exact schemas and ambiguity handling. LEAN fix: remove task-plan pushing, report formatting, and brevity mandates, but retain the mechanical rails in casual prose: prefer tools to guessing, finish an initiated action, batch independent calls, use exact schemas, and keep fleet routing. Confidence: 0.97.
+
+3. MED — `{{original}}` does not implement the cited V2 contract and is wrong for post-history instructions
+
+“`{{original}}` in a persona substitutes the selected duties text”
+“The pass runs over … post_history”
+
+R64 quotes V2 directly: for `system_prompt`, `{{original}}` means the system prompt that would have been used without the card; the analogous placeholder in `post_history_instructions` means the default jailbreak/post-history string. Substituting Duties alone is not the no-card system prompt, and substituting Duties into `post_history` duplicates them at the tail because only persona use suppresses the normal Duties section. Scenario: a normal V2 card using `{{original}}` either loses the fallback Voice or receives Duties twice in different positions. LEAN fix: define field-specific values: system-prompt `original` = the complete no-card Voice+Duties head and consumes the separately emitted Duties once; post-history `original` = ctrl-b’s default post-history text, currently empty. Specify repeated-token behavior explicitly because `_Placeholders.safe_substitute()` replaces every occurrence. Confidence: 0.99.
+
+4. MED — Card-to-SOUL composition has no exact algorithm
+
+“`description`+`personality` (+card `system_prompt`)→SOUL.md”
+
+These are distinct card fields with distinct semantics, but the plan gives no ordering, separators, labels, replacement rule, or behavior when `system_prompt` is empty/non-empty/contains `{{original}}`. Scenario: two builders can validly produce incompatible SOUL files for the same ordinary V2 card—system prompt first versus description first, labelled versus bare, replacement versus concatenation—and therefore different prompts. LEAN fix: add one short normative composition recipe with exact order and separators, plus two golden imports: description+personality and all three fields with `{{original}}`. Confidence: 0.96.
+
+5. MED — Greeting seeding has no single creation seam and cannot happen at today’s `/threads` creation point
+
+“a REAL seeded assistant message persisted at creation of EVERY new thread with that agent”
+
+Today `POST /threads` creates `Thread()` without an agent; auto-created chat threads are also created before `_auto_route_agent`, and normal interactive threads do not persist the selected agent (`thread.agent` remains unset). Automations and subagents create agent-bearing threads through direct `threads.create()` calls. Scenario: implementing only the API create route misses explicit/auto-routed agents, while putting seeding in `ThreadRepo.create()` cannot resolve the agent and risks injecting conversational greetings into automation/subagent histories. LEAN fix: specify each path: accept/persist an optional selected agent on explicit new-thread creation; seed auto-created chat only after routing; decide explicitly whether automation/subagent threads seed, and invoke one shared message-seeding helper only on the chosen paths. Persist `actor=AGENT` and `agent=<resolved name>`. Confidence: 0.98.
+
+6. MED — Silent fallback for an unknown per-agent voice is not available at the cited seam
+
+“unknown ids resolve to the default too — a silent no-op, NEVER an error”
+“at … `provider_registry`’s voice resolution”
+
+The provider registry resolves TTS targets, not each target’s supported voice IDs. `VoiceClient.synthesize()` forwards `voice or target.voice or "alloy"` to every target; an unknown non-empty agent voice can therefore make every hop fail and return a 502. R67 also does not support the stated precedent: Risu/Agnai treat an absent character binding as no speech, while ST throws for an unmapped character. Scenario: a stale voice ID after changing TTS providers breaks read-aloud, read-along, and auto-TTS instead of falling back. LEAN fix: either narrow the contract to empty⇒global and let invalid IDs report the existing error, or add a real configured voice allowlist and fall back only when the binding is absent from that list; do not infer “unknown” from a general provider failure. Confidence: 1.00.
+
+7. MED — The executable-content strip list names the wrong live Risu field and is not concrete enough to enforce recursively
+
+“strips … `regex_scripts`, `triggerscript`, Risu module payloads, `virtualscript`”
+
+R66’s verified Risu field is `extensions.risuai.customScripts`, not `regex_scripts`; CHARX module scripts are folded into `customScripts` and `triggerscript`, and Risu also has `lowLevelAccess` plus code-capable module/assets structures. A prose category such as “Risu module payloads” is insufficient for a recursive sanitizer over V1/V2/V3/raw-extension shapes. Scenario: a malicious card stores `data.extensions.risuai.customScripts` untouched in `card`, contradicting “warehouse none,” and a future export can re-emit it. LEAN fix: define one explicit normalized path/key denylist—at minimum `customScripts`, `triggerscript`, `virtualscript`, low-level scripting flags, and CHARX code/module members—apply it recursively before stashing, report exact removed paths, and reuse the same function on any future export. Confidence: 0.95.
+
+8. MED — Size controls cover CHARX but not plain JSON or PNG card metadata
+
+“CHARX … depth/size caps per §7”
+“`card: dict[str, Any] = {}`”
+
+The plan specifies bounded zip members but no raw multipart limit or decoded-card JSON limit shared by PNG and JSON. There is no generic request-body cap in the inspected app; existing upload surfaces enforce their own counters. Scenario: a broken or hostile 200 MB JSON card, or a PNG carrying a huge base64 `chara` chunk, is parsed into memory and then serialized into an equally huge `agent.yaml`/API payload. LEAN fix: add one card-upload byte cap and one decoded-card JSON cap for every container, using the existing cap+1/413 posture; CHARX retains its additional entry, asset, and total-uncompressed limits. That bounds the stash without inventing a separate field quota. Confidence: 0.98.
+
+9. MED — Preserving arbitrary card extensions in `agent.yaml` inherits a real secret-permission problem
+
+“Unknown fields + `extensions` land in `card` verbatim”
+“one new endpoint … composes the existing writes”
+
+The existing `_scaffold_agent()` calls `yaml.safe_dump()` followed by `write_text_eol()`, whose temporary file receives ordinary umask-derived permissions; unlike `edit_config_yaml()`, it does not enforce 0600. R67 confirms character objects can contain provider API keys, and unknown extension blobs can carry similar credentials. Scenario: importing such a card under an ordinary 022 umask creates a 0644 `agent.yaml`. LEAN fix: route the existing agent write itself through the already path-agnostic `edit_config_yaml(..., path=agent.yaml)` with whole-map synchronization, gaining atomic 0600 writes, YAML-1.1 quoting, and comment preservation once for imports and manual edits. `safe_dump` itself round-trips multiline/Unicode safely; permissions and destructive rewriting are the defects. Confidence: 0.93.
+
+10. MED — Lorebook rendering says both “one block” and two positions
+
+“sorted by `order`, joined into one framed block”
+“`head` → one block … `tail` → the §4.2 tail slot”
+
+One block cannot preserve mixed `head` and `tail` entries, and the required test book deliberately contains a tail entry alongside other mechanisms. Scenario: simultaneous head and tail activation either puts everything at one position, duplicates the block, or applies the budget independently—all different semantics. LEAN fix: activate and apply one global budget/eviction pass, then partition surviving entries by position, preserve `order` within each partition, and emit at most one framed head block plus one framed tail block. State whether framing characters count against `budget_chars`. Confidence: 0.99.
+
+11. MED — The lorebook scan window is off by one against today’s persistence order unless explicitly corrected
+
+“last `lorebooks.scan_depth` messages’ text + the incoming user message”
+
+`run_turn()` persists the incoming user message before `_drive()` calls `_assemble()`, and `_assemble()` reads that message into `history` before `_static_prefix()`. A literal implementation taking `history[-scan_depth:]` and then adding the incoming text scans the current message twice and one fewer prior message. Scenario: with depth 2, a key present only in the second prior message fails to activate. LEAN fix: define the corpus as the last N messages excluding the just-persisted incoming message, plus that incoming message once; compute it before the first `_static_prefix` build and cache the rendered result in `_static_head`. Confidence: 0.94.
+
+12. MED — The visual gallery, picker avatars, backdrop, and message voice need an agent-summary API that no slice owns
+
+“`GET /agents` … returns specialist agent names + the resolved default”
+“S4 — the agents FE”
+
+Today `GET /agents` returns only `agents: string[]` and `default`; individual GETs return the full resolved AgentDef plus SOUL. The new grid, agent picker, historical who-line avatars, active backdrop, and TTS mapping all need at least title/avatar/background/voice for every agent. Scenario: S4 either performs N full agent+SOUL requests whenever the gallery/chat mounts or cannot render the specified surfaces; S4 is labelled FE although the clean backend seam is absent. LEAN fix: add a compact summary collection to `GET /agents`—including the default agent—and assign that backend change before or within S4; keep media URL/focal resolution in the existing media index. The same summary map serves gallery, picker, backdrop, avatar, and voice. Confidence: 0.97.
+
+13. MED — The semantic change to `inference.system_prompt` is not recorded for existing overrides
+
+“Voice — … `AgentDef.prompt` → `inference.system_prompt` → the baked default”
+“existing SOUL.md specialists … get their selected duties section too”
+
+The plan records the SOUL change but not the equivalent global-override change. Today `inference.system_prompt` is a complete replacement for the fused identity+tool prompt; under this design it becomes Voice only and receives Duties afterward. Scenario: an existing global override already containing tool discipline gets duplicated or contradicted by `duties_agent`, affecting every agent without SOUL. LEAN fix: state explicitly that `inference.system_prompt` is redefined as the fallback Voice, call out duplication for existing full-prompt overrides in release notes/UI help, and add a golden case with a configured override plus global/per-agent appends. No compatibility branch is needed. Confidence: 0.96.
+
+14. MED — The `off` backdrop state is internally contradictory and punts a visible decision to the build slice
+
+“`off` hides the art surface itself … including what happens to the name plate”
+“`""`/absent art ⇒ today’s look on every theme regardless of state”
+
+The latter would restore today’s gacha operator fallback even in `off`, contradicting “off beats the ladder entirely.” The plan also leaves plate/scrim/scanline behavior undecided while calling this the plan of record. Scenario: choosing off with an agent lacking art can either still show the oracle, show empty chrome, or remove the whole operator block. LEAN fix: say: off suppresses both agent and fallback art regardless of binding; then explicitly choose whether gacha’s entire oracle surface or only its image layers disappear. Delete “regardless of state” or restrict it to operator/full. Confidence: 0.99.
+
+15. LOW — Prompt-default equality needs exact normalization and append semantics
+
+“text that equals the shipped default stores NOTHING (normalized comparison — the existing `norm` posture)”
+
+The existing `norm` only maps all-whitespace text to empty; it intentionally preserves leading/trailing whitespace on non-empty prompts. “Normalized comparison” could be implemented as `.trim()`, silently discarding an intentional whitespace-only delta. “Stores nothing” is also ambiguous when an append remains. Scenario: an owner adds meaningful leading/trailing spacing, or restores the base while retaining an append. LEAN fix: define equality as exact string equality after only blank/whitespace-only→empty normalization; equal base clears only `override`, preserving `append`. Compare against the `default_text` loaded into that modal. Confidence: 0.89.
+
+
+CONFIRMED SOUND
+
+- The flat optional-field direction matches `AgentDef`’s existing style and owner ruling; Pydantic handles the list/dict defaults per instance.
+- Voice+Duties can remain byte-stable within a turn: resolving both during the first `_static_prefix()` build and caching `_static_head` fits the current invariant. Global and per-agent appends can continue after the composed Voice/Duties message in their current order.
+- A lorebook scan performed once before that first build is cache-compatible; placing its head block last among static blocks follows the real cache comments. Tail entries and `post_history` belong in `_assemble()` before the one-shot reflection nudge.
+- The V3 priority/order split and global-budget-before-placement model are appropriate once the one-block contradiction is fixed.
+- Lorebooks remaining separate from Core Memory is accurately reasoned and matches both implementations’ decision point, visibility, persistence, and budget differences.
+- The media namespace/role extension, reuse of `useImageJob`, and `.who::before` avatar swap fit existing seams.
+- The broad S0→S7 dependency order works apart from the missing agent-summary backend ownership and mixed BE work currently hidden inside “S4 FE.”
+
+
+CITATION SPOT-CHECK
+
+1. `AgentDef` / `domain/agent.py:181-226`: SUPPORTS the flat extension and `extra="allow"` house-style claim.
+2. R64 §1.1 `{{original}}`: DOES NOT SUPPORT substituting Duties alone; it specifies the complete no-character system-prompt fallback, with separate post-history semantics.
+3. R64 §5.4 Voice/Action result: PARTIAL. It supports explicit Voice/Action separation, but +0.052 belongs to the full RRP package, not action-first alone.
+4. R64 §7 example wire: SUPPORTS ST’s named-system shape; DOES NOT SUPPORT “4/4-peer wire shape.” The cited section verifies ST’s wire and Lite’s flattened contrast.
+5. `normalize_system_messages`, `inference.py:563-616`: CONTRADICTS the plan’s position claim; initial named examples coalesce and lose names, while genuinely later systems are re-roled and preserve `name`.
+6. R66 §1 containers: SUPPORTS PNG chunks, discriminator-based JSON, CHARX, the normative `embeded://` typo, JPEG-appended ZIPs, and magic-byte sniffing.
+7. R66 §9 existing-write composition: SUPPORTS composing agents CRUD and SOUL writes rather than creating parallel persistence.
+8. R66 §3 executable content: PARTIAL/CONTRADICTORY. It supports strip-over-execute, but the verified Risu key is `customScripts`, not `regex_scripts`, and identifies additional module/low-level structures.
+9. R65 §1.10/§2/§3: SUPPORTS separate eviction priority and render order, and V3-style eviction rather than ST refusal.
+10. R65 §9 plus `session.py:734-759`: SUPPORTS placing a per-turn lorebook block last in the static head and caching it byte-identically within that turn.
+11. R67 §8: CONTRADICTS the claimed Risu/Agnai global fallback precedent; both object-based systems treat an absent binding as no speech, while ST throws when unmapped.
+12. `kit.css:3601-3613`: SUPPORTS the exact 6px `.who::before` role-colored dot anchor.
+13. `GachaAgent.tsx` plus `gacha.css:4074-4103,4219-4255`: PARTIAL. The no-animated-filter implementation is reusable, but each face contains art+scrim+name and the whole face crossfades; scrim and opacity are not separate in the way §8.3 states.
+
+OPEN SWEEP, LAST
+
+None beyond the findings above.
+
+
+SUMMARY
+
+The architecture is mostly well fitted: one agent model, existing media machinery, static-head caching, tail injection, and a separate lorebook lane are all sound. The defects are concentrated at concrete seams rather than the overall direction: named examples collide with the coalescer; `{{original}}`, card-to-SOUL composition, greetings, and voice fallback do not yet have executable semantics; import limits/stripping/file permissions need tightening; mixed-position lorebooks contradict the “one block” rule; and the visual surfaces need one shared agent-summary API. These are bounded design corrections, not reasons to abandon the design.
+
+VERDICT: BUILD WITH CHANGES
+
+Fix the findings above in the plan before S0. The highest-value corrections are the normalize-system boundary, operationally complete conversational Duties, field-correct `{{original}}`, explicit greeting path coverage, truthful TTS fallback, concrete import caps/strip paths, two-block lore rendering, and the agent-summary endpoint. After those, the slice ladder is buildable without a redesign.
+```
