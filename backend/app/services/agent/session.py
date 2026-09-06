@@ -842,6 +842,16 @@ class AgentSession:
         attachment bodies: the field's corpus is what was said, and a book whose keys matched a
         `ping_host` result would fire on the machinery rather than on the conversation.
 
+        **On a RESUME there is no incoming text, so the window is rebuilt by ANCHOR.** By then the
+        turn's own user message — and possibly a text-bearing suspended assistant row — are already
+        history, so a plain `prior[-scan_depth:]` would have SHIFTED the window forward and could
+        deactivate mid-logical-turn a book that only the oldest scanned message summoned. The anchor
+        is therefore the LAST user-role chat message: its text plays the incoming slot, the window is
+        the `scan_depth` chat messages BEFORE it, and everything after it is ignored. A drained steer
+        persists as a user message and is legitimately part of what the owner said this turn, so it
+        is not excluded — it simply becomes the anchor, which is what "the incoming text" means once
+        the owner has spoken again.
+
         `_static_head` is reset because the head block is cached inside it: the session is per-turn
         today, but a second turn on one session must re-scan, and the cheapest way to guarantee that
         is to invalidate here rather than to rely on the field being untouched. It does NOT make the
@@ -856,14 +866,23 @@ class AgentSession:
         if not slugs:
             return
         cfg = self._settings.lorebooks
-        books = load_books(self._settings.lorebooks_dir_path(), slugs)
+        # Off the loop: reading + parsing N book files is blocking work, and EVERY turn (interactive,
+        # automation, subagent) that attaches a book enters it.
+        books = await asyncio.to_thread(load_books, self._settings.lorebooks_dir_path(), slugs)
         if not books:
             return
         texts = [user_text]
-        if cfg.scan_depth:
+        if cfg.scan_depth or not user_text:
             history = await self._messages.list(thread.id, include_compacted=False)
-            prior = [t for m in history if m.role in ("user", "assistant") and (t := m.text())]
-            texts += prior[-cfg.scan_depth :]
+            chat = [(m.role, t) for m in history if m.role in ("user", "assistant") and (t := m.text())]
+            if user_text:
+                texts += [t for _, t in chat[-cfg.scan_depth :]]
+            else:
+                # The resume path's anchor rule (see the docstring). With no user row to anchor on,
+                # `len(chat)` leaves the window as the plain tail — the turn-start reading, for a
+                # history that never had an incoming slot.
+                anchor = next((i for i in reversed(range(len(chat))) if chat[i][0] == "user"), len(chat))
+                texts = [t for _, t in chat[max(0, anchor - cfg.scan_depth) : anchor + 1]]
         head, tail = scan(books, Haystack.of(texts), self._macros(), budget_chars=cfg.budget_chars)
         if not (head or tail):
             return  # a scan miss costs nothing — not even the framing's stamp (the `_core_index_block` rule)

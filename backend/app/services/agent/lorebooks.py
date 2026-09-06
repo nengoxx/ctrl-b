@@ -41,6 +41,7 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 from app.config import dealias_mapping, edit_config_yaml, sync_mapping
+from app.services.agent.skills import valid_skill_slug
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -101,8 +102,9 @@ class Lorebook(BaseModel):
 
 
 def book_path(directory: Path, slug: str) -> Path:
-    """`<directory>/<slug>.yaml`. The caller validates the slug (`valid_skill_slug`) — this never
-    sees a name the API layer has not already refused."""
+    """`<directory>/<slug>.yaml`. Says nothing about whether the slug is SAFE — the API layer refuses
+    a bad name up front, and `load_book` (the shared read seam) guards the paths that never pass
+    through it: a slug from `config.yaml` or an `agent.yaml`."""
     return directory / f"{slug}{BOOK_SUFFIX}"
 
 
@@ -121,9 +123,18 @@ def load_book(directory: Path, slug: str) -> Lorebook | None:
     attached a book, and the worst that may cost them is the entries it would have contributed.
     So the failure is a log line and a skip, here, once — every caller inherits it.
 
+    The slug is VALIDATED here rather than trusted (K1): `lorebooks.books` in `config.yaml` and an
+    agent's own `lorebooks:` list are hand-edited files that never pass the API's guard, and
+    `../something` would otherwise read outside `$CTRLB_HOME/lorebooks`. An unusable name is the same
+    non-event as a missing file — a log line and a skip — so one guard on the shared read seam covers
+    every caller.
+
     Read with PyYAML (the same 1.1 reader `load_settings` and `_load_agent_folder` use) precisely
     because the writer quotes for that reader: a book whose key is `no` or `23:00` round-trips only
     if both ends agree on which YAML this is."""
+    if not valid_skill_slug(slug):
+        log.warning("lorebook %r: not a usable book name — skipping", slug)
+        return None
     p = book_path(directory, slug)
     if not p.is_file():
         log.warning("lorebook %r: no file at %s — skipping", slug, p)

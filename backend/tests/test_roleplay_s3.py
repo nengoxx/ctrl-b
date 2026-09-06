@@ -35,7 +35,7 @@ from _async import run_async
 from fastapi.testclient import TestClient
 from test_roleplay_s0 import _agent, _client, _session, _systems, _workspace
 from test_roleplay_s2 import agent_yaml, home, imported, make_client, v3
-from test_steer_drain_a_d41 import _Fake, _no_compact, _text
+from test_steer_drain_a_d41 import _Fake, _no_compact, _text, _tool
 
 from app.domain.conversation import Message, TextPart, Thread
 from app.domain.enums import Actor
@@ -144,6 +144,40 @@ def _run_turn(c, thread: Thread, agent_name: str | None, user_text: str) -> _Fak
 
     run_async(go())
     return fake
+
+
+def _suspend_turn(c, thread: Thread, agent_name: str | None, user_text: str) -> tuple[_Fake, str]:
+    """One REAL turn that says something and then SUSPENDS on a confirm-gated call — the first half
+    of a resume, with both rows the resume path has to see past (the persisted user message and a
+    text-bearing suspended assistant row) really in history."""
+    fake = _Fake([[_text("one moment"), _tool("reboot_host", {"host_id": "nope"})]])
+    session = _session(c, agent_name)
+    session._inference = fake
+    _no_compact(session)
+
+    async def go():
+        return [ev async for ev in session.run_turn(thread, user_text)]
+
+    events = run_async(go())
+    return fake, next(e.data["callId"] for e in events if e.event == "tool.permission")
+
+
+def _resumed(c, thread: Thread, agent_name: str | None, call_id: str):
+    """The resumed half on a FRESH session — what the endpoint builds — with `_drive` spied out so
+    nothing but the turn-start re-activation runs."""
+    session = _session(c, agent_name)
+
+    async def _spy(_thread, **_kw):
+        return
+        yield  # unreachable — makes `_spy` the async generator `resume` iterates
+
+    session._drive = _spy
+    run_async(_collect(session.resume(thread, call_id, "dismiss")))
+    return session
+
+
+async def _collect(agen) -> list:
+    return [ev async for ev in agen]
 
 
 # ── 1. activation (§6.3) ──────────────────────────────────────────────────────────────────────────
@@ -256,6 +290,41 @@ def test_a_message_past_the_scan_window_is_not_scanned() -> None:
         thread = _thread(c, ("user", "the ghostship again"), ("assistant", "mm."), ("user", "go on"))
         fake = _run_turn(c, thread, "nyx", "and then?")
         assert "Veile" not in "".join(_blocks(fake.seen[0]))
+
+
+def test_a_resume_re_scans_the_window_of_the_LOGICAL_turn() -> None:
+    """The S3 fix wave's resume pin. A resume has no incoming text, and by then the turn's own user
+    message plus a text-bearing suspended assistant row are already history — so a plain
+    `prior[-scan_depth:]` reads a window shifted two messages forward and the key in the oldest
+    scanned message falls out, deactivating a book MID-logical-turn.
+
+    The anchor rule fixes it: the last user-role message plays the incoming slot and the window is
+    the `scan_depth` messages before it, so the two haystacks agree across the suspend."""
+    with _workspace(), _client() as c:
+        assert c.put("/api/settings", json={"lorebooks": {"scan_depth": 2}}).status_code == 200
+        _book(c, "hollow-sea", TEST_BOOK)
+        _agent(c, "nyx", lorebooks=["hollow-sea"])
+        thread = _thread(c, ("user", "the ghostship again"), ("assistant", "mm."))
+        fake, call_id = _suspend_turn(c, thread, "nyx", "and then?")
+        assert "The ghostship Veile sails in fog." in "".join(_blocks(fake.seen[0]))
+
+        head = _resumed(c, thread, "nyx", call_id)._lorebook_head
+        assert head is not None and "The ghostship Veile sails in fog." in head
+
+
+def test_a_resume_does_not_reach_PAST_the_logical_turns_window() -> None:
+    """…and the window is still a window: one message further back is invisible on the resume too,
+    exactly as it was to the turn that suspended (the anchor moves the window, it does not widen it).
+    """
+    with _workspace(), _client() as c:
+        assert c.put("/api/settings", json={"lorebooks": {"scan_depth": 2}}).status_code == 200
+        _book(c, "hollow-sea", TEST_BOOK)
+        _agent(c, "nyx", lorebooks=["hollow-sea"])
+        thread = _thread(c, ("user", "the ghostship again"), ("assistant", "mm."), ("user", "go on"))
+        fake, call_id = _suspend_turn(c, thread, "nyx", "and then?")
+        assert "Veile" not in "".join(_blocks(fake.seen[0]))
+        head = _resumed(c, thread, "nyx", call_id)._lorebook_head
+        assert head is not None and "Veile" not in head  # the constant entry, and nothing else
 
 
 def test_the_incoming_message_is_scanned_even_at_depth_zero() -> None:
@@ -445,6 +514,24 @@ def test_a_missing_or_unreadable_book_is_skipped_not_fatal() -> None:
         assert "The ghostship Veile sails in fog." in block
 
 
+def test_a_book_slug_that_escapes_the_directory_is_never_read() -> None:
+    """K1. The API refuses a bad slug, but `lorebooks.books` in `config.yaml` and an agent's own
+    `lorebooks:` list are hand-edited files that reach the reader unvalidated — so `load_book`, the
+    shared read seam, validates the name itself and treats an unusable one exactly like a missing
+    file (a log line and a skip)."""
+    with _workspace() as (tmp, _cfg), _client() as c:
+        _book(c, "hollow-sea", TEST_BOOK)
+        # A real, readable book planted one directory ABOVE the lorebooks dir: `../evil` would find it.
+        (tmp / "evil.yaml").write_text(
+            yaml.safe_dump({"name": "Evil", "entries": [{"keys": ["ghostship"], "content": "OUTSIDE."}]}),
+            encoding="utf-8",
+        )
+        _agent(c, "nyx", lorebooks=["hollow-sea", "../evil"])
+        block = _blocks(_turn(c, _thread(c), "nyx", "about the ghostship"))[0]
+        assert "The ghostship Veile sails in fog." in block  # the good book still contributes…
+        assert "OUTSIDE." not in block  # …and the traversal read nothing
+
+
 def test_a_disabled_book_contributes_nothing() -> None:
     with _workspace(), _client() as c:
         _book(c, "hollow-sea", {**TEST_BOOK, "enabled": False})
@@ -624,6 +711,74 @@ def test_logic_is_normalized_away_when_there_are_no_secondary_keys(home: Path) -
         body = import_book_ok(c, book)
     assert body["book"]["entries"][0]["logic"] == "and_any"
     assert body["report"]["warnings"] == []
+
+
+def test_an_unusable_position_or_logic_value_downgrades_instead_of_crashing(home: Path) -> None:
+    """A hand-edited `"position": {}` is neither of the two shapes a position can BE, and asking the
+    downgrade table about an unhashable value used to raise — a 500 on a book that had imported fine
+    before v1 knew about positions at all. Both fields take the SAME unknown-value path they already
+    had for a number nobody ships: the head, with a line naming what was not understood."""
+    with make_client() as c:
+        body = import_book_ok(
+            c,
+            [
+                {
+                    "keys": ["a"],
+                    "content": "c",
+                    "position": {},
+                    "secondary_keys": ["storm"],
+                    "selectiveLogic": [],
+                }
+            ],
+        )
+    entry = body["book"]["entries"][0]
+    warnings = body["report"]["warnings"]
+    assert entry["position"] == "head" and entry["logic"] == "and_any"
+    assert any("the position {} is not one this build knows" in w for w in warnings)
+    assert any("the key logic [] is not one this build knows" in w for w in warnings)
+
+
+def test_a_card_whose_embedded_book_has_an_unusable_position_still_imports(home: Path) -> None:
+    """The same value arriving the OTHER way (§6.5's fourth arrival): a card's `character_book` must
+    land its book with the warning, never refuse the character over it."""
+    card = v3(
+        name="Nyx",
+        description="d",
+        character_book={
+            "name": "Nyx's own",
+            "entries": [{"keys": ["archive"], "content": "It floods.", "position": {}}],
+        },
+    )
+    with make_client() as c:
+        body = imported(c, json.dumps(card).encode("utf-8"))
+        listed = c.get("/api/lorebooks").json()["lorebooks"]
+    assert body["agent"]["lorebooks"] == ["nyx-book"]
+    assert [b["slug"] for b in listed] == ["nyx-book"]
+    assert any("is not one this build knows" in w for w in body["report"]["warnings"])
+
+
+def test_a_non_selective_entry_stashes_its_whole_gate_verbatim(home: Path) -> None:
+    """K2. The source turned the gate OFF, so nothing about it was read — and a field that was not
+    read is provenance, not a mapped value: the secondary keys AND the logic that would have combined
+    them stash verbatim, and the approximation the logic table would have reported is never made."""
+    with make_client() as c:
+        body = import_book_ok(
+            c,
+            {
+                "name": "Inert",
+                "entries": {
+                    "0": st_entry(
+                        0, key=["k"], content="c", selective=False, keysecondary=["storm"], selectiveLogic=3
+                    )
+                },
+            },
+        )
+    entry = body["book"]["entries"][0]
+    assert entry["secondary_keys"] == [] and entry["logic"] == "and_any"  # no gate at all
+    assert entry["keysecondary"] == ["storm"] and entry["selectiveLogic"] == 3  # …both kept verbatim
+    assert {"keysecondary", "selectiveLogic"} <= set(body["report"]["stashed_keys"])
+    assert any("provenance only" in w for w in body["report"]["warnings"])
+    assert not any("AND-ALL" in w for w in body["report"]["warnings"])  # nothing was approximated
 
 
 def test_the_v3_envelope_and_a_bare_list_are_both_read(home: Path) -> None:

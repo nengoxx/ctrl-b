@@ -184,12 +184,15 @@ def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list
     enabled = _flag(on, not _flag(off, False))
 
     # `selective` is read BEFORE the secondary keys, because it decides whether they gate at all.
-    # When the source explicitly turns it off, the secondary keys were inert there — so they stay
-    # UNCONSUMED (stashed verbatim, provenance intact) and this entry gets no gate, which keeps its
-    # activation identical to what the author saw. Anything else: the keys map and the gate is on.
+    # When the source explicitly turns it off, the secondary keys AND the logic that would have
+    # combined them were inert there — so NONE of them is consumed (all stashed verbatim, provenance
+    # intact) and this entry gets no gate, which keeps its activation identical to what the author
+    # saw. `selective` itself IS consumed either way: it was acted on. Anything else: the keys map,
+    # the logic maps, and the gate is on.
     selective = take("selective")
     if selective is not None and not selective:
         secondary: list[str] = []
+        logic = "and_any"  # the no-gate default — nothing was read, so nothing was approximated
         if _string_list(raw.get("keysecondary")) or _string_list(raw.get("secondary_keys")):
             warnings.append(
                 f"{label}: the source marks it non-selective, so its secondary keys were kept as "
@@ -197,6 +200,7 @@ def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list
             )
     else:
         secondary = _string_list(take(*_ALIASES["secondary_keys"]))
+        logic = _logic(take("logic"), take("selectiveLogic"), secondary, label, warnings)
 
     fields: dict[str, Any] = {
         "keys": _string_list(take(*_ALIASES["keys"])),
@@ -204,7 +208,7 @@ def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list
         "enabled": enabled,
         "constant": _flag(take("constant"), False),
         "secondary_keys": secondary,
-        "logic": _logic(take("logic"), take("selectiveLogic"), secondary, label, warnings),
+        "logic": logic,
         "case_sensitive": _flag(take(*_ALIASES["case_sensitive"]), False),
         # ABSENT ⇒ TRUE — ST's SHIPPED default (R65 §1.2), which its own code default contradicts.
         "whole_words": _flag(take(*_ALIASES["whole_words"]), True),
@@ -234,7 +238,11 @@ def _position(raw: dict[str, Any], value: Any, label: str, warnings: list[str]) 
         value = extensions.get("position") if isinstance(extensions, dict) else None
     if value is None or value in ("head", "tail"):  # absent, or already ours (a re-import)
         return value or "head"
-    known = None if isinstance(value, bool) else _POSITIONS.get(value)
+    # The table is consulted only for the two shapes a position can BE (`bool` is an `int` and is not
+    # one of them). Anything else — a hand-edited `{}` or `[]` — is unhashable, so asking the dict
+    # about it would raise where the whole point of this function is that an unreadable position
+    # downgrades rather than fails an import.
+    known = _POSITIONS.get(value) if isinstance(value, int | str) and not isinstance(value, bool) else None
     if known is None:
         warnings.append(
             f"{label}: the position {value!r} is not one this build knows — it landed at the head"
