@@ -1533,11 +1533,12 @@ SillyTavern-class conversational characters as ordinary agents (one flat system,
 lorebooks as a roleplay-independent subsystem. Standing cadence per slice: pinned Opus build →
 main-seat audit → blind Emma round → fix wave → close; each passes `tools/check.py`.
 
-- [ ] S0 — Assembly core (BE): AgentDef fields + config section + macro pass + the Voice/Duties
+- [x] S0 — Assembly core (BE): AgentDef fields + config section + macro pass + the Voice/Duties
       split (`DEFAULT_SYSTEM_PROMPT` → persona default + `duties_agent`; the new
       `duties_conversational`) + scenario/persona blocks + the post-history tail slot ·
       golden-fixture assembly pins (a no-new-fields agent's diff = exactly the restructured
-      head, nothing else).
+      head, nothing else). **CLOSED 2026-09-06**: build `786698c` + fix wave `fc3901d` (the
+      malformed-brace-run MED); Emma confirm RESOLVED, zero new; full record = plan §13-S0.
 - [ ] S1 — Greeting + example dialogue + voice (BE): thread seeding · `<START>` parsing ·
       pseudo-message emission · the normalize-seam probe on strict templates · per-agent voice
       resolution.

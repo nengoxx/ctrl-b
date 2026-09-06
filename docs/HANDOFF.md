@@ -12,7 +12,48 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-06 — THE CHARACTERS+LOREBOOKS DESIGN SESSION: ROLEPLAY_PLAN COUNCIL-CLOSED, awaiting ratification → D70 → S0; supersedes below where it speaks)
+## Current state (2026-09-06, SECOND session — D70 RATIFIED · S0 BUILT + COUNCIL-CLOSED · the app-logging fix; supersedes below where it speaks)
+
+- **D70 IS RATIFIED (the owner, in conversation) and wired (`f328d9f`):** the DECISIONS
+  entry, the plan's status header, the CLAUDE.md doc-map row, and the TODO **Phase 23**
+  block (S0–S7). `ROLEPLAY_PLAN.md` is the spec of record, authority as its header states.
+- **S0 (the assembly core) is BUILT + COUNCIL-CLOSED, the full standing cadence in one
+  session:** pinned Opus build **`786698c`** (the twelve §3.1 fields · `roleplay:` config ·
+  both §4.1a duties texts verbatim as registry entries · `macros.py` · the universal
+  Voice/Duties head + the three §4.2 emissions · goldens re-pinned, none weakened) →
+  main-seat audit (8 deviations, all ACCEPTED — headline ruling: `{{original}}` carries no
+  second `## Voice` heading, the two-heading shape dominates) → blind Emma round **SHIP
+  WITH FIXES: 1 MED (conf 0.98), seven areas confirmed sound, sweep "none"** (a valid
+  token matched inside a 4+-brace malformed run; `{{original}}` amplification) → main-seat
+  fix wave **`fc3901d`** (pattern lookarounds + `_first_only` re-driven off the exported
+  `TOKENS` pattern — one token definition everywhere; the ruling also caught and fixed the
+  once-rule's literal-substring first-slot steal) → **confirm RESOLVED conf 0.99, zero new
+  findings.** Gate green throughout; **BE 2,226** (counts in QUALITY.md). Full record =
+  **plan §13-S0**. **Next slice = S1** (greeting seeding + `<START>` example dialogue +
+  the normalizer named-boundary rule + per-agent voice resolution; §10-S1 + the §4.2 S1
+  probe items), one slice per session, the owner's word opens it.
+- **The 09-06 opening item CLOSED — the presence mystery was a LOGGING bug, not the
+  phone:** the backend NEVER configured Python logging (no `basicConfig` anywhere), so
+  every app-level INFO line — the whole D69 presence trail, the D2-A monitor lines — was
+  dropped by the handler-less root logger since forever, dev AND prod. Fix **`c79d9f4`**:
+  one `logging.basicConfig(level=logging.INFO)` at the `main.py` import chokepoint;
+  proven live within one tick (`presence: phone/tailnet unseen -> online` ·
+  `phone/lan unseen -> offline`). **The D69 2–3-night observation clock TRULY starts
+  09-06 night; dev units stay RUNNING.** First data point: tailnet online / LAN offline
+  at 10:51 while the owner was home — watch whether LAN pins offline (Android ICMP
+  power-save class vs a reservation problem). ⚠ Prod (v1.7.7) still has the blindness —
+  the fix rides v1.7.8.
+- **Git: 35 commits unpushed over origin `04769d9`** (the 30 at session open + `c79d9f4`
+  logging + `f328d9f` D70 + `786698c` S0 + `fc3901d` fix + this docs commit); working
+  tree clean; the PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.**
+  The v1.7.8 pipeline is unchanged and still owed (Dependabot D1 bump → push → release E
+  per the corrected 09-04 line: config migration 2→3 rides it, rollback = config backup
+  FIRST then v1.7.7, pre-tag LOCAL e2e + the three-wave stale-pin sweep) — the roleplay
+  phase does NOT block it; sequencing is the owner's.
+- **Standing next-next (owner):** LIVE VOICE / CALL MODE after the roleplay phase — start
+  at [`R51`](./research/R51-realtime-voice-chat.md), buy only the delta.
+
+## Prior state (2026-09-06, FIRST session — THE CHARACTERS+LOREBOOKS DESIGN SESSION: ROLEPLAY_PLAN COUNCIL-CLOSED, awaiting ratification → D70 → S0; superseded above where it speaks)
 
 - **THE INITIATIVE (the owner's new direction, 2026-09-05/06): SillyTavern-class conversational
   characters — characters ARE agents, one flat system — plus lorebooks as a first-class

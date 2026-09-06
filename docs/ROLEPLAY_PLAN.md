@@ -997,3 +997,43 @@ to the F6 contract.
 all accepted) → fix wave folded → confirm (13/15 + 4 residuals) → residual fixes → micro-confirm
 CONFIRMED. Awaiting the owner's ratification → D70 (which also lands: the DECISIONS entry, the
 CLAUDE.md doc-map row, the TODO phase wiring) → the S0 build brief.
+
+### S0 — the assembly core: BUILT + council-CLOSED 2026-09-06 (same session as ratification)
+
+**Build `786698c`** (Opus 5, pinned brief): the twelve §3.1 fields · `RoleplayCfg` ·
+five registry entries (both §4.1a texts VERBATIM, byte-verified by the reviewer; the two
+section framings; `persona_intro`) · `macros.py` (~85 lines, reuses the registry renderer
+via a new public `prompts.render`) · the session.py head restructure + the three §4.2
+emissions · 28 new tests + the 18 invalidated pins re-pinned through one shared `head()`
+helper, none weakened. Gate 6/6; BE 2,192→2,225.
+
+**Main-seat audit: all 8 declared deviations ACCEPTED.** The ruling that mattered:
+`{{original}}`'s substituted value carries the no-card Voice TEXT + the whole Duties
+section (heading included) but NOT a second `## Voice` heading — the §4.1a two-heading
+head shape dominates a byte-literal "complete no-card head" (three headings otherwise).
+Also recorded: scenario emits unframed (plan names a framing only for the persona) and
+sits before the appends; `roleplay.persona.description` is not macro-substituted in v1.
+
+**Blind Emma round (hermes emma lane, sol high, `--ignore-rules`): SHIP WITH FIXES —
+exactly 1 MED (conf 0.98), seven areas explicitly CONFIRMED SOUND, open sweep "none"**
+(she ran the six focused suites herself, 157 green). The MED, reviewer-traced and
+main-seat-reproduced: the placeholder pattern's `invalid` branch ate the leading `{{` of
+a 4+-brace run (`{{{{char}}`) and the scan then matched a "valid" token INSIDE what the
+owner wrote as one literal blob — half-substituting it, and via `{{original}}` able to
+inject a whole no-card head. Ruling exposed a second half she had not asked about:
+`_first_only` counted tokens by literal substring, so a `{{original}}` inside a run
+stole the once-rule's "first" slot and blanked a REAL token later in the text.
+
+**Fix wave `fc3901d`** (main-seat, leanest form of her own suggestion): lookarounds on
+the shared pattern (`(?<!\{)` / named-branch `(?!\})`) — malformed runs survive verbatim,
+visibly, the same typo-is-visible rule as a miss; the compiled pattern exported as
+`prompts.TOKENS` and `_first_only` re-driven off it (ONE token definition everywhere;
+`consumes_original` was already pattern-driven). Triple-brace behavior unchanged and now
+pinned. Nine new edge assertions; BE 2,226, pyright/ruff clean.
+
+**Confirm round (resumed session): RESOLVED, MED conf 0.99, new findings NONE** — she
+quoted the four satisfying lines, verified the lookahead's named-branch placement leaves
+no asymmetric half-consumption (exhaustive 0–7 leading/trailing-brace checks incl.
+`consumes_original` × once-rule), and swept registry defaults for reliance on the old
+matching: none. **S0 is CLOSED; S1 (greeting + example dialogue + voice resolution) is
+next per §10.**
