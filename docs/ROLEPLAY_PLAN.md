@@ -74,6 +74,18 @@ YAML-1.1-safe after the 2026-09-05 quoting fix).
 14. **Crop + focal-point functionality is REUSED for agent art uploads** (§8.2).
 15. The spec should be exhaustive — "every nuance, every potential issue, every design
     decision" — and the main seat asks clarifications rather than assumes.
+16. **Duties differ in VOICE only, NEVER capability** (round 5: "I don't want to handicap
+    them… I just don't want the prose that is instruction-focused, which will bias the model
+    to respond too formally on a casual conversation"). A conversational character with the
+    tools granted can shut down machines, research, code — everything. Tools/skills/privilege
+    remain the ONLY capability levers; §4.1a is the invariant + both texts verbatim.
+    Imported cards START on conversational (confirmed).
+17. **The agents list moves OUT of Conf into its own settings section — the character/agent
+    gallery** (round 5, revising the restyle-in-place idea): one dedicated section for ALL
+    agents "regardless if they're regular agents or roleplay characters" (§8.4).
+18. **Frontier backdrop: v1 ships with frontier simply unchanged** (the setting has no effect
+    on its bespoke agent surface); the integration lands as a separate follow-up cleanup —
+    round 5: "focus on the feature… one by one."
 
 ## 2. Design principles
 
@@ -155,6 +167,54 @@ All additive with defaults ⇒ **no config migration** (the D68 precedent).
     yourself, tools available when genuinely useful, no task-plan pushing, no progress
     narration. Written fresh in S0, tuned by the owner via the Phase 18 editor like any
     registry prompt (`prompts:` override + Conf).
+
+### 4.1a The two duties texts — v1 drafts, verbatim (registry defaults; owner-tunable per Phase 18)
+
+**The invariant first (ruling 16): duties NEVER gate capability.** Both texts assume whatever
+toolset the agent was granted; `tools`/`skills`/`privilege` are the only capability levers, and
+the import-time minimal allowlist (§5.5) is an independent, freely-widened choice. The two
+texts differ in voice and interaction shape alone — and BOTH keep the one rule R64 §5.4
+measured as load-bearing: act (call the tool) before speaking.
+
+`duties_agent` — today's tool-discipline half, substance preserved, identity removed:
+
+> Call the provided tools to inspect and act. Prefer a tool over guessing. Risky actions
+> (shutdown, stop/restart a service) will ask the owner to confirm before running — propose
+> them when appropriate. Resolve a host or service the owner names to its stable `id` yourself
+> using the fleet roster provided below — never ask the owner for an id. For a multi-step
+> request, call `task_plan` first to lay out the steps, then update it (re-send the whole
+> list) as you complete each — keep one step `active`. Skip the plan for a single quick
+> action. Carry the task through to completion in this turn: keep calling tools until every
+> step is done. Do NOT stop to narrate progress or ask whether to continue when the next step
+> is already clear — the system pauses the turn for you whenever a risky action needs
+> confirmation, so you never have to ask permission yourself. When the same action applies to
+> several targets (e.g. pinging every host), issue all of those tool calls together in one
+> step rather than one at a time. Tool routing: for fleet/host/service requests use the fleet
+> tools and `task_plan` — do NOT use web search or crawling for fleet operations. Use
+> `web_search`/crawl tools ONLY when the owner asks for information from the internet. Never
+> repeat the same tool call with the same arguments; if a result didn't help, change approach
+> or answer. Answer directly and briefly; after the final tool runs, summarize the outcome in
+> one or two lines.
+
+`duties_conversational` — full authority, casual voice; what is REMOVED is only the
+formal-executor shaping (task_plan pushing, brevity mandates, report-style summaries):
+
+> This is a conversation first: speak in your own voice and match its tone and rhythm. Never
+> fall into report formatting — no headings, no bullet lists, no closing summaries unless
+> asked. You still have your tools and your full authority to use them: when the conversation
+> calls for a real action (waking or shutting down a machine, checking on something, searching
+> the web), call the tool FIRST, then weave what happened into your reply naturally. Do not
+> describe or promise an action you can simply take, and do not ask permission yourself —
+> risky actions automatically pause for the owner's confirmation. Resolve a host or service
+> the owner names to its stable `id` yourself from the fleet roster when one is provided.
+> Never repeat the same tool call with the same arguments; if a result didn't help, change
+> approach or say so in your own words.
+
+What each drops from the other, named: conversational drops `task_plan` orchestration, the
+carry-through/batching drill, the routing lecture (a one-line id rule stays), and every
+brevity/summary mandate; agent drops nothing (it IS the current behavior). Shared mechanical
+rails in both: act-before-speaking, the confirm system (never self-ask), id resolution, no
+identical-call repeats.
 
 Head shape: ONE leading system message, two `## `-labelled sections (labels are registry-owned
 framings). `{{original}}` in a persona substitutes the selected duties text at that position
@@ -406,16 +466,22 @@ background tall) are config-shaped like the existing per-role crop settings, not
   INSIDE the shared agent tab, not on the root `KitBackground`). So ONE kit-level layer
   covers cosmos, vapor, and minimal at once; **gacha** integrates via its oracle surface
   (§8.3 above); **frontier** is the one remaining bespoke agent surface (`FrontierAgent.tsx`)
-  and adopts in a recorded follow-up. `""`/absent art ⇒ today's look on every theme
-  regardless of state.
+  — **v1 leaves it exactly as it is** (the setting has no effect there; ruling 18), and the
+  integration lands as a separate follow-up cleanup after the phase. `""`/absent art ⇒
+  today's look on every theme regardless of state.
 
-### 8.4 The visual agents surface (ruling 4)
+### 8.4 The agent gallery — its own settings section (rulings 4 + 17)
 
-ONE surface — the existing agents editor/list restyled visual-first ("the character
-showcase"): each agent renders as a card carrying its avatar (background preview on the
-detail), replacing today's text rows; no second gallery page exists beside it. The chat
-agent picker gets small avatars. Styling per `VAPOR_PATTERNS.md`; theme dressing rides the
-existing surface rules (D31). Import lands here (§5.1), under the §9 visibility predicate.
+The agents editor MOVES out of ConfTab (where it is one collapsible section today,
+`ConfTab.tsx:2699`) into a **dedicated settings section: the agent/character gallery** — one
+home for ALL agents regardless of kind (ruling 17), riding the existing `useSections`
+navigation like any section. Each agent renders as a visual card carrying its avatar
+(background previewed in the detail); opening a card is the full agent editor (fields +
+SOUL.md + art + duties toggle + lorebook picker). Import lands here (§5.1) under the §9
+visibility predicate. Still ONE surface — the gallery IS the editor's list; no duplicate
+list remains in Conf (the `agent.defaults` GLOBALS keep their Conf home — they are settings,
+not agents; the council refines the exact cut). The chat agent picker gets small avatars.
+Styling per `VAPOR_PATTERNS.md`; theme dressing rides the existing surface rules (D31).
 
 ## 9. Editor + Conf presentation
 
@@ -446,10 +512,10 @@ existing surface rules (D31). Import lands here (§5.1), under the §9 visibilit
 - **S2 — card import (BE):** containers + sniffing + normalization + mapping + strip pass +
   avatar into the library + explicit minimal tools + the import report.
 - **S3 — lorebooks (BE):** storage/CRUD + scan + render/budget + bindings + book import.
-- **S4 — the agents FE:** the visual agents surface (avatar cards + background preview) ·
-  avatar/background set-from-editor via the reused `useImageJob` crop/focus machine (§8) ·
-  the new marked fields + visibility predicate · the duties toggle · Conf group + persona
-  editor · import UI + report · agent-picker avatars.
+- **S4 — the agents FE:** the gallery section (the AgentsEditor relocation + visual cards,
+  §8.4) · avatar/background set-from-editor via the reused `useImageJob` crop/focus machine
+  (§8.2) · the new marked fields + visibility predicate · the duties toggle · Conf group +
+  persona editor · import UI + report · agent-picker avatars.
 - **S5 — the lorebook FE:** manager + attachment picker.
 - **S6 — the three-state backdrop (FE/theme):** the appearance setting + gacha oracle
   integration + the kit backdrop layer + the `off`-state surface behavior (§8.3) — in-phase
@@ -467,12 +533,10 @@ scroll fade kept (§8.3) · reset semantics ruled, feature deferred (§4.2) · t
 code-verified: kit layer covers cosmos/vapor/minimal, gacha integrates, frontier follows
 (§8.3).)*
 
-1. **Imported cards start on the conversational duties option** (the same per-agent toggle
-   from ruling 5 — the question is only its STARTING position after an import; flip any agent
-   any time) — confirm.
-2. **The showcase, spelled out (§8.4):** no new page — the EXISTING agents list in the config
-   becomes visual cards (avatar art on each agent, background preview in the detail), and the
-   chat agent picker gets small avatars. One surface. Veto if you wanted a separate gallery
-   page instead.
-3. **Frontier's backdrop adoption** rides as a recorded follow-up (§8.3) — fine, or must it
-   land in-phase too?
+*(Round 5 closed the court: duties-on-import confirmed + the voice-not-capability invariant
+(16) · the gallery becomes its OWN settings section (17) · frontier v1-unchanged, follow-up
+cleanup (18).)*
+
+1. **The two duties texts (§4.1a)** — the owner reads both drafts and tunes words at will
+   (they are registry defaults; every later edit is a Conf edit, no code). Standing until the
+   owner has read them; not blocking the Emma round.
