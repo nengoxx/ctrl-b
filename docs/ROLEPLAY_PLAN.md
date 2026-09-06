@@ -447,9 +447,19 @@ Each entry renders ONCE (spec MUST).
 Attach globally or per-agent. Card import writes an embedded `character_book` as
 `lorebooks/<agent-slug>-book.yaml` and appends it to the agent's list. Book import (its own
 endpoint) accepts the V3 `{spec:'lorebook_v3'}` envelope, ST's raw standalone export, and a
-bare entries list — the three circulating shapes (R65 §5).
+bare entries list — the three circulating shapes (R65 §5). **Position downgrade must be an
+explicit import rule (2026-09-06 scout finding):** the owner's real ST books use positions
+0–4 (before/after char defs, the two AN slots, at-depth), and v1 stores only `head | tail`
+(§6.4) — the S3 brief pins the mapping (which numbers land `head`, which `tail`) with a
+report line for every downgraded entry, never a silent coercion.
 
 ### 6.6 UI
+
+**S5 first-class requirement (owner, 2026-09-06 — after eyeballing their real books):** a book
+is a WALL of text (the field install holds 209-entry books), so the editor's default view is a
+collapsed per-entry list (key summary + a content preview line), content expanded on demand —
+never one giant form. R65/R66 carry the field's editor UX evidence; the S5 brief designs from
+them.
 
 A Lorebooks manager (books + entries CRUD, enable toggles) + an attachment picker in the agent
 editor. Visible regardless of `roleplay.enabled` (ruling 9); only the card-import auto-attach
@@ -460,7 +470,14 @@ surface carries the roleplay marking.
 S3 ships with a small AUTHORED book exercising every v1 mechanism (constant entry ·
 plain keys · secondary `and_any` · `not_any` · a `tail` entry · an eviction-forcing pair) as a
 test fixture, and the S7 device round imports a real public ST-format book of the owner's
-choosing (or a curated interesting one) to prove the import path on field-authored data. The
+choosing (or a curated interesting one) to prove the import path on field-authored data.
+**The owner's book is CHOSEN (2026-09-06, from a five-candidate scout of their ST install):
+`Simple Personality Traits.json`** (40 entries · ~11K chars · 36 entries with secondary keys
+under AND-ANY logic — "character instructions" shaped, reusable across every agent). It is the
+S3 import-test target as well as the S7 device-round book; the runner-ups scouted (Cyberpunk
+2077 · Fallout Western-USA (constant entry) · The Continent (63 tiny entries — eviction
+pressure) · Dating addon (all-constant scenario addon)) are recorded here as extra probe
+material, no ruling attached. The
 "instruction chains" use the owner named — constant entries as standing behavioral blocks, the
 R65 §7 logic-engine pattern — needs no extra mechanism: `constant: true` + `position` already
 express it; the test book demonstrates one.

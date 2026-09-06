@@ -33,7 +33,13 @@
   recorded, none owed) live there — headline: the multipart-spool class + the
   `UploadPart` vanished-dir 500 class are Phase 19 register material.
 - **Next slice = S3 (lorebooks, §10-S3)**, one slice per session, the owner's word
-  opens it. The ⚠ S4 obligation (FE sends `message.agent` on TTS) and the ops note
+  opens it. **The S3 session-close scout is already in the plan:** the owner picked
+  **`Simple Personality Traits.json`** (their ST install's worlds folder) as the
+  import-test book (§6.7 — 36 secondary-key entries, the character-instructions
+  class); the S3 brief must pin the **position-downgrade rule** (real books use ST
+  positions 0–4 vs our `head|tail`, §6.5) and S5 carries the owner's
+  collapsed-entry editor requirement (§6.6). The ⚠ S4 obligation (FE sends
+  `message.agent` on TTS) and the ops note
   (hermes emma rounds run FOREGROUND-detached — `setsid nohup` from a foreground call;
   beware `pgrep hermes_cli.main` matching the unrelated gateway daemons) both stand.
 - **The session tail ran three owner-driven items (all in plan §13-S2's tail):**
