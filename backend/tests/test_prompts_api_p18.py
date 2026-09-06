@@ -88,6 +88,15 @@ def test_an_untouched_row_serves_the_default_as_current() -> None:
         assert row["description"] == REGISTRY["summarizer"].description
 
 
+def test_every_row_carries_its_registry_group() -> None:
+    """D70 §9a-3 — the editor's sections ride the rows, so the client needs no grouping map of its own
+    (which is also what keeps registry order the order WITHIN each section)."""
+    with _workspace(), _client() as c:
+        for row in _rows(c):
+            assert row["group"] == REGISTRY[row["id"]].group
+            assert row["group"]
+
+
 def test_placeholders_are_derived_from_the_default() -> None:
     """L-7: the editor lists them beside the text (no omission warnings anywhere), and they come from
     the DEFAULT — an override that drops one still shows what the code supplies."""

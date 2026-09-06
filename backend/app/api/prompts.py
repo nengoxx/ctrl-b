@@ -33,6 +33,9 @@ async def list_prompts(request: Request) -> dict[str, Any]:
     `placeholders` DERIVED from the default (§2.3 — the editor lists them beside the text so an
     omission is a visible choice rather than a warning to plumb, L-7).
 
+    `group` (D70 §9a-3) is the editor's SECTION for the row — the registry's own label, so the sections
+    and their order both come off this one response and no client-side grouping map can drift from it.
+
     `warnings` names ids present in `config.yaml` that the registry does not know — a typo or a
     renamed prompt. They are PRESERVED on disk (never silently dropped) but are not rows: nothing
     reads them, so the owner has to be told rather than shown an editor for a prompt that does not
@@ -48,6 +51,7 @@ async def list_prompts(request: Request) -> dict[str, Any]:
                 "id": prompt_id,
                 "label": label(prompt_id),
                 "description": definition.description,
+                "group": definition.group,
                 "default_text": definition.default,
                 "override": override,
                 "append": append,

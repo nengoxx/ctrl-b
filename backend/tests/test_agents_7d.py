@@ -47,11 +47,18 @@ def _client():
     return TestClient(create_app())
 
 
+def _names(c) -> dict:
+    """`GET /api/agents` without its D70 `summaries` map — the 7d contract (names + resolved default),
+    asserted whole so a field can never quietly leave it."""
+    body = c.get("/api/agents").json()
+    return {"agents": body["agents"], "default": body["default"]}
+
+
 def test_agent_folder_crud_and_default() -> None:
     with _workspace() as (tmp, cfg):
         with _client() as c:
             # empty workspace → no folder agents; the default resolves to the root "default"
-            assert c.get("/api/agents").json() == {"agents": [], "default": "default"}
+            assert _names(c) == {"agents": [], "default": "default"}
 
             # create a specialist via the file API; a new folder scaffolds agent.yaml + SOUL.md
             r = c.put(
@@ -92,7 +99,7 @@ def test_agent_folder_crud_and_default() -> None:
             assert c.put("/api/settings", json={"agent": {"default_agent": "ops"}}).status_code == 200
 
             # GET /api/agents reflects the discovered name + resolved default
-            assert c.get("/api/agents").json() == {"agents": ["ops"], "default": "ops"}
+            assert _names(c) == {"agents": ["ops"], "default": "ops"}
 
             # hot-applied: the running app resolves it live (no restart), SOUL.md → prompt
             resolved = c.app.state.settings.resolve_agent(None)
@@ -114,7 +121,7 @@ def test_agent_folder_crud_and_default() -> None:
             # finds no folder and falls back gracefully to the root "default" (no 500, no stale agent).
             assert c.delete("/api/agents/ops").status_code == 200
             assert not folder.exists()
-            assert c.get("/api/agents").json() == {"agents": [], "default": "default"}
+            assert _names(c) == {"agents": [], "default": "default"}
             assert c.app.state.settings.resolve_agent(None).name == "default"
             # delete again → 404 (idempotent surface)
             assert c.delete("/api/agents/ops").status_code == 404

@@ -29,7 +29,13 @@ from pathlib import Path
 import pytest
 
 from app.config import ComputerCfg, PromptOverride, ServiceCfg, Settings
-from app.services.agent.prompts import REGISTRY, placeholders, resolve, resolve_with_template
+from app.services.agent.prompts import (
+    PROMPT_GROUPS,
+    REGISTRY,
+    placeholders,
+    resolve,
+    resolve_with_template,
+)
 
 # ── the pre-migration texts, and the context each site supplied ─────────────────────────────────
 
@@ -323,6 +329,17 @@ def test_every_default_renders_with_no_token_left_over() -> None:
         # text (a JSON example), and L-6's rule is about TOKENS.
         assert not placeholders(rendered), f"{prompt_id} left a token unrendered: {rendered!r}"
         assert set(placeholders(REGISTRY[prompt_id].default)) <= set(ctx)
+
+
+def test_every_prompt_declares_a_group_from_the_closed_vocabulary() -> None:
+    """D70 §9a-3: the registry is the ONE authority on the editor's arrangement, so every row carries
+    its section here — and only a name `PROMPT_GROUPS` knows, or a typo would mint a section silently.
+    The GROUP ORDER is not declared anywhere: it is the order the registry first names each group."""
+    for prompt_id, definition in REGISTRY.items():
+        assert definition.group, f"{prompt_id} declares no group"
+        assert definition.group in PROMPT_GROUPS, f"{prompt_id}: unknown group {definition.group!r}"
+    # every declared group is actually used — a vocabulary entry nothing names is a dead section
+    assert {d.group for d in REGISTRY.values()} == set(PROMPT_GROUPS)
 
 
 def test_steering_prompts_carry_a_coupling_warning() -> None:

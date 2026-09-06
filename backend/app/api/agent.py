@@ -1481,16 +1481,58 @@ async def get_default_prompt() -> dict[str, str]:
     return {"text": DEFAULT_SYSTEM_PROMPT}
 
 
+#: The per-agent facts `GET /agents` publishes beside the names (D70 §10-S4, Emma F12) — the SHOWCASE
+#: fields, and only those: what a card, a picker row, a who-line avatar and the TTS voice binding need.
+#: Everything else (prompt, tools, limits, the card stash) stays behind `GET /agents/{name}`, which is
+#: what keeps this a cheap always-on read rather than N full agent+SOUL fetches per mount.
+#: Media stays UNRESOLVED here — `avatar`/`background` are library entry names, and turning one into a
+#: URL + focal point is the media index's job (`GET /api/media/agents`), never a second resolver.
+_SUMMARY_FIELDS = ("title", "description", "avatar", "background", "voice")
+
+
+def _agent_summary(agent: AgentDef) -> dict[str, str]:
+    return {f: getattr(agent, f) for f in _SUMMARY_FIELDS}
+
+
+def _list_agents_payload(s: Settings) -> dict[str, Any]:
+    """The whole blocking side of `GET /agents` in one `to_thread` hop (SYS-16): the folder scan plus
+    one `agent.yaml`/`SOUL.md` load per agent. ONE hop for all of them — a thread per agent would pay
+    the pool for a handful of small reads that are already sequential on the same disk.
+
+    A specialist that will not LOAD (malformed `agent.yaml`, a field the schema refuses) degrades to a
+    name-only summary rather than 500ing the route or vanishing from the map — `resolve_agent`'s
+    posture applied to a list: the agent keeps working as far as it can, and the surfaces that read
+    this keep rendering its row (with no art and no title, which is exactly what a fresh agent shows).
+    Dropping it instead would leave `agents` naming a key `summaries` does not hold, which every
+    consumer would then have to guard.
+
+    The resolved default is always a key here (`setdefault`), so `default` can be looked up in the map
+    without a second read — including the edge where `agent.default_agent` names a folder that carries
+    neither `agent.yaml` nor `SOUL.md` (`list_agent_names` skips it; `resolve_agent` still loads it)."""
+    names = s.list_agent_names()
+    summaries: dict[str, dict[str, str]] = {s.DEFAULT_AGENT_NAME: _agent_summary(s.default_agent_def())}
+    for name in names:
+        try:
+            agent = s.load_agent(name)
+        except Exception:
+            log.warning("agent %r failed to load; listing it without a summary", name, exc_info=True)
+            agent = None
+        summaries[name] = _agent_summary(agent) if agent is not None else dict.fromkeys(_SUMMARY_FIELDS, "")
+    resolved = s.resolve_agent(None)
+    summaries.setdefault(resolved.name, _agent_summary(resolved))
+    return {"agents": names, "default": resolved.name, "summaries": summaries}
+
+
 @router.get("/agents")
 async def list_agents(request: Request) -> dict[str, Any]:
     """Discovered specialist agent names + the resolved default (7d/D14) — for the composer
     `/agent <name>` switch and a quick reference. Names come from `agents/<name>/` folders; the
-    default/root agent isn't listed (`default` is what a bare thread resolves to)."""
-    s = request.app.state.settings
-    return {
-        "agents": s.list_agent_names(),
-        "default": s.resolve_agent(None).name,
-    }
+    default/root agent isn't listed (`default` is what a bare thread resolves to).
+
+    `summaries` (D70 §10-S4) maps EVERY agent — the root default included — to its `_SUMMARY_FIELDS`,
+    so the gallery, the composer's agent picker, the who-line avatar and the backdrop all read one
+    compact response instead of fetching each agent in full."""
+    return await asyncio.to_thread(_list_agents_payload, request.app.state.settings)
 
 
 #: Scaffold for a brand-new skill so the editor opens with valid frontmatter, not a blank file.
