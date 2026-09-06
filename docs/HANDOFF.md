@@ -12,7 +12,41 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-06, SECOND session — D70 RATIFIED · S0 BUILT + COUNCIL-CLOSED · the app-logging fix; supersedes below where it speaks)
+## Current state (2026-09-06, THIRD session — S2 CARD IMPORT BUILT + COUNCIL-CLOSED; supersedes below where it speaks)
+
+- **S2 (card import, §10-S2) is BUILT + COUNCIL-CLOSED, the full standing cadence in one
+  session:** pinned Opus build **`f6aa640`** (`card_import.py` ~604 lines · the three
+  containers with magic-byte sniffing, ccv3-wins, CHARX opening `card.json`+icon ONLY ·
+  the V1→V2→V3 ladder + the normative SOUL recipe pinned by two goldens · the recursive
+  strip pass · `POST /agents/import` composing the existing writes · the additive
+  `agents` media namespace · `roleplay.card_import` caps · **the §7/F9 move:
+  agent.yaml now writes through `edit_config_yaml`+`sync_mapping`, 0600/quoted/
+  comment-preserving, for imports AND the editor's PUT**) → main-seat audit (all 12
+  deviations ACCEPTED) → blind Emma **SHIP WITH FIXES: 8 MED · 1 LOW, sweep "none"**,
+  four reviewer-REPRODUCED → rulings (7 fixed lean; **MED-1 multipart-spool ingress
+  DEFERRED to Phase 19** — `voice.stt` ships the identical posture) → fix wave
+  **`6d0711d`** (exact spec discriminator · hostile-JSON containment · JPEG-glued
+  CHARX · V3 nickname→`{{char}}` · `_yaml11_safe` quotes KEYS · `dealias_mapping`
+  scoped to agent.yaml · V1 heuristic widened · RFC 6901 strip paths) → **confirm: all
+  8 RESOLVED with line proof, both rulings accepted, zero new.** Gate 6/6 throughout;
+  **BE 2,315** (counts in QUALITY.md). Full record = **plan §13-S2**; residuals (all
+  recorded, none owed) live there — headline: the multipart-spool class + the
+  `UploadPart` vanished-dir 500 class are Phase 19 register material.
+- **Next slice = S3 (lorebooks, §10-S3)**, one slice per session, the owner's word
+  opens it. The ⚠ S4 obligation (FE sends `message.agent` on TTS) and the ops note
+  (hermes emma rounds run FOREGROUND-detached — `setsid nohup` from a foreground call;
+  beware `pgrep hermes_cli.main` matching the unrelated gateway daemons) both stand.
+- **The dev backend was restarted onto the S2 tip** so the owner can import a real card
+  from :5173 (the FE import UI is S4 — until then `curl -F file=@card.png
+  http://127.0.0.1:5434/api/agents/import` is the probe path). Dev units stay RUNNING
+  (D69 presence observation continues; the restart keeps the logging fix live).
+- **Git: 41 commits unpushed over origin `04769d9`** (the 38 at session open +
+  `f6aa640` S2 + `6d0711d` its fix wave + this docs commit); working tree clean; the
+  PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8
+  pipeline (Dependabot D1 → push → release E, config migration 2→3, rollback = config
+  backup FIRST then v1.7.7) is unchanged and still owed; sequencing is the owner's.
+
+## Prior state (2026-09-06, SECOND session — D70 RATIFIED · S0 BUILT + COUNCIL-CLOSED · the app-logging fix; superseded above where it speaks)
 
 - **D70 IS RATIFIED (the owner, in conversation) and wired (`f328d9f`):** the DECISIONS
   entry, the plan's status header, the CLAUDE.md doc-map row, and the TODO **Phase 23**

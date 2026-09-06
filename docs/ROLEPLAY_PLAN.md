@@ -1084,3 +1084,63 @@ exact-format consumer of the old opener repo-wide; identical names carry no reco
 side information; named-frame normalization idempotent; empty-name prefixes are `":"`,
 never match-everything), **new findings NONE. S1 is CLOSED; S2 (card import) is next
 per §10.**
+
+### S2 — card import: BUILT + council-CLOSED 2026-09-06 (third session)
+
+**Build `f6aa640`** (Opus 5, pinned brief): `card_import.py` (~604 lines, pure over
+bytes — magic-byte sniffing, PNG `tEXt` walked with `struct`, ccv3-wins, CHARX opening
+`card.json` + the chosen icon and NOTHING else, the V1→V2→V3 ladder, the recursive
+casefolded strip pass, the slug mint, `land_avatar` through the `UploadPart` ladder) ·
+`POST /agents/import` composing the existing writes · the additive `agents` media
+namespace row (`avatars`/`backgrounds`, no bundled ids, no slots) · `CardImportCfg`
+under `roleplay.card_import` (all five caps config, additive defaults) · **the §7/F9
+chokepoint move**: `_scaffold_agent` writes agent.yaml via `edit_config_yaml` +
+`sync_mapping` (atomic 0600 · `_yaml11_safe` · comment-preserving · full-replace) for
+imports AND the editor's PUT. 46 tests; BE 2,251→2,298; gate 6/6. **Main-seat audit:
+all 12 declared deviations ACCEPTED** — headlines: CHARX reads only what v1 consumes
+(extras = a counted report line, §5.4's own non-goal); zip caps checked against
+DECLARED sizes over every member pre-decompression; the flat V1 mirror ST writes beside
+`data` is dropped, not stashed; `probe_image` re-pointed at one shared `_SIGNATURES`
+table rather than growing a copy; `character_book` rides the `card` stash until S3's
+book import (main-seat S2 ruling — the stash is the permanent provenance home either
+way, no dead seam).
+
+**Blind Emma round (hermes emma lane, sol high, `--ignore-rules`): SHIP WITH FIXES —
+8 MED · 1 LOW, open sweep "none"** (285 focused tests run by her; sound-checks
+explicitly cleared the PNG chunk walk, CHARX/zip64/data-descriptor bounds, strip
+coverage — nothing stash-bound escapes it — the avatar ladder + namespace consumers,
+and the route's thread-hop containment). Four findings reviewer-REPRODUCED. She ruled
+the two main-seat knowns as handed: m1 (avatar/SOUL orphans on a late failure) = LOW
+no-fix (no transactionality specified, no data loss); m2 = no finding.
+
+**Main-seat rulings:** 7 fixed lean + **MED-1 (multipart spools before the cap bites)
+ACCEPTED as real but DEFERRED to Phase 19** — `voice.stt` ships the byte-identical
+cap+1-after-spool posture from a prior review, so this is the app's standing ingress
+class (stt + import together), not an S2 regression; tailnet-only, single user.
+
+**Fix wave `6d0711d`** (Opus 5, pinned brief; zero deviations): exact `CARD_SPECS`
+discriminator + `_require_name` on every rung + `spec_version` mismatch = warning ·
+`_JSON_REFUSALS = (UnicodeDecodeError, ValueError, RecursionError)` at both arms + a
+route-level `RecursionError` → 422 (1,100-deep arrays and 5,000-digit ints refuse
+instead of 500) · **JPEG-glued CHARX** routes via `is_zipfile` (the field's "JPEG
+card"; PNG-glued recorded out of scope) · V3 `nickname` claims `title` (= `{{char}}`),
+slug still from `name` · **`_yaml11_safe` quotes KEYS** via `_yaml11_key` at both
+key-writing sites (her probe: `{"no":{"on":…}}` reloaded as `{False:{True:…}}`) ·
+**`dealias_mapping`** (identity walk, deep-copy on second sighting) wired ONLY into the
+agent.yaml mutate — config.yaml anchors and the hosts/integrations/providers callers
+untouched · `_V1_BODY` += `scenario`/`mes_example` · strip paths = RFC 6901 JSON
+Pointers. +17 tests; BE **2,315**; the builder proof-ran the two chokepoint fixes
+disabled to show them load-bearing.
+
+**Confirm round (resumed session): all 8 RESOLVED with line proof · the MED-1 deferral
+ACCEPTED (she verified the stt parity herself) · the `deep_set` third key-writing site
+ACCEPTED as LOW · diff-introduced problems "none" · 137 focused+adjacent tests green.**
+
+**Residuals recorded, none owed now:** the multipart-spool ingress class (stt +
+import) → Phase 19 · `deep_set`'s unquoted-key site (schema/slug keys only, LOW) ·
+`UploadPart.open`'s bare `FileNotFoundError` on a vanished role dir (the media PUT
+shares it) → Phase 19 · the m1 orphan class (LOW, ruled) · `_scaffold_agent(...,
+soul=...)` is the cleaner shape whenever S4 touches that path (the write order is
+load-bearing, comment-protected today) · an agent literally named `import` is
+half-shadowed by the new route. **S2 is CLOSED; S3 (lorebooks, §10-S3) is next per
+§10.**
