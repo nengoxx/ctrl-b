@@ -96,6 +96,16 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/core/provider_registry.py", "_validate_config_refs"),
         ("app/core/provider_registry.py", "provider_skill_collision_warnings"),
         ("app/db.py", "Database.transaction"),
+        # D70 S2 card import: every one of these is a REFUSAL the route answers a bad upload with
+        # (a cap, a container we do not read, a card we cannot use) or a line of the import REPORT —
+        # owner-facing HTTP detail, exactly the class the entries around it are. No model ever sees
+        # them, and each one NAMES the config key that refused, which is the half the owner acts on.
+        ("app/services/agent/card_import.py", "_UNRECOGNIZED"),
+        ("app/services/agent/card_import.py", "_check_zip_bounds"),
+        ("app/services/agent/card_import.py", "_decode_card_json"),
+        ("app/services/agent/card_import.py", "_read_json"),
+        ("app/services/agent/card_import.py", "import_card"),
+        ("app/services/agent/card_import.py", "normalize"),
         ("app/services/agent/compaction.py", "_warn_degenerate_trigger"),
         ("app/services/agent/session.py", "AgentSession._log_context_cost"),
         ("app/services/agent/session.py", "AgentSession._run_calls._complete"),

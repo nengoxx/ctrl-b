@@ -1568,6 +1568,34 @@ class RoleplayPersonaCfg(BaseModel):
     description: str = ""
 
 
+class CardImportCfg(BaseModel):
+    """`roleplay.card_import` — what the card importer will accept (D70 / ROLEPLAY_PLAN §5.3, Emma F8).
+
+    Config-shaped rather than baked constants for the reason every other limit here is: a card the
+    owner wants is refused by a number, and a number they cannot reach is a wall. Every cap is
+    enforced for EVERY container (§7) on the existing cap+1/413 posture — read one byte past the
+    limit, which is the least that still proves "over" without materialising the excess.
+
+    - `max_bytes`: the multipart body cap. 15 MB = the media write path's own ceiling
+      (`media.write.max_bytes`), because a PNG card IS an image upload with metadata glued on.
+    - `max_card_json_bytes`: the DECODED card JSON — the base64 out of a PNG chunk, the `card.json`
+      member of a CHARX, or a bare `.json` body. It is what ends up serialised into `agent.yaml`
+      (the `card` stash), so it is bounded separately from the container that carried it.
+    - `charx_max_entries` / `charx_max_entry_bytes` / `charx_max_total_bytes`: the zip's own bounds —
+      how many members it may declare, how big any one may be, and how much it may claim to expand
+      to. Checked against the DECLARED sizes before anything is decompressed (the zip-bomb guard),
+      and again against the bytes actually read.
+    """
+
+    model_config = {"extra": "allow"}
+
+    max_bytes: int = Field(default=15_000_000, gt=0)
+    max_card_json_bytes: int = Field(default=2_000_000, gt=0)
+    charx_max_entries: int = Field(default=500, gt=0)
+    charx_max_entry_bytes: int = Field(default=15_000_000, gt=0)
+    charx_max_total_bytes: int = Field(default=50_000_000, gt=0)
+
+
 class RoleplayCfg(BaseModel):
     """`roleplay` — the character-agent globals (D70 / ROLEPLAY_PLAN §3.2).
 
@@ -1576,6 +1604,8 @@ class RoleplayCfg(BaseModel):
       working with the switch off.
     - `default_tools` is the explicit allowlist written to a newly created/imported character (§5.5,
       consumed by S2): a minimal starting set the owner freely widens, never a capability ceiling.
+    - `card_import` holds what the importer will ACCEPT (S2) — a nested object rather than five
+      `card_import_*` siblings, per the extend-don't-migrate directive.
 
     Additive with defaults throughout ⇒ no config migration (the D68 precedent); `extra="allow"` so
     a config written by a later slice round-trips through this build instead of being dropped."""
@@ -1585,6 +1615,7 @@ class RoleplayCfg(BaseModel):
     enabled: bool = False
     default_tools: list[str] = Field(default_factory=lambda: ["web_search"])
     persona: RoleplayPersonaCfg = Field(default_factory=RoleplayPersonaCfg)
+    card_import: CardImportCfg = Field(default_factory=CardImportCfg)
 
 
 class Settings(BaseModel):

@@ -516,6 +516,16 @@ def test_roleplay_config_defaults() -> None:
             "enabled": False,
             "default_tools": ["web_search"],
             "persona": {"name": "", "description": ""},
+            # S2's additive nested object (§5.3, Emma F8) — the importer's caps. Re-pinned rather
+            # than loosened: this arm's whole value is that it enumerates the section, so a field a
+            # later slice adds has to be declared here on purpose.
+            "card_import": {
+                "max_bytes": 15_000_000,
+                "max_card_json_bytes": 2_000_000,
+                "charx_max_entries": 500,
+                "charx_max_entry_bytes": 15_000_000,
+                "charx_max_total_bytes": 50_000_000,
+            },
         }
 
 

@@ -814,8 +814,10 @@ def _write_agent(ctx: Context, path: Path, doc: dict[str, Any]) -> None:
     """Rewrite one `agent.yaml` through the same comment-preserving chokepoint as the config.
 
     `edit_config_yaml` is path-agnostic; reusing it means an operator's hand-written agent notes
-    survive a migration (the app's own agents editor rewrites these files with `safe_dump` and does
-    not). Removals here are NOT required to be declared — `consumes` names paths in
+    survive a migration. (Until D70 the app's own agents editor did NOT: it rewrote these files with
+    `safe_dump`, which is exactly the defect Emma F7/F9 closed by routing `_scaffold_agent` through
+    this same chokepoint — so both writers now preserve them.) Removals here are NOT required to be
+    declared — `consumes` names paths in
     `config.yaml`, and an agent file is small, single-purpose and rewritten wholesale by the step that
     owns it. Side effect, deliberate: the file lands at 0600 like the config — a tightening on a
     single-user workspace, never a loosening.

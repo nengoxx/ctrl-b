@@ -24,16 +24,22 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import Response
 
-from app.config import Settings, deep_merge, is_provider_slug, providers_rev
+from app.config import (
+    Settings,
+    deep_merge,
+    edit_config_yaml,
+    is_provider_slug,
+    providers_rev,
+    sync_mapping,
+)
 from app.core.fsutil import write_text_eol
-from app.core.media import StoreWriteError
+from app.core.media import StoreWriteError, role_dir
 from app.core.memory import StoreScope, StoreSpec, store_by_key
 from app.domain.agent import AgentDef
 from app.domain.automation import AutomationSnapshot
@@ -44,6 +50,7 @@ from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import clear_reasoning_demotions, rediscover_integrations
 from app.services.agent.attachments import claim_attachments
+from app.services.agent.card_import import CardImportError, ImportedCard, import_card, land_avatar
 from app.services.agent.compaction import compaction_state_for, prune_compaction_state
 from app.services.agent.exec import run_user_exec
 from app.services.agent.greeting import seed_greeting
@@ -1594,9 +1601,20 @@ def _scaffold_agent(
 ) -> dict[str, Any]:
     """The whole blocking write side of `PUT /agents/{name}` — mkdir → agent.yaml → scaffold SOUL.md
     → reload → payload — hoisted into one `to_thread` hop (SYS-16). Kept as one sequence so the
-    mkdir/is_file/write chain doesn't straddle the loop (validation already ran on the caller)."""
+    mkdir/is_file/write chain doesn't straddle the loop (validation already ran on the caller).
+
+    **The agent.yaml write goes through `edit_config_yaml`, the ONE YAML chokepoint** (D70 §7, Emma
+    F9). It used to be `yaml.safe_dump` + `write_text_eol`, which writes at whatever the umask
+    allows, quotes nothing for the YAML-1.1 reader `load_settings` uses, and destroys the operator's
+    comments on every save. A card's stash can carry credentials (R67 found character objects
+    holding provider API keys), so this file answers to the same rules `config.yaml` does: atomic,
+    0600, `_yaml11_safe`, comment-preserving — once, for imports and manual edits alike.
+
+    `sync_mapping` rather than `deep_set` because PUT semantics are a FULL REPLACE of the fields
+    dict: a key the submission dropped really disappears, while every key that did not change keeps
+    its line, its quoting and its comment."""
     folder.mkdir(parents=True, exist_ok=True)
-    write_text_eol(folder / "agent.yaml", yaml.safe_dump(fields, sort_keys=False, allow_unicode=True))
+    edit_config_yaml(lambda doc: sync_mapping(doc, fields), folder / "agent.yaml")
     soul_p = folder / "SOUL.md"
     if not soul_p.is_file():
         write_text_eol(soul_p, default_prompt + "\n")
@@ -1669,6 +1687,120 @@ async def put_agent(name: str, body: AgentBody, request: Request) -> dict[str, A
     # inference-section edit) it never rebuilds the inference client — so clear the learned reasoning
     # demotions here or a corrected setting would stay stripped. Blanket-on-mutation (not field-diffing):
     # simpler, and re-learning a still-unsupported control costs one 400 on the next turn.
+    clear_reasoning_demotions(request.app)
+    return payload
+
+
+#: The media role an imported avatar lands in (D70 §8.1) — one namespace/role pair, named once so the
+#: import path and the library it writes into cannot drift apart.
+AVATAR_NS, AVATAR_ROLE = "agents", "avatars"
+
+
+def _import_report(card: ImportedCard, warnings: list[str]) -> dict[str, Any]:
+    """What the import DID, for the owner to read (§5.1/§7).
+
+    `post_history` rides verbatim on purpose: it is the highest-leverage text a card can inject —
+    it lands closest to generation, after the whole history — so the one place it must not be
+    invisible is the report of the import that accepted it."""
+    return {
+        "container": card.container,
+        "fields_mapped": card.mapped,
+        "stashed_keys": card.stashed,
+        "stripped_paths": card.stripped,
+        "warnings": warnings,
+        "post_history": card.post_history,
+    }
+
+
+def _import_agent_card(s: Settings, body: bytes, *, avatars_ok: bool) -> dict[str, Any]:
+    """The whole blocking side of `POST /agents/import` in one `to_thread` hop (SYS-16): read the
+    card → strip → map → land the avatar → scaffold the agent → write SOUL.md → build the payload.
+
+    It COMPOSES the existing writes and adds none (§5.1): `land_avatar` is the media ladder,
+    `_write_soul` and `_scaffold_agent` are the same two the editor's PUT uses. The SOUL is written
+    FIRST so the scaffold finds a persona already there and does not lay the baked default over it —
+    a card with no persona text at all still gets the default, exactly like any new agent.
+
+    An avatar failure is a WARNING, never a refusal (§5.4): the character is the text, the picture is
+    an ornament, and refusing a whole import over a broken thumbnail would be the wrong trade."""
+    from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
+
+    cfg = s.roleplay.card_import
+    taken = set(s.list_agent_names()) | {s.DEFAULT_AGENT_NAME}
+    card = import_card(body, cfg, taken=taken, default_tools=s.roleplay.default_tools)
+
+    fields = dict(card.fields)
+    warnings = list(card.warnings)
+    if card.image is not None:
+        if not avatars_ok:
+            warnings.append("the agents media namespace is disabled, so no avatar was imported")
+        else:
+            try:
+                fields["avatar"] = land_avatar(
+                    role_dir(s.home_dir(), AVATAR_NS, AVATAR_ROLE),
+                    card.image,
+                    card.slug,
+                    max_bytes=s.media.write.max_bytes,
+                )
+            except (StoreWriteError, CardImportError) as exc:
+                warnings.append(f"the card's image was not imported: {exc.detail}")
+            except OSError as exc:  # the library tree vanished under us — still not a card failure
+                warnings.append(f"the card's image was not imported: {exc.strerror or exc}")
+
+    # The same validation `put_agent` runs, for the same reason: `agent.defaults` is the inheritance
+    # base, so a value that is fine alone can still be invalid merged — and a card must not be able
+    # to write an agent.yaml the loader would then refuse.
+    merged = deep_merge(dict(s.agent.defaults), fields)
+    merged["name"] = card.slug
+    try:
+        AgentDef.model_validate(merged)
+    except ValidationError as e:
+        raise CardImportError(422, f"invalid agent: {e.errors()[0]['msg']}") from e
+
+    folder = s.agents_dir_path() / card.slug
+    _write_soul(folder, card.soul, require_folder=False)
+    payload = _scaffold_agent(s, card.slug, folder, fields, DEFAULT_SYSTEM_PROMPT)
+    return {**payload, "report": _import_report(card, warnings)}
+
+
+@router.post("/agents/import", status_code=201)
+async def import_agent(request: Request, file: UploadFile) -> dict[str, Any]:
+    """Import a character card as a new agent (D70 / ROLEPLAY_PLAN §5). Multipart, one file field.
+
+    `201` with the created agent payload plus a `report` — what mapped, what was stashed, what was
+    STRIPPED (by exact path), the warnings, and the imported `post_history` verbatim. `413` past
+    `roleplay.card_import.max_bytes` or any of the card/CHARX caps · `415` bytes we do not read as a
+    card container · `422` a container we read whose card is unusable · `409` a slug that could not
+    be minted.
+
+    Multipart HERE and raw-body PUT on the media/attachment surfaces is not an inconsistency: those
+    two are defended by the CORS PREFLIGHT their non-safelisted verb forces (D65/D68,
+    SECURITY_MODEL §2.7), a defence that exists because a picture can be uploaded from a page that
+    never reads a response. This route is an ordinary authenticated-by-tailnet action that answers
+    with the created agent — the same class as every other `POST /api/…` the panel already exposes —
+    and the file arrives as a FILE because that is what a card is: the owner picks it out of their
+    downloads folder.
+
+    The body is read at most `max_bytes + 1` (the `stt` posture): the least that still proves "over
+    the cap" without ever materialising the excess."""
+    s: Settings = request.app.state.settings
+    cap = s.roleplay.card_import.max_bytes
+    body = await file.read(cap + 1)
+    if not body:
+        raise HTTPException(status_code=422, detail="empty upload")
+    if len(body) > cap:
+        # The true size is deliberately NOT reported — we stopped reading at cap+1.
+        raise HTTPException(
+            status_code=413,
+            detail=f"the card is larger than roleplay.card_import.max_bytes ({cap} bytes)",
+        )
+    health = getattr(request.app.state, "media_health", {}).get(AVATAR_NS)
+    try:
+        payload = await asyncio.to_thread(_import_agent_card, s, body, avatars_ok=health is None or health.ok)
+    except CardImportError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+    # D46/F6, exactly as `put_agent`: a new agent landed with its own reasoning settings, so the
+    # learned demotions are cleared or a corrected setting would stay stripped.
     clear_reasoning_demotions(request.app)
     return payload
 

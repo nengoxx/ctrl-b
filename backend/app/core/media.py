@@ -251,6 +251,21 @@ KIT_ROLES: dict[str, MediaRole] = {
 #: and the owner ruled that order is the only priority system. Empty for the reason `FRONTIER_SLOTS` is.
 KIT_SLOTS: dict[str, MediaSlot] = {}
 
+#: The agent-art role folders (D70 / ROLEPLAY_PLAN §8.1). Two ordinary D65 libraries — upload, crop,
+#: focal point, reorder, retire, all inherited — that agents bind INTO by filename
+#: (`AgentDef.avatar` / `AgentDef.background`), which is gacha's roster "deal" pattern exactly: the
+#: POOL is static registry knowledge, the BINDING is entity data. Avatar and background are separate
+#: roles because they are independent images (owner: "which might be different").
+#:
+#: No bundled ids: the app ships no character art, so a fresh install's libraries are empty and every
+#: agent renders exactly as it did before D70. No `slots` either — a pin binds one library entry to a
+#: SURFACE the namespace owns, and here the binding lives on the AGENT instead, which is why this row
+#: needs no namespace-level mechanism of its own.
+AGENTS_ROLES: dict[str, MediaRole] = {
+    "avatars": MediaRole(),
+    "backgrounds": MediaRole(),
+}
+
 
 @dataclass(frozen=True)
 class MediaNamespace:
@@ -275,6 +290,7 @@ MEDIA_NAMESPACES: dict[str, MediaNamespace] = {
     "gacha": MediaNamespace(roles=GACHA_ROLES, slots=GACHA_SLOTS),
     "frontier": MediaNamespace(roles=FRONTIER_ROLES, slots=FRONTIER_SLOTS),
     "kit": MediaNamespace(roles=KIT_ROLES, slots=KIT_SLOTS),
+    "agents": MediaNamespace(roles=AGENTS_ROLES),
 }
 
 #: extension -> (Content-Type served, magic-byte format name expected inside).
@@ -734,8 +750,9 @@ _JPEG_SCAN_LIMIT = 1 << 20
 #: used (Codex F8): a malformed drop made the scan a million single-byte reads inside a request.
 _JPEG_CHUNK = 1 << 16
 #: Enough for a whole PNG IHDR chunk (8 + 13 + 4 = 25 bytes after the 8-byte signature) and for every
-#: WebP flavor's first chunk header, so one read answers both.
-_HEAD_BYTES = 40
+#: WebP flavor's first chunk header, so one read answers both. Public since D70: a caller holding the
+#: bytes in memory (the card importer) reads this many for `signature_format`.
+HEAD_BYTES = 40
 _PNG_IHDR_END = 33
 #: The smallest SOF segment that actually contains what we read from it: the 2-byte length itself plus
 #: precision(1) + height(2) + width(2). A real SOFn is >= 11 (it also carries per-component bytes); this
@@ -745,6 +762,39 @@ _JPEG_SOF_MIN_LEN = 7
 #: each branch below indexes into. A chunk declaring less than this does not contain the canvas size,
 #: so reading it anyway would report a size from bytes outside the chunk (Codex R1).
 _WEBP_MIN_CHUNK = {b"VP8 ": 10, b"VP8L": 5, b"VP8X": 10}
+#: The leading bytes each allowlisted format is identified by. Stated ONCE (D70) because two callers
+#: now ask the question: `probe_image` below, which then goes on to require the format's COMPLETE
+#: header, and `signature_format`, which is the signature half alone.
+_SIGNATURES: tuple[tuple[str, bytes], ...] = (
+    ("png", b"\x89PNG\r\n\x1a\n"),
+    ("jpeg", b"\xff\xd8\xff"),
+    ("webp", b"RIFF"),
+)
+
+
+def signature_format(head: bytes) -> str | None:
+    """Which allowlisted format the first bytes CLAIM — the SIGNATURE alone, no header validation.
+
+    Deliberately weaker than `probe_image`, and used for exactly one thing (D70 / ROLEPLAY_PLAN
+    §5.4): MINTING A NAME. A file's extension has to be chosen before the ladder can land it, and the
+    ladder's own probe is what then decides whether the bytes and that extension agree — so a
+    signature that lies costs a `415` from `UploadPart.finish`, never a mislabelled file. Nothing
+    security-shaped rests on this answer.
+    """
+    for fmt, sig in _SIGNATURES:
+        if head.startswith(sig):
+            # RIFF is a container FAMILY, so WebP is the one claim made of two parts — and a RIFF
+            # that is not one cannot be anything else here, so it answers `None` from inside.
+            return fmt if fmt != "webp" or head[8:12] == b"WEBP" else None
+    return None
+
+
+def suffix_for_format(fmt: str | None) -> str | None:
+    """The extension a format is STORED under, or `None` if this surface stores no such format.
+
+    Derived from `ALLOWED_TYPES` rather than tabled again, so the allowlist stays the one authority on
+    the extension↔format pairing (`jpeg` → `.jpg`, the first row naming it)."""
+    return next((ext for ext, (_mime, f) in ALLOWED_TYPES.items() if f == fmt), None)
 
 
 def probe_image(path: Path) -> Probe:
@@ -766,8 +816,9 @@ def probe_image(path: Path) -> Probe:
     try:
         size = path.stat().st_size
         with path.open("rb") as f:
-            head = f.read(_HEAD_BYTES)
-            if head.startswith(b"\x89PNG\r\n\x1a\n"):
+            head = f.read(HEAD_BYTES)
+            fmt = signature_format(head)
+            if fmt == "png":
                 # The IHDR chunk is mandatory, must be FIRST, and is fixed-size (PNG spec §11.2.2): an
                 # 8-byte length+type, 13 data bytes, 4 CRC bytes. Requiring the WHOLE chunk — declared
                 # length included — is what separates a real header from a file that stops inside it.
@@ -779,9 +830,9 @@ def probe_image(path: Path) -> Probe:
                     w, h = struct.unpack(">II", head[16:24])
                     return Probe("png", w, h)
                 return Probe()
-            if head.startswith(b"\xff\xd8\xff"):
+            if fmt == "jpeg":
                 return _probe_jpeg(f, head)
-            if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+            if fmt == "webp":
                 return _probe_webp(head, size)
     except OSError:
         return Probe()

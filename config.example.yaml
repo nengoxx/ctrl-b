@@ -308,12 +308,22 @@ agent:
 # minimal allowlist written to a newly imported character (widen it freely per agent). `persona` is
 # who YOU are: `name` is what `{{user}}` renders as, and a non-empty `description` is injected as
 # its own block after the fleet roster, for every agent.
+# `card_import` is what the V1/V2/V3 card importer will ACCEPT: the multipart body cap, the decoded
+# card JSON cap (that JSON is what ends up stashed in the agent's own file), and the CHARX zip's
+# bounds — member count, per-member size, and total uncompressed size, all checked against the
+# DECLARED sizes before anything is decompressed. Every one of them answers 413.
 # roleplay:
 #   enabled: false
 #   default_tools: [web_search]
 #   persona:
 #     name: ""
 #     description: ""
+#   card_import:
+#     max_bytes: 15000000
+#     max_card_json_bytes: 2000000
+#     charx_max_entries: 500
+#     charx_max_entry_bytes: 15000000
+#     charx_max_total_bytes: 50000000
 
 # Voice subsystem (Phase 6; A11/D48 Slice 2) — push-to-talk STT + read-aloud TTS. Each service POINTS at
 # the `providers` map above: a flat `provider` primary (+ `model`, omittable iff the catalog has exactly
