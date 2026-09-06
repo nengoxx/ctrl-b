@@ -825,7 +825,7 @@ class AgentSession:
         self._tool_allow = narrow_tools(active, self._agent.tools)
         self._active_skills = [s.name for s in active]  # M2/C-12 — captured right after selection
 
-    async def _activate_lorebooks(self, thread: Thread, user_text: str) -> None:
+    async def _activate_lorebooks(self, thread: Thread, user_text: str, *, resume: bool = False) -> None:
         """Resolve the lorebook entries active for this turn (§6.3/§6.4) and stash the two framed
         blocks `_static_prefix`/`_assemble` emit. The `_activate_skills` precedent, one layer over:
         a turn-start pre-pass that decides once and leaves strings behind, so the loop reads state
@@ -842,15 +842,18 @@ class AgentSession:
         attachment bodies: the field's corpus is what was said, and a book whose keys matched a
         `ping_host` result would fire on the machinery rather than on the conversation.
 
-        **On a RESUME there is no incoming text, so the window is rebuilt by ANCHOR.** By then the
-        turn's own user message — and possibly a text-bearing suspended assistant row — are already
-        history, so a plain `prior[-scan_depth:]` would have SHIFTED the window forward and could
-        deactivate mid-logical-turn a book that only the oldest scanned message summoned. The anchor
-        is therefore the LAST user-role chat message: its text plays the incoming slot, the window is
+        **On a RESUME (`resume=True`) the window is rebuilt by ANCHOR.** By then the turn's own user
+        message — and possibly a text-bearing suspended assistant row — are already history, so a
+        plain `prior[-scan_depth:]` would have SHIFTED the window forward and could deactivate
+        mid-logical-turn a book that only the oldest scanned message summoned. The anchor is
+        therefore the LAST user-role chat message: its text plays the incoming slot, the window is
         the `scan_depth` chat messages BEFORE it, and everything after it is ignored. A drained steer
         persists as a user message and is legitimately part of what the owner said this turn, so it
         is not excluded — it simply becomes the anchor, which is what "the incoming text" means once
-        the owner has spoken again.
+        the owner has spoken again. The discriminator is the EXPLICIT flag, never "the text is
+        empty": an attachment-only send also reaches `run_turn` with no text, and that is a TURN
+        START — pre-persist, its window is the plain tail, and anchoring there would re-frame the
+        PREVIOUS turn's message as incoming while dropping the assistant reply after it.
 
         `_static_head` is reset because the head block is cached inside it: the session is per-turn
         today, but a second turn on one session must re-scan, and the cheapest way to guarantee that
@@ -872,10 +875,10 @@ class AgentSession:
         if not books:
             return
         texts = [user_text]
-        if cfg.scan_depth or not user_text:
+        if cfg.scan_depth or resume:
             history = await self._messages.list(thread.id, include_compacted=False)
             chat = [(m.role, t) for m in history if m.role in ("user", "assistant") and (t := m.text())]
-            if user_text:
+            if not resume:
                 texts += [t for _, t in chat[-cfg.scan_depth :]]
             else:
                 # The resume path's anchor rule (see the docstring). With no user row to anchor on,
@@ -1493,7 +1496,7 @@ class AgentSession:
         # carry (ACA-15e): a resume builds a FRESH session, so the head would otherwise carry no book
         # at all. There is no incoming user text here — the turn's message is already history — so the
         # haystack is the last `scan_depth` messages, which is where that text now lives.
-        await self._activate_lorebooks(thread, "")
+        await self._activate_lorebooks(thread, "", resume=True)
         # …and re-seed the recall budget for the same reason: the resumed half belongs to the LOGICAL
         # turn that suspended, so it must inherit what that turn already spent (D57 §4).
         await self._seed_recall(thread)

@@ -327,6 +327,20 @@ def test_a_resume_does_not_reach_PAST_the_logical_turns_window() -> None:
         assert head is not None and "Veile" not in head  # the constant entry, and nothing else
 
 
+def test_an_empty_text_turn_start_is_not_a_resume() -> None:
+    """The rider on the resume fix: the anchor rule engages on the EXPLICIT `resume` flag, never on
+    "the text is empty" — an attachment-only send reaches `run_turn` with no text and is a TURN
+    START, pre-persist, whose window is the plain tail. Anchoring there would re-frame the previous
+    turn's message as incoming and drop the assistant reply after it — so the key living ONLY in
+    that last assistant message is the discriminator: the plain tail sees it, the anchor would not."""
+    with _workspace(), _client() as c:
+        assert c.put("/api/settings", json={"lorebooks": {"scan_depth": 2}}).status_code == 200
+        _book(c, "hollow-sea", TEST_BOOK)
+        _agent(c, "nyx", lorebooks=["hollow-sea"])
+        thread = _thread(c, ("user", "chart it"), ("assistant", "the ghostship, then."))
+        assert "Veile" in "".join(_blocks(_turn(c, thread, "nyx", "")))
+
+
 def test_the_incoming_message_is_scanned_even_at_depth_zero() -> None:
     """`scan_depth: 0` is "only what was just said" — never "nothing"."""
     with _workspace(), _client() as c:
