@@ -12,7 +12,51 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-04 — THE TWO PRE-RELEASE FEATURES: C3-S2 read-along + the D2-C LAN wake trigger, BOTH BUILT + REVIEW-CLOSED; supersedes below where it speaks)
+## Current state (2026-09-06 — THE CHARACTERS+LOREBOOKS DESIGN SESSION: ROLEPLAY_PLAN COUNCIL-CLOSED, awaiting ratification → D70 → S0; supersedes below where it speaks)
+
+- **THE INITIATIVE (the owner's new direction, 2026-09-05/06): SillyTavern-class conversational
+  characters — characters ARE agents, one flat system — plus lorebooks as a first-class
+  subsystem.** The whole design road ran in this session: 8 owner design rounds in conversation
+  (all 21 rulings in the plan's §1) · **four dossiers bought + committed: R64** (roleplay
+  prompting) · **R65** (lorebook semantics, deep) · **R66** (card import + editor UX) · **R67**
+  (gallery/transcript/voice UX) · an evidence coverage map (§12) on the owner's audit ask · the
+  full council cadence (§13): **blind Emma design round BUILD WITH CHANGES (15 findings, ALL
+  accepted + folded — her citation check killed 4 plan overreaches) → confirm 13/15 → the 4
+  residuals fixed → micro-confirm CONFIRMED.**
+  **Spec of record = [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md), COUNCIL-CLOSED.**
+- **▶▶ THE NEXT SESSION OPENS ON THE OWNER'S RATIFICATION** of that plan → then, in order:
+  the **D70** DECISIONS entry + the CLAUDE.md doc-map row + the TODO phase wiring → **the S0
+  build brief** (pinned Opus build; S0 = the assembly core — AgentDef fields · macro pass ·
+  Voice/Duties split · post-history tail · golden-fixture assembly pins) → S0–S7 per plan §10,
+  one slice per session under the standing cadence.
+- **Also this session:** ① **a shipped 09-04 bug found in the opening review + FIXED
+  (`a2b04fa`):** the ruamel(YAML 1.2) writer emitted Conf-saved `23:00` unquoted; the
+  PyYAML(1.1) loader read it as int 1380 → config preflight refused every boot — **dev was
+  DOWN 09-04 22:13 → 09-05 ~13:00** (the 09-04 handoff's "dev RUNNING" claim was stale).
+  Fix = `_yaml11_safe` quoting at the write chokepoint + 3 tests; BE suite 2,192 green.
+  ② **Read-along: the owner's device round PASSED → default flipped ON** (`bec878d`, D63
+  amended; ships with v1.7.8). ③ Read-along + roleplay memory files updated.
+- **⚠ D69 presence observation: NO transition lines logged yet** — the bricked night lost, and
+  since the fix `grep presence:` returns ZERO while the backend served fine (wake_host POSTs
+  visible). Either the phone genuinely never transitioned (stayed on WiFi) or the observation
+  logging needs a look — **next session eyeballs this before trusting any gap picture**; the
+  2–3-night clock effectively starts once lines are confirmed flowing. **Dev units stay
+  RUNNING for the observation — do NOT stop them at session close/start.**
+- **Git: 29 commits unpushed over origin `04769d9`** (the 09-04 ten + this session's fix +
+  the read-along flip + R64–R67 + the plan's design/council commits + this docs commit);
+  working tree clean; the PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @
+  `578ffa7`.** The v1.7.8 pipeline is unchanged and still owed: the Dependabot D1 lockfile
+  bump → push → **release E per the corrected 09-04 line (config migration 2→3 rides it;
+  rollback = config backup FIRST, then v1.7.7; pre-tag LOCAL e2e + the three-wave stale-pin
+  sweep)** — the roleplay phase does NOT block the release; sequence at the owner's pleasure.
+- **AFTER the roleplay phase (the owner's close-of-session ask, 2026-09-06): LIVE VOICE /
+  CALL MODE** — "as real-time as we can" voice chat. **START AT [`R51`](./research/R51-realtime-voice-chat.md)
+  — the deep dossier already exists** (2026-08-21: the owner's own RealtimeVoiceChat fork +
+  Speaches `/v1/realtime` probed + a RANKED build menu; consumer line = ROADMAP §C4 stub; the
+  owner's "interesting GitHub projects" are largely already read there). Buy only the delta
+  (re-verify the Speaches pin — it moves) before any design talk.
+
+## Prior state (2026-09-04 — THE TWO PRE-RELEASE FEATURES: C3-S2 read-along + the D2-C LAN wake trigger, BOTH BUILT + REVIEW-CLOSED; superseded above where it speaks)
 
 - **The owner picked from the menu: two features ride before v1.7.8** — the C3 S2 read-along
   ("research it again, make sure the plan is solid") and their own new idea, the **LAN-arrival
