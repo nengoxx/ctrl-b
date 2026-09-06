@@ -190,10 +190,34 @@ def test_a_v1_card_is_recognized_by_its_shape(home: Path) -> None:
     assert soul(home, "nyx") == "d\n\np"
 
 
+def test_a_v1_card_may_carry_only_a_scenario(home: Path) -> None:
+    """The V1 sniff is content-shaped, and a card whose author wrote the SETTING instead of the
+    personality is still a card (the S2 review's MED-8): `scenario`/`mes_example` count too."""
+    with make_client() as c:
+        body = imported(c, json.dumps({"name": "Nyx", "scenario": "only"}).encode("utf-8"))
+    assert body["name"] == "nyx" and body["agent"]["scenario"] == "only"
+
+
 def test_a_charx_card_is_read_from_its_card_json(home: Path) -> None:
     with make_client() as c:
         body = imported(c, charx({"card.json": json.dumps(v3(name="Nyx", description="d")).encode()}))
     assert body["report"]["container"] == "charx"
+
+
+def test_a_zip_glued_behind_a_jpeg_is_read_as_a_charx(home: Path) -> None:
+    """The field's "JPEG card" (R66 §1 — the cited reason sniffing is by magic bytes at all): the
+    zip is appended to a JPEG, so the file opens as a picture everywhere AND carries the card. The
+    central directory is what `ZipFile` navigates by, so the prepended image costs us no arithmetic."""
+    glued = jpeg_bytes() + charx({"card.json": json.dumps(v3(name="Nyx", description="d")).encode()})
+    with make_client() as c:
+        body = imported(c, glued, name="nyx.jpeg")
+    assert body["report"]["container"] == "charx" and body["name"] == "nyx"
+
+
+def test_a_jpeg_that_carries_no_zip_is_415(home: Path) -> None:
+    """A picture is not a card container for being a picture — the same answer a bare PNG gets."""
+    with make_client() as c:
+        assert post_card(c, jpeg_bytes(), name="nyx.png").status_code == 415
 
 
 def test_junk_bytes_are_415(home: Path) -> None:
@@ -222,6 +246,65 @@ def test_a_spec_card_with_no_data_object_is_422(home: Path) -> None:
     assert r.status_code == 422 and "no `data` object" in r.json()["detail"]
 
 
+def test_an_unknown_spec_is_refused(home: Path) -> None:
+    """`spec` is the field that says WHAT these bytes are, so an exact match or nothing (the S2
+    review's MED-2): reading an unknown format under V2/V3 rules is how a reader mangles a card."""
+    card = {"spec": "chara_card_v9", "spec_version": "9.0", "data": {"name": "Nyx", "description": "d"}}
+    with make_client() as c:
+        r = post_card(c, json.dumps(card).encode("utf-8"))
+    assert r.status_code == 422 and "unknown spec" in r.json()["detail"]
+
+
+def test_an_unexpected_spec_version_warns_and_still_imports(home: Path) -> None:
+    """The asymmetry the V3 spec itself asks for: the spec NAME is a discriminator, the VERSION is a
+    forward-compatibility ask. A `3.1` card imports, and the report says which rules read it."""
+    card = {"spec": "chara_card_v3", "spec_version": "3.1", "data": {"name": "Nyx", "description": "d"}}
+    with make_client() as c:
+        body = imported(c, json.dumps(card).encode("utf-8"))
+    assert body["name"] == "nyx" and soul(home, "nyx") == "d"
+    assert any("3.1" in w for w in body["report"]["warnings"])
+
+
+@pytest.mark.parametrize(
+    "card",
+    [
+        pytest.param(v2(description="d", personality="p"), id="spec"),
+        pytest.param({"description": "d", "personality": "p"}, id="v1"),
+        pytest.param(v3(name="   ", description="d"), id="blank"),
+    ],
+)
+def test_a_card_with_no_name_is_refused_on_every_rung(home: Path, card: dict) -> None:
+    """The name is what the agent is MINTED from — slug, `{{char}}`, the folder the owner opens — so
+    a card without one is unusable, not imperfect. One rule, stated at one place, for every rung."""
+    with make_client() as c:
+        r = post_card(c, json.dumps(card).encode("utf-8"))
+    assert r.status_code == 422 and "no name" in r.json()["detail"]
+
+
+def test_a_deeply_nested_card_is_refused_not_a_crash(home: Path) -> None:
+    """Legal JSON, hostile shape (the S2 review's MED-3, reproduced): ~2KB of nested arrays parses
+    fine and then exhausts the stack in the strip walk. Depth is the one property no single reader
+    owns — the parser, the strip pass and the YAML dump each have their own limit — so the route
+    contains it, and the atomic write never starts (the dump serialises into a buffer first)."""
+    body = b'{"name":"Nyx","description":"d","extensions":' + b"[" * 1100 + b"]" * 1100 + b"}"
+    with make_client() as c:
+        r = post_card(c, body)
+    assert r.status_code == 422 and "nested too deeply" in r.json()["detail"]
+    assert not (home / "agents" / "nyx").exists() or not (home / "agents" / "nyx" / "agent.yaml").exists()
+
+
+def test_a_5000_digit_number_is_refused_by_each_json_arm(home: Path) -> None:
+    """The other legal-but-hostile document: a number past the interpreter's int-conversion limit
+    raises a plain `ValueError`, which neither `json.loads` arm used to catch. Each arm keeps its own
+    status — the bare body is "not a container we read", a card chunk is "a card we cannot use"."""
+    raw = b'{"name":"Nyx","description":"d","x":' + b"9" * 5000 + b"}"
+    chunked = png_bytes() + png_chunk(b"tEXt", b"chara\x00" + base64.b64encode(raw))
+    with make_client() as c:
+        assert post_card(c, raw).status_code == 415
+        r = post_card(c, chunked + png_chunk(b"IEND", b""))
+    assert r.status_code == 422 and "not valid JSON" in r.json()["detail"]
+
+
 def test_an_undecodable_png_payload_is_422(home: Path) -> None:
     """The chunk is there and it is a card slot — the bytes inside it are what is broken."""
     body = png_bytes() + png_chunk(b"tEXt", b"chara\x00" + base64.b64encode(b"{not json"))
@@ -241,7 +324,7 @@ def test_an_empty_upload_is_422(home: Path) -> None:
 def test_the_strip_removes_the_denylist_at_any_depth_and_reports_exact_paths() -> None:
     """A unit pin on the function itself, because it is written to be reused verbatim by a future
     export: the keys go at ANY depth, in dicts and inside lists, matched case-insensitively, and the
-    reported paths are the exact dotted ones. Inert siblings survive untouched (P4)."""
+    reported paths are exact JSON Pointers (RFC 6901). Inert siblings survive untouched (P4)."""
     tree = {
         "extensions": {
             "risuai": {
@@ -256,10 +339,10 @@ def test_the_strip_removes_the_denylist_at_any_depth_and_reports_exact_paths() -
     }
     cleaned, removed = strip_executable(tree)
     assert removed == [
-        "extensions.risuai.customScripts",
-        "extensions.risuai.lowLevelAccess",
-        "character_book.entries[0].TriggerScript",
-        "nested[0].deeper.virtualscript",
+        "/extensions/risuai/customScripts",
+        "/extensions/risuai/lowLevelAccess",
+        "/character_book/entries/0/TriggerScript",
+        "/nested/0/deeper/virtualscript",
     ]
     assert cleaned == {
         "extensions": {
@@ -270,6 +353,16 @@ def test_the_strip_removes_the_denylist_at_any_depth_and_reports_exact_paths() -
         "nested": [{"deeper": {}}],
     }
     assert tree["extensions"]["risuai"]["customScripts"], "the input tree is not mutated"
+
+
+def test_a_stripped_path_is_a_pointer_so_a_dot_in_a_key_cannot_collide() -> None:
+    """Why a POINTER and not a dotted path (the S2 review's LOW-9): a card's keys are the author's,
+    dots included, so `a.b.customScripts` is two different removals under a dotted grammar and two
+    distinct pointers under RFC 6901 — with `/` and `~` escaped rather than ambiguous."""
+    tree = {"a.b": {"customScripts": 1}, "a": {"b": {"customScripts": 2}}, "x/y~z": {"triggerscript": 3}}
+    _, removed = strip_executable(tree)
+    assert removed == ["/a.b/customScripts", "/a/b/customScripts", "/x~1y~0z/triggerscript"]
+    assert len(set(removed)) == 3
 
 
 def test_an_imported_card_is_stashed_post_strip(home: Path) -> None:
@@ -287,7 +380,7 @@ def test_an_imported_card_is_stashed_post_strip(home: Path) -> None:
     stash = agent_yaml(home, "nyx")["card"]
     assert stash["creator"] == "someone" and stash["tags"] == ["archivist"]
     assert stash["extensions"]["risuai"] == {"additionalAssets": [["a", "b", "c"]]}
-    assert body["report"]["stripped_paths"] == ["extensions.risuai.customScripts"]
+    assert body["report"]["stripped_paths"] == ["/extensions/risuai/customScripts"]
     assert body["report"]["stashed_keys"] == ["creator", "extensions", "spec", "spec_version", "tags"]
 
 
@@ -428,6 +521,28 @@ def test_the_full_mapping_lands_on_the_agent(home: Path) -> None:
         "scenario",
         "post_history_instructions",
     ]
+
+
+def test_a_v3_nickname_becomes_the_char_name(home: Path) -> None:
+    """V3: a non-empty `nickname` "replaces the name in {{char}}" — and `title` IS `{{char}}` here
+    (`macros_for`), so that is where it lands (the S2 review's MED-5). The slug still mints from
+    `name` (a folder is an identifier, not a display) and the nickname stays in the stash verbatim."""
+    card = v3(name="Nyx the Archivist", nickname="Nyx", description="d")
+    with make_client() as c:
+        body = imported(c, json.dumps(card).encode("utf-8"))
+    assert body["name"] == "nyx-the-archivist"
+    assert body["agent"]["title"] == "Nyx"
+    assert agent_yaml(home, "nyx-the-archivist")["card"]["nickname"] == "Nyx"
+
+
+def test_a_v2_nickname_is_stash_only(home: Path) -> None:
+    """The rule is V3's, so a V2 card carrying the same key keeps the name↔title rule it has today —
+    the field is still stashed, because everything unmapped is."""
+    card = v2(name="Nyx the Archivist", nickname="Nyx", description="d")
+    with make_client() as c:
+        body = imported(c, json.dumps(card).encode("utf-8"))
+    assert body["agent"]["title"] == "Nyx the Archivist"
+    assert agent_yaml(home, "nyx-the-archivist")["card"]["nickname"] == "Nyx"
 
 
 def test_the_tools_allowlist_is_written_explicitly(home: Path) -> None:
@@ -609,6 +724,38 @@ def test_yaml_11_ambiguous_values_round_trip_as_strings(home: Path) -> None:
         agent = c.get("/api/agents/nyx").json()["agent"]
     assert agent["greeting"] == "23:00" and agent["scenario"] == "no"
     assert agent_yaml(home, "nyx")["greeting"] == "23:00"
+
+
+def test_yaml_11_ambiguous_stash_KEYS_round_trip_as_strings(home: Path) -> None:
+    """The same resolver split one level up (the S2 review's MED-6): a stash key of `no`/`on` reloads
+    as `False`/`True` unless the writer quotes KEYS too — which is not a mangled value but a mangled
+    TREE, and a card's extensions are arbitrary author-chosen keys."""
+    card = v2(name="Nyx", description="d", extensions={"no": {"on": "23:00"}})
+    with make_client() as c:
+        imported(c, json.dumps(card).encode("utf-8"))
+        agent = c.get("/api/agents/nyx").json()["agent"]
+    assert agent["card"]["extensions"] == {"no": {"on": "23:00"}}
+    assert agent_yaml(home, "nyx")["card"]["extensions"] == {"no": {"on": "23:00"}}
+
+
+def test_an_anchor_in_agent_yaml_does_not_smear_one_edit_across_two_keys(home: Path) -> None:
+    """ruamel loads `lead: *m` as the SAME object `model: &m …` is, so syncing one used to write both
+    (the S2 review's MED-7). `dealias_mapping` gives every alias occurrence its own node first — the
+    anchor is expanded on save, which is the acceptable cost for a file this full-replace PUT owns."""
+    folder = home / "agents" / "ops"
+    folder.mkdir(parents=True)
+    (folder / "agent.yaml").write_text(
+        "model: &m\n  provider: local\n  model: worker\nrouting:\n  lead: *m\n", encoding="utf-8"
+    )
+    edit = {
+        "model": {"provider": "local", "model": "worker"},
+        "routing": {"lead": {"provider": "local", "model": "boss"}},
+    }
+    with make_client() as c:
+        assert c.put("/api/agents/ops", json={"agent": edit}).status_code == 200
+    on_disk = agent_yaml(home, "ops")
+    assert on_disk["model"]["model"] == "worker"  # the key the edit did NOT touch
+    assert on_disk["routing"]["lead"]["model"] == "boss"
 
 
 # ── 9. the `agents` media namespace (§8.1) ────────────────────────────────────────────────────────

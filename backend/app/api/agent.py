@@ -32,6 +32,7 @@ from starlette.responses import Response
 
 from app.config import (
     Settings,
+    dealias_mapping,
     deep_merge,
     edit_config_yaml,
     is_provider_slug,
@@ -1612,9 +1613,14 @@ def _scaffold_agent(
 
     `sync_mapping` rather than `deep_set` because PUT semantics are a FULL REPLACE of the fields
     dict: a key the submission dropped really disappears, while every key that did not change keeps
-    its line, its quoting and its comment."""
+    its line, its quoting and its comment.
+
+    `dealias_mapping` first, and ONLY here (D70 S2 review, MED-7): a hand-written `agent.yaml` may
+    share one node between two keys via an anchor (`model: &m …` / `routing: *m`), and ruamel loads
+    both as the SAME object — so syncing one would write the other. Expanding the anchor on save is
+    the acceptable cost precisely because this write is a full replace of a file the editor owns."""
     folder.mkdir(parents=True, exist_ok=True)
-    edit_config_yaml(lambda doc: sync_mapping(doc, fields), folder / "agent.yaml")
+    edit_config_yaml(lambda doc: sync_mapping(dealias_mapping(doc), fields), folder / "agent.yaml")
     soul_p = folder / "SOUL.md"
     if not soul_p.is_file():
         write_text_eol(soul_p, default_prompt + "\n")
@@ -1782,7 +1788,12 @@ async def import_agent(request: Request, file: UploadFile) -> dict[str, Any]:
     downloads folder.
 
     The body is read at most `max_bytes + 1` (the `stt` posture): the least that still proves "over
-    the cap" without ever materialising the excess."""
+    the cap" without ever materialising the excess.
+
+    `RecursionError` is caught HERE because depth is the one hostile property no single reader owns:
+    a card the JSON parser accepted can still exhaust the stack in the strip walk or in the YAML
+    dump. Nothing is torn by it — `edit_config_yaml` serialises into a buffer before it writes, so a
+    dump that raises never starts the atomic replace."""
     s: Settings = request.app.state.settings
     cap = s.roleplay.card_import.max_bytes
     body = await file.read(cap + 1)
@@ -1799,6 +1810,8 @@ async def import_agent(request: Request, file: UploadFile) -> dict[str, Any]:
         payload = await asyncio.to_thread(_import_agent_card, s, body, avatars_ok=health is None or health.ok)
     except CardImportError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+    except RecursionError:
+        raise HTTPException(status_code=422, detail="the card is nested too deeply") from None
     # D46/F6, exactly as `put_agent`: a new agent landed with its own reasoning settings, so the
     # learned demotions are cleared or a corrected setting would stay stripped.
     clear_reasoning_demotions(request.app)

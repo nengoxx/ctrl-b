@@ -111,6 +111,28 @@ def test_sync_mapping_quotes_ambiguous_strings_too() -> None:
     assert pyyaml.safe_load(out)["host"]["window"] == "12:30"
 
 
+def test_new_ambiguous_map_keys_land_quoted_too() -> None:
+    """The same split one level up (D70 S2 review, MED-6): the guard quoted VALUES but not KEYS, so a
+    written-in map like `{"no": {"on": "23:00"}}` came back `{False: {True: …}}` — a mangled TREE, not
+    a mangled scalar. Reached through the whole-value path (`_yaml11_safe`'s dict branch)."""
+    import yaml as pyyaml
+
+    out = _rewrite(
+        "host:\n  a: 1\n",
+        lambda doc: config.sync_mapping(doc["host"], {"a": 1, "stash": {"no": {"on": "23:00"}}}),
+    )
+    assert pyyaml.safe_load(out)["host"]["stash"] == {"no": {"on": "23:00"}}
+
+
+def test_a_new_ambiguous_key_lands_quoted_on_the_set_path() -> None:
+    """The other key-writing site: a key NEW to a node that already exists in the file. (A key the
+    file already carries keeps its own form — it is the operator's line, not ours.)"""
+    import yaml as pyyaml
+
+    out = _rewrite("host:\n  a: 1\n", lambda doc: config.sync_mapping(doc["host"], {"a": 1, "on": "x"}))
+    assert pyyaml.safe_load(out)["host"] == {"a": 1, "on": "x"}
+
+
 def test_plain_safe_strings_stay_unquoted() -> None:
     out = _rewrite("x: 1\n", lambda doc: config.deep_set(doc, {"name": "corsair"}))
     assert "name: corsair\n" in out

@@ -18,6 +18,7 @@ of the parsed YAML before validation.
 from __future__ import annotations
 
 import contextlib
+import copy
 import hashlib
 import io
 import ipaddress
@@ -2368,19 +2369,35 @@ def _yaml11_safe(v: Any) -> Any:
     (strings already in the file keep their own quoting via `preserve_quotes`). Multiline strings
     are left alone: ruamel emits them in a style both resolvers agree on, and quoting would churn
     prompt-override blocks. Recurses into dicts/lists so sequence entries (e.g. a presence-device
-    map inside a list) get the same guard."""
+    map inside a list) get the same guard — KEYS included: a map written as `{"no": {"on": …}}`
+    reloads as `{False: {True: …}}` otherwise, which is not a mangled value but a mangled TREE (the
+    S2 review's MED-6; a character card's stash is arbitrary author-chosen keys)."""
     if isinstance(v, dict):
-        return {k: _yaml11_safe(x) for k, x in v.items()}
+        return {_yaml11_key(k): _yaml11_safe(x) for k, x in v.items()}
     if isinstance(v, list):
         return [_yaml11_safe(x) for x in v]
-    if isinstance(v, str) and "\n" not in v:
-        try:
-            loaded = yaml.safe_load(v)
-        except yaml.YAMLError:
-            return SingleQuotedScalarString(v)
-        if not isinstance(loaded, str) or loaded != v:
-            return SingleQuotedScalarString(v)
+    if isinstance(v, str):
+        return _yaml11_scalar(v)
     return v
+
+
+def _yaml11_scalar(v: str) -> Any:
+    """One string, single-quoted unless a YAML-1.1 read gives it back verbatim (see `_yaml11_safe`)."""
+    if "\n" in v:
+        return v
+    try:
+        loaded = yaml.safe_load(v)
+    except yaml.YAMLError:
+        return SingleQuotedScalarString(v)
+    if not isinstance(loaded, str) or loaded != v:
+        return SingleQuotedScalarString(v)
+    return v
+
+
+def _yaml11_key(k: Any) -> Any:
+    """A mapping key under the same rule. Non-string keys are left alone: JSON has none, and a YAML
+    doc's own `3:`/`yes:` key is the operator's, written the way they wrote it."""
+    return _yaml11_scalar(k) if isinstance(k, str) else k
 
 
 def deep_set(node: Any, patch: dict[str, Any]) -> None:
@@ -2591,10 +2608,44 @@ def _sync_mapping(node: Any, target: dict[str, Any]) -> str:
             if orphan:
                 unplaced += _place_comment_after(node, k, orphan)
         elif cur != v or k not in node:
-            node[k] = _yaml11_safe(v)
+            # A key NEW to this node is written under the same 1.1 guard its value gets (MED-6);
+            # one already in the file keeps its own form, quoting and comment.
+            node[k if k in node else _yaml11_key(k)] = _yaml11_safe(v)
     for k in [k for k in node if k not in target]:
         unplaced += _delete_key(node, k)
     return unplaced
+
+
+def dealias_mapping(doc: Any) -> Any:
+    """`doc` with every YAML ALIAS given its own independent node, returned for chaining.
+
+    ruamel loads `routing: *m` as the SAME object `model: &m …` is, so a later `sync_mapping` that
+    writes one of them writes both — two keys the file states separately end up whatever the last
+    sync said (the S2 review's MED-7). Walking by object identity and deep-copying the second and
+    further sightings is the whole fix: after it, each occurrence is the value the file showed at
+    that key, and the anchor is simply expanded on save.
+
+    NOT wired into `edit_config_yaml`: expanding an operator's anchors is only acceptable where the
+    caller owns the whole file and the write is a full replace (`_scaffold_agent`'s `agent.yaml`).
+    `config.yaml`'s anchors belong to the operator and every other `sync_mapping` caller edits a
+    subtree of a file it does not own."""
+    seen: set[int] = set()
+
+    def walk(node: Any) -> Any:
+        if not isinstance(node, dict | list):
+            return node
+        if id(node) in seen:
+            return copy.deepcopy(node)  # a second sighting of one object IS the alias
+        seen.add(id(node))
+        if isinstance(node, dict):
+            for k in list(node):
+                node[k] = walk(node[k])
+        else:
+            for i, v in enumerate(node):
+                node[i] = walk(v)
+        return node
+
+    return walk(doc)
 
 
 def delete_path(doc: Any, parts: Sequence[Any]) -> None:
