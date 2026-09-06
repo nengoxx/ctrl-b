@@ -236,6 +236,10 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   (the 4/4-peer wire shape, R64 §7). Position keeps them clear of the leading-run coalescer;
   strict-template rendering rides the existing `normalize_system_messages` seam (non-leading
   system → marked `user`), no new adapter switch. Turn-stable, cached with the head.
+  **S1 verification item (coverage audit):** probe that the cloud dialects we actually use
+  accept `name` on system messages, and that the qwen/llama.cpp path renders the normalized
+  form sanely — R41/R42 cover strict-template systems generally, but named example
+  pseudo-messages specifically have not been probed on OUR providers.
 - **`post_history`** — a new tail emission in `_assemble` after the history, before the
   one-shot reflection nudge; macro-substituted. Recency is the point (R64 §3); cache cost ~nil
   (everything after the newest message re-prefills anyway). Lorebook `tail` entries share the
@@ -243,7 +247,10 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
 - **`greeting`** — a REAL seeded assistant message persisted at creation of EVERY new thread
   with that agent (ruling 11; the 4/4 field shape — an empty-state render never reaches the
   wire and anchors nothing). Macro-substituted at seed time. `alt_greetings` stored; a
-  new-thread greeting picker is a recorded FE seam.
+  new-thread greeting picker is a recorded FE seam. **Compaction note (coverage audit):** the
+  greeting is ordinary history — a long thread's compactor may fold it into the summary like
+  any old turn. By design (the head's persona carries identity, not the greeting); S1 records
+  it in a test comment so nobody later "fixes" it into a pin.
   **The "reset the whole character" command — SEMANTICS RULED round 4, feature NOT v1:** a
   red button on the character's own detail that resets the agent to its default/as-imported
   values, **wipes THAT agent's memory files** (its memory dir; the specific agent's, nothing
@@ -283,8 +290,14 @@ V1→V2→V3 ladder (spec defaults), then the §3.1 mapping. Unknown fields + `e
 `card` verbatim **after the strip pass** (§7) — the spec's preserve-unknowns MUST, structural
 here via `extra="allow"` (R66: ST fakes it with a hidden form input). Name→slug: the agent-name
 grammar, collision-suffixed. Imported agents default `duties: conversational` (ruling 2 — cards
-are companions; the toggle flips any of them to full duty). Export is NOT v1: the stash +
-Agnai's stale-stash comparison (R66 §9) are the recorded seam, so v1 loses nothing.
+are companions; the toggle flips any of them to full duty). **`AgentDef.description` (the
+auto-router's "when to pick me" text) stays EMPTY on import** (coverage audit): the card's
+description is persona prose, not routing copy — an imported character is reached by explicit
+pick, never auto-routed to, until the owner writes a routing line themselves. Export is NOT
+v1: the stash + Agnai's stale-stash comparison (R66 §9) are the recorded seam, so v1 loses
+nothing. Note what imports FREE: `AgentDef.model` already exists per agent, so a character can
+pin its own backend/model (e.g. an RP-tuned model) with zero new machinery — the editor simply
+shows the existing picker beside the new fields.
 
 ### 5.4 The avatar
 
@@ -540,3 +553,41 @@ cleanup (18).)*
 1. **The two duties texts (§4.1a)** — the owner reads both drafts and tunes words at will
    (they are registry defaults; every later edit is a Conf edit, no code). Standing until the
    owner has read them; not blocking the Emma round.
+
+## 12. Evidence coverage map (the owner's round-6 audit: every section → its backing, gaps named)
+
+| Plan section | Evidence | Status |
+|---|---|---|
+| §3 data model / card→field mapping | R64 §1 [V] (anatomy, prompt-vs-metadata) + `AgentDef` seam read | **Covered** |
+| §4.1 Voice/Duties split | R64 §5.4 [R — one primary paper, CPDC 2025] + §4.6 field survey [V] | **Covered, honestly [R]** — the split's warrant is one measured study + field convention; the Emma round should stress it |
+| §4.1a duties texts | Derived from the shipped `DEFAULT_SYSTEM_PROMPT` + R64 §5.4's act-before-speaking rule | **Covered** (owner read both, round 5→6) |
+| §4.2 scenario/persona blocks | R64 §2.2 [V] (assembly order) + §6 [V] (user persona) + R66 §5.5 [V] (persona editors) | **Covered** |
+| §4.2 example dialogue wire | R64 §7 [V] + the R64 §10 coalescer-collision analysis | **Covered, with the named S1 probe**: `name`-on-system acceptance on OUR providers (R41/R42 are general, not this exact shape) |
+| §4.2 post-history tail | R64 §2.2/§3 [V] + R42 [V] (normalize re-role) | **Covered** |
+| §4.2 greeting seeding | R64 §4.3 [V+R] + the compaction note above | **Covered** |
+| §4.3 macros | R32 [V] + `prompts.py` seam read | **Covered** |
+| §5 import containers/normalization/tolerance | R66 §1–§2 [V] (source-read importers) | **Covered** |
+| §5.4 avatar entry | R66 §2.4 [V] + `core/media.py` seam read | **Covered** |
+| §5.5 tools default | R66 §4 [V/R] (field posture: no precedent constrains us) | **Covered** |
+| §6 lorebook semantics/budget/positions | R65 [V] (full ST semantics + V3 + 3 contrasts) | **Covered**; R65's own named gaps stand (no runtime scan-cost measurement — our 2-msg window + char budget keeps the v1 cost trivially bounded; NAI contextConfig unbought — NAI import is a non-goal) |
+| §6.7 test book | Owner ruling + R65 §7 sizing data [R] | **Covered** |
+| §6.8 lorebooks ≠ Core Memory | R65 §9's precise contrast + CORE_MEMORY_PLAN | **Covered** |
+| §7 security/strip | R66 §3 [V] (script classes, the virtualscript precedent) + SECURITY_MODEL | **Covered** |
+| §8.1/8.2 libraries + upload reuse | Code-verified in-house (gacha pattern, W10 `useImageJob`) | **Covered** |
+| §8.3 three-state backdrop | Owner-specified UX + the oracle mechanism code read + round-4 theme-scope verification | **Covered by rulings** — deliberately NOT field-researched: the owner specified the behavior; ST's background system is adjacent prior art, not an authority over an owner ruling |
+| §8.4 the gallery | R66 §5 covers EDITOR forms only | **GAP → R67 commissioned** (2026-09-06): list/gallery surfaces in ST/Risu/Agnai + peers, organization at scale, selection model, mobile reflow — plus the two adjacent unruled conventions below |
+| §9 editor presentation | R66 §5 [V] (Risu predicate, marked help, token counters) | **Covered** |
+| §10 ladder / cadence | House method (D-entry precedents) | n/a |
+
+**Nuances the audit surfaced (now recorded in place):** the S1 named-system probe (§4.2) ·
+the greeting-vs-compaction note (§4.2) · router description empty on import + model-per-
+character free (§5.3) · **two conventions pending R67, then the owner's ruling: the agent
+avatar ON chat bubbles (every RP frontend shows it; ours shows none) and a per-agent TTS
+VOICE override (the field binds voice per character; we have one global voice)** — both land
+as court items when R67 reports.
+
+**Double-checking the data itself:** the three dossiers quote file:line at pinned SHAs and
+were main-seat-audited at landing (implications sections verified against our real seams).
+The blind Emma design round's brief will additionally instruct her to spot-check the plan's
+load-bearing citations against the dossiers — an adversarial second read of the evidence, not
+just the design.
