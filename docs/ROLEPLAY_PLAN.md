@@ -316,6 +316,15 @@ name a library entry — precisely how gacha's roster deals `characters` portrai
 how the `wallpaper` slot pins one to the backdrop. The namespace row is additive;
 `MEDIA_PLAN`/`MEDIA_MANAGER_PLAN` authority ratifies it as an ordinary new namespace.
 
+**Upload/crop/focus are REUSED, not rebuilt (owner ruling, 2026-09-06).** Setting an avatar or
+background from the agent editor drives the same standalone `useImageJob` machine the media
+manager ships (W10: admit→guard→crop→export with delivery injected — built precisely so a new
+surface could inject its own delivery tail), landing the file in the role's library via the
+existing media write path, then writing the `AgentDef` binding. The focal-point editor and
+re-crop work on these entries exactly as on any library entry because they ARE ordinary library
+entries. Zero new upload/crop/focus code; the aspect defaults differ per role (avatar ~square,
+background tall — config-shaped like the existing per-role crop settings, not hardcoded).
+
 **The agents surface becomes the showcase** (ruling 4): ONE surface — the existing agents
 editor/list restyled visual-first (avatar cards, background preview), not a second gallery
 beside it. The chat agent picker gets small avatars. Styling per `VAPOR_PATTERNS.md`; any
@@ -357,6 +366,7 @@ theme default everywhere. Not load-bearing for import (avatars land in the libra
   avatar into the library + explicit minimal tools + the import report.
 - **S3 — lorebooks (BE):** storage/CRUD + scan + render/budget + bindings + book import.
 - **S4 — the agents FE:** the visual agents surface (avatar cards + background preview) ·
+  avatar/background set-from-editor via the reused `useImageJob` crop/focus machine (§8) ·
   the new marked fields + visibility predicate · the duties toggle · Conf group + persona
   editor · import UI + report · agent-picker avatars.
 - **S5 — the lorebook FE:** manager + attachment picker.
