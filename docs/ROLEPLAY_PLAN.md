@@ -86,6 +86,11 @@ YAML-1.1-safe after the 2026-09-05 quoting fix).
 18. **Frontier backdrop: v1 ships with frontier simply unchanged** (the setting has no effect
     on its bespoke agent surface); the integration lands as a separate follow-up cleanup —
     round 5: "focus on the feature… one by one."
+19. **Prompt-editor refinements ride this phase** (round 7): ① the default text shows IN the
+    edit field — grayed, fully editable, "not like a hint… editable and not completely
+    replaced when you click" — ② customized prompts get a small visual highlight on the field
+    box ("you should be able to see the ones that have changed") — ③ the growing catalog gets
+    ORGANIZED: ordered, grouped into sections with small separators. Design in §9a.
 
 ## 2. Design principles
 
@@ -512,6 +517,35 @@ Styling per `VAPOR_PATTERNS.md`; theme dressing rides the existing surface rules
 - **Conf**: the `roleplay` group (toggle · default-tools list · persona name/description) + the
   `lorebooks` globals. Import lives on the agents surface under the visibility predicate.
 - All new forms testable at narrow widths (the standing mobile bar).
+
+### 9a. Prompt-editor refinements (ruling 19 — Phase 18 surface work riding this phase)
+
+Verified current state: `PromptsEditor.tsx` lists every registry prompt flat in registry
+order; rows carry a "customized" badge + an effective-text preview; the edit modal's override
+field opens EMPTY, with the shipped default beside it as reference. The three changes:
+
+1. **Default pre-filled, grayed, editable — WITHOUT the freeze trap.** The field's known
+   failure mode (R27: replacement "freezes you at the copied version") is exactly what naive
+   pre-fill causes: saving the default's text AS an override pins the prompt to today's
+   wording forever, silently opting out of every future default improvement. The design that
+   gives the owner's UX without the trap: the field renders the default text as its CONTENT
+   in a muted style; an edit turns it live (normal style); on save, **text that equals the
+   shipped default stores NOTHING** (normalized comparison — the existing `norm` posture).
+   So the owner always sees and tweaks real words, and an untouched prompt keeps riding
+   upstream defaults. Restore stays "delete the customization" (the shipped rule, unchanged).
+2. **Customized highlight**: beside the existing badge, the field box itself carries a quiet
+   persistent accent (a `tcat-mod`-family left border/tint per VAPOR_PATTERNS tokens — not a
+   transition). With the duties pair in the catalog this is what makes "which prompts did I
+   change for this mode" legible at a glance (the owner's stated need).
+3. **Organization**: `PromptDef` gains an optional `group` label (the registry stays the ONE
+   ordering authority — no FE-side grouping map, per the sibling-map ban); the editor renders
+   the groups as titled sections with separators. Grouping follows the catalog's natural
+   roles (context framing · turn steering · memory · consolidation · summarizer · duties ·
+   lorebook/persona intros as they land). Registry declaration order remains the order within
+   a group, so the backend file stays the single place order is expressed.
+
+Rides S4 (it is Conf/editor FE); recorded as a PROMPTS_PLAN amendment when built so the
+Phase 18 doc stays truthful.
 
 ## 10. Slice ladder (each: pinned Opus build → main-seat audit → blind Emma round → fix wave → close)
 
