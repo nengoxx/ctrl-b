@@ -341,6 +341,25 @@ def test_an_empty_text_turn_start_is_not_a_resume() -> None:
         assert "Veile" in "".join(_blocks(_turn(c, thread, "nyx", "")))
 
 
+def test_an_attachment_only_turn_survives_its_own_resume() -> None:
+    """The confirm round's reproduced residual: an attachment-only send persists a user row with NO
+    TextPart, so an anchor search over text-bearing rows slides back to an OLDER user message and the
+    lorebook active before the suspend deactivates on resume. The anchor must be the last user-ROLE
+    row, text or not — and the rebuilt haystack must equal the turn start's BYTE-FOR-BYTE (same
+    [incoming, *prior] order), so newline-adjacent matching cannot differ across the suspend."""
+    with _workspace(), _client() as c:
+        assert c.put("/api/settings", json={"lorebooks": {"scan_depth": 2}}).status_code == 200
+        _book(c, "hollow-sea", TEST_BOOK)
+        _agent(c, "nyx", lorebooks=["hollow-sea"])
+        thread = _thread(c, ("user", "chart it"), ("assistant", "the ghostship, then."))
+        fake, call_id = _suspend_turn(c, thread, "nyx", "")
+        before = _blocks(fake.seen[0])
+        assert "Veile" in "".join(before)  # active at turn start (the plain-tail window)
+
+        resumed = _resumed(c, thread, "nyx", call_id)
+        assert resumed._lorebook_head == before[0]  # byte-identical across the suspend
+
+
 def test_the_incoming_message_is_scanned_even_at_depth_zero() -> None:
     """`scan_depth: 0` is "only what was just said" — never "nothing"."""
     with _workspace(), _client() as c:
