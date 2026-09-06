@@ -1185,3 +1185,74 @@ soul=...)` is the cleaner shape whenever S4 touches that path (the write order i
 load-bearing, comment-protected today) · an agent literally named `import` is
 half-shadowed by the new route. **S2 is CLOSED; S3 (lorebooks, §10-S3) is next per
 §10.**
+
+### S3 — lorebooks: BUILT + council-CLOSED 2026-09-06 (fourth session)
+
+**Build `cc1f069`** (Opus 5, pinned brief): the whole §6 subsystem — `lorebooks.py`
+(~331: `Lorebook`/`LorebookEntry` with `extra="allow"`, file-per-book storage under
+`$CTRLB_HOME/lorebooks/`, the casefold-once `Haystack`, activation + the ONE global
+budget/eviction pass + partition, the framed `block`) · `lorebook_import.py` (~312:
+the three circulating shapes sniffed off the value, the ruled alias table with
+`matchWholeWords` ABSENT ⇒ TRUE, the position-downgrade table with a report line per
+collapse — ST 1/`after_char` = the exact landing, no report — and the logic table
+0→and_any · 2→not_any · the two ALL variants approximated WITH report) · the CRUD +
+`POST /lorebooks/import` routes (cap+1/413 on the new `lorebooks.max_import_bytes`,
+`valid_skill_slug`, the `_scaffold_agent` YAML chokepoint idiom — `dealias_mapping`'s
+scope note extended to lorebook files as the same full-replace class) · the
+`_activate_lorebooks` pre-pass (PRE-persist, Emma F11's no-exclusion-dance form;
+head block last among the plain system blocks BEFORE the named examples — the
+coalescing-run constraint; tail block just ahead of `post_history`) · the card hook
+(`_character_book`: the embedded book rides the SAME importer, lands as
+`<agent-slug>-book.yaml`, attaches pre-validation, reports only after the write
+succeeds; the stash stays permanent provenance) · `lorebook_intro` appended to the
+registry (reference-data framing, the Core-Memory convention) · `LorebooksCfg`
+additive, no migration. 40 tests; BE 2,316→2,357; gate 6/6. **Main-seat audit: all
+10 declared deviations ACCEPTED** — headlines: `content` defaults `""` (the
+empty-render drop rule covers it); `mint_slug` grew `fallback`/`collection` kwargs
+rather than a second mint; `selective: false` keeps the secondary keys UNCONSUMED
+(activation identical to the source, provenance intact); reports land only after
+writes succeed; the resume path re-scans (the ACA-15e class).
+
+**Blind Emma round (hermes emma lane, sol high, `--ignore-rules`): SHIP WITH FIXES —
+3 MED (all reviewer-REPRODUCED, conf 0.99–1.00) · K1/K2 both ruled FIX · open sweep
+"none"**; sound-checks explicitly cleared matching (no injection/backtracking path),
+budget/eviction, placement across every assembly path, the write path, and the card
+hook. MED-1 resume window drift · MED-2 book load blocking the event loop · MED-3
+unhashable `position` → whole-card 500. Main-seat rulings: all five FIX; MED-1's
+prescription trimmed to the ANCHOR rule (last user-role chat message plays the
+incoming slot; a drained steer is legitimate turn input, not excluded).
+
+**Fix wave `9ac5289`** (Opus 5, pinned brief; 5-of-6 new pins proven failing on the
+pre-fix tree) **+ two main-seat riders:** `769b1da` — the resume anchor engages on
+an EXPLICIT `resume=True` flag, never on "the text is empty" (an attachment-only
+send reaches `run_turn` with no text and is a TURN START; the wave's sniff would
+have re-framed the previous turn's message as incoming) · `39237be` — the confirm
+round's reproduced residual: the anchor now admits attachment-only user rows (a
+user row with NO TextPart is still the turn boundary), the window is the
+`scan_depth` TEXT-BEARING rows before it in the turn start's own `[incoming,
+*prior]` order — the rebuilt haystack is BYTE-IDENTICAL across a suspend, which
+also closed the sweep's concatenation-order LOW. BE **2,365**; gate 6/6 throughout.
+
+**Confirm round (resumed session): 4/5 RESOLVED with line proof + the anchor trim
+ACCEPTED + the rider's flag ruled correct on every entry point — MED-1's
+attachment-only face NOT RESOLVED (her direct repro) → the `39237be` rider →
+micro-confirm: RESOLVED, all three bad shapes re-probed by her through the REAL
+seams (attachment-only turn · attachment-only steer via the Drain-A claim path ·
+greeting-seeded thread with an attachment-only first turn — all PASS, byte-equal),
+diff sweep "none" — SHIP.**
+
+**The §6.7 live probe RAN on the owner's real book (the ST install's
+`Simple Personality Traits.json`, 40 entries · 36 secondary-key gates): 201 on the
+first shot, ZERO warnings** — every entry position 1 → `head` silently (the exact
+landing), every `selectiveLogic: 0` → `and_any` cleanly, `matchWholeWords` absent →
+true, priorities carried, 16 field-classes stashed verbatim (`depth`, `probability`,
+`extensions`, …). Landed as `personality-traits` (0600, YAML-1.1-quoted, 38KB) and
+**ATTACHED to Lynette on dev via the editor PUT** — the S7 device round finds it
+live; a trait word in chat triggers it.
+
+**Residuals recorded, none owed:** genuinely user-less histories degrade the resume
+window to empty-incoming over the plain tail (best-effort, documented) · float
+positions (`1.0`) now take the unknown-position warning where pre-fix they hash-hit
+the table silently — honest, recorded here · the multipart-spool ingress class
+covers `/lorebooks/import` too (Phase 19, the standing K3 posture). **S3 is CLOSED;
+S4 (the agents surface, §10-S4) is next per §10.**

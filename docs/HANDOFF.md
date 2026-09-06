@@ -12,7 +12,46 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-06, THIRD session — S2 CARD IMPORT BUILT + COUNCIL-CLOSED; supersedes below where it speaks)
+## Current state (2026-09-06, FOURTH session — S3 LOREBOOKS BUILT + COUNCIL-CLOSED; supersedes below where it speaks)
+
+- **S3 (lorebooks, §10-S3) is BUILT + COUNCIL-CLOSED, the full standing cadence in one
+  session:** pinned Opus build **`cc1f069`** (the whole plan-§6 subsystem: file-per-book
+  storage + CRUD + `POST /lorebooks/import` for the three circulating shapes · the
+  once-per-turn PRE-persist scan (F11's no-exclusion form) · ONE global budget/eviction
+  pass · head block last-among-plain-blocks BEFORE the named examples, tail block ahead
+  of `post_history` · the ruled position/logic downgrade tables, never silent · the card
+  `character_book` hook through the SAME importer · `lorebook_intro` registry framing ·
+  `LorebooksCfg` additive, no migration) → main-seat audit (all 10 deviations ACCEPTED)
+  → blind Emma **SHIP WITH FIXES: 3 MED all reviewer-REPRODUCED + K1/K2 ruled FIX, sweep
+  "none"** → fix wave **`9ac5289`** (anchor-rule resume window · off-loop book load ·
+  unhashable-position downgrade · slug guard at the read seam · selectiveLogic
+  provenance) → **two main-seat riders**: `769b1da` (the resume anchor engages on an
+  explicit flag — an attachment-only send is a TURN START with empty text) and
+  `39237be` (her confirm-round repro: the anchor now admits attachment-only user rows;
+  the rebuilt haystack is BYTE-IDENTICAL across a suspend, closing the ordering LOW
+  too) → **micro-confirm: RESOLVED — SHIP, all three bad shapes re-probed by her
+  through the REAL seams, sweep "none".** Gate 6/6 throughout; **BE 2,365** (counts in
+  QUALITY.md). Full record = **plan §13-S3**.
+- **The §6.7 live probe PASSED on the owner's real book:** `Simple Personality
+  Traits.json` imported 201 with ZERO warnings (all position 1 = the exact head
+  landing; all 36 gates → `and_any` cleanly), landed as `personality-traits`
+  (0600, 38KB) and **ATTACHED TO LYNETTE on dev via the editor PUT** — a trait word
+  ("groomed", "tidy", …) in a chat with her triggers it live. Dev backend RUNNING on
+  the `39237be` tip (D69 presence observation continues — units stay RUNNING).
+- **Next slice = S4 (the agents surface, §10-S4)**, one slice per session, the owner's
+  word opens it — the BE summary-map half FIRST (Emma F12), and it carries the standing
+  **⚠ S4 obligation: the FE sends `message.agent` on TTS calls.** The S5 collapsed-entry
+  editor requirement (§6.6) stands for its slice. Ops note: the emma-lane `setsid nohup`
+  launcher PID dies BY DESIGN (setsid forks) — find the real PID before declaring a
+  round dead; a Monitor beats a bash waiter for the wait (waiters got reaped twice).
+- **Git: 49 commits unpushed over origin `04769d9`** (the 44 at session open +
+  `cc1f069` S3 + `9ac5289` fix wave + `769b1da` + `39237be` riders + this docs commit);
+  working tree clean; the PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @
+  `578ffa7`.** The v1.7.8 pipeline (Dependabot D1 → push → release E, config migration
+  2→3, rollback = config backup FIRST then v1.7.7) is unchanged and still owed;
+  sequencing is the owner's.
+
+## Prior state (2026-09-06, THIRD session — S2 CARD IMPORT BUILT + COUNCIL-CLOSED; superseded above where it speaks)
 
 - **S2 (card import, §10-S2) is BUILT + COUNCIL-CLOSED, the full standing cadence in one
   session:** pinned Opus build **`f6aa640`** (`card_import.py` ~604 lines · the three

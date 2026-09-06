@@ -1545,9 +1545,17 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       name-in-frame · longest-prefix · voice-as-is); live probe on qwen PASSED; Emma confirm
       RESOLVED, zero new; **S4 obligation: the FE must send `message.agent` on TTS calls**;
       full record = plan §13-S1.
-- [ ] S2 — Card import (BE): PNG/JSON/CHARX containers + sniffing · normalization + mapping ·
+- [x] S2 — Card import (BE): PNG/JSON/CHARX containers + sniffing · normalization + mapping ·
       the strip pass · avatar into the library · explicit minimal tools · the import report.
-- [ ] S3 — Lorebooks (BE): storage/CRUD · scan · render/budget · bindings · book import.
+      **CLOSED 2026-09-06**: build `f6aa640` + fix wave `6d0711d` (8 Emma MEDs → 7 fixed lean,
+      MED-1 spool class → Phase 19); the F9 agent.yaml chokepoint move rode it; live probe on
+      the owner's real Lynette card PASSED; full record = plan §13-S2.
+- [x] S3 — Lorebooks (BE): storage/CRUD · scan · render/budget · bindings · book import.
+      **CLOSED 2026-09-06**: build `cc1f069` + fix wave `9ac5289` + two main-seat riders
+      `769b1da`/`39237be` (3 Emma MEDs + K1/K2; the resume-anchor chain closed byte-identical);
+      micro-confirm SHIP, all three bad shapes re-probed through the real seams; live probe on
+      the owner's real `Simple Personality Traits.json` PASSED zero-warning, attached to
+      Lynette on dev; full record = plan §13-S3.
 - [ ] S4 — The agents surface (FE + summary API): the `GET /agents` per-agent summary map
       FIRST (Emma F12) · the gallery section (AgentsEditor relocation + visual cards) ·
       avatar/background via the reused crop/focus machine · marked fields + visibility
