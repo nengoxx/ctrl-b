@@ -517,3 +517,42 @@ describe("LorebooksEditor · the confirm-round micro-wave", () => {
     });
   });
 });
+
+describe("LorebooksEditor · live draft classification at the echo", () => {
+  it("a keystroke typed DURING the toggle's read survives the echo", async () => {
+    h.books = [{ slug: "traits", name: "Traits", enabled: true, entries: 0 }];
+    h.book = {
+      slug: "traits",
+      book: { name: "Traits", description: "", enabled: true, entries: [] },
+    };
+    render(<LorebooksEditor />);
+    fireEvent.click(chev(/expand Traits/));
+    let release!: (v: unknown) => void;
+    h.fetchBook.mockImplementation(() => new Promise((res) => (release = res)));
+    h.save.mockImplementation(
+      (
+        arg: { slug: string; book: Record<string, unknown> },
+        opts?: { onSuccess?: (r: unknown) => void; onSettled?: () => void },
+      ) => {
+        opts?.onSuccess?.({ slug: arg.slug, book: arg.book });
+        opts?.onSettled?.();
+      },
+    );
+    fireEvent.click(screen.getByRole("switch", { name: "Traits enabled" }));
+    // The GET is in flight; the owner keeps typing in the open editor. A click-time "clean"
+    // snapshot would let the echo replace the draft and swallow this keystroke — classification
+    // must happen at the echo, off the draft as it IS then.
+    fireEvent.change(screen.getByLabelText("Lorebook description"), {
+      target: { value: "typed mid-flight" },
+    });
+    release({
+      slug: "traits",
+      book: { name: "Traits", description: "", enabled: true, entries: [] },
+    });
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+    expect(screen.getByLabelText<HTMLTextAreaElement>("Lorebook description").value).toBe(
+      "typed mid-flight",
+    );
+    expect(isAnyDirty()).toBe(true); // the edit is still unsaved — and still there
+  });
+});

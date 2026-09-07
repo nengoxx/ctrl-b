@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Switch } from "./Switch";
 import { TickGrid } from "./TickGrid";
@@ -373,14 +373,25 @@ function LorebookRow({
   const remove = useDeleteLorebook();
   const [draft, setDraft] = useState<Lorebook | null>(null);
   const seeded = useRef<string | null>(null);
+  // The draft's LIVE mirror, written in the same synchronous moment as every state write (the one
+  // chokepoint below). The toggle's echo callback classifies the draft AFTER an async boundary, and
+  // a click-time snapshot is stale by then (the micro-confirm's blocker: a keystroke typed during
+  // the toggle's GET was mis-read as clean and discarded). A render-mirrored ref has a flush gap; a
+  // classification inside the state updater is impure (StrictMode double-invoke diverges). Writing
+  // ref + state together closes both.
+  const draftRef = useRef<Lorebook | null>(null);
+  const updateDraft = useCallback((next: Lorebook | null) => {
+    draftRef.current = next;
+    setDraft(next);
+  }, []);
 
   useEffect(() => {
     if (!data) return;
     const next = JSON.stringify(data.book);
     if (next === seeded.current) return;
     seeded.current = next;
-    setDraft(data.book);
-  }, [data]);
+    updateDraft(data.book);
+  }, [data, updateDraft]);
 
   // Dirty is the draft against the SEEDED SNAPSHOT, not against `data` — and it is registered with no
   // `open` gate. Collapsing a row does not unmount it or discard its draft (the shelf keeps every row
@@ -408,9 +419,6 @@ function LorebookRow({
     // doors — this guard and the two buttons' disabled — read the pair.
     if (writeBusy) return;
     setFlipping(true);
-    // Whether the draft was CLEAN at click time decides what the echo does to it below.
-    const wasClean = !dirty;
-    const hadDraft = draft !== null;
     // ALWAYS a fresh read, even when the row is open: the editor's copy was fetched when it opened and
     // this PUT is a destructive full replace, so a minutes-old body would silently revert whatever
     // changed on disk since. The read is deliberately NOT published into the query cache — reseeding
@@ -429,15 +437,20 @@ function LorebookRow({
       { slug: info.slug, book: { ...file.book, enabled } },
       {
         onSuccess: (res) => {
-          // A row that was never opened has NO draft and NO pin — leave both alone, so the first
-          // open still seeds from its fetch (a pinned-but-draftless row would skip the seed and sit
-          // on "loading…" forever). With a draft: pin the seed at the echo so the effect above does
-          // not reseed over unsaved edits — then a CLEAN draft adopts the echo wholesale (the fresh
-          // read is simply newer truth), while a DIRTY one takes only the toggled flag, keeping the
-          // owner's unsaved edits (the no-ETag posture Save already has).
-          if (!hadDraft) return;
+          // The draft is classified HERE, off its LIVE mirror — never off a click-time snapshot,
+          // which the await above makes stale (a keystroke typed during the GET must not be
+          // mis-read as clean and discarded; a row opened during the flight must not be treated as
+          // draftless). A row with NO draft right now gets no pin and no patch, so its first open
+          // still seeds from its fetch (a pinned-but-draftless row would skip the seed and sit on
+          // "loading…" forever). With a draft: pin the seed at the echo so the effect above does
+          // not reseed over unsaved edits — then a CLEAN draft adopts the echo wholesale (the
+          // fresh read is simply newer truth), while a DIRTY one takes only the toggled flag,
+          // keeping the owner's unsaved edits (the no-ETag posture Save already has).
+          const d = draftRef.current;
+          if (d === null) return;
+          const clean = seeded.current !== null && JSON.stringify(d) === seeded.current;
           seeded.current = JSON.stringify(res.book);
-          setDraft((d) => (d ? (wasClean ? res.book : { ...d, enabled }) : d));
+          updateDraft(clean ? res.book : { ...d, enabled });
         },
         onSettled: () => setFlipping(false),
       },
@@ -502,7 +515,7 @@ function LorebookRow({
                   aria-label="Lorebook name"
                   value={draft.name}
                   placeholder={info.slug}
-                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                  onChange={(e) => updateDraft({ ...draft, name: e.target.value })}
                 />
                 <label>Description</label>
                 {/* A book description is a line or two of the owner's own note — the `.kv-text`
@@ -511,12 +524,12 @@ function LorebookRow({
                   aria-label="Lorebook description"
                   className="kv-text"
                   value={draft.description}
-                  onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                  onChange={(e) => updateDraft({ ...draft, description: e.target.value })}
                 />
               </div>
               <EntryList
                 entries={draft.entries}
-                onChange={(entries) => setDraft({ ...draft, entries })}
+                onChange={(entries) => updateDraft({ ...draft, entries })}
               />
               <div className="mfoot">
                 <button
