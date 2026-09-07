@@ -102,6 +102,17 @@ test("Conf · Lorebooks — the shelf → a book → its collapsed entry list", 
   // the globals below the manager carry the attach picker for the same book
   await expect(group.getByText("Global lorebooks")).toBeVisible();
   await expect(group.getByRole("button", { name: "Hollow Sea", exact: true })).toBeVisible();
+
+  // The owner's S5 feel round: a card-hosted `.agent-allow` sat FLUSH against the card border
+  // while every row label sits on the card's content line. Pin the shared left edge — the
+  // picker's head must start exactly where the row labels do (x > the card edge, too, so a
+  // missing element can never pass vacuously).
+  const labelBox = await group.locator(".confrow .k .label").first().boundingBox();
+  const headBox = await group.locator(".conf-card > .agent-allow .agent-allow-head").boundingBox();
+  const cardBox = await group.locator(".conf-card").first().boundingBox();
+  expect(labelBox && headBox && cardBox).toBeTruthy();
+  expect(headBox!.x).toBeGreaterThan(cardBox!.x);
+  expect(headBox!.x).toBe(labelBox!.x);
 });
 
 test("Conf · Voice STT — every knob + primary/fallback pickers (no failover switch)", async ({

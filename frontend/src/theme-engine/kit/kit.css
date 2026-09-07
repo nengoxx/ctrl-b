@@ -5486,6 +5486,14 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   flex-direction: column;
   gap: 8px;
 }
+/* The block was born inside `.mform`, whose grid supplies the gutters — a `.conf-card` supplies
+ * none, so a card-hosted instance sat FLUSH against the card border (the owner's S5 feel round:
+ * the Global-lorebooks picker at x:19 while every row label sits at x:33; the S4 roleplay
+ * "Character tools" grid shipped with the same defect). Card-hosted instances take the
+ * `.confrow`'s own inset; the child combinator keeps the `.mform` instances untouched. */
+.kit .conf-card > .agent-allow {
+  padding: 0 14px calc(13px * var(--density-pad));
+}
 .kit .agent-allow-head {
   display: flex;
   align-items: center;
