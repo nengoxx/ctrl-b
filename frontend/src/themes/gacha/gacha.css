@@ -1503,6 +1503,9 @@
       border-color: transparent;
       border-radius: 99px 0 0 99px;
       background: var(--gc-online-fill);
+      /* OF-2 — the 92deg ribbon tiles into the base rule's 1px border strip, so the rounded left cap
+       * carries the ramp's far stop as a solid rim (precedent: 57e106a). */
+      background-clip: padding-box;
       color: var(--gc-online-ink);
     }
     /* ── THE SECOND RUNG on a narrow phone — MEASURED, not reasoned (the e2e arm below this theme's

@@ -54,6 +54,7 @@ const SWEPT: [name: string, css: string, header: string][] = [
   ["cosmos's primary host action", cosmos, ".cosmos-hd .hd-act.primary {"],
   ["vapor's plan-pin tab", vaporExtras, "\n.plan-pin-head {"],
   ["vapor's fleet summary card", vapor, "\n  .summary {"],
+  ["gacha's ONLINE ribbon", gacha, ".gc-card .state.on {"],
 ];
 
 // The two sites that already carry the clip — the precedents this sweep generalizes. They are pinned here
@@ -72,5 +73,11 @@ describe("OF-2 — a gradient fill under a border is clipped to the padding box"
     expect(block).toMatch(/background(-image)?:[^;]*(gradient|-fill)/);
     // …so it must not let that paint reach the border strip.
     expect(block).toContain("background-clip: padding-box");
+    // …and the clip must FOLLOW every `background:` shorthand in the block — the shorthand resets
+    // background-clip to border-box, so an appended fill after the clip would silently re-open the rim
+    // (the same local ordering hazard gachaChrome pins for background-origin).
+    expect(block.lastIndexOf("background:")).toBeLessThan(
+      block.indexOf("background-clip: padding-box"),
+    );
   });
 });
