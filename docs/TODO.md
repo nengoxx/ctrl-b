@@ -1556,13 +1556,22 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       micro-confirm SHIP, all three bad shapes re-probed through the real seams; live probe on
       the owner's real `Simple Personality Traits.json` PASSED zero-warning, attached to
       Lynette on dev; full record = plan §13-S3.
-- [ ] S4 — The agents surface (FE + summary API): the `GET /agents` per-agent summary map
+- [x] S4 — The agents surface (FE + summary API): the `GET /agents` per-agent summary map
       FIRST (Emma F12) · the gallery section (AgentsEditor relocation + visual cards) ·
       avatar/background via the reused crop/focus machine · marked fields + visibility
       predicate · duties toggle · Conf group + persona editor · import UI + report ·
       agent-picker avatars · the who-line avatar swap + toggle · the §9a prompt-editor
-      refinements.
-- [ ] S5 — Lorebook FE: manager + attachment picker.
+      refinements. **CLOSED 2026-09-08 (the owner's word)**: builds `e6cd1d9`..`b84e39e` +
+      the §8.4a satellite fold `d944022`+`fef61c1` + code-round fix wave `d4dd1ef` + the
+      owner-round OF wave `9f6b597`/`90a7664`/`02cc5c4`; every council round RESOLVED — SHIP;
+      full record = plan §13-S4 (+ its four addenda).
+- [x] S5 — Lorebook FE: manager + attachment picker. **CLOSED 2026-09-08**: build `eb2f21c`
+      (the §6.6 collapsed-entry manager in the existing Conf group · the stash-preserving
+      draft/PUT discipline · book import + report · the two-consumer `LorebookPicker` ·
+      `lorebooks.books` on the globals save bar) + fix wave `3be3386` (7 Emma findings) +
+      riders `b365d45` (the S4-surface twins) · `0ce4dd4` (F3 proper + 2 sweep MEDs + the
+      never-opened seeding trap) · `059fd29` (live-draft echo classification); Emma final
+      verdict RESOLVED — SHIP; full record = plan §13-S5.
 - [ ] S6 — The three-state backdrop (FE/theme): appearance setting + gacha oracle integration +
       the kit backdrop layer + `off`-state surface behavior (default `operator`; frontier
       unchanged v1).

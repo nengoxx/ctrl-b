@@ -1382,7 +1382,7 @@ the table silently — honest, recorded here · the multipart-spool ingress clas
 covers `/lorebooks/import` too (Phase 19, the standing K3 posture). **S3 is CLOSED;
 S4 (the agents surface, §10-S4) is next per §10.**
 
-### S4 — the agents surface: BUILT + main-seat AUDITED 2026-09-07 (fifth session) — ⚠ the blind Emma round is OWED (the next session's first move)
+### S4 — the agents surface: BUILT + council-CLOSED + owner-CLOSED 2026-09-08 (record spans sessions five–eight; the four addenda below carry the §8.4a fold, the code round, the OF wave, and OF-1b)
 
 **Two pinned Opus builds, five commits, gate green throughout** (the slice split BE-half-first
 per §10-S4/F12, then the FE in two coherent halves):
@@ -1664,3 +1664,103 @@ missing element nulls and fails; she ran the focused Playwright arm herself, 2/2
 projects). Gate: FE check-all exit 0; **FE e2e arm green** (BE untouched). **The owner's
 phone glance at the agents tab (cards now inset) is the remaining confirm; their word closes
 S4 → S5.**
+
+**S4 CLOSED (the owner's word, 2026-09-08 session, in conversation):** the phone glance
+passed — "you fixed something and it looks good now, we can continue" — S4 is council-closed
+AND owner-closed; S5 (the lorebook FE) opens.
+
+### S5 — the lorebook FE: BUILT + council-CLOSED 2026-09-08 (eighth session, same session as the S4 close)
+
+**The whole standing cadence ran in one session**: two seam scouts (the BE API surface as the
+FE must consume it · the FE patterns to reuse) → main-seat design → pinned Opus build
+**`eb2f21c`** → main-seat audit (full gate independently re-run 6/6; **all 10 declared
+deviations ACCEPTED**) → blind Emma round → fix wave **`3be3386`** → rider **`b365d45`** →
+her confirm → micro-wave **`0ce4dd4`** → micro-wave rider **`059fd29`** → her **FINAL
+VERDICT: RESOLVED — SHIP** (blocker closed with line proof · changed-line sweep "no new
+defects" · she re-ran the full FE suite 3,024/3,024 herself).
+
+**As built (`eb2f21c`, FE-only, no backend change):**
+- **The manager** (`components/LorebooksEditor.tsx`, inside the EXISTING `id="lorebooks"`
+  ConfGroup — manager first, then `LorebookGlobals`): the SkillsEditor file-per-slug shape;
+  book rows are the D25 BREAKOUT (the row carries the enable switch — immediate
+  master-switch mutation over a FRESH `fetchLorebook` read, never the draft); the add row
+  mints the slug with the backend's own `_slugify` rule and refuses an empty mint, a shelf
+  collision, AND (post fix wave) a stale-shelf collision via a file probe (404 = the only
+  "free"); import = the gallery affordance verbatim with a sibling three-list `.agrep`
+  report renderer (mapped · stashed · warnings).
+- **The §6.6 entry list** — the owner's first-class requirement: one collapsed row per
+  entry (key summary · constant badge · a 160-char-capped one-line preview · a DRAFT-only
+  enable switch), only the OPEN entry mounts its form (all eleven v1 fields; blank
+  priority stays the wire's `null`); entry rows are `.lb-entry` (NOT nested `.mwrap`s —
+  `.kit .mwrap.open .mconf` is a descendant selector).
+- **THE LOAD-BEARING RULE, test-pinned**: nothing is rebuilt from form state — every edit
+  spreads the object the server handed back, so the `extra="allow"` stash (`comment`,
+  `uid`, `selectiveLogic`, …) survives the destructive no-ETag full-replace PUT.
+  `tests/tabs/confLorebooks.test.tsx` pins entry-level AND book-level stash.
+- **The picker** (`LorebookPicker`, ONE component, two consumers): the agent form (NOT
+  `rpShow`-gated — ruling 9) and the global `lorebooks.books` on the LorebookGlobals save
+  bar (joined-string reseed guard; the settings deep-merge replaces lists wholesale).
+  Dangling attached slugs render ticked-and-marked-missing so a save never silently drops
+  them. `TickGrid` moved to its own module (cycle-avoidance; +`labels`/`missing` props).
+- Hooks beside `pickLorebooks` in `useRoleplay.ts` (the file's own recorded seam), the
+  useSkills shape verbatim; `/api/lorebooks` in the e2e fixtures ROUTES + a conf.spec
+  shelf→book→entry ladder, green both projects; a11y scans green.
+
+**The Emma round (blind, R46 brief): DO NOT SHIP — 1 HIGH · 5 MED · 1 LOW, all seven ruled
+FIX** (sound-checks confirmed the stash design + pinning tests non-vacuous, the draft
+lifecycle, slug grammar parity, picker wiring, D25 a11y, spec fit §6.6/§9). The fix wave
+`3be3386` (Opus, failing-before proofs): F1 the collapsed-row dirty registration — landed as
+the MAIN-SEAT re-derivation (compare against the SEEDED SNAPSHOT; her "register ungated"
+alone is vacuous when the closed row's query data is undefined — she later ruled the
+re-derivation SOUND) · F2 flipEnabled always reads fresh (a simplification; her
+closed-row-data-truthy mechanism was wrong but the open-row-stale case real) · F3 an
+isPending guard · F4 the stale-shelf file probe (her create-only backend verb OVERRULED —
+out of scope, over-machinery) · F5 the `accept` filter dropped (Android choosers gray out
+mistyped files) · F6 `aria-pressed` on TickGrid (all four consumers) · F7 indexed warning
+keys. **Rider `b365d45` (main-seat): the two same-class TWINS the fix builder flagged on the
+S4 surface** — AgentRow's identical collapsed-dirty defect (failing-before proven) and the
+card-import `accept` filter.
+
+**Her confirm round: 5/7 RESOLVED + the F4 objection + F3 surviving + 2 sweep MEDs → the
+micro-wave `0ce4dd4`** (main-seat, all four tests proven red pre-fix): F3 properly (a
+`flipping` state held from entry to settle — the closure's isPending snapshot cannot be
+re-checked across an await; BOTH doors read `writeBusy`) · sweep-1 (commitNew captures
+name+slug BEFORE the probe; create AND cancel locked while probing) · sweep-2 (a CLEAN
+draft adopts the echo wholesale, a DIRTY one takes only the flag) · **plus a trap her sweep
+missed, main-seat-found: toggling a NEVER-OPENED row pinned the seed with no draft — the
+first open then matched the pin, skipped the seed, and sat on "loading…" forever** (the
+unfaithful test mock — its save not writing the mocked file — is exactly why the class
+survived the wave; the mock now writes it). **Her F4 malformed-file objection OVERRULED as
+a recorded residual** (the API's 404 deliberately collapses absent/unreadable — the S3
+class; no FE probe can distinguish them) — **she ruled the scoping honest**.
+
+**Her micro-confirm found ONE blocker → the rider `059fd29`**: `wasClean`/`hadDraft` were
+click-time snapshots read after the await while the editor stays editable (a keystroke typed
+during the toggle's GET was discarded as "clean"). Root fix at one chokepoint: `updateDraft`
+writes a live ref + state in the same synchronous moment (every draft write rides it), and
+the echo classifies off the LIVE ref — no impure updater (StrictMode diverges), no
+render-mirrored ref (flush gap). Failing-before test: type during a held GET, the keystroke
+survives the echo. **Final round: blocker CLOSED with line proof, sweep "none" — RESOLVED —
+SHIP.**
+
+**Gate at tip `059fd29`: 6/6 — BE 2,373 (untouched) · FE 3,024/177** (counts in QUALITY.md;
+eslint 97 → 110, attributed there — the seeded-snapshot render reads are the design).
+
+**Residuals, recorded, none owed now:**
+- **The malformed-file class, extended**: an unreadable on-disk book is list-invisible,
+  unrepairable, AND (via the probe's 404) silently overwritable by a same-slug create. One
+  register entry: the backend learns to SURFACE unreadable books; the FE refusal follows.
+- The probe→PUT ms TOCTOU on create (accepted — one owner, one tailnet).
+- `TickGrid`'s PRE-EXISTING silent-drop of a selected-but-undiscovered name in the
+  tools/skills grids (the lorebook picker handles it via `missing`; the twins do not) —
+  Phase 19 register material.
+- `.kit .mwrap.open .mconf` is a descendant selector — any future nested disclosure inside
+  a `.mconf` hits it; a `>` combinator is a shared-CSS change for its own pass.
+- The book-row switch is not optimistic (waits the PUT round-trip — the app's posture, but
+  a whole-file write); entry rows are index-keyed (fine without reorder; any future drag
+  revisits); a negative `order` cannot be typed (`numOrKeep` floor).
+
+**S5 owes nothing forward. Next slice = S6 (the three-state backdrop, §10-S6), one slice
+per session, the owner's word opens it. The owner's dev poke at the manager (Conf →
+Lorebooks on :5173 — their real 40-entry `personality-traits` book is live on dev from S3)
+is the natural feel round.**

@@ -12,7 +12,47 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-07, SEVENTH session — THE OF FIX WAVE COUNCIL-CLOSED, then the owner's confirm round RE-PINNED OF-1 → **OF-1b** (the standalone cards' full-bleed) fixed `02cc5c4` + council-closed same session; ⚠ next = the owner's phone glance at the agents tab → their word closes S4 → S5; supersedes below where it speaks)
+## Current state (2026-09-08, EIGHTH session — THE OWNER'S WORD CLOSED S4, then **S5 (the lorebook FE) ran the WHOLE standing cadence in one session and is council-CLOSED: RESOLVED — SHIP**; supersedes below where it speaks)
+
+- **The session opened on the owner's word** ("you fixed something and it looks good now, we
+  can continue") — **S4 is CLOSED** (recorded in plan §13-S4 + TODO) — **and S5 ran end to
+  end**: two seam scouts → main-seat design → pinned Opus build **`eb2f21c`** (the §6.6
+  collapsed-entry manager inside the existing Conf `lorebooks` group · the stash-preserving
+  draft/PUT discipline, test-pinned at entry AND book level · book import + inline report ·
+  the two-consumer `LorebookPicker` (agent form, NOT rp-gated — ruling 9; global
+  `lorebooks.books` on the LorebookGlobals save bar) · `TickGrid` to its own module) →
+  main-seat audit (gate independently re-run 6/6; all 10 deviations ACCEPTED) → **blind Emma
+  round DO NOT SHIP 1H·5M·1L, all seven ruled FIX** → fix wave **`3be3386`** (failing-before
+  proofs; two main-seat re-derivations — F1's seeded-snapshot compare she later ruled SOUND,
+  F4's file probe over her out-of-scope create-only verb) → **rider `b365d45`** (the two
+  same-class TWINS on the S4 surface: AgentRow's collapsed-dirty defect + the card-import
+  `accept` filter) → her confirm (5/7 + F3 surviving + 2 sweep MEDs) → **micro-wave
+  `0ce4dd4`** (F3 held-through-the-await via `flipping` · probe-window locks on the add row ·
+  clean-draft-adopts-echo · **+ a main-seat-found trap her sweep missed**: a toggled
+  never-opened row wedged its first open on "loading…" forever) → her micro-confirm (one
+  blocker: click-time draft classification) → **rider `059fd29`** (the live-ref `updateDraft`
+  chokepoint; the echo classifies the draft as it IS) → **her FINAL VERDICT: RESOLVED — SHIP**
+  (sweep "none"; she re-ran the FE suite 3,024/3,024 herself). **Full record = plan §13-S5**
+  (residuals recorded there — headline: the malformed-file class now also covers
+  create-overwrite; the register fix is the backend surfacing unreadable books).
+- **Gate at tip `059fd29`: 6/6 — BE 2,373 (untouched) · FE 3,024/177** (counts in QUALITY.md;
+  eslint 97 → 110, attributed there — the seeded-snapshot render reads are deliberate).
+  **FE-only slice — :5173 serves it live; both dev units RUNNING (D69 presence observation
+  continues, do NOT stop the units); no backend restart needed.**
+- **▶▶ NEXT: the owner's feel round on the lorebook manager** (dev :5173 → Conf → Lorebooks:
+  the shelf · their real `personality-traits` book's 40 collapsed entries · an entry expand ·
+  the add row's slug hint · import a book · the picker on Lynette's form + the global list)
+  **→ THEIR WORD closes S5 → S6 (the three-state backdrop, §10-S6)** — one slice per session.
+  The Phase 19 residuals stand (`tabbtn-<id>` aria class · multipart spool · now the
+  TickGrid tools/skills silent-drop + unreadable-book surfacing, plan §13-S5).
+- **Git: 75 commits unpushed over origin `04769d9`** (the 69 + `eb2f21c` + `3be3386` +
+  `b365d45` + `0ce4dd4` + `059fd29` + this docs commit); working tree clean; the PUSH ruling
+  stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline (Dependabot
+  D1 → push → release E, config migration 2→3, rollback = config backup FIRST then v1.7.7)
+  is unchanged and still owed; sequencing is the owner's. **NEXT-NEXT (owner): LIVE
+  VOICE/CALL MODE — start at R51, buy only the delta.**
+
+## Prior state (2026-09-07, SEVENTH session — THE OF FIX WAVE COUNCIL-CLOSED, then the owner's confirm round RE-PINNED OF-1 → **OF-1b** (the standalone cards' full-bleed) fixed `02cc5c4` + council-closed same session; superseded above where it speaks)
 
 - **OF-1b (the owner's confirm round, in conversation):** OF-2 confirmed good; but the
   "dropdown with no padding" was RE-PINNED — it is the **ADD-AGENT disclosure card going

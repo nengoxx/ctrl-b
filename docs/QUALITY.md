@@ -39,7 +39,7 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | **FE type safety** | `tsc` **strict** (already on) | type errors, unused locals/params | ✅ |
 | **FE lint** | **ESLint** flat + **typescript-eslint `recommended-type-checked`** + `eslint-plugin-react-hooks` + `-react-refresh` | floating promises, misused async/await, unsafe `any`, hook-deps, rules-of-hooks, React-Compiler diags | ✅ (1b) |
 | **FE format** | **Prettier** + `eslint-config-prettier` | style drift (deterministic) | ✅ (1b) |
-| **FE unit tests** | **Vitest** (D21 — 2,992 across 175 files, 2026-09-07 post the OF fix wave (the gradient-rim source pin `gradientRim.test.ts`: 8 swept sites + both precedents, presence AND shorthand-order) and the D70 §8.4a satellite placement + the S4 code-round fix wave (a malformed persisted placement MAP · the agent-roster invalidation on a settings save): the pure `composeLayout` + its healing · the parameterized never-in-two-places guard (DefaultRoot + Conf across conf/button/tab, malformed, minimal, deep boot, live flip) · the placement-flip scroll-cache clear · the Conf tail numbering across every hosted combination · gacha's キャラ at five columns) | logic regressions | ✅ |
+| **FE unit tests** | **Vitest** (D21 — 3,024 across 177 files, 2026-09-08 post D70 S5 + its fix wave + riders + micro-wave (the lorebook FE: the stash-preservation pins (entry- AND book-level extras through an edited save) · the collapsed-dirty registration pins on BOTH row kinds (lorebook + the AgentRow twin, failing-before) · the fresh-read master-switch pin · the stale-shelf create probe · slug mint + duplicate refusal · `aria-pressed` · the import report; prior: the OF gradient-rim source pin + the §8.4a placement suite) | logic regressions | ✅ |
 | **FE e2e / a11y** | **Playwright** + `@axe-core/playwright` (D24) | broken user paths, a11y | ✅ (Phase 9 wires the suite) |
 | **BE lint + format** | **ruff** (`E,F,I,ASYNC,B` — `backend/pyproject.toml:87`; formatter) | style, imports, dead code, async footguns, bugbear | ✅ |
 | **BE type check** | **`pyright[nodejs]`** (pinned `==1.1.409`; `basic` → ratchet `strict`) | type errors across the FastAPI service | ✅ (1c) |
@@ -211,7 +211,16 @@ because those helpers are unit-tested on their own.
 > deliberate trade `FramingSheet`/`CropModal` made. **No warning was fixed and no rule was touched;
 > F13 stays trigger-gated.** Attributed here on the standing principle rather than absorbed silently.
 
-Deferral status unchanged: all 97 stay in the F13 backlog. **This paragraph is the ONLY home for the
+> **And up 13 across D70 S5 (2026-09-08)**, `97 → 110`: +5 at the S5 build (the manager's new
+> component modules, the same export-beside-component and ref-ish shapes as above), +6 at its fix
+> wave and +2 at the rider — all but the export class being `react-hooks/refs` on ONE deliberate
+> line per row component: the collapsed-dirty fix compares the draft against the seeded-snapshot
+> REF during render (`seeded.current` / `seededFieldsRef.current`), which is exactly what closes
+> the Emma round's F1 (a closed row has no query data to compare against). The compiler flags each
+> access; the read is the design. **No warning was fixed and no rule was touched; F13 stays
+> trigger-gated.** Attributed here on the standing principle.
+
+Deferral status: all 110 stay in the F13 backlog. **This paragraph is the ONLY home for the
 count** (doc-truth ruling 2026-08-17) — other docs point here, no numbers.
 
 **Why deferred (assessed thoroughly 2026-07-02, all ~19 sites reviewed):**
