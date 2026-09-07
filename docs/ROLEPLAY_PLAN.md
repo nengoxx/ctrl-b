@@ -1459,3 +1459,50 @@ session's FIRST move** (the S1 precedent — build+audit one session, review the
 here for context discipline, the owner's standing handoff directive). The ⚠ S4 TTS obligation
 is MET pending her verification; S5 still owes the collapsed-entry lorebook editor (§6.6) and
 the `lorebooks.books` global editor.
+
+#### S4 addendum — the §8.4a SATELLITE PLACEMENT fold (2026-09-07, sixth session; the owner's opening correction)
+
+**The owner's word opened the session:** "its own section" meant INSIDE settings, not a
+separate always-present surface — hidden by default like the tools tab, selectable to show;
+then (round 2) a deep design pass generalizing to future sections (lorebooks named); then
+(round 3) the three rulings: three placements with never-in-two-places degradation · bar slot
+after chat · a minted Japanese sub-label. **The full design road ran in-session:** the code/
+docs probe (one data-driven bar renderer; the docked button = TOP appbar vs the bar = BOTTOM;
+Material 3's 3–5-destination cap) → **§8.4a written as the spec** → **blind Emma DESIGN round
+(sol high, `--ignore-rules`, R46 brief): SHIP WITH CHANGES — 0 HIGH · 3 MED · 2 LOW, sweep =
+the scroll-cache MED only; all five accepted + folded** (MED-1 scroll-cache keys · MED-2 Conf
+tail numbering · MED-3 the dangling `tabbtn-agents` label — a LATENT S4 DEFECT — · LOW-4 the
+exclusivity integration guard · LOW-5 the honest lorebooks recipe), MED-1/MED-3 citations
+main-seat-verified against HEAD → **confirm round (resumed): all five RESOLVED, sweep "none"
+— RESOLVED — SHIP** (rider folded: the composition key is a stable semantic string). Design
+committed `b0dd5f5`; D35 carries the satellite-sections addendum.
+
+**The pinned Opus build landed as `d944022` + `fef61c1`** (mechanism/control/copy/geometry +
+tests · the e2e rider reverts + placement arms). As specced: `composeLayout` pure in
+`layout.ts` (+ `SATELLITES`, `SECTION_PLACEMENTS`, `resolvePlacement`, derived
+`HOSTED_GROUP_IDS`) · `ui.sectionPlacement` device-local, healed at read · both DefaultRoot
+effects keyed on the semantic `placementKey` · the aria fix on the standalone panel + both
+lazy fallbacks · `AgentsContent` extracted (UtilsContent precedent), the hosted
+"Agents · gallery" group, the ordered-`hostedTail` numbering, the extended scroll guard, the
+Appearance "Agents" Seg rendering the RESOLVED value · `tabAgents: "キャラ"` (ONE new glyph
+ャ; six JP subsets +~1.2 KB, Latin files byte-identical; fonts regen committed) · the
+`--tab-crowded` 5-up label step (4-up resolves to the old literals — today's bar
+byte-identical) · the two S4 rider geometries back to conditional (they were e2e pins, not
+CSS — gacha ≤46px, `off` inset 10 by default; a new arm pins the button-placement half).
+**All 6 declared deviations ACCEPTED** (headlines: `SectionPlacement` types in `types.ts` —
+the store must not import the registry-reading layout module; healing at
+`resolvePlacement`, the `resolveLayout` precedent, NOT a second validation site in the
+store; splice appends when the anchor is off this preset's bar — a promotion never silently
+vanishes). **Gate 6/6 — FE 2,980/174 · e2e 159 (mobile project) · 360px screenshots clean in
+kit/frontier/gacha (キャラ renders in the frozen face; worst slack 7.7px, gacha "SETTINGS").**
+
+**Recorded residual (Phase 19 register):** the MED-3 class is WIDER than agents —
+`UtilsTab`/`ConfTab`/`AgentTab` and the bespoke fleet bodies all hardcode
+`aria-labelledby="tabbtn-<id>"` and all can be off-bar (conf in 2-tab, everything under
+`minimal`); the a11y specs can't see it because they reach panels by clicking tab buttons.
+§8.4a fixed only its own scope.
+
+**The §13-S4 owner-feel riders are CLOSED by this fold** (their premise — an always-present
+docked action — is gone; the geometries are conditional again and pinned in both states).
+**The blind Emma CODE round now covers the widened span `e6cd1d9`..`fef61c1` (7 commits)
+against §8/§9/§9a/§10-S4 + §8.4a.**

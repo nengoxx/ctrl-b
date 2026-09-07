@@ -1914,6 +1914,20 @@ paints nothing (no fill/frost/shadow), with squared frosted-glass icon buttons (
 never scatter `=== "visible"` bar-presence checks again. Vapor participates additively (byte-identical
 unless the mode is picked).
 
+**AMENDED 2026-09-07 (D70 §8.4a — SATELLITE SECTIONS v1; the Axis-B "second pair" clause fires).** The
+agents gallery becomes the first **satellite section**: a section that never joins a curated preset and
+instead carries a per-section PLACEMENT (`ui.sectionPlacement`, device-local like the layout lever)
+drawn from the partition's own three buckets — `conf` (hosted ConfGroup, the DEFAULT) · `button`
+(off-bar/unhosted, the menu affordance) · `tab` (bar splice after chat). Composition is ONE pure
+function (`layout.ts#composeLayout`) applied to the resolved preset before `partitionSections`;
+`HOSTED_UTILS_GROUP_ID`'s single consumer path generalized to `HOSTED_GROUP_IDS`. Placement is a
+preference resolved per render — buckets stay disjoint, so a satellite is never in two places; unknown
+persisted values heal at `resolvePlacement` (the lever's own stance). The count presets, the "4/3/2"
+picker and the layout fence are untouched — deliberately NO "5-tab" preset (labels would lie in mixed
+states; presets would multiply per satellite; Material 3 caps a nav bar at 5). **Spec of record +
+council trail: `ROLEPLAY_PLAN.md` §8.4a** (blind Emma design round SHIP WITH CHANGES, all folded,
+confirm RESOLVED — SHIP; built 2026-09-07).
+
 ## D36 — Chat hooks + token contract: one shared chat tree, themes reskin on pinned hooks ✏️ LOCKED 2026-07-12 (frontier F4 design review)
 
 **Context.** Frontier's F4 Agent tab is the first bespoke body that must carry the FULL chat (markdown,
