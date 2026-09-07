@@ -2377,6 +2377,9 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
 .kit .switch.on .knob {
   background: var(--accent-fill);
   border-color: transparent;
+  /* OF-2 — the knob keeps the off-state's 1px border; unclipped, the gradient tiles into it and the ramp's
+   * end stops rim the pill's ends. (gacha is immune — its knob sets `border: 0`.) */
+  background-clip: padding-box;
 }
 .kit .switch.on .knob::after {
   transform: translateX(20px);
@@ -3383,6 +3386,20 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 .kit .mconf .mform input::placeholder {
   color: var(--text-3);
 }
+/* OF-1 (owner round, 2026-09-07): the recipe above styles the SELECT — `all: unset` and a padding of its
+ * own — but a native select's popup is built from `<option>` elements, which inherit none of that and had
+ * no rule anywhere in the app, so every dropdown's rows rendered with essentially no insets. Worst case is
+ * the model picker, whose 20–30-char mono ids make the popup near-viewport-wide with the text flush to its
+ * edge. App-wide by design: one rule for every native select the kit ships (machines, agents, Conf,
+ * automations, the provider/model pair). The 8px 10px is the app's OWN option-row metric — the popover
+ * suggest/tools rows above (`.kit .kit-suggest li`) — so a native popup and a drawn one match.
+ *
+ * What the code cannot show: this lands on DESKTOP browser popups only. A mobile select is rendered by the
+ * OS (a wheel or a full-screen list) and ignores option padding entirely — it carries native insets, so
+ * the phone was never the broken rendering and this rule does not change it. */
+.kit option {
+  padding: 8px 10px;
+}
 /* D2-B — inline caveat beside a switch in the machine form (the mform grid has no desc slot). Net-new
  * class, mirroring extras.css. */
 .kit .mconf .mform .mrow-hint {
@@ -3463,6 +3480,10 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   color: var(--accent-ink);
   background: var(--accent-fill);
   border-color: transparent;
+  /* OF-2 — a gradient is laid out in the PADDING box but painted across the BORDER box and tiled, so the
+   * side strips of the button's 1px border show the ramp's end stops as solid rims (precedent: the gacha
+   * dossier act, 57e106a). Clip the paint to the padding box. */
+  background-clip: padding-box;
 }
 .kit .mconf .mfoot button.danger {
   color: var(--danger);
@@ -3528,6 +3549,9 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   color: var(--accent-ink);
   background: var(--accent-fill);
   border: 1px solid transparent;
+  /* OF-2 — same mechanism as `.mfoot button.save` above: unclipped, the transparent 1px border tiles the
+   * gradient's end stops into solid left/right rims. */
+  background-clip: padding-box;
   transition: opacity var(--dur-fast) var(--ease-std);
 }
 .kit .conf-save:active {
@@ -5491,6 +5515,9 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   color: var(--accent-ink);
   background: var(--accent-fill);
   border-color: transparent;
+  /* OF-2 — the chip keeps the base rule's 1px border; unclipped, the gradient tiles into it and the ramp's
+   * end stops read as solid rims down each side. */
+  background-clip: padding-box;
 }
 /* a tool locked by the global tri-state (core = always-on, disabled = always-off) — not interactive */
 .kit .tick-grid .tick.locked {

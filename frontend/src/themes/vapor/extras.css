@@ -134,6 +134,10 @@ body[data-motion="reduced"] .dev.on .eq i {
   padding: 6px 14px;
   border-radius: 0 0 13px 13px; /* hangs from the top bar */
   background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.22), rgba(var(--accent-rgb-2), 0.12));
+  /* OF-2 — same mechanism as the kit's gradient buttons (precedent: 57e106a): the gradient tiles across
+   * the border strip, so each side of the 40%-alpha border carries one end stop of the ramp. Milder here
+   * because the border is not transparent, but it is the same seam. */
+  background-clip: padding-box;
   border: 1px solid rgba(var(--accent-rgb), 0.4);
   border-top: 0;
   backdrop-filter: blur(12px);

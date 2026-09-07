@@ -655,6 +655,9 @@
     padding: 14px 18px;
     border-radius: 14px;
     background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.10), rgba(92,230,255,0.06));
+    /* OF-2 sweep line (non-interactive, low-alpha — no owner report, closed with the class): the gradient
+     * tiles across the border box, so the 1px `--line-2` strip carries the ramp's end stops. */
+    background-clip: padding-box;
     border: 1px solid var(--line-2);
     display: grid; grid-template-columns: repeat(3, 1fr);
     gap: 8px;

@@ -719,6 +719,9 @@
       color: var(--bg);
       background: linear-gradient(135deg, color-mix(in oklch, var(--accent) 82%, white), var(--accent));
       border-color: transparent;
+      /* OF-2 — the gradient positions against the padding box but paints (tiled) across the border box, so
+       * `.hd-act`'s 1px border shows the ramp's end stops as solid rims (precedent: 57e106a). */
+      background-clip: padding-box;
       box-shadow:
         0 0 20px -3px color-mix(in oklch, var(--accent) 55%, transparent),
         0 5px 16px -6px color-mix(in oklch, var(--accent) 70%, transparent);
