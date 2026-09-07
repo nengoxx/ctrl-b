@@ -543,20 +543,26 @@ export function AgentRow(props: {
   // survived only because TanStack's structural sharing usually hands back the same reference, which
   // is a property of the cache, not a guarantee this component should lean on (v1.3.1).
   const seededDetailRef = useRef<string | null>(null);
+  const seededFieldsRef = useRef<string | null>(null);
   useEffect(() => {
     if (!detail) return;
     const next = JSON.stringify(detail.agent);
     if (next === seededDetailRef.current) return;
     seededDetailRef.current = next;
+    seededFieldsRef.current = JSON.stringify(pickFields(detail.agent));
     setDraft(detail.agent);
   }, [detail]);
 
+  // Dirty is the draft against the SEEDED snapshot, registered with no `open` gate — the S5 Emma
+  // round's F1, which this row had verbatim: collapsing does not unmount the row or discard its
+  // draft, but a closed row queries `useAgent(null)` and `detail` goes undefined, so a compare
+  // against `detail` is vacuously clean exactly when the unload warning matters.
   const dirty = !!(
-    detail &&
     draft &&
-    JSON.stringify(pickFields(draft)) !== JSON.stringify(pickFields(detail.agent))
+    seededFieldsRef.current !== null &&
+    JSON.stringify(pickFields(draft)) !== seededFieldsRef.current
   );
-  useRegisterDirty(`agent:${name}`, props.open && dirty);
+  useRegisterDirty(`agent:${name}`, dirty);
 
   const onSave = () => {
     if (!draft || !dirty) return;

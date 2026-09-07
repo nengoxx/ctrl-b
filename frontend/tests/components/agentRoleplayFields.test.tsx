@@ -42,10 +42,15 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => {
   const actual = await importActual<typeof import("../../src/hooks/useAgents")>();
   return {
     ...actual,
-    useAgent: () => ({
-      data: { name: "lyra", is_default: false, soul: "", agent: h.agent },
-      isLoading: false,
-    }),
+    // Arg-sensitive, as the real hook is: a CLOSED row calls `useAgent(null)` and gets no data —
+    // the exact baseline-vanishes case the collapsed-dirty pin below exists to exercise.
+    useAgent: (name: string | null) =>
+      name
+        ? {
+            data: { name: "lyra", is_default: false, soul: "", agent: h.agent },
+            isLoading: false,
+          }
+        : { data: undefined, isLoading: false },
     useSaveAgent: () => ({ mutate: h.saveAgent, isPending: false }),
     useDeleteAgent: () => ({ mutate: vi.fn(), isPending: false }),
     useSaveAgentSoul: () => ({ mutate: vi.fn() }),
@@ -53,6 +58,7 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => {
 });
 
 import { AgentRow, roleplayFieldVisible } from "../../src/components/AgentsEditor";
+import { isAnyDirty } from "../../src/store/dirty";
 
 /** A specialist as the file API hands it back — every D70 field present, all empty by default. */
 function agentDef(over: Record<string, unknown> = {}) {
@@ -233,5 +239,37 @@ describe("AgentRow · the roleplay fields on the form", () => {
     fireEvent.click(screen.getByRole("button", { name: "save" }));
     const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
     expect(sent.agent.duties).toBe("conversational");
+  });
+});
+
+describe("AgentRow · dirty survives a collapse (the S5 F1 twin — fix rider)", () => {
+  const row = (open: boolean) => (
+    <AgentRow
+      name="lyra"
+      isDefault={false}
+      isResolvedDefault={false}
+      open={open}
+      onToggle={() => undefined}
+      toolNames={[]}
+      toolModes={{}}
+      skillNames={[]}
+      defaultPrompt=""
+    />
+  );
+
+  it("an edited then COLLAPSED row still registers dirty — the row never unmounted", () => {
+    h.agent = agentDef();
+    h.roleplayEnabled = false;
+    h.books = [];
+    expect(isAnyDirty()).toBe(false);
+    const view = render(row(true));
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Lyra II" } });
+    expect(isAnyDirty()).toBe(true);
+
+    // Collapse: the real hook now hands back NO data (`useAgent(null)`), so a dirty compare
+    // against `detail` would go vacuously clean — the seeded snapshot must carry it instead.
+    view.rerender(row(false));
+    expect(screen.queryByLabelText("Display name")).toBeNull(); // the form really is closed…
+    expect(isAnyDirty()).toBe(true); // …and the draft it still holds is still unsaved
   });
 });

@@ -216,11 +216,13 @@ export function AgentsContent() {
             {roleplayOn && (
               <div className="agal-import">
                 {/* HIDDEN input + a styled button — the gallery Add-row shell. `input.value` is reset
-                    in the handler so picking the SAME file twice still fires `change`. */}
+                    in the handler so picking the SAME file twice still fires `change`. NO `accept`
+                    filter (the S5 F5 ruling, applied to its sibling): a phone chooser given one GRAYS
+                    OUT anything it cannot type-match — `.charx` is exactly the extension a share
+                    sheet mangles — and the backend sniffs magic bytes authoritatively either way. */}
                 <input
                   ref={fileRef}
                   type="file"
-                  accept=".png,.json,.charx,image/png,application/json"
                   hidden
                   onChange={(e) => {
                     const file = e.target.files?.[0];
