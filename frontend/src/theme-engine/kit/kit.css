@@ -182,6 +182,15 @@
 }
 .kit .tab > .plan-pin-panel + .kit-backdrop-pin {
   margin-top: calc(-1 * var(--plan-head-h, 31px));
+  /* …and the pull is COMPENSATED on the way out, which the gacha rule this one is modelled on does not
+   * need and must not grow. The difference is the pulled box: gacha's oracle is 300px of flow, so its
+   * siblings are pushed back by its own height and the pull moves only the art. THIS pin is ZERO-HEIGHT
+   * — a negative margin on it advances every FOLLOWING sibling by the same amount, and `.sec` and
+   * `.chat-log` started at the panel's own top, UNDER it (measured in Chromium: identical top
+   * coordinates for the panel, the pin and the section head). The pair nets to zero for the flow while
+   * still seating the pin — and therefore the absolutely-positioned art layer inside it — a panel-head
+   * higher, which is the whole point of the pull. Same token both ways, so they cannot drift apart. */
+  margin-bottom: var(--plan-head-h, 31px);
 }
 /* The art layer itself: absolute WITHIN the zero-height pin, so it needs an explicit height — and that
  * height is EXACTLY the pane below the pin, never "a viewport's worth". An absolutely-positioned

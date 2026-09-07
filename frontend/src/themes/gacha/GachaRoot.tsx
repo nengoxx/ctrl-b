@@ -2,6 +2,7 @@ import { useLayoutEffect } from "react";
 
 import { focalPosition } from "../../lib/focalPosition";
 import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
+import { useAgentBackdropMode } from "../../theme-engine/kit/agentBackdrop";
 import { useKitBackgroundArt } from "../../theme-engine/kit/ownerArt";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { useUISlice } from "../../store/ui";
@@ -10,6 +11,7 @@ import { GachaAgent } from "./GachaAgent";
 import { GachaFleet } from "./GachaFleet";
 import { GachaReel } from "./GachaReel";
 import { fleetSurface } from "./fleetSurface";
+import { oracleFadeActive } from "./oracle";
 import { wallpaperArt } from "./roster";
 import { useGachaRoster } from "./useGachaRoster";
 
@@ -53,7 +55,13 @@ export function GachaRoot() {
   const appbarMode = useUISlice((s) => s.appbarMode);
   // R6: both ship ON (the prototype defaults them OFF — a deliberate, owner-ruled flip).
   const wallpaper = useThemeSetting<boolean>("gacha", "wallpaper");
-  const oracle = useThemeSetting<boolean>("gacha", "oracle");
+  // R6's "Sticky operator art" — stamped through the SAME derivation `GachaAgent` gates its driver and
+  // its ghost copy on (`oracleFadeActive`, the S6 fix wave), because this attribute is the CSS half of
+  // that one behavior: `body[data-oracle="fade"] .gc-oracle` is what makes the block sticky and walks its
+  // ramp. Stamped from the setting alone it kept `off`'s deliberately imageless plate sticky and fading —
+  // operator-mode scroll behavior on a surface the mode says is a plain header (§8.3a item 5).
+  const stickyOracle = useThemeSetting<boolean>("gacha", "oracle") ?? false;
+  const oracleFade = oracleFadeActive(stickyOracle, useAgentBackdropMode());
   // The DOSSIER PALETTE (G6 / §4.4 family 3) — a third body ATTR on exactly the same terms as the two
   // above: it changes how the unit dossier LOOKS, never what is rendered, so it is a CSS axis
   // (`body[data-gc-dossier]`) and not a prop threaded down to GachaHostDetail. `useThemeSetting` validates
@@ -111,7 +119,7 @@ export function GachaRoot() {
   useLayoutEffect(() => {
     const b = document.body;
     b.dataset.wallpaper = wallpaper ? "on" : "off";
-    b.dataset.oracle = oracle ? "fade" : "scroll";
+    b.dataset.oracle = oracleFade ? "fade" : "scroll";
     b.dataset.gcDossier = dossier;
     b.dataset.gcNamefont = nameFont;
     b.dataset.gcCardnamefont = cardNameFont;
@@ -138,7 +146,7 @@ export function GachaRoot() {
     };
   }, [
     wallpaper,
-    oracle,
+    oracleFade,
     dossier,
     nameFont,
     cardNameFont,

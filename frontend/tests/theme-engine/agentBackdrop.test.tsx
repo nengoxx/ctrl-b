@@ -1,7 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ReactElement } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { cssRules } from "../themes/cssRules";
 
 // THE AGENT BACKDROP (D70 §8.3, narrowed by §8.3a) — one appearance mode, three states, one layer.
 //
@@ -302,6 +306,23 @@ describe("the five shipped themes, POPULATED and enabled", () => {
     });
   }
 
+  it("gacha's `data-oracle` stamp follows the MODE, not the sticky setting alone (S6 fix wave)", () => {
+    // `body[data-oracle="fade"]` is what makes the oracle block STICKY and scroll-fading in CSS, and it
+    // used to be stamped from the "Sticky operator art" setting alone — so under `off`/`full` the empty
+    // plate kept the operator-mode scroll behavior the setting is only allowed to govern (§8.3a item 5).
+    // ONE derivation, two readers: the body stamp and the body's own `oracleFade` gate.
+    setUI({ theme: "gacha", themeSettings: { gacha: { oracle: true } } });
+    draw(<GachaRoot />);
+    expect(document.body.dataset.oracle).toBe("fade"); // operator + the setting on: unchanged
+    for (const mode of ["full", "off"] as const) {
+      cleanup();
+      setUI({ agentBackdrop: mode });
+      draw(<GachaRoot />);
+      expect(document.body.dataset.oracle, mode).toBe("scroll");
+    }
+    setUI({ themeSettings: {} });
+  });
+
   it("the layer lives INSIDE the agent tab — it is hidden with it, never loose in the shell", () => {
     // Section bodies are keep-mounted (DefaultRoot), so the node still exists while another section shows
     // — hidden by `.kit .tab { display: none }` with the rest of the tab. What matters is that it is a
@@ -312,6 +333,26 @@ describe("the five shipped themes, POPULATED and enabled", () => {
     expect(layer).not.toBeNull();
     expect(layer.closest("#tab-agent")).not.toBeNull();
     expect(container.querySelector("#tab-agent")!.classList.contains("active")).toBe(false);
+  });
+});
+
+describe("the `full` pin's pinned-plan pull (the S6 fix wave)", () => {
+  // The GEOMETRY of this claim is pinned in `e2e/agent-backdrop.spec.ts`, where a real engine lays the
+  // tab out — jsdom resolves no stylesheets and builds no boxes, so nothing here could measure it. What
+  // this arm holds is the RULE's own shape, because the defect was a rule that could not be right: a
+  // negative margin on a ZERO-HEIGHT box advances every following sibling by exactly that much, so the
+  // pull that lets the art reach up under the plan panel dragged `.sec` and `.chat-log` under it too.
+  // The compensation is what makes the pair net-zero for the flow, and it must read the SAME token.
+  const css = readFileSync(resolve(process.cwd(), "src/theme-engine/kit/kit.css"), "utf8");
+
+  it("compensates its own pull, so a zero-height pin moves no flow sibling", () => {
+    const rule = cssRules(css).find(
+      (r) => r.selector === ".kit .tab > .plan-pin-panel + .kit-backdrop-pin",
+    );
+    expect(rule, "the pinned-plan pull rule is gone — has the pin's seat moved?").toBeDefined();
+    const decls = rule!.declarations.replace(/\s+/g, " ");
+    expect(decls).toContain("margin-top: calc(-1 * var(--plan-head-h, 31px))");
+    expect(decls).toContain("margin-bottom: var(--plan-head-h, 31px)");
   });
 });
 

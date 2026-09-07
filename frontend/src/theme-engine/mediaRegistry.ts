@@ -305,6 +305,16 @@ export interface MediaRoleDef {
   /** The role's bundled tier as a dealt SET — see `MediaRotationDef`. Absent for every role whose
    *  bundled ids are keys or pool members, which is every other one. */
   rotation?: MediaRotationDef;
+  /** This destination paints the AGENT BACKDROP surface (D70 §8.3), so two things outrank whatever its
+   *  own ladder resolves: the ACTIVE agent's `background` (it wins that surface's art while the agent is
+   *  active) and the `off` mode (nothing paints there at all).
+   *
+   *  DECLARED, because only the theme knows which of its roles is that surface — and applied by the
+   *  gallery WIRING (`useMediaLibrary`), which is the one place holding both the library and the app
+   *  state, exactly as it is the one place that judges a seat's claim. The resolvers stay pure in their
+   *  rows + the wire's `slots` (§2.4's purity arm pins their arity), so this could not be a resolver's
+   *  own answer. Absent = false. */
+  agentBackdrop?: boolean;
 }
 
 /** A `slots` pin the gallery offers — and since the 2026-08-26 owner ruling ("W6") **every one of them is
@@ -355,6 +365,12 @@ export interface MediaSlotDef {
    *  kit background, for gacha's fleet backdrop) may be answering instead, which is why the card
    *  captions it `built-in` rather than "in use" and the slot's own `hint` names the middle rung. */
   builtin?: MediaBundledDef;
+  /** The seat's own destination is the AGENT BACKDROP surface — see `MediaRoleDef.agentBackdrop`, which
+   *  this is the same declaration for a pin-backed section. Declared on BOTH because they are two
+   *  sections painting one surface (the picture behind the operator block, and who stands there), and a
+   *  seat's `def` is its SOURCE role's — gacha's oracle seat reads the `characters` row, which is not
+   *  that surface. */
+  agentBackdrop?: boolean;
 }
 
 export interface MediaNsDef {
@@ -504,6 +520,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // bound into the backdrop) outranks this folder entirely, and the card says so with a pointer
         // rather than painting a phantom (§2.4).
         active: activeOraclePool,
+        // …and since D70 §8.3 this folder is the THEME's rung of the AGENT BACKDROP surface, which the
+        // active agent's own `background` and the `off` mode both outrank (the S6 fix wave — the card
+        // used to call this picture live while an agent's art was painting that block, or while the
+        // mode was painting nothing at all).
+        agentBackdrop: true,
         // The bundled backdrop, as an ordinary pool member (S6). It used to be EMPTY on the reasoning
         // that scene art no pin addresses belongs on the last rung of `oracleArt`'s ladder rather than
         // in a library — which was right about pins and wrong about the gallery: the owner could see
@@ -557,6 +578,10 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // a picture that has a real home would be the duplicate the card's `overriddenBy` pointer
         // exists to avoid.
         active: activeSeat("oracle"),
+        // The same surface as the `oracle` role above, so the same outranking (D70 §8.3): a pin that
+        // resolves still stands behind nobody while the agent's own picture wins, or while the mode
+        // is `off`.
+        agentBackdrop: true,
       },
     ],
   },
@@ -930,6 +955,8 @@ export interface MediaSection {
   active?: ActiveResolver;
   /** A SEAT's built-in fallback picture — see `MediaSlotDef.builtin`. Never a library row. */
   builtin?: MediaBundledDef;
+  /** This section's destination is the AGENT BACKDROP surface — see `MediaRoleDef.agentBackdrop`. */
+  agentBackdrop?: boolean;
 }
 
 /** A role the SERVER lists and this registry does not describe. It still gets a gallery — the server
@@ -1064,6 +1091,7 @@ export function mediaSections(
       title: row.label ?? role,
       caps: { ...LIBRARY_CAPS, frame: row.framable === true },
       active: row.active,
+      agentBackdrop: row.agentBackdrop,
     });
   }
   for (const slot of def.slots ?? []) {
@@ -1093,6 +1121,7 @@ export function mediaSections(
       },
       active: slot.active,
       builtin: slot.builtin,
+      agentBackdrop: slot.agentBackdrop,
     });
   }
   return out;

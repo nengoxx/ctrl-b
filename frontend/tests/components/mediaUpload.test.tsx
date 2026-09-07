@@ -52,6 +52,11 @@ vi.mock("../../src/api/client", () => api);
 const toast = vi.hoisted(() => ({ pushToast: vi.fn() }));
 vi.mock("../../src/store/toast", () => toast);
 vi.mock("../../src/lib/composer", () => ({ loadProviders: vi.fn(), loadAgents: vi.fn() }));
+// D70 §8.3 — the gallery's data layer asks whether the ACTIVE agent brings its own backdrop (an
+// agent-backdrop destination must stop claiming its own picture is live when it does). It is a query
+// PAIR of its own and says nothing about this suite's claims, so it answers NO ART here — the same
+// stub `mediaGallery.test.tsx` uses, where the arms that drive it live.
+vi.mock("../../src/hooks/useActiveBackdrop", () => ({ useActiveBackdrop: () => undefined }));
 
 /** Only the WORKER client is faked — every pure rule of the export (`exportPolicy`, the readback, the
  *  step-down) has its own suite against an injected env in `tests/lib/imageExport.test.ts`. What this

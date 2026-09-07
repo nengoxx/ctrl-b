@@ -467,6 +467,20 @@ describe("GachaAgent — M7, the oracle fade driver", () => {
     bar.remove();
   });
 
+  it("does NOT run under `off` — the mode governs the fade, not the sticky setting (S6 fix wave)", async () => {
+    // The S6 review's HIGH-confidence finding: `off` renders the shipped art-resolved-null presentation
+    // (plate + scanline, static flow), and `gacha.oracle` governs OPERATOR-mode scroll ONLY (§8.3a item 5).
+    // With the setting on, the fade machinery used to attach anyway — the imageless ghost face mounted and
+    // the driver wrote the ramp on an empty plate.
+    setUI({ agentBackdrop: "off" });
+    const { container, scroller, setPos } = await mountAgent(<GachaAgent active />);
+    expect(container.querySelector(".gc-oracle-face.soft")).toBeNull();
+    const oracle = container.querySelector<HTMLElement>(".gc-oracle")!;
+    expect(oracle.style.getPropertyValue(P)).toBe("");
+    await scrollTo(scroller, setPos, BASE + 240);
+    expect(oracle.style.getPropertyValue(P)).toBe("");
+  });
+
   it("REMEASURES when a PINNED PLAN mounts above it — with the thread length unchanged", async () => {
     // Codex G3 M3, half two, and the reason `hasPinnedPlan` is its own dependency: `task_plan` can land
     // inside the assistant message that is already streaming, so `messages.length` — what the bottom-pin

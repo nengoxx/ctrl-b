@@ -37,6 +37,11 @@ vi.mock("../../src/api/client", () => api);
 const toast = vi.hoisted(() => ({ pushToast: vi.fn() }));
 vi.mock("../../src/store/toast", () => toast);
 vi.mock("../../src/lib/composer", () => ({ loadProviders: vi.fn(), loadAgents: vi.fn() }));
+// D70 §8.3 — the gallery's data layer asks whether the ACTIVE agent brings its own backdrop (an
+// agent-backdrop destination must stop claiming its own picture is live when it does). It is a query
+// PAIR of its own and says nothing about this suite's claims, so it answers NO ART here — the same
+// stub `mediaGallery.test.tsx` uses, where the arms that drive it live.
+vi.mock("../../src/hooks/useActiveBackdrop", () => ({ useActiveBackdrop: () => undefined }));
 // jsdom ships no ResizeObserver; the framing sheet measures its stage with one and every `FocalImg`
 // preview does too. A no-op is enough here — the MEASURED path has its own suite
 // (`tests/hooks/useFocalPosition.test.tsx`) and what this file is about is the write and the wiring.

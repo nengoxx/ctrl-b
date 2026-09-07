@@ -7,14 +7,20 @@ import { useAgentChat } from "../../hooks/useAgentChat";
 import { useFocalPosition } from "../../hooks/useFocalPosition";
 import { fillComposer } from "../../lib/composer";
 import { AgentBackdrop } from "../../theme-engine/kit/AgentBackdrop";
-import { useAgentBackdropMode } from "../../theme-engine/kit/agentBackdrop";
+import { backdropOutrank, useAgentBackdropMode } from "../../theme-engine/kit/agentBackdrop";
 import { PinnedPlanPanel } from "../../theme-engine/kit/composer/plan/PinnedPlanPanel";
 import { usePlanPlacement } from "../../theme-engine/kit/composer/plan/placement";
 import { parsePx, progressValue, scrollProgress } from "../../theme-engine/kit/scrollProgress";
 import { safeRafLoop } from "../../theme-engine/safeRafLoop";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { GACHA_COPY } from "./copy";
-import { ORACLE_GHOST_DATA, ORACLE_P_VAR, ORACLE_RAMP_VAR, oracleGhosting } from "./oracle";
+import {
+  ORACLE_GHOST_DATA,
+  ORACLE_P_VAR,
+  ORACLE_RAMP_VAR,
+  oracleFadeActive,
+  oracleGhosting,
+} from "./oracle";
 import { oracleArt, type ResolvedArt } from "./roster";
 import { useGachaRoster } from "./useGachaRoster";
 
@@ -322,11 +328,14 @@ export function GachaAgent({ active }: { active: boolean }) {
   //     while that agent is active, else the theme's `oracle:` pin / drop — today's ladder, unchanged;
   //   · `full`     → the SHARED kit arrangement over the same resolution, INSTEAD of the oracle. Its plate
   //     and scanline are absent for as long as `full` is active (owner-accepted); the fade driver must not
-  //     run either, since the element it writes on is not in the DOM — `fade && mode !== "full"` is that
-  //     gate, and it is the same boolean the ghost copy already keys on;
+  //     run either, since the element it writes on is not in the DOM — `oracleFadeActive` is that gate, and
+  //     it is the same boolean the ghost copy and GachaRoot's `data-oracle` stamp key on;
   //   · `off`      → the oracle block with `art={null}`: its SHIPPED art-resolved-null state (plate, scrim
   //     and scanline, no picture), which is why `off` reuses a tested presentation instead of inventing
   //     chrome removal. The theme fallback is suppressed with the agent's own art, per §8.3's F14 ruling.
+  //     The fade is off here too (the S6 fix wave): that shipped presentation is the STATIC one —
+  //     `data-oracle="scroll"`, a header the thread scrolls past — and a sticky, scroll-fading empty plate
+  //     would be operator-mode behavior applied where no picture is being scrolled over.
   // `gacha.oracle` (sticky vs scroll) keeps governing operator-mode scroll ONLY — it is orthogonal.
   const backdropMode = useAgentBackdropMode();
   const agentBackground = useActiveBackdrop();
@@ -341,9 +350,14 @@ export function GachaAgent({ active }: { active: boolean }) {
   // The one art resolution both surfaces take (the §5.3 "ONE resolver" rule, extended by one tier): the
   // active agent's picture, else the theme's own oracle art. `BoundArt` is `ResolvedArt` minus the `rev`
   // bookkeeping only the reel figure's failure latch reads — assignable, no cast.
-  const oracleFade = fade && backdropMode !== "full";
+  const oracleFade = oracleFadeActive(fade, backdropMode);
+  // …and the LADDER itself runs through the kit's one statement of it (`backdropOutrank`, the S6 fix
+  // wave): what the media gallery REPORTS as live on this surface and what this body PAINTS are the
+  // same derivation now, so the ring in Conf cannot claim a picture the operator block is not showing.
+  // `null` ⇒ nothing outranks the theme, which is this theme's own `oracle:` pin / drop.
+  const outrank = backdropOutrank(backdropMode, agentBackground !== undefined);
   const art: ResolvedArt | null =
-    backdropMode === "off" ? null : (agentBackground ?? oracleArt(roster));
+    outrank === "off" ? null : outrank === "agent" ? (agentBackground ?? null) : oracleArt(roster);
   // M7. The thread's LENGTH (not the array) is what moves ChatThread's bottom-pin, so it is what the
   // re-sync depends on; the panel's presence is what moves the oracle's own offset.
   const { oracleRef, anchorRef } = useOracleFade(

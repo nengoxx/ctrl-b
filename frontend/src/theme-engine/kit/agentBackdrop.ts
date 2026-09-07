@@ -41,6 +41,27 @@ export function resolveAgentBackdrop(v: unknown): AgentBackdropMode {
     : "operator";
 }
 
+/** What beats a THEME's own operator art on the agent-backdrop surface: `off` — the mode suppresses
+ *  every picture, agent art and theme fallback alike (§8.3's F14 correction); `agent` — the ACTIVE
+ *  agent's own `background` wins the resolution while that agent is active. */
+export type BackdropOutrank = "off" | "agent";
+
+/** §8.3's ladder as ONE pure statement, with two readers that cannot disagree (the S6 fix wave): the
+ *  PAINT (a theme body resolving what to show — gacha's `GachaAgent`) and the REPORT (the media
+ *  gallery saying which library picture is live — `useMediaLibrary`). `null` ⇒ the theme's own art is
+ *  what paints.
+ *
+ *  It is stated here rather than inside gacha because the rule is the kit's: the agent's art wins the
+ *  backdrop surface on every theme, and the mode governs all of them. A theme contributes the FALLBACK
+ *  rung, never the ordering. */
+export function backdropOutrank(
+  mode: AgentBackdropMode,
+  hasAgentArt: boolean,
+): BackdropOutrank | null {
+  if (mode === "off") return "off";
+  return hasAgentArt ? "agent" : null;
+}
+
 /** The HEALED mode from the store — what every consumer (the two agent bodies, the Conf row) reads, so a
  *  row can never display a value the app is not actually rendering (the `themeRowValue` lesson). */
 export function useAgentBackdropMode(): AgentBackdropMode {

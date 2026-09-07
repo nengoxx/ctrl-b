@@ -442,6 +442,64 @@ export async function seedUI(page: Page, ui: Record<string, unknown>): Promise<v
   }, ui);
 }
 
+/** A thread whose last assistant message carries a `task_plan` call — the shape `currentPlanOf` reads, and
+ *  therefore the only way to make the pinned panel mount from a seeded page. Shared, because every spec that
+ *  needs a PINNED PLAN needs exactly this thread (layout's plan-chrome arms, and the agent backdrop's own). */
+export function planThread(steps: { text: string; status: "pending" | "active" | "done" }[]) {
+  return [
+    {
+      id: "m0",
+      thread_id: "t1",
+      role: "user",
+      parts: [{ type: "text", text: "wake the fleet" }],
+      actor: "user",
+      ts: "2026-01-01T00:00:00Z",
+      tokens: null,
+      compacted: false,
+    },
+    {
+      id: "m1",
+      thread_id: "t1",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "Here is the plan." },
+        { type: "tool_call", call_id: "c1", tool: "task_plan", args: { steps }, state: "ok" },
+      ],
+      actor: "assistant",
+      ts: "2026-01-01T00:00:01Z",
+      tokens: null,
+      compacted: false,
+    },
+  ];
+}
+
+/** Seed one thread + its messages (the two routes every chat-shaped arm here needs). */
+export async function seedThread(page: Page, messages: unknown[]) {
+  await page.route("**/api/threads", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          id: "t1",
+          title: "t",
+          agent: null,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          archived: false,
+        },
+      ]),
+    }),
+  );
+  await page.route("**/api/threads/t1/messages", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(messages),
+    }),
+  );
+}
+
 /** The vapor skin triple, for the specs that drive vapor's bespoke chrome (its Fleet rows/waveform, its
  *  `.composer`, its dark/aqua/ember palettes). Spread into a `seedUI` blob with the wanted `tab`. */
 export const VAPOR_UI = { theme: "vapor", mode: "dark", accent: "dark", v: 1 } as const;

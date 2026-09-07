@@ -88,7 +88,7 @@ export interface UIState {
   // terms as the switch above: the ART is per-agent (shared data), the MODE is the owner's one viewing
   // preference (per-agent overrides stay a recorded seam, not v1). Default `operator` — an agent with no
   // background paints nothing either way, so the default does nothing until one is given a picture.
-  // HEALED AT READ (`kit/AgentBackdrop.tsx#resolveAgentBackdrop`), never here: the persist loader's
+  // HEALED AT READ (`kit/agentBackdrop.ts#resolveAgentBackdrop`), never here: the persist loader's
   // field-fill merge passes any stored value through untyped, exactly like `sectionPlacement`.
   agentBackdrop: AgentBackdropMode;
   // The INSTALLED home-screen icon's baked-in backdrop (D59 / W5) — one id from the backend's

@@ -40,6 +40,13 @@ vi.mock("../../src/store/toast", () => toast);
 // `useSaveSettings` refreshes the composer's verb sets on success; both are network calls this suite
 // has no business making, and the api client above is already mocked.
 vi.mock("../../src/lib/composer", () => ({ loadProviders: vi.fn(), loadAgents: vi.fn() }));
+// D70 §8.3 — "does the ACTIVE agent bring its own backdrop", which the gallery's data layer now asks so
+// an agent-backdrop destination can stop claiming its own picture is live. Mocked to the NO-ART answer
+// (the state every other arm here is about) for the gachaAgent-suite reason: it is a query PAIR of its
+// own — the roster joined with the `agents` media index — and this suite counts the api calls its
+// gallery makes. `agentArt.bg = …` drives the one arm that is about an agent HAVING art.
+const agentArt = vi.hoisted(() => ({ bg: undefined as { url: string } | undefined }));
+vi.mock("../../src/hooks/useActiveBackdrop", () => ({ useActiveBackdrop: () => agentArt.bg }));
 
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { MediaGallery } from "../../src/components/MediaGallery";
@@ -139,6 +146,8 @@ const filesOf = (block: Record<string, unknown>, role = "characters") =>
   (block.roles as Record<string, { files: unknown[] }>)[role].files;
 
 beforeEach(() => {
+  agentArt.bg = undefined; // no agent picture ⇒ each theme's own ladder answers, as it did pre-S6
+  setUI({ agentBackdrop: "operator" }); // …and the shipped mode, so one arm's `off` cannot leak
   api.getJSON.mockReset();
   api.del.mockReset().mockResolvedValue(undefined);
   toast.pushToast.mockReset();
@@ -297,6 +306,79 @@ describe("the entry cards (§6.1)", () => {
     expect(
       screen.queryByRole("button", { name: /Currently set by Operator character/ }),
     ).toBeNull();
+  });
+
+  // ── the AGENT BACKDROP outranks the operator-art ladder (D70 §8.3, the S6 fix wave) ─────────────
+  // gacha's oracle ladder is the THEME's rung of the agent-backdrop surface, and since S6 two things
+  // outrank it: the ACTIVE agent's own `background` (it wins the resolution while that agent is active)
+  // and the `off` mode (nothing paints at all). The gallery kept marking the ladder's picture ACTIVE
+  // through both — the one lie §2.4 exists to prevent, on the surface D65 made owner-facing truth.
+
+  /** The gacha index, with the ACTIVE AGENT's own backdrop present or absent — the one fact outside
+   *  this namespace that decides whether its operator-art ladder is what paints. */
+  function renderWithAgent(payload: MediaIndex, agentBackground: boolean) {
+    agentArt.bg = agentBackground ? { url: "/api/media/agents/files/hall.webp" } : undefined;
+    return renderGallery(payload);
+  }
+
+  /** The theme's own ladder with BOTH rungs answering: a picture in the `oracle` folder and a character
+   *  pinned into the seat above it — so an arm that finds nothing marked active has really been beaten
+   *  from outside, not just left with an empty library. */
+  const withOracleArt = () =>
+    index({
+      roles: {
+        characters: [file("kira", "characters")],
+        banner: [],
+        reel: [],
+        oracle: [file("eye", "oracle")],
+      },
+      slots: { oracle: { name: "kira.webp" } },
+    });
+
+  it("the ACTIVE AGENT's own background outranks the ladder — no card claims the picture is live", async () => {
+    renderWithAgent(withOracleArt(), true);
+    const pool = await screen.findByRole("button", { name: "Open the Operator backdrop gallery" });
+    expect(pool.textContent).toContain("the active character's own background is used");
+    expect(pool.textContent).not.toContain("1 active");
+    expect(pool.querySelectorAll("img")).toHaveLength(0); // no phantom
+    // …and the SEAT, whose pin resolves, must stop saying the bound character is what stands there —
+    // the agent's picture is painting that block, not the pinned one.
+    const seat = screen.getByRole("button", { name: "Open the Operator character gallery" });
+    expect(seat.textContent).not.toContain("is bound here");
+    expect(seat.textContent).toContain("the active character's own background is used");
+    // The seat pointer is dropped with the claim: neither section holds the winner now.
+    expect(
+      screen.queryByRole("button", { name: /Currently set by Operator character/ }),
+    ).toBeNull();
+  });
+
+  it("`off` suppresses the whole ladder — the cards say so instead of naming a picture", async () => {
+    setUI({ agentBackdrop: "off" });
+    renderWithAgent(withOracleArt(), false);
+    const pool = await screen.findByRole("button", { name: "Open the Operator backdrop gallery" });
+    expect(pool.textContent).toContain("the agent backdrop is off");
+    expect(pool.querySelectorAll("img")).toHaveLength(0);
+    const seat = screen.getByRole("button", { name: "Open the Operator character gallery" });
+    expect(seat.textContent).toContain("the agent backdrop is off");
+    expect(seat.textContent).not.toContain("is bound here");
+  });
+
+  it("…and with the mode on and NO agent picture, the ladder answers exactly as it always did", async () => {
+    // The regression guard for the two arms above: the outranking is real, not a blanket silencing.
+    renderWithAgent(
+      index({
+        roles: {
+          characters: [],
+          banner: [],
+          reel: [file("cut", "reel")],
+          oracle: [file("eye", "oracle")],
+        },
+      }),
+      false,
+    );
+    const pool = await screen.findByRole("button", { name: "Open the Operator backdrop gallery" });
+    expect(pool.textContent).toContain("1 active");
+    expect(pool.querySelectorAll("img").length).toBeGreaterThan(0);
   });
 
   it("a SEAT offers only what its source LADDER can resolve — never a pick that falls through", async () => {

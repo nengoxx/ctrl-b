@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { expect, seedUI, test } from "./fixtures";
+import { expect, planThread, seedThread, seedUI, test } from "./fixtures";
 
 // The SECTION LAYOUT SYSTEM v1 lever (D35 / FRONTIER_PLAN §6-F0) driven end-to-end on the REAL built app. A
 // SMOKE (no axe, no screenshots) that rides the existing e2e projects — it seeds the device-local `ui.layout`
@@ -1227,63 +1227,6 @@ test("gacha · the ARCADE composer skin: a flat cabinet panel here, and the same
 // DOCUMENT-level overlay under gacha exactly as under every other theme; the kit's pinned plan panel keeps
 // the kit's own sticky pin and rung; and the shared `arcade` skin holds up under every composer LAYOUT, not
 // just the stacked one it was measured on.
-
-/** A thread whose last assistant message carries a `task_plan` call — the shape `currentPlanOf` reads, and
- *  therefore the only way to make the pinned panel mount from a seeded page. */
-function planThread(steps: { text: string; status: "pending" | "active" | "done" }[]) {
-  return [
-    {
-      id: "m0",
-      thread_id: "t1",
-      role: "user",
-      parts: [{ type: "text", text: "wake the fleet" }],
-      actor: "user",
-      ts: "2026-01-01T00:00:00Z",
-      tokens: null,
-      compacted: false,
-    },
-    {
-      id: "m1",
-      thread_id: "t1",
-      role: "assistant",
-      parts: [
-        { type: "text", text: "Here is the plan." },
-        { type: "tool_call", call_id: "c1", tool: "task_plan", args: { steps }, state: "ok" },
-      ],
-      actor: "assistant",
-      ts: "2026-01-01T00:00:01Z",
-      tokens: null,
-      compacted: false,
-    },
-  ];
-}
-
-/** Seed one thread + its messages (the two routes every chat-shaped arm here needs). */
-async function seedThread(page: Page, messages: unknown[]) {
-  await page.route("**/api/threads", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify([
-        {
-          id: "t1",
-          title: "t",
-          agent: null,
-          created_at: "2026-01-01T00:00:00Z",
-          updated_at: "2026-01-01T00:00:00Z",
-          archived: false,
-        },
-      ]),
-    }),
-  );
-  await page.route("**/api/threads/t1/messages", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(messages),
-    }),
-  );
-}
 
 const chatLines = (n: number) =>
   Array.from({ length: n }, (_, i) => ({

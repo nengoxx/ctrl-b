@@ -7,6 +7,22 @@
 // walk over the same scroller — one definition, two drivers. What stays here is what is gacha's: the
 // property names its CSS reads, and the GHOSTING hysteresis nothing else has.
 
+import type { AgentBackdropMode } from "../../theme-engine/types";
+
+/** Whether the M7 fade is LIVE: the "Sticky operator art" setting AND the operator mode (D70 §8.3a
+ *  item 5 — `gacha.oracle` governs OPERATOR-mode scroll ONLY, and the three-state backdrop decides
+ *  what paints there at all).
+ *
+ *  ONE derivation with TWO readers that cannot disagree (the S6 fix wave): `GachaAgent` gates the
+ *  driver and the ghost copy on it, and `GachaRoot` stamps `body[data-oracle]` from it — the CSS half
+ *  of the same behavior (sticky + the scroll-fade ramp). Stamping from the setting alone left `off`'s
+ *  imageless plate sticky and fading, which is operator-mode scroll behavior applied to a surface that
+ *  is deliberately a plain in-flow header there. `full` mounts no `.gc-oracle` at all, so the stamp is
+ *  inert either way and reads honestly rather than describing a block that is not on screen. */
+export function oracleFadeActive(sticky: boolean, mode: AgentBackdropMode): boolean {
+  return sticky && mode === "operator";
+}
+
 /** The custom property the driver writes and the whole M7 ramp derives from — opacity, scale and the
  *  sharp↔blurred crossfade are all `calc()`s over this ONE number (§10.2: per-frame work stays
  *  opacity/transform). Written on the oracle element, so it is visible in devtools and readable by a probe. */

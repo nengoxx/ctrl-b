@@ -2,6 +2,7 @@ import { useId } from "react";
 
 import {
   libraryItems,
+  OUTRANKED,
   scopedRows,
   type GalleryScope,
   type SectionView,
@@ -273,6 +274,14 @@ function status(
   active: ReturnType<typeof libraryItems>,
 ): string {
   const n = `${items.length} ${items.length === 1 ? "image" : "images"}`;
+  // OUTRANKED FROM OUTSIDE THE GALLERY (D70 §8.3) — said BEFORE any of the per-kind sentences below,
+  // because every one of them would name a picture: this destination is the agent backdrop, and either
+  // the active agent's own art is painting it or the mode is painting nothing. Neither is a section the
+  // owner can be pointed at, so the card says the reason in words instead.
+  if (view.active.outranked !== undefined) {
+    const suffix = view.section.kind === "seat" ? " to choose from" : "";
+    return `${n}${suffix} · ${OUTRANKED[view.active.outranked]}`;
+  }
   if (view.section.kind === "seat") {
     // The resolver's own row — whatever this seat's own pin resolved to.
     if (active.length > 0) return `${active[0].row.name} is bound here`;

@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
 
+import { useActiveBackdrop } from "./useActiveBackdrop";
 import { useMediaGalleryIndex, type MediaFile, type MediaIndex } from "./useMedia";
 import { useSaveSettings, useSettings, type MediaFileEntry, type SettingsDoc } from "./useSettings";
 import { del } from "../api/client";
@@ -26,6 +27,11 @@ import {
   type RowId,
 } from "../lib/mediaLibrary";
 import { pushToast } from "../store/toast";
+import {
+  backdropOutrank,
+  useAgentBackdropMode,
+  type BackdropOutrank,
+} from "../theme-engine/kit/agentBackdrop";
 import { mediaSections, type MediaNsDef, type MediaSection } from "../theme-engine/mediaRegistry";
 
 // The gallery's DATA LAYER (MEDIA_MANAGER_PLAN §12) — index + settings + registry in, SECTIONS out,
@@ -68,6 +74,15 @@ export interface LibraryItem {
    *  a pool has no such question to ask. */
   duplicate: boolean;
 }
+
+/** Why an agent-backdrop destination is painting none of its own pictures, in the owner's words (D70
+ *  §8.3's two outrankings). It lives beside the wiring that MINTS `ActiveArt.outranked` — the same
+ *  place the seat pointer's label is minted — so the card's status line and the gallery's reading line
+ *  say one sentence rather than two that can drift. */
+export const OUTRANKED: Record<BackdropOutrank, string> = {
+  agent: "the active character's own background is used",
+  off: "the agent backdrop is off",
+};
 
 /** One section, resolved: what it is, what is in it, and what is live. */
 export interface SectionView {
@@ -189,6 +204,14 @@ function exclusive(run: () => Promise<void>): Promise<void> {
 
 export function useMediaLibrary(ns: string, def: MediaNsDef) {
   const { data, isLoading, error } = useMediaGalleryIndex(ns);
+  // The AGENT BACKDROP's own ladder (D70 §8.3), for the sections that declare themselves that surface
+  // (`MediaSection.agentBackdrop`). It is read HERE for the same reason the seat's claim is judged here:
+  // this is the one place holding both the library and the app state, and a §2.4 resolver is pure in its
+  // rows + the wire's `slots` — it cannot see which agent is active or what the owner set the mode to.
+  // Two cheap reads: a store selector, and the SHARED `["agents"]`/`["media","agents"]` queries every
+  // backdrop consumer already observes (one request, not a second).
+  const backdropMode = useAgentBackdropMode();
+  const hasAgentArt = useActiveBackdrop() !== undefined;
   // The CONFIG side of every write. A `files` entry carries per-item state the gallery does not
   // interpret (`focal`, `key`, anything a later slice adds), so a write is a read-modify-write against
   // what is persisted — rebuilding from the index would silently drop all of it. Conf-scoped and
@@ -258,6 +281,19 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
           seat = undefined;
         }
       }
+      // …and the surface that outranks BOTH of them (D70 §8.3, the S6 fix wave): where the section IS
+      // the agent-backdrop destination, the active agent's own picture wins its art and `off` paints
+      // nothing — so neither the theme's ladder NOR a seat that resolves is what stands there. Same
+      // consequence as an honoured seat claim (the ids are blanked, and the seat pointer goes with it,
+      // because the pointer would send the owner to a section that is not painting either), plus the
+      // WORD the card needs: "nothing in use" is the sentence for an owner who switched every entry
+      // off, and it would be the wrong reason here.
+      const outranked =
+        section.agentBackdrop === true ? backdropOutrank(backdropMode, hasAgentArt) : null;
+      if (outranked !== null) {
+        active = { ...active, ids: [], overriddenBySlot: undefined, outranked };
+        seat = undefined;
+      }
       // The per-key resolver, bound HERE for the reason `active` is resolved here: the wire's `slots`
       // are the wiring's to hold, and a component passing an empty map in their place would be a
       // second, quieter answer to the same question.
@@ -274,7 +310,7 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
         pinned: section.pin === undefined ? undefined : pinView(data.slots?.[section.pin]),
       };
     });
-  }, [data, def, ns]);
+  }, [data, def, ns, backdropMode, hasAgentArt]);
 
   const drain = useCallback(async () => {
     if (draining.current) return;

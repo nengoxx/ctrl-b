@@ -1,5 +1,5 @@
 import { expect, test } from "./fixtures";
-import { seedUI } from "./fixtures";
+import { planThread, seedThread, seedUI } from "./fixtures";
 
 // THE AGENT BACKDROP in the REAL built app (D70 §8.3/§8.3a) — the half the unit suite structurally cannot
 // reach. `tests/theme-engine/agentBackdrop.test.tsx` proves WHAT MOUNTS; everything asserted here needs a
@@ -48,7 +48,12 @@ const AGENT_ROSTER = {
 
 type Mode = "operator" | "full" | "off";
 
-async function boot(page: import("@playwright/test").Page, theme: string, mode: Mode) {
+async function boot(
+  page: import("@playwright/test").Page,
+  theme: string,
+  mode: Mode,
+  ui: Record<string, unknown> = {},
+) {
   await seedUI(page, {
     theme,
     mode: "dark",
@@ -56,6 +61,7 @@ async function boot(page: import("@playwright/test").Page, theme: string, mode: 
     tab: "agent", // boot straight into the agent section — the backdrop's only home
     agentBackdrop: mode,
     v: 1,
+    ...ui,
   });
   await page.route("**/api/media/agents", (route) =>
     route.fulfill({
@@ -151,6 +157,45 @@ test.describe("the kit themes take the shared layer", () => {
     await expect
       .poll(async () => await opacity(), { message: "the walk never reached the floor" })
       .toBeLessThan(0.4);
+  });
+
+  test("full — a PINNED PLAN above the pin never drags the transcript under the panel", async ({
+    page,
+  }) => {
+    // The S6 review's second finding, and the coverage hole it walked through: the pin is ZERO-HEIGHT,
+    // so the `--plan-head-h` pull that lets the art reach up under the panel advanced every FOLLOWING
+    // sibling by the same amount — `.sec` and `.chat-log` started at the panel's own top, under it.
+    // (gacha's oracle takes the identical pull and is fine: its pulled block is 300px tall, so its
+    // siblings are pushed back by its own height. Nothing about that precedent transfers to a pin.)
+    await seedThread(page, planThread([{ text: "wake pegasus", status: "active" }]));
+    await boot(page, "minimal", "full", {
+      themeSettings: { minimal: { planPlacement: "pinned" } },
+    });
+    const panel = page.locator("#tab-agent > .plan-pin-panel");
+    await expect(panel).toBeVisible();
+    await expect(page.locator("#tab-agent > .kit-backdrop-pin")).toHaveCount(1);
+    // Read the LAYOUT positions (`offsetTop`), not the painted ones: a first-in-flow sticky panel is
+    // shifted down to its own `top` at scroll-top, so its painted box is not the flow box the content
+    // below has to clear. The panel IS that first flow child (the tab's own rule), so its flow box runs
+    // from 0 to its height — and the pin between it and the transcript takes no flow space at all.
+    const off = (sel: string) =>
+      page.locator(sel).evaluate((el: HTMLElement) => ({
+        top: el.offsetTop,
+        height: el.offsetHeight,
+      }));
+    const panelH = (await off("#tab-agent > .plan-pin-panel")).height;
+    expect((await off("#tab-agent > .kit-backdrop-pin")).height).toBe(0);
+    for (const sel of ["#tab-agent > .sec", "#tab-agent > .chat-log"]) {
+      const below = await off(sel);
+      expect(below.top, `${sel} starts under the plan panel's flow box`).toBeGreaterThanOrEqual(
+        panelH,
+      );
+    }
+    // …and the pull it compensates is still doing its job: the art reaches UP under the panel rather
+    // than starting below it (the whole reason the pin is moved at all).
+    const art = (await page.locator(".kit-backdrop-full").boundingBox())!;
+    const painted = (await panel.boundingBox())!;
+    expect(art.y).toBeLessThanOrEqual(painted.y);
   });
 
   test("off — no layer at all, with the picture bound and servable", async ({ page }) => {

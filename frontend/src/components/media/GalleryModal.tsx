@@ -5,6 +5,7 @@ import { LibraryGrid } from "./LibraryGrid";
 import { XIcon } from "../icons";
 import {
   libraryItems,
+  OUTRANKED,
   scopedRows,
   type GalleryScope,
   type LibraryItem,
@@ -453,6 +454,10 @@ function reading(view: SectionView, scope: GalleryScope, active: ActiveArt): str
   const answers =
     scope.key !== undefined ? view.activeForKey !== undefined : section.active !== undefined;
   if (!answers) return undefined;
+  // …and when the destination itself is outranked from OUTSIDE this gallery (D70 §8.3 — the agent's
+  // own backdrop, or the mode being off), the how-it-is-consumed sentence would describe a set nothing
+  // is currently reading. The card's own word, so the two surfaces say one thing.
+  if (active.outranked !== undefined) return OUTRANKED[active.outranked];
   if (active.mode === "deal") return "dealt to machines in this order";
   if (active.mode === "all") return "every in-use image is shown, in this order";
   return "the first in-use image is the one shown";

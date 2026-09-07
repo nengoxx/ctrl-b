@@ -71,6 +71,10 @@
 
 import { centredFocal, type FocalArt, type FocalPoint } from "./focalPosition";
 import { orderedUsable, revUrl, type MediaNamed } from "./media";
+// TYPE-ONLY, and the one vocabulary this module borrows: `ActiveArt.outranked` reports the agent
+// backdrop's own ladder (D70 §8.3), whose words are declared once beside the mode they belong to. No
+// runtime edge is added — the purity above is untouched.
+import type { BackdropOutrank } from "../theme-engine/kit/agentBackdrop";
 
 /** One collated LIBRARY row, structurally — the wire's `MediaFile` and anything derived from one.
  *  A local interface rather than the wire type for the reason `MediaUsable` is one: this module must
@@ -329,6 +333,13 @@ export interface ActiveArt {
   ids: readonly RowId[];
   mode: ActiveMode;
   overriddenBySlot?: string;
+  /** The winner lives OUTSIDE this gallery entirely, so there is no section to point at — today the two
+   *  ways the AGENT BACKDROP beats a theme's operator-art ladder (D70 §8.3: the active agent's own
+   *  picture, or the mode being `off`). MINTED BY THE WIRING, never by a resolver: those are facts about
+   *  the app's state, and a resolver is pure in its role's rows and the wire's `slots` (§2.4). Same
+   *  consequence as `overriddenBySlot`'s honoured claim — the ids are blanked — plus the WORD the card
+   *  needs, because "nothing in use" would name the wrong reason. */
+  outranked?: BackdropOutrank;
 }
 
 /** A section's `active` resolver: PURE in the index rows + the wire's `slots`, never in config
