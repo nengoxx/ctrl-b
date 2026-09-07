@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 
 import { Switch } from "./Switch";
 import { TickGrid } from "./TickGrid";
+import { ApiError } from "../api/client";
 import {
   fetchLorebook,
   newLorebookEntry,
@@ -110,8 +110,10 @@ function BookReportCard({
       </div>
       {report.warnings.length > 0 && (
         <ul className="agrep-warn">
-          {report.warnings.map((w) => (
-            <li key={w}>{w}</li>
+          {/* The INDEX carries the key: two entries can warn identically ("… placed at the tail"), and
+              a duplicated string as a key drops every copy after the first. */}
+          {report.warnings.map((w, i) => (
+            <li key={`${i}:${w}`}>{w}</li>
           ))}
         </ul>
       )}
@@ -366,7 +368,6 @@ function LorebookRow({
   open: boolean;
   onToggle: () => void;
 }) {
-  const qc = useQueryClient();
   const { data, isLoading } = useLorebook(open ? info.slug : null);
   const save = useSaveLorebook();
   const remove = useDeleteLorebook();
@@ -381,8 +382,15 @@ function LorebookRow({
     setDraft(data.book);
   }, [data]);
 
-  const dirty = !!(data && draft && JSON.stringify(draft) !== JSON.stringify(data.book));
-  useRegisterDirty(`lorebook:${info.slug}`, open && dirty);
+  // Dirty is the draft against the SEEDED SNAPSHOT, not against `data` — and it is registered with no
+  // `open` gate. Collapsing a row does not unmount it or discard its draft (the shelf keeps every row
+  // mounted), so an unsaved edit survives the collapse and the unload/nav warning has to survive with
+  // it. `data` cannot be the baseline for that: a closed row queries `useLorebook(null)`, whose `data`
+  // is `undefined`, which would make the compare vacuously clean exactly when it matters. The snapshot
+  // is pinned wherever the draft is (the seed effect above, the toggle's echo below), so the two
+  // always describe the same moment.
+  const dirty = !!(draft && seeded.current !== null && JSON.stringify(draft) !== seeded.current);
+  useRegisterDirty(`lorebook:${info.slug}`, dirty);
 
   const label = info.name.trim() || info.slug;
 
@@ -391,18 +399,20 @@ function LorebookRow({
    *  draft, which would commit unrelated unsaved edits — and then patches the draft's own `enabled` so
    *  a later Save does not revert the toggle. */
   const flipEnabled = async () => {
-    // `fetchQuery` over the SAME key `useLorebook` uses: a closed row has never fetched its book, and
-    // flipping one field of a full-replace PUT needs all of it. The READ is the one step here with no
-    // error path of its own — the mutation toasts its own failures — and an unhandled rejection out of
+    // ONE write at a time. Both the toggle and the Save button ride this row's single `save` mutation,
+    // so an overlapping pair is two full-replace PUTs whose order the network decides — the later,
+    // staler body winning. The row's Save is already disabled while pending; this is the same guard on
+    // the other door (the Switch below is disabled too, for the eye).
+    if (save.isPending) return;
+    // ALWAYS a fresh read, even when the row is open: the editor's copy was fetched when it opened and
+    // this PUT is a destructive full replace, so a minutes-old body would silently revert whatever
+    // changed on disk since. The read is deliberately NOT published into the query cache — reseeding
+    // an open row mid-toggle would throw away an unsaved draft. It is also the one step here with no
+    // error path of its own (the mutation toasts its own failures), and an unhandled rejection out of
     // a click handler is a page error, so it says what happened and stops.
     let file: LorebookFile;
     try {
-      file =
-        data ??
-        (await qc.fetchQuery({
-          queryKey: ["lorebook", info.slug],
-          queryFn: () => fetchLorebook(info.slug),
-        }));
+      file = await fetchLorebook(info.slug);
     } catch (e) {
       return pushToast((e as Error).message || "Could not read the lorebook", "err");
     }
@@ -449,6 +459,7 @@ function LorebookRow({
             <Switch
               on={info.enabled}
               label={`${label} enabled`}
+              disabled={save.isPending}
               onToggle={() => void flipEnabled()}
             />
           </span>
@@ -529,11 +540,25 @@ export function LorebooksEditor() {
   const [newName, setNewName] = useState("");
   const [report, setReport] = useState<{ slug: string; report: LorebookImportReport } | null>(null);
 
-  const commitNew = () => {
+  const commitNew = async () => {
     const slug = slugify(newName);
     if (!slug) return pushToast("name: needs a letter or a digit", "err");
     // `PUT /lorebooks/{slug}` is create-or-OVERWRITE — an unrefused collision would destroy a book.
+    // The shelf answers first because it is free, but it is a 30s-stale cache: a book created since
+    // (another tab, an import) is not in it, and trusting it alone is how the overwrite happens. So the
+    // FILE gets the last word. A 404 is the ONLY answer that means "the slug is free" — a read that
+    // fails for any other reason proves nothing and must not be read as permission to write.
+    // The remaining window is the milliseconds between this probe and the PUT: an accepted residual
+    // (one owner, one tailnet), and closing it would take a create-only verb the API does not have.
     if (books.some((b) => b.slug === slug)) return pushToast(`a lorebook '${slug}' exists`, "err");
+    try {
+      await fetchLorebook(slug);
+      return pushToast(`a lorebook '${slug}' exists`, "err");
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 404) {
+        return pushToast((e as Error).message || "Could not read the shelf", "err");
+      }
+    }
     save.mutate(
       {
         slug,
@@ -614,7 +639,7 @@ export function LorebooksEditor() {
                     type="button"
                     className="save"
                     disabled={save.isPending}
-                    onClick={commitNew}
+                    onClick={() => void commitNew()}
                   >
                     {save.isPending ? "creating…" : "create"}
                   </button>
@@ -627,10 +652,14 @@ export function LorebooksEditor() {
         {/* The gallery's import affordance, second instance: a HIDDEN input + a styled button, with
             `input.value` reset in the handler so picking the SAME file twice still fires `change`. */}
         <div className="lb-import">
+          {/* NO `accept` filter, deliberately. On the owner's phone a chooser given one GRAYS OUT
+              anything it cannot type-match — a book saved by a share sheet with no extension, a
+              `text/plain` .json out of a download folder — and an unpickable valid file is a worse
+              failure than a rejected invalid one. The backend is the authoritative validator either
+              way, and its 422 already reaches the owner through the toast. */}
           <input
             ref={fileRef}
             type="file"
-            accept=".json,application/json"
             hidden
             onChange={(e) => {
               const file = e.target.files?.[0];

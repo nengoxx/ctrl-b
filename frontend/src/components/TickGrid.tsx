@@ -50,6 +50,11 @@ export function TickGrid({
             key={n}
             type="button"
             disabled={locked}
+            // A chip is a TWO-STATE toggle and `on` is only a class — invisible to a screen reader,
+            // which would otherwise announce every chip identically whether it is granted or not.
+            // `aria-pressed` (not `aria-checked`): this is a button that stays pressed, not a checkbox.
+            // It rides on the locked chips too, where it reports the mode's own forced value.
+            aria-pressed={on}
             title={title}
             className={
               "tick" + (on ? " on" : "") + (locked ? " locked" : "") + (gone ? " gone" : "")

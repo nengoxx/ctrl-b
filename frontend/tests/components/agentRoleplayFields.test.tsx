@@ -200,9 +200,14 @@ describe("AgentRow · the roleplay fields on the form", () => {
     expect(screen.getByText("0 attached")).toBeTruthy();
   });
 
-  it("ticking a book writes its SLUG into the draft", () => {
+  it("ticking a book writes its SLUG into the draft — and the chip SAYS it is ticked", () => {
     renderRow({}, false, [{ slug: "hollow-sea", name: "Hollow Sea", enabled: true, entries: 3 }]);
-    fireEvent.click(screen.getByRole("button", { name: "Hollow Sea" }));
+    const chip = screen.getByRole("button", { name: "Hollow Sea" });
+    // A tick chip is a two-state toggle: `on` is a class a screen reader cannot see, `aria-pressed`
+    // is the fact. All four TickGrid surfaces (tools · skills · roleplay tools · books) get it.
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "save" }));
     const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
     expect(sent.agent.lorebooks).toEqual(["hollow-sea"]);

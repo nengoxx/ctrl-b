@@ -143,9 +143,10 @@ export function useLorebooks() {
   });
 }
 
-/** The book fetch itself. Exported because the manager's row SWITCH needs a WHOLE book to flip one
- *  field on a book whose editor may never have been opened — it runs this through `qc.fetchQuery` on
- *  the same key, so there is one spelling of the request and one cache entry. */
+/** The book fetch itself, as ONE spelling of the request. Exported because two paths in the manager
+ *  read a book OUTSIDE the query cache, deliberately: the row SWITCH needs a whole fresh book to flip
+ *  one field of a full-replace PUT (publishing that read would reseed — and wipe — an open row's
+ *  draft), and the add row probes a slug the 30s-stale shelf may not know is taken. */
 export function fetchLorebook(slug: string): Promise<LorebookFile> {
   return getJSON<LorebookFile>(`/api/lorebooks/${encodeURIComponent(slug)}`);
 }

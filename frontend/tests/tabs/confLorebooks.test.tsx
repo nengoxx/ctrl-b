@@ -1,6 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
-import type { ReactElement } from "react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // D70 §6.6 — the LOREBOOK MANAGER, driven over mocked hook boundaries (the agentsGallery posture).
@@ -14,16 +12,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The other half is §6.6's own requirement: a book is a WALL of text, so the default view is one
 // collapsed row per entry and only the open one mounts a form.
 
+/** The one hoisted mock the component CALLS (the others are handed over as values). */
+type FetchBook = (slug: string) => Promise<unknown>;
+
 const h = vi.hoisted(
   (): {
     books: { slug: string; name: string; enabled: boolean; entries: number }[];
     book: { slug: string; book: Record<string, unknown> } | null;
+    fetchBook: ReturnType<typeof vi.fn<FetchBook>>;
     save: ReturnType<typeof vi.fn>;
     importMutate: ReturnType<typeof vi.fn>;
     toast: ReturnType<typeof vi.fn>;
   } => ({
     books: [],
     book: null,
+    fetchBook: vi.fn<FetchBook>(),
     save: vi.fn(),
     importMutate: vi.fn(),
     toast: vi.fn(),
@@ -36,8 +39,9 @@ vi.mock("../../src/hooks/useRoleplay", async (importActual) => {
     ...actual,
     useLorebooks: () => ({ data: h.books }),
     useLorebook: (slug: string | null) => ({ data: slug ? h.book : undefined, isLoading: false }),
-    // what the row SWITCH reaches for on a book whose editor was never opened
-    fetchLorebook: () => Promise.resolve(h.book),
+    // The direct read: the row SWITCH flips a WHOLE fresh book, and the add row probes the FILE for a
+    // collision the 30s-stale shelf list may not know about yet.
+    fetchLorebook: (slug: string) => h.fetchBook(slug),
     useSaveLorebook: () => ({ mutate: h.save, isPending: false }),
     useDeleteLorebook: () => ({ mutate: vi.fn(), isPending: false }),
     useImportLorebook: () => ({ mutate: h.importMutate, isPending: false }),
@@ -45,8 +49,10 @@ vi.mock("../../src/hooks/useRoleplay", async (importActual) => {
 });
 vi.mock("../../src/store/toast", () => ({ pushToast: h.toast }));
 
+import { ApiError } from "../../src/api/client";
 import { LorebooksEditor } from "../../src/components/LorebooksEditor";
 import { newLorebookEntry, type LorebookEntry } from "../../src/hooks/useRoleplay";
+import { isAnyDirty } from "../../src/store/dirty";
 
 /** One entry as the file API hands it back — the v1 fields plus the stash an ST import leaves behind. */
 const entry = (over: Record<string, unknown> = {}): LorebookEntry => ({
@@ -60,16 +66,20 @@ const chev = (name: RegExp) => screen.getByRole("button", { name });
 const saved = () =>
   (h.save.mock.calls[0][0] as { slug: string; book: Record<string, unknown> }).book;
 
-/** The open row calls `useQueryClient` for the row switch's own fetch — a real (unused) client is enough. */
-const render = (ui: ReactElement) =>
-  rtlRender(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
-
 beforeEach(() => {
   h.books = [];
   h.book = null;
   h.save.mockReset();
   h.importMutate.mockReset();
   h.toast.mockReset();
+  // The FILE API's own answer, faithfully: the book exists iff `h.book` is the one being asked for,
+  // and a miss is `getJSON`'s real `ApiError` 404 — the discriminator the add row branches on.
+  h.fetchBook.mockReset();
+  h.fetchBook.mockImplementation((slug: string) =>
+    h.book && h.book.slug === slug
+      ? Promise.resolve(h.book)
+      : Promise.reject(new ApiError(`/api/lorebooks/${slug} → 404 Not Found`, 404)),
+  );
 });
 afterEach(cleanup);
 
@@ -123,6 +133,79 @@ describe("LorebooksEditor · the book's master switch", () => {
     // the switch is a MODE, not a draft: it saves immediately, and it PUTs the whole book
     await waitFor(() => expect(h.save).toHaveBeenCalled());
     expect(saved()).toEqual({ ...h.book.book, enabled: false });
+  });
+
+  it("flips an OPEN book off a FRESH read, never the copy the editor loaded", async () => {
+    h.books = [{ slug: "traits", name: "Traits", enabled: true, entries: 1 }];
+    h.book = {
+      slug: "traits",
+      book: { name: "Traits", description: "keep me", enabled: true, entries: [] },
+    };
+    render(<LorebooksEditor />);
+    fireEvent.click(chev(/expand Traits/));
+    h.fetchBook.mockClear();
+    fireEvent.click(screen.getByRole("switch", { name: "Traits enabled" }));
+
+    // The open row's `data` is minutes old and the PUT is a destructive full replace, so the toggle
+    // re-reads the file even here — one code path, always fresh.
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+    expect(h.fetchBook).toHaveBeenCalledWith("traits");
+  });
+});
+
+describe("LorebooksEditor · the unsaved-changes registry", () => {
+  const openEditedBook = () => {
+    h.books = [{ slug: "hollow-sea", name: "Hollow Sea", enabled: true, entries: 1 }];
+    h.book = {
+      slug: "hollow-sea",
+      book: {
+        name: "Hollow Sea",
+        description: "",
+        enabled: true,
+        entries: [entry({ keys: ["ghostship"], content: "old" })],
+      },
+    };
+    render(<LorebooksEditor />);
+    fireEvent.click(chev(/expand Hollow Sea/));
+    fireEvent.click(chev(/expand entry 1/));
+    fireEvent.change(screen.getByLabelText("Entry 1 content"), { target: { value: "new" } });
+  };
+
+  it("a COLLAPSED row with an unsaved draft still registers dirty — the row never unmounted", () => {
+    expect(isAnyDirty()).toBe(false);
+    openEditedBook();
+    expect(isAnyDirty()).toBe(true);
+
+    fireEvent.click(chev(/collapse Hollow Sea/));
+    expect(screen.queryByLabelText("Lorebook name")).toBeNull(); // the editor really is closed…
+    expect(isAnyDirty()).toBe(true); // …and the draft it still holds is still unsaved
+  });
+
+  it("the master switch on an unedited OPEN row leaves nothing dirty", async () => {
+    h.books = [{ slug: "traits", name: "Traits", enabled: true, entries: 1 }];
+    h.book = {
+      slug: "traits",
+      book: {
+        name: "Traits",
+        description: "",
+        enabled: true,
+        entries: [entry({ keys: ["brave"] })],
+      },
+    };
+    // the PUT's echo, as the server sends it back
+    h.save.mockImplementation(
+      (
+        arg: { slug: string; book: Record<string, unknown> },
+        opts?: { onSuccess?: (r: unknown) => void },
+      ) => opts?.onSuccess?.({ slug: arg.slug, book: arg.book }),
+    );
+    render(<LorebooksEditor />);
+    fireEvent.click(chev(/expand Traits/));
+    fireEvent.click(screen.getByRole("switch", { name: "Traits enabled" }));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+    // The toggle re-pins the seed at the echo and patches only `enabled` — a mode is not an edit.
+    expect(isAnyDirty()).toBe(false);
   });
 });
 
@@ -248,25 +331,57 @@ describe("LorebooksEditor · the add row", () => {
     fireEvent.click(screen.getByRole("button", { name: "create" }));
   };
 
-  it("mints the slug off the NAME, the backend's own rule", () => {
+  it("mints the slug off the NAME, the backend's own rule", async () => {
     add("  Hollow Sea!! (v2)  ");
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+    expect(h.fetchBook).toHaveBeenCalledWith("hollow-sea-v2"); // the probe answered 404 → create
     expect(h.save.mock.calls[0][0]).toMatchObject({
       slug: "hollow-sea-v2",
       book: { name: "Hollow Sea!! (v2)", description: "", enabled: true, entries: [] },
     });
   });
 
-  it("REFUSES a name that slugifies to nothing", () => {
+  it("REFUSES a name that slugifies to nothing", async () => {
     add("???");
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith("name: needs a letter or a digit", "err"),
+    );
     expect(h.save).not.toHaveBeenCalled();
-    expect(h.toast).toHaveBeenCalledWith("name: needs a letter or a digit", "err");
+    expect(h.fetchBook).not.toHaveBeenCalled(); // refused before any request
   });
 
-  it("REFUSES a slug already on the shelf — the PUT would silently overwrite that book", () => {
+  it("REFUSES a slug already on the shelf — the PUT would silently overwrite that book", async () => {
     h.books = [{ slug: "hollow-sea", name: "Hollow Sea", enabled: true, entries: 3 }];
     add("Hollow Sea");
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith("a lorebook 'hollow-sea' exists", "err"),
+    );
     expect(h.save).not.toHaveBeenCalled();
-    expect(h.toast).toHaveBeenCalledWith("a lorebook 'hollow-sea' exists", "err");
+    expect(h.fetchBook).not.toHaveBeenCalled(); // the local list already knew
+  });
+
+  it("REFUSES a book the STALE shelf does not list — the file probe finds it", async () => {
+    // The shelf is a 30s cache; the book was created elsewhere (a second tab, an import) since.
+    h.books = [];
+    h.book = {
+      slug: "hollow-sea",
+      book: { name: "Hollow Sea", description: "", enabled: true, entries: [] },
+    };
+    add("Hollow Sea");
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith("a lorebook 'hollow-sea' exists", "err"),
+    );
+    expect(h.fetchBook).toHaveBeenCalledWith("hollow-sea");
+    expect(h.save).not.toHaveBeenCalled(); // the PUT would have OVERWRITTEN it
+  });
+
+  it("a probe that fails for any OTHER reason stops the create rather than risking the overwrite", async () => {
+    h.fetchBook.mockRejectedValue(
+      new ApiError("/api/lorebooks/x → 500 Internal Server Error", 500),
+    );
+    add("Hollow Sea");
+    await waitFor(() => expect(h.toast).toHaveBeenCalled());
+    expect(h.save).not.toHaveBeenCalled();
   });
 });
 
