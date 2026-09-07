@@ -1832,3 +1832,62 @@ instances cannot match), pin non-vacuous, consistency sweep "no additional findi
 
 **S5 IS CLOSED — the owner's word landed 2026-09-08 ("yes lets continue"): the fixed picker
 passed the phone glance, no further findings. S6 (the three-state backdrop, §10-S6) opens.**
+
+### §13-S6 — the three-state backdrop: BUILT + COUNCIL-CLOSED (2026-09-08, one session — RESOLVED — SHIP)
+
+**The road:** two seam scouts (the gacha oracle surface · the kit/settings machinery) →
+main-seat design → the owner's clarify round in conversation (plain-language restatement,
+confirmed) → **§8.3a written + committed `dd60681`** (the owner-confirmed narrowing: the kit
+operator strip · the one-image active-agent rule · the synced setting) → pinned Opus build
+**`06d3f0e`** → main-seat audit (diff line-by-line, all 8 declared deviations ACCEPTED, gate
+independently re-run 6/6) → **blind Emma round: SHIP WITH FIXES — 0H · 3M · 0L, open sweep
+"none"**, all seeded areas explicitly cleared (she re-ran 149 targeted FE tests + the BE
+appearance tests herself) → all three ruled FIX → fix wave **`29c5be4`** (Opus,
+failing-before proofs on every fix) → her confirm: **all 3 RESOLVED** (F2 re-probed in her
+own Chromium) + ONE new LOW → main-seat rider **`90b7472`** → **micro-confirm: RESOLVED,
+sweep "none" — FINAL VERDICT: PASS.**
+
+**The build (headlines):** `agentBackdrop` operator/full/off — a SYNCED appearance field
+(`AppearanceCfg.agent_backdrop` unseeded-until-written · the full `useAppearance` chain · ONE
+allowlist + heal-at-read `resolveAgentBackdrop`, every consumer reads healed) · the sticky
+session pin made REACTIVE inside ChatState (signatures kept, `useSessionAgent()` added; the
+valid-in-roster fold extracted as `validSessionAgent`, shared with ToolsMenuSheet) ·
+`useActiveBackdrop()` = the one active-agent-art answer · the kit `AgentBackdrop` layer
+(presentational {mode, art}; operator = in-flow token-height strip, no driver; full =
+zero-height sticky pin + sharp full-bleed layer + separate veil + the 1→floor walk over ONE
+custom property, `:has()`-gated z-lift, reduced-motion parks at the floor with the driver
+off) · the pure ramp math LIFTED to `theme-engine/kit/scrollProgress.ts` (gacha re-imports,
+assertions unchanged) · `--kit-pane-h` published by DefaultRoot (the build's own find: an
+`--app-h`-sized layer added 104px of phantom scrollable overflow — e2e-pinned at exactly 0) ·
+gacha wired at the body only (operator: agent art WINS the oracle ladder; full: the shared
+arrangement instead of the oracle, plate absent, owner-accepted; off: the shipped
+art-resolved-null state).
+
+**The fix wave (Emma's three, all red-proven):** ① `off` no longer runs the fade machinery —
+`oracleFadeActive(sticky, mode)` is ONE derivation read by GachaAgent's driver/ghost gate AND
+GachaRoot's `body[data-oracle]` stamp (her catch: the boolean alone left the CSS half sticky);
+② the full pin's pinned-plan pull is COMPENSATED (`margin-bottom` = the same token) — a
+zero-height pin's negative margin advanced every following sibling under the panel (gacha's
+300px oracle precedent didn't transfer); ③ the gallery stops lying: a declared
+`agentBackdrop: true` on gacha's oracle role + seat, judged by the WIRING (`useMediaLibrary`
+— resolvers stay pure, their arity pin untouched), minting `ActiveArt.outranked:
+"off"|"agent"` worded once in `OUTRANKED`; and the ladder itself is ONE kit statement
+`backdropOutrank(mode, hasAgentArt)` read by the gallery's report AND GachaAgent's paint, so
+the two cannot drift. **The rider:** the outranked word now survives the seat MODAL's early
+return (her confirm-round LOW; hoisted first in `reading()`, red-proven).
+
+**Gate at tip `90b7472`: 6/6 — BE 2,373 (the field rides existing suites) · FE 3,061/178 ·
+e2e agent-backdrop 14/14 both projects** (counts in QUALITY.md). ⚠ Ops, recorded: a full-gate
+run CONCURRENT with an Emma round that live-probes in Chromium fails ~8 BE media-write tests —
+her probe rebuilds `frontend/dist` mid-run (the known tree-contention class; both re-runs
+clean in isolation). Background gate runs were also reaped twice this session — run the gate
+FOREGROUND.
+
+**Residuals (recorded, none owed):** the full-veil readability on a LIGHT theme and the 240px
+strip height are unverified by eye — S7 device-round material (both are tokens) · frontier
+integration stays the post-phase follow-up (ruling 18) · per-agent mode overrides stay the
+recorded seam · the `layout.spec.ts` first-parallel-run flake is the standing Phase 19 H-E2E
+contention class.
+
+**S6 owes nothing forward. The owner's phone round on the three states (dev :5173) is the
+natural close; then S7 — the owner device round — IS the phase gate (§10-S7).**

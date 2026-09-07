@@ -1572,9 +1572,11 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       riders `b365d45` (the S4-surface twins) · `0ce4dd4` (F3 proper + 2 sweep MEDs + the
       never-opened seeding trap) · `059fd29` (live-draft echo classification); Emma final
       verdict RESOLVED — SHIP; full record = plan §13-S5.
-- [ ] S6 — The three-state backdrop (FE/theme): appearance setting + gacha oracle integration +
+- [x] S6 — The three-state backdrop (FE/theme): appearance setting + gacha oracle integration +
       the kit backdrop layer + `off`-state surface behavior (default `operator`; frontier
-      unchanged v1).
+      unchanged v1). **COUNCIL-CLOSED 2026-09-08**: §8.3a `dd60681` → build `06d3f0e` → Emma
+      SHIP WITH FIXES 3M → wave `29c5be4` → rider `90b7472` → micro-confirm PASS; full record
+      = plan §13-S6; the owner's phone round on the three states closes it.
 - [ ] S7 — Owner device round (the phase gate): import a real card · talk to it on the phone ·
       tools-in-character on both duties settings · all three backdrop states (blur/dim
       legibility) · a field-authored lorebook triggering live · showcase + picker feel ·

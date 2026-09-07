@@ -12,7 +12,46 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-08, EIGHTH session — THE OWNER'S WORD CLOSED S4, then **S5 (the lorebook FE) ran the WHOLE standing cadence in one session and is council-CLOSED: RESOLVED — SHIP**; supersedes below where it speaks)
+## Current state (2026-09-08, NINTH session — THE OWNER'S WORD CLOSED S5, then **S6 (the three-state backdrop) ran the WHOLE cadence in one session and is council-CLOSED: micro-confirm PASS**; supersedes below where it speaks)
+
+- **The session opened on the owner's word ("yes lets continue") — S5 CLOSED (`0ee3474`) — and
+  S6 ran end to end:** two seam scouts → main-seat design → **the owner's clarify round in
+  conversation** (plain-language restatement of the three states + the one-image active-agent
+  rule; confirmed) → **§8.3a committed `dd60681`** (the owner-confirmed narrowing: the kit
+  operator STRIP as the kit themes' operator-image place · active agent = the sticky pin else
+  the resolved default, never per-bubble/one-shot · the SYNCED `agentBackdrop` setting) →
+  pinned Opus build **`06d3f0e`** (the setting chain BE+FE · the reactive session pin ·
+  `useActiveBackdrop` · the kit `AgentBackdrop` layer (strip / full arrangement with the
+  lifted `scrollProgress` math + the `--kit-pane-h` phantom-overflow fix) · gacha wired at the
+  body · frontier untouched) → main-seat audit (all 8 deviations ACCEPTED, gate independently
+  re-run 6/6) → **blind Emma round SHIP WITH FIXES 0H·3M·0L sweep "none"**, all three ruled
+  FIX → wave **`29c5be4`** (red-proven: `oracleFadeActive` gates driver AND `data-oracle`
+  stamp · the pin's compensating margin · the gallery's `outranked` honesty via
+  `backdropOutrank`, ONE statement for paint + report) → her confirm **all 3 RESOLVED** + 1
+  LOW → main-seat rider **`90b7472`** (the seat modal's reading line) → **micro-confirm:
+  RESOLVED, sweep "none" — PASS.** Full record = **plan §13-S6**.
+- **Gate at tip `90b7472`: 6/6 — BE 2,373 · FE 3,061/178 · e2e agent-backdrop 14/14 both
+  projects** (counts in QUALITY.md). **The S6 BE field is live on dev** (the builder restarted
+  :5434); both dev units RUNNING (D69 presence observation continues — do NOT stop the units).
+  ⚠ Ops recorded in §13-S6: never run the full gate CONCURRENT with an Emma round that probes
+  in Chromium (her probe rebuilds `frontend/dist` → ~8 BE media-write tests fail, pure
+  contention); background gate runs got reaped twice — run the gate FOREGROUND.
+- **▶▶ NEXT: the owner's phone round on the backdrop (dev :5173, Conf → Appearance → "Agent
+  backdrop"):** operator (Lynette's background in the strip / gacha's oracle) · full (behind
+  the chat, dims on scroll) · off — on gacha AND a kit theme; the light-theme veil + the 240px
+  strip height are the two unverified-by-eye items (tokens, feel-round material). **THEIR WORD
+  closes S6 → S7, the owner DEVICE round, IS the phase gate (§10-S7)** — import a real card ·
+  talk on the phone · tools-in-character both duties settings · all three backdrop states ·
+  a lorebook triggering live · showcase/picker feel · read-along on a character reply.
+- **Git: 83 commits unpushed over origin `04769d9`** (the 77 + `0ee3474` S5-close + `dd60681`
+  §8.3a + `06d3f0e` build + `29c5be4` wave + `90b7472` rider + this docs commit); working
+  tree clean; the PUSH ruling stays the owner's. **Prod untouched:
+  v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline (Dependabot D1 → push → release E, config
+  migration 2→3, rollback = config backup FIRST then v1.7.7) is unchanged and still owed;
+  sequencing is the owner's. **NEXT-NEXT (owner): LIVE VOICE/CALL MODE — R51, buy only the
+  delta.**
+
+## Prior state (2026-09-08, EIGHTH session — THE OWNER'S WORD CLOSED S4, then **S5 (the lorebook FE) ran the WHOLE standing cadence in one session and is council-CLOSED: RESOLVED — SHIP**; superseded above where it speaks)
 
 - **The session opened on the owner's word** ("you fixed something and it looks good now, we
   can continue") — **S4 is CLOSED** (recorded in plan §13-S4 + TODO) — **and S5 ran end to
