@@ -12,7 +12,49 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-07, FIFTH session — S4 BUILT + MAIN-SEAT AUDITED; ⚠ the blind Emma round is OWED and opens the next session; supersedes below where it speaks)
+## Current state (2026-09-07, SIXTH session — the §8.4a PLACEMENT RE-RULING designed+built+reviewed AND the S4 code round + fix wave + confirm ALL CLOSED; ⚠ S4 awaits ONLY the owner's word; supersedes below where it speaks)
+
+- **The session opened on the owner's correction: the S4 gallery's "own section" meant INSIDE
+  settings, hidden by default like the tools tab — then a deep design pass, then three rulings
+  (three placements never-in-two-places · bar slot after chat · mint a JP sub-label).** The full
+  road ran in ONE session: probes (one data-driven bar renderer; Material 3's 3–5 cap) →
+  **`ROLEPLAY_PLAN.md` §8.4a written = SATELLITE SECTIONS v1** (core four stay on the curated
+  count presets; a satellite carries a per-section placement `conf`(DEFAULT)/`button`/`tab`
+  composed over the resolved preset by ONE pure `layout.ts#composeLayout`; D35 carries the
+  addendum — deliberately NO "5-tab" preset) → **blind Emma DESIGN round SHIP WITH CHANGES
+  (0H·3M·2L, all folded) → confirm RESOLVED — SHIP** → **pinned Opus build `d944022`+`fef61c1`**
+  (the Conf-hosted gallery group + the Appearance "Agents" Seg under Layout · `ui.sectionPlacement`
+  healed at read · `placementKey`-keyed DefaultRoot effects · the aria fix incl. a latent S4 bug ·
+  gacha `tabAgents: "キャラ"` — ONE new glyph, subsets regenerated · the `--tab-crowded` 5-up CSS
+  step, 360px screenshots clean · **the S4 owner-feel riders CLOSED**: gacha appbar ≤46px and the
+  10px off-inset are back by default, pinned in BOTH placement states) → main-seat audit (6/6
+  deviations ACCEPTED) → design docs `b0dd5f5` + records `2ea9cd1`.
+- **THEN the owed S4 blind CODE round RAN over the widened 7-commit span `e6cd1d9`..`fef61c1`:
+  SHIP WITH FIXES — 0 HIGH · 3 MED · 0 LOW, sweep "none", two REPRODUCED; all eleven seeded areas
+  explicitly sound (the S1 TTS obligation VERIFIED; no test weakened).** All three ruled FIX →
+  **fix wave `d4dd1ef`** (Opus, failing-before proofs: `sectionPlacement?.agents` at the reader ·
+  the `GET /agents` tail takes the loop's degrade posture for a malformed configured default ·
+  `invalidateAgents` exported + called from the settings-save block; 1 deviation accepted) →
+  main-seat audit → **Emma confirm: all three RESOLVED, sweep "none" — RESOLVED — SHIP.**
+  Full records = **plan §13-S4's two addenda**.
+- **Gate at tip `d4dd1ef`: 6/6 — BE 2,373 · FE 2,982/174** (counts in QUALITY.md). **Dev backend
+  RESTARTED onto the tip** (summary map live: default + lynette); **both dev units RUNNING**
+  (:5434 + :5173 — D69 presence observation continues, do NOT stop the units).
+- **▶▶ S4's ENTIRE standing cadence is COMPLETE — THE OWNER'S WORD is the only remaining gate;
+  it closes S4 and opens S5** (lorebook FE: manager + attachment picker + the §6.6
+  collapsed-entry editor + the `lorebooks.books` editor). **Owner-feel items for their next dev
+  round (:5173):** the gallery's new home — Conf's collapsed "Agents · gallery" group — and the
+  Appearance "Agents" placement row (conf/button/tab; tab = spliced after chat, キャラ on gacha) ·
+  a real card imported through the UI. **Recorded residual → Phase 19:** the
+  `aria-labelledby="tabbtn-<id>"` class is wider than agents (every tab body, any can be off-bar).
+- **Git: 61 commits unpushed over origin `04769d9`** (the 55 at session open + `b0dd5f5` design ·
+  `d944022`+`fef61c1` build · `2ea9cd1` records · `d4dd1ef` fix wave + this docs commit); working
+  tree clean; the PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The
+  v1.7.8 pipeline (Dependabot D1 → push → release E, config migration 2→3, rollback = config
+  backup FIRST then v1.7.7) is unchanged and still owed; sequencing is the owner's.
+  **NEXT-NEXT (owner): LIVE VOICE/CALL MODE — start at R51, buy only the delta.**
+
+## Prior state (2026-09-07, FIFTH session — S4 BUILT + MAIN-SEAT AUDITED; ⚠ the blind Emma round is OWED and opens the next session; superseded above where it speaks)
 
 - **S4 (the agents surface, §10-S4) is BUILT across two pinned Opus builds — five commits,
   gate green throughout — and MAIN-SEAT AUDITED (all 13 declared deviations across both

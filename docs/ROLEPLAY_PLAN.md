@@ -1506,3 +1506,46 @@ kit/frontier/gacha (キャラ renders in the frozen face; worst slack 7.7px, gac
 docked action — is gone; the geometries are conditional again and pinned in both states).
 **The blind Emma CODE round now covers the widened span `e6cd1d9`..`fef61c1` (7 commits)
 against §8/§9/§9a/§10-S4 + §8.4a.**
+
+#### S4 code round + fix wave (2026-09-07, same session) — the cadence is COMPLETE; the owner's word is the remaining gate
+
+**Blind Emma CODE round (fresh session, sol high, `--ignore-rules`, R46 brief, the widened
+7-commit span): SHIP WITH FIXES — 0 HIGH · 3 MED · 0 LOW, open sweep "none"; two findings
+reviewer-REPRODUCED** (a live 360px boot with `sectionPlacement: null` · a malformed
+configured-default probe against the real route) **and she ran 363 FE + focused BE tests
+herself. All eleven seeded areas otherwise explicitly SOUND** — the summary map's degrade,
+`useAgentArt` as the sole art resolver, **the S1 TTS obligation verified on every request
+shape**, the gallery's two verbs, §9a's freeze-trap close, the satellite mechanics ("no
+other reachable two-place state found"), the Conf tail, CSS/aria, the キャラ chain, the
+S0–S3 seams, and — her explicit check — **no test weakened for green**.
+
+**The findings, all main-seat-verified and ruled FIX (lean forms):** MED-1 (0.99) —
+`ConfTab.tsx:907` deref'd the RAW persisted placement map that `composeLayout` deliberately
+guards; a persisted `null` bricked the default Conf view · MED-2 (0.99) — the
+`_list_agents_payload` tail's `resolve_agent(None)` re-loaded a malformed CONFIGURED default
+unguarded, 500ing the route the loop had just degraded gracefully for · MED-3 (0.94) — the
+settings-save success block never invalidated `["agents"]`/`["agentlist"]`, so root-default
+and `default_agent` saves left the always-on roster stale.
+
+**Fix wave `d4dd1ef`** (Opus 5, pinned brief; every fix with a FAILING-BEFORE proof):
+`sectionPlacement?.agents` at the reader (the map-guard is the reader's job —
+`resolvePlacement` stays the one value-healing seam; the only other raw deref repo-wide is
+the guarded `composeLayout` hand-off, and the spread at ~3018 self-heals) · the route tail
+try/except'd with the loop's own posture (`default` = the configured name when its degraded
+row exists, else the root default; BOTH arms pinned, incl. the unlisted-folder branch) ·
+`invalidateAgents` exported and CALLED from the settings-save block, subsuming the SYS-9.2
+`loadAgents()` line. **One deviation, ACCEPTED:** reuse means `["actions"]` also invalidates
+on a settings save — the `useToolOverrides` precedent does exactly that on the same
+endpoint. Gate 6/6 — **BE 2,373 · FE 2,982/174** (QUALITY.md updated).
+
+**Emma confirm (resumed): all three RESOLVED with line proof · diff sweep "none" —
+RESOLVED — SHIP** (she re-ran focused suites: BE 6 + FE 16 green).
+
+**S4 status: the full standing cadence is COMPLETE** (2 pinned builds + fold build + fix
+wave · 2 main-seat audits + fold audit · §8.4a design round + confirm · the blind CODE
+round + fix wave + confirm). **The OWNER'S WORD closes S4 and opens S5** (lorebook FE:
+manager + attachment picker + the §6.6 collapsed-entry editor + the `lorebooks.books`
+editor). Owner-feel items riding their next dev round: the gallery's new Conf home + the
+Appearance placement row (conf/button/tab) · キャラ on a promoted 5-up gacha bar · a real
+card imported through the UI. Dev backend restarted onto `d4dd1ef` (summary map live:
+default + lynette); both units RUNNING (D69 observation continues).
