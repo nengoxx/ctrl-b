@@ -398,12 +398,19 @@ function LorebookRow({
    *  draft, so it saves immediately. It PUTs the SERVER's copy with `enabled` flipped — never the open
    *  draft, which would commit unrelated unsaved edits — and then patches the draft's own `enabled` so
    *  a later Save does not revert the toggle. */
+  const [flipping, setFlipping] = useState(false);
+  const writeBusy = save.isPending || flipping;
   const flipEnabled = async () => {
-    // ONE write at a time. Both the toggle and the Save button ride this row's single `save` mutation,
-    // so an overlapping pair is two full-replace PUTs whose order the network decides — the later,
-    // staler body winning. The row's Save is already disabled while pending; this is the same guard on
-    // the other door (the Switch below is disabled too, for the eye).
-    if (save.isPending) return;
+    // ONE write at a time — and the guard has to HOLD THROUGH THE AWAIT. `save.isPending` alone does
+    // not: a toggle that passes the check then waits on its GET leaves the Save button live, and the
+    // closure's `isPending` is a stale render-time snapshot a re-check could not refresh (the confirm
+    // round's F3). So the toggle carries its own `flipping` state from entry to settle, and BOTH
+    // doors — this guard and the two buttons' disabled — read the pair.
+    if (writeBusy) return;
+    setFlipping(true);
+    // Whether the draft was CLEAN at click time decides what the echo does to it below.
+    const wasClean = !dirty;
+    const hadDraft = draft !== null;
     // ALWAYS a fresh read, even when the row is open: the editor's copy was fetched when it opened and
     // this PUT is a destructive full replace, so a minutes-old body would silently revert whatever
     // changed on disk since. The read is deliberately NOT published into the query cache — reseeding
@@ -414,6 +421,7 @@ function LorebookRow({
     try {
       file = await fetchLorebook(info.slug);
     } catch (e) {
+      setFlipping(false);
       return pushToast((e as Error).message || "Could not read the lorebook", "err");
     }
     const enabled = !file.book.enabled;
@@ -421,12 +429,17 @@ function LorebookRow({
       { slug: info.slug, book: { ...file.book, enabled } },
       {
         onSuccess: (res) => {
-          // The echo lands in the cache, and the seed effect above would read it as "the file
-          // changed" and reseed — throwing away unsaved edits for a toggle about one field. Pin the
-          // guard at the echo and patch only what the toggle meant.
+          // A row that was never opened has NO draft and NO pin — leave both alone, so the first
+          // open still seeds from its fetch (a pinned-but-draftless row would skip the seed and sit
+          // on "loading…" forever). With a draft: pin the seed at the echo so the effect above does
+          // not reseed over unsaved edits — then a CLEAN draft adopts the echo wholesale (the fresh
+          // read is simply newer truth), while a DIRTY one takes only the toggled flag, keeping the
+          // owner's unsaved edits (the no-ETag posture Save already has).
+          if (!hadDraft) return;
           seeded.current = JSON.stringify(res.book);
-          setDraft((d) => (d ? { ...d, enabled } : d));
+          setDraft((d) => (d ? (wasClean ? res.book : { ...d, enabled }) : d));
         },
+        onSettled: () => setFlipping(false),
       },
     );
   };
@@ -459,7 +472,7 @@ function LorebookRow({
             <Switch
               on={info.enabled}
               label={`${label} enabled`}
-              disabled={save.isPending}
+              disabled={writeBusy}
               onToggle={() => void flipEnabled()}
             />
           </span>
@@ -517,7 +530,7 @@ function LorebookRow({
                 <button
                   type="button"
                   className="save"
-                  disabled={!dirty || save.isPending}
+                  disabled={!dirty || writeBusy}
                   onClick={() => save.mutate({ slug: info.slug, book: draft })}
                 >
                   {save.isPending ? "saving…" : dirty ? "save" : "saved"}
@@ -539,8 +552,14 @@ export function LorebooksEditor() {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [report, setReport] = useState<{ slug: string; report: LorebookImportReport } | null>(null);
+  const [probing, setProbing] = useState(false);
 
   const commitNew = async () => {
+    if (probing || save.isPending) return;
+    // BOTH values are captured BEFORE the probe's await — the name field stays typeable while the
+    // probe runs, and a mid-probe edit must not split the created file across two spellings
+    // (`old-slug.yaml` carrying the new display name — the confirm round's sweep).
+    const name = newName.trim();
     const slug = slugify(newName);
     if (!slug) return pushToast("name: needs a letter or a digit", "err");
     // `PUT /lorebooks/{slug}` is create-or-OVERWRITE — an unrefused collision would destroy a book.
@@ -548,21 +567,28 @@ export function LorebooksEditor() {
     // (another tab, an import) is not in it, and trusting it alone is how the overwrite happens. So the
     // FILE gets the last word. A 404 is the ONLY answer that means "the slug is free" — a read that
     // fails for any other reason proves nothing and must not be read as permission to write.
-    // The remaining window is the milliseconds between this probe and the PUT: an accepted residual
-    // (one owner, one tailnet), and closing it would take a create-only verb the API does not have.
+    // Two recorded residuals, accepted: the milliseconds between probe and PUT (one owner, one
+    // tailnet; closing it needs a create-only verb the API does not have), and a MALFORMED on-disk
+    // file — the API's 404 deliberately collapses absent and unreadable, so the probe cannot tell
+    // them apart; that whole class (list-invisible, unrepairable, now overwritable) is one register
+    // entry whose fix is the backend learning to SURFACE unreadable books, not a point patch here.
     if (books.some((b) => b.slug === slug)) return pushToast(`a lorebook '${slug}' exists`, "err");
+    setProbing(true);
     try {
       await fetchLorebook(slug);
+      setProbing(false);
       return pushToast(`a lorebook '${slug}' exists`, "err");
     } catch (e) {
       if (!(e instanceof ApiError) || e.status !== 404) {
+        setProbing(false);
         return pushToast((e as Error).message || "Could not read the shelf", "err");
       }
     }
+    setProbing(false);
     save.mutate(
       {
         slug,
-        book: { name: newName.trim(), description: "", enabled: true, entries: [] },
+        book: { name, description: "", enabled: true, entries: [] },
       },
       {
         onSuccess: () => {
@@ -626,8 +652,11 @@ export function LorebooksEditor() {
                   <div className="mrow-hint">file: lorebooks/{slugify(newName) || "…"}.yaml</div>
                 </div>
                 <div className="mfoot">
+                  {/* Both buttons hold still through the probe: a cancel that lands mid-probe would
+                      hide the form while the create it no longer describes goes on to finish. */}
                   <button
                     type="button"
+                    disabled={probing}
                     onClick={() => {
                       setAdding(false);
                       setNewName("");
@@ -638,10 +667,10 @@ export function LorebooksEditor() {
                   <button
                     type="button"
                     className="save"
-                    disabled={save.isPending}
+                    disabled={save.isPending || probing}
                     onClick={() => void commitNew()}
                   >
-                    {save.isPending ? "creating…" : "create"}
+                    {save.isPending || probing ? "creating…" : "create"}
                   </button>
                 </div>
               </>

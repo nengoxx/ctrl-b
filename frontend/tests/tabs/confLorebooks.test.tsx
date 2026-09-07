@@ -411,3 +411,109 @@ describe("LorebooksEditor · import", () => {
     expect(screen.queryByText("imported traits")).toBeNull();
   });
 });
+
+describe("LorebooksEditor · the confirm-round micro-wave", () => {
+  const openTraits = (entries: LorebookEntry[] = []) => {
+    h.books = [{ slug: "traits", name: "Traits", enabled: true, entries: entries.length }];
+    h.book = {
+      slug: "traits",
+      book: { name: "Traits", description: "", enabled: true, entries },
+    };
+    render(<LorebooksEditor />);
+    fireEvent.click(chev(/expand Traits/));
+  };
+  const saveBtn = () => screen.getByRole<HTMLButtonElement>("button", { name: /^sav/ });
+
+  it("Save has no door while the toggle's read is in flight (F3 — the await outlives isPending)", async () => {
+    openTraits([entry({ keys: ["brave"], content: "old" })]);
+    fireEvent.click(chev(/expand entry 1/));
+    fireEvent.change(screen.getByLabelText("Entry 1 content"), { target: { value: "new" } });
+    expect(saveBtn().disabled).toBe(false); // dirty → Save is live…
+    let release!: (v: unknown) => void;
+    h.fetchBook.mockImplementation(() => new Promise((res) => (release = res)));
+    fireEvent.click(screen.getByRole("switch", { name: "Traits enabled" }));
+    // …but not during the toggle's GET: this is exactly where two full-replace PUTs could overlap.
+    expect(saveBtn().disabled).toBe(true);
+    release(h.book);
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+  });
+
+  it("toggling a NEVER-OPENED row leaves seeding alone — the first open still shows the editor", async () => {
+    h.books = [{ slug: "traits", name: "Traits", enabled: true, entries: 0 }];
+    h.book = {
+      slug: "traits",
+      book: { name: "Traits", description: "", enabled: true, entries: [] },
+    };
+    h.save.mockImplementation(
+      (
+        arg: { slug: string; book: Record<string, unknown> },
+        opts?: { onSuccess?: (r: unknown) => void; onSettled?: () => void },
+      ) => {
+        // Faithful: the PUT wrote the file, so the row's next fetch returns EXACTLY the echo —
+        // which is the case that used to match the pin and skip the seed.
+        h.book = { slug: arg.slug, book: arg.book };
+        opts?.onSuccess?.({ slug: arg.slug, book: arg.book });
+        opts?.onSettled?.();
+      },
+    );
+    render(<LorebooksEditor />);
+    fireEvent.click(screen.getByRole("switch", { name: "Traits enabled" }));
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+    // A draftless row must NOT pin the seed at the echo — a pinned-but-draftless row would skip the
+    // seed on open and sit on "loading…" forever.
+    fireEvent.click(chev(/expand Traits/));
+    expect(screen.getByLabelText("Lorebook name")).toBeTruthy();
+  });
+
+  it("a CLEAN open editor adopts the toggle's fresh read — newer truth, no manufactured dirt", async () => {
+    openTraits();
+    // The file changed on disk since the editor loaded (another tab, a hand edit).
+    h.fetchBook.mockResolvedValue({
+      slug: "traits",
+      book: { name: "Traits", description: "NEW words", enabled: true, entries: [] },
+    });
+    h.save.mockImplementation(
+      (
+        arg: { slug: string; book: Record<string, unknown> },
+        opts?: { onSuccess?: (r: unknown) => void; onSettled?: () => void },
+      ) => {
+        opts?.onSuccess?.({ slug: arg.slug, book: arg.book });
+        opts?.onSettled?.();
+      },
+    );
+    fireEvent.click(screen.getByRole("switch", { name: "Traits enabled" }));
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+    // The clean draft adopted the echo wholesale — the external edit shows and Save has nothing to
+    // revert. (A DIRTY draft keeps its edits and takes only the flag: the posture Save already has.)
+    expect(screen.getByLabelText<HTMLTextAreaElement>("Lorebook description").value).toBe(
+      "NEW words",
+    );
+    expect(isAnyDirty()).toBe(false);
+  });
+
+  it("a mid-probe NAME edit cannot split the create — both values were captured first", async () => {
+    let release!: () => void;
+    h.fetchBook.mockImplementation(
+      () =>
+        new Promise((_res, rej) => {
+          release = () => rej(new ApiError("/api/lorebooks/hollow-sea → 404 Not Found", 404));
+        }),
+    );
+    render(<LorebooksEditor />);
+    fireEvent.click(screen.getByRole("button", { name: /add lorebook/ }));
+    fireEvent.change(screen.getByLabelText("lorebook name"), { target: { value: "Hollow Sea" } });
+    fireEvent.click(screen.getByRole("button", { name: "create" }));
+    // The probe is in flight; the owner keeps typing — and cancel is held still (a cancel landing
+    // mid-probe would hide a create that still finishes).
+    fireEvent.change(screen.getByLabelText("lorebook name"), {
+      target: { value: "Different Book" },
+    });
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "cancel" }).disabled).toBe(true);
+    release();
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+    expect(h.save.mock.calls[0][0]).toMatchObject({
+      slug: "hollow-sea",
+      book: { name: "Hollow Sea" },
+    });
+  });
+});
