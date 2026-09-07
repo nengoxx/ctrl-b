@@ -1543,9 +1543,29 @@ RESOLVED — SHIP** (she re-ran focused suites: BE 6 + FE 16 green).
 
 **S4 status: the full standing cadence is COMPLETE** (2 pinned builds + fold build + fix
 wave · 2 main-seat audits + fold audit · §8.4a design round + confirm · the blind CODE
-round + fix wave + confirm). **The OWNER'S WORD closes S4 and opens S5** (lorebook FE:
-manager + attachment picker + the §6.6 collapsed-entry editor + the `lorebooks.books`
-editor). Owner-feel items riding their next dev round: the gallery's new Conf home + the
-Appearance placement row (conf/button/tab) · キャラ on a promoted 5-up gacha bar · a real
-card imported through the UI. Dev backend restarted onto `d4dd1ef` (summary map live:
+round + fix wave + confirm). Dev backend restarted onto `d4dd1ef` (summary map live:
 default + lynette); both units RUNNING (D69 observation continues).
+
+#### THE OWNER ROUND LANDED (2026-09-07, same session, in conversation) — "it looks good" + two fix findings + one deferral; S4 closes AFTER their fix wave
+
+- **OF-1 (FIX):** a DROPDOWN list renders with essentially NO padding — its options "almost
+  crop to the edges of the screen." The owner did not pin which control; it surfaced on the
+  new agents surface round, so start there (the agent form's selects / the gallery context)
+  and pin the exact control + whether the class is app-wide before fixing.
+- **OF-2 (FIX + APP-WIDE SWEEP, owner-directed):** a GRADIENT button — the owner believes
+  the selected agent's SAVE button — shows weird SOLID-colored "rims" at its left and right
+  edges. The owner: "we had an issue like that before" — so this is a recurring CLASS, not
+  an instance. The fix wave must (a) find the precedent (memory / ISSUES / git history for
+  the earlier gradient-edge fix and its mechanism), (b) fix the button, and (c) SWEEP the
+  app for every gradient button whose left/right edges can land on solid color, closing the
+  class the way the precedent ruled.
+- **OF-3 (DEFERRED, owner-ruled):** the layering/composition of the text + text fields +
+  dropdowns could be "revised and refined a little" — explicitly a FUTURE PASS of its own;
+  do not fold it into the fix wave.
+- **⚠ OPS: the Emma lane is UNAVAILABLE (owner's word, 2026-09-07)** — the OF fix wave runs
+  build + main-seat audit; her review rounds resume when the owner says she is back.
+- **The ruled sequence:** the owner stopped the session here for a clean handoff. **The next
+  session opens on the OF-1/OF-2 fix wave** (pin → precedent → fix → sweep → gate) → the
+  owner's confirm on dev → THEIR WORD closes S4 → **S5** (lorebook FE: manager + attachment
+  picker + the §6.6 collapsed-entry editor + the `lorebooks.books` editor) — the owner asked
+  that S5 not start before they are back home.

@@ -12,7 +12,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-07, SIXTH session — the §8.4a PLACEMENT RE-RULING designed+built+reviewed AND the S4 code round + fix wave + confirm ALL CLOSED; ⚠ S4 awaits ONLY the owner's word; supersedes below where it speaks)
+## Current state (2026-09-07, SIXTH session — §8.4a designed+built+reviewed AND the S4 code round CLOSED; then the OWNER ROUND landed 2 FIX findings (OF-1 dropdown padding · OF-2 gradient-button edge rims + app sweep) — ⚠ the NEXT SESSION opens on that fix wave, EMMA UNAVAILABLE, S5 waits for the owner home; supersedes below where it speaks)
 
 - **The session opened on the owner's correction: the S4 gallery's "own section" meant INSIDE
   settings, hidden by default like the tools tab — then a deep design pass, then three rulings
@@ -40,15 +40,22 @@
 - **Gate at tip `d4dd1ef`: 6/6 — BE 2,373 · FE 2,982/174** (counts in QUALITY.md). **Dev backend
   RESTARTED onto the tip** (summary map live: default + lynette); **both dev units RUNNING**
   (:5434 + :5173 — D69 presence observation continues, do NOT stop the units).
-- **▶▶ S4's ENTIRE standing cadence is COMPLETE — THE OWNER'S WORD is the only remaining gate;
-  it closes S4 and opens S5** (lorebook FE: manager + attachment picker + the §6.6
-  collapsed-entry editor + the `lorebooks.books` editor). **Owner-feel items for their next dev
-  round (:5173):** the gallery's new home — Conf's collapsed "Agents · gallery" group — and the
-  Appearance "Agents" placement row (conf/button/tab; tab = spliced after chat, キャラ on gacha) ·
-  a real card imported through the UI. **Recorded residual → Phase 19:** the
-  `aria-labelledby="tabbtn-<id>"` class is wider than agents (every tab body, any can be off-bar).
-- **Git: 61 commits unpushed over origin `04769d9`** (the 55 at session open + `b0dd5f5` design ·
-  `d944022`+`fef61c1` build · `2ea9cd1` records · `d4dd1ef` fix wave + this docs commit); working
+- **▶▶ THE OWNER ROUND LANDED IN-SESSION (2026-09-07): "it looks good" + TWO FIX FINDINGS + one
+  deferral — full record = plan §13-S4's owner-round block. THE NEXT SESSION OPENS ON THEIR FIX
+  WAVE:** **OF-1** a dropdown list with ~no padding, options nearly cropping to the screen edges
+  (control not pinned — start at the agents surface, pin it first) · **OF-2** a gradient button's
+  left/right edge "rims" land on weird SOLID colors (owner thinks the selected agent's SAVE; "we
+  had an issue like that before" — find the PRECEDENT, fix, then SWEEP every gradient button for
+  the class, owner-directed) · **OF-3 DEFERRED** (text/field/dropdown composition refinement = its
+  own future pass, owner-ruled). Then the owner's dev confirm → **THEIR WORD closes S4 → S5**
+  (lorebook FE + §6.6 collapsed-entry editor + `lorebooks.books`) — **S5 does NOT start until the
+  owner is back home (their word). ⚠ THE EMMA LANE IS UNAVAILABLE (owner, 2026-09-07)** — the OF
+  fix wave runs build + main-seat audit only; her rounds resume on the owner's word.
+  **Recorded residual → Phase 19:** the `aria-labelledby="tabbtn-<id>"` class is wider than
+  agents (every tab body, any can be off-bar).
+- **Git: 64 commits unpushed over origin `04769d9`** (the 55 at session open + `b0dd5f5` design ·
+  `d944022`+`fef61c1` build · `2ea9cd1` records · `d4dd1ef` fix wave · `3491f31` + the two
+  owner-round/handoff docs commits); working
   tree clean; the PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The
   v1.7.8 pipeline (Dependabot D1 → push → release E, config migration 2→3, rollback = config
   backup FIRST then v1.7.7) is unchanged and still owed; sequencing is the owner's.
