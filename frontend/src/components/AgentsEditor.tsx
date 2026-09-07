@@ -16,9 +16,11 @@ import {
   type ReasoningEffort,
 } from "../hooks/useAgents";
 import { AgentArtRow, AgentCropStep, useAgentArtStudio } from "./AgentArtRow";
+import { LorebookPicker } from "./LorebooksEditor";
 import { ProviderModelPicker, type PickerCatalog } from "./ProviderModelPicker";
 import { Seg } from "./Seg";
 import { Switch } from "./Switch";
+import { TickGrid } from "./TickGrid";
 import { disclosureToggle } from "../lib/disclosure";
 import { numOrNull } from "../lib/num";
 import { PRIVILEGE_LEVELS } from "../lib/privilege";
@@ -46,50 +48,9 @@ const SLUG = /^[a-z0-9][a-z0-9_-]*$/;
 // Garbage-safe numeric coercion (D42 post-build audit) lives in one place — `../lib/num` (shared with
 // ConfTab's context-window coercion). `numOrNull` = the nullable `ge=1` budget fields.
 
-// `modes` (8b, D22) mirrors the Tools-tab tri-state onto the per-agent selection grid: a globally
-// **disabled** tool shows locked-off (it can't be granted), a **core** tool locked-on (it's always
-// available regardless of the allowlist). Only **enabled** tools are interactive. The skills grid
-// passes no `modes` → every entry stays interactive.
-export function TickGrid({
-  all,
-  selected,
-  onToggle,
-  modes,
-}: {
-  all: string[];
-  selected: Set<string>;
-  onToggle: (n: string) => void;
-  modes?: Record<string, AgentMode>;
-}) {
-  if (!all.length) return <div className="agent-empty">none discovered</div>;
-  return (
-    <div className="tick-grid">
-      {all.map((n) => {
-        const mode = modes?.[n];
-        const locked = mode === "core" || mode === "disabled";
-        const on = mode === "core" ? true : mode === "disabled" ? false : selected.has(n);
-        const title =
-          mode === "core"
-            ? "always available (core) — set in Tools tab"
-            : mode === "disabled"
-              ? "globally disabled — set in Tools tab"
-              : undefined;
-        return (
-          <button
-            key={n}
-            type="button"
-            disabled={locked}
-            title={title}
-            className={"tick" + (on ? " on" : "") + (locked ? " locked" : "")}
-            onClick={() => !locked && onToggle(n)}
-          >
-            {n}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+// The tool/skill allowlist grid moved to its own module (`./TickGrid`) when the D70 §6.5 lorebook
+// picker became its fourth consumer: that picker is exported from `LorebooksEditor`, which this file
+// imports, so the grid could not stay here without making the two an import cycle.
 
 const LIMITS: { key: keyof AgentDef; label: string }[] = [
   { key: "max_iterations", label: "max iters" },
@@ -119,6 +80,8 @@ const FIELD_HELP: Record<string, string> = {
     "The TTS voice id this agent speaks in. Blank → the global voice. A bad id reports on the first read-aloud.",
   avatar: "The picture on this agent's card, in the chat picker, and beside its replies.",
   background: "The picture behind the chat while this agent is active — independent of its avatar.",
+  lorebooks:
+    "Books attached to this agent — an entry joins the turn when one of its keywords shows up in the chat. Books attached globally in Conf come too.",
 };
 
 /** §9's PER-FIELD visibility (the Risu predicate, R66 §5.3): a roleplay field shows when the mode is
@@ -470,6 +433,14 @@ function AgentFieldsForm(props: {
             <FieldHelp text={FIELD_HELP.background} />
           </>
         )}
+        {/* D70 §6.5 — the lorebook ATTACHMENT picker. Deliberately NOT behind `rpShow` (plan ruling 9):
+          lorebooks are roleplay-INDEPENDENT — reference data any agent can carry — so the picker is
+          always here, exactly like Tools and Skills below it. The field already rides `pickFields` into
+          the PUT; this only gives it an editor. */}
+        <label>Lorebooks</label>
+        <LorebookPicker value={a.lorebooks ?? []} onChange={(lorebooks) => set({ lorebooks })} />
+        <FieldHelp text={FIELD_HELP.lorebooks} />
+
         {stashed > 0 && (
           <>
             <label>Imported card</label>

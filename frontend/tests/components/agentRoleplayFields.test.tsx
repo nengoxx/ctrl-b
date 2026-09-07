@@ -10,10 +10,12 @@ const h = vi.hoisted(
     saveAgent: ReturnType<typeof vi.fn>;
     roleplayEnabled: boolean;
     agent: Record<string, unknown>;
+    books: { slug: string; name: string; enabled: boolean; entries: number }[];
   } => ({
     saveAgent: vi.fn(),
     roleplayEnabled: false,
     agent: {},
+    books: [],
   }),
 );
 
@@ -29,6 +31,12 @@ vi.mock("../../src/hooks/useSettings", () => ({
 }));
 vi.mock("../../src/hooks/useMediaLibrary", () => ({
   useMediaLibrary: () => ({ sections: [], write: { append: vi.fn() }, ready: false }),
+}));
+// D70 §6.5 — the form's lorebook picker reads the shelf. `pickRoleplay` stays REAL (the visibility
+// predicate is a fact about the settings doc, not about this mock).
+vi.mock("../../src/hooks/useRoleplay", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/useRoleplay")>()),
+  useLorebooks: () => ({ data: h.books }),
 }));
 vi.mock("../../src/hooks/useAgents", async (importActual) => {
   const actual = await importActual<typeof import("../../src/hooks/useAgents")>();
@@ -82,9 +90,14 @@ function agentDef(over: Record<string, unknown> = {}) {
   };
 }
 
-function renderRow(over: Record<string, unknown> = {}, enabled = false) {
+function renderRow(
+  over: Record<string, unknown> = {},
+  enabled = false,
+  books: typeof h.books = [],
+) {
   h.agent = agentDef(over);
   h.roleplayEnabled = enabled;
+  h.books = books;
   return render(
     <AgentRow
       name="lyra"
@@ -165,11 +178,10 @@ describe("AgentRow · the roleplay fields on the form", () => {
     expect(screen.getByText(/2 imported fields stashed/)).toBeTruthy();
   });
 
-  it("alt_greetings and lorebooks have NO editor and survive a save untouched", () => {
+  it("alt_greetings has NO editor and survives a save untouched", () => {
     renderRow({ alt_greetings: ["hi", "hey"], lorebooks: ["lyra-book"], greeting: "Hello." }, true);
-    // No editor for either — they round-trip through `pickFields`, nothing more.
+    // No editor — it round-trips through `pickFields`, nothing more.
     expect(screen.queryByText("Alt greetings")).toBeNull();
-    expect(screen.queryByText("Lorebooks")).toBeNull();
 
     fireEvent.change(screen.getByLabelText("Voice"), { target: { value: "af_sky" } });
     fireEvent.click(screen.getByRole("button", { name: "save" }));
@@ -177,8 +189,37 @@ describe("AgentRow · the roleplay fields on the form", () => {
     const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
     expect(sent.agent.voice).toBe("af_sky"); // the edit
     expect(sent.agent.alt_greetings).toEqual(["hi", "hey"]); // …and the untouched neighbours
-    expect(sent.agent.lorebooks).toEqual(["lyra-book"]);
     expect(sent.agent.greeting).toBe("Hello.");
+  });
+
+  it("the LOREBOOK picker is visible with roleplay OFF — books are roleplay-INDEPENDENT (ruling 9)", () => {
+    renderRow({}, false, [{ slug: "hollow-sea", name: "Hollow Sea", enabled: true, entries: 3 }]);
+    expect(screen.getByText("Lorebooks")).toBeTruthy();
+    // …drawn by the book's NAME while the value stays its slug
+    expect(screen.getByRole("button", { name: "Hollow Sea" })).toBeTruthy();
+    expect(screen.getByText("0 attached")).toBeTruthy();
+  });
+
+  it("ticking a book writes its SLUG into the draft", () => {
+    renderRow({}, false, [{ slug: "hollow-sea", name: "Hollow Sea", enabled: true, entries: 3 }]);
+    fireEvent.click(screen.getByRole("button", { name: "Hollow Sea" }));
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
+    expect(sent.agent.lorebooks).toEqual(["hollow-sea"]);
+  });
+
+  it("an attached book the shelf no longer lists still renders, and an unrelated save keeps it", () => {
+    renderRow({ lorebooks: ["deleted-book"] }, false, []);
+    const chip = screen.getByRole("button", { name: "deleted-book" });
+    // marked missing rather than hidden — hiding it would delete the attachment on the next save
+    expect(chip.className).toContain("gone");
+    expect(chip.className).toContain("on");
+    expect(chip.getAttribute("title")).toBe("not found — untick to remove it");
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Lyra II" } });
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
+    expect(sent.agent.lorebooks).toEqual(["deleted-book"]);
   });
 
   it("the DUTIES pick round-trips through the save payload", () => {

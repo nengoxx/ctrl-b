@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
-import { TickGrid } from "./AgentsEditor";
+import { LorebookPicker } from "./LorebooksEditor";
 import { SettingRow } from "./SettingRow";
+import { TickGrid } from "./TickGrid";
 import { Switch } from "./Switch";
 import { useAgentToolGrid } from "../hooks/useActions";
 import { pickLorebooks, pickRoleplay } from "../hooks/useRoleplay";
@@ -150,14 +151,32 @@ export function LorebookGlobals() {
   useEffect(() => setBudget(String(cfg.budget_chars)), [cfg.budget_chars]);
   useEffect(() => setMaxBytes(String(cfg.max_import_bytes)), [cfg.max_import_bytes]);
 
+  // D70 §6.5 — the GLOBAL attach list, on the same draft/save bar. Reseeded from the JOINED string,
+  // never the array: a fresh-but-equal array on every render would reseed continuously (the
+  // `default_tools` list right above learned this the same way). `deep_merge` replaces lists
+  // wholesale, so the patch below is a clean full-list write.
+  const [books, setBooks] = useState<string[]>(cfg.books);
+  const seededBooks = cfg.books.join(",");
+  useEffect(() => setBooks(seededBooks ? seededBooks.split(",") : []), [seededBooks]);
+
   const dirty =
     depth !== String(cfg.scan_depth) ||
     budget !== String(cfg.budget_chars) ||
-    maxBytes !== String(cfg.max_import_bytes);
+    maxBytes !== String(cfg.max_import_bytes) ||
+    books.join(",") !== seededBooks;
   useRegisterDirty("lorebooks", dirty);
 
   return (
     <div className="conf-card">
+      <div className="confrow">
+        <div className="k">
+          <div className="label">Global lorebooks</div>
+          <div className="desc">
+            attached to every chat — an agent's own books come on top of these
+          </div>
+        </div>
+      </div>
+      <LorebookPicker value={books} onChange={setBooks} />
       <div className="confrow">
         <div className="k">
           <div className="label">Scan depth</div>
@@ -199,8 +218,6 @@ export function LorebookGlobals() {
           onChange={(e) => setMaxBytes(e.target.value)}
         />
       </div>
-      {/* NO global attach-list editor here: `lorebooks.books` is the S5 manager/picker slice's, and a
-          partial PUT leaves the stored list untouched (the deep merge). */}
       <div className="conf-savebar">
         <button
           className="conf-save"
@@ -208,6 +225,7 @@ export function LorebookGlobals() {
           onClick={() =>
             save.mutate({
               lorebooks: {
+                books,
                 scan_depth: Math.max(0, Number(depth) || 0),
                 budget_chars: Math.max(1, Number(budget) || cfg.budget_chars),
                 max_import_bytes: Math.max(1, Number(maxBytes) || cfg.max_import_bytes),

@@ -5,6 +5,7 @@ import { LorebookGlobals, RoleplayEditor } from "../components/RoleplayEditor";
 import { AutomationsPanel } from "../components/AutomationsPanel";
 import { ConfGroup } from "../components/ConfGroup";
 import { JsonField } from "../components/JsonField";
+import { LorebooksEditor } from "../components/LorebooksEditor";
 import { MachineEditor } from "../components/MachineEditor";
 import { MediaGallery } from "../components/MediaGallery";
 import { MemoryEditor } from "../components/MemoryEditor";
@@ -2754,7 +2755,17 @@ export function ConfTab({ active }: Props) {
         <RoleplayEditor />
       </ConfGroup>
 
-      <ConfGroup id="lorebooks" num="16" title="Lorebooks" right="scan · budget" defaultCollapsed>
+      {/* D70 §6.6 — the MANAGER first (the books themselves, their entries, import), then the globals
+          that apply to all of them. One group, not two: the collapse key and the hand-numbered `num`
+          chain both live on the id, and deep links point at it. */}
+      <ConfGroup
+        id="lorebooks"
+        num="16"
+        title="Lorebooks"
+        right="books · scan · budget"
+        defaultCollapsed
+      >
+        <LorebooksEditor />
         <LorebookGlobals />
       </ConfGroup>
 

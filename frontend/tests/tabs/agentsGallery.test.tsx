@@ -79,6 +79,12 @@ vi.mock("../../src/hooks/useSettings", () => ({
 vi.mock("../../src/hooks/useMediaLibrary", () => ({
   useMediaLibrary: () => ({ sections: [], write: { append: vi.fn() }, ready: false }),
 }));
+// D70 §6.5 — the open row's form carries the lorebook picker. `pickRoleplay` stays REAL: the import
+// entry point's own visibility is read through it off the mocked settings doc.
+vi.mock("../../src/hooks/useRoleplay", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/useRoleplay")>()),
+  useLorebooks: () => ({ data: [] }),
+}));
 
 import { AgentsTab } from "../../src/tabs/AgentsTab";
 import { getSessionAgent, setSessionAgent } from "../../src/store/chat";

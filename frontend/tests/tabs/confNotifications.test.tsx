@@ -106,6 +106,13 @@ vi.mock("../../src/components/RoleplayEditor", async (importActual) => {
   const actual = await importActual<typeof import("../../src/components/RoleplayEditor")>();
   return { ...actual, RoleplayEditor: () => null, LorebookGlobals: () => null };
 });
+// D70 §6.6 — the lorebook manager is a query consumer (the book shelf); this suite has no
+// QueryClientProvider. `LorebookPicker` is named too: `AgentsEditor` imports it, so a mock without
+// it would fail that module's binding rather than its render.
+vi.mock("../../src/components/LorebooksEditor", () => ({
+  LorebooksEditor: () => null,
+  LorebookPicker: () => null,
+}));
 vi.mock("../../src/components/MachineEditor", () => ({ MachineEditor: () => null }));
 vi.mock("../../src/components/MemoryEditor", () => ({ MemoryEditor: () => null }));
 vi.mock("../../src/components/SkillsEditor", () => ({ SkillsEditor: () => null }));

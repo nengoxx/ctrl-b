@@ -85,6 +85,12 @@ vi.mock("../../src/hooks/useMediaLibrary", () => ({
 vi.mock("../../src/hooks/useDefaultPrompt", () => ({
   useDefaultPrompt: () => ({ data: "" }),
 }));
+// D70 §6.5 — the form's lorebook picker. Its shelf query is one of the two `useQuery` callers this
+// suite blanket-mocks away, so it needs its own boundary.
+vi.mock("../../src/hooks/useRoleplay", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/useRoleplay")>()),
+  useLorebooks: () => ({ data: [] }),
+}));
 vi.mock("../../src/hooks/useAgents", async (importActual) => {
   const actual = await importActual<typeof import("../../src/hooks/useAgents")>();
   return {

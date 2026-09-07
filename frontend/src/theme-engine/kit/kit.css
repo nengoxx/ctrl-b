@@ -5525,6 +5525,16 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   opacity: 0.6;
   border-style: dashed;
 }
+/* D70 §6.5 — an ATTACHED name the discovery no longer returns (a lorebook an agent still lists after
+ * its file was deleted). It stays ticked and stays clickable, because unticking it is how the owner
+ * removes it and a picker that hid it would delete the attachment on the next unrelated save — but it
+ * is drawn as a dangling reference rather than a live pick. Declared AFTER `.tick.on`, which it ties
+ * on specificity and must win over. */
+.kit .tick-grid .tick.gone {
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px dashed var(--line-2);
+}
 
 /* ── misc agent rows ── */
 .kit .agent-empty {
@@ -6531,6 +6541,19 @@ body[data-perf="lite"] .kit .navmenu-pop {
   color: var(--accent);
   font-size: 16px;
   line-height: 1;
+  transition: transform var(--dur-slow) var(--ease-std);
+}
+/* D70 §6.6 — the breakout chevron ROTATES when it drives a DISCLOSURE. The automations row's opens a
+ * sheet and carries no `aria-expanded`, so it is untouched; the lorebook manager's book and entry rows
+ * do, and this is what turns their glyph. It is keyed off the button's own state rather than an
+ * ancestor's `.open` class because `.kit .mwrap.open > .confrow .chev` cannot reach it: the `all: unset`
+ * above zeroes `transform` at a HIGHER specificity than that rule carries. */
+.kit .confrow button.chev[aria-expanded="true"] {
+  transform: rotate(90deg);
+}
+.kit .confrow button.chev:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .kit .auto-sw {
   display: inline-flex;
@@ -7896,12 +7919,19 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
 
 /* ── D70 §5 — the card-import affordance + its REPORT, on the agents section. The report is an inline
  * card rather than an overlay: it is a report to READ (no decision, no focus trap), and it stays on
- * screen beside the card it created. Built from `.conf-card` + the `.mgal .path` mono line. ── */
-.kit .agal-import {
+ * screen beside the card it created. Built from `.conf-card` + the `.mgal .path` mono line.
+ *
+ * `.lb-import` rides the same recipe: the app has exactly two "pick a file the field authored" rows
+ * (the character card, §5, and the lorebook, §6.5) and they are the same affordance — one hidden input
+ * behind one full-width outline button. The class is named for its own surface rather than shared so
+ * neither surface reads as living inside the other's section. ── */
+.kit .agal-import,
+.kit .lb-import {
   padding: 10px 12px;
   border-top: 1px solid var(--line);
 }
-.kit .agal-import button {
+.kit .agal-import button,
+.kit .lb-import button {
   all: unset;
   box-sizing: border-box;
   display: block;
@@ -7916,16 +7946,19 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   border-radius: var(--radius-sm);
   color: var(--text-2);
 }
-.kit .agal-import button:disabled {
+.kit .agal-import button:disabled,
+.kit .lb-import button:disabled {
   opacity: 0.5;
   cursor: default;
 }
-.kit .agal-import button:not(:disabled):active {
+.kit .agal-import button:not(:disabled):active,
+.kit .lb-import button:not(:disabled):active {
   background: var(--surface-2);
   color: var(--accent);
   border-color: var(--accent);
 }
-.kit .agal-import button:focus-visible {
+.kit .agal-import button:focus-visible,
+.kit .lb-import button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -7989,6 +8022,88 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
 .kit .agrep-post {
   font-family: ui-monospace, "JetBrains Mono", monospace;
   white-space: pre-wrap;
+}
+
+/* ── D70 §6.6 — the LOREBOOK manager's ENTRY LIST (`components/LorebooksEditor.tsx`). A book is a wall
+ * of text (the field install holds 209-entry books), so the book editor's default view is one collapsed
+ * row per entry and only the open one mounts a form. Almost nothing here is new: the row is a
+ * `.confrow`, the badge is `.badge.dim`, the entry form is a `.mform` and its delete is a `.mfoot`, all
+ * reached as descendants of the book's own `.mconf`.
+ *
+ * WHY THE ROWS ARE NOT `.mwrap`s, which is the shape they otherwise are: `.kit .mwrap.open .mconf` is a
+ * DESCENDANT selector, so nesting one inside an OPEN book would force every entry's body visible at
+ * once — the exact wall the collapsed list exists to prevent. So the wrapper is its own class and the
+ * open body is simply not mounted. ── */
+.kit .lb-entries {
+  margin-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.kit .lb-entries-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0 4px;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: var(--text-2);
+}
+/* the add-entry button — the `.agal-import` outline recipe at chip scale (no gradient, no rim) */
+.kit .lb-add {
+  all: unset;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.kit .lb-add:active {
+  background: var(--surface-2);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.kit .lb-add:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .lb-entry {
+  border-top: 1px solid var(--line);
+}
+/* the OPEN entry tints as a block (row + form), the way `.mwrap.open > .confrow` tints its header */
+.kit .lb-entry.open {
+  background: var(--accent-soft);
+}
+.kit .lb-entry > .confrow {
+  border-top: 0;
+  padding-inline: 0;
+  min-height: 44px;
+  cursor: pointer;
+  user-select: none;
+}
+.kit .lb-entry .badge {
+  margin-left: 8px;
+}
+.kit .lb-entry .lb-nokeys {
+  color: var(--text-3);
+}
+/* ONE line whatever the entry holds — the preview is a glance, not the content. `.desc` sets
+ * `overflow-wrap: anywhere`, which would defeat the nowrap ellipsis, so it is reset here. */
+.kit .lb-entry .lb-prev {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+.kit .lb-body {
+  padding: 2px 0 10px;
+}
+/* an entry's content is a PARAGRAPH, not a key/value line — the `.json-field` precedent for giving the
+ * shared `.kv-text` recipe a taller floor without a second textarea style. */
+.kit .mform textarea.kv-text.lb-content {
+  min-height: 96px;
 }
 
 /* ── D70 §9a — the prompt editor's refinements: the registry's own GROUP sections, the customized

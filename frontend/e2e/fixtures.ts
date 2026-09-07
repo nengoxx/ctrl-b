@@ -329,6 +329,48 @@ const ROUTES: Record<string, unknown> = {
   },
   "/api/agents": { agents: [], default: "" },
   "/api/skills": [],
+  // D70 §6.6 — the lorebook shelf + one whole book behind it. `path.endsWith(key)` keeps the two
+  // apart: only `/api/lorebooks/hollow-sea` ends with the second key. The book carries a plain
+  // keyed entry and a `constant` one, which is what the collapsed row list has to distinguish.
+  "/api/lorebooks": {
+    lorebooks: [{ slug: "hollow-sea", name: "Hollow Sea", enabled: true, entries: 2 }],
+  },
+  "/api/lorebooks/hollow-sea": {
+    slug: "hollow-sea",
+    book: {
+      name: "Hollow Sea",
+      description: "the ghostship and the fog",
+      enabled: true,
+      entries: [
+        {
+          keys: ["ghostship", "the captain"],
+          content: "The Veile sails only under fog.",
+          enabled: true,
+          constant: false,
+          secondary_keys: [],
+          logic: "and_any",
+          case_sensitive: false,
+          whole_words: true,
+          position: "head",
+          order: 100,
+          priority: null,
+        },
+        {
+          keys: [],
+          content: "It is always winter on the Hollow Sea.",
+          enabled: true,
+          constant: true,
+          secondary_keys: [],
+          logic: "and_any",
+          case_sensitive: false,
+          whole_words: true,
+          position: "tail",
+          order: 200,
+          priority: null,
+        },
+      ],
+    },
+  },
   "/api/integrations/status": { mcp: [], openapi: [], dirty: false },
   "/api/threads": [],
   "/api/agent/default-prompt": "You are a helpful homelab assistant.",

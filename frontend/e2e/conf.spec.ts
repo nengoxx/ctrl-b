@@ -69,6 +69,41 @@ test("Conf · Prompts — the registry list + the two-field editor", async ({ pa
   await expect(group.getByRole("button", { name: "Save 1 change" })).toBeEnabled();
 });
 
+// D70 §6.6 — the lorebook manager, in its Conf group. The 390px project viewport is the gate: a book
+// is a wall of text, so what has to hold at phone width is the COLLAPSED ladder — the shelf row opens
+// into a book, the book shows one row per entry, and an entry opens one form. The group ships
+// collapsed (it sits low in a long tab), so the spec opens it first.
+test("Conf · Lorebooks — the shelf → a book → its collapsed entry list", async ({ page }) => {
+  const group = page.locator("#lorebooks");
+  await expect(group.getByText("books · scan · budget")).toBeVisible(); // the header summary, still shut
+  await group.locator(".conftitle").click();
+
+  // the shelf: one row per book, collapsed, with its master switch. Scoped to the row's own label —
+  // the globals' attach picker below carries a chip with the same words.
+  await expect(group.locator(".lb-book > .confrow .label")).toContainText("Hollow Sea");
+  await expect(group.getByText("2 entries").first()).toBeVisible();
+  await expect(group.getByRole("switch", { name: "Hollow Sea enabled" })).toBeVisible();
+  await expect(group.getByLabel("Lorebook name")).toHaveCount(0);
+
+  // open the book → its own fields plus the entry list, every entry still collapsed
+  await group.getByRole("button", { name: "expand Hollow Sea" }).click();
+  await expect(group.getByLabel("Lorebook name")).toHaveValue("Hollow Sea");
+  await expect(group.getByText("ghostship, the captain")).toBeVisible();
+  await expect(group.getByText("The Veile sails only under fog.")).toBeVisible();
+  await expect(group.getByText("constant", { exact: true })).toBeVisible();
+  await expect(group.getByLabel("Entry 1 content")).toHaveCount(0);
+
+  // open ONE entry → one form, and only that one
+  await group.getByRole("button", { name: "expand entry 1" }).click();
+  await expect(group.getByLabel("Entry 1 keys")).toHaveValue("ghostship, the captain");
+  await expect(group.getByLabel("Entry 1 position")).toHaveValue("head");
+  await expect(group.getByLabel("Entry 2 content")).toHaveCount(0);
+
+  // the globals below the manager carry the attach picker for the same book
+  await expect(group.getByText("Global lorebooks")).toBeVisible();
+  await expect(group.getByRole("button", { name: "Hollow Sea", exact: true })).toBeVisible();
+});
+
 test("Conf · Voice STT — every knob + primary/fallback pickers (no failover switch)", async ({
   page,
 }) => {
