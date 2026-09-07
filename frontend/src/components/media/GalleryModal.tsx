@@ -447,6 +447,12 @@ export function GalleryModal({
  *  registry never described has no ladder to speak for. */
 function reading(view: SectionView, scope: GalleryScope, active: ActiveArt): string | undefined {
   const { section } = view;
+  // The OUTRANKED word FIRST (D70 §8.3, the S6 confirm round's find): when the destination is beaten
+  // from outside this gallery — the agent's own backdrop, or the mode being off — that is the one
+  // honest thing to say, and it must survive the seat's early return below (a seat ordinarily has no
+  // reading, but an outranked seat's modal going silent read as blank rings with no reason). Only the
+  // wiring mints `outranked`, and only on agent-backdrop sections, so nothing else changes.
+  if (active.outranked !== undefined) return OUTRANKED[active.outranked];
   if (section.kind === "seat" || section.kind === "unassigned") return undefined;
   // Only where a resolver actually answers for what is ON SCREEN: a key gallery is answered by the
   // role's per-key ladder, everything else by the section's own. `active` is that answer, resolved by
@@ -454,10 +460,6 @@ function reading(view: SectionView, scope: GalleryScope, active: ActiveArt): str
   const answers =
     scope.key !== undefined ? view.activeForKey !== undefined : section.active !== undefined;
   if (!answers) return undefined;
-  // …and when the destination itself is outranked from OUTSIDE this gallery (D70 §8.3 — the agent's
-  // own backdrop, or the mode being off), the how-it-is-consumed sentence would describe a set nothing
-  // is currently reading. The card's own word, so the two surfaces say one thing.
-  if (active.outranked !== undefined) return OUTRANKED[active.outranked];
   if (active.mode === "deal") return "dealt to machines in this order";
   if (active.mode === "all") return "every in-use image is shown, in this order";
   return "the first in-use image is the one shown";

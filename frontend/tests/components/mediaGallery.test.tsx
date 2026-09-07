@@ -363,6 +363,16 @@ describe("the entry cards (§6.1)", () => {
     expect(seat.textContent).not.toContain("is bound here");
   });
 
+  it("…and the WORD survives opening the SEAT — the modal's reading line says it too", async () => {
+    // The confirm round's find (S6 rider): `reading()` returned early for EVERY seat before the
+    // outranked check, so the card outside explained the absent ring and the modal inside went
+    // silent — blank rings with only the image count, no reason. The word is checked FIRST now.
+    setUI({ agentBackdrop: "off" });
+    renderWithAgent(withOracleArt(), false);
+    const dialog = await openSection("Operator character");
+    expect(dialog.textContent).toContain("the agent backdrop is off");
+  });
+
   it("…and with the mode on and NO agent picture, the ladder answers exactly as it always did", async () => {
     // The regression guard for the two arms above: the outranking is real, not a blanket silencing.
     renderWithAgent(
