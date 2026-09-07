@@ -2124,6 +2124,12 @@ test("minimal · 4-tab + placement=button: the gallery is one docked tap away, c
     cards.first().boundingBox(),
   ]);
   expect(card!.width).toBeLessThan(grid!.width * 0.6);
+  // OF-1b (owner round 2026-09-07): standalone, the actions card must carry the tab's page inset and
+  // share the grid's left edge — it shipped full-bleed ("goes up to the sides") because only the
+  // Conf-hosted group ever supplied an inline margin. The hosted look is separately pinned above.
+  const actions = await page.locator(".agal-actions").boundingBox();
+  expect(actions!.x).toBeGreaterThan(0);
+  expect(actions!.x).toBe(grid!.x);
 });
 
 // D70 §8.4a — BAR GEOMETRY AT FIVE. `sectionPlacement.agents = "tab"` splices the satellite onto the bar

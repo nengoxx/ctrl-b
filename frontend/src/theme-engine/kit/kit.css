@@ -7736,6 +7736,21 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
 .kit .agal-detail {
   padding-bottom: 2px;
 }
+/* OF-1b (owner round, 2026-09-07): the STANDALONE tab's page inset — without it these cards ran
+ * edge-to-edge in the `tab`/`button` placements (the owner's "goes up to the sides"), because only the
+ * Conf-hosted group carries an inline margin. 16px = the gallery grid's own inset, so the cards and the
+ * grid share one left edge. The `.util` pair above is the precedent, host-zeroing included. */
+.kit .agal-actions,
+.kit .agal-detail,
+.kit .agrep {
+  margin-inline: 16px;
+}
+/* Hosted inside Conf, the group owns the inline inset (`.confgroup`'s 18px) — same as `.confgroup .util`. */
+.kit .confgroup .agal-actions,
+.kit .confgroup .agal-detail,
+.kit .confgroup .agrep {
+  margin-inline: 0;
+}
 .kit .agal-back {
   all: unset;
   display: block;
