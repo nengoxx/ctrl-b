@@ -1569,3 +1569,66 @@ default + lynette); both units RUNNING (D69 observation continues).
   owner's confirm on dev → THEIR WORD closes S4 → **S5** (lorebook FE: manager + attachment
   picker + the §6.6 collapsed-entry editor + the `lorebooks.books` editor) — the owner asked
   that S5 not start before they are back home.
+
+#### THE OF FIX WAVE (2026-09-07, seventh session — Emma back per the owner's word, so the wave ran the FULL cadence; council-CLOSED, awaits the owner's dev confirm)
+
+**The pin (OF-1).** No agents-only divergence exists: every dropdown on the agents surface is a
+native `<select>` under the ONE shared recipe (`kit.css` `.kit .mconf .mform input, … select` —
+`all: unset` + padding on the SELECT), and **no `option` rule existed repo-wide**, so every
+popup's rows rendered with essentially no insets. Worst case = the provider/model picker
+(`ProviderModelPicker.tsx`), whose 20–30-char mono ids make the popup near-viewport-wide at
+360px with text flush to the edges. The class is app-wide (machines · agents · Conf ·
+automations · the provider/model pair). **Ruled fix: ONE app-wide `.kit option { padding: 8px
+10px; }`** beside the recipe — the metric is the app's own popover option-row recipe
+(`.kit .kit-suggest li`). Recorded honestly in the rule's comment: it lands on DESKTOP popups
+only; an OS-rendered mobile picker ignores option padding and carries native insets, so the
+phone's native dialog was never the broken rendering. If the owner's round still shows a bare
+list, the fold-up is the `.priv-menu` popover-listbox pattern riding the deferred OF-3 pass.
+
+**The precedent (OF-2) — found, and it is the owner's own words.** Commit `57e106a` (the gacha
+dossier act, 2026-08-02): *"pink one side, violet the other."* Mechanism, third occurrence of
+one class: `background-origin` defaults to padding-box but `background-clip` to border-box (+
+repeat), so a gradient is laid out to the padding box then TILED across the border strip — the
+left strip renders the ramp's LAST stop, the right its FIRST; `border-color: transparent` makes
+them read as two solid rims. The ruled fix is the precedent's: `background-clip: padding-box`
+(also the D54 kit-banner fix, e2e-gated). The reported button is `kit.css` `.mconf .mfoot
+button.save` (the agents/machine detail SAVE — a long-standing rule the S4 surface finally put
+in front of the owner; the S4 commits added no gradient controls).
+
+**The sweep + build (pinned Opus, `9f6b597`).** Clip added to SEVEN sites (each with the
+mechanism named in a one-line comment): kit `.mfoot button.save` · kit `.conf-save` · kit
+`.tick-grid .tick.on` · kit `.switch.on .knob` (gacha immune — its knob sets `border: 0`) ·
+cosmos `.hd-act.primary` (own literal gradient) · vapor `.plan-pin-head` · vapor `.summary`
+(non-interactive, swept as class closure, marked as such). Untouched as ruled: the two
+precedent sites, and frontier's `.mconf .mfoot button` flatten (it masks the class under
+frontier — but its own comment says it targets "the fill-less ones", and `.save` IS filled, so
+the flat primary is collateral → **recorded as ISS-12**, an owner look ruling, deliberately NOT
+folded in). **Guard:** `tests/themes/gradientRim.test.ts` — a source pin in the gachaChrome
+style over the swept sites PLUS both precedents, so the thrice-bitten class stays closed from
+both ends. One build deviation, ACCEPTED (the gradient predicate widened to `gradient|-fill` —
+the precedents fill via `--gc-dossier-act-fill`/`background-image`). Main-seat audit: diff read
+line-by-line; declaration order verified per block (a `background:` shorthand RESETS the clip);
+theme-layer override probe clean (gacha's knob shorthand re-set is border-0-immune; frontier
+replaces the fill entirely); **the full gate independently re-run: 6/6**.
+
+**The blind Emma round (back per the owner's word): SHIP WITH FIXES — 1 MED · 1 LOW, open
+sweep "none"; she ran the new spec herself (9/9)** and explicitly cleared: OF-1 reaches every
+native dropdown the app renders (no `multiple`/`size`/`optgroup`/`datalist` cases); all seven
+clip sites effective in the live cascade; the guard's nine cases non-vacuous; no objectionable
+metric change. **MED (conf 0.98): gacha's ONLINE ribbon** `.gc-card .state.on` missed by the
+sweep — the 92deg `--gc-online-fill` over the base `.state`'s 1px border, transparent: the
+exact pair, the rounded left cap tiles the far stop. Main-seat verified in-code; the other
+`--gc-online-fill` consumer (`.po-chip`) checked borderless → immune. **LOW (0.99): the guard
+pinned the clip's presence but not its position** — a shorthand APPENDED after it would reset
+the clip with the test still green. **Both ruled FIX → main-seat rider `90a7664`** (the
+`b5974f5` class): the ribbon clipped + added to SWEPT (10 cases); the guard now also asserts
+the last `background:` shorthand precedes the clip per block (no-shorthand blocks pass via
+lastIndexOf = −1). **Her confirm (resumed): both RESOLVED with line proof · `.po-chip`
+immunity ruled sound (one description correction: asleep = inset shadow, busy removes it) ·
+the ordering assertion's lexical modes named and accepted as non-operative under prettier ·
+open sweep of the rider "none" — RESOLVED — SHIP.**
+
+**State:** gate 6/6 at `90a7664` — **BE 2,373 · FE 2,992/175** (counts in QUALITY.md). FE-only
+wave; :5173 serves it live. **OF-1 + OF-2 are BUILT + council-closed; OF-3 stays deferred;
+ISS-12 (frontier's flat save) awaits an owner ruling. The owner's dev confirm on these two,
+then THEIR WORD closes S4 → S5.**

@@ -12,7 +12,53 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-07, SIXTH session — §8.4a designed+built+reviewed AND the S4 code round CLOSED; then the OWNER ROUND landed 2 FIX findings (OF-1 dropdown padding · OF-2 gradient-button edge rims + app sweep) — ⚠ the NEXT SESSION opens on that fix wave, EMMA UNAVAILABLE, S5 waits for the owner home; supersedes below where it speaks)
+## Current state (2026-09-07, SEVENTH session — THE OF FIX WAVE ran the FULL cadence (Emma back per the owner's word) and is COUNCIL-CLOSED; ⚠ next = the owner's dev confirm on OF-1/OF-2 → their word closes S4 → S5 (still held for the owner home); supersedes below where it speaks)
+
+- **The session opened on the owner's word that Emma is available again, so the OF wave ran the
+  whole standing cadence, not the build-only fallback:** pin + precedent (two scouts) →
+  main-seat design → pinned Opus build **`9f6b597`** → main-seat audit (diff line-by-line,
+  declaration-order + theme-override probes, **full gate independently re-run 6/6**) → blind
+  Emma round → fix rider → her confirm. **Full record = plan §13-S4's OF-FIX-WAVE addendum.**
+- **OF-1 (dropdown padding):** no agents-only divergence — the app styled every native
+  `<select>` through the ONE shared recipe but styled `<option>` NOWHERE, so every popup's rows
+  rendered flush; worst = the provider/model picker's mono ids at 360px. Fix = ONE app-wide
+  `.kit option { padding: 8px 10px; }` (the app's own popover-row metric). Honest caveat in the
+  rule: desktop popups only — OS-rendered mobile pickers ignore option CSS and carry native
+  insets; if the owner's round still shows a bare list, the fold-up is the `.priv-menu`
+  popover-listbox pattern riding the deferred OF-3 pass.
+- **OF-2 (gradient rims):** the precedent was found and is literally the owner's remembered
+  bug — `57e106a`, the gacha dossier act, *"pink one side, violet the other"*. Mechanism: a
+  gradient tiles into the border strip (origin=padding-box, clip=border-box); ruled fix =
+  `background-clip: padding-box` (also D54). Swept SEVEN sites (kit save/`.conf-save`/tick
+  chips/switch knob · cosmos primary · vapor plan-pin + summary) + a NEW source-pin guard
+  `tests/themes/gradientRim.test.ts` (swept sites AND both precedents). **Emma: SHIP WITH
+  FIXES — 1 MED (gacha's ONLINE ribbon `.gc-card .state.on` missed, verified + REPRODUCED by
+  mechanism) · 1 LOW (the guard didn't pin shorthand ORDER) · sweep "none"; both ruled FIX →
+  main-seat rider `90a7664` (ribbon clipped + SWEPT row; per-block last-shorthand-precedes-clip
+  assertion) → her confirm: both RESOLVED with line proof, `.po-chip` immunity sound, rider
+  sweep "none" — RESOLVED — SHIP.**
+- **NEW: ISS-12** (found by the sweep, deliberately NOT folded in): frontier's border-off sweep
+  flattens the modal-footer SAVE to `--surface-2` — collateral of a rule whose own comment
+  targets "the fill-less ones"; primary reads like Cancel. One-token fix sketched in the entry;
+  it changes frontier's shipped look, so it waits for the owner's ruling. **OF-3 stays
+  deferred** (owner-ruled, its own future pass).
+- **Gate at tip: 6/6 — BE 2,373 · FE 2,992/175** (counts in QUALITY.md). FE-only wave — :5173
+  serves it live; **both dev units RUNNING (D69 presence observation continues, do NOT stop
+  the units); no backend restart needed.**
+- **▶▶ NEXT: the owner's dev confirm on OF-1 + OF-2** (:5173 — the agents form's dropdowns +
+  the SAVE button edges, plus any gradient control they eyeball: tick chips, switch knobs,
+  cosmos Wake, the gacha ONLINE ribbon) **→ THEIR WORD closes S4 → S5** (lorebook FE: manager +
+  attachment picker + the §6.6 collapsed-entry editor + the `lorebooks.books` editor) — **S5
+  still does not start until the owner says they are back home.** The Phase 19 residual
+  (`tabbtn-<id>` aria class app-wide) stands.
+- **Git: 67 commits unpushed over origin `04769d9`** (the 64 at session open + `9f6b597` build
+  + `90a7664` rider + this docs commit); working tree clean; the PUSH ruling stays the owner's.
+  **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline (Dependabot D1 → push → release
+  E, config migration 2→3, rollback = config backup FIRST then v1.7.7) is unchanged and still
+  owed; sequencing is the owner's. **NEXT-NEXT (owner): LIVE VOICE/CALL MODE — start at R51,
+  buy only the delta.**
+
+## Prior state (2026-09-07, SIXTH session — §8.4a designed+built+reviewed AND the S4 code round CLOSED; then the OWNER ROUND landed 2 FIX findings (OF-1 dropdown padding · OF-2 gradient-button edge rims + app sweep) — the fix wave ran the NEXT session; superseded above where it speaks)
 
 - **The session opened on the owner's correction: the S4 gallery's "own section" meant INSIDE
   settings, hidden by default like the tools tab — then a deep design pass, then three rulings
