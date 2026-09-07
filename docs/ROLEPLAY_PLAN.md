@@ -592,6 +592,52 @@ background tall) are config-shaped like the existing per-role crop settings, not
   today's look on every theme **under `operator`/`full`** (`off` suppresses the fallback too —
   the F14 correction above).
 
+### 8.3a S6 design addendum (2026-09-08, owner-confirmed in conversation): the kit operator strip · the active-agent rule · the setting's home
+
+*Fills the presentations §8.3 left unstated; scouted against the code at `0ee3474`. §8.3 stands;
+this narrows it.*
+
+1. **The kit operator presentation.** cosmos/vapor/minimal have no operator-image place; under
+   `operator` they get one — **an in-flow art strip at the top of the agent tab** (the gacha
+   oracle's geometry class: a token-height block, art + readability scrim, focal honored via
+   `useFocalPosition`, NO name plate/scanline) that **simply scrolls away with content** —
+   gacha's own `data-oracle="scroll"` posture, so NO JS driver in operator mode. It mounts ONLY
+   when the active agent has a background: agentless / fresh install = today's look exactly.
+   (The rejected alternative — `operator` paints nothing on kit themes — would make the default
+   state invisible on the default theme, contradicting ruling 13's default-ON.)
+2. **The active agent = the sticky session pin when valid in the roster, else the resolved
+   default** (whose own background may paint). ONE image per surface: per-bubble `m.agent`
+   never drives the backdrop, and the composer's one-shot armed pick does NOT flip it — a
+   single-message target is not a change of operator; only switching characters (Talk /
+   `/agent`) is. Mechanically: `sessionAgent` (`store/chat.ts:457`) upgrades to a tiny
+   subscribable (`useSyncExternalStore`) keeping the `getSessionAgent`/`setSessionAgent`
+   signatures — every existing caller untouched — plus a new `useSessionAgent()`; the
+   valid-in-roster derivation already inline in `ToolsMenuSheet.tsx:83-90` is EXTRACTED and
+   shared, not duplicated.
+3. **The setting**: `agentBackdrop: "operator" | "full" | "off"`, default `"operator"` — a
+   **synced** appearance field (the `chatAvatarsVisible` class: `UIState` + the appearance doc
+   + backend `AppearanceCfg.agent_backdrop`, additive, no migration), healed at read against a
+   `const` allowlist (the `SECTION_PLACEMENTS` precedent), rendered as a hand-written
+   `SettingRow` + 3-option `Seg` beside Chat avatars. Per-agent mode overrides stay the
+   recorded seam, not v1.
+4. **`full` is ONE shared arrangement** (a kit-level component) used by the kit themes AND
+   gacha: a zero-height sticky pin (the frontier `.fr-rigstack-pin` precedent) hosting the
+   sharp full-bleed art layer at z:0 (`.chat-log` lifted to z:1 under the state), a separate
+   readability scrim, and the 1→0.28 opacity walk — driven by a minimal kit hook over the
+   **lifted pure progress math** (`themes/gacha/oracle.ts`'s pure half moves to a shared
+   kit module; gacha re-imports — one source of truth; the gacha DOM driver stays gacha's).
+   Walk tunables (ramp/floor) are kit tokens, not magic numbers; §14.11 holds (opacity-only
+   per-frame, no animated filter, no scroll-driven CSS animations; hand-authored
+   perf-lite/motion-reduced gates). **In gacha `full`, `GachaOracle` does not mount** — the
+   plate/scanline are absent while `full` is active (owner-accepted; `operator` keeps them).
+5. **Gacha wiring lands at the body level** (`GachaAgent`; `GachaOracle` untouched):
+   `operator` → `art = activeAgentBackground ?? oracleArt(roster)`; `full` → the shared
+   arrangement paints the same resolution full-bleed; `off` → `art = null` (the shipped
+   plate-only null state) and no kit layer. `gacha.oracle` sticky/fade keeps governing
+   operator-mode scroll ONLY. In `full` with no agent art the theme fallback paints
+   full-bleed (kit themes: nothing — they have no fallback art). Frontier: untouched
+   (ruling 18).
+
 ### 8.4 The agent gallery — its own settings section (rulings 4 + 17; design evidence = R67)
 
 > **⚠ PLACEMENT RE-RULED 2026-09-07 — see §8.4a.** Everything inside the gallery (grid, cards,
@@ -842,8 +888,8 @@ Phase 18 doc stays truthful.
   refinements.
 - **S5 — the lorebook FE:** manager + attachment picker.
 - **S6 — the three-state backdrop (FE/theme):** the appearance setting + gacha oracle
-  integration + the kit backdrop layer + the `off`-state surface behavior (§8.3) — in-phase
-  per ruling 13, default `operator`.
+  integration + the kit backdrop layer + the `off`-state surface behavior (§8.3, narrowed by
+  the owner-confirmed §8.3a) — in-phase per ruling 13, default `operator`.
 - **S7 — the owner device round** (the phase gate): import a real card, talk to it on the
   phone, tools-in-character on both duties settings, all three backdrop states on the real
   phone (blur/dim legibility), a field-authored lorebook imported + triggering live (§6.7),
