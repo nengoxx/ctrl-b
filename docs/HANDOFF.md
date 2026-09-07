@@ -39,18 +39,28 @@
   eslint 97 → 110, attributed there — the seeded-snapshot render reads are deliberate).
   **FE-only slice — :5173 serves it live; both dev units RUNNING (D69 presence observation
   continues, do NOT stop the units); no backend restart needed.**
-- **▶▶ NEXT: the owner's feel round on the lorebook manager** (dev :5173 → Conf → Lorebooks:
-  the shelf · their real `personality-traits` book's 40 collapsed entries · an entry expand ·
-  the add row's slug hint · import a book · the picker on Lynette's form + the global list)
-  **→ THEIR WORD closes S5 → S6 (the three-state backdrop, §10-S6)** — one slice per session.
-  The Phase 19 residuals stand (`tabbtn-<id>` aria class · multipart spool · now the
+- **THE OWNER'S FEEL ROUND LANDED same session (in conversation): "it looks fine" + ONE
+  finding — the Global-lorebooks picker flush with no padding — plus the standing ask to
+  MEASURE consistency rather than claim it.** Measured live at 390px: both card-hosted
+  `.agent-allow` blocks at x:19 (the flagged picker AND the S4-shipped roleplay "Character
+  tools" grid — the same uncaught defect) vs the card content line at x:33; everything else
+  on the surface measured consistent. **Fix `589ecf0`**: one child-scoped rule
+  (`.conf-card > .agent-allow` takes the confrow's density-aware inset; the `.mform`
+  instances untouched); re-measured x:33 both; the e2e Lorebooks ladder pins the shared
+  left edge, proven red without the CSS, green both projects; gate 6/6. **Emma micro-round:
+  RESOLVED — SHIP, sweep "none".** Record = plan §13-S5's feel-round addendum.
+- **▶▶ NEXT: the owner's phone glance at the FIXED picker** (dev :5173 → Conf → Lorebooks —
+  the "0 attached"/chips now on the row-label line; the same grid in Roleplay also fixed)
+  **→ THEIR WORD closes S5 → S6 (the three-state backdrop, §10-S6)** — one slice per
+  session. The Phase 19 residuals stand (`tabbtn-<id>` aria class · multipart spool · the
   TickGrid tools/skills silent-drop + unreadable-book surfacing, plan §13-S5).
-- **Git: 75 commits unpushed over origin `04769d9`** (the 69 + `eb2f21c` + `3be3386` +
-  `b365d45` + `0ce4dd4` + `059fd29` + this docs commit); working tree clean; the PUSH ruling
-  stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline (Dependabot
-  D1 → push → release E, config migration 2→3, rollback = config backup FIRST then v1.7.7)
-  is unchanged and still owed; sequencing is the owner's. **NEXT-NEXT (owner): LIVE
-  VOICE/CALL MODE — start at R51, buy only the delta.**
+- **Git: 77 commits unpushed over origin `04769d9`** (the 69 + `eb2f21c` + `3be3386` +
+  `b365d45` + `0ce4dd4` + `059fd29` + the S5 docs commit + `589ecf0` + this docs commit);
+  working tree clean; the PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @
+  `578ffa7`.** The v1.7.8 pipeline (Dependabot D1 → push → release E, config migration 2→3,
+  rollback = config backup FIRST then v1.7.7) is unchanged and still owed; sequencing is
+  the owner's. **NEXT-NEXT (owner): LIVE VOICE/CALL MODE — start at R51, buy only the
+  delta.**
 
 ## Prior state (2026-09-07, SEVENTH session — THE OF FIX WAVE COUNCIL-CLOSED, then the owner's confirm round RE-PINNED OF-1 → **OF-1b** (the standalone cards' full-bleed) fixed `02cc5c4` + council-closed same session; superseded above where it speaks)
 

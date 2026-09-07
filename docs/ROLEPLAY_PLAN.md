@@ -1764,3 +1764,22 @@ eslint 97 → 110, attributed there — the seeded-snapshot render reads are the
 per session, the owner's word opens it. The owner's dev poke at the manager (Conf →
 Lorebooks on :5173 — their real 40-entry `personality-traits` book is live on dev from S3)
 is the natural feel round.**
+
+#### S5 addendum — the owner's feel round (2026-09-08, same session): ONE finding, fixed `589ecf0`, micro-round-closed
+
+**The round:** "it looks fine" — except the Global-lorebooks picker ("0 attached" + the
+`personality-traits` chip) with "no padding at all", plus a standing ask: MEASURE the whole
+surface for consistency rather than claim it. **Measured live at 390px (the OF-1b method):**
+both card-hosted `.agent-allow` blocks sat at x:19 against the card border — the flagged
+picker AND the S4-shipped roleplay "Character tools" grid (the same defect, previously
+uncaught) — while every row label and every manager internal (mform · entry rows · footers)
+sits on the card's content line at x:33. Cause: `.agent-allow` was born inside `.mform`,
+whose grid supplies gutters; a `.conf-card` supplies none. **Fix `589ecf0`:** ONE
+child-scoped rule (`.kit .conf-card > .agent-allow` takes the confrow's density-aware
+inset); the four consumers produce five placements and the combinator reaches exactly the
+two card-hosted ones. Re-measured x:33 both; the e2e Lorebooks ladder pins the shared left
+edge (head x === label x ∧ > card edge), proven red without the CSS. The import row's 12px
+is the shipped agal recipe verbatim — consistent with its agents-surface sibling, left
+alone. Gate 6/6. **Emma micro-round: RESOLVED — SHIP** — scope verified (the `.mform`
+instances cannot match), pin non-vacuous, consistency sweep "no additional findings".
+**The owner's phone glance at the fixed picker is the remaining word; then S5 closes → S6.**
