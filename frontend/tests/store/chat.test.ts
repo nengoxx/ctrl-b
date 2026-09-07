@@ -12,10 +12,12 @@ import {
   retryLastTurn,
   runShell,
   sendMessage,
+  getSessionAgent,
   setSessionAgent,
   startNewThread,
   stopTurn,
   useChat,
+  useSessionAgent,
 } from "../../src/store/chat";
 import type { Part } from "../../src/types";
 
@@ -3083,6 +3085,35 @@ describe("per-message agent (A6)", () => {
       await sendMessage("hi");
     });
     expect(body.agent).toBe(null);
+  });
+
+  // D70 S6 — the sticky pick is REACTIVE now (it lives in ChatState beside `sessionPrivilege`), because a
+  // surface renders it: the agent backdrop paints the ACTIVE agent's art, and "active" is this pin. The
+  // signatures did not move, so this is the ONE new claim: a subscriber is notified, and the imperative
+  // read agrees with what the subscriber saw. Driven through the real hook (not the store internals) —
+  // a `useSyncExternalStore` binding that never emits is exactly the failure this catches.
+  it("the sticky pick NOTIFIES subscribers — and `getSessionAgent` agrees with what they see", () => {
+    setSessionAgent(null);
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders++;
+      return useSessionAgent();
+    });
+    expect(result.current).toBe(null);
+    const before = renders;
+
+    act(() => {
+      setSessionAgent("lynette");
+    });
+    expect(result.current).toBe("lynette"); // the subscriber saw it
+    expect(getSessionAgent()).toBe("lynette"); // …and the imperative read is the same value
+    expect(renders).toBeGreaterThan(before); // it really re-rendered, rather than reading stale state
+
+    act(() => {
+      setSessionAgent(null); // back to the default — the clear notifies too
+    });
+    expect(result.current).toBe(null);
+    expect(getSessionAgent()).toBe(null);
   });
 
   // Codex, round 2 — the opts.agent is applied by PROPERTY PRESENCE, not `??`. `agent: null` is the menu's

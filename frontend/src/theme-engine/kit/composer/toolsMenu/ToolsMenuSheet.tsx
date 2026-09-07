@@ -7,6 +7,7 @@ import {
   getKnownAgents,
   getKnownSkills,
   useVerbsVersion,
+  validSessionAgent,
 } from "../../../../lib/composer";
 import { getSessionAgent } from "../../../../store/chat";
 import { releaseComposerOverlay, useComposerOverlayOpen } from "../../../../store/composerOverlay";
@@ -74,19 +75,12 @@ export function ToolsMenuSheet() {
   // now the panel stays mounted: `open` flipping IS a re-render of this component, so reopening re-reads
   // the sticky value exactly as remounting used to.)
   //
-  // A sticky name that isn't a CONFIGURED agent reads as the default row (Codex, verify round). `/agent
-  // typo` stays sticky on purpose — the backend falls back to the default agent and `routeSlash` already
-  // warned — but "typo" matches no row, so reflecting it verbatim left the whole group unchecked, i.e. the
-  // panel claiming the next message goes nowhere. The default row is where it actually goes, so that's what
-  // gets ticked. DISPLAY only: the sticky value and the send path are untouched, and `armed` (the dot) still
-  // keys off the one-shot alone.
-  const sticky = getSessionAgent();
+  // A sticky name that isn't a CONFIGURED agent reads as the default row (Codex, verify round) — the
+  // `validSessionAgent` fold, shared with the agent backdrop since D70 S6 (see its note in
+  // `lib/composer.ts`). DISPLAY only: the sticky value and the send path are untouched, and `armed` (the
+  // dot) still keys off the one-shot alone.
   const effectiveAgent =
-    scope.agent !== undefined
-      ? scope.agent
-      : sticky !== null && agents.includes(sticky)
-        ? sticky
-        : null;
+    scope.agent !== undefined ? scope.agent : validSessionAgent(getSessionAgent(), agents);
 
   return (
     <div

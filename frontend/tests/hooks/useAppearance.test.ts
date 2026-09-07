@@ -13,7 +13,7 @@ import type { ThemeSettingField } from "../../src/theme-engine/types";
 // Phase 11 / D28 §9.11 + M3 §14.3 — the cross-device reconcile decision (compare-then-set, server-wins,
 // but only when the server has a recorded preference). The synced unit is
 // {theme,mode,accent,motion,perf,themeSettings,kitBackgroundVisible,appbarSubtitleVisible,
-// chatAvatarsVisible,pwaIconBackground}.
+// chatAvatarsVisible,agentBackdrop,pwaIconBackground}.
 // Pure function
 // → tested directly.
 
@@ -27,6 +27,7 @@ const local: AppearanceLocal = {
   kitBackgroundVisible: true,
   appbarSubtitleVisible: false,
   chatAvatarsVisible: true,
+  agentBackdrop: "operator",
   pwaIconBackground: null,
 };
 const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
@@ -39,6 +40,7 @@ const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
   kit_background_visible: true,
   appbar_subtitle_visible: false,
   chat_avatars_visible: true,
+  agent_backdrop: "operator",
   pwa_icon_background: null,
   updated_at: "2026-06-26T12:00:00Z",
   ...o,
@@ -70,6 +72,7 @@ describe("reconcileAppearance", () => {
       kitBackgroundVisible: true,
       appbarSubtitleVisible: false,
       chatAvatarsVisible: true,
+      agentBackdrop: "operator",
       pwaIconBackground: null,
     });
   });
@@ -95,6 +98,21 @@ describe("reconcileAppearance", () => {
       reconcileAppearance(server({ kit_background_visible: null, accent: "ember" }), local, always)
         ?.kitBackgroundVisible,
     ).toBe(true);
+  });
+
+  // The agent-backdrop MODE (D70 §8.3a) joins on the same terms as the switches — synced because the art
+  // is per-agent and the mode is one viewing preference — with one difference worth pinning: its wire type
+  // is a bare string, so the reconcile CARRIES an unknown value through (the `motion`/`perf` posture) and
+  // the healing happens where it is read. A reconcile that silently coerced here would make a downgrade
+  // followed by an upgrade lose the owner's pick.
+  it("server wins on a differing agent-backdrop mode; UNSEEDED keeps local; unknown is CARRIED", () => {
+    expect(
+      reconcileAppearance(server({ agent_backdrop: "full" }), local, always)?.agentBackdrop,
+    ).toBe("full");
+    expect(reconcileAppearance(server({ agent_backdrop: null }), local, always)).toBeNull();
+    expect(
+      reconcileAppearance(server({ agent_backdrop: "sideways" }), local, always)?.agentBackdrop,
+    ).toBe("sideways");
   });
 
   // The app bar's brand-subtitle switch joins on the same terms again (the third global lever): synced
@@ -211,6 +229,7 @@ describe("reconcileAppearance", () => {
       kitBackgroundVisible: true,
       appbarSubtitleVisible: false,
       chatAvatarsVisible: true,
+      agentBackdrop: "operator",
       pwaIconBackground: null,
     });
   });
@@ -244,6 +263,7 @@ describe("reconcileAppearance", () => {
         kitBackgroundVisible: true, // global lever, unchanged here — still carried whole
         appbarSubtitleVisible: false, // ditto — the subtitle switch rides the same whole-doc apply
         chatAvatarsVisible: true, // ditto — the transcript-avatar switch (D70 §8.5)
+        agentBackdrop: "operator", // ditto — the agent-backdrop mode (D70 §8.3a)
         pwaIconBackground: null, // ditto — the installed-icon backdrop rides it too
       });
     });

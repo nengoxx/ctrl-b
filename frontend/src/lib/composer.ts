@@ -137,6 +137,20 @@ export function getDefaultAgent(): string {
   return defaultAgent;
 }
 
+/** The sticky `/agent` pick REDUCED TO A CONFIGURED AGENT, or `null` for "the resolved default".
+ *
+ *  `/agent typo` stays sticky on purpose — the backend falls back to the default agent and `routeSlash`
+ *  already warned — so the pin itself can name an agent that does not exist. Every surface that has to
+ *  say WHICH agent the next message actually runs as therefore has to fold the unknown name back to the
+ *  default: the tools menu's radio group (which would otherwise leave the whole group unchecked, i.e.
+ *  claim the message goes nowhere) and, since D70 §8.3a, the agent backdrop (which would otherwise paint
+ *  nothing where the default's own art belongs). ONE fold, PURE over its two inputs, because the two
+ *  callers read those inputs differently: the menu takes the module set + the non-reactive pin, the
+ *  backdrop takes the roster query + the reactive one. */
+export function validSessionAgent(sticky: string | null, agents: readonly string[]): string | null {
+  return sticky !== null && agents.includes(sticky) ? sticky : null;
+}
+
 export async function loadAgents(): Promise<void> {
   const gen = ++agentsGen;
   try {

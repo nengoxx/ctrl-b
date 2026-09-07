@@ -282,6 +282,27 @@ export function DefaultRoot({
     return () => ro.disconnect();
   }, [appbarMode]);
 
+  // Expose the CONTENT PANE's height as `--kit-pane-h` — the third measured shell box, published exactly
+  // like the two around it and for the same class of reason: a layer that must fill the visible pane has
+  // no other way to know how tall it is. `--app-h` is the visual viewport (it includes the nav bar, which
+  // is a flex sibling of this box), and the nav's height is a function of the bar mode, the safe-area
+  // inset and the tab count — so "app height minus a constant" is not a thing that can be written down.
+  // The one consumer today is the `full` agent backdrop (D70 §8.3a): an absolutely-positioned descendant
+  // contributes to the SCROLLER's scrollable overflow, so a layer sized to anything bigger than the pane
+  // makes an empty agent tab scrollable by the difference (measured: 104px = the appbar + the tab bar).
+  // `.kit-main` rather than `.kit-scroll`, which is that box's own `inset: 0` child — same number, and the
+  // observed node then does not change identity with the scroller.
+  useEffect(() => {
+    const pane = mainRef.current;
+    if (!pane) return;
+    const set = () =>
+      document.documentElement.style.setProperty("--kit-pane-h", `${pane.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(pane);
+    return () => ro.disconnect();
+  }, []);
+
   // The composer floats OVER the scrolling content (so the content shows in the gaps around it). Measure
   // its height → `--composer-h` so the scroller pads its bottom enough for the last content to scroll clear
   // (the textarea auto-grows, so a ResizeObserver keeps the padding in sync). 0 when no composer.

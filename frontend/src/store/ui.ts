@@ -11,6 +11,7 @@
 // attribute as every other theme's (the legacy `body[data-theme]` axis is RETIRED, only cleared).
 
 import type {
+  AgentBackdropMode,
   LayoutId,
   Mode,
   SectionPlacement,
@@ -82,6 +83,14 @@ export interface UIState {
   // per-agent hide flag would be the similar-things trap. Default ON — an agent with no avatar renders
   // the dot either way, so the switch does nothing until the owner gives one a picture.
   chatAvatarsVisible: boolean;
+  // The AGENT BACKDROP mode (D70 §8.3/§8.3a, ruling 13) — `operator` | `full` | `off`, where the ACTIVE
+  // agent's `background` art paints and how. SYNCED with the rest of appearance and GLOBAL, on the same
+  // terms as the switch above: the ART is per-agent (shared data), the MODE is the owner's one viewing
+  // preference (per-agent overrides stay a recorded seam, not v1). Default `operator` — an agent with no
+  // background paints nothing either way, so the default does nothing until one is given a picture.
+  // HEALED AT READ (`kit/AgentBackdrop.tsx#resolveAgentBackdrop`), never here: the persist loader's
+  // field-fill merge passes any stored value through untyped, exactly like `sectionPlacement`.
+  agentBackdrop: AgentBackdropMode;
   // The INSTALLED home-screen icon's baked-in backdrop (D59 / W5) — one id from the backend's
   // `PWA_ICON_VARIANTS` (`app/core/pwa.py`), which is what `/manifest.webmanifest` turns into the maskable
   // icon's `src`. Nothing in the running app reads it: the value's only consumer is the manifest the
@@ -141,6 +150,7 @@ const DEFAULTS: UIState = {
   kitBackgroundVisible: true, // a dropped background shows without a second step (it is off until one exists)
   appbarSubtitleVisible: false, // G6.3's icon + title only stands as the default; the switch opts back in
   chatAvatarsVisible: true, // an agent given a picture wears it without a second step (dot until then)
+  agentBackdrop: "operator", // D70 ruling 13's default-ON state; nothing paints until an agent has art
   pwaIconBackground: null, // unpicked → the backend's DEFAULT_PWA_ICON_BG (the unchanged transparent icon)
   themeSettings: {}, // per-theme overrides resolve against each ThemeDef.settings default
   appbarMode: "visible", // global per-device chrome lever; every theme's Root honors it

@@ -107,6 +107,7 @@ describe("ui store", () => {
     kitBackgroundVisible: true,
     appbarSubtitleVisible: false,
     chatAvatarsVisible: true,
+    agentBackdrop: "operator",
     pwaIconBackground: null,
     appbarMode: "visible",
     layout: "auto",

@@ -156,6 +156,15 @@ export interface LayoutPreset {
 // The runtime allowlist + the satellite table are in `layout.ts`.
 export type SectionPlacement = "conf" | "button" | "tab";
 
+// How the ACTIVE agent's art paints behind the chat (D70 §8.3/§8.3a, ruling 13) — one global appearance
+// mode, three states: `operator` = the art takes the operator-image place (gacha's oracle surface; an
+// in-flow strip at the top of the tab on the kit themes) and simply scrolls away; `full` = one shared
+// full-bleed arrangement behind the transcript, walking 1 → the floor as the thread scrolls; `off` =
+// no art at all, the theme's own fallback included. The type lives HERE beside `SectionPlacement` and
+// for the same reason: `store/ui.ts` types the field with it, and the store must not import the module
+// that owns the runtime allowlist (`kit/agentBackdrop.ts`, which reads the store).
+export type AgentBackdropMode = "operator" | "full" | "off";
+
 export interface ThemeDef {
   id: ThemeId;
   label: string;

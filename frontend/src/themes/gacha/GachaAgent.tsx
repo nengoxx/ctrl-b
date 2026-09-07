@@ -2,23 +2,19 @@ import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 
 import { ChatThread } from "../../components/ChatThread";
 import { PrivilegeChip } from "../../components/PrivilegeChip";
+import { useActiveBackdrop } from "../../hooks/useActiveBackdrop";
 import { useAgentChat } from "../../hooks/useAgentChat";
 import { useFocalPosition } from "../../hooks/useFocalPosition";
 import { fillComposer } from "../../lib/composer";
+import { AgentBackdrop } from "../../theme-engine/kit/AgentBackdrop";
+import { useAgentBackdropMode } from "../../theme-engine/kit/agentBackdrop";
 import { PinnedPlanPanel } from "../../theme-engine/kit/composer/plan/PinnedPlanPanel";
 import { usePlanPlacement } from "../../theme-engine/kit/composer/plan/placement";
+import { parsePx, progressValue, scrollProgress } from "../../theme-engine/kit/scrollProgress";
 import { safeRafLoop } from "../../theme-engine/safeRafLoop";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { GACHA_COPY } from "./copy";
-import {
-  ORACLE_GHOST_DATA,
-  ORACLE_P_VAR,
-  ORACLE_RAMP_VAR,
-  oracleProgress,
-  oracleGhosting,
-  oracleProgressValue,
-  parsePx,
-} from "./oracle";
+import { ORACLE_GHOST_DATA, ORACLE_P_VAR, ORACLE_RAMP_VAR, oracleGhosting } from "./oracle";
 import { oracleArt, type ResolvedArt } from "./roster";
 import { useGachaRoster } from "./useGachaRoster";
 
@@ -138,7 +134,7 @@ function useOracleFade(
     };
     const write = () => {
       if (ramp === null) return;
-      const p = oracleProgress(scroller.scrollTop, base, ramp);
+      const p = scrollProgress(scroller.scrollTop, base, ramp);
       // THE GHOSTING STAMP, before the numeric write and independent of it: it flips at most twice per
       // scroll gesture, where the property moves every frame.
       const ghosting = oracleGhosting(p, ghost);
@@ -147,7 +143,7 @@ function useOracleFade(
         if (ghosting) el.dataset[ORACLE_GHOST_DATA] = "";
         else delete el.dataset[ORACLE_GHOST_DATA];
       }
-      const value = oracleProgressValue(p);
+      const value = progressValue(p);
       // a sub-perceptual move: don't dirty style
       if (value === last) return;
       last = value;
@@ -320,6 +316,20 @@ export function GachaAgent({ active }: { active: boolean }) {
   // second source): the attribute drives the CSS, this drives whether the driver runs and whether the ghost
   // copy is in the DOM at all.
   const fade = useThemeSetting<boolean>("gacha", "oracle") ?? false;
+  // D70 §8.3a item 5 — the three-state backdrop, wired at the BODY (GachaOracle is untouched: it keeps
+  // taking one `art` and rendering it). The MODE decides which surface paints, the LADDER decides what:
+  //   · `operator` → the oracle block, with the active agent's own background WINNING the art resolution
+  //     while that agent is active, else the theme's `oracle:` pin / drop — today's ladder, unchanged;
+  //   · `full`     → the SHARED kit arrangement over the same resolution, INSTEAD of the oracle. Its plate
+  //     and scanline are absent for as long as `full` is active (owner-accepted); the fade driver must not
+  //     run either, since the element it writes on is not in the DOM — `fade && mode !== "full"` is that
+  //     gate, and it is the same boolean the ghost copy already keys on;
+  //   · `off`      → the oracle block with `art={null}`: its SHIPPED art-resolved-null state (plate, scrim
+  //     and scanline, no picture), which is why `off` reuses a tested presentation instead of inventing
+  //     chrome removal. The theme fallback is suppressed with the agent's own art, per §8.3's F14 ruling.
+  // `gacha.oracle` (sticky vs scroll) keeps governing operator-mode scroll ONLY — it is orthogonal.
+  const backdropMode = useAgentBackdropMode();
+  const agentBackground = useActiveBackdrop();
   // The oracle's backdrop, through the theme's ONE art seam (G5) — the same shared query the Fleet, the
   // Root's wallpaper and the reel figure read. Resolved HERE, in the body, and handed down: the surface
   // renders what it is given (the GachaFleet convention).
@@ -328,9 +338,20 @@ export function GachaAgent({ active }: { active: boolean }) {
   // and used twice (the mount below, and M7's remeasure dependency), so the driver can never disagree with
   // what is actually rendered.
   const hasPinnedPlan = planPlacement === "pinned" && !!currentPlan && currentPlan.steps.length > 0;
+  // The one art resolution both surfaces take (the §5.3 "ONE resolver" rule, extended by one tier): the
+  // active agent's picture, else the theme's own oracle art. `BoundArt` is `ResolvedArt` minus the `rev`
+  // bookkeeping only the reel figure's failure latch reads — assignable, no cast.
+  const oracleFade = fade && backdropMode !== "full";
+  const art: ResolvedArt | null =
+    backdropMode === "off" ? null : (agentBackground ?? oracleArt(roster));
   // M7. The thread's LENGTH (not the array) is what moves ChatThread's bottom-pin, so it is what the
   // re-sync depends on; the panel's presence is what moves the oracle's own offset.
-  const { oracleRef, anchorRef } = useOracleFade(active, fade, chat.messages.length, hasPinnedPlan);
+  const { oracleRef, anchorRef } = useOracleFade(
+    active,
+    oracleFade,
+    chat.messages.length,
+    hasPinnedPlan,
+  );
 
   return (
     <div
@@ -341,12 +362,11 @@ export function GachaAgent({ active }: { active: boolean }) {
       aria-labelledby="tabbtn-agent"
     >
       {hasPinnedPlan && <PinnedPlanPanel />}
-      <GachaOracle
-        fade={fade}
-        art={oracleArt(roster)}
-        oracleRef={oracleRef}
-        anchorRef={anchorRef}
-      />
+      {backdropMode === "full" ? (
+        <AgentBackdrop mode="full" art={art} />
+      ) : (
+        <GachaOracle fade={oracleFade} art={art} oracleRef={oracleRef} anchorRef={anchorRef} />
+      )}
       {/* The kit's own `.sec` header, exactly as AgentTab and FrontierAgent render it (owner ruling, G3
           round 2). The first pass gave the privilege chip a bespoke right-aligned strip of its own, which
           put a shared chat control somewhere it is in no other theme AND parked it in a z-context of its

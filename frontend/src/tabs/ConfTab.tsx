@@ -65,6 +65,7 @@ import { isAnyDirty, useRegisterDirty } from "../store/dirty";
 import { clearGroupScrollTarget, useGroupScrollTarget } from "../store/groupScroll";
 import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
+import { useAgentBackdropMode } from "../theme-engine/kit/agentBackdrop";
 import {
   HOSTED_AGENTS_GROUP_ID,
   HOSTED_UTILS_GROUP_ID,
@@ -77,6 +78,7 @@ import { defaultSwitchTarget } from "../theme-engine/resolve";
 import { settingRowVisible, themeRowValue } from "../theme-engine/settings";
 import { switchTheme } from "../theme-engine/switchTheme";
 import type {
+  AgentBackdropMode,
   LayoutId,
   Mode,
   SectionPlacement,
@@ -899,6 +901,9 @@ export function ConfTab({ active }: Props) {
   const kitBackgroundVisible = useUISlice((s) => s.kitBackgroundVisible); // the shared kit background switch
   const appbarSubtitleVisible = useUISlice((s) => s.appbarSubtitleVisible); // the app bar's brand-subtitle switch
   const chatAvatarsVisible = useUISlice((s) => s.chatAvatarsVisible); // the transcript-avatar switch (D70 §8.5)
+  // The agent-backdrop mode (D70 §8.3a) — the HEALED value, for the reason the placement row above reads a
+  // resolved one: a row rendering an unhealed override lies about what the app is actually painting.
+  const agentBackdrop = useAgentBackdropMode();
   const pwaIconBackground = useUISlice((s) => s.pwaIconBackground); // the installed-icon backdrop (D59)
   const appbarMode = useUISlice((s) => s.appbarMode); // global, per-device (local) — every theme honors it
   const layout = useUISlice((s) => s.layout); // the RAW section-layout lever (auto/4/3/2) — device-local like App bar
@@ -1008,6 +1013,7 @@ export function ConfTab({ active }: Props) {
     kitBackgroundVisible?: boolean;
     appbarSubtitleVisible?: boolean;
     chatAvatarsVisible?: boolean;
+    agentBackdrop?: AgentBackdropMode;
     pwaIconBackground?: string | null;
   }) => {
     setUI(patch);
@@ -2956,6 +2962,27 @@ export function ConfTab({ active }: Props) {
               on={chatAvatarsVisible}
               label="Chat avatars"
               onToggle={() => setGlobal({ chatAvatarsVisible: !chatAvatarsVisible })}
+            />
+          </SettingRow>
+          {/* D70 §8.3 (ruling 13) — the three-state agent backdrop. Synced like the switches above and
+              GLOBAL for the same reason: the ART is per-agent, the MODE is one viewing preference. Beside
+              Chat avatars because the two are the same question about the same pictures, one asked of the
+              transcript and one of the surface behind it. The copy has to stay truthful for an owner whose
+              agents have no background yet — in EVERY mode, that owner's agent tab looks exactly as it
+              does now, which is why the description names the art rather than promising a picture. */}
+          <SettingRow
+            label="Agent backdrop"
+            desc="where the active agent's picture paints · operator strip · full behind the chat · off"
+          >
+            <Seg<AgentBackdropMode>
+              label="Agent backdrop"
+              current={agentBackdrop}
+              options={[
+                { val: "operator", label: "Operator" },
+                { val: "full", label: "Full" },
+                { val: "off", label: "Off" },
+              ]}
+              onPick={(v) => setGlobal({ agentBackdrop: v })}
             />
           </SettingRow>
           {/* Global, per-device (local — not synced like motion/perf): every theme's Root honors it.

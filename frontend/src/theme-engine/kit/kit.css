@@ -104,6 +104,130 @@
   background-position: center;
   background-size: cover;
 }
+/* ── the AGENT BACKDROP (D70 §8.3 / §8.3a) ───────────────────────────────────────────────────────
+ * The ACTIVE agent's own picture behind the chat, in the two states that PAINT (`off` mounts nothing).
+ * `AgentBackdrop` mounts these — and only when the agent has art the media index can serve — so, like the
+ * shared background above, everything is gated on the NODE existing: no agent art anywhere ⇒ the agent tab
+ * is byte-identical to the one that shipped before this slice.
+ *
+ * The four tunables are TOKENS declared on the layer they govern, so a theme retunes them in `@layer theme`
+ * (which outranks this file) with no JS: `--kit-backdrop-h` (the strip's height), `--kit-backdrop-veil` (the
+ * readability wash — different by state, hence declared per-layer), `--kit-backdrop-ramp` (how far the full
+ * layer walks) and `--kit-backdrop-floor` (where it ends). The ramp is read back by the driver through
+ * `getComputedStyle`, which is why it is a real declaration rather than a `var(…, 240px)` fallback.
+ *
+ * Both veils are built from `--bg` through `color-mix`, so they follow the theme's LIGHT and dark modes
+ * without a second literal — the same construction `.kit-bg`'s veil uses. */
+.kit .kit-backdrop-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* `object-position` is inline, from the shared `FocalImg` (D65 §5) — absent when the owner set no
+   * framing point, in which case the browser's own `50% 50%` centre crop stands. */
+}
+.kit .kit-backdrop-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--kit-backdrop-veil);
+}
+
+/* `operator` — an ordinary in-flow block at the top of the tab. FULL-BLEED for free: `.kit .tab` carries no
+ * padding of its own (the heads and the chat log bring theirs), which is the property gacha's oracle rides.
+ * No sticky, no stacking context, no driver: it scrolls away with the content, which IS the presentation
+ * (gacha's own `data-oracle="scroll"` posture). It keeps the scroller's bar-less `--kit-inset-top` rather
+ * than pulling flush through it the way gacha's oracle does: that inset exists to keep content out from
+ * under the floating launcher, and a launcher sitting on the owner's character art is the one thing the
+ * pull would buy back. */
+.kit .kit-backdrop-strip {
+  --kit-backdrop-h: 240px;
+  --kit-backdrop-veil: linear-gradient(
+    color-mix(in oklch, var(--bg) 45%, transparent),
+    color-mix(in oklch, var(--bg) 16%, transparent) 42%,
+    var(--bg)
+  );
+  position: relative;
+  height: var(--kit-backdrop-h);
+  overflow: hidden;
+}
+
+/* `full` — the zero-height sticky PIN (frontier's `.fr-rigstack-pin` precedent): it holds its overflowing
+ * child in view for the whole scroll of the thread without taking flow space and without the
+ * `position: fixed` ancestor-transform trap. `top` parks it under the in-flow app bar — and NOT minus the
+ * bar-less scroller inset, unlike gacha's oracle: that correction exists because the oracle PULLS its flow
+ * position flush through the inset, and this layer deliberately does not (see the strip's note). Engines
+ * rest a sticky box against the scroller's CONTENT box, so `--appbar-h` alone puts the stuck position
+ * exactly on the flow position at scroll-top, in every bar mode. */
+.kit .kit-backdrop-pin {
+  --kit-backdrop-ramp: 240px;
+  --kit-backdrop-floor: 0.28; /* the walk's endpoint (D70 §8.3's 1 → 0.28) */
+  --kit-backdrop-veil: linear-gradient(
+    color-mix(in oklch, var(--bg) 76%, transparent),
+    color-mix(in oklch, var(--bg) 62%, transparent)
+  );
+  position: sticky;
+  top: var(--appbar-h, 0px);
+  height: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+/* With a pinned plan panel above (planPlacement "pinned"), the panel's flow box would seat the pin a
+ * panel-height below the top. Pull it back — the gacha-oracle rule exactly, reading the SAME measured
+ * `--plan-head-h` the mini-player yield reads (published by PinnedPlanPanel's own observer, so the two
+ * consumers can never disagree), and zeroing the panel's flow margin over art it separates nothing from.
+ * The panel stays sticky at z 4, over this layer at z 0. */
+.kit .tab > .plan-pin-panel:has(+ .kit-backdrop-pin) {
+  margin-bottom: 0;
+}
+.kit .tab > .plan-pin-panel + .kit-backdrop-pin {
+  margin-top: calc(-1 * var(--plan-head-h, 31px));
+}
+/* The art layer itself: absolute WITHIN the zero-height pin, so it needs an explicit height — and that
+ * height is EXACTLY the pane below the pin, never "a viewport's worth". An absolutely-positioned
+ * descendant contributes to the SCROLLER's scrollable overflow, so a layer sized to `--app-h` made an
+ * empty agent tab scrollable by the appbar + the tab bar (measured: 104px) — and scrolling that phantom
+ * band dimmed the picture for no reason. `--kit-pane-h` (DefaultRoot's third measured shell box) minus the
+ * two offsets that sit above the pin — the in-flow app bar and the bar-less scroller inset — is the
+ * visible region and nothing more, so the layer fills the pane and the pane does not grow. It is still
+ * clipped by `.kit-scroll`'s own `overflow`, which keeps it inside the scroller rather than over the bars.
+ *
+ * ONE per-frame property, and it is opacity: `1 → --kit-backdrop-floor`, written as "1 minus the walked
+ * distance" so the floor token IS the endpoint you read above rather than something to subtract in your
+ * head. No blur anywhere (that is the whole owner-confirmed difference from the oracle's fade), no
+ * animated `filter`, no scroll-driven CSS animation — §14.11 to the letter. */
+.kit .kit-backdrop-full {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--kit-pane-h, 100dvh) - var(--appbar-h, 0px) - var(--kit-inset-top, 0px));
+  overflow: hidden;
+  opacity: calc(1 - var(--kit-backdrop-p, 0) * (1 - var(--kit-backdrop-floor)));
+  will-change: opacity; /* a compositor property that really does change every walked frame */
+}
+/* The in-flow tab content rides ABOVE the layer. Gated on the pin EXISTING (`:has()`) rather than on a
+ * state stamp — the `.kit-bg` idiom: a tab that mounts no backdrop keeps exactly the stacking it had, so
+ * nothing is trapped inside a stacking context it did not used to have. Both children need it: a
+ * positioned z-0 element paints over the TEXT of non-positioned in-flow blocks, `.sec` included. */
+.kit .tab:has(> .kit-backdrop-pin) > .sec,
+.kit .tab:has(> .kit-backdrop-pin) > .chat-log {
+  position: relative;
+  z-index: 1;
+}
+/* Reduced motion: a scroll-linked opacity ramp IS motion, so the layer simply parks at the floor — the
+ * readable end state, reached with no per-frame work at all (the driver does not run either; the gate is
+ * one boolean honored in both halves). */
+body[data-motion="reduced"] .kit .kit-backdrop-full {
+  opacity: var(--kit-backdrop-floor);
+}
+/* Perf-lite: there is no blur here to drop, so the only cost this mode can buy back is the compositor
+ * layer the `will-change` hint pins in GPU memory. The walk still runs — an opacity change is the cheap
+ * thing §14.11 asks expensive effects to be converted INTO. */
+body[data-perf="lite"] .kit .kit-backdrop-full {
+  will-change: auto;
+}
+
 .kit-main {
   position: relative; /* positioning context for the floating composer + the bottom fade */
   flex: 1 1 auto;

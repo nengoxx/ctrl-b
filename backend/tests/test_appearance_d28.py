@@ -30,6 +30,8 @@ def test_appearance_defaults_config_layer() -> None:
     assert s.appearance.theme_settings is None  # M3: open per-theme options map, unseeded until written
     assert s.appearance.kit_background_visible is None  # unseeded — not "the owner turned it off"
     assert s.appearance.appbar_subtitle_visible is None  # same contract for the brand-subtitle switch
+    assert s.appearance.chat_avatars_visible is None  # D70 §8.5: same contract for the avatar switch
+    assert s.appearance.agent_backdrop is None  # D70 §8.3: unseeded → the client's "operator" default
     assert s.appearance.pwa_icon_background is None  # D59: unseeded → the manifest serves its own default
     assert s.appearance.updated_at is None  # stamped only on first write
 
@@ -98,6 +100,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
                 "kit_background_visible": None,  # unseeded too — a pre-slice config is not "turned off"
                 "appbar_subtitle_visible": None,  # ditto: unseeded ≠ "the owner hid the subtitle"
                 "chat_avatars_visible": None,  # ditto (D70 §8.5): unseeded ≠ "avatars off"
+                "agent_backdrop": None,  # ditto (D70 §8.3): unseeded ≠ "the owner hid the backdrop"
                 "pwa_icon_background": None,  # D59: unseeded → `/manifest.webmanifest` serves the default
                 "updated_at": None,
             }
@@ -116,6 +119,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
                         "kit_background_visible": False,
                         "appbar_subtitle_visible": True,
                         "chat_avatars_visible": False,
+                        "agent_backdrop": "full",
                     }
                 },
             )
@@ -130,6 +134,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
             assert saved["kit_background_visible"] is False
             assert saved["appbar_subtitle_visible"] is True
             assert saved["chat_avatars_visible"] is False
+            assert saved["agent_backdrop"] == "full"
             assert saved["updated_at"] is not None  # server-stamped
 
             # GET reflects it (the cheap always-on read the ui store reconciles against).
@@ -144,6 +149,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
             assert reloaded.appearance.kit_background_visible is False
             assert reloaded.appearance.appbar_subtitle_visible is True
             assert reloaded.appearance.chat_avatars_visible is False
+            assert reloaded.appearance.agent_backdrop == "full"
             assert reloaded.appearance.updated_at is not None
 
             # A second write re-stamps a newer time (monotonic-ish; at least not older).

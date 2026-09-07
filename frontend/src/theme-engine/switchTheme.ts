@@ -23,7 +23,7 @@ import { setUI, type Motion, type Perf, type ThemeSettingsMap } from "../store/u
 import { isAnyDirty } from "../store/dirty";
 import { pushToast } from "../store/toast";
 import { registry } from "./registry";
-import type { Mode, ThemeId } from "./types";
+import type { AgentBackdropMode, Mode, ThemeId } from "./types";
 
 // Cache the per-theme load promise so a CSS/font bundle is fetched+activated at most once.
 const loaded = new Map<ThemeId, Promise<void>>();
@@ -102,6 +102,7 @@ export interface SwitchTarget {
   kitBackgroundVisible?: boolean;
   appbarSubtitleVisible?: boolean;
   chatAvatarsVisible?: boolean;
+  agentBackdrop?: AgentBackdropMode;
   pwaIconBackground?: string | null;
 }
 
@@ -176,6 +177,9 @@ async function runSwitch(
       ...(target.chatAvatarsVisible !== undefined && {
         chatAvatarsVisible: target.chatAvatarsVisible,
       }),
+      ...(target.agentBackdrop !== undefined && {
+        agentBackdrop: target.agentBackdrop,
+      }),
       ...(target.pwaIconBackground !== undefined && {
         pwaIconBackground: target.pwaIconBackground,
       }),
@@ -205,6 +209,7 @@ export function switchTheme(next: ThemeId, target: SwitchTarget): Promise<Switch
     kitBackgroundVisible: target.kitBackgroundVisible,
     appbarSubtitleVisible: target.appbarSubtitleVisible,
     chatAvatarsVisible: target.chatAvatarsVisible,
+    agentBackdrop: target.agentBackdrop,
     pwaIconBackground: target.pwaIconBackground,
   });
   if (inFlight && inFlight.key === key) return inFlight.done; // same target already running → join it

@@ -1,6 +1,9 @@
 import { ChatThread } from "../components/ChatThread";
 import { PrivilegeChip } from "../components/PrivilegeChip";
+import { useActiveBackdrop } from "../hooks/useActiveBackdrop";
 import { useAgentChat } from "../hooks/useAgentChat";
+import { AgentBackdrop } from "../theme-engine/kit/AgentBackdrop";
+import { useAgentBackdropMode } from "../theme-engine/kit/agentBackdrop";
 import { PinnedPlanPanel } from "../theme-engine/kit/composer/plan/PinnedPlanPanel";
 import { usePlanPlacement } from "../theme-engine/kit/composer/plan/placement";
 
@@ -28,6 +31,13 @@ export function AgentTab({ active }: Props) {
   // kit-tokened `PinnedPlanPanel` here at the top of the tab (mutually exclusive — inline never mounts a
   // panel, pinned passes the composer NO plan slots). Vapor declares `pinned`.
   const planPlacement = usePlanPlacement();
+  // D70 §8.3a — the agent backdrop. cosmos, vapor and minimal all render THIS tab (their bespoke work is
+  // the Fleet), so one mount here is the whole kit-theme integration; gacha folds its oracle ladder in at
+  // its own body, and frontier is untouched (ruling 18). The art is the ACTIVE agent's `background` — no
+  // theme fallback exists at kit level (the app ships no character art), so an agentless install mounts
+  // nothing at all, which is exactly today's look.
+  const backdropMode = useAgentBackdropMode();
+  const backdropArt = useActiveBackdrop();
 
   return (
     <div
@@ -45,6 +55,14 @@ export function AgentTab({ active }: Props) {
       {planPlacement === "pinned" && currentPlan && currentPlan.steps.length > 0 && (
         <PinnedPlanPanel />
       )}
+      {/* AFTER the panel, before the `.sec` — and that ORDER is the rule above honored, not bent. What the
+          rule protects is the panel's own travel, and only IN-FLOW content above it can cause that: the
+          `operator` strip is 240px of flow, so above the panel it would make the panel travel by exactly
+          that; below it, the panel is still the tab's first flow box and sits at one spot. (`full` takes no
+          flow at all — a zero-height sticky pin — so it is neutral either way, and its one geometric
+          consequence, starting a panel-height low, is corrected in kit.css by the same measured
+          `--plan-head-h` pull gacha's oracle uses.) */}
+      <AgentBackdrop mode={backdropMode} art={backdropArt ?? null} />
       <div className="sec">
         <span className="num">02</span>
         <b>Chat</b>

@@ -34,8 +34,18 @@ interface ChatState {
   status: ChatStatus;
   streamingId: string | null; // the message currently receiving deltas (drives caret/dots)
   // `/privilege <level>` session override (A1/D16), null → follow the agent's own privilege. Reactive
-  // (unlike sessionMode/sessionAgent) so the chip reflects it; session-scoped, so `/clear` keeps it.
+  // (unlike sessionMode) so the chip reflects it; session-scoped, so `/clear` keeps it.
   sessionPrivilege: Privilege | null;
+  // The sticky `/agent <name>` pick (7d), null → the thread's / configured default AgentDef. REACTIVE
+  // since D70 S6 for exactly the reason `sessionPrivilege` is — a surface renders it: the agent backdrop
+  // paints the ACTIVE agent's art, and "active" is this pin (§8.3a item 2). It lives in ChatState rather
+  // than beside `sessionMode`/`turnMode` as a second module-level store because that is the shape this
+  // file already has for "a session pick a surface reflects"; `set()` + `useChatSlice` are the whole
+  // upgrade, and `getSessionAgent`/`setSessionAgent` keep their signatures so no caller moves.
+  // Per-message only (not persisted on the thread): a resume/answer payload carries no `agent` at all,
+  // so a continuation finishes on the SUSPENDED TURN's own agent (the server resolves it), not on
+  // whatever is sticky now.
+  sessionAgent: string | null;
 }
 
 let state: ChatState = {
@@ -44,6 +54,7 @@ let state: ChatState = {
   status: "idle",
   streamingId: null,
   sessionPrivilege: null,
+  sessionAgent: null,
 };
 let loaded = false;
 //: The chat view's LOAD GENERATION — app-owned cross-generation state (the D39/ACA precedent).
@@ -441,8 +452,8 @@ export function getSessionMode(): ChatMode | null {
 // The inference mode the CURRENT turn was sent with (ACA-16 / S2-D). `sendMessage` stashes its derived
 // per-turn mode here — a per-message `/cloud <msg>` overrides the sticky `sessionMode` for that one
 // turn, so a resume/answer must carry the *turn's* mode, not re-read `sessionMode`. Module-level +
-// non-reactive like `sessionMode`/`sessionAgent` (no UI reflects it); a chained resume keeps the
-// original turn's mode until the next send overwrites it. `null` → the server's configured default.
+// non-reactive like `sessionMode` (no UI reflects it); a chained resume keeps the original turn's mode
+// until the next send overwrites it. `null` → the server's configured default.
 let turnMode: ChatMode | null = null;
 
 // The active skills the CURRENT turn was sent with (C5-M1). `sendMessage` stashes the turn's explicit
@@ -450,18 +461,20 @@ let turnMode: ChatMode | null = null;
 // Module-level + non-reactive like `turnMode`; `null`-equivalent is the empty list.
 let turnSkills: string[] = [];
 
-// Sticky agent for this session, set by `/agent <name>` (7d). `null` → the thread's / configured
-// default AgentDef. Per-message only (not persisted on the thread): a resume/answer payload carries no
-// `agent` at all, so a continuation finishes on the SUSPENDED TURN's own agent (the server resolves it),
-// not on whatever is sticky now.
-let sessionAgent: string | null = null;
+// The sticky `/agent <name>` pick lives in ChatState (see its field note). These three are its whole API.
 export function setSessionAgent(name: string | null): void {
-  sessionAgent = name;
+  set({ sessionAgent: name });
 }
 /** The sticky pick, non-reactively — the composer menu needs it to show which agent the next message
- *  would ACTUALLY run on when nothing is armed (A6 tri-state). */
+ *  would ACTUALLY run on when nothing is armed (A6 tri-state), and it reads it outside a subscription. */
 export function getSessionAgent(): string | null {
-  return sessionAgent;
+  return state.sessionAgent;
+}
+/** The sticky pick, REACTIVELY (D70 §8.3a item 2) — for a surface that must repaint when the owner
+ *  switches character (`/agent`, the gallery's Talk button), i.e. the agent backdrop. A slice, not
+ *  `useChat()`: the store emits on every streamed token, and this value changes about twice a session. */
+export function useSessionAgent(): string | null {
+  return useChatSlice((s) => s.sessionAgent);
 }
 
 // Sticky session privilege override, set by `/privilege <level>` (A1/D16). Reactive (lives in
@@ -2130,7 +2143,7 @@ export async function sendMessage(
   // back to the sticky agent. NOT stashed per-turn like turnMode/turnSkills: the resume/answer payloads
   // carry no `agent` (the server resolves the suspended turn's own), so there is no pin a steer could
   // re-point — a steer's agent rides its own POST, exactly like its `mode`.
-  const agent = opts && "agent" in opts ? (opts.agent ?? null) : sessionAgent;
+  const agent = opts && "agent" in opts ? (opts.agent ?? null) : state.sessionAgent;
   if (!steering) {
     turnMode = mode;
     turnSkills = skills;

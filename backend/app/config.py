@@ -998,6 +998,15 @@ class AppearanceCfg(BaseModel):
     #: preference. The client default is **on** — an agent with no avatar draws the dot either way, so the
     #: switch does nothing until one is given a picture. Same unseeded-until-written contract.
     chat_avatars_visible: bool | None = None
+    #: The AGENT BACKDROP mode (D70 §8.3/§8.3a, ruling 13) — `"operator"` (the art takes the operator-image
+    #: place: gacha's oracle surface, an in-flow strip on the kit themes) | `"full"` (the same art as the
+    #: full chat backdrop, dimmed on scroll) | `"off"` (no art at all, theme fallback included). Synced
+    #: rather than per-device on the same terms as the switches above: the ART is per-AGENT (shared data),
+    #: the MODE is the owner's one viewing preference. Left an untyped `str` exactly like `motion`/`perf`
+    #: — the closed vocabulary is the CLIENT's allowlist, healed at read (`resolveAgentBackdrop`), so a
+    #: rolled-back or hand-edited value degrades to the default instead of 422-ing an appearance write
+    #: from a newer build. Same unseeded-until-written contract (None → the client's `"operator"`).
+    agent_backdrop: str | None = None
     #: The installed home-screen icon's baked-in backdrop (D59 / W5) — one id from `PWA_ICON_VARIANTS`,
     #: which `/manifest.webmanifest` turns into that variant's maskable `src`. Synced like the switches
     #: above rather than device-local: it is one answer to "what does my app icon look like", and the

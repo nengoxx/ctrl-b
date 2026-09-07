@@ -24,6 +24,12 @@ vi.mock("../../src/hooks/useAgentArt", () => ({
     title: name ?? "default",
   }),
 }));
+// D70 §8.3a — "which picture does the ACTIVE agent bring", mocked for the same reason and to the same
+// default: it is a THIRD query (the roster names, joined with that resolver), and the no-agent-art answer
+// is the state every pre-S6 assertion in this file is about. `agentArt.bg = …` drives the one arm that is
+// about an agent HAVING art, and it returns what the real hook returns — a `BoundArt`, or undefined.
+const agentArt = vi.hoisted(() => ({ bg: undefined as { url: string } | undefined }));
+vi.mock("../../src/hooks/useActiveBackdrop", () => ({ useActiveBackdrop: () => agentArt.bg }));
 
 // G5 — the theme's art now comes from `GET /api/media/gacha`. The index hook is mocked rather than wrapped
 // in a QueryClientProvider (the `useFleet` precedent above): these cases are about the BODY's wiring, and
@@ -109,14 +115,15 @@ const userMsg = (text: string): ChatMessage => ({
 });
 
 beforeEach(() => {
-  setUI({ theme: "gacha", themeSettings: {} });
+  setUI({ theme: "gacha", themeSettings: {}, agentBackdrop: "operator" });
   setDraft("");
   chat.view = view([]);
   observers.length = 0; // a previous arm's unmounted observers must never fire into this one
   media.data = undefined; // no owner files ⇒ the bundled oracle art, exactly as G3 shipped it
+  agentArt.bg = undefined; // no agent picture ⇒ the theme's own ladder answers, exactly as G3 shipped it
 });
 afterEach(() => {
-  setUI({ themeSettings: {} });
+  setUI({ themeSettings: {}, agentBackdrop: "operator" });
   setDraft("");
   cleanup();
 });
@@ -227,7 +234,7 @@ describe("GachaAgent — the empty state", () => {
   });
 });
 
-// ── M7 · the fade-on-scroll driver (the DOM half; the arithmetic lives in gachaOracle.test.ts) ──────────
+// ── M7 · the fade-on-scroll driver (the DOM half; the arithmetic lives in theme-engine/scrollProgress.test.ts) ──────────
 // Mounted INSIDE a stand-in `#app-scroll`, because that is the seam: the body reaches the shell's one
 // content pane by id, and everything the driver does hangs off finding it.
 //
@@ -480,6 +487,108 @@ describe("GachaAgent — M7, the oracle fade driver", () => {
     await frame();
     expect(screen.getByTestId("pinned-panel")).toBeTruthy();
     expect(oracle.style.getPropertyValue(P)).toBe("0.500");
+  });
+});
+
+describe("GachaAgent — the three-state backdrop (D70 §8.3a item 5)", () => {
+  /** The theme's OWN oracle drop — the fallback tier the agent's picture has to beat. */
+  const themeOracle = {
+    ns: "gacha",
+    collation: "library-v1",
+    roles: {
+      oracle: [
+        {
+          name: "eye",
+          file: "eye.webp",
+          url: "/api/media/gacha/files/oracle/eye.webp",
+          format: "webp",
+          size_bytes: 1,
+          revision: "1:1",
+          width: 1,
+          height: 1,
+          unusable: false,
+          unusable_reason: null,
+        },
+      ],
+    },
+    slots: {},
+  } as unknown as MediaIndex;
+
+  it("operator: the ACTIVE AGENT's background WINS the ladder over the theme's own oracle art", () => {
+    media.data = themeOracle;
+    agentArt.bg = { url: "/api/media/agents/files/backgrounds/lynette.webp?rev=3%3A9" };
+    const { container } = render(<GachaAgent active />);
+    // The oracle SURFACE is unchanged — plate, scanline, the lot; only the picture in it changed.
+    expect(container.querySelector(".gc-oracle")).not.toBeNull();
+    expect(
+      container.querySelector<HTMLImageElement>(".gc-oracle-face.sharp .gc-oracle-art")?.src,
+    ).toContain("/api/media/agents/files/backgrounds/lynette.webp");
+    expect(container.querySelector(".kit-backdrop-pin")).toBeNull(); // no kit layer in this mode
+  });
+
+  it("operator: with no agent picture the theme's own drop still answers (today's ladder, unchanged)", () => {
+    media.data = themeOracle;
+    const { container } = render(<GachaAgent active />);
+    expect(
+      container.querySelector<HTMLImageElement>(".gc-oracle-face.sharp .gc-oracle-art")?.src,
+    ).toContain("/api/media/gacha/files/oracle/eye.webp");
+  });
+
+  it("full: the ORACLE does not mount at all — the shared kit arrangement paints the same art", () => {
+    media.data = themeOracle;
+    agentArt.bg = { url: "/api/media/agents/files/backgrounds/lynette.webp?rev=3%3A9" };
+    setUI({ agentBackdrop: "full" });
+    const { container } = render(<GachaAgent active />);
+    // The plate + scanline are ABSENT while `full` is active (owner-accepted, §8.3a item 4).
+    expect(container.querySelector(".gc-oracle")).toBeNull();
+    expect(container.querySelector(".gc-oracle-scan")).toBeNull();
+    const layer = container.querySelector(".kit-backdrop-pin");
+    expect(layer).not.toBeNull();
+    expect(layer!.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelector<HTMLImageElement>(".kit-backdrop-art")?.src).toContain(
+      "/api/media/agents/files/backgrounds/lynette.webp",
+    );
+  });
+
+  it("full: with no agent picture the THEME's fallback paints full-bleed (§8.3a item 5)", () => {
+    media.data = themeOracle;
+    setUI({ agentBackdrop: "full" });
+    const { container } = render(<GachaAgent active />);
+    expect(container.querySelector<HTMLImageElement>(".kit-backdrop-art")?.src).toContain(
+      "/api/media/gacha/files/oracle/eye.webp",
+    );
+  });
+
+  it("full: the oracle FADE DRIVER does not run — no ghost copy, and nothing to write on", async () => {
+    // The driver writes `--gc-oracle-p` on an element that isn't in the DOM in this mode; the gate is the
+    // same boolean the ghost copy keys on, so proving the surface is gone proves both.
+    media.data = themeOracle;
+    setUI({ themeSettings: { gacha: { oracle: true } }, agentBackdrop: "full" });
+    const { container } = render(<GachaAgent active />);
+    await act(async () => {});
+    expect(container.querySelector(".gc-oracle-face.soft")).toBeNull();
+    expect(container.querySelector(".gc-oracle-anchor")).toBeNull();
+  });
+
+  it("off: the oracle KEEPS its plate + scanline and paints NO picture, agent art and drop alike", () => {
+    // `off` beats the whole ladder (§8.3's F14 correction) — including an agent that HAS a background —
+    // and it reuses the shipped art-resolved-null presentation rather than inventing chrome removal.
+    media.data = themeOracle;
+    agentArt.bg = { url: "/api/media/agents/files/backgrounds/lynette.webp?rev=3%3A9" };
+    setUI({ agentBackdrop: "off" });
+    const { container } = render(<GachaAgent active />);
+    expect(container.querySelector(".gc-oracle")).not.toBeNull();
+    expect(container.querySelector(".gc-oracle-scan")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: /Lucky Relay/ })).toBeTruthy();
+    expect(container.querySelectorAll(".gc-oracle-art")).toHaveLength(0);
+    expect(container.querySelector(".kit-backdrop-pin")).toBeNull();
+  });
+
+  it("an unknown persisted mode HEALS to operator rather than hiding the art", () => {
+    media.data = themeOracle;
+    setUI({ agentBackdrop: "sideways" as never });
+    const { container } = render(<GachaAgent active />);
+    expect(container.querySelector(".gc-oracle-face.sharp .gc-oracle-art")).not.toBeNull();
   });
 });
 
