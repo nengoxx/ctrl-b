@@ -1632,3 +1632,35 @@ open sweep of the rider "none" — RESOLVED — SHIP.**
 wave; :5173 serves it live. **OF-1 + OF-2 are BUILT + council-closed; OF-3 stays deferred;
 ISS-12 (frontier's flat save) awaits an owner ruling. The owner's dev confirm on these two,
 then THEIR WORD closes S4 → S5.**
+
+#### OF-1b — the owner's confirm round RE-PINNED OF-1 (same day): the real defect was the standalone cards' FULL-BLEED, not the option list; fixed `02cc5c4`, council-closed
+
+**The round:** OF-2 confirmed good everywhere; but "the add-agent dropdown still has no padding
+when [the section] is its own tab — it goes up to the sides; it looks good inside the
+configuration." All owner reports are FROM THE PHONE (their standing default, restated this
+round). **The main seat could NOT reproduce the option-list theory blind** — Playwright over
+both placements showed the page CSS identical (option padding present everywhere) and a headed
+360px popup rendering fine — and the owner's wording re-pinned the control: the **ADD-AGENT
+disclosure card**. Measured: `.agal-actions` spanned **x:0 w:360** in the tab placement (the
+detail card and `.agrep` likewise) while the grid sat at 16px — because only the Conf-hosted
+`.confgroup` ever supplies an inline margin (18px), which is exactly why the same card "looks
+good inside the configuration". The S4 build missed the standalone page inset; the `.util`
+pair (kit.css ~5632-5646, "the host owns the inline inset") is the in-file precedent it
+should have followed.
+
+**The fix (`02cc5c4`, main-seat):** the precedent verbatim — `margin-inline: 16px` on
+`.agal-actions`/`.agal-detail`/`.agrep` (16 = the gallery grid's own inset, one shared left
+edge) + the `.confgroup` host-zeroing pair. Measured both ways: standalone cards+grid both at
+x:16 w:328; hosted UNCHANGED (cards 18, grid 34). The placement=button e2e arm now pins the
+standalone inset (x > 0 AND x === grid.x). The `9f6b597` `.kit option` rule STAYS — a real
+desktop-popup papercut, just not the owner's symptom; this block corrects that attribution.
+The "owned listbox" fold-up idea is WITHDRAWN — with the true cause fixed, native pickers
+stay.
+
+**Emma micro-round (resumed): findings NONE — RESOLVED — SHIP** (chokepoint confirmed
+complete: exactly three standalone `.conf-card` variants exist and all are covered; cascade
+safe — the sibling `margin-top: 10px` intact, no theme overrides; the e2e non-vacuous — a
+missing element nulls and fails; she ran the focused Playwright arm herself, 2/2 both
+projects). Gate: FE check-all exit 0; **FE e2e arm green** (BE untouched). **The owner's
+phone glance at the agents tab (cards now inset) is the remaining confirm; their word closes
+S4 → S5.**

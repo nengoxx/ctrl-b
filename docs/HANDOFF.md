@@ -12,7 +12,28 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-07, SEVENTH session — THE OF FIX WAVE ran the FULL cadence (Emma back per the owner's word) and is COUNCIL-CLOSED; ⚠ next = the owner's dev confirm on OF-1/OF-2 → their word closes S4 → S5 (still held for the owner home); supersedes below where it speaks)
+## Current state (2026-09-07, SEVENTH session — THE OF FIX WAVE COUNCIL-CLOSED, then the owner's confirm round RE-PINNED OF-1 → **OF-1b** (the standalone cards' full-bleed) fixed `02cc5c4` + council-closed same session; ⚠ next = the owner's phone glance at the agents tab → their word closes S4 → S5; supersedes below where it speaks)
+
+- **OF-1b (the owner's confirm round, in conversation):** OF-2 confirmed good; but the
+  "dropdown with no padding" was RE-PINNED — it is the **ADD-AGENT disclosure card going
+  edge-to-edge in the tab placement** ("goes up to the sides"; all owner reports are from the
+  PHONE, their restated default), fine in Conf. Measured cause: `.agal-actions`/`.agal-detail`/
+  `.agrep` had NO standalone inline margin — only the Conf-hosted `.confgroup` supplies one
+  (18px), so standalone they spanned x:0 w:360 while the grid sat at 16px. The S4 build missed
+  the `.util` "standalone page inset + host-zeroing" precedent (kit.css ~5632). **Fix
+  `02cc5c4`** (main-seat): the precedent verbatim — `margin-inline: 16px` (= the grid's inset,
+  shared left edge) + the `.confgroup` zeroing pair; hosted look measured UNCHANGED; the
+  placement=button e2e arm pins the inset. **Emma micro-round: findings NONE — RESOLVED —
+  SHIP** (she ran the focused e2e herself, 2/2). The `9f6b597` option-padding rule STAYS (a
+  real desktop papercut — the plan's OF-1 attribution corrected in the OF-1b block); the
+  "owned listbox" idea is WITHDRAWN. Full record = plan §13-S4's OF-1b block.
+- **▶▶ NEXT: the owner's phone glance at the agents tab** (the add-agent card + detail form
+  now inset like the grid) **→ THEIR WORD closes S4 → S5** (unchanged: lorebook FE + §6.6 +
+  `lorebooks.books`; S5 waits for their word they're back home). Git: **69 commits unpushed**
+  (the 67 + `02cc5c4` + this docs commit); tree clean; prod untouched v1.7.7; dev units
+  RUNNING (FE-only — :5173 serves everything live).
+
+## Prior current-state (same session, before the owner's confirm round — kept for the wave record)
 
 - **The session opened on the owner's word that Emma is available again, so the OF wave ran the
   whole standing cadence, not the build-only fallback:** pin + precedent (two scouts) →
