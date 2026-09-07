@@ -594,6 +594,10 @@ background tall) are config-shaped like the existing per-role crop settings, not
 
 ### 8.4 The agent gallery — its own settings section (rulings 4 + 17; design evidence = R67)
 
+> **⚠ PLACEMENT RE-RULED 2026-09-07 — see §8.4a.** Everything inside the gallery (grid, cards,
+> Talk, import, editor swap) stands as written; where the section LIVES is superseded: the S4
+> as-built "own docked section in every layout" inverted the owner's intent.
+
 The agents editor MOVES out of ConfTab (one collapsible section today, `ConfTab.tsx:2699`)
 into a **dedicated settings section: the agent/character gallery** — one home for ALL agents
 regardless of kind (ruling 17), a `useSections` registry entry like any section (R67 ①: no
@@ -622,6 +626,122 @@ Conf home (settings, not agents; council refines the cut).
 - **Avatar smalls**: circle at list/picker sizes (the field's 50px circle convention); the
   card shows the portrait through its focal point.
 Styling per `VAPOR_PATTERNS.md`; theme dressing rides the existing surface rules (D31).
+
+### 8.4a Satellite placement — where the gallery lives (owner re-rulings 2026-09-07; supersedes §8.4's placement clause and the S4 as-built docked section)
+
+**The re-ruling.** S4 built the gallery as an always-present docked appbar action (off-bar,
+unhosted in every layout). The owner's word: the DEFAULT home is inside settings, "like the
+tools tab" — hidden by default, promotable on ask. The correction generalizes rather than
+patches: the gallery becomes the first **SATELLITE SECTION**, a class the next such surface
+(lorebooks is the named candidate) joins by recipe, not by new machinery.
+
+**Core vs satellite (the model).** The core four (fleet/agent/utils/conf) stay governed by
+D35's curated count presets — picker untouched, layout fence intact, the "4/3/2" labels stay
+true. A satellite never appears in a preset; it carries a per-section PLACEMENT composed over
+the resolved preset at one seam. The placement vocabulary is the partition's own three buckets
+(no new nav concept — R67 ① still holds):
+
+- **conf** (DEFAULT — the owner's "hidden by default"): hosted in Conf, the D35 Axis-B
+  mechanism whose entry says "generalized only if a second hosting pair ever exists" — this is
+  that pair. ConfTab renders an "Agents · gallery" collapsed group; the body is
+  `AgentsContent`, extracted exactly as `UtilsContent` was (AgentsTab keeps its standalone
+  shell for the other placements). No chrome anywhere else.
+- **button**: the S4 as-built state verbatim — off-bar/unhosted; the D35 docking rule +
+  collapse ladder decide presentation (appbar visible → the docked trailing action; off /
+  minimal → the floating launcher/popover). Zero new code: this state is the absence of
+  placement effects.
+- **tab**: joins the bottom bar, spliced AFTER the chat section (owner-ruled; it is promoted
+  because it is a destination — the settings cluster keeps the rightmost seats).
+
+**Never in two places (owner constraint).** Placement is a PREFERENCE resolved each render
+against the actual chrome, single-sourced: one resolved value per satellite decides bucket
+membership, and the partition's buckets are disjoint by construction. Degradation takes the
+layout lever's own coercion stance: under `appbarMode: minimal` the effective bar is `[]`, so a
+`tab` placement falls to the menu popover with everything else — the existing partition does
+it, no special case; the hosted group renders iff the RESOLVED placement is `conf`, so a
+promoted gallery can never also appear in settings. Unknown persisted values heal to the
+default (the lever's parse-don't-validate stance).
+
+**The lever + control.** `ui.sectionPlacement: Partial<Record<TabId, "conf"|"button"|"tab">>`
+— device-local like `ui.layout` (bar real estate is a per-screen preference), ONE map keyed by
+section id with a closed vocabulary (the shape-to-extend rule: lorebooks later = one key, zero
+new stores). Conf → Appearance grows one Seg row per satellite directly under Layout
+("Agents": conf / button / tab), so the layout cluster reads as one control without corrupting
+the count labels. A "5-tab" preset was considered and REJECTED: the count labels lie in mixed
+states, presets multiply per satellite, every theme owes the fence a whole new designed bar,
+and Material 3 caps a nav bar at 5 destinations — the count model stops scaling exactly here.
+
+**Mechanics (reuse-first).** Presets, `partitionSections`, DefaultRoot's data-driven body
+mount, and the hosted-coercion effect keep their structure. The composition step (apply
+placements to the resolved preset before partitioning) is a PURE function in `layout.ts`
+beside `partitionSections` — directly testable, no policy in the hook — with `useSections`
+its one caller (Emma round, folded). The `navigate` chokepoint's hosted scroll-target
+generalizes to the map its comment reserved (`{utils: HOSTED_UTILS_GROUP_ID, agents: …}`);
+the coercion effect keys on the placement so a live conf-flip while standing on the gallery
+lands in Conf + scroll-to-group (relocation resets local state — the D35 ratified trade).
+Deep links/boot with a conf-placed active section coerce at the same chokepoint (existing
+behavior). Three Emma-round folds (all verified against HEAD):
+- **Scroll-cache invalidation (MED, 0.97):** DefaultRoot's `tabScrollRef` clear keys on
+  `[sectionLayout]` only — a placement flip reshapes both documents under the same preset id.
+  The clear effect gains the resolved placement/composition key beside `sectionLayout` — a
+  STABLE SEMANTIC value (e.g. a joined placement string), never a freshly allocated object
+  (her confirm-round rider) — plus one placement-flip case in the scroll test.
+- **Conf tail numbering (MED, 0.98):** the `hostsUtils ? 22 : 21` / media `+i` ternary
+  arithmetic cannot take a second hosted group. The tail derives numbering from ONE explicit
+  ordered list of the hosted/terminal groups actually present (Appearance and the media base
+  computed from its length); the consecutive/unique numbering test stays.
+- **Standalone panel labeling (MED, 0.93 — a LATENT S4 DEFECT fixed by this fold):**
+  `AgentsTab` labels its tabpanel `aria-labelledby="tabbtn-agents"`, an id that exists only
+  for an ON-BAR button — under S4's always-off-bar placement it has never existed. The
+  standalone panel (and its lazy/error fallback) takes a stable `aria-label` from `def.lbl`;
+  `aria-labelledby` only when the tab button exists.
+
+**Bar geometry at 5 (probed 2026-09-07, priced).** The one tab-bar renderer (KitNavBar) is
+N-column data-driven (`--tab-count`/`--tab-i`); nothing structural breaks at 5, and mixed
+counts (a promotion over 3-tab) need no code. The real degrade is label min-content width at
+360px — one `kit.css` mitigation (`min-width: 0` + `nowrap` + a `--tab-count`-driven label
+step), mirrored in gacha's bar block, verified with a real 360px screenshot before close.
+Non-issues: tap targets, indicator math, gacha's reel (five slats, unrelated to tab count).
+
+**The gacha sub-label (owner-ruled: mint one).** `tabAgents: "キャラ"` (kyara) — the
+established gacha-register word for "characters" (the field's roster screens are キャラ一覧 /
+キャラ詳細), three glyphs matching ツール's rhythm, honest under Q8.6b's real-words bar
+(katakana where it is the natural writing). Lands in the frozen copy module through the
+documented regen: edit `copy.ts` → `gen-theme-fonts.mjs` → commit outputs;
+`gachaFonts.test.ts` guards drift. The `tabs.ts` no-sub-label carve-out comment retires.
+
+**Consequences recorded.**
+- The §13-S4 owner-feel riders (gacha appbar +~7px · bar-less 34px inset) lose their premise —
+  the docked action is no longer always-present. Both geometries revert to conditional and
+  must stay correct when placement = button.
+- The S4-shaped test/e2e pins update to the new default (menu empty by default; the
+  docked-button e2e path moves behind a placement flip).
+- ONE parameterized integration guard for the owner's exclusivity constraint (Emma LOW,
+  folded): mount DefaultRoot + Conf across `conf|button|tab`, a malformed persisted
+  placement, minimal+`tab`, deep boot on agents, and one live agents→conf flip — asserting
+  exactly one gallery marker and the expected nav affordance in each state.
+- `tabs.ts`'s "deliberately NOT on any preset bar" note is superseded by this section (its
+  reasoning stands — satellites still never join a PRESET).
+- At fold, D35 gains an addendum recording satellite sections v1 (this section is the spec;
+  DECISIONS points here).
+
+**The lorebooks recipe (future, NOT built now — honest form per the Emma round).** S5 lands
+the lorebook UI as planned (Conf groups). If it ever outgrows settings, satellite #2 is a set
+of ADDITIVE closed-world edits — **no new navigation primitive**, but more than "one row":
+the `Tab` union + `TABS` runtime allowlist in `store/ui.ts` · a TabDef row in every per-theme
+tab set (+ glyph/labels, gacha sub-label with its font regen) · a `DEFAULT_BODIES` entry ·
+the host ConfGroup in the ordered tail list · the navigate scroll-target map entry · its
+Appearance placement row · the satellite-id set the composition step reads. No speculative
+registry is built for this now (a second satellite applies the rule of three when it
+arrives). Adoption is a later owner call.
+
+*Council: blind Emma design round 2026-09-07 (sol high, `--ignore-rules`, R46 brief) —
+SHIP WITH CHANGES: 0 HIGH · 3 MED · 2 LOW, open sweep = the scroll-cache MED only; all five
+accepted + folded above (the MED-1/MED-3 citations main-seat-verified against HEAD
+`22032ad`); sound-checks cleared layering, exclusivity, the lever, the splice, geometry, and
+the キャラ regen path. Confirm round (same session resumed): all five RESOLVED, sweep
+"none" — **RESOLVED — SHIP**; her one rider (the composition key must be a stable semantic
+value) is folded into the MED-1 line above.*
 
 ### 8.5 The transcript avatar — the who-line dot swap (ruling 20)
 
