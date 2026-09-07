@@ -154,6 +154,18 @@ describe("satellite placement — exactly one home, in every state", () => {
     });
   }
 
+  it("a MALFORMED persisted MAP (`sectionPlacement: null`) still renders Conf", async () => {
+    // The value-level half of that story heals in `resolvePlacement` (the case above); the MAP itself is
+    // the other half — the persist loader's field-fill merge passes a stored `null` straight through, and
+    // `composeLayout` already guards it with one typeof check. Conf reads the raw map too (its Appearance
+    // row shows the RESOLVED value), so it needs the same posture or the DEFAULT gallery home crashes on
+    // the deref before a pixel paints — on the one tab the owner would go to in order to fix it.
+    setUI({ sectionPlacement: null as never });
+    const container = await draw("conf");
+    expect(container.querySelectorAll(GRID)).toHaveLength(1);
+    expect(container.querySelector("#agents-hosted")?.querySelector(GRID)).not.toBeNull();
+  });
+
   it("the Appearance row is the CONTROL: picking Tab promotes the gallery, live", async () => {
     // The row sits directly under Layout (the two together are the one "where do my sections live"
     // control) and writes the device-local lever. Driven through the real seg, so what is pinned is

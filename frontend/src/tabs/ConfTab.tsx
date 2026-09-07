@@ -904,7 +904,11 @@ export function ConfTab({ active }: Props) {
   // The per-satellite placement lever (D70 §8.4a) — the RAW map; the Appearance row below renders the
   // RESOLVED value (the `themeRowValue` lesson: a row showing an unhealed override lies about the app).
   const sectionPlacement = useUISlice((s) => s.sectionPlacement);
-  const agentsPlacement = resolvePlacement("agents", sectionPlacement.agents);
+  // Optional-chained for the reason `composeLayout` opens with a typeof guard: the MAP is as untrusted as
+  // the values in it (a persisted `sectionPlacement: null` survives the loader's field-fill merge), and
+  // healing a VALUE is `resolvePlacement`'s job while guarding the map is each reader's. Without this the
+  // deref crashes the gallery's DEFAULT home — the one tab the owner would open to fix it.
+  const agentsPlacement = resolvePlacement("agents", sectionPlacement?.agents);
   // The resolved partition (D35 §F0 + D70 §8.4a): `hostsUtils` = the active layout renders utils INSIDE
   // Conf, `hostsAgents` = the gallery's placement puts it here — one hosting map, two entries, so this tab
   // never needs to know WHICH mechanism (a curated preset, or a satellite lever) put a section in it. The

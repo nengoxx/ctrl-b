@@ -204,7 +204,11 @@ export function useAgent(name: string | null) {
   });
 }
 
-function invalidateAgents(qc: ReturnType<typeof useQueryClient>, name?: string) {
+/** Everything that renders an agent, refreshed after an agent write — the ONE definition of "the
+ *  roster changed". Exported because a settings save is an agent write too: the root default's def
+ *  lives in `agent.defaults` and `agent.default_agent` picks the resolved default, both through
+ *  `PUT /api/settings` (`useSaveSettings` calls this). */
+export function invalidateAgents(qc: ReturnType<typeof useQueryClient>, name?: string) {
   void qc.invalidateQueries({ queryKey: ["agentlist"] });
   if (name) void qc.invalidateQueries({ queryKey: ["agent", name] });
   void qc.invalidateQueries({ queryKey: ["actions"] }); // a toolset/agent change

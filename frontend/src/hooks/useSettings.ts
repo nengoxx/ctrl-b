@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, getJSON, getJSONWithHeader, putJSON } from "../api/client";
-import { loadAgents, loadProviders } from "../lib/composer";
+import { loadProviders } from "../lib/composer";
 import { pushToast } from "../store/toast";
+import { invalidateAgents } from "./useAgents";
 import type { McpServer, OpenApiServer } from "./useIntegrations";
 import type { NotificationEvents } from "./useNotificationPrefs";
 import { withEventDefaults } from "./useNotificationPrefs";
@@ -377,7 +378,13 @@ export function useSaveSettings(opts?: {
       void qc.invalidateQueries({ queryKey: ["notification-prefs"] });
       void qc.invalidateQueries({ queryKey: ["providers"] }); // D48 — a save may add/rename/drop providers (fresh names/warnings)
       void loadProviders(); // refresh the composer's module-level `/<provider>` verb set (best-effort)
-      void loadAgents(); // SYS-9.2 — a save may change the default-agent selection; keep the composer's `/agent` set + resolved default fresh (best-effort)
+      // A settings save IS an agent write: the ROOT default's whole def lives in `agent.defaults` +
+      // `agent.default_title` (AgentsEditor saves it through this mutation), and `agent.default_agent`
+      // picks which agent a bare thread resolves to. `invalidateAgents` is the one place that says what
+      // "the roster changed" means — the always-on `["agents"]` summary map the who-line avatar, the
+      // picker and the gallery badge read included — so it is CALLED here rather than half-copied. It
+      // subsumes the SYS-9.2 `loadAgents()` refresh of the composer's module-level `/agent` set.
+      invalidateAgents(qc);
       if (res.restart_required.length) {
         pushToast(`Saved · restart to apply: ${res.restart_required.join(", ")}`, "info");
       } else if (!quiet) {

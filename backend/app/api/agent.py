@@ -1518,9 +1518,20 @@ def _list_agents_payload(s: Settings) -> dict[str, Any]:
             log.warning("agent %r failed to load; listing it without a summary", name, exc_info=True)
             agent = None
         summaries[name] = _agent_summary(agent) if agent is not None else dict.fromkeys(_SUMMARY_FIELDS, "")
-    resolved = s.resolve_agent(None)
-    summaries.setdefault(resolved.name, _agent_summary(resolved))
-    return {"agents": names, "default": resolved.name, "summaries": summaries}
+    try:
+        resolved = s.resolve_agent(None)
+    except Exception:
+        # The loop's posture, applied to the TAIL: this re-loads the CONFIGURED default, so naming a
+        # malformed agent there would take the whole route down even though the loop already listed it
+        # as a degraded row. Point `default` at that row when it exists, else at the root default —
+        # which is seeded first, so `default` is a key of `summaries` either way.
+        configured = s.agent.default_agent or ""
+        log.warning("default agent %r failed to load; listing the degraded row", configured, exc_info=True)
+        default = configured if configured in summaries else s.DEFAULT_AGENT_NAME
+    else:
+        summaries.setdefault(resolved.name, _agent_summary(resolved))
+        default = resolved.name
+    return {"agents": names, "default": default, "summaries": summaries}
 
 
 @router.get("/agents")

@@ -91,3 +91,30 @@ def test_an_unloadable_specialist_degrades_instead_of_500ing() -> None:
         body = _listing(c)
         assert body["agents"] == ["broken"]
         assert body["summaries"]["broken"] == dict.fromkeys(_FIELDS, "")
+
+
+def test_an_unloadable_CONFIGURED_DEFAULT_degrades_too() -> None:
+    """The same posture at the TAIL of the payload. The per-agent loop swallows the loader error, but
+    the closing `resolve_agent(None)` re-loads the CONFIGURED default — so naming a malformed agent as
+    the default used to take the whole route down (a yaml ParserError, 500) even though its degraded
+    row was already sitting in the map. `default` keeps naming it; a configured name with no row at
+    all falls back to the root default, which is seeded first and always has one."""
+    with _workspace() as (tmp, _cfg), _client() as c:
+        _agent(c, "broken", title="Broken")
+        assert c.put("/api/settings", json={"agent": {"default_agent": "broken"}}).status_code == 200
+        (tmp / "agents" / "broken" / "agent.yaml").write_text("title: [unclosed\n", encoding="utf-8")
+        body = _listing(c)
+        assert body["agents"] == ["broken"]
+        assert body["summaries"]["broken"] == dict.fromkeys(_FIELDS, "")
+        assert body["default"] == "broken"  # its degraded row IS a row — `default` may point at it
+
+        # …and the other arm: a configured default that `list_agent_names` skips (a folder whose name
+        # is not a valid slug) has no row to point at, so `default` falls back to the root agent.
+        odd = tmp / "agents" / "Not A Slug"
+        odd.mkdir()
+        (odd / "agent.yaml").write_text("title: [unclosed\n", encoding="utf-8")
+        r = c.put("/api/settings", json={"agent": {"default_agent": "Not A Slug"}})
+        assert r.status_code == 200, r.text
+        body = _listing(c)
+        assert body["default"] == "default"
+        assert body["default"] in body["summaries"]
