@@ -34,12 +34,12 @@ export const STANDARD_TABS: TabDef[] = [
   // The agents/characters gallery (D70 §8.4) — a settings-class section like `conf`, code-split for the
   // same reason (it carries the whole agent form plus the media library machinery).
   //
-  // It is deliberately NOT added to any `LAYOUT_PRESETS` bar: those presets are named for how many
-  // sections stand ON THE BAR and the Conf picker labels them with that literal number ("4"/"3"/"2"), so
-  // a fifth on-bar section would make the owner-facing control say something untrue. Off-bar and
-  // unhosted is an existing, ruled position (D35 §F0, Axis A) — the section falls to the nav menu, whose
-  // collapse ladder renders a lone item as a DIRECT button, so the gallery is one appbar tap away under
-  // the default chrome and joins the popover under `minimal`.
+  // It is the first SATELLITE section (D70 §8.4a, which supersedes S4's placement): it never joins a
+  // `LAYOUT_PRESETS` bar — those presets are named for how many sections stand ON THE BAR and the Conf
+  // picker labels them with that literal number ("4"/"3"/"2") — and instead carries a per-section
+  // PLACEMENT composed over the resolved preset in `layout.ts#composeLayout`. Its default home is hosted
+  // in Conf; the owner can promote it to the nav affordance or onto the bar. This registry row is the
+  // same pure data either way.
   { id: "agents", glyph: "◉", lbl: "agents", hasComposer: false, lazy: true },
 ];
 
@@ -73,11 +73,18 @@ const TAB_SETS: Partial<Record<ThemeId, TabDef[]>> = {
       hasComposer: false,
       lazy: true,
     },
-    // No `subLabel`: gacha's Japanese nav copy is a FROZEN module that also derives the theme's
-    // committed font subset (see the header note), so minting a new word here would enlarge a
-    // committed asset for a section that never stands on the bar. The row renders label-only, which
-    // `TabDef.subLabel` being optional already means everywhere else.
-    { id: "agents", glyph: "◉", lbl: "cast", hasComposer: false, lazy: true },
+    // The gallery's sub-label was minted at D70 §8.4a (owner-ruled), because the `tab` placement can now
+    // put this row on gacha's bar beside four that all carry one — a label-only fifth column would read
+    // as a missing string. It went through the documented frozen-copy path: edit `copy.ts` → `npm run
+    // fonts:gacha` → commit the regenerated subsets (`gachaFonts.test.ts` is the guard).
+    {
+      id: "agents",
+      glyph: "◉",
+      lbl: "cast",
+      subLabel: GACHA_COPY.tabAgents,
+      hasComposer: false,
+      lazy: true,
+    },
   ],
 };
 

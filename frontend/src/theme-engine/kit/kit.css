@@ -447,6 +447,12 @@ body[data-perf="lite"] .kit-appbar.transparent .kit-iconbtn {
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   border-top: 1px solid var(--line);
+  /* CROWDING (D70 §8.4a) — 0 while the bar holds the curated four or fewer, 1 once a SATELLITE section is
+   * promoted onto it (`sectionPlacement.agents = "tab"` → five columns). Derived from the same
+   * `--tab-count` KitNavBar already sets inline, so it needs no new inline style and no per-preset table;
+   * the label metrics below step off it. Clamped at 1: five is where Material caps a nav bar, and the
+   * count model stops scaling there by design, so a sixth column would take the same one notch. */
+  --tab-crowded: min(1, max(0, var(--tab-count, 4) - 4));
 }
 /* The active-tab indicator — the vapor-original sliding top line, generalized (owner directive 2026-07-12).
  * Two-part (Material's inset-indicator shape): the `.kit-tab-ind` TRACK is one grid column wide and SLIDES
@@ -489,6 +495,10 @@ body[data-motion="reduced"] .kit-tab-ind {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* A grid item's AUTO minimum is its own content, so without this a long label ("settings", "frontier")
+   * would push its column wider than 1fr and unbalance the whole bar instead of letting the type step down
+   * (D70 §8.4a's 5-up mitigation — probed at 360px, the owner's narrowest real viewport). */
+  min-width: 0;
   gap: calc(4px * var(--density-pad));
   /* vapor's 12px 6px 14px, density-scaled with a floor that keeps the total ≥44px tap height */
   padding: max(8px, calc(12px * var(--density-pad))) 6px
@@ -507,11 +517,17 @@ body[data-motion="reduced"] .kit-tab-ind {
   line-height: 1;
   font-family: var(--font-display, inherit);
 }
+/* The label steps DOWN one notch at five columns (D70 §8.4a): 9px/2px tracking is the 4-up look and is
+ * unchanged there (`--tab-crowded` is 0, so both calcs resolve to the old literals). `nowrap` + `min-width:
+ * 0` keep a crowded label on ONE line inside its column — a wrapped label would change the bar's height,
+ * which every `--appbar-h`-anchored surface would then have to follow. */
 .kit-tabbtn .lbl {
-  font-size: 9px;
+  font-size: calc(9px - 1px * var(--tab-crowded, 0));
   font-weight: 600;
-  letter-spacing: 2px;
+  letter-spacing: calc(2px - 0.8px * var(--tab-crowded, 0));
   text-transform: uppercase;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* ── composer (in-flow flex child; rounded surface; textarea + mic + send) ──

@@ -17,7 +17,8 @@ import { setUI, useUISlice } from "../store/ui";
 import { clearGroupScrollTarget, setGroupScrollTarget } from "../store/groupScroll";
 import { runNavTransition } from "../lib/viewTransition";
 import {
-  HOSTED_UTILS_GROUP_ID,
+  composeLayout,
+  HOSTED_GROUP_IDS,
   partitionSections,
   resolveLayout,
   LAYOUT_PRESETS,
@@ -37,6 +38,10 @@ export interface SectionsController {
   hosted: Partial<Record<TabId, TabId>>;
   /** The resolved layout id (the Conf Layout picker + DefaultRoot need the concrete preset). */
   layout: LayoutId;
+  /** The resolved SATELLITE composition as a stable semantic string ("agents:conf") — D70 §8.4a. Effects
+   *  that must re-run when the page reshapes under an UNCHANGED preset id (DefaultRoot's scroll-cache
+   *  clear, its hosted-coercion effect) key on this rather than on a per-render object identity. */
+  placementKey: string;
   /** The current section id. */
   active: TabId;
   /** Switch to a section. A hosted section coerces to its host + arms the scroll-to-group handoff. */
@@ -50,25 +55,33 @@ export function useSections(): SectionsController {
   const active = useUISlice((s) => s.tab);
   const lever = useUISlice((s) => s.layout);
   const appbarMode = useUISlice((s) => s.appbarMode);
+  // A stable reference (the store only replaces it on a real placement change), so the selector contract
+  // holds — the same posture `themeSettings` takes.
+  const placement = useUISlice((s) => s.sectionPlacement);
 
   const sections = tabsFor(theme);
   const layout = resolveLayout(theme, lever);
+  // The SATELLITE composition (D70 §8.4a) — the per-section placement levers applied to the resolved preset
+  // BEFORE the partition, in a pure function that is this hook's only policy call. A `conf`-placed satellite
+  // becomes a hosting-map entry, a `tab`-placed one is spliced onto the bar, `button` adds nothing — so the
+  // three buckets the partition already has are the whole vocabulary, and the buckets stay disjoint by
+  // construction (the owner's never-in-two-places constraint).
+  const { preset, key: placementKey } = composeLayout(LAYOUT_PRESETS[layout], placement);
   // `appbarMode: "minimal"` == the all-off-bar endpoint (the "1-tab mode IS minimal" unification) — the
-  // partition treats the effective bar as [] so every unhosted section falls to the menu.
-  const { bar, menu, hosted } = partitionSections(
-    sections,
-    LAYOUT_PRESETS[layout],
-    appbarMode === "minimal",
-  );
+  // partition treats the effective bar as [] so every unhosted section falls to the menu. A `tab`-placed
+  // satellite degrades through that same path, with no special case.
+  const { bar, menu, hosted } = partitionSections(sections, preset, appbarMode === "minimal");
 
   const navigate = (id: TabId): void => {
     const host = hosted[id];
     if (host) {
       // Hosting supersedes the menu: land on the host section, then arm the scroll-to-group handoff so the
-      // host body (ConfTab) expands + scrolls to the hosted group once it's mounted. One curated pair today
-      // (utils→conf) → one group id; a second hosting pair would map its own hosted-id → group-id here.
+      // host body (ConfTab) expands + scrolls to the hosted group once it's mounted. The hosted-id →
+      // group-id map this comment reserved is real since D70 §8.4a: the curated `utils` pair plus every
+      // satellite placed in `conf`.
       setUI({ tab: host });
-      setGroupScrollTarget(HOSTED_UTILS_GROUP_ID);
+      const group = HOSTED_GROUP_IDS[id];
+      if (group) setGroupScrollTarget(group);
     } else {
       // Any ordinary navigation DISARMS a stale handoff: if the user tapped away while the host's lazy
       // chunk was still loading, the armed target was never consumed — left alone it would (a) keep the
@@ -98,6 +111,7 @@ export function useSections(): SectionsController {
     menu,
     hosted,
     layout,
+    placementKey,
     active,
     navigate,
     hasComposer: sectionHasComposer(theme, active),

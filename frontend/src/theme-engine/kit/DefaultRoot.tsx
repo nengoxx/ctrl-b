@@ -127,9 +127,11 @@ export function DefaultRoot({
   // `sectionLayout` to disambiguate from the COMPOSER layout local below.
   const {
     sections,
+    bar,
     hosted,
     menu,
     layout: sectionLayout,
+    placementKey,
     active: tab,
     navigate,
     hasComposer: showComposer,
@@ -161,6 +163,12 @@ export function DefaultRoot({
 
   const bodyMap = { ...DEFAULT_BODIES, ...bodies };
 
+  // Which sections have a tab BUTTON in the DOM right now (D70 §8.4a MED-3): a `role="tabpanel"` may only
+  // point `aria-labelledby` at an element that exists, and an off-bar section has no `#tabbtn-<id>` at all
+  // (every layout for the agents gallery under its `button` placement; conf in 2-tab; everything under
+  // `minimal`). Off-bar panels take a stable `aria-label` from `def.lbl` instead.
+  const onBar = new Set(bar.map((d) => d.id));
+
   // Generalized lazy latch (was the Conf-only flag): a per-section mounted map, seeded so eager sections are
   // always mounted and a `lazy` section is mounted only if it's the active one. It flips strictly false→true
   // the first time a lazy section becomes active, then stays mounted (drafts survive). `sections` is a
@@ -178,12 +186,15 @@ export function DefaultRoot({
   // Layout coercion (D35): if the active section is HOSTED under the resolved layout (boot with a stale
   // persisted tab, or a live layout switch while a hosted section is active, or any programmatic navigate
   // that bypassed useSections), route through `navigate` — the same chokepoint that lands on the host AND
-  // arms the scroll-to-group handoff. Keyed on [tab, sectionLayout] (the identity-stable inputs); `hosted`/
-  // `navigate` are fresh each render but only ACT when `hosted[tab]` is set, so re-running is harmless.
+  // arms the scroll-to-group handoff. Keyed on [tab, sectionLayout, placementKey] (the identity-stable
+  // inputs); `hosted`/`navigate` are fresh each render but only ACT when `hosted[tab]` is set, so re-running
+  // is harmless. `placementKey` is the D70 §8.4a addition: a satellite's placement can flip to `conf` while
+  // the owner is STANDING on it under an unchanged preset id, and that flip must land in Conf + scroll to
+  // the group exactly as a layout switch does (relocation resets local state — the D35 ratified trade).
   useEffect(() => {
     if (hosted[tab]) navigate(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, sectionLayout]);
+  }, [tab, sectionLayout, placementKey]);
 
   // Keep the scroller's position across a theme-Root remount (a skin pick rebuilds this whole tree —
   // scrollKeep restores the old Root's position in the mount layout-effect, before the VT snapshot).
@@ -212,9 +223,15 @@ export function DefaultRoot({
   // that no longer exists. Dropping the map is the honest answer (the next switch lands at the top, the
   // pre-restoration behaviour); keeping it would scroll to an arbitrary point of the new shape. Declared
   // BEFORE the restore effect so that on a commit which changes both, the clear is what the restore sees.
+  //
+  // A SATELLITE PLACEMENT flip does the same reshaping under an UNCHANGED preset id (D70 §8.4a MED-1) — the
+  // gallery becomes a group inside Conf, which lengthens Conf's document and empties the gallery's own — so
+  // the clear keys on the placement too. `placementKey` is a stable SEMANTIC string ("agents:conf"), never a
+  // freshly-allocated object: an object dep would clear the map on every render and silently retire the
+  // whole per-section restoration.
   useEffect(() => {
     tabScrollRef.current = {};
-  }, [sectionLayout]);
+  }, [sectionLayout, placementKey]);
 
   // Restore the content pane to this section's last position on a section switch — 0 for a section not yet
   // visited, which is the previous reset-to-top behaviour and what a fresh boot always gets. A stored offset
@@ -344,9 +361,11 @@ export function DefaultRoot({
               return (
                 <ErrorBoundary
                   key={def.id}
-                  fallback={(e, r) => lazyErrorFallback(def, index, e, r)}
+                  fallback={(e, r) => lazyErrorFallback(def, index, onBar.has(def.id), e, r)}
                 >
-                  <Suspense fallback={<LazyLoading def={def} index={index} />}>
+                  <Suspense
+                    fallback={<LazyLoading def={def} index={index} onBar={onBar.has(def.id)} />}
+                  >
                     <Body active={active} />
                   </Suspense>
                 </ErrorBoundary>
@@ -385,7 +404,12 @@ export function DefaultRoot({
 // Suspense fallback for a lazy section's chunk — mirrors the real section header (`.sec` num + label) so
 // there's no layout shift. Parameterized from the def (label = `def.lbl`) + its index in the full section
 // list (the `.sec` number), keeping the exact DOM shape of the old Conf-specific placeholder.
-function LazyLoading({ def, index }: { def: TabDef; index: number }) {
+//
+// `onBar` decides the panel's LABELLING (D70 §8.4a MED-3): `aria-labelledby` names the tab button, so it is
+// only correct while that button exists — an off-bar section's panel would otherwise point at nothing at
+// all. The label text is identical either way (`def.lbl` is what the button renders), so nothing changes
+// for a screen reader beyond the reference resolving.
+function LazyLoading({ def, index, onBar }: { def: TabDef; index: number; onBar: boolean }) {
   const num = String(index + 1).padStart(2, "0");
   return (
     <div
@@ -393,7 +417,8 @@ function LazyLoading({ def, index }: { def: TabDef; index: number }) {
       id={`tab-${def.id}`}
       data-screen-label={`${num} ${def.lbl}`}
       role="tabpanel"
-      aria-labelledby={`tabbtn-${def.id}`}
+      aria-labelledby={onBar ? `tabbtn-${def.id}` : undefined}
+      aria-label={onBar ? undefined : def.lbl}
     >
       <div className="sec">
         <span className="num">{num}</span>
@@ -407,7 +432,13 @@ function LazyLoading({ def, index }: { def: TabDef; index: number }) {
 // Error fallback for a lazy section chunk (most common: a stale chunk URL after a deploy → 404). React.lazy
 // caches its rejection, so only a reload recovers — the button does exactly that. Parameterized like
 // `LazyLoading`.
-function lazyErrorFallback(def: TabDef, index: number, error: Error, reload: () => void) {
+function lazyErrorFallback(
+  def: TabDef,
+  index: number,
+  onBar: boolean,
+  error: Error,
+  reload: () => void,
+) {
   const num = String(index + 1).padStart(2, "0");
   return (
     <div
@@ -415,7 +446,8 @@ function lazyErrorFallback(def: TabDef, index: number, error: Error, reload: () 
       id={`tab-${def.id}`}
       data-screen-label={`${num} ${def.lbl}`}
       role="tabpanel"
-      aria-labelledby={`tabbtn-${def.id}`}
+      aria-labelledby={onBar ? `tabbtn-${def.id}` : undefined}
+      aria-label={onBar ? undefined : def.lbl}
     >
       <div className="sec">
         <span className="num">{num}</span>

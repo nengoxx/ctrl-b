@@ -9,17 +9,24 @@ import { getUI, setUI } from "../../src/store/ui";
 // `minimal` supports every preset, so an explicit layout/appbarMode pick is honored (vapor would coerce).
 
 beforeEach(() => {
-  // Reset every lever these components read (module state persists between cases).
-  setUI({ theme: "minimal", tab: "fleet", layout: "auto", appbarMode: "visible" });
+  // Reset every lever these components read (module state persists between cases) — including the
+  // D70 §8.4a satellite placements, which decide whether the gallery is in the menu at all.
+  setUI({
+    theme: "minimal",
+    tab: "fleet",
+    layout: "auto",
+    appbarMode: "visible",
+    sectionPlacement: {},
+  });
 });
 
 afterEach(cleanup);
 
 describe("NavMenu collapse ladder", () => {
   it("menu of one → a DIRECT section button (no popover semantics), labelled by the section", () => {
-    // 4-tab: the curated four stand on the bar and the agents gallery is the one off-bar section
-    // (D70 §8.4) — so the DEFAULT layout is now what exercises the menu-of-one rung.
-    setUI({ layout: "4-tab" });
+    // 4-tab + the gallery PROMOTED to `button` (D70 §8.4a): the curated four stand on the bar and the
+    // gallery is the one off-bar section — the state that exercises the menu-of-one rung.
+    setUI({ layout: "4-tab", sectionPlacement: { agents: "button" } });
     const { container } = render(<NavMenu />);
 
     const btn = container.querySelector<HTMLButtonElement>(".navmenu-launch");
@@ -33,7 +40,8 @@ describe("NavMenu collapse ladder", () => {
   });
 
   it("menu of one, active ON that section → marked as the current location", () => {
-    setUI({ layout: "4-tab", tab: "agents" }); // standing on the lone off-bar section
+    // standing on the lone off-bar section (the `button` placement is what puts it there)
+    setUI({ layout: "4-tab", tab: "agents", sectionPlacement: { agents: "button" } });
     const { container } = render(<NavMenu />);
 
     const btn = container.querySelector<HTMLButtonElement>(".navmenu-direct");
@@ -42,7 +50,7 @@ describe("NavMenu collapse ladder", () => {
   });
 
   it("menu of one → clicking navigates straight to the section", () => {
-    setUI({ layout: "4-tab" });
+    setUI({ layout: "4-tab", sectionPlacement: { agents: "button" } });
     const { container } = render(<NavMenu />);
     fireEvent.click(container.querySelector<HTMLButtonElement>(".navmenu-direct")!);
     // `agents` is off-bar and UNHOSTED → the plain navigate branch, no coercion.
@@ -50,7 +58,7 @@ describe("NavMenu collapse ladder", () => {
   });
 
   it("menu of many → the orbit LAUNCHER with popover semantics (unchanged by the ladder)", () => {
-    setUI({ appbarMode: "minimal" }); // bar = [], menu = every section (length 5)
+    setUI({ appbarMode: "minimal" }); // bar = [], menu = the four unhosted sections
     const { container } = render(<NavMenu />);
 
     const btn = container.querySelector<HTMLButtonElement>(".navmenu-launch");

@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { setUI } from "../../src/store/ui";
 import { KitNavBar } from "../../src/theme-engine/kit/NavBar";
-import { LAYOUT_PRESETS, partitionSections, resolveLayout } from "../../src/theme-engine/layout";
+import {
+  composeLayout,
+  LAYOUT_PRESETS,
+  partitionSections,
+  resolveLayout,
+} from "../../src/theme-engine/layout";
 import { tabsFor } from "../../src/theme-engine/tabs";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
 
@@ -23,7 +28,13 @@ const SUBLABELS = [
 ] as const;
 
 beforeEach(() => {
-  setUI({ theme: "gacha", tab: "fleet", layout: "auto", appbarMode: "visible" });
+  setUI({
+    theme: "gacha",
+    tab: "fleet",
+    layout: "auto",
+    appbarMode: "visible",
+    sectionPlacement: {},
+  });
 });
 
 afterEach(cleanup);
@@ -33,9 +44,9 @@ describe("gacha tab set (data)", () => {
     const tabs = tabsFor("gacha");
     expect(tabs.map((t) => t.id)).toEqual(["fleet", "agent", "utils", "conf", "agents"]);
     expect(tabs.slice(0, 4).map((t) => t.subLabel)).toEqual(SUBLABELS.map(([, jp]) => jp));
-    // D70 §8.4 — the agents gallery carries NO sub-label: `GACHA_COPY` is a frozen module that also
-    // derives the theme's committed font subset, and the section never stands on the bar.
-    expect(tabs.find((t) => t.id === "agents")?.subLabel).toBeUndefined();
+    // D70 §8.4a — the gallery gained one when it became PROMOTABLE onto the bar: キャラ (kyara), from
+    // the same frozen module, so the committed font subset covers it (`gachaFonts.test.ts` is the guard).
+    expect(tabs.find((t) => t.id === "agents")?.subLabel).toBe(GACHA_COPY.tabAgents);
     // Composer visibility + the lazy latch are unchanged from the standard set.
     expect(tabs.map((t) => t.hasComposer)).toEqual([true, true, false, false, false]);
     expect(tabs.find((t) => t.id === "conf")?.lazy).toBe(true);
@@ -45,14 +56,14 @@ describe("gacha tab set (data)", () => {
   it("defaults to the 3-tab preset (the prototype's Fleet/Agent/Settings shape), utils hosted in Conf", () => {
     const layout = resolveLayout("gacha", "auto");
     expect(layout).toBe("3-tab");
-    const { bar, menu, hosted } = partitionSections(
-      tabsFor("gacha"),
-      LAYOUT_PRESETS[layout],
-      false,
-    );
+    // Through the SATELLITE composition, which is what the app partitions (D70 §8.4a): the gallery's
+    // default `conf` placement joins utils in the hosting map, so gacha's default chrome is exactly the
+    // prototype's three columns with nothing extra docked beside them.
+    const { preset } = composeLayout(LAYOUT_PRESETS[layout], {});
+    const { bar, menu, hosted } = partitionSections(tabsFor("gacha"), preset, false);
     expect(bar.map((d) => d.id)).toEqual(["fleet", "agent", "conf"]);
-    expect(menu.map((d) => d.id)).toEqual(["agents"]); // off-bar under every preset (D70 §8.4)
-    expect(hosted).toEqual({ utils: "conf" });
+    expect(menu.map((d) => d.id)).toEqual([]);
+    expect(hosted).toEqual({ utils: "conf", agents: "conf" });
   });
 
   it("honors every preset — it declares no `layouts` restriction (the D35 ideal)", () => {
@@ -73,6 +84,28 @@ describe("gacha nav bar — the sub-labels actually render (Codex R4-9)", () => 
         `gacha's ${id} tab lost its sub-label`,
       ).toBe(jp);
     }
+  });
+
+  it("the PROMOTED gallery renders its own キャラ sub-label — five columns, all five lines", () => {
+    // D70 §8.4a: `sectionPlacement.agents = "tab"` splices the satellite in after chat, so gacha's bar
+    // carries five sub-labels. The word was minted for exactly this state; a label-only fifth column
+    // beside four bilingual ones is what the ruling avoids.
+    setUI({ layout: "4-tab", sectionPlacement: { agents: "tab" } });
+    const { container } = render(<KitNavBar />);
+    const btns = [...container.querySelectorAll("[role='tab']")];
+    expect(btns.map((b) => b.id)).toEqual([
+      "tabbtn-fleet",
+      "tabbtn-agent",
+      "tabbtn-agents",
+      "tabbtn-utils",
+      "tabbtn-conf",
+    ]);
+    expect(container.querySelectorAll(".kit-tabbtn .sub")).toHaveLength(5);
+    expect(container.querySelector("#tabbtn-agents .sub")?.textContent).toBe(GACHA_COPY.tabAgents);
+    // …and the bar hands the CSS its column count, which is what drives the 5-up label step.
+    expect(
+      container.querySelector<HTMLElement>(".kit-tabbar")?.style.getPropertyValue("--tab-count"),
+    ).toBe("5");
   });
 
   it("renders the three on-bar sub-labels under its own 3-tab default", () => {

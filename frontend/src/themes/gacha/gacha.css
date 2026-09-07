@@ -498,6 +498,8 @@
     }
     .kit-tabbtn .lbl {
       font-weight: 800;
+      /* em-relative, so it follows the kit's `--tab-crowded` size step at five columns for free (D70
+       * §8.4a) — the theme states its RHYTHM, the kit states the metric. */
       letter-spacing: 0.12em;
     }
     /* ── Nav sub-label (the `TabDef.subLabel` seam) ───────────────────────────────────────────────
@@ -507,10 +509,14 @@
      * the prototype actually renders (its label is 900 and only 600/800 are cut). */
     .kit-tabbtn .sub {
       font-family: var(--font-display);
-      font-size: 8px;
+      /* The kit's 5-up step, MIRRORED for the line the kit does not have (D70 §8.4a): gacha's is the only
+       * bar with a second label row, and キャラ joins four siblings on it when the gallery is promoted.
+       * `--tab-crowded` is 0 at four or fewer columns, so this is byte-identical to the 8px it always was. */
+      font-size: calc(8px - 0.8px * var(--tab-crowded, 0));
       font-weight: 800;
       letter-spacing: 0.2em;
       opacity: 0.75;
+      white-space: nowrap;
     }
 
     /* ── The tab REEL (M1) — the mechanism; the figure is G4 ──────────────────────────────────────

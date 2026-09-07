@@ -6,14 +6,62 @@
 // pattern). Principle: functionality = modules; layout = modes that recompose WHERE modules live.
 
 import { registry } from "./registry";
-import type { LayoutId, LayoutPreset, TabDef, TabId, ThemeId } from "./types";
+import type { LayoutId, LayoutPreset, SectionPlacement, TabDef, TabId, ThemeId } from "./types";
 
-// The DOM id (and collapse key) of the utils-in-Conf hosted group — the ONE curated hosting pair (Axis B,
-// D35: concrete-first, generalized only if a second pair appears). Lives HERE (the shared, non-lazy layout
-// module) rather than in ConfTab so the eager nav chokepoint (`useSections.navigate`) can name the
-// scroll-to-group target without pulling the lazy Conf chunk. ConfTab renders `<ConfGroup id={…}>` from this
-// same constant → one source, no string duplication.
+// The DOM id (and collapse key) of the utils-in-Conf hosted group — the FIRST curated hosting pair (Axis B,
+// D35: concrete-first, generalized only if a second pair appears; D70 §8.4a IS that second pair). Lives HERE
+// (the shared, non-lazy layout module) rather than in ConfTab so the eager nav chokepoint
+// (`useSections.navigate`) can name the scroll-to-group target without pulling the lazy Conf chunk. ConfTab
+// renders `<ConfGroup id={…}>` from this same constant → one source, no string duplication.
 export const HOSTED_UTILS_GROUP_ID = "utils-hosted";
+// …and the agents GALLERY's hosted group (D70 §8.4a), for exactly the same reasons. A distinct id from the
+// `agents` GLOBALS group Conf already carries (`agent.*` defaults/routing), which is why it is suffixed.
+export const HOSTED_AGENTS_GROUP_ID = "agents-hosted";
+
+// ── SATELLITE SECTIONS (D70 §8.4a) ───────────────────────────────────────────────────────────────────
+// The core four (fleet/agent/utils/conf) are governed by the curated count presets below. A SATELLITE is a
+// section that never appears in a preset and instead carries a per-section PLACEMENT, composed over the
+// resolved preset at ONE seam (`composeLayout`). The vocabulary is the partition's own three buckets — no
+// new nav concept:
+//   · `conf`   — hosted in its host section (the Axis-B mechanism), rendered as a ConfGroup.
+//   · `button` — off-bar AND unhosted: the menu affordance carries it (docked action / floating launcher,
+//                per the D35 docking rule + collapse ladder). This bucket is the ABSENCE of an effect.
+//   · `tab`    — spliced onto the bar immediately after `after` (a promotion: it is a destination, and the
+//                settings cluster keeps the rightmost seats).
+// The `SectionPlacement` vocabulary itself lives in `types.ts` (the store types its lever with it and must
+// not import this registry-reading module — see that type's note).
+
+/** The placement vocabulary as a runtime allowlist — the membership check the lever's parse-don't-validate
+ *  healing needs (TS types are erased; a persisted blob can hold anything). Ordered widest→narrowest home. */
+export const SECTION_PLACEMENTS: readonly SectionPlacement[] = ["conf", "button", "tab"];
+
+interface SatelliteDef {
+  /** The host section under `conf` placement (the hosting map's value). */
+  host: TabId;
+  /** The DOM id of the ConfGroup the host renders it in — the scroll-to-group target. */
+  groupId: string;
+  /** Bar anchor under `tab` placement: spliced immediately AFTER this section id. */
+  after: TabId;
+  /** The placement when the lever holds nothing (or something this build doesn't know). */
+  fallback: SectionPlacement;
+}
+
+/** The satellite registry — `agents` only today (D70 §8.4a; the lorebooks recipe is future work, and a
+ *  second satellite is one entry here plus the additive edits §8.4a enumerates). Declaration order is the
+ *  order `composeLayout` applies them in and the order `placementKey` prints them in. */
+export const SATELLITES: Partial<Record<TabId, SatelliteDef>> = {
+  // The agents/characters gallery. DEFAULT `conf` — the owner's "hidden by default, like the tools tab".
+  agents: { host: "conf", groupId: HOSTED_AGENTS_GROUP_ID, after: "agent", fallback: "conf" },
+};
+
+/** hosted section id → the DOM id of the ConfGroup that renders it. The map `useSections.navigate`'s
+ *  comment reserved: one curated pair (utils, from the presets) plus every satellite's own group. DERIVED
+ *  from `SATELLITES` rather than re-listed, so a satellite's group id has exactly one source. */
+export const HOSTED_GROUP_IDS: Partial<Record<TabId, string>> = (() => {
+  const out: Partial<Record<TabId, string>> = { utils: HOSTED_UTILS_GROUP_ID };
+  for (const [id, sat] of Object.entries(SATELLITES)) out[id as TabId] = sat.groupId;
+  return out;
+})();
 
 // The curated presets (D35 point 2). `bar` order = tab-bar order; `hosted` = Axis-B hosting (utils→conf).
 // A preset never adds/removes sections — only relocates them; `partitionSections` skips any id a given theme
@@ -90,6 +138,58 @@ export function resolveLayout(themeId: ThemeId, lever: "auto" | LayoutId): Layou
   if (!(lever in LAYOUT_PRESETS)) return themeDefault;
   if (supported.includes(lever)) return lever;
   return nearestSupported(lever, supported, themeId, lever);
+}
+
+// Resolve ONE satellite's placement lever — PURE, and the same parse-don't-validate stance `resolveLayout`
+// takes for the layout lever: the persist loader's defaults-merge passes any stored value through UNTYPED,
+// so a value this build doesn't know (a rolled-back vocabulary, hand-edited/corrupt localStorage, a nested
+// number/null) reaches here at render time. A membership check against `SECTION_PLACEMENTS` heals it to the
+// satellite's own fallback instead of letting an unknown bucket silently render the section NOWHERE.
+// Exported so the Conf control can display the value the app actually uses (the `themeRowValue` lesson: a
+// row that renders the RAW override lies about the app's state).
+export function resolvePlacement(id: TabId, lever: SectionPlacement | undefined): SectionPlacement {
+  const sat = SATELLITES[id];
+  if (!sat) return "button"; // not a satellite → no placement effects at all (the bucket that does nothing)
+  return SECTION_PLACEMENTS.includes(lever as SectionPlacement)
+    ? (lever as SectionPlacement)
+    : sat.fallback;
+}
+
+// Compose the satellite placements over a resolved preset — the ONE seam D70 §8.4a adds, PURE (no store
+// read; the caller passes the lever map) and with `useSections` its single caller, so no policy lives in
+// the hook. Never mutates the preset: `LAYOUT_PRESETS` entries are module constants shared by every render.
+//
+// Returns the composed preset PLUS a `key`: a STABLE SEMANTIC string ("agents:conf") naming the resolved
+// composition. Effects that must re-run when the page RESHAPES under an unchanged preset id (DefaultRoot's
+// scroll-cache clear, its hosted-coercion effect) key on that string — never on the freshly-allocated
+// preset object, which changes identity every render.
+export function composeLayout(
+  preset: LayoutPreset,
+  placements: Partial<Record<TabId, SectionPlacement>> | undefined,
+): { preset: LayoutPreset; key: string } {
+  // The lever map itself is untrusted (a persisted `sectionPlacement: null` or a string would reach here) —
+  // one typeof guard, then the per-value membership check in `resolvePlacement` does the rest.
+  const levers = typeof placements === "object" && placements !== null ? placements : {};
+  let bar = preset.bar;
+  let hosted = preset.hosted;
+  const key: string[] = [];
+  for (const [rawId, sat] of Object.entries(SATELLITES)) {
+    const id = rawId as TabId;
+    const placement = resolvePlacement(id, levers[id]);
+    key.push(`${id}:${placement}`);
+    if (placement === "conf") {
+      // Hosting supersedes the menu (the partition's own rule), so a hosted satellite can never ALSO show
+      // as a nav affordance — the owner's never-in-two-places constraint falls out of the existing buckets.
+      hosted = { ...hosted, [id]: sat.host };
+    } else if (placement === "tab") {
+      // Spliced immediately after its anchor; appended when the anchor isn't on this preset's bar (a
+      // narrower preset that drops it) so a promotion never silently vanishes.
+      const at = bar.indexOf(sat.after);
+      bar = at < 0 ? [...bar, id] : [...bar.slice(0, at + 1), id, ...bar.slice(at + 1)];
+    }
+    // `button` = off-bar and unhosted: no effect at all, which is exactly what that bucket means.
+  }
+  return { preset: { bar, ...(hosted ? { hosted } : {}) }, key: key.join(" ") };
 }
 
 // The partition a resolved preset induces over a theme's section defs — PURE (no store/registry read; the

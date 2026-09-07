@@ -148,6 +148,14 @@ export interface LayoutPreset {
   hosted?: Partial<Record<TabId, TabId>>;
 }
 
+// Where a SATELLITE section lives (D70 §8.4a) — the per-section placement lever composed over a resolved
+// preset. Deliberately the partition's OWN three buckets, not a new nav concept: `conf` = hosted in its host
+// (a ConfGroup), `button` = off-bar-and-unhosted (the menu affordance carries it), `tab` = spliced onto the
+// bar. The type lives HERE rather than in `layout.ts` because `store/ui.ts` types the lever with it, and the
+// store must not reach into a module that reads the theme registry (the module-eval cycle its header pins).
+// The runtime allowlist + the satellite table are in `layout.ts`.
+export type SectionPlacement = "conf" | "button" | "tab";
+
 export interface ThemeDef {
   id: ThemeId;
   label: string;

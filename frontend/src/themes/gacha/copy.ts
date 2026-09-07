@@ -40,6 +40,12 @@ export const GACHA_COPY = {
   tabUtils: "ツール",
   /** 設定 (settei) — "settings". */
   tabConf: "設定",
+  /** キャラ (kyara) — "characters", clipped from キャラクター exactly as the register itself clips it: a
+   *  gacha roster screen is キャラ一覧 / キャラ詳細, never the full loanword. Three glyphs, matching ツール's
+   *  rhythm, and katakana because that IS the natural writing for this word (Q8.6b's bar). Minted at
+   *  D70 §8.4a when the agents gallery became promotable onto the bar; ャ is the one glyph it adds to
+   *  the frozen subset (キ rides ラッキーリレー, ラ rides ツール), hence the font re-run. */
+  tabAgents: "キャラ",
 
   // ── Shared glyphs (G1) ──────────────────────────────────────────────────────────────────────────
   // Not words — single characters the Fleet composes strings from at runtime (a star ladder, a plate's

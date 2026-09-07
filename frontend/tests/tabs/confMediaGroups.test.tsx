@@ -1,5 +1,5 @@
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ConfTab · the MEDIA groups (D53 — deferred from M1b to M3, when the second row landed for real).
 //
@@ -47,6 +47,12 @@ vi.mock("../../src/hooks/usePrompts", async (importActual) => ({
   usePrompts: () => ({ data: undefined }),
 }));
 vi.mock("../../src/tabs/UtilsTab", () => ({ UtilsContent: () => null, UtilsTab: () => null }));
+// Same posture for the gallery's hostable body: which GROUPS exist is what this suite is about, and the
+// gallery's own content has its own suite. The stub echoes itself so the group is readable from the DOM.
+vi.mock("../../src/tabs/AgentsTab", () => ({
+  AgentsContent: () => <div data-testid="gallery-hosted" />,
+  AgentsTab: () => null,
+}));
 vi.mock("../../src/hooks/useSettings", () => ({
   useSettings: () => ({ data: undefined }),
   useSettingsProvidersRev: () => "revA",
@@ -64,7 +70,10 @@ vi.mock("../../src/hooks/useAccess", () => ({
 vi.mock("../../src/hooks/useAppChrome", () => ({
   useAppChrome: () => ({ ttsAuto: false, ttsConfigured: false, toggleAutoTts: vi.fn() }),
 }));
-vi.mock("../../src/hooks/useSections", () => ({ useSections: () => ({ hosted: {} }) }));
+// The hosting map is what decides Conf's TAIL (D35 §F0 for utils, D70 §8.4a for the agents gallery), so
+// it is the knob these cases turn — the real controller's own resolution is covered in useSections.test.
+const hosted = vi.hoisted((): { map: Record<string, string> } => ({ map: {} }));
+vi.mock("../../src/hooks/useSections", () => ({ useSections: () => ({ hosted: hosted.map }) }));
 vi.mock("../../src/hooks/useAppearance", () => ({
   useSaveAppearance: () => ({ mutate: vi.fn() }),
   currentAppearancePatch: () => ({}),
@@ -88,6 +97,9 @@ vi.mock("../../src/hooks/useSkills", () => ({ useSkills: () => ({ data: [] }) })
 import { setUI } from "../../src/store/ui";
 import { ConfTab } from "../../src/tabs/ConfTab";
 
+beforeEach(() => {
+  hosted.map = {};
+});
 afterEach(cleanup);
 
 /** Every Conf group's `[id, number]`, in document order. */
@@ -121,18 +133,39 @@ describe("ConfTab · the media groups", () => {
     expect(container.querySelector("[data-testid=gallery-gacha]")).toBeNull();
   });
 
-  it("numbers the groups consecutively and gives every one a distinct id, under either theme", () => {
+  // D70 §8.4a MED-2 — the TAIL. Its numbers used to be ternary arithmetic over the single hosted-utils
+  // flag (`hostsUtils ? 22 : 21`, media `+ i`), a shape that cannot take a SECOND hosted group; it is now
+  // derived from one ordered list of the hosted groups actually present. So the consecutive/unique
+  // assertion has to run across every combination of hosted groups, not just the two it used to.
+  const TAILS: Record<string, string>[] = [
+    {},
+    { utils: "conf" },
+    { agents: "conf" },
+    { utils: "conf", agents: "conf" },
+  ];
+
+  it("numbers the groups consecutively and gives every one a distinct id, under every hosted tail", () => {
     for (const theme of ["gacha", "vapor"] as const) {
-      setUI({ theme });
-      const { container, unmount } = render(<ConfTab active />);
-      const all = groups(container);
-      const ids = all.map(([id]) => id);
-      expect(new Set(ids).size, theme).toBe(ids.length);
-      // The media groups are last, so their numbers continue the tab's own run without a gap or a
-      // repeat — the two failure modes of "the previous group's number + i".
-      const nums = all.map(([, num]) => Number(num));
-      expect(nums, theme).toEqual(nums.map((_, i) => i + 1));
-      unmount();
+      for (const map of TAILS) {
+        hosted.map = map;
+        setUI({ theme });
+        const { container, unmount } = render(<ConfTab active />);
+        const label = `${theme} · hosted=${JSON.stringify(map)}`;
+        const all = groups(container);
+        const ids = all.map(([id]) => id);
+        expect(new Set(ids).size, label).toBe(ids.length);
+        // The media groups are last, so their numbers continue the tab's own run without a gap or a
+        // repeat — the two failure modes of "the previous group's number + i".
+        const nums = all.map(([, num]) => Number(num));
+        expect(nums, label).toEqual(nums.map((_, i) => i + 1));
+        // …and each hosted group is actually THERE, with its body, exactly when the map says so.
+        expect(ids.includes("utils-hosted"), label).toBe("utils" in map);
+        expect(ids.includes("agents-hosted"), label).toBe("agents" in map);
+        expect(container.querySelector("[data-testid=gallery-hosted]") !== null, label).toBe(
+          "agents" in map,
+        );
+        unmount();
+      }
     }
   });
 });

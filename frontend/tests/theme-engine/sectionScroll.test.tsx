@@ -74,7 +74,13 @@ const go = (tab: string) => act(() => setUI({ tab: tab as never }));
 
 beforeEach(() => {
   clearGroupScrollTarget();
-  setUI({ theme: "minimal", tab: "fleet", layout: "auto", appbarMode: "visible" });
+  setUI({
+    theme: "minimal",
+    tab: "fleet",
+    layout: "auto",
+    appbarMode: "visible",
+    sectionPlacement: {},
+  });
 });
 afterEach(() => {
   cleanup();
@@ -139,5 +145,32 @@ describe("DefaultRoot — per-section scroll restoration", () => {
     go("fleet");
     expect(scroller.scrollTop).toBe(0); // the stored 260 was dropped, so the switch lands at the top
     expect(scrollCalls.at(-1)).toEqual([0, 0]);
+  });
+
+  // D70 §8.4a MED-1 — a SATELLITE PLACEMENT flip reshapes both documents under an UNCHANGED preset id
+  // (the gallery becomes a group inside Conf, which lengthens Conf and empties the gallery's own page),
+  // so the clear has to key on the placement as well as on `sectionLayout`. Before the fold it did not,
+  // and every stored offset survived into a page that no longer had those pixels.
+  it("drops every stored offset when a SATELLITE PLACEMENT changes (the preset id never moves)", () => {
+    setUI({ sectionPlacement: { agents: "button" } });
+    const scroller = draw();
+    scrollTo(scroller, 260);
+    go("agent"); // park on a section neither placement touches
+    act(() => setUI({ sectionPlacement: { agents: "conf" } }));
+    go("fleet");
+    expect(scroller.scrollTop).toBe(0);
+    expect(scrollCalls.at(-1)).toEqual([0, 0]);
+  });
+
+  it("…and the clear key is STABLE: an unrelated re-render does NOT wipe the map (the rider)", () => {
+    // The confirm-round rider: keying the clear on a freshly-allocated composition OBJECT would fire it
+    // every commit and silently retire per-section restoration altogether. `agent` is not a satellite, so
+    // toggling an unrelated lever must leave fleet's stored offset intact.
+    const scroller = draw();
+    scrollTo(scroller, 260);
+    go("agent");
+    act(() => setUI({ ttsAuto: false })); // any unrelated store change → an extra commit
+    go("fleet");
+    expect(scroller.scrollTop).toBe(260);
   });
 });

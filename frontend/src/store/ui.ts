@@ -10,7 +10,13 @@
 // since D51 V2 vapor has no private axis: its accents (dark/aqua/ember) ride the same `data-accent`
 // attribute as every other theme's (the legacy `body[data-theme]` axis is RETIRED, only cleared).
 
-import type { LayoutId, Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
+import type {
+  LayoutId,
+  Mode,
+  SectionPlacement,
+  ThemeId,
+  ThemeSettingValue,
+} from "../theme-engine/types";
 import { createStore } from "./createStore";
 import { loadPersistedVersioned, savePersisted } from "./persist";
 
@@ -97,6 +103,15 @@ export interface UIState {
   // exactly like `appbarMode`. `auto` = the active theme's declared default (`ThemeDef.defaultLayout`); an
   // explicit `LayoutId` is coerced to the theme's nearest supported preset by `layout.ts#resolveLayout`.
   layout: "auto" | LayoutId;
+  // Per-SATELLITE placement (D70 §8.4a) — where a satellite section lives, composed over the resolved
+  // preset by `layout.ts#composeLayout`. Device-local (persisted here, NOT synced) for exactly the reason
+  // `layout` and `appbarMode` are: bar real estate is a per-screen preference. ONE map keyed by section id
+  // with a closed vocabulary — the shape-to-extend rule, so the next satellite (lorebooks, if it is ever
+  // promoted) is one key and zero new stores. An ABSENT key means the satellite's own default (`agents` →
+  // `conf`, the owner's "hidden by default"); an unknown/malformed value HEALS to it at read, in
+  // `layout.ts#resolvePlacement` — the same parse-don't-validate boundary `resolveLayout` gives the layout
+  // lever, so the store keeps holding exactly what was persisted and every reader gets the healed value.
+  sectionPlacement: Partial<Record<Tab, SectionPlacement>>;
 }
 
 // First-load default for `motion`: honor the OS `prefers-reduced-motion` preference once.
@@ -130,6 +145,7 @@ const DEFAULTS: UIState = {
   themeSettings: {}, // per-theme overrides resolve against each ThemeDef.settings default
   appbarMode: "visible", // global per-device chrome lever; every theme's Root honors it
   layout: "auto", // global per-device section-layout lever (NOT synced); auto = the active theme's default
+  sectionPlacement: {}, // empty ⇒ every satellite sits at its own default (agents → hosted in Conf)
 };
 
 const KEY = "ctrlb.ui";

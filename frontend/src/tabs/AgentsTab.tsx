@@ -147,7 +147,12 @@ function ImportReportCard({
   );
 }
 
-export function AgentsTab({ active }: { active: boolean }) {
+// The gallery's CONTENT — the report, the actions row, the grid (and the open agent's editor, which
+// replaces all three) — extracted from the tabpanel wrapper EXACTLY as `UtilsContent` was, so the `conf`
+// placement (D70 §8.4a) can host it inside Conf as a `ConfGroup`. The group header replaces the `.sec`
+// header, which stays with the standalone tab below, so the content boundary is again "everything below
+// the `.sec`". Standalone rendering is visually unchanged.
+export function AgentsContent() {
   const { data: list } = useAgentList();
   const art = useAgentArt();
   const { navigate } = useSections();
@@ -178,21 +183,7 @@ export function AgentsTab({ active }: { active: boolean }) {
   };
 
   return (
-    <div
-      className={"tab" + (active ? " active" : "")}
-      id="tab-agents"
-      data-screen-label="05 Agents"
-      role="tabpanel"
-      aria-labelledby="tabbtn-agents"
-    >
-      <div className="sec">
-        <span className="num">05</span>
-        <b>Agents</b>
-        <span className="right">
-          {names.length} agent{names.length === 1 ? "" : "s"}
-        </span>
-      </div>
-
+    <>
       {open !== null ? (
         <div className="conf-card agal-detail">
           <button type="button" className="agal-back" onClick={() => setOpen(null)}>
@@ -270,6 +261,39 @@ export function AgentsTab({ active }: { active: boolean }) {
       )}
 
       <div style={{ height: 24 }} />
+    </>
+  );
+}
+
+export function AgentsTab({ active }: { active: boolean }) {
+  // The `.sec` header's count — the standalone shell's own line, so `AgentsContent` stays exactly the
+  // hostable body (the hosted group's header carries the same count from ConfTab's own read).
+  const { data: list } = useAgentList();
+  const count = 1 + (list?.agents ?? []).filter((n) => n !== DEFAULT_AGENT).length;
+  // D70 §8.4a MED-3 (a latent S4 defect): `aria-labelledby="tabbtn-agents"` named an element that has
+  // NEVER existed — the gallery was off-bar in every layout, and it still is under `conf`/`button`. The
+  // panel takes a stable `aria-label` from the section's own label, and defers to the tab button only
+  // when the `tab` placement actually put one in the DOM.
+  const { bar } = useSections();
+  const onBar = bar.some((d) => d.id === "agents");
+  return (
+    <div
+      className={"tab" + (active ? " active" : "")}
+      id="tab-agents"
+      data-screen-label="05 Agents"
+      role="tabpanel"
+      aria-labelledby={onBar ? "tabbtn-agents" : undefined}
+      aria-label={onBar ? undefined : "Agents"}
+    >
+      <div className="sec">
+        <span className="num">05</span>
+        <b>Agents</b>
+        <span className="right">
+          {count} agent{count === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <AgentsContent />
     </div>
   );
 }

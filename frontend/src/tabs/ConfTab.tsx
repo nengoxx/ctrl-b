@@ -26,7 +26,12 @@ import { useSections } from "../hooks/useSections";
 import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
 
 import { disclosureToggle } from "../lib/disclosure";
-import { pickAgentSection, type AgentSectionCfg } from "../hooks/useAgents";
+import {
+  DEFAULT_AGENT,
+  pickAgentSection,
+  useAgentList,
+  type AgentSectionCfg,
+} from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { pickRoleplay } from "../hooks/useRoleplay";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
@@ -59,15 +64,40 @@ import { isAnyDirty, useRegisterDirty } from "../store/dirty";
 import { clearGroupScrollTarget, useGroupScrollTarget } from "../store/groupScroll";
 import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
-import { HOSTED_UTILS_GROUP_ID } from "../theme-engine/layout";
+import {
+  HOSTED_AGENTS_GROUP_ID,
+  HOSTED_UTILS_GROUP_ID,
+  resolvePlacement,
+  SECTION_PLACEMENTS,
+} from "../theme-engine/layout";
 import { applicableNs, MEDIA_NS } from "../theme-engine/mediaRegistry";
 import { registry, registeredThemes } from "../theme-engine/registry";
 import { defaultSwitchTarget } from "../theme-engine/resolve";
 import { settingRowVisible, themeRowValue } from "../theme-engine/settings";
 import { switchTheme } from "../theme-engine/switchTheme";
-import type { LayoutId, Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
+import type {
+  LayoutId,
+  Mode,
+  SectionPlacement,
+  ThemeId,
+  ThemeSettingValue,
+} from "../theme-engine/types";
 import { setThemeSetting, setUI, useUISlice, type AppbarMode } from "../store/ui";
+import { AgentsContent } from "./AgentsTab";
 import { UtilsContent } from "./UtilsTab";
+
+// The first group number of Conf's TAIL — the run of conditional groups after "Computers" (20): the hosted
+// groups actually present, then Appearance, then the media rows. Named rather than inlined so the ONE
+// arithmetic fact the tail depends on has a home (D70 §8.4a MED-2).
+const TAIL_FIRST_NUM = 21;
+
+// The satellite-placement seg's option labels, keyed on the shared vocabulary so the row's OPTIONS are
+// derived from `SECTION_PLACEMENTS` (one source, in its declared order) rather than re-listed here.
+const PLACEMENT_LABELS: Record<SectionPlacement, string> = {
+  conf: "Conf",
+  button: "Button",
+  tab: "Tab",
+};
 
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
 // **Inference** + **Server** groups to the YAML-backed settings API (GET masked / PUT partial
@@ -871,11 +901,28 @@ export function ConfTab({ active }: Props) {
   const pwaIconBackground = useUISlice((s) => s.pwaIconBackground); // the installed-icon backdrop (D59)
   const appbarMode = useUISlice((s) => s.appbarMode); // global, per-device (local) — every theme honors it
   const layout = useUISlice((s) => s.layout); // the RAW section-layout lever (auto/4/3/2) — device-local like App bar
-  // The resolved partition (D35 §F0): `hostsUtils` = the active layout renders utils INSIDE Conf, so this
-  // tab hosts the Tools group. The scroll-to-group handoff (armed by `useSections.navigate` when it coerces
-  // a `utils` nav here) is consumed by the effect below.
+  // The per-satellite placement lever (D70 §8.4a) — the RAW map; the Appearance row below renders the
+  // RESOLVED value (the `themeRowValue` lesson: a row showing an unhealed override lies about the app).
+  const sectionPlacement = useUISlice((s) => s.sectionPlacement);
+  const agentsPlacement = resolvePlacement("agents", sectionPlacement.agents);
+  // The resolved partition (D35 §F0 + D70 §8.4a): `hostsUtils` = the active layout renders utils INSIDE
+  // Conf, `hostsAgents` = the gallery's placement puts it here — one hosting map, two entries, so this tab
+  // never needs to know WHICH mechanism (a curated preset, or a satellite lever) put a section in it. The
+  // scroll-to-group handoff (armed by `useSections.navigate` when it coerces such a nav here) is consumed
+  // by the effect below.
   const { hosted } = useSections();
   const hostsUtils = "utils" in hosted;
+  const hostsAgents = "agents" in hosted;
+  // THE TAIL (D70 §8.4a MED-2). The groups after "Computers" are conditional, so their numbers used to be
+  // ternary arithmetic (`hostsUtils ? 22 : 21`, media `+ i`) — a shape that cannot take a SECOND hosted
+  // group without every number needing a re-derivation by hand. One explicit ordered list of the hosted
+  // groups actually present replaces it: the hosted groups take `tailNum(index)`, Appearance takes
+  // `tailNum(length)`, and the media rows continue from there. Adding a third hosted group is one push.
+  const hostedTail: string[] = [];
+  if (hostsUtils) hostedTail.push("utils");
+  if (hostsAgents) hostedTail.push("agents");
+  /** The tail's Nth group number — "Computers" is 20, so the tail starts at 21. */
+  const tailNum = (i: number) => String(TAIL_FIRST_NUM + i).padStart(2, "0");
   const scrollTarget = useGroupScrollTarget();
   const themeVals = useUISlice((s) => s.themeSettings[theme]); // overrides for the active theme (or undefined)
   const saveAppearance = useSaveAppearance(); // optimistic cross-device write (§9.11)
@@ -971,15 +1018,17 @@ export function ConfTab({ active }: Props) {
   // plain toggle can't guarantee the open state), scroll it to the top, then clear. The clear is deferred to
   // a MICROTASK so DefaultRoot's parent section-switch effect (which runs AFTER this child effect in the
   // same passive-effect flush) still peeks a pending target and SKIPS its scroll restore — otherwise it would
-  // cancel this scroll. The hosted-utils target additionally waits for `hostsUtils`: that group only exists
-  // in Conf while the layout hosts it, and consuming the handoff before it renders would scroll to nothing.
+  // cancel this scroll. A HOSTED-group target additionally waits for its group: it only exists in Conf while
+  // the layout (utils) or the placement lever (the agents gallery, D70 §8.4a) hosts it, and consuming the
+  // handoff before it renders would scroll to nothing.
   useEffect(() => {
     if (!scrollTarget) return;
     if (scrollTarget === HOSTED_UTILS_GROUP_ID && !hostsUtils) return;
+    if (scrollTarget === HOSTED_AGENTS_GROUP_ID && !hostsAgents) return;
     setCollapsed(scrollTarget, false);
     document.getElementById(scrollTarget)?.scrollIntoView({ block: "start" });
     queueMicrotask(clearGroupScrollTarget);
-  }, [scrollTarget, hostsUtils]);
+  }, [scrollTarget, hostsUtils, hostsAgents]);
 
   const { data: server } = useServerInfo();
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
@@ -1057,6 +1106,11 @@ export function ConfTab({ active }: Props) {
   const agentCfg: AgentSectionCfg = pickAgentSection(agentSection);
   // The Roleplay group's header summary — the one fact worth reading off a collapsed group.
   const roleplayRight = pickRoleplay(settings?.roleplay).enabled ? "on" : "off";
+  // The hosted gallery's header count — the SAME `["agents"]` query the gallery itself reads (TanStack
+  // dedupes it), so the collapsed group can't disagree with the grid inside it. The default agent always
+  // exists and is not in the list route's array, hence the +1 (the gallery's own rule).
+  const { data: agentList } = useAgentList();
+  const agentCount = 1 + (agentList?.agents ?? []).filter((n) => n !== DEFAULT_AGENT).length;
   const skillNames = skillList.map((s) => s.name);
 
   // Memory caps/toggles come off the settings doc (config.yaml `memory.*`); the MemoryEditor edits
@@ -2744,17 +2798,37 @@ export function ConfTab({ active }: Props) {
       </ConfGroup>
 
       {/* Hosted Tools group (D35 §F0): when the active layout hosts utils in Conf (3-/2-tab), the Tools
-          content renders here as the LAST functional group before Appearance — the group header replaces
-          utils's standalone `.sec`. Numbered 21 (slotting in before the terminal Appearance group, which
-          shifts to 18 while hosted); the standalone UtilsTab is unmounted in this layout, so its
-          "agent-tools" child group has no duplicate DOM id. */}
+          content renders here as a hosted group before Appearance — the group header replaces utils's
+          standalone `.sec`. The standalone UtilsTab is unmounted in this layout, so its "agent-tools"
+          child group has no duplicate DOM id. */}
       {hostsUtils && (
-        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="21" title="Tools" right="utility tools">
+        <ConfGroup
+          id={HOSTED_UTILS_GROUP_ID}
+          num={tailNum(hostedTail.indexOf("utils"))}
+          title="Tools"
+          right="utility tools"
+        >
           <UtilsContent />
         </ConfGroup>
       )}
 
-      <ConfGroup id="appearance" num={hostsUtils ? "22" : "21"} title="Appearance">
+      {/* Hosted AGENTS GALLERY (D70 §8.4a) — the satellite's DEFAULT home: the owner's "hidden by default,
+          like the tools tab". Same mechanism, same content boundary (`AgentsContent` is everything below
+          the standalone `.sec`), and the standalone AgentsTab is unmounted while this renders — so the
+          gallery is never in two places. Collapsed by default like every settings group. */}
+      {hostsAgents && (
+        <ConfGroup
+          id={HOSTED_AGENTS_GROUP_ID}
+          num={tailNum(hostedTail.indexOf("agents"))}
+          title="Agents · gallery"
+          right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
+          defaultCollapsed
+        >
+          <AgentsContent />
+        </ConfGroup>
+      )}
+
+      <ConfGroup id="appearance" num={tailNum(hostedTail.length)} title="Appearance">
         {/* Every row uses the shared `SettingRow` (label + desc + trailing control) so the group has one
             consistent shape; the Palette axis uses the `Swatches` color-chip radiogroup. */}
         <div className="conf-card">
@@ -2925,6 +2999,21 @@ export function ConfTab({ active }: Props) {
               onPick={(v) => setUI({ layout: v })}
             />
           </SettingRow>
+          {/* SATELLITE PLACEMENT (D70 §8.4a) — directly under Layout, because the two together are the one
+              "where do my sections live" control. Device-local (setUI, like Layout/App bar): bar real estate
+              is a per-screen preference. The gallery is a SATELLITE, not a preset member — that is what keeps
+              the Layout picker's "4"/"3"/"2" labels literally true while this row can still promote it. */}
+          <SettingRow
+            label="Agents"
+            desc="the character gallery's home · conf = a group in this tab · button = the nav menu · tab = its own seat on the bar"
+          >
+            <Seg<SectionPlacement>
+              label="Agents"
+              current={agentsPlacement}
+              options={SECTION_PLACEMENTS.map((val) => ({ val, label: PLACEMENT_LABELS[val] }))}
+              onPick={(v) => setUI({ sectionPlacement: { ...sectionPlacement, agents: v } })}
+            />
+          </SettingRow>
           {/* The INSTALLED app icon's backdrop (D59 / W5) — SYNCED (setGlobal), because it describes the one
               app icon rather than a per-screen preference. The pick lands in `appearance.pwa_icon_background`
               and the backend serves `/manifest.webmanifest` from it; nothing in the running app changes, which
@@ -2955,7 +3044,7 @@ export function ConfTab({ active }: Props) {
           <ConfGroup
             key={ns}
             id={`media-${ns}`}
-            num={String((hostsUtils ? 23 : 22) + i).padStart(2, "0")}
+            num={tailNum(hostedTail.length + 1 + i)}
             title={def.title}
             right={`media/${ns}/`}
             defaultCollapsed

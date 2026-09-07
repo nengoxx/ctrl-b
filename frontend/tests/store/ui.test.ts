@@ -110,6 +110,7 @@ describe("ui store", () => {
     pwaIconBackground: null,
     appbarMode: "visible",
     layout: "auto",
+    sectionPlacement: {},
   };
 
   describe("migrateLegacyTheme", () => {

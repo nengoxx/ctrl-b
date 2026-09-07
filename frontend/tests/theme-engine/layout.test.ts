@@ -2,10 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ALL_LAYOUTS,
+  composeLayout,
+  HOSTED_AGENTS_GROUP_ID,
+  HOSTED_GROUP_IDS,
   HOSTED_UTILS_GROUP_ID,
   LAYOUT_PRESETS,
   partitionSections,
   resolveLayout,
+  resolvePlacement,
+  SATELLITES,
+  SECTION_PLACEMENTS,
 } from "../../src/theme-engine/layout";
 import { registeredThemes } from "../../src/theme-engine/registry";
 import { STANDARD_TABS } from "../../src/theme-engine/tabs";
@@ -172,11 +178,123 @@ describe("resolveLayout — nearest-supported math (isolated module, mocked regi
   });
 });
 
+describe("composeLayout — the satellite placements (pure, D70 §8.4a)", () => {
+  // The ONE seam the satellite model adds: per-section placements applied to a resolved preset BEFORE the
+  // partition. Every case below is the pure function alone — the controller wiring is useSections.test, the
+  // rendered consequences are sectionPlacement.test.
+  const bars = (p: { preset: { bar: string[] } }) => p.preset.bar;
+
+  it("declares `agents` as the only satellite today, defaulting to `conf`", () => {
+    expect(Object.keys(SATELLITES)).toEqual(["agents"]);
+    expect(SATELLITES.agents?.fallback).toBe("conf");
+    expect(SATELLITES.agents?.after).toBe("agent"); // the owner-ruled bar anchor
+    expect(SATELLITES.agents?.host).toBe("conf");
+    // The vocabulary + the group-id map the nav chokepoint reads.
+    expect([...SECTION_PLACEMENTS]).toEqual(["conf", "button", "tab"]);
+    expect(HOSTED_GROUP_IDS).toEqual({
+      utils: HOSTED_UTILS_GROUP_ID,
+      agents: HOSTED_AGENTS_GROUP_ID,
+    });
+  });
+
+  it("`conf` (the default) adds a hosting entry and leaves the bar alone", () => {
+    const four = composeLayout(LAYOUT_PRESETS["4-tab"], {});
+    expect(bars(four)).toEqual(["fleet", "agent", "utils", "conf"]);
+    expect(four.preset.hosted).toEqual({ agents: "conf" });
+    expect(four.key).toBe("agents:conf");
+    // …and it MERGES with a preset that already hosts utils rather than replacing it.
+    const three = composeLayout(LAYOUT_PRESETS["3-tab"], { agents: "conf" });
+    expect(three.preset.hosted).toEqual({ utils: "conf", agents: "conf" });
+  });
+
+  it("`button` does nothing at all — the bucket that IS the absence of an effect", () => {
+    const { preset, key } = composeLayout(LAYOUT_PRESETS["4-tab"], { agents: "button" });
+    expect(preset.bar).toEqual(LAYOUT_PRESETS["4-tab"].bar);
+    expect(preset.hosted).toBeUndefined();
+    expect(key).toBe("agents:button");
+    // The 3-tab preset's own hosting still passes through untouched.
+    expect(composeLayout(LAYOUT_PRESETS["3-tab"], { agents: "button" }).preset.hosted).toEqual({
+      utils: "conf",
+    });
+  });
+
+  it("`tab` splices the satellite in immediately AFTER chat, in every preset", () => {
+    expect(bars(composeLayout(LAYOUT_PRESETS["4-tab"], { agents: "tab" }))).toEqual([
+      "fleet",
+      "agent",
+      "agents",
+      "utils",
+      "conf",
+    ]);
+    expect(bars(composeLayout(LAYOUT_PRESETS["3-tab"], { agents: "tab" }))).toEqual([
+      "fleet",
+      "agent",
+      "agents",
+      "conf",
+    ]);
+    // 2-tab: chat is the LAST bar entry, so "after chat" is the tail — not an off-by-one drop.
+    expect(bars(composeLayout(LAYOUT_PRESETS["2-tab"], { agents: "tab" }))).toEqual([
+      "fleet",
+      "agent",
+      "agents",
+    ]);
+  });
+
+  it("`tab` appends when the anchor isn't on the bar at all (a promotion never vanishes)", () => {
+    const { preset } = composeLayout({ bar: ["fleet", "conf"] }, { agents: "tab" });
+    expect(preset.bar).toEqual(["fleet", "conf", "agents"]);
+  });
+
+  it("never mutates the shared preset constants (they are module state every render reads)", () => {
+    const before = [...LAYOUT_PRESETS["3-tab"].bar];
+    composeLayout(LAYOUT_PRESETS["3-tab"], { agents: "tab" });
+    composeLayout(LAYOUT_PRESETS["3-tab"], { agents: "conf" });
+    expect(LAYOUT_PRESETS["3-tab"].bar).toEqual(before);
+    expect(LAYOUT_PRESETS["3-tab"].hosted).toEqual({ utils: "conf" });
+  });
+
+  it("HEALS an unknown/malformed lever to the satellite's default (parse-don't-validate)", () => {
+    // The persist loader's defaults-merge passes stored values through UNTYPED, so a rolled-back
+    // vocabulary, a hand-edited blob or a nested non-string reaches here at render time.
+    for (const bad of ["sidebar", "", 7, null, undefined] as never[]) {
+      expect(composeLayout(LAYOUT_PRESETS["4-tab"], { agents: bad }).key).toBe("agents:conf");
+    }
+    // …and the MAP itself can be junk (a `sectionPlacement: null` blob) without a deref crash.
+    for (const bad of [null, undefined, "nope"] as never[]) {
+      expect(composeLayout(LAYOUT_PRESETS["4-tab"], bad).key).toBe("agents:conf");
+    }
+  });
+
+  it("resolvePlacement is the shared read (the Conf row renders what the app uses)", () => {
+    expect(resolvePlacement("agents", "tab")).toBe("tab");
+    expect(resolvePlacement("agents", undefined)).toBe("conf");
+    expect(resolvePlacement("agents", "sidebar" as never)).toBe("conf");
+    // A non-satellite section has no placement effects — `button` is the do-nothing answer.
+    expect(resolvePlacement("conf", "tab")).toBe("button");
+  });
+
+  it("the composed preset partitions into DISJOINT buckets — never in two places", () => {
+    for (const placement of SECTION_PLACEMENTS) {
+      for (const layout of ALL_LAYOUTS) {
+        const { preset } = composeLayout(LAYOUT_PRESETS[layout], { agents: placement });
+        for (const minimal of [false, true]) {
+          const { bar, menu, hosted } = partitionSections(STANDARD_TABS, preset, minimal);
+          const homes =
+            Number(bar.some((d) => d.id === "agents")) +
+            Number(menu.some((d) => d.id === "agents")) +
+            Number("agents" in hosted);
+          expect(homes, `${layout}/${placement}/minimal=${minimal}`).toBe(1);
+        }
+      }
+    }
+  });
+});
+
 describe("partitionSections (pure)", () => {
-  // fleet, agent, utils, conf + `agents` — which no preset's bar names (D70 §8.4: the presets are
-  // the CURATED bar and the Conf picker labels them with that literal count), so the gallery is
-  // off-bar-and-unhosted under every one of them and lands in the menu. That is the assertion each
-  // case below carries now.
+  // fleet, agent, utils, conf + `agents` — which no preset's bar names (D70 §8.4a: the presets are the
+  // CURATED bar and the Conf picker labels them with that literal count; the gallery is a SATELLITE,
+  // placed by `composeLayout` above). These cases drive the RAW presets, so the gallery is
+  // off-bar-and-unhosted in each — the `button` placement's shape.
   const defs = STANDARD_TABS;
   const ids = (list: TabDef[]) => list.map((d) => d.id);
 
