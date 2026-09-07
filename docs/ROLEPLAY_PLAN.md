@@ -1783,3 +1783,6 @@ is the shipped agal recipe verbatim — consistent with its agents-surface sibli
 alone. Gate 6/6. **Emma micro-round: RESOLVED — SHIP** — scope verified (the `.mform`
 instances cannot match), pin non-vacuous, consistency sweep "no additional findings".
 **The owner's phone glance at the fixed picker is the remaining word; then S5 closes → S6.**
+
+**S5 IS CLOSED — the owner's word landed 2026-09-08 ("yes lets continue"): the fixed picker
+passed the phone glance, no further findings. S6 (the three-state backdrop, §10-S6) opens.**
