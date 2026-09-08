@@ -53,7 +53,6 @@ async function boot(
   theme: string,
   mode: Mode,
   ui: Record<string, unknown> = {},
-  ready = "#tab-agent.active",
 ) {
   await seedUI(page, {
     theme,
@@ -88,7 +87,7 @@ async function boot(
     }),
   );
   await page.goto("/");
-  await page.waitForSelector(ready);
+  await page.waitForSelector("#tab-agent.active");
 }
 
 test.describe("the kit themes take the shared layer", () => {
@@ -208,19 +207,25 @@ test.describe("the kit themes take the shared layer", () => {
     // nulled while a `full` pin is on the ACTIVE tab, and only then.
     const scrim = () =>
       page.locator(".kit-main").evaluate((el) => getComputedStyle(el, "::before").backgroundImage);
-    await boot(page, "minimal", "full", { appbarMode: "minimal" });
+    // ONE boot, then the LIVE tab transition — not a second `boot()`. Two boots would register a second
+    // `addInitScript` seeding `ctrlb.ui`, and the order those run in on the reload is not guaranteed: the
+    // first boot's `tab: "agent"` can win, which is the silent-first-run-flake class this suite has been
+    // burned by before. Switching tabs in the running app is also the better claim — the rule has to
+    // follow `.tab.active` as it moves, not merely be right at two boots.
+    // A VISIBLE bar, because that is the mode with both a scrim to lose and a nav bar to click.
+    await boot(page, "minimal", "full", { appbarMode: "visible" });
     expect(await scrim()).toBe("none");
-    // Section bodies are keep-mounted, so the pin's NODE still exists while another tab shows — which is
+    // Section bodies are keep-mounted, so the pin's NODE stays while another tab shows — which is exactly
     // why the rule is scoped to `.tab.active`. On the Fleet the scrim must be back, doing its job.
-    await boot(
-      page,
-      "minimal",
-      "full",
-      { appbarMode: "minimal", tab: "fleet" },
-      "#tab-fleet.active",
-    );
+    await page.locator("#tabbtn-fleet").click();
+    await page.waitForSelector("#tab-fleet.active");
     await expect(page.locator("#tab-agent > .kit-backdrop-pin")).toHaveCount(1); // mounted, not active
     expect(await scrim()).toContain("gradient");
+    // …and back: the scrim yields again when the agent tab returns, so this is a live rule and not a
+    // one-way boot artefact.
+    await page.locator("#tabbtn-agent").click();
+    await page.waitForSelector("#tab-agent.active");
+    expect(await scrim()).toBe("none");
   });
 
   test("operator — the seam scrim KEEPS its job over a strip that scrolls away", async ({

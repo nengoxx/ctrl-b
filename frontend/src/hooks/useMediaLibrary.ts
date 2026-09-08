@@ -80,7 +80,7 @@ export interface LibraryItem {
  *  place the seat pointer's label is minted — so the card's status line and the gallery's reading line
  *  say one sentence rather than two that can drift. */
 export const OUTRANKED: Record<BackdropOutrank, string> = {
-  agent: "the active character's own background is used",
+  agent: "the active character's own art is used",
   off: "the agent backdrop is off",
 };
 

@@ -550,14 +550,15 @@ background tall) are config-shaped like the existing per-role crop settings, not
 
 **One appearance setting, three states: `operator` (default) · `full` · `off`.**
 
-- **What paints:** the ACTIVE agent's `background` entry; when the agent has none, the theme's
-  own operator art (in gacha: the `oracle:` pin / `media/gacha/oracle/` library, today's
-  ladder) — so a fresh install and every agent without art look exactly like today. `off`
-  beats the ladder entirely.
+- **What paints:** the ACTIVE agent's OWN art — its bound `background`, else its `avatar`
+  (owner round 2026-09-08 — a card import binds only the avatar); when the agent has neither,
+  the theme's own operator art (in gacha: the `oracle:` pin / `media/gacha/oracle/` library,
+  today's ladder) — so a fresh install and every agent without art look exactly like today.
+  `off` beats the ladder entirely.
 - **`operator`** — the art takes the operator-image place with the CURRENT treatment: gacha's
   oracle surface as-is (name plate, scrim, scanline, the sticky ghost under `gacha.oracle`
   fade mode), focal position honored via the existing `useFocalPosition` path. The agent's
-  background simply wins the art resolution for that surface while that agent is active.
+  own art simply wins the art resolution for that surface while that agent is active.
 - **`full`** — the same art as the full chat backdrop, **no blur; dimming AND the scroll fade
   kept** (owner-confirmed round 4: "same fade out as the operator image… just the blur" is
   what changes). Mechanism, stated precisely (Emma's citation check corrected the earlier
@@ -602,12 +603,13 @@ this narrows it.*
    oracle's geometry class: a token-height block, art + readability scrim, focal honored via
    `useFocalPosition`, NO name plate/scanline) that **simply scrolls away with content** —
    gacha's own `data-oracle="scroll"` posture, so NO JS driver in operator mode. It mounts ONLY
-   when the active agent has a background: agentless / fresh install = today's look exactly.
+   when the active agent has art (its `background`, else its `avatar`): agentless / fresh
+   install = today's look exactly.
    (The rejected alternative — `operator` paints nothing on kit themes — would make the default
    state invisible on the default theme, contradicting ruling 13's default-ON.)
 2. **The active agent = the sticky session pin when valid in the roster, else the resolved
-   default** (whose own background may paint). ONE image per surface: per-bubble `m.agent`
-   never drives the backdrop, and the composer's one-shot armed pick does NOT flip it — a
+   default** (whose own art may paint — its `background`, else its `avatar`). ONE image per
+   surface: per-bubble `m.agent` never drives the backdrop, and the composer's one-shot armed pick does NOT flip it — a
    single-message target is not a change of operator; only switching characters (Talk /
    `/agent`) is. Mechanically: `sessionAgent` (`store/chat.ts:457`) upgrades to a tiny
    subscribable (`useSyncExternalStore`) keeping the `getSessionAgent`/`setSessionAgent`
@@ -631,8 +633,9 @@ this narrows it.*
    perf-lite/motion-reduced gates). **In gacha `full`, `GachaOracle` does not mount** — the
    plate/scanline are absent while `full` is active (owner-accepted; `operator` keeps them).
 5. **Gacha wiring lands at the body level** (`GachaAgent`; `GachaOracle` untouched):
-   `operator` → `art = activeAgentBackground ?? oracleArt(roster)`; `full` → the shared
-   arrangement paints the same resolution full-bleed; `off` → `art = null` (the shipped
+   `operator` → `art = activeAgentArt ?? oracleArt(roster)` (that resolution is the agent's
+   `background`, else its `avatar`); `full` → the shared arrangement paints the same
+   resolution full-bleed; `off` → `art = null` (the shipped
    plate-only null state) and no kit layer. `gacha.oracle` sticky/fade keeps governing
    operator-mode scroll ONLY. In `full` with no agent art the theme fallback paints
    full-bleed (kit themes: nothing — they have no fallback art). Frontier: untouched

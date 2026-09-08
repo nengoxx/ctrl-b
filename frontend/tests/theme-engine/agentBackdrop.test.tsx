@@ -359,7 +359,7 @@ describe("WHICH picture of that agent's: its background, else its avatar (owner 
 
   it("the gallery's outranked REPORT reads the very same value the layer paints", () => {
     // `useMediaLibrary` asks `useActiveBackdrop() !== undefined` for `hasAgentArt`, which is what
-    // `backdropOutrank` turns into the "the active character's own background is used" word on the
+    // `backdropOutrank` turns into the "the active character's own art is used" word on the
     // cards. One statement, two readers (the S6 invariant): an avatar standing in as the backdrop has
     // to be REPORTED live, or the gallery would claim a picture the tab is not showing.
     bind("", "face.webp");

@@ -338,14 +338,14 @@ describe("the entry cards (§6.1)", () => {
   it("the ACTIVE AGENT's own background outranks the ladder — no card claims the picture is live", async () => {
     renderWithAgent(withOracleArt(), true);
     const pool = await screen.findByRole("button", { name: "Open the Operator backdrop gallery" });
-    expect(pool.textContent).toContain("the active character's own background is used");
+    expect(pool.textContent).toContain("the active character's own art is used");
     expect(pool.textContent).not.toContain("1 active");
     expect(pool.querySelectorAll("img")).toHaveLength(0); // no phantom
     // …and the SEAT, whose pin resolves, must stop saying the bound character is what stands there —
     // the agent's picture is painting that block, not the pinned one.
     const seat = screen.getByRole("button", { name: "Open the Operator character gallery" });
     expect(seat.textContent).not.toContain("is bound here");
-    expect(seat.textContent).toContain("the active character's own background is used");
+    expect(seat.textContent).toContain("the active character's own art is used");
     // The seat pointer is dropped with the claim: neither section holds the winner now.
     expect(
       screen.queryByRole("button", { name: /Currently set by Operator character/ }),
