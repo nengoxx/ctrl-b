@@ -1988,14 +1988,53 @@ micro-confirm: RESOLVED — SHIP** (the avatar proves both art queries settled; 
 async observer resolves before the awaited open; only `useThreadAgent` can rerender after
 release). Gate 6/6 at tip `14d3bae`: **BE 2,374 · FE 3,085/178** (counts in QUALITY.md).
 
-**Wave 2 (pending, its own cadence next session): ① the picker** — the row becomes a
-destination-shaped tappable preview (SectionCard face; "add an image" when empty) opening the
-media-manager library in PICK mode; the hand-rolled `.agart-pick` strip and the three sibling
-pill buttons are DELETED (the scouted duplication: `AgentArtRow` reuses the hooks but none of
-the Phase 21 UI — `GalleryModal`/`LibraryGrid`/`ItemDetail` have exactly one consumer today).
-**② the prompt rows** — extract the Prompts editor's row face (label head · faint desc ·
-preview-as-button, the `.prow-*`/`.tcat-*` family) into a shared component; the agent form's
-`LongField` fields take it; the modal machinery is already shared (`requestPromptPair` is
-string-typed, `PairBody` needs an export). Residual for wave 2's brief: the `operator` strip
-can still show the scrim over its art's first ~20px (deliberately left — the strip scrolls
-away; revisit only if the owner's eye catches it).
+**WAVE 2 — BUILT + COUNCIL-CLOSED same day (RESOLVED — SHIP). The owner's word ("it works, we
+can continue") also closed the S6 FEEL ROUND on the backdrop itself.**
+
+**The build `b0d3cb6`:** ① each art row is now the PICTURE — an aspect-shaped `FocalImg` face
+(avatar 1:1, backdrop 9:16), pencil corner, caption, a gallery-worded "Add an image" empty
+face — opening **`media/LibraryPicker`**, the library in PICK mode. Ruled reuse shape: a thin
+SIBLING of `GalleryModal`, not a mode of it (the modal's manage half — detail, drag, In-use
+corners, delete, seat notices — has no meaning in a pick and would have become `pick ===
+undefined &&` litter in the surface's largest component; the `.pm-` shell + focusTrap +
+back-guard are composed per-consumer house-wide). Genuinely shared pieces ARE shared:
+`LibraryGrid` as-is (the binding passed as its own `ActiveArt`; manage affordances absent BY
+CALLBACK-ABSENCE), and the upload surface extracted to **`media/UploadRow`** (`AddImageRow` +
+`UploadFailureRow`) so gallery and picker ride ONE Add row — the gallery byte-identical.
+Upload-in-picker auto-picks via `onStored`; "Use no picture" appears only while bound. The
+`.agart-pick` strip + the three pill buttons are DELETED with their CSS. Builder-probed
+deviation ACCEPTED: the pickers mount as FORM SIBLINGS — `.mform`'s `all: unset` field recipe
+un-hid the picker's file input when nested (probed in the built artifact); `picking` is a
+field NAME in form state, never a captured row; `ART_FIELDS` = the one field↔role↔label home.
+② **`PromptRowFace.tsx`** exports `FieldRow` + `PromptRowFace` (the Prompts editor's row face
+extracted; PromptsEditor adopted it, suite green unmodified); the six `LongField` sites + the
+two art rows render full-width through it, FIELD_HELP as the faint description; one-line
+inputs/Segs/grids keep label-left (owner rule). Screenshot-measured at 393px: every new row
+at the form's own left edge x=31, one-line inputs' values at x=147.
+
+**The council close:** blind Emma round **SHIP WITH FIXES — 3 MED, sweep "none"** (extraction
+fidelity, lifecycle, filtering, CSS coverage, dialog basics all explicitly sound) → all ruled
+FIX → wave **`ad6b409`**: ① the late-upload race closed by ONE main-seat-demanded-invariants,
+builder-derived guard — `onStored` early-returns unless ITS field's picker is still open (read
+through the upload hook's live ref; a newer pick/clear closed it, a cross-field completion
+sees its own closed; closing mid-upload = withdrawing the binding intent — the file registers,
+one tap away) · ② `LibraryGrid.describeItem` — the picker's tiles say "selected"/"available"
+instead of the gallery's binding-contradicting vocabulary · ③ the face's opener carries
+`aria-label="Edit <field>"` + `aria-hidden` pencil — healing Conf → Prompts through the shared
+component. Six arms red-proven by reverting each mechanism. **Her confirm: all 3 RESOLVED,
+both scopings ACCEPTED** (the unmount-mid-PUT leg stays the recorded §13-S4 residual — closing
+it means lifting the job above the agents surface; the withdraw-intent consequence ruled the
+least surprising owner-intent reading), **sweep CLEAN — RESOLVED — SHIP.**
+
+**Gate at tip `ad6b409`: 6/6 — BE 2,374 · FE 3,097/178** (counts in QUALITY.md). FE-only.
+
+**Residuals (recorded, none owed):** the unmount-mid-PUT upload leg (§13-S4's residual,
+restated) · the old "Edit fullscreen ↗" idiom survives in ConfTab's `PromptRow` (System
+prompt rows) and RoleplayEditor/SkillsEditor/MemoryEditor's `.prompt-open` openers — candidates
+for a later sweep onto `PromptRowFace`, owner-triggered · the `operator` strip can still show
+the seam scrim over its art's first ~20px (deliberate — the strip scrolls away) · the
+gallery's `onPaste` upload path is not `caps.upload`-gated (pre-existing, inherited verbatim
+by the picker).
+
+**NEXT: the owner's feel round on the wave-2 surfaces (dev :5173 — the picker both roles, the
+new field faces), then S7 — the owner DEVICE round — IS the phase gate (§10-S7).**

@@ -62,18 +62,39 @@
   §13-S6b: a builder commit that arrives WITHOUT its report (rate-limit kill) gets the gate
   re-run by the main seat and its red-proof claims treated as unverified in the review brief
   — that posture caught a real false-positive regression arm.
-- **▶▶ NEXT: the owner's phone glance at wave 1** (dev :5173 — pin Lynette OR just open her
-  thread: her card art now paints as her backdrop either way; Conf → Appearance → Agent
-  backdrop `full`: edge-to-edge to the true top, no haze band) **→ then WAVE 2, its own
-  session + cadence (plan §13-S6b's pending block): ① the picker** (image-as-button → the
-  library in PICK mode; the `.agart-pick` duplicate strip DELETED; owner add-ons from the
-  1c round: label-left stays for one-line fields/toggles ONLY, the art buttons read
-  overstretched — they die with the redesign) **+ ④ the prompt rows** (extract the Prompts
-  row face, the agent form's `LongField`s take it). The S6→S7 ladder is unchanged behind it:
-  the owner's word closes S6's feel round, **S7 = the owner DEVICE round = the phase gate
-  (§10-S7)**.
-- **Git: 92 commits unpushed over origin `04769d9`** (the 88 + `27e588f` + `3c6977f` +
-  `8277ebf` + `14d3bae` + this docs commit); working tree clean at write; the
+- **THE OWNER'S GLANCE PASSED wave 1 ("the operator image seems to be Lynette now… it works")
+  — that word ALSO closed the S6 feel round — and WAVE 2 then ran the whole cadence same
+  session and is council-CLOSED: RESOLVED — SHIP** (full record = plan §13-S6b's wave-2
+  block). Build **`b0d3cb6`**: the art rows are now the PICTURE (aspect-shaped FocalImg face,
+  pencil corner, "Add an image" empty face) opening **`media/LibraryPicker`** — the library in
+  PICK mode, a thin SIBLING of GalleryModal reusing `LibraryGrid` as-is + the upload surface
+  extracted to `media/UploadRow` (ONE Add row for gallery + picker, gallery byte-identical);
+  upload auto-picks via `onStored`; "Use no picture" only while bound; the `.agart-pick` strip
+  + three pill buttons DELETED. The prompt-shaped fields take the extracted
+  **`PromptRowFace`** (PromptsEditor adopted it, suite unmodified); one-line fields keep
+  label-left (owner rule); screenshot-measured x=31 aligned at 393px. Probe-forced deviation
+  accepted: pickers mount as FORM SIBLINGS (`.mform`'s `all: unset` un-hid the file input).
+  → blind Emma **SHIP WITH FIXES 3M** (late-upload race · gallery vocabulary in the picker's
+  tile a11y · the face's button named by its preview) → wave **`ad6b409`** (the one-guard
+  `onStored`-only-while-open rule · `describeItem` · `aria-label="Edit <field>"` healing
+  Conf → Prompts too; six arms red-proven by reversion) → **her confirm: all RESOLVED, both
+  scopings accepted, sweep CLEAN — RESOLVED — SHIP.**
+- **Gate at tip `ad6b409`: 6/6 — BE 2,374 · FE 3,097/178** (counts in QUALITY.md). FE-only
+  wave; :5173 serves it live; both dev units RUNNING (D69 — do NOT stop them; :5434 runs the
+  `14d3bae` BE tip, current).
+- **▶▶ NEXT: the owner's FEEL ROUND on wave 2** (dev :5173, agents tab → open a character:
+  tap the avatar/backdrop picture → the library picker, upload from inside it, "Use no
+  picture"; the persona/greeting/etc. rows in the Prompts face) **→ their word closes the
+  owner round → S7 — the owner DEVICE round — IS the phase gate (§10-S7)** (import a real
+  card · talk on the phone · tools-in-character both duties settings · all three backdrop
+  states · a lorebook triggering live · showcase/picker feel · read-along on a character
+  reply). Wave-2 residuals recorded in the plan block (none owed): the unmount-mid-PUT upload
+  leg (§13-S4 restated) · the "Edit fullscreen ↗" idiom remaining in ConfTab's PromptRow +
+  RoleplayEditor/SkillsEditor/MemoryEditor (a later owner-triggered sweep onto the face) ·
+  the strip's 20px scrim overlap (deliberate) · the pre-existing un-gated gallery paste.
+- **Git: 95 commits unpushed over origin `04769d9`** (the 88 + `27e588f` + `3c6977f` +
+  `8277ebf` + `14d3bae` + `72da3eb` + `b0d3cb6` + `ad6b409` + this docs commit); working
+  tree clean at write; the
   PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline
   (Dependabot D1 → push → release E, config migration 2→3, rollback = config backup FIRST
   then v1.7.7) is unchanged and still owed; sequencing is the owner's. **NEXT-NEXT (owner):
