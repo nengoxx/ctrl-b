@@ -166,6 +166,12 @@
     color-mix(in oklch, var(--bg) 76%, transparent),
     color-mix(in oklch, var(--bg) 62%, transparent)
   );
+  /* Everything that sits between the SCROLLER's top edge and this pin's seat: the in-flow app bar and the
+   * bar-less scroller inset (each 0 in the modes the other applies to, so ONE expression covers all four
+   * bar modes without a mode list). The pin itself is NOT moved by it — the art layer inside is
+   * (`.kit-backdrop-full` below reads it), which is what lets the picture reach the pane's true top while
+   * every flow box, and this pin's own carefully-seated position, stay exactly where they were. */
+  --kit-backdrop-lift: calc(var(--appbar-h, 0px) + var(--kit-inset-top, 0px));
   position: sticky;
   top: var(--appbar-h, 0px);
   height: 0;
@@ -192,14 +198,33 @@
    * higher, which is the whole point of the pull. Same token both ways, so they cannot drift apart. */
   margin-bottom: var(--plan-head-h, 31px);
 }
-/* The art layer itself: absolute WITHIN the zero-height pin, so it needs an explicit height — and that
- * height is EXACTLY the pane below the pin, never "a viewport's worth". An absolutely-positioned
- * descendant contributes to the SCROLLER's scrollable overflow, so a layer sized to `--app-h` made an
- * empty agent tab scrollable by the appbar + the tab bar (measured: 104px) — and scrolling that phantom
- * band dimmed the picture for no reason. `--kit-pane-h` (DefaultRoot's third measured shell box) minus the
- * two offsets that sit above the pin — the in-flow app bar and the bar-less scroller inset — is the
- * visible region and nothing more, so the layer fills the pane and the pane does not grow. It is still
- * clipped by `.kit-scroll`'s own `overflow`, which keeps it inside the scroller rather than over the bars.
+/* The art layer itself: absolute WITHIN the zero-height pin, so it needs an explicit top and height — and
+ * between them they make the picture fill the pane EXACTLY, never "a viewport's worth".
+ *
+ * THE PULL (owner round 2026-09-08). The pin's seat is deliberate and stays put, but it is
+ * `--kit-backdrop-lift` BELOW the scroller's own top — a bar's flow box, or the bar-less inset — so the art
+ * started there too and left a band of bare `--bg` above the picture (measured in Chromium: 34px under a
+ * floating launcher, 10px with no chrome at all, 41px of glass-backed nothing under a transparent bar). The
+ * layer is pulled up through that seat instead, and the offset is STATE-INDEPENDENT because the seat is:
+ * the pin renders exactly `lift` below the scroller top both at rest (its flow position) and stuck (the
+ * sticky rest, which engines take from the scroller's CONTENT box — see the pin's note, and gacha.css's
+ * flush-oracle rule for the same reading), and the `--plan-head-h` pair above exists precisely to restore
+ * that seat when a plan panel is in flow. So ONE `-lift` lands the art at the scroller's true top in every
+ * bar mode, at every scroll offset, with no flow box moved and no margin touched.
+ *
+ * What the visible bar modes then look like, owner-confirmed: with an opaque bar the art's top `lift` px
+ * sit UNDER it (the visible edge is unchanged from before the fix); with the transparent bar the art now
+ * shows through the glass, which is the point of that mode.
+ *
+ * THE HEIGHT is `--kit-pane-h` (DefaultRoot's third measured shell box) with nothing subtracted: the two
+ * offsets the old height took off are the very ones the pull removed, so subtracting them again would leave
+ * the pane's last `lift` px unpainted. An absolutely-positioned descendant contributes to the SCROLLER's
+ * scrollable overflow, so a layer sized to `--app-h` made an empty agent tab scrollable by the appbar + the
+ * tab bar (measured: 104px) — and scrolling that phantom band dimmed the picture for no reason. Pulled by
+ * `lift` and sized to the pane, the bottom lands flush at the pane's bottom and the pane does not grow
+ * (measured: still 0 scrollable px on an empty tab, in all four bar modes; the e2e arm holds it). It is
+ * still clipped by `.kit-scroll`'s own `overflow`, which keeps it inside the scroller rather than over the
+ * bars.
  *
  * ONE per-frame property, and it is opacity: `1 → --kit-backdrop-floor`, written as "1 minus the walked
  * distance" so the floor token IS the endpoint you read above rather than something to subtract in your
@@ -207,10 +232,10 @@
  * animated `filter`, no scroll-driven CSS animation — §14.11 to the letter. */
 .kit .kit-backdrop-full {
   position: absolute;
-  top: 0;
+  top: calc(-1 * var(--kit-backdrop-lift));
   left: 0;
   right: 0;
-  height: calc(var(--kit-pane-h, 100dvh) - var(--appbar-h, 0px) - var(--kit-inset-top, 0px));
+  height: var(--kit-pane-h, 100dvh);
   overflow: hidden;
   opacity: calc(1 - var(--kit-backdrop-p, 0) * (1 - var(--kit-backdrop-floor)));
   will-change: opacity; /* a compositor property that really does change every walked frame */
@@ -286,6 +311,17 @@ body[data-perf="lite"] .kit .kit-backdrop-full {
  * stamps `.appbar-clear` on `.kit-main` in transparent mode; null the scrim there so the content shows clean
  * under the floating bar. (0,2,1) outspecifies the base `.kit-main::before` (0,1,1). */
 .kit-main.appbar-clear::before {
+  background: none;
+}
+/* …and the same nulling over a PINNED FULL BACKDROP (owner round 2026-09-08). This scrim's top stop is
+ * OPAQUE `--bg` by design — that is how it seals the seam under the bar — so over full-bleed art it paints
+ * a 30px band of flat background across the picture's top: exactly the gap it exists to prevent. Scoped to
+ * the `full` PIN, not to the mode: `operator` keeps the scrim, because that strip scrolls away and content
+ * is what the seam then has to seal. And scoped to the ACTIVE tab, because section bodies are keep-mounted
+ * (`.kit .tab { display: none }`) — the pin's node still exists while another section shows, so `.tab.active`
+ * is what keeps the Fleet/Conf/Utils scrims doing their job (probe-confirmed: only the agent tab hosts a
+ * pin, and the others are display:none). (0,3,1) outspecifies the base `.kit-main::before` (0,1,1). */
+.kit-main:has(.tab.active > .kit-backdrop-pin)::before {
   background: none;
 }
 .kit-scroll {

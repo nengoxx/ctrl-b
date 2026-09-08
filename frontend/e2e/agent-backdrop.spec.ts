@@ -53,6 +53,7 @@ async function boot(
   theme: string,
   mode: Mode,
   ui: Record<string, unknown> = {},
+  ready = "#tab-agent.active",
 ) {
   await seedUI(page, {
     theme,
@@ -87,7 +88,7 @@ async function boot(
     }),
   );
   await page.goto("/");
-  await page.waitForSelector("#tab-agent.active");
+  await page.waitForSelector(ready);
 }
 
 test.describe("the kit themes take the shared layer", () => {
@@ -157,6 +158,82 @@ test.describe("the kit themes take the shared layer", () => {
     await expect
       .poll(async () => await opacity(), { message: "the walk never reached the floor" })
       .toBeLessThan(0.4);
+  });
+
+  test("full — the art layer reaches the scroller's TRUE top with no bar in flow", async ({
+    page,
+  }) => {
+    // The owner's S6 round: with a floating launcher and no app bar, the picture started a scroller-inset
+    // below the pane's top and left a band of bare `--bg` above it. The pin's SEAT is deliberate and did
+    // not move; the art layer is pulled up through it by `--kit-backdrop-lift` instead. Measured against
+    // the real scroller in the real cascade, because that is the only place the token resolves — jsdom
+    // builds no boxes and the unit suite structurally cannot see this.
+    await boot(page, "minimal", "full", { appbarMode: "minimal" });
+    // Both edges in ONE read, and POLLED for the same reason the overflow arm below is: the tab's 250ms
+    // entrance keyframe translates it by 4px, so a one-shot measure catches the animation, not the layout
+    // (measured: a 3.4px miss on the first frame). 34px + the safe area is what the inset declares in this
+    // mode, and the claim is that NONE of it is left above the picture; ±1 is device-pixel rounding, not a
+    // tolerance on the rule. The BOTTOM edge is the other half of "fills the pane": the height lost its two
+    // subtractions exactly because the pull removed what they compensated.
+    await expect
+      .poll(
+        async () =>
+          await page.evaluate(() => {
+            const art = document.querySelector(".kit-backdrop-full")!.getBoundingClientRect();
+            const pane = document.getElementById("app-scroll")!.getBoundingClientRect();
+            return Math.max(Math.abs(art.top - pane.top), Math.abs(art.bottom - pane.bottom));
+          }),
+        {
+          message:
+            "the art does not fill the pane edge to edge (a band of bare background is left)",
+        },
+      )
+      .toBeLessThanOrEqual(1);
+    // THE OVERFLOW INVARIANT, restated for the new geometry (the twin of the arm above): a taller layer
+    // pulled above the content origin must still add NOTHING scrollable to an empty tab.
+    await expect
+      .poll(
+        async () =>
+          await page.locator("#app-scroll").evaluate((el) => el.scrollHeight - el.clientHeight),
+        { message: "the pulled full-bleed layer made the pane scrollable" },
+      )
+      .toBeLessThanOrEqual(1);
+  });
+
+  test("full — the top seam scrim yields over the art, and only on the tab that has it", async ({
+    page,
+  }) => {
+    // `.kit-main::before` seals the appbar seam with an OPAQUE `--bg` top stop — over full-bleed art that
+    // is a 30px band of flat background across the picture, i.e. the very gap it exists to prevent. It is
+    // nulled while a `full` pin is on the ACTIVE tab, and only then.
+    const scrim = () =>
+      page.locator(".kit-main").evaluate((el) => getComputedStyle(el, "::before").backgroundImage);
+    await boot(page, "minimal", "full", { appbarMode: "minimal" });
+    expect(await scrim()).toBe("none");
+    // Section bodies are keep-mounted, so the pin's NODE still exists while another tab shows — which is
+    // why the rule is scoped to `.tab.active`. On the Fleet the scrim must be back, doing its job.
+    await boot(
+      page,
+      "minimal",
+      "full",
+      { appbarMode: "minimal", tab: "fleet" },
+      "#tab-fleet.active",
+    );
+    await expect(page.locator("#tab-agent > .kit-backdrop-pin")).toHaveCount(1); // mounted, not active
+    expect(await scrim()).toContain("gradient");
+  });
+
+  test("operator — the seam scrim KEEPS its job over a strip that scrolls away", async ({
+    page,
+  }) => {
+    // The deliberate half of the scoping: `operator` is in-flow art that leaves, and once it has left it is
+    // CONTENT under the seam — exactly what the scrim is for. Only the pin yields.
+    await boot(page, "minimal", "operator", { appbarMode: "minimal" });
+    expect(
+      await page
+        .locator(".kit-main")
+        .evaluate((el) => getComputedStyle(el, "::before").backgroundImage),
+    ).toContain("gradient");
   });
 
   test("full — a PINNED PLAN above the pin never drags the transcript under the panel", async ({
