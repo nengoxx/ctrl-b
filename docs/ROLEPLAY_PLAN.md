@@ -2036,5 +2036,61 @@ the seam scrim over its art's first ~20px (deliberate — the strip scrolls away
 gallery's `onPaste` upload path is not `caps.upload`-gated (pre-existing, inherited verbatim
 by the picker).
 
-**NEXT: the owner's feel round on the wave-2 surfaces (dev :5173 — the picker both roles, the
-new field faces), then S7 — the owner DEVICE round — IS the phase gate (§10-S7).**
+**THE WAVE-2 FEEL ROUND LANDED (owner, 2026-09-08, in conversation): "it looks good" + TWO
+asks → WAVE 3, design RATIFIED same conversation ("sounds good"), BUILD OPENS NEXT SESSION.**
+
+### WAVE 3 — bigger circles + the avatar's circular cutout (design RATIFIED 2026-09-08; not built)
+
+**The owner's asks:** ① the message-bubble avatar circle is too small · ② an exact circular
+cutout for the avatar (the bubbles' circle) alongside the whole-image framing the backdrop
+uses — their design question ("same picker with a droppable circle, or a separate picker?")
+answered and ratified below.
+
+**The ratified design (all rulings owner-confirmed):**
+1. **Circle sizes:** who-line face 18px → **28px**, tools-menu face 20px → **24px**, both as
+   TOKENS (the literals die); the owner tunes by eye on the feel round.
+2. **The cutout = the focus point + the PLANNED `z` zoom** (`core/media.py:389`'s
+   "own `hidden`, `focal` and `key` today and `z` (zoom) tomorrow" — tomorrow is now).
+   `MediaFocal` gains `z: float | None` (≥1 clamp; `extra="allow"` makes it additive), FE
+   `StoredFocal`/`FocalArt` (centred) carry it, same `rev` staleness semantics.
+   **Consumption is PER WINDOW SHAPE (the c.ai crop-per-context rule): only CIRCLE windows
+   honor `z`** — the who-face and the tools-face; the gallery card, the picker face, the
+   operator strip and the full-bleed backdrop honor the POINT only (the wave-1 avatar-as-
+   backdrop fallback must not zoom). **RATIFIED TRADE: the circle and the backdrop share ONE
+   center**; an independent circle-center is a future additive field, no migration.
+3. **Where it is set — NOT a circle on the grid, NOT a second picker: the existing
+   `FramingSheet`, upgraded for the avatars role** — react-easy-crop's round crop mask +
+   pinch/drag ZOOM enabled (the sheet pinned `zoom=1` ONLY because `z` was unbuilt — its own
+   comment at FramingSheet.tsx:34-38 says so; CropModal already ships the zoom config
+   1..4/0.05), saving `{x, y, z}`; the preview strip gains a CIRCLE preview ("chat face")
+   beside the square card (registry seam: `MediaPreviewDef` or the role gains a
+   shape/circle declaration — builder's call, reported). Backgrounds keep today's sheet
+   unchanged. **Two doors, one sheet:** the Conf gallery's "Focus" (as today) AND an
+   "Adjust framing" door from the avatar picker/row when an image is bound (an
+   owner-ratified amendment to the §8.2 framing-stays-in-Conf scoping — the SHEET is still
+   the one framing UI).
+4. **The who-face starts honoring framing** (it ignores it today — plain `<img>`, URL-only
+   thread through ChatThread.tsx:698, the kit.css:3843-3852 comment's stated reason being
+   the per-bubble ResizeObserver cost): a circle is ALWAYS aspect 1, so position (and zoom)
+   are computable STATICALLY from the focal + the source dims — no observer, no
+   `useFocalPosition`, §14.11-clean (a static transform, nothing animated). The builder
+   derives the exact render (computed object-position/size or a scale with origin) — the
+   invariant is ZERO per-bubble observers.
+
+**The seam map for the build brief (scouted 2026-09-08, main-seat-held):** `lib/focalPosition.ts:43-57`
+(`FocalArt`; `focalAxis` :89-106) · `lib/mediaLibrary.ts:94-98` (`StoredFocal`), :290-315
+(`focalState`/`artFocal`), :566-580 (`setFocal`, clear-removes-field) · `core/media.py:321-341`
+(`MediaFocal`) + :389 (the `z` seam) · `components/media/FramingSheet.tsx` (:34-38 the no-zoom
+comment · :59-61 reticle consts · :244-250 stage math · :351-356 the pinned crop props ·
+:381-404 the preview strip · save :225/:414) · `components/media/CropModal.tsx:48-50` (the
+zoom consts; NOTE CropModal is DESTRUCTIVE re-encode — the sheet is metadata-only, keep them
+apart) · `components/FocalImg.tsx:27-39` (objectPosition-only today) + `hooks/useFocalPosition.ts`
+· who-face `components/chatAttribution.tsx:172` + `components/ChatThread.tsx:698` (URL-only) +
+`kit.css:3843-3852` (18px + the observer-cost comment) · tools-face `ToolsMenuSheet.tsx:199-206`
++ `kit.css:1401-1411` (20px) · gallery card `AgentsTab.tsx:58-66` (~169px at 390) · registry
+`mediaRegistry.ts:814-859` (avatars previews "one shape asked for three times") + :196-201
+(`MediaPreviewDef {label, aspect}`) · dual consumption `useActiveBackdrop.ts:39-51` · NOTE
+`LibraryGrid` tiles are plain `<img>` (framing not honored in grids — unchanged, fine).
+
+**NEXT: the wave-3 BUILD (pinned Opus brief off this block, the standing cadence), then the
+owner's feel round on it; then S7 — the owner DEVICE round — IS the phase gate (§10-S7).**

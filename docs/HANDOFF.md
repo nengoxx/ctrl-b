@@ -82,19 +82,33 @@
 - **Gate at tip `ad6b409`: 6/6 — BE 2,374 · FE 3,097/178** (counts in QUALITY.md). FE-only
   wave; :5173 serves it live; both dev units RUNNING (D69 — do NOT stop them; :5434 runs the
   `14d3bae` BE tip, current).
-- **▶▶ NEXT: the owner's FEEL ROUND on wave 2** (dev :5173, agents tab → open a character:
-  tap the avatar/backdrop picture → the library picker, upload from inside it, "Use no
-  picture"; the persona/greeting/etc. rows in the Prompts face) **→ their word closes the
-  owner round → S7 — the owner DEVICE round — IS the phase gate (§10-S7)** (import a real
-  card · talk on the phone · tools-in-character both duties settings · all three backdrop
-  states · a lorebook triggering live · showcase/picker feel · read-along on a character
-  reply). Wave-2 residuals recorded in the plan block (none owed): the unmount-mid-PUT upload
-  leg (§13-S4 restated) · the "Edit fullscreen ↗" idiom remaining in ConfTab's PromptRow +
-  RoleplayEditor/SkillsEditor/MemoryEditor (a later owner-triggered sweep onto the face) ·
-  the strip's 20px scrim overlap (deliberate) · the pre-existing un-gated gallery paste.
-- **Git: 95 commits unpushed over origin `04769d9`** (the 88 + `27e588f` + `3c6977f` +
-  `8277ebf` + `14d3bae` + `72da3eb` + `b0d3cb6` + `ad6b409` + this docs commit); working
-  tree clean at write; the
+- **THE WAVE-2 FEEL ROUND LANDED same session ("it looks good") + TWO new asks → WAVE 3
+  DESIGNED + owner-RATIFIED in conversation ("sounds good"), handoff requested for a clean
+  build session.** The asks: the bubble avatar circle is too small, and an exact CIRCULAR
+  CUTOUT for the avatar alongside the whole-image framing. **The ratified design + the full
+  scouted seam map = plan §13-S6b's WAVE 3 block — the next session's build brief comes
+  straight off it.** Headlines: who-face 18→28px / tools-face 20→24px as tokens · the
+  PLANNED-never-built `z` zoom field (core/media.py:389) finally built, honored ONLY by
+  circle-shaped windows (the backdrop/card keep the point alone — the wave-1 avatar-as-
+  backdrop fallback must not zoom; ratified trade: circle + backdrop share one center) ·
+  the cutout is set in the EXISTING FramingSheet upgraded for avatars (round mask +
+  pinch/zoom — react-easy-crop ships both; a circle "chat face" preview joins the strip),
+  reachable from the Conf gallery AND a new door on the avatar picker (owner-ratified §8.2
+  amendment) · the who-face starts honoring framing via a STATIC aspect-1 computation
+  (zero per-bubble observers — the kit.css comment's cost objection dies with the observer).
+- **▶▶ NEXT SESSION: the wave-3 BUILD** (pinned Opus brief off the plan block, the standing
+  cadence: build → main-seat audit → blind Emma → fix wave → confirm) **→ the owner's feel
+  round on it (circle sizes tuned by eye) → then S7 — the owner DEVICE round — IS the phase
+  gate (§10-S7)** (import a real card · talk on the phone · tools-in-character both duties
+  settings · all three backdrop states · a lorebook triggering live · showcase/picker feel ·
+  read-along on a character reply). Wave-2 residuals recorded in the plan block (none owed):
+  the unmount-mid-PUT upload leg (§13-S4 restated) · the "Edit fullscreen ↗" idiom remaining
+  in ConfTab's PromptRow + RoleplayEditor/SkillsEditor/MemoryEditor (a later owner-triggered
+  sweep onto the face) · the strip's 20px scrim overlap (deliberate) · the pre-existing
+  un-gated gallery paste.
+- **Git: 96 commits unpushed over origin `04769d9`** (the 88 + `27e588f` + `3c6977f` +
+  `8277ebf` + `14d3bae` + `72da3eb` + `b0d3cb6` + `ad6b409` + `424cb89` + this docs commit);
+  working tree clean at write; the
   PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline
   (Dependabot D1 → push → release E, config migration 2→3, rollback = config backup FIRST
   then v1.7.7) is unchanged and still owed; sequencing is the owner's. **NEXT-NEXT (owner):
