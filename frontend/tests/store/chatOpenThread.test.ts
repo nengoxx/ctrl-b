@@ -32,13 +32,22 @@ function json(payload: unknown): Response {
   return { ok: true, status: 200, json: async () => payload } as unknown as Response;
 }
 
+/** What `GET /api/threads` answers — the LIST route, which since wave 1c is read by `openThread` too
+ *  (for the opened thread's D11 `agent` pin). Mutable so an arm can pin a thread; the default is the one
+ *  unpinned record every earlier test was written against. */
+let threadList: { id: string; agent?: string | null }[] = [{ id: "recent-thread", agent: null }];
+
 /** A `fetch` stub whose per-URL responses can be DEFERRED: `hold(url)` parks every request for EXACTLY
  *  that URL until `release(url)`, which is how a slow loader is made to land after a fast one. Exact
  *  matching, not substring: `/api/threads` (the list read) is a prefix of every by-id read, and holding
- *  those too would park the very fetch the race is supposed to let through. */
+ *  those too would park the very fetch the race is supposed to let through.
+ *
+ *  The parked requests are a QUEUE per URL, not one slot (wave 1c): `openThread` now reads the LIST too
+ *  (for the thread's D11 pin), so two loaders can be parked on `/api/threads` at once — with a single
+ *  slot the second registration silently orphaned the first, and the loader under test never resolved. */
 function deferrableFetch() {
-  const pending = new Map<string, () => void>();
-  const rejecters = new Map<string, (e: Error) => void>();
+  const pending = new Map<string, (() => void)[]>();
+  const rejecters = new Map<string, ((e: Error) => void)[]>();
   const held = new Set<string>();
   const calls: string[] = [];
   const impl = vi.fn((input: RequestInfo | URL) => {
@@ -48,11 +57,11 @@ function deferrableFetch() {
       ? [msg(`m-${url}`, url.split("/")[3], url)]
       : url.includes("/api/agent/turns/") // the D39 cold-load re-attach probe
         ? { active: false }
-        : [{ id: "recent-thread" }];
+        : threadList;
     if (held.has(url)) {
       return new Promise<Response>((resolve, reject) => {
-        pending.set(url, () => resolve(json(payload)));
-        rejecters.set(url, reject);
+        (pending.get(url) ?? pending.set(url, []).get(url)!).push(() => resolve(json(payload)));
+        (rejecters.get(url) ?? rejecters.set(url, []).get(url)!).push(reject);
       });
     }
     return Promise.resolve(json(payload));
@@ -62,14 +71,14 @@ function deferrableFetch() {
     calls,
     hold: (url: string) => held.add(url),
     release: (url: string) => {
-      pending.get(url)?.();
+      for (const resolve of pending.get(url) ?? []) resolve();
       pending.delete(url);
       rejecters.delete(url);
       held.delete(url);
     },
-    /** Release a parked request as a FAILURE — the backend went away mid-load. */
+    /** Release every parked request for a URL as a FAILURE — the backend went away mid-load. */
     fail: (url: string) => {
-      rejecters.get(url)?.(new Error("backend down"));
+      for (const reject of rejecters.get(url) ?? []) reject(new Error("backend down"));
       pending.delete(url);
       rejecters.delete(url);
       held.delete(url);
@@ -88,6 +97,7 @@ async function freshChat() {
 }
 
 beforeEach(() => {
+  threadList = [{ id: "recent-thread", agent: null }];
   net = deferrableFetch();
   vi.stubGlobal("fetch", net.impl);
 });
@@ -236,5 +246,63 @@ describe("openThread's own contract", () => {
       expect(net.calls.filter((u) => u.includes("rolling")).length).toBeGreaterThan(probesBefore),
     );
     expect(net.calls.filter((u) => u.endsWith("/api/threads/rolling/messages"))).toHaveLength(1);
+  });
+});
+
+// ── the thread's own pinned agent (wave 1c) ───────────────────────────────────────────────────────────
+// The server routes a turn by `agent_name or thread.agent` (D11), and the FE had no notion of the second
+// rung: booting into — or opening — a thread pinned to a character replied as that character while every
+// "which agent is active" surface showed the default (owner glance 2026-09-08). `threadAgent` is that
+// field, and it is written wherever `threadId` is, because the two describe one conversation.
+describe("the open thread's pinned agent", () => {
+  it("the COLD load carries the most-recent thread's pin — no second read for it", async () => {
+    threadList = [{ id: "recent-thread", agent: "lynette" }];
+    const { initChat, useChat } = await freshChat();
+    const { result } = renderHook(() => useChat());
+    await initChat();
+    await waitFor(() => expect(result.current.threadId).toBe("recent-thread"));
+    expect(result.current.threadAgent).toBe("lynette");
+    // `initChat` already holds the RECORD it picked, so the pin costs it nothing extra.
+    expect(net.calls.filter((u) => u.endsWith("/api/threads"))).toHaveLength(1);
+  });
+
+  it("an explicit open learns the pin from the list — and never WAITS on it", async () => {
+    threadList = [{ id: "run-thread", agent: "ops" }];
+    const { openThread, useChat } = await freshChat();
+    const { result } = renderHook(() => useChat());
+    net.hold("/api/threads"); // the pin read, parked: the list can be slow, or a cold load can own it
+    expect(await openThread("run-thread")).toBe(true); // …the history still swapped in
+    expect(result.current.threadId).toBe("run-thread");
+    expect(result.current.threadAgent).toBeNull(); // honest: not known yet, never the LEFT thread's pin
+    net.release("/api/threads");
+    await waitFor(() => expect(result.current.threadAgent).toBe("ops")); // …and it lands late
+  });
+
+  it("a pin that arrives after the owner has moved on is DISCARDED", async () => {
+    threadList = [
+      { id: "slow", agent: "lynette" },
+      { id: "fast", agent: null },
+    ];
+    const { openThread, useChat } = await freshChat();
+    const { result } = renderHook(() => useChat());
+    net.hold("/api/threads");
+    const slow = openThread("slow"); // its pin read is parked…
+    await waitFor(() => expect(result.current.threadId).toBe("slow"));
+    net.release("/api/threads"); // …released only after the view has moved
+    expect(await openThread("fast")).toBe(true);
+    await slow;
+    await waitFor(() => expect(result.current.threadId).toBe("fast"));
+    expect(result.current.threadAgent).toBeNull(); // `slow`'s pin must not paint `fast`
+  });
+
+  it("a /clear resets the pin — a fresh thread is minted unpinned", async () => {
+    threadList = [{ id: "pinned", agent: "lynette" }];
+    const { openThread, startNewThread, useChat } = await freshChat();
+    const { result } = renderHook(() => useChat());
+    await openThread("pinned");
+    await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
+    startNewThread();
+    await waitFor(() => expect(result.current.threadId).toBeNull());
+    expect(result.current.threadAgent).toBeNull();
   });
 });

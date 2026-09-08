@@ -3,13 +3,13 @@ import { useEffect } from "react";
 import { FocalImg } from "../../../../components/FocalImg";
 import { useAgentArt, type AgentArt } from "../../../../hooks/useAgentArt";
 import {
+  effectiveAgent,
   getDefaultAgent,
   getKnownAgents,
   getKnownSkills,
   useVerbsVersion,
-  validSessionAgent,
 } from "../../../../lib/composer";
-import { getSessionAgent } from "../../../../store/chat";
+import { getSessionAgent, getThreadAgent } from "../../../../store/chat";
 import { releaseComposerOverlay, useComposerOverlayOpen } from "../../../../store/composerOverlay";
 import {
   clearComposerScope,
@@ -69,18 +69,22 @@ export function ToolsMenuSheet() {
   const art = useAgentArt();
   const armed = scope.agent !== undefined || scope.skills.length > 0;
   // The radio group must tell the TRUTH about where the next message goes: the armed pick if the menu armed
-  // one, else the sticky `/agent <name>` a plain send would use, else the configured default. Reading the
-  // sticky pick non-reactively is safe — it only changes by SENDING `/agent …`, and typing that `/` hands
-  // the overlay slot to the suggest popover, which CLOSES this panel; reopening re-reads. (That still holds
-  // now the panel stays mounted: `open` flipping IS a re-render of this component, so reopening re-reads
-  // the sticky value exactly as remounting used to.)
+  // one, else the ladder a plain send would route by — the sticky `/agent <name>`, else the OPEN THREAD's
+  // own pin (wave 1c: a thread pinned to a character routes there, and the group used to check the default
+  // row over it), else the configured default. Reading both pins non-reactively is safe — the sticky one
+  // changes by SENDING `/agent …`, and typing that `/` hands the overlay slot to the suggest popover, which
+  // CLOSES this panel; the thread pin changes only by opening another conversation or `/clear`, neither of
+  // which happens with this panel up. Reopening re-reads. (That still holds now the panel stays mounted:
+  // `open` flipping IS a re-render of this component, so reopening re-reads exactly as remounting used to.)
   //
-  // A sticky name that isn't a CONFIGURED agent reads as the default row (Codex, verify round) — the
-  // `validSessionAgent` fold, shared with the agent backdrop since D70 S6 (see its note in
-  // `lib/composer.ts`). DISPLAY only: the sticky value and the send path are untouched, and `armed` (the
-  // dot) still keys off the one-shot alone.
-  const effectiveAgent =
-    scope.agent !== undefined ? scope.agent : validSessionAgent(getSessionAgent(), agents);
+  // A pin that isn't a CONFIGURED agent reads as the default row (Codex, verify round) — the
+  // `effectiveAgent` ladder over `validSessionAgent`, shared with the agent backdrop since D70 S6 (see its
+  // note in `lib/composer.ts`, which mirrors the server's own routing line). DISPLAY only: neither pin and
+  // no send path is touched, and `armed` (the dot) still keys off the one-shot alone.
+  const routedAgent =
+    scope.agent !== undefined
+      ? scope.agent
+      : effectiveAgent(getSessionAgent(), getThreadAgent(), agents);
 
   return (
     <div
@@ -98,12 +102,12 @@ export function ToolsMenuSheet() {
           <AgentRow
             name={getDefaultAgent()}
             tag="default"
-            on={effectiveAgent === null}
+            on={routedAgent === null}
             value={null}
             art={art}
           />
           {agents.map((n) => (
-            <AgentRow key={n} name={n} on={effectiveAgent === n} value={n} art={art} />
+            <AgentRow key={n} name={n} on={routedAgent === n} value={n} art={art} />
           ))}
         </div>
       </div>

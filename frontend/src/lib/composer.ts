@@ -151,6 +151,32 @@ export function validSessionAgent(sticky: string | null, agents: readonly string
   return sticky !== null && agents.includes(sticky) ? sticky : null;
 }
 
+/** WHICH agent the next message actually runs as, given both pins — the server's routing ladder,
+ *  mirrored (`api/agent.py` `_build_session`: `name = agent_name or (thread.agent if thread else None)`,
+ *  then a graceful resolve that falls back to the default for an unknown name).
+ *
+ *  Every clause of that one line matters here, so it is copied rather than re-invented:
+ *    · a TRUTHY sticky pick wins OUTRIGHT — including a typo'd one, which resolves to the default rather
+ *      than falling through to the thread's pin. `/agent typo` sends `body.agent="typo"`, and the server
+ *      never looks at `thread.agent` once that is set;
+ *    · a FALSY one yields to the thread. `pinSessionAgent("")` — Talk on the default agent
+ *      (`AgentsTab`) — is falsy on the server too, so the thread pin winning over `""` is the server's
+ *      own behaviour, not a gap to plug;
+ *    · an unknown name from EITHER pin folds to `null` = the resolved default, via the same
+ *      `validSessionAgent` every caller already shares.
+ *
+ *  The FE learned the thread's pin (`ChatState.threadAgent`) only in wave 1c: before it, opening a thread
+ *  pinned to a character replied as that character while the backdrop painted the default (owner glance
+ *  2026-09-08). PURE over its three inputs for the same reason `validSessionAgent` is — the menu reads
+ *  the module set and the non-reactive pins, the backdrop the roster query and the reactive ones. */
+export function effectiveAgent(
+  sticky: string | null,
+  threadAgent: string | null,
+  agents: readonly string[],
+): string | null {
+  return validSessionAgent(sticky || threadAgent, agents);
+}
+
 export async function loadAgents(): Promise<void> {
   const gen = ++agentsGen;
   try {

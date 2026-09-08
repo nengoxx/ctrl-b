@@ -21,6 +21,7 @@ vi.mock("../../src/store/chat", () => ({
 vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
 
 import {
+  effectiveAgent,
   fillComposer,
   getCompletions,
   getKnownSkills,
@@ -577,6 +578,43 @@ describe("`/consolidate [dry]` (D61 ①)", () => {
     expect(getCompletions("/conso").map((c) => c.value)).toEqual(["consolidate"]);
     expect(getCompletions("/conso")[0].kind).toBe("builtin");
     expect(getCompletions("/consolidate ")).toEqual([]); // `[dry]` is a help hint, not a completion
+  });
+});
+
+// WHICH agent the next message runs as, given both pins (wave 1c) — the FE half of the server's routing
+// line (`api/agent.py` `_build_session`: `agent_name or thread.agent`, then a graceful resolve). Pure, and
+// pinned here rather than at its two callers because the CLAIM is the mirror: a surface that disagrees
+// with the router tells the owner their message goes somewhere it does not.
+describe("effectiveAgent — the server's routing ladder, mirrored", () => {
+  const agents = ["lynette", "ops"];
+
+  it("a sticky pick wins over the thread's pin", () => {
+    expect(effectiveAgent("ops", "lynette", agents)).toBe("ops");
+  });
+
+  it("the THREAD's pin answers when nothing is sticky — the rung wave 1c added", () => {
+    // The owner's glance: a thread pinned to Lynette replies as Lynette, and every active-agent surface
+    // used to show the default because the FE never read `Thread.agent`.
+    expect(effectiveAgent(null, "lynette", agents)).toBe("lynette");
+  });
+
+  it('an EMPTY sticky pick yields to the thread — the server treats "" as unset too', () => {
+    // `pinSessionAgent("")` is what Talk on the default agent stores (AgentsTab). On the server that is a
+    // falsy `body.agent`, so `thread.agent` answers; mirroring it is the point, not a bug to plug.
+    expect(effectiveAgent("", "lynette", agents)).toBe("lynette");
+  });
+
+  it("a TYPO'd sticky pick resolves to the default and does NOT fall through to the thread", () => {
+    // `/agent typo` sends a truthy `body.agent`, so the server never consults `thread.agent` — it
+    // resolves the unknown name to the default. A fall-through here would paint (and check) a character
+    // the message will not run as.
+    expect(effectiveAgent("typo", "lynette", agents)).toBeNull();
+  });
+
+  it("an unknown thread pin folds to the default — a deleted or renamed character", () => {
+    expect(effectiveAgent(null, "ghost", agents)).toBeNull();
+    expect(effectiveAgent(null, null, agents)).toBeNull();
+    expect(effectiveAgent(null, "lynette", [])).toBeNull(); // roster not loaded yet
   });
 });
 

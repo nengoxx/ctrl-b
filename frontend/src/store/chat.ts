@@ -46,6 +46,13 @@ interface ChatState {
   // so a continuation finishes on the SUSPENDED TURN's own agent (the server resolves it), not on
   // whatever is sticky now.
   sessionAgent: string | null;
+  // The OPEN THREAD's own pinned agent (D11's `Thread.agent`), null → the thread pins nobody. It is the
+  // server's SECOND routing rung (`agent_name or thread.agent`, api/agent.py `_build_session`), and the
+  // FE had no notion of it at all: booting into a thread pinned to a character replied AS that character
+  // while every "which agent is active" surface still showed the default (owner glance 2026-09-08). It
+  // rides beside `sessionAgent` for the same reason that one is reactive — a surface renders it — and it
+  // is written wherever `threadId` is: the two describe ONE conversation and must never disagree.
+  threadAgent: string | null;
 }
 
 let state: ChatState = {
@@ -55,6 +62,7 @@ let state: ChatState = {
   streamingId: null,
   sessionPrivilege: null,
   sessionAgent: null,
+  threadAgent: null,
 };
 let loaded = false;
 //: The chat view's LOAD GENERATION — app-owned cross-generation state (the D39/ACA precedent).
@@ -477,6 +485,28 @@ export function useSessionAgent(): string | null {
   return useChatSlice((s) => s.sessionAgent);
 }
 
+// The OPEN THREAD's pinned agent (see its field note). Read-only to the app: it is not a pick anyone
+// makes here, it is what the loaded thread already carries, so the writes live at the load seams.
+/** The thread pin, non-reactively — the composer menu's A6 tri-state read (outside a subscription). */
+export function getThreadAgent(): string | null {
+  return state.threadAgent;
+}
+/** The thread pin, REACTIVELY — the twin of `useSessionAgent` for the surface that repaints when the
+ *  owner opens another conversation (the agent backdrop). Same slice reasoning: this changes once per
+ *  thread switch, while the store emits on every streamed token. */
+export function useThreadAgent(): string | null {
+  return useChatSlice((s) => s.threadAgent);
+}
+
+/** Write a thread id learned from the WIRE — the stream's `thread` frame, a buffered turn's payload, an
+ *  exec response: the three places a send can MINT a thread. A DIFFERENT id is exactly that mint, and a
+ *  just-created thread carries no D11 pin, so the thread agent resets with it. The SAME id is the
+ *  ordinary echo of the conversation we are already in and must leave the pin alone — clearing it there
+ *  would repaint every active-agent surface the moment the owner sends into a pinned thread. */
+function setWireThread(id: string): void {
+  set(id === state.threadId ? { threadId: id } : { threadId: id, threadAgent: null });
+}
+
 // Sticky session privilege override, set by `/privilege <level>` (A1/D16). Reactive (lives in
 // ChatState) so the PrivilegeChip can render it; `null` → the resolved agent's own privilege.
 export function setSessionPrivilege(p: Privilege | null): void {
@@ -568,6 +598,23 @@ async function fetchMessages(threadId: string): Promise<ChatMessage[]> {
   return (await (await fetch(`/api/threads/${threadId}/messages`)).json()) as ChatMessage[];
 }
 
+/** ONE thread's D11 pin, read from the LIST (`GET /api/threads` publishes whole `Thread` dumps and is the
+ *  only thread-record route there is — no by-id read exists, and an explicit open is rare enough that
+ *  adding one would be a backend endpoint bought for a field the list already carries).
+ *
+ *  BEST-EFFORT by design: a thread that opens with its history intact must not fail because this second
+ *  read did — an unknown pin is the same "nobody pinned" the FE has always assumed, and the SERVER still
+ *  routes the turn by the thread's own field either way. `initChat` needs none of this: it is already
+ *  holding the record it picked. */
+async function fetchThreadAgent(threadId: string): Promise<string | null> {
+  try {
+    const threads = (await (await fetch("/api/threads")).json()) as Thread[];
+    return threads.find((t) => t.id === threadId)?.agent ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Hydrate ONE thread into the chat view: its persisted history, then the D39/M4 re-attach probe.
  *
  *  The single load seam. The last turn of the thread we are opening may still be running detached (the
@@ -578,10 +625,10 @@ async function fetchMessages(threadId: string): Promise<ChatMessage[]> {
  *
  *  `gen` is the caller's load generation: the write is DISCARDED if a newer load has started since (see
  *  `loadGen`), so a slow fetch can never land on top of a view that has moved on. */
-async function loadThread(threadId: string, gen: number): Promise<void> {
+async function loadThread(threadId: string, gen: number, agent: string | null): Promise<void> {
   const msgs = await fetchMessages(threadId);
   if (gen !== loadGen) return; // superseded mid-fetch — this result belongs to a view that is gone
-  set({ threadId, messages: msgs });
+  set({ threadId, messages: msgs, threadAgent: agent });
   void probeAndReattach(threadId);
 }
 
@@ -621,7 +668,14 @@ export async function openThread(threadId: string): Promise<boolean> {
     return true;
   }
   try {
-    const msgs = await fetchMessages(threadId);
+    // The pin read starts BESIDE the history and never gates it. `GET /api/threads` is the LIST route, so
+    // an open that awaited it would inherit the list's latency — and a parked list read (a cold `initChat`
+    // in flight against a slow backend) would hang the open outright, which is exactly the coupling
+    // explicit navigation is kept free of. It lands late instead, under this file's usual post-await
+    // guards.
+    const history = fetchMessages(threadId); // …started FIRST: the history is what the open lives or dies by
+    const pin = fetchThreadAgent(threadId);
+    const msgs = await history;
     if (ticket !== openSeq) return false; // a newer open (or /clear) superseded this one mid-fetch
     if (getChatStatus() === "streaming") {
       // A turn started during the fetch — the pre-check above is not enough on its own.
@@ -636,9 +690,18 @@ export async function openThread(threadId: string): Promise<boolean> {
     lastSeq = 0;
     dropAllRaw();
     lastHarvestSig = null;
-    set({ threadId, messages: msgs, status: "idle", streamingId: null });
+    // `threadAgent: null` is the HONEST value at the swap — the pin is not known yet, and a stale one
+    // from the thread being left would be worse than none.
+    set({ threadId, messages: msgs, status: "idle", streamingId: null, threadAgent: null });
     loaded = true; // a later `initChat` must not replace this with the most-recent thread
     if (gen === loadGen) void probeAndReattach(threadId);
+    // …and the pin when it arrives, if the view is still the one that asked for it. A `null` answer (an
+    // unpinned thread, or a list read that failed) needs no write: the swap above already said null.
+    void pin.then((agent) => {
+      if (agent !== null && ticket === openSeq && state.threadId === threadId) {
+        set({ threadAgent: agent });
+      }
+    });
     return true;
   } catch {
     // Nothing was cleared — the view the owner was looking at is still intact. The note only speaks
@@ -662,7 +725,9 @@ export async function initChat(): Promise<void> {
   try {
     const threads = (await (await fetch("/api/threads")).json()) as Thread[];
     if (gen !== loadGen || !threads.length) return; // an explicit open won the race — leave it alone
-    await loadThread(threads[0].id, gen);
+    // The thread RECORD carries D11's pin, and this loader already holds it — so the pin arrives with
+    // the history rather than costing a second read.
+    await loadThread(threads[0].id, gen, threads[0].agent ?? null);
   } catch {
     // Backend was down at load time. Reset `loaded` so the next initChat (or the F16
     // reconnect-triggered reloadChat) can retry — otherwise the chat would be stuck empty
@@ -744,7 +809,9 @@ export function startNewThread(): void {
   lastSeq = 0;
   dropAllRaw(); // FIX C — prune every thread's harvested raw lines (no queued steer survives a /clear)
   lastHarvestSig = null; // FIX E — a fresh view forgets the last harvest receipt (mirrors the backend clear)
-  set({ threadId: null, messages: [], status: "idle", streamingId: null });
+  // …and the fresh view pins nobody: a `/clear` thread is minted unpinned (the sticky `/agent` pick is
+  // session-scoped and deliberately SURVIVES, which is why only this one resets).
+  set({ threadId: null, messages: [], status: "idle", streamingId: null, threadAgent: null });
 }
 
 function emptyAssistant(id: string, agent: string | null = null): ChatMessage {
@@ -1071,7 +1138,7 @@ function makeTurnReducer(ctx: TurnCtx) {
       case "thread": {
         const id = nonEmpty(data.threadId);
         if (!id) return dropWarn(event, "missing threadId");
-        set({ threadId: id });
+        setWireThread(id);
         break;
       }
       case "message.start": {
@@ -1356,7 +1423,7 @@ async function streamTurn(
     // buffered confirm stays resumable (it's the one thing not persisted). No parallel render path.
     if (res.headers.get("content-type")?.includes("application/json")) {
       const payload = (await res.json()) as Record<string, unknown>;
-      if (payload.threadId) set({ threadId: payload.threadId as string });
+      if (payload.threadId) setWireThread(payload.threadId as string);
       const perm = payload.permission as
         | {
             callId?: string;
@@ -2358,7 +2425,7 @@ export async function runShell(command: string): Promise<void> {
     }
     if (!res.ok) throw new Error(`exec → ${res.status}`);
     const data = (await res.json()) as { threadId: string };
-    if (data.threadId) set({ threadId: data.threadId });
+    if (data.threadId) setWireThread(data.threadId);
     // FIX B — a 200 means the exec RAN (the marker was free server-side: a live chat/resume turn returns
     // 202, a sync holder 409). A prior stream may still read "streaming" locally (a race where the turn
     // released server-side but our socket hasn't drained), which would make a NON-forced reload skip and

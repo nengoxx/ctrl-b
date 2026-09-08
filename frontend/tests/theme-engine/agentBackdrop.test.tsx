@@ -56,7 +56,7 @@ vi.mock("../../src/hooks/useAgentChat", () => ({ useAgentChat: () => chat.view }
 
 import { useActiveBackdrop } from "../../src/hooks/useActiveBackdrop";
 import type { MediaFile } from "../../src/hooks/useMedia";
-import { setSessionAgent } from "../../src/store/chat";
+import { openThread, setSessionAgent, startNewThread } from "../../src/store/chat";
 import { setUI } from "../../src/store/ui";
 import { AgentTab } from "../../src/tabs/AgentTab";
 import { DefaultRoot } from "../../src/theme-engine/kit/DefaultRoot";
@@ -141,6 +141,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   setSessionAgent(null);
+  startNewThread(); // …and the THREAD pin with it: both rungs of the ladder start each arm empty
   setUI({ agentBackdrop: "operator" });
   cleanup();
 });
@@ -367,6 +368,85 @@ describe("WHICH picture of that agent's: its background, else its avatar (owner 
       wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
     });
     expect(result.current?.url).toBe(paintedAvatar("face"));
+  });
+});
+
+describe("the OPEN THREAD's pin is the ladder's second rung (wave 1c)", () => {
+  // The owner's glance: a thread pinned to Lynette (D11 `Thread.agent`) replies as Lynette — the server
+  // routes `agent_name or thread.agent` — while this surface painted the default, because the FE never
+  // read the field. These arms drive the REAL loader (`openThread`), so the store write and the paint are
+  // proved end to end rather than by poking a setter the app does not have.
+
+  /** The two routes an open touches, plus the D39 re-attach probe. The LIST is where the pin lives.
+   *  Assigned rather than `vi.stubGlobal`'d: this suite stubs `ResizeObserver` globally at module scope,
+   *  and `unstubAllGlobals` would take that with it (every themed Root mounts a ChatThread that observes). */
+  const realFetch = globalThis.fetch;
+  function serve(agent: string | null) {
+    globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      const body: unknown = url.endsWith("/messages")
+        ? []
+        : url.includes("/api/agent/turns/")
+          ? { active: false }
+          : [{ id: "t1", title: null, agent, created_at: "", updated_at: "", archived: false }];
+      return Promise.resolve({ ok: true, status: 200, json: async () => body } as Response);
+    });
+  }
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  /** Open the pinned thread and let the LATE pin write land (it deliberately does not gate the swap). */
+  async function openPinned(agent: string | null) {
+    serve(agent);
+    await act(async () => {
+      await openThread("t1");
+      await Promise.resolve();
+    });
+  }
+
+  beforeEach(() => {
+    media.by = {
+      agents: {
+        ns: "agents",
+        collation: "library-v1",
+        roles: { backgrounds: [file("hall"), file("lynette")] },
+      },
+    };
+  });
+
+  const src = (c: HTMLElement) =>
+    c.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src");
+
+  it("paints the THREAD's character when nothing is sticky", async () => {
+    await openPinned("lynette");
+    expect(src(draw(<AgentTab active />).container)).toBe(painted("lynette"));
+  });
+
+  it("the sticky pick still wins — a `/agent` switch is the owner speaking last", async () => {
+    await openPinned("lynette");
+    setSessionAgent("default"); // …not a specialist name: the default agent, explicitly picked
+    expect(src(draw(<AgentTab active />).container)).toBe(painted("hall"));
+  });
+
+  it('an EMPTY sticky pick yields to the thread — the server reads "" as unset too', async () => {
+    // `pinSessionAgent("")` is what Talk on the DEFAULT agent stores; the server sees a falsy
+    // `body.agent` and routes by `thread.agent`. Mirroring that is the rule, not a gap.
+    await openPinned("lynette");
+    setSessionAgent("");
+    expect(src(draw(<AgentTab active />).container)).toBe(painted("lynette"));
+  });
+
+  it("a pin naming an agent the roster no longer has falls to the default's art", async () => {
+    await openPinned("ghost");
+    expect(src(draw(<AgentTab active />).container)).toBe(painted("hall"));
+  });
+
+  it("REPAINTS when the owner opens another conversation (the thread pin is reactive)", async () => {
+    const view = draw(<AgentTab active />);
+    expect(src(view.container)).toBe(painted("hall")); // no thread open yet: the resolved default
+    await openPinned("lynette");
+    expect(src(view.container)).toBe(painted("lynette"));
   });
 });
 
