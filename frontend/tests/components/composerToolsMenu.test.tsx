@@ -331,6 +331,14 @@ describe("tools menu — the open thread's pinned agent", () => {
     const release = serveThread("ops");
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
+    // SETTLE THE SHEET'S OWN ASYNC WORK FIRST, and this step is load-bearing (the review's confirm round
+    // caught the arm without it as a FALSE POSITIVE — it passed on the snapshot code too). The sheet
+    // mounts the agent-art resolver, whose roster + media queries land AFTER the first paint: that
+    // rerender re-runs the body, a SNAPSHOT read of the thread pin picks the new value up on the way
+    // past, and the arm goes green without any subscription existing. Waiting for the avatar — the one
+    // DOM effect of both queries having resolved — spends that rerender before the pin is released, so
+    // the subscription is the only path left that can move the checked row.
+    await waitFor(() => expect(container.querySelectorAll("img.tools-face").length).toBe(1));
     await act(async () => {
       await openThread("t1"); // history swaps in; the pin read is still parked
     });
@@ -340,7 +348,7 @@ describe("tools menu — the open thread's pinned agent", () => {
       release();
       await Promise.resolve();
     });
-    // …and when it lands, the group follows WITHOUT being reopened.
+    // …and when it lands, the group follows WITHOUT being reopened — nothing else rerenders it now.
     await waitFor(() => expect(rowName(radios(container).find((r) => r.checked)!)).toBe("ops"));
   });
 });
