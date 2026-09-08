@@ -278,6 +278,23 @@ describe("the open thread's pinned agent", () => {
     await waitFor(() => expect(result.current.threadAgent).toBe("ops")); // …and it lands late
   });
 
+  it("a same-thread RE-OPEN does not orphan the pin still in flight", async () => {
+    // The audit's finding on wave 1c: `openThread` claims an open TICKET unconditionally at entry —
+    // before the same-id early return — and that early return starts no pin read of its own. Guarding
+    // the late write on the ticket therefore discarded the only pin fetch that would ever run, and a
+    // pinned thread stayed unpinned in the view until the next real navigation. Re-tapping the thread
+    // you are already in is an ordinary gesture (the automations panel's own "open thread" row).
+    threadList = [{ id: "rolling", agent: "lynette" }];
+    const { openThread, useChat } = await freshChat();
+    const { result } = renderHook(() => useChat());
+    net.hold("/api/threads"); // the pin read, parked
+    expect(await openThread("rolling")).toBe(true);
+    await waitFor(() => expect(result.current.threadId).toBe("rolling"));
+    expect(await openThread("rolling")).toBe(true); // …the early-return path, claiming a newer ticket
+    net.release("/api/threads");
+    await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
+  });
+
   it("a pin that arrives after the owner has moved on is DISCARDED", async () => {
     threadList = [
       { id: "slow", agent: "lynette" },

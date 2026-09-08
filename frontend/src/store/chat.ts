@@ -695,12 +695,20 @@ export async function openThread(threadId: string): Promise<boolean> {
     set({ threadId, messages: msgs, status: "idle", streamingId: null, threadAgent: null });
     loaded = true; // a later `initChat` must not replace this with the most-recent thread
     if (gen === loadGen) void probeAndReattach(threadId);
-    // …and the pin when it arrives, if the view is still the one that asked for it. A `null` answer (an
-    // unpinned thread, or a list read that failed) needs no write: the swap above already said null.
+    // …and the pin when it arrives, if the VIEW IS STILL ON THIS THREAD. A `null` answer (an unpinned
+    // thread, or a list read that failed) needs no write: the swap above already said null.
+    //
+    // `threadId` alone is the whole guard, deliberately — an open ticket must NOT be part of it (the
+    // main-seat audit of wave 1c). Every navigation the ticket would have caught moves `threadId` first
+    // (another open's swap, a `/clear`, a wire mint), so this comparison already refuses every stale
+    // write; and a pin that is "stale" by ticket for the thread STILL ON SCREEN is by definition the
+    // right value for what the owner is looking at. Including the ticket actively broke the same-thread
+    // RE-OPEN: `openThread` claims a ticket unconditionally at entry, before the same-id early return —
+    // and that early return starts no pin read of its own, so re-tapping the thread you are already
+    // opening invalidated the only pin fetch that would ever run, and a pinned thread sat at `null`
+    // until the next real navigation.
     void pin.then((agent) => {
-      if (agent !== null && ticket === openSeq && state.threadId === threadId) {
-        set({ threadAgent: agent });
-      }
+      if (agent !== null && state.threadId === threadId) set({ threadAgent: agent });
     });
     return true;
   } catch {
