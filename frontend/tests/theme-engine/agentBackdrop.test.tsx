@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, renderHook } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ReactElement } from "react";
@@ -54,6 +54,7 @@ const chat = vi.hoisted(() => {
 });
 vi.mock("../../src/hooks/useAgentChat", () => ({ useAgentChat: () => chat.view }));
 
+import { useActiveBackdrop } from "../../src/hooks/useActiveBackdrop";
 import type { MediaFile } from "../../src/hooks/useMedia";
 import { setSessionAgent } from "../../src/store/chat";
 import { setUI } from "../../src/store/ui";
@@ -278,6 +279,94 @@ describe("which agent the backdrop belongs to (§8.3a item 2)", () => {
       setSessionAgent("lynette"); // what the `/agent` verb and the gallery's Talk button both call
     });
     expect(src()).toBe(painted("lynette"));
+  });
+});
+
+describe("WHICH picture of that agent's: its background, else its avatar (owner ruling 2026-09-08)", () => {
+  // The owner round on S6: Lynette was imported from a character card, which binds an AVATAR and no
+  // background — and the theme's own default painted instead of her. The rule is now "the active agent's
+  // OWN art wins", with the avatar standing in when no background is bound. It lives in
+  // `useActiveBackdrop` and nowhere lower: `AgentArt.background` stays the truthful binding, because the
+  // picker and the who-line read the two fields apart.
+
+  /** The `agents` index with BOTH pools populated, so an arm proves which role was chosen rather than
+   *  which one happened to exist. `file()` builds a `backgrounds/` row; this is its `avatars/` twin. */
+  const avatarFile = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
+    ...file(name, over),
+    url: `/api/media/agents/files/avatars/${name}.webp`,
+  });
+  const paintedAvatar = (name: string) =>
+    `/api/media/agents/files/avatars/${name}.webp?rev=${encodeURIComponent(`1:90000:${name}`)}`;
+
+  /** The default agent binding one, both or neither pool — the whole matrix this rule decides. */
+  function bind(background: string, avatar: string) {
+    qc.setQueryData(["agents"], {
+      agents: [],
+      default: "default",
+      summaries: { default: { title: "default", description: "", avatar, background, voice: "" } },
+    });
+  }
+
+  beforeEach(() => {
+    media.by = {
+      agents: {
+        ns: "agents",
+        collation: "library-v1",
+        roles: { avatars: [avatarFile("face")], backgrounds: [file("hall")] },
+      },
+    };
+  });
+
+  const src = (c: HTMLElement) =>
+    c.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src");
+
+  it("the BOUND BACKGROUND wins whenever the agent has one, avatar or no avatar", () => {
+    bind("hall.webp", "face.webp");
+    expect(src(draw(<AgentTab active />).container)).toBe(painted("hall"));
+  });
+
+  it("the AVATAR paints when no background is bound — in operator AND in full", () => {
+    bind("", "face.webp");
+    expect(src(draw(<AgentTab active />).container)).toBe(paintedAvatar("face"));
+    cleanup();
+    setUI({ agentBackdrop: "full" });
+    expect(src(draw(<AgentTab active />).container)).toBe(paintedAvatar("face"));
+  });
+
+  it("neither bound ⇒ still NOTHING mounts (the fallback added no picture of its own)", () => {
+    bind("", "");
+    expect(layers(draw(<AgentTab active />).container)).toHaveLength(0);
+  });
+
+  it("an avatar the library cannot serve is no fallback either — hidden, unusable or missing", () => {
+    for (const rows of [
+      [avatarFile("face", { hidden: true })],
+      [avatarFile("face", { unusable: true, unusable_reason: "unreadable" })],
+      [] as MediaFile[],
+    ]) {
+      bind("", "face.webp");
+      media.by = {
+        agents: {
+          ns: "agents",
+          collation: "library-v1",
+          roles: { avatars: rows, backgrounds: [] },
+        },
+      };
+      expect(layers(draw(<AgentTab active />).container)).toHaveLength(0);
+      cleanup();
+    }
+  });
+
+  it("the gallery's outranked REPORT reads the very same value the layer paints", () => {
+    // `useMediaLibrary` asks `useActiveBackdrop() !== undefined` for `hasAgentArt`, which is what
+    // `backdropOutrank` turns into the "the active character's own background is used" word on the
+    // cards. One statement, two readers (the S6 invariant): an avatar standing in as the backdrop has
+    // to be REPORTED live, or the gallery would claim a picture the tab is not showing.
+    bind("", "face.webp");
+    const { result } = renderHook(() => useActiveBackdrop(), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    });
+    expect(result.current?.url).toBe(paintedAvatar("face"));
   });
 });
 
