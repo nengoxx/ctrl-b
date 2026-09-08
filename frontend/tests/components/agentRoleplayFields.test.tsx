@@ -204,6 +204,10 @@ describe("AgentRow · the roleplay fields on the form", () => {
     expect(rowOf("Avatar")?.querySelector(".agart-face")).toBeTruthy();
     // The old idiom is gone from this form entirely — nothing here opens "fullscreen" any more.
     expect(form?.querySelector(".kv-prompt")).toBeNull();
+    // …and the opener is named by its FIELD, never by the value that happens to be inside it (the
+    // wave-2 review's F3): the preview text is the content, not the button's purpose.
+    expect(screen.getByRole("button", { name: "Edit Greeting" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Edit Persona · SOUL.md" })).toBeTruthy();
     // …and every one-line field is untouched: a bare <label> in the grid's own left column, its input
     // beside it.
     for (const label of ["Display name", "Your name", "Voice"]) {

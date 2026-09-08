@@ -154,6 +154,13 @@ export function LibraryPicker({
               // passes neither gets tiles that do exactly one thing. Which is the whole contract here —
               // a tap IS the pick.
               onSelect={(item) => onPick(item.row.file)}
+              // …and the tiles SPEAK the picker's vocabulary, not the gallery's (the wave-2 review's
+              // F2). *active · in use · not in use* answer "what does this destination paint", which is
+              // the manage screen's question; here the ring means THE ONE THIS AGENT IS BOUND TO and the
+              // rest are choices — announcing "in use" over them would contradict the binding the tap is
+              // about to make. The other three words the gallery can say cannot arise: the caller hands
+              // this screen only rows that are shown and usable, and a pool has no key to shadow.
+              describeItem={(item) => (item.active ? "selected" : "available")}
             />
           )}
           {section.caps.upload && <AddImageRow upload={upload} />}

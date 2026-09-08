@@ -214,7 +214,24 @@ function ArtPicker(props: {
     append: studio.append,
     // THE LAST HOP: the picture is in the library under this name, so bind it — and the picker's work
     // is done, so it closes on the way out.
+    //
+    // **ONLY WHILE THIS FIELD'S PICKER IS STILL OPEN** (the wave-2 review's F1), which is the Add row's
+    // own promise — *keep this open until it finishes* — read as the rule it always was. A job outlives
+    // the modal, so a completion arriving later used to land unconditionally, and that was two defects
+    // in one line: it OVERRODE a newer explicit pick or clear (both of which close this picker, so a
+    // photo begun first won a choice made second), and it fired the SHARED close, so the avatar's
+    // upload shut the backdrop picker the owner had just opened. One condition answers both, because
+    // both are the same question — *is the owner still on the screen that asked for this picture?* — and
+    // it needs no admission bookkeeping to ask it: `onStored` is read through the hook's live ref, so it
+    // sees the CURRENT open field, not the one captured when the job started.
+    //
+    // The picture is registered either way, so nothing is lost: it is in the library, one tap away in
+    // the very picker that was closed. What is NOT guarded is the tail unmounting mid-PUT (leaving the
+    // agent, collapsing the row) — the file lands unbound. That is the §13-S4 residual verbatim, the
+    // same exposure the pill-button row carried, and closing it means lifting the job above the agents
+    // surface entirely; per the no-new-protection rule it stays recorded rather than half-built.
     onStored: (filename) => {
+      if (!props.open) return;
       props.onChange(filename);
       props.onClose();
     },

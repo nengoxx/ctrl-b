@@ -51,6 +51,7 @@ export function LibraryGrid({
   onSelect,
   onToggleUse,
   onReorder,
+  describeItem = describe,
 }: {
   section: MediaSection;
   items: LibraryItem[];
@@ -62,6 +63,15 @@ export function LibraryGrid({
    *  pair are hidden by the same fact, in the same breath). */
   canReorder?: boolean;
   onSelect: (item: LibraryItem) => void;
+  /** What ONE tile says to a screen reader. Absent ⇒ the gallery's own vocabulary (`describe` below).
+   *
+   *  It is a parameter because the vocabulary is the SCREEN's, not the grid's (the wave-2 review's F2):
+   *  *active · in use · not in use* are answers about what a destination PAINTS, and a picker is not
+   *  asking that — its tiles are a choice, and announcing "in use" over a library the owner is picking
+   *  FROM contradicts the very binding they are about to make. The visual half was already per-consumer
+   *  by construction (the corners and the ring are drawn from what the caller passes); this makes the
+   *  spoken half match. */
+  describeItem?: (item: LibraryItem) => string;
   /** One tap on the corner — membership, through the same queued `setHidden` intent the detail panel's
    *  switch enqueues. Absent where the section has no In-use to give (a seat). */
   onToggleUse?: (item: LibraryItem) => void;
@@ -147,7 +157,7 @@ export function LibraryGrid({
                 )}
                 {item.bundled && <span className="mgal-corner start">Default</span>}
                 <span className="mgal-sr" id={`${descId}-${i}`}>
-                  {describe(item)}
+                  {describeItem(item)}
                 </span>
               </button>
               {/* THE IN-USE TOGGLE, outside the tile button. `aria-pressed` rather than `aria-checked`:

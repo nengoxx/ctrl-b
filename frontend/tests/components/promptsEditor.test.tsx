@@ -74,6 +74,17 @@ describe("PromptsEditor · the prompt registry section", () => {
     expect(names).toEqual(["Memory Intro", "Per Tool Cap"]);
   });
 
+  it("names each opener by its PROMPT, not by the text that happens to be inside it", () => {
+    // NEW with D70 §13-S6b wave 2's review (F3), and the one place this suite changed for it: the row
+    // face is shared with the agent form now, so the accessible-name fix lands on both surfaces at
+    // once. Before it, the button was named by its own preview — the effective template — so a screen
+    // reader announced the VALUE where the control's purpose belongs.
+    doc = { prompts: [row(), row({ id: "per_tool_cap", label: "Per Tool Cap" })], warnings: [] };
+    renderEditor();
+    expect(screen.getByRole("button", { name: "Edit Memory Intro" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Edit Per Tool Cap" })).toBeTruthy();
+  });
+
   it("badges a customized row and offers Restore only there", () => {
     doc = {
       prompts: [row({ override: "mine", is_customized: true }), row({ id: "b", label: "B" })],

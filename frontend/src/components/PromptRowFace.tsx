@@ -71,10 +71,21 @@ export function PromptRowFace(props: {
         type="button"
         className={"prow-preview" + (props.modified === true ? " mod" : "")}
         onClick={props.onOpen}
+        // THE BUTTON IS NAMED BY ITS FIELD, not by what happens to be inside it (the wave-2 review's
+        // F3). Without this the accessible name is the PREVIEW — "41 chars · "Hello there…" ✎" — so a
+        // screen reader announces the value where the control's purpose belongs, and an empty field
+        // announces its placeholder as the name of a button. The head line above says which field this
+        // is visually; the label says it to everything else. It heals Conf → Prompts through the same
+        // face, which is what sharing one was for.
+        aria-label={props.openTitle ?? `Edit ${props.label}`}
         title={props.openTitle ?? "Edit prompt"}
       >
         {props.preview}
-        <span className="tcat-edit"> ✎</span>
+        {/* Decoration: the button already says "Edit …", and a glyph read as text would say it twice. */}
+        <span className="tcat-edit" aria-hidden>
+          {" "}
+          ✎
+        </span>
       </button>
     </FieldRow>
   );
