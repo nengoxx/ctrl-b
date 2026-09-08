@@ -299,9 +299,12 @@ export function tapPan(
  *  slider's home position write the exact three keys it wrote before the field existed. */
 export function roundFocal(point: FocalPoint, zoom: number = FOCAL_ZOOM_MIN): EditedFocal {
   const f = (n: number) => Number(clamp01(n).toFixed(FOCAL_DECIMALS));
-  const z = clampZoom(zoom);
+  // ROUNDED FIRST, tested second (Emma's wave-3 review): a pinch is continuous, so a live 1.004 is
+  // above the floor until the rounding collapses it to exactly 1 — the seam must test the value it
+  // WRITES, or the forbidden spelling rides the gap between the two.
+  const z = Number(clampZoom(zoom).toFixed(ZOOM_DECIMALS));
   const out: EditedFocal = { x: f(point.x), y: f(point.y) };
-  if (z > FOCAL_ZOOM_MIN) out.z = Number(z.toFixed(ZOOM_DECIMALS));
+  if (z > FOCAL_ZOOM_MIN) out.z = z;
   return out;
 }
 

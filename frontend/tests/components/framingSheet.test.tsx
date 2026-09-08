@@ -265,6 +265,10 @@ describe("roundFocal — two decimals, per R57 §2.3", () => {
     expect(roundFocal({ x: 0.4, y: 0.6 })).toEqual({ x: 0.4, y: 0.6 });
     expect(Object.keys(roundFocal({ x: 0.4, y: 0.6 }, 1))).toEqual(["x", "y"]);
     expect(roundFocal({ x: 0.4, y: 0.6 }, 2.25)).toEqual({ x: 0.4, y: 0.6, z: 2.25 });
+    // A pinch is CONTINUOUS — the library reports values the slider's step cannot express, and one
+    // that rounds DOWN to the floor must vanish rather than store the forbidden `z: 1` (Emma's
+    // wave-3 review: the write seam must test the value it writes, not the one it was handed).
+    expect(Object.keys(roundFocal({ x: 0.4, y: 0.6 }, 1.004))).toEqual(["x", "y"]);
     // Two decimals, which is exactly what the slider's 0.05 step can express — and the ends hold.
     expect(roundFocal({ x: 0.4, y: 0.6 }, 1.0500000000000003).z).toBe(1.05);
     expect(roundFocal({ x: 0.4, y: 0.6 }, 99).z).toBe(4);
