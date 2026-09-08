@@ -12,7 +12,57 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-08, TENTH session — THE OWNER'S BACKDROP ROUND LANDED 4 FINDINGS; **wave 1 (②+③) ran the whole cadence and is council-CLOSED: RESOLVED — SHIP**; wave 2 (①+④) designed + owner-confirmed, PENDING; supersedes below where it speaks)
+## Current state (2026-09-09, ELEVENTH session — **WAVE 3 (bigger circles + the z-zoom circular cutout) ran the WHOLE standing cadence in one session and is council-CLOSED: Emma's confirm RESOLVED — SHIP, sweep "none"**; supersedes below where it speaks)
+
+- **The session opened on the handoff's word and built wave 3 off plan §13-S6b's ratified WAVE 3
+  block — full record now in the plan's WAVE 3 AS-BUILT block:** pinned Opus build **`11ff928`**
+  (① `--kit-who-face: 28px` / `--kit-tools-face: 24px` tokens, literals dead · ② `MediaFocal.z`
+  — clamp 1..4, ≤1/NaN fold to `None`, **absent is the only spelling of "no zoom"**, rides the
+  point's object and its rev · ③ scoping by construction: `circleFraming` reads `zoom`,
+  `focalPosition` never does — backdrop/card/strip/picker cannot zoom by accident · ④ the
+  observer-free circle math: for a square window the box side CANCELS out of the cover overflow,
+  so **`FocalFace`** (new) paints the who-line + tools faces from the item alone —
+  `background-size: s·z` + `P(f, s·z)`, dormant at z=1, no ref/observer/state; the tools face
+  LOST its per-row ResizeObserver · ⑤ the sheet role-gated by `MediaPreviewDef.shape: "circle"`
+  + `framesCircle()` — round reticle, keyboard-reachable slider, zoom-carrying
+  panLimit/seedPan/zoomPan, the exact "chat face" circle preview; backgrounds byte-identical,
+  pinned · ⑥ the second door: `LibraryPicker.onFrame` → "Focus" beside "Use no picture",
+  sheet mounted as a form/picker SIBLING, saving through the queued rev-guarded
+  `studio.setFocal`) → main-seat audit (all six declared deviations ACCEPTED — headline: **the
+  reticle STAYS a reticle**; the WYSIWYG round crop needs `restrictPosition`, which pins a 3:4
+  portrait's X at 0.5 forever against the ratified one-centre trade — the exact circle is the
+  preview; + the render-time pan fence, forced by the library's measured pan-first-zoom-second
+  report order; gate independently re-run 6/6) → **blind Emma SHIP WITH FIXES — 1 MED conf
+  0.99, every seeded area sound, open sweep "none"** (`roundFocal` tested the UNROUNDED zoom
+  then rounded: a continuous pinch at 1.004 stored the forbidden `z: 1` — the config write
+  persists the raw patch, so the BE fold never sees it) → ruled FIX → main-seat rider
+  **`6330d6c`** (round first, test the value the seam WRITES; the 1.004 arm red-proven against
+  the unfixed code) → **her confirm: line-proofed resolved, fix-sweep "none" — RESOLVED —
+  SHIP.**
+- **Gate at tip `6330d6c`: 6/6 — BE 2,377 · FE 3,126/178** (counts in QUALITY.md; the eslint
+  ledger 110 → 118 → 99 → 100 measured per-tip and attributed there — wave 2's −19 was the
+  picker-strip deletion, incidental). The build's 15 arms red-proven by scripted reversion. The
+  builder restarted the dev backend onto `11ff928` (the `z` field is live); the review fix is
+  FE-only — **:5173 serves the whole wave live; both dev units RUNNING (D69 — do NOT stop
+  them).** Ops clean this session: gate FOREGROUND ×3, never concurrent with Emma's Chromium
+  probes; her round ran detached (`setsid` + Monitor on the real PID).
+- **▶▶ NEXT: the owner's feel round on wave 3** (dev :5173 — the bubble circles at 28/24px, the
+  tokens are the tuning knob if the eye disagrees; the picker's "Focus" door; the round reticle
+  + zoom slider + the "chat face" circle preview on Lynette's avatar; framing now honored in
+  the transcript) **→ their word closes the S6b round → S7 — the owner DEVICE round — IS the
+  phase gate (§10-S7)** (import a real card · talk on the phone · tools-in-character both
+  duties settings · all three backdrop states · a lorebook triggering live · showcase/picker
+  feel · read-along on a character reply). Wave-3 residuals recorded in the plan block (none
+  owed): the reticle ring is the library's 1px white on both cropper surfaces (pre-existing
+  unlayered-CSS finding) · a hand-edited `z` on a non-circle role round-trips untouched.
+- **Git: 99 commits unpushed over origin `04769d9`** (the 96 + `11ff928` + `6330d6c` + this
+  docs commit); working tree clean at write; the PUSH ruling stays the owner's. **Prod
+  untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline (Dependabot D1 → push → release E,
+  config migration 2→3, rollback = config backup FIRST then v1.7.7) is unchanged and still
+  owed; sequencing is the owner's. **NEXT-NEXT (owner): LIVE VOICE/CALL MODE — R51, buy only
+  the delta.**
+
+## Prior state (2026-09-08, TENTH session — THE OWNER'S BACKDROP ROUND LANDED 4 FINDINGS; **wave 1 (②+③) ran the whole cadence and is council-CLOSED: RESOLVED — SHIP**; wave 2 (①+④) designed + owner-confirmed, PENDING; superseded above where it speaks)
 
 - **The owner's phone round on S6 came back with four findings, restated + confirmed in
   conversation** (full record = **plan §13-S6b**): ① the agent form's avatar/backdrop PICKER

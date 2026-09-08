@@ -2092,5 +2092,74 @@ apart) · `components/FocalImg.tsx:27-39` (objectPosition-only today) + `hooks/u
 (`MediaPreviewDef {label, aspect}`) · dual consumption `useActiveBackdrop.ts:39-51` · NOTE
 `LibraryGrid` tiles are plain `<img>` (framing not honored in grids — unchanged, fine).
 
-**NEXT: the wave-3 BUILD (pinned Opus brief off this block, the standing cadence), then the
-owner's feel round on it; then S7 — the owner DEVICE round — IS the phase gate (§10-S7).**
+**WAVE 3 AS-BUILT (2026-09-09, the full standing cadence in one session — council-CLOSED:
+Emma's confirm RESOLVED — SHIP, sweep "none").** Build **`11ff928`** (pinned Opus brief off the
+block above) + review fix **`6330d6c`**:
+
+- **① sizes:** `--kit-who-face: 28px` / `--kit-tools-face: 24px` on `.kit` (kit.css:75-76,
+  beside `--kit-plan-*`); both literals gone — the owner tunes each in one place.
+- **② `z`:** `MediaFocal.z: float | None` + `FOCAL_ZOOM_MIN/MAX = 1.0/4.0` (media.py:324-325);
+  the validator CLAMPS rather than 422s (the owner's own file — a hand-edited `z: 40` means "as
+  far in as it goes"), folds ≤1 and NaN to `None` — **absent is the only spelling of "no zoom"**,
+  so a home-position save writes the exact three keys it always did. Rides the point's object:
+  set, cleared and rev-keyed with it.
+- **③ per window shape, by construction:** `circleFraming` reads `FocalArt.zoom`,
+  `focalPosition` never does — the scoping is a property of the two functions, not a rule call
+  sites remember. Backdrop/card/strip/picker faces cannot zoom by accident (red-proven R15).
+- **④ the observer-free circle math** (`lib/focalPosition.ts#circleFraming`): for a square box of
+  side `b`, cover scales by `k = b/min(W,H)`, so the overflow `s = (W,H)/min(W,H)` — **`b`
+  cancels**; a square window's overflow is a fact about the PICTURE. Paint =
+  `background-size: s·z` + `background-position: P(f, s·z)` (percentage position ≡
+  `object-position` in the spec). `min(s·z) = z ≥ 1` keeps the no-gap invariant by construction.
+  DORMANT at z=1: no inline size, the stylesheet's `cover` paints (an explicit percentage size is
+  NOT byte-identical to `cover` — Chromium measured ≤5/255 on 1560/14400 px). **`FocalFace`** is
+  the consumer: one `<span>` background (a wrapper-free clip; `cssUrl` escapes hostile
+  filenames), who-line + tools faces — the tools face LOST its per-row ResizeObserver. Unknown
+  dims degrade to the house proportional rule. Live-measured at 390px: identical paint strings at
+  28px and 24px.
+- **⑤ the sheet, role-gated:** `MediaPreviewDef.shape?: "circle"` + `framesCircle()` — ONE
+  declaration, two consequences (zoom offered · the exact "chat face" circle preview joins the
+  strip), so they cannot disagree; avatars declares it, backgrounds/theme roles keep today's
+  sheet (pinned). Round reticle, slider (keyboard-reachable; the library ships no keyboard zoom),
+  `panLimit`/`seedPan`/`tapPan` carry the factor, `zoomPan` = the library's own
+  zoom-about-a-point arithmetic at the container centre so slider and pinch land on one state,
+  and the fence lives on the RENDERED `crop` prop (measured: `setNewZoom` reports pan FIRST —
+  reducer-side clamping would truncate every zoom-in to the fence of the zoom it left).
+- **⑥ two doors, one sheet:** `LibraryPicker` gains optional `onFrame` → **"Focus"** beside "Use
+  no picture" (offered only on a framable bound row: `caps.frame` ∧ bound ∧ usable);
+  `ArtPicker` holds the captured item MediaGallery-style and mounts the sheet as a SIBLING of
+  picker and form (the `.mform` rule); saves through the same queued rev-guarded
+  `studio.setFocal`. Deliberately NOT conditioned on the picker being open — a late upload
+  closing the picker must not yank a framing gesture (the wave-2 F1 posture).
+
+**Deviations (all main-seat ACCEPTED):** "Focus" over "Adjust framing" (the app's word) · **the
+reticle STAYS a reticle** — the WYSIWYG round-crop version needs `restrictPosition`, whose fence
+pins a 3:4 portrait's X at 0.5 forever, and that point is what the full-bleed backdrop reads:
+under the ratified one-centre trade only the small reticle keeps every point addressable; the
+exact circle is the preview · unknown-dims degrade = the shipped proportional rule · render-time
+clamp (measured report order) · the library's UNLAYERED css paints the reticle radius/ring
+(unlayered beats `@layer base` regardless of specificity — pre-existing on both cropper
+surfaces, recorded not fixed; our `.round` rule stays as the guard) · the sheet not conditioned
+on the picker.
+
+**The council round:** blind Emma **SHIP WITH FIXES — 1 MED conf 0.99, every seeded area
+explicitly sound, open sweep "none"**: `roundFocal` tested the UNROUNDED zoom then rounded — a
+continuous pinch at 1.004 passed the floor test and collapsed to a stored `z: 1` (the config
+write persists the raw patch, so the BE fold never sees it). Ruled FIX; **`6330d6c`** rounds
+first and tests the value it WRITES, the 1.004 arm red-proven against the unfixed code. **Her
+confirm: line-proofed resolved, fix-sweep "none" — RESOLVED — SHIP.**
+
+**Tests:** BE 2,374 → 2,377 · FE 3,097 → 3,126/178; the build's 15 arms red-proven by scripted
+reversion (incl. R8 — the who-face framed THROUGH `FocalImg` fails the zero-observer arm) + the
+fix's arm. Gate 6/6 three times (builder · main-seat independent · post-fix). The e2e
+agent-backdrop 20 arms untouched.
+
+**Residuals (recorded, none owed):** the reticle ring is the library's 1px white on BOTH cropper
+surfaces (pre-existing, the unlayered-CSS finding above — a future owner-triggered look item) ·
+a hand-edited `z` on a NON-circle role's item round-trips through that role's sheet untouched
+(nothing reads it; preserving owner data is the chosen posture).
+
+**NEXT: the owner's feel round on wave 3** (dev :5173 — the bubble circles at 28/24px, tuned by
+token if the eye disagrees; the picker's Focus door; the round reticle + zoom + circle preview
+on Lynette's avatar) **→ their word closes the S6b round → S7 — the owner DEVICE round — IS the
+phase gate (§10-S7).**
