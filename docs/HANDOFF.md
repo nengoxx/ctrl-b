@@ -38,19 +38,42 @@
   the scrim e2e rides ONE boot + a live two-way tab transition · §8.3/§8.3a's five clauses
   say the shipped ladder) → **her confirm: all 3 RESOLVED with line proof, sweep "none" —
   RESOLVED — SHIP.**
-- **Gate at tip: 6/6 — BE 2,373 · FE 3,066/178 · e2e agent-backdrop 20/20 both projects**
-  (counts in QUALITY.md). FE-only; **:5173 serves it live; both dev units RUNNING (D69 — do
-  NOT stop them).** ⚠ The §13-S6 ops rules held: gate FOREGROUND, never concurrent with an
-  Emma Chromium round.
-- **▶▶ NEXT: the owner's phone glance at wave 1** (dev :5173 — pin Lynette: her card art now
-  paints as her backdrop; Conf → Appearance → Agent backdrop `full`: edge-to-edge to the true
-  top, no haze band) **→ then WAVE 2, its own session + cadence (plan §13-S6b's pending
-  block): ① the picker** (image-as-button → the library in PICK mode; the `.agart-pick`
-  duplicate strip DELETED) **+ ④ the prompt rows** (extract the Prompts row face, the agent
-  form's `LongField`s take it). The S6→S7 ladder is unchanged behind it: the owner's word
-  closes S6's feel round, **S7 = the owner DEVICE round = the phase gate (§10-S7)**.
-- **Git: 88 commits unpushed over origin `04769d9`** (the 83 + `864f447` + `d74eecb` +
-  `6657a9b` + this docs commit + the memory commit if any); working tree clean at write; the
+- **THEN the owner's re-glance found 1a INCOMPLETE — wave 1c ran the whole cadence same day
+  and is council-CLOSED (RESOLVED — SHIP; full record = plan §13-S6b's 1c block):** the FE had
+  no notion of the thread's D11 pin (a pinned thread replied as the character while the
+  backdrop painted the default). `27e588f` (`ChatState.threadAgent` + `effectiveAgent` — the
+  server routing ladder mirrored; backdrop + A6 menu take it; 14 red-proven arms) → main-seat
+  audit rider `3c6977f` (same-thread reopen orphaned the late pin) → **blind Emma DO NOT SHIP
+  1H·2M all ruled FIX** → `8277ebf` (the HIGH: `GET /threads` gains `include_archived` so the
+  pin read sees ARCHIVED automation threads — boot read deliberately unflagged; the menu
+  subscribes to the late pin; `loadGen` bumps on `/clear` + wire mints) → ⚠ **the Opus builder
+  was rate-limit KILLED after committing, before reporting — the main seat re-ran the gate
+  itself and briefed her confirm that the red-proof claims were UNVERIFIED: she caught F2's
+  arm as a FALSE POSITIVE** (an unrelated art rerender masked it on the parent) → test-only
+  rider `14d3bae` (settle-then-release; three-way transplant proof in a worktree) → **her
+  micro-confirm: RESOLVED — SHIP.**
+- **Gate at tip `14d3bae`: 6/6 — BE 2,374 · FE 3,085/178 · e2e agent-backdrop 20/20 both
+  projects** (counts in QUALITY.md). Wave 1c touched the BE (`include_archived`) — ⚠ **the
+  dev backend :5434 has NOT been restarted onto the tip; the archived-pin read 404s nothing
+  but silently degrades to null until it is** (restart `ctrl-b-dashboard-dev` before testing
+  automation-thread backdrops; the main Lynette path is FE-only and live on :5173 already).
+  Both dev units RUNNING (D69 — do NOT stop them). The §13-S6 ops rules held: gate
+  FOREGROUND, never concurrent with an Emma Chromium round; ⚠ NEW ops lesson recorded in
+  §13-S6b: a builder commit that arrives WITHOUT its report (rate-limit kill) gets the gate
+  re-run by the main seat and its red-proof claims treated as unverified in the review brief
+  — that posture caught a real false-positive regression arm.
+- **▶▶ NEXT: the owner's phone glance at wave 1** (dev :5173 — pin Lynette OR just open her
+  thread: her card art now paints as her backdrop either way; Conf → Appearance → Agent
+  backdrop `full`: edge-to-edge to the true top, no haze band) **→ then WAVE 2, its own
+  session + cadence (plan §13-S6b's pending block): ① the picker** (image-as-button → the
+  library in PICK mode; the `.agart-pick` duplicate strip DELETED; owner add-ons from the
+  1c round: label-left stays for one-line fields/toggles ONLY, the art buttons read
+  overstretched — they die with the redesign) **+ ④ the prompt rows** (extract the Prompts
+  row face, the agent form's `LongField`s take it). The S6→S7 ladder is unchanged behind it:
+  the owner's word closes S6's feel round, **S7 = the owner DEVICE round = the phase gate
+  (§10-S7)**.
+- **Git: 92 commits unpushed over origin `04769d9`** (the 88 + `27e588f` + `3c6977f` +
+  `8277ebf` + `14d3bae` + this docs commit); working tree clean at write; the
   PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline
   (Dependabot D1 → push → release E, config migration 2→3, rollback = config backup FIRST
   then v1.7.7) is unchanged and still owed; sequencing is the owner's. **NEXT-NEXT (owner):

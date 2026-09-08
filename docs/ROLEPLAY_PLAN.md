@@ -1953,6 +1953,41 @@ background-only; amended to the shipped ladder, theme-fallback preserved. Her co
 projects** (counts in QUALITY.md). FE-only wave; :5173 serves it live; dev units RUNNING
 throughout (D69).
 
+**WAVE 1C — the owner's re-glance found 1a INCOMPLETE; built + council-closed same day
+(RESOLVED — SHIP):** in Lynette's PINNED thread the backdrop still painted the default — the FE
+had NO notion of D11's `Thread.agent`, the server's second routing rung (`agent_name or
+thread.agent`, `_build_session`), so booting into or opening a pinned thread replied as the
+character while every "which agent is active" surface showed the default. **`27e588f`:**
+`ChatState.threadAgent` (reactive, written wherever `threadId` moves — `initChat` passes the
+record it already holds; `openThread` reads the list WITHOUT gating the open, the pin lands
+late under guards; `/clear` nulls; the three wire-mint sites go through ONE `setWireThread`
+that resets only on a CHANGED id) + `lib/composer#effectiveAgent(sticky, threadAgent, agents)`
+— the server ladder mirrored verbatim, `""`-yields and typo'd-sticky-wins both deliberate and
+test-pinned — read by `useActiveBackdrop` AND the A6 menu tri-state; 14 arms, red-proven at
+pure/store/paint levels. **Main-seat audit rider `3c6977f`:** the late-pin guard's ticket
+clause orphaned the pin on a same-thread re-open (entry claims a ticket before the same-id
+early return, which starts no new fetch); threadId-only is sufficient — red-proven.
+**Blind Emma round: DO NOT SHIP — 1 HIGH · 2 MED, all verified + ruled FIX → `8277ebf`:**
+① (HIGH) automation threads are ARCHIVED + agent-pinned and terminal per-run threads are
+deliberately continuable, but `GET /threads` hid archived rows from the pin read — the
+endpoint gains `include_archived` (default false, the repo flag), the pin read flags it,
+`initChat`'s boot read deliberately does NOT (never adopt an automation thread as the boot
+view), and the FE mock that couldn't have caught it now obeys the endpoint contract ·
+② (MED) the menu's snapshot read missed the LATE pin landing with the panel up — subscribed
+(`useThreadAgent`), the unused non-reactive getter DELETED as a stale-value trap · ③ (MED)
+`loadGen` bumped only by `openThread` — a parked cold `initChat` landed the old thread's
+history + pin over a `/clear` or a wire-minted view; both bump now. ⚠ The Opus builder was
+rate-limit KILLED between committing `8277ebf` and reporting — the main seat re-ran the full
+gate itself and Emma's confirm was briefed that the commit's red-proof claims were UNVERIFIED
+assertions. **That caught a real one: her confirm ruled F2's regression ARM a FALSE POSITIVE**
+(passes on the parent too — an unrelated agent-art rerender re-reads the snapshot and masks
+the missing subscription). **Rider `14d3bae`** (test-only): the arm settles the art queries
+before releasing the parked pin; three-way transplant proof in a worktree (restructured arm
+RED on `8277ebf^` · the old arm's false positive REPRODUCED there · green on HEAD). **Her
+micro-confirm: RESOLVED — SHIP** (the avatar proves both art queries settled; the only other
+async observer resolves before the awaited open; only `useThreadAgent` can rerender after
+release). Gate 6/6 at tip `14d3bae`: **BE 2,374 · FE 3,085/178** (counts in QUALITY.md).
+
 **Wave 2 (pending, its own cadence next session): ① the picker** — the row becomes a
 destination-shaped tappable preview (SectionCard face; "add an image" when empty) opening the
 media-manager library in PICK mode; the hand-rolled `.agart-pick` strip and the three sibling
