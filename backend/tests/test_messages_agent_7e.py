@@ -168,6 +168,39 @@ def test_resume_falls_through_when_no_assistant_agent() -> None:
             assert _resume_agent_name(c, t.id) is None
 
 
+def test_the_thread_list_hides_archived_rows_but_can_be_asked_for_them() -> None:
+    """`GET /threads` and the D11 pin (wave 1c review, F1).
+
+    An A3 automation mints an ARCHIVED thread per run, PINNED to the automation's agent — and a
+    terminal per-run thread is deliberately continuable in chat. The FE reads this list to learn the
+    open thread's pin, so with archived rows filtered out it saw nothing and painted the default agent
+    over a thread the server would route to that character. The flag is opt-in and the default is
+    unchanged, because the chat's own cold load must never adopt an automation's thread as the
+    conversation the owner was in."""
+    from app.domain.conversation import Thread
+
+    with _workspace():
+        with _client() as c:
+            live = _run(c.app.state.threads.create(Thread(agent="lynette")))
+            run = _run(c.app.state.threads.create(Thread(agent="ops", archived=True)))
+
+            bare = c.get("/api/threads").json()
+            assert [t["id"] for t in bare] == [live.id]  # the owner's list, as it always was
+
+            withArchived = c.get("/api/threads", params={"include_archived": "true"}).json()
+            by_id = {t["id"]: t for t in withArchived}
+            assert set(by_id) == {live.id, run.id}
+            # …and the PIN is what the reader came for, on both rows.
+            assert by_id[run.id]["agent"] == "ops"
+            assert by_id[run.id]["archived"] is True
+            assert by_id[live.id]["agent"] == "lynette"
+
+            # Explicitly false is the default, not a third behaviour.
+            assert [t["id"] for t in c.get("/api/threads", params={"include_archived": "false"}).json()] == [
+                live.id
+            ]
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadAgents, loadSkills } from "../../src/lib/composer";
-import { setSessionAgent } from "../../src/store/chat";
+import { openThread, setSessionAgent, startNewThread } from "../../src/store/chat";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
 import { clearComposerScope, getComposerScope } from "../../src/store/composerScope";
 import { clearDraft } from "../../src/store/composer";
@@ -295,5 +295,52 @@ describe("tools menu — agent avatars (D70 §8.4)", () => {
     expect(face.getAttribute("src")).toBe("/api/media/agents/files/avatars/ops.png?rev=r1");
     // the tick is still there beside it — the avatar never displaces the selection gutter
     expect(withFace[0].closest("label")?.querySelector(".tools-tick")).not.toBe(null);
+  });
+});
+
+// ── the OPEN THREAD's pin (wave 1c + its review's F2). The group has to name the agent the next message
+// will ACTUALLY run as, and since 1c that ladder has a second rung: the sticky `/agent` pick, else the
+// thread's own D11 pin. The pin arrives from `openThread`'s LATE list read — which can land while this
+// panel is up, so the read is subscribed rather than snapshotted.
+describe("tools menu — the open thread's pinned agent", () => {
+  /** The composer harness's stub plus the two routes an open touches; the LIST is deferrable, which is
+   *  the whole point (the pin deliberately does not gate the history swap). */
+  function serveThread(agent: string) {
+    let release!: () => void;
+    const parked = new Promise<void>((r) => (release = r));
+    const base = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      const body = (v: unknown) => ({ ok: true, status: 200, json: async () => v }) as Response;
+      if (u.endsWith("/messages")) return body([]);
+      if (u.includes("/api/agent/turns/")) return body({ active: false });
+      if (u.includes("/api/threads")) {
+        await parked; // the pin read, held open
+        return body([
+          { id: "t1", title: null, agent, created_at: "", updated_at: "", archived: false },
+        ]);
+      }
+      return base(url, init);
+    });
+    return release;
+  }
+
+  afterEach(() => startNewThread()); // the pin is store state — every arm starts with none
+
+  it("checks the THREAD's agent, and follows a pin that lands while the panel is OPEN", async () => {
+    const release = serveThread("ops");
+    const { container } = renderComposer();
+    fireEvent.click(trigger(container));
+    await act(async () => {
+      await openThread("t1"); // history swaps in; the pin read is still parked
+    });
+    // The window the F2 finding is about: the panel is up, the thread is pinned, the pin has not landed.
+    expect(radios(container).find((r) => r.checked)).toBe(radios(container)[0]); // "default"
+    await act(async () => {
+      release();
+      await Promise.resolve();
+    });
+    // …and when it lands, the group follows WITHOUT being reopened.
+    await waitFor(() => expect(rowName(radios(container).find((r) => r.checked)!)).toBe("ops"));
   });
 });

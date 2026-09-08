@@ -487,13 +487,12 @@ export function useSessionAgent(): string | null {
 
 // The OPEN THREAD's pinned agent (see its field note). Read-only to the app: it is not a pick anyone
 // makes here, it is what the loaded thread already carries, so the writes live at the load seams.
-/** The thread pin, non-reactively — the composer menu's A6 tri-state read (outside a subscription). */
-export function getThreadAgent(): string | null {
-  return state.threadAgent;
-}
-/** The thread pin, REACTIVELY — the twin of `useSessionAgent` for the surface that repaints when the
- *  owner opens another conversation (the agent backdrop). Same slice reasoning: this changes once per
- *  thread switch, while the store emits on every streamed token. */
+/** The thread pin, REACTIVELY — the twin of `useSessionAgent` for every surface that must follow it: the
+ *  agent backdrop, and the composer menu's A6 tri-state. There is deliberately NO non-reactive getter
+ *  beside it (there was, for one release): unlike the sticky pick, this value arrives on its own from
+ *  `openThread`'s late pin read, so a snapshot taken at render time can be stale while the surface is
+ *  still up. Same slice reasoning as its twin: it changes once per thread switch, while the store emits
+ *  on every streamed token. */
 export function useThreadAgent(): string | null {
   return useChatSlice((s) => s.threadAgent);
 }
@@ -504,7 +503,15 @@ export function useThreadAgent(): string | null {
  *  ordinary echo of the conversation we are already in and must leave the pin alone — clearing it there
  *  would repaint every active-agent surface the moment the owner sends into a pinned thread. */
 function setWireThread(id: string): void {
-  set(id === state.threadId ? { threadId: id } : { threadId: id, threadAgent: null });
+  if (id === state.threadId) {
+    set({ threadId: id });
+    return;
+  }
+  // A MINT is a change of view identity, exactly like an open or a `/clear` — so it invalidates every
+  // parked reconciliation too (the S6 review's F3). Without this a cold `initChat` that started before
+  // the send lands the OLD thread's history, and its pin, over the conversation just created.
+  loadGen++;
+  set({ threadId: id, threadAgent: null });
 }
 
 // Sticky session privilege override, set by `/privilege <level>` (A1/D16). Reactive (lives in
@@ -602,13 +609,21 @@ async function fetchMessages(threadId: string): Promise<ChatMessage[]> {
  *  only thread-record route there is — no by-id read exists, and an explicit open is rare enough that
  *  adding one would be a backend endpoint bought for a field the list already carries).
  *
+ *  `include_archived` because of WHO opens threads explicitly: the automations run history, and an A3 run
+ *  mints an ARCHIVED thread pinned to the automation's agent (a terminal per-run thread is deliberately
+ *  continuable in chat). The bare list hides those, so this read — the one that has already been told
+ *  which thread it wants — asked for a row it could never see and reported "unpinned" for every run
+ *  thread there is (the S6 review's F1). `initChat`'s list read stays UNFLAGGED on purpose: the boot view
+ *  must never adopt an automation's thread as the conversation the owner was in.
+ *
  *  BEST-EFFORT by design: a thread that opens with its history intact must not fail because this second
  *  read did — an unknown pin is the same "nobody pinned" the FE has always assumed, and the SERVER still
  *  routes the turn by the thread's own field either way. `initChat` needs none of this: it is already
  *  holding the record it picked. */
 async function fetchThreadAgent(threadId: string): Promise<string | null> {
   try {
-    const threads = (await (await fetch("/api/threads")).json()) as Thread[];
+    const res = await fetch("/api/threads?include_archived=true");
+    const threads = (await res.json()) as Thread[];
     return threads.find((t) => t.id === threadId)?.agent ?? null;
   } catch {
     return null;
@@ -812,6 +827,11 @@ export function startNewThread(): void {
     return;
   }
   openSeq++; // a /clear supersedes any pending explicit open — its fetch must not swap in afterwards
+  loadGen++; // …and every parked RECONCILIATION with it (the S6 review's F3): a cold `initChat` or a
+  // `reloadChat` captured its generation before this clear, and would otherwise land its messages AND
+  // the pin that came with them on the fresh empty view the owner just asked for. Same reasoning as the
+  // ticket above, one rung down: `/clear` changes the view's identity, so every in-flight load for the
+  // identity it replaced is stale by definition.
   clearAudioCache(); // 6b-2: revoke this thread's TTS blobs + stop any playback
   lastTurnId = null; // D39: a fresh thread view starts a fresh per-turn event ordering
   lastSeq = 0;

@@ -57,7 +57,9 @@ function deferrableFetch() {
       ? [msg(`m-${url}`, url.split("/")[3], url)]
       : url.includes("/api/agent/turns/") // the D39 cold-load re-attach probe
         ? { active: false }
-        : threadList;
+        : url.includes("/api/exec")
+          ? { threadId: "minted" } // a `!cmd` on an empty view MINTS a thread (a wire thread write)
+          : threadList;
     if (held.has(url)) {
       return new Promise<Response>((resolve, reject) => {
         (pending.get(url) ?? pending.set(url, []).get(url)!).push(() => resolve(json(payload)));
@@ -321,5 +323,40 @@ describe("the open thread's pinned agent", () => {
     startNewThread();
     await waitFor(() => expect(result.current.threadId).toBeNull());
     expect(result.current.threadAgent).toBeNull();
+  });
+});
+
+// ── the view's identity vs the loaders parked against the OLD one (the 1c review's F3) ────────────────
+// `loadGen` is what makes a reconciliation discard itself when the view has moved on, and only
+// `openThread` used to bump it — so a `/clear` and a wire MINT changed the view's identity while a cold
+// `initChat` (or a `reloadChat`) sat parked mid-fetch, and that load then landed the OLD thread's history
+// AND its pin on the conversation the owner had just started.
+describe("a changed view identity invalidates the loads parked against the old one", () => {
+  it("a /clear kills a parked cold load — history and pin alike", async () => {
+    threadList = [{ id: "recent-thread", agent: "lynette" }];
+    const { initChat, startNewThread, useChat } = await freshChat();
+    const { result } = renderHook(() => useChat());
+    net.hold("/api/threads/recent-thread/messages"); // the cold load's HISTORY fetch, parked
+    const init = initChat();
+    startNewThread(); // the owner clears while it is in flight
+    net.release("/api/threads/recent-thread/messages");
+    await init;
+    await waitFor(() => expect(result.current.threadId).toBeNull());
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.threadAgent).toBeNull(); // the pin rode with the history and must die with it
+  });
+
+  it("a MINTED thread kills one too — the send that created it owns the view now", async () => {
+    threadList = [{ id: "recent-thread", agent: "lynette" }];
+    const { initChat, runShell, useChat } = await freshChat();
+    const { result } = renderHook(() => useChat());
+    net.hold("/api/threads/recent-thread/messages");
+    const init = initChat();
+    await runShell("ls"); // `/api/exec` answers with a NEW thread id — a wire thread write
+    await waitFor(() => expect(result.current.threadId).toBe("minted"));
+    net.release("/api/threads/recent-thread/messages");
+    await init;
+    expect(result.current.threadId).toBe("minted");
+    expect(result.current.threadAgent).toBeNull(); // …and never `recent-thread`'s pin
   });
 });

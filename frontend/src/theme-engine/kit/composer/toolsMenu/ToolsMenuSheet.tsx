@@ -9,7 +9,7 @@ import {
   getKnownSkills,
   useVerbsVersion,
 } from "../../../../lib/composer";
-import { getSessionAgent, getThreadAgent } from "../../../../store/chat";
+import { getSessionAgent, useThreadAgent } from "../../../../store/chat";
 import { releaseComposerOverlay, useComposerOverlayOpen } from "../../../../store/composerOverlay";
 import {
   clearComposerScope,
@@ -71,20 +71,24 @@ export function ToolsMenuSheet() {
   // The radio group must tell the TRUTH about where the next message goes: the armed pick if the menu armed
   // one, else the ladder a plain send would route by — the sticky `/agent <name>`, else the OPEN THREAD's
   // own pin (wave 1c: a thread pinned to a character routes there, and the group used to check the default
-  // row over it), else the configured default. Reading both pins non-reactively is safe — the sticky one
-  // changes by SENDING `/agent …`, and typing that `/` hands the overlay slot to the suggest popover, which
-  // CLOSES this panel; the thread pin changes only by opening another conversation or `/clear`, neither of
-  // which happens with this panel up. Reopening re-reads. (That still holds now the panel stays mounted:
-  // `open` flipping IS a re-render of this component, so reopening re-reads exactly as remounting used to.)
+  // row over it), else the configured default.
+  //
+  // The two pins are read DIFFERENTLY, and the difference is not an oversight. The STICKY one stays
+  // non-reactive: it changes only by SENDING `/agent …`, and typing that `/` hands the overlay slot to the
+  // suggest popover, which CLOSES this panel; reopening re-reads (`open` flipping IS a re-render, so the
+  // mounted panel re-reads exactly as remounting used to). The THREAD pin cannot ride that argument — it
+  // arrives on its own, from `openThread`'s LATE list read, and can therefore land while the panel is up
+  // (the S6 review's F2: the group sat on the default row for the whole window). So it is subscribed.
   //
   // A pin that isn't a CONFIGURED agent reads as the default row (Codex, verify round) — the
   // `effectiveAgent` ladder over `validSessionAgent`, shared with the agent backdrop since D70 S6 (see its
   // note in `lib/composer.ts`, which mirrors the server's own routing line). DISPLAY only: neither pin and
   // no send path is touched, and `armed` (the dot) still keys off the one-shot alone.
+  const threadAgent = useThreadAgent();
   const routedAgent =
     scope.agent !== undefined
       ? scope.agent
-      : effectiveAgent(getSessionAgent(), getThreadAgent(), agents);
+      : effectiveAgent(getSessionAgent(), threadAgent, agents);
 
   return (
     <div

@@ -379,16 +379,23 @@ describe("the OPEN THREAD's pin is the ladder's second rung (wave 1c)", () => {
 
   /** The two routes an open touches, plus the D39 re-attach probe. The LIST is where the pin lives.
    *  Assigned rather than `vi.stubGlobal`'d: this suite stubs `ResizeObserver` globally at module scope,
-   *  and `unstubAllGlobals` would take that with it (every themed Root mounts a ChatThread that observes). */
+   *  and `unstubAllGlobals` would take that with it (every themed Root mounts a ChatThread that observes).
+   *
+   *  The list obeys the REAL endpoint contract (the 1c review's F1): `GET /threads` hides archived rows
+   *  unless `include_archived=true` is asked for. The first cut of this mock answered with the row either
+   *  way — so it could not have caught the very defect the review found, since every automation run
+   *  thread is archived and the read that wanted its pin was not asking for one. */
   const realFetch = globalThis.fetch;
-  function serve(agent: string | null) {
+  function serve(agent: string | null, archived = false) {
     globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
+      const row = { id: "t1", title: null, agent, created_at: "", updated_at: "", archived };
+      const listed = archived && !url.includes("include_archived=true") ? [] : [row];
       const body: unknown = url.endsWith("/messages")
         ? []
         : url.includes("/api/agent/turns/")
           ? { active: false }
-          : [{ id: "t1", title: null, agent, created_at: "", updated_at: "", archived: false }];
+          : listed;
       return Promise.resolve({ ok: true, status: 200, json: async () => body } as Response);
     });
   }
@@ -397,8 +404,8 @@ describe("the OPEN THREAD's pin is the ladder's second rung (wave 1c)", () => {
   });
 
   /** Open the pinned thread and let the LATE pin write land (it deliberately does not gate the swap). */
-  async function openPinned(agent: string | null) {
-    serve(agent);
+  async function openPinned(agent: string | null, archived = false) {
+    serve(agent, archived);
     await act(async () => {
       await openThread("t1");
       await Promise.resolve();
@@ -440,6 +447,15 @@ describe("the OPEN THREAD's pin is the ladder's second rung (wave 1c)", () => {
   it("a pin naming an agent the roster no longer has falls to the default's art", async () => {
     await openPinned("ghost");
     expect(src(draw(<AgentTab active />).container)).toBe(painted("hall"));
+  });
+
+  it("an ARCHIVED thread's pin paints too — every automation run thread is one", async () => {
+    // The 1c review's F1: `openThread`'s only production caller is the automations run history, an A3
+    // run mints an ARCHIVED thread pinned to the automation's agent, and a terminal per-run thread is
+    // deliberately continuable in chat. The bare list hides those rows, so the pin read asked for a
+    // record it could never be given and every run thread reported "unpinned".
+    await openPinned("lynette", true);
+    expect(src(draw(<AgentTab active />).container)).toBe(painted("lynette"));
   });
 
   it("REPAINTS when the owner opens another conversation (the thread pin is reactive)", async () => {

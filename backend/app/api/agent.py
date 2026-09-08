@@ -1150,8 +1150,18 @@ async def delete_steer(thread_id: str, entry_id: str, request: Request) -> dict[
 
 
 @router.get("/threads")
-async def list_threads(request: Request) -> list[dict[str, Any]]:
-    return [t.model_dump(mode="json") for t in await request.app.state.threads.list()]
+async def list_threads(request: Request, include_archived: bool = False) -> list[dict[str, Any]]:
+    """The thread list. `include_archived` maps straight onto the repo's own flag (`threads.list`),
+    which exists because an A3 automation mints an ARCHIVED thread per run (`runner.py`) and the
+    conversation list is the owner's, not the scheduler's.
+
+    Opt-IN, and the default stays false, because the two readers want opposite things: the chat's cold
+    load must never adopt an automation's thread as "the conversation you were in", while a reader that
+    already knows WHICH thread it wants — the FE's D11 pin read behind `openThread`, whose only caller
+    opens run threads out of the automations history — needs the archived rows or it sees nothing at
+    all and paints the default agent over a thread the server routes to a character."""
+    threads = await request.app.state.threads.list(include_archived=include_archived)
+    return [t.model_dump(mode="json") for t in threads]
 
 
 @router.post("/threads")
