@@ -173,6 +173,48 @@ describe("AgentRow · the roleplay fields on the form", () => {
     expect(screen.getByLabelText("Voice")).toBeTruthy();
   });
 
+  it("the PROMPT-shaped fields take the full-width row face; the one-liners keep label-left", () => {
+    // §13-S6b wave 2, the owner's ruling: the 104px label column is right for one-line inputs, Segs and
+    // switches, and wrong for the prompt-shaped fields and the two art rows — those take Conf →
+    // Prompts' presentation (`components/PromptRowFace`). The GRID SPAN is CSS; what is structural, and
+    // what this pins, is which face each field wears.
+    renderRow({}, true);
+    const form = document.querySelector(".mform");
+    const rowOf = (label: string) =>
+      [...(form?.querySelectorAll(".prow") ?? [])].find(
+        (r) => r.querySelector(".prow-name")?.textContent === label,
+      );
+    for (const label of [
+      "Persona · SOUL.md",
+      "Prompt append",
+      "Greeting",
+      "Example dialogue",
+      "Scenario",
+      "Post-history",
+      "Avatar",
+      "Backdrop",
+    ])
+      expect(rowOf(label), label).toBeTruthy();
+    // The marked help is the row's DESCRIPTION now, not a `.mfhelp` line trailing the control…
+    expect(rowOf("Greeting")?.querySelector(".prow-desc")?.textContent).toContain(
+      "opens a fresh thread",
+    );
+    // …the preview IS the opener, and the art row's body is the picture-as-button.
+    expect(rowOf("Greeting")?.querySelector(".prow-preview")).toBeTruthy();
+    expect(rowOf("Avatar")?.querySelector(".agart-face")).toBeTruthy();
+    // The old idiom is gone from this form entirely — nothing here opens "fullscreen" any more.
+    expect(form?.querySelector(".kv-prompt")).toBeNull();
+    // …and every one-line field is untouched: a bare <label> in the grid's own left column, its input
+    // beside it.
+    for (const label of ["Display name", "Your name", "Voice"]) {
+      const l = [...(form?.querySelectorAll(":scope > label") ?? [])].find(
+        (n) => n.textContent === label,
+      );
+      expect(l, label).toBeTruthy();
+      expect(l?.nextElementSibling?.tagName, label).toBe("INPUT");
+    }
+  });
+
   it("DUTIES is always visible — an agent fact, not a roleplay extra", () => {
     renderRow();
     expect(screen.getByText("Duties")).toBeTruthy();

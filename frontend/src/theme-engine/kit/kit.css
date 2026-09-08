@@ -7969,9 +7969,10 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
 }
 
 /* ── D70 §9 — the roleplay half of the AGENT FORM: the marked help line, and the two art-binding rows
- * (`components/AgentArtRow.tsx`). Both live inside the `.mform` grid, so they take the VALUE column
- * and the label column keeps its rhythm. Built from the recipes already here — the `.mrow-hint` faint
- * caveat, the `.mgal-tile` grid tile, the `.mfoot` footer buttons — on the semantic tokens only. ── */
+ * (`components/AgentArtRow.tsx`). The help line lives inside the `.mform` grid's VALUE column, under the
+ * control it clarifies; the art rows span the WHOLE grid since §13-S6b wave 2 (below). Built from the
+ * recipes already here — the `.mrow-hint` faint caveat, the `.mgal-tile` checkerboard, the `.prow-*`
+ * prompt-row face — on the semantic tokens only. ── */
 .kit .mconf .mform .mfhelp {
   grid-column: 2;
   margin-top: -4px;
@@ -7979,119 +7980,96 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   line-height: 1.45;
   color: var(--text-3);
 }
-.kit .mconf .mform .agart {
-  display: grid;
-  gap: 8px;
+/* ── §13-S6b wave 2 — THE FULL-WIDTH ROWS. The owner's round ruled the 104px label column right for
+ * one-line inputs, Segs and switches, and wrong for the prompt-shaped fields and the two art rows: those
+ * take Conf → Prompts' presentation (a label head line, a faint description under it, a tappable body).
+ * The FACE is that catalog's own (`components/PromptRowFace`), so this is the only rule it needs — span
+ * both columns, and drop the row FRAME, which belongs to a list of rows rather than to a field in a
+ * grid. The head line therefore starts on the form's own left edge, in line with every `label`. */
+.kit .mconf .mform .prow {
+  grid-column: 1 / -1;
+  padding: 0;
+  border-bottom: 0;
 }
-.kit .mconf .mform .agart-now {
+/* ── THE ART ROW: the picture IS the button (the researched dominant pattern — ST, open-webui,
+ * LibreChat, Telegram, WhatsApp, Material, HIG). Choosing, adding and unbinding all live in the LIBRARY
+ * PICKER it opens (`components/media/LibraryPicker` — the media manager's own grid), so what is left
+ * here is the face: a destination-shaped preview, a pencil corner, and the entry's name beside it. The
+ * thumb + three pill buttons + inline tile strip this replaces are gone with their rules. */
+.kit .mconf .mform .agart {
+  margin-top: 6px;
+}
+.kit .mconf .mform .agart-face {
+  all: unset;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
+  gap: 12px;
+  width: 100%;
+  cursor: pointer;
 }
-.kit .mconf .mform .agart-thumb {
+.kit .mconf .mform .agart-face:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+.kit .mconf .mform .agart-face[disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+/* One HEIGHT for both roles, so the square avatar and the 9:16 backdrop sit on the same line and the
+ * form keeps its rhythm; the aspect is the section's, set inline from the registry. The checkerboard is
+ * the gallery tile's, and for its reason (defect #9): alpha art must READ as transparent. */
+.kit .mconf .mform .agart-shot {
+  position: relative;
   flex: none;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  height: 120px;
+  aspect-ratio: var(--agart-aspect, 1);
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background:
+    repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0 / 12px 12px;
 }
-.kit .mconf .mform .agart-thumb img {
+/* NOTHING BOUND — the dashed frame the gallery's own Add row wears, so "there is no picture yet" looks
+ * the same in both places the owner meets it. */
+.kit .mconf .mform .agart-shot.empty {
+  border-style: dashed;
+  border-color: var(--line-2);
+  background: none;
+}
+.kit .mconf .mform .agart-shot img {
   width: 100%;
   height: 100%;
+  /* `cover`, not the grid's `contain`: this is the DESTINATION's shape, so the face shows what the
+   * window will actually keep — which is also what makes the framing point visible here. */
   object-fit: cover;
 }
-.kit .mconf .mform .agart-none {
+.kit .mconf .mform .agart-plus {
+  font-size: 22px;
+  line-height: 1;
   color: var(--text-3);
 }
-.kit .mconf .mform .agart-name {
+.kit .mconf .mform .agart-pencil {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--text);
+  background: color-mix(in oklch, var(--bg) 72%, transparent);
+}
+.kit .mconf .mform .agart-cap {
+  min-width: 0;
   font-family: ui-monospace, "JetBrains Mono", monospace;
   font-size: 11px;
   color: var(--text-2);
   overflow-wrap: anywhere;
-  min-width: 0;
-}
-/* The row's actions take the FOOTER-BUTTON recipe (`.mfoot button`) — the same outline pills the form
- * already ends on, so the two read as one family. */
-.kit .mconf .mform .agart-acts {
-  display: flex;
-  gap: 6px;
-}
-.kit .mconf .mform .agart-acts button {
-  all: unset;
-  flex: 1;
-  cursor: pointer;
-  text-align: center;
-  padding: 7px 0;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-sm);
-  color: var(--text-2);
-}
-.kit .mconf .mform .agart-acts button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.kit .mconf .mform .agart-acts button:not(:disabled):active {
-  background: var(--surface-2);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.kit .mconf .mform .agart-acts button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.kit .mconf .mform .agart-fail {
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--danger);
-}
-.kit .mconf .mform .agart-fail button {
-  all: unset;
-  cursor: pointer;
-  margin-inline-start: 8px;
-  color: var(--text-2);
-  text-decoration: underline;
-}
-/* The library strip: the gallery's own tile geometry at picker size. */
-.kit .mconf .mform .agart-pick {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-}
-.kit .mconf .mform .agart-tile {
-  all: unset;
-  box-sizing: border-box;
-  display: block;
-  width: 100%;
-  aspect-ratio: 1;
-  cursor: pointer;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-}
-.kit .mconf .mform .agart-tile img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.kit .mconf .mform .agart-tile.on {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
-}
-.kit .mconf .mform .agart-tile:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 /* ── D70 §5 — the card-import affordance + its REPORT, on the agents section. The report is an inline

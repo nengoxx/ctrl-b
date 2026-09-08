@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useProviders, useSaveSettings, useSettings } from "../hooks/useSettings";
-import { AVATARS_ROLE, BACKGROUNDS_ROLE } from "../hooks/useAgentArt";
 import { pickRoleplay } from "../hooks/useRoleplay";
 import {
   DEFAULT_AGENT,
@@ -15,8 +14,16 @@ import {
   type Privilege,
   type ReasoningEffort,
 } from "../hooks/useAgents";
-import { AgentArtRow, AgentCropStep, useAgentArtStudio } from "./AgentArtRow";
+import {
+  AgentArtPickers,
+  AgentArtRow,
+  AgentCropStep,
+  ART_FIELDS,
+  useAgentArtStudio,
+  type ArtField,
+} from "./AgentArtRow";
 import { LorebookPicker } from "./LorebooksEditor";
+import { FieldRow, PromptRowFace } from "./PromptRowFace";
 import { ProviderModelPicker, type PickerCatalog } from "./ProviderModelPicker";
 import { Seg } from "./Seg";
 import { Switch } from "./Switch";
@@ -101,7 +108,14 @@ export function roleplayFieldVisible(enabled: boolean, value: unknown): boolean 
 /** The form's LONG-TEXT idiom, once: a one-line preview that opens the shared fullscreen editor
  *  (`PromptModal`). It was two hand-rolled copies here (the SOUL persona and the prompt append) and
  *  D70 adds four more, so it is a component rather than a sixth copy — the two originals now render
- *  through it too, byte-identically. */
+ *  through it too, byte-identically.
+ *
+ *  Since the owner's backdrop round (§13-S6b wave 2) the FACE is Conf → Prompts' own
+ *  (`./PromptRowFace`), on the owner's ruling: a prompt-shaped field reads better as a full-width label
+ *  line + a faint description + a tappable preview than as a 104px label column beside a preview with an
+ *  "Edit fullscreen ↗" button to aim at. The label-left layout stays for everything that is NOT
+ *  prompt-shaped — the one-line inputs, the Segs, the grids — because those are exactly the rows the
+ *  narrow value column serves well. */
 function LongField(props: {
   label: string;
   title: string;
@@ -122,16 +136,15 @@ function LongField(props: {
     if (next != null && next !== props.value) props.onCommit(next);
   };
   return (
-    <>
-      <label>{props.label}</label>
-      <div className="kv-prompt">
-        <div className="prompt-preview">{promptPreview(props.value, props.placeholder)}</div>
-        <button type="button" className="prompt-open" onClick={open}>
-          Edit fullscreen ↗
-        </button>
-      </div>
-      {props.help != null && <FieldHelp text={props.help} />}
-    </>
+    <PromptRowFace
+      label={props.label}
+      // The MARKED HELP moves INTO the row rather than trailing it as a separate `.mfhelp` line: it is
+      // the same sentence in the same place Conf → Prompts puts a registry description.
+      description={props.help}
+      preview={promptPreview(props.value, props.placeholder)}
+      openTitle={`Edit ${props.label}`}
+      onOpen={open}
+    />
   );
 }
 
@@ -169,6 +182,9 @@ function AgentFieldsForm(props: {
   // ONE image-job machine + ONE media-write queue for BOTH art rows (§4's rule ①: one job at a time,
   // one latch). Mounted here rather than in the rows so closing one row cannot strand a running job.
   const studio = useAgentArtStudio();
+  // WHICH art picker is open — the form's state because the picker is the form's own sibling (see the
+  // mount below). A field NAME, never a captured row: what it writes is resolved from the live draft.
+  const [picking, setPicking] = useState<ArtField | null>(null);
   const catalog: PickerCatalog = Object.fromEntries(
     Object.entries(providersInfo?.providers ?? {}).map(([n, p]) => [n, { models: p.models }]),
   );
@@ -409,29 +425,28 @@ function AgentFieldsForm(props: {
             <FieldHelp text={FIELD_HELP.voice} />
           </>
         )}
+        {/* THE TWO ART ROWS take the same full-width face as the prompt fields above (§13-S6b wave 2):
+          the field name as a head line, the marked help as its description, and the row's own body —
+          the bound picture, as the button that opens the library. */}
         {rpShow(a.avatar) && (
-          <>
-            <label>Avatar</label>
+          <FieldRow label={ART_FIELDS.avatar.label} description={FIELD_HELP.avatar}>
             <AgentArtRow
               studio={studio}
-              role={AVATARS_ROLE}
+              field="avatar"
               value={a.avatar ?? ""}
-              onChange={(entry) => set({ avatar: entry })}
+              onOpen={() => setPicking("avatar")}
             />
-            <FieldHelp text={FIELD_HELP.avatar} />
-          </>
+          </FieldRow>
         )}
         {rpShow(a.background) && (
-          <>
-            <label>Backdrop</label>
+          <FieldRow label={ART_FIELDS.background.label} description={FIELD_HELP.background}>
             <AgentArtRow
               studio={studio}
-              role={BACKGROUNDS_ROLE}
+              field="background"
               value={a.background ?? ""}
-              onChange={(entry) => set({ background: entry })}
+              onOpen={() => setPicking("background")}
             />
-            <FieldHelp text={FIELD_HELP.background} />
-          </>
+          </FieldRow>
         )}
         {/* D70 §6.5 — the lorebook ATTACHMENT picker. Deliberately NOT behind `rpShow` (plan ruling 9):
           lorebooks are roleplay-INDEPENDENT — reference data any agent can carry — so the picker is
@@ -505,8 +520,18 @@ function AgentFieldsForm(props: {
           })}
         </div>
       </div>
-      {/* The crop step, a SIBLING of the form rather than a child of either art row (the MediaGallery
-          placement): a job outlives the row that started it. */}
+      {/* The two art PICKERS and the crop step, SIBLINGS of the form rather than children of an art row
+          (the MediaGallery placement): a job outlives the row that started it, and an overlay must not
+          sit inside the `.mform` grid whose field recipe would dress its own controls (§13-S6b wave 2 —
+          see `AgentArtRow`'s header). Which one is open is the FORM's state; what it writes is read from
+          the live draft below, never captured when it opened. */}
+      <AgentArtPickers
+        studio={studio}
+        open={picking}
+        values={{ avatar: a.avatar ?? "", background: a.background ?? "" }}
+        onChange={(field, entry) => set({ [field]: entry })}
+        onClose={() => setPicking(null)}
+      />
       <AgentCropStep job={studio.job} />
     </>
   );

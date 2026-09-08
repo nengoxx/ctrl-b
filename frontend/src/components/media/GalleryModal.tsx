@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { ItemDetail } from "./ItemDetail";
 import { LibraryGrid } from "./LibraryGrid";
+import { AddImageRow, UploadFailureRow } from "./UploadRow";
 import { XIcon } from "../icons";
 import {
   libraryItems,
@@ -16,7 +17,6 @@ import type { MediaUpload } from "../../hooks/useMediaUpload";
 import { modalKeyDown } from "../../lib/focusTrap";
 import { defaultsRestorable, rowId, type ActiveArt } from "../../lib/mediaLibrary";
 import { requestConfirm } from "../../store/confirm";
-import { UPLOAD_ACCEPT } from "../../theme-engine/mediaRegistry";
 
 // The full-screen GALLERY (MEDIA_MANAGER_PLAN §6.2, R59 §11.2) — one section's whole library, on the
 // HOUSE dialog shell.
@@ -236,20 +236,9 @@ export function GalleryModal({
               the pictures (the header line above, the card underneath, the folder line below). */}
           {/* An ALERT, not a second status (Emma W10 #4): the header line above is the section's ONE
               `role="status"`, and a failure is the assertive kind of news anyway — it interrupts a job
-              the owner started, rather than describing the list they are looking at. */}
-          {upload.failure !== null && (
-            <p className="mgal-fail" role="alert">
-              <b>{failureTitle(upload.failure.phase)}</b> {upload.failure.message}
-              {upload.failure.retry !== undefined && (
-                <button type="button" className="mgal-act" onClick={upload.failure.retry}>
-                  Try again
-                </button>
-              )}
-              <button type="button" className="mgal-act" onClick={upload.dismiss}>
-                Dismiss
-              </button>
-            </p>
-          )}
+              the owner started, rather than describing the list they are looking at. Shared with the
+              LIBRARY PICKER since D70 §13-S6b — one upload surface, one vocabulary (`./UploadRow`). */}
+          <UploadFailureRow upload={upload} />
           {/* A pin naming something the library no longer holds. The theme has already degraded to its
               own next rung, but the VALUE is still in config and nothing else on this screen can reach
               it — there is no tile to select. So the notice carries its own way out. */}
@@ -353,33 +342,7 @@ export function GalleryModal({
           {/* ── BELOW THE GRID: how to PUT SOMETHING IN IT ("W10") ─────────────────────────────────
               The three ways to change what is above, in the order they are reached for: the picker,
               the folder (the same library, over SSH), and the way back to what shipped. */}
-          {section.caps.upload && (
-            <>
-              {/* HIDDEN, `accept`ed by explicit types, and NO `capture` (R54 §5.1/§5.4): both engines
-                  already offer the camera in the chooser for an image accept list, and `capture`
-                  would make the camera the only option. `input.value` is reset in the handler. */}
-              <input
-                ref={upload.inputRef}
-                type="file"
-                accept={UPLOAD_ACCEPT}
-                hidden
-                onChange={upload.onInputChange}
-              />
-              <button
-                type="button"
-                className="mgal-add"
-                disabled={!upload.ready || upload.busy}
-                onClick={upload.pick}
-              >
-                <span aria-hidden>＋</span> {upload.busy ? working(upload.phase) : "Add an image"}
-                <small>
-                  {upload.busy
-                    ? "keep this open until it finishes"
-                    : "a photo or a picture — you can crop it next"}
-                </small>
-              </button>
-            </>
-          )}
+          {section.caps.upload && <AddImageRow upload={upload} />}
           {/* THE FOLDER, as the OTHER way in rather than as a fact about the section — one line doing
               the work of two ("W10"): the standalone path paragraph said where the files live without
               saying why the owner would care, and the empty state repeated the same instruction in
@@ -479,31 +442,6 @@ async function confirmRestore(
     confirmLabel: "Restore",
   });
   if (ok) onRestore();
-}
-
-/** What the Add row says while a job runs. Per PHASE, because they take visibly different amounts of
- *  time on a phone and "working…" for four seconds reads as a hang. */
-function working(phase: MediaUpload["phase"]): string {
-  // `null` while the CROP step is open: the job holds the latch, but nothing is running — the app is
-  // waiting for the owner, behind a modal that covers this row anyway.
-  if (phase === null) return "Working…";
-  if (phase === "guard") return "Opening the picture…";
-  if (phase === "export") return "Preparing the image…";
-  if (phase === "upload") return "Uploading…";
-  if (phase === "replace") return "Saving the change…";
-  return "Saving…";
-}
-
-/** The failure row's own heading — WHICH step failed, because the answer differs completely: a
- *  refused pick means choose another file, a failed upload means try again, a failed REPLACE means the
- *  stored picture is untouched (Emma W10 #2 — an edit is not an upload and must not borrow its copy),
- *  and a failed registration means the picture is already on the server. */
-function failureTitle(phase: MediaUpload["phase"]): string {
-  if (phase === "guard") return "That picture cannot be used —";
-  if (phase === "export") return "The image could not be prepared —";
-  if (phase === "upload") return "The upload did not finish —";
-  if (phase === "replace") return "The change was not saved —";
-  return "Uploaded, but not saved to the list —";
 }
 
 /** The dialog's own name. A section scoped to a KEY is titled by that key plus what a file of the role

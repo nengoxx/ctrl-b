@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { PromptRowFace } from "./PromptRowFace";
 import { WarnRow } from "./WarnRow";
 import { useSavePromptOverrides, usePrompts } from "../hooks/usePrompts";
 import { promptPreview } from "../lib/promptPreview";
@@ -85,11 +86,23 @@ export function PromptsEditor() {
               section has no title and simply trails the named ones. */}
           {section.group !== "" && <div className="pgroup-head">{section.group}</div>}
           {section.rows.map((p) => (
-            <div className="prow" key={p.id}>
-              <div className="prow-head">
-                <span className="prow-name">{p.label}</span>
-                {p.is_customized && <span className="tcat-mod">customized</span>}
-                {p.is_customized && (
+            // THE ROW FACE is shared since D70 §13-S6b (`./PromptRowFace`) — the agent form's long-text
+            // fields take this exact presentation on the owner's ruling, and one face is what keeps the
+            // two surfaces from drifting. Nothing about this row changed with the extraction: the
+            // badge rides `modified`, the restore rides `trailing`, and the preview accent (§9a-2 — a
+            // quiet persistent border, not a transition) rides the same flag.
+            <PromptRowFace
+              key={p.id}
+              label={p.label}
+              description={p.description}
+              modified={p.is_customized}
+              preview={promptPreview(
+                draft[p.id] ? composeTemplate(draft[p.id], p.default_text) : p.current,
+                "empty",
+              )}
+              onOpen={() => void edit(p)}
+              trailing={
+                p.is_customized && (
                   <button
                     type="button"
                     className="prow-restore"
@@ -97,27 +110,9 @@ export function PromptsEditor() {
                   >
                     restore
                   </button>
-                )}
-              </div>
-              {p.description && <div className="prow-desc tcat-faint">{p.description}</div>}
-              {/* A real <button> (Codex MED): the editor opener must be keyboard-reachable, and a real
-              trigger is what the modal's close-focus restore lands back on. */}
-              {/* §9a-2 — a QUIET persistent accent on the field box beside the existing badge: with the
-              duties pair in the catalog, "which prompts did I change" has to be legible at a glance.
-              A border, not a transition (§14.11 has nothing to animate here). */}
-              <button
-                type="button"
-                className={"prow-preview" + (p.is_customized ? " mod" : "")}
-                onClick={() => void edit(p)}
-                title="Edit prompt"
-              >
-                {promptPreview(
-                  draft[p.id] ? composeTemplate(draft[p.id], p.default_text) : p.current,
-                  "empty",
-                )}
-                <span className="tcat-edit"> ✎</span>
-              </button>
-            </div>
+                )
+              }
+            />
           ))}
         </div>
       ))}
