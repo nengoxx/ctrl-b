@@ -12,7 +12,51 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-08, NINTH session — THE OWNER'S WORD CLOSED S5, then **S6 (the three-state backdrop) ran the WHOLE cadence in one session and is council-CLOSED: micro-confirm PASS**; supersedes below where it speaks)
+## Current state (2026-09-08, TENTH session — THE OWNER'S BACKDROP ROUND LANDED 4 FINDINGS; **wave 1 (②+③) ran the whole cadence and is council-CLOSED: RESOLVED — SHIP**; wave 2 (①+④) designed + owner-confirmed, PENDING; supersedes below where it speaks)
+
+- **The owner's phone round on S6 came back with four findings, restated + confirmed in
+  conversation** (full record = **plan §13-S6b**): ① the agent form's avatar/backdrop PICKER
+  is confusing · ② Lynette showed the DEFAULT backdrop (root cause: a card import binds only
+  the avatar; resolution read `background` only — NOT a priority bug) · ③ `full` mode started
+  a band below the pane's top + a 30px `--bg` haze across the art · ④ the agent form's
+  long-text fields should take the Conf → Prompts presentation. **Ruled two waves; the owner
+  confirmed the whole design** (backdrop order = background → avatar → default; picker =
+  image-as-button → the media-manager library in pick mode, the researched dominant pattern).
+- **Wave 1 ran end to end and is council-CLOSED:** three seam scouts + a picker-UX research
+  pass → main-seat design → the owner's word → Opus build **1a `864f447`**
+  (`useActiveBackdrop` returns `background ?? avatar` — the ONE chokepoint all three
+  consumers read; 5 unit arms, 2 red-proven) → **the builder's STOP-CLAUSE catch**: the
+  brief's gap mechanism was measured WRONG (sticky rests on the scroller's CONTENT box — the
+  kit comment was right, the scout wasn't; the margin-pair pull collapses through the
+  first-child zero-height pin and nets ZERO) → main seat accepted the builder's measured
+  alternative → **1b `d74eecb`** (ONE `--kit-backdrop-lift` token; the ABSOLUTE ART LAYER
+  pulled by `-lift`, height subtractions dropped — art top Δ 0.0 in all 4 bar modes ×
+  plan/no-plan, rest AND stuck, overflow still 0; the seam scrim yields via
+  `:has(.tab.active > .kit-backdrop-pin)`; e2e 14 → 20, claim arms red-proven) → main-seat
+  audits (all deviations accepted) → **blind Emma round: SHIP WITH FIXES 1M·2L, sweep
+  "none"**, all ruled FIX → wave **`6657a9b`** (`OUTRANKED.agent` says "own ART is used" ·
+  the scrim e2e rides ONE boot + a live two-way tab transition · §8.3/§8.3a's five clauses
+  say the shipped ladder) → **her confirm: all 3 RESOLVED with line proof, sweep "none" —
+  RESOLVED — SHIP.**
+- **Gate at tip: 6/6 — BE 2,373 · FE 3,066/178 · e2e agent-backdrop 20/20 both projects**
+  (counts in QUALITY.md). FE-only; **:5173 serves it live; both dev units RUNNING (D69 — do
+  NOT stop them).** ⚠ The §13-S6 ops rules held: gate FOREGROUND, never concurrent with an
+  Emma Chromium round.
+- **▶▶ NEXT: the owner's phone glance at wave 1** (dev :5173 — pin Lynette: her card art now
+  paints as her backdrop; Conf → Appearance → Agent backdrop `full`: edge-to-edge to the true
+  top, no haze band) **→ then WAVE 2, its own session + cadence (plan §13-S6b's pending
+  block): ① the picker** (image-as-button → the library in PICK mode; the `.agart-pick`
+  duplicate strip DELETED) **+ ④ the prompt rows** (extract the Prompts row face, the agent
+  form's `LongField`s take it). The S6→S7 ladder is unchanged behind it: the owner's word
+  closes S6's feel round, **S7 = the owner DEVICE round = the phase gate (§10-S7)**.
+- **Git: 88 commits unpushed over origin `04769d9`** (the 83 + `864f447` + `d74eecb` +
+  `6657a9b` + this docs commit + the memory commit if any); working tree clean at write; the
+  PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline
+  (Dependabot D1 → push → release E, config migration 2→3, rollback = config backup FIRST
+  then v1.7.7) is unchanged and still owed; sequencing is the owner's. **NEXT-NEXT (owner):
+  LIVE VOICE/CALL MODE — R51, buy only the delta.**
+
+## Prior state (2026-09-08, NINTH session — THE OWNER'S WORD CLOSED S5, then **S6 (the three-state backdrop) ran the WHOLE cadence in one session and is council-CLOSED: micro-confirm PASS**; superseded above where it speaks)
 
 - **The session opened on the owner's word ("yes lets continue") — S5 CLOSED (`0ee3474`) — and
   S6 ran end to end:** two seam scouts → main-seat design → **the owner's clarify round in

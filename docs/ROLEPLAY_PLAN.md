@@ -1894,3 +1894,73 @@ contention class.
 
 **S6 owes nothing forward. The owner's phone round on the three states (dev :5173) is the
 natural close; then S7 — the owner device round — IS the phase gate (§10-S7).**
+
+### §13-S6b — THE OWNER'S BACKDROP ROUND (2026-09-08): four findings; wave 1 BUILT + COUNCIL-CLOSED (RESOLVED — SHIP); wave 2 designed + owner-confirmed, PENDING
+
+**The round (phone, in conversation), restated and owner-confirmed as four findings + a
+two-wave plan:** ① the agent form's avatar/backdrop picker is confusing (a thumb, a `choose`
+button that unfolds a tile strip, sibling `upload`/`clear`) · ② Lynette showed the theme's
+default backdrop — root cause NOT a priority bug: a card import binds only the AVATAR, her
+`background` is empty, and resolution read `background` only · ③ `full` mode started a
+visible band below the pane's top with a 30px `--bg` haze across the art's top edge · ④ the
+agent form's long-text fields should take the Conf → Prompts presentation (label line + faint
+description + tappable preview box), which the owner prefers over the 104px-label +
+"Edit fullscreen ↗" idiom. **Wave 1 = ②+③ (mechanical, this record); wave 2 = ①+④ (the two
+presentation reshapes, its own cadence).** Owner design confirms taken in conversation:
+backdrop order = bound `background`, else `avatar`, else the existing default; the picker
+becomes image-as-button → the media-manager library in pick mode (upload a tile INSIDE the
+grid, remove inside the picker, shown only when set — the researched dominant pattern:
+ST/open-webui/LibreChat/Telegram/WhatsApp + Material/HIG all agree, sources in the session's
+research pass).
+
+**Wave 1's road:** three parallel seam scouts (resolution chain · picker components · prompts
+presentation) + a bounded picker-UX research pass → main-seat design in plain prose → the
+owner's word → pinned Opus build. **1a `864f447`:** `useActiveBackdrop` returns
+`a.background ?? a.avatar` — folded at that ONE chokepoint (kit paint, gacha's ladder, the
+gallery's `hasAgentArt` report all read it; `resolveAgentArt` untouched so
+`AgentArt.background` stays the truthful binding); 5 unit arms over the real roster×index
+chain, 2 red-proven. **The builder's STOP-CLAUSE catch (a process win worth keeping):** the
+brief's gap mechanism was WRONG twice — the seeded scout misread sticky anchoring (engines
+rest sticky against the scroller's CONTENT box; the shipped kit.css comment was right), and
+the prescribed compensated margin-pair pull on the pin measured INERT (first in-flow
+self-collapsing zero-height child — the pair collapses through the parent and nets zero) while
+regressing the overflow invariant by exactly the lift. The builder stopped per brief, probed,
+and delivered a measured alternative; the main seat overruled its own design and accepted.
+**1b `d74eecb`:** ONE token `--kit-backdrop-lift` (= `--appbar-h + --kit-inset-top`) minted on
+the pin; the ABSOLUTE ART LAYER is pulled by `-lift` with the height's two subtractions
+dropped (no flow box moves, no margin touched; state-independent because the pin's seat is
+`lift` below the scroller top at rest AND stuck, every bar mode) — measured from source: art
+top Δ 0.0 in all four bar modes × plan/no-plan, at rest and stuck, overflow still 0; the seam
+scrim `.kit-main::before` yields via `:has(.tab.active > .kit-backdrop-pin)` (pin-scoped so
+`operator` keeps it; active-scoped because bodies are keep-mounted). The dead end is recorded
+in the commit message + the layer comment so nobody re-walks it. e2e 14 → 20 (geometry
+edge-to-edge + overflow restated · scrim yields-and-returns · the operator-guard), the two
+claim arms red-proven.
+
+**The council close:** blind Emma round (R46 brief, hermes lane, `--ignore-rules`) —
+**SHIP WITH FIXES: 1 MED · 2 LOW, open sweep "none"**, every mechanism section explicitly
+cleared (fallback vs every consumer · safe-area/desktop/pinned-plan/late-`--kit-pane-h`
+geometries · scrim lifecycle · walk driver). All three ruled FIX → wave **`6657a9b`**:
+① (MED) `OUTRANKED.agent` said "own background is used" — a LIE when the avatar stands in
+(the exact honesty class §13-S6's ③ existed for); now "own art is used", all four occurrences,
+none survive · ② (LOW) the scrim e2e's double-`boot()` stacked competing `addInitScript`s
+(unguaranteed order — the known first-run-flake class); now ONE boot + LIVE two-way tab
+transition, the better claim · ③ (LOW) §8.3/§8.3a's five resolution clauses said
+background-only; amended to the shipped ladder, theme-fallback preserved. Her confirm:
+**all 3 RESOLVED with line proof, diff sweep "none" — FINAL VERDICT: RESOLVED — SHIP.**
+
+**Gate at tip `6657a9b`: 6/6 — BE 2,373 · FE 3,066/178 · e2e agent-backdrop 20/20 both
+projects** (counts in QUALITY.md). FE-only wave; :5173 serves it live; dev units RUNNING
+throughout (D69).
+
+**Wave 2 (pending, its own cadence next session): ① the picker** — the row becomes a
+destination-shaped tappable preview (SectionCard face; "add an image" when empty) opening the
+media-manager library in PICK mode; the hand-rolled `.agart-pick` strip and the three sibling
+pill buttons are DELETED (the scouted duplication: `AgentArtRow` reuses the hooks but none of
+the Phase 21 UI — `GalleryModal`/`LibraryGrid`/`ItemDetail` have exactly one consumer today).
+**② the prompt rows** — extract the Prompts editor's row face (label head · faint desc ·
+preview-as-button, the `.prow-*`/`.tcat-*` family) into a shared component; the agent form's
+`LongField` fields take it; the modal machinery is already shared (`requestPromptPair` is
+string-typed, `PairBody` needs an export). Residual for wave 2's brief: the `operator` strip
+can still show the scrim over its art's first ~20px (deliberately left — the strip scrolls
+away; revisit only if the owner's eye catches it).
