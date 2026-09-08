@@ -5,7 +5,6 @@ import { useActiveBackdrop } from "./useActiveBackdrop";
 import { useMediaGalleryIndex, type MediaFile, type MediaIndex } from "./useMedia";
 import { useSaveSettings, useSettings, type MediaFileEntry, type SettingsDoc } from "./useSettings";
 import { del } from "../api/client";
-import type { FocalPoint } from "../lib/focalPosition";
 import { bindingKey, boundByKey } from "../lib/media";
 import {
   appendItem,
@@ -22,6 +21,7 @@ import {
   setFocal,
   toggleHidden,
   type ActiveArt,
+  type EditedFocal,
   type LibraryEntry,
   type PinRef,
   type RowId,
@@ -449,7 +449,8 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
             settle: resolve,
           });
         }),
-      /** The **framing point** (§5). The owner's `{x, y}`, or `null` to clear it.
+      /** The **framing** (§5). The owner's `{x, y}` and, since D70 §13-S6b wave 3, the circle windows'
+       *  `z` — one object, set and cleared together, because it is one framing. `null` clears it.
        *
        *  `expectedRev` is the revision the SHEET rendered — the bytes the owner was actually looking
        *  at while they placed the point. It is the whole of Emma's S4 review #2, and the hole it
@@ -477,7 +478,7 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
       setFocal: (
         section: MediaSection,
         item: LibraryItem,
-        point: FocalPoint | null,
+        point: EditedFocal | null,
         expectedRev: string,
       ) => {
         if (!section.caps.frame) return;

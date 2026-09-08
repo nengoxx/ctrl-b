@@ -10,14 +10,22 @@ import {
 import Cropper, { type Area, type MediaSize } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 
+import { FocalFace } from "../FocalFace";
 import { FocalImg } from "../FocalImg";
 import { XIcon } from "../icons";
 import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
 import type { LibraryItem } from "../../hooks/useMediaLibrary";
-import { centredFocal, type FocalPoint } from "../../lib/focalPosition";
+import {
+  centredFocal,
+  clampZoom,
+  FOCAL_ZOOM_MAX,
+  FOCAL_ZOOM_MIN,
+  FOCAL_ZOOM_STEP,
+  type FocalPoint,
+} from "../../lib/focalPosition";
 import { modalKeyDown } from "../../lib/focusTrap";
-import { focalState, rowFocal, tileUrl } from "../../lib/mediaLibrary";
-import type { MediaSection } from "../../theme-engine/mediaRegistry";
+import { focalState, rowFocal, tileUrl, type EditedFocal } from "../../lib/mediaLibrary";
+import { framesCircle, type MediaSection } from "../../theme-engine/mediaRegistry";
 
 // THE FRAMING SHEET (D65 / MEDIA_MANAGER_PLAN §5, R57 §9) — where the owner says which part of a
 // picture matters, so every window that crops it keeps that part on screen.
@@ -33,9 +41,33 @@ import type { MediaSection } from "../../theme-engine/mediaRegistry";
 //  · a SMALL explicit `cropSize` (see `RETICLE_FRACTION`) — the default would size the crop area to
 //    the whole media on its short axis, which locks one axis of the pan at dead centre forever;
 //  · `restrictPosition={false}` plus our own `panLimit` — its rule keeps the whole crop AREA inside the
-//    picture, which would fence the focal point out of the picture's own edges (see `panLimit`);
-//  · NO ZOOM (`minZoom = maxZoom = 1`). Zoom is the recorded-but-unbuilt `z` field (§5's "future
-//    recorded, not built"): offering a pinch whose result is thrown away on save would be a lie.
+//    picture, which would fence the focal point out of the picture's own edges (see `panLimit`).
+//
+// ── THE ZOOM, and the one role that has one (D70 §13-S6b wave 3) ─────────────────────────────────
+//
+// The comment that stood here said there was NO zoom because `z` was recorded and unbuilt, and that
+// offering a pinch whose result is thrown away would be a lie. `z` is built now, and it is offered
+// exactly where something reads it: a role that declares a CIRCLE destination (`framesCircle` — the
+// avatars library and nothing else today). Backgrounds keep the sheet unchanged, because a full-bleed
+// backdrop honours the point and not the zoom, and a control with no consumer is the same lie in the
+// other direction.
+//
+// **THE RETICLE STAYS A RETICLE, at every zoom.** It is tempting to make the circle on the stage BE the
+// chat face — a round crop area at the media's short axis, `restrictPosition` on, WYSIWYG. Measured
+// against the shared-centre trade the owner ratified, that design loses: the library's fence keeps the
+// whole crop AREA inside the picture, so on a 3:4 portrait the square window's crop can only travel in
+// Y and the X of the point is pinned at 0.5 forever — and that same point is what the FULL-BLEED
+// backdrop reads, where X is the axis that crops. One centre serves both windows only if every point
+// stays addressable, which is what the small reticle and our own `panLimit` are for. The exact circle
+// the owner asked for is the PREVIEW instead, and it is the one preview in this strip that is not an
+// approximation: a circle is always aspect 1, so `FocalFace` paints it through the destination's own
+// arithmetic at whatever size it is drawn (`lib/focalPosition.ts#circleFraming`).
+//
+// What the stage's zoom then means is "magnify by this much", and it means the same thing in both
+// places: the picture grows under the reticle by `z`, and the destination circle shows `1/z` of the
+// cover crop it would otherwise show. The pan travels with it — `panLimit` and `seedPan` both carry the
+// factor, because the library composes `translate(crop) scale(zoom)` and a point at fraction `f` sits
+// at `(f − 0.5)·media·z + crop`.
 //
 // The focal point IS the crop centre, in the library's own percentage output — `onCropAreaChange`
 // fires on every pointer move, so the previews below animate under the finger (Sanity's form, R57 §4).
@@ -47,8 +79,10 @@ import type { MediaSection } from "../../theme-engine/mediaRegistry";
 // **THE PREVIEWS ARE EXAMPLES** and say so (Statamic's `focal_point_previews_are_examples`, R57 §4③).
 // Their aspects come from the registry's `MediaPreviewDef` rows, which are declared coarse in the
 // type's own doc comment: the real surfaces' CSS is the paint authority. What they are NOT
-// approximating is the MATH — each preview is a `FocalImg` over its own measured box, i.e. the same
-// code path the real window runs, so where the point lands in a preview of that shape is exact.
+// approximating is the MATH — each preview runs the destination's own component (`FocalImg` over its
+// own measured box for a rectangle, `FocalFace` for a circle), so where the point lands in a preview of
+// that shape is exact. The CIRCLE one is exact FULL STOP, aspect included: a circle is always 1:1 and
+// its crop does not depend on its diameter, so the "chat face" below is the chat face.
 
 /** The reticle's side, as a fraction of the stage's short axis, with a floor and a ceiling in CSS px.
  *
@@ -75,12 +109,18 @@ const TAP_SLOP = 6;
  *  Shopify's four decimals are storage habit rather than a requirement. */
 const FOCAL_DECIMALS = 2;
 
+/** How many decimals of the ZOOM are stored. Two, because the slider's step is 0.05 — the stored value
+ *  is exactly what the control can express, and nothing finer can arrive from it. */
+const ZOOM_DECIMALS = 2;
+
 interface FramingState {
   /** The library's pan, in container pixels — the offset of the media's centre from the reticle's. */
   crop: { x: number; y: number };
   /** The live focal point, from the crop area's own percentages — or, until the picture has loaded,
    *  the STORED one this sheet opened on. `null` only when there is neither. */
   point: FocalPoint | null;
+  /** The live zoom (`>= 1`; 1 = no zoom). Only a circle-framing role can move it. */
+  zoom: number;
   /** The rendered + natural media size, once the picture has loaded. */
   media: MediaSize | null;
   /** The point this sheet OPENED on (Emma's S4 review #1), or `null` for an unframed item. */
@@ -93,18 +133,20 @@ interface FramingState {
 type FramingAction =
   | { t: "pan"; crop: { x: number; y: number } }
   | { t: "area"; area: Area }
+  | { t: "zoom"; zoom: number }
   | { t: "loaded"; media: MediaSize };
 
 /** The sheet's opening state, from whatever framing the item already has.
  *
  *  A `useReducer` LAZY initializer rather than a constant, because the seed is a prop: an item opened
  *  for a look rather than an edit must not have its framing quietly replaced by the centre. */
-export function initialFraming(seed: FocalPoint | undefined): FramingState {
+export function initialFraming(seed: EditedFocal | undefined): FramingState {
   return {
     crop: { x: 0, y: 0 },
-    point: seed ?? null,
+    point: seed === undefined ? null : { x: seed.x, y: seed.y },
+    zoom: clampZoom(seed?.z),
     media: null,
-    seed: seed ?? null,
+    seed: seed === undefined ? null : { x: seed.x, y: seed.y },
     applied: seed === undefined,
   };
 }
@@ -130,6 +172,13 @@ export function framingReducer(state: FramingState, action: FramingAction): Fram
           y: clamp01((action.area.y + action.area.height / 2) / 100),
         },
       };
+    case "zoom":
+      // THE ZOOM ALONE. The library's own gesture handlers report the matching pan FIRST and the zoom
+      // second (`setNewZoom` calls `onCropChange` then `onZoomChange`, index.module.mjs:507-520), so
+      // re-deriving the pan here would apply the correction twice. The SLIDER, which the library knows
+      // nothing about, dispatches the same pair — see `zoomPan`, which is the library's own
+      // zoom-about-a-point arithmetic taken at the container's centre.
+      return { ...state, zoom: clampZoom(action.zoom) };
     case "loaded": {
       // The picture's size is the last thing the seed needed: until now there was no way to say where
       // 0.42 across it IS. Deriving the pan here is what puts the stored point under the reticle, and
@@ -139,7 +188,7 @@ export function framingReducer(state: FramingState, action: FramingAction): Fram
         ...state,
         media: action.media,
         applied: true,
-        crop: seedPan(state.seed, action.media),
+        crop: seedPan(state.seed, action.media, state.zoom),
       };
     }
   }
@@ -154,9 +203,15 @@ export function framingReducer(state: FramingState, action: FramingAction): Fram
  *  `[r/2W, 1 − r/2W]`, and with a 30% reticle over a contained portrait that is the middle THREE FIFTHS
  *  of the picture. A subject near an edge would be unaddressable, silently, with no sign of why. Half
  *  the picture is the honest limit: every point is reachable, and the picture can never travel further
- *  than its own middle. */
-export function panLimit(media: MediaSize): { x: number; y: number } {
-  return { x: Math.abs(media.width) / 2, y: Math.abs(media.height) / 2 };
+ *  than its own middle.
+ *
+ *  **AND IT GROWS WITH THE ZOOM.** The library paints `translate(crop) scale(zoom)`, so a magnified
+ *  picture is `media·zoom` wide on the stage and reaching its far edge takes `media·zoom/2` of pan. A
+ *  limit that ignored the factor would fence the reticle into the middle `1/z` of a zoomed picture —
+ *  the very unaddressability this function exists to refuse, arriving through the back door. */
+export function panLimit(media: MediaSize, zoom = FOCAL_ZOOM_MIN): { x: number; y: number } {
+  const z = clampZoom(zoom);
+  return { x: (Math.abs(media.width) * z) / 2, y: (Math.abs(media.height) * z) / 2 };
 }
 
 /** One pan, clamped — the ONE place that happens, because `crop` is a CONTROLLED prop: react-easy-crop
@@ -165,9 +220,10 @@ export function panLimit(media: MediaSize): { x: number; y: number } {
 export function clampPan(
   crop: { x: number; y: number },
   media: MediaSize | null,
+  zoom = FOCAL_ZOOM_MIN,
 ): { x: number; y: number } {
   if (media === null) return crop;
-  const limit = panLimit(media);
+  const limit = panLimit(media, zoom);
   return { x: clamp(crop.x, limit.x), y: clamp(crop.y, limit.y) };
 }
 
@@ -182,8 +238,36 @@ export function clampPan(
  *  It is the whole of "open a framed image and see its framing", and without it the sheet opened at
  *  the centre while the library immediately reported that centre as the live point — so confirming
  *  without touching anything replaced the owner's framing with the middle of the picture. */
-export function seedPan(point: FocalPoint, media: MediaSize): { x: number; y: number } {
-  return clampPan({ x: media.width * (0.5 - point.x), y: media.height * (0.5 - point.y) }, media);
+export function seedPan(
+  point: FocalPoint,
+  media: MediaSize,
+  zoom = FOCAL_ZOOM_MIN,
+): { x: number; y: number } {
+  const z = clampZoom(zoom);
+  return clampPan(
+    { x: media.width * z * (0.5 - point.x), y: media.height * z * (0.5 - point.y) },
+    media,
+    z,
+  );
+}
+
+/** The pan that keeps whatever is under the reticle under it while the ZOOM changes — the whole of the
+ *  slider's correction, and one multiplication because the reticle sits at the container's centre.
+ *
+ *  It is the library's own arithmetic, evaluated at that centre: `setNewZoom` computes
+ *  `zoomTarget·newZoom − zoomPoint` about the gesture's point, and at the container's centre
+ *  `zoomPoint` is `{0, 0}`, which leaves `crop · new/old`. Deriving it rather than borrowing it is what
+ *  lets the slider and a pinch land on the same state — and what makes the pair testable without a
+ *  laid-out stage.
+ *
+ *  A zoom that is not a real factor (the control's value read before it has one) moves nothing. */
+export function zoomPan(
+  crop: { x: number; y: number },
+  from: number,
+  to: number,
+): { x: number; y: number } {
+  const ratio = clampZoom(to) / clampZoom(from);
+  return Number.isFinite(ratio) ? { x: crop.x * ratio, y: crop.y * ratio } : crop;
 }
 
 /** The pan that puts the media point currently under `(dx, dy)` — an offset from the reticle's centre,
@@ -199,16 +283,26 @@ export function tapPan(
   crop: { x: number; y: number },
   offset: { x: number; y: number },
   media: MediaSize | null,
+  zoom = FOCAL_ZOOM_MIN,
 ): { x: number; y: number } {
   if (media === null) return crop;
-  return clampPan({ x: crop.x - offset.x, y: crop.y - offset.y }, media);
+  // The offset is in container pixels and so is the pan, so the subtraction is zoom-free; only the
+  // fence it lands in knows about the magnification.
+  return clampPan({ x: crop.x - offset.x, y: crop.y - offset.y }, media, zoom);
 }
 
-/** `{x, y}` at the stored precision — and the ONE place the rounding happens, so what the previews
- *  showed and what the config holds cannot be two different points. */
-export function roundFocal(point: FocalPoint): FocalPoint {
+/** The framing at the stored precision — and the ONE place the rounding happens, so what the previews
+ *  showed and what the config holds cannot be two different framings.
+ *
+ *  **A zoom of 1 is not written.** Absent is the only spelling of "no zoom" (`MediaFocal.z`, and the
+ *  server folds a literal 1 away for the same reason), which is what makes framing an item at the
+ *  slider's home position write the exact three keys it wrote before the field existed. */
+export function roundFocal(point: FocalPoint, zoom: number = FOCAL_ZOOM_MIN): EditedFocal {
   const f = (n: number) => Number(clamp01(n).toFixed(FOCAL_DECIMALS));
-  return { x: f(point.x), y: f(point.y) };
+  const z = clampZoom(zoom);
+  const out: EditedFocal = { x: f(point.x), y: f(point.y) };
+  if (z > FOCAL_ZOOM_MIN) out.z = Number(z.toFixed(ZOOM_DECIMALS));
+  return out;
 }
 
 export function FramingSheet({
@@ -219,10 +313,10 @@ export function FramingSheet({
 }: {
   section: MediaSection;
   item: LibraryItem;
-  /** Save the point — WITH the revision this sheet rendered, so the write can refuse if the bytes
+  /** Save the framing — WITH the revision this sheet rendered, so the write can refuse if the bytes
    *  were replaced while the owner was framing them (Emma's S4 review #2). The sheet supplies it
    *  because the sheet is the only thing that can be authoritative about what it showed. */
-  onSave: (point: FocalPoint | null, expectedRev: string) => void;
+  onSave: (focal: EditedFocal | null, expectedRev: string) => void;
   onCancel: () => void;
 }) {
   // SEEDED from whatever framing the item already carries — `rowFocal` is the shared predicate, so a
@@ -231,6 +325,7 @@ export function FramingSheet({
   const [thirds, setThirds] = useState(false);
   const [stage, setStage] = useState<{ width: number; height: number } | null>(null);
   const labelId = useId();
+  const zoomId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const tapFrom = useRef<{ x: number; y: number } | null>(null);
@@ -239,6 +334,10 @@ export function FramingSheet({
   const url = tileUrl(item.row, section);
   const stored = focalState(item.row);
   const previews = section.def.previews ?? [];
+  // Does anything READ a zoom for this role? Exactly the roles that declare a circle destination — see
+  // the header, and `MediaPreviewDef.shape`, which is the one declaration both this and the circle
+  // preview below hang off.
+  const circle = framesCircle(section.def);
   // The stage's short axis decides the reticle, so it has to be measured — the library takes
   // `cropSize` in pixels and the whole point of this control is that the target is SMALL.
   const reticle =
@@ -289,6 +388,10 @@ export function FramingSheet({
   const naturalWidth = state.media?.naturalWidth ?? item.row.width ?? null;
   const naturalHeight = state.media?.naturalHeight ?? item.row.height ?? null;
   const live = state.point ?? { x: 0.5, y: 0.5 };
+  // ONE art value for the whole strip: the rectangular previews read the point and ignore the zoom
+  // (`focalPosition`), the circle one reads both (`circleFraming`). Which window honours what is a
+  // property of the two mappings, never of this call site.
+  const liveArt = centredFocal(live, naturalWidth, naturalHeight, state.zoom);
 
   const onStageClick = (e: MouseEvent<HTMLDivElement>) => {
     const from = tapFrom.current;
@@ -303,7 +406,16 @@ export function FramingSheet({
       x: e.clientX - (rect.left + rect.width / 2),
       y: e.clientY - (rect.top + rect.height / 2),
     };
-    dispatch({ t: "pan", crop: tapPan(state.crop, offset, state.media) });
+    dispatch({ t: "pan", crop: tapPan(state.crop, offset, state.media, state.zoom) });
+  };
+
+  /** The SLIDER's zoom: the same pair the library's own pinch reports, in the same order — the pan that
+   *  keeps the aimed point under the reticle, then the new factor. Without the first, zooming would
+   *  slide the framing away from whatever the owner had just aimed at (the point sits at
+   *  `(f − 0.5)·media·z + crop`, so holding `crop` while `z` moves moves `f`). */
+  const onZoom = (next: number) => {
+    dispatch({ t: "pan", crop: zoomPan(state.crop, state.zoom, next) });
+    dispatch({ t: "zoom", zoom: next });
   };
 
   return (
@@ -324,9 +436,20 @@ export function FramingSheet({
             <XIcon />
           </button>
         </div>
+        {/* The lede names the shape the owner is looking at, because the reticle is round for a circle
+            role — and, where there is a zoom, says what the second control does. */}
         <p className="mgal-frame-lede">
-          Move the picture so the part that matters sits inside the square. Every place this image
-          is cropped will keep that part in view.
+          {circle ? (
+            <>
+              Move the picture so the part that matters sits inside the circle, and zoom to close in
+              on it. Every place this image is cropped will keep that part in view.
+            </>
+          ) : (
+            <>
+              Move the picture so the part that matters sits inside the square. Every place this
+              image is cropped will keep that part in view.
+            </>
+          )}
         </p>
         {/* The rev-keyed reset, said in the owner's terms (§2.2). The point is not "lost" — the
             PICTURE changed under a name that did not, so a point measured on the old bytes describes
@@ -347,12 +470,20 @@ export function FramingSheet({
           {url !== undefined && (
             <Cropper
               image={url}
-              crop={state.crop}
-              // NO ZOOM: `z` is recorded and unbuilt (§5), and a pinch whose result is discarded on
-              // save would be worse than no pinch at all.
-              zoom={1}
-              minZoom={1}
-              maxZoom={1}
+              // THE FENCE IS HERE, on the rendered value, and that is what makes it right under zoom.
+              // `crop` is a CONTROLLED prop, so the library paints exactly what it is handed and every
+              // position it reports is computed from this one — an over-far drag cannot accumulate. It
+              // has to be the render rather than the reducer because a zoom gesture reports its PAN
+              // FIRST and its new factor second (index.module.mjs:507-520): clamping the pan against
+              // the zoom still in state would truncate a zoom-in to the fence of the zoom it left.
+              crop={clampPan(state.crop, state.media, state.zoom)}
+              // THE ZOOM, where a circle destination reads one (the header). A role with none pins the
+              // pair at 1 exactly as this sheet always has, so the library offers no pinch at all
+              // rather than one whose result would be discarded on save.
+              zoom={state.zoom}
+              minZoom={FOCAL_ZOOM_MIN}
+              maxZoom={circle ? FOCAL_ZOOM_MAX : FOCAL_ZOOM_MIN}
+              onZoomChange={circle ? (zoom) => dispatch({ t: "zoom", zoom }) : undefined}
               aspect={1}
               cropSize={{ width: reticle, height: reticle }}
               objectFit="contain"
@@ -360,15 +491,21 @@ export function FramingSheet({
               // would draw on the reticle, where three lines across 90 px teach nothing.
               showGrid={false}
               disableAutomaticStylesInjection
-              classes={{ cropAreaClassName: "mgal-reticle" }}
+              // ROUND for a circle destination — the aim target wears the shape of the window it is
+              // aiming for. It is still a reticle and not the window (see the header): the exact
+              // circle is the "chat face" preview below.
+              cropShape={circle ? "round" : "rect"}
+              classes={{ cropAreaClassName: "mgal-reticle" + (circle ? " round" : "") }}
               cropperProps={{
                 role: "group",
-                "aria-label": "Drag the picture, or tap a spot, to put it in the square",
+                "aria-label": `Drag the picture, or tap a spot, to put it in the ${
+                  circle ? "circle" : "square"
+                }`,
               }}
               // The library's own fence is OFF (see `panLimit`) — a reticle must reach the edges — so
               // every pan it reports is clamped here instead, by the one rule both sources share.
               restrictPosition={false}
-              onCropChange={(crop) => dispatch({ t: "pan", crop: clampPan(crop, state.media) })}
+              onCropChange={(crop) => dispatch({ t: "pan", crop })}
               onMediaLoaded={(media) => dispatch({ t: "loaded", media })}
               // EVERY pointer move, not just the release: the previews are the compensator for a
               // fingertip being 11% of the picture wide (R57 §2.3), and previews that only update on
@@ -378,21 +515,53 @@ export function FramingSheet({
           )}
           <span className={"mgal-frame-thirds" + (thirds ? " on" : "")} aria-hidden />
         </div>
+        {/* THE ZOOM, for a circle role only. A slider for the same reason the crop step has one: the
+            library ships pinch and wheel and NO keyboard zoom whatsoever, so without this the control
+            is unreachable from a keyboard and awkward on a mouse. */}
+        {circle && (
+          <label className="mgal-frame-zoom" htmlFor={zoomId}>
+            <span>Zoom</span>
+            <input
+              id={zoomId}
+              type="range"
+              min={FOCAL_ZOOM_MIN}
+              max={FOCAL_ZOOM_MAX}
+              step={FOCAL_ZOOM_STEP}
+              value={state.zoom}
+              onChange={(e) => onZoom(Number(e.target.value))}
+            />
+          </label>
+        )}
         {previews.length > 0 && (
           <div className="mgal-frame-previews">
             <ul>
               {previews.map((p) => (
                 <li key={p.label}>
-                  <span className="mgal-frame-win" style={{ aspectRatio: `${p.aspect}` }}>
-                    {url !== undefined && (
-                      <FocalImg
-                        src={url}
-                        alt=""
-                        draggable={false}
-                        art={centredFocal(live, naturalWidth, naturalHeight)}
+                  {/* A CIRCLE preview is the destination itself, not an approximation of it: the face
+                      it paints is `FocalFace` over the same framing, and a circle's crop does not
+                      depend on how big the circle is (`circleFraming`). So it is the painted box —
+                      there is no inner `<img>` to give it. */}
+                  {p.shape === "circle" ? (
+                    url === undefined ? (
+                      <span
+                        className="mgal-frame-win circle"
+                        style={{ aspectRatio: `${p.aspect}` }}
                       />
-                    )}
-                  </span>
+                    ) : (
+                      <FocalFace
+                        className="mgal-frame-win circle"
+                        style={{ aspectRatio: `${p.aspect}` }}
+                        src={url}
+                        art={liveArt}
+                      />
+                    )
+                  ) : (
+                    <span className="mgal-frame-win" style={{ aspectRatio: `${p.aspect}` }}>
+                      {url !== undefined && (
+                        <FocalImg src={url} alt="" draggable={false} art={liveArt} />
+                      )}
+                    </span>
+                  )}
                   <small>{p.label}</small>
                 </li>
               ))}
@@ -421,7 +590,7 @@ export function FramingSheet({
             className="mgal-act primary"
             disabled={state.point === null}
             onClick={() =>
-              state.point !== null && onSave(roundFocal(state.point), item.row.revision)
+              state.point !== null && onSave(roundFocal(state.point, state.zoom), item.row.revision)
             }
           >
             Save

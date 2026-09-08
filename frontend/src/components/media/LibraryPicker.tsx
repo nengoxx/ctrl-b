@@ -28,7 +28,9 @@ import type { RowId } from "../../lib/mediaLibrary";
 // phase words). What they do not share is the whole manage half — the detail panel, the drag, the In-use
 // corners, the delete, the restore, the dangling-pin and seat notices — none of which has any meaning in
 // a pick, and every one of which would have become a `pick === undefined &&` in a component that is
-// already the largest on this surface. Framing and re-crop stay a Conf-gallery job (§8.2's ruling).
+// already the largest on this surface. RE-CROP stays a Conf-gallery job (§8.2's ruling): it re-encodes
+// the file itself. FRAMING crossed over at wave 3 — see `onFrame` — because it is about the picture
+// this binding paints and the owner asked to reach it from here; the SHEET is still the one framing UI.
 //
 // The rows it offers are the caller's: a BINDING must not point at an entry the owner switched off or at
 // bytes the server cannot read, which is what `AgentArtRow` filters through the two shipped predicates
@@ -43,6 +45,7 @@ export function LibraryPicker({
   upload,
   onPick,
   onClear,
+  onFrame,
   onClose,
 }: {
   view: SectionView;
@@ -60,6 +63,15 @@ export function LibraryPicker({
   onPick: (entry: string) => void;
   /** Bind nothing — offered ONLY while something is bound, which is the one state it can act on. */
   onClear: () => void;
+  /** THE SECOND DOOR ON THE FRAMING SHEET (D70 §13-S6b wave 3, the owner's amendment to §8.2's
+   *  framing-stays-in-Conf scoping) — absent ⇒ no such affordance, which is what keeps this component
+   *  generic. It sits beside "Use no picture" and answers the same shape of question: it acts on the
+   *  BINDING that is already made, so like that one it is offered only while there is one.
+   *
+   *  The sheet itself is still the sheet — one framing UI, opened from two places — and the caller
+   *  mounts it as a SIBLING of this dialog, never inside it (an Escape in a nested overlay would ride
+   *  this one's keydown trap and close the picker underneath it). */
+  onFrame?: () => void;
   onClose: () => void;
 }) {
   const { section } = view;
@@ -169,6 +181,14 @@ export function LibraryPicker({
               "picture" rather than "remove": the file stays in the library — this unbinds it. */}
           {current !== null && (
             <p className="mgal-restore">
+              {/* "Focus" is the app's word for this — the plainer one the owner chose over "framing"
+                  in the media manager's S6 round — and it is the SAME sheet the gallery's own Focus
+                  button opens, so it says the same thing in both places. */}
+              {onFrame !== undefined && (
+                <button type="button" className="mgal-act" onClick={onFrame}>
+                  Focus
+                </button>
+              )}
               <button type="button" className="mgal-act" onClick={onClear}>
                 Use no picture
               </button>

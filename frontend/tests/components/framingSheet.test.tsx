@@ -63,6 +63,7 @@ import {
   roundFocal,
   seedPan,
   tapPan,
+  zoomPan,
 } from "../../src/components/media/FramingSheet";
 import { setUI } from "../../src/store/ui";
 
@@ -153,6 +154,70 @@ describe("seedPan — where a stored point has to sit", () => {
   });
 });
 
+// ── THE ZOOM (D70 §13-S6b wave 3) — the circle windows' `z`, and everything that moves with it ──
+//
+// The library paints `translate(crop) scale(zoom)`, so a point at fraction `f` sits at
+// `(f − 0.5)·media·z + crop`. Every number below falls out of that one line: the pan a seed needs, how
+// far the reticle may travel, and what the slider has to do to the pan so zooming does not slide the
+// framing off whatever the owner just aimed at.
+
+describe("the zoom's arithmetic", () => {
+  it("seeds a stored point under the reticle AT the stored zoom", () => {
+    // Without the factor the seeded pan is right only at z = 1: at z = 2 the picture is twice as wide
+    // on the stage, so the same point is twice as far from its middle.
+    expect(seedPan({ x: 0.25, y: 0.75 }, MEDIA, 2)).toEqual({ x: 150, y: -100 });
+    expect(seedPan({ x: 0.25, y: 0.75 }, MEDIA, 1)).toEqual({ x: 75, y: -50 });
+    // …and the default is 1, which is what keeps every un-zoomed call identical to the one before.
+    expect(seedPan({ x: 0.25, y: 0.75 }, MEDIA)).toEqual(seedPan({ x: 0.25, y: 0.75 }, MEDIA, 1));
+  });
+
+  it("GROWS the pan limit with the zoom, or the reticle could not reach a magnified picture's edge", () => {
+    // A limit that ignored the factor would fence the reticle into the middle 1/z of the picture —
+    // the very unaddressability `panLimit` exists to refuse, through the back door.
+    expect(panLimit(MEDIA, 2)).toEqual({ x: 300, y: 200 });
+    expect(clampPan({ x: 280, y: 0 }, MEDIA, 2)).toEqual({ x: 280, y: 0 });
+    expect(clampPan({ x: 280, y: 0 }, MEDIA, 1)).toEqual({ x: 150, y: 0 });
+    // …and a corner of the picture is still exactly reachable at any zoom.
+    expect(seedPan({ x: 0, y: 0 }, MEDIA, 3)).toEqual(panLimit(MEDIA, 3));
+  });
+
+  it("zoomPan keeps the aimed point under the reticle — the library's own rule at the centre", () => {
+    // `setNewZoom` computes `zoomTarget·newZoom − zoomPoint` about the gesture's point; the reticle IS
+    // the container's centre, where `zoomPoint` is {0,0} and the whole correction is `crop · new/old`.
+    expect(zoomPan({ x: 60, y: -40 }, 1, 2)).toEqual({ x: 120, y: -80 });
+    expect(zoomPan({ x: 120, y: -80 }, 2, 1)).toEqual({ x: 60, y: -40 });
+    // …which is exactly the pan the seed would have derived at the new zoom, and that is the claim.
+    expect(zoomPan(seedPan({ x: 0.2, y: 0.9 }, MEDIA, 1), 1, 2.5)).toEqual(
+      seedPan({ x: 0.2, y: 0.9 }, MEDIA, 2.5),
+    );
+    expect(zoomPan({ x: 10, y: 10 }, 1, Number.NaN)).toEqual({ x: 10, y: 10 });
+  });
+
+  it("the reducer's `zoom` moves ONLY the zoom — the library reports its own pan first", () => {
+    // `setNewZoom` calls `onCropChange` and THEN `onZoomChange` (index.module.mjs:507-520), so a
+    // reducer that re-derived the pan here would apply the correction twice on every pinch.
+    const at = framingReducer(
+      { ...framingReducer(fresh, { t: "pan", crop: { x: 33, y: 0 } }) },
+      { t: "zoom", zoom: 3 },
+    );
+    expect(at).toMatchObject({ zoom: 3, crop: { x: 33, y: 0 } });
+    // …and a zoom from anywhere lands inside the range the slider can express.
+    expect(framingReducer(fresh, { t: "zoom", zoom: 99 }).zoom).toBe(4);
+    expect(framingReducer(fresh, { t: "zoom", zoom: 0.1 }).zoom).toBe(1);
+  });
+
+  it("opens on the STORED zoom, and derives the seed pan with it", () => {
+    const opened = initialFraming({ x: 0.25, y: 0.75, z: 2 });
+    expect(opened.zoom).toBe(2);
+    expect(framingReducer(opened, { t: "loaded", media: MEDIA }).crop).toEqual(
+      seedPan({ x: 0.25, y: 0.75 }, MEDIA, 2),
+    );
+    // An unzoomed item — and every item framed before the field existed — opens at 1.
+    expect(initialFraming({ x: 0.25, y: 0.75 }).zoom).toBe(1);
+    expect(fresh.zoom).toBe(1);
+  });
+});
+
 describe("tapPan / clampPan — tap-to-place, and how far a reticle may travel (R57 §2.2a)", () => {
   const media = { width: 300, height: 200, naturalWidth: 1200, naturalHeight: 800 };
 
@@ -192,6 +257,18 @@ describe("roundFocal — two decimals, per R57 §2.3", () => {
   it("clamps, and answers the centre for a non-finite coordinate", () => {
     expect(roundFocal({ x: -3, y: 9 })).toEqual({ x: 0, y: 1 });
     expect(roundFocal({ x: Number.NaN, y: 0.2 })).toEqual({ x: 0.5, y: 0.2 });
+  });
+
+  it("WRITES NO ZOOM AT 1 — absent is the only spelling of it (wave 3)", () => {
+    // The round-trip claim the field is additive on: framing at the slider's home position writes the
+    // exact object it wrote before `z` existed, so nothing in a config the owner may open changes.
+    expect(roundFocal({ x: 0.4, y: 0.6 })).toEqual({ x: 0.4, y: 0.6 });
+    expect(Object.keys(roundFocal({ x: 0.4, y: 0.6 }, 1))).toEqual(["x", "y"]);
+    expect(roundFocal({ x: 0.4, y: 0.6 }, 2.25)).toEqual({ x: 0.4, y: 0.6, z: 2.25 });
+    // Two decimals, which is exactly what the slider's 0.05 step can express — and the ends hold.
+    expect(roundFocal({ x: 0.4, y: 0.6 }, 1.0500000000000003).z).toBe(1.05);
+    expect(roundFocal({ x: 0.4, y: 0.6 }, 99).z).toBe(4);
+    expect(Object.keys(roundFocal({ x: 0.4, y: 0.6 }, Number.NaN))).toEqual(["x", "y"]);
   });
 });
 
@@ -479,5 +556,121 @@ describe("the sheet itself", () => {
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     // Cleared by REMOVAL, never by persisting a `{0.5, 0.5}` that means the same thing.
     expect(savedFiles()).toEqual([{ name: "a.webp" }]);
+  });
+});
+
+// ── THE CIRCLE ROLE (D70 §13-S6b wave 3) ────────────────────────────────────────────────────────
+//
+// The zoom is offered where something READS one — a role that declares a circle destination
+// (`MediaPreviewDef.shape`), which today is the agents' avatars library and nothing else. Everything
+// above ran against gacha's `characters`, which declares none, so those arms are the other half of this
+// claim: the sheet the backgrounds and the theme libraries get is byte-for-byte the one that shipped.
+
+function agentsIndex(avatars: MediaFile[]): MediaIndex {
+  return {
+    ns: "agents",
+    collation: "library-v1",
+    roles: { avatars, backgrounds: [] },
+    slots: {},
+  };
+}
+
+function renderAgents(payload: MediaIndex): void {
+  api.getJSON.mockResolvedValue(payload);
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { mutations: { retry: false } } })}
+    >
+      <MediaGallery ns="agents" def={MEDIA_NS.agents} />
+    </QueryClientProvider>,
+  );
+}
+
+/** The `roles.avatars.files` list of the single settings PUT an agents-side sheet caused. */
+function savedAvatars(): unknown[] {
+  const [url, body] = api.putJSON.mock.calls[0] as [
+    string,
+    { media: { namespaces: { agents: { roles: { avatars: { files: unknown[] } } } } } },
+  ];
+  expect(url).toBe("/api/settings");
+  return body.media.namespaces.agents.roles.avatars.files;
+}
+
+async function openAvatarFraming(rows: MediaFile[]): Promise<HTMLElement> {
+  renderAgents(agentsIndex(rows));
+  fireEvent.click(await screen.findByRole("button", { name: "Open the Avatars gallery" }));
+  const gallery = await screen.findByRole("dialog");
+  fireEvent.click(within(gallery).getByRole("button", { name: "a.webp" }));
+  fireEvent.click(within(gallery).getByRole("button", { name: "Focus" }));
+  return await screen.findByRole("dialog", { name: "Set focus" });
+}
+
+const avatar = (over: Partial<MediaFile> = {}): MediaFile =>
+  file("a", "avatars", { url: "/api/media/agents/files/avatars/a.webp", ...over });
+
+describe("the sheet, for a role whose destination is a CIRCLE", () => {
+  it("offers the zoom and the exact chat-face preview beside the card", async () => {
+    const sheet = await openAvatarFraming([avatar()]);
+    expect(within(sheet).getByRole("slider", { name: "Zoom" })).toBeTruthy();
+    // Two windows of the SAME aspect, which the preview type otherwise forbids: a circle eats the
+    // corners a square keeps, and the corners are where a portrait's hair and shoulders are.
+    for (const label of ["gallery card", "chat face"])
+      expect(within(sheet).getByText(label)).toBeTruthy();
+    // The circle preview IS the destination, painted by the destination's own component — one box
+    // carrying the picture, so a zoomed one is clipped by the disc that declares it.
+    const circle = sheet.querySelector<HTMLElement>(".mgal-frame-win.circle");
+    expect(circle?.tagName).toBe("SPAN");
+    expect(circle?.querySelector("img"), "no inner image — the box IS the face").toBeNull();
+    expect(circle?.style.backgroundImage).toContain("/api/media/agents/files/avatars/a.webp");
+    // …and the lede names the shape the reticle is wearing.
+    expect(within(sheet).getByText(/sits inside the circle/)).toBeTruthy();
+  });
+
+  it("keeps the SAME sheet for a role that declares no circle — no zoom, no circle preview", async () => {
+    // gacha's `characters`: the regression guard on "backgrounds keep today's sheet unchanged", and
+    // the reason the control is gated on the destination rather than on a flag someone sets.
+    renderGallery(index([file("a", "characters"), ...cast]));
+    const gallery = await openItem("Characters", "a.webp");
+    fireEvent.click(within(gallery).getByRole("button", { name: "Focus" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set focus" });
+    expect(within(sheet).queryByRole("slider", { name: "Zoom" })).toBeNull();
+    expect(sheet.querySelector(".mgal-frame-win.circle")).toBeNull();
+    expect(within(sheet).getByText(/sits inside the square/)).toBeTruthy();
+  });
+
+  it("SEEDS the stored zoom and writes it back untouched, beside the point it belongs to", async () => {
+    const sheet = await openAvatarFraming([
+      avatar({ focal: { x: 0.4, y: 0.3, rev: "1:88000", z: 2 } }),
+    ]);
+    expect(within(sheet).getByRole<HTMLInputElement>("slider", { name: "Zoom" }).value).toBe("2");
+    // The circle preview shows the STORED framing on open — 640×854, so `s = (1, 854/640)·2`.
+    const circle = sheet.querySelector<HTMLElement>(".mgal-frame-win.circle");
+    expect(circle?.style.backgroundSize).toBe("200% 266.875%");
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedAvatars()).toEqual([
+      { name: "a.webp", focal: { x: 0.4, y: 0.3, z: 2, rev: "1:88000" } },
+    ]);
+  });
+
+  it("stores the zoom the slider is left at — and NOTHING when it is left at 1", async () => {
+    const sheet = await openAvatarFraming([
+      avatar({ focal: { x: 0.4, y: 0.3, rev: "1:88000", z: 3 } }),
+    ]);
+    const slider = within(sheet).getByRole("slider", { name: "Zoom" });
+    fireEvent.change(slider, { target: { value: "1" } });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    // Back at the home position the write is the exact object a pre-wave-3 save produced.
+    expect(savedAvatars()).toEqual([{ name: "a.webp", focal: { x: 0.4, y: 0.3, rev: "1:88000" } }]);
+  });
+
+  it("CLEARING takes the zoom with it — it is one framing, not a point and a setting", async () => {
+    const sheet = await openAvatarFraming([
+      avatar({ focal: { x: 0.4, y: 0.3, rev: "1:88000", z: 2 } }),
+    ]);
+    fireEvent.click(within(sheet).getByRole("button", { name: "Clear" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedAvatars()).toEqual([{ name: "a.webp" }]);
   });
 });

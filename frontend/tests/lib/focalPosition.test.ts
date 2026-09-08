@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   centredFocal,
+  circleFraming,
+  clampZoom,
   focalAxis,
   focalPosition,
   proportionalFocal,
   shiftFocalX,
   FOCAL_EPSILON,
+  FOCAL_ZOOM_MAX,
+  FOCAL_ZOOM_MIN,
 } from "../../src/lib/focalPosition";
 import { COVER_HERO_SHIFT } from "../../src/themes/gacha/fleet";
 import { defaultRoster } from "../../src/themes/gacha/roster";
@@ -190,6 +194,88 @@ describe("THE PARITY LINE — the shipped bundled art is byte-identical through 
       for (const win of [null, { width: 160, height: 213 }, { width: 390, height: 700 }])
         expect(focalPosition(entry.focus!, win)).toBe(expected);
       expect(shiftFocalX(expected, -COVER_HERO_SHIFT)).toBe(expected.replace("50%", "30%"));
+    }
+  });
+});
+
+// ── THE CIRCLE WINDOW (D70 §13-S6b wave 3) — the measurement-free half ──────────────────────────
+//
+// The claim the transcript's zero-observer invariant rests on: for a SQUARE window the cover overflow
+// is a fact about the picture (`s = W/min(W,H)`, `H/min(W,H)`), so the same two numbers answer for an
+// 18px face, a 28px one and a preview — the box cancels out of `k = b/min(W,H)`. These arms are that
+// algebra, plus the zoom that rides it and the two degrades.
+
+describe("circleFraming — a circle needs no box", () => {
+  const portrait = (zoom?: number) => centredFocal({ x: 0.4, y: 0.3 }, 600, 800, zoom);
+
+  it("answers the SAME framing that a measured square window would, at any size", () => {
+    // The whole derivation, checked against the general mapping rather than restated: `focalPosition`
+    // over a 40px square, a 300px square and a 28px one must agree with each other and with this.
+    const art = portrait();
+    const framing = circleFraming(art);
+    for (const side of [28, 40, 300])
+      expect(focalPosition(art, { width: side, height: side })).toBe(framing!.position);
+    // s.x = 1 (nothing to choose), s.y = 4/3 -> P(0.3, 4/3) = -0.3, clamped to 0.
+    expect(framing).toEqual({ position: "50% 0%", size: undefined });
+  });
+
+  it("states NO size while unzoomed — `cover` is what the window's own CSS already says", () => {
+    expect(circleFraming(portrait())?.size).toBeUndefined();
+    expect(circleFraming(centredFocal({ x: 0.5, y: 0.5 }, 900, 900))).toEqual({
+      position: "50% 50%",
+      size: undefined,
+    });
+  });
+
+  it("magnifies by z — the drawn size is s·z and the position is P(f, s·z)", () => {
+    // Zooming makes the picture overflow FURTHER, so the clamp loosens: the y that pinned to the top
+    // edge at z=1 has room at z=2. That direction is the point — zoom closes in on the subject.
+    expect(circleFraming(portrait(2))).toEqual({
+      position: "30% 18%",
+      size: "200% 266.6667%",
+    });
+    expect(circleFraming(portrait(4))?.size).toBe("400% 533.3333%");
+  });
+
+  it("takes a zoom from a hand-edited config at the nearest end, never as it is written", () => {
+    expect(circleFraming(portrait(99))).toEqual(circleFraming(portrait(FOCAL_ZOOM_MAX)));
+    expect(circleFraming(portrait(0.25))).toEqual(circleFraming(portrait(FOCAL_ZOOM_MIN)));
+    expect(clampZoom(Number.NaN)).toBe(FOCAL_ZOOM_MIN);
+    expect(clampZoom(undefined)).toBe(FOCAL_ZOOM_MIN);
+    expect(clampZoom(null)).toBe(FOCAL_ZOOM_MIN);
+    // …and `centredFocal` drops a zoom of 1 rather than carrying one spelling of "no zoom" beside the
+    // other, which is what keeps two arts for the same framing comparable.
+    expect(centredFocal({ x: 0.4, y: 0.3 }, 600, 800, 1)).toEqual(portrait());
+  });
+
+  it("degrades to the point alone where the picture's own size is unknown — and never guesses one", () => {
+    const unsized = centredFocal({ x: 0.25, y: 0.75 }, null, null, 3);
+    expect(circleFraming(unsized)).toEqual({ position: "25% 75%" });
+    // A degenerate size is the same answer, not a division.
+    expect(circleFraming(centredFocal({ x: 0.25, y: 0.75 }, 0, 800))).toEqual({
+      position: "25% 75%",
+    });
+  });
+
+  it("passes a hand-tuned PROPORTIONAL value through untouched, with no zoom to apply", () => {
+    // The bundled art's mode: a string authored against that picture in that window. There is no `z`
+    // on one, and re-interpreting it would silently re-crop the shipped theme.
+    expect(circleFraming(proportionalFocal("50% 12%"))).toEqual({ position: "50% 12%" });
+  });
+
+  it("says nothing at all for an item with no framing — the surface keeps its own crop", () => {
+    expect(circleFraming(undefined)).toBeUndefined();
+  });
+
+  it("and EVERY OTHER WINDOW IGNORES THE ZOOM — the crop-per-context rule, as two functions", () => {
+    // The owner's ratified scoping: only a circle honours `z`. It is enforced by `focalPosition` never
+    // reading the field, so the gallery card, the picker face, the operator strip and the full-bleed
+    // backdrop cannot honour it even by accident — no call site has to remember the rule.
+    const point = { x: 0.4, y: 0.3 };
+    for (const box of [{ width: 120, height: 120 }, { width: 390, height: 700 }, null]) {
+      expect(focalPosition(centredFocal(point, 600, 800, 3), box)).toBe(
+        focalPosition(centredFocal(point, 600, 800), box),
+      );
     }
   });
 });

@@ -1,5 +1,7 @@
 import { Fragment, type ReactNode, useState } from "react";
 
+import { FocalFace } from "./FocalFace";
+import type { BoundArt } from "../hooks/useAgentArt";
 import type { CallUsage, ChatMessage, MessageSource } from "../types";
 
 // D62 — per-message SERVE ATTRIBUTION for the assistant who-line: the always-on endpoint chip
@@ -153,8 +155,12 @@ export function BotWhoLine({
    *  agent has one. Present ⇒ the line leads with it as a small circle IN THE DOT'S POSITION; absent ⇒
    *  the `.who::before` dot renders exactly as it always has (switch off, no art, retired art). The
    *  RESOLUTION is the caller's (ChatThread holds the one resolver for the whole log) — this component
-   *  only decides which of the two it draws. */
-  avatar?: string;
+   *  only decides which of the two it draws.
+   *
+   *  The whole `BoundArt`, not just its URL, since wave 3: the face HONOURS the owner's framing now,
+   *  and it costs nothing to — a circle is always aspect 1, so `FocalFace` computes the crop from the
+   *  item alone and this line keeps the zero observers its 18 px predecessor was sized down to avoid. */
+  avatar?: BoundArt;
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -167,9 +173,10 @@ export function BotWhoLine({
         className={"who" + (avatar ? " has-avatar" : "")}
         onClick={rows.length ? toggle : undefined}
       >
-        {/* Decoration: the speaker is already the label right beside it, so an `alt` here would make AT
-            announce the same turn twice. */}
-        {avatar && <img className="who-face" src={avatar} alt="" draggable={false} />}
+        {/* Decoration: the speaker is already the label right beside it, so a name here would make AT
+            announce the same turn twice — which is why the face can be a painted box rather than an
+            `<img>` (see `FocalFace`). */}
+        {avatar && <FocalFace className="who-face" src={avatar.url} art={avatar.focus} />}
         {label} ·{" "}
         {source && (
           <>

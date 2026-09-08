@@ -286,13 +286,18 @@ describe("tools menu — agent avatars (D70 §8.4)", () => {
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
     // the two queries behind the resolver (roster + media index) settle asynchronously
-    await waitFor(() => expect(container.querySelectorAll("img.tools-face").length).toBe(1));
+    await waitFor(() => expect(container.querySelectorAll(".tools-face").length).toBe(1));
     const rows = radios(container);
     expect(rows.map(rowName)).toEqual(["default", "ops", "research"]); // the list itself is untouched
-    const withFace = rows.filter((r) => r.closest("label")?.querySelector("img.tools-face"));
+    const withFace = rows.filter((r) => r.closest("label")?.querySelector(".tools-face"));
     expect(withFace.map(rowName)).toEqual(["ops"]);
-    const face = container.querySelector<HTMLImageElement>("img.tools-face")!;
-    expect(face.getAttribute("src")).toBe("/api/media/agents/files/avatars/ops.png?rev=r1");
+    // WAVE 3 — the same CIRCLE window the who-line paints, so the same painted box: one element
+    // carrying the disc and the picture, framed with no measurement (`components/FocalFace.tsx`).
+    const face = container.querySelector<HTMLElement>(".tools-face")!;
+    expect(face.tagName).toBe("SPAN");
+    expect(face.style.backgroundImage).toBe(
+      'url("/api/media/agents/files/avatars/ops.png?rev=r1")',
+    );
     // the tick is still there beside it — the avatar never displaces the selection gutter
     expect(withFace[0].closest("label")?.querySelector(".tools-tick")).not.toBe(null);
   });
@@ -338,7 +343,7 @@ describe("tools menu — the open thread's pinned agent", () => {
     // past, and the arm goes green without any subscription existing. Waiting for the avatar — the one
     // DOM effect of both queries having resolved — spends that rerender before the pin is released, so
     // the subscription is the only path left that can move the checked row.
-    await waitFor(() => expect(container.querySelectorAll("img.tools-face").length).toBe(1));
+    await waitFor(() => expect(container.querySelectorAll(".tools-face").length).toBe(1));
     await act(async () => {
       await openThread("t1"); // history swaps in; the pin read is still parked
     });

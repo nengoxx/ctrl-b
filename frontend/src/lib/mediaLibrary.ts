@@ -91,10 +91,26 @@ export interface LibraryRow extends MediaNamed {
   hidden?: boolean;
 }
 
-/** The stored framing point, structurally — `MediaFile["focal"]` without the import. */
+/** The framing an EDIT produces — the point, plus the CIRCLE windows' zoom (`MediaFocal.z`, D70
+ *  §13-S6b wave 3). It is the shape the framing sheet hands back and the shape a paint site reads;
+ *  what it is missing is the `rev`, which only the write path may stamp (see `useMediaLibrary#setFocal`
+ *  — a point keyed to a revision it was not measured against is the one thing rev-keying exists to
+ *  prevent, so the sheet must not be able to mint one).
+ *
+ *  `z` is OPTIONAL and absent means 1 — the same single spelling the server enforces
+ *  (`core/media.py#MediaFocal._clamp_zoom`), which is what makes a framing set at the slider's home
+ *  position write the exact three keys it wrote before the field existed. */
+export interface EditedFocal extends FocalPoint {
+  z?: number;
+}
+
+/** The stored framing point, structurally — `MediaFile["focal"]` without the import. Its `z` is the
+ *  WIRE's, so it admits the `null` a JSON dump of an unset optional carries; `rowFocal` is where the
+ *  two spellings of "no zoom" fold into the one an edit may produce. */
 export interface StoredFocal extends FocalPoint {
   /** The `revision` these coordinates were set against (§2.2). */
   rev: string;
+  z?: number | null;
 }
 
 /** A row carrying enough to answer "is its framing still about THIS picture" — the wire's `focal`, the
@@ -296,10 +312,13 @@ export function focalState(row: FocalRow): FocalState {
   return focal.rev !== "" && focal.rev === (row.revision ?? "") ? "set" : "stale";
 }
 
-/** The row's LIVE point, or `undefined` for unset AND for stale — the one place that fold happens. */
-export function rowFocal(row: FocalRow): FocalPoint | undefined {
+/** The row's LIVE framing, or `undefined` for unset AND for stale — the one place that fold happens.
+ *  The zoom rides the point out of here for the reason it rides it into config: it is one framing, and
+ *  a stale point takes its zoom down with it. */
+export function rowFocal(row: FocalRow): EditedFocal | undefined {
   const focal = row.focal;
-  return focal != null && focalState(row) === "set" ? { x: focal.x, y: focal.y } : undefined;
+  if (focal == null || focalState(row) !== "set") return undefined;
+  return focal.z == null ? { x: focal.x, y: focal.y } : { x: focal.x, y: focal.y, z: focal.z };
 }
 
 /** The row as a paint-site input (§5's council H3): a row with a live point is CENTRED, and carries the
@@ -310,8 +329,10 @@ export function rowFocal(row: FocalRow): FocalPoint | undefined {
  *  composes `rowFocal` with its own asset record's `width`/`height` instead of calling this (see
  *  `themes/gacha/roster.ts`). The FOLD is still only here: `rowFocal` is what both paths ask. */
 export function artFocal(row: FocalRow): FocalArt | undefined {
-  const point = rowFocal(row);
-  return point === undefined ? undefined : centredFocal(point, row.width, row.height);
+  const focal = rowFocal(row);
+  return focal === undefined
+    ? undefined
+    : centredFocal({ x: focal.x, y: focal.y }, row.width, row.height, focal.z);
 }
 
 // ── active resolution (§2.4) ─────────────────────────────────────────────────────────────────────

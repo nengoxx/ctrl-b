@@ -760,6 +760,33 @@ describe("focalState — rev-keying, the three-valued predicate", () => {
     });
   });
 
+  it("carries the ZOOM out with the point, and drops both together when it goes stale (wave 3)", () => {
+    // `z` is part of the framing, never a setting beside it: one object in, one object out, and a
+    // point that no longer describes these bytes takes its zoom down with it.
+    const zoomed = disk("a.webp", {
+      focal: { x: 0.4, y: 0.2, rev: "1:100", z: 2.5 },
+      width: 600,
+      height: 300,
+    });
+    expect(rowFocal(zoomed)).toEqual({ x: 0.4, y: 0.2, z: 2.5 });
+    expect(artFocal(zoomed)).toEqual({
+      mode: "centred",
+      point: { x: 0.4, y: 0.2 },
+      width: 600,
+      height: 300,
+      zoom: 2.5,
+    });
+    expect(rowFocal({ ...zoomed, revision: "2:200" })).toBeUndefined();
+    // The wire's two spellings of "no zoom" fold to the one an edit may produce — absent.
+    expect(rowFocal(disk("a.webp", { focal: { x: 0.4, y: 0.2, rev: "1:100", z: null } }))).toEqual({
+      x: 0.4,
+      y: 0.2,
+    });
+    expect(
+      Object.keys(rowFocal(disk("a.webp", { focal: { x: 0.4, y: 0.2, rev: "1:100" } }))!),
+    ).toEqual(["x", "y"]);
+  });
+
   it("carries a MISSING source size through as null rather than inventing one", () => {
     const live = disk("a.webp", {
       focal: { x: 0.4, y: 0.2, rev: "1:100" },
@@ -777,6 +804,17 @@ describe("focalState — rev-keying, the three-valued predicate", () => {
 
 describe("setFocal — the framing write (§5)", () => {
   const rows = [disk("a.webp", { listed: true }), disk("b.webp"), bundled("pegasus")];
+
+  it("carries the zoom into the entry as part of the one focal object", () => {
+    expect(
+      setFocal([{ name: "a.webp" }], rows, "f:a.webp", {
+        x: 0.42,
+        y: 0.18,
+        z: 2,
+        rev: "1:100",
+      })[0],
+    ).toEqual({ name: "a.webp", focal: { x: 0.42, y: 0.18, z: 2, rev: "1:100" } });
+  });
 
   it("writes the point on its own entry, keeps the order, and sweeps only the DISK tier", () => {
     const out = setFocal([{ name: "a.webp" }], rows, "f:a.webp", {

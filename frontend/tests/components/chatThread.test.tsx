@@ -15,16 +15,20 @@ vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: []
 // D70 §8.5 — the agent-art resolver is a QUERY PAIR (roster + media index), so it is mocked rather than
 // dragging a QueryClient in (the same reason `useActionSpecs` is mocked above). `art` is the mutable
 // answer: NO ART by default, which is the state every pre-D70 assertion in this file is about.
-const art = vi.hoisted(() => ({ url: undefined as string | undefined }));
+const art = vi.hoisted(() => ({
+  url: undefined as string | undefined,
+  focus: undefined as FocalArt | undefined,
+}));
 vi.mock("../../src/hooks/useAgentArt", () => ({
   useAgentArt: () => (name: string | null) => ({
     name: name ?? "default",
     title: name ?? "default",
-    avatar: art.url === undefined ? undefined : { url: art.url },
+    avatar: art.url === undefined ? undefined : { url: art.url, focus: art.focus },
   }),
 }));
 
 import { ChatThread } from "../../src/components/ChatThread";
+import type { FocalArt } from "../../src/lib/focalPosition";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
 import { AUTOMATIONS_GROUP_ID } from "../../src/hooks/useAutomations";
 import { sendMessage, useChat } from "../../src/store/chat";
@@ -51,6 +55,7 @@ afterEach(() => {
   cleanup();
   setPlanSheetOpen(false); // module state — reset between cases
   art.url = undefined; // ...and the mocked agent art (D70 §8.5)
+  art.focus = undefined;
   setUI({ chatAvatarsVisible: true });
 });
 
@@ -621,17 +626,72 @@ describe("D70 · the who-line avatar swap", () => {
     const { container } = render(<ChatThread active chat={botChat({ agent: "lynette" })} />);
     const who = container.querySelector(".b.bot .who") as HTMLElement;
     expect(who.className).toContain("has-avatar"); // the CSS class is what hides `::before`
-    const img = who.querySelector("img.who-face") as HTMLImageElement;
-    expect(img.getAttribute("src")).toBe(AVATAR);
-    expect(img.getAttribute("alt")).toBe(""); // decoration — the speaker is the label beside it
-    expect(who.firstElementChild).toBe(img); // the DOT'S position, ahead of the label
+    // WAVE 3: the face is a painted box, not an `<img>` — a zoomed picture is drawn larger than its
+    // circle, and a background is clipped by the box that declares it while an `<img>` would need a
+    // wrapper element per bubble to clip it (`components/FocalFace.tsx`).
+    const face = who.querySelector(".who-face") as HTMLElement;
+    expect(face.tagName).toBe("SPAN");
+    expect(face.style.backgroundImage).toBe(`url("${AVATAR}")`);
+    expect(face.textContent).toBe(""); // decoration — the speaker is the label beside it
+    expect(who.firstElementChild).toBe(face); // the DOT'S position, ahead of the label
+  });
+
+  // WAVE 3 — the face HONOURS the owner's framing, at zero per-bubble cost. The claim is exactly that
+  // pair: the crop is right, AND nothing was measured to get it (the old 18px rule refused the framing
+  // precisely because reading it would have cost a ResizeObserver per bubble).
+  it("frames itself from the item alone — the point, the zoom, and NOT one observer", () => {
+    const observed: unknown[] = [];
+    class Spy {
+      constructor(_cb: ResizeObserverCallback) {}
+      observe(el: Element): void {
+        observed.push(el);
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    const base = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = Spy;
+    try {
+      art.url = AVATAR;
+      // A 3:4 portrait: the square window crops in Y only, so `s.y = 4/3` and
+      // `P(0.3, 4/3) = (0.3·4/3 − 0.5)/(4/3 − 1) = −0.3` → clamped to 0. X has nothing to choose.
+      art.focus = { mode: "centred", point: { x: 0.4, y: 0.3 }, width: 600, height: 800 };
+      const { container } = render(<ChatThread active chat={botChat({ agent: "lynette" })} />);
+      const face = container.querySelector(".b.bot .who .who-face") as HTMLElement;
+      expect(face.style.backgroundPosition).toBe("50% 0%");
+      // UNZOOMED ⇒ no inline size at all: `cover` is what the stylesheet already says.
+      expect(face.style.backgroundSize).toBe("");
+      expect(observed, "a framed face must not observe anything").toEqual([]);
+    } finally {
+      globalThis.ResizeObserver = base;
+    }
+  });
+
+  it("magnifies the cover crop by the stored zoom — the only window that does", () => {
+    art.url = AVATAR;
+    // Same portrait at z = 2: the drawn picture is `2·(1, 4/3)` of the circle, and the position is
+    // `P(f, s·2)` — a looser clamp, because a zoomed picture overflows further.
+    art.focus = { mode: "centred", point: { x: 0.4, y: 0.3 }, width: 600, height: 800, zoom: 2 };
+    const { container } = render(<ChatThread active chat={botChat({ agent: "lynette" })} />);
+    const face = container.querySelector(".b.bot .who .who-face") as HTMLElement;
+    expect(face.style.backgroundSize).toBe("200% 266.6667%");
+    expect(face.style.backgroundPosition).toBe("30% 18%");
+  });
+
+  it("degrades to the point alone where the picture's own size is unknown", () => {
+    art.url = AVATAR;
+    art.focus = { mode: "centred", point: { x: 0.25, y: 0.75 }, width: null, height: null };
+    const { container } = render(<ChatThread active chat={botChat({ agent: "lynette" })} />);
+    const face = container.querySelector(".b.bot .who .who-face") as HTMLElement;
+    expect(face.style.backgroundPosition).toBe("25% 75%");
+    expect(face.style.backgroundSize).toBe("");
   });
 
   it("keeps today's dot for an agent with no avatar", () => {
     const { container } = render(<ChatThread active chat={botChat({ agent: "ops" })} />);
     const who = container.querySelector(".b.bot .who") as HTMLElement;
     expect(who.className).toBe("who");
-    expect(who.querySelector("img.who-face")).toBeNull();
+    expect(who.querySelector(".who-face")).toBeNull();
   });
 
   it("keeps today's dot with the Appearance switch off, even when the agent HAS one", () => {
@@ -640,7 +700,7 @@ describe("D70 · the who-line avatar swap", () => {
     const { container } = render(<ChatThread active chat={botChat({ agent: "lynette" })} />);
     const who = container.querySelector(".b.bot .who") as HTMLElement;
     expect(who.className).toBe("who");
-    expect(who.querySelector("img.who-face")).toBeNull();
+    expect(who.querySelector(".who-face")).toBeNull();
   });
 
   it("moves nothing else in the line — label, endpoint chip and time keep their space", () => {
@@ -656,7 +716,7 @@ describe("D70 · the who-line avatar swap", () => {
   it("wears the DEFAULT agent's avatar on a turn with no agent of its own (7e-c)", () => {
     art.url = AVATAR;
     const { container } = render(<ChatThread active chat={botChat()} />);
-    expect(container.querySelector(".b.bot .who img.who-face")).not.toBeNull();
+    expect(container.querySelector(".b.bot .who .who-face")).not.toBeNull();
     expect(container.querySelector(".b.bot .who")?.textContent).toMatch(/^assistant · /);
   });
 });

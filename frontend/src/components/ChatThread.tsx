@@ -695,7 +695,7 @@ const Bubbles = memo(function Bubbles({
             time={hm(m.ts)}
             // A null `agent` is a turn the DEFAULT agent ran (7e-c), so that is whose avatar it wears —
             // the resolver's own `null` contract.
-            avatar={agentArt?.(m.agent ?? null).avatar?.url}
+            avatar={agentArt?.(m.agent ?? null).avatar}
           >
             {working && <span className="status-tag">{reasoning ? "thinking" : "working"}</span>}
             {/* Read-aloud toggle (6b-2): only on a settled text reply, and only when TTS is configured. */}

@@ -1,10 +1,18 @@
+import { useState } from "react";
+
 import { FocalImg } from "./FocalImg";
 import { CropModal } from "./media/CropModal";
+import { FramingSheet } from "./media/FramingSheet";
 import { EditIcon } from "./media/icons";
 import { LibraryPicker } from "./media/LibraryPicker";
 import { AGENTS_NS, AVATARS_ROLE, BACKGROUNDS_ROLE } from "../hooks/useAgentArt";
 import { useImageJob, type ImageJob } from "../hooks/useImageJob";
-import { useMediaLibrary, type SectionView } from "../hooks/useMediaLibrary";
+import {
+  libraryItems,
+  useMediaLibrary,
+  type LibraryItem,
+  type SectionView,
+} from "../hooks/useMediaLibrary";
 import { useMediaUpload } from "../hooks/useMediaUpload";
 import { orderedUsable, revUrl } from "../lib/media";
 import { artFocal, entryId, rowId, shown, type RowId } from "../lib/mediaLibrary";
@@ -37,8 +45,12 @@ import { MEDIA_NS } from "../theme-engine/mediaRegistry";
 // for the sibling half of this reason). So the ROW state lives on the form, the pickers mount beside it,
 // and each one's upload tail outlives the modal being closed on it.
 //
-// FRAMING and RE-CROP are deliberately NOT here (§8.2): these are ordinary library entries, so the
-// media gallery in Conf frames and re-crops them exactly as it does every other picture.
+// **FRAMING HAS A SECOND DOOR HERE** (wave 3, the owner's amendment to §8.2's framing-stays-in-Conf
+// scoping): the picker offers *Focus* on the picture it is already bound to, and what it opens is the
+// media manager's OWN sheet, on the media manager's own queued write. One framing UI, two ways in —
+// never a second picker and never a circle on the grid. RE-CROP stays a Conf-gallery job: it is a
+// destructive re-encode of a library file, which is a library screen's business rather than a
+// binding's.
 
 /** THE TWO ART FIELDS, once: which `AgentDef` field binds which role, and what the owner calls it. One
  *  map because three surfaces have to agree about it — the face in the form, the picker beside it, and
@@ -58,13 +70,22 @@ export interface AgentArtStudio {
   job: ImageJob;
   sections: SectionView[];
   append: ReturnType<typeof useMediaLibrary>["write"]["append"];
+  /** The framing write, for the picker's second door onto the sheet (wave 3) — the SAME queued,
+   *  rev-guarded chokepoint the Conf gallery's Focus button uses, reached from the other end. */
+  setFocal: ReturnType<typeof useMediaLibrary>["write"]["setFocal"];
   ready: boolean;
 }
 
 export function useAgentArtStudio(): AgentArtStudio {
   const lib = useMediaLibrary(AGENTS_NS, MEDIA_NS[AGENTS_NS]);
   const job = useImageJob();
-  return { job, sections: lib.sections, append: lib.write.append, ready: lib.ready };
+  return {
+    job,
+    sections: lib.sections,
+    append: lib.write.append,
+    setFocal: lib.write.setFocal,
+    ready: lib.ready,
+  };
 }
 
 /** The crop step, rendered ONCE per form beside the rows rather than inside one of them — the
@@ -204,7 +225,17 @@ function ArtPicker(props: {
   onClose: () => void;
 }) {
   const { studio, field, value } = props;
-  const { view, rows, want } = useArtBinding(studio, field, value);
+  const { view, rows, want, bound } = useArtBinding(studio, field, value);
+  // THE FRAMING SHEET's subject — `MediaGallery`'s own shape, verbatim: the ITEM, captured when the
+  // sheet is opened, held one level above the screen it was opened from. Capturing is what the sheet's
+  // contract already asks for (it saves the revision it RENDERED), and holding the item rather than a
+  // boolean is what makes the sheet's life independent of the picker's: it can only be raised by the
+  // picker's own Focus, and only ever lowered by its own Save or Cancel.
+  //
+  // It lives here rather than on the form for the reason the picker's own state does not: this
+  // component is already OUTSIDE the `.mform` grid whose field recipe would dress an overlay's
+  // controls (see the header), so nothing is bought by threading it another level up.
+  const [framing, setFraming] = useState<LibraryItem | null>(null);
   const upload = useMediaUpload({
     job: studio.job,
     section: view?.section,
@@ -236,24 +267,55 @@ function ArtPicker(props: {
       props.onClose();
     },
   });
-  if (!props.open || view === undefined) return null;
+  if (view === undefined) return null;
+  // The bound row as the library's own item — through `libraryItems`, the one place a row becomes one,
+  // so the sheet and the write see exactly what the gallery would hand them. Framing is offered only
+  // where the ROLE allows it and there is a picture to frame.
+  const framable =
+    view.section.caps.frame && bound !== undefined && bound.unusable !== true
+      ? libraryItems([bound], { ids: [], mode: "first" })[0]
+      : undefined;
   return (
-    <LibraryPicker
-      view={view}
-      rows={rows}
-      current={want}
-      title={`Choose ${ART_FIELDS[field].label.toLowerCase()}`}
-      ready={studio.ready}
-      upload={upload}
-      onPick={(entry) => {
-        props.onChange(entry);
-        props.onClose();
-      }}
-      onClear={() => {
-        props.onChange("");
-        props.onClose();
-      }}
-      onClose={props.onClose}
-    />
+    <>
+      {props.open && (
+        <LibraryPicker
+          view={view}
+          rows={rows}
+          current={want}
+          title={`Choose ${ART_FIELDS[field].label.toLowerCase()}`}
+          ready={studio.ready}
+          upload={upload}
+          onPick={(entry) => {
+            props.onChange(entry);
+            props.onClose();
+          }}
+          onClear={() => {
+            props.onChange("");
+            props.onClose();
+          }}
+          onFrame={framable === undefined ? undefined : () => setFraming(framable)}
+          onClose={props.onClose}
+        />
+      )}
+      {/* A SIBLING of the picker, never a child (the gallery mounts its own sheet beside the gallery
+          modal for the same reason): a nested overlay's Escape would ride the picker's keydown trap
+          and close the screen underneath it. Ordinarily the picker stays up behind it, so finishing
+          lands the owner back where they were — but the sheet is NOT conditioned on the picker, and
+          that is deliberate: a late upload completing binds and closes the picker (the wave-2 F1
+          path), and yanking a framing gesture off the screen to do it would be the worse answer. It
+          also means the state can never go stale: only Focus raises the sheet, and only the sheet's
+          own Save or Cancel lowers it. */}
+      {framing !== null && (
+        <FramingSheet
+          section={view.section}
+          item={framing}
+          onSave={(focal, expectedRev) => {
+            studio.setFocal(view.section, framing, focal, expectedRev);
+            setFraming(null);
+          }}
+          onCancel={() => setFraming(null)}
+        />
+      )}
+    </>
   );
 }

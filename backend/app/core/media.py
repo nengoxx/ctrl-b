@@ -53,7 +53,7 @@ from pathlib import Path
 from typing import IO, ClassVar, Literal
 from urllib.parse import quote
 
-from pydantic import BaseModel, Field, computed_field, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 from app.core.fsutil import fsync_dir
 
@@ -317,6 +317,14 @@ ROLE_COLLATION = "library-v1"
 
 # ── the library's per-item models (config AND wire — one definition) ──────────────────────────────
 
+#: The framing ZOOM's bounds (D70 §13-S6b wave 3). Pinned to the client's own
+#: `lib/focalPosition.ts#FOCAL_ZOOM_MIN/MAX`, which are the slider's ends: the two numbers describe ONE
+#: control, and a ceiling the server enforced lower than the one the owner can drag to would refuse a
+#: value the UI offered. The floor is 1 because the field means "magnify the cover crop by this much" —
+#: below 1 there is nothing to show but a gap, which `object-fit: cover` exists to prevent.
+FOCAL_ZOOM_MIN = 1.0
+FOCAL_ZOOM_MAX = 4.0
+
 
 class MediaFocal(BaseModel):
     """The framing point of one library item (D65 / MEDIA_MANAGER_PLAN §5): where in the picture the
@@ -332,6 +340,13 @@ class MediaFocal(BaseModel):
     `rev` that does not match the file's current revision reads as UNSET — the client says "framing
     was reset — the file changed" rather than cropping to the wrong spot. An empty `rev` therefore
     degrades the same way (it matches no revision), which is what makes the field safely additive.
+
+    `z` is the CIRCLE windows' zoom (D70 §13-S6b wave 3) — the field this model's own
+    extend-don't-migrate note promised (`MediaItem`'s "`z` (zoom) tomorrow"). It rides the SAME object
+    as the point rather than a sibling map, so it is set, cleared and rev-keyed with it: one framing,
+    one staleness rule, one write. Only a SQUARE window honours it (the who-line face, the composer
+    picker's) — the c.ai crop-per-context rule as the owner ratified it, and the reason it can be one
+    number: a circle is always aspect 1, so "how much of the cover crop do I show" needs no box.
     """
 
     model_config = {"extra": "allow"}
@@ -339,6 +354,21 @@ class MediaFocal(BaseModel):
     x: float = Field(ge=0.0, le=1.0)
     y: float = Field(ge=0.0, le=1.0)
     rev: str = ""
+    #: The zoom, `>= 1`. **ABSENT IS THE ONLY SPELLING OF "NO ZOOM"** — the validator below folds a
+    #: literal `1` away — so a picture framed before this field existed, and one framed after it at the
+    #: slider's home position, are the same three keys in the config file the owner may open.
+    z: float | None = None
+
+    @field_validator("z")
+    @classmethod
+    def _clamp_zoom(cls, v: float | None) -> float | None:
+        """CLAMP rather than refuse, because this is the owner's own file: a hand-edited `z: 40` means
+        "as far in as it goes", and 422-ing the whole config over one number would take the app down
+        for a typo the UI cannot even produce. `None` for anything at or below the floor — see `z`."""
+        if v is None or v != v:  # NaN — the one float that survives `float | None` and means nothing
+            return None
+        z = min(FOCAL_ZOOM_MAX, max(FOCAL_ZOOM_MIN, v))
+        return None if z <= FOCAL_ZOOM_MIN else z
 
 
 class MediaIdentity(BaseModel):
@@ -386,9 +416,11 @@ class MediaItem(MediaIdentity):
     """ONE entry in a role's `files` list — the library's unit of PRIORITY (D65 §2.2).
 
     `files` replaced the old `order: [names]` because the list grew dimensions: the entry carries its
-    own `hidden`, `focal` and `key` today and `z` (zoom) tomorrow, and the alternative — a
-    `hidden: {name: bool}` map beside an `order:` list beside a `focal: {name: …}` map — is the
-    sibling shape the 2026-06-24 extend-don't-migrate directive bans.
+    own `hidden`, `focal` and `key`, and the alternative — a `hidden: {name: bool}` map beside an
+    `order:` list beside a `focal: {name: …}` map — is the sibling shape the 2026-06-24
+    extend-don't-migrate directive bans. The zoom this note used to promise for "tomorrow" arrived at
+    D70 §13-S6b wave 3 and cost exactly what the shape said it would: one optional field INSIDE
+    `MediaFocal` (`z`), no migration, no second map, no reader that had to change.
 
     **Identity is a discriminated union** (Emma #10) — `MediaIdentity` above, shared with the pin. A
     listed entry that named two things would make "which picture is this" a question with two

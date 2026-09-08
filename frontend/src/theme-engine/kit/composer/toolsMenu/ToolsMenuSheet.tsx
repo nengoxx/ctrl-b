@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { FocalImg } from "../../../../components/FocalImg";
+import { FocalFace } from "../../../../components/FocalFace";
 import { useAgentArt, type AgentArt } from "../../../../hooks/useAgentArt";
 import {
   effectiveAgent,
@@ -195,16 +195,10 @@ function AgentRow({
       </span>
       {/* ADDITIVE, never a swap: the tick keeps the selection gutter (which is what lines the names
           up), and the picture leads the name. A row for an agent with no avatar is byte-identical to
-          today's. `alt=""` — the name is right beside it, so the image is decoration. */}
-      {avatar && (
-        <FocalImg
-          className="tools-face"
-          src={avatar.url}
-          art={avatar.focus}
-          alt=""
-          draggable={false}
-        />
-      )}
+          today's. The name is right beside it, so the picture is decoration — and since wave 3 it is a
+          CIRCLE window like the who-line's, framed by the same measurement-free rule (`FocalFace`)
+          instead of by a `ResizeObserver` per row. */}
+      {avatar && <FocalFace className="tools-face" src={avatar.url} art={avatar.focus} />}
       <span className="tools-name">{name}</span>
       {tag && <span className="tools-tag">{tag}</span>}
     </label>

@@ -26,7 +26,9 @@ from test_media_g5 import _SEED, disk, home, make_client, png_bytes, role
 from app import config_migration as cm
 from app.config import Settings, load_settings
 from app.core.media import (
+    FOCAL_ZOOM_MAX,
     MEDIA_NAMESPACES,
+    MediaFocal,
     MediaItem,
     list_role,
     sort_key,
@@ -141,7 +143,9 @@ def test_the_index_carries_focal_hidden_and_listed_on_every_row(home: Path) -> N
         assert r.status_code == 200, r.text
         rows = {f["name"]: f for f in c.get("/api/media/gacha").json()["roles"]["characters"]}
 
-        assert rows["a"]["focal"] == {"x": 0.42, "y": 0.18, "rev": "r1"}
+        # `z` is on the wire from D70 §13-S6b wave 3 and is `None` for a framing with no zoom, which
+        # is the ONLY spelling of "no zoom" there is (`MediaFocal.z` folds a literal 1 away).
+        assert rows["a"]["focal"] == {"x": 0.42, "y": 0.18, "rev": "r1", "z": None}
         assert (rows["a"]["listed"], rows["a"]["hidden"]) == (True, False)
         # …including the BINDING key (§2.3 ④): a named role's file binds by this field when it has
         # one and by its stem otherwise, and a resolver may not read config to find that out.
@@ -151,6 +155,51 @@ def test_the_index_carries_focal_hidden_and_listed_on_every_row(home: Path) -> N
         # and one index serves both consumers (no config side-channel).
         assert (rows["b"]["listed"], rows["b"]["hidden"], rows["b"]["focal"]) == (True, True, None)
         assert rows["b"]["url"].endswith("b.png")
+
+
+def test_the_framing_zoom_rides_the_focal_object_and_reaches_the_wire(home: Path) -> None:
+    """D70 §13-S6b wave 3 — `z` is a field INSIDE `MediaFocal`, not a sibling map keyed by the same
+    name (the extend-don't-migrate directive, and the promise `MediaItem`'s own docstring made). So it
+    is set, cleared and rev-keyed with the point, it needs no migration, and it round-trips config →
+    wire untouched."""
+    with make_client() as c:
+        (role(home, "characters") / "a.png").write_bytes(png_bytes())
+        r = put_files(
+            c, "characters", [{"name": "a.png", "focal": {"x": 0.4, "y": 0.3, "rev": "r1", "z": 2.5}}]
+        )
+        assert r.status_code == 200, r.text
+        rows = {f["name"]: f for f in c.get("/api/media/gacha").json()["roles"]["characters"]}
+        assert rows["a"]["focal"] == {"x": 0.4, "y": 0.3, "rev": "r1", "z": 2.5}
+        # …and CLEARING the framing takes the zoom with it — one object, one write.
+        assert put_files(c, "characters", [{"name": "a.png"}]).status_code == 200
+        rows = {f["name"]: f for f in c.get("/api/media/gacha").json()["roles"]["characters"]}
+        assert rows["a"]["focal"] is None
+
+
+def test_an_old_config_carries_no_zoom_and_needs_no_migration(home: Path) -> None:
+    """The additive claim, stated as the state every existing install is in: a `focal` written before
+    the field existed loads, and reads as NO ZOOM."""
+    focal = MediaFocal.model_validate({"x": 0.4, "y": 0.3, "rev": "r1"})
+    assert focal.z is None
+    assert MediaItem.model_validate({"name": "a.png", "focal": {"x": 0.1, "y": 0.2}}).focal.z is None
+
+
+def test_the_zoom_is_clamped_rather_than_refused_and_1_is_spelled_absent() -> None:
+    """CLAMP, not 422: this is the owner's own file, and taking the app down over a hand-edited `z: 40`
+    would be a worse answer than "as far in as it goes". The floor is 1 because below it there is
+    nothing to show but a gap — and a literal 1 is folded AWAY, so config and wire have exactly one
+    spelling of "no zoom" and a framing at the slider's home position writes the three keys it always
+    wrote."""
+    at = lambda z: MediaFocal.model_validate({"x": 0.5, "y": 0.5, "rev": "r1", "z": z}).z  # noqa: E731
+    assert at(40) == FOCAL_ZOOM_MAX
+    assert at(0.25) is None  # below the floor is "no zoom", not "zoom out"
+    assert at(1) is None
+    assert at(1.0) is None
+    assert at(float("nan")) is None
+    assert at(None) is None
+    assert at(2.5) == 2.5
+    # …and the model still dumps the key, because absent and null are the same statement on the wire.
+    assert MediaFocal.model_validate({"x": 0.5, "y": 0.5}).model_dump()["z"] is None
 
 
 def test_a_bundled_row_carries_its_id_and_nothing_it_could_not_know(home: Path) -> None:

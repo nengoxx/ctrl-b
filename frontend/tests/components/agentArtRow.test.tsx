@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -45,6 +45,17 @@ vi.mock("../../src/hooks/useMediaUpload", () => ({
   },
 }));
 vi.mock("../../src/hooks/useImageJob", () => ({ useImageJob: () => ({ crop: null }) }));
+// The framing sheet (wave 3's second door) measures its stage with a `ResizeObserver`, and so does
+// react-easy-crop inside it; jsdom ships none. A no-op is enough — the sheet's own arms live in
+// `framingSheet.test.tsx`, and what this suite is about is the DOOR.
+vi.stubGlobal(
+  "ResizeObserver",
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+);
 
 import {
   AgentArtPickers,
@@ -74,6 +85,10 @@ const row = (file: string, over: Partial<MediaFile> = {}): MediaFile => ({
 const SECTIONS = mediaSections("agents", MEDIA_NS.agents, ["avatars", "backgrounds"]);
 const sectionOf = (role: string) => SECTIONS.find((s) => s.role === role);
 
+/** The framing write, spied — the studio hands the picker's Focus door the SAME queued chokepoint the
+ *  Conf gallery uses, so what this suite pins is that it is reached with the right subject. */
+const setFocalSpy = vi.fn();
+
 const studio = (rows: Partial<Record<string, MediaFile[]>>, live = true): AgentArtStudio =>
   ({
     job: { crop: null },
@@ -85,6 +100,7 @@ const studio = (rows: Partial<Record<string, MediaFile[]>>, live = true): AgentA
         }))
       : /* the media index has not landed yet */ [],
     append: vi.fn(),
+    setFocal: setFocalSpy,
     ready: true,
   }) as unknown as AgentArtStudio;
 
@@ -320,5 +336,94 @@ describe("AgentArtRow · a completing upload YIELDS (the wave-2 review's F1)", (
     // The backdrop's picker is still up, and nothing was bound behind it.
     expect(screen.getByRole("dialog").textContent).toContain("Choose backdrop");
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+// ── WAVE 3 — THE SECOND DOOR ON THE FRAMING SHEET ───────────────────────────────────────────────
+//
+// §8.2 kept framing in the Conf gallery; the owner's wave-2 round amended that. What did NOT change is
+// that there is ONE framing UI: the door is a button in the picker, and what it opens is the media
+// manager's own sheet on the media manager's own write.
+
+describe("AgentArtRow · the picker's Focus door", () => {
+  it("offers Focus only where there is a bound picture to frame", () => {
+    render(<Form rows={{ avatars: [row("lyra.png")] }} values={{ avatar: "lyra.png" }} />);
+    openPicker();
+    expect(screen.getByRole("button", { name: "Focus" })).toBeTruthy();
+    cleanup();
+    // Nothing bound: neither the unbind nor the framing door, because both act on a binding.
+    render(<Form rows={{ avatars: [row("lyra.png")] }} />);
+    openPicker();
+    expect(screen.queryByRole("button", { name: "Focus" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Use no picture" })).toBeNull();
+  });
+
+  it("opens the sheet as a SIBLING of the picker — outside it, and outside the form", async () => {
+    render(<Form rows={{ avatars: [row("lyra.png")] }} values={{ avatar: "lyra.png" }} />);
+    openPicker();
+    const picker = document.querySelector(".mgal-modal") as HTMLElement;
+    fireEvent.click(screen.getByRole("button", { name: "Focus" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set focus" });
+    // A nested overlay's Escape would ride the picker's own keydown trap and close it underneath.
+    expect(picker.contains(sheet)).toBe(false);
+    expect(sheet.contains(picker)).toBe(false);
+    // …and the form's `all: unset` field recipe must not reach either of them.
+    expect(document.querySelector(".mform .mgal-frame")).toBeNull();
+    // The picker stays UP behind the sheet, so finishing in the sheet lands the owner back where they
+    // were rather than on the form. (Dismissing the sheet is the shared back-guard's job and has its
+    // own suite — `hooks/useOverlayBackGuard.test.tsx`.)
+    expect(document.querySelector(".mgal-modal")).not.toBeNull();
+  });
+
+  it("saves through the library's own framing write, with the bound entry as its subject", async () => {
+    render(<Form rows={{ avatars: [row("lyra.png")] }} values={{ avatar: "lyra.png" }} />);
+    openPicker();
+    fireEvent.click(screen.getByRole("button", { name: "Focus" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set focus" });
+    fireEvent.change(within(sheet).getByRole("slider", { name: "Zoom" }), {
+      target: { value: "2" },
+    });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    expect(setFocalSpy).toHaveBeenCalledTimes(1);
+    const [section, item, focal, expectedRev] = setFocalSpy.mock.calls[0] as [
+      { role: string },
+      { id: string },
+      unknown,
+      string,
+    ];
+    expect(section.role).toBe("avatars");
+    expect(item.id).toBe("f:lyra.png"); // the library's own identity, through `libraryItems`
+    expect(focal).toEqual({ x: 0.5, y: 0.5, z: 2 });
+    expect(expectedRev).toBe("r1"); // the revision the sheet RENDERED, never a send-time read
+    // Saving closes the sheet and nothing else: the picker the owner opened it from is still there.
+    expect(screen.queryByRole("dialog", { name: "Set focus" })).toBeNull();
+    expect(document.querySelector(".mgal-modal")).not.toBeNull();
+  });
+
+  it("outlives a picker closed under it — a framing gesture is not yanked off the screen", () => {
+    // The wave-2 F1 path: an upload begun in this picker completes LATE, binds its file and fires the
+    // shared close. The sheet is not conditioned on the picker being up, so the owner finishes framing
+    // and lands on the form. It is also what makes the state unable to go stale — only Focus raises
+    // the sheet and only the sheet's own Save or Cancel lowers it, so there is nothing to reset.
+    render(
+      <Form
+        rows={{ avatars: [row("lyra.png"), row("nova.png")] }}
+        values={{ avatar: "lyra.png" }}
+      />,
+    );
+    openPicker();
+    fireEvent.click(screen.getByRole("button", { name: "Focus" }));
+    expect(screen.getByRole("dialog", { name: "Set focus" })).toBeTruthy();
+    act(() => h.args.get("avatars")?.onStored?.("nova.png"));
+    expect(document.querySelector(".mgal-modal"), "the picker closed under it").toBeNull();
+    expect(screen.getByRole("dialog", { name: "Set focus" })).toBeTruthy();
+    // …and it still frames the entry it was OPENED on, never whatever the binding became.
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Set focus" })).getByRole("button", {
+        name: "Save",
+      }),
+    );
+    expect(setFocalSpy.mock.calls[0][1]).toMatchObject({ id: "f:lyra.png" });
+    expect(screen.queryByRole("dialog", { name: "Set focus" })).toBeNull();
   });
 });

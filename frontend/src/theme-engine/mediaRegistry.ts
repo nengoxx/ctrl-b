@@ -198,6 +198,22 @@ export interface MediaPreviewDef {
   label: string;
   /** width / height. Coarse, per the warning above. */
   aspect: number;
+  /** The window's SHAPE; absent = a rectangle. A `circle` is the one preview above that is not coarse:
+   *  a circle is always aspect 1, so how far a picture overflows one is a fact about the picture alone
+   *  (`lib/focalPosition.ts#circleFraming`) and the preview runs the destination's exact arithmetic at
+   *  whatever size it happens to be drawn.
+   *
+   *  It is also the ROLE's declaration that it feeds a circle — which is what `framesCircle` below
+   *  reads, and therefore what turns the framing sheet's ZOOM on. One fact, two consequences, no way
+   *  for "there is a circle preview" and "the zoom is offered" to disagree: `MediaFocal.z` is honoured
+   *  by circle windows and by nothing else (the owner's crop-per-context ruling), so a role with no
+   *  circle destination has nothing to zoom FOR. */
+  shape?: "circle";
+}
+
+/** Whether a role feeds a CIRCLE destination — see `MediaPreviewDef.shape`. */
+export function framesCircle(def: MediaRoleDef): boolean {
+  return (def.previews ?? []).some((p) => p.shape === "circle");
 }
 
 /** A `named` role whose BUNDLED tier is a dealt SET rather than one entry per key — a theme layering a
@@ -833,9 +849,16 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // that decides which part of it the square window keeps is the only control the owner has
         // over it. An upload goes through the crop step and is centred by construction.
         framable: true,
-        // ONE window, because there is one: the tile and both circles are square, and previews a
-        // finger apart in aspect teach nothing (`MediaPreviewDef`).
-        previews: [{ label: "gallery card", aspect: 1 }],
+        // TWO windows of the same aspect, which the type's own "previews a finger apart teach
+        // nothing" rule would normally forbid — and this is the exception that proves what the rule is
+        // about. A square and a circle over the same crop are not a finger apart: the circle eats the
+        // corners, which is where a portrait's hair and shoulders live, and it is the window the owner
+        // actually reads the transcript through. It is also the ROLE's declaration that it feeds a
+        // circle at all — see `MediaPreviewDef.shape`, which is what offers the zoom.
+        previews: [
+          { label: "gallery card", aspect: 1 },
+          { label: "chat face", aspect: 1, shape: "circle" },
+        ],
       },
       backgrounds: {
         kind: "pool",

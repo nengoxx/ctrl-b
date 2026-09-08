@@ -67,6 +67,15 @@
    * must clear the pinned plan reads the band + `--plan-head-h` (published by PinnedPlanPanel). */
   --kit-plan-top: calc(var(--appbar-h, 0px) + var(--kit-plan-gap, 8px));
   --kit-plan-band-top: calc(var(--kit-inset-top, 0px) + var(--kit-plan-top));
+  /* ── the AGENT FACES (D70 §13-S6b wave 3) — the diameter of each circle an agent's avatar is painted
+   * in. Two numbers rather than one because the two windows answer to different rows: the who-line's
+   * sits beside a 10px caption in a transcript the owner reads for minutes at a time, and the tools
+   * menu's sits in a 30px picker row it shares with a tick and a name. They are TOKENS because the
+   * owner tunes them by eye — this is the one place to edit either, and no literal survives at the
+   * face's own rule. (`.kit`-level, not theme tokens: the size of a kit widget is the kit's, and a
+   * theme that wants another can still override it at or above `.kit`, exactly like `--kit-plan-gap`.) */
+  --kit-who-face: 28px;
+  --kit-tools-face: 24px;
 }
 /* ── the SHARED owner background (the Kit Art System) ────────────────────────────────────────────
  * `KitBackground` mounts this as the shell's FIRST child — and only when the theme participates, the
@@ -1399,15 +1408,19 @@ body[data-perf="lite"] .kit .tools-sheet {
   font-size: 11px;
 }
 /* the agent rows' AVATAR (D70 §8.4) — the field's circle convention at picker size. `flex-shrink: 0`
- * beside the `flex: 1` name, and a token border so a dark portrait still reads as a disc on a dark row. */
+ * beside the `flex: 1` name, and a token border so a dark portrait still reads as a disc on a dark row.
+ * The SAME window as the who-line's face at another diameter (wave 3), so it takes the same painted-box
+ * recipe and the same measurement-free framing — see `.who-face` above. */
 .kit .tools-sheet .tools-face {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  object-fit: cover;
+  width: var(--kit-tools-face);
+  height: var(--kit-tools-face);
   border-radius: 999px;
   border: 1px solid var(--line-2);
-  background: var(--surface-2);
+  background-color: var(--surface-2);
+  background-size: cover;
+  background-position: 50% 50%;
+  background-repeat: no-repeat;
 }
 .kit .tools-sheet .tools-empty {
   margin: 0;
@@ -3840,15 +3853,23 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 .kit .b .who.has-avatar::before {
   display: none;
 }
+/* The face HONOURS the owner's framing, and costs nothing to (wave 3). The rule that stood here said
+ * a point was not legible at 18px and that reading one would cost a `ResizeObserver` per BUBBLE — both
+ * halves are gone: the circle is 28px on the owner's word, and a circle is ALWAYS aspect 1, so how far
+ * the picture overflows it is a fact about the picture rather than about the box. `FocalFace` computes
+ * the whole crop — the point and its zoom — from the item alone and paints it as a background, so
+ * there is no ref, no observer and no second element to clip one. */
 .kit .b .who .who-face {
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  object-fit: cover; /* centred: a framing point is not legible at 18px, and honoring one would cost a
-                      * ResizeObserver per BUBBLE (`useFocalPosition` is per-window) for no visible gain */
+  width: var(--kit-who-face);
+  height: var(--kit-who-face);
   border-radius: 999px;
   border: 1px solid var(--line-2);
-  background: var(--surface-2);
+  background-color: var(--surface-2);
+  /* The UNFRAMED default, and the one `FocalFace` overrides only where there is a zoom to apply. */
+  background-size: cover;
+  background-position: 50% 50%;
+  background-repeat: no-repeat;
 }
 .kit .b .body {
   font-size: 14px;
@@ -7713,6 +7734,32 @@ body[data-perf="lite"] .kit .mgal-pill {
   box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.42);
   pointer-events: none;
 }
+/* …and ROUND where the role's destination is a circle (D70 §13-S6b wave 3). `cropShape="round"` makes
+ * the library add its own `reactEasyCrop_CropAreaRound`, and MEASURED in a real browser that class is
+ * what currently paints the radius: `react-easy-crop.css` is imported UNLAYERED while this file lives
+ * in `@layer base`, and an unlayered rule beats a layered one whatever the specificity (which is also
+ * why the ring above is the library's 1px white rather than the accent — a pre-existing condition of
+ * both cropper surfaces, recorded, not this slice's to change). This rule is the guard for the day that
+ * changes: without it, `--radius-sm` two rules up would square a window that has to be a circle. */
+.kit .mgal-reticle.round {
+  border-radius: 999px;
+}
+/* The framing sheet's ZOOM row — the crop step's control, in the sheet that now stores a zoom. Its own
+ * class rather than a shared one: the two live in different modals with different paddings, and the
+ * numbers they move mean different things (see `lib/focalPosition.ts`'s constants). */
+.kit .mgal-frame-zoom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.kit .mgal-frame-zoom input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
 /* The transient RULE OF THIRDS, over the whole picture (Gutenberg's 600ms flash, R57 §8①). Two
  * repeating gradients rather than four elements; `opacity` is the only animated property. */
 .kit .mgal-frame-thirds {
@@ -7793,6 +7840,15 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+/* The CIRCLE preview IS the painted box (`FocalFace`), so the picture arrives as this element's own
+ * background rather than as a child — which is also what clips a zoomed one to the disc. The three
+ * background longhands restore what `.mgal-frame-win`'s `background:` shorthand resets. */
+.kit .mgal-frame-win.circle {
+  border-radius: 999px;
+  background-size: cover;
+  background-position: 50% 50%;
+  background-repeat: no-repeat;
 }
 .kit .mgal-frame-caption {
   padding: 0;
