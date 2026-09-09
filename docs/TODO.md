@@ -1576,7 +1576,8 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       the kit backdrop layer + `off`-state surface behavior (default `operator`; frontier
       unchanged v1). **COUNCIL-CLOSED 2026-09-08**: §8.3a `dd60681` → build `06d3f0e` → Emma
       SHIP WITH FIXES 3M → wave `29c5be4` → rider `90b7472` → micro-confirm PASS; full record
-      = plan §13-S6; the owner's phone round on the three states closes it.
+      = plan §13-S6. **The owner rounds then ran §13-S6b** (waves 1/1c/2/3 + the wave-3 feel
+      round, every wave council-closed) — **S6b CLOSED 2026-09-09 by the owner's word**.
 - [ ] S7 — Owner device round (the phase gate): import a real card · talk to it on the phone ·
       tools-in-character on both duties settings · all three backdrop states (blur/dim
       legibility) · a field-authored lorebook triggering live · showcase + picker feel ·

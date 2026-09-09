@@ -2226,6 +2226,7 @@ clear lands on unmounted state, a no-op).
 wave (builder ×2 · main-seat ×2). eslint 100 → 101, the exported `confirmDelete`'s
 `only-export-components` (QUALITY-attributed).
 
-**NEXT: the owner's glance at the closed feel-round wave** (dev :5173 — the 32px circle, the
-delete corner incl. the trash-vs-× call, the still backdrop) **→ their word closes S6b → S7 —
-the owner DEVICE round — IS the phase gate (§10-S7).**
+**S6b IS CLOSED (the owner, 2026-09-09, in conversation): "both fixes looked good, I just
+checked them"** — the delete corner (the trash glyph stands, no × swap asked) and the still
+full-mode backdrop both passed their glance; the 32px circle rode the same round unremarked.
+**→ S7 — the owner DEVICE round — IS the phase gate (§10-S7).**

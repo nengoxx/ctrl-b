@@ -12,7 +12,28 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-09, ELEVENTH session continued — **the owner's WAVE-3 FEEL ROUND landed 3 rulings and the FEEL-ROUND WAVE ran the whole cadence same session: council-CLOSED, Emma's confirm RESOLVED — SHIP**; supersedes below where it speaks)
+## Current state (2026-09-09, TWELFTH session — **the owner's glance PASSED the feel-round wave ("both fixes looked good") → S6b IS CLOSED; NEXT = S7, the owner DEVICE round = the phase gate**; supersedes below where it speaks)
+
+- **S6b closed by the owner's word (2026-09-09, in conversation):** the delete corner passed
+  (the trash glyph stands — no × swap asked) and the still full-mode backdrop passed; the
+  32px circle rode the round unremarked. Recorded in plan §13-S6b (the close line) + the
+  TODO S6 entry. **All of S0–S6(+S6b) are now closed; only S7 remains in Phase 23.**
+- **▶▶ NEXT: S7 — the owner DEVICE round — IS the phase gate (§10-S7):** import a real card
+  through the UI · talk to it on the phone · tools-in-character on both duties settings ·
+  all three backdrop states on the real phone (blur/dim legibility) · a field-authored
+  lorebook triggering live (§6.7 — `personality-traits` is attached to Lynette on dev) ·
+  showcase/picker feel (incl. the §8.4 tap-inversion re-test) · read-along on a character
+  reply. **⚠ Mic needs HTTPS and Serve currently fronts PROD :5433** (`tailscale serve
+  status`); for the dev mic leg, point it at dev for the round (`tailscale serve --bg 5173`,
+  runbook HTTPS_TAILSCALE.md — HMR-websocket caveat noted there) and restore
+  `tailscale serve --bg 5433` after. Everything non-mic runs on plain :5173/:5434 as usual.
+  Both dev units RUNNING (D69 — do NOT stop them); :5434 on `11ff928`, current for the BE.
+- Git after the closure docs commit: **104 commits unpushed over origin `04769d9`**; prod
+  untouched v1.7.7 @ `578ffa7`; the v1.7.8 pipeline (Dependabot D1 → push → release E,
+  config migration 2→3, rollback = config backup FIRST then v1.7.7) unchanged, still owed,
+  owner-sequenced. **NEXT-NEXT (owner): LIVE VOICE/CALL MODE — R51, buy only the delta.**
+
+## Prior state (2026-09-09, ELEVENTH session continued — **the owner's WAVE-3 FEEL ROUND landed 3 rulings and the FEEL-ROUND WAVE ran the whole cadence same session: council-CLOSED, Emma's confirm RESOLVED — SHIP**; superseded above where it speaks)
 
 - **The owner's feel round (in conversation): "looks good" + three rulings** — ① the bubble
   circle slightly bigger → `--kit-who-face` 28 → **32px** (main-seat `1c1e518`) · ② the picker
