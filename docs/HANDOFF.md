@@ -12,7 +12,54 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-09, ELEVENTH session — **WAVE 3 (bigger circles + the z-zoom circular cutout) ran the WHOLE standing cadence in one session and is council-CLOSED: Emma's confirm RESOLVED — SHIP, sweep "none"**; supersedes below where it speaks)
+## Current state (2026-09-09, ELEVENTH session continued — **the owner's WAVE-3 FEEL ROUND landed 3 rulings and the FEEL-ROUND WAVE ran the whole cadence same session: council-CLOSED, Emma's confirm RESOLVED — SHIP**; supersedes below where it speaks)
+
+- **The owner's feel round (in conversation): "looks good" + three rulings** — ① the bubble
+  circle slightly bigger → `--kit-who-face` 28 → **32px** (main-seat `1c1e518`) · ② the picker
+  needs a way to REMOVE an uploaded image — the owner's own design, "an x at the top right
+  corner" · ③ the `full` backdrop must NOT fade on scroll — "just leave it like when the chat
+  is unscrolled". **Full record = plan §13-S6b's FEEL-ROUND block** (its §8.3/§8.3a walk
+  passages carry the amendment in place).
+- **Build `822856e` (pinned Opus) + review rider `c002abe`:** the delete corner
+  (`LibraryGrid.onRemove?` → top-end `.mgal-del`, the in-use disc's recipe with the `--danger`
+  glyph; ONLY the picker passes it — the gallery's top-end stays the problem badge, and the
+  picker's corner is free BY CONSTRUCTION; one exported `confirmDelete` with a per-screen
+  `activeBody` clause; deleting the bound tile also empties the slot, picker stays open) and
+  the un-fade (the walk deleted WHOLE — driver, ramp/floor tokens, opacity calc, will-change,
+  both motion/perf gates; `scrollProgress.ts` stays for gacha's oracle; the static veil IS the
+  rest look). **Main-seat icon ruling:** the corner wears the trash glyph, not a literal × (an
+  × beside tap-is-the-pick reads as deselect) — a one-line swap if the owner wants the ×;
+  **THE OWNER HAS NOT YET SEEN the built corner — their glance rules it.**
+- **The council round: blind Emma SHIP WITH FIXES — 3 MED · 2 LOW, sweep clean** (she
+  Chromium-measured the corner geometry + confirm focus/Escape herself). Rider `c002abe`:
+  MED 1 (the clear compared the CLICK-TIME binding across two suspensions — a late upload
+  rebinding behind the confirm got blanked; fix = the `liveWant` latest-ref, the S5
+  closure-across-await lesson) · MED 2 (`write.remove` → `Promise<boolean>` for the BYTE
+  delete; clear only on `gone &&` the live check) · **MED 3 OVERRULED as residual** (draft
+  abandonment after a delete leaves the saved config naming the dead file — auto-persisting
+  one field would bypass the form's save chokepoint and break cancel-means-no-changes; the
+  dangling state is the shipped bounded degrade; Emma ruled the scoping HONEST) · LOW 1 (the
+  e2e `toPass` stillness arm was vacuous against an async driver — now double-rAF + one
+  assertion each; the builder EXECUTED the red-proof against the restored old driver) · LOW 2
+  (stale comment). **Her confirm: all five line-proofed, rider sweep "none" — RESOLVED —
+  SHIP** (she re-ran AgentArtRow 24/24 + typecheck + the agent-backdrop e2e 20/20 both
+  projects at HEAD).
+- **Gate at tip `c002abe`: 6/6 ×4 this wave — BE 2,377 · FE 3,129/178** (counts + the eslint
+  100→101 attribution in QUALITY.md). **All FE-only — :5173 serves everything live; both dev
+  units RUNNING (D69 — do NOT stop them; :5434 still on `11ff928`, current for the BE).**
+- **▶▶ NEXT: the owner's glance at the closed feel-round wave** (:5173 — the 32px circle · the
+  delete corner, incl. the trash-vs-× call · the still full-mode backdrop) **→ their word
+  closes S6b → S7 — the owner DEVICE round — IS the phase gate (§10-S7)** (import a real card ·
+  talk on the phone · tools-in-character both duties settings · all three backdrop states · a
+  lorebook triggering live · showcase/picker feel · read-along on a character reply).
+- **Git: 103 commits unpushed over origin `04769d9`** (the 99 + `1c1e518` + `822856e` +
+  `c002abe` + this docs commit — count verified by `git rev-list`); tree clean at write; the
+  PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline (Dependabot D1 → push →
+  release E, config migration 2→3, rollback = config backup FIRST then v1.7.7) unchanged,
+  still owed, owner-sequenced. **NEXT-NEXT (owner): LIVE VOICE/CALL MODE — R51, buy only the
+  delta.**
+
+## Prior state (2026-09-09, ELEVENTH session — **WAVE 3 (bigger circles + the z-zoom circular cutout) ran the WHOLE standing cadence in one session and is council-CLOSED: Emma's confirm RESOLVED — SHIP, sweep "none"**; superseded above where it speaks)
 
 - **The session opened on the handoff's word and built wave 3 off plan §13-S6b's ratified WAVE 3
   block — full record now in the plan's WAVE 3 AS-BUILT block:** pinned Opus build **`11ff928`**

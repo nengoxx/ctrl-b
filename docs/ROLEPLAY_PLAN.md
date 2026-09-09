@@ -567,6 +567,9 @@ background tall) are config-shaped like the existing per-role crop settings, not
   art layer + a separate readability scrim + the 1→0.28 opacity walk on the wrapper — REUSING
   the oracle's no-animated-`filter` approach (static rasterization, opacity-only per-frame
   work, §14.11) rather than its exact face structure, and simply mounting NO blurred layer.
+  *(AMENDED at the wave-3 feel round, 2026-09-09: the owner ruled the walk OUT — the `full`
+  layer keeps its rest look at every scroll offset; the driver + ramp/floor tokens were
+  deleted whole. Record = §13-S6b's FEEL-ROUND block. The scrim and everything else stand.)*
 - **`off`** — **suppresses BOTH the agent's art and the theme's fallback art, regardless of
   any binding** (Emma F14 killed the contradiction with the absent-art line below — that line
   now applies to operator/full only). The surface behavior is RULED here, not punted: gacha's
@@ -628,6 +631,8 @@ this narrows it.*
    readability scrim, and the 1→0.28 opacity walk — driven by a minimal kit hook over the
    **lifted pure progress math** (`themes/gacha/oracle.ts`'s pure half moves to a shared
    kit module; gacha re-imports — one source of truth; the gacha DOM driver stays gacha's).
+   *(The walk was AMENDED OUT at the wave-3 feel round, 2026-09-09 — owner ruling, no scroll
+   reaction at all; the lifted math stays for gacha's oracle. §13-S6b's FEEL-ROUND block.)*
    Walk tunables (ramp/floor) are kit tokens, not magic numbers; §14.11 holds (opacity-only
    per-frame, no animated filter, no scroll-driven CSS animations; hand-authored
    perf-lite/motion-reduced gates). **In gacha `full`, `GachaOracle` does not mount** — the
@@ -2159,7 +2164,68 @@ surfaces (pre-existing, the unlayered-CSS finding above — a future owner-trigg
 a hand-edited `z` on a NON-circle role's item round-trips through that role's sheet untouched
 (nothing reads it; preserving owner data is the chosen posture).
 
-**NEXT: the owner's feel round on wave 3** (dev :5173 — the bubble circles at 28/24px, tuned by
-token if the eye disagrees; the picker's Focus door; the round reticle + zoom + circle preview
-on Lynette's avatar) **→ their word closes the S6b round → S7 — the owner DEVICE round — IS the
-phase gate (§10-S7).**
+**THE WAVE-3 FEEL ROUND (owner, 2026-09-09, in conversation): "looks good" + THREE rulings —
+the FEEL-ROUND WAVE ran the whole cadence same session and is council-CLOSED (Emma's confirm
+RESOLVED — SHIP, rider sweep "none").** The rulings: ① the bubble circle slightly bigger →
+`--kit-who-face` 28 → **32px** (main-seat `1c1e518`) · ② the picker needs a way to REMOVE an
+uploaded image — the owner's own design: "an x at the top right corner" (their word overrode
+the main seat's fat-finger caution; the confirm dialog carries the risk) · ③ the `full`
+backdrop must NOT fade on scroll — "just leave it like when the chat is unscrolled".
+
+**Build `822856e`** (pinned Opus) **+ review rider `c002abe`:**
+
+- **② the delete corner:** `LibraryGrid.onRemove?` → a TOP-END corner button (`.mgal-del` — the
+  in-use disc's exact recipe: 24px drawn / ~34px `::after` target, `--danger` glyph on the
+  neutral plate), affordance-by-presence, no corner on `bundled`; ONLY `LibraryPicker` passes
+  it (the gallery's top-end stays the problem badge — a picker's rows are filtered usable +
+  un-`named`, so both halves of `problem` are unreachable there: the corner is free BY
+  CONSTRUCTION, stated in the grid doc). Wiring: `useAgentArtStudio.remove = lib.write.remove`
+  (the ONE delete chokepoint) · confirm through the EXPORTED `ItemDetail#confirmDelete` with a
+  third `activeBody` param — one delete confirm, two screens, only the what-being-active-means
+  clause differs ("…this slot goes back to no picture") · deleting the BOUND tile also clears
+  the slot; the picker STAYS OPEN (grid refreshes through the write queue's media refetch).
+  **Main-seat icon ruling (builder-flagged):** the corner wears `DeleteIcon` (trash), not a
+  literal × — beside tap-is-the-pick an × reads as *deselect*; one-line swap if the owner
+  prefers the ×.
+- **③ the un-fade:** the walk deleted WHOLE, no dormant machinery (the no-legacy-seams rule):
+  `useBackdropWalk` + `P_VAR`/`RAMP_VAR`/`SCROLLER_ID`, `FullBackdrop`'s ref/`motion`
+  read/`active` prop, `useAgentBackdropActive` (no other consumer, grep-proven), the
+  ramp/floor tokens, the `opacity: calc()`, `will-change`, and BOTH `data-motion="reduced"` /
+  `data-perf="lite"` gate rules. `kit/scrollProgress.ts` STAYS whole — gacha's oracle is its
+  consumer (GachaAgent.tsx imports all three helpers; its 14-arm suite untouched). The static
+  veil is the rest look and is unchanged. §8.3/§8.3a amended in place (the two walk passages
+  carry the amendment note).
+- **The review round (blind Emma): SHIP WITH FIXES — 3 MED · 2 LOW, sweep clean; she
+  Chromium-measured the corner geometry (one crisp `.mgal-del` boundary, no tile-tap overlap)
+  and confirm-dialog focus/Escape behavior.** Rulings + rider `c002abe`: **MED 1 FIX** (the
+  clear compared the CLICK-TIME `want` across two suspensions — a late upload rebinding behind
+  the confirm got blanked; fix = the `liveWant` latest-ref, effect-written, compared at
+  resolution — the S5 closure-across-await lesson) · **MED 2 FIX** (`write.remove` now ANSWERS
+  for the byte delete — `Promise<boolean>`, false on refusal/rejected DELETE; the clear
+  requires `gone && item.id === liveWant.current`; the await widens MED 1's window, which is
+  why the ref is load-bearing — said in the code) · **MED 3 OVERRULED as residual** (see
+  below) · **LOW 1 FIX** (the e2e stillness arm's `toPass` exits on FIRST success — vacuous
+  against an async driver; now an explicit double-rAF then ONE assertion each; the builder
+  EXECUTED the red-proof against the restored old driver: the new form fails at 0.28, the old
+  form's opacity half passed — the vacuity demonstrated, and the durable arm-shape lesson
+  recorded) · **LOW 2 FIX** (stale driver clause in the header). **Her confirm: all five
+  line-proofed, the MED-3 scoping ruled HONEST, rider sweep "none" — RESOLVED — SHIP** (she
+  re-ran AgentArtRow 24/24, typecheck, and the agent-backdrop e2e 20/20 both projects at
+  HEAD).
+
+**Residuals (recorded, none owed):** **MED 3** — a confirmed delete followed by ABANDONING the
+dirty agent form leaves the SAVED config naming the deleted file (the clear rides the draft;
+the fix was overruled: auto-persisting one field would mint a second agent-write path around
+the form's save chokepoint and break cancel-means-no-changes; the dangling state is the
+shipped bounded degrade — `useActiveBackdrop` paints nothing, the editor shows the empty face
++ stale name — and joins the §13-S4 unmount-mid-PUT class in the file/binding-divergence
+register) · the same class covers a delete resolving after the FORM unmounts (the resumed
+clear lands on unmounted state, a no-op).
+
+**Tests:** FE 3,127 (wave) → **3,129/178** (rider); BE 2,377 untouched. Gate 6/6 ×4 across the
+wave (builder ×2 · main-seat ×2). eslint 100 → 101, the exported `confirmDelete`'s
+`only-export-components` (QUALITY-attributed).
+
+**NEXT: the owner's glance at the closed feel-round wave** (dev :5173 — the 32px circle, the
+delete corner incl. the trash-vs-× call, the still backdrop) **→ their word closes S6b → S7 —
+the owner DEVICE round — IS the phase gate (§10-S7).**
