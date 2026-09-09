@@ -2,8 +2,8 @@ import { FocalImg } from "../../components/FocalImg";
 import type { AgentBackdropMode } from "../types";
 import type { BackdropArt } from "./agentBackdrop";
 
-// THE AGENT BACKDROP's layer (D70 §8.3 / §8.3a) — the rendering half; the vocabulary, its heal, the store
-// read and the scroll driver are in `agentBackdrop.ts` beside it.
+// THE AGENT BACKDROP's layer (D70 §8.3 / §8.3a) — the rendering half; the vocabulary, its heal and the
+// store read are in `agentBackdrop.ts` beside it.
 //
 // This module is PRESENTATIONAL: it takes a resolved `mode` and a resolved `art` and renders the layer.
 // WHICH art is each body's own answer (`hooks/useActiveBackdrop` for the agent's own picture; gacha folds

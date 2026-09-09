@@ -63,7 +63,10 @@ export function GalleryModal({
       edge: "top" | "bottom",
     ) => void;
     toggleHidden: (section: SectionView["section"], item: LibraryItem) => void;
-    remove: (section: SectionView["section"], item: LibraryItem) => Promise<void>;
+    /** Answers whether the BYTES went — for a caller that changes something of its own on the strength
+     *  of the delete (the agent picker's binding). This screen has nothing riding on it and ignores it:
+     *  the failure is already toasted, and the panel it closes is closing either way. */
+    remove: (section: SectionView["section"], item: LibraryItem) => Promise<boolean>;
     restoreDefaults: (section: SectionView["section"], ids: ReadonlySet<string>) => void;
   };
   upload: MediaUpload;

@@ -101,8 +101,13 @@ const sectionOf = (role: string) => SECTIONS.find((s) => s.role === role);
  *  Conf gallery uses, so what this suite pins is that it is reached with the right subject. */
 const setFocalSpy = vi.fn();
 /** The DELETE write, spied — same story: the picker's tile corner reaches the media manager's own
- *  `write.remove`, so what is pinned is that it is reached with the right subject. */
-const removeSpy = vi.fn();
+ *  `write.remove`, so what is pinned is that it is reached with the right subject.
+ *
+ *  It ANSWERS, because the shipped one does (the feel-round review's MED 2): `true` = the BYTES went.
+ *  The default is the happy path; the arm that needs a refused DELETE overrides it once. */
+const removeSpy = vi.fn(
+  async (_section: { role: string }, _item: { id: string }): Promise<boolean> => true,
+);
 
 const studio = (rows: Partial<Record<string, MediaFile[]>>, live = true): AgentArtStudio =>
   ({
@@ -552,5 +557,60 @@ describe("AgentArtRow · the picker's delete corner", () => {
     expect(removeSpy).not.toHaveBeenCalled();
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Avatar: lyra.png" })).toBeTruthy();
+  });
+
+  // ── the review round's two MEDs: what the slot-clear is allowed to trust ──────────────────────
+
+  it("a REFUSED delete leaves the slot alone — the picture is still on the server (MED 2)", async () => {
+    // `write.remove` answers for its DELETE. Clearing on a refusal would blank the face beside a toast
+    // saying the file could not be deleted — the owner would be looking at two contradictory reports of
+    // the same failure, and the binding they still have would be the one that was thrown away.
+    const onChange = vi.fn();
+    removeSpy.mockResolvedValueOnce(false);
+    render(
+      <Form
+        rows={{ avatars: [row("lyra.png")] }}
+        values={{ avatar: "lyra.png" }}
+        onChange={onChange}
+      />,
+    );
+    openPicker();
+    await tapDelete("lyra.png");
+    expect(removeSpy).toHaveBeenCalledTimes(1); // it was attempted…
+    expect(onChange).not.toHaveBeenCalled(); // …and refused, so nothing of ours moved
+    expect(screen.getByRole("button", { name: "Avatar: lyra.png" })).toBeTruthy();
+  });
+
+  it("a rebind DURING the confirm survives the delete that was already open (MED 1)", async () => {
+    // The stale-closure window, and it is a real one: the owner opens the confirm on the bound tile
+    // while an upload is still running, the upload lands (`onStored` rebinds this field and closes the
+    // picker), and only then is Delete tapped. A callback holding the CLICK-TIME binding would blank
+    // the picture that was just bound — the S5 `updateDraft` lesson, one surface over. The check reads
+    // a ref that renders keep current, so it sees the binding as it is at RESOLUTION time.
+    const onChange = vi.fn();
+    let release!: (ok: boolean) => void;
+    h.confirm.mockImplementationOnce(() => new Promise<boolean>((r) => (release = r)));
+    render(
+      <Form
+        rows={{ avatars: [row("lyra.png"), row("late.webp")] }}
+        values={{ avatar: "lyra.png" }}
+        onChange={onChange}
+      />,
+    );
+    openPicker();
+    // The confirm is UP and unanswered — no `await` here, deliberately.
+    fireEvent.click(screen.getByRole("button", { name: "Delete lyra.png" }));
+    expect(removeSpy).not.toHaveBeenCalled();
+    // …the upload lands behind it: this field rebinds and the picker closes (the wave-2 F1 path).
+    act(() => h.args.get("avatars")?.onStored?.("late.webp"));
+    expect(onChange).toHaveBeenLastCalledWith("avatar", "late.webp");
+    // …and NOW the owner confirms. The file goes; the binding that arrived meanwhile stays.
+    await act(async () => {
+      release(true);
+    });
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(removeSpy.mock.calls[0][1]).toMatchObject({ id: "f:lyra.png" }); // the clicked tile, still
+    expect(onChange).not.toHaveBeenCalledWith("avatar", "");
+    expect(screen.getByRole("button", { name: "Avatar: late.webp" })).toBeTruthy();
   });
 });

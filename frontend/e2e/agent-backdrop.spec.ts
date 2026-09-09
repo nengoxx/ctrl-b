@@ -158,11 +158,23 @@ test.describe("the kit themes take the shared layer", () => {
       el.scrollTop = 400; // well past where the deleted walk used to bottom out
       el.dispatchEvent(new Event("scroll"));
     });
-    // A DRIVER, if one ever came back, would take a frame or two to write — so give it several before
-    // declaring the layer still. `toPass` re-reads for the whole timeout instead of trusting one sample.
-    await expect(async () => {
-      expect(await opacity()).toBeCloseTo(1, 2);
-    }).toPass({ timeout: 2000 });
+    // WAIT FOR THE FRAMES A DRIVER WOULD HAVE USED, then assert ONCE. The first cut polled with
+    // `toPass`, which is vacuous against an asynchronous writer: it exits on the FIRST success, and the
+    // opacity is still 1 in the same task the scroll was dispatched in even with a live rAF-coalesced
+    // driver — the arm would have gone green over exactly the thing it exists to catch. Two frames is
+    // the deleted driver's own budget (one to schedule, one to run), so past them a returning walk has
+    // written and this reads its value rather than the frame before it.
+    await page.evaluate(
+      () =>
+        new Promise<void>((r) =>
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              r();
+            }),
+          ),
+        ),
+    );
+    expect(await opacity()).toBeCloseTo(1, 2);
     // …and nothing wrote the walk's property onto the pin either (the CSS half above is the ruling; this
     // is the JS half, in the same breath).
     expect(

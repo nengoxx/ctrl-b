@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { FocalImg } from "./FocalImg";
 import { CropModal } from "./media/CropModal";
@@ -247,6 +247,20 @@ function ArtPicker(props: {
   // component is already OUTSIDE the `.mform` grid whose field recipe would dress an overlay's
   // controls (see the header), so nothing is bought by threading it another level up.
   const [framing, setFraming] = useState<LibraryItem | null>(null);
+  // THE LIVE BINDING, for a handler that resumes after an `await` (the wave-3 feel-round review's MED 1).
+  // `want` is a render value, and the delete path crosses TWO suspensions — the confirm the owner is
+  // reading, and the DELETE the write awaits — during which a late upload can rebind this field and close
+  // the picker (`onStored` below). A closure comparing the click-time `want` would then see the OLD
+  // binding and blank the NEW one: the S5 `updateDraft` lesson exactly — a closure value never survives an
+  // await, so the check is made against a ref that renders keep current.
+  //
+  // Written in an EFFECT, never during render — the house rule `useMediaUpload` and `useOverlayBackGuard`
+  // both follow, and it is sufficient here by construction: the only reader is a resumed promise, and the
+  // rebind that could stale it is a `setState` whose commit runs this effect before any later task.
+  const liveWant = useRef(want);
+  useEffect(() => {
+    liveWant.current = want;
+  });
   const upload = useMediaUpload({
     job: studio.job,
     section: view?.section,
@@ -290,10 +304,20 @@ function ArtPicker(props: {
   // rides the SAME gesture as the delete rather than waiting for the binding to dangle: the row would
   // otherwise point at a file that is gone until the owner noticed.
   //
-  // The write is FIRED, not awaited, and that is not laziness: `write.remove` reports its own failures
-  // (a toast for the DELETE, a partial-success sentence for the cleanup) and resolves `void` either way,
-  // so there is nothing to await FOR — and an async callback in this `() => void` slot is exactly the
-  // shape `no-misused-promises` rejects.
+  // TWO CONDITIONS GUARD THAT CLEAR, and both come from the review round:
+  //
+  //  · the BYTES actually went (MED 2). `write.remove` answers for its DELETE now, and a refused one
+  //    must not empty a slot whose picture is still on the server — the owner would be looking at a
+  //    toast about a failed delete beside a face that had gone blank anyway.
+  //  · the binding is STILL the one that was clicked (MED 1), read from `liveWant` rather than from the
+  //    render's `want`. Awaiting the write is what makes this load-bearing rather than merely careful:
+  //    it WIDENS the window a late upload can rebind in, on top of the confirm the owner is already
+  //    reading. The ref is the only thing in this closure that survives either suspension.
+  //
+  // The async work is an IIFE inside the `() => void` slot rather than an `async` callback handed to it,
+  // which is exactly the shape `no-misused-promises` rejects; `write.remove` still reports its own
+  // failures (a toast for the DELETE, the queue's partial-success sentence for the cleanup), so nothing
+  // is caught here.
   //
   // The picker STAYS OPEN — the owner may be clearing out several — and the grid it is looking at
   // updates on its own: the cleanup write goes through the queue, whose save awaits the media refetch,
@@ -305,8 +329,10 @@ function ArtPicker(props: {
     confirmDelete(
       item,
       () => {
-        void studio.remove(view.section, item);
-        if (item.id === want) props.onChange("");
+        void (async () => {
+          const gone = await studio.remove(view.section, item);
+          if (gone && item.id === liveWant.current) props.onChange("");
+        })();
       },
       "The file is removed from the server and this slot goes back to no picture. This cannot be undone.",
     );

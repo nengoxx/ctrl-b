@@ -579,14 +579,23 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
        *  The order is the ruled one: the bytes go first, and a failure between the two steps leaves a
        *  DANGLING entry that the collation drops harmlessly on the next read. The reverse would leave
        *  a file on disk that nothing lists — invisible and undeletable. A cleanup failure is reported
-       *  as the partial success it is. */
-      remove: async (section: MediaSection, item: LibraryItem) => {
-        if (!section.caps.remove || item.bundled) return;
+       *  as the partial success it is.
+       *
+       *  It ANSWERS whether the BYTES went (the wave-3 feel-round review's MED 2) — and only that half.
+       *  A caller that changes something of its OWN on the strength of this delete has to know: the
+       *  agent picker clears the binding the deleted file was in, and clearing it on a refused DELETE
+       *  would unbind a picture that is still there. The CLEANUP half stays self-reporting exactly as
+       *  it was (it is queued, and its own `failNote` says the partial-success sentence), because no
+       *  caller can act on it: by then the file is gone whatever the config says. `true` is therefore
+       *  "the file is off the disk", not "everything landed". The gallery ignores the answer, which is
+       *  right — it has nothing of its own riding on it. */
+      remove: async (section: MediaSection, item: LibraryItem): Promise<boolean> => {
+        if (!section.caps.remove || item.bundled) return false;
         try {
           await del(item.row.url);
         } catch (e) {
           pushToast(e instanceof Error ? e.message : "Delete failed", "err");
-          return;
+          return false;
         }
         enqueue(
           listJob(
@@ -598,6 +607,7 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
             `${item.row.file} was deleted, but the library entry could not be cleaned up — it will drop on its own the next time the folder is read.`,
           ),
         );
+        return true;
       },
     };
   }, [enqueue, ns]);
