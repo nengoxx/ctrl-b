@@ -74,7 +74,7 @@
    * owner tunes them by eye — this is the one place to edit either, and no literal survives at the
    * face's own rule. (`.kit`-level, not theme tokens: the size of a kit widget is the kit's, and a
    * theme that wants another can still override it at or above `.kit`, exactly like `--kit-plan-gap`.) */
-  --kit-who-face: 28px;
+  --kit-who-face: 32px;
   --kit-tools-face: 24px;
 }
 /* ── the SHARED owner background (the Kit Art System) ────────────────────────────────────────────
