@@ -4,7 +4,7 @@ import { LibraryGrid } from "./LibraryGrid";
 import { AddImageRow, UploadFailureRow } from "./UploadRow";
 import { XIcon } from "../icons";
 import type { MediaFile } from "../../hooks/useMedia";
-import { libraryItems, type SectionView } from "../../hooks/useMediaLibrary";
+import { libraryItems, type LibraryItem, type SectionView } from "../../hooks/useMediaLibrary";
 import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
 import type { MediaUpload } from "../../hooks/useMediaUpload";
 import { modalKeyDown } from "../../lib/focusTrap";
@@ -32,6 +32,11 @@ import type { RowId } from "../../lib/mediaLibrary";
 // the file itself. FRAMING crossed over at wave 3 — see `onFrame` — because it is about the picture
 // this binding paints and the owner asked to reach it from here; the SHEET is still the one framing UI.
 //
+// DELETE crossed over at the wave-3 feel round, and only as far as the pain reached: a tile corner
+// (`onRemove`), one confirm, no detail panel. An upload ARRIVES in this screen, so a library the owner
+// can only add to was a one-way door — "Use no picture" unbinds and the tile stays forever. The write is
+// still the media manager's own `write.remove`; what crossed is the way in, not a second delete.
+//
 // The rows it offers are the caller's: a BINDING must not point at an entry the owner switched off or at
 // bytes the server cannot read, which is what `AgentArtRow` filters through the two shipped predicates
 // before handing them here.
@@ -46,6 +51,7 @@ export function LibraryPicker({
   onPick,
   onClear,
   onFrame,
+  onRemove,
   onClose,
 }: {
   view: SectionView;
@@ -72,6 +78,11 @@ export function LibraryPicker({
    *  mounts it as a SIBLING of this dialog, never inside it (an Escape in a nested overlay would ride
    *  this one's keydown trap and close the picker underneath it). */
   onFrame?: () => void;
+  /** THE TILE'S DELETE CORNER (wave 3's feel round) — absent ⇒ no corner, the grid's own contract passed
+   *  straight through, which is what keeps this component generic. Unlike the two verbs above it acts on
+   *  a TILE rather than on the binding, so it is offered on every deletable one and not only on the bound
+   *  one; the CALLER owns the confirm and whatever the deleted file's binding then has to do. */
+  onRemove?: (item: LibraryItem) => void;
   onClose: () => void;
 }) {
   const { section } = view;
@@ -165,7 +176,13 @@ export function LibraryPicker({
               // corner and arms the drag only when handed the callbacks for them, so a picker that
               // passes neither gets tiles that do exactly one thing. Which is the whole contract here —
               // a tap IS the pick.
+              //
+              // …with ONE exception since the wave-3 feel round, and it is the same contract: the DELETE
+              // corner, drawn only where the caller handed `onRemove`. It is here rather than in the
+              // manage screen's shape because the pain is here — an upload lands in this library, from
+              // this screen, and "Use no picture" only unbinds it.
               onSelect={(item) => onPick(item.row.file)}
+              onRemove={onRemove}
               // …and the tiles SPEAK the picker's vocabulary, not the gallery's (the wave-2 review's
               // F2). *active · in use · not in use* answer "what does this destination paint", which is
               // the manage screen's question; here the ring means THE ONE THIS AGENT IS BOUND TO and the

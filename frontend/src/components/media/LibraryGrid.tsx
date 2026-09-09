@@ -1,6 +1,6 @@
 import { useId, useRef } from "react";
 
-import { UseIcon } from "./icons";
+import { DeleteIcon, UseIcon } from "./icons";
 import type { LibraryItem } from "../../hooks/useMediaLibrary";
 import { tileUrl } from "../../lib/mediaLibrary";
 import type { MediaSection } from "../../theme-engine/mediaRegistry";
@@ -13,6 +13,7 @@ import { useDragReorder } from "../useDragReorder";
 // anti-recommendation: never share a corner without a priority rule):
 //   · bottom-end   = the IN-USE toggle — a real button, one tap, tick on / hollow ring off;
 //   · top-end      = a PROBLEM — the file will not paint, or another file already took its name;
+//                    …or, where no problem can arise, the DELETE corner (see `onRemove`);
 //   · bottom-start = ORIGIN — the "Default" chip, so "why can I not delete this one" is answered
 //                    before the owner asks.
 // The ACTIVE entry — the one the section's §2.4 resolver says is painted right now — wears an accent
@@ -50,6 +51,7 @@ export function LibraryGrid({
   canReorder = false,
   onSelect,
   onToggleUse,
+  onRemove,
   onReorder,
   describeItem = describe,
 }: {
@@ -75,6 +77,21 @@ export function LibraryGrid({
   /** One tap on the corner — membership, through the same queued `setHidden` intent the detail panel's
    *  switch enqueues. Absent where the section has no In-use to give (a seat). */
   onToggleUse?: (item: LibraryItem) => void;
+  /** Delete this file — the TOP-END corner, and the affordance-by-presence contract again: absent ⇒ no
+   *  corner at all, which is what keeps this grid generic.
+   *
+   *  **Only `LibraryPicker` passes it, and the gallery must not** (D70 §13-S6b wave-3 feel round). The
+   *  corner grammar above gives top-end to a PROBLEM, and in the manage screen a problem really can
+   *  arise — so there the delete verb stays in the detail panel's pill and the top corner stays the
+   *  problem badge. A PICKER is handed only rows that are shown and usable, and it builds its items
+   *  un-`named`, so neither half of `problem` (`row.unusable`, `duplicate`) can be true there: the
+   *  corner is free, and the two uses can never collide.
+   *
+   *  ABSENT, NOT DISABLED, on both rungs — the GNOME rule the delete verb already follows in
+   *  `ItemDetail`: the CALLER hands this only where `section.caps.remove`, and the grid draws no corner
+   *  on a `bundled` item (there is nothing on disk to delete). Same predicate, split across the two
+   *  places that each know their own half of it. */
+  onRemove?: (item: LibraryItem) => void;
   /** Commit a drag. The subject arrives as the ITEM that was picked up, not as an index to look up
    *  again — an index is only a name for a row while the order holds still (Emma's S5 review #1). The
    *  returned promise is what the HELD commit waits on: the tile stays where the owner dropped it until
@@ -160,6 +177,22 @@ export function LibraryGrid({
                   {describeItem(item)}
                 </span>
               </button>
+              {/* THE DELETE CORNER, outside the tile button for the same two reasons the In-use one is
+                  (invalid HTML, and a press that starts here must reach no drag handler). It is a plain
+                  button with no state to press: one tap, then the caller's confirm. */}
+              {onRemove !== undefined && !item.bundled && (
+                <button
+                  type="button"
+                  className="mgal-del"
+                  aria-label={`Delete ${name}`}
+                  // The same gate the In-use corner takes: a write with nothing authoritative to
+                  // recompute from is refused, and the cleanup half of a delete is exactly that write.
+                  disabled={!ready}
+                  onClick={() => onRemove(item)}
+                >
+                  <DeleteIcon size={12} />
+                </button>
+              )}
               {/* THE IN-USE TOGGLE, outside the tile button. `aria-pressed` rather than `aria-checked`:
                   the one `checked` control in this gallery is the detail panel's real Switch (Emma #9),
                   and a pressed-state button is what a two-state icon control IS. */}

@@ -4,6 +4,7 @@ import { FocalImg } from "./FocalImg";
 import { CropModal } from "./media/CropModal";
 import { FramingSheet } from "./media/FramingSheet";
 import { EditIcon } from "./media/icons";
+import { confirmDelete } from "./media/ItemDetail";
 import { LibraryPicker } from "./media/LibraryPicker";
 import { AGENTS_NS, AVATARS_ROLE, BACKGROUNDS_ROLE } from "../hooks/useAgentArt";
 import { useImageJob, type ImageJob } from "../hooks/useImageJob";
@@ -51,6 +52,11 @@ import { MEDIA_NS } from "../theme-engine/mediaRegistry";
 // never a second picker and never a circle on the grid. RE-CROP stays a Conf-gallery job: it is a
 // destructive re-encode of a library file, which is a library screen's business rather than a
 // binding's.
+//
+// **AND SO DOES DELETE** (the wave-3 feel round): the picker's tiles wear the media manager's delete on
+// a corner, on the media manager's own `write.remove` and behind the media manager's own confirm. The
+// reason is the same one that moved the choosing here — an upload ARRIVES in this screen, so a library
+// that could only be added to from here was a one-way door.
 
 /** THE TWO ART FIELDS, once: which `AgentDef` field binds which role, and what the owner calls it. One
  *  map because three surfaces have to agree about it — the face in the form, the picker beside it, and
@@ -73,6 +79,10 @@ export interface AgentArtStudio {
   /** The framing write, for the picker's second door onto the sheet (wave 3) — the SAME queued,
    *  rev-guarded chokepoint the Conf gallery's Focus button uses, reached from the other end. */
   setFocal: ReturnType<typeof useMediaLibrary>["write"]["setFocal"];
+  /** The delete, for the picker's tile corner (the wave-3 feel round) — reached the same way: the media
+   *  manager's OWN chokepoint (bytes first, then the one queued config write that cleans the entry up),
+   *  never a second delete path. */
+  remove: ReturnType<typeof useMediaLibrary>["write"]["remove"];
   ready: boolean;
 }
 
@@ -84,6 +94,7 @@ export function useAgentArtStudio(): AgentArtStudio {
     sections: lib.sections,
     append: lib.write.append,
     setFocal: lib.write.setFocal,
+    remove: lib.write.remove,
     ready: lib.ready,
   };
 }
@@ -268,6 +279,37 @@ function ArtPicker(props: {
     },
   });
   if (view === undefined) return null;
+  // DELETING A TILE FROM THE PICKER (the wave-3 feel round). Confirm through the media manager's ONE
+  // delete confirm — same title, same verb, same "is this the one showing" branch — with the single
+  // clause that is this SCREEN's rather than the file's said in the owner's own words: a binding is one
+  // slot, so deleting what it points at leaves it empty rather than promoting a successor.
+  //
+  // The bound test is `useArtBinding`'s own, spelled the same way: the "W9" identity, never a bare
+  // filename. (`item.active` is the same fact rendered — the picker builds its items with `ids: [want]`
+  // — which is exactly why the shared confirm's branch lands on the right sentence.) Clearing the slot
+  // rides the SAME gesture as the delete rather than waiting for the binding to dangle: the row would
+  // otherwise point at a file that is gone until the owner noticed.
+  //
+  // The write is FIRED, not awaited, and that is not laziness: `write.remove` reports its own failures
+  // (a toast for the DELETE, a partial-success sentence for the cleanup) and resolves `void` either way,
+  // so there is nothing to await FOR — and an async callback in this `() => void` slot is exactly the
+  // shape `no-misused-promises` rejects.
+  //
+  // The picker STAYS OPEN — the owner may be clearing out several — and the grid it is looking at
+  // updates on its own: the cleanup write goes through the queue, whose save awaits the media refetch,
+  // so the rows this component re-reads are the server's. A FramingSheet left open on the very item
+  // being deleted needs no machinery either: `setFocal`'s patch looks the row up in the freshest index
+  // and returns `null` when it is gone, which is the queue's own honest refusal (verified against the
+  // shipped path, not assumed).
+  const removeFile = (item: LibraryItem) =>
+    confirmDelete(
+      item,
+      () => {
+        void studio.remove(view.section, item);
+        if (item.id === want) props.onChange("");
+      },
+      "The file is removed from the server and this slot goes back to no picture. This cannot be undone.",
+    );
   // The bound row as the library's own item — through `libraryItems`, the one place a row becomes one,
   // so the sheet and the write see exactly what the gallery would hand them. Framing is offered only
   // where the ROLE allows it and there is a picture to frame.
@@ -294,6 +336,18 @@ function ArtPicker(props: {
             props.onClose();
           }}
           onFrame={framable === undefined ? undefined : () => setFraming(framable)}
+          // ABSENT WHERE THE SECTION CANNOT DELETE (the GNOME rule, and the grid's own contract): the
+          // corner is offered per SECTION here and refused per ITEM there (`bundled`), which is the two
+          // halves of `ItemDetail`'s `section.caps.remove && !item.bundled` said where each is known.
+          // It is deliberately NOT gated on being bound — the pain is a library the owner can only add
+          // to, and that is every tile in it, not just the one this agent happens to use.
+          onRemove={
+            view.section.caps.remove
+              ? (item) => {
+                  void removeFile(item);
+                }
+              : undefined
+          }
           onClose={props.onClose}
         />
       )}

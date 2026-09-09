@@ -4,7 +4,8 @@ import { planThread, seedThread, seedUI } from "./fixtures";
 // THE AGENT BACKDROP in the REAL built app (D70 §8.3/§8.3a) — the half the unit suite structurally cannot
 // reach. `tests/theme-engine/agentBackdrop.test.tsx` proves WHAT MOUNTS; everything asserted here needs a
 // cascade to exist: the `@layer base` token declarations, the `:has(> .kit-backdrop-pin)` z-lift, `sticky`
-// resolving against the real scroller, and the walk actually moving a computed opacity as the pane scrolls.
+// resolving against the real scroller, and the layer's computed opacity holding STILL as the pane scrolls
+// (the owner's wave-3 feel round ruled the old walk out — see the `full` arm).
 //
 // Seeded the kit-render way — `ctrlb.ui` before any page script (the appearance mock is unseeded, so the
 // reconcile HOLDS the seeded pick) — plus two routed fixtures: an agent that HAS a background, and the
@@ -115,7 +116,7 @@ test.describe("the kit themes take the shared layer", () => {
     await expect(strip).toHaveCSS("position", "relative");
   });
 
-  test("full — a zero-height sticky pin, the transcript lifted above it, and the walk dimming on scroll", async ({
+  test("full — a zero-height sticky pin, the transcript lifted above it, and NO dimming on scroll", async ({
     page,
   }) => {
     await boot(page, "minimal", "full");
@@ -144,19 +145,31 @@ test.describe("the kit themes take the shared layer", () => {
         { message: "the full-bleed layer made the pane scrollable" },
       )
       .toBeLessThanOrEqual(1);
-    // The walk: opacity 1 at rest → strictly dimmer once the pane has scrolled past the ramp. Read as a
-    // COMPUTED value, which is the only place the `calc()` over the driver's property actually resolves.
+    // THE RULING (the owner's wave-3 feel round, 2026-09-09): the layer keeps its REST look at every
+    // scroll offset — "not fade it out … just leave it like when the chat is unscrolled". This arm used to
+    // assert the opposite (opacity 1 at rest, strictly under 0.4 past the 240px ramp); it is inverted
+    // rather than deleted, because the claim needs exactly what it always needed — a real cascade, which
+    // is the only place a computed opacity exists at all.
     const opacity = () =>
       page.locator(".kit-backdrop-full").evaluate((el) => Number(getComputedStyle(el).opacity));
     expect(await opacity()).toBeCloseTo(1, 2);
     await page.locator("#app-scroll").evaluate((el) => {
       el.style.height = "300px"; // force a scrollable pane in an empty thread
-      el.scrollTop = 400; // past the 240px ramp
+      el.scrollTop = 400; // well past where the deleted walk used to bottom out
       el.dispatchEvent(new Event("scroll"));
     });
-    await expect
-      .poll(async () => await opacity(), { message: "the walk never reached the floor" })
-      .toBeLessThan(0.4);
+    // A DRIVER, if one ever came back, would take a frame or two to write — so give it several before
+    // declaring the layer still. `toPass` re-reads for the whole timeout instead of trusting one sample.
+    await expect(async () => {
+      expect(await opacity()).toBeCloseTo(1, 2);
+    }).toPass({ timeout: 2000 });
+    // …and nothing wrote the walk's property onto the pin either (the CSS half above is the ruling; this
+    // is the JS half, in the same breath).
+    expect(
+      await page
+        .locator("#tab-agent > .kit-backdrop-pin")
+        .evaluate((el) => el.style.getPropertyValue("--kit-backdrop-p")),
+    ).toBe("");
   });
 
   test("full — the art layer reaches the scroller's TRUE top with no bar in flow", async ({

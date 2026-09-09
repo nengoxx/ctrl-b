@@ -17,7 +17,9 @@ import { cssRules } from "../themes/cssRules";
 //   · the five shipped themes        — every Root, rendered for real: the three kit themes take the shared
 //                                      layer, gacha paints through its own oracle (its body's own suite
 //                                      owns that ladder), frontier is untouched by ruling 18;
-//   · the `full` DRIVER              — mounted in a modelled `#app-scroll`, the gachaAgent.test harness.
+//   · the `full` layer's STILLNESS   — mounted in a modelled `#app-scroll` (the gachaAgent.test harness),
+//                                      because "it does not react to scroll" is only provable where there
+//                                      is a scroller to move.
 //
 // What is NOT here, deliberately: the z-index LIFT and the perf/motion gates are pure CSS keyed on
 // `:has(> .kit-backdrop-pin)` / `body[data-*]`, and jsdom resolves no stylesheets — those are pinned in
@@ -541,106 +543,64 @@ describe("the `full` pin's pinned-plan pull (the S6 fix wave)", () => {
   });
 });
 
-// ── the `full` walk driver (the DOM half; the arithmetic lives in scrollProgress.test.ts) ───────────────
-// Mounted inside a stand-in `#app-scroll` for the reason the gacha suite models one: the layer reaches the
-// shell's single content pane by id, and everything the driver does hangs off finding it. jsdom resolves no
-// stylesheets, so the ramp token is handed over the same way.
+// ── the `full` layer does NOT walk (the owner's wave-3 feel round, 2026-09-09) ───────────────────────────
+// This was a four-arm suite pinning a scroll-driven opacity walk: `--kit-backdrop-p` written per frame from
+// `#app-scroll`, its ramp token, its unmount cleanup and its reduced-motion gate. The owner ruled the walk
+// out — the `full` layer keeps its rest look at every offset — so the driver was deleted rather than parked,
+// and what is left to pin is the RULING: scrolling the pane writes nothing onto the layer and hooks nothing
+// onto the scroller. Mounted inside a stand-in `#app-scroll` for the reason the gacha suite models one: the
+// layer used to reach the shell's single content pane by id, so that is exactly where a returning driver
+// would attach. (The COMPUTED opacity — the other half of the ruling — needs a cascade and is pinned in
+// `e2e/agent-backdrop.spec.ts`.)
 
-function makeScroller() {
-  const scroller = document.createElement("div");
-  scroller.id = "app-scroll";
-  let pos = 0;
-  Object.defineProperty(scroller, "scrollTop", {
-    configurable: true,
-    get: () => pos,
-    set: () => {}, // an ESM strict-mode assignment must not throw — it just has no effect
-  });
-  document.body.appendChild(scroller);
-  return { scroller, setPos: (v: number) => (pos = v) };
-}
-
-function stubRamp(ramp: string) {
-  const real = window.getComputedStyle.bind(window);
-  vi.spyOn(window, "getComputedStyle").mockImplementation((el: Element, pe?: string | null) => {
-    const decl = real(el, pe ?? undefined);
-    return {
-      ...decl,
-      getPropertyValue: (p: string) =>
-        p === "--kit-backdrop-ramp" ? ramp : decl.getPropertyValue(p),
-    };
-  });
-}
-
-async function scrollTo(scroller: HTMLElement, setPos: (v: number) => void, top: number) {
-  setPos(top);
-  await act(async () => {
-    scroller.dispatchEvent(new Event("scroll"));
-    await new Promise((r) => requestAnimationFrame(() => r(null)));
-  });
-}
-
-describe("the `full` walk — one property, one frame per burst", () => {
-  const P = "--kit-backdrop-p";
+describe("the `full` layer ignores scroll — no driver, no per-frame property", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     document.getElementById("app-scroll")?.remove();
   });
 
-  function mount(ramp = "240px") {
-    const { scroller, setPos } = makeScroller();
-    stubRamp(ramp);
+  it("writes NOTHING onto the layer, however far the pane is scrolled", async () => {
+    const scroller = document.createElement("div");
+    scroller.id = "app-scroll";
+    // Past the old 240px ramp, i.e. the offset that used to pin the walk at its floor. The no-op setter
+    // is not decoration: ChatThread's stick-to-bottom assigns `scrollTop`, and an ESM strict-mode
+    // assignment to a getter-only property throws.
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => 4000,
+      set: () => {},
+    });
+    document.body.appendChild(scroller);
+    // THE RAMP TOKEN, still handed over — and this is what makes the arm RED-PROVABLE rather than
+    // vacuously green. The deleted driver read its length from CSS and wrote nothing when it could not
+    // parse one, and jsdom resolves no stylesheets: without this stub a returning walk would sit silent
+    // and the assertion below would pass over a live driver. With it, any driver that comes back writes
+    // on the first frame and this arm fails (proven by restoring the pre-change module and watching it).
+    const real = window.getComputedStyle.bind(window);
+    vi.spyOn(window, "getComputedStyle").mockImplementation((el: Element, pe?: string | null) => {
+      const decl = real(el, pe ?? undefined);
+      return {
+        ...decl,
+        getPropertyValue: (p: string) =>
+          p === "--kit-backdrop-ramp" ? "240px" : decl.getPropertyValue(p),
+      };
+    });
     setUI({ agentBackdrop: "full" });
-    const view = render(
+    const { container } = render(
       <QueryClientProvider client={qc}>
         <AgentTab active />
       </QueryClientProvider>,
       { container: scroller },
     );
-    return { ...view, scroller, setPos };
-  }
-
-  it("walks 0 → 1 over the ramp token, pinned at both ends, from the tab's own top", () => {
-    const { container, scroller, setPos } = mount();
     const pin = container.querySelector<HTMLElement>(".kit-backdrop-pin")!;
-    // published at mount — the walk starts DEFINED, so entering a scrolled thread never flashes sharp
-    expect(pin.style.getPropertyValue(P)).toBe("0.000");
-    return (async () => {
-      await scrollTo(scroller, setPos, 120);
-      expect(pin.style.getPropertyValue(P)).toBe("0.500");
-      await scrollTo(scroller, setPos, 240);
-      expect(pin.style.getPropertyValue(P)).toBe("1.000");
-      await scrollTo(scroller, setPos, 4000);
-      expect(pin.style.getPropertyValue(P)).toBe("1.000");
-      await scrollTo(scroller, setPos, -50); // overscroll bounce
-      expect(pin.style.getPropertyValue(P)).toBe("0.000");
-    })();
-  });
-
-  it("unhooks AND un-writes on unmount (nothing is left behind on the node)", async () => {
-    const { container, scroller, setPos, unmount } = mount();
-    const pin = container.querySelector<HTMLElement>(".kit-backdrop-pin")!;
-    await scrollTo(scroller, setPos, 240);
-    expect(pin.style.getPropertyValue(P)).toBe("1.000");
-    const spy = vi.spyOn(scroller, "removeEventListener");
-    unmount();
-    expect(spy).toHaveBeenCalledWith("scroll", expect.any(Function));
-    expect(pin.style.getPropertyValue(P)).toBe("");
-  });
-
-  it("writes NOTHING when the ramp token is absent — no ramp, no walk (never a hardcoded fallback)", async () => {
-    const { container, scroller, setPos } = mount(""); // the stylesheet has not landed / a variant dropped it
-    const pin = container.querySelector<HTMLElement>(".kit-backdrop-pin")!;
-    expect(pin.style.getPropertyValue(P)).toBe("");
-    await scrollTo(scroller, setPos, 240);
-    expect(pin.style.getPropertyValue(P)).toBe("");
-  });
-
-  it("does not run under reduced motion — the CSS parks the layer at the floor instead", async () => {
-    setUI({ motion: "reduced" });
-    const { container, scroller, setPos } = mount();
-    const pin = container.querySelector<HTMLElement>(".kit-backdrop-pin")!;
-    await scrollTo(scroller, setPos, 240);
-    expect(pin.style.getPropertyValue(P)).toBe("");
-    setUI({ motion: "full" });
+    await act(async () => {
+      scroller.dispatchEvent(new Event("scroll"));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+    // NO inline style at all on the pin — a stronger claim than "`--kit-backdrop-p` is empty", and the
+    // honest one: the layer is what the stylesheet says it is, at every offset. (The scroller keeps
+    // ChatThread's own stick-to-bottom listener, so "nobody listens to scroll" is not the claim; "nobody
+    // writes to this layer" is.)
+    expect(pin.getAttribute("style")).toBeNull();
   });
 });

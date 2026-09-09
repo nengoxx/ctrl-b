@@ -119,11 +119,11 @@
  * shared background above, everything is gated on the NODE existing: no agent art anywhere ⇒ the agent tab
  * is byte-identical to the one that shipped before this slice.
  *
- * The four tunables are TOKENS declared on the layer they govern, so a theme retunes them in `@layer theme`
- * (which outranks this file) with no JS: `--kit-backdrop-h` (the strip's height), `--kit-backdrop-veil` (the
- * readability wash — different by state, hence declared per-layer), `--kit-backdrop-ramp` (how far the full
- * layer walks) and `--kit-backdrop-floor` (where it ends). The ramp is read back by the driver through
- * `getComputedStyle`, which is why it is a real declaration rather than a `var(…, 240px)` fallback.
+ * The two tunables are TOKENS declared on the layer they govern, so a theme retunes them in `@layer theme`
+ * (which outranks this file) with no JS: `--kit-backdrop-h` (the strip's height) and `--kit-backdrop-veil`
+ * (the readability wash — different by state, hence declared per-layer). There were four: `--kit-backdrop-
+ * ramp` and `--kit-backdrop-floor` tuned the `full` layer's scroll walk, and both went with it at the
+ * wave-3 feel round (see `.kit-backdrop-full`).
  *
  * Both veils are built from `--bg` through `color-mix`, so they follow the theme's LIGHT and dark modes
  * without a second literal — the same construction `.kit-bg`'s veil uses. */
@@ -169,8 +169,6 @@
  * rest a sticky box against the scroller's CONTENT box, so `--appbar-h` alone puts the stuck position
  * exactly on the flow position at scroll-top, in every bar mode. */
 .kit .kit-backdrop-pin {
-  --kit-backdrop-ramp: 240px;
-  --kit-backdrop-floor: 0.28; /* the walk's endpoint (D70 §8.3's 1 → 0.28) */
   --kit-backdrop-veil: linear-gradient(
     color-mix(in oklch, var(--bg) 76%, transparent),
     color-mix(in oklch, var(--bg) 62%, transparent)
@@ -235,10 +233,20 @@
  * still clipped by `.kit-scroll`'s own `overflow`, which keeps it inside the scroller rather than over the
  * bars.
  *
- * ONE per-frame property, and it is opacity: `1 → --kit-backdrop-floor`, written as "1 minus the walked
- * distance" so the floor token IS the endpoint you read above rather than something to subtract in your
- * head. No blur anywhere (that is the whole owner-confirmed difference from the oracle's fade), no
- * animated `filter`, no scroll-driven CSS animation — §14.11 to the letter. */
+ * IT DOES NOT REACT TO SCROLL, and that is the ruling rather than an omission (the owner's wave-3 feel
+ * round, D70 §13-S6b, 2026-09-09: "not fade it out … just leave it like when the chat is unscrolled").
+ * The layer shipped with a scroll-driven walk — `opacity: calc(1 - p * (1 - floor))` over a 240px ramp,
+ * dimming the picture to 0.28 as the thread moved — and what the owner wants is the REST look at every
+ * offset: the art sharp and full, with the static veil below doing the readability work it was always
+ * doing. So the walk is gone whole: the `calc()`, the `--kit-backdrop-ramp`/`--kit-backdrop-floor`
+ * tunables, the JS driver that wrote `--kit-backdrop-p`, and the two gates (`data-motion="reduced"`
+ * parking the layer at the floor, `data-perf="lite"` dropping the `will-change` hint) that existed only
+ * because there was motion to park and a compositor layer to buy back. Nothing dormant is left behind —
+ * it comes back through git if it is ever wanted.
+ *
+ * What that leaves is the §14.11 posture in its cheapest possible form: no blur, no animated `filter`, no
+ * scroll-driven CSS animation, no per-frame property write, and no scroll listener on the shared pane.
+ * (gacha's oracle fade is a different surface with its own driver and is untouched by this.) */
 .kit .kit-backdrop-full {
   position: absolute;
   top: calc(-1 * var(--kit-backdrop-lift));
@@ -246,8 +254,6 @@
   right: 0;
   height: var(--kit-pane-h, 100dvh);
   overflow: hidden;
-  opacity: calc(1 - var(--kit-backdrop-p, 0) * (1 - var(--kit-backdrop-floor)));
-  will-change: opacity; /* a compositor property that really does change every walked frame */
 }
 /* The in-flow tab content rides ABOVE the layer. Gated on the pin EXISTING (`:has()`) rather than on a
  * state stamp — the `.kit-bg` idiom: a tab that mounts no backdrop keeps exactly the stacking it had, so
@@ -257,18 +263,6 @@
 .kit .tab:has(> .kit-backdrop-pin) > .chat-log {
   position: relative;
   z-index: 1;
-}
-/* Reduced motion: a scroll-linked opacity ramp IS motion, so the layer simply parks at the floor — the
- * readable end state, reached with no per-frame work at all (the driver does not run either; the gate is
- * one boolean honored in both halves). */
-body[data-motion="reduced"] .kit .kit-backdrop-full {
-  opacity: var(--kit-backdrop-floor);
-}
-/* Perf-lite: there is no blur here to drop, so the only cost this mode can buy back is the compositor
- * layer the `will-change` hint pins in GPU memory. The walk still runs — an opacity change is the cheap
- * thing §14.11 asks expensive effects to be converted INTO. */
-body[data-perf="lite"] .kit .kit-backdrop-full {
-  will-change: auto;
 }
 
 .kit-main {
@@ -7326,6 +7320,47 @@ body[data-perf="lite"] .kit .navmenu-pop {
   outline-offset: 2px;
 }
 .kit .mgal-use[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+/* THE DELETE CORNER — the PICKER's one manage verb (D70 §13-S6b wave-3 feel round: an upload that lands
+ * in the library had no way out of the screen it landed in). Same disc as the In-use corner above, at the
+ * opposite corner: 24px drawn, ~34px touched through the `::after` inset, so the phone target is the same
+ * one the toggle already proved at 390px. What differs is the one thing that should — the GLYPH takes
+ * `--danger`, which is exactly how the detail panel's own Delete says it (`.mgal-pill-btn.danger`). The
+ * plate stays neutral: a red disc on every tile would read as a warning about the picture. */
+.kit .mgal-del {
+  all: unset;
+  box-sizing: border-box;
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  cursor: pointer;
+  background: color-mix(in oklch, var(--surface-2) 88%, transparent);
+  color: var(--danger);
+  transition:
+    background var(--dur-fast) var(--ease-std),
+    color var(--dur-fast) var(--ease-std);
+}
+.kit .mgal-del::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+}
+.kit .mgal-del:not([disabled]):active {
+  background: var(--danger);
+  color: var(--bg);
+}
+.kit .mgal-del:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .mgal-del[disabled] {
   opacity: 0.4;
   cursor: default;
 }

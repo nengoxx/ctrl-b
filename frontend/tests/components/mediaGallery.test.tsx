@@ -833,6 +833,10 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
     expect(container.querySelectorAll(".mgal-use")).toHaveLength(3);
     expect(container.querySelectorAll(".mgal-use.on")).toHaveLength(3); // none is switched off
     expect(container.querySelectorAll(".mgal-corner.top")).toHaveLength(1); // only the broken one
+    // …and the top-end corner stays the PROBLEM badge's alone here. The picker grew a delete corner in
+    // that slot at the wave-3 feel round (`agentArtRow.test.tsx`), which is only free because a picker
+    // is handed no problem rows; the manage screen has both, so its delete stays in the detail pill.
+    expect(container.querySelectorAll(".mgal-del")).toHaveLength(0);
     expect(container.querySelectorAll(".mgal-corner.start")).toHaveLength(1); // only the default one
     expect(container.querySelector(".mgal-corner.start")?.textContent).toBe("Default");
     // …and the ACTIVE entries — what the fleet paints right now — wear the ring on the tile itself.

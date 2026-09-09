@@ -318,13 +318,24 @@ export function ItemDetail({
  *  It used to say "it is in use", which after the 2026-08-26 vocabulary split would be the wrong word
  *  twice over: in use is MEMBERSHIP, deleting a member that is not the active one changes nothing on
  *  screen, and what actually makes this delete visible is that the entry is the one being painted. So
- *  the sentence names the MODEL — the active image, and the next in the list taking over. */
-async function confirmDelete(item: LibraryItem, onDelete: () => void): Promise<void> {
+ *  the sentence names the MODEL — the active image, and the next in the list taking over.
+ *
+ *  **ONE delete confirm, two screens** (D70 §13-S6b wave-3 feel round). The picker's tile corner deletes
+ *  the same file through the same write, so it asks the same question — same title, same verb, same
+ *  danger flag, and the same *is this the one that is showing* branch. Exactly one clause is the
+ *  SCREEN's rather than the file's: what being that one MEANS where the owner is standing. In the
+ *  gallery the next entry in the list takes over; in a picker the binding is a single slot and it goes
+ *  empty. So that clause is the parameter, defaulted to the gallery's own shipped wording — and the
+ *  branch that chooses it stays here, said once. */
+export async function confirmDelete(
+  item: LibraryItem,
+  onDelete: () => void,
+  /** What deleting the CURRENTLY-SHOWING entry does on the caller's screen. */
+  activeBody = "It is the active image — the next one in the list takes over. The file is removed from the server; this cannot be undone.",
+): Promise<void> {
   const ok = await requestConfirm({
     title: `Delete ${item.row.file}?`,
-    body: item.active
-      ? "It is the active image — the next one in the list takes over. The file is removed from the server; this cannot be undone."
-      : "The file is removed from the server. This cannot be undone.",
+    body: item.active ? activeBody : "The file is removed from the server. This cannot be undone.",
     confirmLabel: "Delete",
     danger: true,
   });

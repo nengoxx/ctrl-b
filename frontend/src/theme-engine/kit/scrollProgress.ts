@@ -1,12 +1,17 @@
 // The SCROLL-WALK's pure half (D70 §8.3a item 4) — a ramp of progress read off the shared scroller, and
 // nothing else. The DOM half (the passive listener, the guarded rAF, the custom-property write) lives with
-// each surface that walks: `themes/gacha/GachaAgent.tsx`'s oracle fade and `kit/AgentBackdrop.tsx`'s
-// full-bleed backdrop. Everything that can be reasoned about without a browser is a function here.
+// each surface that walks: today that is `themes/gacha/GachaAgent.tsx`'s oracle fade. Everything that can
+// be reasoned about without a browser is a function here.
 //
 // LIFTED FROM `themes/gacha/oracle.ts`, unchanged (D70 S6): gacha authored this math for M7, and the kit
-// backdrop's opacity walk is the same ramp over the same scroller — so it is ONE definition both read
+// backdrop's opacity walk was the same ramp over the same scroller — so it became ONE definition both read
 // rather than a near-duplicate in the kit. What stayed gacha's is what is gacha's: the `--gc-oracle-*`
 // property names, the ghosting hysteresis and its stamp, and the driver that writes them.
+//
+// The kit backdrop's walk is GONE (the wave-3 feel round, 2026-09-09: the `full` layer keeps its rest look
+// at every scroll offset), so the oracle is the one consumer again — but this file stays where it is, in
+// the kit: it is the shared, browser-free statement of a ramp, and moving it back into a theme would put
+// the next surface that needs one straight back into a near-duplicate.
 //
 // ── WHY PROGRESS COMES FROM AN OFFSET, NOT FROM scrollTop ────────────────────────────────────────────────
 // The gacha prototype read `agentScreen.scrollTop` because every screen there is its own scroll container.

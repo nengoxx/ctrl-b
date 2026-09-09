@@ -36,6 +36,17 @@ const h = vi.hoisted(() => ({
     offer: vi.fn(),
     dismiss: vi.fn(),
   },
+  /** The house confirm, mocked at the module — `confirmDialog.test.tsx` owns the dialog itself, and
+   *  what this suite has to see is the QUESTION the picker asks (the sentence is the design) and what
+   *  it does with each answer. Deterministic, and no second overlay in the harness. */
+  confirm: vi.fn(
+    async (_req: {
+      title: string;
+      body?: string;
+      confirmLabel?: string;
+      danger?: boolean;
+    }): Promise<boolean> => true,
+  ),
 }));
 
 vi.mock("../../src/hooks/useMediaUpload", () => ({
@@ -45,6 +56,7 @@ vi.mock("../../src/hooks/useMediaUpload", () => ({
   },
 }));
 vi.mock("../../src/hooks/useImageJob", () => ({ useImageJob: () => ({ crop: null }) }));
+vi.mock("../../src/store/confirm", () => ({ requestConfirm: h.confirm }));
 // The framing sheet (wave 3's second door) measures its stage with a `ResizeObserver`, and so does
 // react-easy-crop inside it; jsdom ships none. A no-op is enough — the sheet's own arms live in
 // `framingSheet.test.tsx`, and what this suite is about is the DOOR.
@@ -88,6 +100,9 @@ const sectionOf = (role: string) => SECTIONS.find((s) => s.role === role);
 /** The framing write, spied — the studio hands the picker's Focus door the SAME queued chokepoint the
  *  Conf gallery uses, so what this suite pins is that it is reached with the right subject. */
 const setFocalSpy = vi.fn();
+/** The DELETE write, spied — same story: the picker's tile corner reaches the media manager's own
+ *  `write.remove`, so what is pinned is that it is reached with the right subject. */
+const removeSpy = vi.fn();
 
 const studio = (rows: Partial<Record<string, MediaFile[]>>, live = true): AgentArtStudio =>
   ({
@@ -101,6 +116,7 @@ const studio = (rows: Partial<Record<string, MediaFile[]>>, live = true): AgentA
       : /* the media index has not landed yet */ [],
     append: vi.fn(),
     setFocal: setFocalSpy,
+    remove: removeSpy,
     ready: true,
   }) as unknown as AgentArtStudio;
 
@@ -220,13 +236,16 @@ describe("AgentArtRow · the library in pick mode", () => {
     expect(document.querySelector(".mgal-modal")).toBeNull(); // the pick closes it
   });
 
-  it("carries NO manage affordances — the add row is the only thing beside the pictures", () => {
+  it("carries NO manage affordances but the delete corner — the add row is the rest of it", () => {
     render(<Form rows={{ avatars: [row("lyra.png"), row("mira.png")] }} />);
     openPicker();
     expect(document.querySelectorAll(".mgal-use")).toHaveLength(0); // no In-use corners
     expect(document.querySelector(".mgal-detail")).toBeNull(); // no detail panel to reach
     expect(screen.queryByRole("button", { name: "Restore defaults" })).toBeNull();
     expect(screen.getByRole("button", { name: /Add an image/ })).toBeTruthy();
+    // The ONE that crossed over at the wave-3 feel round, and it is a corner rather than a screen —
+    // its own arms are below.
+    expect(document.querySelectorAll(".mgal-del")).toHaveLength(2);
   });
 
   it("an EMPTY library still opens — the way in is the add row it points at", () => {
@@ -425,5 +444,113 @@ describe("AgentArtRow · the picker's Focus door", () => {
     );
     expect(setFocalSpy.mock.calls[0][1]).toMatchObject({ id: "f:lyra.png" });
     expect(screen.queryByRole("dialog", { name: "Set focus" })).toBeNull();
+  });
+});
+
+// ── THE WAVE-3 FEEL ROUND — THE PICKER'S DELETE CORNER ──────────────────────────────────────────
+//
+// The pain the owner named: an upload lands in this library, from this screen, and there was no way to
+// take it out again — "Use no picture" only unbinds, and the tile stays forever. The answer is a corner
+// on the tile, the media manager's own confirm, and the media manager's own `write.remove`.
+
+describe("AgentArtRow · the picker's delete corner", () => {
+  const corners = () => screen.queryAllByRole("button", { name: /^Delete / });
+  /** Tap one corner and let the confirm settle — `requestConfirm` is a promise even when it answers
+   *  immediately, so the write happens a microtask after the click. */
+  const tapDelete = async (file: string) => {
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: `Delete ${file}` }));
+    });
+  };
+
+  it("every deletable tile wears one, named by its own file", () => {
+    render(<Form rows={{ avatars: [row("lyra.png"), row("mira.png")] }} />);
+    openPicker();
+    // NOT gated on being bound: the pain is a library that can only be added to, which is every tile
+    // in it and not just the one this agent happens to use.
+    expect(corners().map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Delete lyra.png",
+      "Delete mira.png",
+    ]);
+    // A SIBLING of the tile, never a child — a button inside a button is invalid HTML, and a press
+    // that starts on the corner must reach no tile handler at all.
+    expect(document.querySelector(".mgal-tile .mgal-del")).toBeNull();
+  });
+
+  it("a BUNDLED entry has none — absent, not disabled (the rule the detail panel's Delete follows)", () => {
+    render(<Form rows={{ avatars: [row("lyra.png"), row("shipped.png", { bundled: "lyra" })] }} />);
+    openPicker();
+    expect(tiles()).toHaveLength(2);
+    expect(corners().map((b) => b.getAttribute("aria-label"))).toEqual(["Delete lyra.png"]);
+  });
+
+  it("deleting the BOUND picture empties the slot in the same gesture — and says so first", async () => {
+    const onChange = vi.fn();
+    render(
+      <Form
+        rows={{ avatars: [row("lyra.png"), row("mira.png")] }}
+        values={{ avatar: "lyra.png" }}
+        onChange={onChange}
+      />,
+    );
+    openPicker();
+    await tapDelete("lyra.png");
+    // THE QUESTION: the house confirm, with the one clause that is this screen's rather than the
+    // file's said in the owner's own words — a binding is a single slot, so it goes empty rather than
+    // promoting a successor the way the gallery's does.
+    expect(h.confirm).toHaveBeenCalledTimes(1);
+    expect(h.confirm.mock.calls[0][0]).toMatchObject({
+      title: "Delete lyra.png?",
+      body: "The file is removed from the server and this slot goes back to no picture. This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    // THE WRITE: the media manager's own chokepoint, with the section and the library's own identity.
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+    const [section, item] = removeSpy.mock.calls[0] as [{ role: string }, { id: string }];
+    expect(section.role).toBe("avatars");
+    expect(item.id).toBe("f:lyra.png");
+    // …and the slot, in the SAME gesture: the row would otherwise point at a file that is gone.
+    expect(onChange).toHaveBeenCalledWith("avatar", "");
+    // The picker STAYS OPEN — the owner may be clearing out several.
+    expect(document.querySelector(".mgal-modal")).not.toBeNull();
+  });
+
+  it("deleting an UNBOUND tile takes the file and leaves the binding alone", async () => {
+    const onChange = vi.fn();
+    render(
+      <Form
+        rows={{ avatars: [row("lyra.png"), row("mira.png")] }}
+        values={{ avatar: "lyra.png" }}
+        onChange={onChange}
+      />,
+    );
+    openPicker();
+    await tapDelete("mira.png");
+    // The other sentence — the shared confirm's non-active branch, unchanged from the gallery's.
+    expect(h.confirm.mock.calls[0][0]).toMatchObject({
+      title: "Delete mira.png?",
+      body: "The file is removed from the server. This cannot be undone.",
+    });
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Avatar: lyra.png" })).toBeTruthy();
+  });
+
+  it("a cancelled confirm writes nothing at all — not the file, not the slot", async () => {
+    const onChange = vi.fn();
+    h.confirm.mockResolvedValueOnce(false);
+    render(
+      <Form
+        rows={{ avatars: [row("lyra.png")] }}
+        values={{ avatar: "lyra.png" }}
+        onChange={onChange}
+      />,
+    );
+    openPicker();
+    await tapDelete("lyra.png");
+    expect(removeSpy).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Avatar: lyra.png" })).toBeTruthy();
   });
 });

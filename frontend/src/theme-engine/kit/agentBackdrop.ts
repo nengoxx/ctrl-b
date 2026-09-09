@@ -1,27 +1,23 @@
-import { useLayoutEffect, useRef } from "react";
-
 import type { FocalArt } from "../../lib/focalPosition";
 import { useUISlice } from "../../store/ui";
-import { safeRafLoop } from "../safeRafLoop";
 import type { AgentBackdropMode } from "../types";
-import { parsePx, progressValue, scrollProgress } from "./scrollProgress";
 
 // THE AGENT BACKDROP (D70 §8.3, narrowed by the owner-confirmed §8.3a) — where the ACTIVE agent's art
 // paints behind the chat, as ONE global appearance mode with three states. This file is the NON-COMPONENT
-// half: the vocabulary, its heal, the store read and the scroll driver. `AgentBackdrop.tsx` beside it is
+// half: the vocabulary, its heal, the outrank ladder and the store read. `AgentBackdrop.tsx` beside it is
 // the layer that renders them.
 //
 // The split is the `SECTION_PLACEMENTS` shape one axis over — the placement vocabulary + `resolvePlacement`
 // live in the pure `layout.ts`, not in a component — and it is what lets the Conf row read the healed mode
 // without pulling a layer into the settings chunk.
 //
-// §14.11 posture, stated: nothing here animates `filter`, and no scroll-driven CSS animation is used. The
-// walk is ONE custom property written per frame through the engine's guarded rAF, with every channel a
-// `calc()` over it — so a scroll frame costs one property write and the compositor's own opacity work. The
-// perf/motion gates are hand-authored (gacha's posture, since the app has no `.expensive-effect` class):
-// `body[data-motion="reduced"]` parks the layer AT THE FLOOR and the driver does not run at all (a
-// scroll-linked opacity ramp is motion), and `body[data-perf="lite"]` drops the `will-change` layer hint
-// (its GPU-memory cost is the only thing lite has to buy back here — there is no blur to gate).
+// §14.11 posture, stated: the backdrop ANIMATES NOTHING. `full` shipped with a scroll-driven opacity walk
+// (1 → a floor over a ramp token, one custom property per frame through the engine's guarded rAF); the
+// owner ruled it out at the wave-3 feel round (2026-09-09, D70 §13-S6b) — the layer keeps its rest look at
+// every offset — so the driver, its ramp/floor tokens and the motion/perf gates that existed only for it
+// were deleted rather than parked. Nothing is left to gate: no filter, no scroll-driven CSS animation, no
+// per-frame property, and no `will-change` layer for perf-lite to buy back. The ramp MATH still lives in
+// `scrollProgress.ts` because gacha's oracle fade — a different surface, its own driver — still walks.
 
 /** The mode vocabulary as a runtime allowlist — the membership check the healing below needs (TS types are
  *  erased; a persisted blob, or an appearance doc written by another build, can hold anything). Ordered
@@ -74,61 +70,4 @@ export function useAgentBackdropMode(): AgentBackdropMode {
 export interface BackdropArt {
   url: string;
   focus?: FocalArt;
-}
-
-// The kit's ONE scroller — named here for the same reason ChatThread and GachaAgent name it: a body (or a
-// layer inside one) reaches the shell's single content pane by id, and every driver must agree which pane
-// that is.
-const SCROLLER_ID = "app-scroll";
-/** The property the walk writes; every `full` channel is a `calc()` over this ONE number. */
-const P_VAR = "--kit-backdrop-p";
-/** The walk LENGTH token. Read from CSS rather than hardcoded: it is a tunable, and a theme moves it by
- *  overriding the token in `@layer theme`. Parse failure ⇒ no ramp ⇒ the driver writes nothing and the
- *  layer stays at rest (`scrollProgress.ts#parsePx`'s null contract). */
-const RAMP_VAR = "--kit-backdrop-ramp";
-
-/**
- * Drive `--kit-backdrop-p` (0 → 1) from the shared scroller, and nothing else.
- *
- * Deliberately SMALLER than gacha's M7 driver, because the geometry is: the `full` layer is pinned to the
- * top of the tab, so its walk starts at the scroller's own origin — `base` is 0, there is nothing to
- * measure, and therefore no ResizeObserver, no anchor node and no remeasure frame (the three things M7
- * needs because its block sits in the flow under an app bar and a plan panel that both move it).
- *
- * What it keeps from that driver, because those parts are about the SCROLLER rather than the geometry:
- * a PASSIVE listener, ONE coalesced frame per burst through the engine's crash-guarded loop (`start()` is
- * a no-op while a frame is pending — that IS the throttle), the quantized-value guard so a sub-perceptual
- * move never dirties style, and property REMOVAL on teardown.
- */
-export function useBackdropWalk(active: boolean, enabled: boolean) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    const scroller = document.getElementById(SCROLLER_ID);
-    if (!el || !scroller || !active || !enabled) return;
-    const ramp = parsePx(getComputedStyle(el).getPropertyValue(RAMP_VAR));
-    if (ramp === null) return; // no tunable → no walk (the layer renders at rest)
-    let last = "";
-    const write = () => {
-      const value = progressValue(scrollProgress(scroller.scrollTop, 0, ramp));
-      if (value === last) return;
-      last = value;
-      el.style.setProperty(P_VAR, value);
-    };
-    const loop = safeRafLoop(() => {
-      write();
-      return false;
-    });
-    const onScroll = () => loop.start();
-    // The first write is SYNCHRONOUS, before the browser paints this mount: activating the tab on a thread
-    // that is already scrolled must land walked rather than flash sharp for a frame.
-    write();
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      scroller.removeEventListener("scroll", onScroll);
-      loop.stop();
-      el.style.removeProperty(P_VAR);
-    };
-  }, [active, enabled]);
-  return ref;
 }

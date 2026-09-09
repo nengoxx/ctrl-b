@@ -1,7 +1,6 @@
 import { FocalImg } from "../../components/FocalImg";
-import { useUISlice } from "../../store/ui";
 import type { AgentBackdropMode } from "../types";
-import { useBackdropWalk, type BackdropArt } from "./agentBackdrop";
+import type { BackdropArt } from "./agentBackdrop";
 
 // THE AGENT BACKDROP's layer (D70 §8.3 / §8.3a) — the rendering half; the vocabulary, its heal, the store
 // read and the scroll driver are in `agentBackdrop.ts` beside it.
@@ -19,9 +18,13 @@ import { useBackdropWalk, type BackdropArt } from "./agentBackdrop";
 //                  content — gacha's own `data-oracle="scroll"` posture, so there is NO driver in this
 //                  mode. cosmos/vapor/minimal have no operator-image place of their own; this is it.
 //   · `full`     — ONE shared arrangement (used by the kit themes AND gacha): a zero-height sticky PIN
-//                  hosting a sharp full-bleed art layer, a SEPARATE readability veil, and the 1 → floor
-//                  opacity walk. No blurred copy anywhere — that is the whole owner-confirmed difference
-//                  from the oracle's fade ("same fade out … just the blur" is what changes).
+//                  hosting a sharp full-bleed art layer and a SEPARATE readability veil. It does not
+//                  react to scroll AT ALL — the picture the owner sees at the top of the thread is the
+//                  picture at every offset (the wave-3 feel round, 2026-09-09: "not fade it out … just
+//                  leave it like when the chat is unscrolled"). The veil is what makes the text readable
+//                  over it, and it is static, so there is nothing here to drive: no ref, no listener, no
+//                  per-frame property. No blurred copy either — that is the difference from gacha's own
+//                  oracle fade, which is that theme's operator art and keeps its own driver.
 
 /** The `operator` strip — an ordinary in-flow block. No driver, no sticky, no stacking: it scrolls away
  *  with the content, which is the whole presentation. */
@@ -43,14 +46,14 @@ function OperatorStrip({ art }: { art: BackdropArt }) {
 /** The `full` arrangement — the zero-height sticky pin (the frontier `.fr-rigstack-pin` precedent: it keeps
  *  its overflowing child in view for the whole scroll of the thread without taking flow space and without a
  *  `position: fixed` ancestor-transform trap), the sharp art layer, and a SEPARATE veil so the readability
- *  wash is its own layer rather than baked into a face that crossfades. */
-function FullBackdrop({ art, active }: { art: BackdropArt; active: boolean }) {
-  // A scroll-linked opacity ramp IS motion: under `reduced` the layer parks at the floor in CSS and this
-  // driver never runs (no listener, no frames) — the gate is one boolean, honored in both halves.
-  const motion = useUISlice((s) => s.motion);
-  const ref = useBackdropWalk(active, motion !== "reduced");
+ *  wash is its own layer.
+ *
+ *  PRESENTATIONAL TO THE LETTER since the wave-3 feel round: the layer is what it renders, and it renders
+ *  the same at every scroll offset. The `motion` read and the tab gate that used to live here existed only
+ *  to arm the scroll driver, and went out with it. */
+function FullBackdrop({ art }: { art: BackdropArt }) {
   return (
-    <div className="kit-backdrop-pin" ref={ref} aria-hidden>
+    <div className="kit-backdrop-pin" aria-hidden>
       <div className="kit-backdrop-full">
         <FocalImg
           className="kit-backdrop-art"
@@ -70,14 +73,6 @@ function FullBackdrop({ art, active }: { art: BackdropArt; active: boolean }) {
  *  without a picture are byte-identical to the shell that shipped before this slice. `off` renders nothing
  *  whatever the art is (§8.3's F14 correction: `off` beats the ladder). */
 export function AgentBackdrop({ mode, art }: { mode: AgentBackdropMode; art: BackdropArt | null }) {
-  const active = useAgentBackdropActive();
   if (mode === "off" || art === null) return null;
-  return mode === "full" ? <FullBackdrop art={art} active={active} /> : <OperatorStrip art={art} />;
-}
-
-// The tab this layer lives in is the AGENT tab, and `body[data-tab]` already carries which section is
-// showing (`store/ui.ts#applyBodyAttrs`) — so the driver's "is my tab on screen" gate is a store read here
-// rather than a prop every body would have to thread down. Keeps the component's contract at {mode, art}.
-function useAgentBackdropActive(): boolean {
-  return useUISlice((s) => s.tab) === "agent";
+  return mode === "full" ? <FullBackdrop art={art} /> : <OperatorStrip art={art} />;
 }
