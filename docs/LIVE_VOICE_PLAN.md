@@ -77,6 +77,48 @@ through `runComposer` exactly as dictation `auto_send` does today. Costs one tai
 composer's guards, and the confirm-gate UX all byte-identical to text — and the relay needs no
 auth story, no thread knowledge, no persistence.
 
+### 2.1 The inheritance ledger — what the reference projects contributed (owner ask, 2026-09-11)
+
+The owner's RealtimeVoiceChat fork (KoljaB upstream) was source-dissected end-to-end in R51 §2,
+and pipecat/livekit in §4 — nothing here is unexamined. What each contributed, stated once:
+
+**Taken from RealtimeVoiceChat (the reference shape):**
+- The **capture/playback AudioWorklet pattern** (§3.1's capture leg — R51 called the 20+68-line
+  worklet pair "the best code in the repo").
+- The **interruption semantics** — kill audio first, then abort the turn, and persist honestly
+  (§4.3's ordering is RVC §2.6 done with our seams).
+- The **negative lesson**: RVC goes deaf for 1–2 s after every reply because it has no echo
+  answer — our mic never closes (§4.3), and Chrome's `"all"` AEC mode (R68) is the fix RVC
+  never had.
+- The **one-knob philosophy** (RVC's speed slider) — deliberately deferred: v1 ships the raw
+  knobs as Settings and S4 calibrates them with the owner; a single "pace" preset can fold over
+  them later without migration.
+- Its **latency headline trick — the short first clause** — we already own most of it: C3
+  speaks the first sentence at ~0.7 s. The remaining lever is RVC's prompt-side half ("first
+  sentence ≤ N words", which makes the first chunk close sooner). Available any time as an
+  owner-editable call-mode prompt line through the Phase 18 registry — optional, S4 material.
+
+**Deliberately NOT taken (R51 §9.3③ — the ruled-out port):** the duplex-PCM-both-ways WebSocket
+(C3 already delivers audio better over HTTP), the GPU DistilBERT turn classifier + dual Whisper
+(needs hardware we don't spend and partials we don't have), the thread-per-stage abort fence
+(eleven Events, three timeouts — our cancel is one idempotent HTTP call), and its private
+history/pipeline (would fork the agent loop — the hard constraint).
+
+**Shelved with a named trigger (the "least latency" ceiling):** RVC's two real latency weapons —
+**dynamic endpointing** (the pause length adapts to whether the sentence sounds finished) and
+**speculative generation** (the LLM starts on a partial transcript) — both require PARTIAL
+transcripts, which the Speaches ear does not produce (frozen upstream, R68). They are exactly
+what architecture ② / v2 buys if v1's fixed `silence_ms` feels sluggish in the owner's hands:
+pipecat has since formalized the speculation trick as `SpeculationGate` (R68 §2.5), and Smart
+Turn v3 (8.7 MB CPU ONNX) is the endpointing half. **S4's calibration round is the decision
+point: if tuned knobs feel good, v1 stands; if not, ② is designed and costed, not improvised.**
+
+**Taken from livekit:** the interruption floor (`min_duration`/`min_words` → our
+`min_speech_ms` + `barge_threshold`). **Declined for v1:** its false-interruption *resume*
+(the agent un-pauses if the interruption produced no transcript within 2 s) — recorded as an S4
+option if the energy gate alone proves too twitchy; our v1 interruption is deliberately simple
+and irreversible.
+
 ## 3. The wire — the first WebSocket in the codebase
 
 ### 3.1 Route + framing
@@ -268,7 +310,11 @@ voice:
 ```
 
 Delivered to the client via `GET /voice/status` (the established non-Conf-scoped voice-policy
-door); Conf gets the group under the existing `voice` section. `enabled: false` or no resolvable
+door); Conf gets the group under the existing `voice` section. **Owner ruling 2026-09-11: these
+are real Settings, not YAML-only** — the Conf voice group grows rows for the behavior toggles
+(`enabled`, `barge_in`, `echo_workaround`) and the tuning numerics (thresholds, `silence_ms`,
+`min_speech_ms`), same SettingRow presentation as the rest of the voice section, so
+interruption-and-friends are tweakable from the phone. `enabled: false` or no resolvable
 target → the call button is not rendered (the `VoiceClient.configured` pattern).
 
 ### 5.2 Security posture (SECURITY_MODEL lens)
@@ -276,11 +322,10 @@ target → the call button is not rendered (the `VoiceClient.configured` pattern
 - Same origin, same tailnet-only bind, `wss:` under the existing Tailscale Serve cert — no new
   ingress class, no new port.
 - The Speaches bearer never leaves the backend (the A11 secret rules apply — never logged, never
-  echoed in errors). **R68 §1.2 found the current Speaches posture is itself the weak point: it
-  binds `0.0.0.0:9000` with a placeholder API key — an effectively-unauthenticated realtime WS on
-  the LAN.** Not ctrl-b code, but the design refuses to *widen* that exposure: the relay is the
-  only client, so the S0 checklist recommends re-binding Speaches to loopback (it is colocal with
-  ctrl-b on emma) or setting a real key — the owner's server, the owner's call (§8).
+  echoed in errors). **R68 §1.2 flagged the Speaches posture (binds `0.0.0.0:9000`, placeholder
+  API key). OWNER RULING 2026-09-11: leave the server exactly as it is — ctrl-b touches nothing
+  outside the project.** Recorded; the design itself does not widen that exposure (the relay is
+  the only new client, and the phone never talks to Speaches directly).
 - The WS accepts **only** the typed control messages + bounded binary frames; anything else is a
   protocol-error close. Caps: frame bytes, session seconds, one live session per connection plus
   the process-wide `max_sessions` cap (F9). **Browser CORS does not protect WebSockets** — the
@@ -316,8 +361,8 @@ Theme-tokened; gacha/kit/frontier inherit through tokens (no per-theme bespoke w
   Fennec (~5 min each); the Fennec mic-permission persistence check rides the same sitting; a
   server-side smoke script proving emma → Speaches `/v1/realtime?intent=transcription`
   end-to-end **against the resident Parakeet model** (VAD events, a real transcript from a real
-  clip — this also exercises the fork's own `e093d8b` no-speech path). The Speaches posture
-  fix (loopback bind or a real key, §5.2) rides here. **Rules `echo_workaround` and confirms the
+  clip — this also exercises the fork's own `e093d8b` no-speech path; the Speaches server
+  itself is NOT touched — owner ruling, §5.2). **Rules `echo_workaround` and confirms the
   Speaches contract before anything is built on it.**
 - **S1 — the BE relay:** `voice.live` config + `/voice/status` delivery + the WS route + the
   relay session (mock-Speaches tests: framing, resampling, backpressure, caps, error taxonomy,
@@ -337,18 +382,16 @@ Theme-tokened; gacha/kit/frontier inherit through tokens (no per-theme bespoke w
 
 ## 8. Open questions for the owner (the court)
 
-1. **§4.4 truncation — now DEFERRED to v2 by council ruling** (the persistence seam the draft
-   assumed does not exist; a real fix is its own design). v1's posture: an interrupted reply
-   either under-remembers (mid-turn, same as text Stop today) or over-remembers (post-terminal).
-   Say the word if you want the v2 slice bought sooner rather than later.
-2. **The overlay's look** — minimal state-ring v1 as specced, with the agent art backdrop? Or
-   hold UI polish for a feel round after S2 (the design assumes the latter's spirit: build
-   minimal, tune by eye).
+**Owner rulings landed 2026-09-11 (in conversation):** ① §4.4 truncation as a follow-up slice —
+AGREED · ② minimal overlay — YES, tuned by feel rounds after S2 · ④ the Speaches server —
+**LEAVE AS IS; ctrl-b touches nothing outside the project** (folded into §5.2/§7-S0) · NEW
+ruling: the behavior toggles and tuning knobs are real Settings rows, not YAML-only (folded
+into §5.1) · the reference-project inheritance made explicit (§2.1, the owner's ask).
+
+Still open:
+
 3. **Browser priority** — S0 probes both; if Fennec's AEC or permission story is bad, is
    "Chrome for calls" an acceptable v1 posture (the web-push precedent)?
-4. **The Speaches posture** (R68 §1.2) — it binds `0.0.0.0:9000` on the LAN with a placeholder
-   API key. The design recommends loopback-binding it (ctrl-b's relay is its only intended
-   client and is colocal) or setting a real key in S0. Your server, your call.
 
 ## 9. Council record
 
