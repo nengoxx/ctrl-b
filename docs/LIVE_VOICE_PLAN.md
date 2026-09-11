@@ -307,14 +307,18 @@ voice:
     max_sessions: 1             # process-wide live-session cap (F9; N=1 service)
     echo_workaround: auto   # auto | on | off  (S0 probe decides auto's meaning per UA)
     barge_in: true
+    ring: true              # §6 overlay mode: true = the focal-anchored face ring; false = art-only + transcript accent
 ```
 
 Delivered to the client via `GET /voice/status` (the established non-Conf-scoped voice-policy
-door); Conf gets the group under the existing `voice` section. **Owner ruling 2026-09-11: these
-are real Settings, not YAML-only** — the Conf voice group grows rows for the behavior toggles
-(`enabled`, `barge_in`, `echo_workaround`) and the tuning numerics (thresholds, `silence_ms`,
-`min_speech_ms`), same SettingRow presentation as the rest of the voice section, so
-interruption-and-friends are tweakable from the phone. `enabled: false` or no resolvable
+door). **Owner ruling 2026-09-11: these are real Settings, not YAML-only — and the visual-design
+round the same day sharpened the placement: live call gets its OWN Conf section ("Live call"),
+not rows tucked into the existing voice group or Appearance.** The section carries the behavior
+toggles (`enabled`, `barge_in`, `echo_workaround`, the §6 `ring` mode) and the tuning numerics
+(thresholds, `silence_ms`, `min_speech_ms`), same SettingRow presentation as the rest of Conf,
+so interruption-and-friends are tweakable from the phone in one clearly-named place. *(The YAML
+stays `voice.live` — the extend-don't-migrate shape above is untouched; only the Conf grouping
+is its own section.)* `enabled: false` or no resolvable
 target → the call button is not rendered (the `VoiceClient.configured` pattern).
 
 ### 5.2 Security posture (SECURITY_MODEL lens)
@@ -343,15 +347,42 @@ target → the call button is not rendered (the `VoiceClient.configured` pattern
   half-alive background sessions). Wake Lock held while the overlay is up.
 - The Tier 0 auto-stop path stays as-is — the call mode neither replaces nor requires it.
 
-## 6. The UI (VAPOR_PATTERNS governs; kit overlay contract)
+## 6. The UI (VAPOR_PATTERNS governs; kit overlay contract) — **visual design RATIFIED (owner, 2026-09-11 visual round)**
 
-A **call overlay** (the kit's overlay pattern — form-sibling mount, the `.mform` lesson): the
-active agent's art as the backdrop (`useActiveBackdrop` — a call with Lynette looks like *her*),
-a state indicator (the five states as one animated affordance, not five labels), the live final
-transcript line, and **hang up**. Entry: a call button in the composer's voice cluster, rendered
-only when `voice.live` is configured+enabled. Speaking style: minimal v1 — no waveforms, no
-partials (we have none), no speed slider (playbackRate exists in the player already).
-Theme-tokened; gacha/kit/frontier inherit through tokens (no per-theme bespoke work in v1).
+A **call overlay** (the kit's overlay pattern — form-sibling mount, the `.mform` lesson). Entry:
+a call button in the composer's voice cluster, rendered only when `voice.live` is
+configured+enabled. Minimal v1 — no waveforms, no partials (we have none), no speed slider
+(playbackRate exists in the player already). Theme-tokened; gacha/kit/frontier inherit through
+tokens (no per-theme bespoke work in v1).
+
+**The backdrop never goes away (owner ruling).** In BOTH overlay modes the call screen is the
+active agent's art **full-bleed** (`useActiveBackdrop` — a call with Lynette looks like *her*),
+the same resolution ladder as the `full` chat backdrop. There is explicitly NO
+"blank screen + portrait in a circle" phone-call look — the owner rejected it.
+
+**One toggle — `voice.live.ring` (a Conf row in the Live call section, §5.1):**
+
+- **Ring mode (default — the look the owner envisioned):** a drawn **circumference** — a
+  stroke, no fill, nothing masked or cropped — sits on top of the art, over the face; the art
+  shows through untouched (a halo, not a frame). **Focal-anchored (owner-ratified):** the ring
+  centers on where the live backdrop's stored focal point (the media-manager framing crosshair)
+  lands *on screen* — a small pure helper inverting the existing cover/focal positioning math
+  the backdrop already uses; no new data, no new UI, any art at any viewport. Fallback when the
+  image has no focal point: centered, upper third. The §4.2 state animates the STROKE — the
+  music-visualizer *look* without the machinery: `listening` breathes slow, `userSpeechActive`
+  answers visibly (the owner's core ask: "show when I'm speaking and when I'm not"),
+  `thinking` shimmers, `speaking` pulses firmer, `connecting` dim, `error` takes `--danger`.
+  Transform/opacity-only (THEME_ENGINE §14.11 smoothness rule).
+  **DECLINED (owner, 2026-09-11 — do not re-propose):** audio-amplitude reactivity
+  (AnalyserNode on the TTS element). The ring reacts to call state only; a wave-like animation
+  is fine as a *style*, but nothing analyzes the audio signal.
+- **No-ring mode:** the pure art, minimal chrome. Call state rides the **transcript line's
+  accent** (a small dot/edge on the line pulsing the same state palette) — owner-approved with
+  "we can tweak it as we see it"; feel-round material, not a locked geometry.
+
+**Both modes keep the bottom cluster:** the live final-transcript line + **hang up** (reachable
+from every state, §4.2). Text-over-art legibility inherits the three-state-backdrop lessons
+(ROLEPLAY_PLAN §8.3a — the veil/scrim treatments, not new inventions).
 
 ## 7. Slice ladder (each: pinned Opus build → main-seat audit → blind Emma round → fix wave → close)
 
@@ -369,7 +400,9 @@ Theme-tokened; gacha/kit/frontier inherit through tokens (no per-theme bespoke w
   bearer never in logs).
 - **S2 — the FE call loop, WITH basic barge-in (council F8 — an open-mic loop that cannot be
   interrupted is not a reviewable slice):** capture worklet + WS client + the `useLiveCall`
-  machine (§4.2, incl. the new chat-store turn seam — F3) + the call overlay +
+  machine (§4.2, incl. the new chat-store turn seam — F3) + the call overlay (§6 as ratified:
+  full-bleed backdrop, both `ring` modes incl. the focal-anchor helper + the transcript-accent
+  arm) +
   submit-through-`runComposer` + read-along forced on + Wake Lock + degrade states + the plain
   kill: speech during `speaking` (energy floor, §4.3) stops audio and cancels a live turn.
   (End of S2 = a full interruptible conversation on the S0-ruled echo branch.)
@@ -387,6 +420,17 @@ AGREED · ② minimal overlay — YES, tuned by feel rounds after S2 · ④ the 
 **LEAVE AS IS; ctrl-b touches nothing outside the project** (folded into §5.2/§7-S0) · NEW
 ruling: the behavior toggles and tuning knobs are real Settings rows, not YAML-only (folded
 into §5.1) · the reference-project inheritance made explicit (§2.1, the owner's ask).
+
+**The visual-design round (owner, 2026-09-11, in conversation — all folded into §5.1/§6):**
+the overlay design is RATIFIED — full-bleed backdrop in BOTH modes, never a blank-backdrop
+call screen (the cutout-portrait look explicitly rejected) · ring vs no-ring as a real
+Settings toggle (`voice.live.ring`, default ring) · the ring is a stroke-only circumference
+over the face, **focal-anchored** to the live backdrop's stored focal point · no-ring state
+display = the transcript line's accent ("we can tweak it as we see it") · the ring animates
+from CALL STATE only — audio-amplitude analysis **DECLINED**, no extra machinery · live call
+gets its **own Conf section**, not rows inside the voice group or Appearance ("isn't that
+more clear?"). The ring mode is the owner's envisioned look; the no-ring accent is the
+experimental arm of the pair.
 
 Still open:
 
