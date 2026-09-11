@@ -12,7 +12,50 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-09, TWELFTH session — **the owner's glance PASSED the feel-round wave ("both fixes looked good") → S6b IS CLOSED; NEXT = S7, the owner DEVICE round = the phase gate**; supersedes below where it speaks)
+## Current state (2026-09-11, THIRTEENTH session — **S7 mostly ticked + the card-import leg delegated and PASSED · Dependabot D1 done · THE LIVE-VOICE DESIGN SESSION RAN END TO END: `LIVE_VOICE_PLAN.md` council-closed SHIP WITH CHANGES, awaiting the owner's ratification → D71 · everything PUSHED**; supersedes below where it speaks)
+
+- **S7 progress (the owner, in conversation): phone-talk ✓ · all three backdrop states ✓ ·
+  read-along ✓ (the mic leg is DONE — no Serve flip was needed) · showcase/picker feel ✓ ("for
+  now") · image upload + focus ✓.** The **card-import-through-the-UI leg was delegated to the
+  main seat and PASSED**: ST's bundled Seraphina (V2 single-chunk + 4-entry `character_book` —
+  the complement of Lynette's path) imported through the real UI on live :5173 (Playwright, no
+  mocks): inline report + honest position-downgrade warnings, `seraphina-book` attached, card in
+  the grid with avatar/TALK, editor round-trip clean, 0600 agent.yaml. **Seraphina is LIVE on
+  dev.** ⚠ Found: `roleplay.enabled` was never set on dev (defaults false) — the import button
+  was hidden, which is why the owner never saw it; **flipped ON via the settings seam** (persona
+  Ari kept). **Still open in S7, riding the owner's regular use** (their ruling — no formal
+  round): the lorebook live-trigger (say a trait word to Lynette, or ask Seraphina about
+  "Eldoria"/the forest) · tools-in-character on both duties settings. Their word closes S7 =
+  the phase. **The v1.7.8 release (item E — prod deploy, config migration 2→3, config backup
+  FIRST on rollback) stays owed and owner-sequenced; the owner is deliberately staying on dev.**
+- **Dependabot D1 DONE (`2a1d986`):** `npm audit fix`, lockfile-only, all nine alerts cleared
+  (npm audit 0 vulnerabilities), gate 6/6.
+- **THE LIVE-VOICE DESIGN (owner-commissioned this session, the full cadence):** read R51 → an
+  Opus delta pass bought **R68** (`559f300` — headline: Chrome ≥141 ships
+  `echoCancellation:"all"` so the R51 echo worry mostly dissolves; Speaches upstream is FROZEN
+  and emma runs a local fork at `~/github/speaches` @ `e093d8b` preloading **Parakeet**, bound
+  `0.0.0.0:9000` with a placeholder key — posture flagged; Silero v6 = drop-in weights,
+  vad-web stale) → main-seat design **`docs/LIVE_VOICE_PLAN.md`** (architecture ① —
+  Speaches-realtime `intent=transcription` ear behind a ctrl-b relay · client-submitted turns
+  through `runComposer` · C3 read-along mouth · the first WebSocket in the codebase, D-entry at
+  ratification) → **blind Emma design round: RETHINK, 2 HIGH · 7 MED, sweep "none",
+  architecture ① explicitly affirmed — ALL NINE ACCEPTED, both HIGHs code-verified first**
+  (headline: cancelled turns persist NO partial text + C3 outlives the turn ⇒ **§4.4 truncation
+  DEFERRED to v2**; Speaches has no min-speech knob ⇒ the barge-in floor became a client-side
+  sustained-energy gate) → **her confirm: all resolved with line proof, 2 sweep MEDs, verdict
+  SHIP WITH CHANGES — all four folded** (`91db30b`, full trail = plan §9). **The design is
+  council-closed; the owner has the plain-language brief in conversation.**
+- **▶▶ NEXT SESSION: the owner's word ratifies the design → D71 + the CLAUDE.md doc-map row →
+  the S0 build** (plan §7: the AEC capability+leak probe on the owner's phone, the Fennec
+  permission check, the Speaches realtime smoke against Parakeet, the Speaches bind/key posture
+  fix) — one slice per session, the standing cadence. The owner's §8 open questions ride the
+  brief (truncation-v2 timing · overlay minimalism · Chrome-first posture · the Speaches
+  posture).
+- **Git: PUSHED this session (the owner's word)** — the 104 backlog + D1 + R68 + the plan +
+  these docs; origin == local after the push. **Prod untouched: v1.7.7 @ `578ffa7`.** Both dev
+  units RUNNING (D69 — do NOT stop them); :5434 on `11ff928`, current for the BE.
+
+## Prior state (2026-09-09, TWELFTH session — **the owner's glance PASSED the feel-round wave ("both fixes looked good") → S6b IS CLOSED; NEXT = S7, the owner DEVICE round = the phase gate**; superseded above where it speaks)
 
 - **S6b closed by the owner's word (2026-09-09, in conversation):** the delete corner passed
   (the trash glyph stands — no × swap asked) and the still full-mode backdrop passed; the
