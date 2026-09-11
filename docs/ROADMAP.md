@@ -545,7 +545,7 @@ one — only the browser binary can). That splits C2 into two features that must
 
 ---
 
-### C4. Live voice mode (continuous conversation) — **noted 2026-08-21 (owner); FUTURE, not scheduled**
+### C4. Live voice mode (continuous conversation) — **✏️ DESIGN IN PROGRESS 2026-09-11: [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) is the plan of record (R68 delta folded, blind design round run); this entry is now a pointer**
 
 - **What:** always-listening mic → VAD/endpointing → streaming or per-utterance STT → the existing
   agent turn → C3 chunked TTS, with barge-in (speaking over the bot kills playback + cancels the
