@@ -5092,3 +5092,31 @@ grouping).
 `CORE_MEMORY_PLAN` keeps Core Memory. Build = **S0–S7 per plan §10**, one slice per session
 under the standing cadence (pinned Opus build → main-seat audit → blind Emma round → fix wave
 → close); S7 = the owner device round gates the phase.
+
+## D71 — Live voice mode ("call mode"): the Speaches-realtime ear · client-submitted turns · the WebSocket admission ✏️ RATIFIED 2026-09-11 (owner, in conversation — "okay then" after the brief + the reference-projects discussion; spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md); evidence = [R51](./research/R51-realtime-voice-chat.md) + [R68](./research/R68-live-voice-deltas.md); council = blind Emma design round RETHINK [2 HIGH · 7 MED, sweep "none", architecture ① affirmed; all nine ACCEPTED, both HIGHs code-verified] → confirm SHIP WITH CHANGES [all four folded] — plan §9 verbatim)
+
+**The architecture (R51 §9.3 ①, twice re-affirmed):** Speaches `/v1/realtime?intent=transcription`
+as the ear behind a ctrl-b relay (`WS /api/voice/live`; the bearer never reaches the browser;
+the Speaches server itself is UNTOUCHED — owner ruling) · **the phone submits finals through
+`runComposer`** so the agent loop — tools, confirm gates, memory, attribution, steering — is
+reached only through existing doors · C3 read-along (D63) is the mouth, forced on per call ·
+barge-in = C3 kill + the scoped cancel behind a client sustained-energy floor. Architecture ②
+(own the ear: Silero v6 weights + Smart Turn) is the recorded exit if S4's calibration round
+finds fixed endpointing sluggish — partials (dynamic endpointing + speculative generation) are
+②/v2 territory, never bolted onto ①.
+
+**The WebSocket admission (this entry is the invariant's record):** "SSE down, HTTP up" was an
+implicit architectural invariant; `WS /api/voice/live` breaks it **narrowly — WebSockets are
+admitted for continuous media ingress ONLY**. Chat text, turn events, and every non-media
+channel stay SSE/HTTP; a future feature wanting a WS re-argues against this entry. The route
+validates `Origin`, enforces typed-frames-only, per-frame/rate/session caps, and a
+process-wide session cap.
+
+**Scope + posture:** screen-on / app-foreground / Wake Lock (R14); `voice.live` extends
+`VoiceCfg` with a whole-feature `enabled` (ships OFF until the S4 owner round closes) and every
+tunable as a real Conf Settings row (owner ruling — no YAML-only knobs). §4.4
+truncate-to-what-was-heard is DEFERRED to its own follow-up slice (council F1: the persistence
+seam the draft assumed does not exist); v1's interrupted-reply posture is recorded honestly in
+the plan. Build = **S0–S4 per plan §7**, one slice per session under the standing cadence;
+S4 = the owner calibration round gates the phase (and calibrates the Tier-0 auto-stop
+threshold in the same sitting).

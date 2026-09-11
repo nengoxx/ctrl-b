@@ -1,10 +1,10 @@
 # Live voice mode ("call mode") — design draft v1
 
-> **Status: ✏️ DESIGN DRAFT (2026-09-11) — not ratified, nothing built.** Written by the main seat
-> off R51 (the standing dossier) + the as-built seams at the current tip; the R68 delta pass
-> (Speaches/VAD/AEC movement since R51's 2026-08-21 pins) folds in before the council round.
-> Authority once ratified: this file owns the live-voice design; ROADMAP §C4 becomes a pointer.
-> D-entry lands at ratification (the first WebSocket in the codebase needs one — §5.1).
+> **Status: ✏️ DESIGN RATIFIED 2026-09-11 ([D71](./DECISIONS.md)) — the owner's word, after the
+> brief + the §2.1 discussion; nothing built yet. Build = Phase 24 (TODO), §7's S0–S4 ladder,
+> one slice per session under the standing cadence.** Council trail = §9 (blind Emma RETHINK →
+> all folded → confirm SHIP WITH CHANGES). This file owns the live-voice design; ROADMAP §C4 is
+> a pointer; D71 records the WebSocket admission.
 
 ## 0. Evidence + as-built seams (verified at tip `4aa1a0b`, 2026-09-11)
 
@@ -421,4 +421,8 @@ Still open:
   `userSpeechActive || waitingFinal` with the flag's clear condition stated (MED 2). **The
   design is council-closed pending the owner's ratification (→ D71 + the CLAUDE.md doc-map row
   at that word).**
-- *(to be appended: the owner's ratification.)*
+- **2026-09-11 — RATIFIED by the owner (in conversation, "okay then")** after the plain-language
+  brief + the §2.1 reference-projects discussion; their four rulings (server untouched ·
+  truncation as follow-up · minimal overlay · knobs as real Settings) folded the same session.
+  → **D71** + the CLAUDE.md doc-map row + the TODO Phase 24 block. §8.3 (Fennec posture) stays
+  open for S0's empirical answer.

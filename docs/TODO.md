@@ -1578,10 +1578,35 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       SHIP WITH FIXES 3M → wave `29c5be4` → rider `90b7472` → micro-confirm PASS; full record
       = plan §13-S6. **The owner rounds then ran §13-S6b** (waves 1/1c/2/3 + the wave-3 feel
       round, every wave council-closed) — **S6b CLOSED 2026-09-09 by the owner's word**.
-- [ ] S7 — Owner device round (the phase gate): import a real card · talk to it on the phone ·
-      tools-in-character on both duties settings · all three backdrop states (blur/dim
-      legibility) · a field-authored lorebook triggering live · showcase + picker feel ·
-      read-along on a character reply.
+- [ ] S7 — Owner device round (the phase gate): import a real card ✓ (delegated, Seraphina
+      2026-09-11) · talk to it on the phone ✓ · tools-in-character on both duties settings ·
+      all three backdrop states ✓ · a field-authored lorebook triggering live · showcase +
+      picker feel ✓ · read-along on a character reply ✓ — **the remainder rides the owner's
+      regular use (their ruling 2026-09-11); their word closes the phase.**
+
+## Phase 24 — Live voice mode ("call mode"): the continuous ear · the call loop · barge-in — **✏️ DESIGN RATIFIED 2026-09-11 ([`D71`](./DECISIONS.md)) · spec = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) (council-closed §9; §7 = the slice ladder; build against the plan, NOT this list)**
+
+A hands-free voice conversation: Speaches-realtime as the ear behind a ctrl-b relay (the first
+WebSocket, D71's narrow admission), client-submitted turns through the untouched agent loop, C3
+read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each passes
+`tools/check.py`.
+
+- [ ] S0 — Probes + the ear smoke: AEC capability readback + leak check on the owner's phone
+      (Chrome + Fennec) · Fennec mic-permission persistence · the Speaches
+      `/v1/realtime?intent=transcription` smoke against resident Parakeet (server untouched —
+      owner ruling). Rules `echo_workaround` + the Fennec posture (§8.3).
+- [ ] S1 — The BE relay: `voice.live` config + `/voice/status` delivery + `WS /api/voice/live`
+      + the relay session (mock-Speaches tests; framing/resample/backpressure/caps/Origin).
+- [ ] S2 — The FE call loop WITH basic barge-in: capture worklet · WS client · `useLiveCall`
+      (phase + orthogonal flags; the narrow chat-store turn seam) · the call overlay ·
+      submit-through-`runComposer` · read-along forced on · Wake Lock · the plain kill.
+- [ ] S3 — Interruption hardening: the ordered cancel-settle contract · the buffered-final
+      race · playback-would-start-while-speaking · the echo fallback branch if S0 ruled dirty ·
+      flaky-link reconnect/backpressure edges.
+- [ ] S4 — The owner calibration + device round (the phase gate): noise/quiet knob tuning on
+      the real phone (+ the Tier-0 auto-stop threshold, same sitting); `voice.live.enabled`
+      flips ON at its close. Decision point: fixed endpointing good → v1 stands; sluggish →
+      architecture ② gets designed (plan §2.1).
 
 ## Cross-cutting / don't-forget
 

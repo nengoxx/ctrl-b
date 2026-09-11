@@ -45,12 +45,17 @@
   sustained-energy gate) → **her confirm: all resolved with line proof, 2 sweep MEDs, verdict
   SHIP WITH CHANGES — all four folded** (`91db30b`, full trail = plan §9). **The design is
   council-closed; the owner has the plain-language brief in conversation.**
-- **▶▶ NEXT SESSION: the owner's word ratifies the design → D71 + the CLAUDE.md doc-map row →
-  the S0 build** (plan §7: the AEC capability+leak probe on the owner's phone, the Fennec
-  permission check, the Speaches realtime smoke against Parakeet, the Speaches bind/key posture
-  fix) — one slice per session, the standing cadence. The owner's §8 open questions ride the
-  brief (truncation-v2 timing · overlay minimalism · Chrome-first posture · the Speaches
-  posture).
+- **RATIFIED SAME SESSION → D71 (the owner: "okay then", after the brief + the §2.1
+  reference-projects discussion).** Their rulings, all folded (`f2dbbd5` + the ratification
+  commit): the Speaches server stays UNTOUCHED (nothing outside the project) · §4.4 truncation
+  = follow-up slice · minimal overlay · **the behavior toggles/knobs are real Conf Settings
+  rows**. New plan §2.1 = the inheritance ledger (RVC/pipecat/livekit: taken / declined /
+  shelved-with-trigger — partials need arch ②; S4 calibration is the decision point). D71 also
+  records the WebSocket admission (media ingress ONLY). TODO Phase 24 + the CLAUDE.md doc-map
+  row are wired. **▶▶ NEXT SESSION: the S0 build** (plan §7: the AEC capability+leak probe on
+  the owner's phone Chrome+Fennec · the Fennec permission check · the Speaches realtime smoke
+  against Parakeet, server untouched) — one slice per session, the standing cadence; §8.3
+  (Fennec posture) is the one open question, answered empirically by S0.
 - **Git: PUSHED this session (the owner's word)** — the 104 backlog + D1 + R68 + the plan +
   these docs; origin == local after the push. **Prod untouched: v1.7.7 @ `578ffa7`.** Both dev
   units RUNNING (D69 — do NOT stop them); :5434 on `11ff928`, current for the BE.
