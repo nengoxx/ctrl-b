@@ -694,7 +694,64 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   cancel · the 1000 ms floor · hints · the pointercancel promote-to-lock rule); call mode's
   chrome ships but stays hidden until the `live` bit exists (S1/S2). Parameters tuned by the
   owner's feel round against R69's table.
-- **S1 — the BE relay:** `voice.live` config + `/voice/status` delivery + the WS route + the
+
+  > **S0.5 AS-BUILT + council-CLOSED (2026-09-12; the owner FEEL ROUND still owed — their word
+  > closes the slice).** The full cadence ran in one session: pinned Opus build `86de7b0`
+  > (useDictation widens) + `faa62b5` (the gesture) → main-seat audit rider `7a60309` → blind
+  > Emma round **SHIP WITH FIXES (5 MED · 2 LOW, open sweep "none")** → fix wave `05f67b3`
+  > (pinned Opus) → her confirm **BLOCKED (2 survivors)** → main-seat micro-wave `0516490` →
+  > her micro-confirm **RESOLVED — SHIP** (sweep "none"). Gate 6/6 ×3 at the three tips;
+  > FE 3,207/180 · BE 2,377 (counts in QUALITY.md); every claim arm red-proven by scripted
+  > single-mechanism reversion.
+  >
+  > **Shape (per the §6 ratified design):** `kit/composer/useMicGesture.ts` — a PURE
+  > `micReduce` machine + thin pointer wiring (the `useDragReorder` shape), every R69 §9
+  > constant named+traced in that one file and pinned verbatim by a parameter-contract test;
+  > `useDictation` WIDENED to `{status, toggle, start, stop, cancel}` — one recorder, the F5
+  > arming latch as an abortable TOKEN, `cancel` as a discard flag consulted in the ONE
+  > `onstop`, the 1000 ms floor client-side pre-POST; `MicGestureChrome` — ONE component
+  > rendered by all three variants; hint budget = two DEVICE-LOCAL UIState fields; call chrome
+  > built DARK behind `VoiceStatus.live?` (false until S1; `startCall` a named no-op stub,
+  > TODO(S2a)); `aria-pressed` gone, the mode rides the accessible name; `touch-action:none` +
+  > `user-select:none` STATIC on the mic class; e2e `micGesture.spec.ts` (3 arms, both
+  > projects, real pointer capture on the built app).
+  >
+  > **The one build deviation (stop-clause, measured):** the chrome is a positioned SIBLING of
+  > `.kit-composer`, not a child — sheet/line bars compute `overflow: hidden` (probe children
+  > above/beside the bar were not hit-testable; stacked was) — so the 2.2× circle is painted by
+  > the chrome, not by scaling the button (Telegram's own overlay-view shape), anchored to the
+  > measured mic centre via `--mg-x/--mg-y/--mg-size`. Verified: un-clipped in all three
+  > layouts; `--composer-h` measured invariant (92/47/50 px) before/during/after the grow.
+  >
+  > **The review trail's mechanisms (all folded):** main-seat audit — the chip-stage button is
+  > INERT (§6's words; the chip's own tap starts the call, never a down-event) · the keyboard
+  > door measures the anchor before `keyStart`. Emma F1 — a `startGen` generation guard keeps a
+  > stale aborted acquisition's `false` from idling the NEXT gesture, and an aborted attempt's
+  > late `getUserMedia` rejection is silent (no toast, no detector teardown). F2 — non-null
+  > `recRef` OWNS the recorder lifecycle (stop/cancel flip `state` synchronously while terminal
+  > events are QUEUED); `start()` refuses while owned; `onstop` is the ONE releasing terminal
+  > (first statement, so the discard branch releases too; `upload(mime)` takes the mime from
+  > the closure) — and per her confirm sweep, `onerror` deliberately does NOT release (the
+  > platform fires the final `dataavailable`/`stop` AFTER an error; the error arms the discard
+  > flag, F4, and the queued stop closes out). F3 — accepted, prescription RE-DERIVED (hers
+  > would have broken the click-swallow): `armClickGuard` re-asserts the session flag and runs
+  > for EVERY button pointer; the activation timer + machine send are pid-guarded; the timer
+  > arms only on a real idle→press transition; `locked` adopts a stop pointer only while
+  > unowned (`pid === -1`). She ruled the re-derivation sound. F5 — a `live` drop closes
+  > `callArm`/`chip` AND a call-mode `press` (its snapshotted mode would re-enter `callArm`
+  > off the still-armed timer) through the existing `escape` signal. F6 — the reduced-motion
+  > `.mg-rail.armed` transition gate landed; F7 — the parameter pin.
+  >
+  > **Residuals (recorded, none owed now):** the 200 ms cancel/exit curve is NOT built — the
+  > chrome unmounts instantly; feel-round material (the kit.css comment says so) · a
+  > pointercancel-PROMOTED lock retires the teaching hint (accepted: the locked UI appearing
+  > is itself the teaching) · the 1000 ms floor + its "hold the mic" toast copy apply to the
+  > keyboard path too (deliberate one-rule scoping) · `toggle` during `sending` can surface
+  > the once-per-load HTTP nudge · `.mic-gesture` z-index 6 clears the tab bar by ~2 px today
+  > — re-measure if any affordance grows · wake-lock-during-a-hold deferred to S2 (R69 §9's
+  > last row) · chrome geometry (track width, rail −22 px, hint −60 px) is first-pass,
+  > owner-tuned. **Owed: the owner's feel round on real dictation (:5173 serves it live) —
+  > hold/lock/slide-cancel/hints against R69's table; their word closes S0.5 → S1.** `voice.live` config + `/voice/status` delivery + the WS route + the
   relay session (mock-Speaches tests: framing, resampling, backpressure, caps, error taxonomy,
   bearer never in logs).
 - **S2a — the FE call loop, WITH basic barge-in (council F8 — an open-mic loop that cannot

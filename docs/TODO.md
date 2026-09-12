@@ -1597,9 +1597,13 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       against Parakeet; Chrome's `"all"` AEC measured genuinely subtractive, Fennec's measured
       ineffective ⇒ owner ruling: Chrome first-class, Fennec = ear-hold (plan §8 item 3);
       gesture posture zero-cancel on both browsers ⇒ S0.5 green-lit.)*
-- [ ] S0.5 — The entry gesture (FE-only, delta-round rung): the §6 dual-mode mic hook +
+- [x] S0.5 — The entry gesture (FE-only, delta-round rung): the §6 dual-mode mic hook +
       animations, the mic leg live against today's `useDictation`; call chrome ships hidden
-      until the `live` bit exists. Feel-tested on real dictation (plan §7-S0.5).
+      until the `live` bit exists. *(Council-CLOSED 2026-09-12 — build `86de7b0`+`faa62b5`,
+      audit rider `7a60309`, review wave `05f67b3`, confirm micro-wave `0516490`; blind round
+      SHIP WITH FIXES 5M·2L → all folded → RESOLVED — SHIP; plan §7-S0.5 as-built record.
+      The owner FEEL ROUND on real dictation — parameters tuned by eye against R69's table —
+      is still owed and closes the slice by their word; live on :5173.)*
 - [ ] S1 — The BE relay: `voice.live` config + `/voice/status` delivery + `WS /api/voice/live`
       + the relay session (mock-Speaches tests; framing/resample/backpressure/caps/Origin).
 - [ ] S2 — *(split S2a/S2b by the 2026-09-12 delta round — plan §7 wins)* The FE call loop

@@ -12,7 +12,46 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-12, FIFTEENTH session — **S0 RAN END TO END AND IS CLOSED, owner in the loop live: probes built + the phone sitting done + THREE rulings landed (the loopback server fix · Chrome-first echo posture · gesture green-light). ▶▶ NEXT SESSION = S0.5 (the dual-mode mic on real dictation)**; supersedes below where it speaks)
+## Current state (2026-09-12, SIXTEENTH session — **S0.5 (the dual-mode mic entry gesture) RAN THE WHOLE STANDING CADENCE IN ONE SESSION and is council-CLOSED: blind Emma SHIP WITH FIXES → fix wave → BLOCKED confirm → micro-wave → RESOLVED — SHIP. ▶▶ NEXT: the owner's FEEL ROUND on real dictation (:5173) — their word closes S0.5 → S1**; supersedes below where it speaks)
+
+- **S0.5 is council-CLOSED (full as-built record = plan §7-S0.5; read THAT before S1/S2a work):**
+  pinned Opus build `86de7b0` (useDictation widens: start/stop/cancel · the F5 abortable
+  arming TOKEN · the 1000 ms pre-POST floor · the discard-flag cancel) + `faa62b5` (the §6
+  gesture: pure `micReduce` + thin wiring, one `MicGestureChrome` for all three variants,
+  every R69 §9 constant named+traced in ONE file, call chrome DARK behind `VoiceStatus.live?`,
+  `touch-action:none` static, aria-pressed gone, e2e both projects) → main-seat audit rider
+  `7a60309` (chip-stage button INERT per §6 · the keyboard door measures its anchor) → blind
+  Emma **SHIP WITH FIXES 5M·2L sweep "none"** → wave `05f67b3` (the F1 stale-acquisition gen
+  guard · F2 recRef-owns-the-lifecycle · F3 foreign-pointer ownership, her prescription
+  RE-DERIVED and later ruled sound · F4 error-arms-discard · F5 live-drop escape · the
+  reduced-motion rail gate · the parameter-contract pin) → her confirm **BLOCKED (2
+  survivors)** → main-seat micro-wave `0516490` (`onerror` does NOT release ownership — the
+  queued terminal `stop` is the one releasing terminal; a call-mode PRESS escapes on a live
+  drop) → **her micro-confirm: RESOLVED — SHIP, sweep "none".**
+- **The one build deviation, measured (stop-clause fired):** the gesture chrome is a
+  positioned SIBLING of `.kit-composer` — sheet/line compute `overflow: hidden` and clip
+  children — anchored to the measured mic centre; `--composer-h` proven invariant under the
+  2.2× grow. ⚠ Durable lessons this session: a reviewer's fix prescription can break an
+  invariant the finding itself named — re-derive against the actual state shape (F3); an
+  `onerror` is NOT a terminal event — the platform still fires `dataavailable`/`stop` after
+  it, so ownership releases exactly once, in `onstop`.
+- **Gate 6/6 ×3 this session (foreground, never concurrent with an Emma round) — FE 3,207/180
+  · BE 2,377** (counts + attribution in QUALITY.md; eslint 101, net zero new). Every
+  load-bearing arm red-proven by scripted single-mechanism reversion. Also: the S0-close
+  commit had clobbered the plan's S0.5 ladder bullet — restored `dde6688`.
+- **▶▶ NEXT: the owner's FEEL ROUND on real dictation** (dev :5173, FE-only — both dev units
+  RUNNING, D69, do NOT stop them): hold-to-record · release-to-send (composes with
+  `stt_auto_send`) · 56 px lock + the visible CANCEL · slide-left cancel · the <1 s teaching
+  toast · the ≤3-show lock hint — parameters tuned by eye against R69 §9's table (the
+  constants live in `useMicGesture.ts`; geometry offsets are first-pass). **Their word closes
+  S0.5 → S1 (the BE relay).** The S0 blind-review debt rides S1 as recorded.
+- Git: **9 commits unpushed over origin `b946fc1`** (the 2 S0 commits + `dde6688` · `86de7b0`
+  · `faa62b5` · `7a60309` · `05f67b3` · `0516490` + this docs commit); tree clean at write;
+  the PUSH ruling stays the owner's. **Prod untouched v1.7.7 @ `578ffa7`.** Phase 23 S7 +
+  the v1.7.8 sequencing unchanged (release E after the roleplay features — owner ruling
+  09-12).
+
+## Prior state (2026-09-12, FIFTEENTH session — **S0 RAN END TO END AND IS CLOSED, owner in the loop live: probes built + the phone sitting done + THREE rulings landed (the loopback server fix · Chrome-first echo posture · gesture green-light)**; superseded above where it speaks)
 
 - **S0 (plan §7) is CLOSED — the full as-built record with every number and mechanism is plan
   §7-S0; read THAT before S1/S2 work.** Build `da4343f` (pinned Opus): `frontend/probes/{aec,gesture}.html`
