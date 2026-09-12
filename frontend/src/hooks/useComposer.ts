@@ -24,6 +24,10 @@ export interface ComposerController {
   mic: ReturnType<typeof useDictation>;
   /** Whether STT is configured — the mic only renders when true. */
   sttReady: boolean;
+  /** Whether LIVE VOICE (call mode) is configured+enabled (D71 §5.1) — the mic button's SECOND mode.
+   *  False until S1's backend delivers the bit, which is what keeps the call half of the dual-mode
+   *  gesture unreachable while it ships. */
+  liveReady: boolean;
   /** There is something to send: a non-empty draft, OR a READY staged attachment (D68 §7). The line
    *  variant's send button keys its existence off this — and "ready" is what keeps a rail holding
    *  nothing but a failed chip from arming a send that would carry nothing (MED-5). */
@@ -39,6 +43,7 @@ export function useComposer(): ComposerController {
   const status = useChatSlice((s) => s.status);
   const voice = useVoiceStatus();
   const sttReady = voice.data?.stt ?? false;
+  const liveReady = voice.data?.live ?? false;
   const mic = useDictation({
     sttReady,
     statusStamp: voice.dataUpdatedAt,
@@ -78,6 +83,7 @@ export function useComposer(): ComposerController {
     isStreaming,
     mic,
     sttReady,
+    liveReady,
     // MED-5 — the SAME predicate the send path reads (`hasStaged`), derived from the subscribed set
     // so the button re-renders with it: only a `staged` row is something to send.
     sendable: draft.trim() !== "" || staged.some((f) => f.status === "staged"),

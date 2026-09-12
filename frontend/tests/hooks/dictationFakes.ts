@@ -55,9 +55,26 @@ export function mockStt(status: number, body: unknown) {
   );
 }
 
-/** Tap to start, wait until recording, tap to stop (which kicks off the async upload). */
-export async function recordOnce(result: { current: { toggle: () => void; status: string } }) {
+/** Tap to start, wait until recording, tap to stop (which kicks off the async upload).
+ *
+ *  HELD PAST THE 1000 ms FLOOR by default (S0.5): `useDictation` now discards a clip shorter than
+ *  `MIN_CLIP_MS` before any POST, and every case in these two files is about what happens to a real
+ *  recording. The clock is NUDGED rather than waited on — the fake recorder's `stop()` is synchronous
+ *  and `upload()` reads `Date.now()` in its synchronous prefix, so restoring it right after the `act`
+ *  is safe (and under fake timers the captured `Date.now` is the faked one, which goes back unchanged).
+ *  Pass a shorter `heldMs` to drive the floor itself. */
+export async function recordOnce(
+  result: { current: { toggle: () => void; status: string } },
+  heldMs = 1200,
+) {
+  const realNow = Date.now;
   act(() => result.current.toggle());
   await waitFor(() => expect(result.current.status).toBe("recording"));
-  act(() => result.current.toggle());
+  const at = realNow() + heldMs;
+  Date.now = () => at;
+  try {
+    act(() => result.current.toggle());
+  } finally {
+    Date.now = realNow;
+  }
 }

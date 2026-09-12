@@ -35,11 +35,35 @@ import { pushToast } from "../store/toast";
 // ordinary `stop()` — so `onstop → upload → auto_send` is untouched and the two knobs compose (stop
 // alone = hands-free stop + review; with auto_send = say-it-and-it-goes). No VAD model, no worklet, no
 // background listening: a hidden page stops the recording outright (see `armDetector`).
+//
+// Phase 24 / S0.5 — the hook WIDENS for the hold-to-record gesture (LIVE_VOICE_PLAN §6, D71). There is
+// exactly ONE recorder: the gesture drives THIS machine through `start`/`stop`/`cancel` instead of
+// standing up a second one, and `toggle` stays untouched as the keyboard/AT path (R69 §8.1 — the
+// Telegram-Web degradation IS the shipped alternative). What the gesture needed, and nothing more:
+//   · `start()` RESOLVES to whether a recorder actually armed, so a hold on a denied/failed mic can
+//     close its own chrome instead of painting a circle over a mic that never opened;
+//   · `cancel()` discards — a flag consulted in the `onstop` path, so the clip costs no POST;
+//   · the 1000 ms FLOOR (R69 §9, Signal's rule) lives here, in the pre-upload path, because this is
+//     the layer that knows when the recording started;
+//   · the arming latch is now a TOKEN rather than a boolean (delta round F5): a release landing while
+//     `getUserMedia` is still pending ABORTS that attempt, and a stream resolving afterwards is stopped
+//     at once — never an ownerless recording.
 
 // Auto-stop (R51 Tier 0) — how often the energy detector reads the stream while recording. NOT a
 // tunable (the two tunables are the silence window + the RMS floor, both config): 100 ms resolves the
 // configured window to within one reading and costs nothing, the order the field ships at (R51 §5).
 const SILENCE_POLL_MS = 100;
+
+/** The minimum clip we will spend a POST on, in ms (R69 §9 / §2 — Signal's floor, ratified in
+ *  LIVE_VOICE_PLAN §6). A mis-timed hold produces a 200 ms blip: discard it CLIENT-SIDE, before any
+ *  upload, and teach the gesture instead of failing silently. Applies to every entry — the gesture and
+ *  the keyboard toggle alike — because "a clip too short to be speech" is one fact about the clip, not
+ *  a property of how the recording was started. */
+const MIN_CLIP_MS = 1000;
+
+/** The teaching toast that replaces the discarded blip (R69 §2: Signal teaches at exactly this
+ *  moment). Short, and it names the gesture rather than scolding. */
+const TOO_SHORT_MSG = "Too short — hold the mic to record";
 
 const INSECURE_MSG =
   "Mic needs a secure connection — use HTTPS via Tailscale Serve, or allow this origin in your browser flags.";
@@ -120,7 +144,17 @@ export function useDictation({
   const [unavailable, setUnavailable] = useState(false);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const armingRef = useRef(false); // true between a start() tap and the recorder actually arming
+  /** The in-flight `start()` attempt, or null — the re-entrancy latch, now a TOKEN (F5). A second entry
+   *  during the `getUserMedia` await would open a SECOND stream and orphan the first (its tracks never
+   *  stopped → the mic stays live), which is what the old boolean blocked; the token additionally lets a
+   *  release/cancel landing inside that window ABORT the attempt, so a stream that resolves after the
+   *  gesture ended is released immediately instead of becoming a recording nobody asked for. */
+  const armRef = useRef<{ aborted: boolean } | null>(null);
+  /** Set by `cancel()` and consumed in `onstop`: the clip is DROPPED, no upload (LIVE_VOICE_PLAN §6). */
+  const discardRef = useRef(false);
+  /** `Date.now()` at `rec.start()` — the only thing the 1000 ms floor needs, and this is the layer that
+   *  has it. 0 when nothing is recording. */
+  const startedAtRef = useRef(0);
 
   // Auto-stop state. Every one of these stays null unless the feature is on AND its AudioContext ran.
   const audioRef = useRef<AudioContext | null>(null);
@@ -154,9 +188,19 @@ export function useDictation({
   const upload = useCallback(async () => {
     const chunks = chunksRef.current;
     chunksRef.current = [];
+    const heldMs = startedAtRef.current > 0 ? Date.now() - startedAtRef.current : Infinity;
+    startedAtRef.current = 0;
     const mime = recRef.current?.mimeType || "audio/webm";
     const blob = new Blob(chunks, { type: mime });
     if (!blob.size) {
+      setPhase("idle");
+      return;
+    }
+    // THE 1000 ms FLOOR — before the POST, never after: a blip costs no round trip, and the toast is
+    // the teaching moment (R69 §2/§9). Deliberately AFTER the empty-blob early-out, which is about a
+    // recorder that produced nothing at all rather than about a recording that was too brief.
+    if (heldMs < MIN_CLIP_MS) {
+      pushToast(TOO_SHORT_MSG, "info");
       setPhase("idle");
       return;
     }
@@ -205,10 +249,35 @@ export function useDictation({
     }
   }, [autoSend]);
 
+  /** Abort an in-flight `start()` (F5), reporting whether there WAS one. The caller then knows there is
+   *  no recording to stop or discard: the recorder never armed, so nothing was captured. `armRef` is
+   *  released here so an immediate re-press can start afresh — the aborted attempt still owns its own
+   *  token, and `start`'s `finally` only clears the ref when it is still the one it parked. */
+  const abortArming = useCallback((): boolean => {
+    const arm = armRef.current;
+    if (!arm) return false;
+    arm.aborted = true;
+    armRef.current = null;
+    return true;
+  }, []);
+
   const stop = useCallback(() => {
+    if (abortArming()) return; // released inside the acquisition window — nothing started (F5)
     const rec = recRef.current;
     if (rec && rec.state !== "inactive") rec.stop(); // fires onstop → cleanup → upload
-  }, []);
+  }, [abortArming]);
+
+  /** Discard the recording: no transcript, no POST, no draft. The flag is consulted in the `onstop`
+   *  path (the ONE place that decides whether a stopped recorder uploads), so cancelling reuses the
+   *  entire teardown rather than forking it — LIVE_VOICE_PLAN §6's slide-left cancel, the locked-mode
+   *  CANCEL button and the Esc key all land here. */
+  const cancel = useCallback(() => {
+    if (abortArming()) return; // cancelled inside the acquisition window — nothing to discard (F5)
+    const rec = recRef.current;
+    if (!rec || rec.state === "inactive") return;
+    discardRef.current = true;
+    rec.stop();
+  }, [abortArming]);
 
   /** Release ONLY the Web Audio half of the detector (interval · nodes · context). Split out because
    *  the energy detector is allowed to degrade while the hidden-page stop is NOT (MED-1): a context
@@ -305,12 +374,33 @@ export function useDictation({
     [silenceFloor, silenceMs, stop, teardownAudio],
   );
 
-  const start = useCallback(async () => {
-    // Re-entrancy guard: a second tap during the getUserMedia await would open a *second* stream and
-    // orphan the first (its tracks never stopped → the mic stays live). `arming` blocks that window.
-    if (armingRef.current || recRef.current?.state === "recording") return;
-    if (!micCapable) return; // insecure context — `toggle` already surfaced the toast; defensive only
-    armingRef.current = true;
+  /** The pre-flight EVERY entry shares — the tap, and (since S0.5) the gesture's activation. No
+   *  mediaDevices → can't capture: re-explain the fix on every attempt (greyed but tappable, so it's
+   *  never a dead/stuck control). Capable but plain HTTP (flag-whitelisted) → it WORKS (never greyed);
+   *  just nudge once per session that HTTPS is the proper setup. Returns whether a recording may start.
+   *  ONE function rather than a second copy in the gesture path: the degraded states are UX contracts
+   *  (owner-locked 2026-06-22/26), and two copies is how one of them quietly stops being true. */
+  const preflight = useCallback((): boolean => {
+    if (!micCapable) {
+      pushToast(INSECURE_MSG, "info");
+      return false;
+    }
+    if (!httpsOn && !httpReminderShown) {
+      httpReminderShown = true;
+      pushToast(HTTP_REMINDER, "info");
+    }
+    return !unavailable;
+  }, [micCapable, unavailable]);
+
+  /** Open the mic and start recording. RESOLVES TO WHETHER A RECORDER ARMED (S0.5): the gesture holds a
+   *  visible record affordance from the moment of activation, and a permission prompt that is declined —
+   *  or a browser with no usable container — must close that affordance rather than leave it painted
+   *  over a mic that never opened. `false` also covers the F5 abort (released during acquisition). */
+  const start = useCallback(async (): Promise<boolean> => {
+    if (armRef.current || recRef.current?.state === "recording") return false;
+    if (!preflight()) return false;
+    const arm = { aborted: false };
+    armRef.current = arm;
     try {
       let stream: MediaStream;
       try {
@@ -318,7 +408,14 @@ export function useDictation({
       } catch {
         teardownDetector(); // every failed start leaves the detector state clean (MED-2)
         pushToast("Microphone permission denied", "err");
-        return;
+        return false;
+      }
+      // F5 — the gesture ended (release, or a cancel) while the browser was still opening the mic.
+      // Release the stream we were handed at once: an ownerless recording is the one outcome the
+      // acquisition window must never produce.
+      if (arm.aborted) {
+        stream.getTracks().forEach((t) => t.stop());
+        return false;
       }
       const mime = pickMime();
       let rec: MediaRecorder;
@@ -329,50 +426,60 @@ export function useDictation({
         teardownDetector();
         stream.getTracks().forEach((t) => t.stop());
         pushToast("Recording isn't supported on this browser", "err");
-        return;
+        return false;
       }
       recRef.current = rec;
       chunksRef.current = [];
+      discardRef.current = false;
       rec.ondataavailable = (e) => {
         if (e.data.size) chunksRef.current.push(e.data);
       };
       rec.onstop = () => {
         teardownDetector(); // BEFORE the upload enters `sending` — the watcher dies with the recording
         stream.getTracks().forEach((t) => t.stop()); // release the mic indicator
+        // CANCELLED (S0.5): the same teardown, and then nothing — no blob, no POST, no draft.
+        if (discardRef.current) {
+          discardRef.current = false;
+          chunksRef.current = [];
+          startedAtRef.current = 0;
+          setPhase("idle");
+          return;
+        }
         void upload();
       };
       rec.onerror = () => {
         teardownDetector();
         stream.getTracks().forEach((t) => t.stop());
+        startedAtRef.current = 0;
         pushToast("Recording failed", "err");
         setPhase("idle");
       };
       rec.start();
+      startedAtRef.current = Date.now(); // the 1000 ms floor's only input
       setPhase("recording");
       // Toggle off → not even constructed, so the recording behaves exactly as it did pre-Tier-0.
       if (autoStopOn) void armDetector(stream);
+      return true;
     } finally {
-      armingRef.current = false;
+      // Only if it is still OURS: an abort released the ref so a re-press could start immediately, and
+      // that newer attempt's token must survive this one's unwind.
+      if (armRef.current === arm) armRef.current = null;
     }
-  }, [upload, micCapable, autoStopOn, armDetector, teardownDetector]);
+  }, [upload, preflight, autoStopOn, armDetector, teardownDetector]);
 
-  /** Tap handler. No mediaDevices → can't capture: re-explain the fix on every tap (greyed but tappable,
-   *  so it's never a dead/stuck control). Capable but plain HTTP (flag-whitelisted) → it WORKS (never
-   *  greyed); just nudge once per session that HTTPS is the proper setup. Then idle → start, recording →
-   *  stop + transcribe. Inert while unavailable/sending. */
+  /** Tap handler — the KEYBOARD/AT path since S0.5 (R69 §8.1: tap-to-start, tap-to-stop). idle → start,
+   *  recording → stop + transcribe. Inert while unavailable/sending; the degraded explainers ride
+   *  `preflight`, which `start` re-runs for the gesture. */
   const toggle = useCallback(() => {
-    if (!micCapable) {
-      pushToast(INSECURE_MSG, "info");
+    if (phase === "recording") {
+      stop();
       return;
     }
-    if (!httpsOn && !httpReminderShown) {
-      httpReminderShown = true;
-      pushToast(HTTP_REMINDER, "info");
-    }
-    if (unavailable) return;
-    if (phase === "recording") stop();
-    else if (phase === "idle") void start();
-  }, [micCapable, phase, unavailable, start, stop]);
+    // `start` runs the pre-flight itself; running it HERE too would double the plain-HTTP nudge. The
+    // one case `start` cannot cover is a tap that must still explain itself while nothing may start.
+    if (phase === "idle" && !unavailable) void start();
+    else preflight();
+  }, [phase, unavailable, start, stop, preflight]);
 
   // Stop any in-flight recording if the composer unmounts mid-capture (tab switch to Conf/Utils).
   // `stop()` only ASKS the recorder (its `onstop` may land after we're gone), so the detector is torn
@@ -388,5 +495,7 @@ export function useDictation({
   // `insecure` wins over `unavailable`: with no secure context a recording attempt can't even start,
   // so the 502-driven `unavailable` flag never gets set — surface the actionable reason instead.
   const status: MicStatus = !micCapable ? "insecure" : unavailable ? "unavailable" : phase;
-  return { status, toggle };
+  // `toggle` is the keyboard/AT path; `start`/`stop`/`cancel` are the gesture's three verbs (S0.5).
+  // There is one recorder behind all four.
+  return { status, toggle, start, stop, cancel };
 }

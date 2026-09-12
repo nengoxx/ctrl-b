@@ -95,6 +95,133 @@ describe("useDictation", () => {
   });
 });
 
+// --- Phase 24 / S0.5: the three verbs the hold gesture drives ------------------------------------
+// `useDictation` WIDENED rather than gaining a sibling recorder (LIVE_VOICE_PLAN §6): `start`/`stop`/
+// `cancel` are what the gesture calls, `toggle` stays the keyboard path, and there is still exactly one
+// MediaRecorder behind all four. What is pinned here is everything the gesture DEPENDS ON but the
+// gesture's own machine cannot state.
+
+describe("useDictation · the gesture verbs (S0.5)", () => {
+  it("`cancel` discards the clip: no POST, no draft, and the mic is released", async () => {
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(result.current.status).toBe("recording");
+    await act(async () => {
+      result.current.cancel();
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(getDraft()).toBe("");
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("a clip under the 1000 ms floor is discarded BEFORE any POST, with a teaching toast", async () => {
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await recordOnce(result, 300); // a mis-timed hold: 300 ms of audio
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // a blip costs no round trip (R69 §2)
+    expect(getDraft()).toBe("");
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("hold"), "info");
+  });
+
+  it("…and one just over it uploads normally — the floor is 1000 ms, not a general brake", async () => {
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await recordOnce(result, 1001);
+    await waitFor(() => expect(getDraft()).toBe("hello world"));
+  });
+
+  it("`start` RESOLVES to whether a recorder actually armed", async () => {
+    const { result } = renderHook(() => useDictation(opts(false)));
+    let armed: boolean | undefined;
+    await act(async () => {
+      armed = await result.current.start();
+    });
+    expect(armed).toBe(true);
+  });
+
+  it("…and false when the mic is denied, so the gesture can close its own affordance", async () => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => {
+          throw new Error("NotAllowedError");
+        }),
+      },
+    });
+    const { result } = renderHook(() => useDictation(opts(false)));
+    let armed: boolean | undefined;
+    await act(async () => {
+      armed = await result.current.start();
+    });
+    expect(armed).toBe(false);
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("THE ARMING LATCH (F5): a release inside the getUserMedia window aborts the pending start", async () => {
+    // The window the old boolean latch could only BLOCK: the gesture ends while the browser is still
+    // opening the mic. The stream that arrives afterwards must be released at once — an ownerless
+    // recording is the one outcome this window may never produce.
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const trackStop = vi.fn();
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => {
+          await gate;
+          return { getTracks: () => [{ stop: trackStop }] };
+        }),
+      },
+    });
+    const { result } = renderHook(() => useDictation(opts(false)));
+    let armed: boolean | undefined;
+    await act(async () => {
+      void result.current.start().then((v) => {
+        armed = v;
+      });
+    });
+    act(() => result.current.stop()); // released mid-acquisition
+    await act(async () => {
+      open(); // …and only now does the browser hand over the stream
+      await Promise.resolve();
+    });
+    expect(armed).toBe(false);
+    expect(trackStop).toHaveBeenCalled(); // released immediately, never recorded from
+    expect(result.current.status).toBe("idle");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("…and a `cancel` in the same window aborts it too, with nothing to discard", async () => {
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const trackStop = vi.fn();
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => {
+          await gate;
+          return { getTracks: () => [{ stop: trackStop }] };
+        }),
+      },
+    });
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await act(async () => {
+      void result.current.start();
+    });
+    act(() => result.current.cancel());
+    await act(async () => {
+      open();
+      await Promise.resolve();
+    });
+    expect(trackStop).toHaveBeenCalled();
+    expect(result.current.status).toBe("idle");
+  });
+});
+
 // --- R51 Tier 0: auto-stop dictation --------------------------------------------------------------
 // The detector is a timer over an AnalyserNode, so it is driven with FAKE timers + a fake Web Audio
 // graph whose readings the test dictates (`micLevel` is the RMS every sample carries). What is pinned
@@ -242,7 +369,7 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
     const { result } = renderHook(() => useDictation(stopOpts()));
     await startRecording(result);
     micLevel = 0.5; // mid-sentence: only the visibility rule can end this recording
-    await tick(500);
+    await tick(1500); // …and held past the 1000 ms floor, so the clip is a real one
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
@@ -270,7 +397,7 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
     FakeAudioContext.stuckSuspended = true;
     const { result } = renderHook(() => useDictation(stopOpts()));
     await startRecording(result);
-    await tick(500);
+    await tick(1500); // past the 1000 ms floor — this case is about the listener, not the clip length
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));

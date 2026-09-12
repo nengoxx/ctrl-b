@@ -41,6 +41,10 @@ export interface TtsChunkingWire {
 export interface VoiceStatus {
   stt: boolean;
   tts: boolean;
+  /** LIVE VOICE / call mode is configured+enabled (D71 §5.1). **S1's backend delivers it** — nothing
+   *  sends it today, so it reads `undefined` → false everywhere, which is exactly what keeps the S0.5
+   *  call-mode chrome unreachable while its gesture, states and CSS are already built and tested. */
+  live?: boolean;
   /** Client behavior (SttServiceCfg.auto_send): true → mic sends the transcript immediately; false →
    *  fills the composer for review. Surfaced here (not just /api/settings) because the mic is on
    *  Fleet/Agent and the settings query is Conf-scoped. */
