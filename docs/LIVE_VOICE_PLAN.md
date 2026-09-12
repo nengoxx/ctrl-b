@@ -443,10 +443,49 @@ from every state, §4.2). Text-over-art legibility inherits the three-state-back
 - **Second door DEFERRED (owner-ratified — do not re-propose ad hoc):** v1 has ONE entry
   point, the composer. A call door on the agent gallery's cards waits for regular use to ask.
 
-**The entry affordance — OPEN, under design (2026-09-12):** the owner declined a separate call
-button beside the mic (composer space) and proposed the Telegram-style **dual-mode mic button**
-(tap switches mic↔call mode; hold + swipe-up gesture acts). Being feasibility-checked +
-designed; lands here when ratified.
+**The entry affordance — RATIFIED 2026-09-12 (owner + [R69](./research/R69-hold-to-record-gesture.md)):
+the dual-mode mic.** ONE button in the mic's existing slot in all three composer variants — no
+second button (owner ruling: composer space). Every threshold/curve below is R69-sourced (its
+§9 parameter table); the constants live named in one place in the gesture hook, not scattered.
+
+- **Tap = mode switch** (mic↔call icon morph + a transient "hold to record"/"hold to call"
+  hint; Telegram's hint retirement: ≤3 shows, counted only when fully visible, retired forever
+  on the first successful lock). **No mode memory (owner ruling): boots mic, every load.**
+  Call mode is offered only when §5.1's `live` bit is up.
+- **The gesture machine** — one shared hook replacing the current press-visual wiring, consumed
+  by all three variants. Pointer Events + `setPointerCapture`, `touch-action: none` on the
+  button (the spec's ONLY defence against pan — R69), contextmenu suppressed (safe on Fennec
+  ≥91, the old Gecko touch-stream bug is fixed), no `onClick` beside the pointer machine (a
+  click still fires after `lostpointercapture` — R69 risk list). Press → **150 ms activation**
+  (Telegram's tap-disambiguation window for dual-mode buttons — deliberately NOT the 400 ms
+  platform long-press; 8 px movement slop).
+- **Mic mode:** recording starts at activation; **release = stop + send** (today's dictation
+  upload + auto-send path, unchanged underneath). **Swipe up 56 px = lock hands-free** —
+  latches on crossing (Telegram); the button becomes tap-to-stop and a visible tappable cancel
+  appears (the field's tap-twin rule: every gesture affordance grows a tap twin once the hand
+  is free); silence auto-stop stays live in locked mode. **Slide left = cancel** — distance
+  min(35% viewport, 140 px), cancel commits on release past 55% (the relative form: at 360 px
+  a fixed distance leaves no travel — R69). **Recordings under 1000 ms are discarded with a
+  teaching toast** (Signal's floor — kills accidental blips and teaches the hold).
+  **`pointercancel` NEVER loses audio** (the field's iron rule): an unlocked in-progress
+  recording PROMOTES TO LOCKED (Telegram's answer), never silently discards.
+- **Call mode:** hold raises the "slide up to call" pill; **swipe up 56 px, committing on
+  RELEASE** — a recorded deliberate deviation from the lock's latch-on-crossing (R69 found NO
+  field precedent for gesture-started calls; a call costs more to undo than a lock, so it gets
+  the release confirmation). Release *without* the swipe leaves the pill standing ~2 s as a
+  tappable "Start call" chip — the tap twin, and the single-pointer alternative WCAG 2.5.1
+  requires for a path-based commit.
+- **Keyboard/AT:** the Telegram-Web degradation IS the shipped alternative (R69 verified their
+  web client: tap-toggle + Esc-cancel, no hold): keyboard activation runs the current mode
+  toggle-style (start/stop recording · start call), Esc cancels, the mode rides the
+  `aria-label`.
+- **Animations** (transform/opacity only): grow 300 ms `cubic-bezier(0,0,0,1)` to ~2.2×; lock
+  snap 250 ms `cubic-bezier(.23,1,.32,1)`; cancel/exit 200 ms ease-both; fades 150 ms —
+  Telegram's verbatim curves, M3-consistent. Reduced motion routes through the existing
+  UIState/Appearance switch, never a raw media query (the standing pattern + R69's risk list).
+- **Haptics are decoration only** (`navigator.vibrate` no-ops UNDETECTABLY on Fennec — returns
+  true, does nothing, R69): 20 ms on record start · a catch pulse on lock/commit · 50 ms on
+  cancel, always layered over an already-visible state change.
 
 ## 7. Slice ladder (each: pinned Opus build → main-seat audit → blind Emma round → fix wave → close)
 
@@ -459,8 +498,17 @@ designed; lands here when ratified.
   clip — this also exercises the fork's own `e093d8b` no-speech path; the Speaches server
   itself is NOT touched — owner ruling, §5.2). The smoke also pins **which realtime session
   fields the fork honors** (model name, language — the session's model resolves through the
-  provider registry like `voice.stt` does). **Rules `echo_workaround` and confirms the
-  Speaches contract before anything is built on it.**
+  provider registry like `voice.stt` does). The same phone sitting also buys **R69 §11's owed
+  gesture probes** (a dev page: `pointercancel` incidence during a captured hold+slide, and
+  whether `touch-action: none` survives the address-bar collapse — Honor 20, Chrome + Fennec).
+  **Rules `echo_workaround` and confirms the Speaches contract before anything is built on
+  it.**
+- **S0.5 — the entry gesture (FE-only; owner-ratified early so the feel round runs on real
+  dictation before the call exists):** the §6 dual-mode mic — the shared gesture hook +
+  animations + the mic-mode leg live against today's `useDictation` (hold · lock · slide-left
+  cancel · the 1000 ms floor · hints · the pointercancel promote-to-lock rule); call mode's
+  chrome ships but stays hidden until the `live` bit exists (S1/S2). Parameters tuned by the
+  owner's feel round against R69's table.
 - **S1 — the BE relay:** `voice.live` config + `/voice/status` delivery + the WS route + the
   relay session (mock-Speaches tests: framing, resampling, backpressure, caps, error taxonomy,
   bearer never in logs).
@@ -504,9 +552,16 @@ for the button placement"; all folded into §4.5/§5.1/§6/§7):** the twelve co
 tightenings approved wholesale · mute button — YES · confirm gates in-call = the in-overlay
 Allow/Deny row through `resumeCall` (spoken confirmation deliberately not offered) · staged
 attachments ride the call turn · the agent-gallery second door DEFERRED (do not re-propose
-ad hoc) · transcript line = what the ear heard. **OPEN: the entry affordance** — a separate
-call button beside the mic REJECTED (composer space); the owner proposed the Telegram-style
-dual-mode mic (tap switches mic↔call; hold + swipe-up acts) — under design.
+ad hoc) · transcript line = what the ear heard. **The entry affordance, RATIFIED same round
+(after the R69 field pass, owner-commissioned):** a separate call button beside the mic
+REJECTED (composer space) → the §6 dual-mode mic — the owner's rulings: gesture change to
+dictation blessed (hold-to-record replaces tap-to-record) · slide-left cancel IN · **no mode
+memory, boots mic** · the gesture lands as its own EARLY slice (S0.5) feel-tested on
+dictation first. Two recorded deviations from the field, both deliberate: call-commit on
+release (no field precedent exists for gesture-started calls — R69 headline) and the ~2 s
+tappable "Start call" chip as the single-pointer twin. R69 also corrected two premises we
+carried: Telegram's 150 ms is tap-disambiguation, not a long-press, and Fennec's vibrate API
+no-ops undetectably.
 
 Still open:
 
