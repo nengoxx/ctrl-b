@@ -225,8 +225,18 @@ phase. The machine composes existing pieces:
 
 ### 4.3 Barge-in (the interruption path)
 
+**Two triggers, ONE action (owner ruling 2026-09-12: automatic interruption is OPTIONAL).**
+The ordered kill sequence below is trigger-agnostic. Trigger A — **voice** — is gated by the
+`barge_in` Settings row; OFF disables only the automatic path. Trigger B — **manual tap**
+(the ChatGPT voice-mode pattern) — always exists: during `speaking`, a tap anywhere on the
+overlay outside the control cluster interrupts; in ring mode the circumference is the visual
+invitation, and it works identically in no-ring mode. With `barge_in` off, speech over the
+bot is still transcribed (the mic never closes) and the final BUFFERS in §4.3's one-slot
+buffer, submitting when playback drains — walkie-talkie semantics; a tap mid-speech fires
+the ordered sequence and the buffered final rides it.
+
 The mic **stays open while the bot speaks** (RVC's 1–2 s deaf window is the recorded
-anti-pattern). The trigger: during `speaking`, a `speech_started` from the server VAD **gated by
+anti-pattern). Trigger A's mechanism: during `speaking`, a `speech_started` from the server VAD **gated by
 a client-side sustained-energy floor** — Speaches emits `speech_started` on first detection and
 has no minimum-speech knob (council F2), so the ACTION waits until the capture worklet (which
 already owns the samples) has seen ≥ `min_speech_ms` of sustained RMS. The ear never closes;
@@ -426,6 +436,10 @@ from every state, §4.2). Text-over-art legibility inherits the three-state-back
 - **Mute joins hang up** — the one extra control (core call furniture: cough, doorbell,
   someone in the room). Implementation = stop sending frames (track disabled); muted = no VAD
   events, so no false endpointing either.
+- **Tap to interrupt (owner-ratified 2026-09-12, the ChatGPT voice-mode pattern):** during
+  `speaking`, tapping the overlay outside the control cluster fires the §4.3 sequence — the
+  manual twin of voice barge-in, present in BOTH ring modes and regardless of the `barge_in`
+  toggle. Whether it earns a first-run micro-hint is feel-round material.
 - **The transcript line shows what the ear heard YOU say** (catch mishearings instantly); the
   reply is what you *hear*, and lands in the chat as always.
 - **The in-overlay confirm row** (§4.5) is part of the overlay's state set.
@@ -562,6 +576,12 @@ release (no field precedent exists for gesture-started calls — R69 headline) a
 tappable "Start call" chip as the single-pointer twin. R69 also corrected two premises we
 carried: Telegram's 150 ms is tap-disambiguation, not a long-press, and Fennec's vibrate API
 no-ops undetectably.
+
+**Interruption ruling (owner, 2026-09-12, in conversation):** automatic interruption is
+OPTIONAL — the `barge_in` Settings row governs only the voice trigger; a **manual
+tap-to-interrupt** (the ChatGPT pattern, the owner's cite) always exists during `speaking`
+(tap outside the controls, both ring modes). `barge_in` OFF = walkie-talkie: over-speech
+still transcribes and buffers, submitting on drain. Folded into §4.3 + §6.
 
 Still open:
 
