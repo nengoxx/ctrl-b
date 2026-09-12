@@ -5,6 +5,7 @@ import {
   CANCEL_MAX_PX,
   CANCEL_RELEASE,
   CANCEL_SHARE,
+  LOCK_HINT_MAX,
   LOCK_PX,
   MIC_IDLE,
   SLOP_PX,
@@ -327,5 +328,48 @@ describe("micReduce · one gesture owns one pointer", () => {
     const held = run(down(), { type: "activate" }).state;
     expect(micReduce(held, { type: "move", pid: 99, x: 0, y: 0 }).state).toBe(held);
     expect(micReduce(held, { type: "up", pid: 99, t: 900 }).out).toEqual([]);
+  });
+
+  it("a LOCKED recording adopts ONE stop pointer — a second finger cannot hijack the stop", () => {
+    const locked = run(
+      down(300, 700),
+      { type: "activate" },
+      move(300, 700 - LOCK_PX),
+      up(900),
+    ).state;
+    const adopt = (pid: number, s: MicGestureState) =>
+      micReduce(s, { type: "down", pid, t: 1000, x: 300, y: 700, mode: "mic", cancelDist: 126 })
+        .state;
+    const first = adopt(9, locked);
+    expect(first.pid).toBe(9); // unowned (`pid === -1`) → the first fresh pointer takes the tap…
+    const second = adopt(10, first);
+    expect(second.pid).toBe(9); // …and it keeps it
+    expect(micReduce(second, { type: "up", pid: 10, t: 1050 }).out).toEqual([]);
+    expect(micReduce(second, { type: "up", pid: 9, t: 1060 }).out).toEqual(["stop"]);
+  });
+});
+
+describe("micReduce · THE PARAMETER TABLE (R69 §9 / LIVE_VOICE_PLAN §6 — the source of truth)", () => {
+  it("every ratified threshold still holds its ratified value", () => {
+    // Every suite above IMPORTS what it exercises — which is how a test avoids pinning its own copy of
+    // 56 or 0.55, and also why a DRIFTED constant would stay green everywhere. This is the one place
+    // the numbers are written twice on purpose: change one here only when the table itself changes.
+    expect({
+      ACTIVATE_MS,
+      SLOP_PX,
+      LOCK_PX,
+      CANCEL_SHARE,
+      CANCEL_MAX_PX,
+      CANCEL_RELEASE,
+      LOCK_HINT_MAX,
+    }).toEqual({
+      ACTIVATE_MS: 150,
+      SLOP_PX: 8,
+      LOCK_PX: 56,
+      CANCEL_SHARE: 0.35,
+      CANCEL_MAX_PX: 140,
+      CANCEL_RELEASE: 0.55,
+      LOCK_HINT_MAX: 3,
+    });
   });
 });

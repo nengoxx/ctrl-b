@@ -1515,8 +1515,10 @@ body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
  * here because CSS cannot read it:
  *   · grow        300ms cubic-bezier(0, 0, 0, 1) to 2.2x  (R69 §1.6: 19dp -> 41dp, DecelerateInterpolator)
  *   · lock snap   250ms cubic-bezier(.23, 1, .32, 1)      (R69 §1.4: EASE_OUT_QUINT, verbatim)
- *   · cancel/exit 200ms cubic-bezier(.42, 0, .58, 1)      (R69 §1.6: EASE_BOTH)
  *   · fades       150ms                                   (R69 §1.6/§2; M3 `short3`)
+ * R69 §1.6's 200ms EASE_BOTH cancel/exit curve is NOT implemented in S0.5: the chrome unmounts with the
+ * stage, so every exit is instant. Animating it needs an exit STAGE the machine does not have (a state
+ * that outlives its outcome), which is feel-round material rather than a gap in this slice.
  * Reduced motion routes through the EXISTING `body[data-motion]` axis (the UIState/Appearance switch),
  * never a raw `@media (prefers-reduced-motion)` — the standing house rule and R69 risk 10. Every state
  * below stays fully readable with the motion gone: the circle is simply already grown. */
@@ -1592,6 +1594,11 @@ body[data-motion="reduced"] .mg-grow {
     transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
     background 150ms linear,
     color 150ms linear;
+}
+body[data-motion="reduced"] .mg-rail.armed {
+  /* §14.11: the ARMED look is state (the threshold is reached), the snap that announces it is not —
+   * so the colours stay and only the motion goes. */
+  transition: none;
 }
 .mg-rail-label {
   font-size: 10px;

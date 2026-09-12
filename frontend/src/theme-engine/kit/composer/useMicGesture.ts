@@ -252,8 +252,10 @@ export function micReduce(s: MicGestureState, sig: MicSignal): MicStep {
       // to this pointer's down-event — the same no-down-event-commits rule `locked` honors below.
       if (s.stage === "chip") return step(s);
       // A LOCKED recording owns its tap too — but the tap completes on the UP event (WCAG 2.5.2's
-      // "no down-event"), so a fresh pointer is merely adopted here.
-      if (s.stage === "locked") return step({ ...s, pid: sig.pid });
+      // "no down-event"), so a fresh pointer is merely adopted here — and only while the stop is still
+      // UNOWNED (`pid === -1`). A second finger landing on an already-adopted button must not hijack
+      // which release ends the recording (F3).
+      if (s.stage === "locked") return step(s.pid === -1 ? { ...s, pid: sig.pid } : s);
       // A second finger never joins a gesture in flight: the captured pointer owns it.
       if (s.stage !== "idle") return step(s);
       return step({
@@ -431,6 +433,11 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
   const guardTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** True while a pointer session owns this button — the swallow that keeps `onClick` keyboard-only. */
   const pointerSession = useRef(false);
+  /** Which `start()` attempt is the CURRENT one (F1). `useDictation.start` resolves asynchronously, so
+   *  an attempt that was aborted by its own release can resolve `false` long after a NEXT gesture has
+   *  begun — and its close-out would then idle a recording that is running perfectly well. Every
+   *  dispatch takes a generation; only the latest one may close the gesture out. */
+  const startGen = useRef(0);
 
   // The controller, read through a ref so the callbacks below do not re-identify on every render (its
   // `toggle`/`start` re-bind with the mic's phase). Assigned during render, the same idiom LineComposer
@@ -466,15 +473,17 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
       }
       for (const o of out) {
         switch (o) {
-          case "start":
+          case "start": {
             buzz(VIB_START_MS);
             // The affordance is already painted; if the mic never actually opens (permission declined,
             // no usable container, or the F5 abort), close it rather than leave a circle over a mic
-            // that is not recording.
+            // that is not recording — but ONLY while this is still the gesture that asked (F1).
+            const gen = ++startGen.current;
             void micRef.current.start().then((armed) => {
-              if (!armed) send({ type: "stopped" });
+              if (!armed && gen === startGen.current) send({ type: "stopped" });
             });
             break;
+          }
           case "stop":
             micRef.current.stop();
             break;
@@ -526,7 +535,13 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     });
   }, []);
 
+  /** Swallow the trailing `click` this pointer session will produce. RE-ASSERTS the session rather than
+   *  only scheduling its expiry (F3): ANY pointer that went down on the button produces a click, so a
+   *  second finger's release re-arms the guard — and if that release had merely re-scheduled the expiry
+   *  it would leave the flag already false, opening the keyboard door to the owning finger's own
+   *  trailing click. Called from every button-pointer up/cancel, foreign pointers included. */
   const armClickGuard = useCallback(() => {
+    pointerSession.current = true;
     clearTimeout(guardTimer.current);
     guardTimer.current = setTimeout(() => {
       pointerSession.current = false;
@@ -552,6 +567,9 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
       } catch {
         /* a synthetic pointer, or one already gone — the machine works without capture */
       }
+      // Whether THIS down is the one that can create a press — a second finger landing during someone
+      // else's press finds the machine unchanged, and must not re-arm (i.e. restart) its timer (F3).
+      const wasIdle = stateRef.current.stage === "idle";
       send({
         type: "down",
         pid: e.pointerId,
@@ -562,7 +580,7 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
         // RE-MEASURED per gesture (R69 §1.3): rotation and the address bar both move the viewport.
         cancelDist: cancelDistance(window.innerWidth || 0),
       });
-      if (stateRef.current.stage === "press") {
+      if (wasIdle && stateRef.current.stage === "press") {
         clearTimeout(activateTimer.current);
         activateTimer.current = setTimeout(() => send({ type: "activate" }), ACTIVATE_MS);
       }
@@ -578,10 +596,18 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     [send],
   );
 
+  // ONLY THE OWNING POINTER'S RELEASE TOUCHES THE GESTURE (F3): a foreign finger's up/cancel is not
+  // allowed to clear the activation timer the owner is counting on (the machine already ignores its
+  // signal, so the `send` is skipped as a no-op rather than because it would be harmful). The click
+  // guard is the deliberate exception — it arms for EVERY pointer that went down on the button,
+  // because every one of them produces a trailing click. (After a lock the state's pid is −1, so the
+  // locking pointer's own release also takes the no-send path — which is exactly R69 §1.5's rule.)
   const onPointerUp = useCallback(
     (e: ReactPointerEvent<HTMLButtonElement>) => {
-      clearTimeout(activateTimer.current);
-      send({ type: "up", pid: e.pointerId, t: e.timeStamp });
+      if (stateRef.current.pid === e.pointerId) {
+        clearTimeout(activateTimer.current);
+        send({ type: "up", pid: e.pointerId, t: e.timeStamp });
+      }
       armClickGuard();
     },
     [send, armClickGuard],
@@ -589,8 +615,10 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
 
   const onPointerCancel = useCallback(
     (e: ReactPointerEvent<HTMLButtonElement>) => {
-      clearTimeout(activateTimer.current);
-      send({ type: "pointercancel", pid: e.pointerId });
+      if (stateRef.current.pid === e.pointerId) {
+        clearTimeout(activateTimer.current);
+        send({ type: "pointercancel", pid: e.pointerId });
+      }
       armClickGuard();
     },
     [send, armClickGuard],
@@ -656,10 +684,20 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     }
   }, [micStatus, send]);
 
-  // Call mode is offered only while the `live` bit is up; if it goes down under us, fall back to mic.
+  // Call mode is offered only while the `live` bit is up; if it goes down under us, fall back to mic —
+  // and CLOSE anything call mode had in flight first (F5). Repainting the mode alone would leave a
+  // `callArm` still committing on release, or a standing chip still tappable, into a call the backend
+  // just said it cannot take. `escape` is the existing signal for exactly this (both stages fold to
+  // MIC_IDLE with no outcomes), so no new reducer vocabulary is needed.
   useEffect(() => {
-    if (!live) setMode("mic");
-  }, [live]);
+    if (live) return;
+    const stage = stateRef.current.stage;
+    if (stage === "callArm" || stage === "chip") {
+      clearTimeout(chipTimer.current);
+      send({ type: "escape" });
+    }
+    setMode("mic");
+  }, [live, send]);
 
   // THE HINT BUDGET (R69 §1.7): the "slide up to lock" hint shows while the gesture has not started
   // moving, at most three times per device, and a show is SPENT only once the hint is fully visible —

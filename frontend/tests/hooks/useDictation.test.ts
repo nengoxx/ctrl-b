@@ -24,9 +24,11 @@ const opts = (autoSend = false) => ({ sttReady: true, statusStamp: 1, autoSend }
 
 beforeEach(() => {
   vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+  FakeMediaRecorder.deferStop = false; // the queued-events window is opt-in, per case
   setMediaDevices(true);
   clearDraft();
   mockStt(200, { text: "hello world" });
+  vi.mocked(pushToast).mockClear();
 });
 
 // `globals: false` means RTL's auto-cleanup never registers, so a hook would otherwise stay mounted
@@ -218,6 +220,94 @@ describe("useDictation · the gesture verbs (S0.5)", () => {
       await Promise.resolve();
     });
     expect(trackStop).toHaveBeenCalled();
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("…and an ABORTED attempt's late REJECTION reports nothing — the user let go (F1)", async () => {
+    // The other half of the abort: the browser answers the permission prompt with a REJECTION after
+    // the gesture already ended. That is the user's own release, not a fact to report — and the toast
+    // and the detector teardown on that path both belong to whatever attempt is current NOW.
+    let deny!: () => void;
+    const gate = new Promise<void>((_resolve, reject) => {
+      deny = () => reject(new Error("NotAllowedError"));
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => {
+          await gate;
+          return { getTracks: () => [] };
+        }),
+      },
+    });
+    const { result } = renderHook(() => useDictation(opts(false)));
+    let armed: boolean | undefined;
+    await act(async () => {
+      void result.current.start().then((v) => {
+        armed = v;
+      });
+    });
+    act(() => result.current.stop()); // released inside the window → the attempt is aborted
+    await act(async () => {
+      deny(); // …and only now is the prompt answered, too late to matter
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(armed).toBe(false);
+    expect(pushToast).not.toHaveBeenCalledWith("Microphone permission denied", "err");
+  });
+
+  it("a recorder whose TERMINAL EVENTS are still queued refuses the next start (F2)", async () => {
+    // `stop()`/`cancel()` flip `state` to "inactive" synchronously while the final `dataavailable`/
+    // `stop` are queued. A recording started inside that window used to overwrite the chunks, the
+    // discard flag and the stamp the late callback then read — a CANCELLED clip would upload.
+    FakeMediaRecorder.deferStop = true;
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await act(async () => {
+      await result.current.start(); // A
+    });
+    const a = FakeMediaRecorder.last!;
+    await act(async () => {
+      result.current.cancel(); // A is discarded — but its `onstop` has not run yet
+    });
+    let armed: boolean | undefined;
+    await act(async () => {
+      armed = await result.current.start(); // B, inside A's queued window
+    });
+    expect(armed).toBe(false); // refused: A still owns the recorder
+    expect(FakeMediaRecorder.last).toBe(a); // …so no second recorder was ever constructed
+    await act(async () => {
+      a.flush(); // A's terminal events finally land
+      await Promise.resolve();
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // the cancelled clip stayed cancelled
+    expect(getDraft()).toBe("");
+    expect(pushToast).not.toHaveBeenCalledWith(expect.stringContaining("Too short"), "info");
+  });
+
+  it("an `error` followed by its queued `stop` uploads NOTHING (F4)", async () => {
+    // Browsers may deliver `error`, then the final `dataavailable`, then `stop`. The stamp cannot be
+    // what suppresses that upload (a missing stamp deliberately reads as "no floor to apply"), so the
+    // error arms the existing discard flag instead.
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await act(async () => {
+      await result.current.start();
+    });
+    const rec = FakeMediaRecorder.last!;
+    const realNow = Date.now;
+    const at = realNow() + 5000; // far past the 1000 ms floor: only the discard can explain silence
+    Date.now = () => at;
+    try {
+      await act(async () => {
+        rec.onerror?.();
+        rec.stop(); // the queued terminal events, arriving after the error
+        await Promise.resolve();
+      });
+    } finally {
+      Date.now = realNow;
+    }
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(getDraft()).toBe("");
     expect(result.current.status).toBe("idle");
   });
 });

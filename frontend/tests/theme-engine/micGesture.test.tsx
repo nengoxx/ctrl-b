@@ -42,7 +42,12 @@ import {
 import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft } from "../../src/store/composer";
 import { getUI, setUI } from "../../src/store/ui";
-import { FakeMediaRecorder, mockStt, setMediaDevices } from "../hooks/dictationFakes";
+import {
+  FakeMediaRecorder,
+  gateMediaDevices,
+  mockStt,
+  setMediaDevices,
+} from "../hooks/dictationFakes";
 
 const VARIANTS = [
   ["stacked", KitComposer],
@@ -149,6 +154,47 @@ describe("the hold → release leg, against today's dictation pipeline", () => {
     await tick(10);
     expect(posts()).toBe(0);
     expect(getDraft()).toBe("");
+  });
+});
+
+// The review wave's races: a gesture may only ever close ITSELF out, and only the pointer that owns a
+// gesture may touch it. Both are invisible to the pure machine — they live in the async/multi-pointer
+// seams of the wiring — so this is the layer that can state them.
+describe("one gesture never reaches into another (review wave)", () => {
+  it("a stale acquisition's `false` never idles the NEXT gesture (F1)", async () => {
+    const gate = gateMediaDevices(); // getUserMedia parks until the test opens it
+    render(<KitComposer />);
+    await hold(); // A activates and parks inside the acquisition window…
+    up(); // …and is released THERE, which aborts the attempt
+    await tick(10);
+    await hold(); // B: a fresh gesture, its own start()
+    await act(async () => {
+      gate.open(); // both attempts resolve now — A's first, and A's resolves `false`
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    // A's `false` belongs to a gesture that is already gone. B is recording, and its chrome says so —
+    // the failure this pins is a closed chrome over a recorder that keeps recording invisibly.
+    expect(document.querySelector(".mg-circle")).not.toBeNull();
+    expect(mic().className).toContain("rec");
+  });
+
+  it("a FOREIGN finger neither restarts nor kills the owner's activation, nor burns its click guard (F3)", async () => {
+    render(<KitComposer />);
+    down(); // finger 1 presses
+    await tick(100); // 100 ms into the 150 ms activation window
+    fireEvent.pointerDown(mic(), { pointerId: 2, button: 0, clientX: X0, clientY: Y0 });
+    fireEvent.pointerUp(mic(), { pointerId: 2 });
+    await tick(60); // finger 1 is now 160 ms in: its OWN timer must have fired, on its own schedule
+    expect(mic().className).toContain("rec");
+    expect(document.querySelector(".mg-circle")).not.toBeNull();
+    // …and finger 1 still owns the trailing click its release produces: the keyboard door stays shut.
+    await tick(HELD_MS);
+    up();
+    await tick(10); // the upload settles; well inside the 50 ms the guard is armed for
+    expect(posts()).toBe(1); // the release uploaded, once…
+    fireEvent.click(mic());
+    await tick(10);
+    expect(mic().className).not.toContain("rec"); // …and the swallowed click started nothing
   });
 });
 
@@ -385,6 +431,26 @@ describe("call mode is UNREACHABLE until the `live` bit exists (ruling 5)", () =
     up();
     await tick(10);
     expect(chip()).not.toBeNull(); // it still ends only by its own tap or expiry
+  });
+
+  it("the `live` bit dropping takes the standing chip with it (F5)", async () => {
+    // Repainting the mode is not enough: a chip left standing is still tappable, and its tap commits a
+    // call the backend has just said it cannot take. The mode and everything call mode had in flight
+    // go down together.
+    voice.live = true;
+    const { rerender } = render(<KitComposer />);
+    down();
+    up(); // tap → call mode
+    await tick(10);
+    await hold(); // a call-mode hold…
+    up(); // …released short of the threshold → the standing chip
+    await tick(0);
+    expect(chip()).not.toBeNull();
+    voice.live = false; // the bit goes down under us
+    rerender(<KitComposer />);
+    await tick(0);
+    expect(chip()).toBeNull(); // gone with the mode — there is no tap left to commit a call
+    expect(mic().getAttribute("aria-label")).toBe("start dictation");
   });
 });
 

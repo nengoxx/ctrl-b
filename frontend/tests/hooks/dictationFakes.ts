@@ -15,11 +15,17 @@ export class FakeMediaRecorder {
   /** The instance the hook is currently driving — the handle a suite needs to fire `onerror` (a
    *  recorder failure is not reachable through the public toggle). */
   static last: FakeMediaRecorder | null = null;
+  /** Opt-in (F2): model the REAL queued-events window. `stop()` flips `state` to "inactive"
+   *  synchronously, exactly as the spec says, but holds the final `dataavailable`/`stop` events until
+   *  the test calls `flush()` — which is the window a too-early next recording can be started in. Off
+   *  by default, so every existing case keeps the synchronous lifecycle it was written against. */
+  static deferStop = false;
   state = "inactive";
   mimeType: string;
   ondataavailable: ((e: { data: Blob }) => void) | null = null;
   onstop: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  private pendingStop = false;
   constructor(_stream: unknown, opts?: { mimeType?: string }) {
     this.mimeType = opts?.mimeType ?? "audio/webm";
     FakeMediaRecorder.last = this;
@@ -29,6 +35,19 @@ export class FakeMediaRecorder {
   }
   stop() {
     this.state = "inactive";
+    if (FakeMediaRecorder.deferStop) {
+      this.pendingStop = true;
+      return;
+    }
+    this.fire();
+  }
+  /** Deliver the terminal events `stop()` deferred. */
+  flush() {
+    if (!this.pendingStop) return;
+    this.pendingStop = false;
+    this.fire();
+  }
+  private fire() {
     this.ondataavailable?.({ data: new Blob(["audio"], { type: this.mimeType }) });
     this.onstop?.();
   }
@@ -41,6 +60,27 @@ export function setMediaDevices(present: boolean) {
       ? { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) }
       : undefined,
   });
+}
+
+/** A `getUserMedia` the TEST opens by hand: every call parks until `open()` is called, so a suite can
+ *  hold one attempt inside the acquisition window while another gesture runs (F1). Returns the opener
+ *  plus the `stop` spy every handed-over track shares. */
+export function gateMediaDevices(): { open: () => void; trackStop: ReturnType<typeof vi.fn> } {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const trackStop = vi.fn();
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: vi.fn(async () => {
+        await gate;
+        return { getTracks: () => [{ stop: trackStop }] };
+      }),
+    },
+  });
+  return { open: () => release(), trackStop };
 }
 
 /** Answer `POST /api/voice/stt` with `body` under `status`. */

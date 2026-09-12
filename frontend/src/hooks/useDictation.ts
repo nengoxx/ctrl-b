@@ -185,69 +185,76 @@ export function useDictation({
     if (sttReady) setUnavailable(false);
   }, [statusStamp, sttReady]);
 
-  const upload = useCallback(async () => {
-    const chunks = chunksRef.current;
-    chunksRef.current = [];
-    const heldMs = startedAtRef.current > 0 ? Date.now() - startedAtRef.current : Infinity;
-    startedAtRef.current = 0;
-    const mime = recRef.current?.mimeType || "audio/webm";
-    const blob = new Blob(chunks, { type: mime });
-    if (!blob.size) {
-      setPhase("idle");
-      return;
-    }
-    // THE 1000 ms FLOOR — before the POST, never after: a blip costs no round trip, and the toast is
-    // the teaching moment (R69 §2/§9). Deliberately AFTER the empty-blob early-out, which is about a
-    // recorder that produced nothing at all rather than about a recording that was too brief.
-    if (heldMs < MIN_CLIP_MS) {
-      pushToast(TOO_SHORT_MSG, "info");
-      setPhase("idle");
-      return;
-    }
-    setPhase("sending");
-    // Filename extension follows the recorder's *actual* container (mime ↔ ext must agree — Whisper
-    // routes by extension). `mime` strips codec params via extFromMime's substring checks.
-    const form = new FormData();
-    form.append("file", blob, `dictation.${extFromMime(mime)}`);
-    try {
-      const res = await fetch("/api/voice/stt", { method: "POST", body: form });
-      if (res.status === 502) {
-        // The whole STT chain (primary + fallback) failed → the reactive "unavailable" state.
+  /** @param mime the recorder's ACTUAL container, handed over by the `onstop` closure that owns it —
+   *  the recorder releases its ownership of `recRef` before the upload begins (F2), so this can no
+   *  longer be read back off the ref. (A clip's `heldMs` defaulting to `Infinity` when there is no
+   *  stamp is deliberate and STAYS: "no stamp" alone must never discard a clip. A recording that
+   *  ERRORED is covered by the discard flag `onerror` sets — F4 — never by the missing stamp.) */
+  const upload = useCallback(
+    async (mime: string) => {
+      const chunks = chunksRef.current;
+      chunksRef.current = [];
+      const heldMs = startedAtRef.current > 0 ? Date.now() - startedAtRef.current : Infinity;
+      startedAtRef.current = 0;
+      const blob = new Blob(chunks, { type: mime });
+      if (!blob.size) {
+        setPhase("idle");
+        return;
+      }
+      // THE 1000 ms FLOOR — before the POST, never after: a blip costs no round trip, and the toast is
+      // the teaching moment (R69 §2/§9). Deliberately AFTER the empty-blob early-out, which is about a
+      // recorder that produced nothing at all rather than about a recording that was too brief.
+      if (heldMs < MIN_CLIP_MS) {
+        pushToast(TOO_SHORT_MSG, "info");
+        setPhase("idle");
+        return;
+      }
+      setPhase("sending");
+      // Filename extension follows the recorder's *actual* container (mime ↔ ext must agree — Whisper
+      // routes by extension). `mime` strips codec params via extFromMime's substring checks.
+      const form = new FormData();
+      form.append("file", blob, `dictation.${extFromMime(mime)}`);
+      try {
+        const res = await fetch("/api/voice/stt", { method: "POST", body: form });
+        if (res.status === 502) {
+          // The whole STT chain (primary + fallback) failed → the reactive "unavailable" state.
+          setUnavailable(true);
+          pushToast("Voice servers unreachable", "err");
+          return;
+        }
+        if (!res.ok) {
+          pushToast(`Transcription failed (${res.status})`, "err");
+          return;
+        }
+        const data = (await res.json()) as { text?: string };
+        if (data.text?.trim()) {
+          appendDraft(data.text); // always show it in the composer first
+          // Auto-send routes it like a typed+sent message. NO streaming gate (HIGH-1, D41): a voice
+          // message during a live turn QUEUES as a steer (the 202 path), same as Enter — voice is the
+          // owner's primary mobile input, and a queued bubble is visible/removable. `runComposer` →
+          // `sendMessage`/`runShell` enqueue the steer; the running turn keeps the view.
+          if (autoSend) {
+            // Reads the just-appended draft imperatively (combines with anything already typed).
+            const full = getDraft().trim();
+            // D68 MED-2 — the draft is cleared ONLY if the seam actually routed. `runComposer` HOLDS a
+            // send while a staged file is still uploading, and this path is exactly why the gate lives
+            // there: a transcript that lands mid-upload must wait for the file rather than send without
+            // it (or, worse, be cleared away). The words stay in the composer; the next send carries both.
+            if (full && runComposer(full)) clearDraft();
+          }
+        } else {
+          pushToast("Didn't catch that — try again", "info");
+        }
+      } catch {
+        // Network failure reaching our own backend — treat like an unreachable chain.
         setUnavailable(true);
         pushToast("Voice servers unreachable", "err");
-        return;
+      } finally {
+        setPhase("idle");
       }
-      if (!res.ok) {
-        pushToast(`Transcription failed (${res.status})`, "err");
-        return;
-      }
-      const data = (await res.json()) as { text?: string };
-      if (data.text?.trim()) {
-        appendDraft(data.text); // always show it in the composer first
-        // Auto-send routes it like a typed+sent message. NO streaming gate (HIGH-1, D41): a voice
-        // message during a live turn QUEUES as a steer (the 202 path), same as Enter — voice is the
-        // owner's primary mobile input, and a queued bubble is visible/removable. `runComposer` →
-        // `sendMessage`/`runShell` enqueue the steer; the running turn keeps the view.
-        if (autoSend) {
-          // Reads the just-appended draft imperatively (combines with anything already typed).
-          const full = getDraft().trim();
-          // D68 MED-2 — the draft is cleared ONLY if the seam actually routed. `runComposer` HOLDS a
-          // send while a staged file is still uploading, and this path is exactly why the gate lives
-          // there: a transcript that lands mid-upload must wait for the file rather than send without
-          // it (or, worse, be cleared away). The words stay in the composer; the next send carries both.
-          if (full && runComposer(full)) clearDraft();
-        }
-      } else {
-        pushToast("Didn't catch that — try again", "info");
-      }
-    } catch {
-      // Network failure reaching our own backend — treat like an unreachable chain.
-      setUnavailable(true);
-      pushToast("Voice servers unreachable", "err");
-    } finally {
-      setPhase("idle");
-    }
-  }, [autoSend]);
+    },
+    [autoSend],
+  );
 
   /** Abort an in-flight `start()` (F5), reporting whether there WAS one. The caller then knows there is
    *  no recording to stop or discard: the recorder never armed, so nothing was captured. `armRef` is
@@ -397,7 +404,13 @@ export function useDictation({
    *  or a browser with no usable container — must close that affordance rather than leave it painted
    *  over a mic that never opened. `false` also covers the F5 abort (released during acquisition). */
   const start = useCallback(async (): Promise<boolean> => {
-    if (armRef.current || recRef.current?.state === "recording") return false;
+    // A NON-NULL `recRef` OWNS the recorder's lifecycle until one of its terminal callbacks releases
+    // it (F2) — `state` alone is not enough: `stop()`/`cancel()` flip it to "inactive" synchronously
+    // while the final `dataavailable`/`stop` events are still QUEUED, and a recording started inside
+    // that window would overwrite the chunks, the discard flag and the stamp the late callback is
+    // about to read. A too-early re-press gets `false` here and closes its own chrome, as it does for
+    // every other reason a recorder does not arm.
+    if (armRef.current || recRef.current) return false;
     if (!preflight()) return false;
     const arm = { aborted: false };
     armRef.current = arm;
@@ -406,6 +419,11 @@ export function useDictation({
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch {
+        // ABORTED FIRST (F1): the gesture let go while the browser was still asking. A rejection that
+        // lands after that is the user's own release, not a new fact to report — and the toast and the
+        // teardown below both belong to the CURRENT attempt, whose detector/listener this one must not
+        // touch. (The non-aborted path is unchanged: a real denial still explains itself.)
+        if (arm.aborted) return false;
         teardownDetector(); // every failed start leaves the detector state clean (MED-2)
         pushToast("Microphone permission denied", "err");
         return false;
@@ -435,6 +453,11 @@ export function useDictation({
         if (e.data.size) chunksRef.current.push(e.data);
       };
       rec.onstop = () => {
+        // OWNERSHIP ENDS HERE (F2) — before the upload, and before the discard branch returns: this is
+        // the terminal callback the queued-events window was held open for, so the next `start()` is
+        // free from now on. Guarded on the closure's own `rec` so a future defensive overwrite of the
+        // ref is never clobbered by a late callback belonging to an older recorder.
+        if (recRef.current === rec) recRef.current = null;
         teardownDetector(); // BEFORE the upload enters `sending` — the watcher dies with the recording
         stream.getTracks().forEach((t) => t.stop()); // release the mic indicator
         // CANCELLED (S0.5): the same teardown, and then nothing — no blob, no POST, no draft.
@@ -445,9 +468,15 @@ export function useDictation({
           setPhase("idle");
           return;
         }
-        void upload();
+        void upload(rec.mimeType || "audio/webm");
       };
       rec.onerror = () => {
+        if (recRef.current === rec) recRef.current = null; // ownership ends here too (F2)
+        // F4 — an `error` is NOT the end of the event stream: browsers may still deliver the final
+        // `dataavailable` and `stop` afterwards, and that `onstop` must not upload the failed partial
+        // clip. The existing discard branch is exactly the path for "a clip that must not be sent", so
+        // the error arms it rather than growing a second suppression rule.
+        discardRef.current = true;
         teardownDetector();
         stream.getTracks().forEach((t) => t.stop());
         startedAtRef.current = 0;
