@@ -17,7 +17,7 @@ live probe, the four chat peers, the browser half) · [R68](./research/R68-live-
 
 | Seam | Where | What it gives us |
 |---|---|---|
-| The mouth | `lib/audioController.ts` (D63 + read-along) | Sentence-chunked synth on one `<audio>`, ~0.7 s first audio, an **open-session feeder** (`feedReadAlong`/`endTurnSpeak`) that speaks the reply *as it streams*, per-agent voice (D70 §8.5), and a working kill (session abort + element pause + URL revoke). **Call mode needs zero changes here.** |
+| The mouth | `lib/audioController.ts` (D63 + read-along) | Sentence-chunked synth on one `<audio>`, ~0.7 s first audio, an **open-session feeder** (`feedReadAlong`/`endTurnSpeak`) that speaks the reply *as it streams*, per-agent voice (D70 §8.5), and a working kill (session abort + element pause + URL revoke). **Call mode needs ONE minimal new surface here (delta round F4 — the earlier "zero changes" claim was false once priming + the forced read-along landed):** prime/unlock at call start, a call-local read-along override consulted by `useAutoTts`, and the kill-vs-drain flag — no second player, everything else reused. |
 | The ear (today) | `hooks/useDictation.ts` + `POST /api/voice/stt` | Push-to-talk whole-clip STT with failover; Tier 0 auto-stop (energy detector, config-driven, default OFF, **threshold never calibrated on the owner's phone**); `auto_send` already routes a transcript into the composer send path. |
 | The brain | `POST /agent/chat` · SSE turn stream · `POST /agent/turns/{id}/cancel` | Durable server-owned turns, persist-before-emit, 202-steer during a live turn (D41), idempotent scoped cancel. **Untouched by this feature** — the transcript enters through the same door dictation enters today. |
 | Voice config | `VoiceCfg` (`voice.stt`/`voice.tts`) + `GET /voice/status` | The delivery pattern for client voice policy (chunk policy, auto-stop) — `voice.live` rides the same route. |
@@ -257,7 +257,12 @@ order and submits as ONE message on release — never a one-slot overwrite, neve
 which loses the second utterance of a long walkie-talkie hold). A call-origin steer the
 cancel harvested is consumed rather than restored into the composer. This closes the race
 where a short interrupt's transcript lands as a 202 steer on the dying turn and gets silently
-harvested into a draft.
+harvested into a draft. **The queue is fenced by a call-generation token (delta round F7):**
+every drain/settle callback carries the generation it was armed under and no-ops against a
+different one — a hang-up's own C3 kill must not fire a stale "drain" submit, and a redialed
+session must not inherit the old call's callbacks. Terminal disposition: a deliberate hang-up
+DISCARDS pending utterances (the user chose to leave); `error`/`ended` terminals harvest them
+to the composer draft (never-lose applies to failures, not to the user's own exit).
 
 **The turn commonly ends before the mouth does** (council F1): generation outruns synthesis, so
 by the time the owner interrupts, the cancellable turn may already be terminal. Barge-in
@@ -314,8 +319,10 @@ marker for text Stop rides the same seam. This closes R35 divergence ④ for bot
   is typed in the composer stays there.
 - **Staged attachments ride (owner-ratified):** files staged when a call turn submits are
   reserved onto that turn exactly as a typed send would — stage a photo, start the call, ask
-  about it. The existing upload hold applies: a final held by an in-flight upload retries on
-  settle rather than dropping.
+  about it. The upload hold refuses routing while an upload is in flight (that part is
+  shipped); **the retry is NOT existing code (delta round F2)** — dictation survives the hold
+  only via its draft. The call machine keeps a held final in the §4.3 pending queue and
+  retries once on the attachment store's uploading→settled transition.
 - **Empty finals are discarded** (the no-speech path): nothing submits, `waitingFinal` clears.
 - **Thread identity:** the call rides the open thread; with none, the first utterance mints one
   server-side exactly like a typed first message (the `thread` wire frame updates the client,
@@ -342,15 +349,27 @@ marker for text Stop rides the same seam. This closes R35 divergence ④ for bot
   the call continues. Repeated mouth failure never ends the call on its own; hanging up is the
   user's move.
 - **Submit failure loses nothing:** if a transcript's send fails (network/5xx from the chat
-  door), the utterance drops into the composer DRAFT (the existing harvest pattern) and the
-  overlay says so — the never-lose-speech rule applied to the brain leg; no silent retry loop.
+  door), the utterance drops into the composer DRAFT and the overlay says so — the
+  never-lose-speech rule applied to the brain leg; no silent retry loop. **The signal must be
+  BUILT (delta round F8):** `runComposer`'s boolean means "routing started" and `sendMessage`'s
+  promise is discarded today, so the NL send seam grows a narrow accept/refuse result (the
+  boolean wrapper preserved for existing callers); harvest on definite refusal, and a
+  network loss whose acceptance is UNKNOWN is labeled on the overlay rather than re-sent —
+  an invisible duplicate is worse than a manual retry.
 - **Reconnect contract (the §3.3 auto-reconnect, made concrete):** bounded attempts with
   backoff, then the `error` terminal; the overlay shows `connecting` during retries. A drop
   mid-utterance LOSES that utterance — stated honestly, the audio is gone — `waitingFinal`
   clears, and playback is untouched (C3 rides HTTP, not the WS).
-- **Speech during `awaiting_confirm`** queues as an ordinary steer (the existing 202
-  semantics), delivered when the action resumes; the confirmation itself still requires its
-  tap — talking never substitutes for the token.
+- **Speech during `awaiting_confirm` HOLDS in the pending queue (delta round F1 — the
+  original "queues as an ordinary steer" leaned on a broken shape):** a suspended turn leaves
+  chat status `idle`, so a send takes the optimistic fresh-turn path (assistant placeholder +
+  streaming status) and an actual 202 against the held turn strands both. The call machine
+  therefore does not submit while a confirm is outstanding — utterances join the §4.3 queue
+  and submit on resolution (allow OR deny). The confirmation itself still requires its tap.
+  **Recorded pre-existing defect, wider than the call:** TYPED text during `awaiting_confirm`
+  hits the same 202 mis-shape today; the F3 turn-seam slice adds normalize-on-202 at the
+  shared `sendMessage` seam (remove the provisional placeholder, adopt queued-steer state),
+  healing both modes.
 
 ## 5. Config, security, degrade
 
@@ -428,9 +447,12 @@ configured+enabled. Minimal v1 — no waveforms, no partials (we have none), no 
 tokens (no per-theme bespoke work in v1).
 
 **The backdrop never goes away (owner ruling).** In BOTH overlay modes the call screen is the
-active agent's art **full-bleed** (`useActiveBackdrop` — a call with Lynette looks like *her*),
-the same resolution ladder as the `full` chat backdrop. There is explicitly NO
-"blank screen + portrait in a circle" phone-call look — the owner rejected it.
+active agent's art **full-bleed** via `useActiveBackdrop` — a call with Lynette looks like
+*her*. **The ladder is `useActiveBackdrop` ALONE (delta-round sweep clarification):**
+background → avatar → the plain theme surface; gacha's oracle art does NOT participate — the
+call wears agent identity, not fleet flavor (the chat backdrop's gacha fallback is that
+surface's own business). There is explicitly NO "blank screen + portrait in a circle"
+phone-call look — the owner rejected it.
 
 **One toggle — `voice.live.ring` (a Conf row in the Live call section, §5.1):**
 
@@ -463,12 +485,15 @@ from every state, §4.2). Text-over-art legibility inherits the three-state-back
 **The refinement round (owner-approved 2026-09-12) — call furniture, all ratified:**
 
 - **Mute joins hang up** — the one extra control (core call furniture: cough, doorbell,
-  someone in the room). Implementation = stop sending frames (track disabled); muted = no VAD
-  events, so no false endpointing either. **Mute's loop rules (coherence sweep 2026-09-12):**
-  muting mid-utterance DISCARDS that utterance — the abrupt silence will make the server
-  endpoint the half-speech, so a final arriving while muted is dropped and `waitingFinal`
-  clears (mute means "don't send that"); `userSpeechActive` clears on mute; unmute simply
-  resumes frames, a fresh utterance. The ring/accent wears a distinct STATIC muted look — no
+  someone in the room). **ONE mechanism (delta round F3 — the ratified text named two
+  incompatible ones):** mute = `track.enabled = false`, and the worklet KEEPS SENDING the
+  now-silent frames — disabling the track silences the samples but does not stop
+  transmission, and Speaches needs to OBSERVE silence to endpoint a half-utterance; starving
+  it of frames would leave the utterance open to merge with post-unmute speech.
+  **Mute's loop rules (coherence sweep 2026-09-12):** muting mid-utterance DISCARDS that
+  utterance — the silent frames make the server endpoint the half-speech, and a final
+  arriving while muted is dropped, `waitingFinal` clears (mute means "don't send that");
+  `userSpeechActive` clears on mute; unmute re-enables the track, a fresh utterance. The ring/accent wears a distinct STATIC muted look — no
   pulse implies no ear, so the muted state must be visually unmistakable. Tap-to-interrupt
   still works while muted.
 - **Tap to interrupt (owner-ratified 2026-09-12, the ChatGPT voice-mode pattern):** during
@@ -493,7 +518,12 @@ from every state, §4.2). Text-over-art legibility inherits the three-state-back
   gesture priming — scouted; this kills the mobile silent-first-reply failure mode).
 - **The focal→screen helper is greenfield** (scouted: everything today terminates in CSS
   percentage strings; nothing computes where the focal point lands on screen) — a small pure
-  sibling in `lib/focalPosition.ts`, unit-tested, recomputed on rotation/resize.
+  sibling in `lib/focalPosition.ts`, unit-tested. **Coordinate discipline (delta round F9):**
+  the anchor is computed in OVERLAY-LOCAL coordinates from the backdrop element's own box
+  (one `ResizeObserver`), never cached against the window — Android's URL-bar/keyboard
+  transitions move the VISUAL viewport without a useful `window.resize` (the repo already
+  listens to `visualViewport.resize` + `scroll` for exactly this); if any viewport offset
+  enters the calculation, reuse that pair.
 - **Second door DEFERRED (owner-ratified — do not re-propose ad hoc):** v1 has ONE entry
   point, the composer. A call door on the agent gallery's cards waits for regular use to ask.
 
@@ -530,6 +560,14 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   is client-side BEFORE upload — a blip costs no POST).
   **`pointercancel` NEVER loses audio** (the field's iron rule): an unlocked in-progress
   recording PROMOTES TO LOCKED (Telegram's answer), never silently discards.
+  **Axis commit (delta round F6 — R69 said pick one; the amendment forgot to):** once
+  movement leaves the 8 px slop, the gesture LOCKS TO ITS DOMINANT AXIS and only that axis
+  is evaluated — a diagonal thumb arc can otherwise cross the 56 px lock line AND the cancel
+  distance, leaving the outcome to handler order. **The arming latch (delta round F5, the
+  R69 §10 open edge):** release while `getUserMedia` is still pending CANCELS the pending
+  start — a stream resolving after the cancel is stopped immediately, never an ownerless
+  recording; a `pointercancel` during acquisition latches the promote-to-lock intent
+  instead.
 - **Call mode:** hold raises the "slide up to call" pill; **swipe up 56 px, committing on
   RELEASE** — a recorded deliberate deviation from the lock's latch-on-crossing (R69 found NO
   field precedent for gesture-started calls; a call costs more to undo than a lock, so it gets
@@ -573,15 +611,20 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
 - **S1 — the BE relay:** `voice.live` config + `/voice/status` delivery + the WS route + the
   relay session (mock-Speaches tests: framing, resampling, backpressure, caps, error taxonomy,
   bearer never in logs).
-- **S2 — the FE call loop, WITH basic barge-in (council F8 — an open-mic loop that cannot be
-  interrupted is not a reviewable slice):** capture worklet + WS client + the `useLiveCall`
-  machine (§4.2, incl. the new chat-store turn seam — F3) + the call overlay (§6 as ratified:
-  full-bleed backdrop, both `ring` modes incl. the focal-anchor helper + the transcript-accent
-  arm) +
-  submit-through-`runComposer` + read-along forced on + Wake Lock + degrade states + the plain
-  kill: speech during `speaking` (energy floor, §4.3) stops audio and cancels a live turn;
-  the §6 furniture (mute, the in-overlay confirm row) + the §4.5 edge rules.
-  (End of S2 = a full interruptible conversation on the S0-ruled echo branch.)
+- **S2a — the FE call loop, WITH basic barge-in (council F8 — an open-mic loop that cannot
+  be interrupted is not a reviewable slice; SPLIT from the old S2 by delta-round F10 — the
+  monolith was no longer one reviewable change):** capture worklet + WS client + the
+  `useLiveCall` machine (§4.2, incl. the new chat-store turn seam — F3 — with the
+  normalize-on-202 fix and the F8 accept/refuse send result) + a MINIMAL overlay (backdrop +
+  state + transcript line + hang up) + submit-through-`runComposer` + read-along forced on
+  (the F4 audioController surface: prime, call override, kill reuse) + Wake Lock + degrade
+  states + the plain kill: speech during `speaking` (energy floor, §4.3) stops audio and
+  cancels a live turn. (End of S2a = a full interruptible conversation on the S0-ruled echo
+  branch.)
+- **S2b — the overlay's presentation + furniture:** both `ring` modes (the focal-anchor
+  helper with F9's coordinate discipline + the transcript-accent arm) · mute (F3's one
+  mechanism) · the in-overlay confirm row · terminal faces + back-trap · the remaining §4.5
+  edge rules not already forced by S2a's loop.
 - **S3 — interruption hardening:** the §4.3 ordered cancel-settle contract + the buffered-final
   race (F4) · the playback-would-start-while-speaking edge (F5) · the echo fallback branch if S0
   ruled dirty · reconnect/backpressure edges (F6) exercised against a flaky link.
@@ -650,10 +693,8 @@ Still open:
 
 3. **Browser priority** — S0 probes both; if Fennec's AEC or permission story is bad, is
    "Chrome for calls" an acceptable v1 posture (the web-push precedent)?
-4. **A delta design round?** The council closed on the 2026-09-11 text; everything since
-   (§4.5, the §6 furniture + entry gesture, tap-interrupt, the walkie-talkie queue) is
-   main-seat + owner only. A short blind Emma round on the amendment delta before S0.5
-   builds would restore full council coverage — the owner's call.
+4. ~~**A delta design round?**~~ **RAN (owner-ordered, 2026-09-12) — see §9's delta-round
+   entry: SHIP WITH CHANGES, 4H·5M·2L, all eleven ACCEPTED and folded in place.**
 
 ## 9. Council record
 
@@ -688,3 +729,18 @@ Still open:
   truncation as follow-up · minimal overlay · knobs as real Settings) folded the same session.
   → **D71** + the CLAUDE.md doc-map row + the TODO Phase 24 block. §8.3 (Fennec posture) stays
   open for S0's empirical answer.
+- **2026-09-12 — the blind Emma DELTA round (owner-ordered; hermes lane, `--ignore-rules`,
+  R46 brief scoped to `git diff ff33b61..HEAD` on this file): verdict SHIP WITH CHANGES —
+  4 HIGH · 5 MED · 2 LOW, open sweep "none" beyond one LOW, several §4.5 mechanisms
+  explicitly verified sound. ALL ELEVEN ACCEPTED by the main seat (each corroborated against
+  the independent code scout) and folded in place, marked "delta round F#":** F1
+  `awaiting_confirm` mis-shape (→ queue-hold + the recorded PRE-EXISTING typed-text 202
+  defect riding the F3 seam slice) · F2 the upload retry didn't exist (→ pending-queue
+  retry-on-settle) · F3 mute's two incompatible mechanisms (→ disabled track, silent frames
+  keep flowing) · F4 the §0 "zero mouth changes" claim false (→ the minimal audioController
+  surface, S2a) · F5 the getUserMedia arming latch · F6 the dominant-axis commit rule · F7
+  the queue's call-generation fence + terminal disposition (hang-up discards, failure
+  harvests) · F8 the accept/refuse send result (runComposer's boolean is routing-only) · F9
+  overlay-local ring coordinates vs the visual viewport · F10 S2 split into S2a/S2b ·
+  sweep-LOW the backdrop ladder clarified (useActiveBackdrop alone, no gacha oracle). Her
+  factual correction adopted: the line composer's mic is NOT draft-empty-gated at tip.
