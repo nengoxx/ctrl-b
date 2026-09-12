@@ -1591,13 +1591,19 @@ WebSocket, D71's narrow admission), client-submitted turns through the untouched
 read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each passes
 `tools/check.py`.
 
-- [ ] S0 — Probes + the ear smoke: AEC capability readback + leak check on the owner's phone
-      (Chrome + Fennec) · Fennec mic-permission persistence · the Speaches
-      `/v1/realtime?intent=transcription` smoke against resident Parakeet (server untouched —
-      owner ruling). Rules `echo_workaround` + the Fennec posture (§8.3).
+- [x] S0 — Probes + the ear smoke *(CLOSED 2026-09-12, build `da4343f` — plan §7-S0 as-built
+      record. Headlines: the realtime ear was DEAD without `LOOPBACK_HOST_URL` — owner-ruled
+      server-env fix (a drop-in OUTSIDE the repo, see the record) — then proven end to end
+      against Parakeet; Chrome's `"all"` AEC measured genuinely subtractive, Fennec's measured
+      ineffective ⇒ owner ruling: Chrome first-class, Fennec = ear-hold (plan §8 item 3);
+      gesture posture zero-cancel on both browsers ⇒ S0.5 green-lit.)*
+- [ ] S0.5 — The entry gesture (FE-only, delta-round rung): the §6 dual-mode mic hook +
+      animations, the mic leg live against today's `useDictation`; call chrome ships hidden
+      until the `live` bit exists. Feel-tested on real dictation (plan §7-S0.5).
 - [ ] S1 — The BE relay: `voice.live` config + `/voice/status` delivery + `WS /api/voice/live`
       + the relay session (mock-Speaches tests; framing/resample/backpressure/caps/Origin).
-- [ ] S2 — The FE call loop WITH basic barge-in: capture worklet · WS client · `useLiveCall`
+- [ ] S2 — *(split S2a/S2b by the 2026-09-12 delta round — plan §7 wins)* The FE call loop
+      WITH basic barge-in: capture worklet · WS client · `useLiveCall`
       (phase + orthogonal flags; the narrow chat-store turn seam) · the call overlay ·
       submit-through-`runComposer` · read-along forced on · Wake Lock · the plain kill.
 - [ ] S3 — Interruption hardening: the ordered cancel-settle contract · the buffered-final

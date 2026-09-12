@@ -12,7 +12,48 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-12, FOURTEENTH session — **THE LIVE-VOICE REFINEMENT SESSION: the visual design + entry gesture + interruption model designed WITH the owner, R69 bought, a 14-item coherence sweep, and the blind Emma DELTA round ran the full cadence to RESOLVED — SHIP. The plan is council-closed over the amended text; ▶▶ NEXT SESSION = THE S0 BUILD**; supersedes below where it speaks)
+## Current state (2026-09-12, FIFTEENTH session — **S0 RAN END TO END AND IS CLOSED, owner in the loop live: probes built + the phone sitting done + THREE rulings landed (the loopback server fix · Chrome-first echo posture · gesture green-light). ▶▶ NEXT SESSION = S0.5 (the dual-mode mic on real dictation)**; supersedes below where it speaks)
+
+- **S0 (plan §7) is CLOSED — the full as-built record with every number and mechanism is plan
+  §7-S0; read THAT before S1/S2 work.** Build `da4343f` (pinned Opus): `frontend/probes/{aec,gesture}.html`
+  (Vite dev-only, never in dist) + `tools/speaches_realtime_smoke.py` (stays in-tree — the S1
+  mock mirrors its pinned contract). Gate 6/6, independently re-run by the main seat. Process
+  deviation, main-seat ruled + owner informed: the blind round rides S1 (throwaway probe pages;
+  S1 re-verifies the contract against source).
+- **HEADLINE ①: the realtime ear was DEAD on emma's Speaches** — every `intent=transcription`
+  session died at close 1006 before any transcript (bare-router `ASGITransport` when
+  `LOOPBACK_HOST_URL` is unset; source-verified). **OWNER RULING: fix the server env — a
+  one-item amendment to the §5.2 "untouched" posture.** Applied as the drop-in
+  `~/.config/systemd/user/speaches.service.d/20-loopback-url.conf` + unit restart. **⚠ That
+  file lives OUTSIDE every repo — a Speaches reinstall must recreate it** (flagged in plan §0's
+  seams row + the §7-S0 record). Post-fix: speech + silence arms both PASS (exact transcript;
+  VAD +44 ms; `e093d8b` proven through the realtime path).
+- **HEADLINE ②: the echo ruling (owner, measured on the Honor 20, WHY recorded in full in the
+  §7-S0 record + §8 item 3): Chrome is the first-class call browser** — its `"all"` AEC is
+  honored AND genuinely subtractive (the talk-through retest: owner's voice −18 dBFS live
+  during playback, tones cancelled ⇒ voice barge-in viable). **Fennec's AEC does nothing
+  against own playback** (near-full-volume leak, AGC-boosted; `"all"` coerces to `true`) ⇒
+  `echo_workaround: auto` = OFF on capability-verified `"all"`, the protective EAR-HOLD
+  elsewhere (calls work, interruption tap-only) — capability-detected per track, never
+  UA-sniffed; S3 builds the branch. §5.1's `echo_workaround` comment now carries the ruling.
+- **HEADLINE ③: the R69 gesture probes are clean on BOTH browsers** — zero `pointercancel`
+  under the production posture across all gestures (446 px up-slides, 300 px left, multi-second
+  holds), address bar never moved during a captured hold; the controls proved
+  `touch-action:none` is load-bearing (Chrome cancels in <1 s without it). Fennec mic
+  permission persists after one grant. **S0.5 is green-lit exactly as §6 ratified it.**
+- Ops: Tailscale Serve was flipped to :5173 for the sitting and **RESTORED to prod :5433,
+  verified 200**. The speaches unit was restarted once (the env fix) — prod voice blipped
+  seconds, healthy since. Both dev units RUNNING throughout (D69 — do NOT stop them). Prod
+  untouched v1.7.7 @ `578ffa7`.
+- **▶▶ NEXT SESSION: S0.5** (plan §7-S0.5 — the §6 dual-mode mic hook + animations, mic leg
+  live against today's `useDictation`, call chrome ships hidden; FE-only; the standing full
+  cadence applies again, and the owner feel-tests the gesture on real dictation against R69's
+  parameter table). One slice per session. **Phase 23 S7 + the v1.7.8 sequencing are unchanged**
+  (release E after the roleplay features — owner ruling 09-12).
+- Git: **2 commits unpushed over origin `b946fc1`** (`da4343f` build + this docs commit); tree
+  clean at write; the PUSH ruling stays the owner's.
+
+## Prior state (2026-09-12, FOURTEENTH session — **THE LIVE-VOICE REFINEMENT SESSION: the visual design + entry gesture + interruption model designed WITH the owner, R69 bought, a 14-item coherence sweep, and the blind Emma DELTA round ran the full cadence to RESOLVED — SHIP. The plan is council-closed over the amended text; ▶▶ NEXT SESSION = THE S0 BUILD**; superseded above where it speaks)
 
 - **The whole session was plan refinement in conversation with the owner — zero app code; seven
   doc commits `fd9ebac`..the handoff tip, all on `LIVE_VOICE_PLAN.md` (+R69). UNPUSHED — the

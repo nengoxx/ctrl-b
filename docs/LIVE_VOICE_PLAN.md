@@ -21,7 +21,7 @@ live probe, the four chat peers, the browser half) · [R68](./research/R68-live-
 | The ear (today) | `hooks/useDictation.ts` + `POST /api/voice/stt` | Push-to-talk whole-clip STT with failover; Tier 0 auto-stop (energy detector, config-driven, default OFF, **threshold never calibrated on the owner's phone**); `auto_send` already routes a transcript into the composer send path. |
 | The brain | `POST /agent/chat` · SSE turn stream · `POST /agent/turns/{id}/cancel` | Durable server-owned turns, persist-before-emit, 202-steer during a live turn (D41), idempotent scoped cancel. **Untouched by this feature** — the transcript enters through the same door dictation enters today. |
 | Voice config | `VoiceCfg` (`voice.stt`/`voice.tts`) + `GET /voice/status` | The delivery pattern for client voice policy (chunk policy, auto-stop) — `voice.live` rides the same route. |
-| Speaches | emma `:9000` — a **local fork**, `~/github/speaches` @ `e093d8b` (R68 §1: upstream frozen at the R51 pin for 5 months; +2 local commits incl. a Parakeet/VAD fix; the openapi `version` field is a hardcoded literal — pin by SHA) | `/v1/realtime` WS, **`intent=transcription`**: Silero server VAD + endpointing + whole-utterance finals. No partials, no truncate, no auto-interrupt (all three gaps re-verified unchanged, R68 §1.1). Resident STT = **Parakeet** (not Whisper). ⚠ posture: binds `0.0.0.0` with a placeholder API key (§5.2). |
+| Speaches | emma `:9000` — a **local fork**, `~/github/speaches` @ `e093d8b` (R68 §1: upstream frozen at the R51 pin for 5 months; +2 local commits incl. a Parakeet/VAD fix; the openapi `version` field is a hardcoded literal — pin by SHA) | `/v1/realtime` WS, **`intent=transcription`**: Silero server VAD + endpointing + whole-utterance finals. No partials, no truncate, no auto-interrupt (all three gaps re-verified unchanged, R68 §1.1). Resident STT = **Parakeet** (not Whisper). ⚠ posture: binds `0.0.0.0` with a placeholder API key (§5.2). **⚠ S0 (2026-09-12): realtime transcription REQUIRES `LOOPBACK_HOST_URL=http://127.0.0.1:9000` in the unit env — without it every `intent=transcription` session dies at close 1006 before any transcript (the bare-router ASGITransport defect, §7-S0 record). The owner-ruled fix lives OUTSIDE the repo: drop-in `~/.config/systemd/user/speaches.service.d/20-loopback-url.conf` (commented; delete to revert) — a Speaches reinstall MUST recreate it or live calls die.** |
 | Agent art | `useActiveBackdrop` / agent summaries (D70) | The call overlay can wear the active character's art for free. |
 
 **The gap, stated once (R51):** ctrl-b has a first-class downlink and no continuous uplink — no
@@ -389,7 +389,14 @@ voice:
     buffered_ceiling_ms: 1000   # client outbound-buffer ceiling before close+reconnect (F6)
     barge_threshold: 0          # RMS floor for the barge-in energy gate; 0 = reuse stt.auto_stop_threshold
     max_sessions: 1             # process-wide live-session cap (F9; N=1 service)
-    echo_workaround: auto   # auto | on | off  (S0 probe decides auto's meaning per UA)
+    echo_workaround: auto   # auto | on | off — auto's meaning RULED by S0 (owner, 2026-09-12, measured
+                            # on the Honor 20, §7-S0 record): OFF where the live track's
+                            # getSettings().echoCancellation reads "all" (Chrome ≥141 — measured genuinely
+                            # SUBTRACTIVE: playback cancelled, the user's voice survives, voice barge-in
+                            # viable); the protective EAR-HOLD elsewhere (Fennec — its AEC measurably does
+                            # NOT remove the phone's own playback, so an open ear during `speaking` would
+                            # hear the character: the ear pauses, interruption is tap-only there).
+                            # Capability-detected per track at call start, NEVER UA-sniffed.
     barge_in: true
     ring: true              # §6 overlay mode: true = the focal-anchored face ring; false = art-only + transcript accent
 ```
@@ -602,7 +609,85 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   whether `touch-action: none` survives the address-bar collapse — Honor 20, Chrome + Fennec).
   **Rules `echo_workaround` and confirms the Speaches contract before anything is built on
   it.**
-- **S0.5 — the entry gesture (FE-only; owner-ratified early so the feel round runs on real
+
+  > **S0 AS-BUILT + CLOSED (2026-09-12, owner in the loop live).** Build `da4343f` (pinned Opus):
+  > `frontend/probes/aec.html` + `frontend/probes/gesture.html` (Vite dev-served at
+  > `/probes/*.html`, never rollup inputs — dev-only by construction) + `tools/speaches_realtime_smoke.py`
+  > (kept in-tree: it re-runs on any Speaches change and is the contract evidence S1's mock must
+  > mirror). Gate 6/6, independently re-run by the main seat. Raw logs: session scratchpad
+  > `s0-smoke/` + `s0-smoke-postfix/`.
+  >
+  > **① The ear was DEAD on emma's deployment — found, ruled, fixed, re-proven.** Every
+  > `intent=transcription` session died at close **1006** (no close frame) right after commit,
+  > before any transcript, 3/3. Root cause (source-verified in the fork): with `LOOPBACK_HOST_URL`
+  > unset, `speaches/dependencies.py:get_transcription_client()` drives an `ASGITransport` around
+  > the **bare stt `APIRouter`** (the upstream author's own comment: *"this might not work as
+  > expected… TODO: verify"*) — FastAPI asserts (`fastapi_middleware_astack not found`), the
+  > resulting `APIConnectionError` escapes the `except openai.APIStatusError`-only catch in
+  > `input_audio_buffer_event_router.py`, and the event-listener TaskGroup tears the session down.
+  > The HTTP isolation leg proved the stack healthy (same clip → exact transcript in 2.2 s), so
+  > only the realtime wiring was broken. **OWNER RULING (2026-09-12, a one-item amendment to the
+  > §5.2 "server untouched" posture): set `LOOPBACK_HOST_URL=http://127.0.0.1:9000`** — applied as
+  > the systemd drop-in `~/.config/systemd/user/speaches.service.d/20-loopback-url.conf`
+  > (commented with this mechanism; delete to revert). ⚠ **That file lives OUTSIDE every repo — a
+  > Speaches reinstall must recreate it** (also flagged in the §0 seams row). Post-fix smoke:
+  > **speech PASS** (session.created +8 ms · VAD `speech_started` +44 ms after stream start ·
+  > endpoint ≈240 ms after the clip ends · the exact sentence back) · **silence PASS** (zero false
+  > VAD triggers over 4 s; forced commit → `''` — the fork's `e093d8b` no-speech patch now proven
+  > THROUGH the realtime path, not just HTTP).
+  >
+  > **② The pinned wire contract (source-read + live-verified; S1 builds against THIS, not the
+  > OpenAI docs):** `model` is a REQUIRED query param; handshake refusals are **HTTP 403** (bad
+  > key, missing model) while session death is a **bare 1006** — two different failure classes for
+  > the relay's error taxonomy. Uplink is **text frames only**: one binary frame kills the session
+  > (⇒ the relay re-encodes to JSON+base64, ~33 % overhead on the loopback leg — the plan's binary
+  > uplink stops at the relay). Audio is base64 **PCM16 mono 24 kHz hardcoded** (no negotiation;
+  > §3.1's stateful resampler is mandatory). Server VAD defaults 0.9/0/550 ms; Silero runs
+  > **synchronously on the event loop per append** (S1 measures `frame_ms` 40 vs 100); sessions
+  > hard-expire at **30 min** (`asyncio.timeout` — plan the reconnect); **no server-side
+  > backpressure** (unbounded pubsub queues — the relay's bounded queue is the only backpressure
+  > in the chain). `session.update`: **always send the full 5-field `turn_detection`** (a partial
+  > object validates as `NotGiven` and is SILENTLY dropped), always swallow the unavoidable
+  > spurious `prefix_padding_ms` error event (the update still applies), and `language` can never
+  > be reset to null (`exclude_defaults` drops it). Honored: `model` ·
+  > `input_audio_transcription.model`/`.language` · `temperature` · `voice` · `instructions`;
+  > `input_audio_format` is rejected-with-error but the update is still acked. Query params
+  > `language` and `transcription_model` are honored (`transcription_model` wins); alias
+  > resolution happens at the loopback STT call, not the WS layer.
+  >
+  > **③ The echo probes (owner phone sitting, Honor 20 · Chrome 152 · Fennec 151) — the WHY
+  > behind the §8.3 ruling, measured not assumed:** **Chrome honors `echoCancellation:"all"`**
+  > (`getSettings()` echoes `"all"` — R68's headline claim now device-verified) **and it is a real
+  > subtractive canceller**: control leak 53.7 dB → the AEC run gated the capture to digital
+  > silence, and the talk-through retest proved it is NOT a mute — the owner's voice rode through
+  > at −18 dBFS broadband *while playback ran*, tones down at −46 dBFS (vs −13.8 raw). The mic
+  > stays alive during `speaking` ⇒ voice barge-in is viable on Chrome. **Fennec's AEC does
+  > nothing against the phone's own playback**: capabilities are `[true,false]` (no string modes;
+  > even `exact:"all"` silently coerces to `true` — no OverconstrainedError, exactly the WebIDL
+  > degradation R68 predicted), and the leak test measured the played tones at **near-full volume
+  > in the capture** (−4.3 dBFS, AGC-boosted above the 54 dB control) — R51's "Firefox cancels all
+  > browser audio" hope is DISPROVEN on this hardware. An open Fennec ear during `speaking` would
+  > false-trigger barge-in and transcribe the character's own words into the turn — which is why
+  > the ear-hold is the honest degrade there, costing only hands-free interruption
+  > (tap-to-interrupt is every browser's interrupt, §4.3). Fennec mic permission persists after
+  > one grant (its Permissions API keeps reporting "prompt" — cosmetic, behaviorally fine).
+  >
+  > **④ The gesture probes (R69 §11's owed device evidence — S0.5 is GREEN-LIT as ratified):**
+  > under the production posture (`touch-action:none` + `setPointerCapture` + `user-select:none`
+  > + contextmenu prevented) **zero `pointercancel` on both browsers** — Chrome 8/8 gestures clean
+  > incl. a 10.7 s hold with a 446 px up-slide and a 302 px left-slide; Fennec 4/4 incl. 277 px up
+  > and 222 px left — with page scroll 0 and `visualViewport.height` delta 0 throughout: **the
+  > address bar never moved during a captured hold.** The controls prove the posture is
+  > load-bearing, not cargo cult: without `touch-action:none`, Chrome cancels within ~1 s at ~9 px
+  > of drift (4/4), Fennec once cancelled and once scrolled 88 px while still streaming events.
+  > Long-press fires contextmenu on the button (must STAY prevented) and the selection magnifier
+  > appears only on unprotected text. Every §6 gesture element (hold · 56 px lock · relative
+  > slide-left cancel) is deliverable exactly as designed.
+  >
+  > **Process note (the S0 deviation from this section's cadence header, main-seat ruled, owner
+  > informed):** the blind review round deliberately rides S1 — the probe pages are throwaway
+  > once the sitting closed, and S1's build re-verifies the contract table against source; S0 got
+  > the pinned-Opus build + a main-seat line audit + an independent gate re-run instead. (FE-only; owner-ratified early so the feel round runs on real
   dictation before the call exists):** the §6 dual-mode mic — the shared gesture hook +
   animations + the mic-mode leg live against today's `useDictation` (hold · lock · slide-left
   cancel · the 1000 ms floor · hints · the pointercancel promote-to-lock rule); call mode's
@@ -691,8 +776,14 @@ window.
 
 Still open:
 
-3. **Browser priority** — S0 probes both; if Fennec's AEC or permission story is bad, is
-   "Chrome for calls" an acceptable v1 posture (the web-push precedent)?
+3. ~~**Browser priority**~~ **ANSWERED BY S0 + RULED (owner, 2026-09-12): Chrome is the
+   first-class call browser.** Chrome's `"all"` AEC measured genuinely subtractive on the
+   owner's phone (playback cancelled, the owner's voice survives ⇒ voice barge-in viable);
+   Fennec's AEC measured INEFFECTIVE against the phone's own playback (near-full-volume leak),
+   so on Fennec `echo_workaround` resolves to the protective ear-hold — calls fully work,
+   interruption is tap-only there. The web-push precedent (Fennec expected-partial) applied
+   deliberately; capability-detected per track, never UA-sniffed; S3 builds the branch. Full
+   numbers + mechanism = the §7-S0 as-built record.
 4. ~~**A delta design round?**~~ **RAN (owner-ordered, 2026-09-12) — see §9's delta-round
    entry: SHIP WITH CHANGES, 4H·5M·2L, all eleven ACCEPTED and folded in place.**
 
