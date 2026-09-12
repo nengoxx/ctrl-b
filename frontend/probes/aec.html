@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>AEC probe — ctrl-b S0</title>
+    <!--
+      Phase 24 / LIVE_VOICE_PLAN §7-S0 device probe: does Chromium's `echoCancellation: "all"`
+      mode exist AND work on the owner's Honor 20, on Chrome and on Fennec?
+
+      Throwaway DEV TOOLING, not product UI: single self-contained file, no framework, no build
+      step, none of the repo's theme/VAPOR rules apply. Served by the Vite dev server at
+      /probes/aec.html; it is not a rollup input, so it never reaches dist/.
+
+      Shape follows R68 §3.3: getCapabilities()/getSettings() are the readback surfaces —
+      getSupportedConstraints() says nothing about the string modes. The acoustic leak test is the
+      only thing that answers "does it actually work on THIS hardware" (R68 §3.4).
+    -->
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d12;
+        --card: #161a22;
+        --line: #2a3140;
+        --fg: #e9edf5;
+        --dim: #97a3b6;
+        --ok: #4ade80;
+        --bad: #f87171;
+        --warn: #fbbf24;
+        --accent: #60a5fa;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 14px 14px 60px;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          17px/1.5 system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 4px 0 2px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 0 0 10px;
+        color: var(--accent);
+      }
+      .sub {
+        color: var(--dim);
+        font-size: 14px;
+        margin: 0 0 16px;
+      }
+      section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
+        margin: 0 0 14px;
+      }
+      button {
+        display: block;
+        width: 100%;
+        min-height: 56px;
+        margin: 8px 0;
+        padding: 12px 14px;
+        font:
+          600 17px/1.3 system-ui,
+          sans-serif;
+        color: #06121f;
+        background: var(--accent);
+        border: 0;
+        border-radius: 10px;
+      }
+      button:disabled {
+        opacity: 0.45;
+      }
+      button.alt {
+        background: #334155;
+        color: var(--fg);
+      }
+      dl {
+        margin: 0;
+        font-size: 15px;
+      }
+      dt {
+        color: var(--dim);
+        margin-top: 8px;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      dd {
+        margin: 2px 0 0;
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, monospace;
+      }
+      .out {
+        margin-top: 10px;
+        padding: 10px;
+        background: #0b0f16;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font:
+          14px/1.45 ui-monospace,
+          monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        min-height: 24px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .verdict {
+        font-size: 19px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+      ol {
+        padding-left: 22px;
+        margin: 6px 0 0;
+      }
+      li {
+        margin: 6px 0;
+      }
+      textarea {
+        width: 100%;
+        height: 190px;
+        background: #0b0f16;
+        color: var(--fg);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px;
+        font:
+          12px/1.4 ui-monospace,
+          monospace;
+      }
+      .prep {
+        border-left: 3px solid var(--warn);
+        padding-left: 10px;
+        color: var(--warn);
+        font-size: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AEC probe</h1>
+    <p class="sub">ctrl-b Phase 24 · S0 · does <code>echoCancellation:"all"</code> work here?</p>
+
+    <section>
+      <h2>1 · Environment</h2>
+      <dl id="env"></dl>
+      <button class="alt" id="reload-perm">Re-read permission state</button>
+    </section>
+
+    <section>
+      <h2>2 · Capability probe</h2>
+      <button id="probe-ideal">Probe ideal:"all"</button>
+      <button id="probe-exact">Probe exact:"all"</button>
+      <div class="out" id="cap-out">not run</div>
+    </section>
+
+    <section>
+      <h2>3 · Acoustic leak test</h2>
+      <p class="prep">
+        Before running: turn MEDIA volume up, make sure sound comes out of the MAIN speaker (not the
+        earpiece and not a Bluetooth headset), and stand in a quiet room. Each run is ~7 s of beeps.
+      </p>
+      <button id="run-a">Run A — control (AEC off) · must leak</button>
+      <button id="run-b">Run B — measured (echoCancellation ideal:"all")</button>
+      <button class="alt" id="run-both">Run both, back to back</button>
+      <div class="out" id="leak-out">not run</div>
+      <div class="out verdict" id="verdict">—</div>
+    </section>
+
+    <section>
+      <h2>4 · Fennec permission persistence</h2>
+      <ol>
+        <li>Grant the mic when asked (use “Remember this decision” if Fennec offers it).</li>
+        <li>Reload this page. Note whether section 1 still says <b>granted</b>, or re-prompts.</li>
+        <li>Close the tab, reopen <code>/probes/aec.html</code>. Note the state again.</li>
+        <li>Background the browser for a minute, come back, tap “Re-read permission state”.</li>
+      </ol>
+      <div class="out" id="perm-history">—</div>
+    </section>
+
+    <section>
+      <h2>5 · Result log</h2>
+      <textarea id="log" readonly></textarea>
+      <button class="alt" id="copy">Copy log</button>
+    </section>
+
+    <script>
+      // ---------------------------------------------------------------- log + small helpers
+      const logEl = document.getElementById("log");
+      const lines = [];
+      function log(obj) {
+        lines.push(JSON.stringify({ at: new Date().toISOString(), ...obj }));
+        logEl.value = lines.join("\n");
+      }
+      const $ = (id) => document.getElementById(id);
+      const show = (v) => (v === undefined ? "undefined" : JSON.stringify(v));
+
+      // ---------------------------------------------------------------- 1 · environment
+      const permHistory = [];
+      async function readPermission() {
+        // Firefox has historically rejected/thrown on the "microphone" name — never let that
+        // take the page down; an unsupported query is itself a finding.
+        try {
+          const st = await navigator.permissions.query({ name: "microphone" });
+          return st.state;
+        } catch (err) {
+          return "unsupported (" + err.name + ")";
+        }
+      }
+      async function renderEnv() {
+        const sc = navigator.mediaDevices?.getSupportedConstraints?.() ?? {};
+        const perm = await readPermission();
+        permHistory.push(new Date().toLocaleTimeString() + " → " + perm);
+        $("perm-history").textContent = permHistory.join("\n");
+        const rows = {
+          "user agent": navigator.userAgent,
+          "secure context": String(window.isSecureContext),
+          "mediaDevices present": String(!!navigator.mediaDevices),
+          "getSupportedConstraints().echoCancellation": show(sc.echoCancellation),
+          "microphone permission": perm,
+          "page loaded at": new Date().toLocaleString(),
+        };
+        $("env").innerHTML = Object.entries(rows)
+          .map(([k, v]) => "<dt>" + k + "</dt><dd>" + escapeHtml(v) + "</dd>")
+          .join("");
+        log({ probe: "env", ...rows });
+      }
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+      }
+      $("reload-perm").onclick = renderEnv;
+      renderEnv();
+
+      // ---------------------------------------------------------------- 2 · capability probe
+      async function capabilityProbe(mode) {
+        const constraint = mode === "exact" ? { exact: "all" } : { ideal: "all" };
+        const out = $("cap-out");
+        out.textContent = "requesting mic with echoCancellation: " + show(constraint) + " ...";
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: constraint },
+          });
+        } catch (err) {
+          // OverconstrainedError carries `.constraint` — the evidence for the Fennec/coercion
+          // question (R68 §3.4: a string in a ConstrainBoolean slot probably casts to `true`).
+          const rec = {
+            probe: "capability",
+            mode,
+            ok: false,
+            error: err.name,
+            constraint: err.constraint ?? null,
+            message: String(err.message || ""),
+          };
+          out.innerHTML = '<span class="bad">REJECTED</span>\n' + JSON.stringify(rec, null, 1);
+          log(rec);
+          return;
+        }
+        const track = stream.getAudioTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : undefined;
+        const rec = {
+          probe: "capability",
+          mode,
+          ok: true,
+          label: track.label,
+          getCapabilities_present: !!track.getCapabilities,
+          capabilities_echoCancellation: caps ? caps.echoCancellation : undefined,
+          settings_echoCancellation: track.getSettings().echoCancellation,
+          settings_all: track.getSettings(),
+        };
+        const got = rec.settings_echoCancellation;
+        const cls = got === "all" ? "ok" : "warn";
+        out.innerHTML =
+          '<span class="' +
+          cls +
+          '">getSettings().echoCancellation = ' +
+          show(got) +
+          "</span>\n" +
+          JSON.stringify(rec, null, 1);
+        log(rec);
+        stream.getTracks().forEach((t) => t.stop());
+      }
+      $("probe-ideal").onclick = () => capabilityProbe("ideal");
+      $("probe-exact").onclick = () => capabilityProbe("exact");
+
+      // ---------------------------------------------------------------- 3 · acoustic leak test
+      // The stimulus: three tones inside the speech band, summed, in a 500 ms on / 500 ms off
+      // pattern for 7 cycles. Played through an <audio> element on purpose — that is what C3's
+      // read-along uses, so this measures the path the real app will have (a bare oscillator
+      // wired to the AudioContext destination is a DIFFERENT path for Chromium's AEC).
+      const TONES = [700, 1100, 1700];
+      const CYCLE_S = 1.0;
+      const BURST_S = 0.5;
+      const CYCLES = 7;
+      const CLIP_RATE = 48000;
+
+      function toneBurstWavUrl() {
+        const n = Math.round(CLIP_RATE * CYCLE_S * CYCLES);
+        const pcm = new Int16Array(n);
+        const fade = Math.round(CLIP_RATE * 0.01);
+        for (let i = 0; i < n; i++) {
+          const t = i / CLIP_RATE;
+          const phase = t % CYCLE_S;
+          if (phase >= BURST_S) continue;
+          let env = 1;
+          const inBurst = Math.round(phase * CLIP_RATE);
+          const burstLen = Math.round(BURST_S * CLIP_RATE);
+          if (inBurst < fade) env = inBurst / fade;
+          else if (inBurst > burstLen - fade) env = (burstLen - inBurst) / fade;
+          let v = 0;
+          for (const f of TONES) v += Math.sin(2 * Math.PI * f * t);
+          pcm[i] = Math.max(
+            -32767,
+            Math.min(32767, Math.round((v / TONES.length) * 0.9 * 32767 * env)),
+          );
+        }
+        const bytes = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+        const ascii = (off, s) => {
+          for (let i = 0; i < s.length; i++) bytes.setUint8(off + i, s.charCodeAt(i));
+        };
+        ascii(0, "RIFF");
+        bytes.setUint32(4, 36 + pcm.length * 2, true);
+        ascii(8, "WAVEfmt ");
+        bytes.setUint32(16, 16, true);
+        bytes.setUint16(20, 1, true);
+        bytes.setUint16(22, 1, true);
+        bytes.setUint32(24, CLIP_RATE, true);
+        bytes.setUint32(28, CLIP_RATE * 2, true);
+        bytes.setUint16(32, 2, true);
+        bytes.setUint16(34, 16, true);
+        ascii(36, "data");
+        bytes.setUint32(40, pcm.length * 2, true);
+        for (let i = 0; i < pcm.length; i++) bytes.setInt16(44 + i * 2, pcm[i], true);
+        return URL.createObjectURL(new Blob([bytes.buffer], { type: "audio/wav" }));
+      }
+
+      // Goertzel: the cheapest way to ask "how much of exactly THIS frequency is in this window".
+      function goertzel(buf, rate, freq) {
+        const k = Math.round((buf.length * freq) / rate);
+        const w = (2 * Math.PI * k) / buf.length;
+        const coeff = 2 * Math.cos(w);
+        let s0 = 0,
+          s1 = 0,
+          s2 = 0;
+        for (let i = 0; i < buf.length; i++) {
+          s0 = buf[i] + coeff * s1 - s2;
+          s2 = s1;
+          s1 = s0;
+        }
+        return Math.sqrt(s1 * s1 + s2 * s2 - coeff * s1 * s2) / (buf.length / 2);
+      }
+      const db = (x) => 20 * Math.log10(Math.max(x, 1e-9));
+
+      async function leakRun(arm) {
+        const audioConstraints =
+          arm === "A"
+            ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+            : { echoCancellation: { ideal: "all" } };
+        const out = $("leak-out");
+        out.textContent = "run " + arm + ": opening mic ...";
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        const track = stream.getAudioTracks()[0];
+        const settings = track.getSettings();
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === "suspended") await ctx.resume();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 4096;
+        ctx.createMediaStreamSource(stream).connect(analyser);
+        const buf = new Float32Array(analyser.fftSize);
+        const winS = analyser.fftSize / ctx.sampleRate;
+
+        const audio = new Audio(toneBurstWavUrl());
+        audio.volume = 1;
+        const samples = [];
+
+        await audio.play();
+        out.textContent = "run " + arm + ": playing + measuring ~7 s ...";
+        await new Promise((resolve) => {
+          const timer = setInterval(() => {
+            if (audio.ended || audio.currentTime >= CYCLES * CYCLE_S - 0.05) {
+              clearInterval(timer);
+              resolve();
+              return;
+            }
+            analyser.getFloatTimeDomainData(buf);
+            let energy = 0;
+            for (const f of TONES) {
+              const m = goertzel(buf, ctx.sampleRate, f);
+              energy += m * m;
+            }
+            let sq = 0;
+            for (let i = 0; i < buf.length; i++) sq += buf[i] * buf[i];
+            const mid = audio.currentTime - winS / 2;
+            samples.push({
+              tone: Math.sqrt(energy),
+              rms: Math.sqrt(sq / buf.length),
+              phase: ((mid % CYCLE_S) + CYCLE_S) % CYCLE_S,
+            });
+          }, 40);
+        });
+
+        audio.pause();
+        URL.revokeObjectURL(audio.src);
+        stream.getTracks().forEach((t) => t.stop());
+        await ctx.close();
+
+        const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+        // PERCENTILE split, not a schedule split. Android's capture path lags playback by an
+        // unknown 100-300 ms, which would smear schedule-derived buckets across the burst edges
+        // and understate the control leak. The stimulus is 50 % duty cycle, so the loudest 30 %
+        // of windows are unambiguously inside bursts and the quietest 30 % unambiguously inside
+        // gaps — whatever the lag. The schedule figure is still computed, as a cross-check only.
+        const byTone = [...samples].sort((a, b) => a.tone - b.tone);
+        const n = byTone.length;
+        const cut = Math.max(1, Math.round(n * 0.3));
+        const loud = byTone.slice(n - cut);
+        const quiet = byTone.slice(0, cut);
+        const schedLoud = samples.filter((s) => s.phase > 0.15 && s.phase < 0.45);
+        const schedQuiet = samples.filter((s) => s.phase > 0.65 && s.phase < 0.95);
+        const toneOf = (a) => mean(a.map((s) => s.tone));
+        const rmsOf = (a) => mean(a.map((s) => s.rms));
+        const rec = {
+          probe: "leak",
+          arm,
+          requested: audioConstraints,
+          settings_echoCancellation: settings.echoCancellation,
+          settings_noiseSuppression: settings.noiseSuppression,
+          settings_autoGainControl: settings.autoGainControl,
+          track_label: track.label,
+          capture_rate: ctx.sampleRate,
+          windows: { total: n, loud: loud.length, quiet: quiet.length },
+          tone_burst_dbfs: +db(toneOf(loud)).toFixed(1),
+          tone_gap_dbfs: +db(toneOf(quiet)).toFixed(1),
+          broadband_burst_dbfs: +db(rmsOf(loud)).toFixed(1),
+          broadband_gap_dbfs: +db(rmsOf(quiet)).toFixed(1),
+          leak_db: +(db(toneOf(loud)) - db(toneOf(quiet))).toFixed(1),
+          leak_db_by_schedule: +(db(toneOf(schedLoud)) - db(toneOf(schedQuiet))).toFixed(1),
+        };
+        log(rec);
+        out.innerHTML =
+          "run " +
+          arm +
+          " · echoCancellation in effect during the run: <b>" +
+          show(rec.settings_echoCancellation) +
+          "</b>\nleak = <b>" +
+          rec.leak_db +
+          " dB</b> (tone during bursts " +
+          rec.tone_burst_dbfs +
+          " dBFS vs " +
+          rec.tone_gap_dbfs +
+          " dBFS in the gaps)\n" +
+          JSON.stringify(rec, null, 1);
+        return rec;
+      }
+
+      let runA = null;
+      let runB = null;
+      function renderVerdict() {
+        const v = $("verdict");
+        if (!runA) {
+          v.innerHTML = '<span class="warn">Run A (the control) has not run — no verdict.</span>';
+          return;
+        }
+        if (runA.leak_db < 6) {
+          v.innerHTML =
+            '<span class="bad">RIG BROKEN — the control arm leaked only ' +
+            runA.leak_db +
+            " dB. The mic is not hearing the speaker at all (media volume down? earpiece/Bluetooth" +
+            " route? mic covered?). Any “no leak” result from run B is VACUOUS until this shows a" +
+            " strong leak.</span>";
+          log({ probe: "verdict", rig: "broken", control_leak_db: runA.leak_db });
+          return;
+        }
+        if (!runB) {
+          v.innerHTML =
+            '<span class="ok">Control leaks ' +
+            runA.leak_db +
+            " dB — the rig works.</span> Now run B.";
+          return;
+        }
+        const removed = +(runA.leak_db - runB.leak_db).toFixed(1);
+        const cls = removed >= 12 ? "ok" : removed >= 6 ? "warn" : "bad";
+        v.innerHTML =
+          '<span class="' +
+          cls +
+          '">Control leak ' +
+          runA.leak_db +
+          " dB · AEC leak " +
+          runB.leak_db +
+          " dB → AEC removed ~" +
+          removed +
+          " dB.</span><br><small>AEC mode actually in effect during run B: <b>" +
+          show(runB.settings_echoCancellation) +
+          "</b></small>";
+        log({
+          probe: "verdict",
+          control_leak_db: runA.leak_db,
+          aec_leak_db: runB.leak_db,
+          removed_db: removed,
+          aec_mode_in_effect: runB.settings_echoCancellation,
+        });
+      }
+
+      async function guarded(fn) {
+        const buttons = [...document.querySelectorAll("button")];
+        buttons.forEach((b) => (b.disabled = true));
+        try {
+          await fn();
+        } catch (err) {
+          $("leak-out").innerHTML =
+            '<span class="bad">' + err.name + ": " + err.message + "</span>";
+          log({ probe: "leak", error: err.name, message: String(err.message || "") });
+        } finally {
+          buttons.forEach((b) => (b.disabled = false));
+        }
+      }
+      $("run-a").onclick = () =>
+        guarded(async () => {
+          runA = await leakRun("A");
+          renderVerdict();
+        });
+      $("run-b").onclick = () =>
+        guarded(async () => {
+          runB = await leakRun("B");
+          renderVerdict();
+        });
+      $("run-both").onclick = () =>
+        guarded(async () => {
+          runA = await leakRun("A");
+          await new Promise((r) => setTimeout(r, 1200));
+          runB = await leakRun("B");
+          renderVerdict();
+        });
+
+      // ---------------------------------------------------------------- 5 · copy
+      $("copy").onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(logEl.value);
+          $("copy").textContent = "Copied";
+        } catch {
+          logEl.select();
+          $("copy").textContent = "Select-all done — copy manually";
+        }
+        setTimeout(() => ($("copy").textContent = "Copy log"), 2000);
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Gesture probe — ctrl-b S0</title>
+    <!--
+      Phase 24 / LIVE_VOICE_PLAN §7-S0, buying R69 §11's owed device probes on the owner's phone:
+        · pointercancel incidence during a CAPTURED hold+slide,
+        · whether `touch-action: none` survives the address-bar collapse gesture,
+        · whether the long-press selection magnifier still appears over a protected button.
+
+      Throwaway DEV TOOLING, not product UI: single self-contained file, no framework, no build
+      step, none of the repo's theme/VAPOR rules apply. Served by the Vite dev server at
+      /probes/gesture.html; not a rollup input, so it never reaches dist/.
+
+      Geometry is sized off R69 §1.3/§1.4: lock = 56 px of upward travel, cancel ≈ 126 px of
+      leftward travel at a 360 px viewport. The rulers on the targets mark both.
+    -->
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d12;
+        --card: #161a22;
+        --line: #2a3140;
+        --fg: #e9edf5;
+        --dim: #97a3b6;
+        --bad: #f87171;
+        --ok: #4ade80;
+        --accent: #60a5fa;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          17px/1.5 system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      .page {
+        /* Deliberately tall: the address bar only collapses if the page actually scrolls, and
+           that collapse is half of what this probe is here to catch. */
+        min-height: 300vh;
+        padding: 14px 14px 320px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 4px 0 2px;
+      }
+      .sub {
+        color: var(--dim);
+        font-size: 14px;
+        margin: 0 0 14px;
+      }
+      section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
+        margin: 0 0 14px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 0 0 8px;
+        color: var(--accent);
+      }
+      ol {
+        padding-left: 22px;
+        margin: 6px 0 0;
+      }
+      li {
+        margin: 8px 0;
+      }
+      .marker {
+        margin: 40vh 0;
+        text-align: center;
+        color: var(--dim);
+        font:
+          700 15px ui-monospace,
+          monospace;
+        border-top: 1px dashed var(--line);
+        padding-top: 8px;
+      }
+      textarea {
+        width: 100%;
+        height: 170px;
+        background: #0b0f16;
+        color: var(--fg);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px;
+        font:
+          12px/1.4 ui-monospace,
+          monospace;
+      }
+      button.plain {
+        display: block;
+        width: 100%;
+        min-height: 52px;
+        margin: 8px 0 0;
+        font:
+          600 17px system-ui,
+          sans-serif;
+        color: var(--fg);
+        background: #334155;
+        border: 0;
+        border-radius: 10px;
+      }
+
+      /* ---- the fixed composer-position bar: where a real mic button lives ---- */
+      .bar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+        background: #10141c;
+        border-top: 1px solid var(--line);
+        z-index: 10;
+      }
+      .live {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px 10px;
+        font:
+          13px/1.2 ui-monospace,
+          monospace;
+        color: var(--dim);
+        margin-bottom: 8px;
+      }
+      .live b {
+        display: block;
+        font-size: 22px;
+        color: var(--fg);
+      }
+      .live .cancel b {
+        color: var(--bad);
+      }
+      .targets {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .tgt {
+        width: 48px;
+        height: 48px;
+        min-width: 48px;
+        border-radius: 50%;
+        border: 0;
+        display: grid;
+        place-items: center;
+        font:
+          700 18px system-ui,
+          sans-serif;
+        color: #06121f;
+      }
+      /* TARGET A — the production posture (R69 §9: touch-action none, user-select none,
+         contextmenu prevented, pointer capture on down). */
+      #tgt-a {
+        background: var(--ok);
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+      }
+      /* TARGET B — the CONTROL. Identical to A (pointer capture, user-select:none) EXCEPT the two
+         variables under test: no `touch-action`, and its contextmenu is not prevented. Single
+         variable pair on purpose; the selection/magnifier comparison is C's job, not B's. */
+      #tgt-b {
+        background: var(--accent);
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      #tgt-c {
+        flex: 1;
+        font:
+          15px/1.25 system-ui,
+          sans-serif;
+        color: var(--fg);
+      }
+      .armed {
+        outline: 3px solid #fff;
+      }
+      .hint {
+        font:
+          12px/1.3 ui-monospace,
+          monospace;
+        color: var(--dim);
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Gesture probe</h1>
+      <p class="sub">
+        ctrl-b Phase 24 · S0 · R69 §11 device probes — hold the circles in the bar below
+      </p>
+
+      <section>
+        <h2>What to do</h2>
+        <ol>
+          <li>
+            Hold <b>A</b> (green) and slide <b>UP</b> slowly past ~60 px, then release. Expect: no
+            <span style="color: var(--bad)">pointercancel</span>, scrollΔ 0, viewportΔ 0.
+          </li>
+          <li>Hold <b>A</b> and slide <b>LEFT</b> ~100 px, then release. Same expectation.</li>
+          <li>Hold <b>A</b> and drag up/down repeatedly as if trying to scroll the page.</li>
+          <li>
+            Repeat ①–③ on <b>B</b> (blue, unprotected). Expect cancels and/or the page scrolling
+            under your finger and the address bar moving.
+          </li>
+          <li>
+            Long-press <b>A</b> for 2 s, then long-press the text <b>C</b> for 2 s. Note which one
+            pops the selection magnifier / context menu, and write it down.
+          </li>
+          <li>
+            Do at least one gesture on A while the address bar is EXPANDED (scroll to the top
+            first).
+          </li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Environment</h2>
+        <div class="hint" id="env"></div>
+      </section>
+
+      <section>
+        <h2>Gesture log</h2>
+        <textarea id="log" readonly></textarea>
+        <button class="plain" id="copy">Copy log</button>
+        <button class="plain" id="reset">Reset counters + log</button>
+      </section>
+
+      <div class="marker">— scroll marker 1 —</div>
+      <div class="marker">— scroll marker 2 —</div>
+      <div class="marker">— scroll marker 3 —</div>
+      <div class="marker">— bottom of the tall page —</div>
+    </div>
+
+    <div class="bar">
+      <div class="live">
+        <div class="cancel">pointercancel<b id="c-cancel">0</b></div>
+        <div>lostcapture<b id="c-lost">0</b></div>
+        <div>pointerup<b id="c-up">0</b></div>
+        <div>max |dx|<b id="c-dx">0</b></div>
+        <div>max |dy|<b id="c-dy">0</b></div>
+        <div>hold ms<b id="c-ms">0</b></div>
+        <div>scrollΔ<b id="c-scroll">0</b></div>
+        <div>viewportΔ<b id="c-vv">0</b></div>
+        <div>target<b id="c-tgt">—</b></div>
+      </div>
+      <div class="targets">
+        <button class="tgt" id="tgt-a">A</button>
+        <button class="tgt" id="tgt-b">B</button>
+        <div id="tgt-c">C — plain selectable text, long-press me to compare the magnifier.</div>
+      </div>
+      <div class="hint">
+        A = touch-action:none + user-select:none + contextmenu prevented + pointer capture. B =
+        control, no protections. Lock ref 56 px up · cancel ref ~126 px left (R69 §1.3/§1.4).
+      </div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const logEl = $("log");
+      const lines = [];
+      function log(obj) {
+        lines.push(JSON.stringify({ at: new Date().toISOString().slice(11, 23), ...obj }));
+        logEl.value = lines.join("\n");
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      const totals = { cancel: 0, lost: 0, up: 0 };
+      function paint(g) {
+        $("c-cancel").textContent = totals.cancel;
+        $("c-lost").textContent = totals.lost;
+        $("c-up").textContent = totals.up;
+        $("c-dx").textContent = g ? Math.round(g.maxDx) : 0;
+        $("c-dy").textContent = g ? Math.round(g.maxDy) : 0;
+        $("c-ms").textContent = g ? Math.round(g.ms) : 0;
+        $("c-scroll").textContent = g ? Math.round(g.scrollDelta) : 0;
+        $("c-vv").textContent = g ? Math.round(g.vvDelta) : 0;
+        $("c-tgt").textContent = g ? g.target : "—";
+      }
+
+      const vvH = () => (window.visualViewport ? window.visualViewport.height : innerHeight);
+
+      function wire(el, name, protectedTarget) {
+        let g = null;
+        el.addEventListener("pointerdown", (e) => {
+          g = {
+            target: name,
+            protected: protectedTarget,
+            pointerType: e.pointerType,
+            t0: performance.now(),
+            x0: e.clientX,
+            y0: e.clientY,
+            scroll0: window.scrollY,
+            vv0: vvH(),
+            maxDx: 0,
+            maxDy: 0,
+            ms: 0,
+            scrollDelta: 0,
+            vvDelta: 0,
+            captured: false,
+            events: [],
+          };
+          try {
+            el.setPointerCapture(e.pointerId);
+            g.captured = true;
+          } catch (err) {
+            g.captureError = err.name;
+          }
+          el.classList.add("armed");
+          g.events.push("down");
+          paint(g);
+        });
+
+        el.addEventListener("pointermove", (e) => {
+          if (!g) return;
+          g.maxDx = Math.max(g.maxDx, Math.abs(e.clientX - g.x0));
+          g.maxDy = Math.max(g.maxDy, Math.abs(e.clientY - g.y0));
+          g.ms = performance.now() - g.t0;
+          // The two environment signals R69 §11 actually asked for: did the PAGE move, and did
+          // the ADDRESS BAR move, while we held a captured pointer?
+          g.scrollDelta = window.scrollY - g.scroll0;
+          g.vvDelta = vvH() - g.vv0;
+          paint(g);
+        });
+
+        const finish = (kind) => (e) => {
+          if (!g) return;
+          g.ms = performance.now() - g.t0;
+          g.scrollDelta = window.scrollY - g.scroll0;
+          g.vvDelta = vvH() - g.vv0;
+          g.events.push(kind);
+          totals[
+            kind === "pointercancel" ? "cancel" : kind === "lostpointercapture" ? "lost" : "up"
+          ]++;
+          el.classList.remove("armed");
+          paint(g);
+          if (kind !== "lostpointercapture") {
+            log({
+              gesture: name,
+              protected: protectedTarget,
+              end: kind,
+              pointerType: g.pointerType,
+              captured: g.captured,
+              captureError: g.captureError || null,
+              hold_ms: Math.round(g.ms),
+              max_dx: Math.round(g.maxDx),
+              max_dy: Math.round(g.maxDy),
+              scroll_delta: Math.round(g.scrollDelta),
+              visual_viewport_delta: Math.round(g.vvDelta),
+              address_bar_moved: Math.abs(g.vvDelta) > 1,
+              events: g.events.join(","),
+              running_totals: { ...totals },
+            });
+            g = null;
+          }
+        };
+        el.addEventListener("pointerup", finish("pointerup"));
+        el.addEventListener("pointercancel", finish("pointercancel"));
+        el.addEventListener("lostpointercapture", finish("lostpointercapture"));
+
+        if (protectedTarget) {
+          el.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            log({ gesture: name, note: "contextmenu FIRED and was preventDefault()ed" });
+          });
+        } else {
+          el.addEventListener("contextmenu", () =>
+            log({ gesture: name, note: "contextmenu fired (control, not prevented)" }),
+          );
+        }
+      }
+
+      wire($("tgt-a"), "A (protected)", true);
+      wire($("tgt-b"), "B (control)", false);
+      $("tgt-c").addEventListener("contextmenu", () =>
+        log({ gesture: "C (plain text)", note: "contextmenu fired on the text line" }),
+      );
+
+      document.addEventListener("selectionchange", () => {
+        const sel = String(document.getSelection() || "");
+        if (sel.trim())
+          log({ note: "text selected during a gesture", selection: sel.slice(0, 60) });
+      });
+
+      $("env").textContent =
+        navigator.userAgent +
+        "\ndevicePixelRatio " +
+        devicePixelRatio +
+        " · innerWidth " +
+        innerWidth +
+        " · visualViewport " +
+        (window.visualViewport ? Math.round(window.visualViewport.height) : "n/a") +
+        " · maxTouchPoints " +
+        navigator.maxTouchPoints;
+
+      $("reset").onclick = () => {
+        totals.cancel = totals.lost = totals.up = 0;
+        lines.length = 0;
+        logEl.value = "";
+        paint(null);
+      };
+      $("copy").onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(logEl.value);
+          $("copy").textContent = "Copied";
+        } catch {
+          logEl.select();
+          $("copy").textContent = "Select-all done — copy manually";
+        }
+        setTimeout(() => ($("copy").textContent = "Copy log"), 2000);
+      };
+      paint(null);
+    </script>
+  </body>
+</html>
