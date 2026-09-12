@@ -60,8 +60,9 @@
   gate).** One slice per session, the standing cadence; §8.3 (Fennec posture) stays the one
   open question, answered empirically by S0.
 - **Phase 23 S7 unchanged:** the remainder rides the owner's regular use (lorebook
-  live-trigger + duties×2); the v1.7.8 release (item E, config migration 2→3, config backup
-  FIRST on rollback) stays owed and owner-sequenced.
+  live-trigger + duties×2). **v1.7.8 SEQUENCED (owner ruling 2026-09-12): the release (item
+  E, config migration 2→3, config backup FIRST on rollback) comes AFTER the roleplay
+  features are implemented** — it waits on Phase 23's close, not on a calendar.
 
 ## Prior state (2026-09-11, THIRTEENTH session — **S7 mostly ticked + the card-import leg delegated and PASSED · Dependabot D1 done · THE LIVE-VOICE DESIGN SESSION RAN END TO END: `LIVE_VOICE_PLAN.md` council-closed SHIP WITH CHANGES, awaiting the owner's ratification → D71 · everything PUSHED**; superseded above where it speaks)
 
