@@ -471,11 +471,12 @@ export function useDictation({
         void upload(rec.mimeType || "audio/webm");
       };
       rec.onerror = () => {
-        if (recRef.current === rec) recRef.current = null; // ownership ends here too (F2)
-        // F4 — an `error` is NOT the end of the event stream: browsers may still deliver the final
-        // `dataavailable` and `stop` afterwards, and that `onstop` must not upload the failed partial
-        // clip. The existing discard branch is exactly the path for "a clip that must not be sent", so
-        // the error arms it rather than growing a second suppression rule.
+        // OWNERSHIP IS DELIBERATELY NOT RELEASED HERE (the confirm round's sweep): an `error` is not
+        // the end of the event stream — the platform's inactivate steps fire the final `dataavailable`
+        // and `stop` AFTER it, and releasing early would let a new `start()` reset the shared
+        // discard/chunks/stamp that late `onstop` is about to read. The `onstop` above stays the ONE
+        // releasing terminal; what the error arms is the discard flag (F4), which makes that `onstop`
+        // a clean no-upload close-out.
         discardRef.current = true;
         teardownDetector();
         stream.getTracks().forEach((t) => t.stop());

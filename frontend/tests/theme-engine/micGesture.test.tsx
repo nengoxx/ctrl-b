@@ -452,6 +452,25 @@ describe("call mode is UNREACHABLE until the `live` bit exists (ruling 5)", () =
     expect(chip()).toBeNull(); // gone with the mode — there is no tap left to commit a call
     expect(mic().getAttribute("aria-label")).toBe("start dictation");
   });
+
+  it("`live` dropping during a call-mode PRESS never re-enters call mode (confirm sweep)", async () => {
+    // The press SNAPSHOTS its mode, so escaping only callArm/chip left a hole: the still-armed
+    // activation timer would carry a call-mode press straight into `callArm` after the bit fell —
+    // and its release could still raise the chip. A call-mode press is closed with the rest.
+    voice.live = true;
+    const { rerender } = render(<KitComposer />);
+    down();
+    up(); // tap → call mode
+    await tick(10);
+    down(); // a call-mode press, inside the 150 ms activation window
+    voice.live = false; // the bit falls mid-press
+    rerender(<KitComposer />);
+    await tick(ACTIVATE_MS + 10); // the timer fires — into an already-escaped machine
+    up();
+    await tick(10);
+    expect(chip()).toBeNull(); // no chip: the release landed on an idle machine
+    expect(mic().className).not.toContain("rec"); // and nothing recorded either
+  });
 });
 
 describe("all three variants carry the same contract", () => {

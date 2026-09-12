@@ -310,6 +310,39 @@ describe("useDictation · the gesture verbs (S0.5)", () => {
     expect(getDraft()).toBe("");
     expect(result.current.status).toBe("idle");
   });
+
+  it("an errored recorder still OWNS the lifecycle until its queued `stop` lands (confirm sweep)", async () => {
+    // `onerror` must NOT release `recRef`: the platform's inactivate steps fire the final
+    // `dataavailable`/`stop` AFTER the error, so a `start()` admitted between the two would reset the
+    // shared discard/chunks/stamp the late `onstop` is about to read — reopening the exact F2/F4 race.
+    // The error arms the discard flag; the following `onstop` is the ONE releasing terminal.
+    FakeMediaRecorder.deferStop = true;
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await act(async () => {
+      await result.current.start(); // A
+    });
+    const a = FakeMediaRecorder.last!;
+    await act(async () => {
+      a.onerror?.(); // the failure — A's terminal events are still queued
+    });
+    let armed: boolean | undefined;
+    await act(async () => {
+      armed = await result.current.start(); // B, between A's error and A's stop
+    });
+    expect(armed).toBe(false); // refused: the errored recorder still owns the lifecycle
+    expect(FakeMediaRecorder.last).toBe(a);
+    await act(async () => {
+      a.stop();
+      a.flush(); // A's queued terminal events finally land
+      await Promise.resolve();
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // the failed clip stayed discarded (F4)
+    await act(async () => {
+      armed = await result.current.start(); // the terminal `onstop` released ownership
+    });
+    expect(armed).toBe(true);
+    expect(FakeMediaRecorder.last).not.toBe(a);
+  });
 });
 
 // --- R51 Tier 0: auto-stop dictation --------------------------------------------------------------

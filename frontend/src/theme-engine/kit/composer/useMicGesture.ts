@@ -687,12 +687,14 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
   // Call mode is offered only while the `live` bit is up; if it goes down under us, fall back to mic —
   // and CLOSE anything call mode had in flight first (F5). Repainting the mode alone would leave a
   // `callArm` still committing on release, or a standing chip still tappable, into a call the backend
-  // just said it cannot take. `escape` is the existing signal for exactly this (both stages fold to
-  // MIC_IDLE with no outcomes), so no new reducer vocabulary is needed.
+  // just said it cannot take. `escape` is the existing signal for exactly this (every closed stage
+  // folds to MIC_IDLE with no outcomes), so no new reducer vocabulary is needed. A call-mode `press`
+  // is in the list too (the confirm round's sweep): its SNAPSHOTTED mode would otherwise carry the
+  // still-armed activation timer straight into `callArm` after the bit fell.
   useEffect(() => {
     if (live) return;
-    const stage = stateRef.current.stage;
-    if (stage === "callArm" || stage === "chip") {
+    const s = stateRef.current;
+    if (s.stage === "callArm" || s.stage === "chip" || (s.stage === "press" && s.mode === "call")) {
       clearTimeout(chipTimer.current);
       send({ type: "escape" });
     }
