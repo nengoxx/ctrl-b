@@ -72,6 +72,19 @@ async function tick(ms = 0) {
   });
 }
 
+/** jsdom lays nothing out — a stubbed rect is how a test states where an element sits. */
+const rect = (left: number, top: number, width: number, height: number): DOMRect => ({
+  left,
+  top,
+  width,
+  height,
+  right: left + width,
+  bottom: top + height,
+  x: left,
+  y: top,
+  toJSON: () => ({}),
+});
+
 function down(x = X0, y = Y0) {
   fireEvent.pointerDown(mic(), { pointerId: PID, button: 0, clientX: x, clientY: y });
 }
@@ -260,6 +273,20 @@ describe("Esc + the keyboard door (R69 §8.1/risk 5)", () => {
     expect(hint()).toBe("Hold to record"); // it taught the gesture instead
   });
 
+  it("a keyboard start MEASURES the anchor — the chrome must not paint at the host's 0,0", async () => {
+    // A keyboard session never runs `onPointerDown`, the only other place `measure` lives — without
+    // this, the locked circle + CANCEL twin of a keyboard-first session land at the host's top-left
+    // (main-seat audit F-B).
+    render(<KitComposer />);
+    const host = document.querySelector<HTMLElement>(".mic-gesture")!;
+    mic().getBoundingClientRect = () => rect(340, 690, 32, 32);
+    host.getBoundingClientRect = () => rect(0, 400, 393, 452);
+    fireEvent.click(mic());
+    await tick(10);
+    expect(host.style.getPropertyValue("--mg-x")).toBe("356px"); // 340 + 32/2 − 0
+    expect(host.style.getPropertyValue("--mg-y")).toBe("306px"); // 690 + 32/2 − 400
+  });
+
   it("…and the swallow expires, so the next keyboard activation still works", async () => {
     render(<KitComposer />);
     down();
@@ -337,6 +364,27 @@ describe("call mode is UNREACHABLE until the `live` bit exists (ruling 5)", () =
     expect(chip()?.textContent).toBe("Start call");
     await tick(CHIP_MS + 10);
     expect(chip()).toBeNull(); // it expires on its own
+  });
+
+  it("while the chip stands the BUTTON is inert — only the chip's own tap remains (§6)", async () => {
+    voice.live = true;
+    render(<KitComposer />);
+    down();
+    up(); // tap → call mode
+    await tick(10);
+    await hold(); // call-mode hold, released short of the threshold → the chip
+    up();
+    await tick(0);
+    expect(chip()).not.toBeNull();
+    // §6: "the button inert until the chip expires" — a press on the mic starts nothing and the
+    // chip keeps standing (main-seat audit F-A; the pinned machine arm is its reducer twin).
+    down();
+    await tick(ACTIVATE_MS + 10);
+    expect(mic().className).not.toContain("rec");
+    expect(chip()).not.toBeNull();
+    up();
+    await tick(10);
+    expect(chip()).not.toBeNull(); // it still ends only by its own tap or expiry
   });
 });
 

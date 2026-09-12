@@ -255,13 +255,16 @@ describe("micReduce · call mode commits on RELEASE (the recorded deviation)", (
     expect(out).toEqual(["callCommit"]);
   });
 
-  it("releasing short of it leaves a standing chip, which OWNS the next tap", () => {
+  it("releasing short of it leaves a standing chip — and the BUTTON is inert while it stands", () => {
+    // LIVE_VOICE_PLAN §6: the chip "owns its tap (= start call, the button inert until the chip
+    // expires)" — starting the call is the chip's OWN click (`onChipTap`), never the mic button's
+    // pointer, and never a down-event (the no-down-event-commits rule).
     const parked = run(down(300, 700, "call"), { type: "activate" }, up(900));
     expect(parked.out).toEqual(["callChip"]);
     expect(parked.state.stage).toBe("chip");
-    const tapped = micReduce(parked.state, down(300, 700, "call"));
-    expect(tapped.out).toEqual(["callCommit"]);
-    expect(tapped.state.stage).toBe("idle");
+    const pressed = micReduce(parked.state, down(300, 700, "call"));
+    expect(pressed.out).toEqual([]);
+    expect(pressed.state.stage).toBe("chip"); // still standing — only expiry or the chip's tap ends it
   });
 
   it("the chip expires back to idle on its own", () => {

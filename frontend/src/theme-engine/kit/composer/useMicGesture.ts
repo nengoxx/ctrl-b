@@ -246,9 +246,11 @@ const step = (state: MicGestureState, ...out: MicOut[]): MicStep => ({ state, ou
 export function micReduce(s: MicGestureState, sig: MicSignal): MicStep {
   switch (sig.type) {
     case "down":
-      // The STANDING CHIP owns its tap: while it is up the button starts the call rather than
-      // beginning a new gesture (LIVE_VOICE_PLAN §6).
-      if (s.stage === "chip") return step(MIC_IDLE, "callCommit");
+      // While the STANDING CHIP is up, the BUTTON IS INERT (LIVE_VOICE_PLAN §6's exact words: the
+      // chip "owns its tap (= start call, the button inert until the chip expires)"): starting the
+      // call belongs to the chip's OWN tap (`onChipTap`, a real button committing on click), never
+      // to this pointer's down-event — the same no-down-event-commits rule `locked` honors below.
+      if (s.stage === "chip") return step(s);
       // A LOCKED recording owns its tap too — but the tap completes on the UP event (WCAG 2.5.2's
       // "no down-event"), so a fresh pointer is merely adopted here.
       if (s.stage === "locked") return step({ ...s, pid: sig.pid });
@@ -611,18 +613,25 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
    * assistive-technology "click" action — which runs the current mode toggle-style: exactly the
    * Telegram-Web degradation R69 §8.1 verified as the shipped alternative (tap-toggle + Esc, no hold).
    */
-  const onClick = useCallback(() => {
-    if (pointerSession.current) return;
-    if (modeRef.current === "call") {
-      startCall();
-      return;
-    }
-    if (micRef.current.status === "recording") {
-      send({ type: "keyStop" });
-      return;
-    }
-    send({ type: "keyStart" });
-  }, [send, startCall]);
+  const onClick = useCallback(
+    (e: ReactMouseEvent<HTMLButtonElement>) => {
+      if (pointerSession.current) return;
+      if (modeRef.current === "call") {
+        startCall();
+        return;
+      }
+      if (micRef.current.status === "recording") {
+        send({ type: "keyStop" });
+        return;
+      }
+      // A keyboard session never ran `onPointerDown`, so the anchor was never measured — and the
+      // locked circle + CANCEL twin about to paint position off it. Measure from the activating
+      // button, or the chrome lands at the host's 0,0 (main-seat audit F-B).
+      measure(e.currentTarget);
+      send({ type: "keyStart" });
+    },
+    [send, startCall, measure],
+  );
 
   // ESC CANCELS while a recording is up (R69 §8.1's other half — Telegram Web's `captureEscKeyListener`).
   const gesturing = state.stage !== "idle";
