@@ -793,7 +793,7 @@ body[data-perf="lite"] .kit-composer {
   border: 1px solid var(--line-2);
   color: var(--text-2);
   /* border-color + transform ride the same --dur-fast as the fill (R52 cut-down #1): the rec/sending
-   * chip's ring used to SNAP while its background faded, and `.mic.press`'s scale snapped both
+   * chip's ring used to SNAP while its background faded, and `.mic.pressing`'s scale snapped both
    * directions — the state chrome now moves as one. */
   transition:
     background var(--dur-fast) var(--ease-std),
@@ -811,11 +811,29 @@ body[data-perf="lite"] .kit-composer {
 .kit-cbtn svg {
   display: block;
 }
+/* THE GESTURE POSTURE (Phase 24 / S0.5 — R69 §5.3/§6 [V], device-probed on the owner's phone at S0).
+ * `touch-action: none` is the SPEC'S ONLY defence against the scroller stealing a swipe-up: viewport
+ * panning is deliberately not a default action of pointer events, so `preventDefault()` cannot stop it,
+ * and the property is evaluated at hit-test time on `pointerdown` — which is why it is STATIC here and
+ * is never toggled from JS (R69 risk 11). The S0 probes measured what it buys: WITHOUT it Chrome
+ * cancelled the gesture within ~1 s at ~9 px of drift (4/4) and Fennec once scrolled 88 px mid-gesture;
+ * WITH it, plus capture and the two rules below, both browsers produced ZERO `pointercancel` over 12
+ * gestures including a 10.7 s hold. `user-select` keeps the selection handles and the magnifier away
+ * from a control that is held down (the contextmenu half is `preventDefault`ed in the hook). */
+.kit-cbtn.mic {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
 .kit-cbtn.mic.rec {
   color: var(--danger);
   border-color: color-mix(in oklch, var(--danger) 40%, transparent);
 }
-.kit-cbtn.mic.press {
+/* THE PRESS — still a JS-toggled class rather than CSS `:active` (Fennec leaves `:active` wedged after
+ * a tap), but since S0.5 it is a STAGE of the gesture machine (`composer/useMicGesture`: `press`, the
+ * 150 ms window before a hold becomes a recording) rather than a 200 ms timer of its own. Renamed with
+ * the wiring that owns it. */
+.kit-cbtn.mic.pressing {
   transform: scale(0.92);
 }
 .kit-cbtn.mic.unavail {
@@ -1478,6 +1496,212 @@ body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
   height: 36px;
 }
 
+/* ── composer · THE MIC GESTURE'S CHROME (Phase 24 / S0.5 — LIVE_VOICE_PLAN §6, D71) ────────────────
+ * The record circle, the slide-to-cancel track, the lock/call rail, the locked CANCEL button, the
+ * standing call chip and the hints — one set of rules for all THREE layouts and all FOUR composer
+ * skins, because nothing here is positioned off a layout: every rule anchors to `--mg-x`/`--mg-y`/
+ * `--mg-size`, the mic button's measured centre and diameter, published by `useMicGesture` in this
+ * host's own coordinates.
+ *
+ * THE HOST IS A SIBLING OF `.kit-composer`, NOT A CHILD — measured, not assumed (Chromium 390x844, the
+ * real app): `.kit-composer.sheet` and `.kit-composer.line` compute `overflow: hidden`, and a probe
+ * child 60px above (or 30px right of) the bar was NOT hit-testable in either, while the stacked bar's
+ * `overflow: visible` returned it. The 2.2x circle and the lock rail live outside the bar's box by
+ * construction, so a child would be sliced in two layouts of three. It spans `.kit-main` and is inert
+ * (`pointer-events: none`) except for the two TAP TWINS, which opt back in.
+ *
+ * MOTION (R69 §9 [V], Telegram's verbatim curves; §14.11: transform/opacity only, nothing filtered,
+ * nothing that lays out). These four numbers are the JS-side parameter table's counterpart and live
+ * here because CSS cannot read it:
+ *   · grow        300ms cubic-bezier(0, 0, 0, 1) to 2.2x  (R69 §1.6: 19dp -> 41dp, DecelerateInterpolator)
+ *   · lock snap   250ms cubic-bezier(.23, 1, .32, 1)      (R69 §1.4: EASE_OUT_QUINT, verbatim)
+ *   · cancel/exit 200ms cubic-bezier(.42, 0, .58, 1)      (R69 §1.6: EASE_BOTH)
+ *   · fades       150ms                                   (R69 §1.6/§2; M3 `short3`)
+ * Reduced motion routes through the EXISTING `body[data-motion]` axis (the UIState/Appearance switch),
+ * never a raw `@media (prefers-reduced-motion)` — the standing house rule and R69 risk 10. Every state
+ * below stays fully readable with the motion gone: the circle is simply already grown. */
+.mic-gesture {
+  position: absolute;
+  inset: 0;
+  /* above the composer (z-index 4) and the plan sheet (3): the grown circle paints OVER the bar it
+   * grew out of. Inert, so every tap still reaches the mic button underneath. */
+  z-index: 6;
+  pointer-events: none;
+}
+.mic-gesture > * {
+  position: absolute;
+}
+
+/* ① THE RECORD CIRCLE. Two boxes on purpose: the OUTER carries the live drag (translate + Telegram's
+ * shrink-toward-cancel, both written inline per frame), the INNER runs the grow keyframe — so the
+ * finger's travel and the animation never fight over the same `transform`. */
+.mg-circle {
+  left: var(--mg-x);
+  top: var(--mg-y);
+  width: var(--mg-size);
+  height: var(--mg-size);
+  margin-left: calc(var(--mg-size) / -2);
+  margin-top: calc(var(--mg-size) / -2);
+  display: grid;
+  place-items: center;
+}
+.mg-grow {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--accent-ink);
+  animation: mg-grow 300ms cubic-bezier(0, 0, 0, 1) forwards;
+}
+@keyframes mg-grow {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(2.2);
+  }
+}
+body[data-motion="reduced"] .mg-grow {
+  animation: none;
+  transform: scale(2.2); /* §14.11: the affordance is STATE, not decoration — it still has to be there */
+}
+
+/* ② THE RAIL — the "slide up" affordance, following the finger 1:1 (no transition on the base rule:
+ * a transition would smear a drag that is already per-frame) and SNAPPING when the threshold arms. */
+.mg-rail {
+  left: var(--mg-x);
+  top: var(--mg-y);
+  transform: translate(-50%, calc(-50% - var(--mg-size) - 22px - var(--mg-lift, 0) * 34px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+}
+.mg-rail.armed {
+  background: color-mix(in oklch, var(--accent) 18%, var(--surface-2));
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+  color: var(--accent);
+  transition:
+    transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
+    background 150ms linear,
+    color 150ms linear;
+}
+.mg-rail-label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ③ THE TRACK — "slide to cancel", filling the run of bar left of the circle, fading as the finger
+ * travels (R69 §1.3: the hint alpha IS the progress). The chevron oscillates only BEFORE the drag it
+ * describes has started (R69 §1.7: `moveProgress < 0.8f`). */
+.mg-track {
+  left: 0;
+  top: var(--mg-y);
+  width: calc(var(--mg-x) - var(--mg-size));
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-3);
+  opacity: calc(1 - var(--mg-cancel, 0));
+}
+.mg-chev {
+  display: inline-flex;
+}
+body[data-motion="full"] .mg-track:not(.moved) .mg-chev {
+  /* +/-6px, ~1s each way (R69 §1.7 [V]: dp(6) at 3dp/250ms). Transform-only. */
+  animation: mg-chev 2s ease-in-out infinite;
+}
+@keyframes mg-chev {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-6px);
+  }
+}
+
+/* ④ THE TAP TWINS — the only interactive parts of the layer (R69 §8.2 / WCAG 2.5.1 + 2.5.7: a
+ * path-based commit needs a single-pointer, non-dragging alternative, and a gesture affordance grows
+ * one the moment the hand is free). `position` is re-declared after `all: unset`, which resets it. */
+.mg-cancel {
+  all: unset;
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  box-sizing: border-box;
+  left: 0;
+  top: var(--mg-y);
+  width: calc(var(--mg-x) - var(--mg-size));
+  transform: translateY(-50%);
+  padding: 10px 0;
+  text-align: center;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+}
+.mg-chip {
+  all: unset;
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  box-sizing: border-box;
+  right: 10px;
+  top: var(--mg-y);
+  transform: translateY(calc(-50% - var(--mg-size) - 24px));
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  animation: mg-fade-in 150ms linear both;
+}
+
+/* ⑤ THE HINTS — anchored to the RIGHT edge rather than centred on the mic, so a button that sits ~24px
+ * from the bar's trailing edge can still carry a full sentence without running off-screen. The 200ms
+ * delay + 150ms fade is Telegram's own (R69 §1.7), and it is exactly what `LOCK_HINT_COUNT_MS` waits
+ * for before SPENDING one of the three shows — keep the two in lockstep. */
+.mg-hint {
+  right: 10px;
+  top: var(--mg-y);
+  transform: translateY(calc(-50% - var(--mg-size) - 60px));
+  margin: 0;
+  padding: 5px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  animation: mg-fade-in 150ms linear 200ms both;
+}
+@keyframes mg-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+body[data-motion="reduced"] .mg-hint,
+body[data-motion="reduced"] .mg-chip {
+  animation: none; /* §14.11: a hint that never fades in is still a hint */
+}
+
 /* ── composer · DOCKED "sheet" variant (SheetComposer, COMPOSER_SURFACE_PLAN §3.3) ──────────────────────
  * vapor's rounded-dock LOOK ported to the Kit's SEMANTIC tokens: full-width bar pinned to the screen bottom
  * with a rounded top, an embedded borderless accent mic inside the field, and a tall full-height send block
@@ -1554,7 +1778,7 @@ body[data-mode="light"] .kit-composer.sheet {
 }
 /* embedded borderless accent mic (right of the textarea, inside the field). --accent (the TRUE-color channel)
  * NOT --accent-fill (which may be a gradient <image>, background-only per the tokens.css contract). The base
- * `.press` (transform) / `.unavail` (opacity) states still apply — this rule doesn't touch those properties. */
+ * `.pressing` (transform) / `.unavail` (opacity) states still apply — this rule doesn't touch those properties. */
 .kit-composer.sheet .field .kit-cbtn.mic {
   border: 0;
   color: var(--accent);
@@ -1811,7 +2035,7 @@ body[data-composer-skin="glass"] .kit-composer .plan-pill {
 /* glass · STACKED-only icon-forward controls (owner eyeball 2026-07-11) — bigger glyphs, less "icon in a
  * circle". The sheet/line layouts render their OWN control geometry (separate components), so these are gated
  * to `.kit-composer.stacked` (KitComposer's default stamp). MIC: bigger glyph; icon-only (no circular :active
- * flash — the .press scale is the feedback); recording = red icon + slow §14.11 opacity breathe, no ring. */
+ * flash — the .pressing scale is the feedback); recording = red icon + slow §14.11 opacity breathe, no ring. */
 body[data-composer-skin="glass"] .kit-composer.stacked .kit-cbtn svg {
   width: 22px;
   height: 22px;
@@ -2074,14 +2298,14 @@ body[data-composer-skin="arcade"] .kit-composer.sheet .field .kit-cbtn.mic {
 }
 /* the PRESS: translate into the drop and remove it, so the control lands flush on the panel. Transform-only,
  * no transition declared → instant, and §14.11-safe with nothing to motion-gate.
- * `.kit-cbtn.mic.press` rides along because the mic's press is a JS-TOGGLED class, not `:active` — the kit
- * chose that deliberately (useComposerChrome.ts: "Fennec leaves :active wedged after a tap"), and the mic is
+ * `.kit-cbtn.mic.pressing` rides along because the mic's press is a JS-TOGGLED class, not `:active` — the kit
+ * chose that deliberately (useMicGesture.ts: "Fennec leaves :active wedged after a tap"), and the mic is
  * the one control held down for a gesture rather than tapped. Our (0,4,1) outspecifies the base
- * `.kit-cbtn.mic.press` (0,3,0) scale, so under THIS skin the mic's feedback is the sticker press too — one
+ * `.kit-cbtn.mic.pressing` (0,3,0) scale, so under THIS skin the mic's feedback is the sticker press too — one
  * press language across the bar rather than two. W2 adds the PINNED PLAN HEAD, which now wears the chip
  * drop out in the agent tab: a chip that lifts must press, or it reads as a decal. */
 body[data-composer-skin="arcade"] .kit-composer .kit-cbtn:active,
-body[data-composer-skin="arcade"] .kit-composer .kit-cbtn.mic.press,
+body[data-composer-skin="arcade"] .kit-composer .kit-cbtn.mic.pressing,
 body[data-composer-skin="arcade"] .kit-composer .kit-send:active,
 body[data-composer-skin="arcade"] .kit-composer .plan-pill:active,
 body[data-composer-skin="arcade"] .kit .plan-pin-head:active {

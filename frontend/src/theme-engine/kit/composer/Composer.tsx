@@ -9,9 +9,11 @@ import { useComposerSkin } from "../axes";
 import { AttachClip, AttachRail } from "./AttachRail";
 import { ExpandToggle } from "./ExpandToggle";
 import { SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
+import { MicGestureChrome } from "./MicGestureChrome";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
-import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
+import { useComposerChrome } from "./useComposerChrome";
+import { useMicGesture } from "./useMicGesture";
 
 // Kit composer (D29 §14.4) — the DEFAULT composer variant: token-driven, `.kit-*` classes, STACKED layout
 // (full-width textarea over a controls row, so multi-line input gets the room). Same behaviour as vapor's
@@ -40,7 +42,8 @@ export function KitComposer({
   sendIcon,
 }: ComposerSlots & { rootClass?: string; sendIcon?: ReactNode } = {}) {
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const { draft, setDraft, send, isStreaming, mic, sttReady, uploadPending } = useComposer();
+  const { draft, setDraft, send, isStreaming, mic, sttReady, liveReady, uploadPending } =
+    useComposer();
   // Attachments (D68 §7): ONE controller per composer — the rail renders its chips, the clip owns
   // the picker, and `dropProps` puts paste + drag-drop on the surfaces below. Same three lines in
   // every variant; only the PLACEMENT differs (the owner-ruled geometry, per layout).
@@ -48,13 +51,12 @@ export function KitComposer({
   // A staged rail moves the clip + the expand toggle into the rail's TAIL (the S6 fix wave, F1/F2),
   // which changes the FIELD's rendered width — hence the same flag reaching the chrome hook below.
   const staged = attach.files.length > 0;
-  // Shared presentational chrome (mic-press toggle, auto-grow + its expand ceiling, Enter-to-send) — §3.1.
-  const { micPressed, pressMic, releaseMic, onKeyDown, expand } = useComposerChrome(
-    taRef,
-    draft,
-    send,
-    staged,
-  );
+  // Shared presentational chrome (auto-grow + its expand ceiling, Enter-to-send) — §3.1.
+  const { onKeyDown, expand } = useComposerChrome(taRef, draft, send, staged);
+  // THE DUAL-MODE MIC GESTURE (D71 §6 / S0.5) — hold to record, swipe up to lock, slide left to cancel,
+  // tap to switch mode. The same three lines in every variant: one hook, the button's handlers, and the
+  // shared chrome as a positioned SIBLING of the bar (see MicGestureChrome for why it cannot be a child).
+  const gesture = useMicGesture(mic, liveReady);
   // Slash autocomplete (A2) — headless; its `onKeyDown` wraps the chrome's so the popover gets the arrow/
   // Enter/Tab/Esc keys first and everything else still sends.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
@@ -119,18 +121,13 @@ export function KitComposer({
                 "kit-cbtn mic" +
                 (mic.status === "recording" ? " rec" : "") +
                 (mic.status === "sending" ? " sending" : "") +
-                (micPressed ? " press" : "") +
+                (gesture.pressing ? " pressing" : "") +
                 (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
               }
-              aria-label={MIC_LABEL[mic.status]}
-              title={MIC_LABEL[mic.status]}
-              aria-pressed={mic.status === "recording"}
+              aria-label={gesture.label}
+              title={gesture.label}
               disabled={mic.status === "unavailable" || mic.status === "sending"}
-              onPointerDown={pressMic}
-              onPointerUp={releaseMic}
-              onPointerCancel={releaseMic}
-              onPointerLeave={releaseMic}
-              onClick={mic.toggle}
+              {...gesture.handlers}
             >
               {mic.status === "sending" ? (
                 <SpinnerIcon size={16} />
@@ -182,6 +179,9 @@ export function KitComposer({
           </button>
         </div>
       </div>
+      {/* The gesture's chrome — a positioned SIBLING of the bar (measured: the sheet/line bars clip a
+          child), rendered AFTER it so the grown record circle paints over the composer. */}
+      {sttReady && <MicGestureChrome chrome={gesture.chrome} />}
     </>
   );
 }

@@ -18,8 +18,17 @@ import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer
 vi.mock("../../src/hooks/useVoiceStatus", () => ({
   useVoiceStatus: () => ({ data: { stt: true, tts: false }, dataUpdatedAt: 1 }),
 }));
+// The controller WIDENED at S0.5 (start/stop/cancel beside toggle) — the mic button's pointer wiring
+// now drives those three, so a two-field stub would render a composer whose gesture hook explodes on
+// the first press. Frozen at `sending` exactly as before; the extra verbs are inert here.
 vi.mock("../../src/hooks/useDictation", () => ({
-  useDictation: () => ({ status: "sending", toggle: vi.fn() }),
+  useDictation: () => ({
+    status: "sending",
+    toggle: vi.fn(),
+    start: vi.fn(async () => true),
+    stop: vi.fn(),
+    cancel: vi.fn(),
+  }),
 }));
 
 function renderWith(Comp: ComponentType) {

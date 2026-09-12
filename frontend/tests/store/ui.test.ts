@@ -112,6 +112,8 @@ describe("ui store", () => {
     appbarMode: "visible",
     layout: "auto",
     sectionPlacement: {},
+    micLockHintShown: 0,
+    micLockHintRetired: false,
   };
 
   describe("migrateLegacyTheme", () => {

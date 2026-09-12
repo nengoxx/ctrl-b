@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, renderHook } from "@testing-library/react";
+import { cleanup, render, renderHook } from "@testing-library/react";
 import { createElement, type KeyboardEvent } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -160,31 +160,11 @@ describe("useComposerChrome", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("pressMic sets micPressed, releaseMic clears it", () => {
-    const ref = { current: null };
-    const { result } = renderHook(() => useComposerChrome(ref, "", vi.fn()));
-    expect(result.current.micPressed).toBe(false);
-    act(() => result.current.pressMic());
-    expect(result.current.micPressed).toBe(true);
-    act(() => result.current.releaseMic());
-    expect(result.current.micPressed).toBe(false);
-  });
-
-  it("the 200ms safety timeout clears micPressed", () => {
-    vi.useFakeTimers();
-    try {
-      const ref = { current: null };
-      const { result } = renderHook(() => useComposerChrome(ref, "", vi.fn()));
-      act(() => result.current.pressMic());
-      expect(result.current.micPressed).toBe(true);
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
-      expect(result.current.micPressed).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+  // THE MIC-PRESS TOGGLE MOVED AT S0.5 (Phase 24, D71 §6). `micPressed`/`pressMic`/`releaseMic` and
+  // their 200 ms safety timeout were this hook's whole mic-pointer story; the dual-mode gesture replaced
+  // them with a state machine, so the press look is now the `press` STAGE of `composer/useMicGesture`
+  // and is pinned there (`micGestureMachine.test.ts` for the stage, `micGesture.test.tsx` for the class
+  // reaching the button). Nothing was dropped — it is stated where the mechanism now lives.
 
   it("auto-grows the textarea (capped at the 112px resting ceiling) and clears height when empty", () => {
     const ta = document.createElement("textarea");

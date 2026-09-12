@@ -121,6 +121,20 @@ export interface UIState {
   // `layout.ts#resolvePlacement` — the same parse-don't-validate boundary `resolveLayout` gives the layout
   // lever, so the store keeps holding exactly what was persisted and every reader gets the healed value.
   sectionPlacement: Partial<Record<Tab, SectionPlacement>>;
+  // ── the mic gesture's HINT BUDGET (D71 §6 / R69 §1.7, Phase 24 S0.5) ────────────────────────────
+  // DEVICE-LOCAL, deliberately: these are not a preference the owner would want mirrored across
+  // screens — they are "has THIS device's user been taught the gesture yet", and a phone that has
+  // never shown the hint must still show it after the desktop has spent its three. So they live here
+  // with `appbarMode`/`layout`/`sectionPlacement` (persisted, NOT in the useAppearance-synced group),
+  // and NOT in config: nothing server-side has an opinion about them.
+  //
+  // How many times the "slide up to lock" hint has been shown — counted ONLY once the hint was fully
+  // visible (a hint the owner never actually saw is not spent, R69 §1.7), capped at 3 by the gesture.
+  micLockHintShown: number;
+  // …and RETIRED FOREVER on the first successful lock (R69 §1.7 — `removeLockRecordAudioVideoHint`).
+  // Separate from the counter rather than folded into a sentinel value: "retired" and "shown n times"
+  // are two different facts, and a sentinel would make the next reader guess which one 3 means.
+  micLockHintRetired: boolean;
 }
 
 // First-load default for `motion`: honor the OS `prefers-reduced-motion` preference once.
@@ -156,6 +170,8 @@ const DEFAULTS: UIState = {
   appbarMode: "visible", // global per-device chrome lever; every theme's Root honors it
   layout: "auto", // global per-device section-layout lever (NOT synced); auto = the active theme's default
   sectionPlacement: {}, // empty ⇒ every satellite sits at its own default (agents → hosted in Conf)
+  micLockHintShown: 0, // the gesture teaches itself three times on this device…
+  micLockHintRetired: false, // …or until the first successful lock, whichever comes first
 };
 
 const KEY = "ctrlb.ui";

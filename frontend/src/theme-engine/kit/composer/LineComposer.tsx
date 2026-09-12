@@ -7,9 +7,11 @@ import { stopTurn } from "../../../store/chat";
 import { AttachClip, AttachRail } from "./AttachRail";
 import { ExpandToggle } from "./ExpandToggle";
 import { MicIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
+import { MicGestureChrome } from "./MicGestureChrome";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
-import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
+import { useComposerChrome } from "./useComposerChrome";
+import { useMicGesture } from "./useMicGesture";
 
 // The Phase E "line" composer variant (COMPOSER_SURFACE_PLAN §Phase E — owner-confirmed 2026-07-11): the
 // Telegram-reference SINGLE ROW — `[plan pill (leading)] [flex "Message" field] [morph mic/send]` — rebuilt
@@ -42,7 +44,7 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 // The root KEEPS the `.kit-composer` class (edge #5) so DefaultRoot's `querySelector(".kit-composer")`
 // --composer-h measurement still finds it; `.line` adds the stadium styling in kit.css.
 export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSlots = {}) {
-  const { draft, setDraft, send, isStreaming, mic, sttReady, sendable, uploadPending } =
+  const { draft, setDraft, send, isStreaming, mic, sttReady, liveReady, sendable, uploadPending } =
     useComposer();
   const taRef = useRef<HTMLTextAreaElement>(null);
   // Attachments (D68 §7) — the shared controller; see KitComposer for the contract.
@@ -53,16 +55,17 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   // THE CONTROL STACK's state (decided below, after the measurement it reads) — declared first
   // because the chrome hook's width key carries it.
   const [stacked, setStacked] = useState(false);
-  const { micPressed, pressMic, releaseMic, onKeyDown, expand, fieldPx, fieldCeilPx } =
-    useComposerChrome(
-      taRef,
-      draft,
-      send,
-      // The field's width follows BOTH facts (the hook's `fieldWidthKey`): staging moves the clip +
-      // toggle to the rail, and the stack frees or reclaims a whole button lane. Flipping either
-      // re-measures at once, so the height and the painted-px are never stale (re-round MED-1).
-      `${staged}|${stacked}`,
-    );
+  const { onKeyDown, expand, fieldPx, fieldCeilPx } = useComposerChrome(
+    taRef,
+    draft,
+    send,
+    // The field's width follows BOTH facts (the hook's `fieldWidthKey`): staging moves the clip +
+    // toggle to the rail, and the stack frees or reclaims a whole button lane. Flipping either
+    // re-measures at once, so the height and the painted-px are never stale (re-round MED-1).
+    `${staged}|${stacked}`,
+  );
+  // THE DUAL-MODE MIC GESTURE (D71 §6 / S0.5) — the same three lines as every variant; see KitComposer.
+  const gesture = useMicGesture(mic, liveReady);
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
 
@@ -216,18 +219,13 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
                   "kit-cbtn mic line-btn" +
                   (mic.status === "recording" ? " rec" : "") +
                   (mic.status === "sending" ? " sending" : "") +
-                  (micPressed ? " press" : "") +
+                  (gesture.pressing ? " pressing" : "") +
                   (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
                 }
-                aria-label={MIC_LABEL[mic.status]}
-                title={MIC_LABEL[mic.status]}
-                aria-pressed={mic.status === "recording"}
+                aria-label={gesture.label}
+                title={gesture.label}
                 disabled={mic.status === "unavailable" || mic.status === "sending"}
-                onPointerDown={pressMic}
-                onPointerUp={releaseMic}
-                onPointerCancel={releaseMic}
-                onPointerLeave={releaseMic}
-                onClick={mic.toggle}
+                {...gesture.handlers}
               >
                 {mic.status === "sending" ? <SpinnerIcon size={22} /> : <MicIcon size={22} />}
               </button>
@@ -253,6 +251,9 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
           </div>
         </div>
       </div>
+      {/* The gesture's chrome — a positioned SIBLING of the bar: this layout's `overflow: hidden` was
+          MEASURED to clip a child in both directions the gesture needs. */}
+      {showMic && <MicGestureChrome chrome={gesture.chrome} />}
     </>
   );
 }

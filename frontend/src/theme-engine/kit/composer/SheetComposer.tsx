@@ -7,9 +7,11 @@ import { stopTurn } from "../../../store/chat";
 import { AttachClip, AttachRail } from "./AttachRail";
 import { ExpandToggle } from "./ExpandToggle";
 import { MicIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
+import { MicGestureChrome } from "./MicGestureChrome";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
-import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
+import { useComposerChrome } from "./useComposerChrome";
+import { useMicGesture } from "./useMicGesture";
 
 // The DOCKED "sheet" composer variant (D30/D31, COMPOSER_SURFACE_PLAN §3.2) — vapor's inline rounded-dock
 // look, rebuilt in the Kit's SEMANTIC tokens (never vapor's `--magenta`/`--ink`/`--bg-2`): full-width bar
@@ -24,19 +26,17 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 // The root KEEPS the `.kit-composer` class (edge #5) so DefaultRoot's `querySelector(".kit-composer")`
 // --composer-h measurement still finds it; `.sheet` adds the docked styling in kit.css.
 export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerSlots = {}) {
-  const { draft, setDraft, send, isStreaming, mic, sttReady, uploadPending } = useComposer();
+  const { draft, setDraft, send, isStreaming, mic, sttReady, liveReady, uploadPending } =
+    useComposer();
   const taRef = useRef<HTMLTextAreaElement>(null);
   // Attachments (D68 §7) — the shared controller; see KitComposer for the contract.
   const attach = useAttachments();
   // A staged rail moves the clip + the toggle into the rail's TAIL (S6 fix wave, F1/F2) — which in
   // THIS layout genuinely changes the field's width, since both of them are embedded in `.field`.
   const staged = attach.files.length > 0;
-  const { micPressed, pressMic, releaseMic, onKeyDown, expand } = useComposerChrome(
-    taRef,
-    draft,
-    send,
-    staged,
-  );
+  const { onKeyDown, expand } = useComposerChrome(taRef, draft, send, staged);
+  // THE DUAL-MODE MIC GESTURE (D71 §6 / S0.5) — the same three lines as every variant; see KitComposer.
+  const gesture = useMicGesture(mic, liveReady);
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
 
@@ -101,18 +101,13 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
                   "kit-cbtn mic" +
                   (mic.status === "recording" ? " rec" : "") +
                   (mic.status === "sending" ? " sending" : "") +
-                  (micPressed ? " press" : "") +
+                  (gesture.pressing ? " pressing" : "") +
                   (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
                 }
-                aria-label={MIC_LABEL[mic.status]}
-                title={MIC_LABEL[mic.status]}
-                aria-pressed={mic.status === "recording"}
+                aria-label={gesture.label}
+                title={gesture.label}
                 disabled={mic.status === "unavailable" || mic.status === "sending"}
-                onPointerDown={pressMic}
-                onPointerUp={releaseMic}
-                onPointerCancel={releaseMic}
-                onPointerLeave={releaseMic}
-                onClick={mic.toggle}
+                {...gesture.handlers}
               >
                 {/* vapor's stroke mic glyph at vapor's proportion (~26px in the 40px hit target) — owner
                     eyeball 2026-07-11: the docked variant keeps vapor's icon language, theme-colored.
@@ -141,6 +136,9 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
           </button>
         </div>
       </div>
+      {/* The gesture's chrome — a positioned SIBLING of the bar: this layout's `overflow: hidden` was
+          MEASURED to clip a child in both directions the gesture needs. */}
+      {sttReady && <MicGestureChrome chrome={gesture.chrome} />}
     </>
   );
 }

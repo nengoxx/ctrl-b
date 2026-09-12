@@ -1,12 +1,17 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useState, type KeyboardEvent, type RefObject } from "react";
 
-// Shared PRESENTATIONAL chrome for the Kit composer variants (COMPOSER_SURFACE_PLAN §3.1). KitComposer and
-// SheetComposer share three pure-presentational concerns — NOT behaviour (behaviour is `useComposer`, the
-// headless controller): the mic-press JS-toggle (Fennec `:active`-wedge fix), the textarea auto-grow (max
-// 96px), and Enter-to-send. Extracted here so a second variant reuses them instead of copy-pasting; this is
-// a CHARACTERIZED extraction (behaviour byte-identical to the pre-A2 KitComposer), not a redesign.
+// Shared PRESENTATIONAL chrome for the Kit composer variants (COMPOSER_SURFACE_PLAN §3.1). The variants
+// share pure-presentational concerns — NOT behaviour (behaviour is `useComposer`, the headless
+// controller): the textarea auto-grow (the collapsed ceiling below) and Enter-to-send. Extracted here so a
+// second variant reuses them instead of copy-pasting; this is a CHARACTERIZED extraction (behaviour
+// byte-identical to the pre-A2 KitComposer), not a redesign.
 //
-// Since D68 S5 it owns a FOURTH concern, and for the same reason: the EXPAND affordance is nothing but a
+// THE MIC-PRESS TOGGLE LEFT AT S0.5 (Phase 24, D71 §6): `micPressed`/`pressMic`/`releaseMic` were the whole
+// mic-pointer story here, and the dual-mode gesture replaces them wholesale — the press look is now one
+// stage of `composer/useMicGesture`'s state machine. The reason they were a JS-toggled class rather than
+// CSS `:active` (Fennec leaves `:active` wedged after a tap) carried over with them; see `MicGesture.pressing`.
+//
+// Since D68 S5 it owns the EXPAND affordance too, and for the same reason: expanding is nothing but a
 // second auto-grow CEILING, so it belongs to whoever owns the first one — all three variants get it from
 // one place and no per-variant fork exists to write (ATTACHMENTS_PLAN §9-S5, the E-amend (c) finding).
 //
@@ -42,8 +47,8 @@ function expandedCeilPx(): number {
   return Math.max(CEIL_PX, Math.round(h * EXPANDED_SHARE));
 }
 
-/** Mic-button aria-label/title per dictation status — a shared presentational constant (both variants read
- *  it). Lives here (not in a variant) so the two composers stay in lockstep on the labels. */
+/** Mic-button aria-label/title per dictation status — a shared presentational constant (all three
+ *  variants read it). Lives here (not in a variant) so the composers stay in lockstep on the labels. */
 export const MIC_LABEL: Record<string, string> = {
   idle: "start dictation",
   recording: "stop dictation",
@@ -51,6 +56,16 @@ export const MIC_LABEL: Record<string, string> = {
   unavailable: "voice servers unreachable",
   insecure: "microphone needs a secure (HTTPS) connection",
 };
+
+/** The mic button's accessible NAME, which since S0.5 carries the button's MODE (R69 §8.3 [V]: both
+ *  Telegram clients put the mode in the name and re-announce on change; neither uses `aria-pressed`,
+ *  because the two modes are not on/off — they are two destinations). Call mode only ever reaches this
+ *  while `voice.live` is up, so the idle label is the only one that changes: once a call is running the
+ *  overlay owns the surface, and every DICTATION state keeps the sentence it has always had. */
+export function micLabel(status: string, mode: "mic" | "call"): string {
+  if (mode === "call" && status === "idle") return "start a voice call";
+  return MIC_LABEL[status] ?? MIC_LABEL.idle;
+}
 
 /** THE EXPAND AFFORDANCE's state (D68 S5) — what `<ExpandToggle/>` renders off, and the only thing any
  *  variant needs to know about it. Deliberately NOT a mode: `on` moves ONE number (the auto-grow
@@ -66,10 +81,6 @@ export interface ExpandControl {
 }
 
 export interface ComposerChrome {
-  /** Whether the mic is in its brief JS-toggled pressed state (drives the `.press` class). */
-  micPressed: boolean;
-  pressMic: () => void;
-  releaseMic: () => void;
   onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
   /** The expand affordance (D68 S5) — hand it straight to `<ExpandToggle/>`. */
   expand: ExpandControl;
@@ -100,20 +111,6 @@ export function useComposerChrome(
    *  same reason it keys on the viewport. */
   fieldWidthKey: unknown = false,
 ): ComposerChrome {
-  // Mic press feedback as a JS-toggled class (not CSS :active — Fennec leaves :active wedged after a tap).
-  const [micPressed, setMicPressed] = useState(false);
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const pressMic = () => {
-    setMicPressed(true);
-    clearTimeout(pressTimer.current);
-    pressTimer.current = setTimeout(() => setMicPressed(false), 200);
-  };
-  const releaseMic = () => {
-    clearTimeout(pressTimer.current);
-    setMicPressed(false);
-  };
-  useEffect(() => () => clearTimeout(pressTimer.current), []);
-
   // THE EXPAND AFFORDANCE (D68 S5 / ATTACHMENTS_PLAN §7 + §9-S5; main-seat ruling on R62 §5's evidence,
   // owner-overridable at S6). Expanded is a TALLER AUTO-GROW CEILING AND NOTHING ELSE — the field still
   // grows with content, the mode only raises where growth stops. (The peers' "expanded" opens a second
@@ -237,9 +234,6 @@ export function useComposerChrome(
   }
 
   return {
-    micPressed,
-    pressMic,
-    releaseMic,
     onKeyDown,
     expand: {
       on: expanded,
