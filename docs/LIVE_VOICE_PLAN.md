@@ -227,13 +227,16 @@ phase. The machine composes existing pieces:
 
 **Two triggers, ONE action (owner ruling 2026-09-12: automatic interruption is OPTIONAL).**
 The ordered kill sequence below is trigger-agnostic. Trigger A — **voice** — is gated by the
-`barge_in` Settings row; OFF disables only the automatic path. Trigger B — **manual tap**
-(the ChatGPT voice-mode pattern) — always exists: during `speaking`, a tap anywhere on the
-overlay outside the control cluster interrupts; in ring mode the circumference is the visual
-invitation, and it works identically in no-ring mode. With `barge_in` off, speech over the
-bot is still transcribed (the mic never closes) and the final BUFFERS in §4.3's one-slot
-buffer, submitting when playback drains — walkie-talkie semantics; a tap mid-speech fires
-the ordered sequence and the buffered final rides it.
+`barge_in` Settings row (the `min_speech_ms`/`barge_threshold` floors are A's alone — a
+deliberate tap needs no floor); OFF disables only the automatic path. Trigger B — **manual
+tap** (the ChatGPT voice-mode pattern) — always exists: during `speaking`, a tap anywhere on
+the overlay outside the control cluster interrupts; in ring mode the circumference is the
+visual invitation, and it works identically in no-ring mode. **Outside `speaking`, overlay
+taps are inert** — during `thinking` you steer by just talking; nothing cancels by accident;
+mute and hang up stay the only always-live controls. With `barge_in` off, speech over the bot
+is still transcribed (the mic never closes) and completed utterances join the machine's
+**pending queue** (below), submitting when playback drains — walkie-talkie semantics; a tap
+mid-speech fires the ordered sequence and the queue rides it.
 
 The mic **stays open while the bot speaks** (RVC's 1–2 s deaf window is the recorded
 anti-pattern). Trigger A's mechanism: during `speaking`, a `speech_started` from the server VAD **gated by
@@ -246,10 +249,15 @@ Speaches fork with a real `min_speech_duration_ms` — we already carry local co
 
 The action, **ordered (council F4)**: ① C3 kill (pause + session abort — synchronous, the
 audible part stops now) → ② scoped cancel through the §4.2 seam **and await its settlement** →
-③ only then submit the buffered final — while a cancel is pending, `useLiveCall` buffers exactly
-one completed utterance, and a call-origin steer the cancel harvested is consumed rather than
-restored into the composer. This closes the race where a short interrupt's transcript lands as a
-202 steer on the dying turn and gets silently harvested into a draft.
+③ only then submit what is pending — `useLiveCall` keeps **ONE ordered pending-utterance
+queue** serving both holds (the cancel-settle window AND the `barge_in`-off walkie-talkie
+hold are the same mechanism): every utterance completed while the floor was held joins in
+order and submits as ONE message on release — never a one-slot overwrite, never lost speech
+(the coherence-sweep correction: the ratified text said "exactly one buffered utterance",
+which loses the second utterance of a long walkie-talkie hold). A call-origin steer the
+cancel harvested is consumed rather than restored into the composer. This closes the race
+where a short interrupt's transcript lands as a 202 steer on the dying turn and gets silently
+harvested into a draft.
 
 **The turn commonly ends before the mouth does** (council F1): generation outruns synthesis, so
 by the time the owner interrupts, the cancellable turn may already be terminal. Barge-in
@@ -328,6 +336,21 @@ marker for text Stop rides the same seam. This closes R35 divergence ④ for bot
 - **Busy/limits UX copy:** a second concurrent call → "another call is active"; `max_session_s`
   reached → "call time limit reached" + one-tap redial. Settings edited mid-call apply to the
   NEXT call — sessions read config at start.
+- **TTS failure mid-call is nonfatal (coherence sweep 2026-09-12):** if the mouth errors —
+  synthesis fails and playback never starts, or dies mid-reply — the machine returns to
+  `listening` with a "voice failed — the reply is in the chat" line; the ear keeps working and
+  the call continues. Repeated mouth failure never ends the call on its own; hanging up is the
+  user's move.
+- **Submit failure loses nothing:** if a transcript's send fails (network/5xx from the chat
+  door), the utterance drops into the composer DRAFT (the existing harvest pattern) and the
+  overlay says so — the never-lose-speech rule applied to the brain leg; no silent retry loop.
+- **Reconnect contract (the §3.3 auto-reconnect, made concrete):** bounded attempts with
+  backoff, then the `error` terminal; the overlay shows `connecting` during retries. A drop
+  mid-utterance LOSES that utterance — stated honestly, the audio is gone — `waitingFinal`
+  clears, and playback is untouched (C3 rides HTTP, not the WS).
+- **Speech during `awaiting_confirm`** queues as an ordinary steer (the existing 202
+  semantics), delivered when the action resumes; the confirmation itself still requires its
+  tap — talking never substitutes for the token.
 
 ## 5. Config, security, degrade
 
@@ -364,7 +387,9 @@ is its own section.)* `enabled: false` or no resolvable
 target → the call button is not rendered (the `VoiceClient.configured` pattern).
 **Refinement 2026-09-12:** the render gate is live enabled + a resolvable realtime target
 **+ TTS configured** — the call needs the mouth, not just the ear — delivered as one `live`
-capability bit on `GET /voice/status` (the mic's `stt` bit pattern). The entry affordance also
+capability bit on `GET /voice/status` (the mic's `stt` bit pattern). The `voice.enabled`
+MASTER switch outranks everything here, as it does for stt/tts: master off ⇒ the `live` bit
+is down regardless of `voice.live.enabled`. The entry affordance also
 inherits the mic button's degraded-state presentation: greyed-with-explainer on an insecure
 context, reactive `unavailable` after a server error.
 
@@ -415,11 +440,15 @@ the same resolution ladder as the `full` chat backdrop. There is explicitly NO
   centers on where the live backdrop's stored focal point (the media-manager framing crosshair)
   lands *on screen* — a small pure helper inverting the existing cover/focal positioning math
   the backdrop already uses; no new data, no new UI, any art at any viewport. Fallback when the
-  image has no focal point: centered, upper third. The §4.2 state animates the STROKE — the
+  image has no focal point: centered, upper third. The anchor reads the focal POINT only,
+  never `z` — zoom stays circle-window-scoped (the wave-3 rule; the ring is a halo, not a
+  window). The §4.2 state animates the STROKE — the
   music-visualizer *look* without the machinery: `listening` breathes slow, `userSpeechActive`
   answers visibly (the owner's core ask: "show when I'm speaking and when I'm not"),
   `thinking` shimmers, `speaking` pulses firmer, `connecting` dim, `error` takes `--danger`.
-  Transform/opacity-only (THEME_ENGINE §14.11 smoothness rule).
+  Transform/opacity-only (THEME_ENGINE §14.11 smoothness rule). With motion reduced (the
+  existing UIState/Appearance switch, never a raw media query), state changes render as
+  discrete opacity/color steps — reduced motion must never mean an unreadable call state.
   **DECLINED (owner, 2026-09-11 — do not re-propose):** audio-amplitude reactivity
   (AnalyserNode on the TTS element). The ring reacts to call state only; a wave-like animation
   is fine as a *style*, but nothing analyzes the audio signal.
@@ -435,14 +464,25 @@ from every state, §4.2). Text-over-art legibility inherits the three-state-back
 
 - **Mute joins hang up** — the one extra control (core call furniture: cough, doorbell,
   someone in the room). Implementation = stop sending frames (track disabled); muted = no VAD
-  events, so no false endpointing either.
+  events, so no false endpointing either. **Mute's loop rules (coherence sweep 2026-09-12):**
+  muting mid-utterance DISCARDS that utterance — the abrupt silence will make the server
+  endpoint the half-speech, so a final arriving while muted is dropped and `waitingFinal`
+  clears (mute means "don't send that"); `userSpeechActive` clears on mute; unmute simply
+  resumes frames, a fresh utterance. The ring/accent wears a distinct STATIC muted look — no
+  pulse implies no ear, so the muted state must be visually unmistakable. Tap-to-interrupt
+  still works while muted.
 - **Tap to interrupt (owner-ratified 2026-09-12, the ChatGPT voice-mode pattern):** during
   `speaking`, tapping the overlay outside the control cluster fires the §4.3 sequence — the
   manual twin of voice barge-in, present in BOTH ring modes and regardless of the `barge_in`
   toggle. Whether it earns a first-run micro-hint is feel-round material.
 - **The transcript line shows what the ear heard YOU say** (catch mishearings instantly); the
   reply is what you *hear*, and lands in the chat as always.
-- **The in-overlay confirm row** (§4.5) is part of the overlay's state set.
+- **The in-overlay confirm row** (§4.5) is part of the overlay's state set — **Allow and Deny
+  ONLY** (coherence sweep: the chat card's other two stay chat-card affordances — an
+  "always"-grant deserves the chat's full context, and "edit" is keyboard territory; the full
+  four-button card remains in the thread, e.g. after a hang-up).
+- **Terminal faces:** `error` and `ended` both carry "call again" + close; a user hang-up
+  closes the overlay instantly with no terminal screen.
 - **Hang up = immediate full teardown:** capture closed, WS closed, C3 killed mid-word,
   Wake Lock released, the read-along override cleared. An ended call does not keep talking.
 - **The Android back button hangs up** (the kit overlay back-trap pattern), never navigates
@@ -462,10 +502,13 @@ the dual-mode mic.** ONE button in the mic's existing slot in all three composer
 second button (owner ruling: composer space). Every threshold/curve below is R69-sourced (its
 §9 parameter table); the constants live named in one place in the gesture hook, not scattered.
 
-- **Tap = mode switch** (mic↔call icon morph + a transient "hold to record"/"hold to call"
-  hint; Telegram's hint retirement: ≤3 shows, counted only when fully visible, retired forever
-  on the first successful lock). **No mode memory (owner ruling): boots mic, every load.**
-  Call mode is offered only when §5.1's `live` bit is up.
+- **Tap = mode switch, from IDLE only** (mic↔call icon morph + a transient "hold to
+  record"/"hold to call" hint; Telegram's hint retirement: ≤3 shows, counted only when fully
+  visible, retired forever on the first successful lock; hint counters are DEVICE-LOCAL — the
+  ui store, not config). A locked recording owns its tap (= stop); the standing call chip
+  owns its tap (= start call, the button inert until the chip expires). **No mode memory
+  (owner ruling): boots mic, every load.** Call mode is offered only when §5.1's `live` bit
+  is up.
 - **The gesture machine** — one shared hook replacing the current press-visual wiring, consumed
   by all three variants. Pointer Events + `setPointerCapture`, `touch-action: none` on the
   button (the spec's ONLY defence against pan — R69), contextmenu suppressed (safe on Fennec
@@ -473,14 +516,18 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   click still fires after `lostpointercapture` — R69 risk list). Press → **150 ms activation**
   (Telegram's tap-disambiguation window for dual-mode buttons — deliberately NOT the 400 ms
   platform long-press; 8 px movement slop).
-- **Mic mode:** recording starts at activation; **release = stop + send** (today's dictation
-  upload + auto-send path, unchanged underneath). **Swipe up 56 px = lock hands-free** —
+- **Mic mode:** recording starts at activation; **release = stop, then hand to today's
+  dictation pipeline unchanged** — upload → draft append → auto-send iff the existing
+  `stt_auto_send` row is on (the gesture changes CAPTURE ergonomics, not send policy; with
+  auto-send off, release lands the transcript in the draft for review, as dictation does
+  today). **Swipe up 56 px = lock hands-free** —
   latches on crossing (Telegram); the button becomes tap-to-stop and a visible tappable cancel
   appears (the field's tap-twin rule: every gesture affordance grows a tap twin once the hand
   is free); silence auto-stop stays live in locked mode. **Slide left = cancel** — distance
   min(35% viewport, 140 px), cancel commits on release past 55% (the relative form: at 360 px
   a fixed distance leaves no travel — R69). **Recordings under 1000 ms are discarded with a
-  teaching toast** (Signal's floor — kills accidental blips and teaches the hold).
+  teaching toast** (Signal's floor — kills accidental blips and teaches the hold; the check
+  is client-side BEFORE upload — a blip costs no POST).
   **`pointercancel` NEVER loses audio** (the field's iron rule): an unlocked in-progress
   recording PROMOTES TO LOCKED (Telegram's answer), never silently discards.
 - **Call mode:** hold raises the "slide up to call" pill; **swipe up 56 px, committing on
@@ -583,10 +630,30 @@ tap-to-interrupt** (the ChatGPT pattern, the owner's cite) always exists during 
 (tap outside the controls, both ring modes). `barge_in` OFF = walkie-talkie: over-speech
 still transcribes and buffers, submitting on drain. Folded into §4.3 + §6.
 
+**The coherence sweep (main seat, 2026-09-12 — the owner asked for a hunt for
+under-specified behaviors; all findings folded in place, flagged as "coherence sweep"):**
+① the §4.3 one-slot buffer CONTRADICTED walkie-talkie mode (a long hold's second utterance
+would overwrite the first) → unified into ONE ordered pending-utterance queue · ② mute's
+loop rules (mid-utterance mute discards; muted finals dropped; static muted visual) · ③
+overlay taps inert outside `speaking` · ④ mouth failure nonfatal, ear keeps working · ⑤
+submit failure harvests to the draft, never loses speech · ⑥ the reconnect contract made
+concrete (bounded backoff; a mid-utterance drop honestly loses that utterance) · ⑦ speech
+during `awaiting_confirm` = an ordinary steer, the tap still owed · ⑧ the confirm row is
+Allow/Deny ONLY · ⑨ terminal faces carry redial; user hang-up closes instantly · ⑩ release
+composes with `stt_auto_send` (gesture ≠ send policy) · ⑪ the 1000 ms floor checks before
+upload · ⑫ ring anchor never reads `z`; reduced motion keeps states readable · ⑬ hint
+counters device-local · ⑭ `voice.enabled` master outranks the `live` bit. All conservative
+derivations from existing rulings/patterns — the owner's review of this list is their veto
+window.
+
 Still open:
 
 3. **Browser priority** — S0 probes both; if Fennec's AEC or permission story is bad, is
    "Chrome for calls" an acceptable v1 posture (the web-push precedent)?
+4. **A delta design round?** The council closed on the 2026-09-11 text; everything since
+   (§4.5, the §6 furniture + entry gesture, tap-interrupt, the walkie-talkie queue) is
+   main-seat + owner only. A short blind Emma round on the amendment delta before S0.5
+   builds would restore full council coverage — the owner's call.
 
 ## 9. Council record
 
