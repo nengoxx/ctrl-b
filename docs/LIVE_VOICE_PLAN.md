@@ -287,6 +287,38 @@ feed can close SEVERAL chunks, so the boundary is the **greatest feed boundary w
 ranges would need a range-preserving `toSpeech`, deliberately not v1 material). The `[cut off]`
 marker for text Stop rides the same seam. This closes R35 divergence ④ for both modes.
 
+### 4.5 Loop edge rules (the refinement round — owner-approved 2026-09-12, code-scouted first)
+
+- **Transcripts are always plain messages.** Call submissions bypass the `!`/`/` sigil
+  classification in the send door — a misheard transcript must never route as shell or slash.
+- **The typed draft is untouched.** Dictation auto-send appends to the draft and sends the
+  whole draft; the call deliberately does NOT — it submits the transcript alone, and whatever
+  is typed in the composer stays there.
+- **Staged attachments ride (owner-ratified):** files staged when a call turn submits are
+  reserved onto that turn exactly as a typed send would — stage a photo, start the call, ask
+  about it. The existing upload hold applies: a final held by an in-flight upload retries on
+  settle rather than dropping.
+- **Empty finals are discarded** (the no-speech path): nothing submits, `waitingFinal` clears.
+- **Thread identity:** the call rides the open thread; with none, the first utterance mints one
+  server-side exactly like a typed first message (the `thread` wire frame updates the client,
+  unchanged).
+- **A turn already streaming at call-start is not half-read aloud** — only turns that begin
+  after call-start are spoken.
+- **Read-along config fallback:** the call forces the read-along path client-locally for its
+  duration; if TTS chunking is configured off, replies speak once complete via `endTurnSpeak` —
+  the call still works, just less fluid.
+- **Confirm gates in-call (owner-ratified):** a turn reaching `awaiting_confirm` renders in the
+  overlay as a "needs your OK" state with **Allow / Deny buttons riding the SAME `resumeCall`
+  chokepoint and single-use token** as the chat card — a tap, never a spoken confirmation (the
+  privilege gate stays tap-bound; SECURITY_MODEL unchanged; the ruled-out alternative was
+  "pause and peek at chat").
+- **Capture loss** (permission revoked, a real phone call steals the mic, headset events) →
+  the track's `ended` → the call ends in `error` with a plain reason. Page-hidden already ends
+  cleanly (§5.3).
+- **Busy/limits UX copy:** a second concurrent call → "another call is active"; `max_session_s`
+  reached → "call time limit reached" + one-tap redial. Settings edited mid-call apply to the
+  NEXT call — sessions read config at start.
+
 ## 5. Config, security, degrade
 
 ### 5.1 `voice.live` (extends `VoiceCfg` — one unified object, the extend-don't-migrate directive)
@@ -320,6 +352,11 @@ so interruption-and-friends are tweakable from the phone in one clearly-named pl
 stays `voice.live` — the extend-don't-migrate shape above is untouched; only the Conf grouping
 is its own section.)* `enabled: false` or no resolvable
 target → the call button is not rendered (the `VoiceClient.configured` pattern).
+**Refinement 2026-09-12:** the render gate is live enabled + a resolvable realtime target
+**+ TTS configured** — the call needs the mouth, not just the ear — delivered as one `live`
+capability bit on `GET /voice/status` (the mic's `stt` bit pattern). The entry affordance also
+inherits the mic button's degraded-state presentation: greyed-with-explainer on an insecure
+context, reactive `unavailable` after a server error.
 
 ### 5.2 Security posture (SECURITY_MODEL lens)
 
@@ -384,6 +421,33 @@ the same resolution ladder as the `full` chat backdrop. There is explicitly NO
 from every state, §4.2). Text-over-art legibility inherits the three-state-backdrop lessons
 (ROLEPLAY_PLAN §8.3a — the veil/scrim treatments, not new inventions).
 
+**The refinement round (owner-approved 2026-09-12) — call furniture, all ratified:**
+
+- **Mute joins hang up** — the one extra control (core call furniture: cough, doorbell,
+  someone in the room). Implementation = stop sending frames (track disabled); muted = no VAD
+  events, so no false endpointing either.
+- **The transcript line shows what the ear heard YOU say** (catch mishearings instantly); the
+  reply is what you *hear*, and lands in the chat as always.
+- **The in-overlay confirm row** (§4.5) is part of the overlay's state set.
+- **Hang up = immediate full teardown:** capture closed, WS closed, C3 killed mid-word,
+  Wake Lock released, the read-along override cleared. An ended call does not keep talking.
+- **The Android back button hangs up** (the kit overlay back-trap pattern), never navigates
+  the app under the overlay.
+- **No-art fallback:** an agent with neither background nor avatar gets the plain theme
+  surface + the ring at its fallback anchor.
+- **Audio priming:** the call-start tap primes the `<audio>` element (today's element has NO
+  gesture priming — scouted; this kills the mobile silent-first-reply failure mode).
+- **The focal→screen helper is greenfield** (scouted: everything today terminates in CSS
+  percentage strings; nothing computes where the focal point lands on screen) — a small pure
+  sibling in `lib/focalPosition.ts`, unit-tested, recomputed on rotation/resize.
+- **Second door DEFERRED (owner-ratified — do not re-propose ad hoc):** v1 has ONE entry
+  point, the composer. A call door on the agent gallery's cards waits for regular use to ask.
+
+**The entry affordance — OPEN, under design (2026-09-12):** the owner declined a separate call
+button beside the mic (composer space) and proposed the Telegram-style **dual-mode mic button**
+(tap switches mic↔call mode; hold + swipe-up gesture acts). Being feasibility-checked +
+designed; lands here when ratified.
+
 ## 7. Slice ladder (each: pinned Opus build → main-seat audit → blind Emma round → fix wave → close)
 
 - **S0 — probes + the ear smoke (gates the design's one open branch):** the AEC device probe —
@@ -393,7 +457,9 @@ from every state, §4.2). Text-over-art legibility inherits the three-state-back
   server-side smoke script proving emma → Speaches `/v1/realtime?intent=transcription`
   end-to-end **against the resident Parakeet model** (VAD events, a real transcript from a real
   clip — this also exercises the fork's own `e093d8b` no-speech path; the Speaches server
-  itself is NOT touched — owner ruling, §5.2). **Rules `echo_workaround` and confirms the
+  itself is NOT touched — owner ruling, §5.2). The smoke also pins **which realtime session
+  fields the fork honors** (model name, language — the session's model resolves through the
+  provider registry like `voice.stt` does). **Rules `echo_workaround` and confirms the
   Speaches contract before anything is built on it.**
 - **S1 — the BE relay:** `voice.live` config + `/voice/status` delivery + the WS route + the
   relay session (mock-Speaches tests: framing, resampling, backpressure, caps, error taxonomy,
@@ -404,7 +470,8 @@ from every state, §4.2). Text-over-art legibility inherits the three-state-back
   full-bleed backdrop, both `ring` modes incl. the focal-anchor helper + the transcript-accent
   arm) +
   submit-through-`runComposer` + read-along forced on + Wake Lock + degrade states + the plain
-  kill: speech during `speaking` (energy floor, §4.3) stops audio and cancels a live turn.
+  kill: speech during `speaking` (energy floor, §4.3) stops audio and cancels a live turn;
+  the §6 furniture (mute, the in-overlay confirm row) + the §4.5 edge rules.
   (End of S2 = a full interruptible conversation on the S0-ruled echo branch.)
 - **S3 — interruption hardening:** the §4.3 ordered cancel-settle contract + the buffered-final
   race (F4) · the playback-would-start-while-speaking edge (F5) · the echo fallback branch if S0
@@ -431,6 +498,15 @@ from CALL STATE only — audio-amplitude analysis **DECLINED**, no extra machine
 gets its **own Conf section**, not rows inside the voice group or Appearance ("isn't that
 more clear?"). The ring mode is the owner's envisioned look; the no-ring accent is the
 experimental arm of the pair.
+
+**The refinement round (owner, 2026-09-12, in conversation — "everything looks good, except
+for the button placement"; all folded into §4.5/§5.1/§6/§7):** the twelve code-scouted
+tightenings approved wholesale · mute button — YES · confirm gates in-call = the in-overlay
+Allow/Deny row through `resumeCall` (spoken confirmation deliberately not offered) · staged
+attachments ride the call turn · the agent-gallery second door DEFERRED (do not re-propose
+ad hoc) · transcript line = what the ear heard. **OPEN: the entry affordance** — a separate
+call button beside the mic REJECTED (composer space); the owner proposed the Telegram-style
+dual-mode mic (tap switches mic↔call; hold + swipe-up acts) — under design.
 
 Still open:
 
