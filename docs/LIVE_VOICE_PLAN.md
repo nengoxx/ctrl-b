@@ -687,7 +687,8 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > **Process note (the S0 deviation from this section's cadence header, main-seat ruled, owner
   > informed):** the blind review round deliberately rides S1 — the probe pages are throwaway
   > once the sitting closed, and S1's build re-verifies the contract table against source; S0 got
-  > the pinned-Opus build + a main-seat line audit + an independent gate re-run instead. (FE-only; owner-ratified early so the feel round runs on real
+  > the pinned-Opus build + a main-seat line audit + an independent gate re-run instead.
+- **S0.5 — the entry gesture (FE-only; owner-ratified early so the feel round runs on real
   dictation before the call exists):** the §6 dual-mode mic — the shared gesture hook +
   animations + the mic-mode leg live against today's `useDictation` (hold · lock · slide-left
   cancel · the 1000 ms floor · hints · the pointercancel promote-to-lock rule); call mode's
