@@ -744,3 +744,7 @@ Still open:
   overlay-local ring coordinates vs the visual viewport · F10 S2 split into S2a/S2b ·
   sweep-LOW the backdrop ladder clarified (useActiveBackdrop alone, no gacha oracle). Her
   factual correction adopted: the line composer's mic is NOT draft-empty-gated at tip.
+- **2026-09-12 — her confirm round (same session resumed, fold commit `024de33`): ALL ELEVEN
+  RESOLVED with line proof — she rated the F1 queue-hold shape STRONGER than her own narrow
+  prescription — fix-sweep "none". VERDICT: RESOLVED — SHIP. The design is council-closed
+  over the FULL amended text; the build opens at §7-S0.**

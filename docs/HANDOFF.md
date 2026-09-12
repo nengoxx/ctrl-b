@@ -12,7 +12,58 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-11, THIRTEENTH session — **S7 mostly ticked + the card-import leg delegated and PASSED · Dependabot D1 done · THE LIVE-VOICE DESIGN SESSION RAN END TO END: `LIVE_VOICE_PLAN.md` council-closed SHIP WITH CHANGES, awaiting the owner's ratification → D71 · everything PUSHED**; supersedes below where it speaks)
+## Current state (2026-09-12, FOURTEENTH session — **THE LIVE-VOICE REFINEMENT SESSION: the visual design + entry gesture + interruption model designed WITH the owner, R69 bought, a 14-item coherence sweep, and the blind Emma DELTA round ran the full cadence to RESOLVED — SHIP. The plan is council-closed over the amended text; ▶▶ NEXT SESSION = THE S0 BUILD**; supersedes below where it speaks)
+
+- **The whole session was plan refinement in conversation with the owner — zero app code; seven
+  doc commits `fd9ebac`..the handoff tip, all on `LIVE_VOICE_PLAN.md` (+R69). UNPUSHED — the
+  push ruling stays the owner's** (origin == `ff33b61`-era tip from the 09-11 push). Prod
+  untouched v1.7.7 @ `578ffa7`; both dev units RUNNING (D69 — do NOT stop them).
+- **Owner-ratified this session (all in plan §6/§4/§5, rulings recorded §8):** ① the overlay
+  VISUALS — full-bleed backdrop in BOTH modes (blank-backdrop call screen REJECTED), the
+  `voice.live.ring` toggle: a stroke-only circumference FOCAL-ANCHORED over the face (reads
+  the point, never `z`) vs art-only with the transcript-line accent; ring animates from CALL
+  STATE only (amplitude analysis DECLINED, do not re-propose) · ② live call gets its OWN Conf
+  section · ③ the ENTRY = the dual-mode mic (a second composer button REJECTED): tap = mode
+  switch (no mode memory — boots mic), 150 ms activation, hold-record/release-send (composes
+  with `stt_auto_send`), 56 px swipe-up lock, relative slide-left cancel, Signal's 1000 ms
+  floor, call = hold + swipe-up committing on RELEASE + the ~2 s tappable chip — every number
+  R69-sourced · ④ INTERRUPTION: `barge_in` governs only the automatic voice trigger;
+  tap-to-interrupt (ChatGPT pattern) always exists during `speaking`; barge-off =
+  walkie-talkie (utterances queue, submit on drain) · ⑤ mute + the in-overlay Allow/Deny
+  confirm row + staged-attachments-ride + the second door DEFERRED.
+- **[R69](research/R69-hold-to-record-gesture.md) bought (Opus pass, Telegram/Signal source
+  dissection):** headline corrections — Telegram's 150 ms is TAP-DISAMBIGUATION not a
+  long-press; NO field precedent exists for gesture-started calls; Telegram-Web itself
+  degrades to tap-toggle (= our keyboard path); Fennec's `navigator.vibrate` no-ops
+  UNDETECTABLY. Parameter table = R69 §9; web risk list §10.
+- **The blind Emma DELTA round (owner-ordered, hermes lane `--ignore-rules`, scoped to
+  `git diff ff33b61..HEAD` on the plan): SHIP WITH CHANGES — 4 HIGH · 5 MED · 2 LOW, sweep
+  clean, several §4.5 mechanisms verified sound. All eleven ACCEPTED + folded (`024de33`),
+  her confirm: ALL RESOLVED with line proof, fix-sweep "none" — RESOLVED — SHIP** (full
+  record = plan §9). The HIGHs were amendment claims about seams that DON'T exist as
+  claimed: the upload retry (→ pending-queue retry), mute's "stop sending frames" (→
+  disabled track, silent frames flow), "zero mouth changes" (→ the minimal audioController
+  surface), and `awaiting_confirm` speech (→ queue-hold; **⚠ recorded PRE-EXISTING defect:
+  TYPED text during `awaiting_confirm` mis-shapes an actual 202 today — the F3 turn-seam
+  slice heals both modes**). Plus: the getUserMedia arming latch · dominant-axis commit ·
+  the queue's call-generation fence (hang-up discards, failure harvests to draft) · the
+  accept/refuse send result (`runComposer`'s boolean is routing-only) · overlay-local ring
+  coords (visual-viewport, not window resize) · **S2 SPLIT → S2a (loop + minimal overlay +
+  basic interrupt) / S2b (presentation + furniture)** · backdrop ladder = `useActiveBackdrop`
+  ALONE, no gacha oracle.
+- **▶▶ NEXT SESSION: the S0 build (plan §7)** — needs the OWNER + phone (~10 min): the AEC
+  capability + leak probe (Chrome + Fennec) · the Fennec permission check · the R69 gesture
+  probes (pointercancel incidence, `touch-action:none` vs URL-bar collapse) · the Speaches
+  realtime smoke against Parakeet incl. which session fields the fork honors (server
+  UNTOUCHED — owner ruling). **The ladder is now S0 → S0.5 (the dual-mode mic on real
+  dictation, FE-only, feel-tested early) → S1 → S2a → S2b → S3 → S4 (calibration = the phase
+  gate).** One slice per session, the standing cadence; §8.3 (Fennec posture) stays the one
+  open question, answered empirically by S0.
+- **Phase 23 S7 unchanged:** the remainder rides the owner's regular use (lorebook
+  live-trigger + duties×2); the v1.7.8 release (item E, config migration 2→3, config backup
+  FIRST on rollback) stays owed and owner-sequenced.
+
+## Prior state (2026-09-11, THIRTEENTH session — **S7 mostly ticked + the card-import leg delegated and PASSED · Dependabot D1 done · THE LIVE-VOICE DESIGN SESSION RAN END TO END: `LIVE_VOICE_PLAN.md` council-closed SHIP WITH CHANGES, awaiting the owner's ratification → D71 · everything PUSHED**; superseded above where it speaks)
 
 - **S7 progress (the owner, in conversation): phone-talk ✓ · all three backdrop states ✓ ·
   read-along ✓ (the mic leg is DONE — no Serve flip was needed) · showcase/picker feel ✓ ("for
