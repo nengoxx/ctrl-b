@@ -751,7 +751,44 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > — re-measure if any affordance grows · wake-lock-during-a-hold deferred to S2 (R69 §9's
   > last row) · chrome geometry (track width, rail −22 px, hint −60 px) is first-pass,
   > owner-tuned. **Owed: the owner's feel round on real dictation (:5173 serves it live) —
-  > hold/lock/slide-cancel/hints against R69's table; their word closes S0.5 → S1.** `voice.live` config + `/voice/status` delivery + the WS route + the
+  > hold/lock/slide-cancel/hints against R69's table; their word closes S0.5 → S1.**
+  >
+  > **THE FEEL-ROUND WAVE (2026-09-13, owner live in conversation — five findings OF-1..OF-5,
+  > each restated + confirmed before building; the wave ran the full cadence and is
+  > council-CLOSED: blind Emma SHIP WITH FIXES (2 MED, sweep "none") → fix wave → her confirm
+  > RESOLVED — SHIP).** Build `c654834` (pinned Opus) + review fixes `127234a` (main seat).
+  > Gate 6/6 ×2; FE 3,230/181 (counts in QUALITY.md); red-proofs: 13 scripted reversions in the
+  > build + 2 in the fix wave, plus a real-engine calc-validity probe.
+  > **The five rulings, as shipped:** ① grow 2.2× → **1.8×** via the ONE `--mg-grow-scale` knob
+  > (keyframe + reduced-motion both consume it) · ② the lock pill COMPRESSES into a circle
+  > tracking `--mg-lift` (three grid-stacked layers, transform/opacity only; recorded trade: an
+  > ellipse at rest — the divisor counter-scale was rejected as Fennec-risky, and the ruled
+  > target is the exact END circle; call mode's compressed circle wears a phone glyph, ships
+  > dark, S2a owns its proportions) · ③ the REAL voice-level halo — metering SPLIT from the
+  > auto-stop policy in `useDictation` (`armDetector` arms for every recording; the STOP
+  > decision stays `autoStopOn`-gated), level flows through the assignable `meter` ref →
+  > `--mg-level` written imperatively at 10 Hz (no React re-render), bulge ×0.73 = R69 §1.6
+  > verbatim (the briefed 0.5 measured invisible inside the 1.8 disc — builder catch),
+  > `METER_FULL_RMS = 0.12` feel-tuned · ④ the hint is a translucent borderless BUBBLE with a
+  > tail pointed at the mic, right above the button (`MicAnchor.rx` measured for the
+  > right-anchored tail; R69 §1.7 timings kept), and the too-short teaching moved into it via
+  > the null-safe `onTooShort` ref (toast = fallback; `MIN_CLIP_MS` + the rule stayed in
+  > `useDictation`) · ⑤ the locked CANCEL is the TOOLS-MENU TRIGGER morphed (owner-corrected
+  > from the paperclip mid-design): sliders ⇄ ✕ cross-fade, the whole aria contract swaps, the
+  > offer travels through the new `store/micCancel` single-nullable-slot store (the trigger is
+  > composed once in DefaultRoot and can see no variant's gesture; last-writer safe — one
+  > composer mounts at a time); the floating `.mg-cancel` DIED.
+  > **The review's two MEDs (both folded `127234a`):** the metering split had dragged the
+  > hidden-page stop along — locking the phone killed a default-mode recording; the visibility
+  > listener is now POLICY-gated (the meter poll throttling is decoration) · an open tools
+  > sheet survived the morph — the trigger now releases the `menu` overlay whenever the morph
+  > is active, and nothing re-opens it mid-morph.
+  > **⚠ Durable:** a "split metering from policy" refactor must enumerate EVERY decision the
+  > old arming carried — the visibility stop rode along invisibly (the new tests state the
+  > split from both sides, hidden-page included).
+  > **Owed now: the owner's glance at the WAVE itself** (:5173 — the 1.8× circle · the pill
+  > compress · the talk halo · the bubble + its tail · the ✕ morph) — their word closes
+  > S0.5 → S1. `voice.live` config + `/voice/status` delivery + the WS route + the
   relay session (mock-Speaches tests: framing, resampling, backpressure, caps, error taxonomy,
   bearer never in logs).
 - **S2a — the FE call loop, WITH basic barge-in (council F8 — an open-mic loop that cannot

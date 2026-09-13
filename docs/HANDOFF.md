@@ -12,7 +12,43 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-12, SIXTEENTH session — **S0.5 (the dual-mode mic entry gesture) RAN THE WHOLE STANDING CADENCE IN ONE SESSION and is council-CLOSED: blind Emma SHIP WITH FIXES → fix wave → BLOCKED confirm → micro-wave → RESOLVED — SHIP. ▶▶ NEXT: the owner's FEEL ROUND on real dictation (:5173) — their word closes S0.5 → S1**; supersedes below where it speaks)
+## Current state (2026-09-13, SEVENTEENTH session — **the owner's S0.5 FEEL ROUND landed FIVE findings live in conversation (OF-1..OF-5, each restated + confirmed, one mid-design correction) → the wave ran the whole cadence same session and is council-CLOSED: blind Emma SHIP WITH FIXES (2 MED) → fixes → RESOLVED — SHIP. ▶▶ NEXT: the owner's glance at the WAVE (:5173) — their word closes S0.5 → S1**; supersedes below where it speaks)
+
+- **The owner's feel round (in conversation, plain-language restatement + confirm before
+  building):** ① the record circle too big → **1.8×** (one `--mg-grow-scale` knob) · ② the
+  lock pill "compresses into a circle" as you swipe (their Telegram reference; NO bobbing
+  chevron) · ③ a REAL "you're talking" indicator (owner picked real over fake; ruled distinct
+  from the DECLINED call-ring amplitude item — this is the user's own mic while dictating) ·
+  ④ the hint becomes a Telegram-style BUBBLE: right above the button, small tail toward it,
+  translucent, NO border — and the too-short teaching moves into it (the top-of-screen toast
+  goes) · ⑤ the locked CANCEL = an existing button MORPHING — **owner-corrected mid-design
+  from the paperclip to the TOOLS-MENU trigger** ("the menu button at the other side"), which
+  is also always-composed in all three variants (the tap twin exists by construction).
+- **The wave is council-CLOSED (full record = plan §7-S0.5's FEEL-ROUND WAVE block):** build
+  `c654834` (pinned Opus; 13 red-proofs + a real-engine calc probe; headline mechanisms: the
+  metering/policy SPLIT in `useDictation` + the assignable `meter`/`onTooShort` refs +
+  `--mg-level` written imperatively at 10 Hz · the new `store/micCancel` single-nullable-slot
+  store joining the gesture to the trigger · `MicAnchor.rx` for the bubble tail; builder catch:
+  the briefed 0.5 halo bulge measured INVISIBLE inside the 1.8 disc — shipped R69 §1.6's
+  verbatim 0.73) → main-seat audit (3 deviations ACCEPTED: ellipse-at-rest pill trade ·
+  the 0.73 bulge · call-glyph in the compressed circle, ships dark) → **blind Emma SHIP WITH
+  FIXES 2M, sweep "none"** → main-seat fixes `127234a` (**F1: the split had dragged the
+  hidden-page stop along — locking the phone killed a default-mode recording; the visibility
+  listener is now POLICY-gated** · F2: an open tools sheet survived the morph — the trigger
+  releases the `menu` overlay while morphed), both red-proven → **her confirm: RESOLVED —
+  SHIP, sweep "none".**
+- **Gate 6/6 ×2 this session — FE 3,230/181 · BE 2,377** (counts in QUALITY.md). ⚠ Durable
+  lesson recorded in the plan block: a metering-from-policy split must enumerate EVERY
+  decision the old arming carried — the hidden-page stop rode along invisibly.
+- **▶▶ NEXT: the owner's glance at the wave** (:5173, live now — the smaller circle · the
+  pill compress · the talk halo · the bubble + tail · the sliders⇄✕ morph; the ellipse-at-rest
+  pill is the one recorded visual trade to eyeball). **Their word closes S0.5 → S1 (the BE
+  relay).** Phase 23 S7 + v1.7.8 sequencing unchanged.
+- Git: **12 commits unpushed over origin `b946fc1`** (the 9 + `c654834` + `127234a` + this
+  docs commit); tree clean at write; the PUSH ruling stays the owner's. **Prod untouched
+  v1.7.7 @ `578ffa7`.** Both dev units RUNNING (D69 — do NOT stop them).
+
+## Prior state (2026-09-12, SIXTEENTH session — **S0.5 (the dual-mode mic entry gesture) RAN THE WHOLE STANDING CADENCE IN ONE SESSION and is council-CLOSED: blind Emma SHIP WITH FIXES → fix wave → BLOCKED confirm → micro-wave → RESOLVED — SHIP**; superseded above where it speaks)
 
 - **S0.5 is council-CLOSED (full as-built record = plan §7-S0.5; read THAT before S1/S2a work):**
   pinned Opus build `86de7b0` (useDictation widens: start/stop/cancel · the F5 abortable

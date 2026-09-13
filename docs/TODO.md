@@ -1604,6 +1604,9 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       SHIP WITH FIXES 5M·2L → all folded → RESOLVED — SHIP; plan §7-S0.5 as-built record.
       The owner FEEL ROUND on real dictation — parameters tuned by eye against R69's table —
       is still owed and closes the slice by their word; live on :5173.)*
+      *(Feel round RAN 2026-09-13 — five findings OF-1..OF-5; the wave `c654834`+`127234a` is
+      council-CLOSED (Emma 2M → RESOLVED — SHIP; plan §7-S0.5's FEEL-ROUND WAVE block). The
+      owner's glance at the wave itself closes S0.5 → S1.)*
 - [ ] S1 — The BE relay: `voice.live` config + `/voice/status` delivery + `WS /api/voice/live`
       + the relay session (mock-Speaches tests; framing/resample/backpressure/caps/Origin).
 - [ ] S2 — *(split S2a/S2b by the 2026-09-12 delta round — plan §7 wins)* The FE call loop
