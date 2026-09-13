@@ -18,11 +18,12 @@ The arms, by what they defend:
   bytes are the resampled 24 kHz audio, and the one spurious error that must be swallowed.
 * **COMMIT-SAFETY** — a full session never sends `input_audio_buffer.commit` (R70 §1.2 arm A: a
   commit with speech open kills the session and loses the words).
-* **flush** — R70 §4's silence-burst arithmetic, in both branches and in the never-fed no-op case;
-  the burst's DELIVERY barrier against the mic that resumes behind it (F2); and the never-cleared
-  `_audio_seen` latch — burst-when-uncertain — that keeps a stale `committed` from turning a needed
-  flush into a no-op (F3 micro-wave: a commit cannot be told apart from a stale one, so it never
-  suppresses a burst).
+* **flush** — the CONSTANT worst-case pad `max(3000, silence_ms) + 200` (F3, two confirm rounds: a
+  per-buffer count goes stale in BOTH directions — a processed stale `committed` erased the next
+  phrase's count, an UNPROCESSED one left it high and shrank the burst below the 3 s floor — so no
+  count exists at all), in both `max()` branches and the never-fed no-op case; the burst's DELIVERY
+  barrier against the mic that resumes behind it (F2); and the never-cleared `_audio_seen` latch —
+  burst-when-uncertain.
 * **backpressure / taxonomy / secrets** — oldest-dropped + one `degraded`; the three upstream failure
   classes; and the bearer appearing in NO log record and NO downlink frame.
 """
@@ -646,19 +647,33 @@ def _flush_silence_ms(fed_frames: int, **live_cfg: Any) -> float:
     return fake.silence_ms
 
 
-def test_flush_pads_to_the_vad_window_when_the_buffer_is_short() -> None:
-    """30 frames = 1200 ms fed, `silence_ms` 700 ⇒ max(3000 − 1200, 700) + 200 = 2000 ms.
+def test_the_flush_burst_is_the_constant_worst_case_pad() -> None:
+    """The burst is `max(3000, silence_ms) + 200` REGARDLESS of what was fed (F3, confirm round №2).
 
     Silero only inspects the trailing 3 s of the buffer and cannot emit `speech_stopped` before the
-    buffer exceeds 3000 ms (R70 §1.1), so padding to that line is the only legal way to end a short
-    phrase — a commit would kill the session instead.
+    buffer exceeds 3000 ms (R70 §1.1), so padding past that line is the only legal way to end a short
+    phrase — a commit would kill the session instead. R70's `3000 − fed_ms` shortening is deliberately
+    NOT built: the relay cannot keep a per-buffer count (see the mirror arm below), and a constant pad
+    costs nothing in latency — Silero endpoints the moment the threshold is crossed mid-burst.
     """
-    assert _flush_silence_ms(30, silence_ms=700) == pytest.approx(2000, abs=40)
+    assert _flush_silence_ms(30, silence_ms=700) == pytest.approx(3200, abs=40)
 
 
-def test_flush_falls_back_to_silence_ms_once_the_buffer_is_past_the_window() -> None:
-    """88 frames = 3520 ms fed ⇒ the 3000 ms term is already satisfied, so 700 + 200 = 900 ms."""
-    assert _flush_silence_ms(88, silence_ms=700, relay_queue_ms=8000) == pytest.approx(900, abs=40)
+def test_an_unprocessed_committed_cannot_shorten_the_burst() -> None:
+    """The confirm round's MIRROR ordering: Speaches has already committed phrase 1 server-side, but
+    the relay's downlink leg has not processed the `committed` event when `flush` arrives. Any
+    per-buffer count is then stale HIGH — it still includes phrase 1 — and R70's `3000 − fed_ms`
+    collapses toward `silence_ms`: with ~3520 ms counted the burst would be 900 ms against an ear
+    buffer holding almost nothing, below the 3 s floor, and the phrase would never endpoint (words
+    lost). The constant pad is immune: 88 frames fed, NO `committed` ever delivered, burst still
+    max(3000, 700) + 200 = 3200 ms."""
+    assert _flush_silence_ms(88, silence_ms=700, relay_queue_ms=8000) == pytest.approx(3200, abs=40)
+
+
+def test_a_dominant_silence_ms_widens_the_burst() -> None:
+    """The `max()`'s other branch: `silence_ms` above the 3 s window (legal up to 10 s) must widen the
+    burst — the endpoint needs `silence_ms` of TRAILING silence, however long the buffer is."""
+    assert _flush_silence_ms(5, silence_ms=5000) == pytest.approx(5200, abs=40)
 
 
 def test_flush_with_nothing_fed_injects_nothing() -> None:
@@ -713,12 +728,12 @@ def test_a_flush_burst_is_delivered_in_full_before_mic_audio_resumes() -> None:
             ws.send_bytes(_pcm(960, value=3000))  # the mic does not wait for the flush
         ws.send_json({"type": "stop"})
         assert _closed(ws)[0] == 1000
-    # max(3000 - 80, 700) + 200 = 3120 ms, every millisecond of it DELIVERED…
-    assert fake.silence_ms == pytest.approx(3120, abs=1)
+    # max(3000, 700) + 200 = 3200 ms — the constant pad — every millisecond of it DELIVERED…
+    assert fake.silence_ms == pytest.approx(3200, abs=1)
     # …as one uninterrupted run right behind the two mic frames, which is the observable form of "the
-    # flush had not returned yet": 2 mic frames, then 78 x 40 ms of silence, and only then anything.
-    assert len(fake.appends) >= 80
-    assert [any(a) for a in fake.appends[:80]] == [True, True] + [False] * 78
+    # flush had not returned yet": 2 mic frames, then 80 x 40 ms of silence, and only then anything.
+    assert len(fake.appends) >= 82
+    assert [any(a) for a in fake.appends[:82]] == [True, True] + [False] * 80
 
 
 def test_a_flush_after_an_overflow_still_completes() -> None:
@@ -770,19 +785,18 @@ def test_a_stale_committed_does_not_suppress_the_next_phrases_flush() -> None:
         ws.send_json({"type": "flush"})  # straight after the stale commit — nothing re-arms anything
         ws.send_json({"type": "stop"})
         assert _closed(ws)[0] == 1000
-    # `fed_ms` was reset by the stale commit, so the burst is the longest one: max(3000 − 0, 700)
-    # + 200. Undercounting is the SAFE direction — a long burst costs ~1 s of loopback work, a short
+    # The constant pad: max(3000, 700) + 200 — a long burst costs ~1 s of loopback work, a short
     # (or suppressed) one costs the words.
     assert fake.silence_ms == pytest.approx(3200, abs=1)
     assert "input_audio_buffer.commit" not in fake.types
 
 
 def test_a_frame_too_short_to_resample_still_counts_as_audio_fed() -> None:
-    """The latch's own ground, and why it is not `_fed_ms > 0` spelled a second time: `_fed_ms` counts
-    ENQUEUED milliseconds, and a frame can be accepted without producing any. One sample at a
-    downsampling ratio resamples to nothing — `Pcm16Resampler` CARRIES it as phase rather than
-    discarding it — so `_fed_ms` reads 0 over audio that is really in flight, and the old guard turned
-    the flush behind it into a no-op."""
+    """The latch's own ground, and why it is armed at ACCEPT rather than derived from what was
+    enqueued: a frame can be accepted without producing any output. One sample at a downsampling
+    ratio resamples to nothing — `Pcm16Resampler` CARRIES it as phase rather than discarding it — so
+    any enqueued-bytes view reads 0 over audio that is really in flight, and a guard built on it
+    turned the flush behind it into a no-op."""
     fake = FakeSpeaches([created()])
     with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
         _ready(ws, rate=48000)  # 48 k -> 24 k: one sample has no right neighbour to interpolate to
@@ -815,7 +829,7 @@ def test_a_flush_after_a_commit_still_bursts() -> None:
         ws.send_json({"type": "flush"})
         ws.send_json({"type": "stop"})
         assert _closed(ws)[0] == 1000
-    assert fake.silence_ms == pytest.approx(3200, abs=1)  # max(3000 − 0, 700) + 200
+    assert fake.silence_ms == pytest.approx(3200, abs=1)  # the constant pad: max(3000, 700) + 200
 
 
 def test_multiple_flushes_are_legal() -> None:

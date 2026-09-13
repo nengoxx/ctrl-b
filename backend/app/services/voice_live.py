@@ -24,14 +24,15 @@ counter.
    AssertionError escapes an `except openai.APIStatusError`-only catch, the event TaskGroup tears the
    session down at a bare 1006 — **and the words are lost.** Reproduced 2/2 on emma.
 2. **The flush is a silence burst, relay-side** (R70 §4). "End the phrase now" is
-   `max(3000 − fed_ms, silence_ms) + 200` ms of zero-frames appended as fast as the loopback takes
-   them: Silero only looks at the trailing 3 s of the buffer and cannot emit `speech_stopped` before
-   the buffer exceeds 3000 ms, so padding the buffer is the only legal way to force an endpoint. It
-   lives HERE and not on the phone because an 88-frame burst in 3 ms would violate this relay's own
-   §3.1 message-rate ceiling. The burst is also a **delivery barrier** (S1 review F2): the flush does
-   not return until every one of its frames has actually gone upstream, or the mic audio that follows
-   it would evict the tail of the burst out of the same bounded queue and the endpoint would never
-   fire.
+   `max(3000, silence_ms) + 200` ms of zero-frames appended as fast as the loopback takes them: Silero
+   only looks at the trailing 3 s of the buffer and cannot emit `speech_stopped` before the buffer
+   exceeds 3000 ms, so padding the buffer is the only legal way to force an endpoint. The pad is a
+   CONSTANT worst case — R70's `3000 − fed_ms` shortening assumed a per-buffer count the relay cannot
+   actually keep (F3, two review rounds; see `_flush`). It lives HERE and not on the phone because an
+   88-frame burst in 3 ms would violate this relay's own §3.1 message-rate ceiling. The burst is also
+   a **delivery barrier** (S1 review F2): the flush does not return until every one of its frames has
+   actually gone upstream, or the mic audio that follows it would evict the tail of the burst out of
+   the same bounded queue and the endpoint would never fire.
 3. **Backpressure is ours alone.** Speaches has no server-side backpressure (unbounded pubsub
    queues, §7-S0 ②) and `WebSocket.send()` has no awaitable backpressure in the browser, so the
    bounded queue here is the only one in the chain: on overflow it drops the OLDEST frames and says
@@ -252,27 +253,19 @@ class LiveRelaySession:
         self._client_gone = False
         self._closed = False
 
-        #: The bounded relay queue: `(append-event JSON, ms of audio)` pairs. Sized in `_pump`.
-        self._queue: asyncio.Queue[tuple[str, float]] = asyncio.Queue()
-        #: Milliseconds of audio ENQUEUED for upstream since the last observed `committed`. Counted at
-        #: enqueue (not at send) on purpose: the flush burst goes in BEHIND whatever is queued, so by
-        #: the time the silence lands upstream every queued frame has been appended — the queue lag is
-        #: exactly what `fed_ms` must already include for R70's `3000 − fed_ms` to be right. A dropped
-        #: frame gives its milliseconds back, because it never reaches the ear at all.
-        self._fed_ms = 0.0
+        #: The bounded relay queue of append-event JSON payloads. Sized in `_pump`.
+        self._queue: asyncio.Queue[str] = asyncio.Queue()
         #: True between a `speech_started` and its `speech_stopped`. Tracked for the commit-safety
         #: invariant (§7-S0's amendment (i)) and to keep a no-op flush from padding a silent buffer.
         self._speech_open = False
         #: True once ANY client frame has been accepted this session — NEVER cleared (S1 review F3,
-        #: micro-wave). The first cut cleared it on `committed`, which reopened the reviewer's exact
-        #: repro: a `committed` can be STALE (emitted for phrase 1, delivered after phrase 2's frames
-        #: were accepted) or COVERING (everything really was consumed), and the event does not say
-        #: which — the two orderings live in the same ms-scale window and the relay cannot tell them
-        #: apart. When indistinguishable, the safe posture is BURST-WHEN-UNCERTAIN: a suppressed burst
-        #: loses words (the never-lose-speech invariant), a spurious one costs ~80 sub-ms loopback
-        #: appends into a silent buffer. So the only relay-side no-op left is a session that never fed
-        #: audio at all; `_fed_ms` alone cannot even answer that (it reads 0 for a frame the resampler
-        #: carries as phase).
+        #: two rounds). There is deliberately NO per-buffer audio accounting here at all: a `committed`
+        #: from Speaches cannot be correlated with what the relay has fed — it may be STALE (processed
+        #: after the next phrase's frames were accepted; resetting on it once suppressed a needed
+        #: burst) or simply UNPROCESSED at flush time (the mirror ordering: a stale-HIGH count shrank
+        #: the burst below the 3 s floor and the phrase never endpointed). Both directions of trusting
+        #: such a count lose words, so the flush bursts a CONSTANT worst-case pad instead (see
+        #: `_flush`) and the only state kept is this one bit: has this session ever fed audio.
         self._audio_seen = False
         #: One `degraded` frame per overflow BURST, not per dropped frame.
         self._overflow_flagged = False
@@ -506,7 +499,7 @@ class LiveRelaySession:
         """The relay queue → Speaches, as TEXT frames. Deliberately dumb: everything that can be
         rejected was rejected by the producer, so this leg only owns the socket's failure mode."""
         while True:
-            payload, _ms = await self._queue.get()
+            payload = await self._queue.get()
             await self._send_up_raw(payload)
             # The DELIVERY half of the queue's contract: `_flush` parks on `Queue.join()` until every
             # queued item has actually reached Speaches (F2), and this is the call that lets it go.
@@ -530,8 +523,8 @@ class LiveRelaySession:
         first (F4): `max_frame_bytes` bounds one message, `FRAME_MS_TOLERANCE × frame_ms` bounds the
         AUDIO one message may carry, and `_note_frame` bounds both over a rolling window. The frame's
         duration is implied by its length at the rate the client DECLARED — the same rate the
-        resampler was built from, so the duration the caps judge is the duration the queue's own ms
-        accounting will see on the far side of the resample.
+        resampler was built from — and the per-frame cap is what keeps the frame-COUNT queue depth
+        truthful in milliseconds.
         """
         if len(data) > self._cfg.max_frame_bytes:
             raise _ProtocolError(
@@ -549,7 +542,7 @@ class LiveRelaySession:
         self._note_frame(ms)
         # Every frame that clears the caps counts as audio fed, whatever the resampler then makes of
         # it — a frame too short to produce an output sample is CARRIED as phase, not discarded, so
-        # `_fed_ms` would say "nothing fed" about audio that is really in flight (F3).
+        # even a byte-count view would say "nothing fed" about audio that is really in flight (F3).
         self._audio_seen = True
         assert self._resampler is not None
         try:
@@ -608,14 +601,11 @@ class LiveRelaySession:
         """
         if not pcm:
             return
-        ms = len(pcm) / 2 / SPEACHES_WIRE_RATE * 1000
-        item = (
-            json.dumps({"type": "input_audio_buffer.append", "audio": base64.b64encode(pcm).decode("ascii")}),
-            ms,
+        item = json.dumps(
+            {"type": "input_audio_buffer.append", "audio": base64.b64encode(pcm).decode("ascii")}
         )
         if not drop_oldest:
             await self._queue.put(item)
-            self._fed_ms += ms
             return
         dropped = False
         while True:
@@ -624,8 +614,7 @@ class LiveRelaySession:
                 break
             except asyncio.QueueFull:
                 try:
-                    _payload, old_ms = self._queue.get_nowait()
-                    self._fed_ms = max(0.0, self._fed_ms - old_ms)
+                    self._queue.get_nowait()
                     # An evicted item is one the uplink leg will never mark done, so it is marked
                     # here. This is not bookkeeping hygiene: `_flush`'s delivery barrier is
                     # `Queue.join()`, and an unbalanced counter makes that join either hang forever
@@ -634,7 +623,6 @@ class LiveRelaySession:
                     dropped = True
                 except asyncio.QueueEmpty:  # pragma: no cover — the consumer drained it meanwhile
                     pass
-        self._fed_ms += ms
         if dropped and not self._overflow_flagged:
             self._overflow_flagged = True
             log.warning("live voice: relay queue overflow — dropping the oldest uplink audio")
@@ -650,36 +638,33 @@ class LiveRelaySession:
         trips `assert audio_end_ms is not None` and the words are lost at a bare 1006. The relay
         therefore NEVER commits — not here, not anywhere. What it does instead is arithmetic on the
         endpointing law: a stop needs either no speech in the trailing 3 s or a closed segment with the
-        buffer past 3000 ms, so `max(3000 − fed_ms, silence_ms) + 200` ms of zero-frames satisfies
-        whichever of the two applies. Unpaced on purpose: this leg is loopback, off the client's
-        metered wire, and the measured release→text tail is 530–830 ms.
+        buffer past 3000 ms, so `max(3000, silence_ms) + 200` ms of zero-frames satisfies whichever of
+        the two applies — WHATEVER the ear's buffer holds. Unpaced on purpose: this leg is loopback,
+        off the client's metered wire, and the measured release→text tail is 530–830 ms.
 
-        The no-op guard is deliberately minimal (F3, micro-wave): it fires ONLY for a session that has
-        never fed audio at all. Anything smarter has to decide whether the last `committed` was stale
-        (phrase-2 audio pending — a no-op loses the words) or covering (nothing pending — a no-op is
-        right), and the event does not say which: the relay cannot correlate what a commit consumed
-        with what it has accepted, and the two orderings share the same ms-scale delivery window. So
-        the guard bursts when uncertain — a suppressed burst violates never-lose-speech, a spurious
-        one costs ~80 sub-ms loopback appends into a silent buffer and nothing downstream (silence
-        raises no VAD event, so no empty transcript is even minted). `_fed_ms` is not a guard term:
-        it reads 0 both for "never fed" and for audio a stale `committed` mis-zeroed, which is exactly
-        the ambiguity above; its reset on `committed` deliberately STAYS for the burst-LENGTH
-        arithmetic, where undercounting lengthens the burst (`3000 − 0`) — the safe direction.
+        **The burst is deliberately a CONSTANT worst-case pad, not `3000 − fed_ms` (F3, two review
+        rounds).** R70 §4's subtraction assumed the relay could know how much audio the ear's CURRENT
+        buffer holds, and it cannot: `committed` events cannot be correlated with what was fed, so a
+        per-buffer count goes stale in BOTH directions — processed-stale (the reset erases the next
+        phrase's count; the no-op/short burst loses its words) and unprocessed-stale (the mirror: the
+        count still includes the committed phrase, `3000 − fed_ms` goes near zero, and the burst lands
+        below the 3 s floor — the phrase never endpoints). Both were caught by review; the shortening
+        was an optimization, and it was the bug. The constant pad costs only loopback appends, and
+        NOTHING in latency: Silero endpoints the moment the threshold is crossed mid-burst, and the
+        burst's tail lands in the freshly rotated buffer as leading silence (which only helps the next
+        endpoint past its own 3 s floor). The no-op guard is the one bit the relay can actually know:
+        a session that never fed audio has nothing to flush; everything else bursts.
         """
         if not self._speech_open and not self._audio_seen:
             return
-        needed = max(VAD_WINDOW_MS - self._fed_ms, float(self._cfg.silence_ms)) + FLUSH_MARGIN_MS
+        needed = max(float(VAD_WINDOW_MS), float(self._cfg.silence_ms)) + FLUSH_MARGIN_MS
         chunk = self._cfg.frame_ms
         frames = int(needed // chunk)
         # `needed` is rarely a whole number of frames; the leftover (always < `frame_ms`, so always one
         # short frame) is sent too, because the burst's TOTAL duration is what the endpointing law is
         # arithmetic on — rounding it down by up to a frame would leave a short phrase one frame shy.
         remainder = int(needed - frames * chunk)
-        log.info(
-            "live voice: flushing with %d ms of silence (fed_ms=%.0f)",
-            frames * chunk + remainder,
-            self._fed_ms,
-        )
+        log.info("live voice: flushing with %d ms of silence", frames * chunk + remainder)
         quiet = silence(chunk, SPEACHES_WIRE_RATE)
         for _ in range(frames):
             await self._enqueue(quiet, drop_oldest=False)
@@ -707,13 +692,6 @@ class LiveRelaySession:
         elif kind == "input_audio_buffer.speech_stopped":
             self._speech_open = False
             await self._send_down({"type": "speech_stopped"})
-        elif kind == "input_audio_buffer.committed":
-            # Speaches rotates the audio buffer at every commit — including the one its own VAD path
-            # runs right after `speech_stopped` — so the 3 s window restarts here and so does `fed_ms`.
-            # `_audio_seen` deliberately does NOT reset here (F3 micro-wave): this event may be STALE —
-            # emitted for the previous phrase, delivered after the next phrase's frames were accepted —
-            # and clearing the guard on it is exactly how the reviewer's repro lost words. See `_flush`.
-            self._fed_ms = 0.0
         elif kind == "conversation.item.input_audio_transcription.completed":
             # `final` is the R70 §9.2 seam for phrase-streaming dictation (S2.5): the ear has no
             # partials today (verified twice), so every transcript this relay emits is final — but the
@@ -723,8 +701,10 @@ class LiveRelaySession:
             )
         elif kind == "error":
             await self._handle_upstream_error(event)
-        # Everything else (`session.updated`, `conversation.item.*`, `rate_limits.*`) is upstream
-        # bookkeeping the phone has no use for — absorbed, not forwarded.
+        # Everything else (`session.updated`, `input_audio_buffer.committed`, `conversation.item.*`,
+        # `rate_limits.*`) is upstream bookkeeping the phone has no use for — absorbed, not forwarded.
+        # `committed` in particular DELIBERATELY updates nothing (F3, two rounds): it cannot be
+        # correlated with what the relay fed, so no per-buffer accounting hangs off it — see `_flush`.
 
     async def _handle_upstream_error(self, event: dict[str, Any]) -> None:
         """Forward upstream errors, minus the ONE known-spurious one.
