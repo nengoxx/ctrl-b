@@ -40,11 +40,21 @@
 - **Gate 6/6 ×2 this session — FE 3,230/181 · BE 2,377** (counts in QUALITY.md). ⚠ Durable
   lesson recorded in the plan block: a metering-from-policy split must enumerate EVERY
   decision the old arming carried — the hidden-page stop rode along invisibly.
-- **▶▶ NEXT: the owner's glance at the wave** (:5173, live now — the smaller circle · the
-  pill compress · the talk halo · the bubble + tail · the sliders⇄✕ morph; the ellipse-at-rest
-  pill is the one recorded visual trade to eyeball). **Their word closes S0.5 → S1 (the BE
-  relay).** Phase 23 S7 + v1.7.8 sequencing unchanged.
-- Git: **12 commits unpushed over origin `b946fc1`** (the 9 + `c654834` + `127234a` + this
+- **ROUND 2 ran same day (the owner's glance: "much better" + five nudges, built main-seat,
+  council-CLOSED — full record = the plan block's ROUND 2 addendum):** grow → **1.65** · the
+  pill re-shaped to a **TRUE STADIUM** (a real height tracking `--mg-lift` under full radius —
+  ⚠ a RECORDED §14.11 exception, composer-auto-grow precedent, `contain: layout` fence; the
+  round-1 ellipse rejected by eye) · hint gap 15→8px · the ✕ 18px/2.6-stroke · **the composer
+  placeholder YIELDS while recording** (`body:has()` off `data-stage`; e2e-proven in a real
+  engine). Emma micro-round: runtime verified SOUND in Chromium (heights/centring/snap/
+  reduced-motion/`:has` cost) — blocked only on pin coverage + stale comments → rider
+  `c81780c` (exact-arithmetic height pin · the every-rule scaleY/transform-clobber sweep ·
+  the no-raw-grow-literal sweep, all red-proven · 3 comments rewritten) → **RESOLVED — SHIP.**
+  Commits `c057459` + `c81780c`; gate 6/6 ×2; **FE 3,234/181**.
+- **▶▶ NEXT: the owner's glance at ROUND 2** (:5173, live — the thicker ✕ · the closer bubble ·
+  the 1.65× circle · the true pill squeeze · the placeholder clearing for slide-to-cancel).
+  **Their word closes S0.5 → S1 (the BE relay).** Phase 23 S7 + v1.7.8 sequencing unchanged.
+- Git: **15 commits unpushed over origin `b946fc1`** (the 12 + `c057459` + `c81780c` + this
   docs commit); tree clean at write; the PUSH ruling stays the owner's. **Prod untouched
   v1.7.7 @ `578ffa7`.** Both dev units RUNNING (D69 — do NOT stop them).
 

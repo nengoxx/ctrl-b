@@ -788,7 +788,29 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > split from both sides, hidden-page included).
   > **Owed now: the owner's glance at the WAVE itself** (:5173 — the 1.8× circle · the pill
   > compress · the talk halo · the bubble + its tail · the ✕ morph) — their word closes
-  > S0.5 → S1. `voice.live` config + `/voice/status` delivery + the WS route + the
+  > S0.5 → S1.
+  >
+  > **ROUND 2 (2026-09-13, same day — the owner's glance at the wave came back "much better" +
+  > five nudges; built main-seat, council-CLOSED: Emma micro-round NOT RESOLVED on pin
+  > coverage + stale comments (runtime verified fully sound — she Chromium-measured heights at
+  > lift 0/.5/1 both modes, centring, snap, reduced motion, the `:has` cost) → rider →
+  > RESOLVED — SHIP.** Commits `c057459` (the five nudges) + `c81780c` (the rider). Gate 6/6
+  > ×2; FE 3,234/181.
+  > **The five, as shipped:** grow 1.8 → **1.65** (the knob) · **the pill is a TRUE STADIUM** —
+  > `.mg-rail-skin` is a real box whose HEIGHT tracks `--mg-lift` under `border-radius: 999px`
+  > ("like the toggles"; the round-1 ellipse rejected by eye). ⚠ The height is a RECORDED
+  > exception to §14.11's transform-only rule: height IS the mechanism (the composer auto-grow
+  > precedent), 28px wide, absolutely positioned, fenced by `contain: layout`; reduced motion
+  > keeps two discrete states · the hint gap 15 → **8px** · the ✕ **18px + a 2.6 stroke**
+  > (scoped to the morph face) · **the composer placeholder YIELDS while recording**
+  > (hold + locked) via `body:has()` off the chrome's `data-stage` (the seam-scrim precedent) —
+  > the slide-to-cancel was unreadable across the "type a message" text; proven in a real
+  > engine by the e2e `::placeholder` assertion.
+  > **The rider (her blocks):** the height pin holds the EXACT calc expression; a
+  > rules-mentioning sweep bans `scaleY`/transform-clobbers on the skin across every arm; the
+  > grow knob gains a no-raw-scale-literal sweep — all three red-proven against her named
+  > drift classes; three stale transform-only/1.8× comments rewritten to the height mechanism.
+  > **Owed: the owner's glance at round 2 — their word closes S0.5 → S1.** `voice.live` config + `/voice/status` delivery + the WS route + the
   relay session (mock-Speaches tests: framing, resampling, backpressure, caps, error taxonomy,
   bearer never in logs).
 - **S2a — the FE call loop, WITH basic barge-in (council F8 — an open-mic loop that cannot
