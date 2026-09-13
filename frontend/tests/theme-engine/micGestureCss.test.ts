@@ -211,3 +211,47 @@ describe("OF-3/OF-5 · the two rules JS writes into", () => {
     expect(css).not.toContain(".mg-cancel");
   });
 });
+
+describe("S2.5 · the phrase-pending pulse (R70 §7 option 1)", () => {
+  it("is its OWN box — it may not share a property with the grow keyframe or the level halo", () => {
+    // The reason it is a `::after` at all: `.mg-grow` already animates `transform` and `.mg-halo`
+    // already carries the live level on one, so a third state on either would be two animations
+    // fighting over a single property. This is also §14.11's transform/opacity rule with no exception
+    // asked for — the pulse animates OPACITY, and nothing else.
+    const ring = declarationsFor(".mg-grow::after");
+    expect(ring).toContain("opacity: 0");
+    expect(ring).toContain("var(--mg-pending-ring)");
+    for (const rule of everyRuleMentioning("mg-pending")) {
+      expect(normalize(rule.body)).not.toMatch(/\btransform:/);
+      expect(normalize(rule.body)).not.toMatch(/\b(width|height|inset|border-width):/);
+    }
+    // …and the positioned box it hangs off has to be positioned, or `inset: 0` is the composer's.
+    expect(declarationsFor(".mg-grow")).toContain("position: relative");
+  });
+
+  it("the pulse is ONE keyframe driven by the knobs, stated once each", () => {
+    expect(declarationsFor(".mic-gesture[data-pending] .mg-grow::after")).toContain(
+      "animation: mg-pending var(--mg-pending-ms) ease-in-out infinite",
+    );
+    expect(normalize(declarationsFor("50%"))).toContain("opacity: var(--mg-pending-peak)");
+    // The OF-1 rule, applied to the new knobs: each is DECLARED exactly once, so tuning one is one
+    // edit and the reduced-motion arm below cannot drift away from the animation it stands in for.
+    for (const knob of ["--mg-pending-ring", "--mg-pending-peak", "--mg-pending-ms"]) {
+      expect(css.match(new RegExp(`${knob}:`, "g"))).toHaveLength(1);
+    }
+  });
+
+  it("reduced motion keeps it VISIBLE — it is state, not decoration (unlike the level halo)", () => {
+    const still = declarationsFor(
+      'body[data-motion="reduced"] .mic-gesture[data-pending] .mg-grow::after',
+    );
+    expect(normalize(still)).toContain("animation: none");
+    // …at the pulse's own peak, read from the same knob rather than a re-typed number.
+    expect(normalize(still)).toContain("opacity: var(--mg-pending-peak)");
+    // the contrast with the halo, which DOES go: there the level is pure decoration over a state the
+    // red disc already paints, and §14.11 drops it.
+    expect(normalize(declarationsFor('body[data-motion="reduced"] .mg-halo'))).toContain(
+      "opacity: 0",
+    );
+  });
+});

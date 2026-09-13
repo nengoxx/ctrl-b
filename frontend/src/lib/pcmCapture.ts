@@ -5,11 +5,18 @@ import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "./pcmWorklet";
 // `frame_ms` pcm16 frames with their RMS, and the honest answer to "is this track's echo cancellation
 // the subtractive `all` mode".
 //
-// SEPARATE FROM `useDictation` BY DESIGN, not by accident: that hook owns a `MediaRecorder` producing
-// whole opus CLIPS for the HTTP `/voice/stt` door, and this produces a continuous raw-pcm uplink. They
-// share nothing but the permission, and only one of them is ever live at a time. What this does NOT do
-// is change dictation's own constraints — R51 §6.1's finding (dictation passes none) is a deferred
-// residual, not this slice's business.
+// TWO ENTRY POINTS SINCE S2.5, and the split is the whole point:
+//   · `startPcmCapture` — the CALL's: it opens its own `getUserMedia` and its own `AudioContext`,
+//     because a call has no recorder beside it and owns the ear outright;
+//   · `attachPcmUplink` — the worklet graph ALONE, over a context and a stream the CALLER already
+//     holds. Streaming dictation (D71 §7-S2.5) is a THIRD consumer of the ONE stream `useDictation`
+//     already opened for its `MediaRecorder` and its `armDetector` analyser (R70 §8) — never a second
+//     `getUserMedia`, never a second context. `startPcmCapture` is written in terms of it, so the two
+//     legs cannot drift into two different frame contracts.
+// What neither does is change dictation's own `getUserMedia` CONSTRAINTS — R51 §6.1's finding
+// (dictation passes none) is a deferred residual, not this slice's business: the constraints below
+// belong to the capture this module opens, and the borrowed stream arrives however its owner asked
+// for it.
 //
 // THE ECHO READBACK IS THE BARGE-IN GATE (§7-S0 ③, owner's device round): Chrome honours
 // `echoCancellation: {ideal: "all"}` and genuinely SUBTRACTS the page's own playback, so the mic can stay
@@ -51,6 +58,61 @@ export interface PcmCaptureOpts {
   onEnded: () => void;
 }
 
+/** The worklet graph, detachable (S2.5). Deliberately NOT a `PcmCapture`: it owns neither the stream
+ *  nor the context, so it has nothing to release but its own node chain and its Blob URL. */
+export interface PcmUplink {
+  /** Stop delivering frames and release the Blob URL. Idempotent, and it leaves the context and the
+   *  stream exactly as it found them — dictation's detector owns both and closes them on its own
+   *  terminal path (`teardownAudio`), which is also what finally retires these nodes. */
+  stop: () => void;
+}
+
+/**
+ * Hang a pcm16 uplink off an EXISTING running context + stream (the S2.5 seam).
+ *
+ * Throws whatever the worklet install throws; anything it allocated before a later failure is
+ * released on the way out, and the caller's context/stream are untouched either way.
+ */
+export async function attachPcmUplink(
+  ctx: AudioContext,
+  stream: MediaStream,
+  opts: { frameMs: number; onFrame: (frame: PcmFrame) => void },
+): Promise<PcmUplink> {
+  let url: string | null = null;
+  let detached = false;
+  const stop = (): void => {
+    if (detached) return;
+    detached = true;
+    if (url) URL.revokeObjectURL(url);
+  };
+  try {
+    url = URL.createObjectURL(new Blob([PCM_WORKLET_SOURCE], { type: "text/javascript" }));
+    await ctx.audioWorklet.addModule(url);
+    const frameSamples = Math.max(1, Math.round((ctx.sampleRate * opts.frameMs) / 1000));
+    const node = new AudioWorkletNode(ctx, PCM_WORKLET_NAME, {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      processorOptions: { frameSamples },
+    });
+    node.port.onmessage = (e: MessageEvent<PcmFrame>) => {
+      if (!detached) opts.onFrame(e.data);
+    };
+    ctx.createMediaStreamSource(stream).connect(node);
+    // A worklet is only PULLED while it is reachable from the destination, so the chain has to terminate
+    // there — through a muted gain, because "reachable" must not also mean "audible". The processor
+    // writes no output at all (its `outputs` stay zero-filled), so this path carries silence twice over;
+    // the gain is the part that does not depend on that staying true.
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    node.connect(mute);
+    mute.connect(ctx.destination);
+    return { stop };
+  } catch (e) {
+    stop();
+    throw e;
+  }
+}
+
 /**
  * Open the call's capture chain. Throws whatever `getUserMedia` throws (a denied permission, an absent
  * device) — the caller renders that as the call's error terminal; everything it allocated before a later
@@ -71,14 +133,16 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
   const track = stream.getAudioTracks()[0];
 
   let ctx: AudioContext | null = null;
-  let url: string | null = null;
+  let uplink: PcmUplink | null = null;
   let stopped = false;
   const stop = (): void => {
     if (stopped) return;
     stopped = true;
     for (const t of stream.getTracks()) t.stop();
     if (ctx) void ctx.close().catch(() => {});
-    if (url) URL.revokeObjectURL(url);
+    // The graph's own release (its Blob URL): the uplink owns what it minted, this owns the context
+    // and the track. Order is irrelevant — both are idempotent and neither reaches into the other.
+    uplink?.stop();
   };
 
   try {
@@ -89,26 +153,14 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
     // Failing the start instead puts it where the owner can see it (the call's error terminal). The
     // gesture unlock this needs is `primeAudio`'s job, inside the tap; there is no second chance here.
     if (ctx.state !== "running") throw new Error("audio context suspended");
-    url = URL.createObjectURL(new Blob([PCM_WORKLET_SOURCE], { type: "text/javascript" }));
-    await ctx.audioWorklet.addModule(url);
-    const frameSamples = Math.max(1, Math.round((ctx.sampleRate * opts.frameMs) / 1000));
-    const node = new AudioWorkletNode(ctx, PCM_WORKLET_NAME, {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      processorOptions: { frameSamples },
+    uplink = await attachPcmUplink(ctx, stream, {
+      frameMs: opts.frameMs,
+      // The `stopped` guard stays HERE rather than riding the uplink's own `detached`: a released
+      // CAPTURE must deliver nothing even in the window before `stop()` reaches the graph.
+      onFrame: (frame) => {
+        if (!stopped) opts.onFrame(frame);
+      },
     });
-    node.port.onmessage = (e: MessageEvent<PcmFrame>) => {
-      if (!stopped) opts.onFrame(e.data);
-    };
-    ctx.createMediaStreamSource(stream).connect(node);
-    // A worklet is only PULLED while it is reachable from the destination, so the chain has to terminate
-    // there — through a muted gain, because "reachable" must not also mean "audible". The processor
-    // writes no output at all (its `outputs` stay zero-filled), so this path carries silence twice over;
-    // the gain is the part that does not depend on that staying true.
-    const mute = ctx.createGain();
-    mute.gain.value = 0;
-    node.connect(mute);
-    mute.connect(ctx.destination);
     track.addEventListener("ended", () => {
       if (!stopped) opts.onEnded();
     });

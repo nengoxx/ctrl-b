@@ -1015,6 +1015,10 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "ring": False,
             "echo_workaround": "on",
             "max_session_s": 900,
+            "dictation": True,
+            "tail_wait_ms": 2500,
+            "dictation_idle_s": 20,
+            "dictation_max_s": 300,
         }
     )
     body = app.get("/api/voice/status").json()
@@ -1027,9 +1031,50 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "ring": False,
         "echo_workaround": "on",
         "max_session_s": 900,
+        # S2.5 — the dictation four ride the SAME object (one ear, one set of client knobs). Nothing
+        # in `useDictation`'s streaming branch may default one of these; they all arrive here.
+        "dictation": True,
+        "tail_wait_ms": 2500,
+        "dictation_idle_s": 20,
+        "dictation_max_s": 300,
     }
     # shape only: nothing here names an endpoint, a model or a key (the `stt_auto_stop` precedent)
     assert not {"provider", "model", "base_url", "api_key"} & set(body["live_call"])
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "live_enabled", "ear", "call"),
+    [
+        ({}, True, True, True),
+        ({"enabled": False}, True, False, False),  # the voice.enabled MASTER outranks both
+        ({}, False, False, False),  # the feature toggle
+        ({"live": False}, True, False, False),  # no realtime chain = no ear at all
+        # THE ARM THAT MAKES THE TWO BITS DIFFERENT (S2.5): with TTS unconfigured the CALL bit falls
+        # (§5.1 — a call with nothing to say back is not a call) while the EAR bit stands, because
+        # dictation fills the composer and needs no mouth. A `live_ear` that merely aliased `live`
+        # would leave streaming dictation unreachable on a TTS-less install; this is the red-proof.
+        ({"tts": False}, True, True, False),
+        ({"stt": False}, True, True, True),  # push-to-talk STT is irrelevant to the realtime leg
+    ],
+)
+def test_the_live_ear_bit_mirrors_the_route_gate(
+    kwargs: dict[str, Any], live_enabled: bool, ear: bool, call: bool
+) -> None:
+    """`live_ear` answers the WS route's own question — "would this socket be admitted?" — and so it
+    carries the route's two terms and NOT the call bit's third (TTS). Both bits are asserted in every
+    arm so a future edit cannot quietly collapse one into the other."""
+    app = _app(client=_voice_client(**kwargs), live_cfg={"enabled": live_enabled})
+    body = app.get("/api/voice/status").json()
+    assert body["live_ear"] is ear
+    assert body["live"] is call
+
+
+def test_the_live_ear_bit_and_the_route_agree_on_the_same_install() -> None:
+    """The mirror, exercised rather than asserted: the bit says yes and the route takes the socket."""
+    app = _fake_app(FakeSpeaches([created()]), client=_voice_client(tts=False))
+    assert app.get("/api/voice/status").json()["live_ear"] is True
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws)
 
 
 # ── 11. the registry ──────────────────────────────────────────────────────────────────────────────
@@ -1103,6 +1148,10 @@ def test_live_config_defaults() -> None:
     assert (cfg.barge_in, cfg.ring, cfg.echo_workaround) == (True, True, "auto")
     assert (cfg.relay_queue_ms, cfg.start_timeout_s, cfg.allowed_origins) == (2000, 5.0, [])
     assert cfg.provider is None and cfg.fallbacks == []  # blank ⇒ resolve like stt
+    # S2.5 — the dictation four. `dictation` ships OFF beside `enabled` (its own whole-feature toggle),
+    # and the three numbers are R70 §4/§9.3's measured defaults.
+    assert cfg.dictation is False
+    assert (cfg.tail_wait_ms, cfg.dictation_idle_s, cfg.dictation_max_s) == (2000, 15, 120)
 
 
 @pytest.mark.parametrize(
@@ -1121,6 +1170,15 @@ def test_live_config_defaults() -> None:
         {"start_timeout_s": 0},
         {"echo_workaround": "sometimes"},
         {"max_session_s": 5},
+        # S2.5 — the dictation knobs are bounded for the same reason their neighbours are: a value
+        # outside them wedges the mic (a 0 ms tail wait discards every trailing phrase; a 1 s idle
+        # stop ends a session between two words; a 0 s cap opens a socket that closes immediately).
+        {"tail_wait_ms": 0},
+        {"tail_wait_ms": 60000},
+        {"dictation_idle_s": 0},
+        {"dictation_idle_s": 3600},
+        {"dictation_max_s": 1},
+        {"dictation_max_s": 7200},
     ],
 )
 def test_live_config_bounds_reject_wedging_values(bad: dict[str, Any]) -> None:

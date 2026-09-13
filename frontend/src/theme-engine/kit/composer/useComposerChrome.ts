@@ -1,4 +1,13 @@
-import { useEffect, useState, type KeyboardEvent, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
+
+import { dictationAppends } from "../../../hooks/useDictation";
 
 // Shared PRESENTATIONAL chrome for the Kit composer variants (COMPOSER_SURFACE_PLAN §3.1). The variants
 // share pure-presentational concerns — NOT behaviour (behaviour is `useComposer`, the headless
@@ -217,6 +226,76 @@ export function useComposerChrome(
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [draft, taRef, expanded, fieldWidthKey]);
+
+  // ── THE CARET, ACROSS A STREAMING PHRASE (S2.5 / R70 §5) ──────────────────────────────────────
+  //
+  // MEASURED, not reasoned (Chromium, the built app — `e2e/micGesture.spec.ts`'s PROBE): an external
+  // `appendDraft` landing while this textarea is focused COLLAPSES the selection to the end. The field
+  // is CONTROLLED (`value={draft}`), so React re-assigns `.value`, and the HTML value setter moves the
+  // text entry cursor to the end whenever the value differs. One collapse per RECORDING was invisible;
+  // streaming dictation makes it one per PHRASE, at the exact moment R70 §5 says the owner is most
+  // likely mid-edit (locked mode, hands free, field reachable).
+  //
+  // THE GATE IS THE APPEND COUNTER, not an "is streaming live" flag: the question this has to answer is
+  // "was THIS commit a phrase landing", and a flag cannot tell one from the owner typing a character
+  // while a session is up — restoring on a keystroke would fight their typing one character behind.
+  // So nothing else in the app changes behaviour, which is R70 §5's own condition (the whole-clip path
+  // keeps the collapse it always had: one append, at the end of a gesture that took focus off the
+  // field anyway).
+  //
+  // THE SNAPSHOT rides the textarea's own events rather than a render-phase ref read: by the time any
+  // effect runs the DOM has already been mutated and the old caret is gone, and React gives a function
+  // component no before-mutation hook. Listeners are attached imperatively so the three variants keep
+  // one textarea each with no new props. Nothing here ever calls `focus()` — a locked-mode owner may
+  // deliberately be elsewhere with the keyboard closed (open-webui's mistake, R70 §5).
+  const selRef = useRef<{ start: number; end: number } | null>(null);
+  const seenAppends = useRef(dictationAppends());
+  const prevLen = useRef(draft.length);
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const snap = () => {
+      selRef.current = { start: ta.selectionStart, end: ta.selectionEnd };
+    };
+    // Every way a caret moves in a textarea, and no more: keys (typing, arrows, Home/End), a tap or a
+    // drag's release, and the `select` event a range selection fires. A `selectionchange` listener
+    // would be one line fewer and is not universally supported for form controls on our two targets.
+    ta.addEventListener("keyup", snap);
+    ta.addEventListener("pointerup", snap);
+    ta.addEventListener("select", snap);
+    return () => {
+      ta.removeEventListener("keyup", snap);
+      ta.removeEventListener("pointerup", snap);
+      ta.removeEventListener("select", snap);
+    };
+  }, [taRef]);
+  useLayoutEffect(() => {
+    const ta = taRef.current;
+    const was = prevLen.current;
+    prevLen.current = draft.length;
+    const appends = dictationAppends();
+    const landed = appends !== seenAppends.current;
+    seenAppends.current = appends;
+    if (!ta || !landed) return;
+    const want = selRef.current;
+    // EXACTLY ONE selection rides forward instead of being restored: a COLLAPSED caret sitting at (or
+    // past) the end of the old draft. That owner was typing at the end, and the end is where the next
+    // thing they type belongs — pinning it behind the phrase that just landed would be the bug, not
+    // the fix. Everything else is an edit in progress and goes back where it was, clamped: a caret
+    // inside the draft, and a real SELECTION even when its far end happens to be the last character.
+    // (An unfocused field has no caret to preserve and takes the other half of the rule.)
+    const rideForward = !want || (want.start === want.end && want.end >= was);
+    if (document.activeElement === ta && want && !rideForward) {
+      ta.setSelectionRange(
+        Math.min(want.start, ta.value.length),
+        Math.min(want.end, ta.value.length),
+      );
+      return;
+    }
+    // …KEEP THE FIELD AT THE BOTTOM (R70 §5's other half): the phrase that just landed is the one thing
+    // worth reading, and a field scrolled to an older line would hide the whole feature.
+    ta.scrollTop = ta.scrollHeight;
+  }, [draft, taRef]);
 
   // LEAVABLE + SELF-RESETTING: the draft clearing IS the exit — send, the dictation auto-send (which
   // bypasses `useComposer().send` and clears the draft itself) and `/clear` all land here, so the next

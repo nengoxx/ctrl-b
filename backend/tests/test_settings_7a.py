@@ -293,6 +293,53 @@ def test_tool_overrides_put_is_gated_on_a_live_turn() -> None:
         os.environ.pop("CTRLB_DB", None)
 
 
+def test_voice_live_dictation_knobs_round_trip_to_the_status_probe() -> None:
+    """S2.5 coherence: the four dictation knobs are ORDINARY fields on `voice.live`, so they ride the
+    existing per-section machinery — the strict-resolution gate that `voice` already trips, the YAML
+    write, the live `app.state.settings` swap — with nothing added for them. What this pins is the
+    whole path the Conf section actually uses: PUT → disk → live settings → `/voice/status.live_call`,
+    which is the only surface `useDictation` reads. A knob that saved but did not reach the probe would
+    look exactly like a knob that does nothing."""
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    cfg.write_text("server:\n  poll_seconds: 5\n", encoding="utf-8")
+    os.environ["CTRLB_CONFIG"] = str(cfg)
+    os.environ["CTRLB_DB"] = str(tmp / "t.db")
+    try:
+        with _client() as c:
+            r = c.put(
+                "/api/settings",
+                json={
+                    "voice": {
+                        "live": {
+                            "dictation": True,
+                            "tail_wait_ms": 2500,
+                            "dictation_idle_s": 20,
+                            "dictation_max_s": 300,
+                        }
+                    }
+                },
+            )
+            assert r.status_code == 200, r.text
+            live = c.app.state.settings.voice.live
+            assert (live.dictation, live.tail_wait_ms) == (True, 2500)
+            assert (live.dictation_idle_s, live.dictation_max_s) == (20, 300)
+            assert "dictation_idle_s: 20" in cfg.read_text(encoding="utf-8")
+
+            knobs = c.get("/api/voice/status").json()["live_call"]
+            assert knobs["dictation"] is True
+            assert (knobs["tail_wait_ms"], knobs["dictation_idle_s"]) == (2500, 20)
+            assert knobs["dictation_max_s"] == 300
+
+            # …and an out-of-bounds value earns the same visible 422 its neighbours do (nothing saved).
+            bad = c.put("/api/settings", json={"voice": {"live": {"tail_wait_ms": 0}}})
+            assert bad.status_code == 422, bad.text
+            assert c.app.state.settings.voice.live.tail_wait_ms == 2500
+    finally:
+        os.environ.pop("CTRLB_CONFIG", None)
+        os.environ.pop("CTRLB_DB", None)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

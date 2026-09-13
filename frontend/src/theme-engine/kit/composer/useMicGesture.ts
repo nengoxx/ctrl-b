@@ -702,6 +702,7 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
   // for the recorder's life and this runs exactly once per mount.
   const meterRef = mic.meter;
   const tooShortRef = mic.onTooShort;
+  const pendingRef = mic.onPending;
   useEffect(() => {
     // THE LEVEL IS WRITTEN STRAIGHT TO THE DOM. It arrives at 10 Hz; routing it through state would
     // re-render the composer, the gesture chrome and every control beside them ten times a second for
@@ -712,11 +713,24 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     // The too-short teaching, moved out of the toast rail and into the gesture's own bubble — the copy
     // is still `useDictation`'s (one string), and so is the RULE that fires it.
     tooShortRef.current = () => flashHint(TOO_SHORT_MSG);
+    // S2.5 / R70 §7 — "A PHRASE IS PENDING", the one thing the S0.5 vocabulary did not already own.
+    // Claude Code's answer (dimmed text firming up) is unavailable to us: we have no partial to dim.
+    // So it lands on the mic chrome, where the eye already is, and never on the text layer — one DOM
+    // attribute, painted by kit.css, GESTURE MACHINE UNTOUCHED (it is not a stage; a pending phrase
+    // changes nothing about what the button does). Same imperative write as the level, for the same
+    // reason: this must not re-render the composer subtree every couple of seconds.
+    pendingRef.current = (pending: boolean) => {
+      const host = hostRef.current;
+      if (!host) return;
+      if (pending) host.dataset.pending = "1";
+      else delete host.dataset.pending;
+    };
     return () => {
       meterRef.current = null;
       tooShortRef.current = null;
+      pendingRef.current = null;
     };
-  }, [meterRef, tooShortRef, flashHint]);
+  }, [meterRef, tooShortRef, pendingRef, flashHint]);
 
   // THE LOCKED CANCEL, PUBLISHED (OF-5). While the gesture is `locked` — by a swipe or by the keyboard
   // path, which is locked from its first keystroke — the tools/skills trigger at the composer's other
@@ -729,6 +743,19 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     setMicCancel(() => send({ type: "cancelTap" }));
     return () => setMicCancel(null);
   }, [locked, send]);
+
+  // S2.5 — WHOSE TIMEOUT IS THE FINGER (§9.3-c). The streaming idle stop must not run during a `hold`:
+  // the hand is on the button, and a pause is the whole point of phrase dictation. `locked` — reached
+  // by the swipe OR from the first keystroke, which has no hand to free — is the hands-free state that
+  // clock exists for. An assignable ref like the meter, written from the one place that knows the
+  // stage; cleared on unmount so a dead composer never leaves a recording looking hands-free.
+  const handsFreeRef = mic.handsFree;
+  useEffect(() => {
+    handsFreeRef.current = locked;
+    return () => {
+      handsFreeRef.current = false;
+    };
+  }, [locked, handsFreeRef]);
 
   // Call mode is offered only while the `live` bit is up; if it goes down under us, fall back to mic —
   // and CLOSE anything call mode had in flight first (F5). Repainting the mode alone would leave a

@@ -183,3 +183,77 @@ test("the locked CANCEL discards through the morphed trigger — no POST, no dra
   await expect(page.locator(".tools-sheet.open")).toHaveCount(0);
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
+
+// ── S2.5 · THE CARET PROBE (R70 §5 [U] — "not measured, must be probed in the build") ─────────────
+//
+// R70 REASONED that an external `appendDraft` landing while the composer textarea is focused mid-draft
+// would collapse the selection to the end — the field is CONTROLLED (`value={draft}`), so React
+// re-assigns `.value`, and the HTML spec's value setter moves the text entry cursor to the end. It was
+// explicitly flagged unmeasured, and streaming dictation makes it happen once per PHRASE rather than
+// once per recording, so the mitigation (save/restore across the append) is gated on this answer.
+//
+// This lives here because this file already owns the one rig that produces a REAL external append: a
+// real Chromium, the real built app, the real React-controlled textarea, and the mic's own upload path
+// writing the store from outside the field. The STT response is DELAYED so the probe can put the caret
+// back in the middle of the draft while the append is still in flight — which is exactly the shape the
+// streaming branch produces continuously (phrases land while the owner edits in locked mode).
+test("PROBE (R70 §5): an external draft append while the field is focused mid-draft", async ({
+  page,
+  pageErrors,
+}) => {
+  const { mic, field } = await boot(page);
+  // Re-registered AFTER boot's own route, so this slower one wins: the window between the release and
+  // the append is what the probe needs to get the caret back into the middle of the draft.
+  await page.route("**/api/voice/stt", async (r) => {
+    await new Promise((done) => setTimeout(done, 600));
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ text: "spoken words" }),
+    });
+  });
+  const at = await centre(mic);
+
+  await field.fill("hello world");
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await expect(mic).toHaveClass(/rec/);
+  await page.waitForTimeout(HOLD_MS);
+  await page.mouse.up(); // → POST, which will not answer for 600 ms
+
+  // …and while it is in flight the owner is editing: focus back in the field, caret after "hello".
+  await field.evaluate((el: HTMLTextAreaElement) => {
+    el.focus();
+    el.setSelectionRange(5, 5);
+  });
+  const before = await field.evaluate((el: HTMLTextAreaElement) => ({
+    start: el.selectionStart,
+    focused: document.activeElement === el,
+  }));
+  expect(before).toEqual({ start: 5, focused: true });
+
+  await expect(field).toHaveValue("hello world spoken words");
+  const after = await field.evaluate((el: HTMLTextAreaElement) => ({
+    start: el.selectionStart,
+    end: el.selectionEnd,
+    len: el.value.length,
+    focused: document.activeElement === el,
+  }));
+  // THE MEASURED ANSWER (Chromium 2026-09-14, the built app, this rig): the caret COLLAPSES TO THE END.
+  // R70 §5's reasoned hazard reproduces exactly — React's controlled write assigns `.value`, and the
+  // spec's value setter moves the text entry cursor to the end of the control whenever the new value
+  // differs. So the save/restore mitigation IS built; it lives in `kit/composer/useComposerChrome`,
+  // the ONE textarea seam all three kit variants share, and its rules are pinned in
+  // `tests/theme-engine/composerCaret.test.tsx`.
+  //
+  // THIS TEST PINS THE RAW BEHAVIOUR, NOT THE MITIGATION, and deliberately: the mitigation is gated on
+  // a STREAMING dictation append (R70 §5's own "so nothing else in the app changes behaviour"), and
+  // this is the WHOLE-CLIP path, which appends once at the end of a gesture that took focus off the
+  // field anyway. Keeping the raw measurement here is what makes the gate's cost visible if anyone
+  // ever proposes widening it.
+  expect(after.focused).toBe(true);
+  expect(after.start).toBe(after.len);
+  expect(after.end).toBe(after.len);
+  expect(after.len).toBe("hello world spoken words".length);
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});

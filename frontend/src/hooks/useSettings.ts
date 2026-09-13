@@ -114,6 +114,12 @@ export interface VoiceLive extends VoiceServiceCommon {
   barge_in: boolean; //       hands-free interruption; off = tap-to-interrupt only
   ring: boolean; //           §6 overlay mode: the focal-anchored face ring, or art-only
   echo_workaround: string; // auto | on | off — the per-track loopback-AEC lever
+  // S2.5 — phrase-by-phrase streaming dictation on the SAME ear (R70 §9.2). Its own whole-feature
+  // toggle beside `enabled`: calls and streaming dictation are switched independently.
+  dictation: boolean; //      the mic's hold/lock streams to the relay and appends phrase by phrase
+  tail_wait_ms: number; //    how long the release waits for the flush's tail final, 500..10000
+  dictation_idle_s: number; //hands-free idle stop, 3..300 (a `hold` needs none — the finger is it)
+  dictation_max_s: number; // the hard cap on one streaming session, 10..1800
 }
 
 /** One entry of `media.namespaces.<ns>.roles.<role>.files` — the library's unit of priority (D65 §2.2).

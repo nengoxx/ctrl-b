@@ -51,8 +51,8 @@ def _client(request: Request) -> VoiceClient:
 async def voice_status(request: Request) -> dict[str, object]:
     """Capability probe: which voice services are configured + enabled, the STT auto-send flag, the R51
     Tier-0 auto-stop policy, the D63 TTS chunk policy, and the D71 live-call policy (`{stt, tts, live,
-    stt_auto_send, stt_auto_stop, tts_chunking, live_call}`). Everything past the capability bits is
-    CLIENT BEHAVIOR composed HERE from live settings (A11/R2) — the frozen resolved chain the
+    live_ear, stt_auto_send, stt_auto_stop, tts_chunking, live_call}`). Everything past the capability
+    bits is CLIENT BEHAVIOR composed HERE from live settings (A11/R2) — the frozen resolved chain the
     `VoiceClient` holds deliberately doesn't carry it — and this probe is the always-on endpoint the PWA
     already polls, so neither the chunker nor the mic's silence detector nor the call overlay needs a
     query of its own.
@@ -87,10 +87,17 @@ async def voice_status(request: Request) -> dict[str, object]:
     live = request.app.state.settings.voice.live
     client = _client(request)
     status["live"] = client.configured("live") and client.configured("tts") and live.enabled
+    # THE EAR ALONE (S2.5). Streaming dictation needs no mouth — it fills the composer — so it cannot
+    # ride the bit above, whose TTS term is the call's own §5.1 refinement. This one MIRRORS THE WS
+    # ROUTE GATE EXACTLY (`voice_live` below: `cfg.enabled and client.configured("live")`), because it
+    # answers exactly the route's question: would this client's socket be admitted? Any drift between
+    # the two is a mic that opens a leg the route refuses (or refuses to open one it would have taken).
+    status["live_ear"] = client.configured("live") and live.enabled
     # …and the CLIENT-side call knobs, same split as `stt_auto_stop`/`tts_chunking`: shape only — no
     # endpoint, no key, no model id, nothing that says whether a secret exists. Speaches' own
     # `TurnDetection` accepts exactly five fields (§4.1), so every interruption/pacing knob a call
-    # needs is necessarily browser-side and has to arrive here.
+    # needs is necessarily browser-side and has to arrive here. Since S2.5 the same object carries the
+    # four dictation knobs — one ear, one set of client knobs (`LiveCfg`'s own split).
     status["live_call"] = {
         "frame_ms": live.frame_ms,
         "buffered_ceiling_ms": live.buffered_ceiling_ms,
@@ -100,6 +107,10 @@ async def voice_status(request: Request) -> dict[str, object]:
         "ring": live.ring,
         "echo_workaround": live.echo_workaround,
         "max_session_s": live.max_session_s,
+        "dictation": live.dictation,
+        "tail_wait_ms": live.tail_wait_ms,
+        "dictation_idle_s": live.dictation_idle_s,
+        "dictation_max_s": live.dictation_max_s,
     }
     return status
 

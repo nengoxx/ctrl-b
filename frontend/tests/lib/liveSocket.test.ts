@@ -92,6 +92,23 @@ describe("liveSocket — the uplink", () => {
       JSON.stringify({ type: "stop" }),
     ]);
   });
+
+  it("NEVER `commit` — the client API has no such word, and nothing it can be told to do mints one", () => {
+    // THE COMMIT-SAFETY INVARIANT, from this side of the wire (R70 §1.2 arm A, measured: a commit
+    // while the buffer has an open speech segment KILLS the Speaches session — it is not a "force
+    // endpoint"). The relay holds the same invariant on its own side (`services/voice_live.py::_flush`
+    // — red-proven there); S2.5's release is the one place a client would be tempted, and its answer
+    // is the relay-side `flush` burst. Two arms, because either alone is evadable: the wrapper's
+    // SURFACE carries no commit door, and its whole vocabulary — every method, called — emits none.
+    const { socket, ws } = leg();
+    expect(Object.keys(socket).sort()).toEqual(["close", "flush", "sendAudio", "stop", "unknown"]);
+    ws.open();
+    socket.sendAudio(new ArrayBuffer(8));
+    socket.flush();
+    socket.stop();
+    socket.close();
+    expect(ws.sent.filter((m) => typeof m === "string" && m.includes("commit"))).toEqual([]);
+  });
 });
 
 describe("liveSocket — client backpressure (§3.1/F6)", () => {

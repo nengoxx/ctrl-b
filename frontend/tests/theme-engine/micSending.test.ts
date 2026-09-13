@@ -35,6 +35,8 @@ vi.mock("../../src/hooks/useDictation", async (importActual) => {
       cancel: vi.fn(),
       meter: { current: null },
       onTooShort: { current: null },
+      onPending: { current: null },
+      handsFree: { current: false },
     }),
   };
 });

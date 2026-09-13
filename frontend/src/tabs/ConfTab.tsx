@@ -787,6 +787,10 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   barge_in: true,
   ring: true,
   echo_workaround: "auto",
+  dictation: false,
+  tail_wait_ms: 2000,
+  dictation_idle_s: 15,
+  dictation_max_s: 120,
 };
 
 const WAKE_FALLBACK: SettingsDoc["wake"] = {
@@ -1781,12 +1785,18 @@ export function ConfTab({ active }: Props) {
         // (`barge_threshold: 0` = reuse the STT threshold; `min_speech_ms: 0` = no floor;
         // `vad_threshold: 0` = every frame is speech), so a blank coercing to 0 would silently change
         // the call's behaviour instead of surfacing the mistake.
+        // S2.5's three dictation numbers take the bare `Number` `silence_ms` takes, for its reason:
+        // every one of them is floored well above 0 server-side (500 / 3 / 10), so zero is not a
+        // value any of them can mean — a cleared field earns the same visible 422.
         live: {
           ...draft.voice.live,
           vad_threshold: numOrNull(draft.voice.live.vad_threshold),
           silence_ms: Number(draft.voice.live.silence_ms),
           min_speech_ms: numOrNull(draft.voice.live.min_speech_ms),
           barge_threshold: numOrNull(draft.voice.live.barge_threshold),
+          tail_wait_ms: Number(draft.voice.live.tail_wait_ms),
+          dictation_idle_s: Number(draft.voice.live.dictation_idle_s),
+          dictation_max_s: Number(draft.voice.live.dictation_max_s),
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
@@ -2731,6 +2741,19 @@ export function ConfTab({ active }: Props) {
               onToggle={() => setLive("barge_in", !vlive?.barge_in)}
             />
           </SettingRow>
+          {/* S2.5 — streaming dictation is its OWN whole-feature toggle on the same section: it uses
+              the call's ear but not its mouth, so an owner may want one without the other. The desc
+              names the dependency the way the call's own row does. */}
+          <SettingRow
+            label="Live dictation"
+            desc="phrases appear in the composer as you pause — needs the realtime ear; off → the whole clip is transcribed on release"
+          >
+            <Switch
+              on={!!vlive?.dictation}
+              label="Live dictation enabled"
+              onToggle={() => setLive("dictation", !vlive?.dictation)}
+            />
+          </SettingRow>
           <SettingRow
             label="Face ring"
             desc="a ring over the art showing the call's state; off → the art alone"
@@ -2781,6 +2804,24 @@ export function ConfTab({ active }: Props) {
             desc="mic level counted as talking over the reply (0–0.5) — 0 reuses the STT silence threshold"
             value={String(vlive?.barge_threshold ?? "")}
             onChange={(v) => setLive("barge_threshold", v as unknown as number)}
+          />
+          <Field
+            label="Phrase tail wait"
+            desc="ms to wait for the last phrase after you let go (500–10000) — raise it on a slow ear, lower it if the mic feels stuck"
+            value={String(vlive?.tail_wait_ms ?? "")}
+            onChange={(v) => setLive("tail_wait_ms", v as unknown as number)}
+          />
+          <Field
+            label="Dictation idle stop"
+            desc="seconds of silence that end a hands-free dictation (3–300) — a held finger is never idle"
+            value={String(vlive?.dictation_idle_s ?? "")}
+            onChange={(v) => setLive("dictation_idle_s", v as unknown as number)}
+          />
+          <Field
+            label="Dictation time limit"
+            desc="seconds one dictation may run before it stops itself (10–1800)"
+            value={String(vlive?.dictation_max_s ?? "")}
+            onChange={(v) => setLive("dictation_max_s", v as unknown as number)}
           />
           <SectionRefEditor
             primaryDesc="realtime provider · model — blank rides Voice STT's chain"

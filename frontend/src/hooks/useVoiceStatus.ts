@@ -64,6 +64,18 @@ export interface LiveCallWire {
   echo_workaround: string;
   /** The relay's own session cap, in seconds — surfaced so the overlay can be honest about the limit. */
   max_session_s: number;
+  /** S2.5 — phrase-by-phrase streaming dictation: the mic's hold/lock rides the SAME ear, and each
+   *  utterance final appends to the composer draft live. Its own whole-feature toggle beside the
+   *  call's `enabled`, so the two are switched independently. Off ⇒ today's whole-clip POST. */
+  dictation: boolean;
+  /** How long the release waits for the flush's TAIL final before giving up, ms (R70 §4: ~2.4× the
+   *  worst measured 530–830 ms tail). `flush` has NO ack, so this bound is the client's only clock. */
+  tail_wait_ms: number;
+  /** HANDS-FREE idle stop, s: a run of below-floor mic energy this long ends a LOCKED streaming
+   *  session through the ordinary release (R70 §9.3). A `hold` is exempt — the finger is the timeout. */
+  dictation_idle_s: number;
+  /** The hard cap on any one streaming dictation session, s (R70 §9.3) — `hold` included. */
+  dictation_max_s: number;
 }
 
 export interface VoiceStatus {
@@ -73,6 +85,12 @@ export interface VoiceStatus {
    *  sends it today, so it reads `undefined` → false everywhere, which is exactly what keeps the S0.5
    *  call-mode chrome unreachable while its gesture, states and CSS are already built and tested. */
   live?: boolean;
+  /** THE EAR ALONE (S2.5): the realtime chain is configured AND `voice.live.enabled` — the two terms
+   *  the `WS /api/voice/live` route itself gates on, and deliberately NOT the `live` bit's third (TTS,
+   *  the call's §5.1 refinement). Streaming dictation fills the composer, so it needs no mouth; a mic
+   *  keyed off `live` would be dark on a TTS-less install whose relay would have taken the socket.
+   *  Optional so a pre-S2.5 backend reads as "no ear" and the mic stays on the whole-clip path. */
+  live_ear?: boolean;
   /** Client behavior (SttServiceCfg.auto_send): true → mic sends the transcript immediately; false →
    *  fills the composer for review. Surfaced here (not just /api/settings) because the mic is on
    *  Fleet/Agent and the settings query is Conf-scoped. */

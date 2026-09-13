@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 
-import type { SttAutoStopWire } from "./useVoiceStatus";
+import type { LiveCallWire, SttAutoStopWire } from "./useVoiceStatus";
 import { runComposer } from "../lib/composer";
+import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
+import { attachPcmUplink, type PcmUplink } from "../lib/pcmCapture";
 import { appendDraft, clearDraft, getDraft } from "../store/composer";
 import { pushToast } from "../store/toast";
 
@@ -58,6 +60,33 @@ import { pushToast } from "../store/toast";
 // they are registered by whoever is painting (one composer at a time), they are null-safe, and a null one
 // falls back to the behaviour that shipped. A 10 Hz level must not re-render React, which is the whole
 // reason it is a ref the gesture writes to the DOM from rather than a piece of state.
+//
+// Phase 24 / S2.5 — PHRASE-BY-PHRASE STREAMING DICTATION (D71 §7-S2.5, evidence: docs/research/R70).
+// The hold/lock rides the SAME realtime ear the call uses: while the recorder runs, a pcm uplink hangs
+// off ITS stream and the relay's finals append to the composer draft at every pause. What that is NOT:
+// a second recorder, a second `getUserMedia`, a second AudioContext, a new gesture stage, or a change to
+// the send policy. The whole branch is ONE optional leg beside the existing machine, and every number it
+// uses arrives from `/voice/status.live_call` — nothing here defaults one.
+//
+// THE FIVE RULES WORTH READING BEFORE EDITING ANY OF IT:
+//   ① FEED ONLY AFTER `ready`. Frames captured during the handshake BUFFER and drain ahead of the live
+//     frame once the relay answers — audio ORDER is the contract, and the first words of a sentence are
+//     exactly the ones a handshake would eat. The drain is paced under the relay's own 2×-realtime
+//     rolling budget (`services/voice_live.py::_note_frame`); a backlog past `buffered_ceiling_ms` is a
+//     handshake that is not coming, and streaming is abandoned for this recording.
+//   ② THE RELEASE IS `flush` → AWAIT THE TAIL → `stop`. Never a commit: the client API has no such word
+//     and a commit during open speech KILLS the Speaches session (R70 §1.2 arm A). `flush` has no ack —
+//     the endpoint's own `speech_stopped`+`transcript` are the answer — and `stop` DISCARDS unendpointed
+//     audio, which is exactly why it goes last (§7-S1's as-built wire law).
+//   ③ THE EITHER/OR (R70 §8): ≥1 phrase appended ⇒ the recorded clip is DISCARDED; 0 ⇒ it uploads
+//     exactly as it always has. Never both — appending a phrase stream AND the whole-clip transcript is
+//     the one way this feature could duplicate the owner's words. The recorder keeps running underneath
+//     for precisely that reason: the degrade is free and total.
+//   ④ AUTO-SEND FIRES ONCE, AT SESSION END (R70 §6) — through the same helper the upload path calls, so
+//     "the gesture is capture ergonomics, `stt_auto_send` is the send policy" survives verbatim.
+//   ⑤ NOTHING IS EVER RETRACTED FROM THE DRAFT. A cancel, a dropped socket, a timed-out tail: what
+//     already landed stays. The draft is the app's never-lose-speech surface, and the owner may have
+//     been editing beside it.
 
 // Auto-stop (R51 Tier 0) — how often the energy detector reads the stream while recording. NOT a
 // tunable (the two tunables are the silence window + the RMS floor, both config): 100 ms resolves the
@@ -101,6 +130,88 @@ const httpsOn = typeof window !== "undefined" && window.location?.protocol === "
 // Module-level → the plain-HTTP nudge fires once per page load, not once per composer mount (the composer
 // remounts when you visit Conf/Utils), so it doesn't pop on every mic use.
 let httpReminderShown = false;
+
+/** S2.5 — the streaming leg could not be had (a refused handshake, a `ready` that never came, a worklet
+ *  that would not install). The recording itself is untouched, so this is INFORMATION, not a failure:
+ *  said once per page load on the `httpReminderShown` latch, because a misconfigured ear that silently
+ *  degrades every recording forever is worse than one line. */
+const LIVE_DEGRADE_MSG = "Live dictation unavailable — using standard transcription.";
+let liveDegradeShown = false;
+
+function noteLiveDegrade(): void {
+  if (liveDegradeShown) return;
+  liveDegradeShown = true;
+  pushToast(LIVE_DEGRADE_MSG, "info");
+}
+
+/** …and the DISTINCT copy for a leg that died with words already in the draft (R70 §7: "No speech
+ *  detected", "No audio detected" and a dead socket are three different sentences, deliberately). It
+ *  says what was lost, because the tail after the drop really is gone. */
+const LIVE_LOST_MSG = "Voice connection lost — the rest of that wasn't captured";
+
+/** How many phrases a STREAMING session has appended to the draft, ever, this page load.
+ *
+ *  Module state for the same reason the two latches above are (and `getDraft` is an imperative read):
+ *  there is exactly ONE recorder in the app, and the one reader — the kit composer's shared textarea
+ *  seam — is nowhere near this hook's tree. A REACTIVE publisher would re-render the whole composer
+ *  subtree once per phrase to fix a caret, which is the trade the meter's ref already refused.
+ *
+ *  It is a COUNTER rather than an "is streaming live" flag because the reader's real question is not
+ *  "is a session up" but "was THIS commit caused by one of its appends" — a flag cannot tell a phrase
+ *  landing from the owner typing a character while a session is up, and getting that wrong would fight
+ *  their typing. One value answers both: it only ever moves inside a live session. */
+let streamAppends = 0;
+export function dictationAppends(): number {
+  return streamAppends;
+}
+
+/** How many LIVE frames one buffered frame rides out with while a pre-`ready` backlog drains (rule ①).
+ *  One extra per two = 1.5× realtime sustained, which clears a full `buffered_ceiling_ms` backlog in a
+ *  couple of seconds while staying under the relay's own ceiling with margin: `_note_frame` closes the
+ *  leg past 2× realtime in a rolling 2 s window, and draining at exactly 2× would sit ON that bound
+ *  where one retained boundary frame is a protocol close. */
+const BACKLOG_DRAIN_EVERY = 2;
+
+/** A finished recording, out of the hook's refs and on its way to a decision: upload it, or drop it
+ *  because the phrases already said what it says (rule ③). By VALUE — see `upload`'s `@param clip`. */
+interface Clip {
+  chunks: Blob[];
+  /** `Date.now()` at `rec.start()`; 0 when there was no stamp (which is never a reason to discard). */
+  startedAt: number;
+}
+
+/** ONE streaming dictation session: the leg, its pre-`ready` backlog, and the counters the either/or
+ *  rule and the two §9.3 clocks read. There is at most one — there is one recorder. */
+interface StreamSession {
+  /** Which leg this is. A socket's callbacks may outlive their session (`close()` only STARTS the
+   *  handshake), so every one of them checks this against the live session — the `useLiveCall` fence. */
+  leg: number;
+  socket: LiveSocket;
+  /** Frames captured before `state: "ready"`, oldest first. Drained IN ORDER, ahead of live audio. */
+  backlog: ArrayBuffer[];
+  ready: boolean;
+  /** Phrases actually APPENDED to the draft this session — rule ③'s only input. An empty final is not
+   *  one: counting it would discard a clip that carries words nothing else has. */
+  finals: number;
+  /** The leg is gone (a close/error past `ready`, or the pre-`ready` ceiling abort). No flush is
+   *  possible from here; the release choreography skips straight to the either/or. */
+  dead: boolean;
+  /** …and it has been torn down: the socket's own late callbacks are ghosts from here. Separate from
+   *  `dead` because the release marks a leg dead (no flush possible) long before it closes it. */
+  closed: boolean;
+  /** The release choreography is OWED — marked SYNCHRONOUSLY by `stop()`, because `rec.stop()` only
+   *  queues the terminal events and whatever runs in that window (the unmount sweep) must not mistake
+   *  this leg for one nobody is going to close. */
+  finishing: boolean;
+  /** The backlog drain's pacing counter (see `BACKLOG_DRAIN_EVERY`). */
+  drain: number;
+  uplink: PcmUplink | null;
+  /** Set only while the release is waiting for the tail; called by the first final that lands. */
+  tail: (() => void) | null;
+  /** The two §9.3 clocks, both ticked by the ONE 100 ms detector poll — no timers of their own. */
+  elapsedMs: number;
+  idleMs: number;
+}
 
 type Phase = "idle" | "recording" | "sending";
 export type MicStatus = Phase | "unavailable" | "insecure";
@@ -148,17 +259,28 @@ function extFromMime(mime: string): string {
  *                    energy detector on the same stream stops the recording after a silence run —
  *                    hands-free stop, which `autoSend` then composes with unchanged. Absent (older
  *                    backend / test stub) or `enabled: false` → plain push-to-talk, nothing built.
+ * @param liveEar    `/voice/status.live_ear` (D71 S2.5): the realtime chain is configured AND
+ *                    `voice.live.enabled` — the two terms the WS route itself gates on. Deliberately
+ *                    not the `live` bit, whose TTS term belongs to the CALL: dictation fills the
+ *                    composer and needs no mouth.
+ * @param liveCall   `/voice/status.live_call`, the client-side knobs. Absent (pre-S1 backend / test
+ *                    stub) → no streaming, exactly as `liveEar` false. NOTHING in the streaming branch
+ *                    may invent one of these numbers.
  */
 export function useDictation({
   sttReady,
   statusStamp,
   autoSend,
   autoStop,
+  liveEar,
+  liveCall,
 }: {
   sttReady: boolean;
   statusStamp: number;
   autoSend: boolean;
   autoStop?: SttAutoStopWire;
+  liveEar?: boolean;
+  liveCall?: LiveCallWire;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [unavailable, setUnavailable] = useState(false);
@@ -184,6 +306,15 @@ export function useDictation({
    *  and `MIN_CLIP_MS` stay here (this is the layer that knows how long the clip was); only the
    *  PRESENTATION moves. Null → the toast that always shipped. */
   const tooShortRef = useRef<(() => void) | null>(null);
+  /** THE PENDING SEAM (S2.5 / R70 §7 option 1) — assigned by whoever paints the record circle, called
+   *  with `true` while a phrase is in flight (the ear said you stopped talking, its words have not
+   *  landed) and `false` when it lands or the session ends. The same assignable-ref shape as the two
+   *  above, and for the same reasons: chrome-only, null-safe, no gesture-machine stage. */
+  const onPendingRef = useRef<((pending: boolean) => void) | null>(null);
+  /** THE HANDS-FREE SEAM (S2.5 / §9.3-c) — set by whoever knows whether a hand is on the button: the
+   *  idle stop must not run during a `hold`, where the finger IS the timeout. A consumer that registers
+   *  nothing leaves it false, i.e. no idle stop, which is the safe half of the rule. */
+  const handsFreeRef = useRef(false);
 
   // Detector state. Every one of these stays null unless an AudioContext actually ran.
   const audioRef = useRef<AudioContext | null>(null);
@@ -192,11 +323,28 @@ export function useDictation({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hiddenRef = useRef<(() => void) | null>(null);
 
+  // The streaming leg (S2.5). Null whenever the mic is on the plain whole-clip path, which is every
+  // recording until `liveEar && live_call.dictation` is true.
+  const streamRef = useRef<StreamSession | null>(null);
+  const legRef = useRef(0);
+  /** The last value handed to `onPending`, so a repeat costs no DOM write. */
+  const pendingRef = useRef(false);
+
   // The policy, flattened to primitives so the detector's identity tracks the VALUES, not the identity
   // of the query object carrying them. Absent → disabled (the mic predates the field; LOW-4).
   const autoStopOn = autoStop?.enabled ?? false;
   const silenceMs = (autoStop?.silence_s ?? 0) * 1000;
   const silenceFloor = autoStop?.threshold ?? 0;
+
+  // …and the S2.5 knobs, flattened for the same reason. `streamWanted` is the ONE decision, taken per
+  // recording at `start()`: both toggles up, and a `live_call` that actually carries numbers (a frame
+  // size of 0 would be a backend that sent the object without them — nothing here invents one).
+  const frameMs = liveCall?.frame_ms ?? 0;
+  const ceilingMs = liveCall?.buffered_ceiling_ms ?? 0;
+  const tailWaitMs = liveCall?.tail_wait_ms ?? 0;
+  const idleMs = (liveCall?.dictation_idle_s ?? 0) * 1000;
+  const maxMs = (liveCall?.dictation_max_s ?? 0) * 1000;
+  const streamWanted = !!liveEar && !!liveCall?.dictation && frameMs > 0 && tailWaitMs > 0;
 
   // Whether the browser will even hand us a mic. `navigator.mediaDevices` is undefined in an insecure
   // context (plain HTTP) AND present once the origin is treated as secure (real HTTPS, localhost, or a
@@ -214,18 +362,85 @@ export function useDictation({
     if (sttReady) setUnavailable(false);
   }, [statusStamp, sttReady]);
 
+  /** Publish the phrase-pending state to whoever is painting (rule E). Deduped, because at a pause it
+   *  would otherwise fire on every frame that carries the same answer. */
+  const setPending = useCallback((on: boolean): void => {
+    if (pendingRef.current === on) return;
+    pendingRef.current = on;
+    onPendingRef.current?.(on);
+  }, []);
+
+  /** Close ONE streaming leg. NEVER flushes — every caller has either flushed already or decided there
+   *  is nothing to wait for. The uplink goes first so no frame can reach a socket that is closing, and
+   *  a release still parked on the tail is woken rather than left to its timeout. */
+  const closeStream = useCallback(
+    (s: StreamSession): void => {
+      if (s.closed) return;
+      s.closed = true;
+      s.dead = true;
+      s.uplink?.stop();
+      s.uplink = null;
+      const tail = s.tail;
+      s.tail = null;
+      tail?.();
+      s.socket.close();
+      setPending(false);
+    },
+    [setPending],
+  );
+
+  /** …and forget it: the recorder underneath keeps running, so the mic falls back to exactly today's
+   *  whole-clip path for the rest of this recording (R70 §8's free degrade). Silent by contract — the
+   *  loud version is `degradeStream`, for a leg that never opened at all. */
+  const dropStream = useCallback(
+    (s: StreamSession): void => {
+      closeStream(s);
+      if (streamRef.current === s) streamRef.current = null;
+    },
+    [closeStream],
+  );
+
+  /** The same drop, plus the once-per-page-load notice: a leg that never reached `ready` is a
+   *  MISCONFIGURATION (a refused handshake, a busy relay, a worklet that would not install), and a
+   *  feature that silently does nothing forever is the one failure mode worth one line of toast. */
+  const degradeStream = useCallback(
+    (s: StreamSession): void => {
+      dropStream(s);
+      noteLiveDegrade();
+    },
+    [dropStream],
+  );
+
+  /** THE AUTO-SEND, in ONE place (rule ④). Both paths land here — the whole-clip upload right after it
+   *  appends its transcript, and the streaming release after its last phrase — and rule ③ guarantees
+   *  exactly one of them runs per recording. Semantics are the pre-S2.5 ones, verbatim: routed like a
+   *  typed+sent message, NO streaming gate (HIGH-1, D41 — a voice message during a live turn QUEUES as
+   *  a steer, same as Enter), and the draft is cleared ONLY if the seam actually routed (D68 MED-2:
+   *  `runComposer` HOLDS a send while a staged file is still uploading, and the words must wait for the
+   *  file rather than send without it). */
+  const maybeAutoSend = useCallback((): void => {
+    if (!autoSend) return;
+    // Reads the just-appended draft imperatively (combines with anything already typed).
+    const full = getDraft().trim();
+    if (full && runComposer(full)) clearDraft();
+  }, [autoSend]);
+
   /** @param mime the recorder's ACTUAL container, handed over by the `onstop` closure that owns it —
    *  the recorder releases its ownership of `recRef` before the upload begins (F2), so this can no
-   *  longer be read back off the ref. (A clip's `heldMs` defaulting to `Infinity` when there is no
-   *  stamp is deliberate and STAYS: "no stamp" alone must never discard a clip. A recording that
-   *  ERRORED is covered by the discard flag `onerror` sets — F4 — never by the missing stamp.) */
+   *  longer be read back off the ref.
+   *  @param clip the recording, DRAINED OUT OF THE REFS by that same closure. It used to be read back
+   *  off `chunksRef` here, which was safe only because the read was synchronous inside `onstop`; S2.5
+   *  opened a real gap — the release choreography can sit on the tail final for `tail_wait_ms` while
+   *  a NEXT recording arms, and a ref read at that point would hand this upload the next recording's
+   *  chunks (and clear them out from under it). The clip travels by value from the one terminal that
+   *  owns it, which is the same answer F2 gave for the recorder itself.
+   *  (A clip's `heldMs` defaulting to `Infinity` when there is no stamp is deliberate and STAYS: "no
+   *  stamp" alone must never discard a clip. A recording that ERRORED is covered by the discard flag
+   *  `onerror` sets — F4 — never by the missing stamp.) */
   const upload = useCallback(
-    async (mime: string) => {
-      const chunks = chunksRef.current;
-      chunksRef.current = [];
-      const heldMs = startedAtRef.current > 0 ? Date.now() - startedAtRef.current : Infinity;
-      startedAtRef.current = 0;
-      const blob = new Blob(chunks, { type: mime });
+    async (mime: string, clip: Clip) => {
+      const heldMs = clip.startedAt > 0 ? Date.now() - clip.startedAt : Infinity;
+      const blob = new Blob(clip.chunks, { type: mime });
       if (!blob.size) {
         setPhase("idle");
         return;
@@ -262,19 +477,7 @@ export function useDictation({
         const data = (await res.json()) as { text?: string };
         if (data.text?.trim()) {
           appendDraft(data.text); // always show it in the composer first
-          // Auto-send routes it like a typed+sent message. NO streaming gate (HIGH-1, D41): a voice
-          // message during a live turn QUEUES as a steer (the 202 path), same as Enter — voice is the
-          // owner's primary mobile input, and a queued bubble is visible/removable. `runComposer` →
-          // `sendMessage`/`runShell` enqueue the steer; the running turn keeps the view.
-          if (autoSend) {
-            // Reads the just-appended draft imperatively (combines with anything already typed).
-            const full = getDraft().trim();
-            // D68 MED-2 — the draft is cleared ONLY if the seam actually routed. `runComposer` HOLDS a
-            // send while a staged file is still uploading, and this path is exactly why the gate lives
-            // there: a transcript that lands mid-upload must wait for the file rather than send without
-            // it (or, worse, be cleared away). The words stay in the composer; the next send carries both.
-            if (full && runComposer(full)) clearDraft();
-          }
+          maybeAutoSend(); // rule ④ — the one shared helper, once per session
         } else {
           pushToast("Didn't catch that — try again", "info");
         }
@@ -286,7 +489,7 @@ export function useDictation({
         setPhase("idle");
       }
     },
-    [autoSend],
+    [maybeAutoSend],
   );
 
   /** Abort an in-flight `start()` (F5), reporting whether there WAS one. The caller then knows there is
@@ -304,7 +507,13 @@ export function useDictation({
   const stop = useCallback(() => {
     if (abortArming()) return; // released inside the acquisition window — nothing started (F5)
     const rec = recRef.current;
-    if (rec && rec.state !== "inactive") rec.stop(); // fires onstop → cleanup → upload
+    if (!rec || rec.state === "inactive") return;
+    // THE CHOREOGRAPHY IS OWED FROM HERE (S2.5, rule ②) — marked SYNCHRONOUSLY, before the recorder is
+    // asked to stop: `rec.stop()` only QUEUES the terminal events, and anything running in that window
+    // (the unmount sweep, a socket close) must see a leg with a flush coming rather than a leaked one.
+    const s = streamRef.current;
+    if (s) s.finishing = true;
+    rec.stop(); // fires onstop → cleanup → the release choreography, or the upload
   }, [abortArming]);
 
   /** Discard the recording: no transcript, no POST, no draft. The flag is consulted in the `onstop`
@@ -316,8 +525,13 @@ export function useDictation({
     const rec = recRef.current;
     if (!rec || rec.state === "inactive") return;
     discardRef.current = true;
+    // S2.5 — the leg goes NOW, with NO flush: the utterance in flight is dropped and nothing more can
+    // append. What already landed STAYS in the draft (rule ⑤) — retracting it could destroy an edit the
+    // owner made beside it, and a cancel is about the CLIP, which is what `discardRef` throws away.
+    const s = streamRef.current;
+    if (s) dropStream(s);
     rec.stop();
-  }, [abortArming]);
+  }, [abortArming, dropStream]);
 
   /** Release ONLY the Web Audio half of the detector (interval · nodes · context). Split out because
    *  the energy detector is allowed to degrade while the hidden-page stop is NOT (MED-1): a context
@@ -347,6 +561,218 @@ export function useDictation({
     }
   }, [teardownAudio]);
 
+  /**
+   * THE RELEASE CHOREOGRAPHY (rule ②), owned by the ONE terminal that knows the recording is over.
+   *
+   * `flush` (a relay-side silence burst — the client may not mint one, §3.1's rate ceiling makes an
+   * 88-frame burst a protocol close) → await the tail final OR `tail_wait_ms` → `stop` → close. The
+   * order is the wire's, not a preference: `flush` has NO ack, so the endpoint's own transcript IS the
+   * response, and `stop` DISCARDS whatever the ear has not endpointed, so it can only come last.
+   *
+   * IT RUNS TO COMPLETION EVEN IF THE COMPOSER UNMOUNTED MID-WAIT. Every outcome is a store write
+   * (`appendDraft`/`runComposer`/the upload), the `setPhase` calls are no-ops on a dead component, and
+   * the socket close is bounded on every path — the timeout fires whether or not anyone is watching.
+   *
+   * @param s    the session, already detached from `streamRef` by the caller: it is closing out, and no
+   *             later `stop()`/sweep may adopt it.
+   * @param mime the recorder's ACTUAL container, for the clip this may still have to upload.
+   */
+  const finishStream = useCallback(
+    async (s: StreamSession, mime: string, clip: Clip): Promise<void> => {
+      // The existing `sending` phase, deliberately — the mic is inert and spinning while a phrase
+      // lands, which is exactly what it already means. No new `MicStatus` value is owed.
+      setPhase("sending");
+      s.uplink?.stop(); // no microphone audio may reach the ear past the release
+      s.uplink = null;
+      if (!s.dead) {
+        s.socket.flush();
+        setPending(true);
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(() => {
+            s.tail = null;
+            resolve();
+          }, tailWaitMs);
+          // Woken by the FIRST final that lands from here — armed after the flush, so any final past
+          // this point is by construction one we have not already appended.
+          s.tail = () => {
+            clearTimeout(timer);
+            s.tail = null;
+            resolve();
+          };
+        });
+        s.socket.stop();
+      }
+      s.socket.close();
+      s.closed = true; // …and from here its own late callbacks are ghosts
+      setPending(false);
+      // THE EITHER/OR (rule ③), evaluated exactly once, here.
+      if (s.finals > 0) {
+        // The flush's tail was the last append: the clip would say the same words a second time, so
+        // it is simply dropped — it left the refs at `onstop` and nothing else holds it.
+        maybeAutoSend();
+        setPhase("idle");
+        return;
+      }
+      // Nothing was appended — the clip is the whole recording, uploaded exactly as it always was
+      // (the 1000 ms floor, its teaching, the 502 greying, the toasts: all of it untouched).
+      await upload(mime, clip);
+    },
+    [maybeAutoSend, setPending, tailWaitMs, upload],
+  );
+
+  /**
+   * Open the streaming leg for THIS recording, on the detector's own running context and the recorder's
+   * own stream (rule: never a second `getUserMedia`, never a second `AudioContext` — R70 §8's third
+   * consumer). Failures are silent-plus-one-notice degrades; nothing in here can end a recording except
+   * the two rules that are meant to (the §9.3 clocks, and a death with words already in the draft).
+   */
+  const armStream = useCallback(
+    (ctx: AudioContext, stream: MediaStream): void => {
+      const leg = ++legRef.current;
+      /** This leg's own session, held in the CLOSURE rather than read back off `streamRef`: the
+       *  release DETACHES the session from that ref while the choreography is still running (so no
+       *  later `stop()` or sweep can adopt it), and the tail final the flush is waiting for arrives
+       *  through these very callbacks. The fence is the `useLiveCall` one, on the two facts that
+       *  actually make a callback a ghost: a NEWER leg has taken over, or this one is already torn
+       *  down (`close()` only STARTS the handshake — frames can still land after it). */
+      let session: StreamSession | null = null;
+      const mine = (): StreamSession | null =>
+        legRef.current === leg && session && !session.closed ? session : null;
+      const socket = openLiveSocket({
+        url: liveSocketUrl(),
+        // The context's REAL rate — the relay builds its resampler from what we declare here, so it
+        // must be what the worklet actually produces (44.1k or 48k by device; there is no asking).
+        sampleRate: ctx.sampleRate,
+        ceilingMs,
+        onFrame: (frame) => {
+          const s = mine();
+          if (!s) return;
+          switch (frame.type) {
+            case "state":
+              if (frame.state === "ready") {
+                s.ready = true; // …and the backlog starts draining on the next live frame
+              } else if (frame.state === "ended") {
+                // The relay said its piece. Whether that costs the clip is the ordinary death rule.
+                socket.close();
+              }
+              // `degraded` is the relay's overflow note; a dictation leg has nothing to show for it
+              // and nothing to decide — the words it dropped are already gone.
+              break;
+            case "speech_stopped":
+              setPending(true); // "it heard you stop" — the gap R70 §7 wants painted
+              break;
+            case "transcript": {
+              if (!frame.final) break; // we have no partials (§9.4); a future one is data, not text
+              const text = frame.text.trim();
+              if (text) {
+                appendDraft(text); // THE join rule, unchanged — `store/composer` already owns it
+                streamAppends += 1; // …and the caret seam's cue that THIS commit is a phrase landing
+                s.finals += 1;
+              }
+              setPending(false);
+              // Any final ends a release's wait, empty or not: the ear has answered, and an empty
+              // answer is still the answer (it just does not count toward the either/or).
+              s.tail?.();
+              break;
+            }
+            case "error":
+              // Every typed error is followed by the relay's own close, which is where the decision
+              // lives — one rule for "the leg is gone", however it went.
+              break;
+          }
+        },
+        onClose: () => {
+          const s = mine();
+          if (!s || s.finishing) return; // the release owns its own close
+          if (!s.ready) {
+            // It never opened: a refused handshake (403), a busy relay (1013), a leg that died before
+            // `ready`. Silent for the recording, one notice per page load for the misconfiguration.
+            degradeStream(s);
+            return;
+          }
+          if (s.finals === 0) {
+            // Nothing was appended, so the clip still carries every word — degrade SILENTLY and let
+            // the recording run on exactly as it would have without the feature. The clip fallback IS
+            // the retry; there is deliberately no mid-session reconnect (R70 §8's retry-once declined).
+            dropStream(s);
+            return;
+          }
+          // Words are already in the draft, so uploading the clip would say them twice (rule ③). End
+          // the recording HERE through the ordinary path, with the flush marked impossible: the tail
+          // after the drop is honestly lost, and the toast says so rather than pretending otherwise.
+          s.dead = true;
+          s.uplink?.stop();
+          s.uplink = null;
+          setPending(false);
+          pushToast(LIVE_LOST_MSG, "err");
+          stop();
+        },
+      });
+      // Assigned SYNCHRONOUSLY, before the socket can deliver anything: every callback above is
+      // asynchronous by construction, so none of them can observe the null.
+      session = {
+        leg,
+        socket,
+        backlog: [],
+        ready: false,
+        finals: 0,
+        dead: false,
+        closed: false,
+        finishing: false,
+        drain: 0,
+        uplink: null,
+        tail: null,
+        elapsedMs: 0,
+        idleMs: 0,
+      };
+      streamRef.current = session;
+      void attachPcmUplink(ctx, stream, {
+        frameMs,
+        onFrame: (f) => {
+          const s = mine();
+          if (!s || s.dead) return;
+          // ① BEFORE `ready`, BUFFER. The words spoken while the socket was handshaking are the first
+          // words of the sentence, and the relay closes the leg on a leading binary frame anyway.
+          if (!s.ready) {
+            s.backlog.push(f.buf);
+            // THE READY BOUND, and it is a ceiling the owner already configured: a handshake that is
+            // not coming looks exactly like a backlog nothing drains. Past it the leg holds a second
+            // of stale speech and is worse than no leg at all.
+            if (s.backlog.length * frameMs > ceilingMs) degradeStream(s);
+            return;
+          }
+          // …and AFTER it, the backlog goes out AHEAD of the live frame — audio order is the whole
+          // contract — paced at 1.5× realtime (see `BACKLOG_DRAIN_EVERY`).
+          if (s.backlog.length === 0) {
+            s.socket.sendAudio(f.buf);
+            return;
+          }
+          s.backlog.push(f.buf);
+          const head = s.backlog.shift();
+          if (head) s.socket.sendAudio(head);
+          if (++s.drain % BACKLOG_DRAIN_EVERY === 0) {
+            const extra = s.backlog.shift();
+            if (extra) s.socket.sendAudio(extra);
+          }
+        },
+      })
+        .then((uplink) => {
+          const s = mine();
+          // The recording ended (or the leg died) while the worklet was installing — a graph nobody
+          // owns is released at once, exactly as the arming latch releases an ownerless stream.
+          if (!s || s.dead) uplink.stop();
+          else s.uplink = uplink;
+        })
+        .catch(() => {
+          const s = mine();
+          // A worklet that will not install is a leg that can never say anything: the same never-opened
+          // degrade the handshake failures take.
+          if (s) degradeStream(s);
+        });
+    },
+    [ceilingMs, degradeStream, dropStream, frameMs, setPending, stop],
+  );
+
   /** Arm the energy detector on the SAME stream the recorder holds (never a second getUserMedia). Silent
    *  by contract (MED-2): no Web Audio, a context that won't leave `suspended`, a throwing node graph —
    *  every one degrades to ordinary push-to-talk. A recording that needs one extra tap is a non-event;
@@ -369,18 +795,33 @@ export function useDictation({
       // pre-OF-3 recorder had no listener and kept recording behind a hidden page — the metering
       // split must not broaden that rule. Policy off, a hidden page throttles only the meter poll,
       // which is decoration.
-      if (autoStopOn) {
+      //
+      // …AND UNCONDITIONALLY WHILE STREAMING (S2.5 / §9.3-b — the F1 trap read in the other
+      // direction). A live WebSocket plus an open mic behind a locked phone is strictly worse than the
+      // recorder F1 was written about, so the arming decision gains a second reason. What that arming
+      // CARRIES, enumerated, because the split that created F1 failed to: it calls `stop()`, which for
+      // a streaming session is the ordinary release — the recorder stops at once (the mic indicator
+      // goes out immediately, which is the point), then the flush's bounded wait runs. A hidden page
+      // throttles that timer on Android, so the SOCKET may outlive the tap by longer than it would in
+      // the foreground; the mic does not, and the wait ends either way. Keyed on `streamWanted` — the
+      // per-recording decision, taken once — rather than on whether a leg actually opened: one arming
+      // decision per recording, never a listener that comes and goes with a socket.
+      if (autoStopOn || streamWanted) {
         const onHidden = () => {
           if (document.visibilityState === "hidden") stop();
         };
         document.addEventListener("visibilitychange", onHidden);
         hiddenRef.current = onHidden;
       }
-      if (typeof AudioContext === "undefined") return;
+      if (typeof AudioContext === "undefined") {
+        if (streamWanted) noteLiveDegrade(); // no Web Audio ⇒ no uplink either (rule ⑧'s ctx arm)
+        return;
+      }
       let ctx: AudioContext;
       try {
         ctx = new AudioContext(); // constructed inside the start gesture, so it may autoplay-unlock
       } catch {
+        if (streamWanted) noteLiveDegrade();
         return;
       }
       audioRef.current = ctx; // parked BEFORE the await, so a stop during it closes this context
@@ -397,6 +838,7 @@ export function useDictation({
       // armed for the rest of the recording, which is now plain push-to-talk.
       if (ctx.state !== "running") {
         teardownAudio();
+        if (streamWanted) noteLiveDegrade();
         return;
       }
       let analyser: AnalyserNode;
@@ -408,8 +850,13 @@ export function useDictation({
         sourceRef.current = source;
       } catch {
         teardownAudio();
+        if (streamWanted) noteLiveDegrade();
         return;
       }
+      // THE STREAMING LEG (S2.5) — a THIRD consumer of the one stream, on THIS context, only now that
+      // the context is proven to run. Everything below it (the poll's two clocks, the Tier-0
+      // suspension) reads the session it parks; everything above is exactly the shipped detector.
+      if (streamWanted) armStream(ctx, stream);
       const samples = new Float32Array(analyser.fftSize);
       let silentMs = 0; // the current run of below-floor readings; silence BEFORE speech counts too
       pollRef.current = setInterval(() => {
@@ -420,8 +867,43 @@ export function useDictation({
         // ① THE METER — every reading, whatever the policy (OF-3). Straight to a registered consumer,
         //    never through state: at 10 Hz a `setState` would re-render the whole composer subtree.
         meterRef.current?.(Math.min(1, rms / METER_FULL_RMS));
-        // ② THE POLICY — unchanged, and still the only thing that can end a recording from in here.
+        // ② THE STREAMING SESSION'S TWO CLOCKS (S2.5 / §9.3-c), both on this ONE poll — no timers of
+        //    their own, for the reason the meter has none: this interval already runs at the right
+        //    cadence for every decision the mic makes.
+        const live = streamRef.current;
+        if (live && !live.finishing) {
+          //    The HARD cap applies to every streaming session, `hold` included: it bounds the open
+          //    socket, not the owner's patience.
+          live.elapsedMs += SILENCE_POLL_MS;
+          if (live.elapsedMs >= maxMs) {
+            stop();
+            return;
+          }
+          //    The IDLE stop is HANDS-FREE ONLY. While the finger is down the finger IS the timeout,
+          //    and a pause is the entire point of phrase dictation. The floor is `stt_auto_stop`'s —
+          //    the `barge_threshold: 0` reuse precedent, one calibrated silence floor per device — so
+          //    an uncalibrated 0 leaves the idle stop DISARMED rather than firing on every reading.
+          if (handsFreeRef.current && silenceFloor > 0 && rms < silenceFloor) {
+            live.idleMs += SILENCE_POLL_MS;
+            if (live.idleMs >= idleMs) {
+              stop();
+              return;
+            }
+          } else {
+            live.idleMs = 0;
+          }
+        }
+        // ③ THE POLICY — unchanged, and still the only thing that can end a recording from in here.
         if (!autoStopOn) return;
+        //    …EXCEPT that it is SUSPENDED while a streaming session is live (§9.3-a): Tier 0's whole
+        //    job is to end a push-to-talk clip at the first pause, and under phrase dictation the
+        //    pause is the point. The run is RESET rather than frozen — the window is CONTINUOUS
+        //    silence, so a session that dies mid-recording must hand the policy a fresh run, not a
+        //    stale one that ends the clip the moment it resumes.
+        if (live && !live.dead) {
+          silentMs = 0;
+          return;
+        }
         if (rms >= silenceFloor) {
           silentMs = 0; // anything above the floor restarts the run
           return;
@@ -430,7 +912,17 @@ export function useDictation({
         if (silentMs >= silenceMs) stop(); // the SAME path as tapping stop → onstop → upload
       }, SILENCE_POLL_MS);
     },
-    [autoStopOn, silenceFloor, silenceMs, stop, teardownAudio],
+    [
+      armStream,
+      autoStopOn,
+      idleMs,
+      maxMs,
+      silenceFloor,
+      silenceMs,
+      stop,
+      streamWanted,
+      teardownAudio,
+    ],
   );
 
   /** The pre-flight EVERY entry shares — the tap, and (since S0.5) the gesture's activation. No
@@ -501,6 +993,9 @@ export function useDictation({
       recRef.current = rec;
       chunksRef.current = [];
       discardRef.current = false;
+      // A fresh recording starts HAND-ON by default: `start()` is what the gesture calls from a press.
+      // Whoever knows better (the gesture's `locked` stage, the keyboard's tap-to-start) says so after.
+      handsFreeRef.current = false;
       rec.ondataavailable = (e) => {
         if (e.data.size) chunksRef.current.push(e.data);
       };
@@ -512,15 +1007,29 @@ export function useDictation({
         if (recRef.current === rec) recRef.current = null;
         teardownDetector(); // BEFORE the upload enters `sending` — the watcher dies with the recording
         stream.getTracks().forEach((t) => t.stop()); // release the mic indicator
+        // THE CLIP LEAVES THE REFS HERE, once, before anything decides what becomes of it — the F2
+        // ownership rule applied to the recording itself now that S2.5 can hold the decision open for
+        // `tail_wait_ms` (see `upload`'s `@param clip`).
+        const clip: Clip = { chunks: chunksRef.current, startedAt: startedAtRef.current };
+        chunksRef.current = [];
+        startedAtRef.current = 0;
         // CANCELLED (S0.5): the same teardown, and then nothing — no blob, no POST, no draft.
         if (discardRef.current) {
           discardRef.current = false;
-          chunksRef.current = [];
-          startedAtRef.current = 0;
           setPhase("idle");
           return;
         }
-        void upload(rec.mimeType || "audio/webm");
+        // STREAMING (S2.5): the clip is PARKED, not uploaded — which of the two carries this
+        // recording's words is rule ③'s decision, and it cannot be taken until the flush has had its
+        // say. The session is detached here so no later `stop()` or unmount sweep can adopt a leg that
+        // is already closing itself out.
+        const live = streamRef.current;
+        if (live) {
+          streamRef.current = null;
+          void finishStream(live, rec.mimeType || "audio/webm", clip);
+          return;
+        }
+        void upload(rec.mimeType || "audio/webm", clip);
       };
       rec.onerror = () => {
         // OWNERSHIP IS DELIBERATELY NOT RELEASED HERE (the confirm round's sweep): an `error` is not
@@ -531,6 +1040,10 @@ export function useDictation({
         // a clean no-upload close-out.
         discardRef.current = true;
         teardownDetector();
+        // …and the streaming leg goes with it, unflushed: a recorder that failed has no release to
+        // choreograph. Phrases already appended stay in the draft (rule ⑤) — they are the owner's.
+        const live = streamRef.current;
+        if (live) dropStream(live);
         stream.getTracks().forEach((t) => t.stop());
         startedAtRef.current = 0;
         pushToast("Recording failed", "err");
@@ -549,7 +1062,7 @@ export function useDictation({
       // that newer attempt's token must survive this one's unwind.
       if (armRef.current === arm) armRef.current = null;
     }
-  }, [upload, preflight, armDetector, teardownDetector]);
+  }, [upload, preflight, armDetector, teardownDetector, dropStream, finishStream]);
 
   /** Tap handler — the KEYBOARD/AT path since S0.5 (R69 §8.1: tap-to-start, tap-to-stop). idle → start,
    *  recording → stop + transcribe. Inert while unavailable/sending; the degraded explainers ride
@@ -561,8 +1074,17 @@ export function useDictation({
     }
     // `start` runs the pre-flight itself; running it HERE too would double the plain-HTTP nudge. The
     // one case `start` cannot cover is a tap that must still explain itself while nothing may start.
-    if (phase === "idle" && !unavailable) void start();
-    else preflight();
+    if (phase === "idle" && !unavailable) {
+      void start().then((armed) => {
+        // A TAP-started recording is HANDS-FREE by construction (R69 §8.1: there is no hand to free),
+        // so the §9.3-c idle stop arms for it. Written after `start` resolves, because `start` resets
+        // the flag for the gesture's press path. A consumer driving the gesture instead publishes the
+        // same fact from its `locked` stage; both land on the one ref.
+        if (armed) handsFreeRef.current = true;
+      });
+      return;
+    }
+    preflight();
   }, [phase, unavailable, start, stop, preflight]);
 
   // Stop any in-flight recording if the composer unmounts mid-capture (tab switch to Conf/Utils).
@@ -572,20 +1094,45 @@ export function useDictation({
     () => () => {
       stop();
       teardownDetector();
+      // EVERY EXIT TEARS THE LEG DOWN, UNMOUNT INCLUDED (S2.5 — the S2b lesson generalized: an exit
+      // that skips the teardown is an exit that leaks the ear). The REACHABLE half is `stop()` above:
+      // it owes the choreography to whatever was recording, and that choreography closes its own
+      // socket on a bounded path whether or not this component still exists.
+      //
+      // The sweep below is the BELT, and honestly labelled as one: today no leg can reach it. Every
+      // path that ends a recording either marks the session `finishing` (`stop()`) or drops it outright
+      // (`cancel`, `onerror`, a death, `onstop`'s hand-off to the release), and a leg can only be armed
+      // by `armDetector` on a context whose own staleness check already refuses to arm one for a
+      // recording that has ended. It stays because the RULE is "every exit", not "every exit we can
+      // currently enumerate" — the next exit added here gets the teardown for free instead of being
+      // the leak. (Red-proofed at the reachable half: removing `stop()` above is what goes red.)
     },
-    [stop, teardownDetector],
+    [stop, teardownDetector, dropStream],
   );
 
   // `insecure` wins over `unavailable`: with no secure context a recording attempt can't even start,
   // so the 502-driven `unavailable` flag never gets set — surface the actionable reason instead.
   const status: MicStatus = !micCapable ? "insecure" : unavailable ? "unavailable" : phase;
   // `toggle` is the keyboard/AT path; `start`/`stop`/`cancel` are the gesture's three verbs (S0.5).
-  // There is one recorder behind all four. `meter`/`onTooShort` are the two ASSIGNABLE seams the feel
-  // round added — both null-safe, both owned by whoever mounts (assign on mount, null on cleanup), so a
-  // second composer can never inherit a dead handler.
-  return { status, toggle, start, stop, cancel, meter: meterRef, onTooShort: tooShortRef };
+  // There is one recorder behind all four. `meter`/`onTooShort`/`onPending`/`handsFree` are the
+  // ASSIGNABLE seams — all null-safe, all owned by whoever mounts (assign on mount, null on cleanup),
+  // so a second composer can never inherit a dead handler. The two S2.5 additions follow the shape
+  // exactly rather than inventing a second one: chrome the gesture paints (`onPending`) and one fact
+  // only the gesture knows (`handsFree`).
+  return {
+    status,
+    toggle,
+    start,
+    stop,
+    cancel,
+    meter: meterRef,
+    onTooShort: tooShortRef,
+    onPending: onPendingRef,
+    handsFree: handsFreeRef,
+  };
 }
 
-/** The two assignable seams' type, named so a consumer can state what it registers. */
+/** The assignable seams' types, named so a consumer can state what it registers. */
 export type MicMeterRef = MutableRefObject<((level: number) => void) | null>;
 export type MicTooShortRef = MutableRefObject<(() => void) | null>;
+export type MicPendingRef = MutableRefObject<((pending: boolean) => void) | null>;

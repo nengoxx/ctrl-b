@@ -94,6 +94,12 @@ const makeSettings = () => ({
       barge_in: true,
       ring: true,
       echo_workaround: "auto",
+      // S2.5 — the dictation four ride the same object; a sibling `dictation:` map would be the
+      // parallel-maps mistake the standing rule names.
+      dictation: false,
+      tail_wait_ms: 2000,
+      dictation_idle_s: 15,
+      dictation_max_s: 120,
     },
   },
   notifications: {
@@ -317,6 +323,40 @@ describe("ConfTab · the Live call section (D71 §5.1)", () => {
     });
     // The section is edited on the ONE voice object, so its neighbours ride the same patch unharmed.
     expect(voiceOf()).toMatchObject({ auto_stop_threshold: 0.01 });
+  });
+
+  it("S2.5 · renders the dictation toggle + its three numerics from the live config", () => {
+    render(<ConfTab active />);
+    expect(liveGroup().getByLabelText("Live dictation enabled").getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    expect(liveField("Phrase tail wait").value).toBe("2000");
+    expect(liveField("Dictation idle stop").value).toBe("15");
+    expect(liveField("Dictation time limit").value).toBe("120");
+  });
+
+  it("S2.5 · …and saves them coerced to NUMBERS beside the call's own knobs", () => {
+    render(<ConfTab active />);
+    fireEvent.click(liveGroup().getByLabelText("Live dictation enabled"));
+    fireEvent.change(liveField("Phrase tail wait"), { target: { value: "2500" } });
+    fireEvent.change(liveField("Dictation idle stop"), { target: { value: "20" } });
+    fireEvent.click(saveButton());
+    expect(liveOf()).toMatchObject({
+      dictation: true,
+      tail_wait_ms: 2500, // coerced, not the typed "2500"
+      dictation_idle_s: 20,
+      dictation_max_s: 120, // untouched, and still a number
+    });
+  });
+
+  it("S2.5 · a CLEARED dictation numeric rides as 0 — every one is floored well above it", () => {
+    // The `silence_ms` rule, not the `barge_threshold` one: 0 is not a meaning any of these three can
+    // carry (the backend floors them at 500 / 3 / 10), so a blank earns the same visible 422 rather
+    // than a null the reader has to interpret.
+    render(<ConfTab active />);
+    fireEvent.change(liveField("Phrase tail wait"), { target: { value: "" } });
+    fireEvent.click(saveButton());
+    expect(liveOf()?.tail_wait_ms).toBe(0);
   });
 
   it("a CLEARED zero-floored numeric rides as NULL — a visible 422, never a silent meaning", () => {

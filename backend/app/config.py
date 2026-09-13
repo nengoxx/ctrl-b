@@ -608,9 +608,13 @@ class LiveCfg(VoiceServiceCfg):
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `allowed_origins` are the relay's own caps.
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `barge_threshold`, `barge_in`, `ring`,
-      `echo_workaround` are PWA behavior (Speaches' `TurnDetection` accepts exactly five fields, §4.1,
-      so an interruption floor cannot be a server knob). They are delivered verbatim by
-      `GET /voice/status` (`live_call`) and nothing below the browser reads them.
+      `echo_workaround` and the four S2.5 DICTATION knobs are PWA behavior (Speaches' `TurnDetection`
+      accepts exactly five fields, §4.1, so an interruption floor cannot be a server knob). They are
+      delivered verbatim by `GET /voice/status` (`live_call`) and nothing below the browser reads them.
+
+    The dictation four ride this section rather than `voice.stt` because they configure THE SAME EAR
+    the call uses — one realtime target, one set of client knobs (D71 §7-S2.5 / R70 §9.2). `voice.stt`
+    keeps governing the whole-clip POST path, which is exactly what streaming dictation degrades to.
 
     `enabled: false` ships until S4 passes (the whole-feature-toggle rule); the `voice.enabled` MASTER
     switch outranks it, as it does for stt/tts."""
@@ -649,6 +653,36 @@ class LiveCfg(VoiceServiceCfg):
     #: capability-detected per track at call start (OFF where `getSettings().echoCancellation` reads
     #: `"all"`, the protective ear-hold elsewhere) — NEVER UA-sniffed. `on`/`off` force one branch.
     echo_workaround: Literal["auto", "on", "off"] = "auto"
+
+    # ── S2.5 · phrase-by-phrase streaming DICTATION (client; R70 §9.2/§9.3) ──
+    # The mic's hold/lock rides the same ear as the call: each utterance final appends to the composer
+    # draft live, and the release is the relay's `flush` (never a commit — R70 §1.2 arm A). All four
+    # are read by `useDictation` alone; the relay neither sees nor enforces one of them.
+    #: The whole-feature toggle (the standing pluggability requirement), independent of `enabled` so the
+    #: owner can run calls without the mic streaming, or the reverse. OFF ships: streaming dictation is
+    #: opt-in, and with it off the mic is exactly today's whole-clip POST.
+    dictation: bool = False
+    #: How long the client waits for the TAIL final after its release `flush`, ms. R70 §4: ~2.4× the
+    #: worst measured tail (530–830 ms across a 1.26/2.79/4.57 s buffer), which is comfortably inside a
+    #: human's patience for a "finishing…" state and short enough that a dead ear cannot hang the
+    #: gesture. Floored well above the measured worst case; capped so a mistyped value cannot wedge the
+    #: mic in `sending`.
+    tail_wait_ms: int = Field(default=2000, ge=500, le=10000)
+    #: HANDS-FREE idle stop: a run of below-floor mic energy this long ends a LOCKED streaming session
+    #: through the ordinary release choreography (the trailing phrase is kept). R70 §9.3 — Claude Code's
+    #: own number. It is what makes leaving the lock on safe; a `hold` needs none (the finger is the
+    #: timeout). The floor it measures against is `stt.auto_stop_threshold` — the `barge_threshold` 0
+    #: reuse precedent: one calibrated silence floor per device, not three.
+    dictation_idle_s: int = Field(default=15, ge=3, le=300)
+    #: The HARD cap on any one streaming dictation session, s (R70 §9.3, Claude Code's 120). Unlike the
+    #: idle stop this applies to `hold` too: it bounds the open socket, not the user's patience.
+    dictation_max_s: int = Field(default=120, ge=10, le=1800)
+    # PINNED OMISSIONS (main-seat, S2.5 — recorded so the next reader does not re-derive them):
+    # · `pause_flush_ms` (R70 §9.4's client-forced mid-hold flush) is NOT here. A knob whose value does
+    #   nothing is dishonest in Conf, the §7-S1 residual list already omits it, and adding it later is
+    #   purely additive — it needs its own probe and its own review round (R70's own words).
+    # · R70 §6's optional THREE-WORD auto-send floor is NOT here: it is an unratified behaviour change
+    #   to a shipped policy (`stt.auto_send`), and an S4 candidate rather than this slice's.
 
     # ── the relay's own caps (server side; every one testable, none a vibe — §3.1) ──
     #: Uplink frame duration. 40 ms is the plan §3.1 default; Silero runs synchronously on Speaches'

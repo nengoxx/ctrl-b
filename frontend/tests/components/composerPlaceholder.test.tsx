@@ -39,8 +39,9 @@ vi.mock("../../src/hooks/useComposer", () => ({
     send: vi.fn(),
     isStreaming: false,
     sttReady: false,
-    // The controller's full shape: the gesture hook registers the two assignable seams (`meter`,
-    // `onTooShort`) on mount, so a stub without them explodes before anything renders.
+    // The controller's full shape: the gesture hook registers every assignable seam (`meter`,
+    // `onTooShort`, and S2.5's `onPending`/`handsFree`) on mount, so a stub without them explodes
+    // before anything renders.
     mic: {
       status: "idle",
       toggle: vi.fn(),
@@ -49,6 +50,8 @@ vi.mock("../../src/hooks/useComposer", () => ({
       cancel: vi.fn(),
       meter: { current: null },
       onTooShort: { current: null },
+      onPending: { current: null },
+      handsFree: { current: false },
     },
   }),
 }));

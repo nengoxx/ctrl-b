@@ -761,9 +761,10 @@ describe("OF-5 · the tools trigger IS the locked recording's cancel", () => {
   });
 });
 
-describe("OF-3/OF-4 · the two recorder seams the gesture registers", () => {
-  /** A stand-in recorder: these two cases are about the SEAMS, so nothing else needs to be real (the
-   *  metering itself — that the poll runs with auto-stop off — is pinned in `useDictation.test.ts`). */
+describe("OF-3/OF-4 (+S2.5) · the recorder seams the gesture registers", () => {
+  /** A stand-in recorder: these cases are about the SEAMS, so nothing else needs to be real (the
+   *  metering itself — that the poll runs with auto-stop off — is pinned in `useDictation.test.ts`,
+   *  and the streaming rules the last two serve are in `dictationStreaming.test.ts`). */
   const stubMic = (
     status: "idle" | "recording" = "recording",
   ): ReturnType<typeof useDictation> => ({
@@ -776,6 +777,8 @@ describe("OF-3/OF-4 · the two recorder seams the gesture registers", () => {
     // `{ current: null }` would narrow `current` to `null` and the seam could not be called at all.
     meter: { current: null },
     onTooShort: { current: null },
+    onPending: { current: null },
+    handsFree: { current: false },
   });
 
   /** The hook PLUS its chrome, which is what gives the level somewhere to land. */
@@ -786,15 +789,17 @@ describe("OF-3/OF-4 · the two recorder seams the gesture registers", () => {
 
   const host = () => document.querySelector<HTMLElement>(".mic-gesture")!;
 
-  it("registers both seams on mount and WITHDRAWS them on unmount", () => {
+  it("registers every seam on mount and WITHDRAWS them on unmount", () => {
     const mic = stubMic();
     const { unmount } = render(<Harness mic={mic} />);
     expect(mic.meter.current).toBeTypeOf("function");
     expect(mic.onTooShort.current).toBeTypeOf("function");
+    expect(mic.onPending.current).toBeTypeOf("function"); // S2.5
     unmount();
     // a second composer must not inherit handlers pointing into a tree that is gone
     expect(mic.meter.current).toBeNull();
     expect(mic.onTooShort.current).toBeNull();
+    expect(mic.onPending.current).toBeNull();
   });
 
   it("the level lands on the host IMPERATIVELY, and is cleared when the recording ends", async () => {
@@ -808,6 +813,62 @@ describe("OF-3/OF-4 · the two recorder seams the gesture registers", () => {
     rerender(<Harness mic={stubMic("idle")} />); // the recording ends (release, auto-stop, hidden page)
     await tick(0);
     expect(host().style.getPropertyValue("--mg-level")).toBe("0"); // no stale bulge on the next gesture
+  });
+
+  it("S2.5 · the PENDING state lands as one DOM attribute — no stage, no render (R70 §7)", () => {
+    // The gesture MACHINE is untouched by this slice: a phrase in flight changes nothing about what
+    // the button does, so it is chrome and only chrome. Written imperatively for the level's reason —
+    // a phrase lands every couple of seconds and must not repaint the composer subtree to say so.
+    const mic = stubMic();
+    render(<Harness mic={mic} />);
+    expect(host().dataset.pending).toBeUndefined();
+    act(() => mic.onPending.current!(true));
+    expect(host().dataset.pending).toBe("1");
+    act(() => mic.onPending.current!(false));
+    expect(host().dataset.pending).toBeUndefined(); // removed, not left at "0" — the CSS keys on presence
+  });
+});
+
+describe("S2.5 · the gesture publishes WHOSE TIMEOUT THE FINGER IS (§9.3-c)", () => {
+  /** The streaming idle stop may not run while the hand is on the button — a pause is the point of
+   *  phrase dictation, and the release is the end. Only the gesture knows which stage it is in, so it
+   *  publishes the one fact on the recorder's own assignable ref (the `meter`/`onTooShort` shape).
+   *
+   *  Driven against a STUB recorder: the fact under test is the STAGE, and a stub is what lets the
+   *  machine sit in `locked` without a real MediaRecorder lifecycle underneath it. */
+  const stub = (): ReturnType<typeof useDictation> => ({
+    status: "recording",
+    toggle: vi.fn(),
+    start: vi.fn(async () => true),
+    stop: vi.fn(),
+    cancel: vi.fn(),
+    meter: { current: null },
+    onTooShort: { current: null },
+    onPending: { current: null },
+    handsFree: { current: false },
+  });
+
+  function Button({ mic: m }: { mic: ReturnType<typeof useDictation> }) {
+    const gesture = useMicGesture(m, false);
+    return (
+      <>
+        <button type="button" aria-label="start dictation" {...gesture.handlers} />
+        <MicGestureChrome chrome={gesture.chrome} />
+      </>
+    );
+  }
+
+  it("`handsFree` follows the LOCKED stage, and is withdrawn on unmount", async () => {
+    const m = stub();
+    const { unmount } = render(<Button mic={m} />);
+    expect(m.handsFree.current).toBe(false);
+    await hold();
+    expect(m.handsFree.current).toBe(false); // the finger IS the timeout
+    move(X0, Y0 - (LOCK_PX + 24)); // past the 56 px latch → hands-free
+    await tick(0);
+    expect(m.handsFree.current).toBe(true);
+    unmount();
+    expect(m.handsFree.current).toBe(false); // a dead composer leaves nothing looking hands-free
   });
 });
 
