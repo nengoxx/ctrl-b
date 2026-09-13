@@ -118,6 +118,14 @@ def _origin_allowed(origin: str | None, host: str | None, allowed: list[str]) ->
     `host:port` must match the request's own `Host` header — or the whole origin string must appear
     verbatim in `voice.live.allowed_origins` (the escape hatch for a second Serve name). Exact strings,
     never patterns: a pattern is how an allowlist grows a bypass.
+
+    **What this does NOT defend against: DNS rebinding.** The same-host rule compares two values the
+    ATTACKER chose — a page served from `http://evil.example:5433` whose name is rebound to a tailnet
+    IP sends a matching `Origin` and `Host`, and passes. That is the app's existing posture, not a new
+    hole: rebinding equally defeats the absence-of-CORS defence on every plain-HTTP route here. The
+    real fix is app-wide **`Host` header validation** (`TrustedHostMiddleware`), already recorded as
+    D65-R1 in HARDENING_PLAN §8.2 / SECURITY_MODEL §2.7; the rule stays because it still stops the
+    ordinary hostile page and costs no configuration.
     """
     if not origin:
         return False

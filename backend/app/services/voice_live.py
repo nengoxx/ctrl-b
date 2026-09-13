@@ -28,11 +28,15 @@ counter.
    them: Silero only looks at the trailing 3 s of the buffer and cannot emit `speech_stopped` before
    the buffer exceeds 3000 ms, so padding the buffer is the only legal way to force an endpoint. It
    lives HERE and not on the phone because an 88-frame burst in 3 ms would violate this relay's own
-   §3.1 message-rate ceiling.
+   §3.1 message-rate ceiling. The burst is also a **delivery barrier** (S1 review F2): the flush does
+   not return until every one of its frames has actually gone upstream, or the mic audio that follows
+   it would evict the tail of the burst out of the same bounded queue and the endpoint would never
+   fire.
 3. **Backpressure is ours alone.** Speaches has no server-side backpressure (unbounded pubsub
    queues, §7-S0 ②) and `WebSocket.send()` has no awaitable backpressure in the browser, so the
    bounded queue here is the only one in the chain: on overflow it drops the OLDEST frames and says
-   so once, and never stalls (§3.1/F6).
+   so once, and never stalls (§3.1/F6). Its depth is counted in FRAMES, which is only truthful in
+   milliseconds because the uplink caps bound a frame's DURATION as well as its bytes (F4).
 4. **The bearer never leaves the backend.** The key rides an `Authorization` header the relay injects,
    is unwrapped from its `SecretStr` exactly once at the connect call (the A11 rule), and no log line
    or downlink frame ever carries it — connect failures are reported by the target's PROVIDER NAME and
@@ -86,9 +90,17 @@ VAD_WINDOW_MS = 3000
 
 #: The rate-ceiling window (§3.1: "sustained excess over ~2× the nominal 1000/frame_ms per second").
 #: A rolling burst budget rather than an instantaneous rate, so a legitimate jitter catch-up passes
-#: and only a sustained flood closes.
+#: and only a sustained flood closes. Two budgets ride this one window — see `_note_frame`.
 RATE_WINDOW_S = 2.0
 RATE_MULTIPLIER = 2
+
+#: The per-frame DURATION ceiling, as a multiple of the configured `frame_ms` (S1 review F4). ×2
+#: admits a client that occasionally coalesces two frames after a scheduler hiccup; anything larger is
+#: not jitter, it is a protocol violation. This cap is also what makes the frame-COUNT queue depth
+#: truthful in milliseconds: `max_frame_bytes` (32 KiB) at the 8 kHz floor is 2048 ms of audio in ONE
+#: frame, so without it a "2000 ms" relay queue could hold ~100 s and a fully compliant client could
+#: ship ~100× realtime.
+FRAME_MS_TOLERANCE = 2.0
 
 #: WebSocket close codes used by this route. 1008 = policy violation (protocol errors + the pre-accept
 #: refusals), 1011 = internal/upstream failure, 1013 = try again later (busy), 1000 = clean end.
@@ -231,6 +243,9 @@ class LiveRelaySession:
 
         self._up: LiveUpstream | None = None
         self._resampler: Pcm16Resampler | None = None
+        #: The rate the client DECLARED in `start`, kept beside the resampler it built rather than read
+        #: back off it: the caps below reason about the client's own wire, not about the 24 kHz one.
+        self._client_rate: int | None = None
         #: Downlink writes come from two tasks (the client pump's protocol errors and the upstream
         #: pump's events), so they are serialized — an ASGI `send` is not re-entrant.
         self._send_lock = asyncio.Lock()
@@ -248,10 +263,17 @@ class LiveRelaySession:
         #: True between a `speech_started` and its `speech_stopped`. Tracked for the commit-safety
         #: invariant (§7-S0's amendment (i)) and to keep a no-op flush from padding a silent buffer.
         self._speech_open = False
+        #: True once ANY client frame has been accepted since the last observed `committed` — the
+        #: no-op flush guard's third term (S1 review F3). `_fed_ms` alone cannot answer "was anything
+        #: fed": it counts ENQUEUED milliseconds, so it reads 0 both for "nothing arrived" and for a
+        #: frame the resampler is still carrying as phase, and it is zeroed by a `committed` that may
+        #: arrive late. This latch answers the narrower question and nothing else clears it.
+        self._audio_since_commit = False
         #: One `degraded` frame per overflow BURST, not per dropped frame.
         self._overflow_flagged = False
-        #: Monotonic timestamps of the recent client binary frames (the rolling rate ceiling).
-        self._frame_times: deque[float] = deque()
+        #: `(monotonic timestamp, ms of audio)` for the recent client binary frames — the rolling
+        #: rate ceiling's two budgets read the same deque.
+        self._recent_frames: deque[tuple[float, float]] = deque()
         #: Latched after `session.update` so the ONE unavoidable spurious `prefix_padding_ms` error
         #: event is swallowed and every other upstream error still forwards (§7-S0 ②).
         self._swallow_pad_error = False
@@ -302,6 +324,7 @@ class LiveRelaySession:
         except TimeoutError:
             raise _ProtocolError(f"no start message within {self._cfg.start_timeout_s}s") from None
         rate = self._parse_start(msg)
+        self._client_rate = rate
         self._resampler = Pcm16Resampler(rate, SPEACHES_WIRE_RATE)
 
     def _parse_start(self, msg: dict[str, Any]) -> int:
@@ -480,6 +503,13 @@ class LiveRelaySession:
         while True:
             payload, _ms = await self._queue.get()
             await self._send_up_raw(payload)
+            # The DELIVERY half of the queue's contract: `_flush` parks on `Queue.join()` until every
+            # queued item has actually reached Speaches (F2), and this is the call that lets it go.
+            # AFTER the send on purpose — "done" has to mean delivered, not dequeued. If the send
+            # raised, this never runs and the join would wait forever: that is not a hang, because the
+            # exception ends this leg, `_pump`'s FIRST_COMPLETED returns, and the teardown cancels the
+            # client leg out of its join.
+            self._queue.task_done()
 
     async def _pump_downlink(self) -> None:
         """Speaches → the typed downlink."""
@@ -489,38 +519,76 @@ class LiveRelaySession:
     # ── the uplink audio path ─────────────────────────────────────────────────────────────────────
 
     async def _accept_audio(self, data: bytes) -> None:
-        """One client binary frame: caps, then resample, then enqueue."""
+        """One client binary frame: caps, then resample, then enqueue.
+
+        THREE caps, because they bound three different things and a byte ceiling alone bounds only the
+        first (F4): `max_frame_bytes` bounds one message, `FRAME_MS_TOLERANCE × frame_ms` bounds the
+        AUDIO one message may carry, and `_note_frame` bounds both over a rolling window. The frame's
+        duration is implied by its length at the rate the client DECLARED — the same rate the
+        resampler was built from, so the duration the caps judge is the duration the queue's own ms
+        accounting will see on the far side of the resample.
+        """
         if len(data) > self._cfg.max_frame_bytes:
             raise _ProtocolError(
                 f"binary frame of {len(data)} bytes exceeds max_frame_bytes ({self._cfg.max_frame_bytes})"
             )
-        self._note_frame_rate()
-        assert self._resampler is not None  # `start` precedes every binary frame (phase 1)
+        assert self._client_rate is not None  # `start` precedes every binary frame (phase 1)
+        ms = len(data) / 2 / self._client_rate * 1000
+        ceiling = FRAME_MS_TOLERANCE * self._cfg.frame_ms
+        if ms > ceiling:
+            raise _ProtocolError(
+                f"binary frame carries {ms:.0f} ms of audio at the declared {self._client_rate} Hz, "
+                f"over the {ceiling:g} ms per-frame ceiling ({FRAME_MS_TOLERANCE:g}× frame_ms="
+                f"{self._cfg.frame_ms})"
+            )
+        self._note_frame(ms)
+        # Every frame that clears the caps counts as audio fed, whatever the resampler then makes of
+        # it — a frame too short to produce an output sample is CARRIED as phase, not discarded, so
+        # `_fed_ms` would say "nothing fed" about audio that is really in flight (F3).
+        self._audio_since_commit = True
+        assert self._resampler is not None
         try:
             converted = self._resampler.feed(data)
         except ValueError as exc:
             raise _ProtocolError(str(exc)) from None
         await self._enqueue(converted, drop_oldest=True)
 
-    def _note_frame_rate(self) -> None:
-        """The ENFORCED message-rate ceiling (§3.1, confirm-round residual — a protocol close, not a
-        warning). Mechanism, stated exactly because a vague one is untestable: the timestamps of the
-        client's binary frames over a rolling `RATE_WINDOW_S` window are counted, and more than
-        `RATE_MULTIPLIER ×` the nominal `1000/frame_ms` frames-per-second worth of them in that window
-        closes the socket. That makes it a BURST BUDGET — a short catch-up after a scheduler hiccup
-        passes, a sustained flood (or a client trying to run R70's flush itself) does not."""
+    def _note_frame(self, ms: float) -> None:
+        """The ENFORCED uplink ceiling (§3.1, confirm-round residual — a protocol close, not a
+        warning): TWO budgets over one rolling `RATE_WINDOW_S` window, because they bound two
+        different resources and either alone is trivially evaded (F4).
+
+        * the **count** budget bounds per-message CPU: more than `RATE_MULTIPLIER ×` the nominal
+          `1000/frame_ms` frames per second in the window is a flood of (possibly tiny) messages, each
+          of which costs a base64 decode plus a synchronous Silero pass on Speaches' event loop;
+        * the **ms** budget bounds audio THROUGHPUT: more than `RATE_MULTIPLIER ×` realtime worth of
+          audio in the window is a flood that a few huge frames can mount while staying far inside the
+          count budget — which is exactly how a compliant-looking client could ship ~100× realtime.
+
+        Together they bound both, at 2× realtime. Both are BURST budgets over a window rather than
+        instantaneous rates, so a short catch-up after a scheduler hiccup passes and only sustained
+        excess closes. The relay's own flush burst is exempt BY CONSTRUCTION — it is generated past
+        this point and never travels through `_accept_audio`; keep it that way.
+        """
         nominal_per_s = 1000.0 / self._cfg.frame_ms
-        allowance = int(RATE_MULTIPLIER * nominal_per_s * RATE_WINDOW_S)
+        frame_allowance = int(RATE_MULTIPLIER * nominal_per_s * RATE_WINDOW_S)
+        ms_allowance = RATE_MULTIPLIER * RATE_WINDOW_S * 1000
         now = time.monotonic()
-        self._frame_times.append(now)
+        self._recent_frames.append((now, ms))
         cutoff = now - RATE_WINDOW_S
-        while self._frame_times and self._frame_times[0] < cutoff:
-            self._frame_times.popleft()
-        if len(self._frame_times) > allowance:
+        while self._recent_frames and self._recent_frames[0][0] < cutoff:
+            self._recent_frames.popleft()
+        if len(self._recent_frames) > frame_allowance:
             raise _ProtocolError(
-                f"uplink frame rate exceeded: more than {allowance} frames in {RATE_WINDOW_S:g}s "
-                f"({RATE_MULTIPLIER}× the nominal {nominal_per_s:g}/s for frame_ms="
-                f"{self._cfg.frame_ms})"
+                f"uplink frame rate exceeded: more than {frame_allowance} frames in "
+                f"{RATE_WINDOW_S:g}s ({RATE_MULTIPLIER}× the nominal {nominal_per_s:g}/s for "
+                f"frame_ms={self._cfg.frame_ms})"
+            )
+        window_ms = sum(entry[1] for entry in self._recent_frames)
+        if window_ms > ms_allowance:
+            raise _ProtocolError(
+                f"uplink audio rate exceeded: {window_ms:.0f} ms of audio in {RATE_WINDOW_S:g}s "
+                f"({RATE_MULTIPLIER}× realtime is {ms_allowance:g} ms)"
             )
 
     async def _enqueue(self, pcm: bytes, *, drop_oldest: bool) -> None:
@@ -553,6 +621,11 @@ class LiveRelaySession:
                 try:
                     _payload, old_ms = self._queue.get_nowait()
                     self._fed_ms = max(0.0, self._fed_ms - old_ms)
+                    # An evicted item is one the uplink leg will never mark done, so it is marked
+                    # here. This is not bookkeeping hygiene: `_flush`'s delivery barrier is
+                    # `Queue.join()`, and an unbalanced counter makes that join either hang forever
+                    # (a missed `task_done`) or return early (an extra one).
+                    self._queue.task_done()
                     dropped = True
                 except asyncio.QueueEmpty:  # pragma: no cover — the consumer drained it meanwhile
                     pass
@@ -577,9 +650,18 @@ class LiveRelaySession:
         metered wire, and the measured release→text tail is 530–830 ms.
 
         A flush with nothing fed and no open speech is a genuine no-op — padding an empty buffer would
-        only make Speaches' 100 ms minimum interesting for no transcript.
+        only make Speaches' 100 ms minimum interesting for no transcript. The guard takes THREE terms
+        rather than two (F3): `_fed_ms` is reset by a `committed` that can arrive late (after the relay
+        has already accepted the NEXT phrase's frames) and is given back by a drop-oldest eviction, so
+        on its own it can read 0 over audio that really was fed and the burst the phrase needed would
+        never be sent. `_audio_since_commit` is the narrow question — did ANY client frame arrive since
+        the last commit — so the no-op now fires only when genuinely nothing was fed, and a late
+        `committed` cannot suppress a needed burst: the continuously flowing mic re-arms the latch
+        within one frame. The `_fed_ms` reset on `committed` deliberately STAYS: undercounting
+        lengthens the burst (`3000 − 0`), which is the safe direction — words are never lost to a short
+        burst, only ~1 s of loopback work to a long one.
         """
-        if self._fed_ms <= 0 and not self._speech_open:
+        if not self._speech_open and not self._audio_since_commit and self._fed_ms <= 0:
             return
         needed = max(VAD_WINDOW_MS - self._fed_ms, float(self._cfg.silence_ms)) + FLUSH_MARGIN_MS
         chunk = self._cfg.frame_ms
@@ -598,6 +680,16 @@ class LiveRelaySession:
             await self._enqueue(quiet, drop_oldest=False)
         if remainder:
             await self._enqueue(silence(remainder, SPEACHES_WIRE_RATE), drop_oldest=False)
+        # The DELIVERY BARRIER (F2). Returning once the burst is merely ENQUEUED is not enough: the
+        # client reader would resume immediately and its mic frames, which drop the OLDEST item when
+        # the queue is full, would evict the burst's own tail — the silence would land upstream SHORT
+        # of the 3 s VAD floor and the endpoint would never fire (reviewer's repro: 2760 of 3000 ms
+        # delivered). Joining the queue makes the flush return only once everything queued ahead of
+        # the burst AND the whole burst has gone upstream; and because this runs inside the client
+        # reader, no mic frame can even be READ while it waits, so nothing can evict it. No new hang
+        # path: if the uplink leg dies mid-join its exception ends `_pump` through FIRST_COMPLETED and
+        # the teardown cancels this leg out of the join.
+        await self._queue.join()
 
     # ── the downlink path ─────────────────────────────────────────────────────────────────────────
 
@@ -613,7 +705,10 @@ class LiveRelaySession:
         elif kind == "input_audio_buffer.committed":
             # Speaches rotates the audio buffer at every commit — including the one its own VAD path
             # runs right after `speech_stopped` — so the 3 s window restarts here and so does `fed_ms`.
+            # The latch restarts with it: "audio since the last commit" is the question the flush's
+            # no-op guard asks, and THIS is the only place the answer becomes "none" again (F3).
             self._fed_ms = 0.0
+            self._audio_since_commit = False
         elif kind == "conversation.item.input_audio_transcription.completed":
             # `final` is the R70 §9.2 seam for phrase-streaming dictation (S2.5): the ear has no
             # partials today (verified twice), so every transcript this relay emits is final — but the

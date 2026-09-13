@@ -9,14 +9,19 @@ the LIVE-VERIFIED one recorded in `LIVE_VOICE_PLAN.md` §7-S0 ② plus the two R
 The arms, by what they defend:
 
 * **protocol** — every way a client can break the wire contract closes 1008, and a compliant client
-  does not.
+  does not. Including the three uplink caps and what each one bounds: bytes per frame, MILLISECONDS
+  per frame, and both frames and milliseconds over a rolling window (the S1 review's F4 — a byte cap
+  alone lets a compliant client ship ~100x realtime).
 * **origin** — the ONLY defence a WebSocket has in a CORS-less app (SECURITY_MODEL §2.7).
 * **gates** — `enabled` / no chain / no TTS / busy, and the `live` capability bit's truth table.
 * **wire** — the five-field `turn_detection`, the language rule, TEXT-framed base64 appends whose
   bytes are the resampled 24 kHz audio, and the one spurious error that must be swallowed.
 * **COMMIT-SAFETY** — a full session never sends `input_audio_buffer.commit` (R70 §1.2 arm A: a
   commit with speech open kills the session and loses the words).
-* **flush** — R70 §4's silence-burst arithmetic, in both branches and in the no-op case.
+* **flush** — R70 §4's silence-burst arithmetic, in both branches and in the no-op case; the burst's
+  DELIVERY barrier against the mic that resumes behind it (F2); and the `_audio_since_commit` latch
+  that keeps a late `committed` from turning a needed flush into a no-op (F3), plus the commit that
+  clears it again.
 * **backpressure / taxonomy / secrets** — oldest-dropped + one `degraded`; the three upstream failure
   classes; and the bearer appearing in NO log record and NO downlink frame.
 """
@@ -81,6 +86,12 @@ def created(**session: Any) -> Say:
     return Say({"type": "session.created", "session": session})
 
 
+def transcribed(text: str, **gate: Any) -> Say:
+    """One completed transcription — the event the relay turns into a `transcript` downlink. Spelled
+    once because the event type is long enough that a fourth hand-written copy would be a typo risk."""
+    return Say({"type": "conversation.item.input_audio_transcription.completed", "transcript": text}, **gate)
+
+
 PAD_ERROR = {
     "type": "error",
     "error": {
@@ -102,9 +113,15 @@ class FakeSpeaches:
     utterances.
     """
 
-    def __init__(self, script: list[Say], *, stall_appends: bool = False) -> None:
+    def __init__(self, script: list[Say], *, stall_appends: bool = False, latency: float = 0.0) -> None:
         self.script = script
         self.stall_appends = stall_appends
+        #: Seconds each append costs. `stall_appends` is a WEDGED ear (never accepts another append);
+        #: this is a SLOW one, which is the interesting case for the queue: a real upstream that lags
+        #: keeps the bounded queue full, so the producer's drop-oldest path actually runs and the
+        #: interleaving between the relay's two producer paths (mic frames and the flush burst) becomes
+        #: observable instead of theoretical.
+        self.latency = latency
         self.sent: list[dict[str, Any]] = []
         self.appends: list[bytes] = []
         self.closed = False
@@ -117,6 +134,8 @@ class FakeSpeaches:
         if event.get("type") == "input_audio_buffer.append":
             if self.stall_appends:
                 await asyncio.Event().wait()  # a wedged ear: never accepts another append
+            if self.latency:
+                await asyncio.sleep(self.latency)  # a slow ear: the queue fills behind it
             self.appends.append(base64.b64decode(event["audio"]))
             self.sent.append({"type": event["type"]})  # audio elided, like the smoke's Recorder
         else:
@@ -339,6 +358,49 @@ def test_frame_rate_ceiling_closes_a_flood_but_not_a_compliant_client() -> None:
         assert _closed(ws)[0] == 1008
 
 
+def test_a_frame_carrying_too_much_audio_is_a_protocol_close() -> None:
+    """The per-frame DURATION cap (S1 review F4). `max_frame_bytes` is a BYTE cap and bounds no amount
+    of audio at all: 32 KiB at the 8 kHz floor is 2048 ms in ONE frame, so a fully compliant client
+    could ship ~100x realtime and the relay's frame-COUNTED queue depth would be a fiction ("2000 ms"
+    of queue holding ~100 s). `FRAME_MS_TOLERANCE x frame_ms` is what makes the depth truthful in
+    milliseconds; 2x admits a client that coalesces two frames after a scheduler hiccup, nothing more.
+    """
+    fake = FakeSpeaches([created()])
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        ws.send_bytes(_pcm(12000))  # 500 ms @ 24 kHz = 24 000 bytes: far inside max_frame_bytes
+        frame = _drain_until(ws, "error")
+        assert frame["code"] == "protocol" and "per-frame ceiling" in frame["message"]
+        assert _closed(ws)[0] == 1008
+
+
+def test_the_audio_rate_ceiling_closes_a_few_huge_frames_but_not_a_realtime_client() -> None:
+    """The second budget on the same rolling window (F4): the COUNT budget bounds per-message CPU, the
+    MS budget bounds audio THROUGHPUT, and each alone is trivially evaded.
+
+    With `frame_ms` 40 the count budget is 100 frames per 2 s and the ms budget is 4000 ms per 2 s. A
+    client sending 80 ms frames (exactly the per-frame ceiling) mounts a 2x-realtime flood with 51
+    messages — half the count budget — so counting frames would wave it through.
+    """
+    fake = FakeSpeaches([created()])
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        for _ in range(50):
+            ws.send_bytes(_pcm(960))  # 50 x 40 ms = 2000 ms in the window: exactly realtime
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+        assert _closed(ws)[0] == 1000
+
+    fake = FakeSpeaches([created()])
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        for _ in range(51):
+            ws.send_bytes(_pcm(1920))  # 51 x 80 ms = 4080 ms, in 51 messages
+        frame = _drain_until(ws, "error")
+        assert frame["code"] == "protocol" and "audio rate" in frame["message"]
+        assert _closed(ws)[0] == 1008
+
+
 # ── 2. origin ─────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -513,13 +575,7 @@ def test_speech_events_and_transcripts_flow_down() -> None:
             Say({"type": "input_audio_buffer.speech_started", "audio_start_ms": 40}, after_appends=1),
             Say({"type": "input_audio_buffer.speech_stopped", "audio_end_ms": 900}, after_appends=2),
             Say({"type": "input_audio_buffer.committed", "item_id": "x"}, after_appends=2),
-            Say(
-                {
-                    "type": "conversation.item.input_audio_transcription.completed",
-                    "transcript": "Wake up corsair.",
-                },
-                after_appends=2,
-            ),
+            transcribed("Wake up corsair.", after_appends=2),
         ]
     )
     with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
@@ -617,13 +673,7 @@ def test_a_post_flush_endpoint_flows_down_as_a_final_transcript() -> None:
                 {"type": "input_audio_buffer.speech_stopped", "audio_end_ms": 1200},
                 after_silence_ms=200,
             ),
-            Say(
-                {
-                    "type": "conversation.item.input_audio_transcription.completed",
-                    "transcript": "I want the text to appear in the composer while I talk.",
-                },
-                after_silence_ms=200,
-            ),
+            transcribed("I want the text to appear in the composer while I talk.", after_silence_ms=200),
         ]
     )
     with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
@@ -635,6 +685,133 @@ def test_a_post_flush_endpoint_flows_down_as_a_final_transcript() -> None:
         final = _drain_until(ws, "transcript")
         assert final["final"] is True and final["text"].startswith("I want the text")
     assert "input_audio_buffer.commit" not in fake.types
+
+
+def test_a_flush_burst_is_delivered_in_full_before_mic_audio_resumes() -> None:
+    """F2: flush completion is a DELIVERY barrier, not an enqueue barrier.
+
+    The burst and the mic share the one bounded queue, and the mic path drops the OLDEST item when it
+    is full. So a flush that returned as soon as its frames were QUEUED would hand the reader straight
+    back to the mic, whose next frames evict the burst's own tail: the silence lands upstream SHORT of
+    the 3 s VAD floor, no `speech_stopped` ever fires and the phrase is never transcribed (the
+    reviewer's repro delivered 2760 of 3000 ms). `Queue.join()` is the barrier, and the reader being
+    parked on it is also what stops a mic frame from even being READ while the burst drains.
+
+    The rig: a SLOW ear (1 ms per append) so the queue really is full behind the burst, a 400 ms
+    (depth 10) queue so eviction is cheap to reach, and 30 mic frames sent with no pause after the
+    flush control — i.e. exactly what a phone in call mode does.
+    """
+    fake = FakeSpeaches([created()], latency=0.001)
+    app = _fake_app(fake, live_cfg={"relay_queue_ms": 400, "frame_ms": 40})  # depth 10
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        for _ in range(2):
+            ws.send_bytes(_pcm(960, value=2000))  # 80 ms fed
+        ws.send_json({"type": "flush"})
+        for _ in range(30):
+            ws.send_bytes(_pcm(960, value=3000))  # the mic does not wait for the flush
+        ws.send_json({"type": "stop"})
+        assert _closed(ws)[0] == 1000
+    # max(3000 - 80, 700) + 200 = 3120 ms, every millisecond of it DELIVERED…
+    assert fake.silence_ms == pytest.approx(3120, abs=1)
+    # …as one uninterrupted run right behind the two mic frames, which is the observable form of "the
+    # flush had not returned yet": 2 mic frames, then 78 x 40 ms of silence, and only then anything.
+    assert len(fake.appends) >= 80
+    assert [any(a) for a in fake.appends[:80]] == [True, True] + [False] * 78
+
+
+def test_a_flush_after_an_overflow_still_completes() -> None:
+    """The eviction path's half of the barrier's bookkeeping. An item the mic path drops is one the
+    uplink leg will never mark done, so `_enqueue` marks it there. Miss that call and `Queue.join()`
+    waits on a counter that can never reach zero: the next flush parks forever, `stop` is never read
+    and the call hangs to `max_session_s`. Add an extra one and a later join returns early or raises.
+    So: overflow first, then a flush, then a clean end — the arm is the ORDER, not the burst size
+    (which `fed_ms`'s give-back makes eviction-dependent by design)."""
+    fake = FakeSpeaches([created()], latency=0.001)
+    app = _fake_app(fake, live_cfg={"relay_queue_ms": 200, "frame_ms": 40})  # depth 5
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        for _ in range(40):
+            ws.send_bytes(_pcm(960, value=2000))
+        assert _drain_until(ws, "state")["state"] == "degraded"
+        ws.send_json({"type": "flush"})
+        ws.send_json({"type": "stop"})
+        # Straight to the close: a SLOW ear overflows in several bursts, so more `degraded` frames may
+        # follow, and what is under test is that the session reaches a clean end at all.
+        assert _closed(ws)[0] == 1000
+    assert fake.silence_ms > 0
+
+
+def test_a_stale_committed_does_not_suppress_the_next_phrases_flush() -> None:
+    """F3: phrase 1's `committed` can land AFTER the relay has already accepted phrase 2's frames — it
+    is Speaches' own post-`speech_stopped` buffer rotation and it races the uplink. It zeroes
+    `_fed_ms`, and under the old two-term guard a flush arriving before phrase 2's `speech_started` was
+    then a NO-OP: nothing injected, no endpoint, the words never transcribed. `_audio_since_commit`
+    remembers that the mic has spoken since, so the burst still goes.
+
+    The transcript is the barrier: receiving it downstream proves the `committed` queued ahead of it
+    was handled, so the flush below genuinely lands after the reset with no `speech_started` between.
+    """
+    fake = FakeSpeaches(
+        [
+            created(),
+            Say({"type": "input_audio_buffer.committed", "item_id": "p1"}, after_appends=2),
+            transcribed("phrase one", after_appends=2),
+        ]
+    )
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        for _ in range(2):
+            ws.send_bytes(_pcm(960, value=2000))
+        assert _drain_until(ws, "transcript")["text"] == "phrase one"
+        ws.send_bytes(_pcm(960, value=2000))  # the mic never paused (call mode: ~25 frames/s)
+        ws.send_json({"type": "flush"})
+        ws.send_json({"type": "stop"})
+        assert _closed(ws)[0] == 1000
+    # `fed_ms` was reset by the stale commit and re-counts only the ONE frame after it, so the burst is
+    # the long one: max(3000 - 40, 700) + 200. Undercounting is the SAFE direction — a long burst costs
+    # ~1 s of loopback work, a short one costs the words.
+    assert fake.silence_ms == pytest.approx(3160, abs=1)
+    assert "input_audio_buffer.commit" not in fake.types
+
+
+def test_a_frame_too_short_to_resample_still_counts_as_audio_fed() -> None:
+    """The latch's own ground, and why it is not `_fed_ms > 0` spelled a second time: `_fed_ms` counts
+    ENQUEUED milliseconds, and a frame can be accepted without producing any. One sample at a
+    downsampling ratio resamples to nothing — `Pcm16Resampler` CARRIES it as phase rather than
+    discarding it — so `_fed_ms` reads 0 over audio that is really in flight, and the old guard turned
+    the flush behind it into a no-op."""
+    fake = FakeSpeaches([created()])
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=48000)  # 48 k -> 24 k: one sample has no right neighbour to interpolate to
+        ws.send_bytes(_pcm(1))
+        ws.send_json({"type": "flush"})
+        ws.send_json({"type": "stop"})
+        assert _closed(ws)[0] == 1000
+    assert all(not any(a) for a in fake.appends)  # the carried sample produced no append of its own
+    assert fake.silence_ms == pytest.approx(3200, abs=1)  # max(3000 - 0, 700) + 200
+
+
+def test_the_flush_no_op_still_fires_once_a_commit_clears_the_latch() -> None:
+    """The other half of the latch: `committed` clears it along with `_fed_ms`, so the guard is not
+    armed for the rest of the call by one early frame. A flush with genuinely nothing fed since the
+    last commit still pads nothing — otherwise every idle flush would feed Speaches 3 s of silence to
+    make its 100 ms minimum interesting for no transcript."""
+    fake = FakeSpeaches(
+        [
+            created(),
+            Say({"type": "input_audio_buffer.committed", "item_id": "p1"}, after_appends=1),
+            transcribed("phrase one", after_appends=1),
+        ]
+    )
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        ws.send_bytes(_pcm(960, value=2000))
+        assert _drain_until(ws, "transcript")["text"] == "phrase one"
+        ws.send_json({"type": "flush"})
+        ws.send_json({"type": "stop"})
+        assert _closed(ws)[0] == 1000
+    assert fake.silence_ms == 0
 
 
 def test_multiple_flushes_are_legal() -> None:
