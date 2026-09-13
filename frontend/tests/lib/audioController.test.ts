@@ -459,13 +459,16 @@ describe("audioController — the chunk queue (D63)", () => {
     await flush();
     act(() => togglePlay()); // pause under the latch...
     act(() => togglePlay()); // ...then change your mind before the chunk lands
-    expect(result.current.status).toBe("playing");
+    // The resume parks INTENT (`wantPlay`), not a lie: the element is still silent, so the status is
+    // the honest "loading" and only the chunk's REAL `play` publishes "playing" (the confirm round's
+    // blocker — an intent-only "playing" would swallow the start edge §4.2's iron rule watches).
+    expect(result.current.status).toBe("loading");
 
     await act(async () => calls[1].resolve(okRes()));
     await flush();
     expect(lastAudio.src).toBe("blob:2");
     expect(lastAudio.paused).toBe(false);
-    expect(result.current.status).toBe("playing");
+    expect(result.current.status).toBe("playing"); // a GENUINE loading→playing transition
   });
 
   it("skips a failed chunk and keeps reading — one toast for the whole message", async () => {
@@ -1371,10 +1374,13 @@ describe("audioController — read-along (C3 S2)", () => {
 
     act(() => togglePlay()); // replay: the failed slot is re-armed and the cursor rewinds onto it
     expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two.", "Three.", "One."]);
-    expect(result.current.status).toBe("playing"); // latched on the re-request
+    // Latched on the re-request = intent in `wantPlay`, the honest "loading" published — "playing"
+    // is the real `play` event's alone (the confirm round's blocker).
+    expect(result.current.status).toBe("loading");
     await act(async () => calls[3].resolve(okRes()));
     await flush();
     expect(lastAudio.src).toBe("blob:3"); // ...and the retried chunk 0 is what plays
+    expect(result.current.status).toBe("playing"); // a GENUINE loading→playing transition
   });
 
   it("delegates a turn with no fed session to the ordinary play path (D17 buffered)", async () => {

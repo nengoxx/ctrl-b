@@ -1048,12 +1048,16 @@ function transport(): void {
       s.seek = null;
       s.metaSeek?.(); // a replay must not inherit a stale armed payout
       playNext(s);
-      if (s.waiting) set({ status: "playing" }); // latched on a chunk being re-requested
+      if (s.waiting) set({ status: "loading" }); // latched on a chunk being re-requested
       return;
     }
   }
   if (s?.waiting) {
-    set({ status: "playing" }); // nothing loaded to resume — the chunk in flight starts on arrival
+    // Resume INTENT rides `wantPlay` alone — the status stays the honest "loading" until the chunk
+    // actually arrives, and the media `play` event is the ONLY door to "playing" (the confirm round's
+    // blocker: an intent-only "playing" into a silent gap makes the eventual real start republish the
+    // same value, and D71 §4.2's iron rule loses the one edge it watches).
+    set({ status: "loading" });
     return;
   }
   void a.play();
