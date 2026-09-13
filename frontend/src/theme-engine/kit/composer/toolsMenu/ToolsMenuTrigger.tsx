@@ -1,6 +1,8 @@
+import { XIcon } from "../../../../components/icons";
 import { getDefaultAgent, useVerbsVersion } from "../../../../lib/composer";
 import { toggleComposerOverlay, useComposerOverlayOpen } from "../../../../store/composerOverlay";
 import { useComposerScope } from "../../../../store/composerScope";
+import { runMicCancel, useMicCancelOffered } from "../../../../store/micCancel";
 import { TOOLS_SHEET_ID } from "./ToolsMenuSheet";
 
 // The tools/skills menu TRIGGER (A6) — the `controlsStart` half of the addon, at the controls LEADING edge
@@ -11,6 +13,17 @@ import { TOOLS_SHEET_ID } from "./ToolsMenuSheet";
 // It carries the only always-visible feedback the one-shot has: an ARMED dot when the menu has pointed the
 // next message at an agent and/or some skills. Without it the arming is invisible the moment the panel
 // closes, and a message would silently ride a scope the owner forgot about.
+//
+// IT IS ALSO THE LOCKED RECORDING'S CANCEL (Phase 24 / S0.5 feel round OF-5, owner 2026-09-13). While a
+// hold-to-record is LOCKED the hand is free and WCAG 2.5.1 wants a real tap target for "discard this" —
+// and the owner's ruling is that it should be the button already sitting at the controls row's other end
+// rather than a floating one that appears from nowhere. So this button MORPHS: the sliders cross-fade out,
+// an ✕ cross-fades in (opacity/transform only, §14.11), the name becomes "cancel recording", the click
+// discards the clip, and the menu is simply unreachable for those few seconds — as is the armed dot, which
+// belongs to a state the button is no longer presenting. The offer arrives through `store/micCancel`
+// because this component is composed ONCE, in DefaultRoot's slot merge, and can see no composer variant's
+// gesture. If the menu happens to be OPEN when the lock lands, the overlay is left alone (it closes by its
+// own rules) — only the button changes jobs.
 
 /** The lucide `sliders-horizontal` outline — "settings for this one message", in the composer's stroke
  *  language (2.2, round caps/joins; the shared glyphs in `icons.tsx` use 2.2–2.6). Inlined rather than
@@ -36,6 +49,7 @@ function SlidersIcon({ size = 16 }: { size?: number }) {
 
 export function ToolsMenuTrigger() {
   const open = useComposerOverlayOpen("menu");
+  const cancelling = useMicCancelOffered();
   const scope = useComposerScope();
   // The label can name the DEFAULT agent (below), so re-render when a loader installs a fresh set — the
   // same version subscription the panel uses.
@@ -49,29 +63,42 @@ export function ToolsMenuTrigger() {
     ...(scope.agent !== undefined ? [`agent ${scope.agent ?? getDefaultAgent()}`] : []),
     ...(scope.skills.length ? [`skills ${scope.skills.join(", ")}`] : []),
   ];
-  const label = armedParts.length
+  const menuLabel = armedParts.length
     ? `next message: ${armedParts.join(" · ")} — tap to change`
     : "choose an agent or skills for the next message";
+  // The MORPH swaps the whole contract, not just the glyph: the name, the click, and every `aria-*` that
+  // describes a popup this button no longer opens.
+  const label = cancelling ? "cancel recording" : menuLabel;
   return (
     <button
       type="button"
-      className={"kit-cbtn tools" + (open ? " open" : "") + (armed ? " armed" : "")}
-      onClick={() => toggleComposerOverlay("menu")}
+      className={
+        "kit-cbtn tools" +
+        (cancelling ? " cancelling" : (open ? " open" : "") + (armed ? " armed" : ""))
+      }
+      onClick={cancelling ? runMicCancel : () => toggleComposerOverlay("menu")}
       // `dialog`, not `menu`: `aria-haspopup` should describe the popup's ROLE, and the panel is a
       // labelled REGION holding a native radio group + a checkbox group — Tab between the groups, arrows
       // within the radios. Claiming `menu` would promise WHOLE-PANEL menu-widget semantics (arrow keys
       // across every row, typeahead, focus return on Esc) this deliberately isn't (see ToolsMenuSheet).
-      aria-haspopup="dialog"
-      aria-expanded={open}
+      aria-haspopup={cancelling ? undefined : "dialog"}
+      aria-expanded={cancelling ? undefined : open}
       // Only while the panel is OPEN. It now stays mounted for its close animation, but it is `inert` when
       // closed — out of the a11y tree — so pointing at it would name a target AT can't reach. Same rule,
       // same reason, as the suggest popover's `open ? LISTBOX_ID : undefined`.
-      aria-controls={open ? TOOLS_SHEET_ID : undefined}
+      aria-controls={!cancelling && open ? TOOLS_SHEET_ID : undefined}
       aria-label={label}
       title={label}
     >
-      <SlidersIcon />
-      {armed && <span className="tools-dot" aria-hidden />}
+      {/* BOTH glyphs are always mounted and cross-fade in place (kit.css) — a swap would pop, and an
+          element that is added mid-transition has nothing to transition FROM. */}
+      <span className="tools-glyph">
+        <SlidersIcon />
+      </span>
+      <span className="tools-x">
+        <XIcon size={16} />
+      </span>
+      {armed && !cancelling && <span className="tools-dot" aria-hidden />}
     </button>
   );
 }

@@ -3,18 +3,25 @@ import { type CSSProperties } from "react";
 import { MicIcon } from "./icons";
 import type { MicChrome } from "./useMicGesture";
 
-// THE MIC GESTURE'S CHROME (Phase 24 / S0.5 — LIVE_VOICE_PLAN §6): the enlarged record circle, the
-// slide-to-cancel track, the lock/call pill, the locked-mode CANCEL button, the standing "Start call"
-// chip and the two hints. ONE component rendered by all three composer variants, mirroring the mic
-// button's own three call sites — the affordance is the button's, so it lives beside it.
+// THE MIC GESTURE'S CHROME (Phase 24 / S0.5 — LIVE_VOICE_PLAN §6): the enlarged record circle with its
+// live level halo, the slide-to-cancel track, the lock/call rail, the standing "Start call" chip and the
+// hint bubble. ONE component rendered by all three composer variants, mirroring the mic button's own
+// three call sites — the affordance is the button's, so it lives beside it.
+//
+// THE LOCKED CANCEL IS NOT HERE ANY MORE (feel round OF-5, owner 2026-09-13): the floating `.mg-cancel`
+// button is gone, and the tools/skills trigger at the controls row's LEADING edge morphs into the cancel
+// instead (sliders → ✕). It is composed in DefaultRoot, so the gesture publishes the offer through
+// `store/micCancel` — see `useMicGesture`'s locked effect. Nothing in this file is interactive except
+// the call chip, which is call mode's own tap twin.
 //
 // ⚠ IT IS A POSITIONED SIBLING OF `.kit-composer`, NOT A CHILD — the ruled fallback, taken on MEASURED
 // evidence (Chromium, 390×844, the real app at each variant): `.kit-composer.sheet` and
 // `.kit-composer.line` both compute `overflow: hidden`, and a probe child extending 60px above or 30px
 // right of the bar was NOT hit-testable in either (`document.elementFromPoint` returned the chat
-// scroller behind it), while the stacked bar — `overflow: visible` — returned the probe. The 2.2× record
-// circle and the lock rail both live outside the bar's box by construction, so a child would be sliced
-// in two of the three layouts. The plan sheet's `overlay` slot is the precedent for the shape (a
+// scroller behind it), while the stacked bar — `overflow: visible` — returned the probe. The record
+// circle (1.8×, and its level halo reaches ~3.1× of the button) and the lock rail both live outside the
+// bar's box by construction, so a child would be sliced in two of the three layouts. The plan sheet's
+// `overlay` slot is the precedent for the shape (a
 // positioned sibling anchored over the composer); this mounts BESIDE that slot rather than inside it, so
 // a theme filling `overlay` keeps it — they coexist at different z-indices (kit.css).
 //
@@ -24,9 +31,10 @@ import type { MicChrome } from "./useMicGesture";
 // and four composer skins with no per-variant CSS.
 //
 // The host div is ALWAYS mounted (it has to exist to be measured); it paints nothing and takes no
-// pointer events until a gesture is in flight. Only the two TAP TWINS — the CANCEL button and the call
-// chip — ever become interactive, which is the WCAG 2.5.1/2.5.7 conformance half of the design (R69
-// §8.2: every gesture affordance grows a tap twin the moment the hand is free).
+// pointer events until a gesture is in flight. The call CHIP is the only thing in here that ever becomes
+// interactive; the locked recording's tap twin is the morphed tools trigger. Between them they are the
+// WCAG 2.5.1/2.5.7 conformance half of the design (R69 §8.2: every gesture affordance grows a tap twin
+// the moment the hand is free).
 
 /** The chevron the slide-to-cancel hint leads with — hand-inlined geometry, like every icon in the kit
  *  (lucide is not a dependency). */
@@ -68,6 +76,27 @@ function LockIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** The glyph the CALL rail's circle keeps once its label has faded (lucide `phone`). Call mode's twin of
+ *  the padlock: the pill compresses the same way, and what is left has to say what it is. Ships dark with
+ *  the rest of the call leg (`live` is never up before S1). */
+function PhoneIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.4 1.8.6 2.8.8a2 2 0 0 1 1.7 2Z" />
+    </svg>
+  );
+}
+
 function ChevronUpIcon({ size = 12 }: { size?: number }) {
   return (
     <svg
@@ -88,7 +117,7 @@ function ChevronUpIcon({ size = 12 }: { size?: number }) {
 
 export function MicGestureChrome({ chrome }: { chrome: MicChrome }) {
   const { hostRef, stage, mode, anchor, cancel, lift, dragX, moved, showLockHint, hint } = chrome;
-  const { onCancelTap, onChipTap } = chrome;
+  const { onChipTap } = chrome;
   // A RECORDING is up in exactly two stages. `callArm`/`chip` are call mode, which records nothing.
   const recording = stage === "hold" || stage === "locked";
   const open = stage !== "idle" || hint !== null;
@@ -99,6 +128,10 @@ export function MicGestureChrome({ chrome }: { chrome: MicChrome }) {
     "--mg-x": `${anchor.cx}px`,
     "--mg-y": `${anchor.cy}px`,
     "--mg-size": `${anchor.size || 36}px`,
+    // Where the hint bubble's TAIL has to point, measured from the host's right edge (the bubble is
+    // right-anchored). `--mg-level` is NOT here on purpose: it arrives at 10 Hz and is written straight
+    // to this element by the gesture hook, never through a render.
+    "--mg-rx": `${anchor.rx || 36}px`,
   } as CSSProperties;
 
   return (
@@ -107,25 +140,35 @@ export function MicGestureChrome({ chrome }: { chrome: MicChrome }) {
         <>
           {/* ① THE RAIL — the "slide up" affordance, present for the whole hold and following the
               finger up. Mic mode locks hands-free (latch on crossing); call mode commits on release,
-              so its pill reads as the destination rather than as a latch. */}
+              so its pill reads as the destination rather than as a latch.
+
+              THE PILL IS COMPRESSED BY THE SWIPE (feel round OF-2, the owner's Telegram reference).
+              THREE stacked layers in one box, because the morph has to be transform/opacity ONLY
+              (§14.11) and each of the three moves differently: the SKIN is the circle stretched
+              vertically into a pill and squeezed back to a circle by `--mg-lift`; the GLYPH rides at
+              the pill's top and settles into the circle's centre; the TAIL (the chevron, and call
+              mode's label) collapses and fades out on the way. Nothing lays out, nothing distorts —
+              the glyph is a SIBLING of the skin, so the skin's scaleY never touches it. */}
           {(stage === "hold" || stage === "callArm") && (
             <div
-              className={"mg-rail" + (lift >= 1 ? " armed" : "")}
+              className={"mg-rail" + (mode === "call" ? " call" : "") + (lift >= 1 ? " armed" : "")}
               style={{ "--mg-lift": lift } as CSSProperties}
               aria-hidden
             >
-              {mode === "call" ? (
-                <span className="mg-rail-label">call</span>
-              ) : (
-                <LockIcon size={14} />
-              )}
-              <ChevronUpIcon size={12} />
+              <span className="mg-rail-skin" />
+              <span className="mg-rail-glyph">
+                {mode === "call" ? <PhoneIcon size={14} /> : <LockIcon size={14} />}
+              </span>
+              <span className="mg-rail-tail">
+                {mode === "call" && <span className="mg-rail-label">call</span>}
+                <ChevronUpIcon size={12} />
+              </span>
             </div>
           )}
 
-          {/* ② THE TRACK — "slide to cancel" while the hand is on the button; the real CANCEL BUTTON
-              the moment it is free (R69 §1.8: every gesture affordance grows a tap twin). Only mic mode
-              has anything to cancel. */}
+          {/* ② THE TRACK — "slide to cancel" while the hand is on the button. The moment the hand is
+              free the tap twin takes over (R69 §1.8), and since OF-5 that twin is the MORPHED TOOLS
+              TRIGGER rather than anything rendered here. Only mic mode has anything to cancel. */}
           {stage === "hold" && (
             <div
               className={"mg-track" + (moved ? " moved" : "")}
@@ -138,16 +181,12 @@ export function MicGestureChrome({ chrome }: { chrome: MicChrome }) {
               <span>slide to cancel</span>
             </div>
           )}
-          {stage === "locked" && (
-            <button type="button" className="mg-cancel" onClick={onCancelTap}>
-              cancel
-            </button>
-          )}
 
-          {/* ③ THE RECORD CIRCLE — the grown affordance. Two nested boxes on purpose: the outer one
-              carries the DRAG (translate + the shrink toward cancel, both live values), the inner one
-              runs the grow keyframe, so the finger's travel never fights the animation for the
-              `transform` property. */}
+          {/* ③ THE RECORD CIRCLE — the grown affordance. THREE boxes on purpose, one transform each:
+              the outer one carries the DRAG (translate + the shrink toward cancel, both live values),
+              `.mg-grow` runs the grow keyframe, and `.mg-halo` carries the live VOICE LEVEL — so the
+              finger's travel, the entry animation and a 10 Hz meter never fight over one `transform`.
+              The halo is the FIRST child so it paints under the disc. */}
           {recording && (
             <div
               className="mg-circle"
@@ -158,6 +197,7 @@ export function MicGestureChrome({ chrome }: { chrome: MicChrome }) {
               }}
               aria-hidden
             >
+              <span className="mg-halo" />
               <span className="mg-grow">
                 <MicIcon size={20} />
               </span>
@@ -172,9 +212,11 @@ export function MicGestureChrome({ chrome }: { chrome: MicChrome }) {
             </button>
           )}
 
-          {/* ⑤ THE HINTS — the budgeted lock teaching (≤3 shows, retired on the first lock) and the
-              transient mode hint a tap raises. `role="status"` is the web equivalent of Telegram's
-              re-fired focus event: the mode change is announced, not only drawn (R69 §8.3). */}
+          {/* ⑤ THE HINT BUBBLE — the budgeted lock teaching (≤3 shows, retired on the first lock), the
+              transient mode hint a tap raises, and (feel round OF-4) the too-short teaching that used to
+              be a toast: everything the gesture has to SAY, said in one small tailed bubble right above
+              the button it is about. `role="status"` is the web equivalent of Telegram's re-fired focus
+              event: the mode change is announced, not only drawn (R69 §8.3). */}
           {(showLockHint || hint !== null) && (
             <p className="mg-hint" role="status">
               {hint ?? (mode === "call" ? "slide up to call" : "slide up to lock")}

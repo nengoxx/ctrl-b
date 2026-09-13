@@ -1495,6 +1495,43 @@ body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
   width: 36px;
   height: 36px;
 }
+/* THE CANCEL MORPH (Phase 24 / S0.5 feel round OF-5, owner 2026-09-13) — while a hold-to-record is LOCKED
+ * this button IS the cancel: same box, same place in the row, different job. Both glyphs are MOUNTED and
+ * cross-fade in place over 150ms (R69 §1.6's icon cross-fade duration) — opacity + transform only
+ * (§14.11), and stacking them is what makes a transition possible at all: an element added at the moment
+ * of the swap has no FROM state to animate out of. The counter-rotations sell it as one glyph turning
+ * into the other rather than two glyphs blinking. The `.open`/`.armed` classes are withheld while morphed
+ * (the component's own gate): a button that is currently a cancel must not also read as an open menu. */
+.kit .kit-cbtn.tools .tools-glyph,
+.kit .kit-cbtn.tools .tools-x {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transition:
+    opacity 150ms linear,
+    transform 150ms linear;
+}
+.kit .kit-cbtn.tools .tools-x {
+  opacity: 0;
+  transform: scale(0.6) rotate(-60deg);
+}
+.kit .kit-cbtn.tools.cancelling {
+  color: var(--danger);
+}
+.kit .kit-cbtn.tools.cancelling .tools-glyph {
+  opacity: 0;
+  transform: scale(0.6) rotate(60deg);
+}
+.kit .kit-cbtn.tools.cancelling .tools-x {
+  opacity: 1;
+  transform: none;
+}
+body[data-motion="reduced"] .kit .kit-cbtn.tools .tools-glyph,
+body[data-motion="reduced"] .kit .kit-cbtn.tools .tools-x {
+  /* §14.11: WHICH glyph shows is state and stays; the turn between them is decoration and goes. */
+  transition: none;
+}
 
 /* ── composer · THE MIC GESTURE'S CHROME (Phase 24 / S0.5 — LIVE_VOICE_PLAN §6, D71) ────────────────
  * The record circle, the slide-to-cancel track, the lock/call rail, the locked CANCEL button, the
@@ -1506,22 +1543,26 @@ body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
  * THE HOST IS A SIBLING OF `.kit-composer`, NOT A CHILD — measured, not assumed (Chromium 390x844, the
  * real app): `.kit-composer.sheet` and `.kit-composer.line` compute `overflow: hidden`, and a probe
  * child 60px above (or 30px right of) the bar was NOT hit-testable in either, while the stacked bar's
- * `overflow: visible` returned it. The 2.2x circle and the lock rail live outside the bar's box by
- * construction, so a child would be sliced in two layouts of three. It spans `.kit-main` and is inert
- * (`pointer-events: none`) except for the two TAP TWINS, which opt back in.
+ * `overflow: visible` returned it. The grown circle, its level halo and the lock rail live outside the
+ * bar's box by construction, so a child would be sliced in two layouts of three. It spans `.kit-main`
+ * and is inert (`pointer-events: none`) except for the call chip, which opts back in. (The locked
+ * recording's CANCEL is not in this layer at all since the feel round — it is the tools trigger,
+ * morphed; see `.kit-cbtn.tools.cancelling` above.)
  *
  * MOTION (R69 §9 [V], Telegram's verbatim curves; §14.11: transform/opacity only, nothing filtered,
- * nothing that lays out). These four numbers are the JS-side parameter table's counterpart and live
+ * nothing that lays out). These numbers are the JS-side parameter table's counterpart and live
  * here because CSS cannot read it:
- *   · grow        300ms cubic-bezier(0, 0, 0, 1) to 2.2x  (R69 §1.6: 19dp -> 41dp, DecelerateInterpolator)
+ *   · grow        300ms cubic-bezier(0, 0, 0, 1) to --mg-grow-scale (R69 §1.6: 19dp -> 41dp, Decelerate)
  *   · lock snap   250ms cubic-bezier(.23, 1, .32, 1)      (R69 §1.4: EASE_OUT_QUINT, verbatim)
  *   · fades       150ms                                   (R69 §1.6/§2; M3 `short3`)
+ *   · level       120ms linear                            (the meter's 10 Hz steps, smoothed — OF-3)
  * R69 §1.6's 200ms EASE_BOTH cancel/exit curve is NOT implemented in S0.5: the chrome unmounts with the
  * stage, so every exit is instant. Animating it needs an exit STAGE the machine does not have (a state
  * that outlives its outcome), which is feel-round material rather than a gap in this slice.
  * Reduced motion routes through the EXISTING `body[data-motion]` axis (the UIState/Appearance switch),
  * never a raw `@media (prefers-reduced-motion)` — the standing house rule and R69 risk 10. Every state
- * below stays fully readable with the motion gone: the circle is simply already grown. */
+ * below stays fully readable with the motion gone: the circle is simply already grown, and the rail's
+ * pill/circle morph becomes two discrete states instead of a continuous one. */
 .mic-gesture {
   position: absolute;
   inset: 0;
@@ -1529,14 +1570,40 @@ body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
    * grew out of. Inert, so every tap still reaches the mic button underneath. */
   z-index: 6;
   pointer-events: none;
+
+  /* ── THE GEOMETRY KNOBS (the S0.5 feel round, owner 2026-09-13) ────────────────────────────────
+   * Declared ONCE, here, and consumed by every rule below INCLUDING the keyframes and the
+   * reduced-motion fallbacks — the 2.2 literal used to be written twice and drifting apart by one
+   * edit was exactly the risk. */
+
+  /* How far the record circle grows. Telegram's own is 2.2x (R69 §1.6: 19dp -> 41dp); OWNER-TUNED
+   * DOWN to 1.8x in the feel round 2026-09-13 — at 2.2 the circle swallowed the composer's trailing
+   * corner on a 360px phone. */
+  --mg-grow-scale: 1.8;
+  /* …and how far the LEVEL HALO bulges past that at a full meter. R69 §1.6 [V] verbatim:
+   * `circleRadius = dp(41)` + `circleRadiusAmplitude = dp(30)` = +0.73x of the grown circle, which
+   * lands the full-amplitude disc at ~3.1x of the button — Telegram's own 142dp-over-44dp ratio. */
+  --mg-bulge: 0.73;
+
+  /* The lock rail's CIRCLE — what the pill compresses INTO (OF-2). Every other rail number is stated
+   * relative to it, so the rail is resized by this one value. */
+  --mg-dot: 28px;
+  /* …and how much taller than that circle the pill stands at rest. The skin is the circle scaled on
+   * Y alone, so 1.5 = a 42px pill, the box the pre-feel-round rail measured. */
+  --mg-pill-scale: 1.5;
+  /* Where the glyph sits inside the pill at rest (it settles to the circle's centre at full lift)… */
+  --mg-glyph-rise: 7px;
+  /* …and where the collapsing chevron/label tail hangs under it. */
+  --mg-tail-drop: 11px;
 }
 .mic-gesture > * {
   position: absolute;
 }
 
-/* ① THE RECORD CIRCLE. Two boxes on purpose: the OUTER carries the live drag (translate + Telegram's
- * shrink-toward-cancel, both written inline per frame), the INNER runs the grow keyframe — so the
- * finger's travel and the animation never fight over the same `transform`. */
+/* ① THE RECORD CIRCLE. THREE boxes on purpose, one transform each: the OUTER carries the live drag
+ * (translate + Telegram's shrink-toward-cancel, both written inline per frame), `.mg-grow` runs the grow
+ * keyframe, and `.mg-halo` carries the live voice level — so the finger's travel, the entry animation
+ * and a 10 Hz meter never fight over the same `transform`. */
 .mg-circle {
   left: var(--mg-x);
   top: var(--mg-y);
@@ -1562,48 +1629,149 @@ body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
     transform: scale(1);
   }
   to {
-    transform: scale(2.2);
+    transform: scale(var(--mg-grow-scale));
   }
 }
 body[data-motion="reduced"] .mg-grow {
   animation: none;
-  transform: scale(2.2); /* §14.11: the affordance is STATE, not decoration — it still has to be there */
+  /* §14.11: the affordance is STATE, not decoration — it still has to be there, already grown. */
+  transform: scale(var(--mg-grow-scale));
+}
+
+/* THE LEVEL HALO (feel round OF-3) — Telegram's amplitude bulge, on the REAL mic level: `useDictation`'s
+ * detector polls time-domain RMS at 10 Hz for every recording now, and the gesture hook writes the 0…1
+ * result to `--mg-level` on the host imperatively (no React render at 10 Hz). It rests exactly ON the
+ * grown circle's rim (level 0 -> `--mg-grow-scale`, i.e. invisible) and bulges to +`--mg-bulge` past it,
+ * so silence is nothing and a spoken sentence is a soft pulse under the disc. A 120ms linear transition
+ * is what turns ten discrete readings a second into a continuous swell. Its opacity fades in 150ms LATE,
+ * by which point the grow curve — cubic-bezier(0,0,0,1) is almost all travel in its first half — is ~89%
+ * done, so the halo never shows ahead of the circle it hugs. */
+.mg-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--danger) 34%, transparent);
+  transform: scale(calc(var(--mg-grow-scale) * (1 + var(--mg-level, 0) * var(--mg-bulge))));
+  transition: transform 120ms linear;
+  animation: mg-fade-in 150ms linear 150ms both;
+}
+body[data-motion="reduced"] .mg-halo {
+  /* §14.11: the level is DECORATION on top of a state the red disc already paints — the one thing in
+   * this layer that is pure motion, so it is the one thing that goes. The meter keeps flowing; it just
+   * flows into something nobody can see. */
+  animation: none;
+  transition: none;
+  opacity: 0;
 }
 
 /* ② THE RAIL — the "slide up" affordance, following the finger 1:1 (no transition on the base rule:
- * a transition would smear a drag that is already per-frame) and SNAPPING when the threshold arms. */
+ * a transition would smear a drag that is already per-frame) and SNAPPING when the threshold arms.
+ *
+ * IT COMPRESSES INTO A CIRCLE AS THE SWIPE RISES (feel round OF-2, the owner's Telegram reference — no
+ * bobbing chevron; the pill should read as being SQUEEZED by the thumb and end as a circle holding the
+ * lock). The morph is transform/opacity ONLY (§14.11: nothing that lays out, no width/height/padding),
+ * continuous in `--mg-lift`, and with no transition on the tracking values — it follows the finger.
+ *
+ * THE BOX IS THE CIRCLE, and three stacked layers do the rest, because each moves differently and one
+ * element cannot carry three transforms:
+ *   · `.mg-rail-skin`  the circle STRETCHED on Y into the pill, squeezed back to 1 by the lift;
+ *   · `.mg-rail-glyph` the padlock (call mode: the phone), riding at the pill's top and settling into
+ *                      the circle's centre. A SIBLING of the skin, so the skin's scaleY never squashes it;
+ *   · `.mg-rail-tail`  the chevron (and call mode's label), collapsing and fading out on the way up.
+ * Scaling a round box on one axis gives an ellipse rather than a stadium — a deliberate trade: the END
+ * state is the one the ruling names, and it is an EXACT circle. */
 .mg-rail {
   left: var(--mg-x);
   top: var(--mg-y);
-  transform: translate(-50%, calc(-50% - var(--mg-size) - 22px - var(--mg-lift, 0) * 34px));
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 7px;
+  width: var(--mg-dot);
+  height: var(--mg-dot);
+  margin-left: calc(var(--mg-dot) / -2);
+  margin-top: calc(var(--mg-dot) / -2);
+  transform: translateY(calc(-1 * (var(--mg-size) + 22px + var(--mg-lift, 0) * 34px)));
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+/* call mode stands taller (its tail carries a word as well as the chevron) and compresses into the
+ * same circle. Ships dark with the rest of the call leg — `live` is never up before S1. */
+.mg-rail.call {
+  --mg-pill-scale: 2;
+  --mg-glyph-rise: 11px;
+  --mg-tail-drop: 12px;
+}
+.mg-rail-glyph,
+.mg-rail-tail {
+  grid-area: 1 / 1; /* LAYERS in one cell, not a column — the flow must not move as they morph */
+}
+.mg-rail-skin {
+  position: absolute;
+  inset: 0;
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--line-2);
-  color: var(--text-2);
+  transform: scaleY(calc(var(--mg-pill-scale) - var(--mg-lift, 0) * (var(--mg-pill-scale) - 1)));
+}
+.mg-rail-glyph {
+  display: flex;
+  transform: translateY(calc((var(--mg-lift, 0) - 1) * var(--mg-glyph-rise)));
+}
+.mg-rail-tail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  /* it retracts toward the centre as it collapses, so it is never left hanging outside the shrinking
+   * skin; the 1.6 multiplier spends the opacity well before the lift ends, leaving the last third of
+   * the swipe reading as one clean circle. */
+  transform: translateY(calc((1 - var(--mg-lift, 0)) * var(--mg-tail-drop)))
+    scaleY(calc(1 - var(--mg-lift, 0)));
+  opacity: calc(1 - var(--mg-lift, 0) * 1.6);
 }
 .mg-rail.armed {
-  background: color-mix(in oklch, var(--accent) 18%, var(--surface-2));
-  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
   color: var(--accent);
   transition:
     transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
-    background 150ms linear,
     color 150ms linear;
 }
-body[data-motion="reduced"] .mg-rail.armed {
+.mg-rail.armed .mg-rail-skin {
+  background: color-mix(in oklch, var(--accent) 18%, var(--surface-2));
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+  transition:
+    background 150ms linear,
+    border-color 150ms linear;
+}
+body[data-motion="reduced"] .mg-rail.armed,
+body[data-motion="reduced"] .mg-rail.armed .mg-rail-skin {
   /* §14.11: the ARMED look is state (the threshold is reached), the snap that announces it is not —
    * so the colours stay and only the motion goes. */
   transition: none;
 }
+/* …and under reduced motion the morph is TWO DISCRETE STATES rather than a continuous squeeze: a pill
+ * while the swipe is under way, a circle once it arms. Both are readable; neither animates. */
+body[data-motion="reduced"] .mg-rail-skin {
+  transform: scaleY(var(--mg-pill-scale));
+}
+body[data-motion="reduced"] .mg-rail-glyph {
+  transform: translateY(calc(-1 * var(--mg-glyph-rise)));
+}
+body[data-motion="reduced"] .mg-rail-tail {
+  transform: translateY(var(--mg-tail-drop));
+  opacity: 1;
+}
+body[data-motion="reduced"] .mg-rail.armed .mg-rail-skin {
+  transform: scaleY(1);
+}
+body[data-motion="reduced"] .mg-rail.armed .mg-rail-glyph {
+  transform: none;
+}
+body[data-motion="reduced"] .mg-rail.armed .mg-rail-tail {
+  opacity: 0;
+}
 .mg-rail-label {
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  font-size: 9px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  line-height: 1.2;
 }
 
 /* ③ THE TRACK — "slide to cancel", filling the run of bar left of the circle, fading as the finger
@@ -1639,26 +1807,11 @@ body[data-motion="full"] .mg-track:not(.moved) .mg-chev {
   }
 }
 
-/* ④ THE TAP TWINS — the only interactive parts of the layer (R69 §8.2 / WCAG 2.5.1 + 2.5.7: a
- * path-based commit needs a single-pointer, non-dragging alternative, and a gesture affordance grows
- * one the moment the hand is free). `position` is re-declared after `all: unset`, which resets it. */
-.mg-cancel {
-  all: unset;
-  position: absolute;
-  pointer-events: auto;
-  cursor: pointer;
-  box-sizing: border-box;
-  left: 0;
-  top: var(--mg-y);
-  width: calc(var(--mg-x) - var(--mg-size));
-  transform: translateY(-50%);
-  padding: 10px 0;
-  text-align: center;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--danger);
-}
+/* ④ THE CALL CHIP — the only interactive part of this layer (R69 §8.2 / WCAG 2.5.1 + 2.5.7: a
+ * path-based commit needs a single-pointer, non-dragging alternative). The locked recording's twin used
+ * to live here too, as a floating `.mg-cancel`; since the feel round it is the TOOLS TRIGGER, morphed
+ * (OF-5) — a control the owner's thumb already knows, at the other end of the same row.
+ * `position` is re-declared after `all: unset`, which resets it. */
 .mg-chip {
   all: unset;
   position: absolute;
@@ -1678,23 +1831,52 @@ body[data-motion="full"] .mg-track:not(.moved) .mg-chev {
   animation: mg-fade-in 150ms linear both;
 }
 
-/* ⑤ THE HINTS — anchored to the RIGHT edge rather than centred on the mic, so a button that sits ~24px
- * from the bar's trailing edge can still carry a full sentence without running off-screen. The 200ms
- * delay + 150ms fade is Telegram's own (R69 §1.7), and it is exactly what `LOCK_HINT_COUNT_MS` waits
- * for before SPENDING one of the three shows — keep the two in lockstep. */
+/* ⑤ THE HINT BUBBLE — a small chat bubble right above the mic, not a bordered pill floating 60px over
+ * it (feel round OF-4, the owner's Telegram reference): tailed, translucent, borderless, close enough
+ * that it reads as coming OUT of the button. Everything the gesture says goes through it — the budgeted
+ * lock teaching, the mode hint a tap raises, and the too-short teaching that used to be a toast.
+ *
+ * ANCHORED TO THE RIGHT EDGE rather than centred on the mic, so a button that sits ~24px from the bar's
+ * trailing edge can still carry a full sentence without running off-screen — and the TAIL is what puts
+ * it back on the button: `--mg-rx` is the button centre's distance from the host's right edge (measured
+ * beside the anchor), so the tail can find the mic from a bubble whose own left edge CSS cannot know.
+ * Its vertical anchor is the GROWN circle's rim + a 10px gap, so it sits just clear of whatever
+ * `--mg-grow-scale` currently is rather than at a number that has to be re-tuned beside it.
+ *
+ * The 200ms delay + 150ms fade is Telegram's own (R69 §1.7), and it is exactly what `LOCK_HINT_COUNT_MS`
+ * waits for before SPENDING one of the three shows — keep the two in lockstep.
+ *
+ * NO `backdrop-filter` (§14.11 gates blur): the translucency is a `color-mix` against the surface token,
+ * which costs nothing and reads in both modes. */
 .mg-hint {
+  --mg-bubble-bg: color-mix(in srgb, var(--surface-2) 82%, transparent);
   right: 10px;
   top: var(--mg-y);
-  transform: translateY(calc(-50% - var(--mg-size) - 60px));
+  transform: translateY(calc(-100% - var(--mg-size) * var(--mg-grow-scale) / 2 - 15px));
   margin: 0;
-  padding: 5px 11px;
-  border-radius: 999px;
+  padding: 6px 11px;
+  border-radius: 12px;
   white-space: nowrap;
   font-size: 12px;
   color: var(--text-2);
-  background: var(--surface-2);
-  border: 1px solid var(--line-2);
+  background: var(--mg-bubble-bg);
+  box-shadow: 0 4px 14px -4px rgba(0, 0, 0, 0.45);
   animation: mg-fade-in 150ms linear 200ms both;
+}
+/* the TAIL — one rotated square in the same fill, pointing down at the mic's centre. The 15px is the
+ * bubble's own 10px right inset plus half the square, which re-centres it on `--mg-x`. (The bubble is
+ * always wider than that offset in practice: the shortest line it carries is ~100px and the mic never
+ * sits more than ~45px from the bar's trailing edge.) */
+.mg-hint::after {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  right: calc(var(--mg-rx, 36px) - 15px);
+  width: 10px;
+  height: 10px;
+  border-radius: 0 0 3px 0;
+  background: var(--mg-bubble-bg);
+  transform: rotate(45deg);
 }
 @keyframes mg-fade-in {
   from {

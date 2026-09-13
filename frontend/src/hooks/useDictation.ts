@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 
 import type { SttAutoStopWire } from "./useVoiceStatus";
 import { runComposer } from "../lib/composer";
@@ -48,11 +48,29 @@ import { pushToast } from "../store/toast";
 //   · the arming latch is now a TOKEN rather than a boolean (delta round F5): a release landing while
 //     `getUserMedia` is still pending ABORTS that attempt, and a stream resolving afterwards is stopped
 //     at once — never an ownerless recording.
+//
+// S0.5 FEEL ROUND (owner, 2026-09-13) — METERING IS SPLIT FROM POLICY (OF-3). The R51 detector already
+// read time-domain RMS every 100 ms, but only while the auto-stop POLICY was on, so the live voice level
+// the record circle wants existed exactly when the owner had switched a different feature on. The
+// analyser + poll now arm for EVERY recording (that is the METER); the auto-stop STOP decision below is
+// gated on `autoStopOn` exactly as it always was (that is the POLICY, untouched). Both seams the gesture
+// consumes — the level, and the too-short teaching — are ASSIGNABLE REFS on the return rather than props:
+// they are registered by whoever is painting (one composer at a time), they are null-safe, and a null one
+// falls back to the behaviour that shipped. A 10 Hz level must not re-render React, which is the whole
+// reason it is a ref the gesture writes to the DOM from rather than a piece of state.
 
 // Auto-stop (R51 Tier 0) — how often the energy detector reads the stream while recording. NOT a
 // tunable (the two tunables are the silence window + the RMS floor, both config): 100 ms resolves the
 // configured window to within one reading and costs nothing, the order the field ships at (R51 §5).
+// Since the feel round it is also the METER's cadence — one timer, two readers.
 const SILENCE_POLL_MS = 100;
+
+/** The time-domain RMS that reads as a FULL meter, i.e. `level === 1` (OF-3). Feel-tuned, not measured:
+ *  ordinary speech at arm's length on the owner's phone sits well under 0.1 RMS, so 0.12 puts a normal
+ *  sentence in the upper half of the bulge and leaves headroom for a shout instead of pinning. The
+ *  auto-stop's own `threshold` is deliberately NOT reused — that one is a SILENCE floor (default 0.01),
+ *  three orders of feel away from "how loud is loud", and it is user-configurable. */
+const METER_FULL_RMS = 0.12;
 
 /** The minimum clip we will spend a POST on, in ms (R69 §9 / §2 — Signal's floor, ratified in
  *  LIVE_VOICE_PLAN §6). A mis-timed hold produces a 200 ms blip: discard it CLIENT-SIDE, before any
@@ -61,9 +79,11 @@ const SILENCE_POLL_MS = 100;
  *  a property of how the recording was started. */
 const MIN_CLIP_MS = 1000;
 
-/** The teaching toast that replaces the discarded blip (R69 §2: Signal teaches at exactly this
- *  moment). Short, and it names the gesture rather than scolding. */
-const TOO_SHORT_MSG = "Too short — hold the mic to record";
+/** The teaching line that replaces the discarded blip (R69 §2: Signal teaches at exactly this moment).
+ *  Short, and it names the gesture rather than scolding. ONE string for both presentations: since the
+ *  feel round the composer shows it in the gesture's own hint BUBBLE (right above the mic, where the
+ *  blip just happened), and the toast below is the fallback for a consumer that registers no handler. */
+export const TOO_SHORT_MSG = "Too short — hold to record";
 
 const INSECURE_MSG =
   "Mic needs a secure connection — use HTTPS via Tailscale Serve, or allow this origin in your browser flags.";
@@ -156,7 +176,16 @@ export function useDictation({
    *  has it. 0 when nothing is recording. */
   const startedAtRef = useRef(0);
 
-  // Auto-stop state. Every one of these stays null unless the feature is on AND its AudioContext ran.
+  /** THE METER SEAM (OF-3) — assigned by whoever paints the recording (the mic gesture), called with a
+   *  0…1 level every `SILENCE_POLL_MS` while recording. Null-safe: with nobody registered the poll still
+   *  runs the auto-stop policy and simply meters into nothing. */
+  const meterRef = useRef<((level: number) => void) | null>(null);
+  /** THE TOO-SHORT SEAM (OF-4) — assigned by whoever can TEACH better than a toast can. The floor RULE
+   *  and `MIN_CLIP_MS` stay here (this is the layer that knows how long the clip was); only the
+   *  PRESENTATION moves. Null → the toast that always shipped. */
+  const tooShortRef = useRef<(() => void) | null>(null);
+
+  // Detector state. Every one of these stays null unless an AudioContext actually ran.
   const audioRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -205,7 +234,11 @@ export function useDictation({
       // the teaching moment (R69 §2/§9). Deliberately AFTER the empty-blob early-out, which is about a
       // recorder that produced nothing at all rather than about a recording that was too brief.
       if (heldMs < MIN_CLIP_MS) {
-        pushToast(TOO_SHORT_MSG, "info");
+        // The teaching PRESENTATION is the one part a consumer may take over (OF-4): the composer flashes
+        // it in the gesture's hint bubble, right above the button the blip happened on. Everyone else —
+        // and any future consumer that registers nothing — keeps the toast.
+        if (tooShortRef.current) tooShortRef.current();
+        else pushToast(TOO_SHORT_MSG, "info");
         setPhase("idle");
         return;
       }
@@ -318,7 +351,12 @@ export function useDictation({
    *  by contract (MED-2): no Web Audio, a context that won't leave `suspended`, a throwing node graph —
    *  every one degrades to ordinary push-to-talk. A recording that needs one extra tap is a non-event;
    *  an error toast on every recording would not be. The hidden-page stop is NOT part of that degrade
-   *  (MED-1) — it is armed first, synchronously, and outlives any Web Audio failure below. */
+   *  (MED-1) — it is armed first, synchronously, and outlives any Web Audio failure below.
+   *
+   *  ARMED FOR EVERY RECORDING since the feel round (OF-3): what it reads is a LEVEL, which the record
+   *  circle wants whatever the auto-stop policy says. The policy has not moved — the STOP decision inside
+   *  the poll is still gated on `autoStopOn`, and with it off nothing here can end a recording. The
+   *  degrade rule covers the meter too: a context that won't run means no level, never a broken mic. */
   const armDetector = useCallback(
     async (stream: MediaStream) => {
       // Council MED-1 — dictation is a screen-on activity: a hidden page ends the recording outright
@@ -370,7 +408,13 @@ export function useDictation({
         analyser.getFloatTimeDomainData(samples);
         let sum = 0;
         for (const v of samples) sum += v * v;
-        if (Math.sqrt(sum / samples.length) >= silenceFloor) {
+        const rms = Math.sqrt(sum / samples.length);
+        // ① THE METER — every reading, whatever the policy (OF-3). Straight to a registered consumer,
+        //    never through state: at 10 Hz a `setState` would re-render the whole composer subtree.
+        meterRef.current?.(Math.min(1, rms / METER_FULL_RMS));
+        // ② THE POLICY — unchanged, and still the only thing that can end a recording from in here.
+        if (!autoStopOn) return;
+        if (rms >= silenceFloor) {
           silentMs = 0; // anything above the floor restarts the run
           return;
         }
@@ -378,7 +422,7 @@ export function useDictation({
         if (silentMs >= silenceMs) stop(); // the SAME path as tapping stop → onstop → upload
       }, SILENCE_POLL_MS);
     },
-    [silenceFloor, silenceMs, stop, teardownAudio],
+    [autoStopOn, silenceFloor, silenceMs, stop, teardownAudio],
   );
 
   /** The pre-flight EVERY entry shares — the tap, and (since S0.5) the gesture's activation. No
@@ -487,15 +531,17 @@ export function useDictation({
       rec.start();
       startedAtRef.current = Date.now(); // the 1000 ms floor's only input
       setPhase("recording");
-      // Toggle off → not even constructed, so the recording behaves exactly as it did pre-Tier-0.
-      if (autoStopOn) void armDetector(stream);
+      // ALWAYS armed (OF-3): the analyser is the METER first and the auto-stop's input second. The
+      // policy toggle now lives inside the poll, so a recording with auto-stop off still behaves
+      // exactly as it did pre-Tier-0 — nothing in here can stop it — and the level flows regardless.
+      void armDetector(stream);
       return true;
     } finally {
       // Only if it is still OURS: an abort released the ref so a re-press could start immediately, and
       // that newer attempt's token must survive this one's unwind.
       if (armRef.current === arm) armRef.current = null;
     }
-  }, [upload, preflight, autoStopOn, armDetector, teardownDetector]);
+  }, [upload, preflight, armDetector, teardownDetector]);
 
   /** Tap handler — the KEYBOARD/AT path since S0.5 (R69 §8.1: tap-to-start, tap-to-stop). idle → start,
    *  recording → stop + transcribe. Inert while unavailable/sending; the degraded explainers ride
@@ -526,6 +572,12 @@ export function useDictation({
   // so the 502-driven `unavailable` flag never gets set — surface the actionable reason instead.
   const status: MicStatus = !micCapable ? "insecure" : unavailable ? "unavailable" : phase;
   // `toggle` is the keyboard/AT path; `start`/`stop`/`cancel` are the gesture's three verbs (S0.5).
-  // There is one recorder behind all four.
-  return { status, toggle, start, stop, cancel };
+  // There is one recorder behind all four. `meter`/`onTooShort` are the two ASSIGNABLE seams the feel
+  // round added — both null-safe, both owned by whoever mounts (assign on mount, null on cleanup), so a
+  // second composer can never inherit a dead handler.
+  return { status, toggle, start, stop, cancel, meter: meterRef, onTooShort: tooShortRef };
 }
+
+/** The two assignable seams' type, named so a consumer can state what it registers. */
+export type MicMeterRef = MutableRefObject<((level: number) => void) | null>;
+export type MicTooShortRef = MutableRefObject<(() => void) | null>;

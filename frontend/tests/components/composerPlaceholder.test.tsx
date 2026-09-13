@@ -39,7 +39,17 @@ vi.mock("../../src/hooks/useComposer", () => ({
     send: vi.fn(),
     isStreaming: false,
     sttReady: false,
-    mic: { status: "idle", toggle: vi.fn() },
+    // The controller's full shape: the gesture hook registers the two assignable seams (`meter`,
+    // `onTooShort`) on mount, so a stub without them explodes before anything renders.
+    mic: {
+      status: "idle",
+      toggle: vi.fn(),
+      start: vi.fn(async () => true),
+      stop: vi.fn(),
+      cancel: vi.fn(),
+      meter: { current: null },
+      onTooShort: { current: null },
+    },
   }),
 }));
 

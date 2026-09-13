@@ -126,6 +126,26 @@ describe("useDictation · the gesture verbs (S0.5)", () => {
     expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("hold"), "info");
   });
 
+  // OF-4 — the too-short TEACHING is the one part of the floor a consumer may take over: the composer
+  // shows it in the gesture's own bubble instead of the toast rail. The RULE (and `MIN_CLIP_MS`) did not
+  // move, which is what these two cases together state.
+  it("a registered `onTooShort` takes the teaching INSTEAD of the toast (OF-4)", async () => {
+    const { result } = renderHook(() => useDictation(opts(false)));
+    const taught = vi.fn();
+    result.current.onTooShort.current = taught;
+    await recordOnce(result, 300);
+    expect(taught).toHaveBeenCalledTimes(1);
+    expect(pushToast).not.toHaveBeenCalledWith(expect.stringContaining("hold"), "info");
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // the floor RULE is untouched — still no POST
+  });
+
+  it("…and with nobody registered the toast is still the fallback (OF-4)", async () => {
+    const { result } = renderHook(() => useDictation(opts(false)));
+    result.current.onTooShort.current = null; // explicit: this is the shipped-before state
+    await recordOnce(result, 300);
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("hold"), "info");
+  });
+
   it("…and one just over it uploads normally — the floor is 1000 ms, not a general brake", async () => {
     const { result } = renderHook(() => useDictation(opts(false)));
     await recordOnce(result, 1001);
@@ -470,13 +490,33 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("toggle OFF constructs nothing — the recording is byte-identical to push-to-talk", async () => {
+  // OF-3 — METERING IS SPLIT FROM POLICY (S0.5 feel round). The detector now arms for EVERY recording,
+  // because the record circle's level halo needs a level whatever the auto-stop switch says; the STOP
+  // decision is still gated on `enabled`. These two cases are the split, stated from both sides: the
+  // meter runs with the policy OFF, and the policy OFF still never ends a recording — note the case
+  // below keeps the REAL window/threshold numbers (a `/voice/status` carries them whether or not the
+  // feature is enabled), so a lost gate would stop this recording at 3 s.
+  it("toggle OFF still METERS — the level is not the policy's to withhold (OF-3)", async () => {
+    const off = stopOpts(false, { ...AUTO_STOP, enabled: false });
+    const { result } = renderHook(() => useDictation(off));
+    const levels: number[] = [];
+    result.current.meter.current = (v) => levels.push(v);
+    await startRecording(result);
+    micLevel = 0.06; // half of METER_FULL_RMS
+    await tick(300);
+    expect(contexts).toHaveLength(1); // the analyser IS armed now, auto-stop off or not
+    expect(levels.length).toBeGreaterThan(0);
+    expect(levels.at(-1)).toBeCloseTo(0.5, 2); // 0.06 / 0.12 — normalized, clamped at 1
+  });
+
+  it("…and with the policy OFF nothing in the detector ever stops the recording (OF-3)", async () => {
     const off = stopOpts(false, { ...AUTO_STOP, enabled: false });
     const { result } = renderHook(() => useDictation(off));
     await startRecording(result);
+    micLevel = 0; // dead silence, far longer than the configured 3 s window
     await tick(30_000);
-    expect(contexts).toHaveLength(0); // no AudioContext, no analyser, no timer
     expect(result.current.status).toBe("recording"); // still waiting for the tap, as always
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it("an ABSENT policy (older backend / stub) reads as disabled — LOW-4", async () => {
@@ -484,7 +524,6 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
     const { result } = renderHook(() => useDictation(opts(false)));
     await startRecording(result);
     await tick(30_000);
-    expect(contexts).toHaveLength(0);
     expect(result.current.status).toBe("recording");
   });
 

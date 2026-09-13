@@ -121,13 +121,18 @@ test("slide left cancels: no POST, no draft", async ({ page, pageErrors }) => {
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 
-test("swipe up locks hands-free: a real CANCEL appears and the button becomes tap-to-stop", async ({
+test("swipe up locks hands-free: the TOOLS TRIGGER becomes CANCEL and the button becomes tap-to-stop", async ({
   page,
   pageErrors,
 }) => {
   const { posts, mic, field } = await boot(page);
   const at = await centre(mic);
-  const cancel = page.locator(".mg-cancel");
+  // S0.5 feel round OF-5: the locked recording's tap twin is the tools/skills trigger at the controls
+  // row's LEADING edge, morphed — not a floating button. This is the one place the real cascade runs, so
+  // it is where "the trigger is composed outside the composer variant and still finds the gesture" is
+  // actually exercised end to end.
+  const tools = page.locator("#composer .kit-cbtn.tools");
+  const cancel = page.getByRole("button", { name: "cancel recording" });
 
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
@@ -135,6 +140,8 @@ test("swipe up locks hands-free: a real CANCEL appears and the button becomes ta
   await expect(cancel).toHaveCount(0); // no tap twin while the hand is on the button
   await page.mouse.move(at.x, at.y - 80, { steps: 6 }); // past the 56 px latch
   await expect(cancel).toBeVisible();
+  await expect(tools).toHaveClass(/cancelling/); // …and it is the SAME button, not a new one
+  await expect(page.locator(".mg-cancel")).toHaveCount(0);
   await page.mouse.up(); // the LOCKING pointer's release stops nothing
   await page.waitForTimeout(HOLD_MS);
   await expect(mic).toHaveClass(/rec/);
@@ -142,5 +149,31 @@ test("swipe up locks hands-free: a real CANCEL appears and the button becomes ta
   await mic.click(); // …a fresh tap does
   await expect(field).toHaveValue("spoken words");
   expect(posts.n).toBe(1);
+  await expect(tools).not.toHaveClass(/cancelling/); // morphed back once the recording ended
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("the locked CANCEL discards through the morphed trigger — no POST, no draft", async ({
+  page,
+  pageErrors,
+}) => {
+  const { posts, mic, field } = await boot(page);
+  const at = await centre(mic);
+  const cancel = page.getByRole("button", { name: "cancel recording" });
+
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await expect(mic).toHaveClass(/rec/);
+  await page.mouse.move(at.x, at.y - 80, { steps: 6 }); // lock
+  await page.mouse.up();
+  await page.waitForTimeout(HOLD_MS); // long enough to upload, so only the cancel explains the silence
+  await cancel.click();
+
+  await expect(mic).not.toHaveClass(/rec/);
+  await expect(field).toHaveValue("");
+  expect(posts.n).toBe(0);
+  // the menu it normally opens must NOT have been toggled on the way past (the panel stays MOUNTED for
+  // its close animation and is `inert` when shut, so `.open` is what "open" means here)
+  await expect(page.locator(".tools-sheet.open")).toHaveCount(0);
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });

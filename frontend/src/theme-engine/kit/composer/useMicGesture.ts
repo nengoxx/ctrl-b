@@ -9,7 +9,8 @@ import {
 } from "react";
 
 import { micLabel } from "./useComposerChrome";
-import type { useDictation } from "../../../hooks/useDictation";
+import { TOO_SHORT_MSG, type useDictation } from "../../../hooks/useDictation";
+import { setMicCancel } from "../../../store/micCancel";
 import { getUI, setUI, useUISlice } from "../../../store/ui";
 
 // THE DUAL-MODE MIC GESTURE (Phase 24 / S0.5 — docs/LIVE_VOICE_PLAN.md §6, D71; every threshold traced
@@ -113,7 +114,8 @@ export type MicMode = "mic" | "call";
  *   · `idle`    — nothing in flight.
  *   · `press`   — down, before the 150 ms activation. The stage a TAP lives and dies in.
  *   · `hold`    — recording, finger down. Slide left cancels, swipe up locks.
- *   · `locked`  — recording hands-free. The button is tap-to-stop and a real CANCEL button exists.
+ *   · `locked`  — recording hands-free. The button is tap-to-stop, and the tools trigger at the other
+ *                 end of the controls row has morphed into a real CANCEL button (OF-5).
  *   · `callArm` — call mode held: the "slide up to call" pill is up, committing on RELEASE.
  *   · `chip`    — a call-mode release without the swipe left a standing, tappable "Start call" chip. */
 export type GestureStage = "idle" | "press" | "hold" | "locked" | "callArm" | "chip";
@@ -165,7 +167,9 @@ export type MicSignal =
   /** The recording ended without the gesture: the silence auto-stop, the hidden-page rule, a recorder
    *  error, a declined permission. The machine must not keep painting a circle over a closed mic. */
   | { type: "stopped" }
-  /** The visible CANCEL button — the tap twin every gesture affordance grows once the hand is free. */
+  /** The visible CANCEL — the tap twin every gesture affordance grows once the hand is free. Since the
+   *  feel round it is the MORPHED tools trigger rather than a floating button (OF-5); the signal is the
+   *  same, and the machine neither knows nor cares which control sent it. */
   | { type: "cancelTap" }
   | { type: "escape" }
   | { type: "chipExpire" };
@@ -365,6 +369,11 @@ export interface MicAnchor {
   cx: number;
   cy: number;
   size: number;
+  /** The button centre's distance from the host's RIGHT edge. The hint BUBBLE is right-anchored (a
+   *  sentence centred on a button ~24px from the bar's trailing edge runs off-screen), so its TAIL —
+   *  which has to point at the button — needs the one number CSS cannot derive from `cx` alone: where
+   *  the bubble's own right edge is. Same measurement, same moment, no second layout read. */
+  rx: number;
 }
 
 /** Everything `<MicGestureChrome/>` renders off. One object so the three variants pass one prop. */
@@ -387,7 +396,6 @@ export interface MicChrome {
   showLockHint: boolean;
   /** A transient mode hint, or null. */
   hint: string | null;
-  onCancelTap: () => void;
   onChipTap: () => void;
 }
 
@@ -423,7 +431,7 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
   const [mode, setMode] = useState<MicMode>("mic"); // no memory — boots `mic` every load (owner ruling)
   const modeRef = useRef(mode);
   modeRef.current = mode;
-  const [anchor, setAnchor] = useState<MicAnchor>({ cx: 0, cy: 0, size: 0 });
+  const [anchor, setAnchor] = useState<MicAnchor>({ cx: 0, cy: 0, size: 0, rx: 0 });
   const [hint, setHint] = useState<string | null>(null);
 
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -528,10 +536,12 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     if (!host) return;
     const b = btn.getBoundingClientRect();
     const h = host.getBoundingClientRect();
+    const cx = b.left + b.width / 2;
     setAnchor({
-      cx: b.left + b.width / 2 - h.left,
+      cx: cx - h.left,
       cy: b.top + b.height / 2 - h.top,
       size: Math.max(b.width, b.height),
+      rx: h.right - cx,
     });
   }, []);
 
@@ -682,7 +692,44 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     if ((stage === "hold" || stage === "locked") && micStatus !== "recording") {
       send({ type: "stopped" });
     }
+    // …and the live level goes with it (OF-3). The meter stops being CALLED when the poll dies, which
+    // would leave the last reading painted — so the next gesture would open on a stale bulge.
+    if (micStatus !== "recording") hostRef.current?.style.setProperty("--mg-level", "0");
   }, [micStatus, send]);
+
+  // THE TWO RECORDER SEAMS (feel round OF-3/OF-4), registered and withdrawn together in ONE effect: a
+  // composer that unmounts must not leave a live handler pointing into its dead tree, and the next one
+  // to mount must not inherit it. `mic.meter`/`mic.onTooShort` are refs, so their identities are stable
+  // for the recorder's life and this runs exactly once per mount.
+  const meterRef = mic.meter;
+  const tooShortRef = mic.onTooShort;
+  useEffect(() => {
+    // THE LEVEL IS WRITTEN STRAIGHT TO THE DOM. It arrives at 10 Hz; routing it through state would
+    // re-render the composer, the gesture chrome and every control beside them ten times a second for
+    // a decoration. One custom property on the chrome host is what every rule in kit.css reads.
+    meterRef.current = (level: number) => {
+      hostRef.current?.style.setProperty("--mg-level", String(level));
+    };
+    // The too-short teaching, moved out of the toast rail and into the gesture's own bubble — the copy
+    // is still `useDictation`'s (one string), and so is the RULE that fires it.
+    tooShortRef.current = () => flashHint(TOO_SHORT_MSG);
+    return () => {
+      meterRef.current = null;
+      tooShortRef.current = null;
+    };
+  }, [meterRef, tooShortRef, flashHint]);
+
+  // THE LOCKED CANCEL, PUBLISHED (OF-5). While the gesture is `locked` — by a swipe or by the keyboard
+  // path, which is locked from its first keystroke — the tools/skills trigger at the composer's other
+  // end MORPHS into this cancel. It is composed in DefaultRoot and cannot see this hook, so the offer
+  // travels through `store/micCancel`. Withdrawn on leaving the stage AND on unmount (the cleanup is
+  // both), so a dead composer never leaves a live morph.
+  const locked = state.stage === "locked";
+  useEffect(() => {
+    if (!locked) return;
+    setMicCancel(() => send({ type: "cancelTap" }));
+    return () => setMicCancel(null);
+  }, [locked, send]);
 
   // Call mode is offered only while the `live` bit is up; if it goes down under us, fall back to mic —
   // and CLOSE anything call mode had in flight first (F5). Repainting the mode alone would leave a
@@ -725,7 +772,6 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     [],
   );
 
-  const onCancelTap = useCallback(() => send({ type: "cancelTap" }), [send]);
   const onChipTap = useCallback(() => {
     clearTimeout(chipTimer.current);
     send({ type: "chipExpire" });
@@ -754,7 +800,6 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
       moved: state.moved,
       showLockHint,
       hint,
-      onCancelTap,
       onChipTap,
     },
   };

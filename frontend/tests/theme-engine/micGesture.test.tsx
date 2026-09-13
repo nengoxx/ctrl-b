@@ -28,19 +28,31 @@ vi.mock("../../src/store/chat", async (importActual) => {
   const actual = await importActual<typeof import("../../src/store/chat")>();
   return { ...actual, sendMessage: vi.fn(), stopTurn: vi.fn() };
 });
+// Real behaviour, but OBSERVABLE: OF-4 moved the too-short teaching out of the toast rail and into the
+// gesture's own bubble, and "it is not ALSO a toast" is half of that finding.
+vi.mock("../../src/store/toast", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/store/toast")>();
+  return { ...actual, pushToast: vi.fn(actual.pushToast) };
+});
 
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
+import { MicGestureChrome } from "../../src/theme-engine/kit/composer/MicGestureChrome";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
+import { ToolsMenuTrigger } from "../../src/theme-engine/kit/composer/toolsMenu/ToolsMenuTrigger";
 import {
   ACTIVATE_MS,
   CHIP_MS,
   LOCK_HINT_COUNT_MS,
   LOCK_HINT_MAX,
   LOCK_PX,
+  useMicGesture,
 } from "../../src/theme-engine/kit/composer/useMicGesture";
+import { TOO_SHORT_MSG, type useDictation } from "../../src/hooks/useDictation";
 import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft } from "../../src/store/composer";
+import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
+import { pushToast } from "../../src/store/toast";
 import { getUI, setUI } from "../../src/store/ui";
 import {
   FakeMediaRecorder,
@@ -55,6 +67,19 @@ const VARIANTS = [
   ["line", LineComposer],
 ] as const;
 
+/** A variant PLUS the tools/skills trigger — exactly how DefaultRoot composes the two (the trigger is a
+ *  `controlsStart` contribution, merged ONCE outside every variant, which is why the gesture reaches it
+ *  through `store/micCancel` rather than through a prop). A test that renders the bare variant cannot
+ *  see OF-5's morph at all, so every locked-stage case below renders this instead. */
+function composed(V: (typeof VARIANTS)[number][1]) {
+  return (
+    <>
+      <ToolsMenuTrigger />
+      <V />
+    </>
+  );
+}
+
 /** Long enough to clear `useDictation`'s 1000 ms floor — a real recording, not a blip. */
 const HELD_MS = 1200;
 const PID = 1;
@@ -63,7 +88,11 @@ const X0 = 300;
 const Y0 = 700;
 
 const mic = () => screen.getByRole("button", { name: /dictation|microphone|voice call/i });
-const cancelBtn = () => document.querySelector<HTMLButtonElement>(".mg-cancel");
+/** The locked recording's tap twin — since the S0.5 feel round (OF-5) it is the TOOLS TRIGGER, morphed,
+ *  not a floating `.mg-cancel`. Found by its accessible NAME, which is the contract AT reads. */
+const cancelBtn = () => screen.queryByRole("button", { name: "cancel recording" });
+/** The trigger, whatever job it is currently doing. */
+const tools = () => document.querySelector<HTMLButtonElement>(".kit-cbtn.tools")!;
 const chip = () => document.querySelector<HTMLButtonElement>(".mg-chip");
 const hint = () => document.querySelector(".mg-hint")?.textContent ?? null;
 const posts = () => vi.mocked(globalThis.fetch).mock.calls.length;
@@ -115,7 +144,9 @@ beforeEach(() => {
   voice.live = false;
   voice.autoSend = false;
   setUI({ micLockHintShown: 0, micLockHintRetired: false });
+  setComposerOverlay(null); // the overlay slot is module state — a case must not inherit one
   vi.mocked(runComposer).mockClear();
+  vi.mocked(pushToast).mockClear();
 });
 
 afterEach(() => {
@@ -224,7 +255,7 @@ describe("slide-left cancel", () => {
 
 describe("swipe-up lock (hands-free)", () => {
   it("latches on crossing, raises the CANCEL tap twin, and the button becomes tap-to-stop", async () => {
-    render(<KitComposer />);
+    render(composed(KitComposer));
     await hold();
     expect(cancelBtn()).toBeNull(); // no tap twin while the hand is on the button
     move(X0, Y0 - LOCK_PX);
@@ -242,7 +273,7 @@ describe("swipe-up lock (hands-free)", () => {
   });
 
   it("the CANCEL twin discards instead", async () => {
-    render(<KitComposer />);
+    render(composed(KitComposer));
     await hold();
     move(X0, Y0 - LOCK_PX);
     await tick(HELD_MS);
@@ -253,7 +284,7 @@ describe("swipe-up lock (hands-free)", () => {
   });
 
   it("a locked recording that ends on its own (silence auto-stop, hidden page) closes the chrome", async () => {
-    render(<KitComposer />);
+    render(composed(KitComposer));
     await hold();
     move(X0, Y0 - LOCK_PX);
     await tick(HELD_MS);
@@ -270,7 +301,7 @@ describe("swipe-up lock (hands-free)", () => {
 
 describe("`pointercancel` never loses audio (the iron rule)", () => {
   it("promotes an in-flight recording to LOCKED rather than discarding it", async () => {
-    render(<KitComposer />);
+    render(composed(KitComposer));
     await hold();
     fireEvent.pointerCancel(mic(), { pointerId: PID });
     await tick(HELD_MS);
@@ -297,7 +328,7 @@ describe("Esc + the keyboard door (R69 §8.1/risk 5)", () => {
   });
 
   it("a KEYBOARD click starts a hands-free recording; a second one stops it", async () => {
-    render(<KitComposer />);
+    render(composed(KitComposer));
     fireEvent.click(mic()); // no pointer session at all — Enter/Space, or an AT activation
     await tick(10);
     expect(mic().className).toContain("rec");
@@ -503,6 +534,19 @@ describe("all three variants carry the same contract", () => {
     expect(posts()).toBe(0);
   });
 
+  it.each(VARIANTS)(
+    "%s: the locked cancel is the TOOLS TRIGGER, morphed (OF-5)",
+    async (_id, V) => {
+      render(composed(V));
+      await hold();
+      move(X0, Y0 - LOCK_PX);
+      await tick(0);
+      // one twin, and it is the trigger — not a floating button that the layout would have to find room for
+      expect(cancelBtn()).toBe(tools());
+      expect(document.querySelector(".mg-cancel")).toBeNull();
+    },
+  );
+
   it.each(VARIANTS)("%s: the call gate answers to the `live` bit, both ways", async (_id, V) => {
     const off = render(<V />);
     down();
@@ -517,5 +561,146 @@ describe("all three variants carry the same contract", () => {
     up();
     await tick(10);
     expect(mic().getAttribute("aria-label")).toBe("start a voice call");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────────────────────────
+// THE S0.5 FEEL ROUND (owner, 2026-09-13). Three of the five findings changed BEHAVIOUR rather than
+// only CSS, and each is pinned at the seam it actually moved: the tools trigger's morph (OF-5), the
+// live level reaching the DOM without a render (OF-3), and the too-short teaching leaving the toast
+// rail for the bubble (OF-4). OF-1/OF-2 are pure CSS and are pinned in `micGestureCss.test.ts`.
+// ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("OF-5 · the tools trigger IS the locked recording's cancel", () => {
+  it("morphs on lock: the name, the click and the menu's `aria-*` all change hands", async () => {
+    render(composed(KitComposer));
+    // …and it is the MENU trigger while nothing is recording
+    expect(tools().getAttribute("aria-haspopup")).toBe("dialog");
+    expect(cancelBtn()).toBeNull();
+
+    await hold();
+    expect(cancelBtn()).toBeNull(); // a hand-held recording has no free hand to tap with
+    move(X0, Y0 - LOCK_PX);
+    await tick(HELD_MS);
+    expect(cancelBtn()).toBe(tools());
+    expect(tools().getAttribute("title")).toBe("cancel recording");
+    // while morphed it must not read as a menu at all — an open-looking button that opens nothing
+    expect(tools().getAttribute("aria-haspopup")).toBeNull();
+    expect(tools().getAttribute("aria-expanded")).toBeNull();
+
+    fireEvent.click(cancelBtn()!);
+    await tick(10);
+    expect(posts()).toBe(0); // it CANCELLED: the clip was long enough to upload and did not
+    expect(getDraft()).toBe("");
+    expect(getComposerOverlay()).toBeNull(); // …and it never toggled the menu on the way past
+    // morphed back, with its own job returned to it
+    expect(tools().getAttribute("aria-haspopup")).toBe("dialog");
+    expect(cancelBtn()).toBeNull();
+  });
+
+  it("the KEYBOARD path gets the same morph — it is locked from the first keystroke", async () => {
+    render(composed(KitComposer));
+    fireEvent.click(mic()); // no pointer session: Enter/Space, or an AT activation
+    await tick(10);
+    expect(cancelBtn()).toBe(tools());
+    fireEvent.click(cancelBtn()!);
+    await tick(10);
+    expect(mic().className).not.toContain("rec");
+    expect(posts()).toBe(0);
+  });
+
+  it("the offer dies with the composer — a dead gesture never leaves a live morph", async () => {
+    function Pair({ on }: { on: boolean }) {
+      return (
+        <>
+          <ToolsMenuTrigger />
+          {on && <KitComposer />}
+        </>
+      );
+    }
+    const { rerender } = render(<Pair on />);
+    await hold();
+    move(X0, Y0 - LOCK_PX);
+    await tick(0);
+    expect(cancelBtn()).not.toBeNull();
+    rerender(<Pair on={false} />); // the composer unmounts mid-recording (a tab switch to Conf)
+    await tick(0);
+    expect(cancelBtn()).toBeNull(); // the trigger is a menu again, not a cancel for nothing
+    expect(tools().getAttribute("aria-haspopup")).toBe("dialog");
+  });
+});
+
+describe("OF-3/OF-4 · the two recorder seams the gesture registers", () => {
+  /** A stand-in recorder: these two cases are about the SEAMS, so nothing else needs to be real (the
+   *  metering itself — that the poll runs with auto-stop off — is pinned in `useDictation.test.ts`). */
+  const stubMic = (
+    status: "idle" | "recording" = "recording",
+  ): ReturnType<typeof useDictation> => ({
+    status,
+    toggle: vi.fn(),
+    start: vi.fn(async () => true),
+    stop: vi.fn(),
+    cancel: vi.fn(),
+    // Annotated (not `satisfies`): the refs have to keep the CONTROLLER's widened type, or a literal
+    // `{ current: null }` would narrow `current` to `null` and the seam could not be called at all.
+    meter: { current: null },
+    onTooShort: { current: null },
+  });
+
+  /** The hook PLUS its chrome, which is what gives the level somewhere to land. */
+  function Harness({ mic }: { mic: ReturnType<typeof useDictation> }) {
+    const gesture = useMicGesture(mic, false);
+    return <MicGestureChrome chrome={gesture.chrome} />;
+  }
+
+  const host = () => document.querySelector<HTMLElement>(".mic-gesture")!;
+
+  it("registers both seams on mount and WITHDRAWS them on unmount", () => {
+    const mic = stubMic();
+    const { unmount } = render(<Harness mic={mic} />);
+    expect(mic.meter.current).toBeTypeOf("function");
+    expect(mic.onTooShort.current).toBeTypeOf("function");
+    unmount();
+    // a second composer must not inherit handlers pointing into a tree that is gone
+    expect(mic.meter.current).toBeNull();
+    expect(mic.onTooShort.current).toBeNull();
+  });
+
+  it("the level lands on the host IMPERATIVELY, and is cleared when the recording ends", async () => {
+    const mic = stubMic();
+    const { rerender } = render(<Harness mic={mic} />);
+    act(() => {
+      mic.meter.current!(0.62);
+    });
+    // written straight to the element: at 10 Hz a re-render per reading would repaint the composer
+    expect(host().style.getPropertyValue("--mg-level")).toBe("0.62");
+    rerender(<Harness mic={stubMic("idle")} />); // the recording ends (release, auto-stop, hidden page)
+    await tick(0);
+    expect(host().style.getPropertyValue("--mg-level")).toBe("0"); // no stale bulge on the next gesture
+  });
+});
+
+describe("OF-4 · the hint bubble carries the too-short teaching", () => {
+  const host = () => document.querySelector<HTMLElement>(".mic-gesture")!;
+
+  it("a blip TEACHES IN THE BUBBLE and raises no toast", async () => {
+    render(<KitComposer />);
+    await hold();
+    await tick(300); // released well inside the 1000 ms floor
+    up();
+    await tick(10);
+    expect(posts()).toBe(0); // the floor RULE is untouched — still no round trip
+    expect(hint()).toBe(TOO_SHORT_MSG); // …and it says so where the blip happened
+    expect(pushToast).not.toHaveBeenCalledWith(expect.stringContaining("hold"), "info");
+  });
+
+  it("the bubble's TAIL gets the anchor it needs — the mic's distance from the host's right edge", () => {
+    // Right-anchored (a sentence centred on a button ~24px from the trailing edge runs off-screen), so
+    // the tail cannot find the mic from `--mg-x` alone: `--mg-rx` is the number CSS is missing.
+    render(<KitComposer />);
+    mic().getBoundingClientRect = () => rect(340, 690, 32, 32);
+    host().getBoundingClientRect = () => rect(0, 400, 393, 452);
+    fireEvent.click(mic());
+    expect(host().style.getPropertyValue("--mg-rx")).toBe("37px"); // 393 − (340 + 32/2)
   });
 });

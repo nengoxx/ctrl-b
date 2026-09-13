@@ -18,18 +18,26 @@ import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer
 vi.mock("../../src/hooks/useVoiceStatus", () => ({
   useVoiceStatus: () => ({ data: { stt: true, tts: false }, dataUpdatedAt: 1 }),
 }));
-// The controller WIDENED at S0.5 (start/stop/cancel beside toggle) — the mic button's pointer wiring
-// now drives those three, so a two-field stub would render a composer whose gesture hook explodes on
-// the first press. Frozen at `sending` exactly as before; the extra verbs are inert here.
-vi.mock("../../src/hooks/useDictation", () => ({
-  useDictation: () => ({
-    status: "sending",
-    toggle: vi.fn(),
-    start: vi.fn(async () => true),
-    stop: vi.fn(),
-    cancel: vi.fn(),
-  }),
-}));
+// The controller WIDENED at S0.5 (start/stop/cancel beside toggle) and again at its feel round (the two
+// assignable seams, `meter`/`onTooShort`, which the gesture hook REGISTERS on mount) — the mic button's
+// pointer wiring drives all of it, so a two-field stub would render a composer whose gesture hook
+// explodes before the first press. Partial-mocked so the module's real constants still resolve; frozen
+// at `sending` exactly as before, and everything beside `status` is inert here.
+vi.mock("../../src/hooks/useDictation", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/hooks/useDictation")>();
+  return {
+    ...actual,
+    useDictation: () => ({
+      status: "sending",
+      toggle: vi.fn(),
+      start: vi.fn(async () => true),
+      stop: vi.fn(),
+      cancel: vi.fn(),
+      meter: { current: null },
+      onTooShort: { current: null },
+    }),
+  };
+});
 
 function renderWith(Comp: ComponentType) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
