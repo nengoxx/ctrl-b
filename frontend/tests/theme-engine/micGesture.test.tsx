@@ -34,6 +34,12 @@ vi.mock("../../src/store/toast", async (importActual) => {
   const actual = await importActual<typeof import("../../src/store/toast")>();
   return { ...actual, pushToast: vi.fn(actual.pushToast) };
 });
+// Real behaviour, observable: the call commit's ORDER contract (dismiss → prime → open) closes the
+// carried-seek blocker (micro-confirm №2), and an order is only assertable on recorded calls.
+vi.mock("../../src/lib/audioController", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/lib/audioController")>();
+  return { ...actual, dismiss: vi.fn(actual.dismiss), primeAudio: vi.fn(actual.primeAudio) };
+});
 
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
@@ -537,6 +543,32 @@ describe("call mode is UNREACHABLE until the `live` bit exists (ruling 5)", () =
     expect(useCallRequestedValue()).toBe(true);
     // …and the element was handed a decodable silent source inside that same tap.
     expect(primedSrc[0]).toMatch(/^data:audio\/wav;base64,/);
+    endCall();
+  });
+
+  it("the call commit SILENCES pre-call playback FIRST — dismiss, then prime (micro-confirm №2)", async () => {
+    // A pre-call playback session carried into the call can hold a status the element is not honoring
+    // — a pending forward SEEK parks an intent-only "playing" through a silent synthesis gap — and the
+    // chunk landing mid-call republishes that same value: no edge for §4.2's iron rule. The kill at
+    // the DOOR is what makes "no phantom status survives into the call" true by construction; and it
+    // must come BEFORE the prime, whose already-playing guard would otherwise skip the unlock on a
+    // src-loaded element.
+    voice.live = true;
+    const { dismiss, primeAudio } = await import("../../src/lib/audioController");
+    render(<KitComposer />);
+    down();
+    up(); // tap → call mode
+    await tick(10);
+    await hold();
+    up(); // released short of the swipe → the standing chip
+    await tick(0);
+    act(() => chip()!.click());
+    await tick(0);
+    expect(useCallRequestedValue()).toBe(true);
+    expect(vi.mocked(dismiss)).toHaveBeenCalled();
+    expect(vi.mocked(dismiss).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(primeAudio).mock.invocationCallOrder[0],
+    );
     endCall();
   });
 

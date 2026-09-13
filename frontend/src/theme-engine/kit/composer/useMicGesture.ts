@@ -10,7 +10,7 @@ import {
 
 import { micLabel } from "./useComposerChrome";
 import { TOO_SHORT_MSG, type useDictation } from "../../../hooks/useDictation";
-import { primeAudio } from "../../../lib/audioController";
+import { dismiss, primeAudio } from "../../../lib/audioController";
 import { requestCall } from "../../../store/liveCall";
 import { setMicCancel } from "../../../store/micCancel";
 import { getUI, setUI, useUISlice } from "../../../store/ui";
@@ -465,12 +465,19 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
   }, []);
 
   /** The call commit — all three doors (the swipe-up commit, the standing chip's tap, the keyboard
-   *  activation) land here, and every one of them is INSIDE a user gesture. That is what the first line
-   *  is for: the shared `<audio>` element is created lazily by whatever first wants to speak, which on
-   *  mobile is a timer and not a tap, and the autoplay policy would swallow the call's first reply
-   *  (LIVE_VOICE_PLAN §6 "audio priming"). Priming here — not in the overlay's mount effect — is the
-   *  difference between being inside the gesture and merely being caused by one. */
+   *  activation) land here, and every one of them is INSIDE a user gesture.
+   *
+   *  THE ORDER IS THE CONTRACT (micro-confirm №2's blocker): ① `dismiss()` — answering a call
+   *  SILENCES pre-call playback, and not only for the ear's sake: a session carried into the call can
+   *  hold a status the element isn't honoring (a pending forward SEEK parks an intent-only "playing"
+   *  through a silent synthesis gap), and the chunk landing mid-call would republish that same value —
+   *  no edge, and §4.2's iron-rule kill never fires. No session survives the door, so no phantom
+   *  status can. ② `primeAudio()` — the shared `<audio>` element is created lazily by whatever first
+   *  wants to speak, which on mobile is a timer and not a tap; priming must be here, inside the
+   *  gesture, and must come AFTER the dismiss (on a src-loaded element the prime's already-playing
+   *  guard would skip the unlock). ③ open the overlay. */
   const startCall = useCallback(() => {
+    dismiss();
     primeAudio();
     requestCall();
   }, []);
