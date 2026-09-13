@@ -16,8 +16,9 @@ import { NavHome, NavMenu } from "../../components/NavMenu";
 import { PromptModal } from "../../components/PromptModal";
 import { SwUpdatePrompt } from "../../components/SwUpdatePrompt";
 import { Toasts } from "../../components/Toasts";
+import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
 import { useSections } from "../../hooks/useSections";
-import { useCallRequested } from "../../store/liveCall";
+import { endCall, useCallMount } from "../../store/liveCall";
 import { getGroupScrollTarget } from "../../store/groupScroll";
 import { prefetchOnIdle } from "../../lib/prefetch";
 import { AgentTab } from "../../tabs/AgentTab";
@@ -142,8 +143,19 @@ export function DefaultRoot({
   // theme's `composer` setting (registry lookup, fallback-safe). Read the layout once here so the
   // `--composer-h` effect can key on it (re-measure on a live swap) and pass it down (one subscription).
   const composerLayout = useComposerLayout();
-  // Is a live call up (D71)? One bit, published by the mic gesture's call commit — see the mount below.
-  const callUp = useCallRequested();
+  // Is a live call up (D71)? One value, published by the call DOOR (`store/liveCall#startCall`) — null
+  // when none, else the mounted machine's generation. See the mount below.
+  const callMount = useCallMount();
+  // THE CALL'S BACK-TRAP (§6), guarded HERE and not inside the overlay — the history entry means "a call
+  // screen is up", and that is true across a REDIAL, which remounts the machine underneath it. The guard
+  // reclaims its entry with an asynchronous `history.back()`, so an overlay that unmounts and remounts in
+  // ONE commit has a fresh `pushState` racing that traversal: measured in Chromium, the pushed entry is
+  // lost and the browser is left sitting on the app's own entry — the next Back then walks out of the
+  // app, which is the exact failure this guard exists to prevent. Owning it at the CALL's lifetime rather
+  // than the MACHINE's removes the race by construction: one entry per call, whatever the machine does.
+  // `endCall` is the whole hang-up — the overlay's unmount IS the teardown (socket, capture, wake lock,
+  // the mouth), which is the same contract every other exit path here rides.
+  const closeCall = useOverlayBackGuard(callMount !== null, endCall);
   // Composer ADDON composition (D30). DefaultRoot owns it for every variant, and it's a real MERGE
   // (`mergeComposerSlots`) since A6 — the old "when inline, a theme-passed `composerSlots` is silently
   // dropped" limitation is GONE. Three contributors, in `controlsStart` order (first = leading edge):
@@ -421,8 +433,13 @@ export function DefaultRoot({
       {/* THE CALL SCREEN (D71 §6). Mounted HERE, at the shell root beside the dialogs, and nowhere
           else: every theme rides this Root (cosmos/vapor/minimal/gacha/frontier all compose it), and a
           composer-parented overlay would be clipped by the sheet/line bars the gesture chrome already
-          had to escape. Mounting IS starting the call and unmounting is its whole teardown. */}
-      {callUp && <CallOverlay />}
+          had to escape. Mounting IS starting the call and unmounting is its whole teardown.
+
+          …which is also why REDIAL is a `key` and not a method (S2b): "call again" from a terminal face
+          bumps the door's generation, React unmounts this subtree and mounts a fresh one, and the new
+          machine starts exactly the way the first one did. No restart path to keep in step with mount.
+          The back-guard above deliberately sits OUTSIDE that key — see its comment. */}
+      {callMount !== null && <CallOverlay key={callMount} close={closeCall} />}
       <Toasts />
       <ConfirmDialog />
       <PromptModal />

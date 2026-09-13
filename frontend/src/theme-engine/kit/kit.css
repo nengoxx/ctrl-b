@@ -7169,7 +7169,7 @@ body[data-perf="lite"] .kit .navmenu-pop {
    (`.pm-backdrop`, 60). The sheet BORROWS this shell's look but must sit UNDER the confirm dialog it
    opens (its delete asks for confirmation), which is why it takes its own z-index rather than the 60
    below. The call screen sits ABOVE the confirm dialog because a call OWNS the screen for its duration
-   (its own confirm affordance is the in-overlay row, S2b) and UNDER PromptModal for the same reason
+   (its own confirm affordance IS the in-overlay Allow/Deny row) and UNDER PromptModal for the same reason
    everything else is: PromptModal stays on top, opened FROM the others and never under them. */
 .kit .pm-backdrop.auto-pm {
   z-index: 45;
@@ -8838,22 +8838,26 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   color: var(--text-3);
 }
 
-/* ── D71 §6 — THE CALL SCREEN (Phase 24 / S2a, minimal v1) ───────────────────────────────────────
+/* ── D71 §6 — THE CALL SCREEN (Phase 24 / S2a + S2b) ─────────────────────────────────────────────
  * The live-call overlay: the active agent's art full-bleed, the call's state, the transcript line and
- * hang up. Token-only, so gacha/frontier/cosmos/vapor inherit it through their own palettes with no
- * per-theme work (§6's v1 rule) — and every colour is a token, never a literal, so the light modes are
- * covered by the same construction the rest of this file uses.
- *
- * WHAT IS NOT HERE YET (S2b): the focal-anchored face RING and its state animations, the no-ring
- * transcript accent, mute, the in-overlay confirm row and the terminal faces. The layout below is the
- * bottom cluster BOTH ring modes keep, so S2b adds a layer above it rather than rewriting it.
+ * the furniture (mute · hang up · the Allow/Deny confirm row · the terminal faces). Token-only, so
+ * gacha/frontier/cosmos/vapor inherit it through their own palettes with no per-theme work (§6's v1
+ * rule) — and every colour is a token, never a literal, so the light modes are covered by the same
+ * construction the rest of this file uses.
  *
  * z-index 55 — the ladder is stated once, at `.pm-backdrop.auto-pm` above.
  *
- * MOTION: one breathing dot, transform/opacity only (§14.11), and it is gated on the app's own
- * `body[data-motion]` axis — never a raw `prefers-reduced-motion` query (the standing house rule). With
- * motion reduced the dot is a STATIC filled dot in the same state colour, so the call's state stays
- * readable: reduced motion must never mean an unreadable call screen. */
+ * TWO MODES, ONE INDICATOR. `.ring` draws the focal-anchored circumference over the art and the phase
+ * line carries no dot; `.no-ring` drops the ring and moves the dot onto the transcript line. Both wear
+ * the same state palette (`--call-accent`) and the same muted treatment.
+ *
+ * MOTION: transform/opacity only (§14.11), gated on the app's own `body[data-motion]` axis — never a raw
+ * `prefers-reduced-motion` query (the standing house rule). With motion reduced NOTHING animates and the
+ * state is carried by colour + a per-state opacity STEP (`--call-ring-op`), because reduced motion must
+ * never mean an unreadable call screen.
+ *
+ * GEOMETRY IS CUSTOM PROPERTIES, not JS: the ring's diameter, its stroke and its fallback anchor are
+ * feel-round tuning knobs, and JS positions the ring's CENTRE and nothing else. */
 .kit .kit-call {
   position: fixed;
   inset: 0;
@@ -8865,16 +8869,38 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   color: var(--text-1);
   /* The state colour every piece below reads — one declaration per phase, set on the root. */
   --call-accent: var(--accent);
+  /* …and the state's STILL reading of itself: the stroke/dot opacity, which is what keeps the phases
+   * apart when motion is reduced (and what every animation below starts from). */
+  --call-ring-op: 0.72;
+  /* The halo: a little over half the narrow side on a phone, capped so a tablet does not get a hoop. */
+  --call-ring-size: min(56vw, 240px);
+  --call-ring-stroke: 2px;
+  /* THE FALLBACK ANCHOR (§6) — centred, upper third — used whenever the picture has no framing point
+   * to invert (a proportional bundled entry, an unmeasured box, or no art at all). An anchored ring
+   * overrides these two inline, in the overlay's own pixels. */
+  --call-ring-x: 50%;
+  --call-ring-y: 33%;
 }
 .kit .kit-call.ph-thinking {
   --call-accent: var(--text-2);
+  --call-ring-op: 0.5;
 }
 .kit .kit-call.ph-error {
   --call-accent: var(--danger);
+  --call-ring-op: 0.8;
 }
 .kit .kit-call.ph-connecting,
 .kit .kit-call.ph-ended {
   --call-accent: var(--text-3);
+  --call-ring-op: 0.34;
+}
+.kit .kit-call.ph-speaking {
+  --call-ring-op: 0.9;
+}
+/* The owner's core ask — "show when I'm speaking and when I'm not" — is this one step, and it is the
+ * step that must survive reduced motion. */
+.kit .kit-call.speech {
+  --call-ring-op: 1;
 }
 /* The art layer + its veil, the SHIPPED backdrop recipe (§8.3a): a sharp cover image and a separate
  * readability wash, built from `--bg` through `color-mix` so it follows light and dark alike. Heavier
@@ -8893,6 +8919,91 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
     color-mix(in oklch, var(--bg) 88%, transparent)
   );
 }
+/* THE RING (§6, ring mode) — a drawn CIRCUMFERENCE over the art: a stroke, no fill, nothing masked or
+ * cropped, so the picture shows through untouched. A halo, not a frame.
+ *
+ * The BOX is positioned and the STROKE is animated, which is why they are two elements: the centre may
+ * arrive as inline pixels from the focal inversion, and a `transform` used to centre the box would then
+ * be fighting every keyframe for the same property. Negative margins do the centring instead, leaving
+ * `transform` entirely to the animations (§14.11's transform/opacity-only rule).
+ *
+ * `pointer-events: none` — the surface under it is the tap-to-interrupt target (§4.3 trigger B), and a
+ * decorative ring must not shadow it. */
+.kit .kit-call-ring {
+  position: absolute;
+  left: var(--call-ring-x);
+  top: var(--call-ring-y);
+  width: var(--call-ring-size);
+  height: var(--call-ring-size);
+  margin: calc(var(--call-ring-size) / -2) 0 0 calc(var(--call-ring-size) / -2);
+  pointer-events: none;
+}
+.kit .kit-call-ring-stroke {
+  position: absolute;
+  inset: 0;
+  border: var(--call-ring-stroke) solid var(--call-accent);
+  border-radius: 50%;
+  opacity: var(--call-ring-op);
+}
+/* The state, as motion. Each phase gets its own character — listening BREATHES slow, thinking SHIMMERS,
+ * speaking PULSES firmer — and `speech` (the owner speaking) answers visibly over the top of listening;
+ * it comes last so its equal-specificity rule wins on order. Every one is transform/opacity only, and
+ * every one is gated on `full` motion: under `reduced` the `--call-ring-op` steps above carry the state
+ * on their own. NO AUDIO IS ANALYSED anywhere here (owner-DECLINED) — the ring reacts to call state. */
+body[data-motion="full"] .kit .kit-call.ph-listening .kit-call-ring-stroke {
+  animation: kit-call-ring-breathe 3.6s var(--ease-std) infinite;
+}
+body[data-motion="full"] .kit .kit-call.ph-thinking .kit-call-ring-stroke {
+  animation: kit-call-ring-shimmer 1.4s var(--ease-std) infinite;
+}
+body[data-motion="full"] .kit .kit-call.ph-speaking .kit-call-ring-stroke {
+  animation: kit-call-ring-pulse 1.1s var(--ease-std) infinite;
+}
+body[data-motion="full"] .kit .kit-call.speech .kit-call-ring-stroke {
+  animation: kit-call-ring-answer 0.9s var(--ease-std) infinite;
+}
+@keyframes kit-call-ring-breathe {
+  0%,
+  100% {
+    opacity: calc(var(--call-ring-op) * 0.6);
+    transform: scale(0.975);
+  }
+  50% {
+    opacity: var(--call-ring-op);
+    transform: scale(1.015);
+  }
+}
+@keyframes kit-call-ring-shimmer {
+  0%,
+  100% {
+    opacity: calc(var(--call-ring-op) * 0.45);
+  }
+  50% {
+    opacity: var(--call-ring-op);
+  }
+}
+@keyframes kit-call-ring-pulse {
+  0%,
+  100% {
+    opacity: calc(var(--call-ring-op) * 0.7);
+    transform: scale(1);
+  }
+  50% {
+    opacity: var(--call-ring-op);
+    transform: scale(1.045);
+  }
+}
+@keyframes kit-call-ring-answer {
+  0%,
+  100% {
+    opacity: calc(var(--call-ring-op) * 0.75);
+    transform: scale(1);
+  }
+  50% {
+    opacity: var(--call-ring-op);
+    transform: scale(1.07);
+  }
+}
 .kit .kit-call-body {
   position: relative;
   display: grid;
@@ -8906,6 +9017,9 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   letter-spacing: 0.04em;
   color: var(--call-accent);
 }
+/* NO-RING MODE's indicator: the same dot recipe, moved onto the TRANSCRIPT line (§6 — "call state rides
+ * the transcript line's accent"). Geometry here is feel-round material; the state palette is the ring's,
+ * to the token. */
 .kit .kit-call-dot {
   display: inline-block;
   width: 8px;
@@ -8913,10 +9027,14 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   margin-inline-end: 8px;
   border-radius: 50%;
   background: var(--call-accent);
+  opacity: var(--call-ring-op);
   vertical-align: baseline;
 }
 body[data-motion="full"] .kit .kit-call-dot {
   animation: kit-call-breathe 1.8s var(--ease-std) infinite;
+}
+body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
+  animation-duration: 0.9s;
 }
 @keyframes kit-call-breathe {
   0%,
@@ -8946,24 +9064,111 @@ body[data-motion="full"] .kit .kit-call-dot {
   font-size: 12px;
   color: var(--text-3);
 }
+/* THE CLUSTER — the confirm row and the controls, together, because together is what "pointer-down
+ * stopped" has to cover: an Allow tap must never also be a tap-to-interrupt (the component stops the
+ * event on this element, once). */
+.kit .kit-call-cluster {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+}
 .kit .kit-call-controls {
   display: flex;
   justify-content: center;
-  padding-top: 10px;
+  gap: 10px;
 }
-.kit .kit-call-hangup {
+/* One button recipe for the whole cluster (the shipped hang-up's), then the per-button treatment. The
+ * shared half is what keeps a four-button-wide terminal cluster looking like one control group. */
+.kit .kit-call-hangup,
+.kit .kit-call-mute,
+.kit .kit-call-again,
+.kit .kit-call-allow,
+.kit .kit-call-deny {
   all: unset;
   cursor: pointer;
   min-height: 44px;
-  padding: 0 26px;
+  padding: 0 22px;
   border-radius: 999px;
-  background: var(--danger);
-  color: var(--bg);
   font-size: 15px;
   font-weight: 600;
   text-align: center;
 }
-.kit .kit-call-hangup:focus-visible {
+.kit .kit-call-hangup:focus-visible,
+.kit .kit-call-mute:focus-visible,
+.kit .kit-call-again:focus-visible,
+.kit .kit-call-allow:focus-visible,
+.kit .kit-call-deny:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+.kit .kit-call-hangup {
+  background: var(--danger);
+  color: var(--bg);
+}
+.kit .kit-call-again {
+  background: var(--accent);
+  color: var(--bg);
+}
+/* Mute is a QUIET control until it is on — and then it is unmistakable, because a closed ear that looks
+ * like an open one is the one state this screen must never fumble. */
+.kit .kit-call-mute {
+  color: var(--text-1);
+  background: color-mix(in oklch, var(--bg) 62%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.kit .kit-call.muted .kit-call-mute {
+  background: var(--text-2);
+  color: var(--bg);
+  box-shadow: none;
+}
+/* THE IN-OVERLAY CONFIRM ROW (§4.5 · §6) — a line and two buttons; the chat card keeps the full
+ * context, and this is only the tap the privilege gate requires. */
+.kit .kit-call-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--bg) 76%, transparent);
+}
+.kit .kit-call-confirm-line {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.kit .kit-call-confirm-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.kit .kit-call-allow {
+  min-height: 40px;
+  padding: 0 18px;
+  background: var(--accent);
+  color: var(--bg);
+}
+.kit .kit-call-deny {
+  min-height: 40px;
+  padding: 0 18px;
+  color: var(--text-1);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+/* MUTED — the STATIC look, and the LAST word in this block on purpose: no pulse implies no ear, so the
+ * muted treatment has to beat every animation above it (equal specificity, later source). A dashed,
+ * dimmed stroke reads as "open circuit" at a glance and survives reduced motion unchanged, because it
+ * was never motion in the first place. */
+.kit .kit-call.muted {
+  --call-ring-op: 0.45;
+}
+.kit .kit-call.muted .kit-call-ring-stroke,
+body[data-motion="full"] .kit .kit-call.muted .kit-call-ring-stroke {
+  animation: none;
+  border-style: dashed;
+  transform: none;
+}
+.kit .kit-call.muted .kit-call-dot,
+body[data-motion="full"] .kit .kit-call.muted .kit-call-dot {
+  animation: none;
+  background: none;
+  box-shadow: inset 0 0 0 2px var(--call-accent);
 }

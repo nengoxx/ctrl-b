@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   cancelTurn,
+  confirmAwaiting,
   confirmOutstanding,
   getLiveTurn,
   sendMessage,
@@ -167,6 +168,86 @@ describe("the live-turn seam (F3)", () => {
       await resumeCall("c1", "execute");
     });
     expect(confirmOutstanding()).toBe(false);
+  });
+
+  it("`confirmAwaiting` names the waiting call for the overlay's row — and is reference-stable", async () => {
+    const call = (state: string) => ({
+      type: "tool_call",
+      call_id: "c1",
+      tool: "wake_host",
+      args: {},
+      state,
+    });
+    routes({
+      "/api/agent/chat": () =>
+        closedStream([
+          { event: "thread", data: { threadId: "t1" } },
+          { event: "message.start", data: { messageId: "m1" } },
+          { event: "part.added", data: { messageId: "m1", part: call("pending") } },
+          { event: "tool.permission", data: { callId: "c1", token: "tok" } },
+          { event: "done", data: { state: "suspended" } },
+        ]),
+    });
+    await act(async () => {
+      await sendMessage("wake vault");
+    });
+    expect(confirmAwaiting()).toEqual({ callId: "c1", tool: "wake_host" });
+    // THE STORE CONTRACT: a snapshot must be a primitive or a STABLE reference — a fresh object per
+    // read makes `useSyncExternalStore` loop forever. Same gate, same object.
+    expect(confirmAwaiting()).toBe(confirmAwaiting());
+
+    routes({
+      "/messages": () => json(200, []),
+      "/api/agent/resume": () =>
+        closedStream([
+          {
+            event: "tool.result",
+            data: {
+              messageId: "m1",
+              callId: "c1",
+              result: { state: "ok", summary: "done", data: {}, output: null, error: null },
+            },
+          },
+          { event: "done", data: { state: "completed" } },
+        ]),
+    });
+    const { resumeCall } = await import("../../src/store/chat");
+    await act(async () => {
+      await resumeCall("c1", "execute");
+    });
+    expect(confirmAwaiting()).toBeNull();
+  });
+
+  it("a suspended QUESTION holds the queue but earns NO Allow/Deny row", async () => {
+    // `awaiting_answer` wants typed words, and the chat card is where those are given. The overlay
+    // still holds its utterances for it (that is `confirmOutstanding`'s job) — it just has no row.
+    routes({
+      "/api/agent/chat": () =>
+        closedStream([
+          { event: "thread", data: { threadId: "t1" } },
+          { event: "message.start", data: { messageId: "m1" } },
+          {
+            event: "part.added",
+            data: {
+              messageId: "m1",
+              part: {
+                type: "tool_call",
+                call_id: "q1",
+                tool: "question",
+                args: {},
+                state: "pending",
+              },
+            },
+          },
+          { event: "tool.question", data: { callId: "q1", question: "which host?" } },
+          { event: "done", data: { state: "suspended" } },
+        ]),
+    });
+    await act(async () => {
+      await sendMessage("wake it");
+    });
+    expect(confirmOutstanding()).toBe(true);
+    expect(confirmAwaiting()).toBeNull();
   });
 });
 

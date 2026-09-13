@@ -39,6 +39,7 @@ class FakeContext {
 
 class FakeTrack {
   stopped = 0;
+  enabled = true;
   listeners: Record<string, (() => void)[]> = {};
   stop() {
     this.stopped += 1;
@@ -89,6 +90,26 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     expect(cap.sampleRate).toBe(48000);
     expect(cap.echoCancellation).toBe("all");
     expect(track.stopped).toBe(0);
+  });
+
+  it("MUTE disables the TRACK and nothing else — the frames must keep flowing (D71 F3)", async () => {
+    // The one mechanism: disabling the track silences the samples while the worklet keeps shipping
+    // them, because Speaches has to OBSERVE the silence to endpoint a half-spoken phrase. Stopping
+    // the uplink instead would leave that utterance open to merge with whatever is said after.
+    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    cap.setMuted(true);
+    expect(track.enabled).toBe(false);
+    expect(track.stopped).toBe(0); // the ear is closed, not released
+    expect(FakeContext.last?.closed).toBe(0);
+    cap.setMuted(false);
+    expect(track.enabled).toBe(true);
+
+    // …and a released capture is not a muted one: re-enabling a torn-down track would be a lie.
+    cap.stop();
+    cap.setMuted(false);
+    expect(track.enabled).toBe(true);
+    cap.setMuted(true);
+    expect(track.enabled).toBe(true);
   });
 
   it("resumes a suspended context — the ordinary autoplay-policy case", async () => {

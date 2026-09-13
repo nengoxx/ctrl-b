@@ -10,8 +10,7 @@ import {
 
 import { micLabel } from "./useComposerChrome";
 import { TOO_SHORT_MSG, type useDictation } from "../../../hooks/useDictation";
-import { dismiss, primeAudio } from "../../../lib/audioController";
-import { requestCall } from "../../../store/liveCall";
+import { startCall } from "../../../store/liveCall";
 import { setMicCancel } from "../../../store/micCancel";
 import { getUI, setUI, useUISlice } from "../../../store/ui";
 
@@ -464,23 +463,10 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     hintTimer.current = setTimeout(() => setHint(null), HINT_MS);
   }, []);
 
-  /** The call commit — all three doors (the swipe-up commit, the standing chip's tap, the keyboard
-   *  activation) land here, and every one of them is INSIDE a user gesture.
-   *
-   *  THE ORDER IS THE CONTRACT (micro-confirm №2's blocker): ① `dismiss()` — answering a call
-   *  SILENCES pre-call playback, and not only for the ear's sake: a session carried into the call can
-   *  hold a status the element isn't honoring (a pending forward SEEK parks an intent-only "playing"
-   *  through a silent synthesis gap), and the chunk landing mid-call would republish that same value —
-   *  no edge, and §4.2's iron-rule kill never fires. No session survives the door, so no phantom
-   *  status can. ② `primeAudio()` — the shared `<audio>` element is created lazily by whatever first
-   *  wants to speak, which on mobile is a timer and not a tap; priming must be here, inside the
-   *  gesture, and must come AFTER the dismiss (on a src-loaded element the prime's already-playing
-   *  guard would skip the unlock). ③ open the overlay. */
-  const startCall = useCallback(() => {
-    dismiss();
-    primeAudio();
-    requestCall();
-  }, []);
+  // The call commit — all three doors (the swipe-up commit, the standing chip's tap, the keyboard
+  // activation) land on the STORE's `startCall`, and every one of them is INSIDE a user gesture. The
+  // door itself (dismiss → prime → open, in that order, and the redial that rides it) lives there
+  // because it is no longer only this gesture's: the terminal face's "Call again" is the second caller.
 
   // A NAMED function expression so the two self-scheduling outcomes (`start`'s failure close-out and
   // the chip's expiry) can re-enter the machine by the function's own name rather than through the
@@ -540,7 +526,7 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
         }
       }
     },
-    [live, flashHint, startCall],
+    [live, flashHint],
   );
 
   /** Measure the pressed button against the chrome host — once, at the start of the gesture. */
@@ -681,7 +667,7 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
       measure(e.currentTarget);
       send({ type: "keyStart" });
     },
-    [send, startCall, measure],
+    [send, measure],
   );
 
   // ESC CANCELS while a recording is up (R69 §8.1's other half — Telegram Web's `captureEscKeyListener`).
@@ -789,7 +775,7 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     clearTimeout(chipTimer.current);
     send({ type: "chipExpire" });
     startCall();
-  }, [send, startCall]);
+  }, [send]);
 
   return {
     pressing: state.stage === "press",

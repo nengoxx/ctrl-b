@@ -212,6 +212,55 @@ export function circleFraming(art: FocalArt | undefined): CircleFraming | undefi
   };
 }
 
+/** WHERE THE FOCAL POINT LANDS, in the painting box's own pixels (D71 §6 — the call ring's anchor).
+ *
+ *  `focalPosition` answers "what `object-position` puts the subject in the middle"; this answers the
+ *  question a HALO asks instead — "and where on screen did the subject end up" — so a ring can be drawn
+ *  over the face without masking, cropping or re-laying-out the art. Same inputs, same cover math, one
+ *  step further:
+ *
+ *      s     = the per-axis cover overflow (`coverScale`, `s ≥ 1`)
+ *      P     = focalAxis(f, s)                  — the position fraction the paint actually uses
+ *      off   = box · (1 − s) · P                — the drawn image's top-left, relative to the box
+ *      land  = off + f · box · s                — the focal point, box-local
+ *
+ *  Deriving it from `focalAxis` rather than from `f` alone is the whole point: the paint CLAMPS (no gap
+ *  may show), so on a heavily-cropped axis the subject is not where a naive `f · box` would put it.
+ *
+ *  `null` means UNANCHORABLE and the caller must use its own fallback anchor (§6: centred, upper third):
+ *  a `proportional` item carries a hand-tuned CSS string and no point at all, and an unmeasured box has
+ *  nothing to land in. A centred item whose SOURCE pixels are unknown degrades instead of failing — to
+ *  `f · box`, exactly the raw-point paint `focalPosition` degrades to, so the ring sits where the picture
+ *  actually is in that state. `z` is deliberately not read: zoom is circle-window-scoped (see
+ *  `circleFraming`), and the ring is a halo over the art, not a window into it. */
+export function focalLanding(art: FocalArt, box: FocalBox | null): FocalPoint | null {
+  if (art.mode !== "centred" || box === null) return null;
+  if (!(box.width > 0) || !(box.height > 0)) return null;
+  const { point } = art;
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const s = coverScale(art.width, art.height, box);
+  if (s === null)
+    return {
+      x: clampTo(point.x * box.width, box.width),
+      y: clampTo(point.y * box.height, box.height),
+    };
+  return {
+    x: clampTo(land(point.x, s.x, box.width), box.width),
+    y: clampTo(land(point.y, s.y, box.height), box.height),
+  };
+}
+
+/** One axis of the landing above: the drawn image's offset plus the point's own distance into it. */
+function land(f: number, s: number, box: number): number {
+  return box * (1 - s) * focalAxis(f, s) + f * box * s;
+}
+
+/** Inside the box, and never a `NaN` an inline `left`/`top` would drop on the floor. */
+function clampTo(n: number, box: number): number {
+  if (!Number.isFinite(n)) return box / 2;
+  return Math.min(box, Math.max(0, n));
+}
+
 /** Shift a resolved position's X by `dx` (a fraction of the position range), clamped at 0 — a
  *  PER-WINDOW offset, applied by the one window that wants it (gacha's magazine cover slides its hero
  *  out from under the cut-in column).

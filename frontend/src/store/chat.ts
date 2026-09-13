@@ -19,6 +19,7 @@ import type {
   PlanStep,
   RunState,
   Thread,
+  ToolCallPart,
   ToolResult,
 } from "../types";
 import { consumeStaged, releaseStaged, stagedPreviews } from "./attachments";
@@ -637,14 +638,48 @@ export function getLiveTurn(): LiveTurnRef | null {
  *  machine reads it as a submit HOLD: a suspended turn leaves chat status `idle`, so an utterance sent
  *  into it would take the optimistic fresh-turn path and strand on the held turn's 202. */
 export function confirmOutstanding(): boolean {
-  return state.messages.some((m) =>
-    m.parts.some(
-      (p) =>
-        p.type === "tool_call" &&
-        (p.state === "awaiting_confirm" || p.state === "awaiting_answer") &&
-        !m.parts.some((r) => r.type === "tool_result" && r.call_id === p.call_id),
-    ),
-  );
+  return awaitingCall("awaiting_confirm", "awaiting_answer") !== null;
+}
+
+/** The FIRST tool call on this thread still waiting on the owner in one of `states`, or `null`. The one
+ *  scan behind both readers below — "is anything waiting" and "what exactly is waiting" are the same
+ *  question asked twice, and two copies of this walk is how one of them stops matching the reducer. */
+function awaitingCall(...states: RunState[]): ToolCallPart | null {
+  for (const m of state.messages) {
+    for (const p of m.parts) {
+      if (p.type !== "tool_call" || !states.includes(p.state)) continue;
+      if (!m.parts.some((r) => r.type === "tool_result" && r.call_id === p.call_id)) return p;
+    }
+  }
+  return null;
+}
+
+/** WHAT is waiting for an Allow/Deny, for a surface that renders its own two buttons — the call
+ *  overlay's in-overlay confirm row (D71 §4.5 · §6). `awaiting_answer` is deliberately NOT included:
+ *  a suspended `question` wants typed words, and the chat card is where those are given; the overlay
+ *  still HOLDS its utterances for it (`confirmOutstanding`, which does count it) and simply offers no
+ *  row. The decision itself rides `resumeCall` — the same chokepoint and the same single-use token as
+ *  the chat card, so no consumer of this ever touches a confirm token.
+ *
+ *  REFERENCE-STABLE by contract, like `Playback.chunks`: the `createStore` snapshot rule requires a
+ *  primitive or a stable reference, and a fresh `{callId, tool}` on every read would re-render forever.
+ *  The memo returns the SAME object while the same call is waiting for the same tool. */
+export interface AwaitingConfirm {
+  callId: string;
+  /** The tool's raw name — the row formats it exactly as the chat card's summary does. */
+  tool: string;
+}
+let awaitingMemo: AwaitingConfirm | null = null;
+export function confirmAwaiting(): AwaitingConfirm | null {
+  const p = awaitingCall("awaiting_confirm");
+  if (p === null) awaitingMemo = null;
+  else if (
+    awaitingMemo === null ||
+    awaitingMemo.callId !== p.call_id ||
+    awaitingMemo.tool !== p.tool
+  )
+    awaitingMemo = { callId: p.call_id, tool: p.tool };
+  return awaitingMemo;
 }
 
 /** Fetch one thread's persisted history. Split from the state write so a caller can decide what to do

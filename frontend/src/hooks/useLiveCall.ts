@@ -50,6 +50,20 @@ import { useVoiceStatus } from "./useVoiceStatus";
  *  in the backoff schedule below, which is what keeps the two from drifting apart. */
 const RECONNECT_BACKOFF_MS = [400, 900, 1800, 3000] as const;
 
+/** How long the "connection strained" note stands after a `degraded` frame, unless another one re-arms
+ *  it (S2b — the S2a residual).
+ *
+ *  It has to be a CLIENT decision because the relay only ever says the bad news: it emits ONE `degraded`
+ *  state per overflow burst and has no recovery signal at all (`services/voice_live.py` — the bounded
+ *  queue drops its oldest frames and says so once). Without a hold the note would stand for the whole
+ *  rest of the call over a single hiccup, which is how a warning stops meaning anything.
+ *
+ *  3× the relay's own default `relay_queue_ms` (2000 ms of audio, `LiveCfg`): long enough that a burst
+ *  of overflows re-arms the note rather than flickering it, short enough that a call which recovered
+ *  stops claiming otherwise. Not a config knob — it is the presentation of someone else's number, and
+ *  the owner tunes the queue, not the note. */
+const DEGRADED_NOTE_MS = 6000;
+
 /** How successive queued utterances are joined into the ONE message a drain submits: a space, because
  *  they are continuous speech, not composer lines. (The composer HARVEST joins with newlines — there
  *  they are lines the owner will edit.) */
@@ -91,6 +105,9 @@ export interface CallState {
   heldUpload: boolean;
   /** A confirm gate is outstanding (delta round F1): utterances hold until it resolves either way. */
   confirmHold: boolean;
+  /** The ear is MUTED (§6's call furniture): the track is disabled, the frames keep flowing as silence,
+   *  and nothing the ear still delivers about the muted stretch is taken. */
+  muted: boolean;
   /** The call generation (F7). Bumped by every terminal and by hang-up. */
   gen: number;
   /** Reconnect attempts spent since the last `ready`. */
@@ -107,6 +124,7 @@ export const CALL_INITIAL: CallState = {
   killing: false,
   heldUpload: false,
   confirmHold: false,
+  muted: false,
   gen: 0,
   attempts: 0,
 };
@@ -120,6 +138,8 @@ export type CallSignal = { gen?: number } & (
   | { type: "speechStop" }
   | { type: "final"; text: string }
   | { type: "degraded" }
+  | { type: "degradedOver" } //                the strained note's hold expired (see DEGRADED_NOTE_MS)
+  | { type: "setMuted"; on: boolean } //       the mute control (§6)
   | { type: "serverError"; code: string; message: string }
   | { type: "serverEnded" } //                 the relay said `state: ended`
   | { type: "barge" } //                       trigger A (voice) or B (tap) — the same edge
@@ -132,7 +152,10 @@ export type CallSignal = { gen?: number } & (
   | { type: "sent"; outcome: SendResult; text: string }
   | { type: "uploadSettled" }
   | { type: "captureLost" }
-  | { type: "hangup" } //                      the user's own exit
+  /** The user's own exit. Since S2b the OVERLAY does not send this — the shell owns "a call is up" and
+   *  ending it is `endCall()`, whose unmount IS the teardown — but the rule it carries is the same one
+   *  `hidden` needs, and the two share this arm. */
+  | { type: "hangup" }
   | { type: "hidden" } //                      §5.3: the page went away — a clean end, not an error
   | { type: "failed"; note: string } //        the call could not start at all
 );
@@ -145,6 +168,8 @@ export type CallEffect =
   | { type: "kill" }
   | { type: "harvest"; lines: string[] }
   | { type: "reconnect"; delayMs: number }
+  /** (Re)arm the strained note's hold — the relay never says "recovered", so the client times it out. */
+  | { type: "degradeHold" }
   /** Release everything. `close` additionally dismisses the overlay — the user's own exit gets no
    *  terminal screen (§6); an `error`/`ended` terminal keeps the overlay up to say why. */
   | { type: "teardown"; close: boolean };
@@ -193,6 +218,10 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
       userSpeechActive: false,
       waitingFinal: false,
       killing: false,
+      // …`muted` included: the terminal's teardown RELEASES the capture, so a closed ear is not a state
+      // any more, and the terminal face carries no control to reopen it. A ring still wearing the static
+      // muted look there would be describing something that no longer exists.
+      muted: false,
       gen: s.gen + 1,
     },
     out,
@@ -251,12 +280,34 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
       // The flag only. The ACTION (trigger A) waits on the client's sustained-energy floor, which the
       // wiring measures off the worklet's own RMS and delivers as `barge` — Speaches fires
       // `speech_started` on first detection and has no minimum-speech knob (council F2).
+      // MUTED: ignored. The frames are silence, but the server's VAD can still be mid-utterance when the
+      // mute lands, and a stale start would light "speaking" on a screen whose whole point is that the
+      // ear is closed.
+      if (s.muted) return { state: s, out: [] };
       return { state: { ...s, userSpeechActive: true }, out: [] };
 
     case "speechStop":
+      if (s.muted) return { state: s, out: [] };
       return { state: { ...s, userSpeechActive: false, waitingFinal: true }, out: [] };
 
+    case "setMuted":
+      // MUTE CONDEMNS THE HALF-UTTERANCE (§6, owner-ratified). Both flags clear with the same edge: the
+      // words in flight are not going to be sent, so nothing waits on them — and §4.2's iron rule (no
+      // playback while `userSpeechActive || waitingFinal`) must not go on killing replies over a final
+      // that is never coming. Unmuting is simply the ear opening again; the next utterance is fresh.
+      if (sig.on) {
+        return {
+          state: { ...s, muted: true, userSpeechActive: false, waitingFinal: false },
+          out: [],
+        };
+      }
+      return { state: { ...s, muted: false }, out: [] };
+
     case "final": {
+      // "Mute means don't send that" (owner-ratified), applied FLAT: a final that arrives while muted is
+      // dropped whether it is the condemned half-utterance or one the server endpointed a moment before
+      // the tap. One rule, no window where the words go out anyway.
+      if (s.muted) return { state: s, out: [] };
       const text = sig.text.trim();
       // Empty finals are discarded (§4.5's no-speech path): nothing submits, the flag clears.
       if (!text) return { state: { ...s, waitingFinal: false }, out: [] };
@@ -357,7 +408,14 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
       break;
 
     case "degraded":
-      return { state: { ...s, note: CALL_COPY.strained }, out: [] };
+      return { state: { ...s, note: CALL_COPY.strained }, out: [{ type: "degradeHold" }] };
+
+    case "degradedOver":
+      // Clears ONLY the note it was armed for. Anything else standing there — a refused send, a mouth
+      // failure, a nonfatal upstream error — arrived AFTER the degrade and is newer news; a timer that
+      // clobbered it would silently retract a message the owner has not read yet.
+      if (s.note !== CALL_COPY.strained) return { state: s, out: [] };
+      return { state: { ...s, note: null }, out: [] };
 
     case "serverError":
       switch (sig.code) {
@@ -393,10 +451,12 @@ export interface CallView {
   heard: string;
   note: string | null;
   userSpeechActive: boolean;
-  /** The user's exit: instant, total, no terminal screen. */
-  hangUp: () => void;
+  /** The ear is closed (§6) — a STATIC look on the ring/accent, never a pulse. */
+  muted: boolean;
   /** Trigger B — a tap outside the control cluster during `speaking` (§4.3). Inert elsewhere. */
   interrupt: () => void;
+  /** Mute/unmute the ear. The track goes silent; the frames keep flowing (see `PcmCapture.setMuted`). */
+  toggleMute: () => void;
 }
 
 export function useLiveCall(): CallView {
@@ -411,6 +471,8 @@ export function useLiveCall(): CallView {
   const capture = useRef<PcmCapture | null>(null);
   const socket = useRef<LiveSocket | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** The strained note's hold — re-armed by every `degraded` frame, cleared by the teardown. */
+  const degradeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wakeLock = useRef<WakeLockSentinel | null>(null);
   /** Sustained above-floor milliseconds — trigger A's own clock, fed by the worklet's per-frame RMS. */
   const sustained = useRef(0);
@@ -425,6 +487,7 @@ export function useLiveCall(): CallView {
   /** Release EVERYTHING, on every exit path (§6's "hang up = immediate full teardown"). Idempotent. */
   const teardown = useCallback((): void => {
     clearTimeout(retryTimer.current);
+    clearTimeout(degradeTimer.current);
     socket.current?.close();
     socket.current = null;
     capture.current?.stop();
@@ -487,6 +550,17 @@ export function useLiveCall(): CallView {
             retryTimer.current = setTimeout(() => {
               if (ref.current.gen === gen) openLegRef.current();
             }, eff.delayMs);
+            break;
+          }
+          case "degradeHold": {
+            // Fenced like every other armed callback (F7): a hold armed in this call cannot clear a note
+            // belonging to the next one. Re-arming beats accumulating — one hold, always the newest.
+            const gen = ref.current.gen;
+            clearTimeout(degradeTimer.current);
+            degradeTimer.current = setTimeout(
+              () => send({ type: "degradedOver", gen }),
+              DEGRADED_NOTE_MS,
+            );
             break;
           }
           case "teardown":
@@ -691,16 +765,27 @@ export function useLiveCall(): CallView {
     return () => document.removeEventListener("visibilitychange", onHidden);
   }, [send]);
 
-  const hangUp = useCallback(() => send({ type: "hangup" }), [send]);
   const interrupt = useCallback(() => send({ type: "barge", gen: ref.current.gen }), [send]);
+
+  /** The mute control: the TRACK first (the samples go silent immediately, before any render), then the
+   *  rule change. Trigger A's own clock is reset with it — silent frames read ~0 RMS and would decay it
+   *  anyway, but a counter left standing at the edge of its floor is a barge-in waiting to fire off
+   *  audio nobody sent, and "the ear is closed" has to mean it. */
+  const toggleMute = useCallback((): void => {
+    const on = !ref.current.muted;
+    capture.current?.setMuted(on);
+    if (on) sustained.current = 0;
+    send({ type: "setMuted", on, gen: ref.current.gen });
+  }, [send]);
 
   return {
     phase: state.phase,
     heard: state.heard,
     note: state.note,
     userSpeechActive: state.userSpeechActive,
-    hangUp,
+    muted: state.muted,
     interrupt,
+    toggleMute,
   };
 }
 

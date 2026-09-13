@@ -314,11 +314,24 @@ describe("callReduce — terminals (§4.3/§4.5)", () => {
     expect(out).toEqual([]);
   });
 
-  it("`degraded` is a line, not a state change", () => {
+  it("`degraded` is a line, not a state change — and it arms its own hold", () => {
     const { state, out } = run(speaking, [{ type: "degraded" }]);
     expect(state.phase).toBe("speaking");
     expect(state.note).toBe(CALL_COPY.strained);
-    expect(out).toEqual([]);
+    // The relay says the bad news ONCE and never says "recovered", so the note is held by a client
+    // timer instead of standing for the rest of the call (S2b).
+    expect(out).toEqual([{ type: "degradeHold" }]);
+  });
+
+  it("the strained note times out — but ONLY ever clears itself", () => {
+    const strained = run(speaking, [{ type: "degraded" }]).state;
+    expect(run(strained, [{ type: "degradedOver" }]).state.note).toBeNull();
+
+    // A NEWER note standing where the degrade's used to be is newer news: a timer armed by the degrade
+    // must not retract a message the owner has not read yet.
+    const newer = run(strained, [{ type: "playbackFailed" }]).state;
+    expect(newer.note).toBe(CALL_COPY.voiceFailed);
+    expect(run(newer, [{ type: "degradedOver" }]).state.note).toBe(CALL_COPY.voiceFailed);
   });
 
   it("a mouth failure is nonfatal: back to listening, the ear keeps working", () => {
@@ -416,6 +429,72 @@ describe("callReduce — send outcomes (F8)", () => {
     const { state, out } = run(sent.state, [{ type: "sent", outcome: "accepted", text: "ok" }]);
     expect(out).toEqual([]);
     expect(state.phase).toBe("thinking");
+  });
+});
+
+describe("callReduce — MUTE (§6, the one mechanism)", () => {
+  /** Mid-utterance: the ear has an open segment and its transcript is still coming. */
+  const midUtterance = run(listening, [{ type: "speechStart" }, { type: "speechStop" }]).state;
+
+  it("condemns the half-utterance: both flags clear the moment the ear closes", () => {
+    expect(midUtterance.waitingFinal).toBe(true);
+    const { state } = run(midUtterance, [{ type: "setMuted", on: true }]);
+    expect(state.muted).toBe(true);
+    expect(state.userSpeechActive).toBe(false);
+    // …which is also what keeps §4.2's iron rule from killing playback forever over a final that is
+    // never coming: `waitingFinal` cannot be left standing on words nobody is going to send.
+    expect(state.waitingFinal).toBe(false);
+  });
+
+  it("a final arriving while muted is dropped FLAT — nothing queues, nothing is heard", () => {
+    const muted = run(midUtterance, [{ type: "setMuted", on: true }]).state;
+    const { state, out } = run(muted, [{ type: "final", text: "the doorbell" }]);
+    expect(out).toEqual([]);
+    expect(state.pending).toEqual([]);
+    expect(state.heard).toBe("");
+    expect(state.waitingFinal).toBe(false);
+  });
+
+  it("ignores a VAD race: a start/stop pair delivered after the mute changes nothing", () => {
+    const muted = run(listening, [{ type: "setMuted", on: true }]).state;
+    const { state } = run(muted, [{ type: "speechStart" }, { type: "speechStop" }]);
+    expect(state.userSpeechActive).toBe(false);
+    expect(state.waitingFinal).toBe(false);
+  });
+
+  it("unmuting is a FRESH utterance — the next final goes out normally", () => {
+    const back = run(listening, [
+      { type: "setMuted", on: true },
+      { type: "final", text: "swallowed" },
+      { type: "setMuted", on: false },
+    ]).state;
+    expect(back.muted).toBe(false);
+    const { state, out } = run(back, [{ type: "final", text: "where were we" }]);
+    expect(submits(out)).toEqual(["where were we"]);
+    expect(state.phase).toBe("thinking");
+  });
+
+  it("tap-to-interrupt still works while muted (§6)", () => {
+    const mutedSpeaking = run(speaking, [{ type: "setMuted", on: true }]).state;
+    const { state, out } = run(mutedSpeaking, [{ type: "barge" }]);
+    expect(out).toEqual([{ type: "kill" }]);
+    expect(state.killing).toBe(true);
+  });
+
+  it("a TERMINAL releases the mute with every other flag — the ear is gone, not closed", () => {
+    const muted = run(listening, [{ type: "setMuted", on: true }]).state;
+    const { state } = run(muted, [{ type: "captureLost" }]);
+    expect(state.phase).toBe("error");
+    expect(state.muted).toBe(false); // the terminal face carries no control to reopen it
+  });
+
+  it("a REDIAL starts unmuted — `muted` rides CALL_INITIAL, like every other flag", () => {
+    expect(CALL_INITIAL.muted).toBe(false);
+    // A hang-up rebuilds the state from CALL_INITIAL, which is the same shape a fresh mount starts in.
+    const { state } = run(run(listening, [{ type: "setMuted", on: true }]).state, [
+      { type: "hangup" },
+    ]);
+    expect(state.muted).toBe(false);
   });
 });
 

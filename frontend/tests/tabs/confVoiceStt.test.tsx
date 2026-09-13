@@ -78,6 +78,23 @@ const makeSettings = () => ({
       timeout_s: 30,
       extra_body: {},
     },
+    // D71 §5.1 — the third voice service on the SAME object (never a sibling `live_call:` map).
+    live: {
+      enabled: false,
+      provider: null,
+      model: null,
+      fallbacks: [],
+      connect_timeout_s: 3,
+      timeout_s: 30,
+      extra_body: {},
+      vad_threshold: 0.9,
+      silence_ms: 700,
+      min_speech_ms: 300,
+      barge_threshold: 0,
+      barge_in: true,
+      ring: true,
+      echo_workaround: "auto",
+    },
   },
   notifications: {
     enabled: false,
@@ -217,6 +234,16 @@ const saveButton = () =>
 const voiceOf = (call = 0) =>
   (h.save.mock.calls[call][0] as { voice?: { stt?: Record<string, unknown> } }).voice?.stt;
 
+/** …and the Live call group beside it (D71 §5.1 — its OWN section, not rows in the voice groups). */
+const liveGroup = () => {
+  const el = document.getElementById("voice-live");
+  if (!el) throw new Error("the Live call group is not rendered");
+  return within(el);
+};
+const liveField = (name: string) => liveGroup().getByLabelText<HTMLInputElement>(name);
+const liveOf = (call = 0) =>
+  (h.save.mock.calls[call][0] as { voice?: { live?: Record<string, unknown> } }).voice?.live;
+
 describe("ConfTab · auto-stop dictation rows (R51 Tier 0)", () => {
   it("renders the toggle + both thresholds in the STT group, from the live config", () => {
     render(<ConfTab active />);
@@ -250,5 +277,57 @@ describe("ConfTab · auto-stop dictation rows (R51 Tier 0)", () => {
     fireEvent.change(field("Silence threshold"), { target: { value: "" } });
     fireEvent.click(saveButton());
     expect(voiceOf()?.auto_stop_threshold).toBe(0);
+  });
+});
+
+describe("ConfTab · the Live call section (D71 §5.1)", () => {
+  it("renders the behaviour toggles + the tuning numerics from the live config", () => {
+    render(<ConfTab active />);
+    expect(liveGroup().getByLabelText("Live call enabled").getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    expect(liveGroup().getByLabelText("Live call barge-in").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(liveGroup().getByLabelText("Live call ring").getAttribute("aria-checked")).toBe("true");
+    expect(liveGroup().getByRole("button", { name: "auto" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(liveField("Speech threshold").value).toBe("0.9");
+    expect(liveField("Silence window").value).toBe("700");
+    expect(liveField("Minimum speech").value).toBe("300");
+    expect(liveField("Interruption threshold").value).toBe("0");
+  });
+
+  it("saves the whole section coerced — and `voice.stt` rides along untouched", () => {
+    render(<ConfTab active />);
+    fireEvent.click(liveGroup().getByLabelText("Live call enabled"));
+    fireEvent.click(liveGroup().getByLabelText("Live call ring"));
+    fireEvent.click(liveGroup().getByRole("button", { name: "off" }));
+    fireEvent.change(liveField("Silence window"), { target: { value: "900" } });
+    fireEvent.change(liveField("Interruption threshold"), { target: { value: "0.02" } });
+    fireEvent.click(saveButton());
+
+    expect(liveOf()).toMatchObject({
+      enabled: true,
+      ring: false,
+      echo_workaround: "off",
+      silence_ms: 900, // coerced, not the typed "900"
+      barge_threshold: 0.02,
+    });
+    // The section is edited on the ONE voice object, so its neighbours ride the same patch unharmed.
+    expect(voiceOf()).toMatchObject({ auto_stop_threshold: 0.01 });
+  });
+
+  it("a CLEARED zero-floored numeric rides as NULL — a visible 422, never a silent meaning", () => {
+    // `barge_threshold: 0` MEANS "reuse the STT threshold" and `min_speech_ms: 0` means "no floor", so
+    // a blank coercing to 0 (what bare `Number("")` does) would silently reconfigure the call instead
+    // of surfacing the mistake — the wake timings' documented rule, for the same reason.
+    render(<ConfTab active />);
+    fireEvent.change(liveField("Interruption threshold"), { target: { value: "" } });
+    fireEvent.change(liveField("Minimum speech"), { target: { value: "" } });
+    fireEvent.click(saveButton());
+    expect(liveOf()?.barge_threshold).toBeNull();
+    expect(liveOf()?.min_speech_ms).toBeNull();
   });
 });

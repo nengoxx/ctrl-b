@@ -15,6 +15,7 @@ import {
   togglePlay,
   useMouthFailures,
   usePlayback,
+  usePlayIntent,
   type ChunkPolicy,
 } from "../../src/lib/audioController";
 
@@ -469,6 +470,42 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(lastAudio.src).toBe("blob:2");
     expect(lastAudio.paused).toBe(false);
     expect(result.current.status).toBe("playing"); // a GENUINE loading→playing transition
+  });
+
+  it("PUBLISHES THE PLAY INTENT through a gap — what the transport button's face is about (S2b)", async () => {
+    // The MiniPlayer used to `disabled` its play/pause on `loading`, which locked the owner out of
+    // pausing for the whole of a mid-reply synthesis gap — while the controller supported it all along.
+    // Intent is its OWN published value for exactly that reason: `status` says what the element is
+    // DOING, and through a gap that is honestly "loading" while the owner's intent is still "play".
+    const calls = deferredFetch();
+    const { result } = renderHook(() => usePlayback((p) => p.status));
+    const intent = renderHook(() => usePlayIntent());
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    expect(result.current).toBe("playing");
+    expect(intent.result.current).toBe(true);
+
+    await act(async () => lastAudio.finish()); // caught up: the honest "loading" gap
+    await flush();
+    expect(result.current).toBe("loading");
+    expect(intent.result.current).toBe(true); // …and the button still reads "pause", because it is
+
+    act(() => togglePlay()); // THE TAP THE OLD `disabled` SWALLOWED
+    expect(intent.result.current).toBe(false);
+    expect(result.current).toBe("paused");
+
+    act(() => togglePlay()); // …and lifting it again re-arms the latch without lying about audio
+    expect(intent.result.current).toBe(true);
+    expect(result.current).toBe("loading");
+
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    expect(lastAudio.paused).toBe(false); // the catch-up latch still works, both ways through it
+    expect(result.current).toBe("playing");
+    expect(intent.result.current).toBe(true);
   });
 
   it("skips a failed chunk and keeps reading — one toast for the whole message", async () => {

@@ -1,6 +1,12 @@
 import { useLayoutEffect, useState, type RefObject } from "react";
 
-import { focalPosition, type FocalArt, type FocalBox } from "../lib/focalPosition";
+import {
+  focalLanding,
+  focalPosition,
+  type FocalArt,
+  type FocalBox,
+  type FocalPoint,
+} from "../lib/focalPosition";
 
 // ONE WINDOW's reading of an item's framing point (D65 / MEDIA_MANAGER_PLAN §5, council H3).
 //
@@ -44,10 +50,37 @@ export function useFocalPosition(
   ref: RefObject<Element | null>,
   art: FocalArt | undefined,
 ): string | undefined {
-  const [box, setBox] = useState<FocalBox | null>(null);
   // Only a CENTRED item has anything to measure for. Read as a primitive so the effect's dependency
   // is a boolean rather than the freshly-built object a resolver returns on every render.
-  const measured = art?.mode === "centred";
+  const box = useFocalBox(ref, art?.mode === "centred");
+  return art === undefined ? undefined : focalPosition(art, box);
+}
+
+/** WHERE the framing point LANDS in that same window, in its own pixels (D71 §6) — the call ring's
+ *  anchor, which is `focalLanding` over the one box this measures. `null` = unanchorable (a
+ *  proportional item, no point, or a box that has not been measured yet) and the caller paints its own
+ *  fallback anchor.
+ *
+ *  **Coordinate discipline (D71 delta round F9).** The box is the ELEMENT's own, and the caller draws
+ *  the ring inside that same element's coordinate space — so no window/visual-viewport offset enters
+ *  the calculation at all, and Android's URL-bar and keyboard transitions (which move the visual
+ *  viewport without a useful `window.resize`) cannot desync it. The observer below sees any resize of
+ *  the box itself, which is the only thing that can move the landing. */
+export function useFocalAnchor(
+  ref: RefObject<Element | null>,
+  art: FocalArt | undefined,
+): FocalPoint | null {
+  const box = useFocalBox(ref, art?.mode === "centred");
+  return art === undefined ? null : focalLanding(art, box);
+}
+
+/** The ONE measurement both readings share: this window's painted box, or `null` while it cannot be
+ *  known. Shared rather than copied because every line of it is a rule learned once — a zero box is not
+ *  a measurement, a same-value write must not re-render every consumer, and jsdom ships no
+ *  `ResizeObserver`. `measured` is the caller's "is there anything to measure for": false costs no
+ *  observer at all, which is what keeps the bundled proportional art free. */
+function useFocalBox(ref: RefObject<Element | null>, measured: boolean): FocalBox | null {
+  const [box, setBox] = useState<FocalBox | null>(null);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -77,5 +110,5 @@ export function useFocalPosition(
     return () => ro.disconnect();
   }, [ref, measured]);
 
-  return art === undefined ? undefined : focalPosition(art, box);
+  return box;
 }

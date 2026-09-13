@@ -42,11 +42,16 @@ interface Relay {
   uplink: (string | number)[];
   /** Push a downlink frame to the connected client. */
   say: (frame: unknown) => Promise<void>;
+  /** How many `start` controls the client has sent — one per SESSION, so a redial makes it two. */
+  starts: () => number;
   closed: () => boolean;
 }
 
 /** Boot the agent tab with the `live` bit up, a fake mic, a scripted relay and a counted chat door. */
-async function boot(page: import("@playwright/test").Page, opts: { holdChat?: boolean } = {}) {
+async function boot(
+  page: import("@playwright/test").Page,
+  opts: { holdChat?: boolean; ring?: boolean } = {},
+) {
   const uplink: (string | number)[] = [];
   const sends: Record<string, unknown>[] = [];
   let socket: import("@playwright/test").WebSocketRoute | null = null;
@@ -63,7 +68,7 @@ async function boot(page: import("@playwright/test").Page, opts: { holdChat?: bo
         live: true,
         stt_auto_send: false,
         tts_chunking: { mode: "off", read_along: false, format: "opus" },
-        live_call: LIVE_CALL,
+        live_call: { ...LIVE_CALL, ring: opts.ring ?? LIVE_CALL.ring },
       }),
     }),
   );
@@ -102,6 +107,10 @@ async function boot(page: import("@playwright/test").Page, opts: { holdChat?: bo
 
   const relay: Relay = {
     uplink,
+    starts: () =>
+      uplink.filter(
+        (u) => typeof u === "string" && (JSON.parse(u) as { type: string }).type === "start",
+      ).length,
     say: async (frame) => {
       await expect.poll(() => socket !== null).toBe(true);
       socket!.send(JSON.stringify(frame));
@@ -118,8 +127,12 @@ async function startCall(page: import("@playwright/test").Page) {
   const box = (await mic.boundingBox())!;
   const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 
-  await page.mouse.click(at.x, at.y); // tap → call mode
-  await expect(mic).toHaveAttribute("aria-label", "start a voice call");
+  // Tap SWITCHES mode, so a second call in the same session is already there (there is no mode memory
+  // across loads, but the gesture keeps its own within one — S0.5's rule).
+  if ((await mic.getAttribute("aria-label")) !== "start a voice call") {
+    await page.mouse.click(at.x, at.y); // tap → call mode
+    await expect(mic).toHaveAttribute("aria-label", "start a voice call");
+  }
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
   await page.waitForTimeout(300); // past the 150 ms activation → the "slide up to call" pill
@@ -205,6 +218,127 @@ test("the relay's `busy` ends the call with the other call named", async ({ page
   // A terminal KEEPS the overlay up to say why; the button becomes the way out.
   await page.locator(".kit-call-hangup").click();
   await expect(page.locator(overlay)).toHaveCount(0);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+// ── S2b: the overlay's presentation + furniture (§6) ──────────────────────────────────────────────
+
+test("MUTE closes the ear: the face flips and a final heard while muted never submits", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay, sends } = await boot(page);
+  await startCall(page);
+  await relay.say({ type: "state", state: "ready" });
+
+  await page.getByRole("button", { name: "Mute" }).click();
+  await expect(page.getByRole("button", { name: "Unmute" })).toBeVisible();
+  await expect(page.locator(overlay)).toHaveClass(/muted/);
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Muted");
+
+  // The uplink KEEPS FLOWING while muted (delta round F3's one mechanism: Speaches must observe the
+  // silence to endpoint), so a final can genuinely arrive here — and it is dropped flat.
+  const before = relay.uplink.filter((u) => typeof u === "number").length;
+  await relay.say({ type: "transcript", text: "the doorbell, not you", final: true });
+  await expect
+    .poll(() => relay.uplink.filter((u) => typeof u === "number").length)
+    .toBeGreaterThan(before);
+  await expect(page.locator(`${overlay} .kit-call-heard`)).toHaveText("");
+  expect(sends).toHaveLength(0);
+
+  // Unmute → a fresh utterance goes out the ordinary door.
+  await page.getByRole("button", { name: "Unmute" }).click();
+  await expect(page.getByRole("button", { name: "Mute" })).toBeVisible();
+  await relay.say({ type: "transcript", text: "where were we", final: true });
+  await expect.poll(() => sends.length).toBe(1);
+  expect(sends[0].text).toBe("where were we");
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("the RING mode knob decides which indicator the screen wears", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay } = await boot(page);
+  await startCall(page);
+  await relay.say({ type: "state", state: "ready" });
+  // Ring mode: the stroke is drawn over the art and the phase line carries no dot — one indicator.
+  await expect(page.locator(`${overlay} .kit-call-ring-stroke`)).toHaveCount(1);
+  await expect(page.locator(`${overlay} .kit-call-dot`)).toHaveCount(0);
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("…and with `ring: false` the state rides the transcript line instead", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay } = await boot(page, { ring: false });
+  await startCall(page);
+  await relay.say({ type: "state", state: "ready" });
+  await expect(page.locator(`${overlay} .kit-call-ring`)).toHaveCount(0);
+  await expect(page.locator(`${overlay} .kit-call-heard .kit-call-dot`)).toHaveCount(1);
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("a terminal face redials through the SAME door, and the new machine starts fresh", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay } = await boot(page);
+  await startCall(page);
+  await relay.say({ type: "state", state: "ready" });
+  await page.getByRole("button", { name: "Mute" }).click(); // …so "fresh" is provable
+  await expect(page.locator(overlay)).toHaveClass(/muted/);
+
+  await relay.say({ type: "error", code: "upstream", message: "the ear fell over" });
+  await expect(page.locator(`${overlay} .kit-call-note`)).toHaveText("the ear fell over");
+  await expect(page.getByRole("button", { name: "Call again" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close" })).toBeVisible();
+  expect(relay.starts()).toBe(1);
+
+  await page.getByRole("button", { name: "Call again" }).click();
+  // MOUNTING IS STARTING: the key bump tore the old machine down and built a new one, which opened a
+  // second SESSION and carries none of the first one's state — not its note, and not its mute.
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Connecting");
+  await expect(page.locator(overlay)).not.toHaveClass(/muted/);
+  await expect(page.locator(`${overlay} .kit-call-note`)).toHaveCount(0);
+  await expect.poll(() => relay.starts()).toBe(2);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("the BACK gesture hangs up instead of navigating the app out from under the call", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay } = await boot(page);
+  const url = page.url();
+  await startCall(page);
+  await relay.say({ type: "state", state: "ready" });
+
+  // ONE back closes the call and leaves the app exactly where it was — the single most common way a
+  // PWA loses its user is the overlay that does not trap Back.
+  await page.evaluate(() => history.back());
+  await expect(page.locator(overlay)).toHaveCount(0);
+  await expect(page.locator("#composer")).toBeVisible();
+  expect(page.url()).toBe(url);
+  await expect.poll(() => relay.closed()).toBe(true);
+
+  // …and a REDIAL leaves exactly one entry too. This is the case that can leak: the old overlay
+  // unmounts with its entry UNSPENT (the guard reclaims it) while the new one pushes its own, and a
+  // miscount there costs the owner a second Back press for one call.
+  await startCall(page);
+  // The relay handle follows the NEWEST connection, so wait for this call's own `start` before
+  // scripting it — otherwise the frame goes down the socket the first call already closed.
+  await expect.poll(() => relay.starts()).toBe(2);
+  await relay.say({ type: "error", code: "upstream", message: "the ear fell over" });
+  await page.getByRole("button", { name: "Call again" }).click();
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Connecting");
+  await page.evaluate(() => history.back());
+  await expect(page.locator(overlay)).toHaveCount(0);
+  expect(page.url()).toBe(url);
 
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });

@@ -638,7 +638,7 @@ function startChunked(id: string, markdown: string, seq: number, agent: string |
     s.abort = new AbortController();
     s.playIdx = -1;
     s.waiting = false;
-    s.wantPlay = true;
+    setIntent(s, true);
     s.parked = false; // a replay is a live queue — a stale flag would let a retried chunk's failure
     // drop the session mid-listen instead of taking the ordinary skip (confirm-round catch)
     // C3 S2 — only a read-along queue is ever RETAINED with holes in it (ruling 3); this replay is
@@ -1018,7 +1018,7 @@ function transport(): void {
   const a = ensureEl();
   const s = liveSession();
   if (pb.status === "playing") {
-    if (s) s.wantPlay = false;
+    if (s) setIntent(s, false);
     a.pause();
     if (pb.status === "playing") set({ status: "paused" }); // latched: no `pause` event will do it
     return;
@@ -1026,17 +1026,17 @@ function transport(): void {
   if (pb.status === "loading" && s?.waiting) {
     // A pause under an HONEST catch-up gap — both latch branches publish "loading" now (the review
     // wave + its rider), and the pinned latch contract ("a pause taken under the latch survives it")
-    // must survive the honest status: the bubble's speaker button stays tappable through a gap even
-    // though the MiniPlayer's transport disables. Initial synth (`waiting` false — no chunk has ever
-    // played) keeps ignoring taps exactly as before.
-    s.wantPlay = false;
+    // must survive the honest status: both transports stay tappable through a gap (the MiniPlayer's
+    // too, since S2b — its face rides `playIntent` instead of disabling on "loading"). Initial synth
+    // (`waiting` false — no chunk has ever played) keeps ignoring taps exactly as before.
+    setIntent(s, false);
     set({ status: "paused" });
     return;
   }
   if (pb.status !== "paused") return; // loading → ignore taps until it resolves
   if (s) {
     const replay = s.parked; // parked = the end-of-queue rewind: this tap replays, not resumes
-    s.wantPlay = true;
+    setIntent(s, true);
     s.parked = false; // resuming (a replay included) makes it an ordinary live queue again
     // C3 S2 (ruling 3's rider) — a read-along queue parks WITH its holes, so the replay is what
     // re-requests them. `pump` only looks forward of the cursor, so a hole BEHIND the rewind point
@@ -1136,7 +1136,7 @@ function seekChunked(s: Session, f: number): void {
   s.metaSeek?.();
   s.parked = false; // a navigation makes the parked queue live again
   const play = pb.status === "playing"; // the latch already encodes intent in the published status
-  s.wantPlay = play;
+  setIntent(s, play);
 
   if (s.states[i] === "ok") {
     s.seek = null;
@@ -1201,4 +1201,33 @@ export function clearAudioCache(): void {
  */
 export function usePlayback<T>(selector: (p: Playback) => T): T {
   return useStore(() => selector(pb));
+}
+
+/** Write the queue's play INTENT and PUBLISH it. Intent moves without the status moving — that is the
+ *  whole point of it (a pause taken under a catch-up latch, a resume into a synthesis gap) — so a bare
+ *  assignment would leave every subscriber looking at a stale answer until some unrelated `set()`
+ *  happened to fire. One helper, one emit, no write site to remember. */
+function setIntent(s: Session, want: boolean): void {
+  if (s.wantPlay === want) return;
+  s.wantPlay = want;
+  emit();
+}
+
+/** THE USER'S PLAY INTENT — what a play/pause button's FACE is about, and deliberately not the same
+ *  question as `status`.
+ *
+ *  `status` says what the element is DOING, and under chunking it is honestly "loading" through every
+ *  silent gap (the S2a durable lesson: an intent published as a playback status is a lie some consumer
+ *  will eventually trust). A play/pause control is intent's UI: while the queue waits for the next
+ *  chunk with `wantPlay` still set, the button must read "pause" — the reply is not over, and a tap
+ *  still parks the intent under the latch. Without a queue there is no latch to survive and "playing"
+ *  IS the intent, which is what the fallback says. */
+export function playIntent(): boolean {
+  const s = liveSession();
+  return s ? s.wantPlay : pb.status === "playing";
+}
+
+/** The same answer, bound to React. */
+export function usePlayIntent(): boolean {
+  return useStore(playIntent);
 }

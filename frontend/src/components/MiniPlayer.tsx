@@ -71,11 +71,17 @@ export function MiniPlayer() {
 
   return (
     <div className="mini-player" role="group" aria-label="read-aloud player">
+      {/* THE TRANSPORT rides INTENT, not the element's status (D71 §7-S2b). A mid-reply synthesis gap
+          publishes the honest `loading`, and this button used to disable itself there — locking the
+          owner out of pausing a reply that is still going, for exactly as long as the queue was behind.
+          The controller has always supported it (`togglePlay` parks the intent under the latch); only
+          the face was wrong. So: the face and the name read `wantPlay`, and the only thing that hides
+          this control is the player's own self-hide when nothing is docked. The time label keeps its
+          `···` loading face — THAT one really is about what the element is doing. */}
       <button
         type="button"
-        className={"mp-play" + (np.playing ? " playing" : "")}
-        aria-label={np.playing ? "pause" : "play"}
-        disabled={np.loading}
+        className={"mp-play" + (np.wantPlay ? " playing" : "")}
+        aria-label={np.wantPlay ? "pause" : "play"}
         onClick={np.togglePlay}
       />
       <div

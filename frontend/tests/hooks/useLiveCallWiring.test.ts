@@ -42,6 +42,7 @@ const h = vi.hoisted(() => ({
   cancelTurn: vi.fn(async () => {}),
   appendDraft: vi.fn(),
   endCall: vi.fn(),
+  setMuted: vi.fn(),
 }));
 
 vi.mock("../../src/lib/audioController", () => ({
@@ -66,7 +67,12 @@ vi.mock("../../src/lib/liveSocket", () => ({
   },
 }));
 vi.mock("../../src/lib/pcmCapture", () => ({
-  startPcmCapture: async () => ({ sampleRate: 48000, echoCancellation: "all", stop: () => {} }),
+  startPcmCapture: async () => ({
+    sampleRate: 48000,
+    echoCancellation: "all",
+    setMuted: h.setMuted,
+    stop: () => {},
+  }),
 }));
 vi.mock("../../src/store/attachments", () => ({ useStagedFiles: () => h.staged }));
 vi.mock("../../src/store/chat", () => ({
@@ -95,6 +101,7 @@ beforeEach(() => {
   h.openGate.mockClear();
   h.dismiss.mockClear();
   h.appendDraft.mockClear();
+  h.setMuted.mockClear();
 });
 
 /** Mount the machine and connect it — `ready` is what makes the call `listening`. */
@@ -224,5 +231,69 @@ describe("useLiveCall — the held-upload retry latch (§4.5)", () => {
     await step(() => (h.staged = [{ status: "uploading" }]));
     await step(() => (h.staged = []));
     expect(texts()).toHaveLength(2); // the hold is over — a second settle retries nothing
+  });
+});
+
+describe("useLiveCall — the degraded note's hold (S2b)", () => {
+  it("stands, re-arms on a second burst, and clears itself when the link stays quiet", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, step } = await call();
+      await step(() => h.frame?.({ type: "state", state: "degraded" }));
+      expect(view.result.current.note).toBe("connection strained");
+
+      // Not yet: the relay emits one frame per overflow BURST, so the note has to outlive a gap
+      // between bursts or it would flicker on a link that is genuinely struggling.
+      await step(() => vi.advanceTimersByTime(5000));
+      expect(view.result.current.note).toBe("connection strained");
+      // A second burst RE-ARMS rather than accumulating…
+      await step(() => h.frame?.({ type: "state", state: "degraded" }));
+      await step(() => vi.advanceTimersByTime(5000));
+      expect(view.result.current.note).toBe("connection strained");
+
+      // …and past the full hold with nothing more arriving, the note goes: the relay never says
+      // "recovered", so this timer is the only thing that can stop the screen claiming otherwise.
+      await step(() => vi.advanceTimersByTime(2000));
+      expect(view.result.current.note).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is torn down with the call — a hold cannot outlive the machine that armed it", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, step } = await call();
+      await step(() => h.frame?.({ type: "state", state: "degraded" }));
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+      view.unmount();
+      // The teardown releases EVERYTHING (§6) — a hold armed by a call that is over has nothing left
+      // to be honest about, and a timer outliving its machine is how a stale note reaches the next one.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("useLiveCall — mute (§6)", () => {
+  it("flips the live TRACK and the machine together, and back", async () => {
+    const { view, step } = await call();
+    expect(view.result.current.muted).toBe(false);
+
+    await step(() => view.result.current.toggleMute());
+    expect(h.setMuted).toHaveBeenLastCalledWith(true);
+    expect(view.result.current.muted).toBe(true);
+
+    await step(() => view.result.current.toggleMute());
+    expect(h.setMuted).toHaveBeenLastCalledWith(false);
+    expect(view.result.current.muted).toBe(false);
+  });
+
+  it("a final heard while muted never reaches the chat door", async () => {
+    const { view, step, say } = await call();
+    await step(() => view.result.current.toggleMute());
+    await say("the doorbell, not you");
+    expect(texts()).toEqual([]);
   });
 });

@@ -11,6 +11,7 @@ import {
   seekFraction,
   togglePlay,
   usePlayback,
+  usePlayIntent,
   type ChunkSpan,
 } from "../lib/audioController";
 import { getUI, setUI, useUISlice } from "../store/ui";
@@ -47,6 +48,10 @@ export interface NowPlaying {
   active: boolean;
   loading: boolean;
   playing: boolean;
+  /** The user's play/pause INTENT — its OWN field, never folded into `status`/`playing` (the S2a durable
+   *  lesson). `playing` says what the element is doing; this says what the owner asked for, and they
+   *  differ for the whole of a mid-reply synthesis gap. The transport BUTTON rides this one. */
+  wantPlay: boolean;
   /** Progress 0..1 — the scrubber value + the filled-track look. */
   fraction: number;
   /** Seconds remaining — the time label. */
@@ -76,10 +81,12 @@ export function useNowPlaying(): NowPlaying {
   // The chunk map is a stable reference by contract (the controller rebuilds it only when a duration or
   // a chunk state moves), so selecting it here does NOT add a render per `timeupdate`.
   const chunks = usePlayback((p) => p.chunks);
+  const wantPlay = usePlayIntent();
   return {
     active,
     loading: status === "loading",
     playing: status === "playing",
+    wantPlay,
     fraction: duration > 0 ? Math.min(1, current / duration) : 0,
     remaining: duration > 0 ? Math.max(0, duration - current) : 0,
     duration,

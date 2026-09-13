@@ -32,6 +32,12 @@ export interface PcmCapture {
    *  system-loopback mode, `true`/`false` on a boolean-only implementation, `undefined` when the browser
    *  reports nothing at all. The one input to the trigger-A arming decision. */
   echoCancellation: string | boolean | undefined;
+  /** MUTE (§6's call furniture, D71 delta round F3 — the ONE mechanism). `track.enabled = false` keeps
+   *  the graph running and the uplink FLOWING: the samples become digital silence, and the frames keep
+   *  going out. That is the point — Speaches endpoints an utterance by OBSERVING silence, so starving it
+   *  of frames instead would leave a half-spoken phrase open to merge with whatever is said after the
+   *  unmute. Nothing else about the capture changes. */
+  setMuted: (muted: boolean) => void;
   /** Release everything: the worklet, the graph, the context, the track, and the Blob URL. Idempotent. */
   stop: () => void;
 }
@@ -109,6 +115,11 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
     return {
       sampleRate: ctx.sampleRate,
       echoCancellation: track.getSettings().echoCancellation,
+      setMuted: (muted: boolean) => {
+        // Guarded on `stopped` for the same reason every other exit here is: a released track is not a
+        // muted one, and re-enabling one the call has already torn down would be a lie about the ear.
+        if (!stopped) track.enabled = !muted;
+      },
       stop,
     };
   } catch (e) {

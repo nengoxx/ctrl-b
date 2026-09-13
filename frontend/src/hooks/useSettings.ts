@@ -99,6 +99,23 @@ export interface VoiceTts extends VoiceServiceCommon {
   chunk_read_along: boolean;
 }
 
+/** LIVE VOICE / call mode (Phase 24 / D71 §5.1 — `LiveCfg`, which extends the same `VoiceServiceCfg`
+ *  base stt/tts do: a blank `provider` with no fallbacks resolves like `voice.stt`, which is the common
+ *  case of one Speaches box serving both doors). Only the fields Conf EDITS are modelled — the relay's
+ *  own server-side caps (`frame_ms`, `max_frame_bytes`, `max_sessions`, `relay_queue_ms`,
+ *  `start_timeout_s`, `allowed_origins`) stay YAML-only and round-trip untouched through the draft,
+ *  exactly as every other unmodelled key in this doc does. */
+export interface VoiceLive extends VoiceServiceCommon {
+  enabled: boolean; //        whole-feature toggle (the master `voice.enabled` still outranks it)
+  vad_threshold: number; //   Silero speech-probability floor, 0..1 — rides `session.update`
+  silence_ms: number; //      the silence run that ends an utterance, 100..10000
+  min_speech_ms: number; //   client interruption floor, 0..5000
+  barge_threshold: number; // client RMS floor, 0..0.5; 0 = reuse `stt.auto_stop_threshold`
+  barge_in: boolean; //       hands-free interruption; off = tap-to-interrupt only
+  ring: boolean; //           §6 overlay mode: the focal-anchored face ring, or art-only
+  echo_workaround: string; // auto | on | off — the per-track loopback-AEC lever
+}
+
 /** One entry of `media.namespaces.<ns>.roles.<role>.files` — the library's unit of priority (D65 §2.2).
  *  Exactly one of `name`/`bundled` identifies it (the backend validates that); the open index keeps the
  *  entry's other per-item fields intact through a read-modify-write it does not interpret. */
@@ -181,7 +198,7 @@ export interface SettingsDoc {
     timeout_s: number;
     max_output_chars: number;
   };
-  voice: { enabled: boolean; stt: VoiceStt; tts: VoiceTts };
+  voice: { enabled: boolean; stt: VoiceStt; tts: VoiceTts; live: VoiceLive };
   // F1 — foreground notification preferences. Same shape as the always-on `GET /api/notifications`
   // read (`useNotificationPrefs`); edited here through the ordinary settings draft/PUT, since there
   // is exactly one write path for config.

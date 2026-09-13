@@ -5,6 +5,7 @@ import {
   circleFraming,
   clampZoom,
   focalAxis,
+  focalLanding,
   focalPosition,
   proportionalFocal,
   shiftFocalX,
@@ -277,5 +278,76 @@ describe("circleFraming — a circle needs no box", () => {
         focalPosition(centredFocal(point, 600, 800), box),
       );
     }
+  });
+});
+
+describe("focalLanding — WHERE the point ends up, in the box's own pixels (D71 §6, the ring's anchor)", () => {
+  const box = { width: 400, height: 400 };
+
+  it("a picture the box does not crop puts the point exactly where its fraction says", () => {
+    // s = 1 on both axes: no overflow, no clamp, nothing to choose. The landing is the plain fraction.
+    expect(focalLanding(centredFocal({ x: 0.25, y: 0.75 }, 800, 800), box)).toEqual({
+      x: 100,
+      y: 300,
+    });
+  });
+
+  it("a LANDSCAPE source: the cropped axis lands where the paint actually put it", () => {
+    // 2000x1000 into 400x400 -> s.x = 2, s.y = 1; drawn 800x400.
+    // f.x = 0.5 -> P = 0.5 -> offset −200 -> 0.5·800 − 200 = 200 (dead centre: it could be centred).
+    expect(focalLanding(centredFocal({ x: 0.5, y: 0.5 }, 2000, 1000), box)).toEqual({
+      x: 200,
+      y: 200,
+    });
+    // f.x = 0.25 -> P clamps to 0 (centring it would show a gap at the left), so the image's left edge
+    // sits at the box's and the point lands at 0.25·800 = 200. THE CLAMP is the whole reason this is
+    // not the naive `f · box`, which would have said 100 — half a frame out on a phone.
+    expect(focalLanding(centredFocal({ x: 0.25, y: 0.5 }, 2000, 1000), box)!.x).toBe(200);
+    // …and an off-centre point the crop CAN honour is centred, exactly like the paint.
+    expect(focalLanding(centredFocal({ x: 0.6, y: 0.5 }, 2000, 1000), box)!.x).toBe(200);
+    // A point so far right the clamp bites the other way: P = 1, offset = −400, 0.95·800 − 400 = 360.
+    expect(focalLanding(centredFocal({ x: 0.95, y: 0.5 }, 2000, 1000), box)!.x).toBeCloseTo(360, 6);
+  });
+
+  it("a PORTRAIT source crops the other axis, by the same rule", () => {
+    // 1000x2000 into 400x400 -> s.y = 2. f.y = 0.1 -> P = 0 -> 0.1·800 = 80.
+    expect(focalLanding(centredFocal({ x: 0.5, y: 0.1 }, 1000, 2000), box)).toEqual({
+      x: 200,
+      y: 80,
+    });
+  });
+
+  it("a NON-SQUARE box is no different — the landing is always that box's own pixels", () => {
+    // 1200x600 into 360x640 (a phone): scale = max(0.3, 1.0667) = 1.0667; s.x = 3.5556, s.y = 1.
+    const phone = { width: 360, height: 640 };
+    const at = focalLanding(centredFocal({ x: 0.5, y: 0.4 }, 1200, 600), phone)!;
+    expect(at.x).toBeCloseTo(180, 6); // centred: the crop can honour it
+    expect(at.y).toBeCloseTo(256, 6); // uncropped axis: 0.4 · 640
+  });
+
+  it("degrades to the raw point where the source's own size is unknown — the paint's own degrade", () => {
+    // `focalPosition` falls back to painting the point as percentages there, so the ring has to land
+    // where THAT puts it rather than where a cover crop we cannot compute would have.
+    expect(focalLanding(centredFocal({ x: 0.25, y: 0.75 }, null, null), box)).toEqual({
+      x: 100,
+      y: 300,
+    });
+  });
+
+  it("says UNANCHORABLE for a proportional item, an unmeasured box, or a degenerate one", () => {
+    // The bundled art's hand-tuned string carries no point at all — the caller uses its fallback anchor.
+    expect(focalLanding(proportionalFocal("50% 12%"), box)).toBeNull();
+    expect(focalLanding(centredFocal({ x: 0.5, y: 0.5 }, 800, 800), null)).toBeNull();
+    expect(
+      focalLanding(centredFocal({ x: 0.5, y: 0.5 }, 800, 800), { width: 0, height: 0 }),
+    ).toBeNull();
+  });
+
+  it("never leaves the box, and never answers NaN — an inline left/top has no forgiving degrade", () => {
+    const out = focalLanding(centredFocal({ x: 4, y: -2 }, 800, 800), box)!;
+    expect(out.x).toBe(400);
+    expect(out.y).toBe(0);
+    const nan = focalLanding(centredFocal({ x: Number.NaN, y: 0.5 }, 800, 800), box);
+    expect(nan).toBeNull();
   });
 });

@@ -92,7 +92,7 @@ import { UtilsContent } from "./UtilsTab";
 // The first group number of Conf's TAIL — the run of conditional groups after "Computers" (20): the hosted
 // groups actually present, then Appearance, then the media rows. Named rather than inlined so the ONE
 // arithmetic fact the tail depends on has a home (D70 §8.4a MED-2).
-const TAIL_FIRST_NUM = 21;
+const TAIL_FIRST_NUM = 22;
 
 // The satellite-placement seg's option labels, keyed on the shared vocabulary so the row's OPTIONS are
 // derived from `SECTION_PLACEMENTS` (one source, in its declared order) rather than re-listed here.
@@ -767,6 +767,28 @@ const MONITOR_FALLBACK: SettingsDoc["monitor"] = {
   down_after_checks: 3,
   up_after_checks: 2,
 };
+/** D71 §5.1 — the same defensive seed, for the same reason: the live backend always dumps `voice.live`
+ *  (`VoiceCfg` defaults it), so this only bites against a doc from an older/mismatched build — but the
+ *  Live call rows, the changed-section diff and the save-time coercion all assume a well-formed object,
+ *  and `undefined` propagating into `Number()` is a far worse failure than one explicit default. Values
+ *  mirror `LiveCfg`'s own field defaults. */
+const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
+  enabled: false,
+  provider: null,
+  model: null,
+  fallbacks: [],
+  connect_timeout_s: 3,
+  timeout_s: 30,
+  extra_body: {},
+  vad_threshold: 0.9,
+  silence_ms: 700,
+  min_speech_ms: 300,
+  barge_threshold: 0,
+  barge_in: true,
+  ring: true,
+  echo_workaround: "auto",
+};
+
 const WAKE_FALLBACK: SettingsDoc["wake"] = {
   cooldown_s: 300,
   presence_devices: [],
@@ -788,7 +810,9 @@ function pickDraft(s: SettingsDoc): Draft {
     embeddings: s.embeddings,
     open_terminal: s.open_terminal,
     shell: s.shell,
-    voice: s.voice,
+    // …and `live` field-wise on top of its own fallback, for the reason LIVE_FALLBACK states. Every
+    // other key of `voice` (including any the UI does not model) rides through untouched.
+    voice: { ...s.voice, live: { ...LIVE_FALLBACK, ...s.voice.live } },
     // `withEventDefaults` on top of the section fallback for the same field-wise reason as the two
     // sections below, plus one of its own: a doc from a build that predates an event class omits its
     // key, and a missing key renders the row UNCHECKED — and saves it that way.
@@ -931,7 +955,7 @@ export function ConfTab({ active }: Props) {
   const hostedTail: string[] = [];
   if (hostsUtils) hostedTail.push("utils");
   if (hostsAgents) hostedTail.push("agents");
-  /** The tail's Nth group number — "Computers" is 20, so the tail starts at 21. */
+  /** The tail's Nth group number — "Computers" is 21, so the tail starts at 22. */
   const tailNum = (i: number) => String(TAIL_FIRST_NUM + i).padStart(2, "0");
   const scrollTarget = useGroupScrollTarget();
   const themeVals = useUISlice((s) => s.themeSettings[theme]); // overrides for the active theme (or undefined)
@@ -1294,7 +1318,7 @@ export function ConfTab({ active }: Props) {
       const provs: Record<string, ProviderDoc> = {};
       for (const [k, v] of Object.entries(d.providers)) provs[k === from ? to : k] = v;
       // D48 C1 — the rename control rewrites every VISIBLE draft selector that pointed at the old name:
-      // the inference section AND the three Slice-2 section editors (voice.stt / voice.tts / embeddings),
+      // the inference section AND the four section editors (voice.stt / voice.tts / voice.live / embeddings),
       // each a primary `provider` + ordered `fallbacks[].provider`. Model names are provider-relative and
       // carry unchanged. (The reference-guard cascade + the queued `provider_renames` handle the rest.)
       const reref = <T extends { provider: string | null; fallbacks: SectionRef[] }>(s: T): T => ({
@@ -1307,7 +1331,12 @@ export function ConfTab({ active }: Props) {
         providers: provs,
         inference: reref(d.inference),
         embeddings: reref(d.embeddings),
-        voice: { ...d.voice, stt: reref(d.voice.stt), tts: reref(d.voice.tts) },
+        voice: {
+          ...d.voice,
+          stt: reref(d.voice.stt),
+          tts: reref(d.voice.tts),
+          live: reref(d.voice.live),
+        },
       };
     });
     setRenames((r) => {
@@ -1357,6 +1386,13 @@ export function ConfTab({ active }: Props) {
   function setTts<K extends keyof Draft["voice"]["tts"]>(key: K, val: Draft["voice"]["tts"][K]) {
     setDraft((d) => (d ? { ...d, voice: { ...d.voice, tts: { ...d.voice.tts, [key]: val } } } : d));
   }
+  // D71 §5.1 — live call is a THIRD voice service on the same object (never a sibling `live_call:` map),
+  // so it takes the same shape of setter as its two neighbours.
+  function setLive<K extends keyof Draft["voice"]["live"]>(key: K, val: Draft["voice"]["live"][K]) {
+    setDraft((d) =>
+      d ? { ...d, voice: { ...d.voice, live: { ...d.voice.live, [key]: val } } } : d,
+    );
+  }
   // A11/D48 Slice 2 — the primary provider+model refs for each consumer section (set together so a
   // provider switch resets the model in one draft update). Fallbacks flow through the section's own
   // `fallbacks` key via the setters above; the SectionRefEditor owns the row add/remove/reorder.
@@ -1376,6 +1412,16 @@ export function ConfTab({ active }: Props) {
         ? {
             ...d,
             voice: { ...d.voice, tts: { ...d.voice.tts, provider: v.provider, model: v.model } },
+          }
+        : d,
+    );
+  }
+  function setLivePrimary(v: PickerValue) {
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            voice: { ...d.voice, live: { ...d.voice.live, provider: v.provider, model: v.model } },
           }
         : d,
     );
@@ -1426,6 +1472,7 @@ export function ConfTab({ active }: Props) {
   const sh = draft?.shell;
   const vstt = draft?.voice.stt;
   const vtts = draft?.voice.tts;
+  const vlive = draft?.voice.live;
   const notif = draft?.notifications;
   const mon = draft?.monitor;
   const wk = draft?.wake;
@@ -1510,6 +1557,10 @@ export function ConfTab({ active }: Props) {
       ][] = [
         ["Voice STT", draft.voice.stt],
         ["Voice TTS", draft.voice.tts],
+        // D71 §5.1 — the live ear is a ModelRef section like the two above: a provider used ONLY by the
+        // call still blocks its own removal/rename. A BLANK primary with no fallbacks is the "resolve
+        // like stt" case and contributes no reference at all, which is exactly right.
+        ["Live voice", draft.voice.live],
         ["Embeddings", draft.embeddings],
       ];
       for (const [name, sec] of sectionRefs) {
@@ -1589,6 +1640,10 @@ export function ConfTab({ active }: Props) {
         ["inference", draft.inference],
         ["Voice STT", draft.voice.stt],
         ["Voice TTS", draft.voice.tts],
+        // …and it is strict-resolved server-side on exactly the same two rules (`provider_registry`
+        // builds a `voice.live` chain the moment a provider OR a fallback is set), so the same two
+        // pre-flight warnings apply. Both blank ⇒ neither pass fires, and the section rides stt.
+        ["Live voice", draft.voice.live],
         ["Embeddings", draft.embeddings],
       ];
       const liveProvider = (name: string) => draft.providers[renames[name] ?? name];
@@ -1719,6 +1774,19 @@ export function ConfTab({ active }: Props) {
           chunk_min_chars: Number(draft.voice.tts.chunk_min_chars),
           chunk_max_chars: Number(draft.voice.tts.chunk_max_chars),
           chunk_lookahead: Number(draft.voice.tts.chunk_lookahead),
+        },
+        // D71 §5.1. `silence_ms` takes the bare `Number` its neighbours take — the backend floors it at
+        // 100, so a cleared field earns the same visible 422. The other three take `numOrNull`, for the
+        // documented reason the wake timings do: their floor is ZERO and zero is a MEANINGFUL value
+        // (`barge_threshold: 0` = reuse the STT threshold; `min_speech_ms: 0` = no floor;
+        // `vad_threshold: 0` = every frame is speech), so a blank coercing to 0 would silently change
+        // the call's behaviour instead of surfacing the mistake.
+        live: {
+          ...draft.voice.live,
+          vad_threshold: numOrNull(draft.voice.live.vad_threshold),
+          silence_ms: Number(draft.voice.live.silence_ms),
+          min_speech_ms: numOrNull(draft.voice.live.min_speech_ms),
+          barge_threshold: numOrNull(draft.voice.live.barge_threshold),
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
@@ -2636,10 +2704,105 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
+      {/* D71 §5.1 — LIVE CALL gets its OWN section (owner ruling 2026-09-11), not rows tucked into the
+          voice groups above: interruption-and-friends are exactly the knobs the owner wants to tweak
+          from the phone, and they want one clearly-named place. The YAML shape is untouched — this is
+          still `voice.live`, the third service on the one voice object; only the Conf grouping is its
+          own. Same rows, same setters, same save bar as its two neighbours. */}
+      <ConfGroup id="voice-live" num="11" title="Live call" right="call mode">
+        <div className="conf-card">
+          <SettingRow
+            label="Enabled"
+            desc="the call button in the composer; needs STT, TTS and a realtime target — edits apply to the NEXT call"
+          >
+            <Switch
+              on={!!vlive?.enabled}
+              label="Live call enabled"
+              onToggle={() => setLive("enabled", !vlive?.enabled)}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Hands-free interruption"
+            desc="talk over the reply to cut it off; off → tap the call screen to interrupt"
+          >
+            <Switch
+              on={!!vlive?.barge_in}
+              label="Live call barge-in"
+              onToggle={() => setLive("barge_in", !vlive?.barge_in)}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Face ring"
+            desc="a ring over the art showing the call's state; off → the art alone"
+          >
+            <Switch
+              on={!!vlive?.ring}
+              label="Live call ring"
+              onToggle={() => setLive("ring", !vlive?.ring)}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Echo cancellation"
+            desc="auto → detected per microphone at call start (never guessed from the browser name)"
+          >
+            <Seg<string>
+              label="Echo cancellation"
+              current={vlive?.echo_workaround ?? "auto"}
+              options={[
+                { val: "auto", label: "auto" },
+                { val: "on", label: "on" },
+                { val: "off", label: "off" },
+              ]}
+              onPick={(v) => setLive("echo_workaround", v)}
+            />
+          </SettingRow>
+          {/* Every bound below is copied from `LiveCfg`'s own `Field(...)` in backend/app/config.py —
+              one control, two enforcers; a typed value outside them earns a visible 422 on save. */}
+          <Field
+            label="Speech threshold"
+            desc="how sure the ear must be that it heard speech (0–1) — raise it in a noisy room"
+            value={String(vlive?.vad_threshold ?? "")}
+            onChange={(v) => setLive("vad_threshold", v as unknown as number)}
+          />
+          <Field
+            label="Silence window"
+            desc="ms of silence that ends what you were saying (100–10000) — lower it for a snappier reply, raise it if it cuts you off mid-sentence"
+            value={String(vlive?.silence_ms ?? "")}
+            onChange={(v) => setLive("silence_ms", v as unknown as number)}
+          />
+          <Field
+            label="Minimum speech"
+            desc="ms of talking before it counts as interrupting (0–5000) — a cough should cost nothing"
+            value={String(vlive?.min_speech_ms ?? "")}
+            onChange={(v) => setLive("min_speech_ms", v as unknown as number)}
+          />
+          <Field
+            label="Interruption threshold"
+            desc="mic level counted as talking over the reply (0–0.5) — 0 reuses the STT silence threshold"
+            value={String(vlive?.barge_threshold ?? "")}
+            onChange={(v) => setLive("barge_threshold", v as unknown as number)}
+          />
+          <SectionRefEditor
+            primaryDesc="realtime provider · model — blank rides Voice STT's chain"
+            value={{
+              provider: vlive?.provider ?? null,
+              model: vlive?.model ?? null,
+              fallbacks: vlive?.fallbacks ?? [],
+            }}
+            onChangePrimary={setLivePrimary}
+            onChangeFallbacks={(next) => setLive("fallbacks", next)}
+            catalog={draftCatalog}
+            providerNames={providerNames}
+            sectionLabel="Live voice"
+          />
+        </div>
+        {saveBar}
+      </ConfGroup>
+
       {/* F1 — placed right after the Voice groups: both are "how the app reaches out to you on this
           device", both depend on a secure context (Tailscale Serve HTTPS), and both mix a saved
           config preference with an immediate browser-capability gesture. */}
-      <ConfGroup id="notifications" num="11" title="Notifications" right="while the app is open">
+      <ConfGroup id="notifications" num="12" title="Notifications" right="while the app is open">
         <div className="conf-card">
           <SettingRow
             label="Enabled"
@@ -2711,7 +2874,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="mcp"
-        num="12"
+        num="13"
         title="MCP servers"
         right={`${settings?.mcp_servers?.length ?? 0} server${(settings?.mcp_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -2724,7 +2887,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="openapi"
-        num="13"
+        num="14"
         title="OpenAPI tool servers"
         right={`${settings?.openapi_servers?.length ?? 0} server${(settings?.openapi_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -2750,14 +2913,14 @@ export function ConfTab({ active }: Props) {
       {/* D70 §8.4 — the GLOBALS only. The per-agent list, its form and the add disclosure moved to the
           agents gallery (its own section), so this group is `agent.*` config and nothing else; the
           header summary says what it now holds rather than counting agents that are no longer here. */}
-      <ConfGroup id="agents" num="14" title="Agents" right="defaults · routing" defaultCollapsed>
+      <ConfGroup id="agents" num="15" title="Agents" right="defaults · routing" defaultCollapsed>
         <AgentGlobals cfg={agentCfg} />
       </ConfGroup>
 
       {/* D70 §9 — the roleplay GLOBALS (the mode switch · the character tools · the owner's persona)
           and the lorebook scan budgets. Both sit right after Agents because that is what they are
           about; both own their reads and their partial PUTs (see `RoleplayEditor`). */}
-      <ConfGroup id="roleplay" num="15" title="Roleplay" right={roleplayRight} defaultCollapsed>
+      <ConfGroup id="roleplay" num="16" title="Roleplay" right={roleplayRight} defaultCollapsed>
         <RoleplayEditor />
       </ConfGroup>
 
@@ -2766,7 +2929,7 @@ export function ConfTab({ active }: Props) {
           chain both live on the id, and deep links point at it. */}
       <ConfGroup
         id="lorebooks"
-        num="16"
+        num="17"
         title="Lorebooks"
         right="books · scan · budget"
         defaultCollapsed
@@ -2781,7 +2944,7 @@ export function ConfTab({ active }: Props) {
           save bar: every row edit is its own request. */}
       <ConfGroup
         id={AUTOMATIONS_GROUP_ID}
-        num="17"
+        num="18"
         title="Automations"
         right={automationsRight}
         defaultCollapsed
@@ -2791,7 +2954,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="skills"
-        num="18"
+        num="19"
         title="Skills"
         right={`${skillNames.length} discovered`}
         defaultCollapsed
@@ -2801,7 +2964,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="memory"
-        num="19"
+        num="20"
         title="Memory"
         right={memoryCfg.enabled ? "on" : "off"}
         defaultCollapsed
@@ -2811,7 +2974,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="20"
+        num="21"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >

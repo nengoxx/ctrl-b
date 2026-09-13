@@ -59,7 +59,7 @@ import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft } from "../../src/store/composer";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
 import { pushToast } from "../../src/store/toast";
-import { endCall, useCallRequested } from "../../src/store/liveCall";
+import { endCall, useCallMount } from "../../src/store/liveCall";
 import { getUI, setUI } from "../../src/store/ui";
 import {
   FakeMediaRecorder,
@@ -102,16 +102,18 @@ const cancelBtn = () => screen.queryByRole("button", { name: "cancel recording" 
 const tools = () => document.querySelector<HTMLButtonElement>(".kit-cbtn.tools")!;
 const chip = () => document.querySelector<HTMLButtonElement>(".mg-chip");
 const hint = () => document.querySelector(".mg-hint")?.textContent ?? null;
-/** The call store's one bit, read without a component of its own (the hook is the only reader). */
-const useCallRequestedValue = () => {
-  let v = false;
+/** The call store's one value, read without a component of its own (the hook is the only reader).
+ *  `null` = no call; a number = the mounted machine's generation. */
+const callMountValue = () => {
+  let v: number | null = null;
   const Probe = () => {
-    v = useCallRequested();
+    v = useCallMount();
     return null;
   };
   render(<Probe />);
   return v;
 };
+const callUp = () => callMountValue() !== null;
 const posts = () => vi.mocked(globalThis.fetch).mock.calls.length;
 
 /** Let timers fire and every promise they woke settle (the start path awaits `getUserMedia`). */
@@ -537,10 +539,10 @@ describe("call mode is UNREACHABLE until the `live` bit exists (ruling 5)", () =
     await hold();
     up(); // released short of the swipe → the standing chip
     await tick(0);
-    expect(useCallRequestedValue()).toBe(false);
+    expect(callUp()).toBe(false);
     act(() => chip()!.click());
     await tick(0);
-    expect(useCallRequestedValue()).toBe(true);
+    expect(callUp()).toBe(true);
     // …and the element was handed a decodable silent source inside that same tap.
     expect(primedSrc[0]).toMatch(/^data:audio\/wav;base64,/);
     endCall();
@@ -564,7 +566,7 @@ describe("call mode is UNREACHABLE until the `live` bit exists (ruling 5)", () =
     await tick(0);
     act(() => chip()!.click());
     await tick(0);
-    expect(useCallRequestedValue()).toBe(true);
+    expect(callUp()).toBe(true);
     expect(vi.mocked(dismiss)).toHaveBeenCalled();
     expect(vi.mocked(dismiss).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(primeAudio).mock.invocationCallOrder[0],
