@@ -613,8 +613,10 @@ export interface LiveTurnRef {
   /** The turn the seq gate is watching — `null` when a stream is live but no frame has carried an id
    *  yet, which is exactly the unscoped (legacy) cancel the backend still accepts. */
   turnId: string | null;
-  /** The assistant bubble receiving deltas. Carried because the call machine's read-along override and
-   *  the deferred §4.4 truncate are both message-scoped; nothing in S2a writes through it. */
+  /** The assistant bubble receiving deltas. Carried for the deferred §4.4 truncate, which is
+   *  message-scoped; nothing in S2a reads or writes through it. (The call's read-along override
+   *  deliberately does NOT: this id is RENAMED mid-stream when `message.start` adopts the server's,
+   *  so it cannot key anything that must survive the adoption.) */
   assistantMessageId: string | null;
 }
 
@@ -2151,9 +2153,12 @@ export async function reconcileChat(): Promise<void> {
   if (state.threadId && getChatStatus() !== "streaming") void probeAndReattach(state.threadId);
 }
 
-// Guards a double-tap of Stop: the cancel POST isn't instant, and the button stays mounted until the
-// resulting `done{cancelled}` settles status through the attached stream.
-let cancelling = false;
+// THE ONE IN-FLIGHT CANCEL. A double-tap of Stop must not POST twice (the cancel isn't instant and the
+// button stays mounted until the resulting `done{cancelled}` settles status through the attached
+// stream) — and the second caller must not be told it is DONE while the turn is still being cancelled,
+// because `cancelTurn` resolving means "settled" and D71 §4.3 step ② submits on that promise. So the
+// re-entry guard is the PROMISE itself: everyone shares the first cancel's settlement.
+let cancelInFlight: Promise<void> | null = null;
 
 /** The signature of the last harvest actually restored to the draft (FIX E — `harvest_replayed`
  *  idempotency). A REPEAT Stop within the backend's linger replays the SAME entries with
@@ -2243,10 +2248,18 @@ export type HarvestMode = "draft" | "discard";
  *     supersedes our stale stream via `streamGeneration`).
  *   • REPLAYED HARVEST (`harvest_replayed:true`): restore is idempotent (`harvestToDraft` signature).
  *   • LOST RESPONSE (the POST/read threw): retry the Stop ONCE — the backend replays the harvest receipt
- *     — before falling back to a durable-floor settle. */
-export async function cancelTurn(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> {
-  if (cancelling) return;
-  cancelling = true;
+ *     — before falling back to a durable-floor settle.
+ *
+ *  RE-ENTRY shares the in-flight cancel rather than resolving early: a second caller awaits the same
+ *  settlement, and the FIRST caller's harvest disposition is the one that applies (a `discard` racing a
+ *  `draft` cannot un-consume what the first already took). */
+export function cancelTurn(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> {
+  if (cancelInFlight) return cancelInFlight;
+  cancelInFlight = runCancel(ref, harvest);
+  return cancelInFlight;
+}
+
+async function runCancel(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> {
   const threadId = ref.threadId;
   // A6/C4-H2: scope the cancel to THIS turn (the ref's own id) so a delayed Stop can't cancel/harvest a
   // successor turn — the server refuses/peeks a turn_id that doesn't match the live handle.
@@ -2292,7 +2305,7 @@ export async function cancelTurn(ref: LiveTurnRef, harvest: HarvestMode): Promis
     await reloadChat(true);
     set({ status: "idle", streamingId: null });
   } finally {
-    cancelling = false;
+    cancelInFlight = null;
   }
 }
 

@@ -98,6 +98,16 @@ describe("callReduce — the orthogonal flags (§4.2)", () => {
     expect(out).toEqual([{ type: "kill" }]);
   });
 
+  it("…and while the phase is ALREADY `speaking` — the read-along gap scenario", () => {
+    // A chunked reply pauses for synthesis mid-message and resumes: the phase never left `speaking`,
+    // so the resuming chunk arrives as a `playbackStarted` on top of it. If the owner started talking
+    // during that gap, the reply resuming over them is exactly the barge-in §4.2 forbids.
+    const talking = run(speaking, [{ type: "speechStart" }]).state;
+    const { state, out } = run(talking, [{ type: "playbackStarted" }]);
+    expect(state.killing).toBe(true);
+    expect(out).toEqual([{ type: "kill" }]);
+  });
+
   it("with both flags clear, playback simply starts", () => {
     const { state, out } = run(listening, [{ type: "playbackStarted" }]);
     expect(state.phase).toBe("speaking");
@@ -317,6 +327,24 @@ describe("callReduce — terminals (§4.3/§4.5)", () => {
     expect(state.phase).toBe("listening");
     expect(state.note).toBe(CALL_COPY.voiceFailed);
     expect(out).toEqual([]);
+  });
+
+  it("…but OUR OWN kill is not a failure — the killing guard keeps that line off the screen", () => {
+    // `dismiss()` aborts the clip, and the element reports that exactly like an engine refusing to
+    // play. Telling the owner "voice failed" for a reply THEY interrupted would be a lie.
+    const killing = run(speaking, [{ type: "barge" }]).state;
+    const { state, out } = run(killing, [{ type: "playbackFailed" }]);
+    expect(state.note).toBeNull();
+    expect(state.killing).toBe(true);
+    expect(out).toEqual([]);
+  });
+
+  it("two failures in a row are two events — a repeat still only notes it", () => {
+    const thinking = run(listening, [{ type: "final", text: "again" }]).state;
+    const once = run(thinking, [{ type: "playbackFailed" }]);
+    const twice = run(once.state, [{ type: "playbackFailed" }]);
+    expect(twice.state.phase).toBe("listening"); // never a terminal — the ear keeps working
+    expect(twice.state.note).toBe(CALL_COPY.voiceFailed);
   });
 
   it("nothing reaches the machine after a terminal", () => {

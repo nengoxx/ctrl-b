@@ -134,37 +134,48 @@ describe("primeAudio — when it must do nothing", () => {
 describe("setCallVoice — the call's read-along override (§4.5)", () => {
   it("is off until a call arms it", async () => {
     const { callVoiceSpeaks } = await controller();
-    expect(callVoiceSpeaks("m1")).toBe(false);
+    expect(callVoiceSpeaks()).toBe(false);
   });
 
-  it("speaks every message EXCEPT the one already streaming at call start", async () => {
+  it("with NO turn in flight at call start, the gate is open immediately", async () => {
     const { callVoiceSpeaks, setCallVoice } = await controller();
-    setCallVoice(true, "m-already-streaming");
-    expect(callVoiceSpeaks("m-already-streaming")).toBe(false);
-    expect(callVoiceSpeaks("m-next")).toBe(true);
+    setCallVoice(true, false);
+    expect(callVoiceSpeaks()).toBe(true);
   });
 
-  it("with no turn in flight at call start, it speaks everything", async () => {
-    const { callVoiceSpeaks, setCallVoice } = await controller();
-    setCallVoice(true, null);
-    expect(callVoiceSpeaks("m1")).toBe(true);
+  it("a turn already streaming HOLDS it shut until that turn settles", async () => {
+    const { callVoiceSpeaks, openCallVoiceGate, setCallVoice } = await controller();
+    setCallVoice(true, true);
+    expect(callVoiceSpeaks()).toBe(false); // the pre-call reply is not picked up mid-sentence
+    openCallVoiceGate();
+    expect(callVoiceSpeaks()).toBe(true); // …and everything from here is the call's own
   });
 
-  it("clearing it forgets the since-id too — a redial must not inherit an exclusion", async () => {
-    const { callVoiceSpeaks, setCallVoice } = await controller();
-    setCallVoice(true, "m1");
-    setCallVoice(false, null);
-    setCallVoice(true, null);
-    expect(callVoiceSpeaks("m1")).toBe(true);
+  it("opening the gate is inert with no call up — a later call still waits for its own settle", async () => {
+    const { callVoiceSpeaks, openCallVoiceGate, setCallVoice } = await controller();
+    openCallVoiceGate();
+    setCallVoice(true, true);
+    expect(callVoiceSpeaks()).toBe(false);
   });
 
-  it("is REACTIVE: arming it re-runs the feeder's gates instead of waiting for the next delta", async () => {
-    const { setCallVoice, useCallVoice } = await controller();
+  it("clearing it forgets the gate too — a redial must not inherit an open one", async () => {
+    const { callVoiceSpeaks, openCallVoiceGate, setCallVoice } = await controller();
+    setCallVoice(true, true);
+    openCallVoiceGate();
+    setCallVoice(false, false);
+    setCallVoice(true, true);
+    expect(callVoiceSpeaks()).toBe(false);
+  });
+
+  it("is REACTIVE: arming it — and OPENING it — re-runs the feeder's gates", async () => {
+    const { openCallVoiceGate, setCallVoice, useCallVoice } = await controller();
     const { result } = renderHook(() => useCallVoice());
     expect(result.current).toBe(false);
-    act(() => setCallVoice(true, null));
+    act(() => setCallVoice(true, true));
+    expect(result.current).toBe(false); // armed, but still gated
+    act(() => openCallVoiceGate());
     expect(result.current).toBe(true);
-    act(() => setCallVoice(false, null));
+    act(() => setCallVoice(false, false));
     expect(result.current).toBe(false);
   });
 });

@@ -160,28 +160,66 @@ export function primeAudio(): void {
 }
 
 /** The CALL's read-along override (§4.5) — client-local for the call's duration; the Conf rows are never
- *  written. `since` is the assistant message that was already streaming when the call started: a turn
- *  half-spoken into an owner who was not yet in a call is never picked up mid-sentence. */
-let callVoice: { active: boolean; since: string | null } = { active: false, since: null };
+ *  written.
+ *
+ *  `waiting` is §4.5's "a turn half-spoken into an owner who was not yet in a call is never picked up
+ *  mid-sentence", expressed as a GATE on the status timeline rather than as the excluded message's id:
+ *  the optimistic placeholder a fresh turn streams under is RENAMED to the server's id mid-stream
+ *  (`message.start` adoption), so an id captured at call start stops matching the very message it was
+ *  meant to exclude. A timeline no rename can move — "not until the turn that was live when the call
+ *  started has settled" — is what the call machine opens the gate on.
+ *
+ *  WHAT THE GATE DELIBERATELY DOES NOT DO is outrank `ttsAuto`: with auto-TTS on, that pre-call reply is
+ *  being spoken by the owner's own standing setting, and starting a call must not silence it. The
+ *  override only ever ADDS a voice (the feeder's `||`), it never takes one away. */
+let callVoice: { active: boolean; waiting: boolean } = { active: false, waiting: false };
 
-/** Arm/disarm the override. The call's teardown clears it on EVERY exit path. */
-export function setCallVoice(active: boolean, sinceMessageId: string | null): void {
-  const since = active ? sinceMessageId : null;
-  if (callVoice.active === active && callVoice.since === since) return;
-  callVoice = { active, since };
+/** Arm/disarm the override. `waitForSettle` is "a turn was already streaming when this call started" —
+ *  the override stays silent until `openCallVoiceGate`. The call's teardown clears it on EVERY exit
+ *  path. */
+export function setCallVoice(active: boolean, waitForSettle: boolean): void {
+  const waiting = active && waitForSettle;
+  if (callVoice.active === active && callVoice.waiting === waiting) return;
+  callVoice = { active, waiting };
   emit(); // the feeder is a hook: flipping the override has to re-run its gates
 }
 
-/** Does the call override speak THIS message? The feeder's per-message question — the answer is what
- *  lets `ttsAuto`/`read_along` be bypassed for the call's own turns and nothing else. */
-export function callVoiceSpeaks(messageId: string): boolean {
-  return callVoice.active && messageId !== callVoice.since;
+/** The pre-call turn has settled — everything from here is the call's own. No-op when no call is up or
+ *  the gate was never closed, so the machine may call it on every settle edge. */
+export function openCallVoiceGate(): void {
+  if (!callVoice.active || !callVoice.waiting) return;
+  callVoice = { ...callVoice, waiting: false };
+  emit();
 }
 
-/** Is the override armed at all — the feeder's reactive dependency (the per-message answer above is read
- *  imperatively once the target id is known). */
+/** Does the call override speak right now? Armed AND past the gate — the whole of the feeder's
+ *  question, and what lets `ttsAuto`/`read_along` be bypassed for the call's own turns and nothing
+ *  else. */
+export function callVoiceSpeaks(): boolean {
+  return callVoice.active && !callVoice.waiting;
+}
+
+/** The same answer, as the feeder's reactive dependency: arming the override — or opening its gate —
+ *  re-runs the gates instead of waiting for the next delta. */
 export function useCallVoice(): boolean {
-  return useStore(() => callVoice.active);
+  return useStore(callVoiceSpeaks);
+}
+
+/** MOUTH FAILURES, counted (§4.5's "voice failed — the reply is in the chat"). The transport `status`
+ *  cannot carry this: a rejected `play()` publishes "paused" and a media error resets to "idle", and the
+ *  call machine reads both of those as ordinary user/drain transitions. So the failure is its own
+ *  explicit tick — a monotonic counter the machine watches for an INCREMENT, which is the one shape that
+ *  survives two failures in a row. Bumped unconditionally: nothing outside a call subscribes. */
+let mouthFailures = 0;
+
+function mouthFailed(): void {
+  mouthFailures += 1;
+  emit();
+}
+
+/** How many times the mouth has failed this page. Only the DELTA means anything — see `mouthFailed`. */
+export function useMouthFailures(): number {
+  return useStore(() => mouthFailures);
 }
 
 // ── the chunk queue ──────────────────────────────────────────────────────────────────────────────
@@ -396,6 +434,7 @@ function ensureEl(): HTMLAudioElement {
     set({ current: 0, status: "paused" }); // reset to start, ready to replay
   });
   a.addEventListener("error", () => {
+    mouthFailed(); // `reset()` below publishes a plain "idle", which reads exactly like a natural drain
     if (pb.id) {
       pushToast("Playback failed", "err");
       reset();
@@ -525,8 +564,11 @@ async function playWhole(
   } catch {
     // play() rejects on the autoplay/interaction guard — OR because a newer toggle swapped the src and
     // aborted this play. Only the still-current toggle may settle the state (else we'd clobber the
-    // newer clip's status with a stale "paused").
-    if (seq === reqSeq) set({ status: "paused" });
+    // newer clip's status with a stale "paused"), and only a still-current rejection is a real failure.
+    if (seq === reqSeq) {
+      mouthFailed();
+      set({ status: "paused" });
+    }
   }
 }
 
@@ -724,6 +766,11 @@ function playNext(s: Session): void {
       // not the end of the message. `finish()` here would rewind to chunk 0 and publish "paused"
       // mid-turn; the flush is the only thing allowed to end an open session.
       s.waiting = true;
+      // …and the queue IS waiting on synthesis, so say so. Holding "playing" through a silent gap both
+      // lies and hides the next chunk's `play` (same value republished ⇒ no edge), which is the one
+      // signal §4.2's iron rule watches for: a reply resuming over an owner who started talking during
+      // the gap. "loading" is the same honest state the first chunk's synth publishes.
+      set({ status: "loading" });
       pump(s);
       return;
     }
@@ -762,7 +809,10 @@ function playNext(s: Session): void {
   set({ current: at }); // publish the seam immediately — `timeupdate` only arrives ~4×/sec
   const op = ++playOp;
   void a.play().catch(() => {
-    if (s.seq === reqSeq && op === playOp) set({ status: "paused" });
+    if (s.seq === reqSeq && op === playOp) {
+      mouthFailed();
+      set({ status: "paused" });
+    }
   });
 }
 
@@ -1086,7 +1136,10 @@ function seekChunked(s: Session, f: number): void {
     set({ current: at });
     const op = ++playOp;
     void a.play().catch(() => {
-      if (s.seq === reqSeq && op === playOp) set({ status: "paused" });
+      if (s.seq === reqSeq && op === playOp) {
+        mouthFailed();
+        set({ status: "paused" });
+      }
     });
     return;
   }

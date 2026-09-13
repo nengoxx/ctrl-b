@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 
 import {
-  callVoiceSpeaks,
   dismiss,
   endTurnSpeak,
   feedReadAlong,
@@ -74,10 +73,10 @@ export function useAutoTts(): void {
   const abandoned = useRef(false);
   const prevTtsOk = useRef(ttsOk);
   // D71 §4.5 — a live CALL forces this feeder on for its own turns: read-along is how a call sounds like
-  // a call, and the owner's Conf rows are left exactly as they are. Subscribed here (the per-message
-  // answer is read imperatively below, once the target id is known) so arming the override re-runs the
-  // gates instead of waiting for the next delta.
-  const callVoice = useCallVoice();
+  // a call, and the owner's Conf rows are left exactly as they are. Its own gate (`audioController`)
+  // holds it shut until the turn that was streaming at call start has settled, so a reply the owner was
+  // reading silently is never picked up half-way through.
+  const callSpeaks = useCallVoice();
 
   useEffect(() => {
     const was = prevStatus.current;
@@ -100,13 +99,11 @@ export function useAutoTts(): void {
       abandoned.current = true;
       dismiss();
     }
-    // The turn this render is about — hoisted because BOTH gates and the terminal edge need to know
-    // whether the CALL override speaks it, and it is the same pure scan all three used to repeat.
+    // The turn this render is about — hoisted because both the feed and the terminal edge need it.
     const live = finalReply(messages);
-    // The override's first bypass: `ttsAuto` (the AppBar toggle). It applies per MESSAGE, never
-    // globally — the turn that was already streaming when the call started is excluded, so a reply the
-    // owner was reading silently is not picked up half-way through (§4.5).
-    const callSpeaks = callVoice && callVoiceSpeaks((live ?? fed.current)?.id ?? "");
+    // The override's first bypass: `ttsAuto` (the AppBar toggle). It only ever ADDS a voice — with
+    // auto-TTS on, a pre-call reply keeps being spoken by the owner's own standing setting and the
+    // call's gate does not silence it (§4.5).
     if ((!ttsAuto && !callSpeaks) || !ttsOk) return;
 
     // The terminal edge: idle OR error. An errored turn never passes through "idle" (`failStream` and
@@ -146,5 +143,5 @@ export function useAutoTts(): void {
       docked: fed.current?.id === live.id && fed.current.docked,
     };
     feedReadAlong(live.id, live.text, live.agent);
-  }, [status, messages, ttsAuto, ttsOk, chunking, dockedId, callVoice]);
+  }, [status, messages, ttsAuto, ttsOk, chunking, dockedId, callSpeaks]);
 }

@@ -13,6 +13,7 @@ import {
   setChunkPolicy,
   toggle,
   togglePlay,
+  useMouthFailures,
   usePlayback,
   type ChunkPolicy,
 } from "../../src/lib/audioController";
@@ -37,6 +38,8 @@ class FakeAudio {
   duration = Number.NaN;
   paused = true;
   ended = false;
+  /** The autoplay guard, or a decode the engine refused: `play()` rejects. */
+  playRejects = false;
   private listeners: Record<string, (() => void)[]> = {};
   constructor() {
     // The controller builds its ONE player element lazily and then keeps it forever, so the FIRST
@@ -63,6 +66,7 @@ class FakeAudio {
     this.emit("loadedmetadata");
   }
   async play() {
+    if (this.playRejects) throw new DOMException("blocked", "NotAllowedError");
     this.paused = false;
     this.ended = false;
     this.emit("play");
@@ -158,6 +162,9 @@ function metaFor(url: string, seconds: number): void {
 
 beforeEach(() => {
   vi.stubGlobal("Audio", FakeAudio);
+  // The player element is page-lifetime (the controller keeps its one `el` forever), so its refusal
+  // flag has to be cleared between cases or a rejected play leaks into every later one.
+  if (lastAudio) lastAudio.playRejects = false;
   urlSeq = 0;
   revoked = [];
   probes = [];
@@ -1154,7 +1161,10 @@ describe("audioController — read-along (C3 S2)", () => {
 
     await act(async () => lastAudio.finish()); // playback reaches the end of what has arrived
     await flush();
-    expect(result.current.status).toBe("playing"); // NOT paused — the reply is still being written
+    // The queue is WAITING on synthesis, and says so: holding "playing" through a silent gap lies, and
+    // it also hides the next chunk's `play` behind a republished value — no edge for anyone watching
+    // (D71 §4.2's iron rule watches exactly that edge).
+    expect(result.current.status).toBe("loading"); // NOT paused either — the reply is still being written
     expect(lastAudio.src).toBe("blob:1"); // ...and NOT rewound to the top
     expect(calls).toHaveLength(1);
 
@@ -1163,7 +1173,7 @@ describe("audioController — read-along (C3 S2)", () => {
     await act(async () => calls[1].resolve(okRes()));
     await flush();
     expect(lastAudio.src).toBe("blob:2");
-    expect(result.current.status).toBe("playing");
+    expect(result.current.status).toBe("playing"); // a GENUINE loading→playing transition
   });
 
   it("the timeline GROWS with the reply and stays estimated", async () => {
@@ -1383,5 +1393,85 @@ describe("audioController — read-along (C3 S2)", () => {
 
     await act(async () => void endTurnSpeak("m1", WHOLE));
     expect(result.current.status).toBe("playing"); // `toggle` here would have paused it mid-sentence
+  });
+});
+
+describe("audioController — the mouth's own failures, counted (D71 §4.5)", () => {
+  // The transport `status` cannot carry a failure: a rejected `play()` publishes "paused" and a media
+  // error resets to "idle", and the call machine reads both as ordinary transitions (a user pause, a
+  // natural drain). So failures get their own tick, and the INCREMENT is the signal — which is what
+  // makes two failures in a row two events rather than one unchanged value. The counter is
+  // page-lifetime by design (nothing resets it), so every arm below measures its own DELTA.
+  function failureDelta() {
+    const view = renderHook(() => useMouthFailures());
+    const base = view.result.current;
+    return () => view.result.current - base;
+  }
+
+  it("counts a rejected play() on the whole-message path, beside the 'paused' it publishes", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p.status));
+    const since = failureDelta();
+    await act(async () => {
+      await toggle("m1", "hello"); // creates the element…
+    });
+    lastAudio.playRejects = true; // …which the autoplay guard then refuses
+    await act(async () => {
+      await toggle("m2", "again");
+    });
+    expect(result.current).toBe("paused");
+    expect(since()).toBe(1);
+  });
+
+  it("counts a rejected play() at a CHUNK seam too", async () => {
+    setChunkPolicy(chunked());
+    const since = failureDelta();
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", "One. Two."));
+    lastAudio.playRejects = true;
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    expect(since()).toBe(1);
+  });
+
+  it("counts a rejected play() a SEEK started", async () => {
+    setChunkPolicy(chunked());
+    const since = failureDelta();
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", "One. Two. Three."));
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    expect(since()).toBe(0);
+
+    lastAudio.playRejects = true;
+    act(() => seekFraction(0.9)); // land on the second chunk, which is synthesized
+    await flush();
+    expect(since()).toBe(1);
+  });
+
+  it("counts a media ERROR — the path that resets to a perfectly ordinary 'idle'", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p.status));
+    const since = failureDelta();
+    await act(async () => {
+      await toggle("m1", "hello");
+    });
+    expect(since()).toBe(0);
+    await act(async () => lastAudio.emit("error"));
+    expect(result.current).toBe("idle"); // indistinguishable from a drain — hence the counter
+    expect(since()).toBe(1);
+  });
+
+  it("a play aborted by a NEWER clip is not a failure — only the still-current one counts", async () => {
+    setChunkPolicy(OFF);
+    const since = failureDelta();
+    const calls = deferredFetch();
+    void toggle("m1", "one");
+    await flush();
+    void toggle("m2", "two"); // supersedes the first synth before it ever plays
+    await flush();
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    expect(since()).toBe(0);
   });
 });

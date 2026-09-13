@@ -225,6 +225,51 @@ describe("cancelTurn — the harvest disposition", () => {
     expect(cancel).toContain("turn_id=turn-1");
   });
 
+  it("a concurrent cancel SHARES the first one's settlement instead of resolving early", async () => {
+    // `cancelTurn` resolving means SETTLED — D71 §4.3 step ② submits the interrupting utterance on
+    // that promise. A re-entry that returned immediately would submit into a turn still being killed.
+    const live = openStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m1" }, id: "turn-1:1" },
+    ]);
+    let release: (() => void) | null = null;
+    const slowCancel = new Promise<Response>((r) => (release = () => r(harvestResponse)));
+    let posts = 0;
+    routes({
+      "/api/agent/chat": () => live.res,
+      "/cancel": () => {
+        posts += 1;
+        return slowCancel;
+      },
+      "/messages": () => json(200, []),
+    });
+    await act(async () => {
+      void sendMessage("hi");
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const ref = getLiveTurn()!;
+    const settled: string[] = [];
+    await act(async () => {
+      void cancelTurn(ref, "discard").then(() => settled.push("first"));
+      void cancelTurn(ref, "draft").then(() => settled.push("second"));
+      await Promise.resolve();
+    });
+    expect(posts).toBe(1); // one cancel in flight, not two
+    expect(settled).toEqual([]); // …and NOBODY is told it is done while it is not
+
+    await act(async () => {
+      release!();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(settled).toEqual(["first", "second"]);
+    // The FIRST caller's disposition is the one that applied: a `discard` racing a `draft` cannot
+    // un-consume what the first already took.
+    expect(getDraft()).toBe("");
+  });
+
   it("`stopTurn` IS the seam plus its guard — same harvest, and inert with nothing live", async () => {
     const idle = vi.fn();
     globalThis.fetch = idle;

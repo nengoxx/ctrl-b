@@ -78,6 +78,11 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
   try {
     ctx = new AudioContext();
     if (ctx.state === "suspended") await ctx.resume().catch(() => {});
+    // A context that will not run is a SILENT CALL: the graph builds, the worklet installs, and not one
+    // frame is ever pulled — the overlay would reach "Listening" and sit there forever with a dead ear.
+    // Failing the start instead puts it where the owner can see it (the call's error terminal). The
+    // gesture unlock this needs is `primeAudio`'s job, inside the tap; there is no second chance here.
+    if (ctx.state !== "running") throw new Error("audio context suspended");
     url = URL.createObjectURL(new Blob([PCM_WORKLET_SOURCE], { type: "text/javascript" }));
     await ctx.audioWorklet.addModule(url);
     const frameSamples = Math.max(1, Math.round((ctx.sampleRate * opts.frameMs) / 1000));

@@ -156,8 +156,9 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
       // §3.1: `WebSocket.send()` has no awaitable backpressure, so the ONLY honest reading of a
       // backed-up uplink is to throw the leg away. Draining seconds of stale speech into the ear would
       // transcribe it into a turn the owner has long since moved past; a fresh session loses the
-      // utterance and says so. Checked BEFORE the send, so the ceiling bounds what we ever queue.
-      if (ws.bufferedAmount > ceiling) {
+      // utterance and says so. Checked BEFORE the send, against what the buffer would hold AFTER it —
+      // the backlog alone would admit one frame past the ceiling, which is the thing the ceiling is.
+      if (ws.bufferedAmount + buf.byteLength > ceiling) {
         ws.close(CLOSE_BACKPRESSURE, "uplink backpressure");
         return;
       }

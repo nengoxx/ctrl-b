@@ -27,9 +27,10 @@ const h = vi.hoisted(() => {
     voice,
     player,
     ui: { ttsAuto: true },
-    // D71 §4.5 — the CALL's read-along override, driven the way the real one is: a reactive "armed"
-    // bit plus the per-message question the hook asks once it knows the target id.
-    call: { active: false, since: null as string | null },
+    // D71 §4.5 — the CALL's read-along override, driven the way the real one is: ARMED plus a GATE
+    // that stays shut while a pre-call turn is still streaming (the controller owns both; the hook
+    // only ever reads the one composite answer).
+    call: { active: false, waiting: false },
     feed: vi.fn(),
     endTurn: vi.fn(),
     dismiss: vi.fn(),
@@ -46,8 +47,7 @@ vi.mock("../../src/lib/audioController", () => ({
   endTurnSpeak: h.endTurn,
   dismiss: h.dismiss,
   usePlayback: (sel: (p: { id: string | null }) => unknown) => sel(h.player),
-  useCallVoice: () => h.call.active,
-  callVoiceSpeaks: (id: string) => h.call.active && id !== h.call.since,
+  useCallVoice: () => h.call.active && !h.call.waiting,
 }));
 
 import { useAutoTts } from "../../src/hooks/useAutoTts";
@@ -87,7 +87,7 @@ beforeEach(() => {
   h.ui = { ttsAuto: true };
   h.voice = { tts: true, tts_chunking: { mode: "sentence", read_along: true } };
   h.player.id = null;
-  h.call = { active: false, since: null };
+  h.call = { active: false, waiting: false };
   h.feed.mockClear();
   h.endTurn.mockClear();
   h.dismiss.mockClear();
@@ -286,7 +286,7 @@ describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
   it("speaks a call's turn with BOTH owner toggles off — the Conf rows are never written", () => {
     h.ui = { ttsAuto: false };
     h.voice = { tts: true, tts_chunking: { mode: "sentence", read_along: false } };
-    h.call = { active: true, since: null };
+    h.call = { active: true, waiting: false };
     const step = mount();
     step("streaming", [user, said("a1", "On my way.")]);
     expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "On my way.", null);
@@ -294,25 +294,49 @@ describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
     expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "On my way.", null);
   });
 
-  it("does NOT pick up the turn that was already streaming when the call started", () => {
+  it("does NOT pick up the turn that was already streaming — not even after it is RENAMED", () => {
     h.ui = { ttsAuto: false };
-    h.call = { active: true, since: "a1" };
+    h.call = { active: true, waiting: true }; // a turn was live when the call started
     const step = mount();
-    step("streaming", [user, said("a1", "Half-read already.")]);
+    step("streaming", [user, said("assist-1", "Half-read already.")]);
     expect(h.feed).not.toHaveBeenCalled();
-    step("idle", [user, said("a1", "Half-read already.")]);
+    // `message.start` adoption renames the optimistic placeholder to the SERVER's id mid-stream. An
+    // exclusion keyed to the id captured at call start stops matching right here and picks the reply
+    // up half-way through; the gate is on the status timeline, which no rename can move.
+    step("streaming", [user, said("m-real", "Half-read already. And more.")]);
+    expect(h.feed).not.toHaveBeenCalled();
+    step("idle", [user, said("m-real", "Half-read already. And more.")]);
     expect(h.endTurn).not.toHaveBeenCalled();
+  });
 
-    // …and the NEXT turn, which began inside the call, is spoken.
-    const next = [user, said("a1", "Half-read already."), user, said("a2", "This one is yours.")];
+  it("…and the NEXT turn, begun inside the call, is spoken once that settle opens the gate", () => {
+    h.ui = { ttsAuto: false };
+    h.call = { active: true, waiting: true };
+    const step = mount();
+    step("streaming", [user, said("m1", "Half-read already.")]);
+    step("idle", [user, said("m1", "Half-read already.")]);
+    h.call = { active: true, waiting: false }; // the machine opens it on exactly that edge
+    const next = [user, said("m1", "Half-read already."), user, said("m2", "This one is yours.")];
     step("streaming", next);
-    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a2", "This one is yours.", null);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("m2", "This one is yours.", null);
+  });
+
+  it("the gate never SILENCES: with auto-TTS on, the pre-call reply keeps being read", () => {
+    // The override only ever ADDS a voice. With the owner's own toggle on, that reply is being spoken
+    // by their standing setting, and starting a call must not take it away (main-seat ruling).
+    h.ui = { ttsAuto: true };
+    h.call = { active: true, waiting: true };
+    const step = mount();
+    step("streaming", [user, said("m1", "Half-read already.")]);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("m1", "Half-read already.", null);
+    step("idle", [user, said("m1", "Half-read already.")]);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("m1", "Half-read already.", null);
   });
 
   it("with chunking OFF the reply still speaks — whole, at turn end (§4.5's stated fallback)", () => {
     h.ui = { ttsAuto: false };
     h.voice = { tts: true, tts_chunking: { mode: "off", read_along: false } };
-    h.call = { active: true, since: null };
+    h.call = { active: true, waiting: false };
     const step = mount();
     step("streaming", [user, said("a1", "Nothing to split.")]);
     expect(h.feed).not.toHaveBeenCalled();
@@ -322,7 +346,7 @@ describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
 
   it("does not override TTS being unconfigured — there is no mouth to force on", () => {
     h.voice = { tts: false, tts_chunking: { mode: "sentence", read_along: true } };
-    h.call = { active: true, since: null };
+    h.call = { active: true, waiting: false };
     const step = mount();
     step("streaming", [user, said("a1", "Silence.")]);
     step("idle", [user, said("a1", "Silence.")]);
@@ -332,7 +356,7 @@ describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
 
   it("the user taking the player away still stops the call's reply (the abandon latch holds)", () => {
     h.ui = { ttsAuto: false };
-    h.call = { active: true, since: null };
+    h.call = { active: true, waiting: false };
     const step = mount();
     step("streaming", [user, said("a1", "One.")]);
     h.player.id = "a1";

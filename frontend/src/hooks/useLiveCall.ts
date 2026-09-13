@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { dismiss, setCallVoice, usePlayback, type PlayStatus } from "../lib/audioController";
+import {
+  dismiss,
+  openCallVoiceGate,
+  setCallVoice,
+  useMouthFailures,
+  usePlayback,
+  type PlayStatus,
+} from "../lib/audioController";
 import { sendCallTranscript } from "../lib/composer";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
 import { startPcmCapture, type PcmCapture } from "../lib/pcmCapture";
@@ -409,7 +416,8 @@ export function useLiveCall(): CallView {
   const sustained = useRef(0);
   /** Trigger A is armed only on a track whose AEC is the subtractive `all` mode (the S0 ruling). */
   const bargeArmed = useRef(false);
-  /** The held-upload retry is ONE (§4.5); this latch is what makes it one. */
+  /** The held-upload retry is ONE PER HOLD (§4.5); this latch is what makes it one. A fresh `held`
+   *  outcome re-arms it — see the submit effect. */
   const retriedUpload = useRef(false);
   /** Which socket LEG is current — see `openLeg`. */
   const legSeq = useRef(0);
@@ -422,7 +430,7 @@ export function useLiveCall(): CallView {
     capture.current?.stop();
     capture.current = null;
     dismiss(); // an ended call does not keep talking
-    setCallVoice(false, null);
+    setCallVoice(false, false);
     const lock = wakeLock.current;
     wakeLock.current = null;
     void lock?.release().catch(() => {});
@@ -446,6 +454,10 @@ export function useLiveCall(): CallView {
             const gen = ref.current.gen;
             const text = eff.text;
             void sendCallTranscript(text).then((outcome) => {
+              // A NEW hold arms a NEW retry: the latch below is one-per-HOLD, not one-per-call. Without
+              // this reset a SECOND held upload in the same call would never receive `uploadSettled`,
+              // and every utterance after it would queue until hang-up.
+              if (outcome === "held") retriedUpload.current = false;
               send({ type: "sent", outcome, text, gen });
             });
             break;
@@ -548,8 +560,10 @@ export function useLiveCall(): CallView {
     }
     let disposed = false;
     // The call speaks every turn that STARTS after this moment, and deliberately not the one already
-    // streaming (§4.5 — a reply half-read to an owner who was not yet in a call is not picked up).
-    setCallVoice(true, getLiveTurn()?.assistantMessageId ?? null);
+    // streaming (§4.5 — a reply half-read to an owner who was not yet in a call is not picked up). The
+    // exclusion is a GATE on the status timeline, not an id: the streaming message is renamed to the
+    // server's id mid-flight, and a captured id stops matching the message it was meant to exclude.
+    setCallVoice(true, getLiveTurn() !== null);
     const floor = knobs.barge_threshold || (voice.stt_auto_stop?.threshold ?? 0);
     void startPcmCapture({
       frameMs: knobs.frame_ms,
@@ -609,10 +623,26 @@ export function useLiveCall(): CallView {
     const gen = ref.current.gen;
     if (playStatus === "playing") send({ type: "playbackStarted", gen });
     // Synthesis that never produced a sample is the mouth FAILING; audio that played and stopped is the
-    // reply finishing (or our own kill, which the machine's `killing` flag tells apart).
+    // reply finishing (or our own kill, which the machine's `killing` flag tells apart). Kept as BELT
+    // beside the explicit tick below — the reducer dedupes (a nonfatal note and back to listening).
     else if (was === "loading" && playStatus === "idle") send({ type: "playbackFailed", gen });
-    else if (was === "playing") send({ type: "playbackDrained", gen });
+    // "loading" is the mouth still BUSY — a mid-reply synthesis gap the read-along queue publishes
+    // honestly. The reply is not over, so this is no drain; and because a reply that ENDS inside such a
+    // gap goes loading→paused, the drain has to be "the mouth stopped", not "it stopped while playing".
+    else if (playStatus !== "loading" && (was === "playing" || was === "loading"))
+      send({ type: "playbackDrained", gen });
   }, [playStatus, send]);
+
+  // A mouth failure the TRANSPORT cannot express (§4.5): a rejected `play()` publishes "paused" and a
+  // media error resets to "idle", and both of those read as ordinary transitions from here. The
+  // controller counts them instead, and an INCREMENT is the signal — two failures in a row are two.
+  const mouthFailures = useMouthFailures();
+  const prevFailures = useRef(mouthFailures);
+  useEffect(() => {
+    const was = prevFailures.current;
+    prevFailures.current = mouthFailures;
+    if (mouthFailures !== was) send({ type: "playbackFailed", gen: ref.current.gen });
+  }, [mouthFailures, send]);
 
   // ── the brain, watched: the turn settling, and the confirm gate ────────────────────────────────
   const chatStatus = useChatSlice((s) => s.status);
@@ -620,8 +650,13 @@ export function useLiveCall(): CallView {
   useEffect(() => {
     const was = prevChat.current;
     prevChat.current = chatStatus;
-    if (was === "streaming" && chatStatus !== "streaming")
+    if (was === "streaming" && chatStatus !== "streaming") {
       send({ type: "turnSettled", gen: ref.current.gen });
+      // …and THIS edge is what the read-along gate waits for: a turn that was already streaming when the
+      // call started settling is exactly "everything from here is the call's own". Idempotent, so the
+      // call's own turns settling cost nothing.
+      openCallVoiceGate();
+    }
   }, [chatStatus, send]);
 
   const confirming = useChatSlice(() => confirmOutstanding());

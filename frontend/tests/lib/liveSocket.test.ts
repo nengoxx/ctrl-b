@@ -111,13 +111,23 @@ describe("liveSocket — client backpressure (§3.1/F6)", () => {
     expect(closes).toEqual([{ code: CLOSE_BACKPRESSURE, reason: "uplink backpressure" }]);
   });
 
-  it("a backlog UNDER the ceiling is ordinary jitter and ships", () => {
+  it("a backlog the frame still FITS under is ordinary jitter and ships", () => {
     const { socket, ws, closes } = leg({ ceilingMs: 1000, sampleRate: 48000 });
     ws.open();
-    ws.bufferedAmount = 95999;
+    ws.bufferedAmount = 94000; // 94000 + 1920 = 95920, still inside the ceiling
     socket.sendAudio(new ArrayBuffer(1920));
     expect(ws.sent).toHaveLength(2);
     expect(closes).toEqual([]);
+  });
+
+  it("the frame that would CROSS the ceiling is the one refused — the backlog alone admits one past", () => {
+    const { socket, ws, closes } = leg({ ceilingMs: 1000, sampleRate: 48000 });
+    ws.open();
+    ws.bufferedAmount = 95999; // under the ceiling on its own…
+    socket.sendAudio(new ArrayBuffer(1920)); // …and 97919 once this frame is queued behind it
+    expect(ws.sent).toHaveLength(1); // start only
+    expect(ws.closed?.code).toBe(CLOSE_BACKPRESSURE);
+    expect(closes).toEqual([{ code: CLOSE_BACKPRESSURE, reason: "uplink backpressure" }]);
   });
 });
 

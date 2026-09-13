@@ -1,8 +1,9 @@
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import { FocalImg } from "../../components/FocalImg";
 import { useActiveBackdrop } from "../../hooks/useActiveBackdrop";
 import { useLiveCall, type CallPhase } from "../../hooks/useLiveCall";
+import { modalKeyDown } from "../../lib/focusTrap";
 
 // THE CALL SCREEN (Phase 24 / D71 §6) — minimal v1: the agent's art full-bleed, the call's state, what
 // the ear heard you say, and hang up. The machine lives inside this component, so MOUNTING is starting a
@@ -46,6 +47,23 @@ export function CallOverlay() {
   const call = useLiveCall();
   const labelId = useId();
   const terminal = call.phase === "error" || call.phase === "ended";
+  const panelRef = useRef<HTMLDivElement>(null);
+  const hangUpRef = useRef<HTMLButtonElement>(null);
+
+  // `aria-modal` is a PROMISE about focus, and it was one this overlay could not keep: focus stayed on
+  // the composer it covers, so Tab walked an app the screen reader had already been told was hidden.
+  // The trap is the one the modals already share (`lib/focusTrap`) — nothing new, and ESCAPE HANGS UP
+  // rather than merely closing a panel, deliberately: there is nothing here to dismiss without ending
+  // the call. (The Android BACK gesture is the same question and is S2b's, with the rest of §6.)
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    hangUpRef.current?.focus();
+    return () => {
+      // The element we took focus from can be gone by now (the composer re-renders under the overlay).
+      if (prev?.isConnected) prev.focus();
+      else (document.activeElement as HTMLElement | null)?.blur();
+    };
+  }, []);
 
   // The whole surface is trigger B; the cluster below stops the event so a hang-up is never also an
   // interrupt. `pointerdown` rather than `click`: an interrupt should land on the touch, not on the
@@ -56,11 +74,13 @@ export function CallOverlay() {
 
   return (
     <div
+      ref={panelRef}
       className={`kit-call ph-${call.phase}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby={labelId}
       onPointerDown={onSurface}
+      onKeyDown={(e) => modalKeyDown(e, panelRef.current, call.hangUp)}
     >
       {art !== undefined && (
         <div className="kit-call-art" aria-hidden>
@@ -86,7 +106,7 @@ export function CallOverlay() {
         </p>
         {call.note !== null && call.note !== "" && <p className="kit-call-note">{call.note}</p>}
         <div className="kit-call-controls" onPointerDown={(e) => e.stopPropagation()}>
-          <button type="button" className="kit-call-hangup" onClick={call.hangUp}>
+          <button ref={hangUpRef} type="button" className="kit-call-hangup" onClick={call.hangUp}>
             {terminal ? "Close" : "Hang up"}
           </button>
         </div>
