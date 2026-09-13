@@ -18,6 +18,7 @@ import {
   stopTurn,
   useChat,
   useSessionAgent,
+  type SendOutcome,
 } from "../../src/store/chat";
 import type { Part } from "../../src/types";
 
@@ -604,7 +605,7 @@ describe("turn integrity — client (Slice 2)", () => {
     );
 
     const { result } = renderHook(() => useChat());
-    let sendP!: Promise<void>;
+    let sendP!: Promise<SendOutcome>;
     await act(async () => {
       sendP = sendMessage("hi"); // sets status "streaming" synchronously, then holds on the open body
     });
@@ -1276,7 +1277,7 @@ describe("durable turns — client (Slice 3, D39)", () => {
     });
 
     const { result } = renderHook(() => useChat());
-    let sendP!: Promise<void>;
+    let sendP!: Promise<SendOutcome>;
     await act(async () => {
       sendP = sendMessage("hi"); // status → streaming, holds on the open body
     });
@@ -1381,7 +1382,7 @@ describe("durable turns — client (Slice 3, D39)", () => {
     });
 
     const { result } = renderHook(() => useChat());
-    let sendP!: Promise<void>;
+    let sendP!: Promise<SendOutcome>;
     await act(async () => {
       sendP = sendMessage("hi");
     });
@@ -1592,7 +1593,7 @@ describe("the client half — formal-audit wave C", () => {
     });
 
     const { result } = renderHook(() => useChat());
-    let sendP!: Promise<void>;
+    let sendP!: Promise<SendOutcome>;
     await act(async () => {
       sendP = sendMessage("hi"); // sets status "streaming", then holds on the open body
     });
@@ -1813,7 +1814,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
       return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
     });
     const hook = renderHook(() => useChat());
-    let sendP!: Promise<void>;
+    let sendP!: Promise<SendOutcome>;
     await act(async () => {
       sendP = sendMessage("first");
     });
@@ -2591,8 +2592,8 @@ describe("steering queue — client (Slice 5, D41)", () => {
       return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
     });
     const { result } = renderHook(() => useChat());
-    let sendA!: Promise<void>;
-    let sendB!: Promise<void>;
+    let sendA!: Promise<SendOutcome>;
+    let sendB!: Promise<SendOutcome>;
     await act(async () => {
       sendA = sendMessage("first");
     });
@@ -2698,8 +2699,8 @@ describe("steering queue — client (Slice 5, D41)", () => {
       return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
     });
     const { result } = renderHook(() => useChat());
-    let sendA!: Promise<void>;
-    let steerSend!: Promise<void>;
+    let sendA!: Promise<SendOutcome>;
+    let steerSend!: Promise<SendOutcome>;
     await act(async () => {
       sendA = sendMessage("first");
     });
@@ -2866,7 +2867,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
       return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
     });
     const { result } = renderHook(() => useChat());
-    let sendP!: Promise<void>;
+    let sendP!: Promise<SendOutcome>;
     await act(async () => {
       sendP = sendMessage("hi");
     });
@@ -2943,7 +2944,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
       return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
     });
     const { result } = renderHook(() => useChat());
-    let sendA!: Promise<void>;
+    let sendA!: Promise<SendOutcome>;
     await act(async () => {
       sendA = sendMessage("first");
     });
@@ -3209,7 +3210,7 @@ describe("per-message agent (A6)", () => {
     });
 
     const hook = renderHook(() => useChat());
-    let sendP!: Promise<void>;
+    let sendP!: Promise<SendOutcome>;
     await act(async () => {
       sendP = sendMessage("first", { mode: "cloud", skills: ["deploy"] });
     });

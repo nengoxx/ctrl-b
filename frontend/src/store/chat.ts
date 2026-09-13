@@ -599,6 +599,52 @@ export function getChatStatus(): ChatStatus {
   return state.status;
 }
 
+// ── D71 §4.2 — THE LIVE-TURN SEAM (council F3) ───────────────────────────────────────────────────
+// Turn identity used to exist only INSIDE this file, as three private slots that `stopTurn` composed on
+// the spot: `state.threadId`, the seq gate's `lastTurnId`, and `state.streamingId`. That was fine while
+// text Stop was the only caller; the call machine is a second one, and the wrong answer to "who else
+// needs this" is a second set of slots tracking the same turn from the outside. So the composition is
+// stated ONCE here, and both callers take it: `stopTurn` is now a thin composite over `cancelTurn`, and
+// the call's barge-in passes the same ref with the other harvest disposition.
+
+/** The live turn, as anything outside this file may name it. */
+export interface LiveTurnRef {
+  threadId: string;
+  /** The turn the seq gate is watching — `null` when a stream is live but no frame has carried an id
+   *  yet, which is exactly the unscoped (legacy) cancel the backend still accepts. */
+  turnId: string | null;
+  /** The assistant bubble receiving deltas. Carried because the call machine's read-along override and
+   *  the deferred §4.4 truncate are both message-scoped; nothing in S2a writes through it. */
+  assistantMessageId: string | null;
+}
+
+/** The live turn, or `null` when there is nothing to cancel. NON-NULL IFF `status === "streaming"` —
+ *  the same authority `stopTurn` has always used, so "is there a turn" cannot be answered two ways. */
+export function getLiveTurn(): LiveTurnRef | null {
+  if (state.status !== "streaming" || !state.threadId) return null;
+  return {
+    threadId: state.threadId,
+    turnId: lastTurnId,
+    assistantMessageId: state.streamingId,
+  };
+}
+
+/** Is a tool call on this thread still waiting on the owner — a confirm gate or a question with no
+ *  result beside it (D71 §4.5's delta-round F1)? Derived from the message shapes the reducer already
+ *  writes, beside `RUN_STATES`, so there is no parallel "suspended" flag to keep in step. The call
+ *  machine reads it as a submit HOLD: a suspended turn leaves chat status `idle`, so an utterance sent
+ *  into it would take the optimistic fresh-turn path and strand on the held turn's 202. */
+export function confirmOutstanding(): boolean {
+  return state.messages.some((m) =>
+    m.parts.some(
+      (p) =>
+        p.type === "tool_call" &&
+        (p.state === "awaiting_confirm" || p.state === "awaiting_answer") &&
+        !m.parts.some((r) => r.type === "tool_result" && r.call_id === p.call_id),
+    ),
+  );
+}
+
 /** Fetch one thread's persisted history. Split from the state write so a caller can decide what to do
  *  with a FAILED fetch before it has touched the view (see `openThread`). */
 async function fetchMessages(threadId: string): Promise<ChatMessage[]> {
@@ -1363,7 +1409,7 @@ async function streamTurn(
    *  minute-long turn. A callback rather than a return value for exactly that reason — `streamTurn`
    *  resolves when the STREAM ends, which is far too late. */
   onAccepted?: () => void,
-): Promise<void> {
+): Promise<SendOutcome> {
   const ctx: TurnCtx = { claimed: !placeholderId, placeholderId, settled: false, gen: -1 };
   const handle = makeTurnReducer(ctx);
 
@@ -1398,7 +1444,7 @@ async function streamTurn(
         ...(isSteer ? {} : { status: "idle", streamingId: null }),
       });
       pushSystemNote("// " + detail);
-      return;
+      return "refused";
     }
     // 202 = the live holder is a chat/resume turn that ACCEPTS a steer (D41): this POST was ENQUEUED,
     // not rejected. Mark the optimistic user bubble QUEUED (keyed by the server's entry_id) and stash
@@ -1407,6 +1453,23 @@ async function streamTurn(
     if (res.status === 202) {
       onAccepted?.(); // ENQUEUED with its attachment ids — the drain claims them (D41 / §3's steer arm)
       const info = (await res.json().catch(() => ({}))) as { entry_id?: string; turn_id?: string };
+      // NORMALIZE-ON-202 (D71 §4.5, the recorded pre-existing defect — wider than the call). A send
+      // taken while chat status is `idle` builds the FRESH-turn shape: an optimistic assistant
+      // placeholder plus `status: "streaming"`. A suspended turn (a confirm gate) leaves the status idle
+      // while still HOLDING the thread, so the server answers that optimistic send with a 202 — and the
+      // placeholder then waits for a `message.start` no stream will ever deliver, with the composer
+      // wedged on Stop. The queued-steer bubble below is the whole truth of what happened, so the
+      // fresh-turn shape is undone here: placeholder removed, status settled, bubble left to be marked.
+      // TYPED text during `awaiting_confirm` hits this exact path, which is why the fix lives at the
+      // shared seam and not in the call's send door.
+      if (placeholderId !== undefined && !ctx.claimed) {
+        const stranded = placeholderId;
+        set({
+          messages: state.messages.filter((m) => m.id !== stranded),
+          status: "idle",
+          streamingId: null,
+        });
+      }
       if (info.entry_id && pendingUserId) {
         const entryId = info.entry_id;
         setRaw(
@@ -1437,7 +1500,10 @@ async function streamTurn(
         set({ messages: state.messages.filter((m) => m.id !== pendingUserId) });
         pushSystemNote("// steer not queued — try again");
       }
-      return;
+      // An UNTRACKABLE 202 (no `entry_id`) is a refusal in outcome terms however the server meant it:
+      // nothing queued that a drain can deliver, and the bubble was just dropped — so a call-origin
+      // utterance harvests to the draft instead of vanishing (F8).
+      return info.entry_id ? "accepted" : "refused";
     }
     if (!res.ok || !res.body) throw new Error(`${url} → ${res.status}`);
     // Past the 409 and past `!res.ok`: the turn is RUNNING (or already ran, buffered), so whatever
@@ -1503,7 +1569,7 @@ async function streamTurn(
         isObj(payload.error) ? str(payload.error.message) : undefined,
       );
       discoverSpawnedSteerTurn(); // D41 §3 — a buffered turn can also leave queued steers to a drain-B turn
-      return;
+      return "accepted";
     }
 
     // D41 — a STEER send (no placeholder) races the turn ending: the marker released before our POST
@@ -1520,7 +1586,7 @@ async function streamTurn(
     await parseSSE(res.body, handle);
     // FIX A — if a NEWER stream superseded us mid-reduce (a steer-race adopted turn B on another
     // socket), do NOT settle/re-attach/fail off this now-stale stream: its owner has moved on.
-    if (ctx.gen !== streamGeneration) return;
+    if (ctx.gen !== streamGeneration) return "accepted";
     // The loop exits when the underlying stream closes. If the server sent a `done`/`error` before
     // closing, `settled` is true and there's nothing more to do. Otherwise the connection was cut
     // mid-flight (phone lock / backend killed / network drop / proxy timeout). D39: the turn is now
@@ -1539,6 +1605,9 @@ async function streamTurn(
       // for them (invisible until probed). Discover + re-attach (reuses the D39 probe path).
       discoverSpawnedSteerTurn();
     }
+    // Past the 200: the server TOOK this send, whatever the stream then did with it (F8 — the outcome
+    // describes the ACCEPTANCE, not the turn's fate; a turn that fails mid-stream renders its own error).
+    return "accepted";
   } catch (e) {
     // Cross-channel reconnect signal (F16): if this looks like a backend-unreachable error
     // (fetch network failure, or a 502/503/504 from Vite's proxy when the upstream is gone),
@@ -1550,7 +1619,7 @@ async function streamTurn(
     // FIX A — a stream that WENT LIVE (claimed a generation) but has since been superseded by a newer
     // stream must not re-attach or failStream off its own drop: the newer generation owns the view. A
     // never-claimed stream (gen −1: the fetch/setup threw before going live) still fails normally.
-    if (ctx.gen >= 0 && ctx.gen !== streamGeneration) return;
+    if (ctx.gen >= 0 && ctx.gen !== streamGeneration) return "accepted";
     // A THROWN read error (abrupt network loss, TCP reset) is the other half of the drop
     // case — the clean-EOF branch above already re-attaches; this one must too (final-review
     // CONCERN-1: without it a transient blip that recovers in seconds still failStreams a
@@ -1559,9 +1628,14 @@ async function streamTurn(
       const cursor = lastTurnId ? `${lastTurnId}:${lastSeq}` : undefined;
       const tid = state.threadId;
       const reattached = tid ? await reattachTurn(tid, cursor).catch(() => false) : false;
-      if (reattached) return;
+      if (reattached) return "accepted";
     }
     failStream((e as Error).message);
+    // F8 — the ONE indeterminate case, and it must stay distinguishable: a native fetch failure
+    // (TypeError) can mean the request never left, or that it landed and the ANSWER was lost. A caller
+    // that re-sends on that would risk an invisible duplicate, so the call overlay labels it instead.
+    // Everything else here is the server having answered (`<url> → <status>`): a definite refusal.
+    return e instanceof TypeError ? "unknown" : "refused";
   }
 }
 
@@ -2133,13 +2207,36 @@ function harvestToDraft(threadId: string, data: CancelResp): void {
   }
 }
 
-/** Stop the running turn (D39/S3-C, D41 §6). While streaming, the composer's send control becomes Stop →
- *  `POST /api/agent/turns/{id}/cancel?turn_id=<scoped>`. On the happy path the server-owned drain task's
- *  CancelledError path emits a `done{state:"cancelled"}` through the ATTACHED stream, which settles
- *  status normally; undrained steers are harvested to the composer. If nothing was live (the stream
- *  already ended / the POST fails), settle from the durable floor so the button never wedges "streaming".
+/** Consume a harvest receipt WITHOUT restoring it (D71 §4.3): a call-origin steer the cancel harvested
+ *  was spoken INTO the turn being interrupted, and the owner is already saying the thing that replaces
+ *  it — dropping it into the composer would leave stale words behind the live conversation. The raw
+ *  lines are dropped exactly as a restore drops them, and the signature is stamped for the same reason
+ *  `harvestToDraft` stamps it: a replayed receipt (the retry) must not then restore what this discarded. */
+function discardHarvest(threadId: string, data: CancelResp): void {
+  const harvested = Array.isArray(data.steer_queue) ? data.steer_queue : [];
+  if (!harvested.length) return;
+  const sig = harvested.map((e) => e.entry_id ?? "").join(",");
+  if (sig === lastHarvestSig) return;
+  for (const e of harvested) if (e.entry_id) delRaw(threadId, e.entry_id);
+  lastHarvestSig = sig;
+}
+
+/** The receipt's disposition, the ONE place the two callers differ. */
+function applyHarvest(threadId: string, data: CancelResp, harvest: HarvestMode): void {
+  if (harvest === "draft") harvestToDraft(threadId, data);
+  else discardHarvest(threadId, data);
+}
+
+/** What a cancel does with the steers the server hands back: `"draft"` = today's text-Stop restore;
+ *  `"discard"` = the call's barge-in (§4.3 — consumed, not restored). */
+export type HarvestMode = "draft" | "discard";
+
+/** Cancel ONE named turn and settle the view — the primitive behind both text Stop and the call's
+ *  ordered kill (D71 §4.2's F3 seam). Resolves only when the cancel has SETTLED, which is what makes
+ *  §4.3 step ② awaitable: the barge-in may not submit the interrupting utterance until the turn it
+ *  interrupted is actually gone.
  *
- *  FIX E — three contract behaviours:
+ *  FIX E — three contract behaviours, unchanged by the extraction:
  *   • SCOPED MISMATCH (`{cancelled:false, active:true, turn_id:<live>}`): our scoped turn has finished
  *     and a successor is live. The response's `steer_queue` is a READ-ONLY PEEK of the successor's queue,
  *     NOT a harvest — do NOT restore/remove. Adopt the live turn instead (re-attach; its generation
@@ -2147,13 +2244,13 @@ function harvestToDraft(threadId: string, data: CancelResp): void {
  *   • REPLAYED HARVEST (`harvest_replayed:true`): restore is idempotent (`harvestToDraft` signature).
  *   • LOST RESPONSE (the POST/read threw): retry the Stop ONCE — the backend replays the harvest receipt
  *     — before falling back to a durable-floor settle. */
-export async function stopTurn(): Promise<void> {
-  if (state.status !== "streaming" || !state.threadId || cancelling) return;
+export async function cancelTurn(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> {
+  if (cancelling) return;
   cancelling = true;
-  const threadId = state.threadId;
-  // A6/C4-H2: scope the cancel to THIS turn (the seq gate's current `lastTurnId`) so a delayed Stop can't
-  // cancel/harvest a successor turn — the server refuses/peeks a turn_id that doesn't match the live handle.
-  const scopedTurn = lastTurnId;
+  const threadId = ref.threadId;
+  // A6/C4-H2: scope the cancel to THIS turn (the ref's own id) so a delayed Stop can't cancel/harvest a
+  // successor turn — the server refuses/peeks a turn_id that doesn't match the live handle.
+  const scopedTurn = ref.turnId;
   try {
     const res = await postCancel(threadId, scopedTurn);
     if (!res.ok) throw new Error(`cancel → ${res.status}`);
@@ -2168,7 +2265,7 @@ export async function stopTurn(): Promise<void> {
       }
       return;
     }
-    harvestToDraft(threadId, data);
+    applyHarvest(threadId, data, harvest);
     // No live turn (active:false) → no stream will deliver a `done`, so settle status here. Either way
     // ALWAYS reload from the durable floor: the drain task's cancel path already reconciled the in-flight
     // calls to CANCELLED server-side, but the ATTACHED client's local call parts still render pending —
@@ -2183,7 +2280,8 @@ export async function stopTurn(): Promise<void> {
       const res = await postCancel(threadId, scopedTurn);
       if (res.ok) {
         const data = (await res.json()) as CancelResp;
-        if (!(data.cancelled === false && data.active === true)) harvestToDraft(threadId, data);
+        if (!(data.cancelled === false && data.active === true))
+          applyHarvest(threadId, data, harvest);
         if (data.active === false) set({ status: "idle", streamingId: null });
         await reloadChat(true);
         return;
@@ -2197,6 +2295,26 @@ export async function stopTurn(): Promise<void> {
     cancelling = false;
   }
 }
+
+/** Stop the running turn (D39/S3-C, D41 §6) — the composer's Stop control. The guard is the whole of
+ *  what text Stop adds to the seam: only a STREAMING turn is stoppable from the composer (the button is
+ *  not even mounted otherwise), and its steers go back to the composer where the owner can edit them. */
+export async function stopTurn(): Promise<void> {
+  const ref = getLiveTurn();
+  if (ref === null) return;
+  await cancelTurn(ref, "draft");
+}
+
+/** What the chat door did with a send (D71 §4.5's F8). `runComposer`'s boolean means "routing started"
+ *  and every existing caller discards this promise, so the signal had to be BUILT: a call transcript
+ *  that is definitely refused goes back to the owner as draft text, and one whose fate is UNKNOWN is
+ *  labelled rather than re-sent (an invisible duplicate is worse than a manual retry).
+ *
+ *  · `accepted` — the server took it: a 200 stream, a buffered JSON turn, or a 202 with an entry id.
+ *  · `refused`  — the server ANSWERED and did not take it: 409, any non-OK status, an untrackable 202.
+ *  · `unknown`  — the request failed at the transport (a native fetch TypeError) with no answer and no
+ *                 successful re-attach, so whether it landed is genuinely not knowable from here. */
+export type SendOutcome = "accepted" | "refused" | "unknown";
 
 /**
  * Send a user message and stream the assistant turn. Appends the user bubble + an empty assistant
@@ -2217,12 +2335,13 @@ export async function sendMessage(
      *  (the accept) or release them (anything else). */
     attachments?: string[];
   },
-): Promise<void> {
+): Promise<SendOutcome> {
   const body = text.trim();
   const attachments = opts?.attachments ?? [];
   // Empty text is a legal send WITH files (D68 §7): the server injects `ATTACHMENT_ONLY_TEXT` as the
-  // wire text and titles the thread from the filenames. With neither there is nothing to send.
-  if (!body && !attachments.length) return;
+  // wire text and titles the thread from the filenames. With neither there is nothing to send — which
+  // is a refusal from the caller's side: nothing was queued, and nothing will arrive later.
+  if (!body && !attachments.length) return "refused";
   // D41 — the send-while-streaming guard is LIFTED: a send during a live turn is a STEER (enqueued via a
   // 202, drained into the running turn or spawned at its end). Per-message `/cloud <msg>` wins; else the
   // sticky session mode; else the server default (null). Only a FRESH (non-steer) send stashes
@@ -2328,11 +2447,10 @@ export async function sendMessage(
     // 409 (cap overflow / a sync holder) rolls it back; a 200 (the turn just ended) adopts it live.
     set({ messages: [...state.messages, tempUser] });
     try {
-      await streamTurn("/api/agent/chat", reqBody, undefined, tempUser.id, raw, onAccepted);
+      return await streamTurn("/api/agent/chat", reqBody, undefined, tempUser.id, raw, onAccepted);
     } finally {
       releaseUnspent();
     }
-    return;
   }
 
   const placeholderId = `assist-${Date.now()}`;
@@ -2341,8 +2459,16 @@ export async function sendMessage(
     status: "streaming",
     streamingId: placeholderId,
   });
+  let outcome: SendOutcome;
   try {
-    await streamTurn("/api/agent/chat", reqBody, placeholderId, tempUser.id, raw, onAccepted);
+    outcome = await streamTurn(
+      "/api/agent/chat",
+      reqBody,
+      placeholderId,
+      tempUser.id,
+      raw,
+      onAccepted,
+    );
   } finally {
     releaseUnspent();
   }
@@ -2355,6 +2481,7 @@ export async function sendMessage(
   // `probeAndReattach` uses for the drained-exec gap, and it costs one GET on attachment sends only.
   // (A STEER returns above: its floor arrives with the next reconcile.)
   if (claimed) await reloadChat();
+  return outcome;
 }
 
 /** One-line sys breadcrumb for a compaction event (auto or manual). `rejected` (D42, manual only)

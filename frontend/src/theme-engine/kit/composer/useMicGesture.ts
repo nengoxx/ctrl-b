@@ -10,6 +10,8 @@ import {
 
 import { micLabel } from "./useComposerChrome";
 import { TOO_SHORT_MSG, type useDictation } from "../../../hooks/useDictation";
+import { primeAudio } from "../../../lib/audioController";
+import { requestCall } from "../../../store/liveCall";
 import { setMicCancel } from "../../../store/micCancel";
 import { getUI, setUI, useUISlice } from "../../../store/ui";
 
@@ -462,11 +464,15 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     hintTimer.current = setTimeout(() => setHint(null), HINT_MS);
   }, []);
 
-  /** The call commit. S0.5 builds the whole path TO here and nothing past it: `live` is never true
-   *  until S1 delivers the bit, so this is unreachable today and deliberately does nothing rather than
-   *  pretending. TODO(S2a): open the live-call overlay (LIVE_VOICE_PLAN §7-S2a). */
+  /** The call commit — all three doors (the swipe-up commit, the standing chip's tap, the keyboard
+   *  activation) land here, and every one of them is INSIDE a user gesture. That is what the first line
+   *  is for: the shared `<audio>` element is created lazily by whatever first wants to speak, which on
+   *  mobile is a timer and not a tap, and the autoplay policy would swallow the call's first reply
+   *  (LIVE_VOICE_PLAN §6 "audio priming"). Priming here — not in the overlay's mount effect — is the
+   *  difference between being inside the gesture and merely being caused by one. */
   const startCall = useCallback(() => {
-    /* no-op until S2a wires the call loop */
+    primeAudio();
+    requestCall();
   }, []);
 
   // A NAMED function expression so the two self-scheduling outcomes (`start`'s failure close-out and

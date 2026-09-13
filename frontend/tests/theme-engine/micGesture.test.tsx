@@ -53,6 +53,7 @@ import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft } from "../../src/store/composer";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
 import { pushToast } from "../../src/store/toast";
+import { endCall, useCallRequested } from "../../src/store/liveCall";
 import { getUI, setUI } from "../../src/store/ui";
 import {
   FakeMediaRecorder,
@@ -95,6 +96,16 @@ const cancelBtn = () => screen.queryByRole("button", { name: "cancel recording" 
 const tools = () => document.querySelector<HTMLButtonElement>(".kit-cbtn.tools")!;
 const chip = () => document.querySelector<HTMLButtonElement>(".mg-chip");
 const hint = () => document.querySelector(".mg-hint")?.textContent ?? null;
+/** The call store's one bit, read without a component of its own (the hook is the only reader). */
+const useCallRequestedValue = () => {
+  let v = false;
+  const Probe = () => {
+    v = useCallRequested();
+    return null;
+  };
+  render(<Probe />);
+  return v;
+};
 const posts = () => vi.mocked(globalThis.fetch).mock.calls.length;
 
 /** Let timers fire and every promise they woke settle (the start path awaits `getUserMedia`). */
@@ -482,6 +493,51 @@ describe("call mode is UNREACHABLE until the `live` bit exists (ruling 5)", () =
     await tick(0);
     expect(chip()).toBeNull(); // gone with the mode — there is no tap left to commit a call
     expect(mic().getAttribute("aria-label")).toBe("start dictation");
+  });
+
+  it("the call commit PRIMES audio and opens the call — from the chip's own tap (S2a)", async () => {
+    // The two things the commit must do, and the reason both are HERE rather than in the overlay: this
+    // is the last frame that is still inside the user's gesture. Priming the <audio> element anywhere
+    // later is priming it outside a gesture, which is exactly what the autoplay policy refuses.
+    voice.live = true;
+    // The player element is built by `new Audio()`, never mounted in the document, so the way to see
+    // the prime is to watch the constructor the singleton uses.
+    const primedSrc: string[] = [];
+    vi.stubGlobal(
+      "Audio",
+      class {
+        set src(v: string) {
+          primedSrc.push(v);
+        }
+        preload = "";
+        muted = false;
+        currentSrc = "";
+        addEventListener() {}
+        getAttribute() {
+          return null;
+        }
+        removeAttribute() {}
+        load() {}
+        play() {
+          return undefined;
+        }
+        pause() {}
+      },
+    );
+    render(<KitComposer />);
+    down();
+    up(); // tap → call mode
+    await tick(10);
+    await hold();
+    up(); // released short of the swipe → the standing chip
+    await tick(0);
+    expect(useCallRequestedValue()).toBe(false);
+    act(() => chip()!.click());
+    await tick(0);
+    expect(useCallRequestedValue()).toBe(true);
+    // …and the element was handed a decodable silent source inside that same tap.
+    expect(primedSrc[0]).toMatch(/^data:audio\/wav;base64,/);
+    endCall();
   });
 
   it("`live` dropping during a call-mode PRESS never re-enters call mode (confirm sweep)", async () => {

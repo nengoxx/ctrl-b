@@ -277,7 +277,7 @@ describe("the optimistic snapshot (MED-6)", () => {
     mockChat(() => new Promise<Response>((resolve) => (answer = resolve)) as unknown as Response);
     addStaged(photo("id-1"));
     const { result } = renderHook(() => useChat());
-    let sending!: Promise<void>;
+    let sending!: Promise<unknown>;
     await act(async () => {
       sending = sendMessage("look at this", { attachments: reserveStaged() });
       await Promise.resolve();
@@ -326,6 +326,10 @@ describe("the optimistic snapshot (MED-6)", () => {
 
   it("the URL survives the send and is revoked by the DURABLE swap, not by the rail", async () => {
     const revoke = vi.spyOn(URL, "revokeObjectURL");
+    // Measure THIS arm's revokes only. `URL.revokeObjectURL` is already a mock (tests/setup.ts), so
+    // `spyOn` hands back that same one — and the previous case can still be settling an un-awaited
+    // send whose sweep lands inside this case's `beforeEach`, after vitest's own `clearMocks`.
+    revoke.mockClear();
     mockChat(() => sseResponse(DONE));
     addStaged(photo("id-1"));
     await act(async () => {
@@ -347,6 +351,8 @@ describe("the optimistic snapshot (MED-6)", () => {
 
   it("a REFUSED send never takes ownership — the rail keeps the chip AND its thumbnail", async () => {
     const revoke = vi.spyOn(URL, "revokeObjectURL");
+    revoke.mockClear(); // this arm's own revokes only — see the note above
+
     mockChat(() => status(409));
     addStaged(photo("id-1"));
     await act(async () => {

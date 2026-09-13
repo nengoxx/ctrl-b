@@ -1,6 +1,13 @@
 import { useEffect, useRef } from "react";
 
-import { dismiss, endTurnSpeak, feedReadAlong, usePlayback } from "../lib/audioController";
+import {
+  callVoiceSpeaks,
+  dismiss,
+  endTurnSpeak,
+  feedReadAlong,
+  useCallVoice,
+  usePlayback,
+} from "../lib/audioController";
 import { useChat } from "../store/chat";
 import type { ChatMessage } from "../types";
 import { useUISlice } from "../store/ui";
@@ -66,6 +73,11 @@ export function useAutoTts(): void {
   );
   const abandoned = useRef(false);
   const prevTtsOk = useRef(ttsOk);
+  // D71 §4.5 — a live CALL forces this feeder on for its own turns: read-along is how a call sounds like
+  // a call, and the owner's Conf rows are left exactly as they are. Subscribed here (the per-message
+  // answer is read imperatively below, once the target id is known) so arming the override re-runs the
+  // gates instead of waiting for the next delta.
+  const callVoice = useCallVoice();
 
   useEffect(() => {
     const was = prevStatus.current;
@@ -88,7 +100,14 @@ export function useAutoTts(): void {
       abandoned.current = true;
       dismiss();
     }
-    if (!ttsAuto || !ttsOk) return;
+    // The turn this render is about — hoisted because BOTH gates and the terminal edge need to know
+    // whether the CALL override speaks it, and it is the same pure scan all three used to repeat.
+    const live = finalReply(messages);
+    // The override's first bypass: `ttsAuto` (the AppBar toggle). It applies per MESSAGE, never
+    // globally — the turn that was already streaming when the call started is excluded, so a reply the
+    // owner was reading silently is not picked up half-way through (§4.5).
+    const callSpeaks = callVoice && callVoiceSpeaks((live ?? fed.current)?.id ?? "");
+    if ((!ttsAuto && !callSpeaks) || !ttsOk) return;
 
     // The terminal edge: idle OR error. An errored turn never passes through "idle" (`failStream` and
     // `done{state:"error"}` both settle on "error"), which would leave an open session hanging — and
@@ -96,10 +115,9 @@ export function useAutoTts(): void {
     // ONE flush per turn: `spokenId` collapses the `error` frame and the `done(error)` behind it.
     if (was === "streaming" && (status === "idle" || status === "error")) {
       if (abandoned.current) return; // the user stopped this reply's audio — don't start it again
-      const reply = finalReply(messages);
       // A final assistant message that never became text-bearing (a tool-only step, or one that
       // errored before its first delta) would otherwise strand the preamble already being read.
-      const target = reply ?? fed.current;
+      const target = live ?? fed.current;
       if (!target || target.id === spokenId.current) return;
       spokenId.current = target.id;
       void endTurnSpeak(target.id, target.text, target.agent);
@@ -108,8 +126,16 @@ export function useAutoTts(): void {
     if (status !== "streaming") return;
 
     // ── the feed (read-along) ──
-    if (!chunking?.read_along || chunking.mode === "off" || abandoned.current) return;
-    const live = finalReply(messages);
+    // The override's second bypass: `read_along` itself. What it does NOT bypass is `mode === "off"` —
+    // with chunking off there is nothing to split a growing reply into, so §4.5's stated fallback
+    // applies: the call still works, the reply just speaks whole at turn end through the branch above.
+    if (
+      !chunking ||
+      chunking.mode === "off" ||
+      (!chunking.read_along && !callSpeaks) ||
+      abandoned.current
+    )
+      return;
     if (!live) return;
     const already = fed.current?.id === live.id ? fed.current.text.length : 0;
     if (!BOUNDARY.test(live.text.slice(already))) return;
@@ -120,5 +146,5 @@ export function useAutoTts(): void {
       docked: fed.current?.id === live.id && fed.current.docked,
     };
     feedReadAlong(live.id, live.text, live.agent);
-  }, [status, messages, ttsAuto, ttsOk, chunking, dockedId]);
+  }, [status, messages, ttsAuto, ttsOk, chunking, dockedId, callVoice]);
 }

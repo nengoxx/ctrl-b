@@ -7165,10 +7165,12 @@ body[data-perf="lite"] .kit .navmenu-pop {
    the auto-TTS flash (`.kit-tts-toast`, 41) < the automations editor sheet (`.pm-backdrop.auto-pm`, 45)
    = a THEME's full-screen transition overlay (gacha's tab reel, D52 §10.1 — a document-level sibling of
    `.kit`, deliberately at the same rung: the two can never co-exist, and both must sit under a question)
-   < ConfirmDialog (`.modal-backdrop`, 50) < PromptModal (`.pm-backdrop`, 60). The sheet BORROWS this
-   shell's look but must sit UNDER the confirm dialog it opens (its delete asks for confirmation), which
-   is why it takes its own z-index rather than the 60 below. PromptModal stays on top: it is opened FROM
-   the other two, never under them. */
+   < ConfirmDialog (`.modal-backdrop`, 50) < THE CALL SCREEN (`.kit-call`, 55, D71 §6) < PromptModal
+   (`.pm-backdrop`, 60). The sheet BORROWS this shell's look but must sit UNDER the confirm dialog it
+   opens (its delete asks for confirmation), which is why it takes its own z-index rather than the 60
+   below. The call screen sits ABOVE the confirm dialog because a call OWNS the screen for its duration
+   (its own confirm affordance is the in-overlay row, S2b) and UNDER PromptModal for the same reason
+   everything else is: PromptModal stays on top, opened FROM the others and never under them. */
 .kit .pm-backdrop.auto-pm {
   z-index: 45;
 }
@@ -8834,4 +8836,134 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
 /* The pre-filled default, before it is edited: reference text, not the owner's words (§9a-1). */
 .kit .pm-text.muted {
   color: var(--text-3);
+}
+
+/* ── D71 §6 — THE CALL SCREEN (Phase 24 / S2a, minimal v1) ───────────────────────────────────────
+ * The live-call overlay: the active agent's art full-bleed, the call's state, the transcript line and
+ * hang up. Token-only, so gacha/frontier/cosmos/vapor inherit it through their own palettes with no
+ * per-theme work (§6's v1 rule) — and every colour is a token, never a literal, so the light modes are
+ * covered by the same construction the rest of this file uses.
+ *
+ * WHAT IS NOT HERE YET (S2b): the focal-anchored face RING and its state animations, the no-ring
+ * transcript accent, mute, the in-overlay confirm row and the terminal faces. The layout below is the
+ * bottom cluster BOTH ring modes keep, so S2b adds a layer above it rather than rewriting it.
+ *
+ * z-index 55 — the ladder is stated once, at `.pm-backdrop.auto-pm` above.
+ *
+ * MOTION: one breathing dot, transform/opacity only (§14.11), and it is gated on the app's own
+ * `body[data-motion]` axis — never a raw `prefers-reduced-motion` query (the standing house rule). With
+ * motion reduced the dot is a STATIC filled dot in the same state colour, so the call's state stays
+ * readable: reduced motion must never mean an unreadable call screen. */
+.kit .kit-call {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: var(--bg);
+  color: var(--text-1);
+  /* The state colour every piece below reads — one declaration per phase, set on the root. */
+  --call-accent: var(--accent);
+}
+.kit .kit-call.ph-thinking {
+  --call-accent: var(--text-2);
+}
+.kit .kit-call.ph-error {
+  --call-accent: var(--danger);
+}
+.kit .kit-call.ph-connecting,
+.kit .kit-call.ph-ended {
+  --call-accent: var(--text-3);
+}
+/* The art layer + its veil, the SHIPPED backdrop recipe (§8.3a): a sharp cover image and a separate
+ * readability wash, built from `--bg` through `color-mix` so it follows light and dark alike. Heavier
+ * at the bottom, where the text sits. */
+.kit .kit-call-art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.kit .kit-call-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    color-mix(in oklch, var(--bg) 24%, transparent),
+    color-mix(in oklch, var(--bg) 52%, transparent) 46%,
+    color-mix(in oklch, var(--bg) 88%, transparent)
+  );
+}
+.kit .kit-call-body {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  padding: 20px 18px calc(24px + env(safe-area-inset-bottom));
+  text-align: center;
+}
+.kit .kit-call-phase {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--call-accent);
+}
+.kit .kit-call-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-inline-end: 8px;
+  border-radius: 50%;
+  background: var(--call-accent);
+  vertical-align: baseline;
+}
+body[data-motion="full"] .kit .kit-call-dot {
+  animation: kit-call-breathe 1.8s var(--ease-std) infinite;
+}
+@keyframes kit-call-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+/* The transcript line: what the ear heard YOU say. Two lines at most — it is a check, not a log. */
+.kit .kit-call-heard {
+  margin: 0;
+  min-height: 2.6em;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--text-1);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.kit .kit-call-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.kit .kit-call-controls {
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
+}
+.kit .kit-call-hangup {
+  all: unset;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 0 26px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--bg);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+.kit .kit-call-hangup:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

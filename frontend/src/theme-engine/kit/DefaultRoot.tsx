@@ -17,6 +17,7 @@ import { PromptModal } from "../../components/PromptModal";
 import { SwUpdatePrompt } from "../../components/SwUpdatePrompt";
 import { Toasts } from "../../components/Toasts";
 import { useSections } from "../../hooks/useSections";
+import { useCallRequested } from "../../store/liveCall";
 import { getGroupScrollTarget } from "../../store/groupScroll";
 import { prefetchOnIdle } from "../../lib/prefetch";
 import { AgentTab } from "../../tabs/AgentTab";
@@ -26,6 +27,7 @@ import { UtilsTab } from "../../tabs/UtilsTab";
 import { useScrollKeep } from "../scrollKeep";
 import type { TabDef, TabId } from "../types";
 import { KitAppBar, KitTtsFlash } from "./AppBar";
+import { CallOverlay } from "./CallOverlay";
 import { mergeComposerSlots } from "./composer/mergeSlots";
 import { kitPlanComposerSlots } from "./composer/plan";
 import { usePlanPlacement } from "./composer/plan/placement";
@@ -140,6 +142,8 @@ export function DefaultRoot({
   // theme's `composer` setting (registry lookup, fallback-safe). Read the layout once here so the
   // `--composer-h` effect can key on it (re-measure on a live swap) and pass it down (one subscription).
   const composerLayout = useComposerLayout();
+  // Is a live call up (D71)? One bit, published by the mic gesture's call commit — see the mount below.
+  const callUp = useCallRequested();
   // Composer ADDON composition (D30). DefaultRoot owns it for every variant, and it's a real MERGE
   // (`mergeComposerSlots`) since A6 — the old "when inline, a theme-passed `composerSlots` is silently
   // dropped" limitation is GONE. Three contributors, in `controlsStart` order (first = leading edge):
@@ -414,6 +418,11 @@ export function DefaultRoot({
           flash it even under `off`/`minimal` where no bar renders. Anchored via --appbar-h (0 when the
           bar is hidden → it sits at the viewport top-right). */}
       <KitTtsFlash />
+      {/* THE CALL SCREEN (D71 §6). Mounted HERE, at the shell root beside the dialogs, and nowhere
+          else: every theme rides this Root (cosmos/vapor/minimal/gacha/frontier all compose it), and a
+          composer-parented overlay would be clipped by the sheet/line bars the gesture chrome already
+          had to escape. Mounting IS starting the call and unmounting is its whole teardown. */}
+      {callUp && <CallOverlay />}
       <Toasts />
       <ConfirmDialog />
       <PromptModal />

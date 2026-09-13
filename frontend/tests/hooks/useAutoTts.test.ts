@@ -27,6 +27,9 @@ const h = vi.hoisted(() => {
     voice,
     player,
     ui: { ttsAuto: true },
+    // D71 §4.5 — the CALL's read-along override, driven the way the real one is: a reactive "armed"
+    // bit plus the per-message question the hook asks once it knows the target id.
+    call: { active: false, since: null as string | null },
     feed: vi.fn(),
     endTurn: vi.fn(),
     dismiss: vi.fn(),
@@ -43,6 +46,8 @@ vi.mock("../../src/lib/audioController", () => ({
   endTurnSpeak: h.endTurn,
   dismiss: h.dismiss,
   usePlayback: (sel: (p: { id: string | null }) => unknown) => sel(h.player),
+  useCallVoice: () => h.call.active,
+  callVoiceSpeaks: (id: string) => h.call.active && id !== h.call.since,
 }));
 
 import { useAutoTts } from "../../src/hooks/useAutoTts";
@@ -82,6 +87,7 @@ beforeEach(() => {
   h.ui = { ttsAuto: true };
   h.voice = { tts: true, tts_chunking: { mode: "sentence", read_along: true } };
   h.player.id = null;
+  h.call = { active: false, since: null };
   h.feed.mockClear();
   h.endTurn.mockClear();
   h.dismiss.mockClear();
@@ -273,5 +279,68 @@ describe("useAutoTts — the per-turn abandon latch", () => {
     const turn2 = [user, said("a1", "One. Two. Three."), user, said("a2", "A new reply.")];
     step("streaming", turn2);
     expect(h.feed).toHaveBeenLastCalledWith("a2", "A new reply.", null);
+  });
+});
+
+describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
+  it("speaks a call's turn with BOTH owner toggles off — the Conf rows are never written", () => {
+    h.ui = { ttsAuto: false };
+    h.voice = { tts: true, tts_chunking: { mode: "sentence", read_along: false } };
+    h.call = { active: true, since: null };
+    const step = mount();
+    step("streaming", [user, said("a1", "On my way.")]);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "On my way.", null);
+    step("idle", [user, said("a1", "On my way.")]);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "On my way.", null);
+  });
+
+  it("does NOT pick up the turn that was already streaming when the call started", () => {
+    h.ui = { ttsAuto: false };
+    h.call = { active: true, since: "a1" };
+    const step = mount();
+    step("streaming", [user, said("a1", "Half-read already.")]);
+    expect(h.feed).not.toHaveBeenCalled();
+    step("idle", [user, said("a1", "Half-read already.")]);
+    expect(h.endTurn).not.toHaveBeenCalled();
+
+    // …and the NEXT turn, which began inside the call, is spoken.
+    const next = [user, said("a1", "Half-read already."), user, said("a2", "This one is yours.")];
+    step("streaming", next);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a2", "This one is yours.", null);
+  });
+
+  it("with chunking OFF the reply still speaks — whole, at turn end (§4.5's stated fallback)", () => {
+    h.ui = { ttsAuto: false };
+    h.voice = { tts: true, tts_chunking: { mode: "off", read_along: false } };
+    h.call = { active: true, since: null };
+    const step = mount();
+    step("streaming", [user, said("a1", "Nothing to split.")]);
+    expect(h.feed).not.toHaveBeenCalled();
+    step("idle", [user, said("a1", "Nothing to split.")]);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Nothing to split.", null);
+  });
+
+  it("does not override TTS being unconfigured — there is no mouth to force on", () => {
+    h.voice = { tts: false, tts_chunking: { mode: "sentence", read_along: true } };
+    h.call = { active: true, since: null };
+    const step = mount();
+    step("streaming", [user, said("a1", "Silence.")]);
+    step("idle", [user, said("a1", "Silence.")]);
+    expect(h.feed).not.toHaveBeenCalled();
+    expect(h.endTurn).not.toHaveBeenCalled();
+  });
+
+  it("the user taking the player away still stops the call's reply (the abandon latch holds)", () => {
+    h.ui = { ttsAuto: false };
+    h.call = { active: true, since: null };
+    const step = mount();
+    step("streaming", [user, said("a1", "One.")]);
+    h.player.id = "a1";
+    step("streaming", [user, said("a1", "One. Two.")]);
+    h.player.id = null; // the call's own kill undocks it
+    step("streaming", [user, said("a1", "One. Two. Three.")]);
+    expect(h.feed).toHaveBeenCalledTimes(2);
+    step("idle", [user, said("a1", "One. Two. Three.")]);
+    expect(h.endTurn).not.toHaveBeenCalled();
   });
 });

@@ -106,6 +106,84 @@ export function setChunkPolicy(next: ChunkPolicy): void {
   policy = next;
 }
 
+// ── D71 §6 / §4.5 — THE CALL's three touches on this singleton ───────────────────────────────────
+// A call needs a MOUTH, and the mouth is this module. It gets exactly three things and no new player:
+// a gesture unlock, a client-local read-along override, and the kill it already has (`dismiss`).
+
+/** ~1 sample of silence, as a WAV data URI. The field's unlock payload (howler.js carries the same
+ *  44-byte header): a `play()` on a src-LESS element rejects with NotSupportedError, and a rejected play
+ *  grants nothing — the element has to be handed something it can actually decode. */
+const SILENT_WAV =
+  "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+
+/** True while `primeAudio`'s silent unlock is on the element — the two status listeners above ignore it
+ *  so a prime never publishes a phantom "playing"/"paused" into the transport. */
+let priming = false;
+/** The unlock is once per page: the element keeps its activation for the session. */
+let primed = false;
+
+/**
+ * Unlock the shared `<audio>` element from inside a user gesture (D71 §6 "audio priming").
+ *
+ * Today's element is created LAZILY, by whatever first wants to speak — which on mobile is a timer, not
+ * a tap, and the first reply of a call would be silently swallowed by the autoplay policy. The call's
+ * start gesture calls this instead, and it does the two things the field's unlock is made of: CONSTRUCT
+ * the element inside the gesture (howler.js's html5 pool rule) and get one real `play()` out of it, on a
+ * decodable silent source, then put the element straight back the way it was.
+ *
+ * Never throws and never awaits: a rejected unlock (an engine that wants more, a src already loaded)
+ * leaves exactly today's behaviour. Idempotent — a redial costs nothing.
+ */
+export function primeAudio(): void {
+  if (primed) return;
+  primed = true;
+  const a = ensureEl();
+  // Something is already loaded on the element: it was unlocked by whatever put it there, and clobbering
+  // its `src` to prime would stop live audio. Nothing to do.
+  if (a.currentSrc || a.getAttribute("src")) return;
+  priming = true;
+  const done = (): void => {
+    a.pause();
+    a.removeAttribute("src");
+    a.load();
+    a.muted = false;
+    priming = false;
+  };
+  a.muted = true;
+  a.src = SILENT_WAV;
+  // `play()` returns a promise everywhere that matters — but not in every environment this module runs
+  // in (jsdom's is a no-op returning undefined), and a prime must never throw into the gesture that
+  // called it.
+  const started = a.play() as Promise<void> | undefined;
+  if (started) void started.then(done).catch(() => done());
+  else done();
+}
+
+/** The CALL's read-along override (§4.5) — client-local for the call's duration; the Conf rows are never
+ *  written. `since` is the assistant message that was already streaming when the call started: a turn
+ *  half-spoken into an owner who was not yet in a call is never picked up mid-sentence. */
+let callVoice: { active: boolean; since: string | null } = { active: false, since: null };
+
+/** Arm/disarm the override. The call's teardown clears it on EVERY exit path. */
+export function setCallVoice(active: boolean, sinceMessageId: string | null): void {
+  const since = active ? sinceMessageId : null;
+  if (callVoice.active === active && callVoice.since === since) return;
+  callVoice = { active, since };
+  emit(); // the feeder is a hook: flipping the override has to re-run its gates
+}
+
+/** Does the call override speak THIS message? The feeder's per-message question — the answer is what
+ *  lets `ttsAuto`/`read_along` be bypassed for the call's own turns and nothing else. */
+export function callVoiceSpeaks(messageId: string): boolean {
+  return callVoice.active && messageId !== callVoice.since;
+}
+
+/** Is the override armed at all — the feeder's reactive dependency (the per-message answer above is read
+ *  imperatively once the target id is known). */
+export function useCallVoice(): boolean {
+  return useStore(() => callVoice.active);
+}
+
 // ── the chunk queue ──────────────────────────────────────────────────────────────────────────────
 
 type ChunkState = "pending" | "ok" | "failed";
@@ -289,8 +367,12 @@ function ensureEl(): HTMLAudioElement {
   });
   a.addEventListener("durationchange", syncDuration);
   a.addEventListener("loadedmetadata", syncDuration);
-  a.addEventListener("play", () => set({ status: "playing" }));
+  a.addEventListener("play", () => {
+    if (priming) return; // the gesture unlock is not playback — see `primeAudio`
+    set({ status: "playing" });
+  });
   a.addEventListener("pause", () => {
+    if (priming) return;
     // A clip reaching its end fires `pause` BEFORE `ended` (HTML spec). Mid-queue that is not a user
     // pause, it's the seam — reporting "paused" there would flicker the transport on every chunk
     // boundary (the `if (el.ended) return` guard AnythingLLM's player needs for the same reason).

@@ -24,6 +24,7 @@ import {
   pushSystemNote,
   runShell,
   sendMessage,
+  type SendOutcome,
   setSessionAgent,
   setSessionMode,
   setSessionPrivilege,
@@ -489,6 +490,33 @@ export function runComposer(raw: string): boolean {
     ...(attachments.length ? { attachments } : {}),
   });
   return true;
+}
+
+/** Send one CALL transcript (Phase 24 / D71 §4.5) — the call's own door beside `runComposer`, not a
+ *  branch inside it, because every rule it breaks is a rule the typed composer needs:
+ *
+ *  · **no sigil classification.** A misheard "bang" must never route as shell, and "slash" must never
+ *    route as a slash command. A transcript is always a plain message.
+ *  · **the typed draft is untouched.** Dictation appends to the draft and sends the whole draft; a call
+ *    submits the utterance ALONE and leaves whatever is in the composer exactly where the owner left it.
+ *  · **the armed one-shot scope is NOT spent.** `runComposer` takes `takeComposerScope()` because the
+ *    owner armed it for the message they are typing; a spoken utterance is not that message, and
+ *    silently disarming their pick mid-call would be a surprise they never asked for.
+ *
+ *  What it DOES share is the staged-attachment reservation, deliberately (§4.5, owner-ratified: stage a
+ *  photo, start the call, ask about it) — including the upload HOLD, which here returns `"held"` rather
+ *  than a dead `false`: the call machine keeps the utterance in its §4.3 pending queue and retries once
+ *  when the upload settles. */
+export async function sendCallTranscript(text: string): Promise<"held" | SendOutcome> {
+  const body = text.trim();
+  if (!body) return "refused";
+  if (isUploading()) return "held";
+  setUI({ tab: "agent" }); // the chat log lives on the Agent tab — a call's turns land there like any other
+  const attachments = reserveStaged();
+  return await sendMessage(body, {
+    raw: body,
+    ...(attachments.length ? { attachments } : {}),
+  });
 }
 
 /** `!<cmd>` — the guarded shell escape hatch (Phase 5, built). Runs `run_shell` on the backend host via

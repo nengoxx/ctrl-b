@@ -1,0 +1,678 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { dismiss, setCallVoice, usePlayback, type PlayStatus } from "../lib/audioController";
+import { sendCallTranscript } from "../lib/composer";
+import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
+import { startPcmCapture, type PcmCapture } from "../lib/pcmCapture";
+import { useStagedFiles } from "../store/attachments";
+import { cancelTurn, confirmOutstanding, getLiveTurn, useChatSlice } from "../store/chat";
+import { appendDraft } from "../store/composer";
+import { endCall } from "../store/liveCall";
+import { useVoiceStatus } from "./useVoiceStatus";
+
+// THE CALL MACHINE (Phase 24 / D71 §4.2 · §4.3 · §4.5) — one owner for the ear, the brain and the mouth.
+//
+// Shaped like `micReduce` (S0.5): a PURE `callReduce` holding every rule, and a thin wiring layer below
+// it that owns the sockets, the clocks and the stores. Everything a review argues about — what a final
+// during `thinking` does, who may submit while a confirm is open, what a hang-up throws away — is in the
+// reducer, testable without a browser.
+//
+// THE THREE RUN CONCURRENTLY, so one linear enum cannot carry the truth (council F5): a rendered PRIMARY
+// PHASE plus two ORTHOGONAL FLAGS (`userSpeechActive` between the server VAD's start/stop,
+// `waitingFinal` from a speech-stop until its transcript is consumed or discarded). The rule those flags
+// exist for is §4.2's: **playback may not start while either holds** — the gap between "you stopped
+// talking" and "your words arrived" must not let an older reply begin. A mouth that would open there IS
+// a barge-in, killed before its first audible sample.
+//
+// ONE QUEUE FOR EVERY HOLD (§4.3). The cancel-settle window, the `barge_in`-off walkie-talkie hold, a
+// suspended confirm gate and a staged upload in flight are four reasons not to submit and ONE mechanism:
+// utterances join an ordered pending queue and drain as a SINGLE message, in order, when the last hold
+// clears. Never a one-slot overwrite (the coherence sweep's correction), never lost speech.
+//
+// THE GENERATION FENCE (delta round F7). Every asynchronous callback — a send's outcome, a cancel's
+// settlement, a reconnect timer, a socket event — carries the generation it was armed under, and the
+// reducer drops anything armed under a different one. Hanging up bumps the generation, so a hang-up's
+// own C3 kill can never fire a stale drain-submit and a redial inherits nothing.
+
+// ── the named constants (all of them, in this one file — the R69 precedent) ──────────────────────
+// What is NOT here: every §4.1 tunable (`frame_ms`, `buffered_ceiling_ms`, `min_speech_ms`,
+// `barge_threshold`, `barge_in`, `max_session_s`). Those are the owner's, delivered by
+// `/voice/status.live_call`, and this hook reads them — it never defaults them.
+
+/** Reconnect attempts before the call gives up (§4.5's "bounded attempts with backoff"). One per entry
+ *  in the backoff schedule below, which is what keeps the two from drifting apart. */
+const RECONNECT_BACKOFF_MS = [400, 900, 1800, 3000] as const;
+
+/** How successive queued utterances are joined into the ONE message a drain submits: a space, because
+ *  they are continuous speech, not composer lines. (The composer HARVEST joins with newlines — there
+ *  they are lines the owner will edit.) */
+const PENDING_JOIN = " ";
+const HARVEST_JOIN = "\n";
+
+/** The overlay's own copy. Plain sentences, kept here so the machine's arms can pin them. */
+export const CALL_COPY = {
+  busy: "another call is active",
+  limit: "call time limit reached",
+  strained: "connection strained",
+  micLost: "the microphone stopped",
+  voiceFailed: "voice failed — the reply is in the chat",
+  refused: "couldn't send that — it's back in the composer",
+  unknown: "not sure that sent — check the chat before repeating it",
+  lost: "lost the connection",
+  unconfigured: "live call is not configured",
+} as const;
+
+// ── the machine ──────────────────────────────────────────────────────────────────────────────────
+
+export type CallPhase = "connecting" | "listening" | "thinking" | "speaking" | "error" | "ended";
+
+export interface CallState {
+  phase: CallPhase;
+  /** Between the server VAD's `speech_started` and `speech_stopped`. */
+  userSpeechActive: boolean;
+  /** Speech stopped, its transcript not yet consumed or discarded. */
+  waitingFinal: boolean;
+  /** The §4.3 pending-utterance queue: ordered, drained as one message. */
+  pending: string[];
+  /** The last final the ear heard — the overlay's transcript line (what YOU said, §6). */
+  heard: string;
+  /** One plain line: a degrade, a nonfatal failure, or a terminal's reason. */
+  note: string | null;
+  /** The cancel-settle window (§4.3 step ②): a kill is in flight and nothing may submit yet. */
+  killing: boolean;
+  /** A staged upload held the last submit (§4.5) — the utterance went back on the queue. */
+  heldUpload: boolean;
+  /** A confirm gate is outstanding (delta round F1): utterances hold until it resolves either way. */
+  confirmHold: boolean;
+  /** The call generation (F7). Bumped by every terminal and by hang-up. */
+  gen: number;
+  /** Reconnect attempts spent since the last `ready`. */
+  attempts: number;
+}
+
+export const CALL_INITIAL: CallState = {
+  phase: "connecting",
+  userSpeechActive: false,
+  waitingFinal: false,
+  pending: [],
+  heard: "",
+  note: null,
+  killing: false,
+  heldUpload: false,
+  confirmHold: false,
+  gen: 0,
+  attempts: 0,
+};
+
+export type SendResult = "accepted" | "refused" | "unknown" | "held";
+
+export type CallSignal = { gen?: number } & (
+  | { type: "ready" } //                       the relay said `state: ready`
+  | { type: "socketLost" } //                  the leg closed while the call was still wanted
+  | { type: "speechStart" }
+  | { type: "speechStop" }
+  | { type: "final"; text: string }
+  | { type: "degraded" }
+  | { type: "serverError"; code: string; message: string }
+  | { type: "serverEnded" } //                 the relay said `state: ended`
+  | { type: "barge" } //                       trigger A (voice) or B (tap) — the same edge
+  | { type: "killSettled" }
+  | { type: "playbackStarted" }
+  | { type: "playbackDrained" }
+  | { type: "playbackFailed" }
+  | { type: "turnSettled" } //                 chat status left `streaming`
+  | { type: "confirmHold"; on: boolean }
+  | { type: "sent"; outcome: SendResult; text: string }
+  | { type: "uploadSettled" }
+  | { type: "captureLost" }
+  | { type: "hangup" } //                      the user's own exit
+  | { type: "hidden" } //                      §5.3: the page went away — a clean end, not an error
+  | { type: "failed"; note: string } //        the call could not start at all
+);
+
+export type CallEffect =
+  | { type: "submit"; text: string }
+  /** The §4.3 ORDERED kill: C3 first (synchronous, the audible part stops now), then the scoped cancel
+   *  AND its settlement, and only then the pending submit. The reducer has already set `killing`, so the
+   *  queue is held for the whole of it. */
+  | { type: "kill" }
+  | { type: "harvest"; lines: string[] }
+  | { type: "reconnect"; delayMs: number }
+  /** Release everything. `close` additionally dismisses the overlay — the user's own exit gets no
+   *  terminal screen (§6); an `error`/`ended` terminal keeps the overlay up to say why. */
+  | { type: "teardown"; close: boolean };
+
+interface Step {
+  state: CallState;
+  out: CallEffect[];
+}
+
+const isTerminal = (p: CallPhase): boolean => p === "error" || p === "ended";
+
+/** Every reason a queued utterance may not go out right now (§4.3's one mechanism, four holds). */
+function held(s: CallState): boolean {
+  return (
+    s.killing ||
+    s.confirmHold ||
+    s.heldUpload ||
+    s.phase === "speaking" ||
+    s.phase === "connecting" ||
+    isTerminal(s.phase)
+  );
+}
+
+/** Submit the WHOLE queue as one message if nothing holds it. The single drain — every release path
+ *  calls it, so "what happens when a hold clears" has exactly one answer. */
+function drain(s: CallState): Step {
+  if (held(s) || s.pending.length === 0) return { state: s, out: [] };
+  return {
+    state: { ...s, pending: [], phase: "thinking" },
+    out: [{ type: "submit", text: s.pending.join(PENDING_JOIN) }],
+  };
+}
+
+/** Land on a terminal: the pending queue is HARVESTED (never-lose applies to failures), the flags are
+ *  cleared, and the generation moves so nothing armed under the old one can still fire. */
+function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
+  const out: CallEffect[] = [];
+  if (s.pending.length) out.push({ type: "harvest", lines: s.pending });
+  out.push({ type: "teardown", close: false });
+  return {
+    state: {
+      ...s,
+      phase,
+      note,
+      pending: [],
+      userSpeechActive: false,
+      waitingFinal: false,
+      killing: false,
+      gen: s.gen + 1,
+    },
+    out,
+  };
+}
+
+/**
+ * The whole conversation loop, as one pure function.
+ */
+export function callReduce(s: CallState, sig: CallSignal): Step {
+  // THE FENCE (F7), first line: a callback armed under an older generation is not this call's business.
+  if (sig.gen !== undefined && sig.gen !== s.gen) return { state: s, out: [] };
+  // "Hang up from every state" (§4.2) is the one rule that outranks the terminal guard below.
+  if (sig.type === "hangup" || sig.type === "hidden") {
+    // A deliberate exit DISCARDS the pending queue: the owner chose to leave, and never-lose-speech is
+    // about failures, not about the user's own decision (§4.3's terminal disposition).
+    return {
+      state: { ...CALL_INITIAL, phase: "ended", gen: s.gen + 1 },
+      out: [{ type: "teardown", close: true }],
+    };
+  }
+  if (isTerminal(s.phase)) return { state: s, out: [] };
+
+  switch (sig.type) {
+    case "ready":
+      // A fresh leg is a fresh session: the ear knows nothing about a half-spoken phrase that died with
+      // the old socket, so the flags start clean and the reconnect budget resets.
+      return drain({
+        ...s,
+        phase: "listening",
+        attempts: 0,
+        userSpeechActive: false,
+        waitingFinal: false,
+        note: null,
+      });
+
+    case "socketLost": {
+      const attempt = s.attempts + 1;
+      if (attempt > RECONNECT_BACKOFF_MS.length) return terminal(s, "error", CALL_COPY.lost);
+      // §4.5, stated honestly: a drop mid-utterance LOSES that utterance — the audio is gone — so
+      // `waitingFinal` clears rather than waiting for a transcript no session will send. Playback is
+      // untouched: C3 rides HTTP, not this socket.
+      return {
+        state: {
+          ...s,
+          phase: "connecting",
+          attempts: attempt,
+          userSpeechActive: false,
+          waitingFinal: false,
+        },
+        out: [{ type: "reconnect", delayMs: RECONNECT_BACKOFF_MS[attempt - 1] }],
+      };
+    }
+
+    case "speechStart":
+      // The flag only. The ACTION (trigger A) waits on the client's sustained-energy floor, which the
+      // wiring measures off the worklet's own RMS and delivers as `barge` — Speaches fires
+      // `speech_started` on first detection and has no minimum-speech knob (council F2).
+      return { state: { ...s, userSpeechActive: true }, out: [] };
+
+    case "speechStop":
+      return { state: { ...s, userSpeechActive: false, waitingFinal: true }, out: [] };
+
+    case "final": {
+      const text = sig.text.trim();
+      // Empty finals are discarded (§4.5's no-speech path): nothing submits, the flag clears.
+      if (!text) return { state: { ...s, waitingFinal: false }, out: [] };
+      return drain({ ...s, waitingFinal: false, heard: text, pending: [...s.pending, text] });
+    }
+
+    case "barge":
+      // "Outside `speaking`, overlay taps are inert" (§4.3) — and voice barge-in has nothing to
+      // interrupt either. During `speaking` both triggers fire the SAME ordered sequence.
+      if (s.phase !== "speaking" || s.killing) return { state: s, out: [] };
+      return { state: { ...s, killing: true }, out: [{ type: "kill" }] };
+
+    case "playbackStarted":
+      // §4.2's iron rule (confirm-round MED 2). The mouth is about to open while the owner is mid-word,
+      // or while their words are still in flight: that IS a barge-in, and it is killed BEFORE the first
+      // audible sample rather than after it.
+      if (s.userSpeechActive || s.waitingFinal) {
+        if (s.killing) return { state: s, out: [] };
+        return { state: { ...s, killing: true }, out: [{ type: "kill" }] };
+      }
+      return { state: { ...s, phase: "speaking" }, out: [] };
+
+    case "playbackDrained":
+      // A kill in flight owns the transition (its settlement releases the queue in the §4.3 ORDER);
+      // without this guard our own `dismiss()` would look like a natural drain and submit early.
+      if (s.killing || s.phase !== "speaking") return { state: s, out: [] };
+      return drain({ ...s, phase: "listening" });
+
+    case "playbackFailed":
+      // §4.5 — a mouth failure is NONFATAL: the ear keeps working, the reply is in the chat, and
+      // hanging up stays the user's move. Repeated failure never ends the call on its own.
+      if (s.killing || isTerminal(s.phase)) return { state: s, out: [] };
+      return drain({ ...s, phase: "listening", note: CALL_COPY.voiceFailed });
+
+    case "turnSettled":
+      // The brain finished without a mouth (a tool-only turn, TTS off, a reply that never synthesized).
+      // Playback, if it is coming, moves us to `speaking` on its own.
+      if (s.phase !== "thinking") return { state: s, out: [] };
+      return drain({ ...s, phase: "listening" });
+
+    case "killSettled": {
+      // Step ③, and only now: the interrupted turn is gone, so what the owner said over it may go.
+      const next: CallState = {
+        ...s,
+        killing: false,
+        phase: s.phase === "speaking" || s.phase === "thinking" ? "listening" : s.phase,
+      };
+      return drain(next);
+    }
+
+    case "confirmHold":
+      // Speech during `awaiting_confirm` HOLDS (delta round F1): a suspended turn leaves chat status
+      // idle, so a send would take the optimistic fresh-turn path and strand on the held turn's 202.
+      // Resolution — allow OR deny — releases it; the confirmation itself still needs its own tap.
+      return drain({ ...s, confirmHold: sig.on });
+
+    case "uploadSettled":
+      return drain({ ...s, heldUpload: false });
+
+    case "sent":
+      switch (sig.outcome) {
+        case "accepted":
+          return { state: s, out: [] };
+        case "held":
+          // The upload gate refused to route (§4.5). The utterance goes back to the FRONT of the queue —
+          // it was spoken before everything still in it — and the wiring retries once when the upload
+          // settles.
+          return {
+            state: {
+              ...s,
+              heldUpload: true,
+              pending: [sig.text, ...s.pending],
+              phase: s.phase === "thinking" ? "listening" : s.phase,
+            },
+            out: [],
+          };
+        case "refused":
+          return {
+            state: {
+              ...s,
+              note: CALL_COPY.refused,
+              phase: s.phase === "thinking" ? "listening" : s.phase,
+            },
+            out: [{ type: "harvest", lines: [sig.text] }],
+          };
+        case "unknown":
+          // Deliberately NOT re-sent and deliberately NOT harvested: an invisible duplicate is worse
+          // than a manual retry, and the words may well be in the thread already.
+          return {
+            state: {
+              ...s,
+              note: CALL_COPY.unknown,
+              phase: s.phase === "thinking" ? "listening" : s.phase,
+            },
+            out: [],
+          };
+      }
+      break;
+
+    case "degraded":
+      return { state: { ...s, note: CALL_COPY.strained }, out: [] };
+
+    case "serverError":
+      switch (sig.code) {
+        case "busy":
+          return terminal(s, "error", CALL_COPY.busy);
+        case "session_limit":
+          return terminal(s, "ended", CALL_COPY.limit);
+        case "upstream_error":
+          // The ONE code the relay keeps the session alive through — so the client must too.
+          return { state: { ...s, note: sig.message || CALL_COPY.lost }, out: [] };
+        default:
+          return terminal(s, "error", sig.message || CALL_COPY.lost);
+      }
+
+    case "serverEnded":
+      return terminal(s, "ended", s.note ?? "");
+
+    case "captureLost":
+      // §4.5: permission revoked, a real phone call stole the mic, a headset event.
+      return terminal(s, "error", CALL_COPY.micLost);
+
+    case "failed":
+      return terminal(s, "error", sig.note);
+  }
+  return { state: s, out: [] };
+}
+
+// ── the wiring ───────────────────────────────────────────────────────────────────────────────────
+
+/** What the overlay renders + the two things it can do. */
+export interface CallView {
+  phase: CallPhase;
+  heard: string;
+  note: string | null;
+  userSpeechActive: boolean;
+  /** The user's exit: instant, total, no terminal screen. */
+  hangUp: () => void;
+  /** Trigger B — a tap outside the control cluster during `speaking` (§4.3). Inert elsewhere. */
+  interrupt: () => void;
+}
+
+export function useLiveCall(): CallView {
+  const [state, setState] = useState<CallState>(CALL_INITIAL);
+  // The SYNCHRONOUS read every callback uses (the `phaseRef` idiom from the gesture hook): a socket
+  // frame landing before React has re-rendered must still see the transition the previous one caused,
+  // and the generation fence is only honest if it reads the LIVE generation.
+  const ref = useRef(state);
+
+  const voice = useVoiceStatus().data;
+  const knobs = voice?.live_call;
+  const capture = useRef<PcmCapture | null>(null);
+  const socket = useRef<LiveSocket | null>(null);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const wakeLock = useRef<WakeLockSentinel | null>(null);
+  /** Sustained above-floor milliseconds — trigger A's own clock, fed by the worklet's per-frame RMS. */
+  const sustained = useRef(0);
+  /** Trigger A is armed only on a track whose AEC is the subtractive `all` mode (the S0 ruling). */
+  const bargeArmed = useRef(false);
+  /** The held-upload retry is ONE (§4.5); this latch is what makes it one. */
+  const retriedUpload = useRef(false);
+  /** Which socket LEG is current — see `openLeg`. */
+  const legSeq = useRef(0);
+
+  /** Release EVERYTHING, on every exit path (§6's "hang up = immediate full teardown"). Idempotent. */
+  const teardown = useCallback((): void => {
+    clearTimeout(retryTimer.current);
+    socket.current?.close();
+    socket.current = null;
+    capture.current?.stop();
+    capture.current = null;
+    dismiss(); // an ended call does not keep talking
+    setCallVoice(false, null);
+    const lock = wakeLock.current;
+    wakeLock.current = null;
+    void lock?.release().catch(() => {});
+  }, []);
+
+  /** `openLeg` needs `send` (its frames drive the machine) and `send` needs `openLeg` (a reconnect
+   *  effect opens one), so one of the two rides a ref. Assigned during render — the latch-ref idiom
+   *  `LineComposer` uses — and only ever read from a timer, long after this render is done. */
+  const openLegRef = useRef<() => void>(() => {});
+
+  const send = useCallback(
+    function send(sig: CallSignal): void {
+      const { state: next, out } = callReduce(ref.current, sig);
+      if (next !== ref.current) {
+        ref.current = next;
+        setState(next);
+      }
+      for (const eff of out) {
+        switch (eff.type) {
+          case "submit": {
+            const gen = ref.current.gen;
+            const text = eff.text;
+            void sendCallTranscript(text).then((outcome) => {
+              send({ type: "sent", outcome, text, gen });
+            });
+            break;
+          }
+          case "kill": {
+            const gen = ref.current.gen;
+            // ① the audible part stops NOW — synchronous, before anything is awaited.
+            dismiss();
+            // ② the scoped cancel, AND its settlement. `discard` because the steer this cancel harvests
+            //    is the owner's own call-origin speech, which they are in the middle of replacing.
+            const turn = getLiveTurn();
+            if (turn === null) {
+              // The turn commonly ends before the mouth does (council F1): nothing to cancel, and the
+              // interrupting utterance simply becomes the next turn. Same edge, same order.
+              send({ type: "killSettled", gen });
+            } else {
+              void cancelTurn(turn, "discard").then(() => send({ type: "killSettled", gen }));
+            }
+            break;
+          }
+          case "harvest":
+            appendDraft(eff.lines.join(HARVEST_JOIN), HARVEST_JOIN);
+            break;
+          case "reconnect": {
+            const gen = ref.current.gen;
+            clearTimeout(retryTimer.current);
+            retryTimer.current = setTimeout(() => {
+              if (ref.current.gen === gen) openLegRef.current();
+            }, eff.delayMs);
+            break;
+          }
+          case "teardown":
+            teardown();
+            if (eff.close) endCall();
+            break;
+        }
+      }
+    },
+    [teardown],
+  );
+
+  /** Open ONE socket leg against the live capture. Reconnect is a FRESH session (no resume protocol,
+   *  §3.3) — a new `start` with the same measured rate. */
+  const openLeg = useCallback((): void => {
+    const cap = capture.current;
+    if (!cap || !knobs) return;
+    const gen = ref.current.gen;
+    // THE LEG FENCE, beside the call-generation one. A reconnect closes the old socket, but `close()`
+    // only STARTS the handshake — a frame already in flight can still be dispatched afterwards, and a
+    // dead leg's `speech_started` (or its own close) driving the live session would be a ghost. Each
+    // leg takes a number; only the newest one may speak. The CALL generation cannot do this job: it is
+    // bumped by terminals only, deliberately, so that an HTTP send's outcome still lands across a
+    // reconnect (the socket dropping says nothing about whether the chat POST was taken).
+    const leg = ++legSeq.current;
+    const mine = (): boolean => legSeq.current === leg;
+    socket.current?.close();
+    socket.current = openLiveSocket({
+      url: liveSocketUrl(),
+      sampleRate: cap.sampleRate,
+      ceilingMs: knobs.buffered_ceiling_ms,
+      onFrame: (frame) => {
+        if (!mine()) return;
+        switch (frame.type) {
+          case "state":
+            if (frame.state === "ready") send({ type: "ready", gen });
+            else if (frame.state === "degraded") send({ type: "degraded", gen });
+            else send({ type: "serverEnded", gen });
+            break;
+          case "speech_started":
+            send({ type: "speechStart", gen });
+            break;
+          case "speech_stopped":
+            send({ type: "speechStop", gen });
+            break;
+          case "transcript":
+            if (frame.final) send({ type: "final", text: frame.text, gen });
+            break;
+          case "error":
+            send({ type: "serverError", code: frame.code, message: frame.message, gen });
+            break;
+        }
+      },
+      onClose: () => {
+        // What reaches the machine is an UNANNOUNCED close — a dropped tailnet link, or this client's
+        // own backpressure bail — which is what reconnect is for. A relay that already said its piece
+        // (a typed `error`/`ended`) left the machine terminal, and the terminal guard drops this.
+        if (mine()) send({ type: "socketLost", gen });
+      },
+    });
+  }, [knobs, send]);
+
+  openLegRef.current = openLeg;
+
+  // ── the one start effect: capture, then the first leg ──────────────────────────────────────────
+  useEffect(() => {
+    if (voice === undefined) return; // the knobs have not arrived yet — nothing to configure from
+    if (!knobs) {
+      send({ type: "failed", note: CALL_COPY.unconfigured });
+      return;
+    }
+    let disposed = false;
+    // The call speaks every turn that STARTS after this moment, and deliberately not the one already
+    // streaming (§4.5 — a reply half-read to an owner who was not yet in a call is not picked up).
+    setCallVoice(true, getLiveTurn()?.assistantMessageId ?? null);
+    const floor = knobs.barge_threshold || (voice.stt_auto_stop?.threshold ?? 0);
+    void startPcmCapture({
+      frameMs: knobs.frame_ms,
+      onFrame: (frame) => {
+        socket.current?.sendAudio(frame.buf);
+        // TRIGGER A (§4.3): the worklet already owns the samples, so the sustained-energy floor is
+        // measured on the frames we are shipping — never a second AnalyserNode over the same audio.
+        // A floor of 0 means neither knob was calibrated, and "every frame is speech" would make a
+        // cough kill the reply — so the automatic trigger simply stays disarmed until S4 sets one.
+        if (!bargeArmed.current || floor <= 0 || ref.current.phase !== "speaking") {
+          sustained.current = 0;
+          return;
+        }
+        if (frame.rms < floor) {
+          sustained.current = 0;
+          return;
+        }
+        sustained.current += knobs.frame_ms;
+        if (sustained.current >= knobs.min_speech_ms) {
+          sustained.current = 0;
+          send({ type: "barge", gen: ref.current.gen });
+        }
+      },
+      onEnded: () => send({ type: "captureLost", gen: ref.current.gen }),
+    })
+      .then((cap) => {
+        if (disposed) {
+          cap.stop();
+          return;
+        }
+        capture.current = cap;
+        // The S0 ruling, per TRACK and never UA-sniffed: only a genuinely subtractive canceller lets the
+        // ear stay open under the reply, so only there can VOICE interrupt. Everywhere else the tap is
+        // the interrupt (§4.3), and the protective ear-hold is S3's.
+        bargeArmed.current = knobs.barge_in && cap.echoCancellation === "all";
+        openLeg();
+      })
+      .catch((e: unknown) => {
+        if (!disposed) send({ type: "failed", note: micFailure(e) });
+      });
+    return () => {
+      disposed = true;
+      teardown();
+    };
+    // Armed ONCE per mount: the overlay's lifetime IS the call's, and a mid-call `/voice/status`
+    // refetch must not re-open the ear (§4.5 — settings edited mid-call apply to the NEXT call).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice === undefined]);
+
+  // ── the mouth, watched (§4.2: `speaking` is C3 playback, observed — never inferred) ────────────
+  const playStatus = usePlayback((p) => p.status);
+  const prevPlay = useRef<PlayStatus>("idle");
+  useEffect(() => {
+    const was = prevPlay.current;
+    prevPlay.current = playStatus;
+    if (was === playStatus) return;
+    const gen = ref.current.gen;
+    if (playStatus === "playing") send({ type: "playbackStarted", gen });
+    // Synthesis that never produced a sample is the mouth FAILING; audio that played and stopped is the
+    // reply finishing (or our own kill, which the machine's `killing` flag tells apart).
+    else if (was === "loading" && playStatus === "idle") send({ type: "playbackFailed", gen });
+    else if (was === "playing") send({ type: "playbackDrained", gen });
+  }, [playStatus, send]);
+
+  // ── the brain, watched: the turn settling, and the confirm gate ────────────────────────────────
+  const chatStatus = useChatSlice((s) => s.status);
+  const prevChat = useRef(chatStatus);
+  useEffect(() => {
+    const was = prevChat.current;
+    prevChat.current = chatStatus;
+    if (was === "streaming" && chatStatus !== "streaming")
+      send({ type: "turnSettled", gen: ref.current.gen });
+  }, [chatStatus, send]);
+
+  const confirming = useChatSlice(() => confirmOutstanding());
+  useEffect(() => {
+    send({ type: "confirmHold", on: confirming, gen: ref.current.gen });
+  }, [confirming, send]);
+
+  // ── the held upload's ONE retry (§4.5 — "the retry is NOT existing code") ──────────────────────
+  const uploading = useStagedFiles().some((f) => f.status === "uploading");
+  useEffect(() => {
+    if (!state.heldUpload || uploading || retriedUpload.current) return;
+    retriedUpload.current = true;
+    send({ type: "uploadSettled", gen: ref.current.gen });
+  }, [state.heldUpload, uploading, send]);
+
+  // ── screen + foreground (§5.3) ────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    // Feature-detected, never UA-sniffed; a browser without it simply keeps today's screen behaviour.
+    void navigator.wakeLock
+      ?.request("screen")
+      .then((lock) => {
+        if (isTerminal(ref.current.phase)) void lock.release().catch(() => {});
+        else wakeLock.current = lock;
+      })
+      .catch(() => {});
+    const onHidden = (): void => {
+      // The call is foreground-only (R14 scope): a hidden page ends it CLEANLY — no half-alive
+      // background session, and no error face for something the owner did on purpose.
+      if (document.visibilityState === "hidden") send({ type: "hidden" });
+    };
+    document.addEventListener("visibilitychange", onHidden);
+    return () => document.removeEventListener("visibilitychange", onHidden);
+  }, [send]);
+
+  const hangUp = useCallback(() => send({ type: "hangup" }), [send]);
+  const interrupt = useCallback(() => send({ type: "barge", gen: ref.current.gen }), [send]);
+
+  return {
+    phase: state.phase,
+    heard: state.heard,
+    note: state.note,
+    userSpeechActive: state.userSpeechActive,
+    hangUp,
+    interrupt,
+  };
+}
+
+/** Why the ear never opened, in the owner's words rather than the engine's. */
+function micFailure(e: unknown): string {
+  const name = e instanceof Error ? e.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") return "microphone permission denied";
+  if (name === "NotFoundError") return "no microphone found";
+  return "could not open the microphone";
+}

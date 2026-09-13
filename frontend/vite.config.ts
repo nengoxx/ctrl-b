@@ -186,6 +186,11 @@ export default defineConfig({
     ...(process.env.VITE_HMR_CLIENT_PORT
       ? { hmr: { clientPort: Number(process.env.VITE_HMR_CLIENT_PORT) } }
       : {}),
-    proxy: { "/api": process.env.VITE_API_TARGET || "http://127.0.0.1:5433" },
+    // `ws: true` is load-bearing since D71/S1: `/api/voice/live` is a WebSocket UPGRADE, and the string
+    // shorthand proxies HTTP only — without it the dev server answers the upgrade itself and the call
+    // never reaches the relay (§7-S1's recorded S2a residual). The object form is the same target.
+    proxy: {
+      "/api": { target: process.env.VITE_API_TARGET || "http://127.0.0.1:5433", ws: true },
+    },
   },
 });

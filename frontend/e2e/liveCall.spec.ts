@@ -1,0 +1,210 @@
+import { seedUI, test, expect } from "./fixtures";
+
+// THE CALL LOOP, IN A REAL BROWSER (Phase 24 / S2a — LIVE_VOICE_PLAN §7-S2a, D71).
+//
+// The unit suites pin the machine's rules and the socket's framing; what only a real engine can answer
+// is whether the whole chain HOLDS: a genuine `AudioContext` loading the worklet from its Blob URL, the
+// worklet framing live samples, a real `WebSocket` carrying `start`-then-binary to the relay, the
+// relay's downlink driving the machine, and the transcript coming back out of the chat door as an
+// ordinary POST. Every one of those is a place the app could work in jsdom and fail in Chromium.
+//
+// DETERMINISM: no real microphone and no relay. `getUserMedia` is replaced by a stream built from an
+// `AudioContext` oscillator — a REAL `MediaStream` with a REAL live audio track, which is what makes the
+// worklet genuinely run — and the relay is `page.routeWebSocket`, scripted frame by frame.
+
+/** A fake mic that is nevertheless real audio: a 440 Hz tone on a genuine MediaStreamTrack. */
+const FAKE_MIC = () => {
+  const media = navigator.mediaDevices as unknown as { getUserMedia: unknown };
+  media.getUserMedia = () => {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const dest = ctx.createMediaStreamDestination();
+    osc.frequency.value = 440;
+    osc.connect(dest);
+    osc.start();
+    return Promise.resolve(dest.stream);
+  };
+};
+
+const LIVE_CALL = {
+  frame_ms: 40,
+  buffered_ceiling_ms: 1000,
+  min_speech_ms: 300,
+  barge_threshold: 0.02,
+  barge_in: true,
+  ring: true,
+  echo_workaround: "auto",
+  max_session_s: 1800,
+};
+
+interface Relay {
+  /** Everything the client sent, in order: the JSON controls as strings, audio as byte counts. */
+  uplink: (string | number)[];
+  /** Push a downlink frame to the connected client. */
+  say: (frame: unknown) => Promise<void>;
+  closed: () => boolean;
+}
+
+/** Boot the agent tab with the `live` bit up, a fake mic, a scripted relay and a counted chat door. */
+async function boot(page: import("@playwright/test").Page, opts: { holdChat?: boolean } = {}) {
+  const uplink: (string | number)[] = [];
+  const sends: Record<string, unknown>[] = [];
+  let socket: import("@playwright/test").WebSocketRoute | null = null;
+  let closed = false;
+
+  // AFTER the fixture's blanket `**/api/**` route — last registered wins in Playwright.
+  await page.route("**/api/voice/status", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        stt: true,
+        tts: true,
+        live: true,
+        stt_auto_send: false,
+        tts_chunking: { mode: "off", read_along: false, format: "opus" },
+        live_call: LIVE_CALL,
+      }),
+    }),
+  );
+  await page.route("**/api/agent/chat", async (r) => {
+    sends.push(r.request().postDataJSON() as Record<string, unknown>);
+    // `holdChat` leaves the POST in flight, which is what keeps the machine in `thinking` long enough
+    // to assert it: a buffered turn that answers immediately is back to `listening` before the
+    // assertion can run, and a phase that flickers past is not a phase a test can see.
+    if (opts.holdChat) await new Promise(() => {});
+    // A BUFFERED turn (D17): no SSE to script, and the call's mouth is not what this spec is about.
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ threadId: "t1", state: "completed" }),
+    });
+  });
+  // The durable floor a buffered turn re-reads. The fixture's blanket route answers `{}` for an
+  // unmocked path, and the store's message list must be a LIST.
+  await page.route("**/api/threads/t1/messages", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
+  );
+  // THE RELAY. Handled entirely in the test — `routeWebSocket` never dials a server, so the uplink is
+  // observable and the downlink is ours to script.
+  await page.routeWebSocket("**/api/voice/live", (ws) => {
+    socket = ws;
+    ws.onMessage((msg) => {
+      uplink.push(typeof msg === "string" ? msg : msg.byteLength);
+    });
+    ws.onClose(() => {
+      closed = true;
+    });
+  });
+  await page.addInitScript(FAKE_MIC);
+  await seedUI(page, { theme: "cosmos", mode: "dark", accent: "violet", tab: "agent", v: 1 });
+  await page.goto("/");
+
+  const relay: Relay = {
+    uplink,
+    say: async (frame) => {
+      await expect.poll(() => socket !== null).toBe(true);
+      socket!.send(JSON.stringify(frame));
+    },
+    closed: () => closed,
+  };
+  return { relay, sends, mic: page.locator("#composer .kit-cbtn.mic") };
+}
+
+/** Enter call mode and commit through the standing chip — the tap twin of the swipe (§6). */
+async function startCall(page: import("@playwright/test").Page) {
+  const mic = page.locator("#composer .kit-cbtn.mic");
+  await expect(mic).toBeVisible();
+  const box = (await mic.boundingBox())!;
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+  await page.mouse.click(at.x, at.y); // tap → call mode
+  await expect(mic).toHaveAttribute("aria-label", "start a voice call");
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.waitForTimeout(300); // past the 150 ms activation → the "slide up to call" pill
+  await page.mouse.up(); // released without the swipe → the standing chip
+  await page.locator(".mg-chip").click();
+  await expect(page.locator(".kit-call")).toBeVisible();
+}
+
+const overlay = ".kit-call";
+
+test("a call connects, hears a final, sends it as a plain message, and hangs up", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay, sends } = await boot(page, { holdChat: true });
+  await startCall(page);
+
+  // ① CONNECTING → the handshake. The FIRST uplink frame must be the text `start` carrying the real
+  //    measured rate — a leading binary frame is a protocol close on the relay.
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Connecting");
+  await expect.poll(() => relay.uplink.length).toBeGreaterThan(0);
+  const start = JSON.parse(String(relay.uplink[0])) as { type: string; sample_rate: number };
+  expect(start.type).toBe("start");
+  expect(start.sample_rate).toBeGreaterThanOrEqual(8000);
+  expect(start.sample_rate).toBeLessThanOrEqual(96000);
+
+  // ② READY → listening, and REAL audio starts flowing: the worklet loaded from its Blob URL, framed
+  //    the oscillator's samples and the socket shipped them as binary.
+  await relay.say({ type: "state", state: "ready" });
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Listening");
+  await expect
+    .poll(() => relay.uplink.filter((u) => typeof u === "number").length)
+    .toBeGreaterThan(2);
+  // …at the configured frame size: 40 ms of pcm16 mono at the declared rate.
+  const bytes = relay.uplink.find((u) => typeof u === "number") as number;
+  expect(bytes).toBe(Math.round((start.sample_rate * LIVE_CALL.frame_ms) / 1000) * 2);
+
+  // ③ THE EAR SPEAKS. The transcript line shows what it heard YOU say…
+  await relay.say({ type: "speech_started" });
+  await relay.say({ type: "speech_stopped" });
+  await relay.say({ type: "transcript", text: "wake the vault", final: true });
+  await expect(page.locator(`${overlay} .kit-call-heard`)).toHaveText("wake the vault");
+
+  // ④ …and it goes out of the ordinary chat door as a PLAIN message (no sigil classification).
+  await expect.poll(() => sends.length).toBe(1);
+  expect(sends[0].text).toBe("wake the vault");
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Thinking");
+
+  // ⑤ HANG UP: the overlay goes instantly (no terminal screen) and the socket closes with it.
+  await page.locator(".kit-call-hangup").click();
+  await expect(page.locator(overlay)).toHaveCount(0);
+  await expect.poll(() => relay.closed()).toBe(true);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("a transcript never routes as a shell command, and never touches the typed draft", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay, sends } = await boot(page);
+  // Something already typed: the call must leave it exactly where it is (§4.5).
+  await page.locator("#cmd-input").fill("a half-typed thought");
+  await startCall(page);
+  await relay.say({ type: "state", state: "ready" });
+
+  // A misheard "bang" — the one transcript that must NOT become a shell run.
+  await relay.say({ type: "transcript", text: "!rm -rf /", final: true });
+  await expect.poll(() => sends.length).toBe(1);
+  expect(sends[0].text).toBe("!rm -rf /"); // the agent chat door, verbatim — not `/api/exec`
+  await expect(page.locator("#cmd-input")).toHaveValue("a half-typed thought");
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("the relay's `busy` ends the call with the other call named", async ({ page, pageErrors }) => {
+  const { relay } = await boot(page);
+  await startCall(page);
+  await relay.say({ type: "error", code: "busy", message: "a live call is already running" });
+
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Call ended");
+  await expect(page.locator(`${overlay} .kit-call-note`)).toHaveText("another call is active");
+  // A terminal KEEPS the overlay up to say why; the button becomes the way out.
+  await page.locator(".kit-call-hangup").click();
+  await expect(page.locator(overlay)).toHaveCount(0);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
