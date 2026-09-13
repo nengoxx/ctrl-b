@@ -845,6 +845,86 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   commit while speech is open kills the session — the §7-S0 amendment) and a `flush` control
   message implemented as a relay-side silence burst (client-sent bursts would violate §3.1's
   own rate ceiling) — S2.5's release flush and the call loop's edges both ride these.**
+
+  > **S1 AS-BUILT + council-CLOSED (2026-09-13, one session; the full standing cadence).** Build
+  > `beead72` (pinned Opus, 16 files +2342/−19) → main-seat audit (gate independently re-run; all
+  > nine declared deviations ACCEPTED) → blind Emma round (hermes lane, `--ignore-rules`; the
+  > **S0 blind debt rode this round** — her light pass on `tools/speaches_realtime_smoke.py`
+  > found nothing to fix) **SHIP WITH FIXES — 4 MED, open sweep "none"**, commit-safety /
+  > resampler / teardown / secrets / registry all explicitly confirmed sound → fix wave
+  > `0fb7c56` (pinned Opus) → her confirm **F1/F2/F4 RESOLVED with line proof + F3 BLOCKED on
+  > the MIRROR ordering** → main-seat waves `24336eb` + `a01ae76` → her micro-confirm
+  > **RESOLVED — SHIP, sweep "none"** (she re-ran the 73-arm suite herself). Gate 6/6 ×4 at the
+  > four tips; **BE 2,462** (counts in QUALITY.md); red-proofs: 11 scripted reversions in the
+  > build, 10 in the fix wave, and the two constant-pad arms proven RED against the pre-fix
+  > relay.
+  >
+  > **Shape (deviations from the §5.1 letter, all main-seat ruled):** `LiveCfg(VoiceServiceCfg)`
+  > takes the house `provider/model/fallbacks` pointer shape, NOT the plan's literal
+  > `target: ""` — a blank provider (and no fallbacks) REUSES `stt_chain` verbatim so a
+  > misconfig is reported against the section the operator actually wrote; `LivePolicy.language`
+  > always comes from `voice.stt` (one ear-language knob however the chain is pointed) · **no
+  > failover** — a stateful WS cannot re-dial mid-stream; `VoiceClient.live_target()` hands the
+  > relay hop 1 and the degrade is push-to-talk · the `live` status bit = realtime chain AND
+  > TTS AND `voice.live.enabled` (`voice.enabled` master outranks inside `configured()`);
+  > `live_call` delivers the client knobs shape-only · `core/audio.Pcm16Resampler` carries its
+  > read position as an EXACT RATIONAL (float phase breaks `feed(a)+feed(b) == feed(a+b)`) ·
+  > `LiveSessionSlots` = the D38 no-await check-and-set on `app.state` · the Origin rail =
+  > same-host + `allowed_origins` exact strings, pre-accept; busy is a typed post-accept
+  > `busy` + 1013 · `websockets>=14` promoted to a direct dep · extra bounded-Field knobs:
+  > `relay_queue_ms`, `start_timeout_s`, `allowed_origins`.
+  >
+  > **The wire AS BUILT (the S2a/S2.5 contract):** uplink = text `start
+  > {sample_rate 8000..96000}` first (within `start_timeout_s`), then binary pcm16 LE mono
+  > frames (≤ `max_frame_bytes` AND ≤ 2× `frame_ms` of audio at the declared rate AND under a
+  > rolling 2 s window carrying BOTH a frame-count and a 2×-realtime ms budget), plus text
+  > `flush`/`stop`; anything else = protocol close 1008. Downlink = `state`
+  > (`ready`/`degraded`+overflow/`ended`) · `speech_started`/`speech_stopped` ·
+  > `transcript {text, final: true}` · `error {code, message}`. Codes → closes: `busy`→1013 ·
+  > `protocol`→1008 · `upstream_refused`/`upstream_lost`→1011 · `upstream_error`→ session
+  > continues · `session_limit`→1000 ("call time limit reached"). Pre-accept refusals
+  > (origin/gate) are handshake failures — a browser sees HTTP 403. **`flush` has NO ack** (the
+  > endpoint's own `speech_stopped`+`transcript` are the response) and **`stop` discards
+  > unendpointed audio** — S2.5's release MUST be flush → await the final (client-side
+  > `tail_wait_ms`) → stop.
+  >
+  > **⚠ THE FLUSH AS BUILT AMENDS R70 §4's formula (two review rounds forced it):** the burst is
+  > the CONSTANT `max(3000, silence_ms) + 200` ms whenever the session has ever fed audio (the
+  > never-fed session is the only relay-side no-op; the `_audio_seen` bit never clears). R70's
+  > `3000 − fed_ms` shortening assumed a per-buffer count the relay cannot keep — `committed`
+  > events cannot be correlated with what was fed, so the count goes stale in BOTH directions
+  > (processed-stale: the reset erased the next phrase's count and suppressed a needed burst;
+  > unprocessed-stale, the confirm round's mirror: the count stayed high and shrank the burst
+  > below the 3 s floor — words lost either way). The constant pad costs loopback appends only:
+  > Silero endpoints the moment the threshold is crossed mid-burst, and the tail lands in the
+  > rotated buffer as leading silence that only helps the next endpoint's 3 s floor. The flush
+  > is also a **DELIVERY BARRIER** (`Queue.task_done()`/`join()`, balanced on the eviction
+  > path): it returns only when the whole burst has gone upstream, so post-flush mic audio can
+  > never evict queued silence. **COMMIT-SAFETY holds in the strongest form: the relay never
+  > sends `input_audio_buffer.commit` on any path** (red-proven; the invariant + the R70
+  > citation live at the one tempting place, `_flush`).
+  >
+  > **The F1 ruling (recorded honestly):** the same-host Origin rule does NOT defend against
+  > DNS rebinding (the authority is attacker-selected) — but rebinding equally bypasses the
+  > no-CORS defence on the app's ENTIRE unauthenticated HTTP surface on plain-HTTP paths, so
+  > the WS route adds no new authority class (Emma concurred: "the re-scoping is honest"). The
+  > app-wide fix is the ALREADY-RECORDED **D65-R1** (HARDENING_PLAN §8.2 / SECURITY_MODEL §2.7,
+  > `TrustedHostMiddleware`) — Phase 19's court.
+  >
+  > **⚠ Durable lessons:** per-buffer audio accounting hung off an uncorrelatable event stream
+  > is untrustworthy in BOTH stale directions — when an optimization needs state the protocol
+  > cannot give you, DELETE the optimization (burst-when-uncertain; net −6 lines) · a
+  > `Queue.join()` barrier needs `task_done` balanced on EVERY consume site, evictions included
+  > · ops: `setsid cmd` FORKS — liveness-check the child PID, never the wrapper's.
+  >
+  > **Residuals riding later slices (none owed now):** whether Tailscale Serve preserves the
+  > Host header is EMPIRICAL for S2a's device leg (`allowed_origins` is the designed escape) ·
+  > the Vite dev proxy needs `ws: true` for `/api/voice/live` (S2a) · `tail_wait_ms` +
+  > `dictation` + idle/max knobs are S2.5 client-side config (R70 §9.2–9.3) · a slow ear can
+  > emit several `degraded` frames per overflow burst and lengthen the reader's occupancy —
+  > S2b presentation/hysteresis material · rebinding = D65-R1, Phase 19 · the relay judges
+  > frame duration at the DECLARED rate (a lying client is bounded only by the byte caps —
+  > unchanged posture, undetectable).
 - **S2a — the FE call loop, WITH basic barge-in (council F8 — an open-mic loop that cannot
   be interrupted is not a reviewable slice; SPLIT from the old S2 by delta-round F10 — the
   monolith was no longer one reviewable change):** capture worklet + WS client + the

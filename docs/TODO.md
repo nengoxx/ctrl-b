@@ -1607,8 +1607,13 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       round 2 (five nudges incl. the true-stadium pill, `c057459`+`c81780c`) · round 3 (four
       clarifications incl. the draft-lifts-the-track design + the light-theme shadow rider,
       `484102d`+`0d1d429`) — all RESOLVED — SHIP; records = plan §7-S0.5's three wave blocks.)*
-- [ ] S1 — The BE relay: `voice.live` config + `/voice/status` delivery + `WS /api/voice/live`
+- [x] S1 — The BE relay: `voice.live` config + `/voice/status` delivery + `WS /api/voice/live`
       + the relay session (mock-Speaches tests; framing/resample/backpressure/caps/Origin).
+      *(Council-CLOSED 2026-09-13 — build `beead72` (pinned Opus) → blind Emma SHIP WITH FIXES
+      4M (the S0 blind debt rode the round) → wave `0fb7c56` → confirm BLOCKED on F3's mirror →
+      main-seat waves `24336eb`+`a01ae76` (the flush = a CONSTANT pad; `_fed_ms` deleted) →
+      RESOLVED — SHIP, sweep "none". Plan §7-S1 as-built record = the S2a/S2.5 wire contract;
+      ⚠ it AMENDS R70 §4's burst formula. BE 2,462; gate 6/6 ×4.)*
 - [ ] S2 — *(split S2a/S2b by the 2026-09-12 delta round — plan §7 wins)* The FE call loop
       WITH basic barge-in: capture worklet · WS client · `useLiveCall`
       (phase + orthogonal flags; the narrow chat-store turn seam) · the call overlay ·

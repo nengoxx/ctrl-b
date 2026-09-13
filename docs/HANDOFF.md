@@ -12,7 +12,53 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-13, SEVENTEENTH session END — **S0.5 IS CLOSED BY THE OWNER'S WORD after THREE live feel rounds, every wave through the full cadence to RESOLVED — SHIP. ▶▶ NEXT SESSION = S1 (the BE relay), with ONE question open for the owner first: streaming dictation (plan §8 item 5, AWAITING THEIR WORD)**; supersedes below where it speaks)
+## Current state (2026-09-13, EIGHTEENTH session — **S1 (the BE relay) RAN THE WHOLE STANDING CADENCE IN ONE SESSION and is council-CLOSED: blind Emma SHIP WITH FIXES → fix wave → confirm BLOCKED on a mirror race → two main-seat waves → RESOLVED — SHIP, sweep "none" ×2. ▶▶ NEXT SESSION = S2a (the FE call loop)**; supersedes below where it speaks)
+
+- **S1 is council-CLOSED (full as-built record = plan §7-S1 — it IS the S2a/S2.5 wire
+  contract; read THAT before any S2a work):** `voice.live` config (`LiveCfg` on the house
+  provider/model/fallbacks shape — blank provider rides `voice.stt`'s section; every numeric a
+  bounded Field) · the `live` bit + `live_call` knobs on `GET /voice/status` (bit = chain AND
+  TTS AND `live.enabled`; master outranks) · `WS /api/voice/live` (the first WebSocket, D71's
+  narrow admission; Origin rail = same-host + `allowed_origins`, pre-accept; typed `busy`+1013
+  post-accept) · the relay session (`services/voice_live.py`: three pumps, bounded drop-oldest
+  queue, stateful exact-rational `Pcm16Resampler` in `core/audio.py`, the §7-S0 pinned wire —
+  full 5-field `turn_detection`, spurious-error swallow, text-frames-only uplink, 403-vs-1006
+  taxonomy, bearer never in logs) · **COMMIT-SAFETY in the strongest form: the relay never
+  sends `commit` on any path** (R70 arm A, red-proven).
+- **The cadence:** build `beead72` (pinned Opus, +2342/−19, 77 new tests, 11 red-proofs) →
+  main-seat audit (nine deviations ACCEPTED; gate re-run) → **blind Emma SHIP WITH FIXES (4
+  MED, sweep "none"; the S0 blind debt rode the round — the smoke tool passed her light
+  pass)** → wave `0fb7c56` (pinned Opus: the flush DELIVERY BARRIER via task_done/join · the
+  per-frame duration cap + rolling ms budget (F4) · the origin-rail honesty note) → her
+  confirm **F1/F2/F4 RESOLVED + F3 BLOCKED on the MIRROR ordering** (an UNPROCESSED
+  `committed` left the fed-count stale-HIGH → a 900 ms burst under the 3 s floor → words
+  lost) → main-seat waves `24336eb`+`a01ae76`: **⚠ the flush burst is now the CONSTANT
+  `max(3000, silence_ms) + 200` (AMENDS R70 §4) and `_fed_ms` is DELETED** — a per-buffer
+  count off an uncorrelatable event stream is stale in BOTH directions; the optimization WAS
+  the bug (net −6 lines) → **her micro-confirm: RESOLVED — SHIP, sweep "none"** (she re-ran
+  the 73-arm suite herself).
+- **F1 ruling recorded:** the same-host Origin rule doesn't stop DNS rebinding — but rebinding
+  bypasses the app's ENTIRE no-CORS HTTP surface equally (pre-existing class), so the route
+  adds no new authority; Emma concurred the scoping is honest. App-wide fix = the
+  already-recorded **D65-R1** (TrustedHostMiddleware), Phase 19's court.
+- **Gate 6/6 ×4 this session — BE 2,462 · FE 3,241/181** (counts in QUALITY.md). Both dev
+  units RUNNING (D69 — do NOT stop them); **the dev backend :5434 was restarted onto the tip**
+  so the S1 surface exists on dev (`voice.live.enabled` defaults OFF — nothing owner-visible
+  until S2a; the S4 round flips it).
+- **▶▶ NEXT SESSION: S2a (plan §7)** — capture worklet + WS client + `useLiveCall` + minimal
+  overlay + basic barge-in; **plan §7-S1's as-built block = the wire contract** (S2a
+  gotchas recorded there: Vite proxy needs `ws: true` · the Serve Host-header question is
+  empirical, `allowed_origins` is the escape · flush has NO ack · `stop` discards
+  unendpointed audio). Then S2b → S2.5 (R70 §9; `tail_wait_ms` etc. are S2.5 client config) →
+  S3 → S4. One slice per session, the standing cadence. Phase 23 S7 + v1.7.8 sequencing
+  unchanged (release E after the roleplay features).
+- Git: **24 commits unpushed over origin `b946fc1`** (the 19 + `beead72` + `0fb7c56` +
+  `24336eb` + `a01ae76` + this docs commit); tree clean at write; the PUSH ruling stays the
+  owner's. **Prod untouched v1.7.7 @ `578ffa7`.** ⚠ Ops lesson (recorded in plan §7-S1):
+  `setsid cmd` FORKS — liveness-check the child PID, never the wrapper's (two ghost Emma
+  runs were killed by PID mid-session after this bit).
+
+## Prior state (2026-09-13, SEVENTEENTH session END — **S0.5 IS CLOSED BY THE OWNER'S WORD after THREE live feel rounds, every wave through the full cadence to RESOLVED — SHIP. ▶▶ NEXT SESSION = S1 (the BE relay), with ONE question open for the owner first: streaming dictation (plan §8 item 5, AWAITING THEIR WORD)**; superseded above where it speaks)
 
 - **S0.5 CLOSED (the owner: "okay looks good, lets handoff") — the full three-round trail lives
   in plan §7-S0.5's three wave blocks; read THOSE before touching any gesture surface.** The
