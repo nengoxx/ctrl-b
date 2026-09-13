@@ -637,7 +637,16 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > THROUGH the realtime path, not just HTTP).
   >
   > **② The pinned wire contract (source-read + live-verified; S1 builds against THIS, not the
-  > OpenAI docs):** `model` is a REQUIRED query param; handshake refusals are **HTTP 403** (bad
+  > OpenAI docs). ⚠ TWO R70 AMENDMENTS (2026-09-13, measured + source-verified by the main seat
+  > at `input_audio_buffer.py:36/:85`): (i) the silence-case "forced commit → `''`" below is the
+  > ONLY safe commit — a commit while speech is OPEN (`speech_started` without its stop) hits
+  > `assert audio_end_ms is not None` and KILLS the session at 1006, words lost (reproduced
+  > 2/2); the relay must hold a commit-safety invariant, and a release flush is a relay-side
+  > SILENCE BURST (measured release→text 530–830 ms), never a raw commit. (ii) "one final per
+  > pause" overstates the VAD: Silero runs over only the LAST 3 s of the buffer and cannot emit
+  > `speech_stopped` before the buffer exceeds 3000 ms — short phrases COALESCE; the latency law
+  > is `max(silence_ms, 3000 − phrase_ms) + ~0.5 s`. Both bind the CALL loop too (S2a/S4
+  > expectations). Full mechanics = R70 §§4–5.** `model` is a REQUIRED query param; handshake refusals are **HTTP 403** (bad
   > key, missing model) while session death is a **bare 1006** — two different failure classes for
   > the relay's error taxonomy. Uplink is **text frames only**: one binary frame kills the session
   > (⇒ the relay re-encodes to JSON+base64, ~33 % overhead on the loopback leg — the plan's binary
@@ -829,9 +838,13 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > **⚠ Durable (her round-2/3 pin lessons, now the house bar for source pins): hold EXACT
   > expressions, sweep EVERY rule mentioning the selector, and red-proof against the named bypass
   > — fragment checks admit fakes** (a 4-point "square" polygon passed "any polygon"; a magic
-  > offset passed "mentions the knob"). `voice.live` config + `/voice/status` delivery + the WS route + the
+  > offset passed "mentions the knob").
+- **S1 — the BE relay:** `voice.live` config + `/voice/status` delivery + the WS route + the
   relay session (mock-Speaches tests: framing, resampling, backpressure, caps, error taxonomy,
-  bearer never in logs).
+  bearer never in logs). **+R70 (2026-09-13): the relay owns the COMMIT-SAFETY invariant (a
+  commit while speech is open kills the session — the §7-S0 amendment) and a `flush` control
+  message implemented as a relay-side silence burst (client-sent bursts would violate §3.1's
+  own rate ceiling) — S2.5's release flush and the call loop's edges both ride these.**
 - **S2a — the FE call loop, WITH basic barge-in (council F8 — an open-mic loop that cannot
   be interrupted is not a reviewable slice; SPLIT from the old S2 by delta-round F10 — the
   monolith was no longer one reviewable change):** capture worklet + WS client + the
@@ -846,6 +859,19 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   helper with F9's coordinate discipline + the transcript-accent arm) · mute (F3's one
   mechanism) · the in-overlay confirm row · terminal faces + back-trap · the remaining §4.5
   edge rules not already forced by S2a's loop.
+- **S2.5 — phrase-by-phrase streaming dictation (owner-RATIFIED 2026-09-13, §8 item 5;
+  design evidence = [R70](./research/R70-phrase-streaming-dictation.md)):** the dictation
+  hold/lock rides the SAME ear as calls — each utterance final appends to the composer draft
+  live at every pause while the user keeps talking; **release = the relay's `flush` (a
+  silence burst, 530–830 ms measured), NEVER a raw commit — R70's amendment: a commit during
+  open speech kills the session.** ⚠ R70's VAD reality tempers the feel: the 3 s buffer floor
+  coalesces short phrases (latency `max(silence_ms, 3000 − phrase_ms) + ~0.5 s`) — the feel
+  round judges with that known. One more consumer of the S1 relay + the existing
+  draft-append seam; the S0.5 gesture unchanged (capture ergonomics stay, only the transcript
+  DELIVERY moves from whole-clip POST to the ear's finals when the `live` capability is up —
+  degrade = today's whole-clip path). Slotted after S2a so the ear/loop mechanics are proven
+  in calls first; sequencing vs S2b is the build session's call. Word-by-word explicitly NOT
+  this slice (§8.5c — the S4 trigger).
 - **S3 — interruption hardening:** the §4.3 ordered cancel-settle contract + the buffered-final
   race (F4) · the playback-would-start-while-speaking edge (F5) · the echo fallback branch if S0
   ruled dirty · reconnect/backpressure edges (F6) exercised against a flaky link.
@@ -922,24 +948,20 @@ Still open:
    numbers + mechanism = the §7-S0 as-built record.
 4. ~~**A delta design round?**~~ **RAN (owner-ordered, 2026-09-12) — see §9's delta-round
    entry: SHIP WITH CHANGES, 4H·5M·2L, all eleven ACCEPTED and folded in place.**
-5. **Streaming dictation — "text fills the composer as I talk" (owner ask, 2026-09-13, at the
-   S0.5 handoff; the Claude Code dictation experience named as the reference). AWAITING THE
-   OWNER'S WORD on the recording below — discussed, not yet ruled.** The capability facts
-   (R51/R68, re-verified twice): the Speaches realtime ear has NO PARTIALS — it emits one
-   whole-utterance FINAL per pause; word-by-word streaming is a server capability we do not
-   have, not a toggle. The three tiers laid out in conversation:
-   **(a)** today's shipped hold→release→text (S0.5);
-   **(b) PHRASE-BY-PHRASE dictation riding the S1 ear — the main seat's recommendation as a
-   named follow-up slice after S2a:** hold the mic, keep talking, each utterance final appends
-   to the draft at every pause — reuses the whole S1 relay + the existing draft-append seam,
-   one more consumer of the same WS; not word-by-word but genuinely live;
-   **(c)** true word-by-word = a partial-capable STT server — EXACTLY the §2.1 shelved-with-
-   trigger item (arch ② / a fork patch on ~github/speaches, upstream frozen ⇒ the maintenance
-   is ours, and it crosses the §5.2 "nothing outside the project" posture) — **the S4
-   calibration round stays the decision point**, taken with the phrase-level feel in hand;
-   partials also cost FE revise-and-repaint logic (they get corrected mid-stream), never plain
-   appends. The owner ended the session before ruling; the next session opens the question
-   with them or proceeds to S1 leaving (b) proposed.
+5. ~~**Streaming dictation — "text fills the composer as I talk"**~~ **RULED (owner,
+   2026-09-13, same conversation): PHRASE-BY-PHRASE — YES, a planned feature; research
+   commissioned ([R70](./research/R70-phrase-streaming-dictation.md)) and the slice added to
+   the §7 ladder as S2.5.** The capability facts that framed it (R51/R68, re-verified twice):
+   the Speaches realtime ear has NO PARTIALS — one whole-utterance FINAL per pause;
+   word-by-word is a server capability we lack, not a toggle. The three tiers as discussed:
+   **(a)** today's shipped hold→release→text (S0.5) · **(b) phrase-by-phrase riding the S1
+   ear — RATIFIED:** hold the mic, keep talking, each utterance final appends to the draft at
+   every pause; reuses the S1 relay + the existing draft-append seam, one more consumer of the
+   same WS · **(c)** true word-by-word = a partial-capable STT server — stays EXACTLY the §2.1
+   shelved-with-trigger item (arch ② / a fork patch on ~github/speaches — our maintenance, and
+   it crosses the §5.2 posture); **the S4 calibration round remains the decision point**,
+   taken with the phrase-level feel in hand; partials also cost FE revise-and-repaint logic,
+   never plain appends.
 
 ## 9. Council record
 

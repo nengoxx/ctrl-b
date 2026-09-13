@@ -35,18 +35,25 @@
   polygon") · a one-axis scale can never give a stadium — the pill's height IS the mechanism.
 - **Gate 6/6 at every tip — final counts FE 3,241/181 · BE 2,377** (QUALITY.md). Both dev
   units RUNNING (D69 — do NOT stop them); :5173 serves the closed S0.5 live.
-- **▶▶ NEXT SESSION: open on plan §8 item 5 — STREAMING DICTATION (owner ask at handoff,
-  discussed NOT ruled):** the Speaches ear has NO partials (verified twice) — the three tiers
-  are recorded there; the main seat recommends tier (b), phrase-by-phrase dictation riding the
-  S1 ear as a named follow-up slice after S2a, with word-by-word staying on its §2.1 S4
-  trigger. **Get the owner's word, then S1 (the BE relay — `voice.live` config + `/voice/status`
-  delivery + the WS route + the relay session; the S0+S0.5 blind debt on the probe pages rides
-  S1's round; the S0-pinned wire contract in §7-S0 is the mock's spec).** One slice per
-  session, the standing cadence. Phase 23 S7 + the v1.7.8 sequencing unchanged (release E
-  after the roleplay features).
-- Git: **18 commits unpushed over origin `b946fc1`** (through `0d1d429` + this docs commit);
-  tree clean at write; the PUSH ruling stays the owner's. **Prod untouched v1.7.7 @
-  `578ffa7`.**
+- **STREAMING DICTATION: RULED + RESEARCHED same session (owner: phrase-by-phrase YES — a
+  planned feature = the new ladder slice S2.5; word-by-word stays on the §2.1 S4 trigger).**
+  [R70](research/R70-phrase-streaming-dictation.md) bought (Opus pass, first-party measured
+  on emma; main seat source-verified both record-amending claims): **⚠ it AMENDS the §7-S0
+  pinned contract — a commit while speech is OPEN kills the session at 1006, words lost**
+  (S0 proved only the silence case; the relay needs a COMMIT-SAFETY invariant + a `flush` =
+  a relay-side silence burst, release→text 530–830 ms measured) — **and the VAD has a 3 s
+  buffer floor: short phrases COALESCE** (latency `max(silence_ms, 3000 − phrase_ms) + ~0.5 s`
+  — binds the CALL loop's feel too). Join problem already solved (Parakeet finals are cased +
+  punctuated; `appendDraft` is right — build nothing). Both amendments folded into §7-S0/§7's
+  S1+S2.5 bullets; the full field dissection + §9 recommendation = R70.
+- **▶▶ NEXT SESSION: S1 (the BE relay)** — `voice.live` config + `/voice/status` delivery +
+  the WS route + the relay session; **the §7-S0 pinned contract AS AMENDED BY R70 is the
+  mock's spec** (commit-safety + `flush` are now S1 scope); the S0+S0.5 blind debt on the
+  probe pages rides S1's round. One slice per session, the standing cadence. Then S2a → S2b →
+  S2.5 (off R70 §9) → S3 → S4. Phase 23 S7 + the v1.7.8 sequencing unchanged (release E after
+  the roleplay features).
+- Git: **19 commits unpushed over origin `b946fc1`** (through the final docs commit); tree
+  clean at write; the PUSH ruling stays the owner's. **Prod untouched v1.7.7 @ `578ffa7`.**
 
 ## Prior state (2026-09-13, SEVENTEENTH session mid — **the owner's S0.5 FEEL ROUND landed FIVE findings live in conversation (OF-1..OF-5, each restated + confirmed, one mid-design correction) → the wave ran the whole cadence same session and is council-CLOSED**; superseded above where it speaks)
 

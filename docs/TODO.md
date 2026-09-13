@@ -1613,6 +1613,10 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       WITH basic barge-in: capture worklet · WS client · `useLiveCall`
       (phase + orthogonal flags; the narrow chat-store turn seam) · the call overlay ·
       submit-through-`runComposer` · read-along forced on · Wake Lock · the plain kill.
+- [ ] S2.5 — Phrase-by-phrase streaming dictation (owner-RATIFIED 2026-09-13; R70 = the
+      design evidence): dictation rides the S1 ear, utterance finals append to the draft
+      live; release = the relay's `flush` (NEVER a raw commit — R70's §7-S0 amendment);
+      degrade = today's whole-clip path (plan §7-S2.5).
 - [ ] S3 — Interruption hardening: the ordered cancel-settle contract · the buffered-final
       race · playback-would-start-while-speaking · the echo fallback branch if S0 ruled dirty ·
       flaky-link reconnect/backpressure edges.
