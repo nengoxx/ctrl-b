@@ -119,6 +119,12 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/automations/service.py", "AutomationAgentMissing.__init__"),
         ("app/services/automations/service.py", "AutomationService._update"),
         ("app/services/automations/service.py", "AutomationService.claim"),
+        # D71 S1 live voice: the WS protocol-error text the relay puts in its `error` downlink frame
+        # when a client floods the uplink past the §3.1 message-rate ceiling. It NAMES the numbers
+        # that refused (the measured burst budget, the multiplier, the configured `frame_ms`), which
+        # is the half a client author acts on — the same operator-facing-diagnostic class as the
+        # entries around it. No model ever sees a frame from this socket.
+        ("app/services/voice_live.py", "LiveRelaySession._note_frame_rate"),
     ),
     "per-call outcome text — what happened on THIS invocation, not a standing instruction "
     "(the C-1 granularity ruling's class, one size up from the short `summary` labels)": (

@@ -362,6 +362,31 @@ voice:
     chunk_min_chars: 50
     chunk_max_chars: 400   # split at the last word boundary under this (must be <= max_text_chars)
     chunk_lookahead: 1     # synth-ahead depth (1 = synthesize chunk N+1 while N plays)
+  # Live voice / call mode (Phase 24, D71) — the realtime EAR behind `WS /api/voice/live`. Same
+  # pointer shape as stt/tts; leave `provider` blank and it resolves exactly like `voice.stt` (one
+  # Speaches box serves both doors). Shipped OFF: flip `enabled` when the call loop is calibrated.
+  live:
+    enabled: false         # whole-feature toggle; `voice.enabled` above outranks it
+    # provider: voice      # blank → resolve like voice.stt (the common case)
+    # model: parakeet      # the realtime `model` query param; blank inherits stt's
+    vad_threshold: 0.9     # Silero speech-probability floor (Speaches' own server-VAD default)
+    silence_ms: 700        # silence run that ends an utterance (100–10000); rides session.update
+    min_speech_ms: 300     # CLIENT interruption floor — speech shorter than this is not a barge-in
+    frame_ms: 40           # uplink frame duration (10–200); also the flush burst's granularity
+    max_session_s: 1800    # hard session lifetime; 1800 aligns with Speaches' own 30-min expiry
+    max_frame_bytes: 32768 # max accepted binary uplink frame
+    buffered_ceiling_ms: 1000   # CLIENT outbound-buffer ceiling before close+reconnect
+    barge_threshold: 0     # CLIENT RMS floor for the barge-in gate; 0 = reuse stt.auto_stop_threshold
+    max_sessions: 1        # process-wide concurrent live sessions (a second connect gets `busy`)
+    echo_workaround: auto  # auto | on | off — auto = capability-detected per track, never UA-sniffed
+    barge_in: true         # CLIENT: hands-free interruption (false = tap-to-interrupt only)
+    ring: true             # CLIENT: overlay mode — true = focal-anchored face ring
+    relay_queue_ms: 2000   # bounded relay queue, in ms of audio; overflow drops the OLDEST frames
+    start_timeout_s: 5     # how long an accepted socket may sit before its `start` message arrives
+    allowed_origins: []    # EXTRA exact `scheme://host[:port]` strings the WS Origin check admits
+                           # (empty = same-host only; browser CORS does not protect WebSockets)
+    connect_timeout_s: 3   # realtime handshake budget (no next hop — there is no live failover)
+    timeout_s: 30          # read window once established
 
 # Embeddings backend (Phase 4f, D9; A11/D48 Slice 2). POINTS at the `providers` map — a flat `provider`
 # primary (+ `model`, omittable iff the catalog has exactly one model) and an ordered `fallbacks` chain of

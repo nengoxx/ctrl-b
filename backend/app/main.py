@@ -125,6 +125,7 @@ from app.services.events import EventService
 from app.services.fleet import FleetService
 from app.services.monitor import MonitorService
 from app.services.svc import ServiceService
+from app.services.voice_live import LiveSessionSlots
 
 # backend/app/main.py -> repo-root/frontend/dist
 _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -186,6 +187,13 @@ async def lifespan(app: FastAPI):
     # Voice (Phase 6): STT/TTS proxy with failover. App-state only (not consumed by the agent loop);
     # the /api/voice endpoints read it per request, so a Conf edit hot-applies via `reconfigure`.
     set_voice(app, boot_registry)
+    # Live voice (Phase 24 / D71): the process-wide live-session cap, created ONCE here — the
+    # `endpoint_gates` precedent. A pure counter (no settings held: the cap is read live at every
+    # acquire), so it needs no rebuild on a Conf edit and nothing to close at shutdown. A live relay
+    # session is a request-scoped task like any other handler, so uvicorn's graceful shutdown cancels
+    # it; the session's own one `finally` closes both legs and the route's releases the slot. No
+    # session registry beyond this counter, deliberately.
+    app.state.voice_live_slots = LiveSessionSlots()
     deps = Deps(
         settings=app.state.settings,
         fleet=app.state.fleet,

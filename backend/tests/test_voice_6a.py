@@ -260,11 +260,13 @@ def test_stt_language_model_over_service_and_extras() -> None:
 def test_configured_and_status_and_unconfigured() -> None:
     async def go():
         # empty chains → both unconfigured; enabled=False → both off regardless of chain
-        assert _vc().status() == {"stt": False, "tts": False}
+        # D71 adds the `live` capability bit beside the two originals (no live chain here ⇒ False).
+        assert _vc().status() == {"stt": False, "tts": False, "live": False}
         disabled = _vc(stt=[target("s", "http://p/v1", "w")], enabled=False)
         assert disabled.configured("stt") is False
         live = _vc(stt=[target("s", "http://p/v1", "w")], tts=[target("t", "http://q/v1", "k")])
-        assert live.status() == {"stt": True, "tts": True}  # no stt_auto_send — composed at the API layer
+        assert live.status() == {"stt": True, "tts": True, "live": False}  # no stt_auto_send —
+        # composed at the API layer; `live` needs its own chain, which this client has not got
         for coro in (
             _vc().transcribe(content=b"x", filename="a", content_type=None),
             _vc().synthesize(text="hi"),

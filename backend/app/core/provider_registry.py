@@ -29,6 +29,7 @@ from pydantic import SecretStr
 from app.domain.provider import (
     ApiMode,
     EmbeddingsPolicy,
+    LivePolicy,
     MaxTokensField,
     ResolvedTarget,
     SectionPolicy,
@@ -242,6 +243,11 @@ class Registry:
     stt_policy: SttPolicy = field(default_factory=SttPolicy)
     tts_chain: tuple[ResolvedTarget, ...] = ()
     tts_policy: TtsPolicy = field(default_factory=TtsPolicy)
+    #: LIVE VOICE (Phase 24 / D71): the realtime-ear chain + its policy. The relay dials **hop 1 only**
+    #: — a stateful WS session cannot fail over mid-stream — so the tail hops are carried for shape
+    #: consistency (and a future reconnect policy), not walked. Empty ⇒ live unconfigured.
+    live_chain: tuple[ResolvedTarget, ...] = ()
+    live_policy: LivePolicy | None = None
     embeddings_chain: tuple[ResolvedTarget, ...] = ()
     embeddings_policy: EmbeddingsPolicy = field(default_factory=EmbeddingsPolicy)
 
@@ -680,6 +686,44 @@ def _resolve(settings: "Settings", *, strict: bool) -> tuple[Registry, list[Regi
         warnings=warnings,
         strict=strict,
     )
+    # ── voice.live (Phase 24 / D71): the realtime EAR's chain. Two ways in, and WHICH one matters for
+    #    where a misconfiguration is reported:
+    #      • `voice.live.provider` (or any `fallbacks`) set → build a chain of its own, labelled
+    #        `voice.live` so a broken ref points at the section the operator actually wrote. The
+    #        fallbacks case is included deliberately: blank-primary-with-fallbacks is a real C5 verdict
+    #        (strict 422 / lenient promote) that silently reusing stt's chain would swallow.
+    #      • both blank → the plan §5.1 "empty → resolve like stt": REUSE `stt_chain` verbatim rather
+    #        than rebuilding it under a `voice.live` label. Rebuilding would duplicate every stt error
+    #        under a section name the operator never configured — the misconfig IS in `voice.stt`, and
+    #        that is where it is already reported. Same targets, one report.
+    #    No `global_retry` and no failover toggle, like stt/tts.
+    live = settings.voice.live
+    if live.provider or live.fallbacks:
+        live_chain = _build_section_chain(
+            "voice.live",
+            settings.providers,
+            live.provider,
+            live.model,
+            live.fallbacks,
+            0,
+            gate_cap,
+            errors=errors,
+            warnings=warnings,
+            strict=strict,
+        )
+        live_policy = LivePolicy(
+            # `LiveCfg` has no `language` of its own — the ear's language is the STT service's, one
+            # knob however the chain is pointed (see `LivePolicy`).
+            language=stt.language,
+            connect_timeout_s=live.connect_timeout_s,
+            timeout_s=live.timeout_s,
+        )
+    else:
+        live_chain = stt_chain
+        live_policy = LivePolicy(
+            language=stt.language, connect_timeout_s=stt.connect_timeout_s, timeout_s=stt.timeout_s
+        )
+
     emb = settings.embeddings
     embeddings_chain = _build_section_chain(
         "embeddings",
@@ -758,6 +802,8 @@ def _resolve(settings: "Settings", *, strict: bool) -> tuple[Registry, list[Regi
         stt_policy=stt_policy,
         tts_chain=tts_chain,
         tts_policy=tts_policy,
+        live_chain=live_chain,
+        live_policy=live_policy,
         embeddings_chain=embeddings_chain,
         embeddings_policy=embeddings_policy,
     )

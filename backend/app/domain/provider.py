@@ -130,6 +130,30 @@ class TtsPolicy(BaseModel):
     extra_body: dict[str, Any] = Field(default_factory=dict)
 
 
+class LivePolicy(BaseModel):
+    """The per-session frozen snapshot of the LIVE-VOICE service's own knobs (Phase 24 / D71; the
+    `SttPolicy` shape). Captured at resolution alongside `Registry.live_chain`; the relay reads it and
+    never touches live `Settings`.
+
+    `connect_timeout_s` bounds the Speaches realtime HANDSHAKE (the websockets `open_timeout`) and
+    `timeout_s` its close — the same "fail fast reaching a dead endpoint, be generous once connected"
+    split the HTTP voice doors use, except there is **no failover to walk to**: a stateful WS session
+    cannot be re-dialled mid-stream, so the relay dials hop 1 only and the client's degrade is
+    push-to-talk (D71 §3.3 / §5.3).
+
+    `language` is the SERVICE fallback for `session.update`'s `input_audio_transcription.language`
+    (a target's own `language` wins — the C8 model > service precedence). It comes from **`voice.stt`**
+    whichever section resolved the chain: `LiveCfg` deliberately carries no `language` of its own, so
+    the ear has ONE language knob however it is pointed. Blank ⇒ the field is OMITTED, never sent as
+    null (§7-S0 ②: `exclude_defaults` means a null can never reset it)."""
+
+    model_config = {"frozen": True}
+
+    language: str = ""  # SERVICE fallback from voice.stt; blank → omit the field entirely
+    connect_timeout_s: float = 3.0  # realtime handshake budget (no next hop to fall over to)
+    timeout_s: float = 30.0  # close budget once established
+
+
 class EmbeddingsPolicy(BaseModel):
     """The per-call frozen snapshot of the embeddings service's own knobs (A11 / D48 §Module boundary).
     Only `timeout_s` is section-level (the SDK client read window); `enabled` is passed into the client

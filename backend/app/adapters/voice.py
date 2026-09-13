@@ -40,7 +40,7 @@ from app.core.provider_registry import EndpointGates
 if TYPE_CHECKING:
     from contextlib import AbstractAsyncContextManager
 
-    from app.domain.provider import ResolvedTarget, SttPolicy, TtsPolicy
+    from app.domain.provider import LivePolicy, ResolvedTarget, SttPolicy, TtsPolicy
 
 # Local servers ignore the key but the SDK requires a non-empty string.
 _PLACEHOLDER_KEY = "sk-no-key-required"
@@ -118,11 +118,20 @@ class VoiceClient:
         gates: EndpointGates | None = None,
         *,
         enabled: bool = True,
+        live: "tuple[ResolvedTarget, ...]" = (),
+        live_policy: "LivePolicy | None" = None,
     ) -> None:
         self._stt = stt
         self._stt_policy = stt_policy
         self._tts = tts
         self._tts_policy = tts_policy
+        #: LIVE VOICE (D71): the realtime-ear chain + policy. Keyword-only with defaults so every
+        #: pre-S1 construction (tests, standalone) stays valid — live simply reports unconfigured.
+        #: This client does NOT call the realtime endpoint: the relay (`services/voice_live.py`) owns
+        #: that socket. What lives here is the CAPABILITY question + hop 1, so the one object the API
+        #: already holds answers "is there an ear?" the same way it answers it for stt/tts.
+        self._live = live
+        self._live_policy = live_policy
         self._enabled = enabled
         self._gates = gates if gates is not None else EndpointGates()
         #: SDK clients cached by (provider, connect_timeout_s, timeout_s) so STT and TTS sharing a host
@@ -135,15 +144,32 @@ class VoiceClient:
         self._retired = False
 
     def configured(self, service: str) -> bool:
-        """Whether `service` ("stt"/"tts") has at least one usable target (and voice is enabled).
-        Drives `GET /api/voice/status` so the PWA shows/hides the mic + auto-TTS."""
-        chain = self._stt if service == "stt" else self._tts
+        """Whether `service` ("stt"/"tts"/"live") has at least one usable target (and voice is enabled).
+        Drives `GET /api/voice/status` so the PWA shows/hides the mic + auto-TTS + the call button.
+        An unknown service name reads as unconfigured rather than silently aliasing to tts."""
+        chain = {"stt": self._stt, "tts": self._tts, "live": self._live}.get(service, ())
         return bool(self._enabled and chain)
 
     def status(self) -> dict[str, bool]:
         """Capability bits only. `stt_auto_send` is composed at the API layer from live settings (R2) —
-        it is a client-behavior flag, not a wire capability, so it never rides the frozen chain."""
-        return {"stt": self.configured("stt"), "tts": self.configured("tts")}
+        it is a client-behavior flag, not a wire capability, so it never rides the frozen chain. The
+        `live` bit here is the CHAIN half (is there a realtime ear?); the API composes the shipped bit,
+        which also needs TTS and `voice.live.enabled` (D71 §5.1 refinement — a call needs the mouth)."""
+        return {
+            "stt": self.configured("stt"),
+            "tts": self.configured("tts"),
+            "live": self.configured("live"),
+        }
+
+    def live_target(self) -> "ResolvedTarget | None":
+        """Hop 1 of the live chain — the ONE target the relay dials. There is deliberately no failover
+        for live voice (D71 §3.3): a stateful realtime session cannot be re-dialled mid-stream, so the
+        chain's tail hops are carried for shape consistency and the client's degrade is push-to-talk."""
+        return self._live[0] if self._live else None
+
+    def live_policy(self) -> "LivePolicy | None":
+        """The frozen live-session policy captured at resolution (language + the transport pair)."""
+        return self._live_policy
 
     def _client(self, target: "ResolvedTarget", connect_timeout_s: float, timeout_s: float) -> AsyncOpenAI:
         key = (target.provider, connect_timeout_s, timeout_s)

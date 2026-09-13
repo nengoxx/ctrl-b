@@ -32,6 +32,7 @@ dependencies = [
     "mcp==1.28.1",                 # exact pin caps the imminent breaking v2 (drops the 3rd stream tuple element)
     "pypdf==6.16.2",               # D68/A8 S4: the ONE new dep of composer attachments (ATTACHMENTS_PLAN §10) — pure-Python PDF text extraction at claim, zero runtime deps of its own (the `crypto` extra is not installed: an encrypted PDF is an extraction failure, not a feature). Exact pin: it parses hostile input.
     "anyio>=4.2",                  # first DIRECT use: session.py's shielded-finally CancelScope (ACA Slice 2 / D38). Floor, not exact: transitive via starlette/httpx which resolve it; >=4.2 clears anyio#642 (shield-shields-siblings). 4.14.1 installed.
+    "websockets>=14",              # first DIRECT use: the live-voice relay's Speaches leg (D71/S1) — the CLIENT half of `WS /v1/realtime`, which httpx/the OpenAI SDK cannot speak. Floor, not exact: transitive via uvicorn[standard] until now, which resolves it; >=14 is where `websockets.asyncio.client` became the supported API (the legacy one is deprecated). 16.1 installed.
 ]
 
 # Dev-only tooling (not shipped with the app). Install with:

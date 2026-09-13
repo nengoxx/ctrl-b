@@ -5,6 +5,11 @@ it to the configured OpenAI-compatible endpoint(s) with failover, and returns th
 `GET /voice/status` is the capability probe the PWA uses to decide whether to show the mic + auto-TTS
 (without exposing whether keys exist). Thin by design (AGENTS conventions): validate + delegate.
 
+`WS /api/voice/live` (Phase 24 / D71) is the one exception to "thin proxies over HTTP": the live-call
+relay, which bridges the phone to a Speaches realtime session. Its session object lives in
+`services/voice_live.py`; what is here is the route's rails — the `Origin` check, the feature gate, and
+the process-wide admission slot.
+
 HTTP contract: a success always returns 200 with `X-Voice-Served-By: <provider>` — the NAME of the
 registry provider that actually served (A11/D48; a fallback serve carries that fallback's provider name,
 a single-user diagnostic surface); TTS additionally carries `X-Voice-Target: <provider>/<model>`, the
@@ -17,12 +22,23 @@ error); voice/service unconfigured → 503; STT with no file → 422.
 from __future__ import annotations
 
 import json
+import logging
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request, UploadFile, WebSocket
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.adapters.voice import AUDIO_FORMATS, VoiceClient, VoiceError
+from app.services.voice_live import (
+    CLOSE_BUSY,
+    CLOSE_PROTOCOL,
+    LiveRelaySession,
+    LiveSessionSlots,
+    connect_speaches,
+)
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["voice"], prefix="/voice")
 
@@ -34,15 +50,17 @@ def _client(request: Request) -> VoiceClient:
 @router.get("/status")
 async def voice_status(request: Request) -> dict[str, object]:
     """Capability probe: which voice services are configured + enabled, the STT auto-send flag, the R51
-    Tier-0 auto-stop policy, and the D63 TTS chunk policy (`{stt, tts, stt_auto_send, stt_auto_stop,
-    tts_chunking}`). Everything past the two capability bits is CLIENT BEHAVIOR composed HERE from live
-    settings (A11/R2) — the frozen resolved chain the `VoiceClient` holds deliberately doesn't carry it —
-    and this probe is the always-on endpoint the PWA already polls, so neither the chunker nor the mic's
-    silence detector needs a query of its own.
+    Tier-0 auto-stop policy, the D63 TTS chunk policy, and the D71 live-call policy (`{stt, tts, live,
+    stt_auto_send, stt_auto_stop, tts_chunking, live_call}`). Everything past the capability bits is
+    CLIENT BEHAVIOR composed HERE from live settings (A11/R2) — the frozen resolved chain the
+    `VoiceClient` holds deliberately doesn't carry it — and this probe is the always-on endpoint the PWA
+    already polls, so neither the chunker nor the mic's silence detector nor the call overlay needs a
+    query of its own.
 
-    `stt_auto_stop` and `tts_chunking` are shape-only: a toggle + thresholds, and the split mode + size
-    floors/caps + container + the read-along flag. No endpoint, no key, no model id — nothing here says
-    whether a secret exists."""
+    `stt_auto_stop`, `tts_chunking` and `live_call` are shape-only: a toggle + thresholds, the split
+    mode + size floors/caps + container + the read-along flag, and the call's client-side pacing /
+    interruption / presentation knobs. No endpoint, no key, no model id — nothing here says whether a
+    secret exists."""
     status: dict[str, object] = dict(_client(request).status())
     stt = request.app.state.settings.voice.stt
     tts = request.app.state.settings.voice.tts
@@ -62,7 +80,116 @@ async def voice_status(request: Request) -> dict[str, object]:
         "format": tts.chunk_format,
         "read_along": tts.chunk_read_along,
     }
+    # LIVE VOICE / call mode (D71 §5.1). The BIT is composed of three things, because the call needs
+    # both ears and a mouth: a resolvable realtime target (the frozen client's chain), TTS configured
+    # (the §5.1 refinement 2026-09-12 — a call with nothing to say back is not a call), and the
+    # feature's own toggle. `voice.enabled` MASTER outranks all of it, already, inside `configured()`.
+    live = request.app.state.settings.voice.live
+    client = _client(request)
+    status["live"] = client.configured("live") and client.configured("tts") and live.enabled
+    # …and the CLIENT-side call knobs, same split as `stt_auto_stop`/`tts_chunking`: shape only — no
+    # endpoint, no key, no model id, nothing that says whether a secret exists. Speaches' own
+    # `TurnDetection` accepts exactly five fields (§4.1), so every interruption/pacing knob a call
+    # needs is necessarily browser-side and has to arrive here.
+    status["live_call"] = {
+        "frame_ms": live.frame_ms,
+        "buffered_ceiling_ms": live.buffered_ceiling_ms,
+        "min_speech_ms": live.min_speech_ms,
+        "barge_threshold": live.barge_threshold,
+        "barge_in": live.barge_in,
+        "ring": live.ring,
+        "echo_workaround": live.echo_workaround,
+        "max_session_s": live.max_session_s,
+    }
     return status
+
+
+def _origin_allowed(origin: str | None, host: str | None, allowed: list[str]) -> bool:
+    """The WS `Origin` rail (D71 §5.2/F9), pure so it can be reasoned about and tested directly.
+
+    **Browser CORS does not protect WebSockets** — there is no preflight on an upgrade, and this app
+    deliberately mounts no CORS middleware at all (SECURITY_MODEL §2.7, where the *absence* of CORS is
+    the load-bearing defence for the media write path). For the HTTP surface that absence is the
+    defence; for a WebSocket it buys nothing, so this explicit check is the ONLY thing standing between
+    a hostile page opened on a tailnet device and the owner's relay.
+
+    The rule: an origin must be PRESENT (a browser always sends one; absent means a non-browser client,
+    which is exactly what the tailnet trust boundary does not extend to on this route), and its
+    `host:port` must match the request's own `Host` header — or the whole origin string must appear
+    verbatim in `voice.live.allowed_origins` (the escape hatch for a second Serve name). Exact strings,
+    never patterns: a pattern is how an allowlist grows a bypass.
+    """
+    if not origin:
+        return False
+    if origin in allowed:
+        return True
+    if not host:
+        return False
+    return urlsplit(origin).netloc == host
+
+
+@router.websocket("/live")
+async def voice_live(websocket: WebSocket) -> None:
+    """`WS /api/voice/live` — the live-voice relay (D71 §3; the FIRST WebSocket in this codebase,
+    admitted for continuous media ingress only, §3.2).
+
+    Thin by design, like every other handler here: the pre-accept rails, the admission slot, then
+    delegate to `LiveRelaySession`. The three refusals, in order and for a reason:
+
+    1. **Origin** first — it is the security rail, and a rejected origin must learn nothing about
+       whether the feature exists.
+    2. **The feature gate** (`voice.live.enabled` + a resolvable realtime target) — refused
+       pre-`accept()`, which a browser sees as a failed handshake (HTTP 403), matching how the mic
+       simply is not offered when `stt` is unconfigured.
+    3. **Busy** — post-`accept()`, deliberately: the cap is a transient condition, so the client gets
+       a TYPED `{"error","busy"}` + close 1013 ("try again later") it can render, not an opaque
+       handshake failure indistinguishable from a misconfiguration.
+
+    The upstream connector is injectable through `app.state.voice_live_connect` — the one test seam,
+    the same shape as `app.state.voice` being a stub in the voice-API tests. Absent in production.
+    """
+    app = websocket.app
+    settings = app.state.settings
+    cfg = settings.voice.live
+    client: VoiceClient = app.state.voice
+
+    if not _origin_allowed(
+        websocket.headers.get("origin"), websocket.headers.get("host"), cfg.allowed_origins
+    ):
+        log.warning("live voice: refused a websocket with a foreign/absent Origin")
+        await websocket.close(code=CLOSE_PROTOCOL, reason="origin not allowed")
+        return
+    target = client.live_target()
+    policy = client.live_policy()
+    if not (cfg.enabled and client.configured("live")) or target is None or policy is None:
+        await websocket.close(code=CLOSE_PROTOCOL, reason="live voice unavailable")
+        return
+
+    slots: LiveSessionSlots = app.state.voice_live_slots
+    await websocket.accept()
+    if not slots.acquire(cfg.max_sessions):
+        await websocket.send_json(
+            {
+                "type": "error",
+                "code": "busy",
+                "message": f"a live call is already running (max_sessions {cfg.max_sessions})",
+            }
+        )
+        await websocket.close(code=CLOSE_BUSY, reason="busy")
+        return
+    try:
+        await LiveRelaySession(
+            websocket,
+            cfg=cfg,
+            target=target,
+            policy=policy,
+            connect=getattr(app.state, "voice_live_connect", None) or connect_speaches,
+        ).run()
+    finally:
+        # The ONE release. Latched by being the single `finally` on the single acquire — a failing
+        # upstream close inside the session can never leak the slot, because the session swallows its
+        # own teardown failures and this block runs regardless.
+        slots.release()
 
 
 @router.post("/stt")

@@ -590,6 +590,97 @@ class SttServiceCfg(VoiceServiceCfg):
     auto_stop_threshold: float = Field(default=0.01, ge=0.001, le=0.5)
 
 
+class LiveCfg(VoiceServiceCfg):
+    """LIVE VOICE / call mode (Phase 24 / D71, `docs/LIVE_VOICE_PLAN.md` §5.1) — the realtime EAR behind
+    `WS /api/voice/live`. Inherits the house target shape from `VoiceServiceCfg`
+    (`provider`/`model`/`fallbacks` + the split timeouts + `extra_body`) rather than the plan's literal
+    `target: ""` string: one unified pointer shape for every voice section, so a live-only endpoint is
+    configured exactly like stt/tts (main-seat decision, S1). **A BLANK `provider` (and no
+    `fallbacks`) resolves like `voice.stt`** — the plan's "empty → resolve like stt" — which is the
+    common case: one Speaches box serves both doors.
+
+    Every numeric below is a bounded `Field` with its provenance in the comment (the no-magic-numbers
+    doctrine — see `TurnsCfg`). Three sources: **§7-S0** = the live-verified Speaches wire contract,
+    **R70** = the measured endpoint/flush law, **§3.1** = the plan's declared wire bounds.
+
+    Split by WHO reads the knob, because the split is load-bearing for `GET /voice/status`:
+    * SERVER knobs — `vad_threshold`/`silence_ms` ride `session.update` to Speaches; `frame_ms`,
+      `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
+      `allowed_origins` are the relay's own caps.
+    * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `barge_threshold`, `barge_in`, `ring`,
+      `echo_workaround` are PWA behavior (Speaches' `TurnDetection` accepts exactly five fields, §4.1,
+      so an interruption floor cannot be a server knob). They are delivered verbatim by
+      `GET /voice/status` (`live_call`) and nothing below the browser reads them.
+
+    `enabled: false` ships until S4 passes (the whole-feature-toggle rule); the `voice.enabled` MASTER
+    switch outranks it, as it does for stt/tts."""
+
+    # ── whole-feature toggle (the standing pluggability requirement; OFF until S4) ──
+    enabled: bool = False
+
+    # ── the two knobs that ride `session.update` verbatim (§4.1; the ONLY server-side VAD knobs) ──
+    #: Silero speech probability floor. Default = Speaches' own server-VAD default (§7-S0 "defaults
+    #: 0.9/0/550 ms"), so an unconfigured install behaves exactly like the smoke-verified server.
+    vad_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
+    #: `turn_detection.silence_duration_ms` — the silence run that ends an utterance. 700 ms is the
+    #: plan §5.1 field default (above Speaches' 550 ms: R70's latency law is
+    #: `max(silence_ms, 3000 − phrase_ms) + ~0.5 s`, so a hair more silence buys fewer mid-sentence cuts
+    #: without touching the 3 s VAD-window floor). Bounded both ways: ~0 would end every clip before a
+    #: word, unbounded would never end one (the `auto_stop_silence_s` precedent).
+    silence_ms: int = Field(default=700, ge=100, le=10000)
+
+    # ── client-side behavior, delivered by `GET /voice/status` and read only by the PWA ──
+    #: Interruption floor: speech shorter than this never counts as a barge-in (livekit's
+    #: `min_duration`, plan §4.3). A CLIENT gate — Speaches' TurnDetection has no such field.
+    min_speech_ms: int = Field(default=300, ge=0, le=5000)
+    #: Client outbound-buffer ceiling, in ms of audio, before the client closes + reconnects a fresh
+    #: session (plan §3.1/F6 — `WebSocket.send()` has no awaitable backpressure).
+    buffered_ceiling_ms: int = Field(default=1000, ge=100, le=10000)
+    #: Normalized RMS floor for the barge-in energy gate. **0 = reuse `stt.auto_stop_threshold`** (plan
+    #: §5.1), so the owner calibrates ONE number on the phone unless the call wants its own. Capped at
+    #: 0.5 like its sibling — above that it is a mute, not a floor.
+    barge_threshold: float = Field(default=0.0, ge=0.0, le=0.5)
+    #: Hands-free interruption master (client). False ⇒ tap-to-interrupt only, which is also the honest
+    #: degrade on a browser whose AEC does not remove the phone's own playback (§7-S0 ③, Fennec).
+    barge_in: bool = True
+    #: §6 overlay mode: true = the focal-anchored face ring, false = art-only + transcript accent.
+    ring: bool = True
+    #: Per-track echo policy (§7-S0 ③, owner-ruled on measured device evidence): `auto` =
+    #: capability-detected per track at call start (OFF where `getSettings().echoCancellation` reads
+    #: `"all"`, the protective ear-hold elsewhere) — NEVER UA-sniffed. `on`/`off` force one branch.
+    echo_workaround: Literal["auto", "on", "off"] = "auto"
+
+    # ── the relay's own caps (server side; every one testable, none a vibe — §3.1) ──
+    #: Uplink frame duration. 40 ms is the plan §3.1 default; Silero runs synchronously on Speaches'
+    #: event loop per append (§7-S0 ②), so the knob exists to trade that per-append cost against
+    #: latency. Also the granularity of the R70 flush burst.
+    frame_ms: int = Field(default=40, ge=10, le=200)
+    #: Hard session lifetime. Default 1800 s aligns with Speaches' own 30-min `asyncio.timeout` hard
+    #: expiry (§7-S0 ②) — a longer value would just be cut upstream; the ceiling keeps a configured
+    #: value within four of those windows for a future reconnecting relay.
+    max_session_s: int = Field(default=1800, ge=10, le=1800 * 4)
+    #: Max accepted binary uplink frame (plan §3.1 default 32 KiB = 40 ms of pcm16 @ 96 kHz with room
+    #: to spare). `gt=0` so a blanked Conf field cannot disable the cap.
+    max_frame_bytes: int = Field(default=32768, gt=0)
+    #: Process-wide concurrent live sessions (plan §5.2/F9; N=1 service). One call at a time by
+    #: default — the second connection gets a typed `busy`, never a silent queue.
+    max_sessions: int = Field(default=1, ge=1, le=8)
+    #: The §3.1 bounded relay queue, expressed in **ms of audio** (frame-size-independent). On overflow
+    #: the OLDEST frames are dropped and one `degraded` state goes down — the relay never stalls, and
+    #: this queue is the ONLY backpressure in the chain (Speaches' own pubsub queues are unbounded,
+    #: §7-S0 ②). 2000 ms ≈ 50 frames at the default `frame_ms`.
+    relay_queue_ms: int = Field(default=2000, ge=200, le=20000)
+    #: How long an accepted socket may sit before its `start` control message arrives. 5 s is generous
+    #: for a phone that just got the mic; past it the connection is a protocol error, not a held slot.
+    start_timeout_s: float = Field(default=5.0, gt=0, le=60, allow_inf_nan=False)
+    #: EXTRA exact origin strings admitted by the WS `Origin` check, on top of the same-host rule
+    #: (plan §5.2's "the configured ctrl-b origin(s)"). Empty = same-host only. Browser CORS does not
+    #: protect WebSockets and this app mounts no CORS middleware (SECURITY_MODEL §2.7), so the check
+    #: in `api/voice.py` is the only defence — this list is its one escape hatch (e.g. a second
+    #: Tailscale Serve name). Exact `scheme://host[:port]` strings, never patterns.
+    allowed_origins: list[str] = Field(default_factory=list)
+
+
 class TtsServiceCfg(VoiceServiceCfg):
     """TTS service (Phase 6; chunked synthesis = D63). `format` is the `response_format`/container —
     mp3 is the universally `<audio>`-seekable choice the mini-player needs for a WHOLE-clip synth.
@@ -650,6 +741,9 @@ class VoiceCfg(BaseModel):
     enabled: bool = True
     stt: SttServiceCfg = Field(default_factory=SttServiceCfg)
     tts: TtsServiceCfg = Field(default_factory=TtsServiceCfg)
+    #: Live voice / call mode (Phase 24 / D71) — the realtime ear behind `WS /api/voice/live`. A third
+    #: voice service beside stt/tts, same pointer shape; `enabled: false` until S4 (§5.1).
+    live: LiveCfg = Field(default_factory=LiveCfg)
 
 
 class SearxngCfg(BaseModel):
