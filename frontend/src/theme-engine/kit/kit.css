@@ -1516,6 +1516,11 @@ body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
   opacity: 0;
   transform: scale(0.6) rotate(-60deg);
 }
+/* the cancel ✕ reads slightly bigger + thicker than the shared glyph's default 2 (owner round 2,
+ * 2026-09-13) — a presentation override scoped to this face, not a change to the shared icon. */
+.kit .kit-cbtn.tools .tools-x svg {
+  stroke-width: 2.6;
+}
 .kit .kit-cbtn.tools.cancelling {
   color: var(--danger);
 }
@@ -1577,9 +1582,9 @@ body[data-motion="reduced"] .kit .kit-cbtn.tools .tools-x {
    * edit was exactly the risk. */
 
   /* How far the record circle grows. Telegram's own is 2.2x (R69 §1.6: 19dp -> 41dp); OWNER-TUNED
-   * DOWN to 1.8x in the feel round 2026-09-13 — at 2.2 the circle swallowed the composer's trailing
-   * corner on a 360px phone. */
-  --mg-grow-scale: 1.8;
+   * DOWN to 1.8x in the feel round 2026-09-13, then to 1.65x in round 2 the same day — their eye,
+   * their number; this knob exists precisely so the tune is one edit. */
+  --mg-grow-scale: 1.65;
   /* …and how far the LEVEL HALO bulges past that at a full meter. R69 §1.6 [V] verbatim:
    * `circleRadius = dp(41)` + `circleRadiusAmplitude = dp(30)` = +0.73x of the grown circle, which
    * lands the full-amplitude disc at ~3.1x of the button — Telegram's own 142dp-over-44dp ratio. */
@@ -1588,8 +1593,9 @@ body[data-motion="reduced"] .kit .kit-cbtn.tools .tools-x {
   /* The lock rail's CIRCLE — what the pill compresses INTO (OF-2). Every other rail number is stated
    * relative to it, so the rail is resized by this one value. */
   --mg-dot: 28px;
-  /* …and how much taller than that circle the pill stands at rest. The skin is the circle scaled on
-   * Y alone, so 1.5 = a 42px pill, the box the pre-feel-round rail measured. */
+  /* …and how much taller than that circle the pill stands at rest — 1.5 = a 42px pill. Since the
+   * owner's round 2 the skin is a real box whose HEIGHT tracks the lift (a true stadium at every
+   * stage), so this is a height multiplier, no longer a scaleY. */
   --mg-pill-scale: 1.5;
   /* Where the glyph sits inside the pill at rest (it settles to the circle's centre at full lift)… */
   --mg-glyph-rise: 7px;
@@ -1674,13 +1680,18 @@ body[data-motion="reduced"] .mg-halo {
  *
  * THE BOX IS THE CIRCLE, and three stacked layers do the rest, because each moves differently and one
  * element cannot carry three transforms:
- *   · `.mg-rail-skin`  the circle STRETCHED on Y into the pill, squeezed back to 1 by the lift;
+ *   · `.mg-rail-skin`  a real box whose HEIGHT tracks the lift, `border-radius: 999px` — a TRUE
+ *                      STADIUM at every stage ("like the toggles" — owner round 2; the round-1 scaleY
+ *                      gave an ellipse at rest, rejected by eye), collapsing to the exact circle;
  *   · `.mg-rail-glyph` the padlock (call mode: the phone), riding at the pill's top and settling into
- *                      the circle's centre. A SIBLING of the skin, so the skin's scaleY never squashes it;
+ *                      the circle's centre. A SIBLING of the skin, so the squeeze never squashes it;
  *   · `.mg-rail-tail`  the chevron (and call mode's label), collapsing and fading out on the way up.
- * Scaling a round box on one axis gives an ellipse rather than a stadium — a deliberate trade: the END
- * state is the one the ruling names, and it is an EXACT circle. */
+ * ⚠ The skin's height is a RECORDED exception to the §14.11 transform-only rule: height IS the
+ * mechanism here, not decoration (the composer's own auto-grow is the precedent), the box is 28px
+ * wide and absolutely positioned, and `contain: layout` on the rail keeps the per-frame reflow
+ * inside these three layers. */
 .mg-rail {
+  contain: layout;
   left: var(--mg-x);
   top: var(--mg-y);
   width: var(--mg-dot);
@@ -1705,11 +1716,19 @@ body[data-motion="reduced"] .mg-halo {
 }
 .mg-rail-skin {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: 50%;
+  /* pill height at rest, the circle's own at full lift — straight vertical sides + semicircular
+   * caps the whole way (the recorded height exception; see the block comment above). No transition:
+   * it follows the finger per frame, like the drag transforms do. */
+  height: calc(
+    var(--mg-dot) * (var(--mg-pill-scale) - var(--mg-lift, 0) * (var(--mg-pill-scale) - 1))
+  );
+  transform: translateY(-50%);
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--line-2);
-  transform: scaleY(calc(var(--mg-pill-scale) - var(--mg-lift, 0) * (var(--mg-pill-scale) - 1)));
 }
 .mg-rail-glyph {
   display: flex;
@@ -1737,6 +1756,7 @@ body[data-motion="reduced"] .mg-halo {
   background: color-mix(in oklch, var(--accent) 18%, var(--surface-2));
   border-color: color-mix(in oklch, var(--accent) 45%, transparent);
   transition:
+    height 250ms cubic-bezier(0.23, 1, 0.32, 1),
     background 150ms linear,
     border-color 150ms linear;
 }
@@ -1749,7 +1769,7 @@ body[data-motion="reduced"] .mg-rail.armed .mg-rail-skin {
 /* …and under reduced motion the morph is TWO DISCRETE STATES rather than a continuous squeeze: a pill
  * while the swipe is under way, a circle once it arms. Both are readable; neither animates. */
 body[data-motion="reduced"] .mg-rail-skin {
-  transform: scaleY(var(--mg-pill-scale));
+  height: calc(var(--mg-dot) * var(--mg-pill-scale)); /* the centring translateY(-50%) stays */
 }
 body[data-motion="reduced"] .mg-rail-glyph {
   transform: translateY(calc(-1 * var(--mg-glyph-rise)));
@@ -1759,7 +1779,7 @@ body[data-motion="reduced"] .mg-rail-tail {
   opacity: 1;
 }
 body[data-motion="reduced"] .mg-rail.armed .mg-rail-skin {
-  transform: scaleY(1);
+  height: var(--mg-dot);
 }
 body[data-motion="reduced"] .mg-rail.armed .mg-rail-glyph {
   transform: none;
@@ -1777,6 +1797,17 @@ body[data-motion="reduced"] .mg-rail.armed .mg-rail-tail {
 /* ③ THE TRACK — "slide to cancel", filling the run of bar left of the circle, fading as the finger
  * travels (R69 §1.3: the hint alpha IS the progress). The chevron oscillates only BEFORE the drag it
  * describes has started (R69 §1.7: `moveProgress < 0.8f`). */
+/* WHILE THE MIC GESTURE IS RECORDING, THE COMPOSER'S PLACEHOLDER YIELDS (owner round 2, 2026-09-13):
+ * the slide-to-cancel track paints across the field, and with the "type a message" hint underneath the
+ * two texts are unreadable together. The draft only fills at RELEASE (upload → append), so during the
+ * hold an empty field has nothing else to hide. `body:has()` because the chrome is the composer's
+ * SIBLING and CSS has no previous-sibling selector — the seam-scrim `:has()` precedent; stage-gated
+ * off the chrome's own `data-stage`, so it covers hold AND locked and costs nothing at idle. */
+body:has(.mic-gesture[data-stage="hold"]) .kit-composer textarea::placeholder,
+body:has(.mic-gesture[data-stage="locked"]) .kit-composer textarea::placeholder {
+  color: transparent;
+}
+
 .mg-track {
   left: 0;
   top: var(--mg-y);
@@ -1852,7 +1883,8 @@ body[data-motion="full"] .mg-track:not(.moved) .mg-chev {
   --mg-bubble-bg: color-mix(in srgb, var(--surface-2) 82%, transparent);
   right: 10px;
   top: var(--mg-y);
-  transform: translateY(calc(-100% - var(--mg-size) * var(--mg-grow-scale) / 2 - 15px));
+  /* the 8px gap is the owner's round-2 nudge ("very, very slightly closer" — was 15px) */
+  transform: translateY(calc(-100% - var(--mg-size) * var(--mg-grow-scale) / 2 - 8px));
   margin: 0;
   padding: 6px 11px;
   border-radius: 12px;

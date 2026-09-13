@@ -109,7 +109,9 @@ export function ToolsMenuTrigger() {
         <SlidersIcon />
       </span>
       <span className="tools-x">
-        <XIcon size={16} />
+        {/* 18px + a 2.6 stroke (kit.css) — the owner's round-2 ask: the ✕ reads slightly bigger and
+            thicker than the sliders it replaces. */}
+        <XIcon size={18} />
       </span>
       {armed && !cancelling && <span className="tools-dot" aria-hidden />}
     </button>

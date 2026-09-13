@@ -17,9 +17,12 @@ import { describe, expect, it } from "vitest";
 // asked to bring down to 1.8× was written as a literal in TWO places — the grow keyframe's end state and
 // the reduced-motion static fallback — so an edit to one of them would have left the reduced-motion path
 // painting the old size, invisibly, for exactly the users who cannot see the animation that would have
-// given it away. The knob exists so that cannot happen; this says so. OF-2's invariant is the §14.11 one:
-// the pill→circle morph must be transform/opacity ONLY, and the cheapest way to write it would have been
-// `height`/`padding`, which animates the layout.
+// given it away. The knob exists so that cannot happen; this says so. OF-2 (as re-ruled in the owner's
+// ROUND 2, 2026-09-13): the pill is a TRUE STADIUM — a real box whose HEIGHT tracks the lift under
+// `border-radius: 999px` (the round-1 scaleY gave an ellipse at rest, rejected by eye). The height is a
+// RECORDED exception to §14.11's transform-only rule (the composer auto-grow precedent; the kit.css block
+// comment carries the justification), fenced by `contain: layout` on the rail — which is exactly what
+// these pins hold in place.
 
 const kit = readFileSync(resolve(process.cwd(), "src/theme-engine/kit/kit.css"), "utf8");
 
@@ -49,7 +52,7 @@ describe("OF-1 · the record circle's grow is ONE knob", () => {
   it("declares `--mg-grow-scale` exactly once, on the chrome host", () => {
     const declarations = css.match(/--mg-grow-scale:\s*[^;]+;/g) ?? [];
     expect(declarations).toHaveLength(1);
-    expect(declarations[0]).toContain("1.8"); // owner-tuned down from Telegram's 2.2× (R69 §1.6)
+    expect(declarations[0]).toContain("1.65"); // owner-tuned: 2.2× (Telegram) → 1.8 → 1.65 (round 2)
     expect(declarationsFor(".mic-gesture")).toContain("--mg-grow-scale");
   });
 
@@ -68,14 +71,17 @@ describe("OF-1 · the record circle's grow is ONE knob", () => {
   });
 });
 
-describe("OF-2 · the lock pill compresses into a circle, on transform alone", () => {
-  it("the SKIN is the only thing that scales, and it scales on Y off `--mg-lift`", () => {
+describe("OF-2 · the lock pill is a TRUE STADIUM compressing into a circle (owner round 2)", () => {
+  it("the SKIN's HEIGHT tracks the lift under a full radius — straight sides, semicircular caps", () => {
     const skin = declarationsFor(".mg-rail-skin");
-    expect(skin).toContain("scaleY(");
+    expect(skin).toMatch(/height:\s*calc\(/);
     expect(skin).toContain("--mg-lift");
     expect(skin).toContain("--mg-pill-scale");
-    // §14.11: nothing that lays out. The cheap version of this morph is a height/padding animation.
-    expect(skin).not.toMatch(/(^|[\s;])(height|width|padding|margin)\s*:/);
+    expect(skin).toContain("border-radius: 999px");
+    // the round-1 ellipse mechanism is gone — a returning scaleY would re-ship the rejected shape
+    expect(skin).not.toContain("scaleY(");
+    // the recorded §14.11 exception travels with its fence: the rail contains its own reflow
+    expect(declarationsFor(".mg-rail")).toContain("contain: layout");
   });
 
   it("the glyph and the tail are SIBLINGS of the skin, so the squeeze never distorts them", () => {
@@ -90,12 +96,31 @@ describe("OF-2 · the lock pill compresses into a circle, on transform alone", (
   it("reduced motion gets DISCRETE states — pill, then circle — through body[data-motion]", () => {
     // Never a raw `@media (prefers-reduced-motion)`: the house axis is the UIState/Appearance switch.
     expect(declarationsFor('body[data-motion="reduced"] .mg-rail-skin')).toContain(
-      "scaleY(var(--mg-pill-scale))",
+      "height: calc(var(--mg-dot) * var(--mg-pill-scale))",
     );
     expect(declarationsFor('body[data-motion="reduced"] .mg-rail.armed .mg-rail-skin')).toContain(
-      "scaleY(1)",
+      "height: var(--mg-dot)",
     );
     expect(css).not.toContain("prefers-reduced-motion");
+  });
+});
+
+describe("round 2 · the composer placeholder yields to the slide-to-cancel track", () => {
+  it("both RECORDING stages hide it, and only through the chrome's own data-stage", () => {
+    // The chrome is the composer's SIBLING, so the reach is body:has() (the seam-scrim precedent).
+    const rule = declarationsFor(
+      'body:has(.mic-gesture[data-stage="hold"]) .kit-composer textarea::placeholder',
+    );
+    expect(rule).toContain("color: transparent");
+    expect(
+      declarationsFor(
+        'body:has(.mic-gesture[data-stage="locked"]) .kit-composer textarea::placeholder',
+      ),
+    ).toContain("color: transparent");
+  });
+
+  it("the cancel ✕ carries its own thicker stroke, scoped to the morph face", () => {
+    expect(declarationsFor(".kit .kit-cbtn.tools .tools-x svg")).toContain("stroke-width: 2.6");
   });
 });
 

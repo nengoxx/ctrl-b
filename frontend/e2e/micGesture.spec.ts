@@ -92,6 +92,12 @@ test("hold → release dictates: the transcript lands in the composer draft", as
   // the chrome is a sibling rather than a child (the sheet/line bars clip children).
   await expect(page.locator(".mg-circle")).toBeVisible();
   await expect(mic).toHaveClass(/rec/);
+  // Round 2: the composer's placeholder YIELDS while recording — the slide-to-cancel track paints
+  // across the field, and the two texts were unreadable together (owner). Only a real engine can see
+  // a ::placeholder, so this is the assertion's home.
+  expect(await field.evaluate((el) => getComputedStyle(el, "::placeholder").color)).toBe(
+    "rgba(0, 0, 0, 0)",
+  );
   await page.waitForTimeout(HOLD_MS);
   await page.mouse.up();
 
