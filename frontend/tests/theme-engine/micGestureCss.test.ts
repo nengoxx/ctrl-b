@@ -165,16 +165,31 @@ describe("round 2 · the composer placeholder yields to the slide-to-cancel trac
 describe("round 3 · the translucent bubble's tail, and the track's lift", () => {
   it("the tail is a CLIPPED TRIANGLE below the body — never a square tucked behind the alpha", () => {
     // A rotated square behind a translucent bubble double-paints the overlap and shows through
-    // (the owner saw the square's upper half). Only the pointing half may exist.
-    const tail = declarationsFor(".mg-hint::after");
-    expect(tail).toMatch(/clip-path:\s*polygon\(/);
+    // (the owner saw the square's upper half). Only the pointing half may exist — pinned as the
+    // EXACT three-point polygon + geometry + centring (the round-3 confirm's gap: "any polygon"
+    // admitted a four-point square).
+    const tail = normalize(declarationsFor(".mg-hint::after"));
+    expect(tail).toContain("clip-path: polygon(0 0, 100% 0, 50% 100%)");
     expect(tail).toContain("top: 100%"); // flush BELOW the body — zero overlap with it
+    expect(tail).toContain("width: 14px");
+    expect(tail).toContain("height: 6px");
+    // 14px wide, bubble inset 10px ⇒ −17 keeps the apex on the mic's centre for every --mg-rx
+    expect(tail).toContain("right: calc(var(--mg-rx, 36px) - 17px)");
     expect(tail).not.toContain("rotate(");
   });
 
-  it("a WRITTEN draft lifts the track to the hint's height, off the same grow knob", () => {
-    const lifted = declarationsFor(".mic-gesture.lifted .mg-track");
-    expect(lifted).toContain("var(--mg-grow-scale)"); // clears the grown circle, not a magic offset
+  it("a WRITTEN draft lifts the track by the hint's EXACT arithmetic — no magic offset", () => {
+    // The round-3 confirm's gap: "mentions the knob" admitted a magic translateY beside an
+    // unrelated var reference. The whole expression is the pin.
+    expect(normalize(declarationsFor(".mic-gesture.lifted .mg-track"))).toContain(
+      "transform: translateY(calc(-50% - var(--mg-size) * var(--mg-grow-scale) / 2 - 8px))",
+    );
+  });
+
+  it("the borderless pill keeps its light-theme silhouette through a SHADOW, not an outline", () => {
+    // Round-3 review: surface-2 on a light ground measured ~1.05:1 — without the shadow the
+    // squeeze-to-circle is invisible exactly where the border used to carry it.
+    expect(declarationsFor(".mg-rail-skin")).toMatch(/box-shadow:/);
   });
 });
 

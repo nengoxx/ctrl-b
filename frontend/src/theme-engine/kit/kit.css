@@ -1729,8 +1729,11 @@ body[data-motion="reduced"] .mg-halo {
   transform: translateY(-50%);
   border-radius: 999px;
   /* BORDERLESS (owner round 3, 2026-09-13): the outline read as chrome on a control the thumb is
-   * already holding — the fill alone is the pill. */
+   * already holding — the fill alone is the pill. The SHADOW is what keeps the silhouette alive on
+   * LIGHT themes (round-3 review: surface-2 on a light ground measured ~1.05:1 — the squeeze was
+   * invisible); the bubble's own soft shadow, not a border by another name. */
   background: var(--surface-2);
+  box-shadow: 0 3px 12px -3px rgba(0, 0, 0, 0.4);
 }
 .mg-rail-glyph {
   display: flex;
@@ -1903,10 +1906,9 @@ body[data-motion="full"] .mg-track:not(.moved) .mg-chev {
   box-shadow: 0 4px 14px -4px rgba(0, 0, 0, 0.45);
   animation: mg-fade-in 150ms linear 200ms both;
 }
-/* the TAIL — one rotated square in the same fill, pointing down at the mic's centre. The 15px is the
- * bubble's own 10px right inset plus half the square, which re-centres it on `--mg-x`. (The bubble is
- * always wider than that offset in practice: the shortest line it carries is ~100px and the mic never
- * sits more than ~45px from the bar's trailing edge.) */
+/* the TAIL — see the block below: a clipped triangle in the same fill, pointing down at the mic's
+ * centre. (The bubble is always wider than the centring offset in practice: the shortest line it
+ * carries is ~100px and the mic never sits more than ~45px from the bar's trailing edge.) */
 .mg-hint::after {
   /* THE TAIL IS A CLIPPED TRIANGLE, NOT A ROTATED SQUARE (owner round 3): the bubble is translucent,
    * so a square tucked behind it double-painted the alpha and its upper half showed THROUGH the body.
