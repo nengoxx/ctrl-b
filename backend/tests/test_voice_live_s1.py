@@ -18,10 +18,11 @@ The arms, by what they defend:
   bytes are the resampled 24 kHz audio, and the one spurious error that must be swallowed.
 * **COMMIT-SAFETY** — a full session never sends `input_audio_buffer.commit` (R70 §1.2 arm A: a
   commit with speech open kills the session and loses the words).
-* **flush** — R70 §4's silence-burst arithmetic, in both branches and in the no-op case; the burst's
-  DELIVERY barrier against the mic that resumes behind it (F2); and the `_audio_since_commit` latch
-  that keeps a late `committed` from turning a needed flush into a no-op (F3), plus the commit that
-  clears it again.
+* **flush** — R70 §4's silence-burst arithmetic, in both branches and in the never-fed no-op case;
+  the burst's DELIVERY barrier against the mic that resumes behind it (F2); and the never-cleared
+  `_audio_seen` latch — burst-when-uncertain — that keeps a stale `committed` from turning a needed
+  flush into a no-op (F3 micro-wave: a commit cannot be told apart from a stale one, so it never
+  suppresses a burst).
 * **backpressure / taxonomy / secrets** — oldest-dropped + one `degraded`; the three upstream failure
   classes; and the bearer appearing in NO log record and NO downlink frame.
 """
@@ -743,14 +744,16 @@ def test_a_flush_after_an_overflow_still_completes() -> None:
 
 
 def test_a_stale_committed_does_not_suppress_the_next_phrases_flush() -> None:
-    """F3: phrase 1's `committed` can land AFTER the relay has already accepted phrase 2's frames — it
-    is Speaches' own post-`speech_stopped` buffer rotation and it races the uplink. It zeroes
-    `_fed_ms`, and under the old two-term guard a flush arriving before phrase 2's `speech_started` was
-    then a NO-OP: nothing injected, no endpoint, the words never transcribed. `_audio_since_commit`
-    remembers that the mic has spoken since, so the burst still goes.
+    """F3, the reviewer's PURE repro: phrase 2's frames are accepted, THEN phrase 1's `committed`
+    lands (Speaches' own post-`speech_stopped` buffer rotation racing the uplink), then `flush` —
+    with NO mic frame in between, which is exactly the release ordering (capture stops, then flush).
+    The stale commit zeroes `_fed_ms`; under any guard that a commit can clear, this flush was a
+    NO-OP: nothing injected, no endpoint, the words never transcribed. The never-cleared
+    `_audio_seen` latch is what keeps the burst going.
 
     The transcript is the barrier: receiving it downstream proves the `committed` queued ahead of it
-    was handled, so the flush below genuinely lands after the reset with no `speech_started` between.
+    was handled, so the flush below genuinely lands after the reset with no `speech_started` and no
+    further frame between.
     """
     fake = FakeSpeaches(
         [
@@ -764,14 +767,13 @@ def test_a_stale_committed_does_not_suppress_the_next_phrases_flush() -> None:
         for _ in range(2):
             ws.send_bytes(_pcm(960, value=2000))
         assert _drain_until(ws, "transcript")["text"] == "phrase one"
-        ws.send_bytes(_pcm(960, value=2000))  # the mic never paused (call mode: ~25 frames/s)
-        ws.send_json({"type": "flush"})
+        ws.send_json({"type": "flush"})  # straight after the stale commit — nothing re-arms anything
         ws.send_json({"type": "stop"})
         assert _closed(ws)[0] == 1000
-    # `fed_ms` was reset by the stale commit and re-counts only the ONE frame after it, so the burst is
-    # the long one: max(3000 - 40, 700) + 200. Undercounting is the SAFE direction — a long burst costs
-    # ~1 s of loopback work, a short one costs the words.
-    assert fake.silence_ms == pytest.approx(3160, abs=1)
+    # `fed_ms` was reset by the stale commit, so the burst is the longest one: max(3000 − 0, 700)
+    # + 200. Undercounting is the SAFE direction — a long burst costs ~1 s of loopback work, a short
+    # (or suppressed) one costs the words.
+    assert fake.silence_ms == pytest.approx(3200, abs=1)
     assert "input_audio_buffer.commit" not in fake.types
 
 
@@ -792,11 +794,13 @@ def test_a_frame_too_short_to_resample_still_counts_as_audio_fed() -> None:
     assert fake.silence_ms == pytest.approx(3200, abs=1)  # max(3000 - 0, 700) + 200
 
 
-def test_the_flush_no_op_still_fires_once_a_commit_clears_the_latch() -> None:
-    """The other half of the latch: `committed` clears it along with `_fed_ms`, so the guard is not
-    armed for the rest of the call by one early frame. A flush with genuinely nothing fed since the
-    last commit still pads nothing — otherwise every idle flush would feed Speaches 3 s of silence to
-    make its 100 ms minimum interesting for no transcript."""
+def test_a_flush_after_a_commit_still_bursts() -> None:
+    """Burst-when-uncertain (F3 micro-wave): a commit does NOT re-arm the no-op — the relay cannot
+    tell a covering commit (nothing pending; a burst is wasted work) from a stale one (phrase-2 audio
+    pending; a no-op loses the words), so it always bursts once any audio was ever fed. The wasted
+    case costs ~80 sub-ms loopback appends into a silent buffer and raises no VAD event downstream;
+    the suppressed case would violate never-lose-speech. The only relay-side no-op left is the
+    never-fed session (`test_flush_with_nothing_fed_injects_nothing`)."""
     fake = FakeSpeaches(
         [
             created(),
@@ -811,7 +815,7 @@ def test_the_flush_no_op_still_fires_once_a_commit_clears_the_latch() -> None:
         ws.send_json({"type": "flush"})
         ws.send_json({"type": "stop"})
         assert _closed(ws)[0] == 1000
-    assert fake.silence_ms == 0
+    assert fake.silence_ms == pytest.approx(3200, abs=1)  # max(3000 − 0, 700) + 200
 
 
 def test_multiple_flushes_are_legal() -> None:

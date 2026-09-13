@@ -263,12 +263,17 @@ class LiveRelaySession:
         #: True between a `speech_started` and its `speech_stopped`. Tracked for the commit-safety
         #: invariant (§7-S0's amendment (i)) and to keep a no-op flush from padding a silent buffer.
         self._speech_open = False
-        #: True once ANY client frame has been accepted since the last observed `committed` — the
-        #: no-op flush guard's third term (S1 review F3). `_fed_ms` alone cannot answer "was anything
-        #: fed": it counts ENQUEUED milliseconds, so it reads 0 both for "nothing arrived" and for a
-        #: frame the resampler is still carrying as phase, and it is zeroed by a `committed` that may
-        #: arrive late. This latch answers the narrower question and nothing else clears it.
-        self._audio_since_commit = False
+        #: True once ANY client frame has been accepted this session — NEVER cleared (S1 review F3,
+        #: micro-wave). The first cut cleared it on `committed`, which reopened the reviewer's exact
+        #: repro: a `committed` can be STALE (emitted for phrase 1, delivered after phrase 2's frames
+        #: were accepted) or COVERING (everything really was consumed), and the event does not say
+        #: which — the two orderings live in the same ms-scale window and the relay cannot tell them
+        #: apart. When indistinguishable, the safe posture is BURST-WHEN-UNCERTAIN: a suppressed burst
+        #: loses words (the never-lose-speech invariant), a spurious one costs ~80 sub-ms loopback
+        #: appends into a silent buffer. So the only relay-side no-op left is a session that never fed
+        #: audio at all; `_fed_ms` alone cannot even answer that (it reads 0 for a frame the resampler
+        #: carries as phase).
+        self._audio_seen = False
         #: One `degraded` frame per overflow BURST, not per dropped frame.
         self._overflow_flagged = False
         #: `(monotonic timestamp, ms of audio)` for the recent client binary frames — the rolling
@@ -545,7 +550,7 @@ class LiveRelaySession:
         # Every frame that clears the caps counts as audio fed, whatever the resampler then makes of
         # it — a frame too short to produce an output sample is CARRIED as phase, not discarded, so
         # `_fed_ms` would say "nothing fed" about audio that is really in flight (F3).
-        self._audio_since_commit = True
+        self._audio_seen = True
         assert self._resampler is not None
         try:
             converted = self._resampler.feed(data)
@@ -649,19 +654,19 @@ class LiveRelaySession:
         whichever of the two applies. Unpaced on purpose: this leg is loopback, off the client's
         metered wire, and the measured release→text tail is 530–830 ms.
 
-        A flush with nothing fed and no open speech is a genuine no-op — padding an empty buffer would
-        only make Speaches' 100 ms minimum interesting for no transcript. The guard takes THREE terms
-        rather than two (F3): `_fed_ms` is reset by a `committed` that can arrive late (after the relay
-        has already accepted the NEXT phrase's frames) and is given back by a drop-oldest eviction, so
-        on its own it can read 0 over audio that really was fed and the burst the phrase needed would
-        never be sent. `_audio_since_commit` is the narrow question — did ANY client frame arrive since
-        the last commit — so the no-op now fires only when genuinely nothing was fed, and a late
-        `committed` cannot suppress a needed burst: the continuously flowing mic re-arms the latch
-        within one frame. The `_fed_ms` reset on `committed` deliberately STAYS: undercounting
-        lengthens the burst (`3000 − 0`), which is the safe direction — words are never lost to a short
-        burst, only ~1 s of loopback work to a long one.
+        The no-op guard is deliberately minimal (F3, micro-wave): it fires ONLY for a session that has
+        never fed audio at all. Anything smarter has to decide whether the last `committed` was stale
+        (phrase-2 audio pending — a no-op loses the words) or covering (nothing pending — a no-op is
+        right), and the event does not say which: the relay cannot correlate what a commit consumed
+        with what it has accepted, and the two orderings share the same ms-scale delivery window. So
+        the guard bursts when uncertain — a suppressed burst violates never-lose-speech, a spurious
+        one costs ~80 sub-ms loopback appends into a silent buffer and nothing downstream (silence
+        raises no VAD event, so no empty transcript is even minted). `_fed_ms` is not a guard term:
+        it reads 0 both for "never fed" and for audio a stale `committed` mis-zeroed, which is exactly
+        the ambiguity above; its reset on `committed` deliberately STAYS for the burst-LENGTH
+        arithmetic, where undercounting lengthens the burst (`3000 − 0`) — the safe direction.
         """
-        if not self._speech_open and not self._audio_since_commit and self._fed_ms <= 0:
+        if not self._speech_open and not self._audio_seen:
             return
         needed = max(VAD_WINDOW_MS - self._fed_ms, float(self._cfg.silence_ms)) + FLUSH_MARGIN_MS
         chunk = self._cfg.frame_ms
@@ -705,10 +710,10 @@ class LiveRelaySession:
         elif kind == "input_audio_buffer.committed":
             # Speaches rotates the audio buffer at every commit — including the one its own VAD path
             # runs right after `speech_stopped` — so the 3 s window restarts here and so does `fed_ms`.
-            # The latch restarts with it: "audio since the last commit" is the question the flush's
-            # no-op guard asks, and THIS is the only place the answer becomes "none" again (F3).
+            # `_audio_seen` deliberately does NOT reset here (F3 micro-wave): this event may be STALE —
+            # emitted for the previous phrase, delivered after the next phrase's frames were accepted —
+            # and clearing the guard on it is exactly how the reviewer's repro lost words. See `_flush`.
             self._fed_ms = 0.0
-            self._audio_since_commit = False
         elif kind == "conversation.item.input_audio_transcription.completed":
             # `final` is the R70 §9.2 seam for phrase-streaming dictation (S2.5): the ear has no
             # partials today (verified twice), so every transcript this relay emits is final — but the
