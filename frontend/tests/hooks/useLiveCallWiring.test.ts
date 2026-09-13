@@ -43,6 +43,8 @@ const h = vi.hoisted(() => ({
   appendDraft: vi.fn(),
   endCall: vi.fn(),
   setMuted: vi.fn(),
+  /** Holds `startPcmCapture` open when an arm needs the acquisition GAP itself. */
+  capGate: Promise.resolve(),
 }));
 
 vi.mock("../../src/lib/audioController", () => ({
@@ -67,12 +69,15 @@ vi.mock("../../src/lib/liveSocket", () => ({
   },
 }));
 vi.mock("../../src/lib/pcmCapture", () => ({
-  startPcmCapture: async () => ({
-    sampleRate: 48000,
-    echoCancellation: "all",
-    setMuted: h.setMuted,
-    stop: () => {},
-  }),
+  startPcmCapture: async () => {
+    await h.capGate; // resolved by default; an arm swaps in a deferred to hold acquisition open
+    return {
+      sampleRate: 48000,
+      echoCancellation: "all",
+      setMuted: h.setMuted,
+      stop: () => {},
+    };
+  },
 }));
 vi.mock("../../src/store/attachments", () => ({ useStagedFiles: () => h.staged }));
 vi.mock("../../src/store/chat", () => ({
@@ -95,6 +100,7 @@ beforeEach(() => {
   h.staged = [];
   h.liveTurn = null;
   h.frame = null;
+  h.capGate = Promise.resolve();
   h.sendCall.mockReset();
   h.sendCall.mockResolvedValue("accepted");
   h.setCallVoice.mockClear();
@@ -295,6 +301,29 @@ describe("useLiveCall — mute (§6)", () => {
     await step(() => view.result.current.toggleMute());
     await say("the doorbell, not you");
     expect(texts()).toEqual([]);
+  });
+
+  it("a mute tapped DURING acquisition reaches the track the moment it exists (S2b confirm F1)", async () => {
+    // The rule flips while `getUserMedia` is still pending — there is no track to disable yet, so the
+    // install must apply the machine's answer, or audio flows to the relay under a screen saying Muted.
+    let open = (): void => {};
+    h.capGate = new Promise<void>((r) => {
+      open = r;
+    });
+    const view = renderHook(() => useLiveCall());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      view.result.current.toggleMute();
+    });
+    expect(h.setMuted).not.toHaveBeenCalled(); // nothing to mute yet — the tell that the gap is real
+    await act(async () => {
+      open();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.setMuted).toHaveBeenCalledWith(true);
   });
 });
 

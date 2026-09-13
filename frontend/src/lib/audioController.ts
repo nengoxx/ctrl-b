@@ -1135,8 +1135,11 @@ function seekChunked(s: Session, f: number): void {
   // catch). Only past the early returns: a no-op seek must not cancel anything.
   s.metaSeek?.();
   s.parked = false; // a navigation makes the parked queue live again
-  const play = pb.status === "playing"; // the latch already encodes intent in the published status
-  setIntent(s, play);
+  // The user's LIVE intent, not the status (S2b confirm F2): a play() rejection publishes `paused`
+  // and a synthesis gap publishes `loading`, both with `wantPlay` still true — reading the status
+  // here silently cancelled a resume the owner had already asked for. A seek changes WHERE, never
+  // WHETHER; the intent rides through it untouched.
+  const play = s.wantPlay;
 
   if (s.states[i] === "ok") {
     s.seek = null;

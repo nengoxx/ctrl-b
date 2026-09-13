@@ -508,6 +508,28 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(intent.result.current).toBe(true);
   });
 
+  it("a seek rides the INTENT, never the status — the drag must not cancel a resume (S2b confirm F2)", async () => {
+    // Through a gap the honest status is "loading" while `wantPlay` is true; the seek used to derive
+    // its play flag from the status, so a drag during the gap (or after a play() rejection's `paused`)
+    // silently cancelled the resume the owner had already asked for. A seek changes WHERE, not WHETHER.
+    const calls = deferredFetch();
+    renderHook(() => usePlayback((p) => p.status));
+    const intent = renderHook(() => usePlayIntent());
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish()); // the gap: chunk 2 still synthesizing
+    await flush();
+    act(() => togglePlay()); // pause under the latch…
+    act(() => togglePlay()); // …resume: intent parks TRUE while the status stays "loading"
+    expect(intent.result.current).toBe(true);
+
+    act(() => seekFraction(0)); // drag back onto the retained first chunk, mid-gap
+    expect(intent.result.current).toBe(true);
+  });
+
   it("skips a failed chunk and keeps reading — one toast for the whole message", async () => {
     const calls = deferredFetch();
     await act(async () => {

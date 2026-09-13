@@ -334,6 +334,23 @@ describe("callReduce — terminals (§4.3/§4.5)", () => {
     expect(run(newer, [{ type: "degradedOver" }]).state.note).toBe(CALL_COPY.voiceFailed);
   });
 
+  it("`ready` retracts only the strained note too — a reconnect must not clear unread news (F3)", () => {
+    // strained → a refused send lands its own note → the socket drops → the fresh leg's `ready`:
+    // the refusal is not connection news, and the owner has not read it yet.
+    const strained = run(listening, [{ type: "degraded" }]).state;
+    const refused = run(strained, [
+      { type: "final", text: "send this" },
+      { type: "sent", outcome: "refused", text: "send this" },
+    ]).state;
+    expect(refused.note).toBe(CALL_COPY.refused);
+    const reconnected = run(refused, [{ type: "socketLost" }, { type: "ready" }]).state;
+    expect(reconnected.note).toBe(CALL_COPY.refused);
+
+    // …while a strained note alone IS connection news, and the fresh leg retracts it.
+    const back = run(strained, [{ type: "socketLost" }, { type: "ready" }]).state;
+    expect(back.note).toBeNull();
+  });
+
   it("a mouth failure is nonfatal: back to listening, the ear keeps working", () => {
     const thinking = run(listening, [{ type: "final", text: "say something" }]).state;
     const { state, out } = run(thinking, [{ type: "playbackFailed" }]);

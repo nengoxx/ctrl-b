@@ -261,14 +261,17 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
   switch (sig.type) {
     case "ready":
       // A fresh leg is a fresh session: the ear knows nothing about a half-spoken phrase that died with
-      // the old socket, so the flags start clean and the reconnect budget resets.
+      // the old socket, so the flags start clean and the reconnect budget resets. The note follows the
+      // `degradedOver` rule (S2b confirm F3): only the STRAINED note is connection news a fresh leg
+      // retracts — anything else standing there (a refused send, a mouth failure) is unread news that
+      // arrived for its own reason, and a reconnect has no business clearing it.
       return drain({
         ...s,
         phase: "listening",
         attempts: 0,
         userSpeechActive: false,
         waitingFinal: false,
-        note: null,
+        note: s.note === CALL_COPY.strained ? null : s.note,
       });
 
     case "socketLost": {
@@ -682,6 +685,11 @@ export function useLiveCall(): CallView {
           return;
         }
         capture.current = cap;
+        // MUTE ACROSS THE ACQUISITION GAP (S2b confirm F1): a Mute tapped while `getUserMedia` was
+        // still pending changed the RULE but had no track to change — so the track takes the
+        // machine's answer the moment it exists, or audio flows to the relay while the screen says
+        // Muted (and a final landing after the unmute would pass the reducer and submit it).
+        cap.setMuted(ref.current.muted);
         // The S0 ruling, per TRACK and never UA-sniffed: only a genuinely subtractive canceller lets the
         // ear stay open under the reply, so only there can VOICE interrupt. Everywhere else the tap is
         // the interrupt (§4.3), and the protective ear-hold is S3's.
