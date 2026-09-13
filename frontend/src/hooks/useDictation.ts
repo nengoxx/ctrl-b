@@ -1106,6 +1106,13 @@ export function useDictation({
       // recording that has ended. It stays because the RULE is "every exit", not "every exit we can
       // currently enumerate" — the next exit added here gets the teardown for free instead of being
       // the leak. (Red-proofed at the reachable half: removing `stop()` above is what goes red.)
+      //
+      // ⚠ The `!finishing` guard is LOAD-BEARING, not defensive dressing: `stop()` above only QUEUES
+      // the recorder's terminal events, so a session it just marked is still parked in `streamRef`
+      // until `onstop` detaches it — an unguarded drop here would close the very leg whose queued
+      // choreography still owes the flush, and the tail phrase would be lost on every tab switch.
+      const s = streamRef.current;
+      if (s && !s.finishing) dropStream(s);
     },
     [stop, teardownDetector, dropStream],
   );
