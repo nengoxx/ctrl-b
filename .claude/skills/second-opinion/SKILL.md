@@ -140,8 +140,22 @@ S=<scratchpad>
 
 Run backgrounded; `-z` prints ONLY the final text to stdout (no progress signal — rely on the
 completion notification, not log growth). Same brief discipline, same calibration paste (§Scoping
-item 9 applies — sol is sol). Follow-up/confirm rounds: `--resume latest --in <repo>` re-enters
-the same session; re-state `--ignore-rules`.
+item 9 applies — sol is sol).
+
+> ### ⚠ Two lane gotchas, both burned live on 2026-09-13 (the S2a confirm round)
+> 1. **The CLI DOUBLE-FORKS.** The PID you launch (and the one `pgrep` finds seconds later) can
+>    exit within a couple of minutes while the REAL run continues under a child with **identical
+>    argv**. "Process exited, output file 0 bytes" is therefore NOT a failed run — it is usually a
+>    premature read after the wrapper died. Before concluding failure or relaunching: `pgrep -af
+>    'hermes_cli.main -z'` and take the **OLDEST** matching python PID; monitor THAT one. Two blind
+>    relaunches here produced THREE overlapping reviews writing the same output file, culled by
+>    PID (never by pattern). Short-lived same-argv workers also appear and vanish — fork noise,
+>    ignore them.
+> 2. **`-z --ignore-rules` persists NO session, so `--resume latest` DOES NOT WORK in this lane**
+>    — it has nothing to re-enter and exits silently (0 bytes stdout AND stderr; the resume advice
+>    that used to sit here came from the D60/D61 rounds, which ran differently). **Confirm rounds
+>    must be SELF-CONTAINED**: paste the original review verbatim into the new prompt alongside
+>    the rulings and the confirm tasks, and launch a fresh `-z` run.
 
 ```bash
 S=<scratchpad>

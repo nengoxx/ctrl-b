@@ -12,7 +12,56 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-13, EIGHTEENTH session — **S1 (the BE relay) RAN THE WHOLE STANDING CADENCE IN ONE SESSION and is council-CLOSED: blind Emma SHIP WITH FIXES → fix wave → confirm BLOCKED on a mirror race → two main-seat waves → RESOLVED — SHIP, sweep "none" ×2. ▶▶ NEXT SESSION = S2a (the FE call loop)**; supersedes below where it speaks)
+## Current state (2026-09-13, NINETEENTH session — **S2a (the FE call loop) RAN THE STANDING CADENCE TWICE AROUND IN ONE SESSION and is council-CLOSED: blind Emma SHIP WITH FIXES (6 MED, sweep "none") → fix wave (+2 main-seat) → rider → confirm BLOCKED ×2 (one defect class, chased to its root) → two main-seat micro-waves → RESOLVED — SHIP. ▶▶ NEXT SESSION = S2b (presentation + furniture) — or S2.5, the build session's call**; supersedes below where it speaks)
+
+- **S2a is council-CLOSED (full as-built record = plan §7-S2a — read THAT before S2b/S2.5
+  work):** the whole FE call loop — `useLiveCall` (pure `callReduce`: phases + the two
+  orthogonal flags, §4.2's iron rule, the ONE generation-fenced pending queue draining as ONE
+  message, the ordered kill awaiting `cancelTurn`'s settlement, hang-up-discards vs
+  error-harvests) · the pcm16 capture worklet (Blob'd — `?worker&url` measured broken both
+  ways) · the typed WS leg (start-first; `bufferedAmount + frame > ceiling` ⇒ close 4000) ·
+  the chat-store F3 seam (`getLiveTurn`/`cancelTurn`/`confirmOutstanding`; `stopTurn` re-based;
+  **normalize-on-202 heals TYPED text during `awaiting_confirm` too**) · the F8 `SendOutcome` ·
+  `sendCallTranscript` (no sigils, draft untouched, staged attachments ride) · the
+  audioController call surface (`primeAudio` in-gesture; the read-along override as a
+  WAIT-UNTIL-FIRST-SETTLE GATE, not an id; `useMouthFailures`; the HONEST mouth status —
+  "playing" only from the real `play` event) · the minimal `CallOverlay` (full-bleed
+  `useActiveBackdrop` art, z 55, focus-trapped, Wake Lock, hidden ⇒ clean end; tap = trigger
+  B) · **the call DOOR: `startCall` = dismiss → prime → open** (answering a call silences
+  pre-call playback — no session, no phantom status survives into the machine). Trigger A
+  (voice barge) arms only on `barge_in` AND `echoCancellation:"all"` (the S0 ruling); the
+  Fennec EAR-HOLD stays S3.
+- **The cadence, twice around:** build `83d8e63` (pinned Opus, +3336/−58, 19 red-proofs) →
+  main-seat audit (6 deviations ACCEPTED) → blind Emma **SHIP WITH FIXES (6 MED, sweep
+  "none")** → wave `d40ee0d` (her six + the main seat's two) → rider `ff986ed` (the second
+  latch + the gap-pause) → confirm **BLOCKED** → micro `08e3533` (intent rides `wantPlay`) →
+  micro-confirm **BLOCKED** (the carried pre-call seek — a reachability ruling must count
+  state carried ACROSS the boundary) → micro №2 `8496c32` (the door) → **№3: RESOLVED — SHIP**
+  (full generation-guard walk; the auto-TTS knock-on ruled benign — a bare `dismiss()` arms
+  the feeder's `abandoned`; sweep = comment drift only, folded in this docs commit). ⚠ The durable
+  class: **an intent published as playback STATUS is a lie some consumer eventually trusts** —
+  status = what the element is DOING, intent rides `wantPlay`; every silent-"playing" window
+  traced to this one class.
+- **Gate 6/6 at every tip — BE 2,462 · FE 3,356/189** (counts in QUALITY.md). Both dev units
+  RUNNING (D69 — do NOT stop them); S2a is FE-only, :5173 serves it live; :5434 unchanged on
+  the S1 tip. **⚠ `voice.live.enabled` still defaults OFF** — the call door stays hidden until
+  it is flipped (S4's close is the designed flip; a dev poke can flip it via the settings
+  seam/YAML earlier if the owner wants to feel S2a).
+- **⚠ Hermes emma-lane ops (owner: "note the issues") — recorded in the second-opinion SKILL +
+  memory:** the CLI DOUBLE-FORKS (a premature "exited, 0 bytes" is the tell; take the OLDEST
+  matching PID; the COMPLETION signal is the output file going non-empty — a lingering
+  same-argv worker can outlive the finished run) · `-z --ignore-rules` persists NO session ⇒
+  `--resume latest` silently dies — confirm rounds must be SELF-CONTAINED.
+- **▶▶ NEXT SESSION: S2b (plan §7-S2b)** — ring modes + focal anchor · mute · the in-overlay
+  confirm row · terminal faces · back-trap · the remaining §4.5 rules; §7-S2a's residuals list
+  is the checklist. (S2.5 slotting vs S2b stays the build session's call, per the ladder.) One
+  slice per session, the standing cadence. Phase 23 S7 + v1.7.8 sequencing unchanged (release
+  E after the roleplay features).
+- Git: **30 commits unpushed over origin `b946fc1`** (the 24 + `83d8e63` · `d40ee0d` ·
+  `ff986ed` · `08e3533` · `8496c32` + this docs commit); tree clean at write; the PUSH ruling
+  stays the owner's. **Prod untouched v1.7.7 @ `578ffa7`.**
+
+## Prior state (2026-09-13, EIGHTEENTH session — **S1 (the BE relay) RAN THE WHOLE STANDING CADENCE IN ONE SESSION and is council-CLOSED: blind Emma SHIP WITH FIXES → fix wave → confirm BLOCKED on a mirror race → two main-seat waves → RESOLVED — SHIP, sweep "none" ×2. ▶▶ NEXT SESSION = S2a (the FE call loop)**; superseded above where it speaks)
 
 - **S1 is council-CLOSED (full as-built record = plan §7-S1 — it IS the S2a/S2.5 wire
   contract; read THAT before any S2a work):** `voice.live` config (`LiveCfg` on the house

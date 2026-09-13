@@ -935,6 +935,89 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   states + the plain kill: speech during `speaking` (energy floor, §4.3) stops audio and
   cancels a live turn. (End of S2a = a full interruptible conversation on the S0-ruled echo
   branch.)
+
+  > **S2a AS-BUILT + council-CLOSED (2026-09-13, one session; the standing cadence, twice around).**
+  > Build `83d8e63` (pinned Opus, 26 files +3336/−58, 19 red-proofs) → main-seat audit (gate
+  > independently re-run; all six declared deviations ACCEPTED) → blind Emma round (hermes lane,
+  > `--ignore-rules`) **SHIP WITH FIXES — 6 MED, open sweep "none"** (chat seam · capture math ·
+  > wire conformance · harvest-sig sharing explicitly confirmed sound) → fix wave `d40ee0d`
+  > (pinned Opus: her six + the main seat's two — the once-per-call `retriedUpload` latch and
+  > `cancelTurn`'s early-resolving re-entry) → main-seat rider `ff986ed` (the SECOND `playNext`
+  > latch had F2's exact shape; + `transport()` accepting a gap-pause while `waiting`, preserving
+  > the pinned pause-under-latch contract) → her confirm **BLOCKED** (the rider exposed the
+  > pre-existing intent-only-"playing" resume arms) → main-seat micro-wave `08e3533` (resume
+  > intent rides `wantPlay`; the real media `play` event is the ONLY door to "playing") → her
+  > micro-confirm **BLOCKED** (a forward seek armed BEFORE the call carries the seek latch's
+  > intent-"playing" in — the overlay only stops NEW seeks) → main-seat micro-wave №2 `8496c32`
+  > (**the call DOOR: `startCall` = dismiss → prime → open** — answering a call silences pre-call
+  > playback, so NO session and no phantom status of any kind survives into the machine's mount;
+  > order load-bearing, the prime's already-playing guard would skip the unlock) → her
+  > micro-confirm №3: the six-step walk closed at the door with a full generation-guard
+  > verification, the auto-TTS knock-on ruled BENIGN (a bare `dismiss()` arms the feeder's
+  > `abandoned` — the pre-call turn never re-docks), fix-sweep = comment drift only (folded same
+  > session) — **RESOLVED — SHIP.** Gate 6/6 at every tip; final FE 3,356/189 · BE 2,462
+  > (QUALITY.md).
+  >
+  > **Shape:** `hooks/useLiveCall.ts` — pure `callReduce` (the §4.2 phase + the two orthogonal
+  > flags; the ONE pending queue serving all four holds and draining as ONE message; the ordered
+  > kill awaiting `cancelTurn`'s settlement; hang-up-discards vs error-harvests) + thin wiring
+  > (the leg fence beside the call-generation fence — `close()` only starts a handshake; trigger
+  > A = worklet-RMS sustained ≥ `min_speech_ms`, armed only on `barge_in` AND a track reading
+  > `echoCancellation: "all"` per the S0 ruling, floor 0 ⇒ disarmed until S4). `lib/liveSocket.ts`
+  > — one typed leg, start-first, `bufferedAmount + frame > ceiling` ⇒ close 4000.
+  > `lib/pcmCapture.ts` + `pcmWorklet.ts` — the Blob'd worklet (**`?worker&url` measured broken:
+  > dev injects a bare import into the worklet scope; the build's asset is swept into the SW
+  > precache**), float→pcm16 with remainder carry, `{ideal:"all"}`+noiseSuppression+mono,
+  > `ctx.state` must reach "running" or the start fails loud. `store/chat.ts` — the F3 seam
+  > (`getLiveTurn` from the three existing slots · `cancelTurn(ref, "draft"|"discard")` resolving
+  > only when settled, re-entry sharing the in-flight promise · `stopTurn` a thin composite ·
+  > `confirmOutstanding()`), **normalize-on-202 healing TYPED text during `awaiting_confirm`
+  > too**, the F8 `SendOutcome` (existing callers unchanged).
+  > `lib/composer.sendCallTranscript` — no sigils, no draft touch, staged attachments ride,
+  > `"held"` → the machine's one-per-HOLD retry. `audioController` — `primeAudio()` (in-gesture
+  > silent-WAV unlock), the call-voice override as a WAIT-UNTIL-FIRST-SETTLE GATE (not an id:
+  > `message.start` adoption RENAMES the streaming message), `useMouthFailures()` (explicit tick;
+  > the loading→idle inference as belt), and the HONEST mouth status: every silent wait publishes
+  > `"loading"`, "playing" comes only from the real `play` event (the two catch-up latches, the
+  > resume arms; the SEEK latch's out-of-call intent presentation stays pinned, in-call
+  > unreachable by the door). `kit/CallOverlay` — minimal §6 (full-bleed `useActiveBackdrop` art +
+  > veil · phase line · heard line · hang up; tap-outside-cluster = trigger B), z 55 (ladder
+  > comment updated), focus trap via `lib/focusTrap` (Escape = hang up, deliberate), Wake Lock,
+  > hidden ⇒ clean end. `store/liveCall` single-slot; mounted once in `DefaultRoot`; Vite proxy
+  > `ws: true` (the §7-S1 residual, closed). e2e `liveCall.spec.ts`: a genuine AudioWorklet +
+  > real binary frames + a `routeWebSocket` relay mock, both Chromium projects.
+  >
+  > **Main-seat rulings recorded:** tap-to-interrupt is IN S2a (§4.3's trigger B always exists —
+  > and it is the only interrupt on a dirty-echo browser) · the trigger-A capability gate ships
+  > here, the full Fennec EAR-HOLD stays S3 · `sendCallTranscript` does NOT spend the armed
+  > one-shot composer scope (the pick belongs to the message the owner is typing) · the F2 drain
+  > reclassification (loading = mouth busy; drain = playing|loading → paused/idle) accepted as
+  > the ruling's completion · Emma's ttsAuto sub-claim overruled at the GATE (it only ever ADDS a
+  > voice) — while the call DOOR's one-time `dismiss()` is the separate act that silences the
+  > in-flight pre-call reply (micro-wave №2), the feeder's `abandoned` keeping it silent · a call
+  > START silences pre-call playback by design (it would compete with the ear regardless).
+  >
+  > **⚠ Durable lessons:** an intent published as a playback STATUS is a lie some consumer will
+  > eventually trust — status says what the element is DOING, intent rides its own flag
+  > (`wantPlay`); two review rounds and two micro-waves traced every silent-"playing" window to
+  > this one class · a reachability ruling must count state CARRIED ACROSS the boundary, not just
+  > actions possible after it (the armed pre-call seek) · killing at the DOOR beats guarding
+  > every path inside (no session survives ⇒ no phantom status can) · hermes lane ops: the CLI
+  > double-forks (a premature "exited, 0 bytes" is the tell — take the OLDEST matching PID; the
+  > COMPLETION signal is the output file going non-empty, a lingering same-argv worker can outlive
+  > the finished run) and `-z --ignore-rules` persists no session ⇒ `--resume latest` silently
+  > dies — confirm rounds must be SELF-CONTAINED (full notes in the second-opinion skill).
+  >
+  > **Residuals riding later slices (none owed now):** S2b — ring modes + the focal anchor ·
+  > mute · the in-overlay confirm ROW (the queue-HOLD ships) · terminal "call again" faces ·
+  > the Android back-trap (`useOverlayBackGuard` is the seam) · degraded-frame
+  > presentation/hysteresis · the MiniPlayer's disabled pause during gaps. S3 — the Fennec
+  > ear-hold · flaky-link reconnect edges · `transport()`'s uncaught bare `play()`. S2.5 —
+  > `flush()` built and unused; the release choreography (flush → await final → stop). S4 —
+  > `barge_threshold`/Tier-0 calibration · the Serve Host-header empiricism (`allowed_origins` =
+  > the escape) · `voice.live.enabled` flips ON as that round's close. Phase 19 —
+  > `confirmOutstanding` as a per-token selector scan. Deferred — dictation's own getUserMedia
+  > constraints (R51 §6.1).
 - **S2b — the overlay's presentation + furniture:** both `ring` modes (the focal-anchor
   helper with F9's coordinate discipline + the transcript-accent arm) · mute (F3's one
   mechanism) · the in-overlay confirm row · terminal faces + back-trap · the remaining §4.5

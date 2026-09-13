@@ -321,9 +321,11 @@ describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
     expect(h.feed).toHaveBeenCalledExactlyOnceWith("m2", "This one is yours.", null);
   });
 
-  it("the gate never SILENCES: with auto-TTS on, the pre-call reply keeps being read", () => {
-    // The override only ever ADDS a voice. With the owner's own toggle on, that reply is being spoken
-    // by their standing setting, and starting a call must not take it away (main-seat ruling).
+  it("the GATE never silences: with auto-TTS on and the gate shut, the feeder still feeds", () => {
+    // The override only ever ADDS a voice — the FEEDER-level half of the ruling, tested in isolation.
+    // In the real flow the call DOOR's one-time `dismiss()` at start silences the in-flight pre-call
+    // reply and its undock arms `abandoned` (micro-confirm №2/№3); this arm pins that the gate itself
+    // contributes no silencing on top of that.
     h.ui = { ttsAuto: true };
     h.call = { active: true, waiting: true };
     const step = mount();

@@ -169,9 +169,11 @@ export function primeAudio(): void {
  *  meant to exclude. A timeline no rename can move — "not until the turn that was live when the call
  *  started has settled" — is what the call machine opens the gate on.
  *
- *  WHAT THE GATE DELIBERATELY DOES NOT DO is outrank `ttsAuto`: with auto-TTS on, that pre-call reply is
- *  being spoken by the owner's own standing setting, and starting a call must not silence it. The
- *  override only ever ADDS a voice (the feeder's `||`), it never takes one away. */
+ *  WHAT THE GATE DELIBERATELY DOES NOT DO is outrank `ttsAuto`: the override only ever ADDS a voice
+ *  (the feeder's `||`), it never takes one away. The thing that DOES silence a pre-call reply is the
+ *  call DOOR, once, at start — `startCall`'s `dismiss()` (micro-confirm №2's carried-seek blocker) —
+ *  after which the feeder's own `abandoned` rule keeps that turn silent; the gate plays no part in
+ *  either. */
 let callVoice: { active: boolean; waiting: boolean } = { active: false, waiting: false };
 
 /** Arm/disarm the override. `waitForSettle` is "a turn was already streaming when this call started" —

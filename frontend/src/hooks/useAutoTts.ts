@@ -101,9 +101,10 @@ export function useAutoTts(): void {
     }
     // The turn this render is about — hoisted because both the feed and the terminal edge need it.
     const live = finalReply(messages);
-    // The override's first bypass: `ttsAuto` (the AppBar toggle). It only ever ADDS a voice — with
-    // auto-TTS on, a pre-call reply keeps being spoken by the owner's own standing setting and the
-    // call's gate does not silence it (§4.5).
+    // The override's first bypass: `ttsAuto` (the AppBar toggle). It only ever ADDS a voice — this
+    // gate never silences anything. (What DOES silence a pre-call reply is the call DOOR's one-time
+    // `dismiss()` at start, whose undock arms `abandoned` above and keeps that turn silent — the
+    // feeder just observes it like any other dismissal.)
     if ((!ttsAuto && !callSpeaks) || !ttsOk) return;
 
     // The terminal edge: idle OR error. An errored turn never passes through "idle" (`failStream` and

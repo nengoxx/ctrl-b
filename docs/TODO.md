@@ -1614,10 +1614,19 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       main-seat waves `24336eb`+`a01ae76` (the flush = a CONSTANT pad; `_fed_ms` deleted) →
       RESOLVED — SHIP, sweep "none". Plan §7-S1 as-built record = the S2a/S2.5 wire contract;
       ⚠ it AMENDS R70 §4's burst formula. BE 2,462; gate 6/6 ×4.)*
-- [ ] S2 — *(split S2a/S2b by the 2026-09-12 delta round — plan §7 wins)* The FE call loop
+- [x] S2a — *(split S2a/S2b by the 2026-09-12 delta round — plan §7 wins)* The FE call loop
       WITH basic barge-in: capture worklet · WS client · `useLiveCall`
-      (phase + orthogonal flags; the narrow chat-store turn seam) · the call overlay ·
-      submit-through-`runComposer` · read-along forced on · Wake Lock · the plain kill.
+      (phase + orthogonal flags; the narrow chat-store turn seam) · the minimal call overlay ·
+      the call send door · read-along forced on · Wake Lock · the plain kill + the manual tap.
+      *(Council-CLOSED 2026-09-13 — build `83d8e63` (pinned Opus) → blind Emma SHIP WITH FIXES
+      6M, sweep "none" → wave `d40ee0d` (her six + the main seat's two) → rider `ff986ed` →
+      confirm BLOCKED ×2 (the intent-only-"playing" class, then the carried pre-call seek) →
+      micro-waves `08e3533`+`8496c32` (the honest mouth status; the call DOOR dismiss→prime→
+      open) → RESOLVED — SHIP, sweep = comment drift only, folded. Plan §7-S2a as-built record;
+      FE 3,356/189; gate 6/6 at every tip. ⚠ `voice.live.enabled` still OFF — S4's close.)*
+- [ ] S2b — The overlay's presentation + furniture: both `ring` modes + the focal anchor ·
+      mute · the in-overlay confirm row · terminal "call again" faces · the Android back-trap ·
+      the remaining §4.5 edge rules (plan §7-S2b).
 - [ ] S2.5 — Phrase-by-phrase streaming dictation (owner-RATIFIED 2026-09-13; R70 = the
       design evidence): dictation rides the S1 ear, utterance finals append to the draft
       live; release = the relay's `flush` (NEVER a raw commit — R70's §7-S0 amendment);
