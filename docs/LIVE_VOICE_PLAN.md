@@ -810,7 +810,26 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > rules-mentioning sweep bans `scaleY`/transform-clobbers on the skin across every arm; the
   > grow knob gains a no-raw-scale-literal sweep — all three red-proven against her named
   > drift classes; three stale transform-only/1.8× comments rewritten to the height mechanism.
-  > **Owed: the owner's glance at round 2 — their word closes S0.5 → S1.** `voice.live` config + `/voice/status` delivery + the WS route + the
+  > **Owed: the owner's glance at round 2 — their word closes S0.5 → S1.**
+  >
+  > **ROUND 3 (2026-09-13, same day — the owner live: round 2 "looks good" + four clarifications;
+  > main-seat build, council-CLOSED: Emma micro-round BLOCKED (light-theme pill contrast measured
+  > ~1.05:1 + two pins admitting fakes) → rider → RESOLVED — SHIP, she pixel-measured the fix) —
+  > and the owner's word ("okay looks good, lets handoff") CLOSES S0.5.** Commits `484102d` +
+  > rider `0d1d429`; gate 6/6 ×2; FE 3,241/181. **The four:** ① the pill's outline REMOVED (fill
+  > only; the round-3 review then found the borderless pill INVISIBLE on light themes — silhouette
+  > restored by the bubble's own soft shadow, borderless kept; a shadow-presence pin) · ② the
+  > bubble tail is a clip-path TRIANGLE flush BELOW the translucent body (`top: 100%`, apex
+  > centred via `--mg-rx − 17px`) — the rotated square double-painted the alpha and showed
+  > through; pinned as the exact 3-point polygon + geometry · ③ **a WRITTEN draft lifts the
+  > slide-to-cancel track above the bar** to the hint's height (the owner's own design; the draft
+  > must stay visible) — `lifted` prop wired in all three variants, the exact transform arithmetic
+  > pinned; Emma Chromium-verified zero track/hint overlap at 360px in all three · ④ `--mg-bulge`
+  > 0.73 → **0.35** (owner: too much size difference; overrides R69's Telegram value, trace kept).
+  > **⚠ Durable (her round-2/3 pin lessons, now the house bar for source pins): hold EXACT
+  > expressions, sweep EVERY rule mentioning the selector, and red-proof against the named bypass
+  > — fragment checks admit fakes** (a 4-point "square" polygon passed "any polygon"; a magic
+  > offset passed "mentions the knob"). `voice.live` config + `/voice/status` delivery + the WS route + the
   relay session (mock-Speaches tests: framing, resampling, backpressure, caps, error taxonomy,
   bearer never in logs).
 - **S2a — the FE call loop, WITH basic barge-in (council F8 — an open-mic loop that cannot
@@ -903,6 +922,24 @@ Still open:
    numbers + mechanism = the §7-S0 as-built record.
 4. ~~**A delta design round?**~~ **RAN (owner-ordered, 2026-09-12) — see §9's delta-round
    entry: SHIP WITH CHANGES, 4H·5M·2L, all eleven ACCEPTED and folded in place.**
+5. **Streaming dictation — "text fills the composer as I talk" (owner ask, 2026-09-13, at the
+   S0.5 handoff; the Claude Code dictation experience named as the reference). AWAITING THE
+   OWNER'S WORD on the recording below — discussed, not yet ruled.** The capability facts
+   (R51/R68, re-verified twice): the Speaches realtime ear has NO PARTIALS — it emits one
+   whole-utterance FINAL per pause; word-by-word streaming is a server capability we do not
+   have, not a toggle. The three tiers laid out in conversation:
+   **(a)** today's shipped hold→release→text (S0.5);
+   **(b) PHRASE-BY-PHRASE dictation riding the S1 ear — the main seat's recommendation as a
+   named follow-up slice after S2a:** hold the mic, keep talking, each utterance final appends
+   to the draft at every pause — reuses the whole S1 relay + the existing draft-append seam,
+   one more consumer of the same WS; not word-by-word but genuinely live;
+   **(c)** true word-by-word = a partial-capable STT server — EXACTLY the §2.1 shelved-with-
+   trigger item (arch ② / a fork patch on ~github/speaches, upstream frozen ⇒ the maintenance
+   is ours, and it crosses the §5.2 "nothing outside the project" posture) — **the S4
+   calibration round stays the decision point**, taken with the phrase-level feel in hand;
+   partials also cost FE revise-and-repaint logic (they get corrected mid-stream), never plain
+   appends. The owner ended the session before ruling; the next session opens the question
+   with them or proceeds to S1 leaving (b) proposed.
 
 ## 9. Council record
 

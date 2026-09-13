@@ -12,7 +12,43 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-13, SEVENTEENTH session — **the owner's S0.5 FEEL ROUND landed FIVE findings live in conversation (OF-1..OF-5, each restated + confirmed, one mid-design correction) → the wave ran the whole cadence same session and is council-CLOSED: blind Emma SHIP WITH FIXES (2 MED) → fixes → RESOLVED — SHIP. ▶▶ NEXT: the owner's glance at the WAVE (:5173) — their word closes S0.5 → S1**; supersedes below where it speaks)
+## Current state (2026-09-13, SEVENTEENTH session END — **S0.5 IS CLOSED BY THE OWNER'S WORD after THREE live feel rounds, every wave through the full cadence to RESOLVED — SHIP. ▶▶ NEXT SESSION = S1 (the BE relay), with ONE question open for the owner first: streaming dictation (plan §8 item 5, AWAITING THEIR WORD)**; supersedes below where it speaks)
+
+- **S0.5 CLOSED (the owner: "okay looks good, lets handoff") — the full three-round trail lives
+  in plan §7-S0.5's three wave blocks; read THOSE before touching any gesture surface.** The
+  session ran the owner's feel iteration LIVE: round 1 (OF-1..5: grow 1.8 · pill compress ·
+  the REAL level halo w/ metering split from policy · the tailed bubble · the tools-trigger
+  cancel morph, owner-corrected from the paperclip; waves `c654834`+`127234a` — review caught
+  the hidden-page-stop regression: locking the phone killed default-mode recordings) → round 2
+  ("much better" + five nudges: grow 1.65 · the TRUE-STADIUM pill — height tracks `--mg-lift`,
+  a RECORDED §14.11 exception w/ `contain: layout` fence · hint 8px · ✕ 18px/2.6 · the
+  placeholder YIELDS while recording via `body:has()`; `c057459`+`c81780c`) → round 3 (four:
+  borderless pill — then the review measured it INVISIBLE on light themes ⇒ the soft-shadow
+  rider · the clip-path triangle tail replacing the alpha-doubling square · **a WRITTEN draft
+  lifts the slide-to-cancel above the bar** (the owner's design) · bulge 0.35;
+  `484102d`+`0d1d429`). Emma's verdicts all ended RESOLVED — SHIP; she pixel-measured the
+  shadow fix herself.
+- **⚠ Durable lessons recorded in the plan blocks:** a metering-from-policy split must
+  enumerate EVERY decision the old arming carried (the hidden-page stop rode along) · source
+  pins must hold EXACT expressions + sweep EVERY rule mentioning the selector + be red-proven
+  against the named bypass — fragment checks admit fakes (a 4-point polygon passed "any
+  polygon") · a one-axis scale can never give a stadium — the pill's height IS the mechanism.
+- **Gate 6/6 at every tip — final counts FE 3,241/181 · BE 2,377** (QUALITY.md). Both dev
+  units RUNNING (D69 — do NOT stop them); :5173 serves the closed S0.5 live.
+- **▶▶ NEXT SESSION: open on plan §8 item 5 — STREAMING DICTATION (owner ask at handoff,
+  discussed NOT ruled):** the Speaches ear has NO partials (verified twice) — the three tiers
+  are recorded there; the main seat recommends tier (b), phrase-by-phrase dictation riding the
+  S1 ear as a named follow-up slice after S2a, with word-by-word staying on its §2.1 S4
+  trigger. **Get the owner's word, then S1 (the BE relay — `voice.live` config + `/voice/status`
+  delivery + the WS route + the relay session; the S0+S0.5 blind debt on the probe pages rides
+  S1's round; the S0-pinned wire contract in §7-S0 is the mock's spec).** One slice per
+  session, the standing cadence. Phase 23 S7 + the v1.7.8 sequencing unchanged (release E
+  after the roleplay features).
+- Git: **18 commits unpushed over origin `b946fc1`** (through `0d1d429` + this docs commit);
+  tree clean at write; the PUSH ruling stays the owner's. **Prod untouched v1.7.7 @
+  `578ffa7`.**
+
+## Prior state (2026-09-13, SEVENTEENTH session mid — **the owner's S0.5 FEEL ROUND landed FIVE findings live in conversation (OF-1..OF-5, each restated + confirmed, one mid-design correction) → the wave ran the whole cadence same session and is council-CLOSED**; superseded above where it speaks)
 
 - **The owner's feel round (in conversation, plain-language restatement + confirm before
   building):** ① the record circle too big → **1.8×** (one `--mg-grow-scale` knob) · ② the

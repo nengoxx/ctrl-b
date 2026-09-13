@@ -1602,11 +1602,11 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       until the `live` bit exists. *(Council-CLOSED 2026-09-12 — build `86de7b0`+`faa62b5`,
       audit rider `7a60309`, review wave `05f67b3`, confirm micro-wave `0516490`; blind round
       SHIP WITH FIXES 5M·2L → all folded → RESOLVED — SHIP; plan §7-S0.5 as-built record.
-      The owner FEEL ROUND on real dictation — parameters tuned by eye against R69's table —
-      is still owed and closes the slice by their word; live on :5173.)*
-      *(Feel round RAN 2026-09-13 — five findings OF-1..OF-5; the wave `c654834`+`127234a` is
-      council-CLOSED (Emma 2M → RESOLVED — SHIP; plan §7-S0.5's FEEL-ROUND WAVE block). The
-      owner's glance at the wave itself closes S0.5 → S1.)*
+      **S0.5 CLOSED BY THE OWNER'S WORD 2026-09-13** after THREE feel rounds run live in
+      conversation, every wave through the full cadence: round 1 (OF-1..5, `c654834`+`127234a`) ·
+      round 2 (five nudges incl. the true-stadium pill, `c057459`+`c81780c`) · round 3 (four
+      clarifications incl. the draft-lifts-the-track design + the light-theme shadow rider,
+      `484102d`+`0d1d429`) — all RESOLVED — SHIP; records = plan §7-S0.5's three wave blocks.)*
 - [ ] S1 — The BE relay: `voice.live` config + `/voice/status` delivery + `WS /api/voice/live`
       + the relay session (mock-Speaches tests; framing/resample/backpressure/caps/Origin).
 - [ ] S2 — *(split S2a/S2b by the 2026-09-12 delta round — plan §7 wins)* The FE call loop
