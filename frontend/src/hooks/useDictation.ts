@@ -351,7 +351,9 @@ export function useDictation({
    *  by contract (MED-2): no Web Audio, a context that won't leave `suspended`, a throwing node graph —
    *  every one degrades to ordinary push-to-talk. A recording that needs one extra tap is a non-event;
    *  an error toast on every recording would not be. The hidden-page stop is NOT part of that degrade
-   *  (MED-1) — it is armed first, synchronously, and outlives any Web Audio failure below.
+   *  (MED-1) — when the auto-stop POLICY is on it is armed first, synchronously, and outlives any Web
+   *  Audio failure below; with the policy off it does not exist at all (F1 — the policy's rule, never
+   *  the meter's).
    *
    *  ARMED FOR EVERY RECORDING since the feel round (OF-3): what it reads is a LEVEL, which the record
    *  circle wants whatever the auto-stop policy says. The policy has not moved — the STOP decision inside
@@ -359,15 +361,21 @@ export function useDictation({
    *  degrade rule covers the meter too: a context that won't run means no level, never a broken mic. */
   const armDetector = useCallback(
     async (stream: MediaStream) => {
-      // Council MED-1 — dictation is a screen-on activity: a hidden page ends the recording outright
-      // rather than leaving the mic live behind a timer Android throttles to ~once a minute. Armed
-      // before any Web Audio work, so an unavailable/suspended context can never leave the mic
-      // recording untended; only the full teardown (every terminal path) removes it.
-      const onHidden = () => {
-        if (document.visibilityState === "hidden") stop();
-      };
-      document.addEventListener("visibilitychange", onHidden);
-      hiddenRef.current = onHidden;
+      // Council MED-1 — under the AUTO-STOP POLICY, dictation is a screen-on activity: a hidden page
+      // ends the recording outright rather than leaving the mic live behind a timer Android throttles
+      // to ~once a minute. Armed before any Web Audio work, so an unavailable/suspended context can
+      // never leave the mic recording untended; only the full teardown (every terminal path) removes
+      // it. ⚠ GATED ON THE POLICY, not on the meter (feel-round review F1): with auto-stop OFF the
+      // pre-OF-3 recorder had no listener and kept recording behind a hidden page — the metering
+      // split must not broaden that rule. Policy off, a hidden page throttles only the meter poll,
+      // which is decoration.
+      if (autoStopOn) {
+        const onHidden = () => {
+          if (document.visibilityState === "hidden") stop();
+        };
+        document.addEventListener("visibilitychange", onHidden);
+        hiddenRef.current = onHidden;
+      }
       if (typeof AudioContext === "undefined") return;
       let ctx: AudioContext;
       try {

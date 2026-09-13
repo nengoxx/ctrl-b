@@ -609,6 +609,26 @@ describe("OF-5 · the tools trigger IS the locked recording's cancel", () => {
     expect(posts()).toBe(0);
   });
 
+  it("an OPEN tools sheet is released when the trigger changes jobs (feel-round F2)", async () => {
+    // Keyboard-lock with the menu up: the trigger drops its popup contract and becomes the cancel,
+    // so the overlay it opened must not survive it — orphaned, still interactive, with no trigger
+    // pointing at it. The sheet is a pure reader of the overlay store; the store is the contract.
+    render(composed(KitComposer));
+    act(() => setComposerOverlay("menu")); // the sheet is up…
+    fireEvent.click(mic()); // …and a keyboard activation locks a recording
+    await tick(10);
+    expect(cancelBtn()).toBe(tools());
+    expect(getComposerOverlay()).toBeNull(); // the menu went down with the morph
+    // …and nothing can re-open it mid-morph through the store either.
+    act(() => setComposerOverlay("menu"));
+    await tick(0);
+    expect(getComposerOverlay()).toBeNull();
+    fireEvent.click(cancelBtn()!); // end the recording; the trigger is a menu again
+    await tick(10);
+    fireEvent.click(tools());
+    expect(getComposerOverlay()).toBe("menu"); // its own tap reopens it as always
+  });
+
   it("the offer dies with the composer — a dead gesture never leaves a live morph", async () => {
     function Pair({ on }: { on: boolean }) {
       return (

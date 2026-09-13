@@ -1,6 +1,12 @@
+import { useEffect } from "react";
+
 import { XIcon } from "../../../../components/icons";
 import { getDefaultAgent, useVerbsVersion } from "../../../../lib/composer";
-import { toggleComposerOverlay, useComposerOverlayOpen } from "../../../../store/composerOverlay";
+import {
+  releaseComposerOverlay,
+  toggleComposerOverlay,
+  useComposerOverlayOpen,
+} from "../../../../store/composerOverlay";
 import { useComposerScope } from "../../../../store/composerScope";
 import { runMicCancel, useMicCancelOffered } from "../../../../store/micCancel";
 import { TOOLS_SHEET_ID } from "./ToolsMenuSheet";
@@ -22,8 +28,8 @@ import { TOOLS_SHEET_ID } from "./ToolsMenuSheet";
 // discards the clip, and the menu is simply unreachable for those few seconds — as is the armed dot, which
 // belongs to a state the button is no longer presenting. The offer arrives through `store/micCancel`
 // because this component is composed ONCE, in DefaultRoot's slot merge, and can see no composer variant's
-// gesture. If the menu happens to be OPEN when the lock lands, the overlay is left alone (it closes by its
-// own rules) — only the button changes jobs.
+// gesture. If the menu happens to be OPEN when the lock lands, it is RELEASED (feel-round review F2): a
+// sheet must not outlive its trigger's job — orphaned, interactive, with no trigger pointing at it.
 
 /** The lucide `sliders-horizontal` outline — "settings for this one message", in the composer's stroke
  *  language (2.2, round caps/joins; the shared glyphs in `icons.tsx` use 2.2–2.6). Inlined rather than
@@ -50,6 +56,13 @@ function SlidersIcon({ size = 16 }: { size?: number }) {
 export function ToolsMenuTrigger() {
   const open = useComposerOverlayOpen("menu");
   const cancelling = useMicCancelOffered();
+  // A SHEET MUST NOT OUTLIVE ITS TRIGGER'S JOB (feel-round review F2): if the menu overlay is up when
+  // the morph lands — a keyboard lock with the sheet open — or anything re-opens it mid-morph, release
+  // it. The sheet is a pure reader of the overlay store, so this closes it; `release` is owner-checked,
+  // so no other overlay is touched, and when the morph ends the menu simply reopens by its own tap.
+  useEffect(() => {
+    if (cancelling && open) releaseComposerOverlay("menu");
+  }, [cancelling, open]);
   const scope = useComposerScope();
   // The label can name the DEFAULT agent (below), so re-render when a loader installs a fresh set — the
   // same version subscription the panel uses.

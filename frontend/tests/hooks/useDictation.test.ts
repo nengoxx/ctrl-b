@@ -527,6 +527,23 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
     expect(result.current.status).toBe("recording");
   });
 
+  it("with the POLICY OFF a hidden page does NOT stop the recording (feel-round F1)", async () => {
+    // Pre-OF-3, plain push-to-talk had no visibility listener at all — the metering split arms the
+    // detector for every recording, but the hidden-page stop is the POLICY's rule and must not have
+    // ridden along with the meter.
+    const off = stopOpts(false, { ...AUTO_STOP, enabled: false });
+    const { result } = renderHook(() => useDictation(off));
+    await startRecording(result);
+    await tick(1500);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(result.current.status).toBe("recording"); // exactly what shipped before the wave
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  });
+
   it("a hidden page stops the recording outright (MED-1) — the mic never runs untended", async () => {
     const { result } = renderHook(() => useDictation(stopOpts()));
     await startRecording(result);
