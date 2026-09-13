@@ -253,7 +253,7 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
       </div>
       {/* The gesture's chrome — a positioned SIBLING of the bar: this layout's `overflow: hidden` was
           MEASURED to clip a child in both directions the gesture needs. */}
-      {showMic && <MicGestureChrome chrome={gesture.chrome} />}
+      {showMic && <MicGestureChrome chrome={gesture.chrome} lifted={draft.length > 0} />}
     </>
   );
 }

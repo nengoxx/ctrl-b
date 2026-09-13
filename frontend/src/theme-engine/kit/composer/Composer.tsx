@@ -181,7 +181,7 @@ export function KitComposer({
       </div>
       {/* The gesture's chrome — a positioned SIBLING of the bar (measured: the sheet/line bars clip a
           child), rendered AFTER it so the grown record circle paints over the composer. */}
-      {sttReady && <MicGestureChrome chrome={gesture.chrome} />}
+      {sttReady && <MicGestureChrome chrome={gesture.chrome} lifted={draft.length > 0} />}
     </>
   );
 }

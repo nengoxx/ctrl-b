@@ -1585,10 +1585,10 @@ body[data-motion="reduced"] .kit .kit-cbtn.tools .tools-x {
    * DOWN to 1.8x in the feel round 2026-09-13, then to 1.65x in round 2 the same day — their eye,
    * their number; this knob exists precisely so the tune is one edit. */
   --mg-grow-scale: 1.65;
-  /* …and how far the LEVEL HALO bulges past that at a full meter. R69 §1.6 [V] verbatim:
-   * `circleRadius = dp(41)` + `circleRadiusAmplitude = dp(30)` = +0.73x of the grown circle, which
-   * lands the full-amplitude disc at ~3.1x of the button — Telegram's own 142dp-over-44dp ratio. */
-  --mg-bulge: 0.73;
+  /* …and how far the LEVEL HALO bulges past that at a full meter. Telegram's own is +0.73x
+   * (R69 §1.6 [V]: dp(41) + dp(30)); OWNER-TUNED DOWN to 0.35 in round 3, 2026-09-13 — "the halo
+   * grows too big with sound, too much size difference". Their eye, their number. */
+  --mg-bulge: 0.35;
 
   /* The lock rail's CIRCLE — what the pill compresses INTO (OF-2). Every other rail number is stated
    * relative to it, so the rail is resized by this one value. */
@@ -1728,8 +1728,9 @@ body[data-motion="reduced"] .mg-halo {
   );
   transform: translateY(-50%);
   border-radius: 999px;
+  /* BORDERLESS (owner round 3, 2026-09-13): the outline read as chrome on a control the thumb is
+   * already holding — the fill alone is the pill. */
   background: var(--surface-2);
-  border: 1px solid var(--line-2);
 }
 .mg-rail-glyph {
   display: flex;
@@ -1755,11 +1756,9 @@ body[data-motion="reduced"] .mg-halo {
 }
 .mg-rail.armed .mg-rail-skin {
   background: color-mix(in oklch, var(--accent) 18%, var(--surface-2));
-  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
   transition:
     height 250ms cubic-bezier(0.23, 1, 0.32, 1),
-    background 150ms linear,
-    border-color 150ms linear;
+    background 150ms linear;
 }
 body[data-motion="reduced"] .mg-rail.armed,
 body[data-motion="reduced"] .mg-rail.armed .mg-rail-skin {
@@ -1807,6 +1806,14 @@ body[data-motion="reduced"] .mg-rail.armed .mg-rail-tail {
 body:has(.mic-gesture[data-stage="hold"]) .kit-composer textarea::placeholder,
 body:has(.mic-gesture[data-stage="locked"]) .kit-composer textarea::placeholder {
   color: transparent;
+}
+
+/* …and when the field holds WRITTEN text (which must stay visible — hiding a draft mid-hold reads as
+ * losing it), the track YIELDS UPWARD instead: it lifts above the bar to the hint's height (owner
+ * round 3 — their own design: "move the swipe-to-cancel on top of the composer, like the hint").
+ * `.lifted` is the variant's knowledge (only it sees the draft), passed as a prop. */
+.mic-gesture.lifted .mg-track {
+  transform: translateY(calc(-50% - var(--mg-size) * var(--mg-grow-scale) / 2 - 8px));
 }
 
 .mg-track {
@@ -1901,15 +1908,19 @@ body[data-motion="full"] .mg-track:not(.moved) .mg-chev {
  * always wider than that offset in practice: the shortest line it carries is ~100px and the mic never
  * sits more than ~45px from the bar's trailing edge.) */
 .mg-hint::after {
+  /* THE TAIL IS A CLIPPED TRIANGLE, NOT A ROTATED SQUARE (owner round 3): the bubble is translucent,
+   * so a square tucked behind it double-painted the alpha and its upper half showed THROUGH the body.
+   * A clip-path triangle hanging flush below the bubble's bottom edge overlaps nothing — only the
+   * pointing half exists. Apex centred on the mic (`--mg-rx` is the button centre's distance from the
+   * host's right edge; the bubble's own right edge sits 10px in, the triangle is 14px wide). */
   content: "";
   position: absolute;
-  bottom: -4px;
-  right: calc(var(--mg-rx, 36px) - 15px);
-  width: 10px;
-  height: 10px;
-  border-radius: 0 0 3px 0;
+  top: 100%;
+  right: calc(var(--mg-rx, 36px) - 17px);
+  width: 14px;
+  height: 6px;
   background: var(--mg-bubble-bg);
-  transform: rotate(45deg);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 @keyframes mg-fade-in {
   from {

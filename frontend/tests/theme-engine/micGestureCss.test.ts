@@ -115,6 +115,13 @@ describe("OF-2 · the lock pill is a TRUE STADIUM compressing into a circle (own
     }
   });
 
+  it("…and the pill is BORDERLESS (owner round 3) — no rule dresses it in an outline again", () => {
+    for (const rule of everyRuleMentioning(".mg-rail-skin")) {
+      // `border-radius` is the shape and stays; any other border-* is the rejected outline.
+      expect(rule.body).not.toMatch(/border(?!-radius)/);
+    }
+  });
+
   it("the glyph and the tail are SIBLINGS of the skin, so the squeeze never distorts them", () => {
     // Stacked in one grid cell — a column would move the flow as the tail collapses.
     expect(declarationsFor(".mg-rail-glyph")).toContain("grid-area: 1 / 1");
@@ -152,6 +159,22 @@ describe("round 2 · the composer placeholder yields to the slide-to-cancel trac
 
   it("the cancel ✕ carries its own thicker stroke, scoped to the morph face", () => {
     expect(declarationsFor(".kit .kit-cbtn.tools .tools-x svg")).toContain("stroke-width: 2.6");
+  });
+});
+
+describe("round 3 · the translucent bubble's tail, and the track's lift", () => {
+  it("the tail is a CLIPPED TRIANGLE below the body — never a square tucked behind the alpha", () => {
+    // A rotated square behind a translucent bubble double-paints the overlap and shows through
+    // (the owner saw the square's upper half). Only the pointing half may exist.
+    const tail = declarationsFor(".mg-hint::after");
+    expect(tail).toMatch(/clip-path:\s*polygon\(/);
+    expect(tail).toContain("top: 100%"); // flush BELOW the body — zero overlap with it
+    expect(tail).not.toContain("rotate(");
+  });
+
+  it("a WRITTEN draft lifts the track to the hint's height, off the same grow knob", () => {
+    const lifted = declarationsFor(".mic-gesture.lifted .mg-track");
+    expect(lifted).toContain("var(--mg-grow-scale)"); // clears the grown circle, not a magic offset
   });
 });
 

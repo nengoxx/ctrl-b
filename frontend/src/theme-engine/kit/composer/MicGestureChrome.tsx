@@ -115,7 +115,12 @@ function ChevronUpIcon({ size = 12 }: { size?: number }) {
   );
 }
 
-export function MicGestureChrome({ chrome }: { chrome: MicChrome }) {
+/**
+ * @param lifted the composer holds WRITTEN text (round 3): the slide-to-cancel track lifts above the
+ *               bar instead of painting across a draft it would be unreadable over. Variant knowledge
+ *               — only the variant sees the draft — so it arrives as a prop, not through the hook.
+ */
+export function MicGestureChrome({ chrome, lifted }: { chrome: MicChrome; lifted?: boolean }) {
   const { hostRef, stage, mode, anchor, cancel, lift, dragX, moved, showLockHint, hint } = chrome;
   const { onChipTap } = chrome;
   // A RECORDING is up in exactly two stages. `callArm`/`chip` are call mode, which records nothing.
@@ -135,7 +140,12 @@ export function MicGestureChrome({ chrome }: { chrome: MicChrome }) {
   } as CSSProperties;
 
   return (
-    <div className="mic-gesture" ref={hostRef} data-stage={stage} style={open ? vars : undefined}>
+    <div
+      className={"mic-gesture" + (lifted ? " lifted" : "")}
+      ref={hostRef}
+      data-stage={stage}
+      style={open ? vars : undefined}
+    >
       {!open ? null : (
         <>
           {/* ① THE RAIL — the "slide up" affordance, present for the whole hold and following the

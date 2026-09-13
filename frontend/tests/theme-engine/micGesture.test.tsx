@@ -524,6 +524,27 @@ describe("all three variants carry the same contract", () => {
     expect(getDraft()).toBe("hello world");
   });
 
+  it.each(VARIANTS)(
+    "%s: a WRITTEN draft lifts the cancel track above the bar (round 3)",
+    async (_id, V) => {
+      // The placeholder-yield rule covers an empty field; a real draft must stay visible (hiding it
+      // mid-hold reads as losing it), so the track yields UPWARD instead — the owner's own design.
+      render(<V />);
+      const field = document.querySelector<HTMLTextAreaElement>("#cmd-input")!;
+      fireEvent.change(field, { target: { value: "half-typed thought" } });
+      await hold();
+      expect(document.querySelector(".mic-gesture")!.className).toContain("lifted");
+      up();
+      await tick(HELD_MS + 10);
+      // …and with the field empty the track keeps its in-row seat.
+      fireEvent.change(field, { target: { value: "" } });
+      await hold();
+      expect(document.querySelector(".mic-gesture")!.className).not.toContain("lifted");
+      up();
+      await tick(10);
+    },
+  );
+
   it.each(VARIANTS)("%s: slide-left cancels without a POST", async (_id, V) => {
     render(<V />);
     await hold();
