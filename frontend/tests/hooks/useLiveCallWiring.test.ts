@@ -297,3 +297,22 @@ describe("useLiveCall — mute (§6)", () => {
     expect(texts()).toEqual([]);
   });
 });
+
+describe("useLiveCall — the unmount fence (S2b audit)", () => {
+  it("a final already in flight when the component unmounts never submits", async () => {
+    // The shell's `endCall` exit (and a redial's key bump) unmount the machine WITHOUT a hang-up
+    // signal — and `close()` only starts the socket's handshake, so a frame dispatched before it can
+    // still be delivered after the cleanup ran. The cleanup's `unmounted` signal moves the generation
+    // first, which is the only thing standing between that frame and a §4.3-violating submit.
+    const { view } = await call();
+    view.unmount();
+    await act(async () => {
+      h.frame?.({ type: "speech_started" });
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text: "after the door closed", final: true });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(texts()).toEqual([]);
+  });
+});

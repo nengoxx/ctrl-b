@@ -505,3 +505,30 @@ describe("callReduce — the page going away (§5.3)", () => {
     expect(out).toEqual([{ type: "teardown", close: true }]);
   });
 });
+
+describe("callReduce — the unmount fence (S2b audit — §4.3 hang-up-discards, one task late)", () => {
+  it("moves the generation and discards the queue, so an in-flight callback is a ghost", () => {
+    const queued = run(listening, [
+      { type: "confirmHold", on: true }, // hold the queue open so a `final` stays pending
+      { type: "final", text: "left unsaid" },
+    ]).state;
+    const { state } = run(queued, [{ type: "unmounted" }]);
+    expect(state.gen).toBe(queued.gen + 1);
+    expect(state.pending).toEqual([]); // a deliberate exit DISCARDS — never a harvest
+    // …and the discarded final's own signals, armed under the old generation, no longer land.
+    const late = callReduce(state, { type: "final", text: "too late", gen: queued.gen });
+    expect(late.out).toEqual([]);
+    expect(late.state).toBe(state);
+  });
+
+  it("tears down WITHOUT `close` — a redial's remount must not be endCall'd by the old machine", () => {
+    const { out } = run(listening, [{ type: "unmounted" }]);
+    expect(out).toEqual([{ type: "teardown", close: false }]);
+  });
+
+  it("outranks the terminal guard, exactly as hang-up does", () => {
+    const dead = run(listening, [{ type: "failed", note: "x" }]).state;
+    const { state } = run(dead, [{ type: "unmounted" }]);
+    expect(state.gen).toBe(dead.gen + 1);
+  });
+});

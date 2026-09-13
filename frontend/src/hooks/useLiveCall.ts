@@ -157,6 +157,15 @@ export type CallSignal = { gen?: number } & (
    *  `hidden` needs, and the two share this arm. */
   | { type: "hangup" }
   | { type: "hidden" } //                      §5.3: the page went away — a clean end, not an error
+  /** The machine's component is UNMOUNTING (the shell's `endCall`, or a redial's key bump). The arm
+   *  exists for the FENCE, not the teardown: the wiring's callbacks — a socket frame already
+   *  dispatched (`close()` only starts the handshake), a `cancelTurn` settlement, a send outcome —
+   *  can land AFTER the unmount, and before S2b every user exit moved the generation through the
+   *  `hangup` arm so those became ghosts. The shell exit must too, or a `final` in that gap still
+   *  SUBMITS after the owner closed the call (§4.3's hang-up-discards, violated one task late).
+   *  Deliberately NOT `hangup` itself: its `close: true` would `endCall()`, and on a redial's
+   *  remount that would kill the fresh call the owner just asked for. */
+  | { type: "unmounted" }
   | { type: "failed"; note: string } //        the call could not start at all
 );
 
@@ -234,13 +243,17 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
 export function callReduce(s: CallState, sig: CallSignal): Step {
   // THE FENCE (F7), first line: a callback armed under an older generation is not this call's business.
   if (sig.gen !== undefined && sig.gen !== s.gen) return { state: s, out: [] };
-  // "Hang up from every state" (§4.2) is the one rule that outranks the terminal guard below.
-  if (sig.type === "hangup" || sig.type === "hidden") {
+  // "Hang up from every state" (§4.2) is the one rule that outranks the terminal guard below — and
+  // `unmounted` shares it: the generation MUST move on every exit, terminal or not, or a callback
+  // still in flight (a dispatched socket frame, a cancel settlement) outlives the call it belonged to.
+  if (sig.type === "hangup" || sig.type === "hidden" || sig.type === "unmounted") {
     // A deliberate exit DISCARDS the pending queue: the owner chose to leave, and never-lose-speech is
-    // about failures, not about the user's own decision (§4.3's terminal disposition).
+    // about failures, not about the user's own decision (§4.3's terminal disposition). `unmounted`
+    // alone does not `close` — its component is ALREADY unmounting, and an `endCall()` here would end
+    // the fresh call a redial's key bump is mounting in the same commit.
     return {
       state: { ...CALL_INITIAL, phase: "ended", gen: s.gen + 1 },
-      out: [{ type: "teardown", close: true }],
+      out: [{ type: "teardown", close: sig.type !== "unmounted" }],
     };
   }
   if (isTerminal(s.phase)) return { state: s, out: [] };
@@ -680,7 +693,11 @@ export function useLiveCall(): CallView {
       });
     return () => {
       disposed = true;
-      teardown();
+      // THROUGH THE REDUCER, not a bare `teardown()`: the `unmounted` arm moves the generation FIRST,
+      // so a callback that lands after this cleanup — `close()` only starts the socket's handshake,
+      // and a `killSettled`/`sent` settlement answers whenever it answers — is a ghost by the same
+      // fence every other stale callback hits. The arm's own effect runs the teardown.
+      send({ type: "unmounted" });
     };
     // Armed ONCE per mount: the overlay's lifetime IS the call's, and a mid-call `/voice/status`
     // refetch must not re-open the ear (§4.5 — settings edited mid-call apply to the NEXT call).
