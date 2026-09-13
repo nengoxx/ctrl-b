@@ -1624,9 +1624,14 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       micro-waves `08e3533`+`8496c32` (the honest mouth status; the call DOOR dismiss→prime→
       open) → RESOLVED — SHIP, sweep = comment drift only, folded. Plan §7-S2a as-built record;
       FE 3,356/189; gate 6/6 at every tip. ⚠ `voice.live.enabled` still OFF — S4's close.)*
-- [ ] S2b — The overlay's presentation + furniture: both `ring` modes + the focal anchor ·
+- [x] S2b — The overlay's presentation + furniture: both `ring` modes + the focal anchor ·
       mute · the in-overlay confirm row · terminal "call again" faces · the Android back-trap ·
-      the remaining §4.5 edge rules (plan §7-S2b).
+      the remaining §4.5 edge rules (plan §7-S2b). **council-CLOSED 2026-09-14**: build
+      `3461975` (pinned Opus) → main-seat audit (+ the `unmounted` fence rider `29d7b65`) →
+      blind Emma SHIP WITH FIXES (3 MED, sweep "none") → wave `461a025` → her confirm
+      RESOLVED — SHIP, fix-sweep "none". Plan §7-S2b as-built record; incl. the Conf
+      "Live call" section (§5.1) + the two S2a residuals (degraded hysteresis · the
+      MiniPlayer intent face).
 - [ ] S2.5 — Phrase-by-phrase streaming dictation (owner-RATIFIED 2026-09-13; R70 = the
       design evidence): dictation rides the S1 ear, utterance finals append to the draft
       live; release = the relay's `flush` (NEVER a raw commit — R70's §7-S0 amendment);

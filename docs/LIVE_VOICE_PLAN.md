@@ -1022,6 +1022,73 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   helper with F9's coordinate discipline + the transcript-accent arm) · mute (F3's one
   mechanism) · the in-overlay confirm row · terminal faces + back-trap · the remaining §4.5
   edge rules not already forced by S2a's loop.
+
+  > **S2b AS-BUILT + council-CLOSED (2026-09-14, one session; the standing cadence).** Build
+  > `3461975` (pinned Opus, 26 files +1756/−163) → main-seat audit (gate independently re-run
+  > 6/6; all three declared deviations ACCEPTED; **one audit finding**, fixed as rider
+  > `29d7b65`) → blind Emma round (hermes lane, `--ignore-rules`, detached `setsid` + a
+  > completion monitor) **SHIP WITH FIXES — 3 MED, open sweep "none"** (ring math · exit
+  > paths incl. the rider · confirm row · Conf section all explicitly verified sound) →
+  > main-seat fix wave `461a025` (her three, built as prescribed, each red-proven) → her
+  > self-contained confirm: **all three RESOLVED with line proof, fix-sweep "none" —
+  > RESOLVED — SHIP.** Gate 6/6 at every tip; liveCall e2e 16/16 both projects; final
+  > FE 3,406/190 · BE 2,462 (QUALITY.md).
+  >
+  > **Shape:** the RING — `focalLanding` + `useFocalAnchor` (pure siblings in
+  > `lib/focalPosition.ts`/`useFocalPosition.ts`; the landing derives from `focalAxis`, which
+  > CLAMPS — a naive `f · box` is off on any cropped axis; the measuring half of
+  > `useFocalPosition` extracted as the shared `useFocalBox`), anchored overlay-local off the
+  > art box's one ResizeObserver (F9 — `.kit-call-art` is inset-0, so no viewport offset can
+  > enter); JS places only the CENTER, the diameter/stroke/fallback-anchor are CSS custom
+  > properties (feel-round knobs); state animates the stroke via `ph-*`/`speech`/`muted`
+  > classes, `body[data-motion]`-gated, discrete steps under reduced motion; no-ring mode
+  > relocates the dot to the heard line — ONE indicator per mode, the phase-line dot is gone
+  > from both. MUTE — `PcmCapture.setMuted` (`track.enabled`, frames keep flowing), reducer
+  > rules exactly as ratified (mute condemns the half-utterance: BOTH flags clear; finals
+  > while muted drop FLAT; VAD races ignored; terminals + redial start unmuted), the muted
+  > look STATIC in both modes, "Muted" outranks the listening copy. CONFIRM ROW —
+  > `confirmAwaiting()` beside `confirmOutstanding` (one shared scan, reference-stable memo;
+  > `awaiting_answer` holds the queue but earns NO row — typed words are the chat card's),
+  > Allow/Deny ride `resumeCall` (the same chokepoint + single-use token; the overlay never
+  > sees a token). TERMINAL FACES + REDIAL — the door hoisted to `store/liveCall.startCall()`
+  > (dismiss → prime → open, the order still the contract; ① is load-bearing AGAIN at the
+  > terminal face — auto-TTS can re-dock playback); redial = `seq` bump → the shell's `key`
+  > remount, so mounting stays the only start path. BACK-TRAP — `useOverlayBackGuard` at the
+  > SHELL (measured: a key remount's fresh push races the old guard's async reclaim and the
+  > entry is LOST — the next Back left the app; owning the entry at the CALL's lifetime kills
+  > the race by construction); `close()` is the one exit (button · Escape · Back). Plus the
+  > two S2a residuals: degraded-note hysteresis (`DEGRADED_NOTE_MS` client hold — the relay
+  > never signals recovery; clears only its own note) and the MiniPlayer transport riding
+  > published intent (`playIntent`/`usePlayIntent`; `setIntent` is the one write door) instead
+  > of disabling on "loading". And the Conf **"Live call" section** (§5.1 — a main-seat scope
+  > addition: no ladder slice owned the owner-ratified Settings rows and the `ring` toggle
+  > needed a home): toggles + `LiveCfg`-bounded numerics + the provider ref as a third voice
+  > service; `voice.live` joins the reref rename-remap and the strict-422 `guarded` list
+  > (BE-coherence deviations, accepted).
+  >
+  > **The audit finding + the wave (the durable lesson):** retiring the per-overlay `hangUp`
+  > lost the pre-teardown GENERATION bump on the shell's `endCall` exit — `close()` only
+  > starts the socket handshake, so an in-flight `final`/`killSettled`/`sent` landing one
+  > task after the cleanup still passed both fences and could SUBMIT after the owner closed
+  > the call. Fixed reducer-owned: the cleanup sends `unmounted` (the hangup rule with
+  > `close: false` — an `endCall()` there would kill the fresh call a redial is mounting).
+  > ⚠ The lesson: **an exit that skips the reducer is an exit that skips the fence** — every
+  > path out of the machine must move the generation BEFORE teardown, unmount included.
+  > Emma's three MEDs were the same family at other seams: mute during ACQUISITION never
+  > reached the resolved track (the install now applies `ref.current.muted`); `seekChunked`
+  > still derived its play flag from STATUS (a rejection's `paused`/a gap's `loading` with
+  > `wantPlay` true → a drag silently cancelled the resume; a seek changes WHERE, never
+  > WHETHER); `ready` cleared the note unconditionally (now the degradedOver rule: only
+  > strained is connection news).
+  >
+  > **Residuals riding later slices (none owed now):** the general `useOverlayBackGuard`
+  > unmount/remount race (any overlay remounting in one commit loses its entry — S2b
+  > sidesteps it; the shared-primitive fix, hand-the-entry-over instead of reclaim-then-push,
+  > is Phase 19 material) · the MiniPlayer's initial-synth window (button enabled during the
+  > first synth where the controller's pinned rule still ignores taps — closing it means
+  > publishing a `waiting` state or changing the latch, neither S2b's) · ring/accent geometry
+  > + the tap-to-interrupt micro-hint = S4 feel-round material · a hand-tuned
+  > `allowed_origins` stays the Serve escape (S4).
 - **S2.5 — phrase-by-phrase streaming dictation (owner-RATIFIED 2026-09-13, §8 item 5;
   design evidence = [R70](./research/R70-phrase-streaming-dictation.md)):** the dictation
   hold/lock rides the SAME ear as calls — each utterance final appends to the composer draft

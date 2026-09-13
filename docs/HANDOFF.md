@@ -12,7 +12,53 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-13, NINETEENTH session — **S2a (the FE call loop) RAN THE STANDING CADENCE TWICE AROUND IN ONE SESSION and is council-CLOSED: blind Emma SHIP WITH FIXES (6 MED, sweep "none") → fix wave (+2 main-seat) → rider → confirm BLOCKED ×2 (one defect class, chased to its root) → two main-seat micro-waves → RESOLVED — SHIP. ▶▶ NEXT SESSION = S2b (presentation + furniture) — or S2.5, the build session's call**; supersedes below where it speaks)
+## Current state (2026-09-14, TWENTIETH session — **S2b (presentation + furniture) RAN THE WHOLE STANDING CADENCE IN ONE SESSION and is council-CLOSED: pinned Opus build → main-seat audit found + fixed the UNMOUNT FENCE hole → blind Emma SHIP WITH FIXES (3 MED, sweep "none") → fix wave → her confirm RESOLVED — SHIP, fix-sweep "none". ▶▶ NEXT SESSION = S2.5 (phrase streaming dictation), then S3 → S4**; supersedes below where it speaks)
+
+- **S2b is council-CLOSED (full as-built record = plan §7-S2b — read THAT before S2.5/S3
+  work):** the RING both modes (`focalLanding`/`useFocalAnchor` — the cover-clamped landing
+  math, overlay-local off ONE ResizeObserver per F9; JS places only the center, geometry =
+  CSS knobs; state animates the stroke, motion-gated; no-ring = the heard-line dot; ONE
+  indicator per mode) · MUTE (`PcmCapture.setMuted`, frames keep flowing; the ratified
+  reducer rules — mute condemns the half-utterance, finals-while-muted drop FLAT; static
+  muted look, "Muted" outranks the listening copy) · the in-overlay Allow/Deny CONFIRM ROW
+  (`confirmAwaiting` beside `confirmOutstanding`, one scan; rides `resumeCall` — the same
+  chokepoint + token; a QUESTION holds but earns no row) · TERMINAL FACES + REDIAL (the door
+  hoisted to `store/liveCall.startCall()`; redial = `seq` bump → the shell's `key` remount) ·
+  the BACK-TRAP (`useOverlayBackGuard` at the SHELL — measured: a key remount loses the
+  guard's entry when mounted per-machine; call-lifetime ownership kills the race) · degraded
+  hysteresis (`DEGRADED_NOTE_MS`) · the MiniPlayer transport riding published INTENT
+  (`playIntent`; the S2a status/intent doctrine applied to its face) · **the Conf "Live call"
+  section (§5.1)** — toggles + LiveCfg-bounded numerics + the provider ref (a main-seat
+  scope addition; no ladder slice owned the ratified Settings rows).
+- **The cadence:** build `3461975` (pinned Opus, +1756/−163; 3 deviations, all ACCEPTED) →
+  main-seat audit **found the unmount-fence hole** (the shell's `endCall` exit skipped the
+  reducer, so an in-flight `final`/`killSettled` could SUBMIT after the owner closed the
+  call) → rider `29d7b65` (the `unmounted` signal: gen moves on EVERY exit, `close:false`
+  so a redial's remount survives) → blind Emma (hermes lane, detached `setsid` + monitor —
+  ⚠ harness-BACKGROUNDED long tasks were killed 3× this session; the detached pattern is
+  the one that survives) **SHIP WITH FIXES — 3 MED, sweep "none"** (ring math · exit paths
+  incl. the rider · confirm row · Conf section all verified sound) → wave `461a025` (mute
+  applied to the track on ACQUISITION resolve · `seekChunked` rides `wantPlay` not status ·
+  `ready` retracts only the strained note) → her self-contained confirm: **all three
+  RESOLVED with line proof, fix-sweep "none" — RESOLVED — SHIP.** ⚠ The durable class (the
+  plan block has it): **an exit that skips the reducer is an exit that skips the fence** —
+  and Emma's three were the same family at other seams (a rule change with no object to
+  apply it to; intent still derived from status at one seam; an unconditional clear).
+- **Gate 6/6 at every tip — FE 3,406/190 · BE 2,462 · liveCall e2e 16/16** (counts in
+  QUALITY.md; eslint 101, net zero). Both dev units RUNNING (D69 — do NOT stop them); S2b is
+  FE-only, :5173 serves it live; :5434 unchanged on the S1 tip. **⚠ `voice.live.enabled`
+  still defaults OFF** (S4's flip) — but the Conf "Live call" section now exists, so a dev
+  poke can flip `enabled` (+ `ring`) from the phone when the owner wants to feel S2a+S2b.
+- **▶▶ NEXT SESSION: S2.5 (plan §7-S2.5)** — phrase-by-phrase streaming dictation on the S1
+  relay's `flush` (release = flush → await final → stop, NEVER commit; R70's 3 s VAD floor
+  tempers the feel). Then S3 (interruption hardening + the Fennec ear-hold) → S4 (owner
+  calibration, the phase gate + the enabled flip). One slice per session, the standing
+  cadence. Phase 23 S7 + v1.7.8 sequencing unchanged (release E after the roleplay features).
+- Git: **34 commits unpushed over origin `b946fc1`** (the 30 + `3461975` · `29d7b65` ·
+  `461a025` + this docs commit); tree clean at write; the PUSH ruling stays the owner's.
+  **Prod untouched v1.7.7 @ `578ffa7`.**
+
+## Prior state (2026-09-13, NINETEENTH session — **S2a (the FE call loop) RAN THE STANDING CADENCE TWICE AROUND IN ONE SESSION and is council-CLOSED: blind Emma SHIP WITH FIXES (6 MED, sweep "none") → fix wave (+2 main-seat) → rider → confirm BLOCKED ×2 (one defect class, chased to its root) → two main-seat micro-waves → RESOLVED — SHIP. ▶▶ NEXT SESSION = S2b (presentation + furniture) — or S2.5, the build session's call**; superseded above where it speaks)
 
 - **S2a is council-CLOSED (full as-built record = plan §7-S2a — read THAT before S2b/S2.5
   work):** the whole FE call loop — `useLiveCall` (pure `callReduce`: phases + the two
