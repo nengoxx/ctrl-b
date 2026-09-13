@@ -1675,8 +1675,9 @@ body[data-motion="reduced"] .mg-halo {
  *
  * IT COMPRESSES INTO A CIRCLE AS THE SWIPE RISES (feel round OF-2, the owner's Telegram reference — no
  * bobbing chevron; the pill should read as being SQUEEZED by the thumb and end as a circle holding the
- * lock). The morph is transform/opacity ONLY (§14.11: nothing that lays out, no width/height/padding),
- * continuous in `--mg-lift`, and with no transition on the tracking values — it follows the finger.
+ * lock). The morph is continuous in `--mg-lift` with no transition on the tracking values — it follows
+ * the finger. Since round 2 the skin's HEIGHT is the mechanism (the recorded §14.11 exception below);
+ * everything else on the rail stays transform/opacity.
  *
  * THE BOX IS THE CIRCLE, and three stacked layers do the rest, because each moves differently and one
  * element cannot carry three transforms:

@@ -48,6 +48,15 @@ function declarationsFor(selector: string): string {
   return bodies.join("\n");
 }
 
+/** Every rule whose selector list MENTIONS `fragment` anywhere — for invariants that must hold across
+ *  every skin/armed/reduced-motion arm, not just the base rule (the round-2 confirm's coverage gap:
+ *  a `scaleY` returning under `body[data-motion="reduced"] .mg-rail-skin` slipped the base-only ban). */
+function everyRuleMentioning(fragment: string): { selectors: string[]; body: string }[] {
+  return RULES.filter((r) => r.selectors.some((s) => s.includes(fragment)));
+}
+
+const normalize = (s: string) => s.replace(/\s+/g, " ").trim();
+
 describe("OF-1 · the record circle's grow is ONE knob", () => {
   it("declares `--mg-grow-scale` exactly once, on the chrome host", () => {
     const declarations = css.match(/--mg-grow-scale:\s*[^;]+;/g) ?? [];
@@ -69,19 +78,41 @@ describe("OF-1 · the record circle's grow is ONE knob", () => {
     // OF-4's bubble sits just clear of the GROWN circle, so changing the grow must move the bubble.
     expect(declarationsFor(".mg-hint")).toContain("var(--mg-grow-scale)");
   });
+
+  it("no `.mg-grow` rule anywhere carries a raw scale literal — the knob or nothing", () => {
+    // The round-2 confirm's gap: an override like `body[x] .mg-grow { transform: scale(1.8) }`
+    // would beat the knob silently. Every scale any `.mg-grow` rule declares must BE the var.
+    for (const rule of everyRuleMentioning(".mg-grow")) {
+      // one nesting level, so `scale(var(--x))` matches whole rather than truncating at var's `)`
+      const scales = rule.body.match(/scale\((?:[^()]|\([^()]*\))*\)/g) ?? [];
+      for (const s of scales) expect(s).toBe("scale(var(--mg-grow-scale))");
+    }
+  });
 });
 
 describe("OF-2 · the lock pill is a TRUE STADIUM compressing into a circle (owner round 2)", () => {
-  it("the SKIN's HEIGHT tracks the lift under a full radius — straight sides, semicircular caps", () => {
-    const skin = declarationsFor(".mg-rail-skin");
-    expect(skin).toMatch(/height:\s*calc\(/);
-    expect(skin).toContain("--mg-lift");
-    expect(skin).toContain("--mg-pill-scale");
+  it("the SKIN's HEIGHT tracks the lift under a full radius — the EXACT arithmetic, pinned", () => {
+    const skin = normalize(declarationsFor(".mg-rail-skin"));
+    // The whole expression, not fragments (the round-2 confirm's gap: wrong arithmetic passed a
+    // fragment check): pill height at rest, the circle's own at lift 1, linear between.
+    expect(skin).toContain(
+      "height: calc( var(--mg-dot) * (var(--mg-pill-scale) - var(--mg-lift, 0) * (var(--mg-pill-scale) - 1)) )",
+    );
     expect(skin).toContain("border-radius: 999px");
-    // the round-1 ellipse mechanism is gone — a returning scaleY would re-ship the rejected shape
-    expect(skin).not.toContain("scaleY(");
+    // …and the centring the height model depends on: the box grows from its middle.
+    expect(skin).toContain("transform: translateY(-50%)");
     // the recorded §14.11 exception travels with its fence: the rail contains its own reflow
     expect(declarationsFor(".mg-rail")).toContain("contain: layout");
+  });
+
+  it("NO skin rule — base, armed, reduced-motion, any skin — scales it or clobbers the centring", () => {
+    // The round-1 ellipse mechanism must not return under ANY selector, and no override may replace
+    // the centring transform (the height model breaks silently without it).
+    for (const rule of everyRuleMentioning(".mg-rail-skin")) {
+      expect(rule.body).not.toContain("scaleY(");
+      const transforms = rule.body.match(/transform:\s*[^;]+/g) ?? [];
+      for (const t of transforms) expect(normalize(t)).toBe("transform: translateY(-50%)");
+    }
   });
 
   it("the glyph and the tail are SIBLINGS of the skin, so the squeeze never distorts them", () => {

@@ -19,7 +19,7 @@ import type { MicChrome } from "./useMicGesture";
 // `.kit-composer.line` both compute `overflow: hidden`, and a probe child extending 60px above or 30px
 // right of the bar was NOT hit-testable in either (`document.elementFromPoint` returned the chat
 // scroller behind it), while the stacked bar — `overflow: visible` — returned the probe. The record
-// circle (1.8×, and its level halo reaches ~3.1× of the button) and the lock rail both live outside the
+// circle (`--mg-grow-scale`, owner-tuned, its level halo bulging past it) and the lock rail live outside the
 // bar's box by construction, so a child would be sliced in two of the three layouts. The plan sheet's
 // `overlay` slot is the precedent for the shape (a
 // positioned sibling anchored over the composer); this mounts BESIDE that slot rather than inside it, so
@@ -142,13 +142,14 @@ export function MicGestureChrome({ chrome }: { chrome: MicChrome }) {
               finger up. Mic mode locks hands-free (latch on crossing); call mode commits on release,
               so its pill reads as the destination rather than as a latch.
 
-              THE PILL IS COMPRESSED BY THE SWIPE (feel round OF-2, the owner's Telegram reference).
-              THREE stacked layers in one box, because the morph has to be transform/opacity ONLY
-              (§14.11) and each of the three moves differently: the SKIN is the circle stretched
-              vertically into a pill and squeezed back to a circle by `--mg-lift`; the GLYPH rides at
-              the pill's top and settles into the circle's centre; the TAIL (the chevron, and call
-              mode's label) collapses and fades out on the way. Nothing lays out, nothing distorts —
-              the glyph is a SIBLING of the skin, so the skin's scaleY never touches it. */}
+              THE PILL IS COMPRESSED BY THE SWIPE (feel round OF-2; round 2 made it a TRUE STADIUM).
+              THREE stacked layers in one box, each moving differently: the SKIN is a real box whose
+              HEIGHT tracks `--mg-lift` under a full radius — straight sides, semicircular caps, the
+              exact circle at full lift (the recorded §14.11 height exception; kit.css carries the
+              justification) — while the GLYPH rides at the pill's top and settles into the circle's
+              centre, and the TAIL (the chevron, and call mode's label) collapses and fades out on the
+              way. The glyph and tail stay transform/opacity, and as SIBLINGS of the skin its squeeze
+              never distorts them. */}
           {(stage === "hold" || stage === "callArm") && (
             <div
               className={"mg-rail" + (mode === "call" ? " call" : "") + (lift >= 1 ? " armed" : "")}
