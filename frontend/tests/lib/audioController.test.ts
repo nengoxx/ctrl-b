@@ -412,10 +412,14 @@ describe("audioController — the chunk queue (D63)", () => {
     await act(async () => lastAudio.finish());
     await flush();
     expect(lastAudio.src).toBe("blob:1"); // still on chunk 1's blob — nothing to swap to yet
+    // The mid-queue gap says "loading" — the same honest state the open-session catch-up publishes
+    // (review-wave rider): holding "playing" through the silent gap would republish the same value on
+    // the next chunk's `play`, hiding the edge D71 §4.2's iron rule watches.
+    expect(result.current.status).toBe("loading");
     await act(async () => calls[1].resolve(okRes()));
     await flush();
     expect(lastAudio.src).toBe("blob:2");
-    expect(result.current.status).toBe("playing");
+    expect(result.current.status).toBe("playing"); // a GENUINE loading→playing transition
   });
 
   it("a pause taken under the latch survives it: the late chunk loads but does not play", async () => {

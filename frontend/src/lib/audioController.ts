@@ -779,6 +779,12 @@ function playNext(s: Session): void {
   }
   if (s.states[i] !== "ok") {
     s.waiting = true; // caught up — `synthChunk` calls back here the moment this chunk lands
+    // The SAME honest "loading" as the open-session branch above, for the same reason: a silent gap
+    // held as "playing" hides the next chunk's `play` behind a republished value, and §4.2's iron rule
+    // watches exactly that edge. (The SEEK latch is the deliberate exception — `seekChunked` parks the
+    // user's own intent in the published status and its arm pins that; a seek is unreachable while this
+    // branch's "loading" holds, since the scrubber is inert on `loading`.)
+    set({ status: "loading" });
     pump(s);
     return;
   }
@@ -1013,6 +1019,16 @@ function transport(): void {
     if (s) s.wantPlay = false;
     a.pause();
     if (pb.status === "playing") set({ status: "paused" }); // latched: no `pause` event will do it
+    return;
+  }
+  if (pb.status === "loading" && s?.waiting) {
+    // A pause under an HONEST catch-up gap — both latch branches publish "loading" now (the review
+    // wave + its rider), and the pinned latch contract ("a pause taken under the latch survives it")
+    // must survive the honest status: the bubble's speaker button stays tappable through a gap even
+    // though the MiniPlayer's transport disables. Initial synth (`waiting` false — no chunk has ever
+    // played) keeps ignoring taps exactly as before.
+    s.wantPlay = false;
+    set({ status: "paused" });
     return;
   }
   if (pb.status !== "paused") return; // loading → ignore taps until it resolves
