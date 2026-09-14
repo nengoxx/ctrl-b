@@ -547,17 +547,27 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     });
   }, []);
 
-  /** THE ANCHOR TRACKS THE BUTTON while the chrome is open (the owner's live round, 2026-09-14).
-   *  Measure-once assumed a short hold over a STATIC bar, and S2.5 broke the premise: a streaming
-   *  recording is LONG, and the bar moves under it — the keyboard collapses at record start (the
-   *  field blurs, `--app-h` grows, the bar drops), and the field auto-grows as phrases append — so
-   *  the circle painted where the button USED to be ("two mic buttons", the owner's phone round).
+  /** THE ANCHOR TRACKS THE BUTTON while the chrome stands FINGER-FREE (the owner's live round,
+   *  2026-09-14; the review's F2 scoped it). Measure-once assumed a short hold over a STATIC bar,
+   *  and S2.5 broke the premise: a streaming recording is LONG, and the bar moves under it — the
+   *  keyboard collapses at record start, and the field auto-grows as phrases append — so the circle
+   *  painted where the button USED to be ("two mic buttons", the owner's phone round).
+   *
+   *  ONLY `locked`/`chip` track (F2): while a FINGER owns the gesture the chrome is finger-relative
+   *  by design (`dragX`/lift ride pointer deltas from the down coordinates), and re-anchoring under
+   *  a stationary finger would teleport the circle away from the touch — the affordance must never
+   *  detach from the hand that holds it. The moment the hand lets go (a lock, or the standing call
+   *  chip) the chrome is button-relative, and the effect's own first `remeasure()` recovers
+   *  whatever moved during the held stages.
+   *
    *  EVENT-driven, never a per-move rect loop (the measure-at-lift rule's letter was about
-   *  pointermove): `visualViewport` resize = the keyboard · a ResizeObserver on the HOST = the
-   *  bar's own geometry (auto-grow, the rail, the stack) · window resize = rotation — the S2b call
-   *  ring's F9 pattern, one layer down. Coalesced through one rAF so a burst of observer callbacks
-   *  costs one layout read; the button-gone guard makes a mid-teardown fire a no-op. */
-  const tracking = state.stage !== "idle";
+   *  pointermove): `visualViewport` resize = the keyboard · a ResizeObserver on the BAR
+   *  (`.kit-composer` — the review's F1: the HOST is `.kit-main`, whose box does NOT change when
+   *  the bottom-anchored bar grows upward) plus the host (pane-level changes) · window resize =
+   *  rotation — the S2b call ring's F9 pattern, one layer down. Coalesced through one rAF so a
+   *  burst of observer callbacks costs one layout read; the button-gone guard makes a mid-teardown
+   *  fire a no-op. */
+  const tracking = state.stage === "locked" || state.stage === "chip";
   useEffect(() => {
     if (!tracking) return;
     let raf = 0;
@@ -569,10 +579,17 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
       });
     };
     const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(remeasure);
-    if (ro && hostRef.current) ro.observe(hostRef.current);
+    if (ro) {
+      const bar = anchorBtn.current?.closest(".kit-composer");
+      if (bar) ro.observe(bar);
+      if (hostRef.current) ro.observe(hostRef.current);
+    }
     const vv = window.visualViewport;
     vv?.addEventListener("resize", remeasure);
     window.addEventListener("resize", remeasure);
+    // The catch-up read: geometry that moved while a finger owned the stages (the keyboard
+    // collapsing during the hold that became this lock) is recovered the moment tracking arms.
+    remeasure();
     return () => {
       ro?.disconnect();
       vv?.removeEventListener("resize", remeasure);

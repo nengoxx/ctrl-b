@@ -901,35 +901,88 @@ describe("OF-4 · the hint bubble carries the too-short teaching", () => {
 //
 // S2.5 broke measure-once's premise: a streaming recording is long, and the bar reflows under it —
 // the keyboard collapses at record start, the field auto-grows as phrases append, and `sendable`
-// flipping used to slide send in and shift the mic left. Two rules close the class, and both are
-// pinned here: the ANCHOR TRACKS the button (event-driven re-measure), and the ROW FREEZES (the
-// trailing controls may not CHANGE while a recording is live — a latch, not a hide).
+// flipping used to slide send in and shift the mic left. Two rules close the class, both pinned
+// here: the ANCHOR TRACKS the button while the chrome stands FINGER-FREE (locked/chip — while a
+// finger owns the gesture the chrome is finger-relative BY DESIGN, review F2), and the ROW FREEZES
+// (the trailing controls may not CHANGE while a recording is live — a latch, not a hide).
 
-describe("the anchor TRACKS the button while the chrome is open", () => {
-  it("re-measures on a viewport resize: the circle follows the bar the keyboard-collapse moved", async () => {
-    // A synchronous rAF (returning 0 so the coalescing slot stays free) — the effect's coalescer is
-    // real-rAF-shaped; the arm only needs the re-measure to land inside its own `act`.
+describe("the anchor TRACKS the button while the chrome stands finger-free", () => {
+  /** A ResizeObserver the arm can FIRE — jsdom has none, and a stub that merely exists would let
+   *  the listener wiring rot silently (review F4: the old arm drove only window.resize). */
+  class FakeRO {
+    static all: FakeRO[] = [];
+    targets: Element[] = [];
+    constructor(public cb: () => void) {
+      FakeRO.all.push(this);
+    }
+    observe(t: Element) {
+      this.targets.push(t);
+    }
+    disconnect() {
+      this.targets = [];
+    }
+  }
+
+  it("holds are finger-relative; the lock's catch-up read, the BAR observer and visualViewport all re-measure", async () => {
+    // A synchronous rAF (returning 0 keeps the coalescing slot free — the effect's `raf ||=`).
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
       cb(0);
       return 0;
     });
-    render(composed(LineComposer));
-    const host = document.querySelector<HTMLElement>(".mic-gesture")!;
-    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(0, 600, 360, 120));
-    const btnRect = vi
-      .spyOn(mic(), "getBoundingClientRect")
-      .mockReturnValue(rect(300, 650, 36, 36));
-    await hold();
-    expect(host.style.getPropertyValue("--mg-y")).toBe("68px"); // 650 + 18 − 600
-    // The keyboard hides: the bar drops 80px inside the host. jsdom has no ResizeObserver and no
-    // visualViewport, so the WINDOW-resize listener is the one this arm can drive — same handler.
-    btnRect.mockReturnValue(rect(300, 730, 36, 36));
-    await act(async () => {
-      window.dispatchEvent(new Event("resize"));
+    FakeRO.all = [];
+    vi.stubGlobal("ResizeObserver", FakeRO);
+    const vvHandlers: Array<() => void> = [];
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: {
+        addEventListener: (t: string, h: () => void) => {
+          if (t === "resize") vvHandlers.push(h);
+        },
+        removeEventListener: () => {},
+      },
     });
-    expect(host.style.getPropertyValue("--mg-y")).toBe("148px"); // tracked, not stale
-    up();
-    await tick(HELD_MS);
+    try {
+      render(composed(LineComposer));
+      const host = document.querySelector<HTMLElement>(".mic-gesture")!;
+      vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(0, 500, 360, 220));
+      const btnRect = vi
+        .spyOn(mic(), "getBoundingClientRect")
+        .mockReturnValue(rect(300, 650, 36, 36));
+      await hold();
+      expect(host.style.getPropertyValue("--mg-y")).toBe("168px"); // 650 + 18 − 500
+      // The keyboard collapses DURING the hold: the chrome is finger-relative while a hand owns it
+      // (review F2) — nothing may chase the bar out from under a stationary finger.
+      btnRect.mockReturnValue(rect(300, 700, 36, 36));
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(host.style.getPropertyValue("--mg-y")).toBe("168px"); // untouched: a finger owns it
+      // …but the LOCK's catch-up read recovers it the moment the hand lets go.
+      move(X0, Y0 - LOCK_PX);
+      await tick(20);
+      expect(host.style.getPropertyValue("--mg-y")).toBe("218px"); // 700 + 18 − 500
+      // The RO watches the BAR (review F1: the host is `.kit-main`, whose box never changes when
+      // the bottom-anchored bar grows upward) — firing it is intrinsic growth, re-measured…
+      const ro = FakeRO.all.at(-1)!;
+      expect(ro.targets).toContain(document.querySelector(".kit-composer"));
+      btnRect.mockReturnValue(rect(300, 640, 36, 36));
+      await act(async () => {
+        ro.cb();
+      });
+      expect(host.style.getPropertyValue("--mg-y")).toBe("158px");
+      // …and the visualViewport's own resize (the keyboard) is the second door to the same read.
+      btnRect.mockReturnValue(rect(300, 600, 36, 36));
+      await act(async () => {
+        for (const h of vvHandlers) h();
+      });
+      expect(host.style.getPropertyValue("--mg-y")).toBe("118px");
+      up(); // locked: the owning pointer's release is a no-op (R69 §1.5)
+      fireEvent.click(cancelBtn()!);
+      await tick(10);
+    } finally {
+      delete (window as { visualViewport?: unknown }).visualViewport;
+      vi.unstubAllGlobals(); // the next test's beforeEach re-stubs what it owns
+    }
   });
 });
 
@@ -954,5 +1007,21 @@ describe("the ROW FREEZE · the trailing controls may not change while a recordi
     expect(document.getElementById("cmd-send")).not.toBeNull(); // hiding it would be the same jank
     up();
     await tick(HELD_MS);
+  });
+
+  it("the control stack cannot ENGAGE mid-recording — it waits for the release too (review F4)", async () => {
+    render(composed(LineComposer));
+    const field = document.getElementById("cmd-input")!;
+    let content = 22;
+    Object.defineProperty(field, "scrollHeight", { configurable: true, get: () => content });
+    await hold();
+    // Six lines land mid-dictation: the resting field paints the trio's 112 — stack-eligible, but
+    // the decision is FROZEN with the row (the same jank through the other door).
+    content = 132;
+    act(() => setDraft("one\ntwo\nthree\nfour\nfive\nsix"));
+    expect(document.querySelector(".line-cluster.stack")).toBeNull();
+    up();
+    await tick(HELD_MS);
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull(); // released → the rules run
   });
 });

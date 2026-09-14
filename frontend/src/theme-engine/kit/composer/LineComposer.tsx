@@ -151,7 +151,10 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   // re-test (the final confirm's catch: without this, a survived change left `entryNeeds` stale and
   // every later input re-tested strictly, quietly killing the hysteresis for the whole episode).
   // Idempotent while nothing changes, so it rides every render.
-  if (nextStacked) entryNeeds.current = stackNeeds;
+  // …and NOT while the row is frozen (review F3): a needs change landing mid-recording (staging a
+  // file hands-free) must still face the STRICT re-test on release — a baseline rewritten under
+  // the freeze would quietly hand it the permissive `holds` band instead.
+  if (!recording && nextStacked) entryNeeds.current = stackNeeds;
   if (nextStacked !== stacked && flippedFor.current !== stackCtx) {
     flippedFor.current = stackCtx;
     setStacked(nextStacked);
