@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   dismiss,
+  getPlayStatus,
   openCallVoiceGate,
   setCallVoice,
+  subscribePlayback,
   useMouthFailures,
-  usePlayback,
   type PlayStatus,
 } from "../lib/audioController";
 import { sendCallTranscript } from "../lib/composer";
@@ -479,10 +480,20 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // screen, and only a screen that was showing the interrupted turn may be repainted — a kill that
       // settles while the leg is down must leave `connecting` standing, because the floor is genuinely
       // not the owner's yet.
+      // …but WHICH repaint consults the mouth (S3 review F1): a `playbackStarted` that landed during
+      // the kill re-set `mouthLive` — something genuinely started talking after the dismiss — and a
+      // settlement that painted `listening` over it would also DRAIN the queue into a reply still
+      // speaking (`held()` reads the phase this arm writes). Landing on `speaking` keeps the queue
+      // held and leaves the handoff where it already lives: the real `playbackDrained` drains it.
       const next: CallState = {
         ...s,
         killing: false,
-        phase: s.phase === "speaking" || s.phase === "thinking" ? "listening" : s.phase,
+        phase:
+          s.phase === "speaking" || s.phase === "thinking"
+            ? s.mouthLive
+              ? "speaking"
+              : "listening"
+            : s.phase,
       };
       return drain(next);
     }
@@ -845,27 +856,54 @@ export function useLiveCall(): CallView {
   }, [voice === undefined]);
 
   // ── the mouth, watched (§4.2: `speaking` is C3 playback, observed — never inferred) ────────────
-  const playStatus = usePlayback((p) => p.status);
+  // A SYNCHRONOUS store subscription, not a render-time effect (S3 review F2). The controller's `emit`
+  // runs listeners inside the very `set()` the media `play` event handler made, so everything below —
+  // the signal AND the hardware hold on its heels — lands in the SAME task as the audible start. The
+  // effect this replaced paid a render + a paint before the hold could reach `track.enabled`, and on a
+  // leaking track (Fennec) that window put the reply's own first words into the relay: a short reply
+  // could drain before their transcript came back, and the leaked final walked in through an open ear.
+  // Two knock-ons the timing closes at the root: no leak ⇒ no leak-window `speech_started` whose
+  // `speech_stopped` the engaged hold would then drop (a stranded `userSpeechActive` is a phantom
+  // iron-rule kill of the NEXT reply), and no re-open race between a pre-play hold and a stale effect.
+  //
+  // RE-ENTRANCY, now real and deliberately safe: a kill effect's own `dismiss()` moves the status and
+  // this listener fires INSIDE that `send`'s effect loop. It is sound for the same reason every other
+  // synchronous callback is — `send` writes `ref.current` before it runs effects, so the re-entrant
+  // reduce sees the killing state it must (and its `playbackDrained` is dropped by the `killing` guard).
   const prevPlay = useRef<PlayStatus>("idle");
   useEffect(() => {
-    const was = prevPlay.current;
-    prevPlay.current = playStatus;
-    if (was === playStatus) return;
-    const gen = ref.current.gen;
-    if (playStatus === "playing") send({ type: "playbackStarted", gen });
-    // Synthesis that never produced a sample is the mouth FAILING; audio that played and stopped is the
-    // reply finishing (or our own kill, which the machine's `killing` flag tells apart). Kept as BELT
-    // beside the explicit tick below — the reducer dedupes (a nonfatal note and back to listening).
-    else if (was === "loading" && playStatus === "idle") send({ type: "playbackFailed", gen });
-    // "loading" is the mouth still BUSY — a mid-reply synthesis gap the read-along queue publishes
-    // honestly. The reply is not over, so this is no drain; and because a reply that ENDS inside such a
-    // gap goes loading→paused, the drain has to be "the mouth stopped", not "it stopped while playing".
-    else if (playStatus !== "loading" && (was === "playing" || was === "loading"))
-      send({ type: "playbackDrained", gen });
-  }, [playStatus, send]);
+    const onPlayback = (): void => {
+      const status = getPlayStatus();
+      const was = prevPlay.current;
+      if (was === status) return; // the store emits for time/intent too — only the status edge matters
+      prevPlay.current = status;
+      const gen = ref.current.gen;
+      if (status === "playing") send({ type: "playbackStarted", gen });
+      // Synthesis that never produced a sample is the mouth FAILING; audio that played and stopped is
+      // the reply finishing (or our own kill, which the machine's `killing` flag tells apart). Kept as
+      // BELT beside the explicit tick below — the reducer dedupes (a nonfatal note, back to listening).
+      else if (was === "loading" && status === "idle") send({ type: "playbackFailed", gen });
+      // "loading" is the mouth still BUSY — a mid-reply synthesis gap the read-along queue publishes
+      // honestly. The reply is not over, so this is no drain; and because a reply that ENDS inside such
+      // a gap goes loading→paused, the drain has to be "the mouth stopped", not "stopped while playing".
+      else if (status !== "loading" && (was === "playing" || was === "loading"))
+        send({ type: "playbackDrained", gen });
+      // THE ENGAGE-PATH HOLD (F2's fix): `send` is synchronous, so by this line the reducer AND the
+      // normalize have already answered — the hold reaches the track before this task yields, ahead of
+      // the first frame that could carry the reply back into the mic. The state effect below stays as
+      // the applier for every rule change that does not ride a playback edge (the kill, the terminal).
+      capture.current?.setHeld(ref.current.earHeld);
+    };
+    const unsub = subscribePlayback(onPlayback);
+    // One initial pass, exactly like the effect this replaced: a status already standing at mount is a
+    // transition the machine has not seen (the door makes it `idle` by construction — this is the belt).
+    onPlayback();
+    return unsub;
+  }, [send]);
 
   // ── the ear-hold, applied to the track (S3) ───────────────────────────────────────────────────
-  // The rule lives in the reducer; this is the one place it reaches the hardware. Cheap and idempotent
+  // The rule lives in the reducer; this is the general path to the hardware (the playback subscription
+  // above applies it synchronously on the edges where a render's delay would leak). Cheap and idempotent
   // (`track.enabled` against the stored pair — see `PcmCapture.setHeld`), so an effect that re-runs on a
   // state the hold did not move costs nothing.
   useEffect(() => {

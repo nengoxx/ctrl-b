@@ -553,6 +553,28 @@ describe("callReduce — the mouth is not the phase (S3 · mouthLive)", () => {
     expect(settled.state.killing).toBe(false);
   });
 
+  it("a kill settling under REPLACEMENT playback lands on SPEAKING and keeps the queue held (F1)", () => {
+    // The barge's own `dismiss()` silenced the first reply — but something genuinely started talking
+    // again while the cancel settled (`playbackStarted` during `killing` re-sets the flag by design).
+    // A settlement that painted `listening` over it would also DRAIN the queue into a reply still
+    // speaking (`held()` reads the phase the arm writes) — and on a held track it would do so with the
+    // ear closed under a screen claiming the floor is free.
+    const killing = run(holdingSpeaking, [{ type: "barge" }]).state;
+    const replaced = run(killing, [
+      { type: "playbackStarted" },
+      { type: "final", text: "no, the other one" },
+    ]);
+    expect(replaced.state.mouthLive).toBe(true);
+    expect(submits(replaced.out)).toEqual([]); // the kill still holds the queue
+    const settled = run(replaced.state, [{ type: "killSettled" }]);
+    expect(settled.state.phase).toBe("speaking"); // the mouth is audible — the screen must say so
+    expect(submits(settled.out)).toEqual([]); // …and `speaking` is itself a hold: nothing drains yet
+    expect(settled.state.earHeld).toBe(true); // the leak protection stands over the live audio
+    const over = run(settled.state, [{ type: "playbackDrained" }]);
+    expect(submits(over.out)).toEqual(["no, the other one"]); // the REAL drain is the release
+    expect(over.state.phase).toBe("thinking"); // …and the submit puts the brain to work
+  });
+
   it("a reply that ENDS during the reconnect leaves the fresh leg listening", () => {
     // The drain arrives with the screen on `connecting`, so the arm declines to repaint — but the FLAG
     // lands, and it is the flag `ready` consults. Without that the call would come back claiming to be

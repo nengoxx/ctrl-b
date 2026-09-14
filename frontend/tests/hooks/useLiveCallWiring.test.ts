@@ -28,6 +28,10 @@ const h = vi.hoisted(() => ({
     },
   },
   play: { status: "idle" },
+  /** The controller's store listeners (S3: the wiring subscribes; it no longer reads status on
+   *  render). `setPlay` below is the one way the cases move the status — assignment alone would
+   *  change a value nobody is told about, exactly like the real store without its `emit`. */
+  playbackSubs: new Set<() => void>(),
   chat: { status: "idle" },
   confirm: false,
   failures: 0,
@@ -63,7 +67,11 @@ vi.mock("../../src/lib/audioController", () => ({
   openCallVoiceGate: h.openGate,
   setCallVoice: h.setCallVoice,
   useMouthFailures: () => h.failures,
-  usePlayback: (sel: (p: { status: string }) => unknown) => sel(h.play),
+  getPlayStatus: () => h.play.status,
+  subscribePlayback: (cb: () => void) => {
+    h.playbackSubs.add(cb);
+    return () => h.playbackSubs.delete(cb);
+  },
 }));
 vi.mock("../../src/lib/composer", () => ({ sendCallTranscript: h.sendCall }));
 vi.mock("../../src/lib/liveSocket", () => ({
@@ -105,8 +113,16 @@ vi.mock("../../src/hooks/useVoiceStatus", () => ({ useVoiceStatus: () => h.voice
 
 import { useLiveCall } from "../../src/hooks/useLiveCall";
 
+/** Move the playback status the way the real store does: write, then tell the listeners — in the same
+ *  task, which is the whole S3 contract the wiring now rides (see the sync-hold suite). */
+const setPlay = (status: string): void => {
+  h.play = { status };
+  for (const cb of h.playbackSubs) cb();
+};
+
 beforeEach(() => {
   h.play = { status: "idle" };
+  h.playbackSubs.clear();
   h.chat = { status: "idle" };
   h.confirm = false;
   h.failures = 0;
@@ -184,37 +200,37 @@ describe("useLiveCall — the read-along gate (§4.5)", () => {
 describe("useLiveCall — the mouth, watched", () => {
   it("a mid-reply synthesis GAP is not the reply ending", async () => {
     const { step, say } = await call();
-    await step(() => (h.play = { status: "playing" }));
+    await step(() => setPlay("playing"));
     await say("queue this");
     expect(texts()).toEqual([]); // held while the mouth is open
 
-    await step(() => (h.play = { status: "loading" })); // the read-along queue caught up mid-reply
+    await step(() => setPlay("loading")); // the read-along queue caught up mid-reply
     expect(texts()).toEqual([]); // …which is NOT a drain: nothing goes out yet
-    await step(() => (h.play = { status: "playing" })); // the next chunk lands
+    await step(() => setPlay("playing")); // the next chunk lands
     expect(texts()).toEqual([]);
 
-    await step(() => (h.play = { status: "paused" })); // NOW the reply is over
+    await step(() => setPlay("paused")); // NOW the reply is over
     expect(texts()).toEqual(["queue this"]);
   });
 
   it("…and a reply that ENDS inside such a gap still drains", async () => {
     const { step, say } = await call();
-    await step(() => (h.play = { status: "playing" }));
+    await step(() => setPlay("playing"));
     await say("after you");
-    await step(() => (h.play = { status: "loading" }));
-    await step(() => (h.play = { status: "paused" })); // the flush found nothing left to speak
+    await step(() => setPlay("loading"));
+    await step(() => setPlay("paused")); // the flush found nothing left to speak
     expect(texts()).toEqual(["after you"]);
   });
 
   it("an explicit mouth FAILURE tick says so — the transport alone cannot", async () => {
     const { view, step, say } = await call();
     await say("say something");
-    await step(() => (h.play = { status: "playing" }));
+    await step(() => setPlay("playing"));
     expect(view.result.current.phase).toBe("speaking");
 
     // A rejected play() publishes "paused" — an ordinary-looking transition. The counter is the signal.
     await step(() => {
-      h.play = { status: "paused" };
+      setPlay("paused");
       h.failures = 1;
     });
     expect(view.result.current.phase).toBe("listening");
@@ -354,7 +370,7 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
     fennec();
     const { view, step, say } = await call();
     expect(h.setHeld).toHaveBeenLastCalledWith(false); // nothing is speaking yet
-    await step(() => (h.play = { status: "playing" }));
+    await step(() => setPlay("playing"));
     expect(h.setHeld).toHaveBeenLastCalledWith(true); // the reply is audible ⇒ the ear closes
 
     // …and what the ear still delivers from that stretch is the phone hearing ITSELF.
@@ -362,7 +378,7 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
     expect(texts()).toEqual([]);
     expect(view.result.current.heard).toBe("");
 
-    await step(() => (h.play = { status: "paused" })); // the reply ends…
+    await step(() => setPlay("paused")); // the reply ends…
     expect(h.setHeld).toHaveBeenLastCalledWith(false);
     await say("what happened next");
     expect(texts()).toEqual(["what happened next"]); // …and the ear is the owner's again
@@ -370,17 +386,17 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
 
   it("a SUBTRACTIVE track holds nothing — the ear stays open under the reply", async () => {
     const { step, say } = await call(); // `echoCancellation: "all"` by default
-    await step(() => (h.play = { status: "playing" }));
+    await step(() => setPlay("playing"));
     expect(h.setHeld).not.toHaveBeenCalledWith(true);
     await say("wait, stop"); // walkie-talkie: it queues, and drains when the reply ends
-    await step(() => (h.play = { status: "paused" }));
+    await step(() => setPlay("paused"));
     expect(texts()).toEqual(["wait, stop"]);
   });
 
   it("`on` and `off` are the owner's override of that reading, not a second reading", async () => {
     h.voice.data.live_call.echo_workaround = "on";
     const forced = await call(); // …on a track that reads `all` and would otherwise hold nothing
-    await forced.step(() => (h.play = { status: "playing" }));
+    await forced.step(() => setPlay("playing"));
     expect(h.setHeld).toHaveBeenLastCalledWith(true);
     forced.view.unmount();
 
@@ -389,7 +405,7 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
     h.voice.data.live_call.echo_workaround = "off";
     fennec();
     const never = await call();
-    await never.step(() => (h.play = { status: "playing" }));
+    await never.step(() => setPlay("playing"));
     expect(h.setHeld).not.toHaveBeenCalledWith(true);
   });
 
@@ -418,6 +434,21 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
     // the render the track must not have spent open.
     expect(h.order.slice(0, 2)).toEqual(["held:true", "socket"]);
     view.unmount();
+  });
+
+  it("the ENGAGE is synchronous with the play edge — before React renders (review F2)", async () => {
+    // The physics the subscription exists for: the controller's `emit` runs inside the media `play`
+    // handler's own `set()`, and the hold must reach `track.enabled` in that SAME task — a hold that
+    // waits for a render lets the reply's first frames into the mic (and, on a short reply, their
+    // transcript back in through a reopened ear). So the assertion sits INSIDE the synchronous
+    // window: the listeners have fired and nothing has rendered or flushed an effect yet.
+    fennec();
+    await call();
+    h.setHeld.mockClear();
+    act(() => {
+      setPlay("playing");
+      expect(h.setHeld).toHaveBeenCalledWith(true); // same task — no render happened yet
+    });
   });
 });
 

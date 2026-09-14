@@ -69,7 +69,7 @@ export interface ChunkPolicy extends ChunkCfg {
   readAlong: boolean;
 }
 
-const { emit, useStore } = createStore();
+const { emit, useStore, subscribe } = createStore();
 const IDLE: Playback = {
   id: null,
   status: "idle",
@@ -1219,6 +1219,22 @@ export function clearAudioCache(): void {
  */
 export function usePlayback<T>(selector: (p: Playback) => T): T {
   return useStore(() => selector(pb));
+}
+
+/** Non-React subscription to the same store (the `useEvents` cache precedent). The point of it is
+ *  TIMING, not convenience: `emit` runs its listeners SYNCHRONOUSLY inside the `set()` that published
+ *  the change, so a subscriber runs in the same task as the media event itself — where a React effect
+ *  waits for a render and a paint. The call machine's ear-hold needs exactly that (S3 review F2: a
+ *  hold that reaches the track one render after the `play` event has already let the reply's first
+ *  frames into the mic). Read the current state through `getPlayStatus`; the callback gets no payload. */
+export function subscribePlayback(cb: () => void): () => void {
+  return subscribe(cb);
+}
+
+/** The status, readable OUTSIDE React — the subscription's companion (a hook cannot be called from a
+ *  store listener). */
+export function getPlayStatus(): PlayStatus {
+  return pb.status;
 }
 
 /** Write the queue's play INTENT and PUBLISH it. Intent moves without the status moving — that is the
