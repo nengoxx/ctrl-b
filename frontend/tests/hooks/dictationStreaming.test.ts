@@ -19,6 +19,9 @@ const h = vi.hoisted(() => ({
   sent: [] as string[],
   /** Every binary frame the leg shipped, in order — the backlog drain's whole assertion. */
   audio: [] as ArrayBuffer[],
+  /** …and the `performance.now()` each one went out at. The pacer's assertion is a rolling WINDOW,
+   *  because that is the currency the relay's own uplink budget is written in (F5). */
+  audioAt: [] as number[],
   /** The relay's downlink door, and its close — the case IS the relay. */
   frame: null as ((f: LiveDown) => void) | null,
   close: null as (() => void) | null,
@@ -45,7 +48,10 @@ vi.mock("../../src/lib/liveSocket", () => ({
     h.frame = opts.onFrame;
     h.close = () => opts.onClose(1006, "");
     return {
-      sendAudio: (buf: ArrayBuffer) => h.audio.push(buf),
+      sendAudio: (buf: ArrayBuffer) => {
+        h.audio.push(buf);
+        h.audioAt.push(performance.now());
+      },
       flush: () => h.sent.push("flush"),
       stop: () => h.sent.push("stop"),
       close: () => h.sent.push("close"),
@@ -71,7 +77,7 @@ vi.mock("../../src/lib/pcmCapture", () => ({
 }));
 
 import { useDictation } from "../../src/hooks/useDictation";
-import { FakeMediaRecorder, mockStt, setMediaDevices } from "./dictationFakes";
+import { FakeMediaRecorder, gateMediaDevices, mockStt, setMediaDevices } from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
 import { pushToast } from "../../src/store/toast";
@@ -184,11 +190,19 @@ function phrase(text: string): void {
 }
 
 /** One `frame_ms` worth of microphone audio. The BYTE VALUE identifies the frame, so a case can pin
- *  the drain's ORDER rather than merely its count. */
+ *  the drain's ORDER rather than merely its count.
+ *
+ *  IT CARRIES ITS OWN `frame_ms` OF WALL CLOCK (S2.5 review F5): a worklet frame IS that much elapsed
+ *  time, and since the drain is metered by `performance.now()` rather than by callback count, a helper
+ *  that shipped frames at an instant would be modelling a main-thread stall, not a microphone. The
+ *  stall has its own helper below, which is the whole point of the split. */
 function mic(n: number): void {
   const buf = new ArrayBuffer(8);
   new Uint8Array(buf)[0] = n;
-  act(() => h.onFrame?.({ buf, rms: micLevel }));
+  act(() => {
+    vi.advanceTimersByTime(KNOBS.frame_ms);
+    h.onFrame?.({ buf, rms: micLevel });
+  });
 }
 
 const shipped = (): number[] => h.audio.map((b) => new Uint8Array(b)[0]);
@@ -233,6 +247,7 @@ beforeEach(() => {
   contexts = [];
   h.sent = [];
   h.audio = [];
+  h.audioAt = [];
   h.opens = [];
   h.frame = null;
   h.close = null;
@@ -341,7 +356,9 @@ describe("useDictation · streaming ① frames buffer until `ready`, then drain 
     // The BACKLOG goes first: audio order is the contract, so the live frame queues behind it.
     expect(shipped()).toEqual([1]);
     mic(4);
-    // …and the catch-up frame rides every second live frame (1.5× realtime, under the relay's 2×).
+    // …and the catch-up frame rides every second live frame: at the ordinary cadence each callback
+    // banks 1.5 × 40 ms, so the bucket spends one frame and half a catch-up frame — exactly the net
+    // the old per-callback ratio gave, in the same order (F5 changed the METER, not the pace).
     expect(shipped()).toEqual([1, 2, 3]);
     mic(5);
     expect(shipped()).toEqual([1, 2, 3, 4]);
@@ -361,6 +378,74 @@ describe("useDictation · streaming ① frames buffer until `ready`, then drain 
     // (the notice itself is ⑧'s, above — it is latched per page load and a file is one page load)
     // …and the recording underneath never noticed: the clip is the whole answer (R70 §8).
     expect(result.current.status).toBe("recording");
+    await release(result);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(getDraft()).toBe("the whole clip");
+  });
+});
+
+// ── rule ① (continued) · the PACER is a WALL CLOCK, not a callback ratio (S2.5 review F5) ──────────
+
+/** The relay's own uplink budget, restated in its own arithmetic (`services/voice_live.py`:
+ *  `RATE_MULTIPLIER` 2 × `RATE_WINDOW_S` 2.0). TWO budgets ride one rolling window — a FRAME count and
+ *  a 2×-realtime MS total — and tripping either is a protocol close in the middle of a recording. */
+const RELAY_WINDOW_MS = 2000;
+const RELAY_FRAME_BUDGET = Math.trunc(2 * (1000 / KNOBS.frame_ms) * (RELAY_WINDOW_MS / 1000)); // 100
+const RELAY_MS_BUDGET = 2 * RELAY_WINDOW_MS; // 4000 ms of audio in the window
+
+/** The worst rolling-window load the wire ever saw, in FRAMES — the one number both relay budgets read
+ *  off (`× frame_ms` gives the ms total). */
+function worstWindowFrames(): number {
+  let worst = 0;
+  for (let i = 0; i < h.audioAt.length; i++) {
+    let n = 0;
+    while (i + n < h.audioAt.length && h.audioAt[i + n] - h.audioAt[i] < RELAY_WINDOW_MS) n += 1;
+    if (n > worst) worst = n;
+  }
+  return worst;
+}
+
+/** A MAIN-THREAD STALL: the worklet kept producing through it, and its MessagePort deliveries then
+ *  arrive in ONE dispatch — every queued frame at the same instant, carrying no wall clock with them.
+ *  That is the hazard a per-callback ratio cannot see, because it counts callbacks. */
+function stallThenBurst(stallMs: number): void {
+  act(() => {
+    vi.advanceTimersByTime(stallMs);
+  });
+  act(() => {
+    for (let i = 0; i < Math.floor(stallMs / KNOBS.frame_ms); i++) {
+      h.onFrame?.({ buf: new ArrayBuffer(8), rms: micLevel });
+    }
+  });
+}
+
+describe("useDictation · streaming ① a stall's burst cannot outrun the relay's rolling budget", () => {
+  it("meters the dispatch by the clock the burst does not carry", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    for (let i = 0; i < 50; i++) mic(i); // two seconds of ordinary cadence, one frame per 40 ms
+    stallThenBurst(5000); //                …then five seconds of jank, delivered in one tick
+    // Paced per CALLBACK, those 125 queued deliveries are 125 sends at one instant — over the relay's
+    // frame budget AND its 2×-realtime ms budget, i.e. a protocol close mid-recording. Paced by the
+    // clock, the burst may spend only what the bucket banked (`BUCKET_CAP_MS`).
+    expect(worstWindowFrames()).toBeLessThanOrEqual(RELAY_FRAME_BUDGET);
+    expect(worstWindowFrames() * KNOBS.frame_ms).toBeLessThanOrEqual(RELAY_MS_BUDGET);
+    expect(shipped().length).toBeGreaterThan(50); // …and it did keep draining, not stall the uplink
+  });
+
+  it("…and what the burst leaves queued is STALE SPEECH: the leg goes, the clip carries the words", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    stallThenBurst(5000);
+    // Past `ready` a queue this deep is not a handshake that never came — it is audio the ear would
+    // transcribe into a turn the owner has long since moved past (the S2a doctrine, one layer up).
+    expect(h.sent).toContain("close");
+    await act(async () => {
+      h.close?.(); // the socket's close completes: 0 phrases ⇒ the ordinary SILENT degrade
+    });
+    expect(result.current.status).toBe("recording"); // the recording underneath never noticed
     await release(result);
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(getDraft()).toBe("the whole clip");
@@ -452,6 +537,144 @@ describe("useDictation · streaming ② the release is flush → tail → stop, 
     });
     expect(h.sent).toEqual(["flush", "stop", "close"]); // resolved without the timeout
     expect(globalThis.fetch).toHaveBeenCalledTimes(1); // …and it did NOT count as a phrase
+  });
+});
+
+// ── rule ② (continued) · the wait COUNTS the endpoints it is owed (S2.5 review F1) ────────────────
+
+describe("useDictation · streaming ② the tail wait counts endpoints, it does not wake on a final", () => {
+  it("a final still in transit does not end the wait — the phrase the flush is minting is the point", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    act(() => {
+      h.frame?.({ type: "speech_started" }); // phrase A…
+      h.frame?.({ type: "speech_stopped" }); // …endpointed, its final still travelling
+      h.frame?.({ type: "speech_started" }); // …and the owner is already saying B
+    });
+    act(() => result.current.stop()); // released mid-B: the flush is what will endpoint it
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush"]);
+    // A's late final lands FIRST. Waking on it would send `stop` — which DISCARDS unendpointed audio
+    // — and B would be gone from the stream AND from the clip, which the either/or then drops.
+    act(() => h.frame?.({ type: "transcript", text: "wake corsair", final: true }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush"]); // still waiting: two endpoints, one answer
+    act(() => {
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text: "and check its uptime", final: true });
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(getDraft()).toBe("wake corsair and check its uptime");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("…and the FLOOR holds a release the ledger says owes nothing: VAD lags the words", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    act(() => h.frame?.({ type: "speech_started" }));
+    phrase("first"); // one endpoint, one final — the ledger is square
+    act(() => result.current.stop()); // …but the owner kept talking, and VAD has not said so yet
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush"]); // the floor, not the count: an "owes nothing ⇒ resolve now"
+    phrase("the tail"); //                would `stop` before the flush's own endpoint could answer
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(getDraft()).toBe("first the tail");
+  });
+});
+
+// ── rule ⑦ (continued) · a death DURING the release (S2.5 review F2) ──────────────────────────────
+
+describe("useDictation · streaming ⑦ a close under the release wakes it, and names what was lost", () => {
+  it("resolves at once rather than stalling on `tail_wait_ms`, and says the tail is gone", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("half of it");
+    act(() => result.current.stop());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush"]); // the wait is open
+    await act(async () => {
+      h.close?.(); // …and the socket dies under it
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // NOT ONE TIMER WAS ADVANCED: the wait ended on the close. Swallowed, this parks the mic in
+    // `sending` for the full `tail_wait_ms` waiting for a tail that cannot arrive.
+    expect(result.current.status).toBe("idle");
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Voice connection lost"), "err");
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // words in the draft ⇒ the clip is still dropped
+    expect(getDraft()).toBe("half of it");
+  });
+
+  it("…and says nothing when nothing was appended: the clip still carries every word", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    await tick(1200); // a real recording — this one ends on the CLIP
+    act(() => result.current.stop());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      h.close?.();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(pushToast).not.toHaveBeenCalledWith(
+      expect.stringContaining("Voice connection lost"),
+      "err",
+    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(getDraft()).toBe("the whole clip");
+  });
+
+  it("…nor when the close rides the counted final itself — a finished release is not a loss", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("all of it");
+    act(() => result.current.stop());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // The tail lands and the relay hangs up in the SAME dispatch: the wait was satisfied before the
+    // close arrived, so nothing was lost and saying otherwise would be a lie.
+    act(() => {
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text: "and the tail", final: true });
+      h.close?.();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getDraft()).toBe("all of it and the tail");
+    expect(pushToast).not.toHaveBeenCalledWith(
+      expect.stringContaining("Voice connection lost"),
+      "err",
+    );
   });
 });
 
@@ -659,6 +882,34 @@ describe("useDictation · streaming ⑨ the three §9.3 rules", () => {
     expect(result.current.status).toBe("idle");
     expect(getDraft()).toBe("left running");
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("…and a lock published INSIDE the acquisition window still arms it (S2.5 review F3)", async () => {
+    // The gesture reaches `locked` while `getUserMedia` is still pending — a permission prompt, a
+    // slow mic — and publishes `handsFree`. `start()` resets that flag for its own press path, so the
+    // reset must land BEFORE the await: after it, it silently overwrites the lock and the idle stop
+    // is disarmed for the whole session, which then runs to the hard cap.
+    const gate = gateMediaDevices();
+    const { result } = renderHook(() => useDictation(withAutoStop()));
+    let armed!: Promise<boolean>;
+    act(() => {
+      armed = result.current.start();
+    });
+    act(() => {
+      result.current.handsFree.current = true; // the `locked` stage, mid-acquisition
+    });
+    await act(async () => {
+      gate.open();
+      await armed;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.status).toBe("recording");
+    ready();
+    phrase("left running");
+    micLevel = 0;
+    await tick(15_000); // `dictation_idle_s`
+    expect(h.sent[0]).toBe("flush"); // the ordinary release ran — the idle clock was armed
   });
 
   it("…and speech RESETS the idle run: it is continuous silence, not elapsed time", async () => {

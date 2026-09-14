@@ -257,16 +257,24 @@ export function useComposerChrome(
     const snap = () => {
       selRef.current = { start: ta.selectionStart, end: ta.selectionEnd };
     };
-    // Every way a caret moves in a textarea, and no more: keys (typing, arrows, Home/End), a tap or a
-    // drag's release, and the `select` event a range selection fires. A `selectionchange` listener
-    // would be one line fewer and is not universally supported for form controls on our two targets.
+    // Every way a caret moves in a textarea, and no more: keys (arrows, Home/End, a hardware
+    // keystroke), a tap or a drag's release, the `select` event a range selection fires — and `input`,
+    // which is the one that carries the SOFT keyboards (S2.5 review F4). Gboard and every IME advance
+    // a collapsed caret through composition with NO `keyup` at all, so a phone-typed draft would leave
+    // a stale snapshot and the next phrase's restore would yank the owner backwards through text they
+    // had just typed. `input` fires AFTER the value change with the post-edit caret — the correct
+    // snapshot point, not merely an extra one — and it covers paste and drop for free. (A
+    // `selectionchange` listener would be one line fewer and is not universally supported for form
+    // controls on our two targets.)
     ta.addEventListener("keyup", snap);
     ta.addEventListener("pointerup", snap);
     ta.addEventListener("select", snap);
+    ta.addEventListener("input", snap);
     return () => {
       ta.removeEventListener("keyup", snap);
       ta.removeEventListener("pointerup", snap);
       ta.removeEventListener("select", snap);
+      ta.removeEventListener("input", snap);
     };
   }, [taRef]);
   useLayoutEffect(() => {

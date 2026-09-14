@@ -71,9 +71,10 @@ import { pushToast } from "../store/toast";
 // THE FIVE RULES WORTH READING BEFORE EDITING ANY OF IT:
 //   ① FEED ONLY AFTER `ready`. Frames captured during the handshake BUFFER and drain ahead of the live
 //     frame once the relay answers — audio ORDER is the contract, and the first words of a sentence are
-//     exactly the ones a handshake would eat. The drain is paced under the relay's own 2×-realtime
-//     rolling budget (`services/voice_live.py::_note_frame`); a backlog past `buffered_ceiling_ms` is a
-//     handshake that is not coming, and streaming is abandoned for this recording.
+//     exactly the ones a handshake would eat. ONE queue carries both phases and ONE wall-clock token
+//     bucket meters it, under the relay's own 2×-realtime rolling budget
+//     (`services/voice_live.py::_note_frame`); a backlog past `buffered_ceiling_ms` is a handshake that
+//     is not coming (before `ready`) or stale speech (after it), and neither may reach the ear.
 //   ② THE RELEASE IS `flush` → AWAIT THE TAIL → `stop`. Never a commit: the client API has no such word
 //     and a commit during open speech KILLS the Speaches session (R70 §1.2 arm A). `flush` has no ack —
 //     the endpoint's own `speech_stopped`+`transcript` are the answer — and `stop` DISCARDS unendpointed
@@ -165,12 +166,26 @@ export function dictationAppends(): number {
   return streamAppends;
 }
 
-/** How many LIVE frames one buffered frame rides out with while a pre-`ready` backlog drains (rule ①).
- *  One extra per two = 1.5× realtime sustained, which clears a full `buffered_ceiling_ms` backlog in a
- *  couple of seconds while staying under the relay's own ceiling with margin: `_note_frame` closes the
- *  leg past 2× realtime in a rolling 2 s window, and draining at exactly 2× would sit ON that bound
- *  where one retained boundary frame is a protocol close. */
-const BACKLOG_DRAIN_EVERY = 2;
+/** THE UPLINK PACER (rule ①) — how much audio-time the one queue earns per millisecond of WALL CLOCK.
+ *  1.5× realtime sustained clears a full `buffered_ceiling_ms` backlog in a couple of seconds while
+ *  staying under the relay's own ceiling with margin: `_note_frame` closes the leg past 2× realtime in a
+ *  rolling 2 s window, and draining at exactly 2× would sit ON that bound where one retained boundary
+ *  frame is a protocol close.
+ *
+ *  WHY A CLOCK AND NOT A PER-CALLBACK RATIO (S2.5 review F5): the worklet's MessagePort deliveries QUEUE
+ *  while the main thread is stalled (heavy jank, an app-switch race) and then dispatch in one burst, so
+ *  anything paced per CALLBACK ships at dispatch speed — fifty queued callbacks are fifty sends in one
+ *  tick, straight through the relay's rolling window and into a protocol close mid-recording. A budget
+ *  earned from `performance.now()` cannot be outrun by a burst: the burst carries no wall clock with it. */
+const DRAIN_PACE = 1.5;
+
+/** …and the bucket's CEILING, which is what bounds that post-stall burst. The most the wire can take in
+ *  one dispatch is `BUCKET_CAP_MS` of banked audio, so over any rolling relay window the total is at most
+ *  `cap + DRAIN_PACE × window`. Against the relay's 2 s window that is 500 + 1.5×2000 = 3500 ms under its
+ *  2×-realtime budget of 4000 ms — and the same margin holds for its FRAME-count budget at any
+ *  `frame_ms`, because both sides scale by the frame size (3500/frame_ms frames against an allowance of
+ *  4000/frame_ms). */
+const BUCKET_CAP_MS = 500;
 
 /** A finished recording, out of the hook's refs and on its way to a decision: upload it, or drop it
  *  because the phrases already said what it says (rule ③). By VALUE — see `upload`'s `@param clip`. */
@@ -180,19 +195,42 @@ interface Clip {
   startedAt: number;
 }
 
-/** ONE streaming dictation session: the leg, its pre-`ready` backlog, and the counters the either/or
- *  rule and the two §9.3 clocks read. There is at most one — there is one recorder. */
+/** The release's bounded wait for the tail, as the two things that can end it.
+ *
+ *  It is NOT "the first final" any more (S2.5 review F1). A final still in transit when the owner
+ *  released would wake a first-final wait, and the `stop` that follows DISCARDS unendpointed audio —
+ *  so the phrase the flush was busy minting is thrown away, and the clip that also carried it has
+ *  already been discarded by the either/or. The wait therefore COUNTS: `noteFinal` is called by every
+ *  final that lands from the release onward, and it resolves only once as many have arrived as the
+ *  endpoint ledger said were owed. `wake` is the other half — a leg that died owes nothing more, and
+ *  parking on it for the full `tail_wait_ms` helps nobody. */
+interface TailWait {
+  noteFinal: () => void;
+  wake: () => void;
+}
+
+/** ONE streaming dictation session: the leg, its uplink queue, and the counters the either/or rule, the
+ *  release's tail accounting and the two §9.3 clocks read. There is at most one — there is one recorder. */
 interface StreamSession {
   /** Which leg this is. A socket's callbacks may outlive their session (`close()` only STARTS the
    *  handshake), so every one of them checks this against the live session — the `useLiveCall` fence. */
   leg: number;
   socket: LiveSocket;
-  /** Frames captured before `state: "ready"`, oldest first. Drained IN ORDER, ahead of live audio. */
+  /** THE uplink queue, oldest first — one FIFO for both phases (the handshake's buffer and every live
+   *  frame), because audio ORDER is the contract and a second path for "the live frame" is how a burst
+   *  gets to overtake the backlog. Drained only by the pacer below. */
   backlog: ArrayBuffer[];
   ready: boolean;
   /** Phrases actually APPENDED to the draft this session — rule ③'s only input. An empty final is not
    *  one: counting it would discard a clip that carries words nothing else has. */
   finals: number;
+  /** THE ENDPOINT LEDGER (S2.5 review F1) — every `speech_started`/`speech_stopped` the ear has
+   *  reported, and every FINAL it has answered with, empty ones included (an empty answer still
+   *  DISCHARGES an endpoint, which is the only thing this ledger is about). `finals` above keeps its
+   *  non-empty-only rule: the either/or's input is a different question and is unchanged. */
+  starts: number;
+  stops: number;
+  finalsSeen: number;
   /** The leg is gone (a close/error past `ready`, or the pre-`ready` ceiling abort). No flush is
    *  possible from here; the release choreography skips straight to the either/or. */
   dead: boolean;
@@ -203,11 +241,18 @@ interface StreamSession {
    *  queues the terminal events and whatever runs in that window (the unmount sweep) must not mistake
    *  this leg for one nobody is going to close. */
   finishing: boolean;
-  /** The backlog drain's pacing counter (see `BACKLOG_DRAIN_EVERY`). */
-  drain: number;
+  /** THE PACER's state (see `DRAIN_PACE`): audio-time the uplink may ship right now, and the
+   *  `performance.now()` the last grant was measured from. Both start at `ready` — budget earned
+   *  across a slow handshake would be spent in one dispatch, the very burst the cap exists to bound. */
+  budgetMs: number;
+  lastTick: number;
   uplink: PcmUplink | null;
-  /** Set only while the release is waiting for the tail; called by the first final that lands. */
-  tail: (() => void) | null;
+  /** The release's tail wait, while it is OPEN — null both before it is armed and after it ends. */
+  tail: TailWait | null;
+  /** …and it ended because the finals it counted actually ARRIVED (rather than by a timeout or a
+   *  wake). The mid-death honesty test (F2): a close AFTER that is the ear hanging up on a finished
+   *  release, which costs nothing, and saying "the rest of that wasn't captured" would be a lie. */
+  tailSatisfied: boolean;
   /** The two §9.3 clocks, both ticked by the ONE 100 ms detector poll — no timers of their own. */
   elapsedMs: number;
   idleMs: number;
@@ -382,7 +427,7 @@ export function useDictation({
       s.uplink = null;
       const tail = s.tail;
       s.tail = null;
-      tail?.();
+      tail?.wake();
       s.socket.close();
       setPending(false);
     },
@@ -565,9 +610,10 @@ export function useDictation({
    * THE RELEASE CHOREOGRAPHY (rule ②), owned by the ONE terminal that knows the recording is over.
    *
    * `flush` (a relay-side silence burst — the client may not mint one, §3.1's rate ceiling makes an
-   * 88-frame burst a protocol close) → await the tail final OR `tail_wait_ms` → `stop` → close. The
-   * order is the wire's, not a preference: `flush` has NO ack, so the endpoint's own transcript IS the
-   * response, and `stop` DISCARDS whatever the ear has not endpointed, so it can only come last.
+   * 88-frame burst a protocol close) → await the finals the ear still OWES us, or `tail_wait_ms` →
+   * `stop` → close. The order is the wire's, not a preference: `flush` has NO ack, so the endpoint's
+   * own transcript IS the response, and `stop` DISCARDS whatever the ear has not endpointed, so it can
+   * only come last — which is also why the wait COUNTS rather than waking on the first final (F1).
    *
    * IT RUNS TO COMPLETION EVEN IF THE COMPOSER UNMOUNTED MID-WAIT. Every outcome is a store write
    * (`appendDraft`/`runComposer`/the upload), the `setPhase` calls are no-ops on a dead component, and
@@ -585,19 +631,42 @@ export function useDictation({
       s.uplink?.stop(); // no microphone audio may reach the ear past the release
       s.uplink = null;
       if (!s.dead) {
+        // HOW MANY FINALS THE RELEASE IS OWED, snapshotted BEFORE the flush (S2.5 review F1). The ear
+        // reports an endpoint (`speech_stopped`) before it answers it (`transcript`), so the finals
+        // still in transit are exactly the endpoints it has not answered yet; and if speech is still
+        // OPEN at the release (`starts > stops`), the flush is about to mint ONE more endpoint — the
+        // phrase the owner had only just finished saying, which is the one this whole wait is for.
+        //
+        // THE FLOOR AT 1 IS THE RULE, not defensive dressing: VAD detection LAGS speech, so words
+        // spoken just before the release may not have produced their `speech_started` yet, and an
+        // "awaiting 0 ⇒ resolve now" would send `stop` — which DISCARDS unendpointed audio — before
+        // the flush's own endpoint could answer, re-opening the exact hole F1 closed. With the floor
+        // the nothing-pending case waits precisely as the shipped code did: one final, or the timeout.
+        const awaiting = Math.max(1, s.stops - s.finalsSeen + (s.starts > s.stops ? 1 : 0));
         s.socket.flush();
         setPending(true);
         await new Promise<void>((resolve) => {
+          let seen = 0;
           const timer = setTimeout(() => {
             s.tail = null;
             resolve();
           }, tailWaitMs);
-          // Woken by the FIRST final that lands from here — armed after the flush, so any final past
-          // this point is by construction one we have not already appended.
-          s.tail = () => {
+          // Armed after the flush, so every final counted here is by construction one we have not
+          // already appended. Whichever of the three endings comes first wins, and `s.tail = null`
+          // is what makes it exactly once.
+          const end = () => {
             clearTimeout(timer);
             s.tail = null;
             resolve();
+          };
+          s.tail = {
+            noteFinal: () => {
+              seen += 1;
+              if (seen < awaiting) return; // an earlier phrase's answer — the tail is still coming
+              s.tailSatisfied = true;
+              end();
+            },
+            wake: end,
           };
         });
         s.socket.stop();
@@ -651,6 +720,10 @@ export function useDictation({
             case "state":
               if (frame.state === "ready") {
                 s.ready = true; // …and the backlog starts draining on the next live frame
+                // The pacer's clock starts HERE, and EMPTY: a slow handshake must bank nothing, or
+                // its whole duration would be spent in one dispatch the moment audio is allowed.
+                s.budgetMs = 0;
+                s.lastTick = performance.now();
               } else if (frame.state === "ended") {
                 // The relay said its piece. Whether that costs the clip is the ordinary death rule.
                 socket.close();
@@ -658,21 +731,29 @@ export function useDictation({
               // `degraded` is the relay's overflow note; a dictation leg has nothing to show for it
               // and nothing to decide — the words it dropped are already gone.
               break;
+            case "speech_started":
+              s.starts += 1; // the ledger's open half — see `StreamSession.starts`
+              break;
             case "speech_stopped":
+              s.stops += 1; // …and its closed half: one endpoint the ear now owes a final for
               setPending(true); // "it heard you stop" — the gap R70 §7 wants painted
               break;
             case "transcript": {
               if (!frame.final) break; // we have no partials (§9.4); a future one is data, not text
+              s.finalsSeen += 1; // ANY final discharges an endpoint, empty or not
               const text = frame.text.trim();
               if (text) {
                 appendDraft(text); // THE join rule, unchanged — `store/composer` already owns it
                 streamAppends += 1; // …and the caret seam's cue that THIS commit is a phrase landing
                 s.finals += 1;
               }
-              setPending(false);
-              // Any final ends a release's wait, empty or not: the ear has answered, and an empty
-              // answer is still the answer (it just does not count toward the either/or).
-              s.tail?.();
+              // The pulse says what is still OWED rather than "the last one landed": a second endpoint
+              // the ear has not answered yet keeps it lit instead of blinking off between two phrases.
+              setPending(s.stops > s.finalsSeen);
+              // Any final counts toward a release's wait, empty or not — the ear has answered, and an
+              // empty answer is still the answer (it just does not count toward the either/or). The
+              // wait itself decides when ENOUGH of them have landed (F1).
+              s.tail?.noteFinal();
               break;
             }
             case "error":
@@ -683,7 +764,24 @@ export function useDictation({
         },
         onClose: () => {
           const s = mine();
-          if (!s || s.finishing) return; // the release owns its own close
+          if (!s) return;
+          if (s.finishing) {
+            // THE RELEASE IS ALREADY RUNNING and the leg died underneath it (S2.5 review F2).
+            // Swallowing this — which "the release owns its own close" used to do — parks the
+            // choreography on the full `tail_wait_ms` for a tail that can no longer arrive, and then
+            // discards the clip in SILENCE when words are already in the draft. The release's own
+            // close cannot reach here: it marks the session `closed` in the same synchronous step, so
+            // `mine()` is already null by the time that close event lands.
+            s.dead = true; // …so a release that has not flushed yet skips straight to the either/or
+            const tail = s.tail;
+            s.tail = null;
+            tail?.wake();
+            // The loss is named only when there IS one: words in the draft mean the clip is about to
+            // be discarded, so the tail after the drop is honestly gone. A close after the counted
+            // finals had already arrived is the ear hanging up on a finished release — benign.
+            if (s.finals > 0 && !s.tailSatisfied) pushToast(LIVE_LOST_MSG, "err");
+            return;
+          }
           if (!s.ready) {
             // It never opened: a refused handshake (403), a busy relay (1013), a leg that died before
             // `ready`. Silent for the recording, one notice per page load for the misconfiguration.
@@ -716,12 +814,17 @@ export function useDictation({
         backlog: [],
         ready: false,
         finals: 0,
+        starts: 0,
+        stops: 0,
+        finalsSeen: 0,
         dead: false,
         closed: false,
         finishing: false,
-        drain: 0,
+        budgetMs: 0,
+        lastTick: 0,
         uplink: null,
         tail: null,
+        tailSatisfied: false,
         elapsedMs: 0,
         idleMs: 0,
       };
@@ -731,29 +834,37 @@ export function useDictation({
         onFrame: (f) => {
           const s = mine();
           if (!s || s.dead) return;
+          // ONE QUEUE, BOTH PHASES (S2.5 review F5): every frame joins the tail of the SAME FIFO and
+          // leaves it through the same pacer. Audio ORDER is the contract, and a second path for "the
+          // live frame" is how a dispatched burst gets to overtake the backlog.
+          s.backlog.push(f.buf);
           // ① BEFORE `ready`, BUFFER. The words spoken while the socket was handshaking are the first
           // words of the sentence, and the relay closes the leg on a leading binary frame anyway.
           if (!s.ready) {
-            s.backlog.push(f.buf);
             // THE READY BOUND, and it is a ceiling the owner already configured: a handshake that is
             // not coming looks exactly like a backlog nothing drains. Past it the leg holds a second
             // of stale speech and is worse than no leg at all.
             if (s.backlog.length * frameMs > ceilingMs) degradeStream(s);
             return;
           }
-          // …and AFTER it, the backlog goes out AHEAD of the live frame — audio order is the whole
-          // contract — paced at 1.5× realtime (see `BACKLOG_DRAIN_EVERY`).
-          if (s.backlog.length === 0) {
-            s.socket.sendAudio(f.buf);
-            return;
+          // …and AFTER it, THE TOKEN BUCKET earns audio-time from the WALL CLOCK and spends it on the
+          // head of the queue, so the backlog drains ahead of the live frame at `DRAIN_PACE` whatever
+          // cadence the callbacks themselves arrive at. At the ordinary 40 ms cadence each callback
+          // banks 60 ms and ships one frame plus half a catch-up frame — the same net ≥ 0.5 extra per
+          // callback the old ratio gave, and the identical order.
+          const now = performance.now();
+          s.budgetMs = Math.min(BUCKET_CAP_MS, s.budgetMs + (now - s.lastTick) * DRAIN_PACE);
+          s.lastTick = now;
+          while (s.backlog.length > 0 && s.budgetMs >= frameMs) {
+            const head = s.backlog.shift();
+            if (head) s.socket.sendAudio(head);
+            s.budgetMs -= frameMs;
           }
-          s.backlog.push(f.buf);
-          const head = s.backlog.shift();
-          if (head) s.socket.sendAudio(head);
-          if (++s.drain % BACKLOG_DRAIN_EVERY === 0) {
-            const extra = s.backlog.shift();
-            if (extra) s.socket.sendAudio(extra);
-          }
+          // THE SAME CEILING ONE LAYER UP (the S2a backpressure doctrine): a queue this deep PAST
+          // `ready` is not a handshake that never came, it is stale speech — audio the ear would
+          // transcribe into a turn the owner has long since moved past. Throw the leg away and let
+          // `onClose`'s own mid-death rules decide what that costs; no new mechanism, no new knob.
+          if (s.backlog.length * frameMs > ceilingMs) s.socket.close();
         },
       })
         .then((uplink) => {
@@ -956,6 +1067,16 @@ export function useDictation({
     // every other reason a recorder does not arm.
     if (armRef.current || recRef.current) return false;
     if (!preflight()) return false;
+    // A fresh recording starts HAND-ON by default: `start()` is what the gesture calls from a press,
+    // and whoever knows better (the gesture's `locked` stage, the keyboard's tap-to-start) says so
+    // after. ⚠ IT MUST PRECEDE THE FIRST AWAIT (S2.5 review F3) — the ordering rule this codebase
+    // already keeps for the call's mute: a rule write must reach the object it governs the MOMENT that
+    // object exists, never across an async window. `getUserMedia` can sit on a permission prompt for
+    // seconds, the gesture reaches `locked` inside that window and publishes `handsFree = true`, and a
+    // reset landing afterwards would silently overwrite it — disarming the §9.3-c idle stop for the
+    // whole session, which would then run to the hard cap. Written here, any lock published during
+    // acquisition lands AFTER it and wins.
+    handsFreeRef.current = false;
     const arm = { aborted: false };
     armRef.current = arm;
     try {
@@ -993,9 +1114,6 @@ export function useDictation({
       recRef.current = rec;
       chunksRef.current = [];
       discardRef.current = false;
-      // A fresh recording starts HAND-ON by default: `start()` is what the gesture calls from a press.
-      // Whoever knows better (the gesture's `locked` stage, the keyboard's tap-to-start) says so after.
-      handsFreeRef.current = false;
       rec.ondataavailable = (e) => {
         if (e.data.size) chunksRef.current.push(e.data);
       };

@@ -104,6 +104,24 @@ describe("the caret across a streaming phrase (R70 §5)", () => {
     expect(field().selectionStart).toBe("hello world spoken words".length);
   });
 
+  it("a SOFT-KEYBOARD edit is snapshotted too: Gboard/IME move the caret with no `keyup` (F4)", () => {
+    // The listener set was keys + pointer + `select`, and an IME fires none of them: composition
+    // commits text and advances a collapsed caret through `input` alone. The snapshot then goes STALE
+    // and the next phrase's restore drags the owner backwards through text they had just typed.
+    render(<Field />);
+    act(() => setDraft("hello world"));
+    caretAt(5); // the last caret a hardware key reported
+    // …the owner then types on the soft keyboard. The value setter leaves the caret at the end — which
+    // is where they ARE — and `input` is the only event that fires.
+    fireEvent.input(field(), { target: { value: "helloX world" } });
+    expect(field().selectionStart).toBe("helloX world".length);
+    landPhrase("spoken words");
+    // Riding forward is the correct half of the rule here: they were typing at the END. With the
+    // stale (5,5) snapshot the seam would instead yank them into the middle of their own sentence.
+    expect(field().value).toBe("helloX world spoken words");
+    expect(field().selectionStart).toBe("helloX world spoken words".length);
+  });
+
   it("an UNFOCUSED field is never focused — a locked-mode owner may be deliberately elsewhere", () => {
     render(<Field />);
     act(() => setDraft("hello world"));
