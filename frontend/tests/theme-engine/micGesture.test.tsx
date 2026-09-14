@@ -56,7 +56,7 @@ import {
 } from "../../src/theme-engine/kit/composer/useMicGesture";
 import { TOO_SHORT_MSG, type useDictation } from "../../src/hooks/useDictation";
 import { runComposer } from "../../src/lib/composer";
-import { clearDraft, getDraft } from "../../src/store/composer";
+import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
 import { pushToast } from "../../src/store/toast";
 import { endCall, useCallMount } from "../../src/store/liveCall";
@@ -894,5 +894,65 @@ describe("OF-4 · the hint bubble carries the too-short teaching", () => {
     host().getBoundingClientRect = () => rect(0, 400, 393, 452);
     fireEvent.click(mic());
     expect(host().style.getPropertyValue("--mg-rx")).toBe("37px"); // 393 − (340 + 32/2)
+  });
+});
+
+// ── 2026-09-14 (the owner's phone round) · the bar moves under a LONG recording ───────────────────
+//
+// S2.5 broke measure-once's premise: a streaming recording is long, and the bar reflows under it —
+// the keyboard collapses at record start, the field auto-grows as phrases append, and `sendable`
+// flipping used to slide send in and shift the mic left. Two rules close the class, and both are
+// pinned here: the ANCHOR TRACKS the button (event-driven re-measure), and the ROW FREEZES (the
+// trailing controls may not CHANGE while a recording is live — a latch, not a hide).
+
+describe("the anchor TRACKS the button while the chrome is open", () => {
+  it("re-measures on a viewport resize: the circle follows the bar the keyboard-collapse moved", async () => {
+    // A synchronous rAF (returning 0 so the coalescing slot stays free) — the effect's coalescer is
+    // real-rAF-shaped; the arm only needs the re-measure to land inside its own `act`.
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+    render(composed(LineComposer));
+    const host = document.querySelector<HTMLElement>(".mic-gesture")!;
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(0, 600, 360, 120));
+    const btnRect = vi
+      .spyOn(mic(), "getBoundingClientRect")
+      .mockReturnValue(rect(300, 650, 36, 36));
+    await hold();
+    expect(host.style.getPropertyValue("--mg-y")).toBe("68px"); // 650 + 18 − 600
+    // The keyboard hides: the bar drops 80px inside the host. jsdom has no ResizeObserver and no
+    // visualViewport, so the WINDOW-resize listener is the one this arm can drive — same handler.
+    btnRect.mockReturnValue(rect(300, 730, 36, 36));
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(host.style.getPropertyValue("--mg-y")).toBe("148px"); // tracked, not stale
+    up();
+    await tick(HELD_MS);
+  });
+});
+
+describe("the ROW FREEZE · the trailing controls may not change while a recording is live", () => {
+  it("a phrase appending mid-recording does not summon send; release does", async () => {
+    render(composed(LineComposer));
+    expect(document.getElementById("cmd-send")).toBeNull(); // empty draft + STT → mic alone
+    await hold();
+    // dictation populates the composer mid-recording (the streaming leg's appendDraft)
+    act(() => setDraft("phrase one landed"));
+    expect(document.getElementById("cmd-send")).toBeNull(); // FROZEN — the mic must not move
+    up();
+    await tick(HELD_MS);
+    expect(document.getElementById("cmd-send")).not.toBeNull(); // re-evaluated the moment it ended
+  });
+
+  it("…and the mirror: a send already visible at record start STAYS (freeze, never hide)", async () => {
+    render(composed(LineComposer));
+    act(() => setDraft("typed before the hold"));
+    expect(document.getElementById("cmd-send")).not.toBeNull();
+    await hold();
+    expect(document.getElementById("cmd-send")).not.toBeNull(); // hiding it would be the same jank
+    up();
+    await tick(HELD_MS);
   });
 });

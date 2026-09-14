@@ -529,10 +529,13 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     [live, flashHint],
   );
 
-  /** Measure the pressed button against the chrome host — once, at the start of the gesture. */
+  /** Measure the pressed button against the chrome host — at the start of the gesture, and again
+   *  whenever the tracking effect below sees the geometry move (the button ref is what lets it). */
+  const anchorBtn = useRef<HTMLElement | null>(null);
   const measure = useCallback((btn: HTMLElement) => {
     const host = hostRef.current;
     if (!host) return;
+    anchorBtn.current = btn;
     const b = btn.getBoundingClientRect();
     const h = host.getBoundingClientRect();
     const cx = b.left + b.width / 2;
@@ -543,6 +546,40 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
       rx: h.right - cx,
     });
   }, []);
+
+  /** THE ANCHOR TRACKS THE BUTTON while the chrome is open (the owner's live round, 2026-09-14).
+   *  Measure-once assumed a short hold over a STATIC bar, and S2.5 broke the premise: a streaming
+   *  recording is LONG, and the bar moves under it — the keyboard collapses at record start (the
+   *  field blurs, `--app-h` grows, the bar drops), and the field auto-grows as phrases append — so
+   *  the circle painted where the button USED to be ("two mic buttons", the owner's phone round).
+   *  EVENT-driven, never a per-move rect loop (the measure-at-lift rule's letter was about
+   *  pointermove): `visualViewport` resize = the keyboard · a ResizeObserver on the HOST = the
+   *  bar's own geometry (auto-grow, the rail, the stack) · window resize = rotation — the S2b call
+   *  ring's F9 pattern, one layer down. Coalesced through one rAF so a burst of observer callbacks
+   *  costs one layout read; the button-gone guard makes a mid-teardown fire a no-op. */
+  const tracking = state.stage !== "idle";
+  useEffect(() => {
+    if (!tracking) return;
+    let raf = 0;
+    const remeasure = () => {
+      raf ||= requestAnimationFrame(() => {
+        raf = 0;
+        const btn = anchorBtn.current;
+        if (btn?.isConnected) measure(btn);
+      });
+    };
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(remeasure);
+    if (ro && hostRef.current) ro.observe(hostRef.current);
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", remeasure);
+    window.addEventListener("resize", remeasure);
+    return () => {
+      ro?.disconnect();
+      vv?.removeEventListener("resize", remeasure);
+      window.removeEventListener("resize", remeasure);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [tracking, measure]);
 
   /** Swallow the trailing `click` this pointer session will produce. RE-ASSERTS the session rather than
    *  only scheduling its expiry (F3): ANY pointer that went down on the button produces a click, so a

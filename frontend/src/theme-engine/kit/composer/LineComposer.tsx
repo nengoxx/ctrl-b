@@ -81,7 +81,20 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   // `sendable` (not `draft !== ""`) since D68 S3: a staged file with NO caption is a legal send
   // (§7), and the button that sends it has to exist. It reads the draft too, so the pre-attachment
   // behaviour is unchanged when nothing is staged.
-  const showSend = !sttReady || sendable || isStreaming;
+  //
+  // THE ROW FREEZE (the owner's live round, 2026-09-14): while a RECORDING is live, the trailing
+  // row must not CHANGE — a phrase appending mid-dictation flipped `sendable`, send slid in, the
+  // mic shifted left, and the gesture chrome (anchored at record start) painted over the wrong
+  // button. A LATCH, not a hide: whatever the row showed when the recording began stays (a
+  // pre-typed draft keeps its send; an empty one doesn't summon it until release) — so the freeze
+  // itself can never cause the reflow it prevents. Release re-evaluates at once; the D39 Stop
+  // morph waits with it (owner-accepted trade, plan §7-S3.5 addendum). Written during render —
+  // this file's own latch idiom (`entryNeeds`/`flippedFor` below).
+  const recording = mic.status === "recording";
+  const showSendLive = !sttReady || sendable || isStreaming;
+  const sendLatch = useRef(showSendLive);
+  if (!recording) sendLatch.current = showSendLive;
+  const showSend = recording ? sendLatch.current : showSendLive;
 
   // THE CONTROL STACK (the owner's S6 re-round, 2026-09-03): once the field is TALL enough, the
   // trailing controls turn vertical — mic over send, "same distance and everything" — and the text
@@ -123,11 +136,17 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   const stackCtx = `${draft}|${staged}|${expand.on}|${stackNeeds}`;
   const fits = fieldPx >= stackNeeds - 1; // the strict entry test (1px grace: 77.25 vs 78)
   const holds = fieldPx >= stackNeeds - 23 && fieldCeilPx >= stackNeeds - 1;
-  const nextStacked = !stacked
-    ? fits
-    : stackNeeds !== entryNeeds.current // the column itself changed — strict re-test (MED-5)
+  // The stack decision FREEZES with the row (the same 2026-09-14 rule): the field auto-growing
+  // under appended phrases could otherwise engage the stack mid-recording and move the mic — the
+  // exact jank the send latch just closed, through the other door. On release the ordinary rules
+  // run against the final geometry (a needs change re-tests strictly, as always).
+  const nextStacked = recording
+    ? stacked
+    : !stacked
       ? fits
-      : holds;
+      : stackNeeds !== entryNeeds.current // the column itself changed — strict re-test (MED-5)
+        ? fits
+        : holds;
   // Re-baseline whenever the stack STANDS — entering, or SURVIVING a needs change on the strict
   // re-test (the final confirm's catch: without this, a survived change left `entryNeeds` stale and
   // every later input re-tested strictly, quietly killing the hysteresis for the whole episode).
