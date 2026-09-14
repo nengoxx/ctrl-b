@@ -49,9 +49,11 @@
   **`voice.live.enabled` flips ON as the round's close = the phase closes**; the decision
   point: fixed endpointing good → v1 stands, sluggish → architecture ② gets designed (§2.1).
   Phase 23 S7 + v1.7.8 sequencing unchanged (release E after the roleplay features).
-- Git: **45 commits unpushed over origin `b946fc1`** (the 41 + `fd7fee2` · `7a298ff` ·
-  `850d530` + this docs commit); tree clean at write; the PUSH ruling stays the owner's.
-  **Prod untouched v1.7.7 @ `578ffa7`.**
+- Git: **PUSHED 2026-09-14 (the owner's word)** — the whole 46-commit S0→S3 backlog over
+  `b946fc1` (through `a89a54d` + this push-note commit); origin == local after the push; tree
+  clean. **Prod untouched v1.7.7 @ `578ffa7`.** The owner opened their OWN live test round on
+  dev right after the push (S4 is still the formal calibration sitting — their findings land
+  next session).
 
 ## Prior state (2026-09-14, TWENTY-FIRST session — **S2.5 (phrase streaming dictation) RAN THE STANDING CADENCE WITH FOUR CONFIRM ROUNDS and is council-CLOSED: pinned Opus build → main-seat audit rider → blind Emma SHIP WITH FIXES (5 MED, sweep "none") → fix wave → three F1 chases ending in a DELETION (the tail wait is the FLAT bound) → №4 RESOLVED — SHIP. ▶▶ ~~NEXT SESSION = S3~~ done, see above**; superseded above where it speaks)
 
