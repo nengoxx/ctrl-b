@@ -12,7 +12,51 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-14, TWENTIETH session — **S2b (presentation + furniture) RAN THE WHOLE STANDING CADENCE IN ONE SESSION and is council-CLOSED: pinned Opus build → main-seat audit found + fixed the UNMOUNT FENCE hole → blind Emma SHIP WITH FIXES (3 MED, sweep "none") → fix wave → her confirm RESOLVED — SHIP, fix-sweep "none". ▶▶ NEXT SESSION = S2.5 (phrase streaming dictation), then S3 → S4**; supersedes below where it speaks)
+## Current state (2026-09-14, TWENTY-FIRST session — **S2.5 (phrase streaming dictation) RAN THE STANDING CADENCE WITH FOUR CONFIRM ROUNDS and is council-CLOSED: pinned Opus build → main-seat audit rider → blind Emma SHIP WITH FIXES (5 MED, sweep "none") → fix wave → three F1 chases ending in a DELETION (the tail wait is the FLAT bound) → №4 RESOLVED — SHIP. ▶▶ NEXT SESSION = S3 (interruption hardening + the Fennec ear-hold), then S4**; supersedes below where it speaks)
+
+- **S2.5 is council-CLOSED (full as-built record = plan §7-S2.5 — read THAT before S3/S4
+  work):** the mic's hold/lock rides the SAME ear as calls — finals append to the draft at
+  every pause; release = flush → **the FLAT `tail_wait_ms` wait** → stop → close; the
+  either/or (≥1 phrase appended ⇒ clip discarded · 0 ⇒ today's upload, never both);
+  `attachPcmUplink` on the recorder's OWN stream + the detector's context (never a second
+  getUserMedia); ONE FIFO + ONE wall-clock token bucket under the relay's budget; §9.3 all
+  three (Tier-0 suspended · hidden-page unconditional · idle/max on the one poll); the
+  `onPending` chrome pulse; the caret save/restore (the R70 §5 collapse MEASURED real in a
+  new e2e probe first, `input`-snapshotted for Gboard). BE: `LiveCfg` +4 (`dictation` OFF ·
+  `tail_wait_ms` 2000 · idle 15 · max 120) in `live_call`, Conf rows in the S2b section, and
+  **the new `live_ear` bit mirroring the WS route gate exactly** (no TTS term — dictation
+  needs no mouth). Pinned omissions: `pause_flush_ms` · the three-word auto-send floor · any
+  mid-session reconnect (the clip fallback IS the retry).
+- **The cadence, four confirm rounds:** build `801309f` (pinned Opus, +2234/−82, 24
+  red-proofs; the caret [U] probed before mitigating) → audit rider `1de1cf0` (the narrated
+  unmount belt actually written, guarded) → blind Emma **SHIP WITH FIXES 5M sweep "none"** →
+  wave `a3c3f1e` → confirm BLOCKED ×3, F1 chased through a count (`192f77f`, + synchronous
+  flush truth + the release drains its queue) and a settle window (`ac39675`) to the ROOT →
+  `b3d76f1` (main-seat, **+99/−299**): **⚠ THE TAIL-WAIT THEOREM, recorded at the wait —
+  `flush` has no ack and the wire has no completeness marker, so NO ledger event may resolve
+  the release wait; the S1 lesson applied (an optimization needing state the protocol cannot
+  give gets DELETED); the one sound early exit is a DELIVERED close** → **№4: RESOLVED —
+  SHIP, sweep "none"** (Emma's line proof + her ruling that the simplified honesty toast
+  extends her own accepted rule). ⚠ The durable meta-lesson: a reviewer blocking the SAME
+  finding at three boundaries is proving the mechanism CLASS unsound — rule on the root and
+  delete, don't tighten.
+- **Gate 6/6 at every tip — FE 3,471/192 · BE 2,476** (counts in QUALITY.md). Both dev units
+  RUNNING (D69 — do NOT stop them); the dev backend was restarted onto the build tip
+  (`live_ear` + the four knobs live on :5434); :5173 serves the whole slice. **⚠
+  `voice.live.enabled` AND `voice.live.dictation` both default OFF** — a dev poke flips both
+  from the Conf "Live call" section; ⚠ the release costs a flat `tail_wait_ms` (2 s default)
+  of `sending` — the S4 sitting's knob, tuned against the measured 530–830 ms release→final.
+- **▶▶ NEXT SESSION: S3 (plan §7)** — interruption hardening: the §4.3 ordered cancel-settle
+  contract · the buffered-final race (F4) · playback-would-start-while-speaking (F5) · the
+  Fennec EAR-HOLD branch (S0's echo ruling) · flaky-link reconnect/backpressure edges (F6).
+  Then S4 (owner calibration = the phase gate + the `enabled` flip; S2.5's knobs join that
+  sitting's list). One slice per session, the standing cadence. Phase 23 S7 + v1.7.8
+  sequencing unchanged (release E after the roleplay features).
+- Git: **41 commits unpushed over origin `b946fc1`** (the 34 + `801309f` · `1de1cf0` ·
+  `a3c3f1e` · `192f77f` · `ac39675` · `b3d76f1` + this docs commit); tree clean at write; the
+  PUSH ruling stays the owner's. **Prod untouched v1.7.7 @ `578ffa7`.**
+
+## Prior state (2026-09-14, TWENTIETH session — **S2b (presentation + furniture) RAN THE WHOLE STANDING CADENCE IN ONE SESSION and is council-CLOSED: pinned Opus build → main-seat audit found + fixed the UNMOUNT FENCE hole → blind Emma SHIP WITH FIXES (3 MED, sweep "none") → fix wave → her confirm RESOLVED — SHIP, fix-sweep "none". ▶▶ NEXT SESSION = S2.5 (phrase streaming dictation), then S3 → S4**; superseded above where it speaks)
 
 - **S2b is council-CLOSED (full as-built record = plan §7-S2b — read THAT before S2.5/S3
   work):** the RING both modes (`focalLanding`/`useFocalAnchor` — the cover-clamped landing

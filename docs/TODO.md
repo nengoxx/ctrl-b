@@ -1632,10 +1632,16 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       RESOLVED — SHIP, fix-sweep "none". Plan §7-S2b as-built record; incl. the Conf
       "Live call" section (§5.1) + the two S2a residuals (degraded hysteresis · the
       MiniPlayer intent face).
-- [ ] S2.5 — Phrase-by-phrase streaming dictation (owner-RATIFIED 2026-09-13; R70 = the
+- [x] S2.5 — Phrase-by-phrase streaming dictation (owner-RATIFIED 2026-09-13; R70 = the
       design evidence): dictation rides the S1 ear, utterance finals append to the draft
       live; release = the relay's `flush` (NEVER a raw commit — R70's §7-S0 amendment);
-      degrade = today's whole-clip path (plan §7-S2.5).
+      degrade = today's whole-clip path (plan §7-S2.5). **council-CLOSED 2026-09-14**: build
+      `801309f` → audit rider `1de1cf0` → blind Emma SHIP WITH FIXES (5 MED) → wave
+      `a3c3f1e` → THREE confirm rounds chased F1 to its root → micro-waves `192f77f` ·
+      `ac39675` · `b3d76f1` (**the tail wait is the FLAT `tail_wait_ms` bound** — every
+      early-resolve heuristic deleted; the three-round theorem is recorded at the wait) →
+      confirm №4 RESOLVED — SHIP, sweep "none". Plan §7-S2.5 as-built record; ⚠ the release
+      now costs `tail_wait_ms` (default 2 s) of `sending` — the S4 sitting's knob.
 - [ ] S3 — Interruption hardening: the ordered cancel-settle contract · the buffered-final
       race · playback-would-start-while-speaking · the echo fallback branch if S0 ruled dirty ·
       flaky-link reconnect/backpressure edges.

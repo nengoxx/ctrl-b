@@ -1102,6 +1102,93 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   degrade = today's whole-clip path). Slotted after S2a so the ear/loop mechanics are proven
   in calls first; sequencing vs S2b is the build session's call. Word-by-word explicitly NOT
   this slice (§8.5c — the S4 trigger).
+
+  > **S2.5 AS-BUILT + council-CLOSED (2026-09-14, one session; the standing cadence, FOUR
+  > confirm rounds — the longest F1 chase yet, and it ended in a deletion).** Build `801309f`
+  > (pinned Opus, 22 files +2234/−82, 24 red-proofs; 5 declared deviations, 4 accepted + the
+  > 5th closed as the main-seat audit rider `1de1cf0` — the guarded unmount belt the comment
+  > narrated but never wrote) → blind Emma (hermes lane, `--ignore-rules`, detached + the
+  > output-file monitor) **SHIP WITH FIXES — 5 MED, open sweep "none"** (fences · wire
+  > vocabulary · either/or terminals · capture extraction · the BE truth table all verified
+  > sound) → wave `a3c3f1e` (her five; F1 as the endpoint-ledger count, F5 as ONE wall-clock
+  > token bucket replacing the per-callback ratio) → confirm **BLOCKED** (F1 survives one
+  > VAD-late phrase deeper + F2's already-CLOSING socket + new N1: the queue's only pump was
+  > capture delivery) → micro `192f77f` (the DYNAMIC resolve rule `owed()===0 && stops >
+  > stopsAtRelease` · `flush()`/`stop()` return SENT-truth · the release drains its queue,
+  > bounded + paced, through the one extracted `accrue`/`pump` bucket) → **№2 BLOCKED** (F2 +
+  > N1 RESOLVED; F1 survives TWO VAD-late phrases — "the ledger can prove a new endpoint
+  > completed, never that the flush processed everything") → micro `ac39675` (a settle window:
+  > a satisfied condition arms 300 ms of required ledger quiet; a late `speech_started`
+  > retracts it) → **№3 BLOCKED** (a queued-but-undispatched socket message loses to an
+  > overdue timer — task sources carry no ordering guarantee; every finite window has a losing
+  > boundary) → micro `b3d76f1` (main-seat, **+99/−299**) → **№4: F1 RESOLVED with line
+  > proof, the ⑦ toast simplification ruled HONEST, wave sweep "none" — RESOLVED — SHIP**
+  > (she re-ran the suite at HEAD). Gate 6/6 at every tip; final **FE 3,471/192 · BE 2,476**
+  > (QUALITY.md).
+  >
+  > **Shape:** BE — `LiveCfg` gains `dictation` (own whole-feature toggle, OFF) ·
+  > `tail_wait_ms` (500–10000, default 2000) · `dictation_idle_s` (15) · `dictation_max_s`
+  > (120), delivered in `live_call`; **the new `live_ear` bit MIRRORS THE WS ROUTE GATE
+  > exactly** (`configured("live") AND live.enabled`, NO TTS term — dictation fills the
+  > composer and needs no mouth; the `live` bit keeps TTS for the call button); Conf rows ride
+  > the S2b "Live call" section. FE — the streaming leg arms per recording on `live_ear &&
+  > live_call.dictation`: `attachPcmUplink` (extracted from `startPcmCapture`, which is now
+  > written in terms of it) hangs the worklet off the RECORDER's stream + `armDetector`'s
+  > context — never a second `getUserMedia` or context; ONE FIFO + ONE wall-clock token bucket
+  > (`DRAIN_PACE 1.5` · `BUCKET_CAP_MS 500` — cap + 1.5×window < the relay's 2×window budget,
+  > the 7/8 margin at any `frame_ms`) meters every frame out, both phases, with the ceiling as
+  > handshake-bound pre-`ready` and stale-speech close post-`ready`; finals append through the
+  > untouched `appendDraft`; the release PARKS the clip BY VALUE (the tail wait widened F2's
+  > ownership window), drains the queue paced pre-flush, then **flush → the FLAT
+  > `tail_wait_ms` wait → stop → close**; the either/or (≥1 appended ⇒ clip discarded · 0 ⇒
+  > today's upload, never both) + `maybeAutoSend` once at session end; mid-death decided by
+  > the draft (≥1 ⇒ end + toast + discard · 0 ⇒ silent clip degrade); §9.3 all three (Tier-0
+  > suspended-with-reset · hidden-page armed unconditionally while streaming · idle 15 s
+  > hands-free only via the `handsFree` ref + max 120 s on the one 100 ms poll); the
+  > `onPending` chrome pulse (opacity-only `::after`, motion-gated); the caret save/restore in
+  > `useComposerChrome` gated on the module APPEND COUNTER (the collapse MEASURED real in the
+  > new e2e probe first — R70 §5's [U] closed), snapshotting on `input` too (Gboard).
+  >
+  > **⚠ THE TAIL-WAIT THEOREM (three review rounds, recorded at the wait itself — nobody
+  > attempts a fourth heuristic):** `flush` has NO ack and the wire carries no completeness
+  > marker (the relay could only say "burst handed upstream", never "upstream processed it" —
+  > and the server stays untouched, §5.2), so NO ledger event may end the release wait: "the
+  > first final" · a count snapshotted at release · a dynamic condition + settle window each
+  > lost at their own boundary, one round apiece (a phrase can be entirely UNOBSERVED —
+  > VAD-late, or its socket message queued behind a stalled main thread — while every
+  > heuristic reads done). The S1 durable lesson applied verbatim: an optimization needing
+  > state the protocol cannot give gets DELETED. **The wait is `tail_wait_ms` FLAT; the one
+  > sound early exit is a DELIVERED close** (in-order delivery proves nothing more can
+  > arrive), which also owns the honesty toast (`finals > 0` ⇒ the possible tail is named
+  > lost). Finals append instantly mid-session — the flat bound is only the RELEASE's price.
+  >
+  > **Main-seat rulings this slice:** `pause_flush_ms` + the three-word auto-send floor
+  > OMITTED (a knob whose value does nothing is dishonest in Conf; the floor is an unratified
+  > behavior change — both S4 candidates, recorded in `LiveCfg`) · no mid-session reconnect
+  > (the clip fallback IS the retry; R70 §8's retry-once + circuit breaker declined) · cancel
+  > keeps already-appended draft text (retraction could destroy concurrent edits — feel-round
+  > item) · pre-`ready` frames BUFFER and drain paced (never-lose-speech: handshake words
+  > must reach the stream).
+  >
+  > **⚠ Durable lessons:** (a) the theorem above — and its shape generalizes: a reviewer
+  > blocking the SAME finding three times at three boundaries is usually proving the
+  > mechanism class is unsound, not that the tuning is off; rule on the root, then DELETE
+  > rather than tighten (net −60 source lines). (b) A wait that parks a decision open widens
+  > every ownership window it spans — the clip had to leave the refs BY VALUE the moment the
+  > release could outlive the next recording's arming (the F2 rule applied to data). (c) A
+  > queue whose only pump is its producer's callback strands its tail on the producer's last
+  > delivery (N1) — a release must drain what it accepted, bounded, before it seals the
+  > session.
+  >
+  > **Residuals riding later slices (none owed now):** the release costs a FLAT
+  > `tail_wait_ms` (default 2 s) of `sending` — the S4 sitting tunes it against the measured
+  > 530–830 ms release→final, and real multi-phrase VAD lag there is the §2.1 arch-② trigger
+  > · auto-send fires on that same bound (a mid-death auto-send sends the truncated draft —
+  > feel material) · the hidden-page release's throttled timers can hold the SOCKET (never
+  > the mic) open past the tap (in-source note; S3/feel) · a hand-edited `dictation: true`
+  > with `enabled: false` streams nothing until the ear exists (`live_ear` is the gate —
+  > by design) · the e2e caret probe pins the RAW collapse on the whole-clip path (the
+  > mitigation is unit-pinned).
 - **S3 — interruption hardening:** the §4.3 ordered cancel-settle contract + the buffered-final
   race (F4) · the playback-would-start-while-speaking edge (F5) · the echo fallback branch if S0
   ruled dirty · reconnect/backpressure edges (F6) exercised against a flaky link.
