@@ -1284,6 +1284,18 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > save coercion, no YAML shape change, no migration). The Live call section keeps the
   > call-only + shared-ear knobs and a pointer comment. Conf tests moved with the rows and
   > now also pin the ONE-home rule (the live group renders none of the four).
+  >
+  > **The council round (same session):** build `6b8b6b4` → main-seat audit sweep (one stale
+  > consumer docstring found — `useVoiceStatus.live_ear` — rider `13b664c`) → blind Emma
+  > (hermes lane, self-contained): **SHIP WITH FIXES — 1 MED · 3 LOW, open sweep "none"**; the
+  > gate/matrix/security/save-flow/sizing all explicitly verified sound (her full 7-row
+  > feature matrix is in the review). The MED: with an EXPLICIT realtime target +
+  > `dictation: true` but `voice.stt` unconfigured, the toggle is dead (the mic itself gates
+  > on `sttReady`) and the row desc didn't say so — fixed as she prescribed, copy only
+  > (`8409bd1`, + the four-label one-home loop (F4) + QUALITY counts 2,480 (F3); F2 was the
+  > rider's own catch). → **Her confirm: all four RESOLVED with line proof, fix-sweep "none" —
+  > RESOLVED — SHIP.** Gate 6/6 at the tip; BE 2,476 → 2,480, FE 3,513 unchanged (tests
+  > moved, not added).
 - **S4 — the owner calibration + device round (the phase gate):** real phone, real rooms — noisy
   and quiet; the §4.1 knobs tuned by feel; the Tier 0 auto-stop threshold calibrated in the same
   sitting; `enabled` flips ON as the round's close.

@@ -12,7 +12,39 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-14, TWENTY-SECOND session — **S3 (interruption hardening) RAN THE STANDING CADENCE WITH TWO CONFIRM ROUNDS and is council-CLOSED: pinned Opus build → main-seat audit (4 deviations ACCEPTED) → blind Emma SHIP WITH FIXES (2 MED, sweep "none") → fix wave → confirm BLOCKED (both MEDs survived at a boundary) → main-seat micro-wave №2 → №2 RESOLVED — SHIP, sweep "none". ▶▶ NEXT SESSION = S4 (the owner calibration + device round = THE PHASE GATE + the `enabled` flip) — it NEEDS THE OWNER + phone**; supersedes below where it speaks)
+## Current state (2026-09-14, TWENTY-THIRD session — **the PUSH landed (46 S0→S3 commits, owner's word) and the owner's question "is live dictation call-only?" became S3.5, built + council-CLOSED same session: the WS route + `live_ear` admit on `enabled OR dictation` (dictation no longer requires the call feature) and the four dictation Conf rows moved to Voice · STT (keys stay `voice.live.*`). Blind Emma SHIP WITH FIXES (1 MED · 3 LOW, sweep "none") → fix wave → confirm ALL RESOLVED with line proof, fix-sweep "none" — RESOLVED — SHIP. ▶▶ NEXT SESSION = S4 (unchanged — the owner calibration + device round = THE PHASE GATE)**; supersedes below where it speaks)
+
+- **S3.5 is council-CLOSED (full as-built + council record = plan §7-S3.5, between S3 and S4):**
+  the owner asked whether streaming dictation is a regular-mic feature (it is — it lives in
+  `useDictation`, fills the composer, no call involved) and whether its setting could live in
+  the STT section. The question surfaced a latent inconsistency: `LiveCfg.dictation`'s comment
+  claimed independence from `enabled`, but `live_ear` + the WS route required the CALL toggle.
+  Field precedent already owned (R70 §2): composer dictation and voice mode are separate
+  features in every peer. **Shipped:** ① the route gate + `live_ear` are now
+  `configured("live") AND (enabled OR dictation)` — mirror rule intact, the `live` CALL bit
+  untouched (dictation alone never shows the call door; the relay is ear-only so the widened
+  admission leaks nothing); red-proven route test + three mirror arms. ② The dictation four
+  (toggle · tail wait · idle stop · time limit) render in Conf **Voice · STT** — grouping
+  only, keys stay `voice.live.*` (the S2.5 one-ear rationale), one-home rule pinned over all
+  four labels. Emma's MED: the row desc now names the standard-STT dependency (explicit
+  realtime target + dictation with `voice.stt` unconfigured was a dead toggle).
+- **Commits this session:** `afbfa14` (push-note docs) · `6b8b6b4` (S3.5 build) · `13b664c`
+  (audit rider — the stale `useVoiceStatus` docstring) · `8409bd1` (review wave) + this docs
+  commit. **Gate 6/6 at the tip — FE 3,513/192 (unchanged, tests moved not added) · BE
+  2,480 (+4)** (counts in QUALITY.md).
+- **Git: the S0→S3 backlog (46 commits) was PUSHED at session start (the owner's word,
+  `b946fc1..afbfa14`); the S3.5 commits push at session close.** Prod untouched v1.7.7 @
+  `578ffa7`. Both dev units RUNNING (D69 — do NOT stop them); **:5434 restarted onto the tip
+  at close** so the owner's live test round has the decoupled gate; :5173 serves everything.
+- **⚠ For the owner's test round: "Live dictation" now lives in Conf → Voice · STT** (and no
+  longer needs "Live call enabled" — flipping it alone streams the mic). The call's own
+  toggle stays in the Live call section; both still default OFF.
+- **▶▶ NEXT SESSION: S4 (plan §7) — unchanged from the block below** (the owner calibration +
+  device round = THE PHASE GATE; needs the owner + phone, afternoons; `voice.live.enabled`
+  flips ON as the round's close) — **plus whatever the owner's own test round surfaced.**
+  Phase 23 S7 + v1.7.8 sequencing unchanged (release E after the roleplay features).
+
+## Prior state (2026-09-14, TWENTY-SECOND session — **S3 (interruption hardening) RAN THE STANDING CADENCE WITH TWO CONFIRM ROUNDS and is council-CLOSED: pinned Opus build → main-seat audit (4 deviations ACCEPTED) → blind Emma SHIP WITH FIXES (2 MED, sweep "none") → fix wave → confirm BLOCKED (both MEDs survived at a boundary) → main-seat micro-wave №2 → №2 RESOLVED — SHIP, sweep "none". ▶▶ NEXT SESSION = S4 (the owner calibration + device round = THE PHASE GATE + the `enabled` flip) — it NEEDS THE OWNER + phone**; supersedes below where it speaks)
 
 - **S3 is council-CLOSED (full as-built record = plan §7-S3 — read THAT before S4):** the
   Fennec EAR-HOLD (`PcmCapture.setHeld`, ONE rule `enabled = !(muted||held)`, frames keep
