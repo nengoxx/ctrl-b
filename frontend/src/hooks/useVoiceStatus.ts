@@ -85,11 +85,13 @@ export interface VoiceStatus {
    *  sends it today, so it reads `undefined` → false everywhere, which is exactly what keeps the S0.5
    *  call-mode chrome unreachable while its gesture, states and CSS are already built and tested. */
   live?: boolean;
-  /** THE EAR ALONE (S2.5): the realtime chain is configured AND `voice.live.enabled` — the two terms
-   *  the `WS /api/voice/live` route itself gates on, and deliberately NOT the `live` bit's third (TTS,
-   *  the call's §5.1 refinement). Streaming dictation fills the composer, so it needs no mouth; a mic
-   *  keyed off `live` would be dark on a TTS-less install whose relay would have taken the socket.
-   *  Optional so a pre-S2.5 backend reads as "no ear" and the mic stays on the whole-clip path. */
+  /** THE EAR ALONE (S2.5): the realtime chain is configured AND at least one of
+   *  `voice.live.{enabled,dictation}` (S3.5: the dictation toggle alone opens the ear) — exactly the
+   *  terms the `WS /api/voice/live` route itself gates on, and deliberately NOT the `live` bit's
+   *  third (TTS, the call's §5.1 refinement). Streaming dictation fills the composer, so it needs no
+   *  mouth; a mic keyed off `live` would be dark on a TTS-less install whose relay would have taken
+   *  the socket. Optional so a pre-S2.5 backend reads as "no ear" and the mic stays on the whole-clip
+   *  path. */
   live_ear?: boolean;
   /** Client behavior (SttServiceCfg.auto_send): true → mic sends the transcript immediately; false →
    *  fills the composer for review. Surfaced here (not just /api/settings) because the mic is on
