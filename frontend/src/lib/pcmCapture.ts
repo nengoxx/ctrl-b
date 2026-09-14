@@ -22,7 +22,9 @@ import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "./pcmWorklet";
 // `echoCancellation: {ideal: "all"}` and genuinely SUBTRACTS the page's own playback, so the mic can stay
 // open while the reply speaks and voice barge-in is viable. Fennec coerces the string to `true` and its
 // AEC measurably does nothing against the phone's own output. So the capability is READ BACK per track
-// (never UA-sniffed) and handed up; the machine arms the automatic interrupt only on `"all"`.
+// (never UA-sniffed) and handed up; the machine arms the automatic interrupt only on `"all"` — and
+// everywhere else it arms the EAR-HOLD instead (`setHeld`, S3), which is the same readback read for its
+// other consequence: an ear that cannot be left open under the reply is closed while the reply speaks.
 
 /** One uplink frame: pcm16 LE mono bytes, plus the RMS of the same samples (§4.3's energy gate reuses
  *  the worklet's own pass — there is deliberately no second AnalyserNode measuring the same audio). */
@@ -45,6 +47,17 @@ export interface PcmCapture {
    *  of frames instead would leave a half-spoken phrase open to merge with whatever is said after the
    *  unmute. Nothing else about the capture changes. */
   setMuted: (muted: boolean) => void;
+  /** THE EAR-HOLD (S3 · §5.1's `echo_workaround`, the S0 ruling): the PROTECTIVE close, for a track whose
+   *  AEC readback is not the subtractive `"all"` mode. There the phone's own playback rides back into the
+   *  capture at near-full level (Fennec, measured — §7-S0 ③), so an ear left open under the reply would
+   *  transcribe the character's own words into the owner's next message. While the mouth is audible the
+   *  ear closes; interruption there is the tap (§4.3's trigger B), which is why nothing else is owed.
+   *
+   *  Mechanically it IS mute — `track.enabled`, frames still flowing as digital silence, for exactly the
+   *  endpointing reason above — and the two share ONE effective rule (`enabled = !(muted || held)`) so
+   *  neither setter can answer over the other: a hold released while the owner is muted must not reopen
+   *  the ear, and an unmute under a live hold must not either. */
+  setHeld: (held: boolean) => void;
   /** Release everything: the worklet, the graph, the context, the track, and the Blob URL. Idempotent. */
   stop: () => void;
 }
@@ -135,6 +148,17 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
   let ctx: AudioContext | null = null;
   let uplink: PcmUplink | null = null;
   let stopped = false;
+  // THE TWO REASONS THE EAR CAN BE CLOSED, and the ONE rule that applies them (S3). They are independent
+  // — the owner's mute and the call machine's echo hold — so each setter stores its own answer and both
+  // route through `applyEnabled`; a setter that wrote `track.enabled` directly would silently revoke the
+  // other's decision the moment the two overlapped.
+  let muted = false;
+  let held = false;
+  const applyEnabled = (): void => {
+    // Guarded on `stopped` for the same reason every other exit here is: a released track is not a muted
+    // (or held) one, and re-enabling one the call has already torn down would be a lie about the ear.
+    if (!stopped) track.enabled = !(muted || held);
+  };
   const stop = (): void => {
     if (stopped) return;
     stopped = true;
@@ -167,10 +191,13 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
     return {
       sampleRate: ctx.sampleRate,
       echoCancellation: track.getSettings().echoCancellation,
-      setMuted: (muted: boolean) => {
-        // Guarded on `stopped` for the same reason every other exit here is: a released track is not a
-        // muted one, and re-enabling one the call has already torn down would be a lie about the ear.
-        if (!stopped) track.enabled = !muted;
+      setMuted: (m: boolean) => {
+        muted = m;
+        applyEnabled();
+      },
+      setHeld: (h: boolean) => {
+        held = h;
+        applyEnabled();
       },
       stop,
     };

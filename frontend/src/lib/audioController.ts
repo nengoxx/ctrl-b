@@ -1062,7 +1062,22 @@ function transport(): void {
     set({ status: "loading" });
     return;
   }
-  void a.play();
+  // THE TAP'S OWN PLAY, caught like every other (S3 — the S2a residual). A resume can be refused for the
+  // same reasons a fresh clip's can (the autoplay guard after a focus change, a transient device loss),
+  // and un-caught it is both an unhandled rejection and a mouth failure NOBODY counts: the status still
+  // reads "paused", which is indistinguishable from the tap never having happened.
+  // The guard is `transport`'s own: it acts on whatever is CURRENT, so what must still be true when the
+  // rejection lands is that nothing newer has taken the element — a newer toggle/seek (`playOp`) or a
+  // whole newer request, `dismiss()`/`reset()` included (`reqSeq`). Deliberately not `s.seq`: this path
+  // also runs with no session at all (the whole-message clip), where `reqSeq` is the only generation.
+  const seq = reqSeq;
+  const op = ++playOp;
+  void a.play().catch(() => {
+    if (seq === reqSeq && op === playOp) {
+      mouthFailed();
+      set({ status: "paused" });
+    }
+  });
 }
 
 /**

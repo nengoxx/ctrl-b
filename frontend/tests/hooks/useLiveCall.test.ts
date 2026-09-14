@@ -412,11 +412,13 @@ describe("callReduce — reconnect (§4.5)", () => {
   });
 
   it("a fresh `ready` resets the budget and drains whatever is queued", () => {
-    const dropped = run(speaking, [
-      { type: "final", text: "held over the reconnect" },
+    // Queued during `connecting`, which is a hold of its own: there is no leg to send it down.
+    const dropped = run(listening, [
       { type: "socketLost" },
+      { type: "final", text: "held over the reconnect" },
     ]).state;
     expect(dropped.attempts).toBe(1);
+    expect(dropped.pending).toEqual(["held over the reconnect"]);
     const back = run(dropped, [{ type: "ready" }]);
     expect(back.state.attempts).toBe(0);
     expect(submits(back.out)).toEqual(["held over the reconnect"]);
@@ -512,6 +514,310 @@ describe("callReduce — MUTE (§6, the one mechanism)", () => {
       { type: "hangup" },
     ]);
     expect(state.muted).toBe(false);
+  });
+});
+
+// ── S3: the mouth across a reconnect, the ear-hold, and the interleaving sweep ────────────────────
+
+/** A call on a track whose AEC is NOT the subtractive mode (Fennec, §7-S0 ③) — the ear-hold's own. */
+const holding = run(CALL_INITIAL, [
+  { type: "captureReady", earHoldMode: true },
+  { type: "ready" },
+]).state;
+/** …and the same call with the reply speaking, i.e. with the ear actually closed. */
+const holdingSpeaking = run(holding, [
+  { type: "final", text: "tell me a story" },
+  { type: "playbackStarted" },
+]).state;
+
+describe("callReduce — the mouth is not the phase (S3 · mouthLive)", () => {
+  it("a reply is still audible across a reconnect: `ready` lands back on SPEAKING", () => {
+    // C3 rides HTTP, so the leg dropping says nothing about the voice the owner can hear. Landing on
+    // `listening` would hand them a floor that is not theirs — and (below) take their interrupt away.
+    const dropped = run(speaking, [{ type: "socketLost" }]).state;
+    expect(dropped.phase).toBe("connecting");
+    expect(dropped.mouthLive).toBe(true);
+    const back = run(dropped, [{ type: "ready" }]).state;
+    expect(back.phase).toBe("speaking");
+    expect(back.attempts).toBe(0);
+  });
+
+  it("…and the tap STILL interrupts it, right through the reconnect window", () => {
+    const dropped = run(speaking, [{ type: "socketLost" }]).state;
+    const tapped = run(dropped, [{ type: "barge" }]);
+    expect(tapped.out).toEqual([{ type: "kill" }]);
+    expect(tapped.state.killing).toBe(true);
+    // …and the ordered sequence completes as it always does, on whichever leg is up by then.
+    const settled = run(tapped.state, [{ type: "ready" }, { type: "killSettled" }]);
+    expect(settled.state.phase).toBe("listening");
+    expect(settled.state.killing).toBe(false);
+  });
+
+  it("a reply that ENDS during the reconnect leaves the fresh leg listening", () => {
+    // The drain arrives with the screen on `connecting`, so the arm declines to repaint — but the FLAG
+    // lands, and it is the flag `ready` consults. Without that the call would come back claiming to be
+    // speaking over silence, and never leave it until the next reply.
+    const quiet = run(speaking, [{ type: "socketLost" }, { type: "playbackDrained" }]).state;
+    expect(quiet.mouthLive).toBe(false);
+    expect(quiet.phase).toBe("connecting");
+    expect(run(quiet, [{ type: "ready" }]).state.phase).toBe("listening");
+  });
+
+  it("a mouth FAILURE during the reconnect clears it too", () => {
+    const failed = run(speaking, [{ type: "socketLost" }, { type: "playbackFailed" }]).state;
+    expect(failed.mouthLive).toBe(false);
+    expect(run(failed, [{ type: "ready" }]).state.phase).toBe("listening");
+  });
+
+  it("the flag lands even where the arm ignores the signal — a drain under a kill", () => {
+    const killing = run(speaking, [{ type: "barge" }]).state;
+    const drained = run(killing, [{ type: "playbackDrained" }]).state;
+    expect(drained.killing).toBe(true); // the kill still owns the transition
+    expect(drained.mouthLive).toBe(false); // …but the element really did stop
+  });
+
+  it("taps stay inert while the mouth is silent — thinking and listening both", () => {
+    const thinking = run(listening, [{ type: "final", text: "hm" }]).state;
+    const connecting = run(listening, [{ type: "socketLost" }]).state;
+    for (const from of [listening, thinking, connecting]) {
+      expect(from.mouthLive).toBe(false);
+      expect(run(from, [{ type: "barge" }]).out).toEqual([]);
+    }
+  });
+
+  it("a terminal takes the mouth with it — the teardown's own `dismiss()`", () => {
+    const { state } = run(speaking, [{ type: "captureLost" }]);
+    expect(state.mouthLive).toBe(false);
+  });
+});
+
+describe("callReduce — the Fennec EAR-HOLD (S3 · §5.1's `echo_workaround`)", () => {
+  it("closes the ear while the reply speaks, and opens it when the reply ends", () => {
+    expect(holding.earHoldMode).toBe(true);
+    expect(holding.earHeld).toBe(false); // nothing is speaking yet
+    expect(holdingSpeaking.earHeld).toBe(true);
+    expect(run(holdingSpeaking, [{ type: "playbackDrained" }]).state.earHeld).toBe(false);
+  });
+
+  it("drops the VAD events and the FINAL heard while it is closed — the whole point", () => {
+    // What the ear hears under the reply on such a track is the CHARACTER. A final from that stretch
+    // would go out as the owner's next message, quoting the bot back at itself.
+    const { state, out } = run(holdingSpeaking, [
+      { type: "speechStart" },
+      { type: "speechStop" },
+      { type: "final", text: "…and then the dragon said" },
+    ]);
+    expect(state.userSpeechActive).toBe(false);
+    expect(state.waitingFinal).toBe(false);
+    expect(state.pending).toEqual([]);
+    // …and the transcript line still shows what the OWNER last said, not what the phone overheard.
+    expect(state.heard).toBe("tell me a story");
+    expect(out).toEqual([]);
+  });
+
+  it("…and keeps taking them the moment the reply drains", () => {
+    const open = run(holdingSpeaking, [{ type: "playbackDrained" }]).state;
+    const { out } = run(open, [{ type: "final", text: "what happened next" }]);
+    expect(submits(out)).toEqual(["what happened next"]);
+  });
+
+  it("releases the INSTANT a kill starts — the interrupting words are not eaten", () => {
+    // Step ① of the kill is a synchronous `dismiss()`, so the audible part is gone before anything can
+    // read this state; and `killSettled` can answer in the same breath (the turn was already terminal),
+    // long before the playback store notices. A hold standing into that window swallows the first thing
+    // the owner says after tapping — which is the one utterance the tap exists to make room for.
+    const tapped = run(holdingSpeaking, [{ type: "barge" }]);
+    expect(tapped.state.earHeld).toBe(false);
+    const spoken = run(tapped.state, [
+      { type: "killSettled" },
+      { type: "final", text: "no, the other one" },
+    ]);
+    expect(submits(spoken.out)).toEqual(["no, the other one"]);
+  });
+
+  it("a track whose AEC subtracts holds NOTHING — walkie-talkie speech still transcribes", () => {
+    // The Chrome branch of the S0 ruling: the ear stays open under the reply, which is what makes both
+    // voice barge-in and `barge_in: false` walkie-talkie semantics possible at all.
+    expect(speaking.earHoldMode).toBe(false);
+    expect(speaking.earHeld).toBe(false);
+    const { state } = run(speaking, [{ type: "final", text: "wait" }]);
+    expect(state.pending).toEqual(["wait"]);
+  });
+
+  it("MUTE and the hold are independent rules — neither answers for the other", () => {
+    const muted = run(holdingSpeaking, [{ type: "setMuted", on: true }]).state;
+    expect(muted.earHeld).toBe(true);
+    // Unmuting under a live hold leaves the ear closed: the reply is still speaking.
+    const unmuted = run(muted, [{ type: "setMuted", on: false }]).state;
+    expect(unmuted.muted).toBe(false);
+    expect(unmuted.earHeld).toBe(true);
+    // …and the drain opens it for real.
+    expect(run(unmuted, [{ type: "playbackDrained" }]).state.earHeld).toBe(false);
+  });
+
+  it("a TERMINAL releases the hold AND forgets the mode — the track it described is gone", () => {
+    const { state } = run(holdingSpeaking, [{ type: "captureLost" }]);
+    expect(state.earHeld).toBe(false);
+    expect(state.earHoldMode).toBe(false);
+  });
+
+  it("a REDIAL re-reads the mode from its own track — nothing is inherited", () => {
+    expect(CALL_INITIAL.earHoldMode).toBe(false);
+    expect(run(holdingSpeaking, [{ type: "hangup" }]).state.earHoldMode).toBe(false);
+  });
+});
+
+describe("callReduce — the interleaving sweep (S3 · F4 · F5 · F6)", () => {
+  it("F4: every final spoken during the cancel-settle window drains IN ORDER, as one message", () => {
+    const killing = run(speaking, [{ type: "barge" }]).state;
+    const queued = run(killing, [
+      { type: "final", text: "stop" },
+      { type: "final", text: "do the other thing" },
+    ]);
+    expect(submits(queued.out)).toEqual([]);
+    const settled = run(queued.state, [{ type: "killSettled" }]);
+    expect(submits(settled.out)).toEqual(["stop do the other thing"]);
+    expect(settled.state.pending).toEqual([]);
+  });
+
+  it("F4: a SECOND barge while the first is settling is inert — one kill per interruption", () => {
+    const killing = run(speaking, [{ type: "barge" }]);
+    expect(killing.out).toEqual([{ type: "kill" }]);
+    const again = run(killing.state, [{ type: "barge" }, { type: "barge" }]);
+    expect(again.out).toEqual([]);
+    // …and one settlement still ends it: nothing is left waiting on a second kill that never fired.
+    expect(run(again.state, [{ type: "killSettled" }]).state.killing).toBe(false);
+  });
+
+  it("F5: the mouth opening mid-word kills BEFORE the first sample, and never twice", () => {
+    const mid = run(listening, [{ type: "speechStart" }]);
+    const first = run(mid.state, [{ type: "playbackStarted" }]);
+    expect(first.out).toEqual([{ type: "kill" }]);
+    expect(first.state.phase).not.toBe("speaking");
+    // A second chunk starting while the kill is in flight must not fire another ordered sequence —
+    // two kills means two `cancelTurn` settlements, and the second one drains a queue already drained.
+    const second = run(first.state, [{ type: "playbackStarted" }]);
+    expect(second.out).toEqual([]);
+    expect(second.state.killing).toBe(true);
+  });
+
+  it("F5: …and the same in the `waitingFinal` gap, with the words arriving mid-kill", () => {
+    const gap = run(listening, [{ type: "speechStart" }, { type: "speechStop" }]).state;
+    const killed = run(gap, [{ type: "playbackStarted" }]);
+    expect(killed.out).toEqual([{ type: "kill" }]);
+    const late = run(killed.state, [{ type: "final", text: "as I was saying" }]);
+    expect(submits(late.out)).toEqual([]); // the §4.3 ORDER: nothing goes before the settlement
+    expect(submits(run(late.state, [{ type: "killSettled" }]).out)).toEqual(["as I was saying"]);
+  });
+
+  it("F6: a socket lost DURING the kill reconnects, and the settlement still drains in order", () => {
+    const killing = run(speaking, [{ type: "barge" }]).state;
+    const queued = run(killing, [{ type: "final", text: "the other thing" }]).state;
+    const dropped = run(queued, [{ type: "socketLost" }]);
+    expect(dropped.state.phase).toBe("connecting");
+    expect(dropped.state.killing).toBe(true); // the cancel is a CHAT-side act; the leg says nothing
+    expect(dropped.out).toEqual([{ type: "reconnect", delayMs: 400 }]);
+
+    // The settlement lands while the leg is still down: the queue is held by `connecting` now…
+    const settled = run(dropped.state, [{ type: "killSettled" }]);
+    expect(submits(settled.out)).toEqual([]);
+    expect(settled.state.phase).toBe("connecting"); // the restore does NOT repaint a leg that is down
+    // …and the fresh leg is what finally releases it.
+    expect(submits(run(settled.state, [{ type: "ready" }]).out)).toEqual(["the other thing"]);
+  });
+
+  it("F6: …and in the other order — the leg comes back first, the settlement releases it", () => {
+    const killing = run(speaking, [{ type: "barge" }]).state;
+    const queued = run(killing, [
+      { type: "final", text: "the other thing" },
+      { type: "socketLost" },
+    ]).state;
+    const back = run(queued, [{ type: "ready" }]);
+    expect(submits(back.out)).toEqual([]); // still killing: the §4.3 order outranks the fresh leg
+    expect(submits(run(back.state, [{ type: "killSettled" }]).out)).toEqual(["the other thing"]);
+  });
+
+  it("F6: a drop mid-utterance loses it — and `ready` never resurrects the wait", () => {
+    const mid = run(listening, [{ type: "speechStart" }, { type: "speechStop" }]).state;
+    expect(mid.waitingFinal).toBe(true);
+    const dropped = run(mid, [{ type: "socketLost" }]).state;
+    expect(dropped.waitingFinal).toBe(false);
+    const back = run(dropped, [{ type: "ready" }]).state;
+    expect(back.waitingFinal).toBe(false);
+    expect(back.userSpeechActive).toBe(false);
+    // …and a straggler final from the DEAD leg is not the owner's next message either: with the flag
+    // cleared it is simply an utterance, which is what the leg fence upstairs is for. What must not
+    // happen is the iron rule going on killing replies over a transcript nobody is waiting for.
+    const reply = run(back, [{ type: "playbackStarted" }]);
+    expect(reply.out).toEqual([]);
+    expect(reply.state.phase).toBe("speaking");
+  });
+
+  it("F6: the attempt budget is exactly the backoff schedule, then the `lost` terminal", () => {
+    let s = listening;
+    const delays: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const step = run(s, [{ type: "socketLost" }]);
+      s = step.state;
+      for (const e of step.out) if (e.type === "reconnect") delays.push(e.delayMs);
+      // Every leg that comes back resets the budget, which is why the count is per RUN of failures.
+      expect(s.attempts).toBe(i + 1);
+    }
+    expect(delays).toEqual([400, 900, 1800, 3000]);
+    const done = run(s, [{ type: "socketLost" }]);
+    expect(done.state.phase).toBe("error");
+    expect(done.state.note).toBe(CALL_COPY.lost);
+
+    // …and a leg that DID come back in the middle starts the budget over.
+    const recovered = run(run(listening, [{ type: "socketLost" }]).state, [
+      { type: "ready" },
+    ]).state;
+    expect(recovered.attempts).toBe(0);
+  });
+
+  it("F6: the strained note survives its own reconnect exactly once", () => {
+    const strained = run(listening, [{ type: "degraded" }]);
+    expect(strained.out).toEqual([{ type: "degradeHold" }]);
+    // The fresh leg retracts it — connection news a new connection makes obsolete…
+    const back = run(strained.state, [{ type: "socketLost" }, { type: "ready" }]).state;
+    expect(back.note).toBeNull();
+    // …and the hold armed by the OLD leg, landing late, has nothing left to clear and clobbers nothing.
+    const late = run(back, [{ type: "playbackFailed" }, { type: "degradedOver" }]).state;
+    expect(late.note).toBe(CALL_COPY.voiceFailed);
+    // A degrade on the NEW leg still says its piece, and re-arms its own hold.
+    const again = run(back, [{ type: "degraded" }]);
+    expect(again.state.note).toBe(CALL_COPY.strained);
+    expect(again.out).toEqual([{ type: "degradeHold" }]);
+  });
+
+  it("F6: a confirm gate outstanding across a reconnect still holds — and releases ONCE", () => {
+    const held = run(listening, [
+      { type: "confirmHold", on: true },
+      { type: "final", text: "yes" },
+      { type: "socketLost" },
+      { type: "final", text: "go ahead" },
+    ]);
+    expect(submits(held.out)).toEqual([]);
+    const back = run(held.state, [{ type: "ready" }]);
+    expect(submits(back.out)).toEqual([]); // the gate outranks the fresh leg
+    const allowed = run(back.state, [{ type: "confirmHold", on: false }]);
+    expect(submits(allowed.out)).toEqual(["yes go ahead"]);
+    expect(allowed.state.pending).toEqual([]);
+  });
+
+  it("the ear-hold rides the sweep too: nothing leaks in while the reply speaks, kill or drop", () => {
+    // The hold closes on the MOUTH, so it must survive everything that moves the phase around it.
+    const dropped = run(holdingSpeaking, [{ type: "socketLost" }]).state;
+    expect(dropped.earHeld).toBe(true); // the reply is still audible — the leg is irrelevant
+    expect(run(dropped, [{ type: "final", text: "the bot's own words" }]).state.pending).toEqual(
+      [],
+    );
+    const back = run(dropped, [{ type: "ready" }]).state;
+    expect(back.phase).toBe("speaking");
+    expect(back.earHeld).toBe(true);
+    // Only the mouth stopping — or the owner interrupting — opens it.
+    expect(run(back, [{ type: "playbackDrained" }]).state.earHeld).toBe(false);
+    expect(run(back, [{ type: "barge" }]).state.earHeld).toBe(false);
   });
 });
 

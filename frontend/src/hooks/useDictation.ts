@@ -699,21 +699,38 @@ export function useDictation({
         // The ONE sound early exit: a close the socket actually DELIVERED. WebSocket delivery is
         // in-order, so a delivered close proves nothing more can ever arrive — parking on the bound
         // past it helps nobody. The ⑦ branch owns that wake (and its honesty toast).
+        //
+        // …and ONE abandonment, which is a different kind of thing entirely (S3): the page going HIDDEN
+        // under the wait is the user LEAVING, not evidence that the tail arrived. It ends the wait the
+        // way branch ② ends it — the leg is thrown away, not completed — because a hidden page is where
+        // this timer is throttled (Android), and the residual it closes is a SOCKET held open long past
+        // the tap. Nothing about completeness is claimed or inferred: the theorem above still stands.
         if (s.socket.flush()) {
           setPending(true);
           await new Promise<void>((resolve) => {
-            const timer = setTimeout(() => {
-              s.tail = null;
-              resolve();
-            }, tailWaitMs);
-            // Whichever ends it first wins; `s.tail = null` makes it exactly once.
-            s.tail = () => {
+            const end = (): void => {
               clearTimeout(timer);
+              document.removeEventListener("visibilitychange", onHidden);
               s.tail = null;
               resolve();
             };
+            const timer = setTimeout(end, tailWaitMs);
+            const onHidden = (): void => {
+              if (document.visibilityState !== "hidden") return;
+              // The same disposition as every other death mid-release: mark it dead so no `stop` is
+              // sent to a leg nobody is listening to, fall through to the unconditional `close()`, and
+              // name the loss by the ONE mid-death rule — words in the draft mean the clip is about to
+              // be discarded, so a tail that never landed really is gone; none means the clip carries
+              // everything and there is nothing to say.
+              s.dead = true;
+              if (s.finals > 0) pushToast(LIVE_LOST_MSG, "err");
+              end();
+            };
+            document.addEventListener("visibilitychange", onHidden);
+            // Whichever ends it first wins; `s.tail = null` makes it exactly once.
+            s.tail = end;
           });
-          s.socket.stop();
+          if (!s.dead) s.socket.stop();
         } else {
           // ② AN UNSENT FLUSH IS A DEAD LEG, KNOWN SYNCHRONOUSLY (S2.5 confirm round F2). The socket was
           // already CLOSING — backpressure, the relay's `ended`, the post-`ready` ceiling close — and its
@@ -966,11 +983,12 @@ export function useDictation({
       // recorder F1 was written about, so the arming decision gains a second reason. What that arming
       // CARRIES, enumerated, because the split that created F1 failed to: it calls `stop()`, which for
       // a streaming session is the ordinary release — the recorder stops at once (the mic indicator
-      // goes out immediately, which is the point), then the flush's bounded wait runs. A hidden page
-      // throttles that timer on Android, so the SOCKET may outlive the tap by longer than it would in
-      // the foreground; the mic does not, and the wait ends either way. Keyed on `streamWanted` — the
-      // per-recording decision, taken once — rather than on whether a leg actually opened: one arming
-      // decision per recording, never a listener that comes and goes with a socket.
+      // goes out immediately, which is the point), then the flush's bounded wait runs. A page that goes
+      // hidden while that wait is ALREADY open no longer rides a throttled timer to its end: the wait
+      // takes it as the user leaving and abandons the leg (S3 — see `finishStream`'s ① block), so the
+      // socket does not outlive the departure either. Keyed on `streamWanted` — the per-recording
+      // decision, taken once — rather than on whether a leg actually opened: one arming decision per
+      // recording, never a listener that comes and goes with a socket.
       if (autoStopOn || streamWanted) {
         const onHidden = () => {
           if (document.visibilityState === "hidden") stop();

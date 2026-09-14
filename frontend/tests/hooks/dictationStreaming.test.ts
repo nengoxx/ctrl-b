@@ -779,6 +779,85 @@ describe("useDictation · streaming ② a flush that could not be SENT ends the 
   });
 });
 
+describe("useDictation · streaming ② a page HIDDEN under the tail wait ABANDONS the leg (S3)", () => {
+  /** The user leaving: the app goes to the background mid-release.
+   *
+   *  ⚠ The dispatch is DOCUMENT-wide, so it also wakes any listener an earlier case left armed — whose
+   *  own leg then closes into the same shared `h.sent`. These arms therefore pin THIS release's
+   *  vocabulary (what it said, and what it pointedly did not) rather than the array's exact contents. */
+  async function hide(): Promise<void> {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  }
+
+  it("closes the leg without a `stop`, proceeds to the either/or, and names the loss", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("half of it");
+    act(() => result.current.stop());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush"]); // the wait is open
+
+    await hide();
+    // NOT ONE TIMER WAS ADVANCED. The wait ended on the DEPARTURE — and it ends the way a death does,
+    // not the way a completion does: no `stop` is sent to a leg nobody is listening to any more.
+    // Left to the bound, this is the residual it closes — a throttled timer holding the SOCKET open
+    // long past the tap (the mic was already released at `onstop`).
+    expect(h.sent[0]).toBe("flush");
+    expect(h.sent).not.toContain("stop");
+    expect(h.sent).toContain("close");
+    expect(result.current.status).toBe("idle");
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Voice connection lost"), "err");
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // words in the draft ⇒ the clip is dropped
+    expect(getDraft()).toBe("half of it");
+  });
+
+  it("…and says nothing when nothing had landed: the clip still carries every word", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    await tick(1200); // a real recording — this one ends on the CLIP
+    act(() => result.current.stop());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await hide();
+    expect(h.sent[0]).toBe("flush");
+    expect(h.sent).not.toContain("stop");
+    expect(h.sent).toContain("close");
+    expect(pushToast).not.toHaveBeenCalledWith(
+      expect.stringContaining("Voice connection lost"),
+      "err",
+    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(getDraft()).toBe("the whole clip");
+  });
+
+  it("the listener is the WAIT's alone — a hidden page after it is over changes nothing", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("all of it");
+    await release(result); // the ordinary bound: flush → stop → close, the draft kept
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    const after = [...h.sent];
+    await hide();
+    expect(h.sent).toEqual(after); // nothing to abandon, nothing said
+    expect(pushToast).not.toHaveBeenCalledWith(
+      expect.stringContaining("Voice connection lost"),
+      "err",
+    );
+  });
+});
+
 // ── rule ⑦ (continued) · a death DURING the release (S2.5 review F2) ──────────────────────────────
 
 describe("useDictation · streaming ⑦ a close under the release wakes it, and names what was lost", () => {

@@ -21,7 +21,7 @@ const h = vi.hoisted(() => ({
         barge_threshold: 0,
         barge_in: true,
         ring: "none",
-        echo_workaround: false,
+        echo_workaround: "auto",
         max_session_s: 600,
       },
       stt_auto_stop: { threshold: 0 },
@@ -35,6 +35,10 @@ const h = vi.hoisted(() => ({
   liveTurn: null as { threadId: string; turnId: string | null } | null,
   /** The socket the hook opened: the test drives the relay through its `onFrame`. */
   frame: null as ((f: LiveDown) => void) | null,
+  /** The acquisition TIMELINE, in order: what reached the track, and when the leg opened. The ear-hold's
+   *  whole assertion is an ORDERING — a rule that reaches the track one render late is a rule that was
+   *  not applied while the first frames went out. */
+  order: [] as string[],
   sendCall: vi.fn<(text: string) => Promise<string>>(),
   setCallVoice: vi.fn(),
   openGate: vi.fn(),
@@ -43,6 +47,13 @@ const h = vi.hoisted(() => ({
   appendDraft: vi.fn(),
   endCall: vi.fn(),
   setMuted: vi.fn(),
+  setHeld: vi.fn((held: boolean) => {
+    h.order.push(`held:${String(held)}`);
+  }),
+  /** Is the opened track a boolean-only AEC (Fennec: `getSettings().echoCancellation === true`, and no
+   *  string modes at all) rather than Chromium's subtractive `"all"`? The ONE input to both the
+   *  trigger-A arming and the S3 ear-hold decision. */
+  fennec: false,
   /** Holds `startPcmCapture` open when an arm needs the acquisition GAP itself. */
   capGate: Promise.resolve(),
 }));
@@ -59,6 +70,7 @@ vi.mock("../../src/lib/liveSocket", () => ({
   liveSocketUrl: () => "ws://x/api/voice/live",
   openLiveSocket: (opts: { onFrame: (f: LiveDown) => void }) => {
     h.frame = opts.onFrame;
+    h.order.push("socket");
     return {
       sendAudio: () => {},
       flush: () => {},
@@ -73,8 +85,9 @@ vi.mock("../../src/lib/pcmCapture", () => ({
     await h.capGate; // resolved by default; an arm swaps in a deferred to hold acquisition open
     return {
       sampleRate: 48000,
-      echoCancellation: "all",
+      echoCancellation: h.fennec ? true : "all",
       setMuted: h.setMuted,
+      setHeld: h.setHeld,
       stop: () => {},
     };
   },
@@ -100,6 +113,9 @@ beforeEach(() => {
   h.staged = [];
   h.liveTurn = null;
   h.frame = null;
+  h.order = [];
+  h.fennec = false;
+  h.voice.data.live_call.echo_workaround = "auto";
   h.capGate = Promise.resolve();
   h.sendCall.mockReset();
   h.sendCall.mockResolvedValue("accepted");
@@ -108,6 +124,7 @@ beforeEach(() => {
   h.dismiss.mockClear();
   h.appendDraft.mockClear();
   h.setMuted.mockClear();
+  h.setHeld.mockClear();
 });
 
 /** Mount the machine and connect it — `ready` is what makes the call `listening`. */
@@ -324,6 +341,83 @@ describe("useLiveCall — mute (§6)", () => {
       await Promise.resolve();
     });
     expect(h.setMuted).toHaveBeenCalledWith(true);
+  });
+});
+
+describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1)", () => {
+  /** A browser whose AEC has no string modes and does not subtract the page's own playback. */
+  const fennec = () => {
+    h.fennec = true;
+  };
+
+  it("resolves the mode ONCE from the TRACK — `auto` holds where the readback is not `all`", async () => {
+    fennec();
+    const { view, step, say } = await call();
+    expect(h.setHeld).toHaveBeenLastCalledWith(false); // nothing is speaking yet
+    await step(() => (h.play = { status: "playing" }));
+    expect(h.setHeld).toHaveBeenLastCalledWith(true); // the reply is audible ⇒ the ear closes
+
+    // …and what the ear still delivers from that stretch is the phone hearing ITSELF.
+    await say("and then the dragon said");
+    expect(texts()).toEqual([]);
+    expect(view.result.current.heard).toBe("");
+
+    await step(() => (h.play = { status: "paused" })); // the reply ends…
+    expect(h.setHeld).toHaveBeenLastCalledWith(false);
+    await say("what happened next");
+    expect(texts()).toEqual(["what happened next"]); // …and the ear is the owner's again
+  });
+
+  it("a SUBTRACTIVE track holds nothing — the ear stays open under the reply", async () => {
+    const { step, say } = await call(); // `echoCancellation: "all"` by default
+    await step(() => (h.play = { status: "playing" }));
+    expect(h.setHeld).not.toHaveBeenCalledWith(true);
+    await say("wait, stop"); // walkie-talkie: it queues, and drains when the reply ends
+    await step(() => (h.play = { status: "paused" }));
+    expect(texts()).toEqual(["wait, stop"]);
+  });
+
+  it("`on` and `off` are the owner's override of that reading, not a second reading", async () => {
+    h.voice.data.live_call.echo_workaround = "on";
+    const forced = await call(); // …on a track that reads `all` and would otherwise hold nothing
+    await forced.step(() => (h.play = { status: "playing" }));
+    expect(h.setHeld).toHaveBeenLastCalledWith(true);
+    forced.view.unmount();
+
+    h.setHeld.mockClear();
+    h.play = { status: "idle" };
+    h.voice.data.live_call.echo_workaround = "off";
+    fennec();
+    const never = await call();
+    await never.step(() => (h.play = { status: "playing" }));
+    expect(h.setHeld).not.toHaveBeenCalledWith(true);
+  });
+
+  it("reaches the track BEFORE the leg opens — a rule applied a render late is a leak", async () => {
+    // The S2b confirm-F1 lesson, in the other direction: the hold can be TRUE the moment the capture
+    // exists (a reply was already audible while `getUserMedia` was pending), and the uplink starts
+    // flowing as soon as the socket opens in the very same continuation. An install that left the hold
+    // to the next render would ship exactly that stretch of leaked reply to the ear.
+    fennec();
+    h.play = { status: "playing" }; // the mouth is already open when the machine mounts
+    let open = (): void => {};
+    h.capGate = new Promise<void>((r) => {
+      open = r;
+    });
+    const view = renderHook(() => useLiveCall());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.order).toEqual([]); // no track, no leg — the acquisition gap is real
+    await act(async () => {
+      open();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // The install applied it first; the effect's own (idempotent) apply trails behind, which is exactly
+    // the render the track must not have spent open.
+    expect(h.order.slice(0, 2)).toEqual(["held:true", "socket"]);
+    view.unmount();
   });
 });
 

@@ -45,6 +45,11 @@ interface Relay {
   /** How many `start` controls the client has sent — one per SESSION, so a redial makes it two. */
   starts: () => number;
   closed: () => boolean;
+  /** Drop the LEG from the relay's side, the way a flaky tailnet link does: an unannounced close with
+   *  no `error`/`ended` frame in front of it (S3 — the only close the machine may reconnect through). */
+  drop: (code?: number) => Promise<void>;
+  /** Every `start` control the client has sent, parsed — the reconnect's contract is a FRESH session. */
+  startFrames: () => { type: string; sample_rate: number }[];
 }
 
 /** Boot the agent tab with the `live` bit up, a fake mic, a scripted relay and a counted chat door. */
@@ -105,17 +110,26 @@ async function boot(
   await seedUI(page, { theme: "cosmos", mode: "dark", accent: "violet", tab: "agent", v: 1 });
   await page.goto("/");
 
+  const startFrames = () =>
+    uplink
+      .filter((u) => typeof u === "string")
+      .map((u) => JSON.parse(String(u)) as { type: string; sample_rate: number })
+      .filter((c) => c.type === "start");
   const relay: Relay = {
     uplink,
-    starts: () =>
-      uplink.filter(
-        (u) => typeof u === "string" && (JSON.parse(u) as { type: string }).type === "start",
-      ).length,
+    starts: () => startFrames().length,
+    startFrames,
     say: async (frame) => {
       await expect.poll(() => socket !== null).toBe(true);
       socket!.send(JSON.stringify(frame));
     },
     closed: () => closed,
+    drop: async (code = 1006) => {
+      await expect.poll(() => socket !== null).toBe(true);
+      const leg = socket!;
+      socket = null; // …so `say` waits for the NEXT leg rather than talking into the dead one
+      await leg.close({ code, reason: "link" });
+    },
   };
   return { relay, sends, mic: page.locator("#composer .kit-cbtn.mic") };
 }
@@ -305,6 +319,63 @@ test("a terminal face redials through the SAME door, and the new machine starts 
   await expect(page.locator(overlay)).not.toHaveClass(/muted/);
   await expect(page.locator(`${overlay} .kit-call-note`)).toHaveCount(0);
   await expect.poll(() => relay.starts()).toBe(2);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+// ── S3: the flaky link (§4.5's reconnect contract, F6) ────────────────────────────────────────────
+
+test("a leg dropped MID-UTTERANCE reconnects as a fresh session, and loses only that utterance", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay, sends } = await boot(page);
+  await startCall(page);
+  await relay.say({ type: "state", state: "ready" });
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Listening");
+
+  // The owner is mid-sentence when the link goes: the ear heard them START and the transcript for that
+  // audio is never coming — §4.5 states that loss honestly rather than waiting for it.
+  await relay.say({ type: "speech_started" });
+  await relay.drop(1011);
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Connecting");
+
+  // RECONNECT = A NEW SESSION (§3.3 — there is no resume protocol): a second `start`, carrying the same
+  // measured rate, because the capture underneath was never released.
+  await expect.poll(() => relay.starts()).toBe(2);
+  const [first, second] = relay.startFrames();
+  expect(second.sample_rate).toBe(first.sample_rate);
+
+  await relay.say({ type: "state", state: "ready" });
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Listening");
+  expect(sends).toHaveLength(0); // the lost utterance was never submitted, and nothing was stranded
+
+  // …and the fresh leg is a working one: the next thing said goes out the ordinary door.
+  await relay.say({ type: "transcript", text: "still there", final: true });
+  await expect.poll(() => sends.length).toBe(1);
+  expect(sends[0].text).toBe("still there");
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("a backpressure-style unannounced close takes the same reconnect path", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay, sends } = await boot(page);
+  await startCall(page);
+  await relay.say({ type: "state", state: "ready" });
+
+  // The client's own bail (`CLOSE_BACKPRESSURE`, 4000) and a relay that simply vanishes are the SAME
+  // event from here: a close with nothing said in front of it. Only a typed `error`/`ended` is terminal.
+  await relay.drop(4000);
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Connecting");
+  await expect.poll(() => relay.starts()).toBe(2);
+  await relay.say({ type: "state", state: "ready" });
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Listening");
+
+  await relay.say({ type: "transcript", text: "back again", final: true });
+  await expect.poll(() => sends.length).toBe(1);
 
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });

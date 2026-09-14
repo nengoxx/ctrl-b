@@ -112,6 +112,31 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     expect(track.enabled).toBe(true);
   });
 
+  it("the EAR-HOLD is the same mechanism, and the two never answer for each other (S3)", async () => {
+    // Mute is the owner's and the hold is the machine's (§5.1's `echo_workaround`), so they overlap
+    // freely: whichever is standing keeps the track disabled, and only BOTH being clear reopens it. A
+    // setter writing `track.enabled` on its own would silently revoke the other's decision.
+    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    cap.setHeld(true);
+    expect(track.enabled).toBe(false);
+    cap.setMuted(true);
+    cap.setHeld(false); // the reply ended — but the owner is still muted
+    expect(track.enabled).toBe(false);
+    cap.setMuted(false);
+    expect(track.enabled).toBe(true);
+
+    // …and the other way round: an unmute under a live hold does not reopen the ear either.
+    cap.setHeld(true);
+    cap.setMuted(true);
+    cap.setMuted(false);
+    expect(track.enabled).toBe(false);
+    expect(track.stopped).toBe(0); // closed, never released
+
+    cap.stop();
+    cap.setHeld(false);
+    expect(track.enabled).toBe(false); // a released capture is not an open one
+  });
+
   it("resumes a suspended context — the ordinary autoplay-policy case", async () => {
     vi.stubGlobal(
       "AudioContext",

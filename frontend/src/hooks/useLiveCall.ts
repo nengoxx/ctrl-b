@@ -36,6 +36,20 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // utterances join an ordered pending queue and drain as a SINGLE message, in order, when the last hold
 // clears. Never a one-slot overwrite (the coherence sweep's correction), never lost speech.
 //
+// THE MOUTH IS NOT THE PHASE (S3). C3 plays over HTTP, so the reply is audible or not for reasons this
+// call's socket knows nothing about — a leg that drops mid-reply changes the SCREEN and nothing else.
+// `mouthLive` carries that truth beside the phase, and everything meaning "there is something to
+// interrupt" reads it: a tap across the reconnect window still kills the reply, and the fresh leg's
+// `ready` lands back on `speaking` rather than telling the owner the floor is theirs over a voice they
+// can still hear.
+//
+// THE EAR-HOLD (S3 · §5.1's `echo_workaround`, the S0 device ruling). Where the track's AEC is the
+// subtractive `"all"` mode the ear stays open under the reply and voice barge-in is real. Where it is
+// not — Fennec, measured at near-full leak — an open ear would transcribe the character's own words
+// into the owner's next message, so while the mouth is audible the ear CLOSES (`earHeld`) and every
+// event from that stretch is dropped. Nothing is lost by it: interruption there is the tap, which is
+// every browser's interrupt anyway (§4.3's trigger B).
+//
 // THE GENERATION FENCE (delta round F7). Every asynchronous callback — a send's outcome, a cancel's
 // settlement, a reconnect timer, a socket event — carries the generation it was armed under, and the
 // reducer drops anything armed under a different one. Hanging up bumps the generation, so a hang-up's
@@ -108,6 +122,17 @@ export interface CallState {
   /** The ear is MUTED (§6's call furniture): the track is disabled, the frames keep flowing as silence,
    *  and nothing the ear still delivers about the muted stretch is taken. */
   muted: boolean;
+  /** THE MOUTH IS AUDIBLE — the observed transport truth, and deliberately ORTHOGONAL to the phase (S3).
+   *  C3 rides HTTP, not the call's socket, so a reply keeps playing straight through a reconnect while
+   *  the rendered phase is `connecting`. Anything that means "there is something to interrupt" reads
+   *  THIS; only what the screen says reads `phase`. Maintained by the playback signals whatever the
+   *  phase logic decides to do with them. */
+  mouthLive: boolean;
+  /** Does THIS call's track need the ear-hold at all (§5.1's `echo_workaround`, resolved ONCE at capture
+   *  from the track's own AEC readback — never UA-sniffed, never re-decided mid-call). */
+  earHoldMode: boolean;
+  /** …and is it closed right now. DERIVED after every reduce (see `normalize`) — never set by an arm. */
+  earHeld: boolean;
   /** The call generation (F7). Bumped by every terminal and by hang-up. */
   gen: number;
   /** Reconnect attempts spent since the last `ready`. */
@@ -125,6 +150,9 @@ export const CALL_INITIAL: CallState = {
   heldUpload: false,
   confirmHold: false,
   muted: false,
+  mouthLive: false,
+  earHoldMode: false,
+  earHeld: false,
   gen: 0,
   attempts: 0,
 };
@@ -140,6 +168,9 @@ export type CallSignal = { gen?: number } & (
   | { type: "degraded" }
   | { type: "degradedOver" } //                the strained note's hold expired (see DEGRADED_NOTE_MS)
   | { type: "setMuted"; on: boolean } //       the mute control (§6)
+  /** The capture RESOLVED, carrying the one thing about it the rules depend on: whether this track
+   *  needs the ear-hold (§5.1 — `echo_workaround` resolved against the track's own AEC readback). */
+  | { type: "captureReady"; earHoldMode: boolean }
   | { type: "serverError"; code: string; message: string }
   | { type: "serverEnded" } //                 the relay said `state: ended`
   | { type: "barge" } //                       trigger A (voice) or B (tap) — the same edge
@@ -212,6 +243,26 @@ function drain(s: CallState): Step {
   };
 }
 
+/** The observed mouth, written without churning the state when nothing moved (the wiring's `next !==
+ *  ref.current` check is what keeps a re-render honest). Its callers set it from the PLAYBACK signals
+ *  regardless of what their phase logic does with them — see `mouthLive`. */
+function mouth(s: CallState, live: boolean): CallState {
+  return s.mouthLive === live ? s : { ...s, mouthLive: live };
+}
+
+/** Start the §4.3 ORDERED kill. Both triggers land here, and so does §4.2's iron rule, so the state the
+ *  kill leaves behind is written once.
+ *
+ *  `mouthLive` goes down with it, and that is not an inference about the element: step ① of the effect is
+ *  a SYNCHRONOUS `dismiss()`, so by the time anything else reads this state the audible part is already
+ *  gone. Waiting for the playback store's own drain to say so would leave a window — a `killSettled` that
+ *  answers synchronously (the turn was already terminal, the common case per council F1) lands BEFORE the
+ *  drain does — in which the ear-hold would close again over exactly the words the owner interrupted
+ *  with. */
+function killNow(s: CallState): Step {
+  return { state: { ...mouth(s, false), killing: true }, out: [{ type: "kill" }] };
+}
+
 /** Land on a terminal: the pending queue is HARVESTED (never-lose applies to failures), the flags are
  *  cleared, and the generation moves so nothing armed under the old one can still fire. */
 function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
@@ -231,6 +282,13 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
       // any more, and the terminal face carries no control to reopen it. A ring still wearing the static
       // muted look there would be describing something that no longer exists.
       muted: false,
+      // The same reasoning, twice over (S3): the teardown's `dismiss()` silences the mouth, and the
+      // track the ear-hold governs is released with it — a hold standing on a capture that is gone, or a
+      // MODE describing a track nobody holds, would both outlive the thing they were about. The next
+      // call re-reads the mode from its own track.
+      mouthLive: false,
+      earHoldMode: false,
+      earHeld: false,
       gen: s.gen + 1,
     },
     out,
@@ -239,8 +297,23 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
 
 /**
  * The whole conversation loop, as one pure function.
+ *
+ * THE EAR-HOLD IS DERIVED, NOT DECIDED (S3): `earHeld` is normalized once here, after the arm has had its
+ * say, rather than being maintained by every arm that could move one of its three inputs. A rule spread
+ * across a dozen arms is a rule with a dozen chances to be forgotten by the next one.
  */
 export function callReduce(s: CallState, sig: CallSignal): Step {
+  const step = reduce(s, sig);
+  // `earHoldMode` is the track's (does this ear leak?), `mouthLive` the transport's (is the reply
+  // audible?), and `!killing` the machine's own: an interrupt in flight has ALREADY silenced the mouth
+  // synchronously, and holding the ear until the cancel settles would eat the first word of exactly the
+  // sentence the owner interrupted with.
+  const earHeld = step.state.earHoldMode && step.state.mouthLive && !step.state.killing;
+  if (earHeld === step.state.earHeld) return step;
+  return { state: { ...step.state, earHeld }, out: step.out };
+}
+
+function reduce(s: CallState, sig: CallSignal): Step {
   // THE FENCE (F7), first line: a callback armed under an older generation is not this call's business.
   if (sig.gen !== undefined && sig.gen !== s.gen) return { state: s, out: [] };
   // "Hang up from every state" (§4.2) is the one rule that outranks the terminal guard below — and
@@ -267,7 +340,11 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
       // arrived for its own reason, and a reconnect has no business clearing it.
       return drain({
         ...s,
-        phase: "listening",
+        // A FRESH LEG CHANGES NOTHING ABOUT THE MOUTH (S3). C3 rides HTTP, so a reply that was speaking
+        // when the socket dropped is still speaking now — landing on `listening` here would tell the
+        // owner the floor is theirs over a voice they can hear, and (worse, before the `mouthLive` gate
+        // below) would make their tap-to-interrupt inert for the rest of the reply.
+        phase: s.mouthLive ? "speaking" : "listening",
         attempts: 0,
         userSpeechActive: false,
         waitingFinal: false,
@@ -299,11 +376,15 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
       // MUTED: ignored. The frames are silence, but the server's VAD can still be mid-utterance when the
       // mute lands, and a stale start would light "speaking" on a screen whose whole point is that the
       // ear is closed.
-      if (s.muted) return { state: s, out: [] };
+      // HELD: ignored for a DIFFERENT reason, and it is the whole point of the hold (S3). On a track
+      // whose AEC does not subtract the page's own playback, what the ear hears under the reply is the
+      // CHARACTER — so a VAD event from that stretch is the phone listening to itself, and taking it
+      // would light "speaking" for nobody and arm §4.2's iron rule against a phantom.
+      if (s.muted || s.earHeld) return { state: s, out: [] };
       return { state: { ...s, userSpeechActive: true }, out: [] };
 
     case "speechStop":
-      if (s.muted) return { state: s, out: [] };
+      if (s.muted || s.earHeld) return { state: s, out: [] };
       return { state: { ...s, userSpeechActive: false, waitingFinal: true }, out: [] };
 
     case "setMuted":
@@ -323,7 +404,10 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
       // "Mute means don't send that" (owner-ratified), applied FLAT: a final that arrives while muted is
       // dropped whether it is the condemned half-utterance or one the server endpointed a moment before
       // the tap. One rule, no window where the words go out anyway.
-      if (s.muted) return { state: s, out: [] };
+      // …and the same flat drop while the ear is HELD (S3), where the words are the reply's own leaking
+      // back in: transcribing the character into the owner's next message is the exact failure the hold
+      // exists to prevent, and it must not depend on whether the VAD pair that framed it was seen.
+      if (s.muted || s.earHeld) return { state: s, out: [] };
       const text = sig.text.trim();
       // Empty finals are discarded (§4.5's no-speech path): nothing submits, the flag clears.
       if (!text) return { state: { ...s, waitingFinal: false }, out: [] };
@@ -331,32 +415,57 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
     }
 
     case "barge":
-      // "Outside `speaking`, overlay taps are inert" (§4.3) — and voice barge-in has nothing to
-      // interrupt either. During `speaking` both triggers fire the SAME ordered sequence.
-      if (s.phase !== "speaking" || s.killing) return { state: s, out: [] };
-      return { state: { ...s, killing: true }, out: [{ type: "kill" }] };
+      // THE GATE IS THE MOUTH, NOT THE PHASE (S3). §4.3's ratified intent — "outside `speaking`, overlay
+      // taps are inert; nothing cancels by accident" — is a statement about whether there is anything to
+      // interrupt, and `thinking`/`listening` still answer no (their `mouthLive` is false). What changes
+      // is the honest case the phase enum cannot express: a reply still audible across a reconnect, where
+      // the screen says `connecting` and the tap must STILL interrupt. Both triggers, one sequence.
+      if (!s.mouthLive || s.killing) return { state: s, out: [] };
+      return killNow(s);
 
-    case "playbackStarted":
+    case "playbackStarted": {
+      // The transport spoke, so the flag lands FIRST and unconditionally — what the phase logic below
+      // decides to do about it is a separate question (see `mouthLive`).
+      const open = mouth(s, true);
       // §4.2's iron rule (confirm-round MED 2). The mouth is about to open while the owner is mid-word,
       // or while their words are still in flight: that IS a barge-in, and it is killed BEFORE the first
       // audible sample rather than after it.
       if (s.userSpeechActive || s.waitingFinal) {
-        if (s.killing) return { state: s, out: [] };
-        return { state: { ...s, killing: true }, out: [{ type: "kill" }] };
+        if (s.killing) return { state: open, out: [] };
+        return killNow(open);
       }
-      return { state: { ...s, phase: "speaking" }, out: [] };
+      return { state: { ...open, phase: "speaking" }, out: [] };
+    }
 
-    case "playbackDrained":
+    case "playbackDrained": {
+      // The mouth stopped: the flag goes down even where the arm declines to move the phase, because a
+      // reply that ended during a reconnect is exactly what the fresh leg's `ready` must not mistake for
+      // one still speaking.
+      const quiet = mouth(s, false);
       // A kill in flight owns the transition (its settlement releases the queue in the §4.3 ORDER);
-      // without this guard our own `dismiss()` would look like a natural drain and submit early.
-      if (s.killing || s.phase !== "speaking") return { state: s, out: [] };
-      return drain({ ...s, phase: "listening" });
+      // without this guard our own `dismiss()` would look like a natural drain and submit early. And the
+      // phase test stays the RENDERED phase deliberately: this arm paints `listening`, and only a screen
+      // that was saying `speaking` may be repainted — a drain landing during `connecting` leaves the
+      // reconnect owning the phase (its `ready` reads the flag this arm just cleared).
+      if (s.killing || s.phase !== "speaking") return { state: quiet, out: [] };
+      return drain({ ...quiet, phase: "listening" });
+    }
 
-    case "playbackFailed":
+    case "playbackFailed": {
+      // Synthesis that never produced a sample, or a mouth that died mid-reply: either way nothing is
+      // audible any more, so the flag goes down here too, guard or no guard.
+      const quiet = mouth(s, false);
       // §4.5 — a mouth failure is NONFATAL: the ear keeps working, the reply is in the chat, and
       // hanging up stays the user's move. Repeated failure never ends the call on its own.
-      if (s.killing || isTerminal(s.phase)) return { state: s, out: [] };
-      return drain({ ...s, phase: "listening", note: CALL_COPY.voiceFailed });
+      if (s.killing || isTerminal(s.phase)) return { state: quiet, out: [] };
+      return drain({ ...quiet, phase: "listening", note: CALL_COPY.voiceFailed });
+    }
+
+    case "captureReady":
+      // The ear-hold RULE, taken ONCE from the track that actually opened (§5.1). It cannot be re-decided
+      // later: `echo_workaround` is read at call start like every other knob (§4.5 — settings edited
+      // mid-call apply to the NEXT call), and the capability belongs to this track, not to the browser.
+      return { state: { ...s, earHoldMode: sig.earHoldMode }, out: [] };
 
     case "turnSettled":
       // The brain finished without a mouth (a tool-only turn, TTS off, a reply that never synthesized).
@@ -366,6 +475,10 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
 
     case "killSettled": {
       // Step ③, and only now: the interrupted turn is gone, so what the owner said over it may go.
+      // The restore reads the RENDERED phase, not the mouth (S3's audit): what this arm repaints is the
+      // screen, and only a screen that was showing the interrupted turn may be repainted — a kill that
+      // settles while the leg is down must leave `connecting` standing, because the floor is genuinely
+      // not the owner's yet.
       const next: CallState = {
         ...s,
         killing: false,
@@ -663,7 +776,11 @@ export function useLiveCall(): CallView {
         // measured on the frames we are shipping — never a second AnalyserNode over the same audio.
         // A floor of 0 means neither knob was calibrated, and "every frame is speech" would make a
         // cough kill the reply — so the automatic trigger simply stays disarmed until S4 sets one.
-        if (!bargeArmed.current || floor <= 0 || ref.current.phase !== "speaking") {
+        // Gated on the MOUTH, not the phase (S3, the same audit as the `barge` arm): what trigger A
+        // measures is speech over an audible reply, and the reducer's own gate reads `mouthLive` — a
+        // clock that stopped at the rendered phase would spend the reconnect window unable to accrue
+        // toward a kill the tap could still fire.
+        if (!bargeArmed.current || floor <= 0 || !ref.current.mouthLive) {
           sustained.current = 0;
           return;
         }
@@ -692,8 +809,23 @@ export function useLiveCall(): CallView {
         cap.setMuted(ref.current.muted);
         // The S0 ruling, per TRACK and never UA-sniffed: only a genuinely subtractive canceller lets the
         // ear stay open under the reply, so only there can VOICE interrupt. Everywhere else the tap is
-        // the interrupt (§4.3), and the protective ear-hold is S3's.
+        // the interrupt (§4.3) — and the ear is CLOSED while the reply speaks, which is the same readback
+        // read for its other consequence (S3). `on`/`off` are the owner's override of that reading; only
+        // `auto` consults the track. The two decisions are deliberately not one flag: `barge_in` may be
+        // off on a perfectly subtractive track (walkie-talkie by choice), which holds nothing.
         bargeArmed.current = knobs.barge_in && cap.echoCancellation === "all";
+        const hold = knobs.echo_workaround;
+        send({
+          type: "captureReady",
+          earHoldMode:
+            hold === "on" ? true : hold === "off" ? false : cap.echoCancellation !== "all",
+          gen: ref.current.gen,
+        });
+        // …and the TRACK takes the machine's answer the moment it exists — the S2b confirm-F1 lesson
+        // beside the mute line above, in the other direction: the rule can already be TRUE here (a reply
+        // was audible while `getUserMedia` was pending), and a hold that only ever reaches the track on
+        // its next CHANGE would leave the ear open for exactly that stretch.
+        cap.setHeld(ref.current.earHeld);
         openLeg();
       })
       .catch((e: unknown) => {
@@ -731,6 +863,14 @@ export function useLiveCall(): CallView {
     else if (playStatus !== "loading" && (was === "playing" || was === "loading"))
       send({ type: "playbackDrained", gen });
   }, [playStatus, send]);
+
+  // ── the ear-hold, applied to the track (S3) ───────────────────────────────────────────────────
+  // The rule lives in the reducer; this is the one place it reaches the hardware. Cheap and idempotent
+  // (`track.enabled` against the stored pair — see `PcmCapture.setHeld`), so an effect that re-runs on a
+  // state the hold did not move costs nothing.
+  useEffect(() => {
+    capture.current?.setHeld(state.earHeld);
+  }, [state.earHeld]);
 
   // A mouth failure the TRANSPORT cannot express (§4.5): a rejected `play()` publishes "paused" and a
   // media error resets to "idle", and both of those read as ordinary transitions from here. The

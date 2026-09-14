@@ -1519,6 +1519,32 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     expect(since()).toBe(1);
   });
 
+  it("counts a rejected RESUME — the transport's own tap (S3, the S2a residual)", async () => {
+    // The last un-caught `play()` in the mouth: a resume can be refused exactly like a fresh clip's
+    // (the autoplay guard after a focus change, a transient device loss), and swallowed it is both an
+    // unhandled rejection and a failure nobody counts — the status still reads "paused", which is
+    // indistinguishable from the tap never having landed. The call machine's only mouth-failure signal
+    // is this counter, so a silent one strands it in `speaking` over a reply that never resumed.
+    setChunkPolicy(OFF);
+    const { result } = renderHook(() => usePlayback((p) => p.status));
+    const since = failureDelta();
+    await act(async () => {
+      await toggle("m1", "hello");
+    });
+    expect(result.current).toBe("playing");
+    await act(async () => {
+      await toggle("m1", "hello"); // …the same message: pause in place
+    });
+    expect(result.current).toBe("paused");
+
+    lastAudio.playRejects = true;
+    await act(async () => {
+      await toggle("m1", "hello"); // …and resume, which the engine now refuses
+    });
+    expect(since()).toBe(1);
+    expect(result.current).toBe("paused");
+  });
+
   it("counts a media ERROR — the path that resets to a perfectly ordinary 'idle'", async () => {
     const { result } = renderHook(() => usePlayback((p) => p.status));
     const since = failureDelta();
