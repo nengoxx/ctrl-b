@@ -1345,6 +1345,20 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > LONG, every "measured at start" value it rides must be re-audited; and an overlay anchored
   > to a moving control wants finger-relative while a hand owns it, control-relative the moment
   > the hand lets go — never one rule for both.
+  >
+  > **THE ROUND CLOSED (2026-09-14, the owner's verdicts, follow-up session):** both waves
+  > PASSED on the phone — the bar rules verified in BOTH latch cases (a pre-typed draft keeps
+  > its frozen row; an empty composer summons send only at release) and streaming dictation
+  > "works well" over the Serve HTTPS chain. The one question the owner raised — does Tier-0
+  > auto-stop collide with the streaming session? — was source-verified **NO COLLISION**: the
+  > energy poll hard-resets Tier-0's silence run every tick while a session is live (§9.3-a,
+  > `useDictation`'s poll block ③), so what ended their long-silence recording was the
+  > session's OWN idle clock (`dictation_idle_s` 15 s, hands-free only, floor =
+  > `stt.auto_stop_threshold`) closing via the ordinary release — appended phrases kept. Their
+  > dev Tier-0 window (auto-stop ON at 5 s during the round) never firing across long pauses
+  > is itself live proof of the suspension. Ambient noise can only DELAY the idle stop (above
+  > the floor it resets the clock), never cause it; the floor and `dictation_idle_s` stay on
+  > the S4 calibration list below. Ops: Serve RESTORED to prod :5433, verified 200/v1.7.7.
 - **S4 — the owner calibration + device round (the phase gate):** real phone, real rooms — noisy
   and quiet; the §4.1 knobs tuned by feel; the Tier 0 auto-stop threshold calibrated in the same
   sitting; `enabled` flips ON as the round's close.

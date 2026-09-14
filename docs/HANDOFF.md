@@ -12,7 +12,39 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-14, TWENTY-THIRD session — **the PUSH landed (46 S0→S3 commits) · S3.5 council-CLOSED (dictation DECOUPLED from the call: gate = `enabled OR dictation`, the four dictation Conf rows now in Voice · STT) · then the owner's LIVE PHONE ROUND ran and produced TWO more council-CLOSED waves the SAME session: the WORKLET GATE (streaming dictation was DEAD on plain HTTP — AudioWorklet is secure-context-only; the Serve→dev HTTPS chain verified end to end, and the S4 Serve Host-header question ANSWERED: the same-host rule passes with allowed_origins EMPTY) and the LONG-RECORDING BAR RULES (the anchor tracks the button finger-free · the row FREEZES while recording). Everything through Emma blind rounds → waves → confirms, all RESOLVED — SHIP, sweeps "none". ⚠ OPS: Tailscale Serve fronts DEV :5173 for the owner's still-running test round — RESTORE `tailscale serve --bg 5433` when it ends. ▶▶ NEXT SESSION opens on the owner's test verdicts → then S4**; supersedes below where it speaks)
+## Current state (2026-09-14, TWENTY-FOURTH session — **THE OWNER'S TEST ROUND CLOSED with both verdicts PASS: the long-recording bar rules verified in BOTH latch cases (pre-typed draft + empty composer) and streaming dictation "works well" over the Serve HTTPS chain. The one question — does Tier-0 auto-stop collide with streaming dictation? — was source-verified NO COLLISION (the stop the owner felt was `dictation_idle_s`, by design). Serve RESTORED to prod :5433, verified. Zero app code this session. ▶▶ NEXT SESSION = S4 (plan §7) — the owner calibration + device round = THE PHASE GATE**; supersedes below where it speaks)
+
+- **The verdicts (the owner, in conversation; record folded into plan §7-S3.5's addendum as the
+  round-close block):** ① the bar rules PASS — tested with text already in the composer (the
+  latched `showSend`/frozen row) and without (send summoned only at release); ② streaming
+  dictation PASS — phrases appending over the Serve → :5173 HTTPS chain, "works well".
+- **The collision check (the owner's ask, source-verified — no code changed):** the energy poll
+  rules in order — Tier-0's silence run is HARD-RESET every tick while a streaming session is
+  live (§9.3-a; `useDictation.ts`'s poll block ③), so Tier-0 cannot fire mid-stream no matter
+  the pause. What ended the owner's long-silence recording was the streaming session's own
+  IDLE clock — `dictation_idle_s` (15 s, HANDS-FREE ONLY; the finger is the timeout while
+  held; floor = `stt.auto_stop_threshold`, 0 disarms it) — closing via the ordinary release,
+  appended phrases kept; `dictation_max_s` (120 s) bounds the socket regardless. The owner's
+  dev Tier-0 (they flipped auto-stop ON at 5 s for the round) never firing across long pauses
+  is live proof of the suspension. Ambient noise can only DELAY the idle stop (above-floor
+  readings reset the clock), never cause it. The floor + `dictation_idle_s` ride the S4
+  calibration sitting.
+- **Ops:** Tailscale Serve RESTORED to prod — `tailscale serve --bg 5433`, verified 200 +
+  health v1.7.7. Both dev units RUNNING (D69 — do NOT stop them). Dev config now: `dictation`
+  ON · `enabled` OFF · **`stt.auto_stop` ON @ 5 s** (the owner's round toggle, left as they
+  set it) · `allowed_origins` keeps the Serve origin as the belt.
+- **▶▶ NEXT SESSION: S4 (plan §7) — the owner calibration + device round = THE PHASE GATE**
+  (needs the OWNER + phone, afternoons): the §4.1 knobs · `barge_threshold`/Tier-0 threshold ·
+  `tail_wait_ms` vs the measured 530–830 ms · `dictation_idle_s` feel · ring/hint feel ·
+  **`voice.live.enabled` flips ON as the round's close**; the decision point: fixed
+  endpointing good → v1 stands, sluggish → architecture ② gets designed (§2.1). The Serve
+  Host-header item is DONE. Phase 23 S7 + v1.7.8 sequencing unchanged (release E after the
+  roleplay features).
+- Git: **this docs commit is the only delta over the pushed tip** (the push ruling stays the
+  owner's); tree clean at write. **Prod untouched v1.7.7 @ `578ffa7`.** FE 3,519/192 · BE
+  2,480 unchanged.
+
+## Prior state (2026-09-14, TWENTY-THIRD session — **the PUSH landed (46 S0→S3 commits) · S3.5 council-CLOSED (dictation DECOUPLED from the call: gate = `enabled OR dictation`, the four dictation Conf rows now in Voice · STT) · then the owner's LIVE PHONE ROUND ran and produced TWO more council-CLOSED waves the SAME session: the WORKLET GATE (streaming dictation was DEAD on plain HTTP — AudioWorklet is secure-context-only; the Serve→dev HTTPS chain verified end to end, and the S4 Serve Host-header question ANSWERED: the same-host rule passes with allowed_origins EMPTY) and the LONG-RECORDING BAR RULES (the anchor tracks the button finger-free · the row FREEZES while recording). Everything through Emma blind rounds → waves → confirms, all RESOLVED — SHIP, sweeps "none". ⚠ OPS: Tailscale Serve fronts DEV :5173 for the owner's still-running test round — RESTORE `tailscale serve --bg 5433` when it ends. ▶▶ NEXT SESSION opens on the owner's test verdicts → then S4**; supersedes below where it speaks)
 
 - **S3.5 (council-CLOSED; record = plan §7-S3.5):** the owner's question "is live dictation
   call-only?" surfaced the latent gate coupling. Shipped: the WS route + `live_ear` admit on
