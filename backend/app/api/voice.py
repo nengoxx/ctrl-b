@@ -89,10 +89,13 @@ async def voice_status(request: Request) -> dict[str, object]:
     status["live"] = client.configured("live") and client.configured("tts") and live.enabled
     # THE EAR ALONE (S2.5). Streaming dictation needs no mouth — it fills the composer — so it cannot
     # ride the bit above, whose TTS term is the call's own §5.1 refinement. This one MIRRORS THE WS
-    # ROUTE GATE EXACTLY (`voice_live` below: `cfg.enabled and client.configured("live")`), because it
-    # answers exactly the route's question: would this client's socket be admitted? Any drift between
-    # the two is a mic that opens a leg the route refuses (or refuses to open one it would have taken).
-    status["live_ear"] = client.configured("live") and live.enabled
+    # ROUTE GATE EXACTLY (`voice_live` below: `(cfg.enabled or cfg.dictation) and
+    # client.configured("live")`), because it answers exactly the route's question: would this
+    # client's socket be admitted? Any drift between the two is a mic that opens a leg the route
+    # refuses (or refuses to open one it would have taken). The OR (S3.5): the ear opens when EITHER
+    # feature wants it — dictation is an STT-facing feature (the R70 field norm: composer dictation
+    # and voice mode are separate features everywhere) and must not require the CALL toggle.
+    status["live_ear"] = client.configured("live") and (live.enabled or live.dictation)
     # …and the CLIENT-side call knobs, same split as `stt_auto_stop`/`tts_chunking`: shape only — no
     # endpoint, no key, no model id, nothing that says whether a secret exists. Speaches' own
     # `TurnDetection` accepts exactly five fields (§4.1), so every interruption/pacing knob a call
@@ -157,9 +160,10 @@ async def voice_live(websocket: WebSocket) -> None:
 
     1. **Origin** first — it is the security rail, and a rejected origin must learn nothing about
        whether the feature exists.
-    2. **The feature gate** (`voice.live.enabled` + a resolvable realtime target) — refused
-       pre-`accept()`, which a browser sees as a failed handshake (HTTP 403), matching how the mic
-       simply is not offered when `stt` is unconfigured.
+    2. **The feature gate** (either feature toggle — `voice.live.enabled` for the call,
+       `voice.live.dictation` for the streaming mic (S3.5) — plus a resolvable realtime target) —
+       refused pre-`accept()`, which a browser sees as a failed handshake (HTTP 403), matching how
+       the mic simply is not offered when `stt` is unconfigured.
     3. **Busy** — post-`accept()`, deliberately: the cap is a transient condition, so the client gets
        a TYPED `{"error","busy"}` + close 1013 ("try again later") it can render, not an opaque
        handshake failure indistinguishable from a misconfiguration.
@@ -180,7 +184,7 @@ async def voice_live(websocket: WebSocket) -> None:
         return
     target = client.live_target()
     policy = client.live_policy()
-    if not (cfg.enabled and client.configured("live")) or target is None or policy is None:
+    if not ((cfg.enabled or cfg.dictation) and client.configured("live")) or target is None or policy is None:
         await websocket.close(code=CLOSE_PROTOCOL, reason="live voice unavailable")
         return
 

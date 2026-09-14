@@ -2557,6 +2557,40 @@ export function ConfTab({ active }: Props) {
             value={String(vstt?.auto_stop_threshold ?? "")}
             onChange={(v) => setStt("auto_stop_threshold", v as unknown as number)}
           />
+          {/* S3.5 — streaming dictation lives HERE, beside the mic it upgrades (the R70 field norm:
+              composer dictation and voice/call mode are separate features everywhere). The KEYS stay
+              `voice.live.*` — the four configure the same realtime ear the call uses (the recorded
+              S2.5 rationale), so they ride `setLive` and the live section's save coercion; only the
+              GROUPING is STT's. The toggle alone opens the ear — the WS route admits on either
+              feature's toggle — so it does NOT need "Live call" enabled. */}
+          <SettingRow
+            label="Live dictation"
+            desc="phrases appear in the composer as you pause — needs a realtime (live) target; blank rides this STT chain. off → the whole clip is transcribed on release"
+          >
+            <Switch
+              on={!!vlive?.dictation}
+              label="Live dictation enabled"
+              onToggle={() => setLive("dictation", !vlive?.dictation)}
+            />
+          </SettingRow>
+          <Field
+            label="Phrase tail wait"
+            desc="ms to wait for the last phrase after you let go (500–10000) — raise it on a slow ear, lower it if the mic feels stuck"
+            value={String(vlive?.tail_wait_ms ?? "")}
+            onChange={(v) => setLive("tail_wait_ms", v as unknown as number)}
+          />
+          <Field
+            label="Dictation idle stop"
+            desc="seconds of silence that end a hands-free dictation (3–300) — a held finger is never idle"
+            value={String(vlive?.dictation_idle_s ?? "")}
+            onChange={(v) => setLive("dictation_idle_s", v as unknown as number)}
+          />
+          <Field
+            label="Dictation time limit"
+            desc="seconds one dictation may run before it stops itself (10–1800)"
+            value={String(vlive?.dictation_max_s ?? "")}
+            onChange={(v) => setLive("dictation_max_s", v as unknown as number)}
+          />
           {/* A11/D48 Slice 2 — the STT primary + ordered fallbacks point at the registry (provider + model
               scoped to its catalog); the whisper endpoint/key/model now live on the provider card. */}
           <SectionRefEditor
@@ -2741,19 +2775,9 @@ export function ConfTab({ active }: Props) {
               onToggle={() => setLive("barge_in", !vlive?.barge_in)}
             />
           </SettingRow>
-          {/* S2.5 — streaming dictation is its OWN whole-feature toggle on the same section: it uses
-              the call's ear but not its mouth, so an owner may want one without the other. The desc
-              names the dependency the way the call's own row does. */}
-          <SettingRow
-            label="Live dictation"
-            desc="phrases appear in the composer as you pause — needs the realtime ear; off → the whole clip is transcribed on release"
-          >
-            <Switch
-              on={!!vlive?.dictation}
-              label="Live dictation enabled"
-              onToggle={() => setLive("dictation", !vlive?.dictation)}
-            />
-          </SettingRow>
+          {/* S3.5 — the dictation four (toggle · tail wait · idle stop · time limit) render in the
+              Voice · STT group above: dictation is the mic's feature, not the call's. Same
+              `voice.live.*` keys, same save coercion — only the grouping moved. */}
           <SettingRow
             label="Face ring"
             desc="a ring over the art showing the call's state; off → the art alone"
@@ -2804,24 +2828,6 @@ export function ConfTab({ active }: Props) {
             desc="mic level counted as talking over the reply (0–0.5) — 0 reuses the STT silence threshold"
             value={String(vlive?.barge_threshold ?? "")}
             onChange={(v) => setLive("barge_threshold", v as unknown as number)}
-          />
-          <Field
-            label="Phrase tail wait"
-            desc="ms to wait for the last phrase after you let go (500–10000) — raise it on a slow ear, lower it if the mic feels stuck"
-            value={String(vlive?.tail_wait_ms ?? "")}
-            onChange={(v) => setLive("tail_wait_ms", v as unknown as number)}
-          />
-          <Field
-            label="Dictation idle stop"
-            desc="seconds of silence that end a hands-free dictation (3–300) — a held finger is never idle"
-            value={String(vlive?.dictation_idle_s ?? "")}
-            onChange={(v) => setLive("dictation_idle_s", v as unknown as number)}
-          />
-          <Field
-            label="Dictation time limit"
-            desc="seconds one dictation may run before it stops itself (10–1800)"
-            value={String(vlive?.dictation_max_s ?? "")}
-            onChange={(v) => setLive("dictation_max_s", v as unknown as number)}
           />
           <SectionRefEditor
             primaryDesc="realtime provider · model — blank rides Voice STT's chain"

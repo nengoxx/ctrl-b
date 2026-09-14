@@ -52,8 +52,9 @@ export function useComposer(): ComposerController {
     // absent (older backend / stub) → undefined → plain push-to-talk.
     autoStop: voice.data?.stt_auto_stop,
     // D71 S2.5 — phrase-by-phrase streaming dictation, off the same probe again. `live_ear` is the
-    // EAR's own bit (the WS route's two terms), deliberately not `live`: dictation fills the composer
-    // and needs no mouth, so a TTS-less install still streams. Both absent → today's whole-clip path.
+    // EAR's own bit (the WS route's own terms; since S3.5 the dictation toggle alone opens it),
+    // deliberately not `live`: dictation fills the composer and needs no mouth, so a TTS-less or
+    // call-less install still streams. Both absent → today's whole-clip path.
     liveEar: voice.data?.live_ear,
     liveCall: voice.data?.live_call,
   });

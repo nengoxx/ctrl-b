@@ -1130,8 +1130,10 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > `tail_wait_ms` (500–10000, default 2000) · `dictation_idle_s` (15) · `dictation_max_s`
   > (120), delivered in `live_call`; **the new `live_ear` bit MIRRORS THE WS ROUTE GATE
   > exactly** (`configured("live") AND live.enabled`, NO TTS term — dictation fills the
-  > composer and needs no mouth; the `live` bit keeps TTS for the call button); Conf rows ride
-  > the S2b "Live call" section. FE — the streaming leg arms per recording on `live_ear &&
+  > composer and needs no mouth; the `live` bit keeps TTS for the call button) *(S3.5 AMENDED:
+  > both the route gate and the mirror are now `configured("live") AND (enabled OR
+  > dictation)`)*; Conf rows ride the S2b "Live call" section *(S3.5 AMENDED: the dictation
+  > four render in Voice · STT — keys unmoved)*. FE — the streaming leg arms per recording on `live_ear &&
   > live_call.dictation`: `attachPcmUplink` (extracted from `startPcmCapture`, which is now
   > written in terms of it) hangs the worklet off the RECORDER's stream + `armDetector`'s
   > context — never a second `getUserMedia` or context; ONE FIFO + ONE wall-clock token bucket
@@ -1185,10 +1187,11 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > 530–830 ms release→final, and real multi-phrase VAD lag there is the §2.1 arch-② trigger
   > · auto-send fires on that same bound (a mid-death auto-send sends the truncated draft —
   > feel material) · the hidden-page release's throttled timers can hold the SOCKET (never
-  > the mic) open past the tap (in-source note; S3/feel) · a hand-edited `dictation: true`
+  > the mic) open past the tap (in-source note; S3/feel) · ~~a hand-edited `dictation: true`
   > with `enabled: false` streams nothing until the ear exists (`live_ear` is the gate —
-  > by design) · the e2e caret probe pins the RAW collapse on the whole-clip path (the
-  > mitigation is unit-pinned).
+  > by design)~~ *(S3.5 SUPERSEDED: `dictation: true` alone now opens the ear — the owner's
+  > ruling that dictation must not require the call feature)* · the e2e caret probe pins the
+  > RAW collapse on the whole-clip path (the mitigation is unit-pinned).
 - **S3 — interruption hardening:** the §4.3 ordered cancel-settle contract + the buffered-final
   race (F4) · the playback-would-start-while-speaking edge (F5) · the echo fallback branch if S0
   ruled dirty · reconnect/backpressure edges (F6) exercised against a flaky link.
@@ -1260,6 +1263,27 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > play site must route through `startEl` (the comment at the chokepoint pins the rule) ·
   > ring/hint feel + `tail_wait_ms`/`barge_threshold`/Tier-0 calibration = the S4 sitting ·
   > `voice.live.enabled` (+ `.dictation`) still default OFF — S4's flip closes the phase.
+- **S3.5 — dictation decoupled from the call (owner-commissioned 2026-09-14, in conversation):**
+  the owner's question — "is live dictation a regular-mic feature, and can its setting live in
+  the STT section?" — surfaced a latent inconsistency: `LiveCfg.dictation`'s comment claimed
+  independence from `enabled`, but `live_ear` and the WS route both required `enabled`, so
+  streaming dictation silently demanded the CALL feature (and, with TTS configured, the call
+  button). Field norm (R70 §2, already bought): composer dictation and voice/call mode are
+  separate features in every peer — ChatGPT's own docs state it flatly.
+
+  > **S3.5 AS-BUILT (main-seat build, blind-reviewed):** ① the WS route gate and `live_ear`
+  > both became `configured("live") AND (enabled OR dictation)` — the mirror rule between them
+  > intact (the ear opens when EITHER feature wants it; the MASTER `voice.enabled` and the
+  > missing-chain refusals outrank both, unchanged); the `live` (call) bit is untouched, so
+  > `dictation` alone never shows the call door. Red-proven: a new route-level test admits the
+  > socket at `enabled: false, dictation: true` and fails against the reverted gate; the
+  > mirror parametrize grew three S3.5 arms (dictation-alone × master-off × chain-missing).
+  > ② The four dictation rows (toggle · tail wait · idle stop · time limit) moved to the
+  > Conf **Voice · STT** group, beside the mic rows they modulate — GROUPING ONLY: the keys
+  > stay `voice.live.*` (the recorded S2.5 one-ear rationale; same `setLive` setters, same
+  > save coercion, no YAML shape change, no migration). The Live call section keeps the
+  > call-only + shared-ear knobs and a pointer comment. Conf tests moved with the rows and
+  > now also pin the ONE-home rule (the live group renders none of the four).
 - **S4 — the owner calibration + device round (the phase gate):** real phone, real rooms — noisy
   and quiet; the §4.1 knobs tuned by feel; the Tier 0 auto-stop threshold calibrated in the same
   sitting; `enabled` flips ON as the round's close.

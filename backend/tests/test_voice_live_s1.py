@@ -437,7 +437,7 @@ def test_a_configured_extra_origin_is_accepted() -> None:
 
 def test_feature_disabled_and_no_chain_refuse_the_handshake() -> None:
     for kwargs in (
-        {"live_cfg": {"enabled": False}},
+        {"live_cfg": {"enabled": False}},  # dictation defaults False too — BOTH toggles down (S3.5)
         {"client": _voice_client(live=False)},
         {"client": _voice_client(enabled=False)},  # the voice.enabled MASTER outranks live.enabled
     ):
@@ -1043,27 +1043,33 @@ def test_status_carries_the_client_side_call_knobs() -> None:
 
 
 @pytest.mark.parametrize(
-    ("kwargs", "live_enabled", "ear", "call"),
+    ("kwargs", "live_cfg", "ear", "call"),
     [
-        ({}, True, True, True),
-        ({"enabled": False}, True, False, False),  # the voice.enabled MASTER outranks both
-        ({}, False, False, False),  # the feature toggle
-        ({"live": False}, True, False, False),  # no realtime chain = no ear at all
+        ({}, {"enabled": True}, True, True),
+        ({"enabled": False}, {"enabled": True}, False, False),  # the voice.enabled MASTER outranks both
+        ({}, {"enabled": False}, False, False),  # both feature toggles off
+        ({"live": False}, {"enabled": True}, False, False),  # no realtime chain = no ear at all
         # THE ARM THAT MAKES THE TWO BITS DIFFERENT (S2.5): with TTS unconfigured the CALL bit falls
         # (§5.1 — a call with nothing to say back is not a call) while the EAR bit stands, because
         # dictation fills the composer and needs no mouth. A `live_ear` that merely aliased `live`
         # would leave streaming dictation unreachable on a TTS-less install; this is the red-proof.
-        ({"tts": False}, True, True, False),
-        ({"stt": False}, True, True, True),  # push-to-talk STT is irrelevant to the realtime leg
+        ({"tts": False}, {"enabled": True}, True, False),
+        ({"stt": False}, {"enabled": True}, True, True),  # push-to-talk STT is irrelevant to the realtime leg
+        # THE S3.5 ARMS: `dictation` ALONE opens the ear (the route gate's OR) while the CALL bit
+        # stays down — streaming dictation is an STT-facing feature and must not require the call
+        # toggle. The MASTER and the missing-chain refusals outrank it exactly as they do `enabled`.
+        ({}, {"enabled": False, "dictation": True}, True, False),
+        ({"enabled": False}, {"enabled": False, "dictation": True}, False, False),
+        ({"live": False}, {"enabled": False, "dictation": True}, False, False),
     ],
 )
 def test_the_live_ear_bit_mirrors_the_route_gate(
-    kwargs: dict[str, Any], live_enabled: bool, ear: bool, call: bool
+    kwargs: dict[str, Any], live_cfg: dict[str, Any], ear: bool, call: bool
 ) -> None:
     """`live_ear` answers the WS route's own question — "would this socket be admitted?" — and so it
-    carries the route's two terms and NOT the call bit's third (TTS). Both bits are asserted in every
+    carries the route's terms and NOT the call bit's third (TTS). Both bits are asserted in every
     arm so a future edit cannot quietly collapse one into the other."""
-    app = _app(client=_voice_client(**kwargs), live_cfg={"enabled": live_enabled})
+    app = _app(client=_voice_client(**kwargs), live_cfg=live_cfg)
     body = app.get("/api/voice/status").json()
     assert body["live_ear"] is ear
     assert body["live"] is call
@@ -1073,6 +1079,18 @@ def test_the_live_ear_bit_and_the_route_agree_on_the_same_install() -> None:
     """The mirror, exercised rather than asserted: the bit says yes and the route takes the socket."""
     app = _fake_app(FakeSpeaches([created()]), client=_voice_client(tts=False))
     assert app.get("/api/voice/status").json()["live_ear"] is True
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws)
+
+
+def test_dictation_alone_admits_the_socket_with_the_call_disabled() -> None:
+    """The S3.5 red-proof, exercised end to end: `enabled: false, dictation: true` and the route
+    still takes the socket (the OR is load-bearing — revert the route gate to `cfg.enabled and …`
+    and this hangs up pre-accept). The call bit stays down, so no call door appears."""
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"enabled": False, "dictation": True})
+    body = app.get("/api/voice/status").json()
+    assert body["live_ear"] is True
+    assert body["live"] is False
     with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
         _ready(ws)
 

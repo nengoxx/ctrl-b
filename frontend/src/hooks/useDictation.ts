@@ -316,10 +316,11 @@ function extFromMime(mime: string): string {
  *                    energy detector on the same stream stops the recording after a silence run —
  *                    hands-free stop, which `autoSend` then composes with unchanged. Absent (older
  *                    backend / test stub) or `enabled: false` → plain push-to-talk, nothing built.
- * @param liveEar    `/voice/status.live_ear` (D71 S2.5): the realtime chain is configured AND
- *                    `voice.live.enabled` — the two terms the WS route itself gates on. Deliberately
- *                    not the `live` bit, whose TTS term belongs to the CALL: dictation fills the
- *                    composer and needs no mouth.
+ * @param liveEar    `/voice/status.live_ear` (D71 S2.5): the realtime chain is configured AND at
+ *                    least one of `voice.live.{enabled,dictation}` — exactly the terms the WS route
+ *                    gates on (S3.5: the dictation toggle alone opens the ear; no call feature
+ *                    required). Deliberately not the `live` bit, whose TTS term belongs to the
+ *                    CALL: dictation fills the composer and needs no mouth.
  * @param liveCall   `/voice/status.live_call`, the client-side knobs. Absent (pre-S1 backend / test
  *                    stub) → no streaming, exactly as `liveEar` false. NOTHING in the streaming branch
  *                    may invent one of these numbers.

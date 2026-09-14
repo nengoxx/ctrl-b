@@ -659,8 +659,12 @@ class LiveCfg(VoiceServiceCfg):
     # draft live, and the release is the relay's `flush` (never a commit — R70 §1.2 arm A). All four
     # are read by `useDictation` alone; the relay neither sees nor enforces one of them.
     #: The whole-feature toggle (the standing pluggability requirement), independent of `enabled` so the
-    #: owner can run calls without the mic streaming, or the reverse. OFF ships: streaming dictation is
-    #: opt-in, and with it off the mic is exactly today's whole-clip POST.
+    #: owner can run calls without the mic streaming, or the reverse. The independence is REAL both ways
+    #: (S3.5): the WS route + the `live_ear` bit admit on `enabled OR dictation`, so this switch alone
+    #: opens the ear for the mic — no call feature required (the R70 field norm: composer dictation and
+    #: voice mode are separate features everywhere). OFF ships: streaming dictation is opt-in, and with
+    #: it off the mic is exactly today's whole-clip POST. Conf renders this + the three knobs below in
+    #: the Voice · STT section (grouping is presentational; the YAML home stays here — same ear).
     dictation: bool = False
     #: How long the client waits for the TAIL final after its release `flush`, ms. R70 §4: ~2.4× the
     #: worst measured tail (530–830 ms across a 1.26/2.79/4.57 s buffer), which is comfortably inside a
