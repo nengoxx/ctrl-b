@@ -1192,6 +1192,74 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
 - **S3 — interruption hardening:** the §4.3 ordered cancel-settle contract + the buffered-final
   race (F4) · the playback-would-start-while-speaking edge (F5) · the echo fallback branch if S0
   ruled dirty · reconnect/backpressure edges (F6) exercised against a flaky link.
+
+  > **S3 AS-BUILT + council-CLOSED (2026-09-14, one session; the standing cadence, TWO confirm
+  > rounds — both of the reviewer's MEDs survived their first fix at a boundary, and both roots
+  > moved).** Build `fd7fee2` (pinned Opus, 10 files +849/−48, 9 red-proofs; 4 declared
+  > deviations, all ACCEPTED — headline: `killNow` clears `mouthLive` at the kill because step ①
+  > `dismiss()` is synchronous, so the ear-hold must not close again over the words the owner
+  > interrupted with) → main-seat audit (the stranded-flag walk: a `speechStop` dropped while
+  > held cannot strand `userSpeechActive` — the iron rule kills before the hold can engage over
+  > active speech) → blind Emma (hermes lane, `--ignore-rules`, detached + the output-file
+  > monitor) **SHIP WITH FIXES — 2 MED, open sweep "none"** (transport catch · pcmCapture's OR
+  > rule · the dictation abandonment · ready/queue interactions all explicitly verified sound) →
+  > wave `7a298ff` (F1: `killSettled`'s repaint consults `mouthLive` — replacement playback
+  > keeps `speaking`, `held()` re-holds the queue, the REAL drain releases it; F2 re-derived
+  > lean: the mouth watcher became a SYNCHRONOUS store subscription —
+  > `subscribePlayback`/`getPlayStatus`, `emit` runs listeners inside the publishing `set()` —
+  > with the hold applied on the signal's heels in the same task) → her confirm **BLOCKED —
+  > both survive at a boundary** (F1: `playbackStarted` was the ONE arm repainting
+  > `connecting → speaking` while the leg was down; F2: same-task-as-EVENT is not before-AUDIO —
+  > the `play` event is a queued task, and a stalled main thread lets a captured leak frame
+  > beat the handler) → micro-wave №2 `850d530` (main-seat: **the RECONNECT OWNS THE PHASE** —
+  > `playbackStarted` preserves `connecting`, the flag lands, `ready` stays the arm that
+  > consults it; and **the ear closes BEFORE the mouth asks to play** — `setCallPrePlay` + the
+  > ONE `startEl` chokepoint over the four audible play sites, the muted silent prime excluded;
+  > the tap is a bare "close now", stable in the play()→event gap because nothing can
+  > transition `earHeld` there, reopened by a rejection's own status edge; deliberately NO
+  > third gate slot in `PcmCapture`) → **her confirm №2: both RESOLVED with line proof,
+  > micro-wave sweep "none" — RESOLVED — SHIP** (she re-ran the three suites herself). Gate
+  > 6/6 at every tip; final **FE 3,513/192 · BE 2,476** (QUALITY.md); liveCall e2e 16 → 20
+  > arms (the mid-utterance leg drop · the backpressure-style unannounced close).
+  >
+  > **Shape:** the Fennec EAR-HOLD — `PcmCapture.setHeld` beside `setMuted`, ONE effective rule
+  > `track.enabled = !(muted || held)` (frames keep flowing as silence — the endpointing
+  > reason, unchanged); the REDUCER owns the rule: `earHoldMode` lands once via the new
+  > `captureReady` signal (`auto` → the track's AEC readback ≠ `"all"` · `on`/`off` force it;
+  > per track, never UA-sniffed), and `earHeld` is DERIVED in one normalize after every reduce
+  > (`mode && mouthLive && !killing`) — never maintained per-arm; the `speechStart`/
+  > `speechStop`/`final` guards widened to `muted || earHeld` (a leaked-playback final must
+  > never become a message); the rule reaches the track at acquisition, on every state change,
+  > synchronously on playback edges, and — the confirm round's teaching — BEFORE the play call
+  > itself. `mouthLive` — the observed transport truth, ORTHOGONAL to the phase: maintained
+  > past every phase guard, `ready` lands on `speaking` while it holds, `barge` gates on
+  > `mouthLive && !killing` (§4.3's intent, honest across the reconnect window), trigger A's
+  > sustained-energy clock reads it. Plus the parked residuals closed: `transport()`'s bare
+  > `play()` caught (reqSeq/playOp, the file's own generation conventions) and the dictation
+  > release's hidden-page tail wait ended by ABANDONMENT (dead → skip `stop` → `close`; the
+  > tail-wait theorem intact — a user departure, not a completeness claim).
+  >
+  > **⚠ Durable lessons:** (a) **observation cannot beat the audio thread** — a "synchronous"
+  > store subscription is same-task-as-EVENT, and the media event is a queued task; anything
+  > that must precede audible output must run BEFORE the API call that starts it (the pre-play
+  > tap), not on any observer however fast. The reviewer holding the same boundary twice is
+  > what moved the class — the S2.5 meta-lesson applied on the spot, one round early. (b) Two
+  > arms disagreeing about who owns the screen is a defect even when each is locally
+  > defensible — `socketLost` painted `connecting` over a live mouth while `playbackStarted`
+  > repainted it back; the rule ("the reconnect owns the phase; `ready` consults the flag")
+  > had to be stated once and enforced at every arm. (c) A derived flag wants a NORMALIZE
+  > chokepoint, not per-arm maintenance (`earHeld` computed after every reduce — a rule spread
+  > across a dozen arms is a rule with a dozen chances to be forgotten). (d) Ops: the harness
+  > kills its own backgrounded shells — the Monitor tool, plus detached `setsid` work with an
+  > output-file completion signal, is the surviving pattern (three plain background monitors
+  > died this session before the switch).
+  >
+  > **Residuals riding later slices (none owed now):** dictation's streaming leg deliberately
+  > does NOT hold during playback (recording over a reply is the user's own choice — parity
+  > with the whole-clip path) · the pre-play tap covers element plays only, and every future
+  > play site must route through `startEl` (the comment at the chokepoint pins the rule) ·
+  > ring/hint feel + `tail_wait_ms`/`barge_threshold`/Tier-0 calibration = the S4 sitting ·
+  > `voice.live.enabled` (+ `.dictation`) still default OFF — S4's flip closes the phase.
 - **S4 — the owner calibration + device round (the phase gate):** real phone, real rooms — noisy
   and quiet; the §4.1 knobs tuned by feel; the Tier 0 auto-stop threshold calibrated in the same
   sitting; `enabled` flips ON as the round's close.

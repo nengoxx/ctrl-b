@@ -12,7 +12,48 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-14, TWENTY-FIRST session — **S2.5 (phrase streaming dictation) RAN THE STANDING CADENCE WITH FOUR CONFIRM ROUNDS and is council-CLOSED: pinned Opus build → main-seat audit rider → blind Emma SHIP WITH FIXES (5 MED, sweep "none") → fix wave → three F1 chases ending in a DELETION (the tail wait is the FLAT bound) → №4 RESOLVED — SHIP. ▶▶ NEXT SESSION = S3 (interruption hardening + the Fennec ear-hold), then S4**; supersedes below where it speaks)
+## Current state (2026-09-14, TWENTY-SECOND session — **S3 (interruption hardening) RAN THE STANDING CADENCE WITH TWO CONFIRM ROUNDS and is council-CLOSED: pinned Opus build → main-seat audit (4 deviations ACCEPTED) → blind Emma SHIP WITH FIXES (2 MED, sweep "none") → fix wave → confirm BLOCKED (both MEDs survived at a boundary) → main-seat micro-wave №2 → №2 RESOLVED — SHIP, sweep "none". ▶▶ NEXT SESSION = S4 (the owner calibration + device round = THE PHASE GATE + the `enabled` flip) — it NEEDS THE OWNER + phone**; supersedes below where it speaks)
+
+- **S3 is council-CLOSED (full as-built record = plan §7-S3 — read THAT before S4):** the
+  Fennec EAR-HOLD (`PcmCapture.setHeld`, ONE rule `enabled = !(muted||held)`, frames keep
+  flowing as silence; `earHoldMode` lands once via `captureReady` — `auto` = readback ≠ `"all"`
+  per track, never UA-sniffed; `earHeld` DERIVED in one normalize, `mode && mouthLive &&
+  !killing`; VAD/final guards widened to `muted || earHeld`; **the PRE-PLAY TAP** —
+  `setCallPrePlay` + the ONE `startEl` chokepoint, the ear closes BEFORE the mouth asks the
+  element to play) · `mouthLive` (the observed transport truth, orthogonal to the phase —
+  `ready` lands on `speaking` while it holds, `barge` gates on `mouthLive && !killing`, **the
+  reconnect owns the phase while the leg is down**) · the F4/F5/F6 race sweep + two flaky-link
+  e2e arms (liveCall 16 → 20) · `transport()`'s bare `play()` caught · the dictation release's
+  hidden-page tail wait closed by ABANDONMENT (the tail-wait theorem intact).
+- **The cadence, two confirm rounds:** build `fd7fee2` (pinned Opus, +849/−48, 9 red-proofs) →
+  audit (the stranded-flag walk; 4 deviations ACCEPTED) → blind Emma **SHIP WITH FIXES 2M
+  sweep "none"** → wave `7a298ff` (killSettled consults the mouth · the watcher became a
+  SYNCHRONOUS store subscription) → confirm **BLOCKED ×1, both survived**: ⚠ the durable pair —
+  `playbackStarted` was the ONE arm repainting `connecting → speaking` (two arms disagreeing
+  about who owns the screen IS a defect), and **observation cannot beat the audio thread**
+  (same-task-as-EVENT ≠ before-AUDIO; what must precede audible output runs BEFORE the API
+  call that starts it) → micro `850d530` (the connecting-preserve + the pre-play tap, both her
+  prescriptions in lean form — no third gate slot needed, the play()→event gap cannot
+  transition `earHeld`) → **№2: both RESOLVED with line proof, sweep "none" — RESOLVED —
+  SHIP.** The S2.5 meta-lesson (a boundary held twice ⇒ the class moves) applied one round
+  early this time.
+- **Gate 6/6 at every tip — FE 3,513/192 · BE 2,476 (unchanged, S3 was FE-only)** (counts in
+  QUALITY.md). Both dev units RUNNING (D69 — do NOT stop them); :5173 serves the whole slice
+  live; :5434 unchanged on the S2.5 tip. **⚠ `voice.live.enabled` AND `voice.live.dictation`
+  still default OFF** — the Conf "Live call" section flips them for a dev poke.
+- **▶▶ NEXT SESSION: S4 (plan §7) — the owner calibration + device round, THE PHASE GATE. It
+  needs the OWNER + the phone (afternoons)**: real rooms noisy and quiet · the §4.1 knobs
+  (`vad_threshold`/`silence_ms`/`min_speech_ms`) + `barge_threshold`/Tier-0 auto-stop
+  calibrated in one sitting · `tail_wait_ms` tuned against the measured 530–830 ms ·
+  ring/hint feel · the Serve Host-header empiricism (`allowed_origins` = the escape) ·
+  **`voice.live.enabled` flips ON as the round's close = the phase closes**; the decision
+  point: fixed endpointing good → v1 stands, sluggish → architecture ② gets designed (§2.1).
+  Phase 23 S7 + v1.7.8 sequencing unchanged (release E after the roleplay features).
+- Git: **45 commits unpushed over origin `b946fc1`** (the 41 + `fd7fee2` · `7a298ff` ·
+  `850d530` + this docs commit); tree clean at write; the PUSH ruling stays the owner's.
+  **Prod untouched v1.7.7 @ `578ffa7`.**
+
+## Prior state (2026-09-14, TWENTY-FIRST session — **S2.5 (phrase streaming dictation) RAN THE STANDING CADENCE WITH FOUR CONFIRM ROUNDS and is council-CLOSED: pinned Opus build → main-seat audit rider → blind Emma SHIP WITH FIXES (5 MED, sweep "none") → fix wave → three F1 chases ending in a DELETION (the tail wait is the FLAT bound) → №4 RESOLVED — SHIP. ▶▶ ~~NEXT SESSION = S3~~ done, see above**; superseded above where it speaks)
 
 - **S2.5 is council-CLOSED (full as-built record = plan §7-S2.5 — read THAT before S3/S4
   work):** the mic's hold/lock rides the SAME ear as calls — finals append to the draft at

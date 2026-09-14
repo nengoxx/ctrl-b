@@ -1642,9 +1642,12 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       early-resolve heuristic deleted; the three-round theorem is recorded at the wait) →
       confirm №4 RESOLVED — SHIP, sweep "none". Plan §7-S2.5 as-built record; ⚠ the release
       now costs `tail_wait_ms` (default 2 s) of `sending` — the S4 sitting's knob.
-- [ ] S3 — Interruption hardening: the ordered cancel-settle contract · the buffered-final
+- [x] S3 — Interruption hardening: the ordered cancel-settle contract · the buffered-final
       race · playback-would-start-while-speaking · the echo fallback branch if S0 ruled dirty ·
-      flaky-link reconnect/backpressure edges.
+      flaky-link reconnect/backpressure edges. **✅ council-CLOSED 2026-09-14** (build `fd7fee2` +
+      waves `7a298ff`/`850d530`; TWO confirm rounds — the Fennec EAR-HOLD with the PRE-PLAY tap,
+      `mouthLive` across reconnect, the race sweep, the transport catch, the hidden-page tail
+      abandonment; full record = LIVE_VOICE_PLAN §7-S3).
 - [ ] S4 — The owner calibration + device round (the phase gate): noise/quiet knob tuning on
       the real phone (+ the Tier-0 auto-stop threshold, same sitting); `voice.live.enabled`
       flips ON at its close. Decision point: fixed endpointing good → v1 stands; sluggish →
