@@ -1315,6 +1315,36 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > EMPTY — Serve and the Vite ws proxy preserve `Host` end to end; the allowlist is not
   > needed on this topology (dev keeps the Serve origin listed as a belt). Ops for the
   > sitting: Serve flipped to :5173 (restore `tailscale serve --bg 5433` at close).
+  >
+  > **THE LONG-RECORDING BAR RULES (same sitting — the owner's second finding, council-CLOSED):**
+  > on HTTPS the streaming worked, but the gesture chrome's MEASURE-ONCE anchor (the S0.5
+  > measure-at-lift rule) painted the record circle where the bar USED to be — the premise "a
+  > short hold over a static bar" died with S2.5's long recordings (the keyboard collapses at
+  > record start; appended phrases flip `sendable` → send slid in and pushed the mic left under
+  > the stale circle; the field auto-grows). Two rules shipped (`3780476`), then Emma's blind
+  > round **SHIP WITH FIXES — 3 MED · 1 LOW, sweep "none"** → wave `34f00e4` → her confirm
+  > **all four VERIFIED with line proof, fix-sweep "none" — RESOLVED — SHIP**:
+  > ① **the ANCHOR TRACKS the button while the chrome stands FINGER-FREE** — tracking arms only
+  > at `locked`/`chip` (her F2: while a finger owns the gesture the chrome is finger-relative BY
+  > DESIGN — re-anchoring would teleport the circle away from a stationary touch), with a
+  > catch-up read on arming; event-driven — visualViewport resize (keyboard) · a ResizeObserver
+  > on THE BAR (her F1: the host is `.kit-main`, whose box never changes when the bottom-anchored
+  > bar grows upward) + the host belt · window resize (rotation) — the S2b ring's F9 pattern,
+  > one rAF coalescer, never a per-move rect loop.
+  > ② **the ROW FREEZE (LineComposer; the owner's own design, generalized to a LATCH)** — while
+  > `mic.status === "recording"` the trailing row may not CHANGE: `showSend` latches at record
+  > start (a pre-typed draft keeps its send; an empty one doesn't summon it until release — the
+  > latch can't cause the reflow it prevents), the control-stack decision freezes, and the
+  > stack's hysteresis BASELINE freezes with it (her F3 — a mid-recording needs change still
+  > faces the strict re-test on release). Owner-accepted trade: the D39 send→Stop morph waits
+  > for release. The `lifted` cancel-track rule deliberately stays LIVE (readability over
+  > stillness, the round-3 ruling). Tests: the tracking arm fires a REAL RO callback + the
+  > visualViewport handler (deleting either listener fails it), holds pinned untouched, the
+  > stack-engage-waits arm; F1+F2 red-proven by combined scripted reversion. FE 3,519/192.
+  > **⚠ Durable:** a measure-once rule dies with its premise — when a slice makes a gesture
+  > LONG, every "measured at start" value it rides must be re-audited; and an overlay anchored
+  > to a moving control wants finger-relative while a hand owns it, control-relative the moment
+  > the hand lets go — never one rule for both.
 - **S4 — the owner calibration + device round (the phase gate):** real phone, real rooms — noisy
   and quiet; the §4.1 knobs tuned by feel; the Tier 0 auto-stop threshold calibrated in the same
   sitting; `enabled` flips ON as the round's close.
