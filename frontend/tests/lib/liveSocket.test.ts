@@ -93,6 +93,23 @@ describe("liveSocket — the uplink", () => {
     ]);
   });
 
+  it("…and they REPORT whether the frame actually went out (S2.5 confirm round F2)", () => {
+    // `flush` has NO ack, so the readyState at the moment of the call is the only honest answer to "did
+    // the ear hear me ask" — and S2.5's release is a caller that must know SYNCHRONOUSLY: a leg already
+    // CLOSING whose `onclose` has not been delivered yet would otherwise park the whole release on
+    // `tail_wait_ms` waiting for a tail nothing can mint, and then discard the clip in silence.
+    const { socket, ws } = leg();
+    expect(socket.flush()).toBe(false); // still CONNECTING
+    expect(socket.stop()).toBe(false);
+    ws.open();
+    expect(socket.flush()).toBe(true);
+    expect(socket.stop()).toBe(true);
+    ws.readyState = WebSocket.CLOSING; // the close handshake has started; no event has landed yet
+    expect(socket.flush()).toBe(false);
+    // …and a `false` is not a lie about a frame that snuck out: exactly the one OPEN flush was sent.
+    expect(ws.sent.filter((m) => typeof m === "string" && m.includes("flush"))).toHaveLength(1);
+  });
+
   it("NEVER `commit` — the client API has no such word, and nothing it can be told to do mints one", () => {
     // THE COMMIT-SAFETY INVARIANT, from this side of the wire (R70 §1.2 arm A, measured: a commit
     // while the buffer has an open speech segment KILLS the Speaches session — it is not a "force

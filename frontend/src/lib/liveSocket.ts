@@ -88,10 +88,17 @@ export interface LiveSocket {
   /** Ship one pcm16 frame. Silently drops while the socket is not OPEN (the machine feeds only between
    *  `ready` and teardown, so this is the reconnect gap, not an error). */
   sendAudio: (buf: ArrayBuffer) => void;
-  /** "End the phrase now" — a relay-side silence burst, NO ack (§7-S1). S2.5's door; unused by S2a. */
-  flush: () => void;
-  /** The clean end. DISCARDS audio the ear has not endpointed yet. */
-  stop: () => void;
+  /** "End the phrase now" — a relay-side silence burst, NO ack (§7-S1). S2.5's door; unused by S2a.
+   *
+   *  RETURNS WHETHER THE FRAME ACTUALLY WENT OUT (S2.5 confirm round F2). `flush` has no ack, so the
+   *  readyState at the moment of the call is the ONLY honest answer to "did the ear hear me ask" — and
+   *  S2.5's release is a caller that must know SYNCHRONOUSLY: a leg already CLOSING whose `onclose` has
+   *  not been delivered yet would otherwise have its release park on the full `tail_wait_ms` waiting for
+   *  a tail nothing can mint. Callers that do not care ignore it (a `boolean` return is
+   *  source-compatible with the `void` one it replaces). */
+  flush: () => boolean;
+  /** The clean end. DISCARDS audio the ear has not endpointed yet. Same boolean truth as `flush`. */
+  stop: () => boolean;
   /** Drop the leg without a `stop` — teardown and the backpressure bail. */
   close: () => void;
   /** Downlink frames this build does not know, counted rather than thrown (forward compatibility with
@@ -123,8 +130,13 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
   let unknown = 0;
   let done = false;
 
-  const control = (type: "flush" | "stop"): void => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type }));
+  // …and it REPORTS the readyState it checked (see `LiveSocket.flush`): "the socket was not OPEN" is a
+  // fact only this line has, and a caller that has to choreograph around an unsent control cannot
+  // rediscover it from anywhere else without waiting for the close it is trying not to wait for.
+  const control = (type: "flush" | "stop"): boolean => {
+    if (ws.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify({ type }));
+    return true;
   };
 
   ws.onopen = () => {

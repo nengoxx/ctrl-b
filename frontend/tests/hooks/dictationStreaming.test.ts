@@ -30,6 +30,10 @@ const h = vi.hoisted(() => ({
   /** How many sockets were opened, and with what — "did it stream at all" is a count. */
   opens: [] as { sampleRate: number; ceilingMs: number }[],
   uplinkStops: 0,
+  /** Whether the wire is OPEN, i.e. what the real module's `control()` gate reads before it sends: a
+   *  `false` here models a leg already CLOSING whose `onclose` has not been delivered yet, and the two
+   *  controls then report that they did NOT go out (F2). */
+  wireOpen: true,
   /** Holds `attachPcmUplink` open when an arm needs the install window itself. */
   attachGate: Promise.resolve(),
 }));
@@ -52,8 +56,16 @@ vi.mock("../../src/lib/liveSocket", () => ({
         h.audio.push(buf);
         h.audioAt.push(performance.now());
       },
-      flush: () => h.sent.push("flush"),
-      stop: () => h.sent.push("stop"),
+      // The controls carry the real module's return: "the frame went out", which is false on a socket
+      // that is no longer OPEN. Recorded either way — an ATTEMPTED flush is still a word the release said.
+      flush: () => {
+        h.sent.push("flush");
+        return h.wireOpen;
+      },
+      stop: () => {
+        h.sent.push("stop");
+        return h.wireOpen;
+      },
       close: () => h.sent.push("close"),
       unknown: () => 0,
     };
@@ -253,6 +265,7 @@ beforeEach(() => {
   h.close = null;
   h.onFrame = null;
   h.uplinkStops = 0;
+  h.wireOpen = true;
   h.attachGate = Promise.resolve();
   vi.mocked(pushToast).mockClear();
   vi.mocked(runComposer).mockClear();
@@ -452,6 +465,97 @@ describe("useDictation · streaming ① a stall's burst cannot outrun the relay'
   });
 });
 
+// ── rule ② (continued) · the release DRAINS the queue before it flushes (S2.5 review N1) ───────────
+
+/** `n` worklet frames delivered in ONE dispatch, byte-identified from `from` — the same no-wall-clock
+ *  delivery `stallThenBurst` models, but pinnable by ORDER and sized to stay under the ceiling. What is
+ *  left queued afterwards is a REAL queue at release time, which is the state N1 is about. */
+function burst(from: number, n: number): void {
+  act(() => {
+    for (let i = 0; i < n; i++) {
+      const buf = new ArrayBuffer(8);
+      new Uint8Array(buf)[0] = from + i;
+      h.onFrame?.({ buf, rms: micLevel });
+    }
+  });
+}
+
+describe("useDictation · streaming ② the release paces out what is already captured, then flushes", () => {
+  it("ships the queued frames — in ORDER, and still paced — BEFORE the flush", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    // 20 frames (800 ms, under the 1000 ms ceiling) delivered with no wall clock behind them: the bucket
+    // has banked nothing since `ready`, so every one of them QUEUES. The pacer's only pump is the next
+    // worklet callback — and the release is precisely what stops those.
+    burst(1, 20);
+    expect(shipped()).toEqual([]);
+
+    act(() => result.current.stop());
+    // Synchronously inside the release: the drain is parked on its first tick and the flush has NOT gone
+    // out. Without the drain these frames are stranded — and with an earlier phrase appended the
+    // either/or would then discard the clip that also carried them.
+    expect(h.sent).toEqual([]);
+    expect(shipped()).toEqual([]); // no wall clock has passed since the burst, so the bucket is empty
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200); // four ticks' worth of budget
+    });
+    // PACED, not dumped: the drain earns its frames from the clock exactly as the live uplink does.
+    expect(shipped().length).toBeGreaterThan(0);
+    expect(shipped().length).toBeLessThan(20);
+    expect(h.sent).toEqual([]); // …and the flush is still waiting behind the queue
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(KNOBS.buffered_ceiling_ms); // generous vs the derived bound
+    });
+    expect(shipped()).toEqual(Array.from({ length: 20 }, (_, i) => i + 1)); // all of it, in order
+    expect(h.sent[0]).toBe("flush"); // …and only THEN the release's own choreography
+    // The drain spends the SAME bucket the live uplink does, so it cannot trip the relay's budget.
+    expect(worstWindowFrames()).toBeLessThanOrEqual(RELAY_FRAME_BUDGET);
+    expect(worstWindowFrames() * KNOBS.frame_ms).toBeLessThanOrEqual(RELAY_MS_BUDGET);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(KNOBS.tail_wait_ms);
+    });
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+  });
+
+  it("…and a queue that cannot drain inside the BOUND is stale speech: the leg goes, no flush", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("half of it");
+    // Five seconds of jank: the uplink's own ceiling has already thrown the leg away (its `onclose` has
+    // not been delivered), and what is queued is far more audio than the bound can ever pace out.
+    stallThenBurst(5000);
+    expect(h.sent).toContain("close");
+    act(() => result.current.stop());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(KNOBS.buffered_ceiling_ms * 4);
+    });
+    // The bound is `ceilingMs / DRAIN_PACE` plus a tick — a derivation, not a vibe — and past it the
+    // remainder can no longer reach the ear in time. One disposition, the same mid-death rule.
+    expect(h.sent).not.toContain("flush");
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Voice connection lost"), "err");
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // words in the draft ⇒ the clip is still dropped
+    expect(getDraft()).toBe("half of it");
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("an EMPTY queue adds nothing at all — the ordinary release does not await a drain", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    for (let i = 1; i <= 6; i++) mic(i); // the ordinary cadence: the bucket keeps up, nothing queues
+    expect(shipped()).toEqual([1, 2, 3, 4, 5, 6]);
+    act(() => result.current.stop());
+    // The flush is out in the SAME synchronous step as the release — no timer tick between them. This is
+    // the path that runs a thousand times for every one the arm above is about.
+    expect(h.sent).toEqual(["flush"]);
+  });
+});
+
 // ── rules ② + ③ · the release, and which transcript wins ──────────────────────────────────────────
 
 describe("useDictation · streaming ② the release is flush → tail → stop, and NEVER a commit", () => {
@@ -540,9 +644,14 @@ describe("useDictation · streaming ② the release is flush → tail → stop, 
   });
 });
 
-// ── rule ② (continued) · the wait COUNTS the endpoints it is owed (S2.5 review F1) ────────────────
+// ── rule ② (continued) · the wait RE-READS the endpoint ledger (S2.5 review F1, both rounds) ───────
+//
+// It wakes neither on the first final NOR on a count of them snapshotted at the release. The condition
+// it re-evaluates on every ledger event is `owed() === 0 && stops > stopsAtRelease`: the flush must have
+// minted a genuinely NEW endpoint (so an old phrase's final can never satisfy the wait), and everything
+// the ear has reported must be discharged (so a late `speech_started` raises the bar instead).
 
-describe("useDictation · streaming ② the tail wait counts endpoints, it does not wake on a final", () => {
+describe("useDictation · streaming ② the tail wait re-reads the ledger, it never wakes on a final", () => {
   it("a final still in transit does not end the wait — the phrase the flush is minting is the point", async () => {
     const { result } = renderHook(() => useDictation(opts()));
     await hold(result);
@@ -577,24 +686,143 @@ describe("useDictation · streaming ② the tail wait counts endpoints, it does 
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("…and the FLOOR holds a release the ledger says owes nothing: VAD lags the words", async () => {
+  it("…and a SQUARE ledger at the release still waits for the flush's own endpoint: VAD lags the words", async () => {
     const { result } = renderHook(() => useDictation(opts()));
     await hold(result);
     ready();
     act(() => h.frame?.({ type: "speech_started" }));
-    phrase("first"); // one endpoint, one final — the ledger is square
+    phrase("first"); // one endpoint, one final — the ledger owes nothing at all
     act(() => result.current.stop()); // …but the owner kept talking, and VAD has not said so yet
     await act(async () => {
       await Promise.resolve();
     });
-    expect(h.sent).toEqual(["flush"]); // the floor, not the count: an "owes nothing ⇒ resolve now"
-    phrase("the tail"); //                would `stop` before the flush's own endpoint could answer
+    expect(h.sent).toEqual(["flush"]); // an "owes nothing ⇒ resolve now" would `stop` — discarding
+    phrase("the tail"); //                unendpointed audio — before the flush's endpoint could answer
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
     expect(h.sent).toEqual(["flush", "stop", "close"]);
     expect(getDraft()).toBe("first the tail");
+  });
+
+  it("a phrase the ledger did not know about YET is still waited for — the static-count survivor", async () => {
+    // THE CASE A SNAPSHOT CANNOT SEE (confirm round F1). At the release endpoint A is outstanding — one
+    // `speech_stopped`, no final — while B has just been spoken and VAD has not reported its
+    // `speech_started` yet. Any count read off the ledger here says "one final owed", A's late final
+    // pays it, and the `stop` that follows DISCARDS B: gone from the stream AND, via the either/or,
+    // from the clip that also carried it.
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    act(() => {
+      h.frame?.({ type: "speech_started" }); // phrase A…
+      h.frame?.({ type: "speech_stopped" }); // …endpointed, its final still travelling
+    });
+    act(() => result.current.stop()); // released with B said but not yet reported
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush"]);
+    act(() => h.frame?.({ type: "transcript", text: "wake corsair", final: true }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // The ledger is square again — but no NEW endpoint has been minted, so this is not the tail.
+    expect(h.sent).toEqual(["flush"]);
+    act(() => {
+      h.frame?.({ type: "speech_started" }); // …and only now does VAD catch up with B
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text: "and check its uptime", final: true });
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(getDraft()).toBe("wake corsair and check its uptime");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("…and a release with real debt but NO tail honestly rides the timeout", async () => {
+    // THE PRICE of the rule above, pinned so it is a decision and not a surprise: released during A's
+    // transcription with nothing said after, the wait can never see a new endpoint. From here a VAD with
+    // nothing to report and a VAD that is merely late are the same observation — so it waits the bound
+    // out rather than sending the `stop` that would discard a real tail. `tail_wait_ms` is the knob.
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    act(() => {
+      h.frame?.({ type: "speech_started" });
+      h.frame?.({ type: "speech_stopped" }); // A endpointed, its final still travelling
+    });
+    act(() => result.current.stop());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => h.frame?.({ type: "transcript", text: "all of it", final: true }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush"]); // square, but no new endpoint: still waiting
+    await act(async () => {
+      vi.advanceTimersByTime(KNOBS.tail_wait_ms);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(getDraft()).toBe("all of it"); // …and the phrase that DID land is kept, clip discarded
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// ── rule ② (continued) · an unsent flush is a dead leg, known SYNCHRONOUSLY (S2.5 review F2) ───────
+
+describe("useDictation · streaming ② a flush that could not be SENT ends the release at once", () => {
+  it("proceeds to the either/or immediately and names the loss — no `tail_wait_ms` stall", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("half of it");
+    // The leg is already CLOSING — backpressure, the relay's `ended`, the post-`ready` ceiling close —
+    // and its `onclose` has not been delivered yet. Blind to that, the release parks on the full wait
+    // for a tail nothing can mint, and the close that eventually lands is GHOSTED by the session's own
+    // `closed` flag: a silent 2 s stall AND no toast.
+    h.wireOpen = false;
+    act(() => result.current.stop());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // NOT ONE TIMER WAS ADVANCED. The flush was ATTEMPTED (it is still the wire's word for the release)
+    // and reported that it did not go out, so no `stop` followed it.
+    expect(h.sent).toEqual(["flush", "close"]);
+    expect(result.current.status).toBe("idle");
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Voice connection lost"), "err");
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // words in the draft ⇒ the clip is still dropped
+    expect(getDraft()).toBe("half of it");
+  });
+
+  it("…and says nothing when nothing had landed: the clip still carries every word", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    await tick(1200); // a real recording — this one ends on the CLIP
+    h.wireOpen = false;
+    act(() => result.current.stop());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush", "close"]);
+    expect(pushToast).not.toHaveBeenCalledWith(
+      expect.stringContaining("Voice connection lost"),
+      "err",
+    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(getDraft()).toBe("the whole clip");
   });
 });
 
