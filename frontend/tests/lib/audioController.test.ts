@@ -10,6 +10,7 @@ import {
   endTurnSpeak,
   feedReadAlong,
   seekFraction,
+  setCallPrePlay,
   setChunkPolicy,
   toggle,
   togglePlay,
@@ -1543,6 +1544,26 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     });
     expect(since()).toBe(1);
     expect(result.current).toBe("paused");
+  });
+
+  it("the call's PRE-PLAY tap runs BEFORE the element is asked to play (S3 confirm F2)", async () => {
+    // Observation cannot beat the audio thread: by the time the `play` event dispatches, output may
+    // already be in the microphone. So `startEl` runs the registered tap FIRST — asserted by reading
+    // the element inside the tap, where a pre-play run still sees it paused.
+    setChunkPolicy(OFF);
+    const seen: boolean[] = [];
+    setCallPrePlay(() => seen.push(lastAudio.paused));
+    await act(async () => {
+      await toggle("m1", "hello");
+    });
+    expect(seen).toEqual([true]); // the tap ran, and it ran while the element had not yet played
+    expect(lastAudio.paused).toBe(false); // …and the play still happened
+
+    setCallPrePlay(null); // unregistered (the call's teardown): the door goes back to a bare play
+    await act(async () => {
+      await toggle("m2", "again");
+    });
+    expect(seen).toEqual([true]);
   });
 
   it("counts a media ERROR — the path that resets to a perfectly ordinary 'idle'", async () => {

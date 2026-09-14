@@ -54,6 +54,8 @@ const h = vi.hoisted(() => ({
   setHeld: vi.fn((held: boolean) => {
     h.order.push(`held:${String(held)}`);
   }),
+  /** The controller's registered pre-play tap (S3 confirm F2) — null when nothing is registered. */
+  prePlay: null as (() => void) | null,
   /** Is the opened track a boolean-only AEC (Fennec: `getSettings().echoCancellation === true`, and no
    *  string modes at all) rather than Chromium's subtractive `"all"`? The ONE input to both the
    *  trigger-A arming and the S3 ear-hold decision. */
@@ -67,6 +69,9 @@ vi.mock("../../src/lib/audioController", () => ({
   openCallVoiceGate: h.openGate,
   setCallVoice: h.setCallVoice,
   useMouthFailures: () => h.failures,
+  setCallPrePlay: (cb: (() => void) | null) => {
+    h.prePlay = cb;
+  },
   getPlayStatus: () => h.play.status,
   subscribePlayback: (cb: () => void) => {
     h.playbackSubs.add(cb);
@@ -123,6 +128,7 @@ const setPlay = (status: string): void => {
 beforeEach(() => {
   h.play = { status: "idle" };
   h.playbackSubs.clear();
+  h.prePlay = null;
   h.chat = { status: "idle" };
   h.confirm = false;
   h.failures = 0;
@@ -433,6 +439,25 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
     // The install applied it first; the effect's own (idempotent) apply trails behind, which is exactly
     // the render the track must not have spent open.
     expect(h.order.slice(0, 2)).toEqual(["held:true", "socket"]);
+    view.unmount();
+  });
+
+  it("registers the PRE-PLAY tap on a held-mode track, and the teardown clears it (confirm F2)", async () => {
+    // The tap is what closes the ear BEFORE the mouth asks the element to play — the subscription
+    // below is the reducer's answer catching up, not the thing standing between output and the mic.
+    fennec();
+    const { view } = await call();
+    expect(h.prePlay).not.toBeNull();
+    h.setHeld.mockClear();
+    h.prePlay?.();
+    expect(h.setHeld).toHaveBeenCalledWith(true); // a bare "close now"
+    view.unmount();
+    expect(h.prePlay).toBeNull(); // the tap dies with the capture it closes over
+  });
+
+  it("a SUBTRACTIVE track registers no tap — its ear never closes", async () => {
+    const { view } = await call(); // `echoCancellation: "all"` by default
+    expect(h.prePlay).toBeNull();
     view.unmount();
   });
 

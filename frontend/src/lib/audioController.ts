@@ -207,6 +207,26 @@ export function useCallVoice(): boolean {
   return useStore(callVoiceSpeaks);
 }
 
+/** THE CALL'S PRE-PLAY TAP (S3 confirm round F2 — the reviewer's boundary held twice, so the class
+ *  moved). Observation cannot close the ear BEFORE audio: the `play` event is a queued task, output
+ *  begins on the audio thread, and a stalled main thread can let a captured leak frame beat the
+ *  handler. So on a leaking track (the Fennec ear-hold, §5.1) the call registers this tap and
+ *  `startEl` runs it BEFORE the element is asked to play — the hold reaches `track.enabled` ahead of
+ *  the first sample by construction, not by racing the event loop. The subscription's post-event
+ *  apply remains the reducer's answer (idempotent when it agrees, the reopener when playback ends or
+ *  the play rejects). Null when no call needs it; the call's teardown clears it on every exit. */
+let callPrePlay: (() => void) | null = null;
+export function setCallPrePlay(cb: (() => void) | null): void {
+  callPrePlay = cb;
+}
+
+/** Start the shared element — the ONE door to an audible `play()` (the silent, muted prime keeps its
+ *  own path). Every future play site goes through here or it reopens the pre-play leak. */
+function startEl(a: HTMLAudioElement): ReturnType<HTMLMediaElement["play"]> {
+  callPrePlay?.();
+  return a.play();
+}
+
 /** MOUTH FAILURES, counted (§4.5's "voice failed — the reply is in the chat"). The transport `status`
  *  cannot carry this: a rejected `play()` publishes "paused" and a media error resets to "idle", and the
  *  call machine reads both of those as ordinary user/drain transitions. So the failure is its own
@@ -562,7 +582,7 @@ async function playWhole(
   a.src = url;
   a.currentTime = 0;
   try {
-    await a.play();
+    await startEl(a);
   } catch {
     // play() rejects on the autoplay/interaction guard — OR because a newer toggle swapped the src and
     // aborted this play. Only the still-current toggle may settle the state (else we'd clobber the
@@ -816,7 +836,7 @@ function playNext(s: Session): void {
   }
   set({ current: at }); // publish the seam immediately — `timeupdate` only arrives ~4×/sec
   const op = ++playOp;
-  void a.play().catch(() => {
+  void startEl(a).catch(() => {
     if (s.seq === reqSeq && op === playOp) {
       mouthFailed();
       set({ status: "paused" });
@@ -1072,7 +1092,7 @@ function transport(): void {
   // also runs with no session at all (the whole-message clip), where `reqSeq` is the only generation.
   const seq = reqSeq;
   const op = ++playOp;
-  void a.play().catch(() => {
+  void startEl(a).catch(() => {
     if (seq === reqSeq && op === playOp) {
       mouthFailed();
       set({ status: "paused" });
@@ -1175,7 +1195,7 @@ function seekChunked(s: Session, f: number): void {
     }
     set({ current: at });
     const op = ++playOp;
-    void a.play().catch(() => {
+    void startEl(a).catch(() => {
       if (s.seq === reqSeq && op === playOp) {
         mouthFailed();
         set({ status: "paused" });

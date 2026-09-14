@@ -4,6 +4,7 @@ import {
   dismiss,
   getPlayStatus,
   openCallVoiceGate,
+  setCallPrePlay,
   setCallVoice,
   subscribePlayback,
   useMouthFailures,
@@ -435,6 +436,12 @@ function reduce(s: CallState, sig: CallSignal): Step {
         if (s.killing) return { state: open, out: [] };
         return killNow(open);
       }
+      // THE RECONNECT OWNS THE PHASE while the leg is down (confirm round F1's survivor). `socketLost`
+      // deliberately paints `connecting` over a live mouth and `playbackDrained` preserves it — an arm
+      // that repainted `speaking` here would be the one voice disagreeing about who owns the screen
+      // during a reconnect (and a kill settling after it would inherit the lie). The flag lands above;
+      // `ready` is the arm that consults it.
+      if (s.phase === "connecting") return { state: open, out: [] };
       return { state: { ...open, phase: "speaking" }, out: [] };
     }
 
@@ -634,6 +641,7 @@ export function useLiveCall(): CallView {
     capture.current = null;
     dismiss(); // an ended call does not keep talking
     setCallVoice(false, false);
+    setCallPrePlay(null); // the pre-play tap dies with the capture it closes over
     const lock = wakeLock.current;
     wakeLock.current = null;
     void lock?.release().catch(() => {});
@@ -837,6 +845,11 @@ export function useLiveCall(): CallView {
         // was audible while `getUserMedia` was pending), and a hold that only ever reaches the track on
         // its next CHANGE would leave the ear open for exactly that stretch.
         cap.setHeld(ref.current.earHeld);
+        // THE PRE-PLAY TAP (confirm round F2): on a leaking track the mouth closes the ear BEFORE it
+        // asks the element to play — observation, however synchronous, races the audio thread. The tap
+        // is a bare "close now": stable until the play event's own reduce confirms it (nothing can
+        // transition `earHeld` in that gap), and a rejected play's status edge is what reopens it.
+        if (ref.current.earHoldMode) setCallPrePlay(() => cap.setHeld(true));
         openLeg();
       })
       .catch((e: unknown) => {

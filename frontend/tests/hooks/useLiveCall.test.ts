@@ -575,6 +575,28 @@ describe("callReduce — the mouth is not the phase (S3 · mouthLive)", () => {
     expect(over.state.phase).toBe("thinking"); // …and the submit puts the brain to work
   });
 
+  it("playback STARTING during the reconnect leaves `connecting` standing (confirm F1)", () => {
+    // `socketLost` paints `connecting` over a live mouth on purpose, and `playbackDrained` preserves
+    // it — this arm must not be the one voice that disagrees. The flag lands; `ready` consults it.
+    const dropped = run(speaking, [{ type: "socketLost" }, { type: "playbackDrained" }]).state;
+    const started = run(dropped, [{ type: "playbackStarted" }]).state;
+    expect(started.phase).toBe("connecting");
+    expect(started.mouthLive).toBe(true);
+    expect(run(started, [{ type: "ready" }]).state.phase).toBe("speaking");
+  });
+
+  it("…and a kill settling behind it inherits `connecting`, not a phantom repaint (confirm F1)", () => {
+    // The reviewer's surviving sequence, verbatim: drop → barge (mouthLive clears at the kill) →
+    // replacement playback starts with both speech flags clear → the settlement must leave the
+    // reconnect owning the screen. The mouth truth survives in the flag for `ready` to read.
+    const killing = run(speaking, [{ type: "socketLost" }, { type: "barge" }]).state;
+    expect(killing.phase).toBe("connecting");
+    const replaced = run(killing, [{ type: "playbackStarted" }, { type: "killSettled" }]).state;
+    expect(replaced.phase).toBe("connecting");
+    expect(replaced.mouthLive).toBe(true);
+    expect(run(replaced, [{ type: "ready" }]).state.phase).toBe("speaking");
+  });
+
   it("a reply that ENDS during the reconnect leaves the fresh leg listening", () => {
     // The drain arrives with the screen on `connecting`, so the arm declines to repaint — but the FLAG
     // lands, and it is the flag `ready` consults. Without that the call would come back claiming to be
