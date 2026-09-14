@@ -295,9 +295,16 @@ describe("ConfTab · streaming dictation rows (S3.5 — rendered in the STT grou
     expect(field("Phrase tail wait").value).toBe("2000");
     expect(field("Dictation idle stop").value).toBe("15");
     expect(field("Dictation time limit").value).toBe("120");
-    // …and the Live call group no longer renders them: ONE home per row (the S3.5 move).
-    expect(liveGroup().queryByLabelText("Live dictation enabled")).toBeNull();
-    expect(liveGroup().queryByLabelText("Phrase tail wait")).toBeNull();
+    // …and the Live call group no longer renders ANY of the four: ONE home per row (the S3.5
+    // move; Emma F4 — all four asserted, so a single row duplicated back cannot pass).
+    for (const label of [
+      "Live dictation enabled",
+      "Phrase tail wait",
+      "Dictation idle stop",
+      "Dictation time limit",
+    ]) {
+      expect(liveGroup().queryByLabelText(label)).toBeNull();
+    }
   });
 
   it("saves them coerced to NUMBERS onto `voice.live` — the keys did not move with the rows", () => {

@@ -2565,7 +2565,7 @@ export function ConfTab({ active }: Props) {
               feature's toggle — so it does NOT need "Live call" enabled. */}
           <SettingRow
             label="Live dictation"
-            desc="phrases appear in the composer as you pause — needs a realtime (live) target; blank rides this STT chain. off → the whole clip is transcribed on release"
+            desc="phrases appear in the composer as you pause — needs standard STT (the mic itself) plus a realtime (live) target; a blank target rides this STT chain. off → the whole clip is transcribed on release"
           >
             <Switch
               on={!!vlive?.dictation}
