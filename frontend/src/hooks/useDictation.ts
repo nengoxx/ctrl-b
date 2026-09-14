@@ -290,6 +290,31 @@ function pump(s: StreamSession, frameMs: number): void {
  *  full-ceiling queue leaves in the same handful of pumps the live uplink would have used. */
 const DRAIN_TICK_MS = 50;
 
+/** THE TAIL'S SETTLE WINDOW (S2.5 micro-confirm №2 F1) — how long the release's satisfied resolve
+ *  condition must hold QUIET, with no ledger event retracting it, before the wait actually ends.
+ *
+ *  WHY IT EXISTS: no ledger of ordinary phrase events can PROVE "the flush has processed all pre-flush
+ *  audio" — the wire has no flush-completion marker, and adding one cannot work either (the relay can
+ *  mark "burst handed upstream", never "upstream processed it"; the server stays untouched, §5.2). So
+ *  "the first post-release endpoint completed" is observationally identical to "everything completed"
+ *  — the two-VAD-late ordering: A's debt discharged, B's endpoint minted and answered, and C's
+ *  `speech_started` still in the ear's future; an instant resolve sends `stop` and C is cut. The settle
+ *  converts the condition into LEDGER QUIESCENCE WHILE SATISFIED: any event re-evaluates it — a late
+ *  `speech_started` retracts the pending settle before the resolve can happen — and only a quiet window
+ *  ends the wait early. `tail_wait_ms` stays the hard cap either way.
+ *
+ *  THE NUMBER: under the flush burst the loopback feeds audio faster than realtime and Silero's pass is
+ *  synchronous per append, so adjacent VAD events of already-fed audio arrive milliseconds apart — and
+ *  the serial transcription queue means a next phrase's ENDPOINT lands before the previous phrase's
+ *  final, breaking the condition long before any settle could fire. 300 ms is therefore a wide margin
+ *  over every gap the ledger can legally go quiet across while audio remains, at the price of +300 ms
+ *  on every release's happy path (release→text ≈ 830 ms measured + this). A CONSTANT on the
+ *  `BUCKET_CAP_MS` precedent (a derived robustness margin, not a behavior knob); if the S4 sitting
+ *  measures real multi-phrase VAD lag, the answer is the §2.1 arch-② trigger (own the ear), not a
+ *  bigger number here — and if the +300 ms reads as sluggish, promoting this to a `voice.live` Field is
+ *  the recorded move. Exported for the parameter-pinning tests. */
+export const TAIL_SETTLE_MS = 300;
+
 type Phase = "idle" | "recording" | "sending";
 export type MicStatus = Phase | "unavailable" | "insecure";
 
@@ -709,6 +734,12 @@ export function useDictation({
         // demands every endpoint the ear HAS reported is discharged, so B's late `speech_started`
         // RAISES the bar before any resolve can happen (`starts > stops` ⇒ `owed` ≥ 1).
         //
+        // …AND A SATISFIED CONDITION ONLY ARMS A SETTLE (micro-confirm №2 F1, the two-VAD-late
+        // ordering: B's completed endpoint satisfies the condition while C's `speech_started` is still
+        // in the ear's future — no ledger of ordinary events can prove completeness, `TAIL_SETTLE_MS`
+        // has the full argument). The wait ends early only after the condition has held QUIET for the
+        // settle window; every ledger event re-reckons, and a late start retracts a pending settle.
+        //
         // THE PRICE, named rather than hidden: a release with real debt and NO tail — released during
         // A's transcription, nothing spoken after — can never satisfy `stops > stopsAtRelease`, so it
         // rides the TIMEOUT. That is honest, not unfortunate: from here a VAD with nothing to report and
@@ -720,22 +751,38 @@ export function useDictation({
         if (s.socket.flush()) {
           setPending(true);
           await new Promise<void>((resolve) => {
-            const timer = setTimeout(() => {
-              s.tail = null;
-              resolve();
-            }, tailWaitMs);
-            // Armed after the flush, so anything it reckons over is by construction the release's own.
-            // Whichever of the three endings comes first wins, and `s.tail = null` makes it exactly once.
+            // A SATISFIED CONDITION ARMS A SETTLE, IT DOES NOT RESOLVE (micro-confirm №2 F1 — see
+            // `TAIL_SETTLE_MS`): the condition can only prove "at least one new endpoint completed",
+            // never "all pre-flush audio completed", so the resolve waits for the ledger to stay QUIET
+            // while satisfied. Any event re-reckons: one that breaks the condition (a late
+            // `speech_started` raising `owed`) RETRACTS the pending settle; one that re-satisfies it
+            // re-arms the window from now. `tailSatisfied` is set only when the settle actually FIRES —
+            // a close landing inside the window is a death inside the uncertainty the window exists
+            // for, and it is reported as one (the ⑦ branch reads this flag).
+            let settle: ReturnType<typeof setTimeout> | null = null;
             const end = () => {
               clearTimeout(timer);
+              if (settle !== null) clearTimeout(settle);
+              settle = null;
               s.tail = null;
               resolve();
             };
+            // The hard cap outranks the settle: however the ledger dances, the wait ends here.
+            const timer = setTimeout(end, tailWaitMs);
             s.tail = {
+              // Armed after the flush, so anything it reckons over is by construction the release's
+              // own. Whichever ending comes first wins; `end` clears both clocks exactly once.
               reckon: () => {
-                if (owed() !== 0 || s.stops <= stopsAtRelease) return;
-                s.tailSatisfied = true;
-                end();
+                if (owed() !== 0 || s.stops <= stopsAtRelease) {
+                  if (settle !== null) clearTimeout(settle);
+                  settle = null;
+                  return;
+                }
+                if (settle !== null) clearTimeout(settle);
+                settle = setTimeout(() => {
+                  s.tailSatisfied = true;
+                  end();
+                }, TAIL_SETTLE_MS);
               },
               wake: end,
             };
@@ -821,10 +868,11 @@ export function useDictation({
               break;
             case "speech_started":
               s.starts += 1; // the ledger's open half — see `StreamSession.starts`
-              // NOT reckoned, and that is the rule rather than an omission: an open segment can only
-              // RAISE what the ear owes (`starts > stops` ⇒ `owed` ≥ 1), so a `speech_started` can never
-              // newly satisfy an open wait — it can only make one wait longer, which it does simply by
-              // being counted here.
+              // RECKONED — but the rule flipped with the settle (micro-confirm №2 F1): an open segment
+              // still can never SATISFY a wait (`starts > stops` ⇒ `owed` ≥ 1), what it must be able to
+              // do is RETRACT a settle already pending — this is exactly the late `speech_started` the
+              // settle window exists to catch before the resolve fires.
+              s.tail?.reckon();
               break;
             case "speech_stopped":
               s.stops += 1; // …and its closed half: one endpoint the ear now owes a final for

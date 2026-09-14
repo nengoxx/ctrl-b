@@ -88,7 +88,7 @@ vi.mock("../../src/lib/pcmCapture", () => ({
   },
 }));
 
-import { useDictation } from "../../src/hooks/useDictation";
+import { TAIL_SETTLE_MS, useDictation } from "../../src/hooks/useDictation";
 import { FakeMediaRecorder, gateMediaDevices, mockStt, setMediaDevices } from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
@@ -242,6 +242,17 @@ async function release(result: Mic): Promise<void> {
 async function tick(ms: number): Promise<void> {
   await act(async () => {
     vi.advanceTimersByTime(ms);
+  });
+}
+
+/** Grant a SATISFIED tail wait its quiet window (micro-confirm №2 F1): the condition only ARMS a
+ *  settle, and the resolve fires after `TAIL_SETTLE_MS` of ledger quiescence — so a case that expects
+ *  the release to complete on a final must also grant it the quiet. */
+async function settleTail(): Promise<void> {
+  await act(async () => {
+    vi.advanceTimersByTime(TAIL_SETTLE_MS);
+    await Promise.resolve();
+    await Promise.resolve();
   });
 }
 
@@ -579,6 +590,11 @@ describe("useDictation · streaming ② the release is flush → tail → stop, 
       await Promise.resolve();
       await Promise.resolve();
     });
+    // The condition is satisfied — and STILL nothing more went out: a satisfied condition only ARMS
+    // the settle (micro-confirm №2 F1), because "one new endpoint completed" cannot prove "all
+    // pre-flush audio completed". Only the quiet window ends the wait.
+    expect(h.sent).toEqual(["flush"]);
+    await settleTail();
     expect(h.sent).toEqual(["flush", "stop", "close"]);
     expect(getDraft()).toBe("first phrase and the tail");
     expect(result.current.status).toBe("idle");
@@ -635,11 +651,8 @@ describe("useDictation · streaming ② the release is flush → tail → stop, 
       await Promise.resolve();
     });
     phrase("   "); // the ear answered, with nothing
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(h.sent).toEqual(["flush", "stop", "close"]); // resolved without the timeout
+    await settleTail();
+    expect(h.sent).toEqual(["flush", "stop", "close"]); // resolved without the FULL timeout
     expect(globalThis.fetch).toHaveBeenCalledTimes(1); // …and it did NOT count as a phrase
   });
 });
@@ -677,10 +690,7 @@ describe("useDictation · streaming ② the tail wait re-reads the ledger, it ne
       h.frame?.({ type: "speech_stopped" });
       h.frame?.({ type: "transcript", text: "and check its uptime", final: true });
     });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await settleTail();
     expect(h.sent).toEqual(["flush", "stop", "close"]);
     expect(getDraft()).toBe("wake corsair and check its uptime");
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -698,10 +708,7 @@ describe("useDictation · streaming ② the tail wait re-reads the ledger, it ne
     });
     expect(h.sent).toEqual(["flush"]); // an "owes nothing ⇒ resolve now" would `stop` — discarding
     phrase("the tail"); //                unendpointed audio — before the flush's endpoint could answer
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await settleTail();
     expect(h.sent).toEqual(["flush", "stop", "close"]);
     expect(getDraft()).toBe("first the tail");
   });
@@ -735,12 +742,72 @@ describe("useDictation · streaming ② the tail wait re-reads the ledger, it ne
       h.frame?.({ type: "speech_stopped" });
       h.frame?.({ type: "transcript", text: "and check its uptime", final: true });
     });
+    await settleTail();
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(getDraft()).toBe("wake corsair and check its uptime");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("a THIRD phrase the ledger has not seen retracts a pending settle — the two-VAD-late survivor", async () => {
+    // MICRO-CONFIRM №2's F1 (the ordering that blocked the dynamic rule alone): A's debt is discharged
+    // and B completes a genuinely new endpoint — the condition is SATISFIED — while C, spoken before
+    // the release, still has no `speech_started`. An instant resolve sends `stop` here and C is cut,
+    // from the stream and (via the either/or) from the clip. The settle is what saves it: C's late
+    // start RETRACTS the pending settle, and only C's own final re-arms it.
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    act(() => {
+      h.frame?.({ type: "speech_started" }); // phrase A…
+      h.frame?.({ type: "speech_stopped" }); // …endpointed, its final still travelling
+    });
+    act(() => result.current.stop()); // released with B AND C said, neither reported yet
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => h.frame?.({ type: "transcript", text: "wake corsair", final: true })); // A pays its debt
+    act(() => {
+      h.frame?.({ type: "speech_started" }); // B catches up…
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text: "check its uptime", final: true }); // …condition SATISFIED
+    });
+    // Inside the settle window, C's start arrives — the resolve must NOT have fired, and the pending
+    // settle must be RETRACTED, not merely restarted.
+    await tick(TAIL_SETTLE_MS - 100);
+    expect(h.sent).toEqual(["flush"]);
+    act(() => h.frame?.({ type: "speech_started" })); // C exists after all
+    await tick(TAIL_SETTLE_MS + 100); // a full window later: still held — the condition is BROKEN now
+    expect(h.sent).toEqual(["flush"]);
+    act(() => {
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text: "and its temps", final: true });
+    });
+    await settleTail();
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(getDraft()).toBe("wake corsair check its uptime and its temps");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("…and the hard cap outranks the settle: `tail_wait_ms` ends the wait whatever the ledger does", async () => {
+    // The settle can only SHORTEN the bounded wait, never extend it: a phrase landing just before the
+    // cap leaves less than a full settle window, and the cap ends the wait — with everything already
+    // appended kept, exactly as any timeout does.
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    act(() => result.current.stop());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await tick(KNOBS.tail_wait_ms - 100); // almost the whole bound, ledger silent
+    phrase("just under the wire"); // condition satisfied — settle armed, but only 100 ms remain
+    await tick(100);
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
     expect(h.sent).toEqual(["flush", "stop", "close"]);
-    expect(getDraft()).toBe("wake corsair and check its uptime");
+    expect(getDraft()).toBe("just under the wire");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -878,7 +945,13 @@ describe("useDictation · streaming ⑦ a close under the release wakes it, and 
     expect(getDraft()).toBe("the whole clip");
   });
 
-  it("…nor when the close rides the counted final itself — a finished release is not a loss", async () => {
+  it("…and a close INSIDE the settle window IS reported: the window measures exactly that uncertainty", async () => {
+    // THE CLAIM FLIPPED with the settle (micro-confirm №2 F1, ruled at the fold): under instant
+    // resolve, a close riding the counted final was provably benign — the wait was already over.
+    // Under the settle, "satisfied" is PROVISIONAL for `TAIL_SETTLE_MS` precisely because a phrase the
+    // ledger has not seen may still be in the ear — and a death inside that window kills any such
+    // phrase, indistinguishably from there having been none. Honesty picks the toast: what already
+    // landed is kept, and the possible tail is named as lost.
     const { result } = renderHook(() => useDictation(opts()));
     await hold(result);
     ready();
@@ -887,15 +960,33 @@ describe("useDictation · streaming ⑦ a close under the release wakes it, and 
     await act(async () => {
       await Promise.resolve();
     });
-    // The tail lands and the relay hangs up in the SAME dispatch: the wait was satisfied before the
-    // close arrived, so nothing was lost and saying otherwise would be a lie.
     act(() => {
       h.frame?.({ type: "speech_stopped" });
       h.frame?.({ type: "transcript", text: "and the tail", final: true });
-      h.close?.();
+      h.close?.(); // the relay hangs up in the same dispatch — the settle had no time to fire
     });
     await act(async () => {
       await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getDraft()).toBe("all of it and the tail"); // nothing retracted, ever (rule ⑤)
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // words in the draft ⇒ the clip is dropped
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Voice connection lost"), "err");
+  });
+
+  it("…but a close AFTER the settle fired is a finished release, and says nothing", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("all of it");
+    act(() => result.current.stop());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    phrase("and the tail");
+    await settleTail(); // the settle FIRES: `tailSatisfied`, stop + close go out
+    act(() => h.close?.()); // …and the wire's own close lands after — a hangup on a finished release
+    await act(async () => {
       await Promise.resolve();
     });
     expect(getDraft()).toBe("all of it and the tail");
