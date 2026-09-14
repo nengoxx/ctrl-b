@@ -1296,6 +1296,25 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > rider's own catch). → **Her confirm: all four RESOLVED with line proof, fix-sweep "none" —
   > RESOLVED — SHIP.** Gate 6/6 at the tip; BE 2,476 → 2,480, FE 3,513 unchanged (tests
   > moved, not added).
+  >
+  > **THE WORKLET GATE (same day — the owner's live round found the phone leg dead):** on plain
+  > HTTP every streaming leg died accept→close in the SAME SECOND (dev log), `start` never
+  > processed, no upstream dial — while the relay probe AND a real-browser probe through the
+  > whole app (:5173, synthetic stream, real worklet + WS: 224 frames, 3 endpoints, full
+  > release choreography) both passed. Root cause: **`AudioWorklet` is SECURE-CONTEXT-ONLY
+  > (MDN)** — a browser pref that unlocks the mic on plain HTTP does not unlock worklets, so
+  > `ctx.audioWorklet` is undefined, `attachPcmUplink` rejects same-tick, and the teardown
+  > races the socket's own `start`. Shipped (main-seat leaf fix, both arms red-proven by
+  > scripted reversion; no blind round — rides the next one): ① `armDetector` declines the
+  > leg up front when `ctx.audioWorklet` is absent (capability-checked on the context, never
+  > UA-sniffed) — no doomed socket; ② the degrade notice names the reason on
+  > `isSecureContext === false` ("Live dictation needs HTTPS — using standard transcription");
+  > explicit-false, because a treat-as-secure origin IS secure and streams fine. FE 3,515/192.
+  > **⚠ THE SERVE HOST-HEADER QUESTION (S4 §8) IS ANSWERED, measured:** `wss://` through
+  > Serve → Vite(:5173) → the relay passes the SAME-HOST Origin rule with `allowed_origins`
+  > EMPTY — Serve and the Vite ws proxy preserve `Host` end to end; the allowlist is not
+  > needed on this topology (dev keeps the Serve origin listed as a belt). Ops for the
+  > sitting: Serve flipped to :5173 (restore `tailscale serve --bg 5433` at close).
 - **S4 — the owner calibration + device round (the phase gate):** real phone, real rooms — noisy
   and quiet; the §4.1 knobs tuned by feel; the Tier 0 auto-stop threshold calibrated in the same
   sitting; `enabled` flips ON as the round's close.

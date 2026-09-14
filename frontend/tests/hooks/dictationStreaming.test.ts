@@ -110,8 +110,12 @@ class FakeAnalyser {
 class FakeAudioContext {
   /** Emulates a context the browser refuses to run — the degrade path the leg shares with the meter. */
   static stuckSuspended = false;
+  /** Emulates a context WITHOUT `audioWorklet` — an insecure (plain-HTTP) page, where the property
+   *  simply does not exist (secure-context-only, MDN). The worklet gate's whole subject. */
+  static noWorklet = false;
   state: string;
   sampleRate = 48000;
+  audioWorklet: object | undefined = FakeAudioContext.noWorklet ? undefined : {};
   analyser = new FakeAnalyser();
   source = { connect: vi.fn(), disconnect: vi.fn() };
   resume = vi.fn(async () => {
@@ -263,6 +267,7 @@ beforeEach(() => {
   FakeMediaRecorder.deferStop = false;
   FakeMediaRecorder.last = null;
   FakeAudioContext.stuckSuspended = false;
+  FakeAudioContext.noWorklet = false;
   setMediaDevices(true);
   clearDraft();
   mockStt(200, { text: "the whole clip" });
@@ -350,6 +355,18 @@ describe("useDictation · streaming arms only when BOTH toggles say so", () => {
     expect(h.opens).toEqual([]);
     await release(result);
     expect(globalThis.fetch).toHaveBeenCalledTimes(1); // the clip, exactly as before S2.5
+    expect(getDraft()).toBe("the whole clip");
+  });
+
+  it("…and NOT on a context without `audioWorklet` — the WORKLET GATE declines the doomed socket", async () => {
+    // The uplink could never install (secure-context-only, MDN), so opening the leg would only race
+    // its own teardown — measured on dev as accept→close in the same second, `start` never processed.
+    FakeAudioContext.noWorklet = true;
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    expect(h.opens).toEqual([]); // no socket was ever opened, not "a socket that died"
+    await release(result);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1); // the degrade is total: the clip carried it
     expect(getDraft()).toBe("the whole clip");
   });
 
@@ -1331,5 +1348,40 @@ describe("useDictation · streaming appends through the EXISTING draft seam", ()
     expect(getDraft()).toBe(
       "already typed Okay, so I need you to wake up. Course air and then check its uptime.",
     );
+  });
+});
+
+// ── the HTTPS sentence (the worklet gate's message half) ──────────────────────────────────────────
+//
+// The degrade notice is latched once per page load, and the ⑧ describe up top spends this file's
+// latch on the generic sentence — so this arm buys a FRESH module registry (a new "page load") to
+// assert the message SELECTION: on a page that is explicitly not a secure context, the notice names
+// HTTPS as the reason instead of reading as "it's broken". Kept LAST in the file: `vi.resetModules`
+// re-runs the mock factories for fresh imports, and nothing after this describe imports anything.
+describe("useDictation · streaming ⑧b an insecure page names HTTPS as the reason", () => {
+  it("no worklet + isSecureContext false ⇒ no socket, and the notice says 'needs HTTPS'", async () => {
+    vi.resetModules();
+    vi.stubGlobal("isSecureContext", false);
+    FakeAudioContext.noWorklet = true;
+    // Fresh instances of the hook AND its (mocked) toast module — the static imports up top belong
+    // to the spent page load, so both sides of the assertion must come from the fresh registry.
+    const fresh = await import("../../src/hooks/useDictation");
+    const freshToast = await import("../../src/store/toast");
+    const { result } = renderHook(() => fresh.useDictation(opts()));
+    await act(async () => {
+      await result.current.start();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.status).toBe("recording"); // the mic itself is untouched by the gate
+    expect(h.opens).toEqual([]); // the doomed socket is never opened
+    expect(vi.mocked(freshToast.pushToast)).toHaveBeenCalledWith(
+      expect.stringContaining("needs HTTPS"),
+      "info",
+    );
+    act(() => result.current.cancel());
+    vi.unstubAllGlobals();
   });
 });

@@ -140,12 +140,19 @@ let httpReminderShown = false;
  *  said once per page load on the `httpReminderShown` latch, because a misconfigured ear that silently
  *  degrades every recording forever is worse than one line. */
 const LIVE_DEGRADE_MSG = "Live dictation unavailable — using standard transcription.";
+/** …and the DISTINCT sentence for the one cause the app can NAME (the owner's live round, 2026-09-14):
+ *  `AudioWorklet` exists only on SECURE contexts (MDN), so on plain HTTP the uplink can never install —
+ *  a browser pref that unlocks the mic does not unlock worklets. The generic line reads as "it's
+ *  broken"; this one says what to change. Chosen on `isSecureContext === false` (explicitly false, not
+ *  merely absent), because a treat-as-secure flagged origin IS secure and streams fine over http:. */
+const LIVE_HTTPS_MSG = "Live dictation needs HTTPS — using standard transcription.";
 let liveDegradeShown = false;
 
 function noteLiveDegrade(): void {
   if (liveDegradeShown) return;
   liveDegradeShown = true;
-  pushToast(LIVE_DEGRADE_MSG, "info");
+  const insecure = typeof window !== "undefined" && window.isSecureContext === false;
+  pushToast(insecure ? LIVE_HTTPS_MSG : LIVE_DEGRADE_MSG, "info");
 }
 
 /** …and the DISTINCT copy for a leg that died with words already in the draft (R70 §7: "No speech
@@ -1040,7 +1047,15 @@ export function useDictation({
       // THE STREAMING LEG (S2.5) — a THIRD consumer of the one stream, on THIS context, only now that
       // the context is proven to run. Everything below it (the poll's two clocks, the Tier-0
       // suspension) reads the session it parks; everything above is exactly the shipped detector.
-      if (streamWanted) armStream(ctx, stream);
+      // THE WORKLET GATE (the owner's live round, 2026-09-14): `audioWorklet` is secure-context-only,
+      // so on plain HTTP the uplink below could never install — and the socket `armStream` opens first
+      // would be torn down by the install's rejection, racing its own `start` (measured on dev: the
+      // relay logged accept→close in the same second, `start` never processed). Capability-checked on
+      // the context itself, never UA-sniffed (the house rule); the degrade names the real reason.
+      if (streamWanted) {
+        if (ctx.audioWorklet) armStream(ctx, stream);
+        else noteLiveDegrade();
+      }
       const samples = new Float32Array(analyser.fftSize);
       let silentMs = 0; // the current run of below-floor readings; silence BEFORE speech counts too
       pollRef.current = setInterval(() => {
