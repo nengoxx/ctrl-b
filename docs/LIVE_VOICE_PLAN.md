@@ -1359,6 +1359,70 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > is itself live proof of the suspension. Ambient noise can only DELAY the idle stop (above
   > the floor it resets the clock), never cause it; the floor and `dictation_idle_s` stay on
   > the S4 calibration list below. Ops: Serve RESTORED to prod :5433, verified 200/v1.7.7.
+- **INTERMISSION — the cross-cutting fix wave (D72, 2026-09-15): three voice findings landed
+  between S3.5 and S4, and each AMENDS a ratified slice record.** The wave ran a three-lane audit of
+  everything built since v1.7.7 (voice · roleplay+attachments · fleet/cross-cutting), bought
+  [R71](./research/R71-uplink-stall-pacing.md)/[R72](./research/R72-session-slot-reconnect.md)
+  against its two hard questions, and put the plan itself through an adversarial review round
+  (H1–H3, M4–M7, L8–L14, all ACCEPTED by the main seat). **This block post-dates every S-record
+  below it: where the two differ, this is the later ruling.**
+
+  > **W1 — the dead too-short floor (audit A-F1).** `useDictation`'s post-release floor read
+  > `startedAtRef` AFTER the release had already zeroed it, so the guard that refuses to POST a clip
+  > too short to carry speech could never fire on the streaming path — a stray tap's 80 ms of audio
+  > went to the STT endpoint instead of teaching the user to hold. AMENDS §7-S2.5: `Clip` carries
+  > `{chunks, heldMs}` and **`Clip.startedAt` is DELETED outright** (two readers existed), `onstop`
+  > stamps `heldMs = startedAt > 0 ? now - startedAt : Infinity` **before** the reset, and `upload()`
+  > reads the stamp. The Infinity never-discards doctrine and the floor's placement after the
+  > empty-blob check are unchanged — every terminal was re-confirmed to route through
+  > `stop()`→`onstop` (cancel returns pre-upload, `onerror` arms the discard), so no other path needs
+  > a stamp.
+  >
+  > **W2 — the call's uplink is PACED and BOUNDED (audit A-F2; [R71](./research/R71-uplink-stall-pacing.md)).**
+  > Dictation had a token-bucket pacer; the call's `onFrame` called `sendAudio` raw, so a phone
+  > returning from a background stall burst its whole backlog at the relay — whose own
+  > `relay_queue_ms` then dropped it, at the far end of the wire, as speech the owner had already
+  > spoken. The pacer lifts into `lib/uplinkPacer.ts` with two BACKLOG RULES on one implementation:
+  > **lossless** (dictation — behaviour byte-identical, its release drain runs through the same
+  > functions, the local copies deleted rather than left as a seam) and **drop-oldest at a ms bound**
+  > (the call). R71's field split is the reason the two differ rather than converge: WS voice clients
+  > are lossless-unbounded, servers drop past a bound — and since our relay already drops at
+  > `relay_queue_ms`, a lossless client would merely RELOCATE the loss and leave two owners of it.
+  > Four PINS, each a ruling: ① Trigger-A energy measurement stays on the CAPTURE callback, never the
+  > pump. ② **The pacer NEVER consults `muted`/`held`** — review M5 corrected the field's
+  > flush-never-strand precedent as inapplicable here: mute is `track.enabled`, so silence frames KEEP
+  > FLOWING (`pcmCapture.ts`), the one-rule ownership lives in `PcmCapture` alone, and there is
+  > therefore no strandable tail and no flush-on-mute question for the call. ③ A client-side drop
+  > presents the SAME degraded/"strained" note the relay's drop presents, locally triggered and
+  > clearing the same way (review L11 — one loss chain, one signal). ④ A `protocol`-code error
+  > terminal shows plain copy, not the relay's raw internal sentence. KNOB **`voice.live.call_backlog_ms`,
+  > default 1000** (R71's recommended ≈1 s), in all five homes: `LiveCfg` · the hand-built
+  > `/voice/status` dict · the exact-equality wire pin · the FE `LiveCallWire` · a Conf row beside the
+  > other live knobs (the S3.5 precedent). The CallOverlay's live `ring` read is snapshotted at call
+  > start, per §4.5's "next call" rule.
+  >
+  > **W3 — busy during a reconnect is no longer terminal (audit A-F3; [R72](./research/R72-session-slot-reconnect.md);
+  > RESHAPED by review H2).** R72 probed the stack LIVE on emma: uvicorn's default 20/20 ping leaves a
+  > dead socket's session slot held for a **measured 20–40 s**, so a phone that lost its network
+  > reconnected into its OWN zombie and got `busy` — and `busy` ended the call. Two halves.
+  > **(i) Detection:** `--ws-ping-interval 5 --ws-ping-timeout 5` at the four real launch sites (both
+  > systemd units, both `run.sh` invocations, `start.ps1`), which R72 measured down to a **10 s
+  > worst case**; repo-only, so prod picks it up at the next release install. **(ii) Policy:**
+  > `RECONNECT_BACKOFF_MS` → `[400, 900, 1800, 3000, 4000, 4000]` (≈14.1 s > that 10 s hold; the
+  > length↔max-attempts coupling stands), and the `busy` arm AMENDS §4.5's reconnect contract (and
+  > S1's `busy`→terminal as-built) with the shape H2 ruled — **a busy refusal is TWO events, the frame then the 1013 close**. At
+  > `attempts === 0` it stays terminal (a first-dial busy is genuinely another device; the ratified
+  > behaviour and its e2e pin are untouched). At `attempts > 0` the frame is a **NOTE-ONLY NO-OP**,
+  > and the close that always follows drives the ONE existing `socketLost`→reconnect arm: no double
+  > burn, no second counter, one owner of the ladder. RFC 6455 §7.4.1 is the standing argument R72
+  > brought — 1013 *means* "try again later", so a terminal `busy` violated our own close code.
+  >
+  > **Lanes + close.** W1/W2(FE)/W3(ii) rode the voice lane, W2's backend homes the backend lane;
+  > the wave closes on two independent review lenses over the whole diff, the main seat's rulings and
+  > the full gate. ⚠ **Owed to S4:** R71's Honor-20 app-switch backlog probe (the real burst size
+  > behind `call_backlog_ms`) and R72's UNVERIFIED question — whether Tailscale Serve's proxy
+  > preserves the shortened ping cadence end to end — both belong in the §4.1 calibration sitting.
+
 - **S4 — the owner calibration + device round (the phase gate):** real phone, real rooms — noisy
   and quiet; the §4.1 knobs tuned by feel; the Tier 0 auto-stop threshold calibrated in the same
   sitting; `enabled` flips ON as the round's close.

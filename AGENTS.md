@@ -43,7 +43,7 @@ backend/                FastAPI + Uvicorn service (port 5433). Layered:
   app/core/             the typed-action registry + tool abstraction
   app/adapters/         host/SSH/WOL/inference/MCP/OpenAPI adapters
   app/services/         ActionService (gate+audit), the agent loop (services/agent/), fleet, svc, …
-  app/api/              FastAPI routers (JSON + SSE)
+  app/api/              FastAPI routers (JSON + SSE; one WS — voice `/live`, D71)
   app/config.py         config.yaml/.env loading; _PROJECT_ROOT = repo root; CTRLB_HOME relocates data
   app/config_migration/ config-shape migrations (UPDATE_PLAN.md) — load-boundary fold + write-back
   app/runtime.py        the process-wide chokepoint: settings writes / reconfigure() / grant_approval
@@ -121,8 +121,10 @@ transport (SSE today) drains *that* — it never re-implements the loop. UI butt
 route through the **same typed-action registry → `ActionService`** (validate → risk/privilege gate →
 execute → audit). Hosts/services/actions/events/agents are first-class Pydantic entities in `app/domain/`.
 SQLite holds chat/memory/events; YAML holds config (round-tripped by the Conf tab via a single write path).
-Streaming is **SSE**. `uvicorn` serves the API and the built `frontend/dist` (SPA fallback). Design detail:
-`docs/ARCHITECTURE.md` + `docs/DESIGN.md`.
+Streaming is **SSE** — *with one narrow exception*: **`WS /api/voice/live`**, the live-voice relay's
+continuous **media ingress** (D71 §3.2 — the only WebSocket in the codebase, admitted for audio frames
+only; everything else stays SSE down / HTTP up). `uvicorn` serves the API and the built `frontend/dist`
+(SPA fallback). Design detail: `docs/ARCHITECTURE.md` + `docs/DESIGN.md` + `docs/LIVE_VOICE_PLAN.md`.
 
 **OS-agnostic invariant.** Branch on the managed **host's** `os_type` (ping/SSH command shape), never on the
 *server's* OS. Server-OS branches are a **closed allowlist** (`fleet._ping_cmd` ping syntax · `run_shell`'s

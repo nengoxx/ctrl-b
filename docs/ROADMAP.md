@@ -539,8 +539,9 @@ one — only the browser binary can). That splits C2 into two features that must
   `5277da2` (the pure layer: `chunkPlanFrom` + `stableMarkdownPrefix` + the pipeline property
   test) + `7de0e98` (open sessions, `feedReadAlong`/`endTurnSpeak` — the single turn-end ownership
   entry point — the thin feeder, the Conf toggle) + `53bc104` (the review round's 2 MED folded);
-  rider `e0dcaed` fixed the S1-shipped strikethrough-`$2` literal. **`chunk_read_along` ships OFF**
-  — the owner flips it in Conf; the device round (autoplay-grant persistence over long sessions ·
+  rider `e0dcaed` fixed the S1-shipped strikethrough-`$2` literal. **`chunk_read_along` ships ON**
+  (owner ruling 2026-09-06, the D63 amendment — `config.py` defaults it `True`; it shipped OFF for two
+  days and this line said so until the intermission wave's doc-truth pass, D72); the device round (autoplay-grant persistence over long sessions ·
   TTS-vs-dictation-auto-stop on speakerphone) rides live use.
 
 ---

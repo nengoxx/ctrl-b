@@ -12,7 +12,43 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-14, TWENTY-FOURTH session — **THE OWNER'S TEST ROUND CLOSED with both verdicts PASS: the long-recording bar rules verified in BOTH latch cases (pre-typed draft + empty composer) and streaming dictation "works well" over the Serve HTTPS chain. The one question — does Tier-0 auto-stop collide with streaming dictation? — was source-verified NO COLLISION (the stop the owner felt was `dictation_idle_s`, by design). Serve RESTORED to prod :5433, verified. Zero app code this session. ▶▶ NEXT SESSION = S4 (plan §7) — the owner calibration + device round = THE PHASE GATE**; supersedes below where it speaks)
+## Current state (2026-09-15, TWENTY-FIFTH session — **THE INTERMISSION AUDIT + FIX WAVE (D72), owner-commissioned before S4: a 3-lane Opus audit of the whole v1.7.7→HEAD span ruled the architecture SOUND and surfaced 6 blockers; the full loop ran — R71/R72/R73 bought · adversarial plan review (7 amendments folded) · 3 implementer lanes · 2 review lenses + confirm rounds ALL RESOLVED · the gate green twice. ALL COMMITTED, UNPUSHED. ▶▶ NEXT SESSION = S4 unchanged (plan §7), which now also inherits the wave's probes**; supersedes below where it speaks)
+
+- **What the wave fixed (the audit finding → the landed shape):** ① the 1000 ms too-short floor
+  was DEAD with streaming dictation on (`heldMs` measured after the tail wait — the owner's "the
+  STT is doing things"); now stamped on the `Clip` at `onstop`, red-proven. ② the call uplink
+  ships through dictation's wall-clock bucket (shared `lib/uplinkPacer.ts`, dictation
+  byte-identical), the call bounded DROP-OLDEST at `voice.live.call_backlog_ms` (1000; Conf row
+  in Live call) with the relay's own `degraded` note on a drop — R71's ruling: the leg-kill's
+  stale-speech rule + the server-side bound make lossless a relocation of the loss. ③ busy
+  during a reconnect is a note-only no-op (the 1013 close that ALWAYS follows drives the one
+  socketLost arm — one rung per refusal); ladder → 6 rungs ≈14.1 s over the R72-MEASURED 10 s
+  slot hold at the new `--ws-ping-interval 5 --ws-ping-timeout 5` (all four launch files,
+  qh9-§6-pinned; **prod picks the flags up at the next release install**); an all-busy ladder
+  ends on "the last connection never let go". ④ SECURITY: both D70 imports are raw-body **PUT**
+  (multipart POST was a no-preflight cross-origin owner-file write — R73), declared above their
+  `{name}`/`{slug}` siblings (route shadowing), stream-read at cap+1; `postForm` deleted; the
+  multipart pin is APP-WIDE (allowlist = `POST /api/voice/stt`); SECURITY_MODEL §2.9 is the
+  record. ⑤ `server.trusted_hosts` BUILT, **ships EMPTY = not mounted** (D72 ⑥) — mounting is
+  the owner's opt-in; closes R73's DNS-rebinding residual when set (example block +
+  lockout warning in config.example.yaml). ⑥ every fleet surface's rendered control speaks
+  `livenessWord` (five states incl. "shutting down"; the shutdown-INVERSION covered; gacha
+  dossier + cosmos Ping ruled in) — accessible names only, the visible half deliberately
+  unbuilt (owner's call if wanted). Plus W8: `app` logger follows `server.debug` (lifespan;
+  root stays INFO — the 5 s pings would spam DEBUG), `_auto_route_agent` off the loop at both
+  sites, lorebook warn-once, presence-tick gather isolation, config.example.yaml carries the
+  D69 `wake:` + D71 dictation knobs.
+- **Doc truth landed:** AGENTS/ARCHITECTURE SSE lines carry the one-WS exception; SPEC §6.2/§8.1/
+  §8.2 know attachments + lorebooks + the WS; DESIGN pointer stubs; ROADMAP read-along default;
+  D72; the §7/§13 addenda; ISS-13/14/15; QUALITY counts (BE 2,499 · FE 3,567/194).
+- **PARKED to S4 (with the standing knobs):** capture constraints · `METER_FULL_RMS` · the
+  Honor-20 app-switch backlog probe (does the stall class exist at all — R71 §4.3) · whether
+  Serve preserves the 5 s ping cadence end-to-end (R72's open [U]) · the `dictation_idle_s`
+  feel + the rest of the §4.1 sitting below.
+- **Open owner decision:** flip `trusted_hosts` ON by filling the list (recovery = hand-edit
+  config.yaml if a name is missed); and whether the fleet pending word should ALSO be visible
+  text (currently screen-reader only).
+ — **THE OWNER'S TEST ROUND CLOSED with both verdicts PASS: the long-recording bar rules verified in BOTH latch cases (pre-typed draft + empty composer) and streaming dictation "works well" over the Serve HTTPS chain. The one question — does Tier-0 auto-stop collide with streaming dictation? — was source-verified NO COLLISION (the stop the owner felt was `dictation_idle_s`, by design). Serve RESTORED to prod :5433, verified. Zero app code this session. ▶▶ NEXT SESSION = S4 (plan §7) — the owner calibration + device round = THE PHASE GATE**; supersedes below where it speaks)
 
 - **The verdicts (the owner, in conversation; record folded into plan §7-S3.5's addendum as the
   round-close block):** ① the bar rules PASS — tested with text already in the composer (the

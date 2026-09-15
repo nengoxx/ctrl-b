@@ -328,7 +328,8 @@ tokens pass through literally, so existing SOUL.md text without macros is untouc
 
 ### 5.1 Surface
 
-`POST /api/agents/import` (multipart file). One new endpoint that **composes the existing
+`PUT /api/agents/import` (raw body — *amended from multipart POST by the §13 import-rail
+addendum, D72/R73: a multipart POST is a no-preflight cross-origin write*). One new endpoint that **composes the existing
 writes** (R66 §9: agent PUT + soul PUT + media PUT) — no parallel write path. Response = the
 created agent payload + an import report (what mapped, what was stashed, what was stripped —
 imported `post_history` shown verbatim, §7).
@@ -352,7 +353,7 @@ inside any of them behaves per §4.1's field-specific rule. Two golden imports p
 description+personality only, and all three fields with `{{original}}`. Unknown fields +
 `extensions` land in `card` verbatim **after the strip pass** (§7) — the spec's
 preserve-unknowns MUST, structural here via `extra="allow"` (R66: ST fakes it with a hidden
-form input). **Size caps (Emma F8):** one upload byte cap on the multipart body and one
+form input). **Size caps (Emma F8):** one upload byte cap on the request body and one
 decoded-card JSON cap, enforced for EVERY container (the existing cap+1/413 posture); CHARX
 additionally keeps its per-entry / asset-count / total-uncompressed limits. Name→slug: the agent-name
 grammar, collision-suffixed. Imported agents default `duties: conversational` (ruling 2 — cards
@@ -2230,3 +2231,58 @@ wave (builder ×2 · main-seat ×2). eslint 100 → 101, the exported `confirmDe
 checked them"** — the delete corner (the trash glyph stands, no × swap asked) and the still
 full-mode backdrop both passed their glance; the 32px circle rode the same round unremarked.
 **→ S7 — the owner DEVICE round — IS the phase gate (§10-S7).**
+
+
+### Addendum — the IMPORT RAIL, hardened (the intermission fix wave, D72, 2026-09-15)
+
+The wave's three-lane audit of everything built since v1.7.7 put a security lens on this phase and
+found **one HIGH: both D70 import routes were `multipart/form-data` POSTs** —
+`POST /api/agents/import` (a V2/V3 character card) and `POST /api/lorebooks/import` (a book). [R73](./research/R73-cross-origin-write-defense.md) was bought against the question and
+settles it: multipart POST sits squarely inside the browser's **no-preflight set**, so any page the
+owner happens to open while on the tailnet can `fetch(…, {mode: "no-cors", body: formData})` attacker
+bytes into the agent/lorebook corpus — CORS shares *responses*, never sends, so **the write always
+happens**. The same dossier's verb truth table (Fetch + HTML specs read, not recalled) is what makes
+the fix a one-liner in shape: **no browser path emits a cross-origin PUT without a preflight** —
+forms are `get`/`post`/`dialog` only, and a `no-cors` fetch THROWS on a non-safelisted method.
+
+**THE RULING (folded; §7's import contract amended, the shape unchanged for the owner):**
+
+- **Both imports become raw-body `PUT`** — D65's own verb rail for owner writes, now app-wide rather
+  than media-only. **The verb IS the CORS control.** No filename path param (the format stays
+  content-SNIFFED, which is what the multipart read was never needed for), and the existing per-format
+  caps and behaviour are otherwise untouched.
+- **The body rides the HOUSE STREAM PATTERN** (review H3): accumulate `request.stream()` into a
+  bytearray and **413 the moment the length passes the cap** — the cap+1 posture `core/media.py` and
+  `core/attachments.py` already share — never a bare `await request.body()`, which would land the
+  whole payload before anyone asked how big it was.
+- **Both decorators MOVE ABOVE their parametrized siblings** (review H1, reproduced live): with
+  `PUT /agents/{name}` and `PUT /lorebooks/{slug}` registered first, the literal `…/import` path is
+  SHADOWED by the parameter route and an import mis-routes into the editor handler — a 500 on owner
+  input rather than a 415. Route order is load-bearing here, and the per-route tests assert that the
+  IMPORT handler answered (201/415 — never a `{name}`-shaped 422/500).
+- **FE:** `AgentsEditor` + `LorebooksEditor` swap to the existing `putBytes` (the error surface
+  preserved); `api/client.ts`'s `postForm` is DELETED after a zero-other-callers grep — the wave's
+  own no-legacy-seam rule.
+- **A standing pin, not a patch:** an app-wide invariant iterates every live route and asserts that
+  **no handler declares multipart/`UploadFile`**, with the single allowlist entry
+  `{("POST", "/api/voice/stt")}` (a real file upload with no owner-corpus write behind it). It lives
+  with the D65 pin family and reuses its route-iteration helper, so the next route that reaches for a
+  form upload fails the gate instead of a future audit.
+
+**The residual the verb rail does NOT close, and what now backs it up:** R73 also establishes that
+**DNS rebinding defeats the verb rail entirely** — it does not beat the rail, it removes its premise:
+the attacker's page re-resolves their own name to this address, so the request genuinely IS
+same-origin. The one thing they never control is the name in `Host`, and until this wave our stack
+validated none (the prod bind is `0.0.0.0`, SECURITY_MODEL §2.1's accepted trusted-LAN posture).
+So the wave BUILT the belt-and-braces: `server.trusted_hosts` (additive, validated at the config
+gate) mounts Starlette's `TrustedHostMiddleware` — which covers websocket scopes too, so it also
+backs the WS `Origin` rail — and it was built **owner-gated-off**: it ships EMPTY, i.e. NOT mounted,
+because an empty allowlist that is mounted 400s every route including the Conf UI, and because the
+list must name every address the owner browses by before it can be switched on. Mounting it is their
+opt-in, one config line. SECURITY_MODEL §2.9 records the mechanics, the empty-list trap and the
+pre-deploy checklist row; with it empty, the rebinding residual stands and is recorded there.
+
+**Authority:** SECURITY_MODEL's D70 section (the PUT rail, R73's vector table, the accepted
+card-prompt-injection posture, the script-key strip, lorebook writes) + its §2.7 checklist, which the
+wave updated to the app-wide pin and the STT allowlist. The D-entry is
+[DECISIONS D72](./DECISIONS.md#d72).

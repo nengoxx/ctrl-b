@@ -5120,3 +5120,61 @@ seam the draft assumed does not exist); v1's interrupted-reply posture is record
 the plan. Build = **S0–S4 per plan §7**, one slice per session under the standing cadence;
 S4 = the owner calibration round gates the phase (and calibrates the Tier-0 auto-stop
 threshold in the same sitting).
+
+
+## D72 — The intermission fix wave: cross-cutting correctness, security and doc truth between S3.5 and S4 ✏️ RULED 2026-09-15 (main seat, on a three-lane audit of everything built since v1.7.7 + the plan-review round; evidence = [R71](./research/R71-uplink-stall-pacing.md) · [R72](./research/R72-session-slot-reconnect.md) · [R73](./research/R73-cross-origin-write-defense.md); design of record = the wave plan v3, whose rulings are recorded IN the owning plans — [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7 intermission addendum · [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §13 addendum · [`SECURITY_MODEL.md`](./SECURITY_MODEL.md)'s D70 section; the plan-review round H1–H3 · M4–M7 · L8–L14 was ACCEPTED in full)
+
+**Why a wave and not five separate fixes:** three phases (D68 attachments, D70 roleplay, D71 live
+voice) are "build in progress" at once and D67/D69 shipped inside the same span, so a per-phase
+sweep would have missed exactly the findings that live BETWEEN subsystems. One audit, three lanes,
+one review round; each finding then lands in the plan that owns it, and this entry is the index.
+
+**The six rulings.** ① **The call's uplink is paced and bounded** (R71): the token-bucket pacer
+lifts out of dictation into `lib/uplinkPacer.ts` with two backlog rules on one implementation —
+LOSSLESS for dictation (byte-identical behaviour, the local copies deleted, no seam left behind) and
+DROP-OLDEST at `voice.live.call_backlog_ms` (default 1000) for the call. R71's field split is the
+argument: clients are lossless-unbounded, servers drop past a bound, and since our relay already
+drops at `relay_queue_ms` a lossless client would merely RELOCATE the loss and leave two owners of
+it. ② **`busy` is no longer terminal during a reconnect** (R72, measured live on emma: uvicorn's
+default 20/20 ping holds a dead session's slot 20–40 s, so a phone reconnects into its own zombie):
+`--ws-ping-interval 5 --ws-ping-timeout 5` at the four real launch sites brings that to a measured
+10 s, the backoff ladder is re-sized past it, and a busy frame mid-reconnect becomes a NOTE-ONLY
+NO-OP — the 1013 close that always follows drives the one existing reconnect arm, so there is no
+double burn and no second counter. RFC 6455 §7.4.1 is the standing argument: 1013 *means* "try again
+later", so a terminal `busy` violated our own close code. ③ **Owner-corpus writes are raw-body PUT,
+app-wide** (R73): the D70 card/lorebook imports were multipart POSTs, which sit inside the browser's
+no-preflight set — any page the owner opens on the tailnet could push attacker bytes into the agent
+corpus, because CORS shares responses, never sends. The verb IS the control (no browser path emits a
+cross-origin PUT without a preflight), the body rides the house stream-and-413 pattern, the literal
+`…/import` decorators move ABOVE their parametrized siblings (which otherwise shadow them into a
+500), and an app-wide pin now asserts that no live route declares multipart/`UploadFile` outside the
+single allowlist entry `POST /api/voice/stt`. ④ **A pending host's control says WHY it is disabled:**
+D67 stretched the disabled window from ~100 ms to 90/180/300 s, and gacha was the only fleet that
+ever spoke the state — so `livenessWord(online, pending)` moves beside `PendingKind` in
+`store/fleetPending`, gains a fifth word (`shutting down`), and becomes a RULE rather than a site
+list: **the label of WHICHEVER control a pending host renders carries it**, which is what covers the
+inversion nobody had noticed — a pending shutdown is PRESENTED offline, so the control on screen is
+the one that WAKES the machine. ⑤ **Doc truth:** AGENTS.md still asserted SSE-only three phases after
+D71 admitted a WebSocket, SPEC's `$CTRLB_HOME` tree and router table predated attachments and
+lorebooks, DESIGN mentioned none of the three, and ROADMAP contradicted the shipped
+`chunk_read_along` default — all four corrected, and the three live plans carry the wave's addenda.
+⑥ **The `Host` allowlist is BUILT and ships EMPTY** (R73's DNS-rebinding residual, which the verb rail
+cannot close — rebinding does not defeat the rail, it removes its premise: the attacker's page
+re-resolves their own name to this address, so the request genuinely IS same-origin and the one thing
+they never control is the name in `Host`). `server.trusted_hosts` is additive (no schema bump), its
+pattern shape is validated at the CONFIG gate — Starlette `assert`s on a malformed wildcard inside
+`__init__`, and a typo must refuse with a sentence rather than crash the import — and
+`TrustedHostMiddleware` mounts at app-construction time **only when the list is non-empty**, because an
+empty allowlist that IS mounted matches no name and 400s every route, the Conf UI included: off means
+not mounted, never a middleware that says no. **Empty is the shipped default and MOUNTING is the
+owner's opt-in** — the rail costs them every name and address they browse by, and a name missing from
+the list answers 400 everywhere with `config.yaml` by hand as the only recovery, which is a bill only
+the owner may accept. It is one config line and no release when they do. → [`SECURITY_MODEL.md`](./SECURITY_MODEL.md)
+§2.9 carries the mechanics, the empty-list trap and the pre-deploy checklist row.
+
+**The standing lesson (the reason ⑤ is a ruling and not a chore):** a feature plan stays fresh
+because its slices are worked; the CROSS-CUTTING docs — the ones CLAUDE.md sends every new agent to
+FIRST — rot silently, and the cost is paid by the next designer, who reads AGENTS.md and concludes
+the transport they need does not exist. The 2026-08-17 doc-truth pass said it and this wave measured
+it again: **a wave that touches a subsystem lands that subsystem's SPEC/DESIGN/doc-map rows in the
+same wave.**

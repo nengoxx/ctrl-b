@@ -392,6 +392,17 @@ class Plan(BaseModel):     items: list[PlanItem]; updated_at: datetime
 A `ToolCallPart` and its matching `ToolResultPart` share `call_id`. The UI renders a command/action
 bubble from the pair; a `confirm`-gated call sits in `AWAITING_CONFIRM` until the user acts.
 
+> **Added by D68 (2026-09-01) — `AttachmentPart`, the seventh member of the union.** One file the owner
+> attached to a user turn, and **facts only: never the data, never a price** — the bytes live in
+> `$CTRLB_HOME/attachments/{thread_id}/{name}` and the part is the durable reference to them
+> (`{kind, name, path, mime, bytes, width?, height?, inline_chars?}`), because inlining base64 would put
+> tens of megabytes into a JSON column every history read has to parse, and a persisted token estimate
+> would bake today's `attachments.*` knobs into rows the estimator re-prices at READ. **The server
+> constructs every one of them** at claim time from the bytes it just landed — the client sends opaque
+> staging ids and nothing else, so no field is client-authored. Additive: the union is discriminated on
+> `type`, so old rows load untouched. Authority: [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) §2
+> (the part) · §3 (transport B: id-addressed staging + claim-by-rename) · §8 (serving).
+
 ---
 
 ## 5. Agent subsystem (the heart)
@@ -440,6 +451,19 @@ class ModelRef(BaseModel):              # "pointer + call config" (D42/A10; A11/
 > a `providers` map entry, and the model declares `extra="forbid"`, so a stale `mode:` reaching normal
 > validation is a HARD error (only the quarantined config/`agent.yaml` migration folds strip it —
 > `inference.default_mode` survives *only* as that strip-fold; `InferenceCfg` is provider/model/fallbacks).
+
+> **Expanded by D70 (2026-09-06) — characters ARE agents.** No `Character` model, no type flag, no
+> nested `character:` object: `AgentDef` grew a FLAT, optional, defaulted band of fields, and what kind
+> of agent something IS emerges from which of them it uses — `duties` (`agent` | `conversational`:
+> which duties prompt rides the head's second section, and **never a capability lever** —
+> `tools`/`skills`/`privilege` stay the only gates) · `greeting`/`alt_greetings`/`example_dialogue` ·
+> `scenario` · `post_history` (the operational last word, emitted AFTER the history) · `user_name` ·
+> `avatar`/`background`/`voice` · `lorebooks: [slug]` · `card` (the import stash — a V2/V3 card's
+> unmapped fields post-strip: export-ready provenance, **never prompt-facing**). The LOREBOOK subsystem
+> is its own corpus (`$CTRLB_HOME/lorebooks/<slug>.yaml`, one book per file, scanned the way `agents/`
+> and `skills/` are), injected by keyed trigger at assembly time. Authority:
+> [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §3.1 (the schema) · §4.1–§4.2 (the universal Voice/Duties
+> assembly + where each block lands) · §6 (lorebooks) · §7 (card import + the script-key strip).
 
 ### 5.2 The loop as an explicit state machine
 
@@ -1226,6 +1250,20 @@ carries the thread's `steer_queue`), `GET /api/agent/turns/{id}/stream` (re-atta
 `{removed}`). Sending during a live chat/resume turn returns **202** `{queued, turn_id, entry_id,
 position, depth}` (both `POST /api/agent/chat` and `POST /api/exec`), not the old 409 (D41).
 `GET /api/events/stream` (fleet activity) is a separate feed off the EventBus.
+
+**The one WebSocket (D71, 2026-09-11).** "SSE down, HTTP up" was an implicit invariant of this codebase
+until live voice, and it is still the rule for everything the agent does. `WS /api/voice/live` is the
+single admitted exception, and only because continuous **media ingress** is the one thing neither half
+of the rule can carry: the phone streams raw pcm16 frames for minutes at a time. It is not an agent
+transport — a spoken turn still arrives over `POST /api/agent/chat` and streams back as SSE. Wire:
+**up** one JSON `start` (`{type, sample_rate}`), then binary pcm16 LE mono frames plus `flush`/`stop`;
+**down** JSON only — `state` (`ready`/`ended`/`degraded`) · `speech_started`/`speech_stopped` ·
+`transcript` (`{text, final}`) · `error` (`{code, message}`); **no audio ever rides the downlink** (the
+reply's voice is HTTP TTS, D63). Three refusals, in order: origin, then the feature gate — both
+pre-`accept()` — then `busy` as a typed frame + close 1013 post-`accept()`; with `server.trusted_hosts`
+set, a `Host`-mismatch 400 precedes all three (the middleware answers the handshake before routing —
+SECURITY_MODEL §2.9). Authority:
+[`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §3 (the relay + the admission) · §4 (the turn protocol).
 
 ---
 

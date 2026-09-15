@@ -473,8 +473,13 @@ $CTRLB_HOME/
 ├── skills/<name>/SKILL.md # global skills (frontmatter + instructions)
 ├── agents/<slug>/         # specialists: agent.yaml (overrides) + SOUL.md + skills/
 ├── media/<ns>/<role>/     # owner art per NAMESPACE + role (D53; `core/media.py` validates the shape,
-│                          #   served at /api/media/<ns>/files — a stray folder stays invisible. D65: the
-│                          #   ONLY tree the app writes owner files into, via PUT/DELETE — SECURITY_MODEL §2.7)
+│                          #   served at /api/media/<ns>/files — a stray folder stays invisible. D65: owner
+│                          #   art's ONLY write tree, via PUT/DELETE — SECURITY_MODEL §2.7)
+├── attachments/           # D68: the files the owner attaches to a turn — the SECOND tree the app writes
+│   ├── staging/           #   (SECURITY_MODEL §2.8). Staged by raw-body PUT, then CLAIMED into the thread
+│   └── <thread_id>/       #   at send; a message's `AttachmentPart` is the durable reference to one file
+├── lorebooks/<slug>.yaml  # D70: one lorebook per file (entries + keys + placement) — owner-authored and
+│                          #   diffable, discovered by scanning, exactly like `agents/` and `skills/`
 └── memories/              # ← local git repo (D26, auto-commit + external-edit sweep)
     ├── MEMORY.md USER.md STATE.md      # tier 1: default agent + global stores (capped, § entries)
     ├── agents/<slug>/MEMORY.md STATE.md
@@ -569,6 +574,15 @@ Dual-mode delivery (D17): same generator collected into one JSON payload when
 `agent.streaming=off`/client asks buffered. Second feed: `GET /api/events/stream` (fleet
 activity, EventBus, 15 s keepalive) with client auto-reconnect + reconcile.
 
+**The one WebSocket (D71 §3.2).** `WS /api/voice/live` is the codebase's only socket and is NOT an
+agent transport: the client sends one JSON `start` (`{type, sample_rate}`), then raw binary pcm16 LE
+mono frames plus the JSON controls `flush`/`stop`, and the relay sends JSON only — `state`
+(`ready`/`ended`/`degraded`) · `speech_started`/`speech_stopped` · `transcript` (`{text, final}`) ·
+`error` (`{code, message}`). **No audio ever rides the downlink** (reply audio stays on HTTP TTS, C3).
+A turn the owner speaks still reaches the agent
+through the ordinary `POST /api/agent/chat` + SSE — the socket carries **media ingress only**, which is
+the whole basis on which it was admitted beside the SSE rule.
+
 ### 8.2 REST surface (by router)
 
 Every router is mounted under **`/api`** (`main.py::include_router`); the paths below are
@@ -578,14 +592,15 @@ router-relative.
 |---|---|
 | hosts / services | list + status + CRUD (comment-preserving YAML edits) + wake/shutdown/reboot/start/stop/restart via actions · `GET /hosts/vpn-discovery` (D3: propose a `vpn_host` per host from `tailscale status --json` — read-only, never writes config; 403 when Tailscale control is off) |
 | actions / tools | catalog (specs + schemas + retry_safe + each tool's `approvals`) · `POST /actions/{name}` (the name is in the **path**; UI two-step confirm — re-POST with `confirm_token`) · Tools-tab twin `POST /tools/{name}` (utility cards only, 404 otherwise; no confirm dance) |
-| agent | threads CRUD · `chat` · `resume` · `compact` (D42: `instructions?` in → `{removed, summaryId?, truncated?, rejected?}` out) · `plan` · `apply` · `exec` (!) · skills CRUD · agents CRUD (+SOUL, memory stores) · `GET /memory/core/status` (tier-2 corpus status — derived, read-only, D57) · default-prompt (`chat`/`exec` → **202 steer-enqueue** when the thread runs a chat/resume turn, D41) · `GET /providers` (A11/D48: the composer + Conf provider directory — a NAKED non-secret read; names + catalogs + the effective chain + `verbs`) |
+| agent | threads CRUD · `chat` · `resume` · `compact` (D42: `instructions?` in → `{removed, summaryId?, truncated?, rejected?}` out) · `plan` · `apply` · `exec` (!) · skills CRUD · agents CRUD (+SOUL, memory stores) · `GET /memory/core/status` (tier-2 corpus status — derived, read-only, D57) · default-prompt (`chat`/`exec` → **202 steer-enqueue** when the thread runs a chat/resume turn, D41) · `GET /providers` (A11/D48: the composer + Conf provider directory — a NAKED non-secret read; names + catalogs + the effective chain + `verbs`) · **lorebooks CRUD (D70)** — `GET /lorebooks` (the index) · `GET/PUT/DELETE /lorebooks/{slug}` (one whole book per call, validated then written whole; loaded fresh per turn, so a save is live) · the two **IMPORT rails**, `/agents/import` (a V2/V3 character card) and `/lorebooks/import` (a book): **raw-body PUT, never multipart, never POST** — the same CORS-preflight defence the media write path states (SECURITY_MODEL §2.7), the format content-SNIFFED rather than taken from a filename, the body streamed under `lorebooks.max_import_bytes`/the card cap with a `413` the moment it is crossed, and both decorators registered ABOVE their parametrized `PUT /{name}`/`PUT /{slug}` siblings so the literal path cannot be shadowed |
 | settings | `GET/PUT /settings` (masked/hot-apply) · `GET /appearance` · `GET /notifications` (the F1 prefs projection — an always-on read for the app-global engine; writes still ride `PUT /settings`) |
 | prompts | `GET /prompts` (Phase 18: every registry id + label + effective template + placeholders — read-only; edits ride `PUT /settings` `prompts:`) |
 | integrations | MCP/OpenAPI CRUD · `rediscover` (409 while turn active) · status |
-| voice | `status` · `stt` · `tts` |
+| voice | `status` (the client policies: STT auto-stop, the D63 chunk plan, the D71 live/live_ear bits + the call's client knobs) · `stt` · `tts` · **`WS /voice/live`** — the live-voice relay (D71 §3: **the codebase's only WebSocket**, admitted for continuous media ingress alone). Three refusals in order: **origin** pre-`accept()` (the security rail — a rejected origin learns nothing), the **feature gate** pre-`accept()` (either `voice.live.enabled` or `voice.live.dictation`, plus a resolvable realtime target → a 403 handshake failure), then **busy** post-`accept()` as a typed `{"error":"busy"}` + close 1013, because a full session cap is transient and renderable — and with `server.trusted_hosts` set, a **`Host`-mismatch 400** precedes all three (the middleware answers the handshake before routing — SECURITY_MODEL §2.9) |
 | events / access / health | audit list + SSE · Tailscale Serve control · health |
 | automations (D49) | `GET /automations` · `POST /automations` (201) · `POST /automations/schedule-preview` (validate a cron + show the next fires) · `PUT /automations/{id}` · `POST /automations/{id}/enabled` · `DELETE /automations/{id}` (204) · `POST /automations/{id}/run-now` (202) · `GET /automations/{id}/runs` · `POST /automations/runs/{run_id}/read` |
 | media (D53 · **writes D65 ✅**) | `GET /media/{ns}` (the namespace index — roles + what the owner has installed) + a per-namespace **static mount** at `/media/{ns}/files` (`MediaFiles`, restricted to the roles the index advertises, so a folder parked beside them is invisible rather than quietly public) · **D65, BUILT at S1** (MEDIA_MANAGER_PLAN §12): `collation: "library-v1"` on the index (`files` order → unlisted disk → unlisted BUNDLED as the fallback tier, every row carrying `focal`/`hidden`/`listed`/`key`) · **`PUT /media/{ns}/files/{role}/{filename}`** — raw `png\|jpeg\|webp` body, **never multipart, never POST** (the CORS-preflight defence, SECURITY_MODEL §2.7) → `201 MediaFile` · `404` unknown ns/role · `409` name exists (the race guard, client retries with the next suffix) · `413` over `media.write.max_bytes` · `415` extension/bytes disagree · `422` bad filename or empty body · **`DELETE` the same path** → `204 \| 404` (touches no config; the client composes delete-then-config-write) |
+| attachments (D68) | **`PUT /attachments/staging/{filename}`** — one staged file, **raw body, never multipart, never POST** (the verb IS the CORS control, media's rule one subsystem over): the name is admitted BEFORE any byte streams, then `201 StagedAttachment` (an opaque server-minted id) · `404` a path-shaped name · `413` past `attachments.max_file_mb` · `415` bytes that are not an image, a PDF or decodable text · `422` a name this surface may not create, or an empty body. The chat POST then CLAIMS ids into `{thread_id}/` by rename, so the upload never carries thread identity · **`GET /attachments/{thread_id}/{name}`** — one CLAIMED file (the bubble's `<img>` src + the owner's download), `private, immutable` cache, `404` for anything that is not exactly a file this thread persisted a part for |
 | agent turns (D39/D41) | `GET /agent/turns/{t}` (status + `steer_queue`) · `GET …/stream` (re-attach) · `POST …/cancel` (idempotent Stop; harvests `steer_queue`) · `DELETE …/steer/{entry_id}` (unsend a queued steer) |
 
 Two routes sit **outside** `/api`, in `main.py`'s prod-only branch (absent in dev, where Vite owns

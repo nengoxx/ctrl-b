@@ -24,7 +24,7 @@ System picture: [`README.md`](../README.md) (mermaid overview) · [`SPEC.md`](./
 `test_arch_invariants_qh9.py`):
 
 ```
-app/api/        one router per resource (JSON + SSE)          → SPEC §8.2 (router table)
+app/api/        one router per resource (JSON + SSE + the one WS) → SPEC §8.2 (router table)
 app/services/   ActionService (gate+audit) · agent/ (session loop, subagents, memory,
                 compaction) · fleet.py / svc.py pollers · actions/ · tools/
 app/core/       tool registry · permissions.decide() · redact · skills/memory/agents Protocols
@@ -40,10 +40,11 @@ extension cookbook ("add an action/tool/skill/agent/MCP server = one file/row").
 
 ## 2. API surface
 
-Superseded sketch — the **real router inventory** is `backend/app/api/` (14 routers: access ·
-actions · agent · automations · events · health · hosts · integrations · media · prompts ·
-services · settings · tools · voice)
-and the verified table in **`SPEC.md` §8.2**. The SSE wire contract is **`DESIGN.md` §12**
+Superseded sketch — the **real router inventory** is `backend/app/api/` (15 routers: access ·
+actions · agent · attachments · automations · events · health · hosts · integrations · media ·
+prompts · services · settings · tools · voice)
+and the verified table in **`SPEC.md` §8.2**. The SSE wire contract is **`DESIGN.md` §12**;
+streaming is SSE plus the one WebSocket, `WS /api/voice/live` (D71 §3.2, media ingress only)
 (lockstep-guarded against `session.py` by `test_sse_event_lockstep_qh7.py`).
 
 ## 3. Data model
