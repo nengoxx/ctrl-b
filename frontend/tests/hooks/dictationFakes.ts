@@ -99,10 +99,10 @@ export function mockStt(status: number, body: unknown) {
  *
  *  HELD PAST THE 1000 ms FLOOR by default (S0.5): `useDictation` now discards a clip shorter than
  *  `MIN_CLIP_MS` before any POST, and every case in these two files is about what happens to a real
- *  recording. The clock is NUDGED rather than waited on — the fake recorder's `stop()` is synchronous
- *  and `upload()` reads `Date.now()` in its synchronous prefix, so restoring it right after the `act`
- *  is safe (and under fake timers the captured `Date.now` is the faked one, which goes back unchanged).
- *  Pass a shorter `heldMs` to drive the floor itself. */
+ *  recording. The clock is NUDGED rather than waited on — the fake recorder's `stop()` fires `onstop`
+ *  synchronously, and `onstop` is where the duration is STAMPED onto the clip (A-F1), so restoring the
+ *  clock right after the `act` is safe (and under fake timers the captured `Date.now` is the faked one,
+ *  which goes back unchanged). Pass a shorter `heldMs` to drive the floor itself. */
 export async function recordOnce(
   result: { current: { toggle: () => void; status: string } },
   heldMs = 1200,

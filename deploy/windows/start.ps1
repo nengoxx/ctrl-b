@@ -49,7 +49,11 @@ if ($Dev) {
 } else {
   Write-Host "-- PROD: serving on http://127.0.0.1:5433  (alongside the Flask app on :5432; Ctrl-C to stop)" -ForegroundColor Green
 }
-& $VPY -m uvicorn app.main:app --host 127.0.0.1 --port 5433
+# THE LIVE-VOICE KEEPALIVES, identical to the Linux launch sites (D71 / A-F3, docs/research/R72 §4): the
+# relay holds its call slot until the WebSocket ping times out, and uvicorn's defaults (20 s interval +
+# 20 s timeout) outlast the client's reconnect ladder — so a phone leg that dies without a close frame
+# makes the app refuse its own redial as `busy`. 5/5 ⇒ worst-case slot release 10.0 s.
+& $VPY -m uvicorn app.main:app --host 127.0.0.1 --port 5433 --ws-ping-interval 5 --ws-ping-timeout 5
 # PROPAGATE the exit code (UPDATE_PLAN slice 6). Without this the script always returns 0, so
 # `start.cmd`'s `if errorlevel 1 pause` never fires — and the app's import-time config refusal (exit 78,
 # §14) would print its fix instruction into a console window that then vanishes.

@@ -31,6 +31,7 @@ const LIVE_CALL = {
   buffered_ceiling_ms: 1000,
   min_speech_ms: 300,
   barge_threshold: 0.02,
+  call_backlog_ms: 1000,
   barge_in: true,
   ring: true,
   echo_workaround: "auto",

@@ -1086,6 +1086,49 @@ describe("useDictation · streaming ⑦ a death past `ready` is decided by what 
   });
 });
 
+// ── the mic's own 1000 ms FLOOR, under a streaming leg (the intermission wave, A-F1) ──────────────
+//
+// The floor is the RECORDER's rule (R69 §9 — its arms live in `useDictation.test.ts`), but S2.5 put a
+// choreography between the release and the upload: drain → flush → the FLAT `tail_wait_ms` wait. A
+// duration measured at the upload therefore measures the CHOREOGRAPHY, which is always ≥ the wait and
+// so always past the floor — the shipped rule silently reversed for every recording made with streaming
+// dictation on, which is the owner's own dev config. These two cases are the boundary, stated on THIS
+// path: what the floor reads is how long the owner HELD, never how long the release took.
+
+describe("useDictation · streaming the mic's 1000 ms floor is measured on the HOLD (A-F1)", () => {
+  /** Hold for exactly `heldMs`, release, and let the whole choreography run out to its bound. */
+  async function releaseAfter(result: Mic, heldMs: number): Promise<void> {
+    await act(async () => {
+      vi.advanceTimersByTime(heldMs);
+    });
+    act(() => result.current.stop());
+    await runOutTail();
+  }
+
+  it("a mis-timed 400 ms hold POSTs nothing and teaches, exactly as it does with no leg", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready(); // a leg really opened — 400 ms is well past the gesture's own activation
+    await releaseAfter(result, 400);
+    // 400 ms of hold, ~2.4 s of wall clock by the time `upload` runs. The blip must cost no round trip
+    // and must teach the gesture, or a mis-timed hold quietly appends whatever the ear made of it — and
+    // with `stt_auto_send` on, SENDS it.
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(getDraft()).toBe("");
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Too short"), "info");
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("…and a hold just past it still uploads — the floor is 1000 ms, not a brake on the path", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    await releaseAfter(result, 1100);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(getDraft()).toBe("the whole clip");
+  });
+});
+
 // ── rule ⑨ · the interplay with the mic's own rules ───────────────────────────────────────────────
 
 describe("useDictation · streaming ⑨ the three §9.3 rules", () => {
@@ -1100,6 +1143,11 @@ describe("useDictation · streaming ⑨ the three §9.3 rules", () => {
     await tick(10_000);
     expect(result.current.status).toBe("recording");
     expect(globalThis.fetch).not.toHaveBeenCalled();
+    // …and then END IT, which is not decoration: a case that walks away from a live recording leaves
+    // the UNMOUNT's release parked on the fake clock, and the NEXT case's `advanceTimersByTime` is what
+    // finally runs it — an upload landing in a test that never recorded anything. `cancel` is the one
+    // exit that resolves synchronously and POSTs nothing, so nothing can outlive this case.
+    act(() => result.current.cancel());
   });
 
   it("…and the moment the leg dies the policy resumes, with a FRESH run", async () => {

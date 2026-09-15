@@ -21,7 +21,11 @@ Environment=CTRLB_HOME=__CTRLB_HOME__
 # watcher loop, not a supervisor — it stays alive, so the unit reports `active (running)` with a DEAD
 # port and the refusal only in the journal. Start-time refusals are terminal-78 as intended; this is the
 # mid-session reload path only, and it does not exist in prod (no --reload there).
-ExecStart=__REPO__/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5434 --reload
+# …and the same ws keepalives prod runs (D71 / A-F3, docs/research/R72 §4): a live-voice slot is held
+# until the ping times out, so uvicorn's 20+20 s defaults would outlast the client's reconnect ladder and
+# refuse its own redial as `busy`. 5/5 ⇒ worst-case slot release 10.0 s. Dev must match prod here or the
+# S4 phone round calibrates against a different reconnect window than the one it will ship on.
+ExecStart=__REPO__/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5434 --reload --ws-ping-interval 5 --ws-ping-timeout 5
 # UPDATE_PLAN slice 4: `app.main` refuses at IMPORT time on a config this build cannot load and
 # exits 78 (EX_CONFIG). No restart can fix that, and this unit has no StartLimitBurst — without the
 # directive below systemd retries forever at RestartSec=5 (measured: 5 restarts in 8s). With it the

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { FocalImg } from "../../components/FocalImg";
 import { useActiveBackdrop } from "../../hooks/useActiveBackdrop";
@@ -65,10 +65,20 @@ function phaseLabel(phase: CallPhase, speaking: boolean, muted: boolean): string
 export function CallOverlay({ close }: { close: () => boolean }) {
   const art = useActiveBackdrop();
   const call = useLiveCall();
-  // The §6 mode knob. Absent knobs mean the call cannot start at all (the machine fails it with
-  // "not configured"), so this default only ever dresses that terminal face — and it is the `LiveCfg`
-  // field default, which is the one answer this surface is allowed to assume.
-  const ringMode = useVoiceStatus().data?.live_call?.ring ?? true;
+  // The §6 mode knob, SNAPSHOTTED (audit A LOW). Read live off the query, a mid-call `/voice/status`
+  // refetch — a Conf save, a window refocus — would flip the overlay's indicator under a call in
+  // progress, against §4.5's "settings edited mid-call apply to the NEXT call", which every other knob
+  // here obeys by being read once at capture.
+  // MOUNT-TIME *IS* CALL START, which is what makes a lazy initializer the whole of it: this component
+  // is mounted under `key={callMount}` (`DefaultRoot`), so a call cannot begin without mounting it and
+  // a REDIAL bumps the key rather than reusing the machine — the next call reads the query again.
+  // The read is the design, stated the honest way round: the query has ALREADY answered by the time the
+  // overlay can mount, because the call door is gated on it — call mode is only reachable while
+  // `useComposer().liveReady` (= `/voice/status`'s own `live` bit) is up, and the mic's mode boots to
+  // `mic` with no memory every load. So the `?? true` below is not a race to win; it is the `LiveCfg`
+  // field default dressing a state the door does not admit.
+  const ringKnob = useVoiceStatus().data?.live_call?.ring;
+  const [ringMode] = useState(() => ringKnob ?? true);
   // WHAT is waiting for an Allow/Deny (§4.5). Reference-stable by the selector's contract, so this
   // subscription costs one render per change of gate and none per streamed part.
   const awaiting = useChatSlice(() => confirmAwaiting());

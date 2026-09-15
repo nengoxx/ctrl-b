@@ -120,6 +120,10 @@ export interface VoiceLive extends VoiceServiceCommon {
   tail_wait_ms: number; //    how long the release waits for the flush's tail final, 500..10000
   dictation_idle_s: number; //hands-free idle stop, 3..300 (a `hold` needs none — the finger is it)
   dictation_max_s: number; // the hard cap on one streaming session, 10..1800
+  // W2/D72 — the CALL's uplink bound: how much audio the client-side pacer may hold for a leg
+  // before it drops the OLDEST frames. A client knob like the four above (the pacer runs in the
+  // PWA), which is why it is modelled here and not left to the relay's YAML-only caps.
+  call_backlog_ms: number; // the drop-oldest bound on the call's paced uplink, 200..20000
 }
 
 /** One entry of `media.namespaces.<ns>.roles.<role>.files` — the library's unit of priority (D65 §2.2).

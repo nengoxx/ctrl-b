@@ -4,6 +4,7 @@ import type { LiveCallWire, SttAutoStopWire } from "./useVoiceStatus";
 import { runComposer } from "../lib/composer";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
 import { attachPcmUplink, type PcmUplink } from "../lib/pcmCapture";
+import { accrue, DRAIN_PACE, enqueue, pump, type PacerState } from "../lib/uplinkPacer";
 import { appendDraft, clearDraft, getDraft } from "../store/composer";
 import { pushToast } from "../store/toast";
 
@@ -46,7 +47,9 @@ import { pushToast } from "../store/toast";
 //     close its own chrome instead of painting a circle over a mic that never opened;
 //   · `cancel()` discards — a flag consulted in the `onstop` path, so the clip costs no POST;
 //   · the 1000 ms FLOOR (R69 §9, Signal's rule) lives here, in the pre-upload path, because this is
-//     the layer that knows when the recording started;
+//     the layer that knows how long the recording ran — MEASURED in `onstop`, where the recording
+//     actually ends, and carried on the clip (A-F1: measuring it at the upload dated the whole
+//     streaming release into the clip and the floor could never fire);
 //   · the arming latch is now a TOKEN rather than a boolean (delta round F5): a release landing while
 //     `getUserMedia` is still pending ABORTS that attempt, and a stream resolving afterwards is stopped
 //     at once — never an ownerless recording.
@@ -176,46 +179,31 @@ export function dictationAppends(): number {
   return streamAppends;
 }
 
-/** THE UPLINK PACER (rule ①) — how much audio-time the one queue earns per millisecond of WALL CLOCK.
- *  1.5× realtime sustained clears a full `buffered_ceiling_ms` backlog in a couple of seconds while
- *  staying under the relay's own ceiling with margin: `_note_frame` closes the leg past 2× realtime in a
- *  rolling 2 s window, and draining at exactly 2× would sit ON that bound where one retained boundary
- *  frame is a protocol close.
- *
- *  WHY A CLOCK AND NOT A PER-CALLBACK RATIO (S2.5 review F5): the worklet's MessagePort deliveries QUEUE
- *  while the main thread is stalled (heavy jank, an app-switch race) and then dispatch in one burst, so
- *  anything paced per CALLBACK ships at dispatch speed — fifty queued callbacks are fifty sends in one
- *  tick, straight through the relay's rolling window and into a protocol close mid-recording. A budget
- *  earned from `performance.now()` cannot be outrun by a burst: the burst carries no wall clock with it. */
-const DRAIN_PACE = 1.5;
-
-/** …and the bucket's CEILING, which is what bounds that post-stall burst. The most the wire can take in
- *  one dispatch is `BUCKET_CAP_MS` of banked audio, so over any rolling relay window the total is at most
- *  `cap + DRAIN_PACE × window`. Against the relay's 2 s window that is 500 + 1.5×2000 = 3500 ms under its
- *  2×-realtime budget of 4000 ms — and the same margin holds for its FRAME-count budget at any
- *  `frame_ms`, because both sides scale by the frame size (3500/frame_ms frames against an allowance of
- *  4000/frame_ms). */
-const BUCKET_CAP_MS = 500;
-
 /** A finished recording, out of the hook's refs and on its way to a decision: upload it, or drop it
  *  because the phrases already said what it says (rule ③). By VALUE — see `upload`'s `@param clip`. */
 interface Clip {
   chunks: Blob[];
-  /** `Date.now()` at `rec.start()`; 0 when there was no stamp (which is never a reason to discard). */
-  startedAt: number;
+  /** How long the recording actually RAN, measured in the terminal that ended it (A-F1). It is a
+   *  duration rather than a start stamp because the decision it feeds — the `MIN_CLIP_MS` floor — is
+   *  taken far from the arm that knows: the streaming release drains, flushes and then waits
+   *  `tail_wait_ms` before `upload()` ever runs, so a stamp re-read there measures the CHOREOGRAPHY and
+   *  the floor could never fire. `Infinity` when there was no stamp, which is never a reason to
+   *  discard. */
+  heldMs: number;
 }
 
 /** ONE streaming dictation session: the leg, its uplink queue, and the counters the either/or rule, the
- *  pending pulse and the two §9.3 clocks read. There is at most one — there is one recorder. */
-interface StreamSession {
+ *  pending pulse and the two §9.3 clocks read. There is at most one — there is one recorder.
+ *
+ *  THE SESSION *IS* A PACER (`lib/uplinkPacer`): its `backlog`/`budgetMs`/`lastTick` are that module's
+ *  state, shipped through its `enqueue`/`accrue`/`pump`, under the LOSSLESS backlog rule. Extended rather
+ *  than nested because every one of this hook's rules — the ceiling abort, the release's own drain, the
+ *  either/or — reads the queue as part of the session it belongs to. */
+interface StreamSession extends PacerState {
   /** Which leg this is. A socket's callbacks may outlive their session (`close()` only STARTS the
    *  handshake), so every one of them checks this against the live session — the `useLiveCall` fence. */
   leg: number;
   socket: LiveSocket;
-  /** THE uplink queue, oldest first — one FIFO for both phases (the handshake's buffer and every live
-   *  frame), because audio ORDER is the contract and a second path for "the live frame" is how a burst
-   *  gets to overtake the backlog. Drained only by the pacer below. */
-  backlog: ArrayBuffer[];
   ready: boolean;
   /** Phrases actually APPENDED to the draft this session — rule ③'s only input. An empty final is not
    *  one: counting it would discard a clip that carries words nothing else has. */
@@ -236,11 +224,6 @@ interface StreamSession {
    *  queues the terminal events and whatever runs in that window (the unmount sweep) must not mistake
    *  this leg for one nobody is going to close. */
   finishing: boolean;
-  /** THE PACER's state (see `DRAIN_PACE`): audio-time the uplink may ship right now, and the
-   *  `performance.now()` the last grant was measured from. Both start at `ready` — budget earned
-   *  across a slow handshake would be spent in one dispatch, the very burst the cap exists to bound. */
-  budgetMs: number;
-  lastTick: number;
   uplink: PcmUplink | null;
   /** The release's tail wait while it is OPEN — the WAKE that ends it early, null before it is armed
    *  and after it ends. Exactly ONE thing may end the wait before its bound: a DELIVERED close
@@ -249,26 +232,6 @@ interface StreamSession {
   /** The two §9.3 clocks, both ticked by the ONE 100 ms detector poll — no timers of their own. */
   elapsedMs: number;
   idleMs: number;
-}
-
-/** THE PACER, as the two steps every drainer of the one queue takes (S2.5 confirm round N1): `accrue`
- *  earns audio-time from the WALL CLOCK, `pump` spends it on the head of the FIFO. Lifted out of the
- *  uplink callback because the RELEASE now drains that same queue through that same bucket, and two
- *  copies of this arithmetic would be two pacers that disagree about what the relay has already been
- *  sent — i.e. the relay's rolling budget tripped by the sum of two things each of which thought it was
- *  under it. One bucket, one place it is spent from. */
-function accrue(s: StreamSession): void {
-  const now = performance.now();
-  s.budgetMs = Math.min(BUCKET_CAP_MS, s.budgetMs + (now - s.lastTick) * DRAIN_PACE);
-  s.lastTick = now;
-}
-
-function pump(s: StreamSession, frameMs: number): void {
-  while (s.backlog.length > 0 && s.budgetMs >= frameMs) {
-    const head = s.backlog.shift();
-    if (head) s.socket.sendAudio(head);
-    s.budgetMs -= frameMs;
-  }
 }
 
 /** How long the release's pre-flush drain (N1) parks between pumps. NOT a tunable: the drain's RATE is
@@ -360,7 +323,8 @@ export function useDictation({
   /** Set by `cancel()` and consumed in `onstop`: the clip is DROPPED, no upload (LIVE_VOICE_PLAN §6). */
   const discardRef = useRef(false);
   /** `Date.now()` at `rec.start()` — the only thing the 1000 ms floor needs, and this is the layer that
-   *  has it. 0 when nothing is recording. */
+   *  has it. 0 when nothing is recording. Consumed by `onstop`, which turns it into the clip's
+   *  `heldMs` in the same synchronous step that clears it. */
   const startedAtRef = useRef(0);
 
   /** THE METER SEAM (OF-3) — assigned by whoever paints the recording (the mic gesture), called with a
@@ -501,10 +465,11 @@ export function useDictation({
    *  owns it, which is the same answer F2 gave for the recorder itself.
    *  (A clip's `heldMs` defaulting to `Infinity` when there is no stamp is deliberate and STAYS: "no
    *  stamp" alone must never discard a clip. A recording that ERRORED is covered by the discard flag
-   *  `onerror` sets — F4 — never by the missing stamp.) */
+   *  `onerror` sets — F4 — never by the missing stamp.)
+   *  …and it arrives MEASURED (A-F1): the clip carries how long the recording ran, stamped by the
+   *  terminal that ended it, because this function can run `tail_wait_ms` after the release. */
   const upload = useCallback(
     async (mime: string, clip: Clip) => {
-      const heldMs = clip.startedAt > 0 ? Date.now() - clip.startedAt : Infinity;
       const blob = new Blob(clip.chunks, { type: mime });
       if (!blob.size) {
         setPhase("idle");
@@ -513,7 +478,7 @@ export function useDictation({
       // THE 1000 ms FLOOR — before the POST, never after: a blip costs no round trip, and the toast is
       // the teaching moment (R69 §2/§9). Deliberately AFTER the empty-blob early-out, which is about a
       // recorder that produced nothing at all rather than about a recording that was too brief.
-      if (heldMs < MIN_CLIP_MS) {
+      if (clip.heldMs < MIN_CLIP_MS) {
         // The teaching PRESENTATION is the one part a consumer may take over (OF-4): the composer flashes
         // it in the gesture's hint bubble, right above the button the blip happened on. Everyone else —
         // and any future consumer that registers nothing — keeps the toast.
@@ -664,10 +629,10 @@ export function useDictation({
         // `ceilingMs / DRAIN_PACE` is the whole job, plus one tick for the pump that finishes it.
         const until = performance.now() + ceilingMs / DRAIN_PACE + DRAIN_TICK_MS;
         while (!s.dead && s.backlog.length > 0 && performance.now() < until) {
-          // The SAME bucket the live uplink spends from (`accrue`/`pump`), so these frames are under the
-          // relay's rolling budget by construction rather than by a second calculation.
+          // The SAME bucket the live uplink spends from (`lib/uplinkPacer`), so these frames are under
+          // the relay's rolling budget by construction rather than by a second calculation.
           accrue(s);
-          pump(s, frameMs);
+          pump(s, frameMs, s.socket.sendAudio);
           if (s.backlog.length === 0) break;
           await new Promise<void>((r) => setTimeout(r, DRAIN_TICK_MS));
         }
@@ -920,8 +885,10 @@ export function useDictation({
           if (!s || s.dead) return;
           // ONE QUEUE, BOTH PHASES (S2.5 review F5): every frame joins the tail of the SAME FIFO and
           // leaves it through the same pacer. Audio ORDER is the contract, and a second path for "the
-          // live frame" is how a dispatched burst gets to overtake the backlog.
-          s.backlog.push(f.buf);
+          // live frame" is how a dispatched burst gets to overtake the backlog. The LOSSLESS enqueue —
+          // dictation never drops a frame; what it does when the queue is too deep is throw the LEG
+          // away, twice below.
+          enqueue(s, f.buf);
           // ① BEFORE `ready`, BUFFER. The words spoken while the socket was handshaking are the first
           // words of the sentence, and the relay closes the leg on a leading binary frame anyway.
           if (!s.ready) {
@@ -936,9 +903,10 @@ export function useDictation({
           // cadence the callbacks themselves arrive at. At the ordinary 40 ms cadence each callback
           // banks 60 ms and ships one frame plus half a catch-up frame — the same net ≥ 0.5 extra per
           // callback the old ratio gave, and the identical order. (The two steps are shared with the
-          // release's own drain — see `accrue`/`pump`; there is ONE bucket.)
+          // release's own drain — and, since the intermission wave, with the CALL: `lib/uplinkPacer`
+          // is the one bucket both consumers of the relay spend from.)
           accrue(s);
-          pump(s, frameMs);
+          pump(s, frameMs, s.socket.sendAudio);
           // THE SAME CEILING ONE LAYER UP (the S2a backpressure doctrine): a queue this deep PAST
           // `ready` is not a handshake that never came, it is stale speech — audio the ear would
           // transcribe into a turn the owner has long since moved past. Throw the leg away and let
@@ -1216,7 +1184,15 @@ export function useDictation({
         // THE CLIP LEAVES THE REFS HERE, once, before anything decides what becomes of it — the F2
         // ownership rule applied to the recording itself now that S2.5 can hold the decision open for
         // `tail_wait_ms` (see `upload`'s `@param clip`).
-        const clip: Clip = { chunks: chunksRef.current, startedAt: startedAtRef.current };
+        // …AND IT IS STAMPED HERE (A-F1), which is the same rule one step further: the DURATION is a
+        // fact about the recording that only this terminal holds, and every millisecond after it
+        // belongs to the release choreography, not to the owner's hold. Measured BEFORE the ref is
+        // cleared, one line below — with `startedAtRef` already zeroed the clip would read `Infinity`
+        // and the floor would never fire for anyone.
+        const clip: Clip = {
+          chunks: chunksRef.current,
+          heldMs: startedAtRef.current > 0 ? Date.now() - startedAtRef.current : Infinity,
+        };
         chunksRef.current = [];
         startedAtRef.current = 0;
         // CANCELLED (S0.5): the same teardown, and then nothing — no blob, no POST, no draft.
@@ -1256,7 +1232,7 @@ export function useDictation({
         setPhase("idle");
       };
       rec.start();
-      startedAtRef.current = Date.now(); // the 1000 ms floor's only input
+      startedAtRef.current = Date.now(); // the 1000 ms floor's only input, read once in `onstop`
       setPhase("recording");
       // ALWAYS armed (OF-3): the analyser is the METER first and the auto-stop's input second. The
       // policy toggle now lives inside the poll, so a recording with auto-stop off still behaves

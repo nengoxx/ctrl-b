@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
       live_call: {
         frame_ms: 20,
         buffered_ceiling_ms: 1000,
+        call_backlog_ms: 1000, //     = 50 frames at 20 ms before the pacer drops its oldest
         min_speech_ms: 300,
         barge_threshold: 0,
         barge_in: true,
@@ -39,6 +40,13 @@ const h = vi.hoisted(() => ({
   liveTurn: null as { threadId: string; turnId: string | null } | null,
   /** The socket the hook opened: the test drives the relay through its `onFrame`. */
   frame: null as ((f: LiveDown) => void) | null,
+  /** …and that leg's close, so a case can drop it the way a flaky link does. */
+  close: null as (() => void) | null,
+  /** …and the CAPTURE's own door: the case IS the microphone (A-F2's pacer cases). */
+  mic: null as ((f: { buf: ArrayBuffer; rms: number }) => void) | null,
+  /** Every frame that actually reached the WIRE, by its identifying first byte and in order — the
+   *  pacer's whole assertion is what the uplink shipped and what it dropped. */
+  audio: [] as number[],
   /** The acquisition TIMELINE, in order: what reached the track, and when the leg opened. The ear-hold's
    *  whole assertion is an ORDERING — a rule that reaches the track one render late is a rule that was
    *  not applied while the first frames went out. */
@@ -81,11 +89,17 @@ vi.mock("../../src/lib/audioController", () => ({
 vi.mock("../../src/lib/composer", () => ({ sendCallTranscript: h.sendCall }));
 vi.mock("../../src/lib/liveSocket", () => ({
   liveSocketUrl: () => "ws://x/api/voice/live",
-  openLiveSocket: (opts: { onFrame: (f: LiveDown) => void }) => {
+  openLiveSocket: (opts: {
+    onFrame: (f: LiveDown) => void;
+    onClose: (code: number, reason: string) => void;
+  }) => {
     h.frame = opts.onFrame;
+    // The leg's own unannounced close — a dropped tailnet link, the one close the machine reconnects
+    // through. Bound per leg, so a case can drop THIS leg and watch the ladder open the next one.
+    h.close = () => opts.onClose(1006, "");
     h.order.push("socket");
     return {
-      sendAudio: () => {},
+      sendAudio: (buf: ArrayBuffer) => h.audio.push(new Uint8Array(buf)[0]),
       flush: () => {},
       stop: () => {},
       close: () => {},
@@ -94,8 +108,9 @@ vi.mock("../../src/lib/liveSocket", () => ({
   },
 }));
 vi.mock("../../src/lib/pcmCapture", () => ({
-  startPcmCapture: async () => {
+  startPcmCapture: async (opts: { onFrame: (f: { buf: ArrayBuffer; rms: number }) => void }) => {
     await h.capGate; // resolved by default; an arm swaps in a deferred to hold acquisition open
+    h.mic = opts.onFrame;
     return {
       sampleRate: 48000,
       echoCancellation: h.fennec ? true : "all",
@@ -135,9 +150,13 @@ beforeEach(() => {
   h.staged = [];
   h.liveTurn = null;
   h.frame = null;
+  h.close = null;
+  h.mic = null;
+  h.audio = [];
   h.order = [];
   h.fennec = false;
   h.voice.data.live_call.echo_workaround = "auto";
+  h.voice.data.live_call.barge_threshold = 0; // trigger A DISARMED unless a case calibrates a floor
   h.capGate = Promise.resolve();
   h.sendCall.mockReset();
   h.sendCall.mockResolvedValue("accepted");
@@ -474,6 +493,115 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
       setPlay("playing");
       expect(h.setHeld).toHaveBeenCalledWith(true); // same task — no render happened yet
     });
+  });
+});
+
+describe("useLiveCall — THE UPLINK PACER (A-F2, evidence docs/research/R71)", () => {
+  /** One worklet frame, identified by its first byte so a case can pin ORDER, not just a count. */
+  const frame = (n: number, rms = 0): { buf: ArrayBuffer; rms: number } => {
+    const buf = new ArrayBuffer(8);
+    new Uint8Array(buf)[0] = n;
+    return { buf, rms };
+  };
+
+  /** `n` frames delivered in ONE dispatch, carrying no wall clock at all — the queued MessagePort
+   *  deliveries a stalled main thread releases in a single tick, which is the whole hazard. */
+  const burst = async (from: number, n: number, rms = 0): Promise<void> => {
+    await act(async () => {
+      for (let i = 0; i < n; i++) h.mic?.(frame(from + i, rms));
+      await Promise.resolve();
+    });
+  };
+
+  it("bounds a post-stall dispatch instead of firing it at the relay in one tick", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view } = await call();
+      // Five seconds of stall: the bucket banks its CAP (500 ms) and not a millisecond more…
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      // …and 125 frames (2.5 s of audio at 20 ms) arrive at once. Shipped raw, that is a rolling window
+      // far past the relay's 2×-realtime budget — `error{code:"protocol"}` + close 1008, a call that
+      // simply ends mid-sentence with no reconnect.
+      await burst(1, 125);
+      expect(h.audio).toHaveLength(500 / 20); // the cap, exactly — 25 frames
+      expect(h.audio[0]).toBe(1); // …from the head: order is the contract
+
+      // What is over the bound is gone from the OLDEST end (the relay's own drop rule): the burst left
+      // the last 50 frames queued (76…125), and the live frame 126 arriving pushed 76 out in its turn.
+      // So the next thing the wire sees is 77 — the tail of what the owner said, never its stale head.
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      await burst(126, 1);
+      expect(h.audio[25]).toBe(77);
+      // …and the loss wears the SAME note the relay's own overflow does: one loss chain, one signal.
+      expect(view.result.current.note).toBe("connection strained");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("raises that note ONCE per burst, the way the relay does", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, step } = await call();
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      await burst(1, 125); // one overflow burst → one note
+      expect(view.result.current.note).toBe("connection strained");
+      // The note is held by a client timer (the relay never says "recovered"), and a link that stops
+      // dropping lets it expire instead of standing for the rest of the call.
+      await step(() => vi.advanceTimersByTime(7000));
+      expect(view.result.current.note).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("TRIGGER A is measured on the CAPTURE, not on what the pacer found room for", async () => {
+    // What the owner said is a fact about the microphone. A frame the bound dropped is one the ear will
+    // never transcribe — but it is still speech over an audible reply, and it must still count toward
+    // the interrupt, or a stalled phone would be exactly when tap-to-interrupt stops being optional.
+    vi.useFakeTimers();
+    try {
+      h.voice.data.live_call.barge_threshold = 0.01;
+      const { step } = await call(); // the default track reads `echoCancellation: "all"` ⇒ armed
+      await step(() => setPlay("playing")); // there is now something to interrupt
+      h.dismiss.mockClear();
+      // Fifteen frames = the configured 300 ms of sustained energy, delivered with NO clock behind
+      // them: the bucket is empty, so not one of them reaches the wire.
+      await burst(1, 15, 0.5);
+      expect(h.audio).toEqual([]);
+      expect(h.dismiss).toHaveBeenCalled(); // …and the kill fired anyway
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a fresh leg gets a fresh pacer — a reconnect inherits no stale audio", async () => {
+    vi.useFakeTimers();
+    try {
+      await call();
+      await burst(1, 40); // queued: nothing has been banked since the leg opened
+      expect(h.audio).toEqual([]);
+      // The leg drops and the ladder redials. §4.5 already declares the in-flight utterance lost, so
+      // the queue that outlived its socket is stale speech by definition.
+      await act(async () => {
+        h.close?.();
+        vi.advanceTimersByTime(400); // the first rung
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(5000); // a full bucket on the NEW leg
+      });
+      await burst(100, 1);
+      expect(h.audio).toEqual([100]); // …and not one frame of the dead leg's backlog
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

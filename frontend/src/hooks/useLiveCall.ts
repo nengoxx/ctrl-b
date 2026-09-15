@@ -13,6 +13,7 @@ import {
 import { sendCallTranscript } from "../lib/composer";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
 import { startPcmCapture, type PcmCapture } from "../lib/pcmCapture";
+import { accrue, enqueueBounded, newPacer, pump, type PacerState } from "../lib/uplinkPacer";
 import { useStagedFiles } from "../store/attachments";
 import { cancelTurn, confirmOutstanding, getLiveTurn, useChatSlice } from "../store/chat";
 import { appendDraft } from "../store/composer";
@@ -63,15 +64,27 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // `/voice/status.live_call`, and this hook reads them — it never defaults them.
 
 /** Reconnect attempts before the call gives up (§4.5's "bounded attempts with backoff"). One per entry
- *  in the backoff schedule below, which is what keeps the two from drifting apart. */
-const RECONNECT_BACKOFF_MS = [400, 900, 1800, 3000] as const;
+ *  in the backoff schedule below, which is what keeps the two from drifting apart.
+ *
+ *  THE LADDER MUST OUTLAST THE RELAY'S SLOT (A-F3, evidence docs/research/R72 §4). When this client's own
+ *  leg dies without a close frame — a Wi-Fi↔LTE handover, the case §4.5's reconnect contract exists for —
+ *  the relay goes on holding its `max_sessions` slot until its WebSocket ping times out, and every dial
+ *  inside that window is refused `busy` by a session that is really this same phone. The launch sites now
+ *  run uvicorn at `--ws-ping-interval 5 --ws-ping-timeout 5` (R72's (B), the deploy half of the same fix),
+ *  which puts the worst-case slot release at 10.0 s — so the ladder spans ≈14.1 s, with margin, instead of
+ *  the 6.1 s that could not reach it. Longer rungs, not more of them: six dials is already generous for a
+ *  single-user install, and the last two repeat because a link that has not returned in 10 s is not coming
+ *  back in a hurry. */
+const RECONNECT_BACKOFF_MS = [400, 900, 1800, 3000, 4000, 4000] as const;
 
 /** How long the "connection strained" note stands after a `degraded` frame, unless another one re-arms
  *  it (S2b — the S2a residual).
  *
- *  It has to be a CLIENT decision because the relay only ever says the bad news: it emits ONE `degraded`
- *  state per overflow burst and has no recovery signal at all (`services/voice_live.py` — the bounded
- *  queue drops its oldest frames and says so once). Without a hold the note would stand for the whole
+ *  It has to be a CLIENT decision because neither end of the loss chain says the good news: the relay
+ *  emits ONE `degraded` state per overflow burst and has no recovery signal at all
+ *  (`services/voice_live.py` — the bounded queue drops its oldest frames and says so once), and the
+ *  client's OWN bounded queue (A-F2 — see the pacer in the capture callback) reports the same way on
+ *  purpose: one loss chain, one signal, one hold. Without that hold the note would stand for the whole
  *  rest of the call over a single hiccup, which is how a warning stops meaning anything.
  *
  *  3× the relay's own default `relay_queue_ms` (2000 ms of audio, `LiveCfg`): long enough that a burst
@@ -89,8 +102,19 @@ const HARVEST_JOIN = "\n";
 /** The overlay's own copy. Plain sentences, kept here so the machine's arms can pin them. */
 export const CALL_COPY = {
   busy: "another call is active",
+  /** …and the same refusal arriving mid-RECONNECT, which is a different fact (A-F3): the only thing this
+   *  client can collide with there is its own zombie slot, and the ladder is already redialling. */
+  busyRetrying: "the last connection hasn't let go yet — retrying",
+  /** …and the TERMINAL that ladder ends on when it never did. `lost` would be a different, wrong story
+   *  — the link was never lost, every dial was ANSWERED and refused — and it is the wrong remedy too:
+   *  this one clears by waiting for the relay to reap its slot, which "Call again" then finds free. */
+  busyHeld: "the last connection never let go",
   limit: "call time limit reached",
   strained: "connection strained",
+  /** A `protocol` terminal, in the owner's words. The relay's own message is an internal sentence
+   *  ("uplink frame rate exceeded: 4040 ms of audio in 2s …") written for a log, and the terminal face
+   *  already carries the action (Call again) — so the note says what happened, not what tripped. */
+  protocol: "the connection had a problem",
   micLost: "the microphone stopped",
   voiceFailed: "voice failed — the reply is in the chat",
   refused: "couldn't send that — it's back in the composer",
@@ -98,6 +122,13 @@ export const CALL_COPY = {
   lost: "lost the connection",
   unconfigured: "live call is not configured",
 } as const;
+
+/** The notes a FRESH LEG retracts — connection news, which a live connection has just made false.
+ *  Everything else standing there (a refused send, a mouth failure, an upstream hiccup) arrived for its
+ *  own reason and is the owner's unread news, which a reconnect has no business clearing (S2b confirm
+ *  F3). The set exists because there are now two: the strained note, and the busy-retrying one the
+ *  reconnect itself put up. */
+const CONNECTION_NOTES: readonly string[] = [CALL_COPY.strained, CALL_COPY.busyRetrying];
 
 // ── the machine ──────────────────────────────────────────────────────────────────────────────────
 
@@ -167,6 +198,9 @@ export type CallSignal = { gen?: number } & (
   | { type: "speechStart" }
   | { type: "speechStop" }
   | { type: "final"; text: string }
+  /** The uplink is losing audio — the relay's own overflow state, or (A-F2) our own bounded queue
+   *  dropping its oldest frames. ONE signal for both, deliberately: it is one loss chain, and two notes
+   *  for it would be two things saying the same thing. */
   | { type: "degraded" }
   | { type: "degradedOver" } //                the strained note's hold expired (see DEGRADED_NOTE_MS)
   | { type: "setMuted"; on: boolean } //       the mute control (§6)
@@ -337,9 +371,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
     case "ready":
       // A fresh leg is a fresh session: the ear knows nothing about a half-spoken phrase that died with
       // the old socket, so the flags start clean and the reconnect budget resets. The note follows the
-      // `degradedOver` rule (S2b confirm F3): only the STRAINED note is connection news a fresh leg
-      // retracts — anything else standing there (a refused send, a mouth failure) is unread news that
-      // arrived for its own reason, and a reconnect has no business clearing it.
+      // `degradedOver` rule (S2b confirm F3): only CONNECTION news is retracted by a fresh connection —
+      // anything else standing there (a refused send, a mouth failure) is unread news that arrived for
+      // its own reason, and a reconnect has no business clearing it.
       return drain({
         ...s,
         // A FRESH LEG CHANGES NOTHING ABOUT THE MOUTH (S3). C3 rides HTTP, so a reply that was speaking
@@ -350,12 +384,22 @@ function reduce(s: CallState, sig: CallSignal): Step {
         attempts: 0,
         userSpeechActive: false,
         waitingFinal: false,
-        note: s.note === CALL_COPY.strained ? null : s.note,
+        note: s.note !== null && CONNECTION_NOTES.includes(s.note) ? null : s.note,
       });
 
     case "socketLost": {
       const attempt = s.attempts + 1;
-      if (attempt > RECONNECT_BACKOFF_MS.length) return terminal(s, "error", CALL_COPY.lost);
+      // THE LADDER IS SPENT. The terminal's note is the reason the DIALS failed, not the shape of the
+      // last event: a ladder that ran out while every rung was answered `busy` ends on the busy truth,
+      // because "lost the connection" would send the owner looking at their Wi-Fi for a slot the relay
+      // is holding. The standing note is what carries that fact here — the busy arm below puts it up
+      // and a `ready` retracts it, so its presence at exhaustion means a dial was refused and no leg
+      // came ready since — a mixed ladder (a refusal, then silent deaths) lands here too, and the
+      // held-slot story is still the truer of the two.
+      if (attempt > RECONNECT_BACKOFF_MS.length) {
+        const why = s.note === CALL_COPY.busyRetrying ? CALL_COPY.busyHeld : CALL_COPY.lost;
+        return terminal(s, "error", why);
+      }
       // §4.5, stated honestly: a drop mid-utterance LOSES that utterance — the audio is gone — so
       // `waitingFinal` clears rather than waiting for a transcript no session will send. Playback is
       // untouched: C3 rides HTTP, not this socket.
@@ -567,12 +611,29 @@ function reduce(s: CallState, sig: CallSignal): Step {
     case "serverError":
       switch (sig.code) {
         case "busy":
-          return terminal(s, "error", CALL_COPY.busy);
+          // A FIRST dial refused is genuinely another device holding the call: terminal, named, ratified
+          // (§4.5, e2e-pinned). The SAME refusal during a reconnect is the opposite fact (A-F3 / R72):
+          // this install has one user, so the only session that can be holding the slot is this phone's
+          // own dead leg, which the relay has not reaped yet.
+          if (s.attempts === 0) return terminal(s, "error", CALL_COPY.busy);
+          // …and there it is a NOTE-ONLY NO-OP, deliberately driving nothing. A busy refusal is TWO
+          // events on the wire — this typed frame, and the 1013 close that always follows it (RFC 6455
+          // §7.4.1 "try again later"; `api/voice.py` sends both). The close is what the ONE existing
+          // `socketLost` arm reconnects from, so a dial that gets `busy` consumes exactly ONE attempt:
+          // reconnecting from here as well would burn two rungs per refusal and need a second counter
+          // to notice.
+          return { state: { ...s, note: CALL_COPY.busyRetrying }, out: [] };
         case "session_limit":
           return terminal(s, "ended", CALL_COPY.limit);
         case "upstream_error":
           // The ONE code the relay keeps the session alive through — so the client must too.
           return { state: { ...s, note: sig.message || CALL_COPY.lost }, out: [] };
+        case "protocol":
+          // The client and the relay disagreed about the wire (A-F2: an uplink burst past the rolling
+          // budget is the one way this happens in practice, which the pacer is there to prevent). The
+          // relay's `message` is a diagnostic sentence for the journal, not a line for the owner's
+          // screen, so this arm is the one place the default's echo is refused.
+          return terminal(s, "error", CALL_COPY.protocol);
         default:
           return terminal(s, "error", sig.message || CALL_COPY.lost);
       }
@@ -630,6 +691,14 @@ export function useLiveCall(): CallView {
   const retriedUpload = useRef(false);
   /** Which socket LEG is current — see `openLeg`. */
   const legSeq = useRef(0);
+  /** THIS LEG'S UPLINK PACER (A-F2, `lib/uplinkPacer`), or null between legs. Per leg and never shared:
+   *  a bucket that survived a reconnect would carry the dead session's banked budget — and its stale
+   *  audio — into a fresh one, which is the same fence `legSeq` draws for the socket's callbacks. */
+  const pacer = useRef<PacerState | null>(null);
+  /** …and the relay's own "one report per overflow BURST" latch (`voice_live.py::_overflow_flagged`),
+   *  mirrored client-side: a drop RAISES the strained note once and an enqueue that drops nothing lowers
+   *  the latch, so a struggling link re-arms the note instead of re-rendering the overlay per frame. */
+  const overflowed = useRef(false);
 
   /** Release EVERYTHING, on every exit path (§6's "hang up = immediate full teardown"). Idempotent. */
   const teardown = useCallback((): void => {
@@ -637,6 +706,9 @@ export function useLiveCall(): CallView {
     clearTimeout(degradeTimer.current);
     socket.current?.close();
     socket.current = null;
+    // The pacer dies with the leg it metered: whatever it still held is audio for a session that is over.
+    pacer.current = null;
+    overflowed.current = false;
     capture.current?.stop();
     capture.current = null;
     dismiss(); // an ended call does not keep talking
@@ -735,6 +807,11 @@ export function useLiveCall(): CallView {
     // reconnect (the socket dropping says nothing about whether the chat POST was taken).
     const leg = ++legSeq.current;
     const mine = (): boolean => legSeq.current === leg;
+    // A FRESH LEG GETS A FRESH PACER (see the ref): the old leg's queue is stale speech by definition —
+    // a reconnect is a new session and §4.5 already declares the in-flight utterance lost — and its
+    // banked budget was earned against a socket that is gone.
+    pacer.current = newPacer();
+    overflowed.current = false;
     socket.current?.close();
     socket.current = openLiveSocket({
       url: liveSocketUrl(),
@@ -790,9 +867,42 @@ export function useLiveCall(): CallView {
     void startPcmCapture({
       frameMs: knobs.frame_ms,
       onFrame: (frame) => {
-        socket.current?.sendAudio(frame.buf);
+        // THE UPLINK GOES THROUGH THE PACER (A-F2, evidence docs/research/R71). Shipping each frame the
+        // instant the worklet hands it over is safe at the ordinary cadence and fatal after a stall: the
+        // worklet's MessagePort deliveries queue while the main thread is blocked and then dispatch in
+        // ONE tick, which the relay's rolling 2×-realtime budget reads as a protocol violation and
+        // answers with `error{code:"protocol"}` + close 1008 — a call that simply ends, mid-sentence,
+        // with no reconnect. Dictation has metered this wire since S2.5; the call now spends from the
+        // same bucket (`lib/uplinkPacer`), under the CALL's backlog rule: drop-OLDEST past
+        // `call_backlog_ms`, because a call has a clock on both sides and a second of stale speech
+        // endpoints a turn the owner has moved past (R71 §5.3).
+        //
+        // WHAT IT DOES NOT CONSULT: `muted`/`held`. Both are `track.enabled` — the frames keep flowing,
+        // as SILENCE, which is exactly what the server VAD must observe to endpoint (`pcmCapture`'s one
+        // rule). So there is no stranded tail here and no flush-on-mute question: the queue is pumped by
+        // a callback that never stops arriving while the capture is alive.
+        const p = pacer.current;
+        if (p) {
+          if (enqueueBounded(p, frame.buf, knobs.frame_ms, knobs.call_backlog_ms)) {
+            // The client's own drop presents the RELAY'S signal, locally raised: one loss chain, one
+            // note, one hold that times out the same way (`degraded` → `degradeHold`). Once per burst —
+            // see the `overflowed` latch.
+            if (!overflowed.current) {
+              overflowed.current = true;
+              send({ type: "degraded", gen: ref.current.gen });
+            }
+          } else overflowed.current = false;
+          accrue(p);
+          // The pump reads the LIVE socket rather than closing over one: a frame paced out across the
+          // handshake of a fresh leg belongs to that leg, and `sendAudio` drops it anyway while the
+          // socket is not OPEN (the reconnect gap, exactly as before the pacer).
+          pump(p, knobs.frame_ms, (buf) => socket.current?.sendAudio(buf));
+        }
         // TRIGGER A (§4.3): the worklet already owns the samples, so the sustained-energy floor is
-        // measured on the frames we are shipping — never a second AnalyserNode over the same audio.
+        // measured on the frames we CAPTURE — never a second AnalyserNode over the same audio, and
+        // deliberately never inside the pump: what the owner said is a fact about the microphone, not
+        // about what the uplink found room for. A dropped frame is one the ear will not transcribe; it
+        // is still speech over an audible reply, and it must still count toward the interrupt.
         // A floor of 0 means neither knob was calibrated, and "every frame is speech" would make a
         // cough kill the reply — so the automatic trigger simply stays disarmed until S4 sets one.
         // Gated on the MOUTH, not the phase (S3, the same audit as the `barge` arm): what trigger A

@@ -191,3 +191,45 @@ def test_frontend_secret_sentinel_list_matches_the_schema_rule():
         "the Conf guard's secret-sentinel list has drifted from `config._SECRET_SENTINEL_NAMES`: "
         f"frontend={sorted(mirrored)} backend={sorted(_SECRET_SENTINEL_NAMES)}"
     )
+
+
+# --- 6. every launch site runs uvicorn at the live-voice keepalives ------------------------------
+
+
+#: The four files that actually start a server — the two systemd units, the Linux one-command runner and
+#: the Windows one. (`start.cmd` is NOT one: it only shells to the `.ps1`.)
+_LAUNCH_FILES = (
+    "deploy/linux/systemd/ctrl-b-dashboard.service",
+    "deploy/linux/systemd/ctrl-b-dashboard-dev.service",
+    "deploy/linux/run.sh",
+    "deploy/windows/start.ps1",
+)
+
+_WS_KEEPALIVE_FLAGS = ("--ws-ping-interval 5", "--ws-ping-timeout 5")
+
+
+def test_every_launch_site_carries_the_live_voice_keepalives():
+    """D72 ② / R72 §4 — these two flags are LOAD-BEARING, not tuning.
+
+    A phone leg that dies without a close frame (a Wi-Fi↔LTE handover, the case the reconnect ladder
+    exists for) leaves the relay holding its `max_sessions` slot until the WebSocket ping times out, and
+    every dial inside that window is refused `busy` by a session that is really the same phone. At
+    uvicorn's defaults that is 20 s interval + 20 s timeout — measured live on emma as a 20–40 s hold,
+    which no ladder we would ship can outlast. At **5/5** the worst case is 10.0 s, and the client's
+    ladder spans ≈14.1 s: the two numbers are a matched pair, and `useLiveCall`'s
+    `RECONNECT_BACKOFF_MS` comment states the same proof from the other end.
+
+    So a launch site that loses the flags does not fail anything — it silently re-opens A-F3 on ONE
+    deployment path while the others stay fixed. The scan is for the FLAG STRINGS, deliberately not for
+    the mechanism: `run.sh` holds them in a `WS_KEEPALIVE` array it expands into both invocations, and
+    pinning that array's name would fail the day someone inlines it correctly.
+    """
+    missing: list[str] = []
+    for rel in _LAUNCH_FILES:
+        text = (BACKEND.parent / rel).read_text(encoding="utf-8")
+        missing += [f"{rel}: {flag}" for flag in _WS_KEEPALIVE_FLAGS if flag not in text]
+    assert not missing, (
+        "a launch site no longer starts uvicorn with the live-voice WebSocket keepalives, so a dead "
+        "call leg holds its relay slot past the client's reconnect ladder and the redial is refused "
+        f"`busy` (D72 ② / R72 §4): {missing}"
+    )

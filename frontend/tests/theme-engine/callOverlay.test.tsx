@@ -24,6 +24,8 @@ const h = vi.hoisted(() => {
   return {
     call,
     ring: true,
+    /** Whether `/voice/status` has answered yet. */
+    knobs: true,
     awaiting: null as { callId: string; tool: string } | null,
     resumeCall: vi.fn(),
     startCall: vi.fn(),
@@ -34,7 +36,10 @@ const h = vi.hoisted(() => {
 vi.mock("../../src/hooks/useLiveCall", () => ({ useLiveCall: () => h.call }));
 vi.mock("../../src/hooks/useActiveBackdrop", () => ({ useActiveBackdrop: () => undefined }));
 vi.mock("../../src/hooks/useVoiceStatus", () => ({
-  useVoiceStatus: () => ({ data: { live_call: { ring: h.ring } } }),
+  // `data` is UNDEFINED until the query resolves, exactly as the real hook reports it — kept because
+  // the ring's snapshot is taken AT MOUNT, so what that case does is a property worth stating (and the
+  // reason it is unreachable is the call door, not this component).
+  useVoiceStatus: () => (h.knobs ? { data: { live_call: { ring: h.ring } } } : { data: undefined }),
 }));
 vi.mock("../../src/store/chat", () => ({
   confirmAwaiting: (): AwaitingConfirm | null => h.awaiting,
@@ -83,6 +88,7 @@ beforeEach(() => {
   h.call.interrupt.mockClear();
   h.call.toggleMute.mockClear();
   h.ring = true;
+  h.knobs = true;
   h.awaiting = null;
   h.resumeCall.mockClear();
   h.startCall.mockClear();
@@ -165,6 +171,53 @@ describe("CallOverlay — the two ring modes (§6)", () => {
     expect(document.querySelector(".kit-call-ring")).toBeNull();
     expect(document.querySelector(".kit-call-heard .kit-call-dot")).not.toBeNull();
     expect(overlay().className).toContain("no-ring");
+  });
+
+  it("the MODE IS SNAPSHOTTED at call start — a mid-call refetch does not flip the indicator", () => {
+    // §4.5's rule for every other knob, applied to this one (audit A LOW): settings edited mid-call
+    // apply to the NEXT call. Read live off the query, a Conf save or a window refocus mid-call would
+    // swap the owner's indicator out from under a call in progress.
+    const view = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-ring-stroke")).not.toBeNull();
+    h.ring = false;
+    view.rerender(<Host open={true} />);
+    expect(document.querySelector(".kit-call-ring-stroke")).not.toBeNull();
+    // …and in the other direction, from a call that started without one.
+    cleanup();
+    h.ring = false;
+    const off = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-ring")).toBeNull();
+    h.ring = true;
+    off.rerender(<Host open={true} />);
+    expect(document.querySelector(".kit-call-ring")).toBeNull();
+  });
+
+  it("…and the snapshot is the MOUNT, because the mount IS the call start", () => {
+    // `DefaultRoot` mounts this overlay under `key={callMount}`, and a REDIAL bumps that key rather
+    // than reusing the machine — so there is no call whose start is not a mount of this component, and
+    // the next call reads the query afresh. That is the other half of the rule above: mid-call the knob
+    // is frozen, between calls it is not.
+    const first = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-ring")).not.toBeNull();
+    first.unmount();
+    h.ring = false;
+    render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-ring")).toBeNull();
+  });
+
+  it("a mount with the knobs still absent wears the LiveCfg default — and the door forbids one", () => {
+    // Stated rather than defended: `/voice/status` has ALREADY answered by the time this can mount,
+    // because call mode is only reachable while `useComposer().liveReady` (that same payload's `live`
+    // bit) is up and the mic's mode boots to `mic` with no memory. So the unanswered case is not a race
+    // the overlay plays for — it freezes the `LiveCfg` default for that call, and the door does not
+    // admit it. If the door ever stops gating on the payload, THIS is the assertion that changes.
+    h.knobs = false;
+    const view = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-ring")).not.toBeNull(); // the default, `ring: true`
+    h.knobs = true;
+    h.ring = false;
+    view.rerender(<Host open={true} />);
+    expect(document.querySelector(".kit-call-ring")).not.toBeNull();
   });
 
   it("the owner speaking is a state class in BOTH modes — the ring answers, and so does the dot", () => {

@@ -24,7 +24,8 @@ import { dictationAppends } from "../../../hooks/useDictation";
 // second auto-grow CEILING, so it belongs to whoever owns the first one — all three variants get it from
 // one place and no per-variant fork exists to write (ATTACHMENTS_PLAN §9-S5, the E-amend (c) finding).
 //
-// vapor's `components/Composer.tsx` keeps its own copy (frozen, D7 — not touched here).
+// (vapor kept a bespoke `components/Composer.tsx` beside this until Phase 16 DELETED it — D51 §3 V4:
+// every theme now takes a kit composer variant, vapor's being `sheet`, so this is the only copy.)
 
 /** The COLLAPSED auto-grow ceiling, in px. 112, not the long-standing 96 (owner S6 re-round №3,
  *  "extend the minimum… just a little so the mic icon would fit without having to click expand"):

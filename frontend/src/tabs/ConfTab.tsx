@@ -791,6 +791,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   tail_wait_ms: 2000,
   dictation_idle_s: 15,
   dictation_max_s: 120,
+  call_backlog_ms: 1000,
 };
 
 const WAKE_FALLBACK: SettingsDoc["wake"] = {
@@ -1797,6 +1798,9 @@ export function ConfTab({ active }: Props) {
           tail_wait_ms: Number(draft.voice.live.tail_wait_ms),
           dictation_idle_s: Number(draft.voice.live.dictation_idle_s),
           dictation_max_s: Number(draft.voice.live.dictation_max_s),
+          // W2/D72's pacer bound takes the bare `Number` too: it is floored at 200 server-side,
+          // so zero is not a value it can mean.
+          call_backlog_ms: Number(draft.voice.live.call_backlog_ms),
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
@@ -2828,6 +2832,15 @@ export function ConfTab({ active }: Props) {
             desc="mic level counted as talking over the reply (0–0.5) — 0 reuses the STT silence threshold"
             value={String(vlive?.barge_threshold ?? "")}
             onChange={(v) => setLive("barge_threshold", v as unknown as number)}
+          />
+          {/* W2/D72 — the call's own uplink bound. Its sibling knobs shape what the ear HEARS; this one
+              bounds what a stalled link may hold back before the pacer drops the oldest audio, so a
+              recovering connection replays a second of your voice rather than a minute of it. */}
+          <Field
+            label="Uplink backlog"
+            desc="ms of your voice the call may hold on a stalled link (200–20000) — past it the oldest audio is dropped, not queued"
+            value={String(vlive?.call_backlog_ms ?? "")}
+            onChange={(v) => setLive("call_backlog_ms", v as unknown as number)}
           />
           <SectionRefEditor
             primaryDesc="realtime provider · model — blank rides Voice STT's chain"

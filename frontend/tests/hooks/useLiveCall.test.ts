@@ -291,7 +291,7 @@ describe("callReduce — terminals (§4.3/§4.5)", () => {
     expect(lost.state.note).toBe(CALL_COPY.micLost);
   });
 
-  it("`busy` names the other call; `session_limit` is a clean end, not an error", () => {
+  it("`busy` on the FIRST dial names the other call; `session_limit` is a clean end, not an error", () => {
     const busy = run(CALL_INITIAL, [
       { type: "serverError", code: "busy", message: "a live call is already running" },
     ]);
@@ -303,6 +303,23 @@ describe("callReduce — terminals (§4.3/§4.5)", () => {
     ]);
     expect(limit.state.phase).toBe("ended");
     expect(limit.state.note).toBe(CALL_COPY.limit);
+  });
+
+  it("a `protocol` terminal says so plainly — never the relay's internal sentence (A-F2)", () => {
+    const { state } = run(listening, [
+      {
+        type: "serverError",
+        code: "protocol",
+        message: "uplink frame rate exceeded: 4040 ms of audio in 2s (2× realtime is 4000 ms)",
+      },
+    ]);
+    expect(state.phase).toBe("error");
+    expect(state.note).toBe(CALL_COPY.protocol);
+    // …and the default arm still echoes, because an unknown code has nothing better to say.
+    expect(
+      run(listening, [{ type: "serverError", code: "weird_new_code", message: "something else" }])
+        .state.note,
+    ).toBe("something else");
   });
 
   it("`upstream_error` is NONFATAL — the relay keeps the session, so the client must too", () => {
@@ -395,7 +412,7 @@ describe("callReduce — reconnect (§4.5)", () => {
     const delays: number[] = [];
     // A drop mid-utterance: the flags clear because that audio is gone.
     s = run(s, [{ type: "speechStart" }]).state;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       const step = run(s, [{ type: "socketLost" }]);
       s = step.state;
       expect(s.phase).toBe("connecting");
@@ -403,7 +420,7 @@ describe("callReduce — reconnect (§4.5)", () => {
       expect(s.waitingFinal).toBe(false);
       for (const e of step.out) if (e.type === "reconnect") delays.push(e.delayMs);
     }
-    expect(delays).toEqual([400, 900, 1800, 3000]);
+    expect(delays).toEqual([400, 900, 1800, 3000, 4000, 4000]);
 
     const done = run(s, [{ type: "socketLost" }]);
     expect(done.state.phase).toBe("error");
@@ -422,6 +439,73 @@ describe("callReduce — reconnect (§4.5)", () => {
     const back = run(dropped, [{ type: "ready" }]);
     expect(back.state.attempts).toBe(0);
     expect(submits(back.out)).toEqual(["held over the reconnect"]);
+  });
+
+  // ── `busy` mid-reconnect (A-F3, evidence docs/research/R72) ─────────────────────────────────────
+  //
+  // A first, user-initiated dial that gets `busy` really is another device on the call, and it stays
+  // terminal (pinned above, and by `e2e/liveCall.spec.ts`). The same refusal DURING a reconnect is the
+  // opposite fact: one user, one install, so the session holding the slot is this phone's own dead leg
+  // that the relay has not reaped yet — and ending the call there tells the owner something both wrong
+  // and unactionable.
+
+  /** A call whose leg has just dropped: `attempts` is 1 and a redial is armed. */
+  const reconnecting = run(listening, [{ type: "socketLost" }]).state;
+
+  it("mid-reconnect it is a NOTE, not a terminal — the ladder keeps its own counsel", () => {
+    const { state, out } = run(reconnecting, [
+      { type: "serverError", code: "busy", message: "a live call is already running" },
+    ]);
+    expect(state.phase).toBe("connecting"); // not `error`: the redial is still the plan
+    expect(state.note).toBe(CALL_COPY.busyRetrying);
+    expect(out).toEqual([]); // …and it drives NOTHING — see the case below for why
+    expect(state.attempts).toBe(1); // no counter of its own, and no rung burned here
+  });
+
+  it("H2: a busy refusal + its close consume exactly ONE attempt", () => {
+    // A busy refusal is TWO events on the wire: the typed frame, then the 1013 close that always
+    // follows it. The close is what the existing `socketLost` arm reconnects from — so if the busy arm
+    // ALSO reconnected, every refusal would burn two rungs and the ladder would end in half the time
+    // it is sized for.
+    const refused = run(reconnecting, [
+      { type: "serverError", code: "busy", message: "a live call is already running" },
+    ]).state;
+    const closed = run(refused, [{ type: "socketLost" }]);
+    expect(closed.state.attempts).toBe(2);
+    expect(closed.out).toEqual([{ type: "reconnect", delayMs: 900 }]); // the SECOND rung, not the third
+  });
+
+  it("…and a ladder spent on busy refusals still ends — bounded, on the BUSY truth", () => {
+    // Bounded is half of it; the other half is WHICH story it ends on. Every rung here was answered,
+    // not lost, so `lost` would point the owner at their own link for a slot the relay is holding.
+    let s = reconnecting;
+    for (let i = 0; i < 5; i++) {
+      s = run(s, [
+        { type: "serverError", code: "busy", message: "still busy" },
+        { type: "socketLost" },
+      ]).state;
+    }
+    expect(s.attempts).toBe(6);
+    const done = run(s, [
+      { type: "serverError", code: "busy", message: "still busy" },
+      { type: "socketLost" },
+    ]);
+    expect(done.state.phase).toBe("error");
+    expect(done.state.note).toBe(CALL_COPY.busyHeld);
+    // …while a ladder spent on genuine DROPS still ends on `lost`: the note is what tells them apart.
+    let dropped = reconnecting;
+    for (let i = 0; i < 5; i++) dropped = run(dropped, [{ type: "socketLost" }]).state;
+    expect(run(dropped, [{ type: "socketLost" }]).state.note).toBe(CALL_COPY.lost);
+  });
+
+  it("…and a leg that comes back retracts the busy note: it is connection news", () => {
+    const refused = run(reconnecting, [
+      { type: "serverError", code: "busy", message: "a live call is already running" },
+    ]).state;
+    expect(run(refused, [{ type: "ready" }]).state.note).toBeNull();
+    // …while anything that is NOT connection news still survives the fresh leg (S2b confirm F3).
+    const failed = run(refused, [{ type: "playbackFailed" }]).state;
+    expect(run(failed, [{ type: "ready" }]).state.note).toBe(CALL_COPY.voiceFailed);
   });
 });
 
@@ -800,14 +884,18 @@ describe("callReduce — the interleaving sweep (S3 · F4 · F5 · F6)", () => {
   it("F6: the attempt budget is exactly the backoff schedule, then the `lost` terminal", () => {
     let s = listening;
     const delays: number[] = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       const step = run(s, [{ type: "socketLost" }]);
       s = step.state;
       for (const e of step.out) if (e.type === "reconnect") delays.push(e.delayMs);
       // Every leg that comes back resets the budget, which is why the count is per RUN of failures.
       expect(s.attempts).toBe(i + 1);
     }
-    expect(delays).toEqual([400, 900, 1800, 3000]);
+    // THE LADDER SPANS THE RELAY'S SLOT (A-F3 / R72 §4): the relay holds a dead phone's session until
+    // its ws ping times out — 10.0 s worst case at the 5/5 the launch sites now run — so a ladder that
+    // gave up at 6.1 s spent every rung inside the window where its own zombie slot answers `busy`.
+    expect(delays).toEqual([400, 900, 1800, 3000, 4000, 4000]);
+    expect(delays.reduce((a, b) => a + b, 0)).toBeGreaterThan(10_000);
     const done = run(s, [{ type: "socketLost" }]);
     expect(done.state.phase).toBe("error");
     expect(done.state.note).toBe(CALL_COPY.lost);
