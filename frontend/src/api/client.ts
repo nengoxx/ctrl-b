@@ -76,8 +76,9 @@ export function formatDetail(detail: unknown): string | null {
 
 /** A refused response, as the ONE `ApiError` every write path throws — FastAPI's `detail` when the body
  *  carries one, the status line when it does not (a 204, a proxy's HTML page). It was three identical
- *  copies of this block; the fourth (the multipart POST, D70 §5.1) is what made it a function. `getJSON`
- *  keeps its bare status line deliberately — a GET carries no validation detail worth rendering. */
+ *  copies of this block; the fourth (D70's card import, whose 413/415/422/409 the owner reads verbatim)
+ *  is what made it a function. `getJSON` keeps its bare status line deliberately — a GET carries no
+ *  validation detail worth rendering. */
 async function refuse(res: Response): Promise<never> {
   let detail = `${res.status} ${res.statusText}`;
   try {
@@ -100,26 +101,6 @@ async function sendJSON<T>(method: string, path: string, body: unknown): Promise
   return (await res.json()) as T;
 }
 
-/** POST a MULTIPART form — the app's one non-JSON POST body (D70 §5.1: a character card is a FILE the
- *  owner picks out of their downloads, and `POST /api/agents/import` takes it as one `file` field).
- *
- *  Note what is NOT set: `Content-Type`. The browser writes it, WITH the multipart boundary — setting
- *  it by hand produces a body the server cannot parse.
- *
- *  It shares `refuse` with `postJSON`, deliberately, because the statuses this route answers with are
- *  ones the caller renders verbatim (413 the cap · 415 not a card · 422 unusable · 409 the slug), and
- *  a second error renderer here would be a second set of words for the same refusals.
- *
- *  On the security posture: a raw-body PUT is preflight-defended by its very shape (see `putBytes`),
- *  and a multipart POST is not — but this route is an ordinary authenticated-by-tailnet action that
- *  ANSWERS with the created agent, the same class as every other `POST /api/…` the panel exposes, and
- *  the backend says so at the route (SECURITY_MODEL §2.7). */
-export async function postForm<T>(path: string, body: FormData): Promise<T> {
-  const res = await fetch(path, { method: "POST", headers: { Accept: "application/json" }, body });
-  if (!res.ok) await refuse(res);
-  return (await res.json()) as T;
-}
-
 /** POST JSON. On error, surfaces FastAPI's `detail` (string or validation list) as the message. */
 export function postJSON<T>(path: string, body: unknown): Promise<T> {
   return sendJSON<T>("POST", path, body);
@@ -130,7 +111,8 @@ export function putJSON<T>(path: string, body: unknown): Promise<T> {
   return sendJSON<T>("PUT", path, body);
 }
 
-/** PUT RAW BYTES — the ONE write in this app that is not JSON (D65 / MEDIA_MANAGER_PLAN §3).
+/** PUT RAW BYTES — EVERY write in this app that is not JSON (D65 / MEDIA_MANAGER_PLAN §3: the media
+ *  upload · D68: the attachment mint · D70: both character-card / lorebook imports).
  *
  *  **The verb and the body shape ARE the security control**, which is why this is its own function
  *  rather than an option on `sendJSON`: the app has no application-layer auth (the tailnet is the
@@ -138,14 +120,17 @@ export function putJSON<T>(path: string, body: unknown): Promise<T> {
  *  cross-origin requests a page can fire without a preflight are the CORS-SAFELISTED ones, which
  *  include `multipart/form-data` POSTs. A raw-body `PUT` is not safelisted: it forces an `OPTIONS`
  *  preflight that this app answers with no ACAO, so a cross-origin write dies unsent. Never turn this
- *  into a POST, and never send `FormData` from it (SECURITY_MODEL §2.7).
+ *  into a POST, and never send `FormData` from it (SECURITY_MODEL §2.7/§2.9). The import routes were
+ *  multipart POSTs until R73 (2026-09-15) and are here now for exactly this reason — CORS withholds
+ *  the RESPONSE, never the send, so "it answers with the created object" was never a defence.
  *
- *  The `Content-Type` is the blob's own and is advisory only — the server reads the MAGIC BYTES and
- *  answers 415 if they disagree with the extension in the URL.
+ *  The `Content-Type` is the body's own and is advisory only — the server reads the MAGIC BYTES (the
+ *  media write answers 415 if they disagree with the extension in the URL; an import sniffs the card
+ *  container the same way). A `File` is a `Blob`, so an import passes the owner's pick straight in.
  *
- *  Errors keep their STATUS (`ApiError.status`), because the media write's callers branch on it: a
- *  `409` is the name-race guard and is retried with the next suffix rather than shown to anyone, and
- *  a `412` is the edit path's stale precondition.
+ *  Errors keep their STATUS (`ApiError.status`), because the callers branch on it: a `409` is the
+ *  media name-race guard and is retried with the next suffix rather than shown to anyone, a `412` is
+ *  the edit path's stale precondition, and an import's 413/415/422/409 are rendered verbatim.
  *
  *  `headers` carries the PRECONDITION an edit states (`X-Expected-Revision`, "W10") — the one header
  *  a caller adds, and the reason it is a parameter rather than an option object: a custom header keeps

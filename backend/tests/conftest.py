@@ -33,6 +33,7 @@ import tempfile
 import pytest
 
 from app import config
+from app.services.agent import lorebooks
 
 #: Suite-private workspace root, created once per pytest process. Not `tmp_path` — that is a fixture,
 #: and this must exist before the first test module is imported. Removed at exit rather than left to
@@ -69,6 +70,15 @@ def _fresh_env_warning_registry(monkeypatch):
     undeclared-override warning silences it for every later test that asserts on one. Reset per test
     rather than in the one test that noticed (Fable)."""
     monkeypatch.setattr(config, "_WARNED_ENV_PATHS", set())
+
+
+@pytest.fixture(autouse=True)
+def _fresh_lorebook_warning_registry(monkeypatch):
+    """The same defect class, the same cure: `lorebooks._MISSING_WARNED` is a process-global warn-once
+    registry keyed by PATH, so the first test that reads a lorebook whose file is missing silences the
+    warning for every later test that asserts on one. Reset per test rather than in the one test that
+    noticed (the wave's review round)."""
+    monkeypatch.setattr(lorebooks, "_MISSING_WARNED", set())
 
 
 @pytest.fixture(autouse=True)

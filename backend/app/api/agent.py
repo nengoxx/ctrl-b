@@ -24,7 +24,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sse_starlette.sse import EventSourceResponse
@@ -374,7 +374,14 @@ def _auto_route_agent(state, thread: Thread, explicit_agent: str | None, text: s
     `/agent` (or a thread-sticky agent) always wins; only when nothing pins the agent AND the switch is
     on does the keyword selector pick a specialist by matching `text`. Extracted so the chat endpoint
     AND the D41 drain-B spawn resolve the agent identically (a spawned steer turn routes exactly as the
-    fresh POST that enqueued it would have — D41 §9 captured-params fidelity)."""
+    fresh POST that enqueued it would have — D41 §9 captured-params fidelity).
+
+    **BLOCKING — both callers hop it onto a thread** (SYS-16; audit B-3). The selector's arm reads
+    every specialist's `agent.yaml` fresh off disk, and D70 made those files both more numerous (the
+    gallery + card import) and much larger (each one now carries the card stash, bounded only by
+    `roleplay.card_import.max_bytes`). Run on the loop that is N full YAML parses ahead of the first
+    token, stalling every other request — SSE streams and monitor polls included — behind a routing
+    decision. `agent.auto_rotate` is off by default, which is why this was latent rather than live."""
     agent_name = explicit_agent
     selector = getattr(state, "agent_selector", None)
     if (
@@ -762,7 +769,7 @@ async def start_steer_turn(state, thread: Thread, entries: list[SteerEntry]) -> 
     handle = state.turns.get(thread.id)
     if handle is None:  # defensive — the caller reserved it; a vanished marker means abandon the spawn
         return
-    agent_name = _auto_route_agent(state, thread, head.agent, head.text)
+    agent_name = await asyncio.to_thread(_auto_route_agent, state, thread, head.agent, head.text)
     # The captured privilege round-trips as a string (`body.privilege.value` at enqueue); re-hydrate it
     # to `Privilege | None`, tolerating a junk value like the endpoint's lenient `_coerce_privilege`.
     privilege: Privilege | None = None
@@ -1223,7 +1230,7 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     # `/agent` (body.agent) or a thread-sticky agent always wins, and the switch is off by default.
     # `thread.agent` is never set in normal chat (created None), so "no pin" → per-turn routing.
     state = request.app.state
-    agent_name = _auto_route_agent(state, thread, body.agent, body.text)
+    agent_name = await asyncio.to_thread(_auto_route_agent, state, thread, body.agent, body.text)
 
     # Reserve the thread's turn marker (D38) — synchronous check-and-set, after the thread is resolved
     # and the auto-rediscover boundary, before the response is built. Ownership transfers to the
@@ -1739,6 +1746,85 @@ def _write_soul(folder: Path, content: str, *, require_folder: bool) -> bool:
     return True
 
 
+async def _import_body(request: Request, *, cap: int, what: str, setting: str) -> bytes:
+    """The raw request body of an import PUT, bounded as it arrives — the media/attachment write
+    path's own posture (`api/media.py#media_upload`, `api/attachments.py#stage_attachment`), one
+    helper because both imports want it identically.
+
+    **Never `await request.body()`**: that materialises whatever the client sent before anything can
+    refuse it, which is the cap being a claim rather than a bound. Streaming and refusing THE MOMENT
+    the counter crosses `cap` is the cap+1 posture those two routes already ship — the least that
+    still proves "over the cap" without ever holding the excess. The true size is deliberately not
+    reported, because we stopped reading.
+
+    In memory rather than through `UploadPart`, unlike its two neighbours: a card is parsed whole (a
+    PNG's tEXt chunks, a CHARX zip, a JSON document) and never lands as a file, so a temp on disk
+    would be a write this path does not otherwise make."""
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > cap:
+            raise HTTPException(status_code=413, detail=f"the {what} is larger than {setting} ({cap} bytes)")
+    if not body:
+        raise HTTPException(status_code=422, detail="empty upload")
+    return bytes(body)
+
+
+# THE DECLARATION ORDER BELOW IS LOAD-BEARING (R73, reproduced): `/agents/import` must be registered
+# BEFORE `PUT /agents/{name}`, or the parametrized sibling matches first and an import is answered as
+# an agent write named "import" — a 422 about a missing body, never this handler. FastAPI matches in
+# registration order, so the specific path goes above the pattern. The same rule puts
+# `/lorebooks/import` above `PUT /lorebooks/{slug}` further down. Only the ROUTES moved: the card
+# mapping this one composes (`AVATAR_NS`, `_import_agent_card`, `_character_book`) stays in its own
+# cluster just below, beside the `put_agent` whose writes it reuses.
+@router.put("/agents/import", status_code=201)
+async def import_agent(request: Request) -> dict[str, Any]:
+    """Import a character card as a new agent (D70 / ROLEPLAY_PLAN §5). **Raw body — never multipart,
+    never POST** (SECURITY_MODEL §2.7/§2.9): the owner picks a FILE, and the client PUTs its bytes.
+
+    `201` with the created agent payload plus a `report` — what mapped, what was stashed, what was
+    STRIPPED (by exact path), the warnings, and the imported `post_history` verbatim. `413` past
+    `roleplay.card_import.max_bytes` or any of the card/CHARX caps · `415` bytes we do not read as a
+    card container · `422` a container we read whose card is unusable, or an empty body · `409` a
+    slug that could not be minted.
+
+    **The VERB is the control**, exactly as it is on the media and attachment write paths: this app
+    has no application-layer auth (the tailnet is the boundary), so the attacker worth designing
+    against is the owner's own browser on another origin — and no browser API can emit a cross-origin
+    `PUT` without a preflight (R73 §1: `fetch`/XHR always preflight a non-safelisted method,
+    `no-cors` mode throws on one, and an HTML form can only emit GET or POST). This app mounts no
+    CORS middleware and answers no ACAO, so such a write dies unsent. It used to be a multipart POST,
+    on the argument that it "answers with the created agent" — which is not a defence: CORS withholds
+    the RESPONSE, never the send, so that shape executed for a hostile page that read nothing and
+    landed attacker-authored persona text in the owner's own agent surface.
+
+    No filename rides the URL, deliberately: nothing here reads one — the container is sniffed from
+    the bytes and the slug is minted from the card's own name.
+
+    `RecursionError` is caught HERE because depth is the one hostile property no single reader owns:
+    a card the JSON parser accepted can still exhaust the stack in the strip walk or in the YAML
+    dump. Nothing is torn by it — `edit_config_yaml` serialises into a buffer before it writes, so a
+    dump that raises never starts the atomic replace."""
+    s: Settings = request.app.state.settings
+    body = await _import_body(
+        request,
+        cap=s.roleplay.card_import.max_bytes,
+        what="card",
+        setting="roleplay.card_import.max_bytes",
+    )
+    health = getattr(request.app.state, "media_health", {}).get(AVATAR_NS)
+    try:
+        payload = await asyncio.to_thread(_import_agent_card, s, body, avatars_ok=health is None or health.ok)
+    except CardImportError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+    except RecursionError:
+        raise HTTPException(status_code=422, detail="the card is nested too deeply") from None
+    # D46/F6, exactly as `put_agent`: a new agent landed with its own reasoning settings, so the
+    # learned demotions are cleared or a corrected setting would stay stripped.
+    clear_reasoning_demotions(request.app)
+    return payload
+
+
 @router.get("/agents/{name}")
 async def get_agent(name: str, request: Request) -> dict[str, Any]:
     """The resolved `AgentDef` (agent.yaml merged onto `agent.defaults`) + its `SOUL.md` persona, for
@@ -1798,7 +1884,7 @@ def _import_report(card: ImportedCard, warnings: list[str]) -> dict[str, Any]:
 
 
 def _import_agent_card(s: Settings, body: bytes, *, avatars_ok: bool) -> dict[str, Any]:
-    """The whole blocking side of `POST /agents/import` in one `to_thread` hop (SYS-16): read the
+    """The whole blocking side of `PUT /agents/import` in one `to_thread` hop (SYS-16): read the
     card → strip → map → land the avatar → scaffold the agent → write SOUL.md → build the payload.
 
     It COMPOSES the existing writes and adds none (§5.1): `land_avatar` is the media ladder,
@@ -1896,55 +1982,6 @@ def _character_book(s: Settings, card: ImportedCard, warnings: list[str]) -> tup
     directory = s.lorebooks_dir_path()
     slug = mint_slug(f"{card.slug}-book", book_slugs(directory), fallback="lorebook", collection="lorebooks")
     return slug, imported
-
-
-@router.post("/agents/import", status_code=201)
-async def import_agent(request: Request, file: UploadFile) -> dict[str, Any]:
-    """Import a character card as a new agent (D70 / ROLEPLAY_PLAN §5). Multipart, one file field.
-
-    `201` with the created agent payload plus a `report` — what mapped, what was stashed, what was
-    STRIPPED (by exact path), the warnings, and the imported `post_history` verbatim. `413` past
-    `roleplay.card_import.max_bytes` or any of the card/CHARX caps · `415` bytes we do not read as a
-    card container · `422` a container we read whose card is unusable · `409` a slug that could not
-    be minted.
-
-    Multipart HERE and raw-body PUT on the media/attachment surfaces is not an inconsistency: those
-    two are defended by the CORS PREFLIGHT their non-safelisted verb forces (D65/D68,
-    SECURITY_MODEL §2.7), a defence that exists because a picture can be uploaded from a page that
-    never reads a response. This route is an ordinary authenticated-by-tailnet action that answers
-    with the created agent — the same class as every other `POST /api/…` the panel already exposes —
-    and the file arrives as a FILE because that is what a card is: the owner picks it out of their
-    downloads folder.
-
-    The body is read at most `max_bytes + 1` (the `stt` posture): the least that still proves "over
-    the cap" without ever materialising the excess.
-
-    `RecursionError` is caught HERE because depth is the one hostile property no single reader owns:
-    a card the JSON parser accepted can still exhaust the stack in the strip walk or in the YAML
-    dump. Nothing is torn by it — `edit_config_yaml` serialises into a buffer before it writes, so a
-    dump that raises never starts the atomic replace."""
-    s: Settings = request.app.state.settings
-    cap = s.roleplay.card_import.max_bytes
-    body = await file.read(cap + 1)
-    if not body:
-        raise HTTPException(status_code=422, detail="empty upload")
-    if len(body) > cap:
-        # The true size is deliberately NOT reported — we stopped reading at cap+1.
-        raise HTTPException(
-            status_code=413,
-            detail=f"the card is larger than roleplay.card_import.max_bytes ({cap} bytes)",
-        )
-    health = getattr(request.app.state, "media_health", {}).get(AVATAR_NS)
-    try:
-        payload = await asyncio.to_thread(_import_agent_card, s, body, avatars_ok=health is None or health.ok)
-    except CardImportError as exc:
-        raise HTTPException(status_code=exc.status, detail=exc.detail) from None
-    except RecursionError:
-        raise HTTPException(status_code=422, detail="the card is nested too deeply") from None
-    # D46/F6, exactly as `put_agent`: a new agent landed with its own reasoning settings, so the
-    # learned demotions are cleared or a corrected setting would stay stripped.
-    clear_reasoning_demotions(request.app)
-    return payload
 
 
 @router.delete("/agents/{name}")
@@ -2049,6 +2086,41 @@ async def list_lorebooks(request: Request) -> dict[str, Any]:
     }
 
 
+# Registered above `PUT /lorebooks/{slug}` for the reason spelled out at `import_agent`: the
+# parametrized sibling would otherwise match first and answer an import as a book write named
+# "import". Its mapping helpers (`_book_report`, `_import_lorebook`) stay below, beside the book
+# writes they reuse.
+@router.put("/lorebooks/import", status_code=201)
+async def import_lorebook(request: Request) -> dict[str, Any]:
+    """Import a lorebook (D70 §6.5). **Raw body — never multipart, never POST** (the `import_agent`
+    note, verbatim: the verb is the cross-origin control). The JSON may be the V3 envelope, ST's raw
+    standalone export, or a bare entries list; the shape is read off the parsed value, never off a
+    filename — which is why none rides the URL.
+
+    `201` with the created book plus a `report`: what mapped, what was stashed, and every
+    approximation made (every collapsed position, every approximated key logic). `413` past
+    `lorebooks.max_import_bytes` · `422` JSON we cannot read as a book, or an empty body · `409` a
+    slug that could not be minted.
+
+    The body is streamed and bounded by `_import_body` — the card route's posture, which is the media
+    write path's. `RecursionError` is caught for the same reason it is there: depth is the one
+    hostile property no single reader owns, and a JSON the parser accepted can still exhaust the
+    stack in the YAML dump."""
+    s: Settings = request.app.state.settings
+    body = await _import_body(
+        request,
+        cap=s.lorebooks.max_import_bytes,
+        what="lorebook",
+        setting="lorebooks.max_import_bytes",
+    )
+    try:
+        return await asyncio.to_thread(_import_lorebook, s, body)
+    except CardImportError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+    except RecursionError:
+        raise HTTPException(status_code=422, detail="the lorebook is nested too deeply") from None
+
+
 @router.get("/lorebooks/{slug}")
 async def get_lorebook(slug: str, request: Request) -> dict[str, Any]:
     """One whole book for the editor. 404 when the file is absent OR unreadable — the reader logs
@@ -2096,7 +2168,7 @@ def _book_report(imported: ImportedBook) -> dict[str, Any]:
 
 
 def _import_lorebook(s: Settings, body: bytes) -> dict[str, Any]:
-    """The whole blocking side of `POST /lorebooks/import` in one `to_thread` hop (SYS-16): parse →
+    """The whole blocking side of `PUT /lorebooks/import` in one `to_thread` hop (SYS-16): parse →
     map → mint a slug → write. The slug is minted from the book's own NAME through the card
     importer's mint (one grammar, one walk), falling back to `lorebook` for a name that slugifies to
     nothing."""
@@ -2108,40 +2180,6 @@ def _import_lorebook(s: Settings, body: bytes) -> dict[str, Any]:
     directory = s.lorebooks_dir_path()
     slug = mint_slug(imported.book.name, book_slugs(directory), fallback="lorebook", collection="lorebooks")
     return {**_save_and_load(directory, slug, imported.book), "report": _book_report(imported)}
-
-
-@router.post("/lorebooks/import", status_code=201)
-async def import_lorebook(request: Request, file: UploadFile) -> dict[str, Any]:
-    """Import a lorebook (D70 §6.5). Multipart, one JSON file field — the V3 envelope, ST's raw
-    standalone export, or a bare entries list; the shape is read off the parsed value, never off the
-    filename.
-
-    `201` with the created book plus a `report`: what mapped, what was stashed, and every
-    approximation made (every collapsed position, every approximated key logic). `413` past
-    `lorebooks.max_import_bytes` · `422` JSON we cannot read as a book · `409` a slug that could not
-    be minted.
-
-    The body is read at most `max_bytes + 1` — the card route's posture, which is the `stt` posture:
-    the least that still proves "over the cap" without ever materialising the excess. `RecursionError`
-    is caught for the same reason it is there: depth is the one hostile property no single reader
-    owns, and a JSON the parser accepted can still exhaust the stack in the YAML dump."""
-    s: Settings = request.app.state.settings
-    cap = s.lorebooks.max_import_bytes
-    body = await file.read(cap + 1)
-    if not body:
-        raise HTTPException(status_code=422, detail="empty upload")
-    if len(body) > cap:
-        # The true size is deliberately NOT reported — we stopped reading at cap+1.
-        raise HTTPException(
-            status_code=413,
-            detail=f"the lorebook is larger than lorebooks.max_import_bytes ({cap} bytes)",
-        )
-    try:
-        return await asyncio.to_thread(_import_lorebook, s, body)
-    except CardImportError as exc:
-        raise HTTPException(status_code=exc.status, detail=exc.detail) from None
-    except RecursionError:
-        raise HTTPException(status_code=422, detail="the lorebook is nested too deeply") from None
 
 
 # ── Memory file API (Phase 7e-d-3, D14/D15 #4) ────────────────────────────────────────────────

@@ -104,6 +104,7 @@ async def voice_status(request: Request) -> dict[str, object]:
     status["live_call"] = {
         "frame_ms": live.frame_ms,
         "buffered_ceiling_ms": live.buffered_ceiling_ms,
+        "call_backlog_ms": live.call_backlog_ms,
         "min_speech_ms": live.min_speech_ms,
         "barge_threshold": live.barge_threshold,
         "barge_in": live.barge_in,

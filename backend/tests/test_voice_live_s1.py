@@ -1009,6 +1009,7 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         live_cfg={
             "frame_ms": 100,
             "buffered_ceiling_ms": 1500,
+            "call_backlog_ms": 1200,
             "min_speech_ms": 250,
             "barge_threshold": 0.02,
             "barge_in": False,
@@ -1025,6 +1026,9 @@ def test_status_carries_the_client_side_call_knobs() -> None:
     assert body["live_call"] == {
         "frame_ms": 100,
         "buffered_ceiling_ms": 1500,
+        # A-F2 — the call pacer's backlog bound. A CLIENT knob like its neighbours: the pacer runs in
+        # the browser, so nothing below it reads this and it has to arrive here or be defaulted twice.
+        "call_backlog_ms": 1200,
         "min_speech_ms": 250,
         "barge_threshold": 0.02,
         "barge_in": False,

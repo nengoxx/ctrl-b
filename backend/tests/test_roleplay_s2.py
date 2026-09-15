@@ -6,8 +6,9 @@ What is load-bearing here, and therefore what is pinned:
   1. **The SOUL recipe is NORMATIVE** (§5.3, Emma F4) — two golden imports assert it BYTE-EXACTLY,
      because two builders producing two different SOULs from one card is the defect that rule exists
      to prevent.
-  2. **Sniffing is by magic bytes** (§5.2): the container is decided by the first bytes, never by the
-     filename the client sent — every fixture below is posted under a deliberately wrong name.
+  2. **Sniffing is by magic bytes** (§5.2): the container is decided by the first bytes. Since R73
+     made the route a raw-body PUT there is no filename in the request at all — the strongest form
+     of that rule, and the reason no fixture below carries one.
   3. **The strip pass** (§7): a concrete key denylist at ANY depth, the exact removed paths in the
      report, inert siblings untouched.
   4. **The caps are config** (§5.3, Emma F8) and answer 413 for every container.
@@ -88,13 +89,17 @@ def configure(home: Path, block: str) -> None:
     cfg.write_text(cfg.read_text(encoding="utf-8") + block, encoding="utf-8")
 
 
-def post_card(c: TestClient, body: bytes, name: str = "whatever.bin") -> object:
-    """Post one card. The filename is deliberately meaningless: the container is sniffed."""
-    return c.post("/api/agents/import", files={"file": (name, body, "application/octet-stream")})
+def put_card(c: TestClient, body: bytes) -> object:
+    """Send one card — a RAW-BODY PUT (R73 / SECURITY_MODEL §2.9: the verb is the cross-origin
+    control; never multipart, never POST).
+
+    There is NO filename anywhere in the request, which is the sniffing rule's strongest form: the
+    route has no name to be misled by, so the container can only come from the bytes."""
+    return c.put("/api/agents/import", content=body)
 
 
-def imported(c: TestClient, body: bytes, name: str = "whatever.bin") -> dict:
-    r = post_card(c, body, name)
+def imported(c: TestClient, body: bytes) -> dict:
+    r = put_card(c, body)
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -141,12 +146,46 @@ def test_the_soul_is_system_prompt_then_description_then_personality(home: Path)
     )
 
 
+# ── 1b. the route itself: shape + registration order (R73) ────────────────────────────────────────
+
+
+def test_the_import_is_a_raw_body_put_and_is_not_shadowed_by_the_agent_name_route(home: Path) -> None:
+    """`PUT /agents/import` and `PUT /agents/{name}` match the SAME url, and FastAPI takes the first
+    REGISTERED one — so the import must be declared above its parametrized sibling or every import is
+    answered as an agent write named "import". Reproduced during the R73 fix: mis-routed, it 422s on
+    a body it cannot read as an `AgentBody`, which is a refusal about the wrong thing entirely.
+
+    Both arms below are statuses only THIS handler produces — a 201 carrying an import `report`, and
+    the sniffer's 415 — so a silent re-shadowing (a route inserted above it, a decorator moved back
+    down) fails here rather than in whichever test happened to import a card that day.
+
+    The multipart POST this route USED to be is gone, and stays gone: it is CORS-safelisted, so a
+    hostile page could fire it with no preflight and land attacker-authored persona text in the
+    owner's agent surface (R73 §2). The app-wide pin lives in `test_media_write_d65.py`; this is the
+    per-route half — the old shape must not answer at all.
+    """
+    card = json.dumps(v2(name="Nyx", description="d")).encode("utf-8")
+    with make_client() as c:
+        ok = c.put("/api/agents/import", content=card)
+        assert ok.status_code == 201, ok.text
+        assert "report" in ok.json() and ok.json()["name"] == "nyx"
+
+        sniffed = c.put("/api/agents/import", content=b"\x00\x01\x02 not a card at all")
+        assert sniffed.status_code == 415, sniffed.text  # not a {name}-shaped 422/500
+
+        # The retired shapes: a multipart POST is no longer a route at all (405/404, never 201), and
+        # the agent named "import" is unreachable — the specific path wins every time.
+        gone = c.post("/api/agents/import", files={"file": ("nyx.png", card, "image/png")})
+        assert gone.status_code in (404, 405), gone.text
+        assert "import" not in c.get("/api/agents").json()["agents"]
+
+
 # ── 2. sniffing (§5.2) ────────────────────────────────────────────────────────────────────────────
 
 
 def test_a_png_card_is_read_from_its_chara_chunk(home: Path) -> None:
     with make_client() as c:
-        body = imported(c, png_card(v2(name="Nyx", description="d")), name="portrait.jpg")
+        body = imported(c, png_card(v2(name="Nyx", description="d")))
     assert body["report"]["container"] == "png"
     assert body["name"] == "nyx"
 
@@ -210,19 +249,19 @@ def test_a_zip_glued_behind_a_jpeg_is_read_as_a_charx(home: Path) -> None:
     central directory is what `ZipFile` navigates by, so the prepended image costs us no arithmetic."""
     glued = jpeg_bytes() + charx({"card.json": json.dumps(v3(name="Nyx", description="d")).encode()})
     with make_client() as c:
-        body = imported(c, glued, name="nyx.jpeg")
+        body = imported(c, glued)
     assert body["report"]["container"] == "charx" and body["name"] == "nyx"
 
 
 def test_a_jpeg_that_carries_no_zip_is_415(home: Path) -> None:
     """A picture is not a card container for being a picture — the same answer a bare PNG gets."""
     with make_client() as c:
-        assert post_card(c, jpeg_bytes(), name="nyx.png").status_code == 415
+        assert put_card(c, jpeg_bytes()).status_code == 415
 
 
 def test_junk_bytes_are_415(home: Path) -> None:
     with make_client() as c:
-        r = post_card(c, b"\x00\x01\x02 not a card at all", name="nyx.png")
+        r = put_card(c, b"\x00\x01\x02 not a card at all")
     assert r.status_code == 415
     assert "not a recognized character card container" in r.json()["detail"]
 
@@ -230,19 +269,19 @@ def test_junk_bytes_are_415(home: Path) -> None:
 def test_a_png_with_no_card_metadata_is_415(home: Path) -> None:
     """A real PNG is not a card container just for being a PNG."""
     with make_client() as c:
-        assert post_card(c, png_bytes() + png_chunk(b"IEND", b"")).status_code == 415
+        assert put_card(c, png_bytes() + png_chunk(b"IEND", b"")).status_code == 415
 
 
 def test_a_json_object_that_is_not_a_card_is_422(home: Path) -> None:
     """The container WAS read — the content is what is unusable, which is a different answer."""
     with make_client() as c:
-        r = post_card(c, json.dumps({"hello": "world"}).encode("utf-8"))
+        r = put_card(c, json.dumps({"hello": "world"}).encode("utf-8"))
     assert r.status_code == 422 and "not a character card" in r.json()["detail"]
 
 
 def test_a_spec_card_with_no_data_object_is_422(home: Path) -> None:
     with make_client() as c:
-        r = post_card(c, json.dumps({"spec": "chara_card_v2", "name": "Nyx"}).encode("utf-8"))
+        r = put_card(c, json.dumps({"spec": "chara_card_v2", "name": "Nyx"}).encode("utf-8"))
     assert r.status_code == 422 and "no `data` object" in r.json()["detail"]
 
 
@@ -251,7 +290,7 @@ def test_an_unknown_spec_is_refused(home: Path) -> None:
     review's MED-2): reading an unknown format under V2/V3 rules is how a reader mangles a card."""
     card = {"spec": "chara_card_v9", "spec_version": "9.0", "data": {"name": "Nyx", "description": "d"}}
     with make_client() as c:
-        r = post_card(c, json.dumps(card).encode("utf-8"))
+        r = put_card(c, json.dumps(card).encode("utf-8"))
     assert r.status_code == 422 and "unknown spec" in r.json()["detail"]
 
 
@@ -277,7 +316,7 @@ def test_a_card_with_no_name_is_refused_on_every_rung(home: Path, card: dict) ->
     """The name is what the agent is MINTED from — slug, `{{char}}`, the folder the owner opens — so
     a card without one is unusable, not imperfect. One rule, stated at one place, for every rung."""
     with make_client() as c:
-        r = post_card(c, json.dumps(card).encode("utf-8"))
+        r = put_card(c, json.dumps(card).encode("utf-8"))
     assert r.status_code == 422 and "no name" in r.json()["detail"]
 
 
@@ -288,7 +327,7 @@ def test_a_deeply_nested_card_is_refused_not_a_crash(home: Path) -> None:
     contains it, and the atomic write never starts (the dump serialises into a buffer first)."""
     body = b'{"name":"Nyx","description":"d","extensions":' + b"[" * 1100 + b"]" * 1100 + b"}"
     with make_client() as c:
-        r = post_card(c, body)
+        r = put_card(c, body)
     assert r.status_code == 422 and "nested too deeply" in r.json()["detail"]
     assert not (home / "agents" / "nyx").exists() or not (home / "agents" / "nyx" / "agent.yaml").exists()
 
@@ -300,8 +339,8 @@ def test_a_5000_digit_number_is_refused_by_each_json_arm(home: Path) -> None:
     raw = b'{"name":"Nyx","description":"d","x":' + b"9" * 5000 + b"}"
     chunked = png_bytes() + png_chunk(b"tEXt", b"chara\x00" + base64.b64encode(raw))
     with make_client() as c:
-        assert post_card(c, raw).status_code == 415
-        r = post_card(c, chunked + png_chunk(b"IEND", b""))
+        assert put_card(c, raw).status_code == 415
+        r = put_card(c, chunked + png_chunk(b"IEND", b""))
     assert r.status_code == 422 and "not valid JSON" in r.json()["detail"]
 
 
@@ -309,13 +348,13 @@ def test_an_undecodable_png_payload_is_422(home: Path) -> None:
     """The chunk is there and it is a card slot — the bytes inside it are what is broken."""
     body = png_bytes() + png_chunk(b"tEXt", b"chara\x00" + base64.b64encode(b"{not json"))
     with make_client() as c:
-        r = post_card(c, body + png_chunk(b"IEND", b""))
+        r = put_card(c, body + png_chunk(b"IEND", b""))
     assert r.status_code == 422 and "not valid JSON" in r.json()["detail"]
 
 
 def test_an_empty_upload_is_422(home: Path) -> None:
     with make_client() as c:
-        assert post_card(c, b"").status_code == 422
+        assert put_card(c, b"").status_code == 422
 
 
 # ── 3. the strip pass (§7, Emma F7) ───────────────────────────────────────────────────────────────
@@ -397,7 +436,7 @@ def test_a_charx_with_a_traversal_entry_is_refused(home: Path) -> None:
     carrying one is hostile or broken, and reading a card out of it anyway would be the wrong answer."""
     body = charx({"card.json": json.dumps(v3(name="Nyx", description="d")).encode(), "../evil.txt": b"x"})
     with make_client() as c:
-        r = post_card(c, body)
+        r = put_card(c, body)
     assert r.status_code == 422 and "unsafe entry path" in r.json()["detail"]
 
 
@@ -406,7 +445,7 @@ def test_the_charx_entry_count_cap_is_config(home: Path) -> None:
     members = {"card.json": json.dumps(v3(name="Nyx", description="d")).encode()}
     members |= {f"assets/{i}.txt": b"x" for i in range(3)}
     with make_client() as c:
-        r = post_card(c, charx(members))
+        r = put_card(c, charx(members))
     assert r.status_code == 413 and "charx_max_entries" in r.json()["detail"]
 
 
@@ -415,7 +454,7 @@ def test_the_charx_per_entry_cap_is_config(home: Path) -> None:
     configure(home, _charx_config(charx_max_entry_bytes=64))
     body = charx({"card.json": json.dumps(v3(name="Nyx", description="d")).encode(), "big.bin": b"x" * 200})
     with make_client() as c:
-        r = post_card(c, body)
+        r = put_card(c, body)
     assert r.status_code == 413 and "charx_max_entry_bytes" in r.json()["detail"]
 
 
@@ -426,7 +465,7 @@ def test_the_charx_total_uncompressed_cap_is_config(home: Path) -> None:
     members = {"card.json": json.dumps(v3(name="Nyx", description="d")).encode()}
     members |= {f"a{i}.bin": b"x" * 900 for i in range(2)}
     with make_client() as c:
-        r = post_card(c, charx(members))
+        r = put_card(c, charx(members))
     assert r.status_code == 413 and "charx_max_total_bytes" in r.json()["detail"]
 
 
@@ -450,7 +489,7 @@ def test_a_charx_module_member_is_never_read_or_stashed(home: Path) -> None:
 
 def test_a_charx_without_a_card_json_is_422(home: Path) -> None:
     with make_client() as c:
-        r = post_card(c, charx({"assets/x.png": png_bytes()}))
+        r = put_card(c, charx({"assets/x.png": png_bytes()}))
     assert r.status_code == 422 and "card.json" in r.json()["detail"]
 
 
@@ -461,7 +500,7 @@ def test_the_body_cap_is_config_and_answers_413(home: Path) -> None:
     configure(home, "roleplay:\n  card_import:\n    max_bytes: 200\n")
     card = v2(name="Nyx", description="d" * 500)
     with make_client() as c:
-        r = post_card(c, json.dumps(card).encode("utf-8"))
+        r = put_card(c, json.dumps(card).encode("utf-8"))
     assert r.status_code == 413 and "max_bytes" in r.json()["detail"]
 
 
@@ -473,7 +512,7 @@ def test_the_decoded_card_json_cap_applies_to_every_container(home: Path, contai
     card = v2(name="Nyx", description="d" * 500)
     body = json.dumps(card).encode("utf-8") if container == "json" else png_card(card)
     with make_client() as c:
-        r = post_card(c, body)
+        r = put_card(c, body)
     assert r.status_code == 413 and "max_card_json_bytes" in r.json()["detail"]
 
 

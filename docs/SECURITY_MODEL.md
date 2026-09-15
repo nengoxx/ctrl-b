@@ -289,7 +289,12 @@ any future unauthenticated write path.
   the write dies unsent. The attacker cannot read the response either way; the point is that the
   *write itself* never happens. **This is load-bearing: adding CORS middleware — or accepting a
   multipart/POST upload — silently removes the defence.** S1 must pin both with tests plus an
-  architecture guard, and neither may be introduced without revisiting D65.
+  architecture guard, and neither may be introduced without revisiting D65. **The form-body guard is
+  now APP-WIDE** (R73 §8.2, 2026-09-15): this section's own walk is scoped to `/api/media`, which made
+  it blind to D70's two multipart import routes on another router — so every live route is asserted
+  against one allowlist, `{POST /api/voice/stt}`, in
+  `test_media_write_d65.py::test_no_route_in_the_whole_app_declares_a_form_body_outside_the_allowlist`.
+  The path-scoped walks stay as the per-surface half; the app-wide one is what cannot go blind again.
 - **ONE URL SPACE, ONE "not there" (S4 rider, ruled 2026-08-25).** A READ of a file path whose
   namespace is not mounted — a tree that failed the boot shape check, or one the registry never had —
   answers **404 for every verb**, never a `405`. It used to answer 405: with no mount registered
@@ -339,8 +344,11 @@ any future unauthenticated write path.
 
 - **DNS rebinding.** A page on an attacker domain that re-resolves to the app's LAN/tailnet address
   becomes same-origin and is no longer subject to CORS at all. This has always been true of the
-  whole API; the write path only raises the value of the target. Lean fix when the packet runs:
-  `TrustedHostMiddleware` with the deploy's real names.
+  whole API; the write path only raises the value of the target. **Closed as an opt-in rail
+  (2026-09-15, R73):** `server.trusted_hosts` mounts `TrustedHostMiddleware` with the deploy's real
+  names — see §2.9 for the mechanics and the empty-list trap. It ships EMPTY, so the residual stands
+  on any deploy that has not filled it in, and it is scoped to the cleartext bind either way (TLS
+  makes the Serve front door unrebindable).
 - **Safelisted-reachable POST mutations — a CLASS, and a pre-existing one.** A cross-origin page
   can *send* a CORS-safelisted `POST` (CORS withholds the read-back, not the send), so any POST route
   that executes without needing a JSON content type is reachable that way. Two shapes exist here:
@@ -391,6 +399,75 @@ The second owner-file write surface, deliberately the same shape as §2.7 (desig
 
 **Safe-defaults fit:** like §2.7, no toggle — the surviving properties are negatives (no CORS
 middleware, no multipart route, no client-named paths) plus the two confinement pins above.
+
+### 2.9 Character-card + lorebook imports — the third owner-file write surface (D70)
+
+The third and last surface that writes owner files, and the one that shipped in the WRONG shape and
+was corrected (R73, 2026-09-15 — [`research/R73-cross-origin-write-defense.md`](./research/R73-cross-origin-write-defense.md);
+design of record [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §5/§6):
+
+- **Writes are raw-body `PUT /api/agents/import` and `PUT /api/lorebooks/import`.** They shipped as
+  multipart `POST`s, defended by the argument that they "answer with the created object". That is not
+  a defence: **CORS withholds the RESPONSE, never the send.** A safelisted request — `GET`/`HEAD`/
+  `POST` with `multipart/form-data`, `application/x-www-form-urlencoded` or `text/plain` — is
+  *delivered and executed*; only the reply is kept from the attacker's script. So any page the owner
+  opened, on any origin, could `fetch(…, {method:"POST", mode:"no-cors", body: formData})` and land
+  `agents/<slug>/agent.yaml` + `SOUL.md` carrying attacker-authored persona, `greeting` and
+  `post_history` in the owner's own agent surface — persistent, model-facing prompt injection,
+  repeatable and never needing to read a byte back.
+- **The verb IS the control, and R73 §1 is why it is sufficient against browsers.** No browser API
+  can emit a cross-origin `PUT` without a preflight: `fetch`/XHR set the unsafe-request flag, so a
+  non-safelisted method is *always* preflighted whatever the content type; `mode: "no-cors"` throws a
+  `TypeError` on a non-safelisted method; an HTML `<form>`'s `method` attribute has exactly the
+  keywords `get`/`post`/`dialog` — **there is no PUT**; `sendBeacon` and `<a ping>` are POST-only (and
+  `<a ping>`'s body is the fixed string `PING`). `X-HTTP-Method-Override` is a custom header, hence
+  preflighted, and this app honours no method override anywhere. The preflight is then refused by
+  omission: no CORS middleware is mounted and no `OPTIONS` handler exists, so nothing ever answers one.
+- **No filename rides either URL** (unlike §2.7/§2.8, which take `{filename:path}`), because neither
+  handler reads one: the card CONTAINER is sniffed from magic bytes and a book's shape is read off the
+  parsed value. The body streams into a counted buffer and is refused the moment it crosses its cap
+  (`roleplay.card_import.max_bytes` · `lorebooks.max_import_bytes`) — the §2.7 cap+1 posture, never a
+  bare `await request.body()`.
+- **The pin is now APP-WIDE** (`test_media_write_d65.py::test_no_route_in_the_whole_app_declares_a_form_body_outside_the_allowlist`).
+  D65's and D68's form-body walks are path-scoped (`/api/media`, `/api/attachments`), so both were
+  blind to a new router by construction — which is exactly how D70 landed two multipart POSTs with
+  every existing guard green. Every live route is now walked against one explicit allowlist:
+  **`{POST /api/voice/stt}`**, the pre-existing residual §2.7 enumerates (it spends an STT call and
+  writes no owner file). Adding a row there is a security decision, not a refactor.
+- **Card content is accepted as UNTRUSTED PROSE, deliberately.** A character card is prompt text by
+  definition, so importing one is consenting to model-facing text the owner did not write; what is
+  refused is text with *side effects*. `strip_executable` is a recursive key denylist (scripts, hooks,
+  Risu/ST extension modules) reporting every removal by exact RFC-6901 path, and the import REPORT
+  surfaces `post_history` verbatim on purpose — it lands closest to generation, so it is the one field
+  that must never be invisible. Readers are capped end to end (body 15 MB at cap+1, decoded JSON 2 MB,
+  CHARX entry count/entry bytes/total checked against DECLARED sizes before any decompress, traversal
+  refused, `RecursionError` caught at the route); an embedded avatar goes through the D65 media probe
+  and closed extension allowlist and is named from the slug grammar.
+- **Lorebook writes** land one YAML per book under `$CTRLB_HOME/lorebooks/`, through the same
+  `edit_config_yaml` atomic write the agent editor uses; slugs are validated on the shared READ seam
+  too (`load_book`), because `lorebooks.books` and an agent's own `lorebooks:` list are hand-edited
+  files that never pass the API's guard and `../something` would otherwise read outside the tree. A
+  book that is missing or malformed is a log line and a skip — never a failed turn.
+
+**Belt and braces: `server.trusted_hosts`** (additive, ships EMPTY = not mounted). The verb rail has
+one residual it cannot touch: **DNS rebinding** does not defeat it, it removes its premise — the
+attacker's page re-resolves their own name to this machine, so the request is genuinely same-origin,
+no preflight is required and `Origin`/`Sec-Fetch-Site` both say same-origin. The name in `Host` is the
+one thing the attacker does not control, which is why every peer with our threat model (Ollama,
+ComfyUI, Syncthing) ships a host check. Non-empty ⇒ Starlette's `TrustedHostMiddleware` is mounted at
+app construction (`main._mount_trusted_hosts`) and answers `400 Invalid host header` to every other
+name — on **`websocket` scopes as well as `http`**, so it also backs up the D71 WS `Origin` rail.
+Scope-limited by construction: rebinding reaches only the **cleartext** bind (prod's `0.0.0.0` waiver,
+§2.1, and dev's Vite), because over HTTPS the Serve cert cannot match an attacker's name. Two
+mechanics are load-bearing and test-pinned (`test_trusted_hosts_r73.py`): an EMPTY list must not be
+mounted (a mounted empty allowlist 400s every route, the Conf UI included — recovery is hand-editing
+`config.yaml`), and a malformed pattern refuses at the config gate rather than as an `AssertionError`
+at import. **No global `Origin`/`Sec-Fetch-Site` rule was added**, deliberately (R73 §5): Fetch
+Metadata is not sent to a non-trustworthy origin at all, an https attacker page posting to our http
+port legitimately sends `Origin: null`, and a fail-closed rule would break the owner's own `curl`.
+
+**Safe-defaults fit:** the import surfaces add no toggle — the surviving property is the app-wide
+negative above. `trusted_hosts` is the one thing here to *set*, and §6 carries its row.
 
 ---
 
@@ -489,14 +566,21 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
       on, **`memory.longterm.core.root`** points at a directory you are content for the agent to write
       files into — the confinement rails refuse a bad root, but they can't tell a *valid* wrong one from
       a right one. Remember the write-side secret gate is best-effort, not a boundary.
-- [ ] **No CORS middleware is mounted, and no upload route accepts `multipart/form-data` or POST**
-      (§2.7, D65) — the media write path's whole defence is that a cross-origin write is forced into
-      a preflight nobody answers. This is a negative to preserve, not a setting to choose.
+- [ ] **No CORS middleware is mounted, and NO route anywhere in the app accepts `multipart/form-data`
+      or a form POST except `POST /api/voice/stt`** (§2.7/§2.9, D65 + R73) — every owner-file write
+      path's whole defence is that a cross-origin write is forced into a preflight nobody answers.
+      This is a negative to preserve, not a setting to choose; the app-wide walk in
+      `test_media_write_d65.py` is what enforces it, and its allowlist is the only place to change.
+- [ ] **`server.trusted_hosts` reviewed** (§2.9) — empty means the DNS-rebinding residual stands;
+      non-empty means every name NOT listed answers 400 on every route, the Conf UI included. If you
+      fill it in, list every name and address you actually browse by (ts.net name · bare hostname ·
+      `localhost` · `127.0.0.1` · the LAN literal · the 100.x literal) and then load the panel from
+      each of them once before you rely on it.
 - [ ] `config.yaml` present and owner-only readable on the host (`chmod 600`).
 
 ---
 
 ## References
-- Enforced rules for agents: [`AGENTS.md`](../AGENTS.md) §6 · Deploy/exposure: [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) · DECISIONS D1 (Tailscale Serve HTTPS), D3 (hybrid execution model), D32 (topology), D44 (persisted approvals — §2.5), D65 (the media write path — §2.7; spec of record [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)).
+- Enforced rules for agents: [`AGENTS.md`](../AGENTS.md) §6 · Deploy/exposure: [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) · DECISIONS D1 (Tailscale Serve HTTPS), D3 (hybrid execution model), D32 (topology), D44 (persisted approvals — §2.5), D65 (the media write path — §2.7; spec of record [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)), D68 (chat attachments — §2.8; [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md)), D70 (card/lorebook imports — §2.9; [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md), dossier [`R73`](./research/R73-cross-origin-write-defense.md)).
 - Code anchors: `config.py` (`ServerCfg`, `ShellCfg`, `ApprovalRule`/`ToolOverride`, `secret_values`/`mask_secrets`) · `core/permissions.py` (`decide`, `canonical_str`/`glob_escape`/`exact_arg_pins`/`approval_match`) · `core/tool.py` (registry, `ToolSpec`) · `services/action_service.py` (confirm-tokens, the gate consult + the `[auto-allowed: …]` marker) · `runtime.py` (`grant_approval`, `settings_write_lock`) · `core/redact.py` · `adapters/ssh.py`.
 - Hardening that closed the flagged gaps: [`PRE_DEPLOY.md`](./PRE_DEPLOY.md) steps 3 (secret-hygiene tests) + 4b (stale confirm-token recovery) — **both shipped 2026-07-02; the §3 register carries no open "gap → step N" rows.**

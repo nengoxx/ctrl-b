@@ -27,6 +27,7 @@ S2's `home` fixture. Every write goes to a temp `$CTRLB_HOME` — never the oper
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,7 @@ from test_steer_drain_a_d41 import _Fake, _no_compact, _text, _tool
 
 from app.domain.conversation import Message, TextPart, Thread
 from app.domain.enums import Actor
+from app.services.agent.lorebooks import load_book
 from app.services.agent.prompts import REGISTRY
 
 __all__ = ["home"]  # the temp-workspace fixture is imported, not redefined
@@ -565,6 +567,29 @@ def test_a_book_slug_that_escapes_the_directory_is_never_read() -> None:
         assert "OUTSIDE." not in block  # …and the traversal read nothing
 
 
+def test_a_dangling_attachment_is_warned_about_ONCE_not_every_turn(tmp_path: Path, caplog) -> None:
+    """audit B-4. A book the owner deleted while an agent still lists it is a TOLERATED state —
+    `delete_lorebook` says so and `LorebookPicker` renders the slug as `missing` — but this seam runs
+    once per attached slug per TURN, so a WARNING here was one journal line per turn forever, about a
+    condition the UI presents as fine. That is noise which dilutes the lines that are not.
+
+    The UNREADABLE arm keeps repeating on purpose: a file that will not parse is a defect, and every
+    occurrence of it is evidence. Both halves are asserted, because "quieter" applied to the wrong arm
+    is how a real failure goes missing."""
+    directory = tmp_path / "lorebooks"
+    directory.mkdir()
+    with caplog.at_level(logging.WARNING, logger="app.services.agent.lorebooks"):
+        for _ in range(3):
+            assert load_book(directory, "never-existed") is None
+        assert sum("no file at" in r.message for r in caplog.records) == 1
+
+        (directory / "broken.yaml").write_text("entries: [oh no\n", encoding="utf-8")
+        caplog.clear()
+        for _ in range(3):
+            assert load_book(directory, "broken") is None
+        assert sum("could not be read" in r.message for r in caplog.records) == 3
+
+
 def test_a_disabled_book_contributes_nothing() -> None:
     with _workspace(), _client() as c:
         _book(c, "hollow-sea", {**TEST_BOOK, "enabled": False})
@@ -678,15 +703,46 @@ ST_BOOK: dict[str, Any] = {
 }
 
 
-def post_book(c: TestClient, payload: Any, name: str = "whatever.bin") -> Any:
+def put_book(c: TestClient, payload: Any) -> Any:
+    """Send one book — a RAW-BODY PUT, the card route's shape verbatim (R73 / SECURITY_MODEL §2.9:
+    the verb is the cross-origin control). No filename rides the request: the book's SHAPE is read
+    off the parsed value, so there is no name for the route to be misled by."""
     body = payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
-    return c.post("/api/lorebooks/import", files={"file": (name, body, "application/octet-stream")})
+    return c.put("/api/lorebooks/import", content=body)
 
 
 def import_book_ok(c: TestClient, payload: Any) -> dict:
-    r = post_book(c, payload)
+    r = put_book(c, payload)
     assert r.status_code == 201, r.text
     return r.json()
+
+
+def test_the_import_is_a_raw_body_put_and_is_not_shadowed_by_the_slug_route(home: Path) -> None:
+    """The card route's own registration-order pin, for the book half (R73 — see
+    `test_roleplay_s2.py`): `PUT /lorebooks/import` must be declared above `PUT /lorebooks/{slug}`
+    or an import is answered as a book write to a book named "import".
+
+    Both arms are answers only THIS handler gives: a 201 carrying an import `report`, and the 413
+    naming `lorebooks.max_import_bytes` — `put_lorebook` has no cap at all, so it can never produce
+    one. The multipart POST the route used to be is gone (R73 §2: safelisted, therefore
+    preflight-free, therefore reachable from any page) and must no longer answer.
+    """
+    (home / "config.yaml").write_text(
+        (home / "config.yaml").read_text(encoding="utf-8") + "lorebooks:\n  max_import_bytes: 80\n",
+        encoding="utf-8",
+    )
+    with make_client() as c:
+        big = put_book(c, ST_BOOK)
+        assert big.status_code == 413, big.text  # not a {slug}-shaped 422/500
+        assert "lorebooks.max_import_bytes" in big.json()["detail"]
+
+        small = put_book(c, [{"keys": ["a"], "content": "c"}])
+        assert small.status_code == 201, small.text
+        assert "report" in small.json()
+
+        gone = c.post("/api/lorebooks/import", files={"file": ("b.json", b"[]", "application/json")})
+        assert gone.status_code in (404, 405), gone.text
+        assert "import" not in [b["slug"] for b in c.get("/api/lorebooks").json()["lorebooks"]]
 
 
 def test_the_st_raw_export_imports_whole(home: Path) -> None:
@@ -856,21 +912,21 @@ def test_an_import_over_the_cap_is_413(home: Path) -> None:
         encoding="utf-8",
     )
     with make_client() as c:
-        r = post_book(c, ST_BOOK)
+        r = put_book(c, ST_BOOK)
     assert r.status_code == 413
     assert "lorebooks.max_import_bytes" in r.json()["detail"]
 
 
 def test_hostile_and_unusable_json_is_refused(home: Path) -> None:
     with make_client() as c:
-        assert post_book(c, b'{"entries": [').status_code == 422  # not JSON at all
-        assert post_book(c, b"").status_code == 422  # empty upload
-        assert post_book(c, {"name": "no entries"}).status_code == 422  # not a book
-        assert post_book(c, {"spec": "lorebook_v9", "data": {}}).status_code == 422  # a spec we don't read
+        assert put_book(c, b'{"entries": [').status_code == 422  # not JSON at all
+        assert put_book(c, b"").status_code == 422  # empty upload
+        assert put_book(c, {"name": "no entries"}).status_code == 422  # not a book
+        assert put_book(c, {"spec": "lorebook_v9", "data": {}}).status_code == 422  # a spec we don't read
         # Depth is the hostile property no single reader owns (the card route's own note): this JSON
         # parses fine and then exhausts the stack in the YAML quoting walk, on its way to disk.
         deep = json.loads("[" * 4000 + "]" * 4000)
-        assert post_book(c, [{"keys": ["a"], "content": "c", "extensions": deep}]).status_code == 422
+        assert put_book(c, [{"keys": ["a"], "content": "c", "extensions": deep}]).status_code == 422
 
 
 # ── 8. the card hook (§6.5) ───────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { del, getJSON, postForm, putJSON } from "../api/client";
+import { del, getJSON, putBytes, putJSON } from "../api/client";
 import { loadAgents } from "../lib/composer";
 import type { Privilege } from "../lib/privilege";
 import { pushToast } from "../store/toast";
@@ -234,7 +234,7 @@ export function useSaveAgent() {
   });
 }
 
-/** What an import DID, as `POST /api/agents/import` reports it (D70 §5.1 — the backend's
+/** What an import DID, as `PUT /api/agents/import` reports it (D70 §5.1 — the backend's
  *  `_import_report`). Every field is shown: what mapped is the reassurance, and what was STASHED,
  *  STRIPPED or warned about is the part the owner cannot discover any other way.
  *
@@ -255,8 +255,10 @@ export interface ImportResult extends AgentFull {
   report: ImportReport;
 }
 
-/** Import a character card as a new agent (§5). MULTIPART, one `file` field — a card is a FILE the
- *  owner picks, and `postForm` is the one helper that sends one.
+/** Import a character card as a new agent (§5). The owner's picked `File` goes up as a RAW-BODY PUT
+ *  (`putBytes`) — a `File` is a `Blob`, so there is nothing to wrap. Never multipart, never POST: the
+ *  verb is what forces the preflight this app answers with no ACAO, so a hostile page on another
+ *  origin cannot land a card in the owner's agent surface (R73 / SECURITY_MODEL §2.9).
  *
  *  It invalidates exactly what a create does, PLUS the `agents` media index: a card's embedded avatar
  *  lands in the `agents/avatars` library on the way in, so the gallery that is about to paint the new
@@ -265,11 +267,7 @@ export interface ImportResult extends AgentFull {
 export function useImportAgent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (file: File) => {
-      const form = new FormData();
-      form.append("file", file);
-      return postForm<ImportResult>("/api/agents/import", form);
-    },
+    mutationFn: (file: File) => putBytes<ImportResult>("/api/agents/import", file),
     onSuccess: (res) => {
       invalidateAgents(qc, res.name);
       void qc.invalidateQueries({ queryKey: ["media", "agents"] });

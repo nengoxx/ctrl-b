@@ -13,7 +13,26 @@ server:
   host: 127.0.0.1        # tailnet-only; front with Tailscale Serve for HTTPS (mic needs it)
   port: 5433             # 5433 coexists with the live Flask app on 5432 until cutover
   poll_seconds: 5        # fleet status poll cadence
-  debug: false           # keep false — debug is an RCE surface
+  debug: false           # keep false — debug is an RCE surface. ON also raises the `app` logger to
+                         # DEBUG, which is what turns on the per-tick presence trail (the diagnostic
+                         # for a drifted DHCP reservation).
+  # `Host` header allowlist — the anti-DNS-rebinding rail (R73, SECURITY_MODEL §2.9). EMPTY (the
+  # default) = no check at all; non-empty = every OTHER name is answered `400 Invalid host header`,
+  # on HTTP and WebSocket alike. A page on an attacker's domain that re-resolves to this machine's
+  # address becomes SAME-ORIGIN, which is the one thing the raw-body-PUT write rail cannot defend
+  # against — but the attacker never controls the name they must send in `Host`.
+  #
+  # ⚠ A NAME MISSING FROM A NON-EMPTY LIST ANSWERS 400 ON EVERY ROUTE, THE CONF UI INCLUDED —
+  # recovery is editing config.yaml by hand and restarting. So list every name AND address you
+  # actually browse by, not just the pretty one. Entries are exact names or ONE leading `*.`
+  # wildcard; no ports (the Host's port is stripped before matching).
+  # trusted_hosts:
+  #   - emma                          # the bare hostname on the LAN
+  #   - emma.lobster-vector.ts.net    # the Tailscale Serve name (Serve preserves Host end to end)
+  #   - localhost
+  #   - 127.0.0.1
+  #   - 192.168.1.160                 # the LAN address literal — yours
+  #   - 100.64.0.1                    # the tailnet (100.x) address literal — yours
 
 # Notifications (F1) — v1 is the FOREGROUND channel only: the PWA raises a browser notification from
 # the live streams it already holds, so the phone buzzes while the app is open or backgrounded. There
@@ -30,12 +49,47 @@ server:
 #     action_failed: true    # a recorded action ended error / denied / timeout
 #     automation_done: true  # a scheduled (or run-now) automation run finished — however it ended
 
-# Fleet wake automation (ROADMAP D2). `wake_on_connect` on a machine below (D2-B) fires that host's
-# Wake-on-LAN whenever a client opens the live event stream — i.e. when you open the dashboard. This
-# cooldown bounds how often ONE host can be re-woken by reconnects (a phone drifting off wifi reopens
-# the stream a lot); 0 disables it. WOL is idempotent, so this is about keeping the Event log quiet.
+# Fleet wake automation (ROADMAP D2) — BOTH triggers' tunables.
+#
+# D2-B wake-on-connect: `wake_on_connect` on a machine below fires that host's Wake-on-LAN whenever a
+# client opens the live event stream — i.e. when you open the dashboard. `cooldown_s` bounds how often
+# ONE host can be re-woken by reconnects (a phone drifting off wifi reopens the stream a lot); 0
+# disables it. WOL is idempotent, so this is about keeping the Event log quiet.
+#
+# D2-A/D2-C wake-on-presence: `wake_on_presence` on a machine fires when the monitor sees one of YOUR
+# devices ARRIVE, watched on two independent sources with one arming machine each. The tailnet source
+# answers "I want the servers" (turning Tailscale on is a deliberate act); the LAN source answers
+# "I'm home" (the phone rejoining the house Wi-Fi). A source only fires after the device was
+# CONTINUOUSLY absent for its damping constant, so a radio blip cannot wake the fleet.
+#   · presence_devices — one entry per watched device. Give either address or both. `lan_ip` should be
+#     a DHCP RESERVATION on the router: a drifting lease looks exactly like the device leaving, and the
+#     only warning is the presence trail in the journal (`server.debug: true` to see it).
+#     `lan_offline_after_s` is PER DEVICE because it is a property of that radio's power management —
+#     a phone that drops its association while dozing looks like a phone that left the house.
+#   · lan_health_ip — an always-on address on the same LAN, normally the router, and never one of the
+#     watched devices. `ping` reports "device unreachable" and "our link is dead" identically, so
+#     without this an unplugged server would arm every device and wake the whole fleet on reconnect.
+#     While this address does not answer, every LAN no-reply that tick is UNKNOWN, which disarms.
+#     Unset = no gate; setting it is the recommended posture.
+#   · quiet_hours — a local-time window in which a LAN arrival wakes nothing. LAN ONLY: a Tailscale
+#     connect is deliberate and is never suppressed. Both times are QUOTED "HH:MM" strings (a bare
+#     23:00 is a NUMBER to YAML); start == end is refused. Unset = never quiet, the default.
 # wake:
-#   cooldown_s: 300
+#   cooldown_s: 300              # per-host seconds between wake-on-CONNECT fires (0 = every connect)
+#   presence_cooldown_s: 3600    # per-host seconds between PRESENCE-driven wakes (both sources)
+#   presence_offline_after_s: 120  # tailnet absence that must precede an arrival (R12's watchdog floor)
+#   tailscale_socket_path: /var/run/tailscale/tailscaled.sock  # config, not an OS branch (Synology etc.)
+#   lan_probe_count: 3           # echoes per LAN probe — several ride out Wi-Fi power-save buffering
+#   lan_probe_timeout_s: 1       # per ECHO, not per probe
+#   lan_health_ip: 192.168.1.1
+#   presence_devices:
+#     - name: phone              # the journal's name for it, and the key its state is held under
+#       tailnet_ip: 100.64.0.2
+#       lan_ip: 192.168.1.143
+#       lan_offline_after_s: 900 # LAN absence before an arrival counts (5× the field's 180 s floor)
+#   quiet_hours:
+#     start: "23:00"
+#     end: "07:00"
 
 # Owner media (D52/D53 + D65's write path). The ART itself is FILES — drop them into
 # $CTRLB_HOME/media/<ns>/<role>/ over SSH, or upload them from Conf → the gallery; this block only
@@ -376,11 +430,22 @@ voice:
     max_session_s: 1800    # hard session lifetime; 1800 aligns with Speaches' own 30-min expiry
     max_frame_bytes: 32768 # max accepted binary uplink frame
     buffered_ceiling_ms: 1000   # CLIENT outbound-buffer ceiling before close+reconnect
+    call_backlog_ms: 1000  # CLIENT pacer backlog for a call leg, in ms of audio; past it the OLDEST
+                           # frames are dropped (the mirror of relay_queue_ms below, one hop upstream).
+                           # Dictation's pacer is lossless instead and ignores this.
     barge_threshold: 0     # CLIENT RMS floor for the barge-in gate; 0 = reuse stt.auto_stop_threshold
     max_sessions: 1        # process-wide concurrent live sessions (a second connect gets `busy`)
     echo_workaround: auto  # auto | on | off — auto = capability-detected per track, never UA-sniffed
     barge_in: true         # CLIENT: hands-free interruption (false = tap-to-interrupt only)
     ring: true             # CLIENT: overlay mode — true = focal-anchored face ring
+    # Streaming DICTATION (S2.5) — the mic's hold/lock rides the SAME realtime ear as the call, and
+    # each utterance final appends to the composer draft live. Independent of `enabled` in both
+    # directions: this switch alone opens the ear, no call feature required. OFF = today's whole-clip
+    # POST through voice.stt. All four are CLIENT knobs; the relay enforces none of them.
+    dictation: false       # whole-feature toggle for streaming dictation
+    tail_wait_ms: 2000     # how long the client waits for the TAIL final after its release flush
+    dictation_idle_s: 15   # hands-free idle stop for a LOCKED session (the trailing phrase is kept)
+    dictation_max_s: 120   # hard cap on ONE streaming session — applies to hold as well as lock
     relay_queue_ms: 2000   # bounded relay queue, in ms of audio; overflow drops the OLDEST frames
     start_timeout_s: 5     # how long an accepted socket may sit before its `start` message arrives
     allowed_origins: []    # EXTRA exact `scheme://host[:port]` strings the WS Origin check admits

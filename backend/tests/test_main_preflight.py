@@ -46,24 +46,35 @@ def test_it_is_wired_at_import_before_the_app_object() -> None:
 
     Asserted over the **AST**, not the source text: a substring check passes just as happily when the
     call sits inside `if False:`, in another function, or commented out with the marker intact (Codex —
-    the first version of this test was theatre). Here the call must be a top-level statement, and it
-    must precede the top-level binding of `app`.
+    the first version of this test was theatre).
+
+    The gate now HANDS BACK the settings it validated, and `create_app` takes them (D72 ⑥: one config
+    read on the boot path instead of two), so the two statements became one —
+    `app = create_app(_preflight_config())`. That states the ordering MORE tightly, not less: Python
+    evaluates the argument before the call it belongs to. So the shape the AST must show is either
+    form — a preflight call in a top-level statement BEFORE the `app` binding, or the preflight nested
+    inside the binding's own expression. What is still refused is the only thing that ever mattered:
+    an `app` bound at import with no preflight evaluated on the way.
     """
     tree = ast.parse(Path(main.__file__).read_text(encoding="utf-8"))
-    calls = [
-        i
-        for i, node in enumerate(tree.body)
-        if isinstance(node, ast.Expr)
-        and isinstance(node.value, ast.Call)
-        and getattr(node.value.func, "id", None) == "_preflight_config"
-    ]
+
+    def calls_preflight(node: ast.AST) -> bool:
+        return any(
+            isinstance(n, ast.Call) and getattr(n.func, "id", None) == "_preflight_config"
+            for n in ast.walk(node)
+        )
+
     binds = [
         i
         for i, node in enumerate(tree.body)
         if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "app" for t in node.targets)
     ]
-    assert calls and binds, "the preflight call or the `app` binding is no longer top-level"
-    assert calls[0] < binds[0]
+    assert binds, "the `app` binding is no longer top-level"
+    before = [i for i, node in enumerate(tree.body) if i < binds[0] and calls_preflight(node)]
+    assert before or calls_preflight(tree.body[binds[0]]), (
+        "`app` is bound at import without `_preflight_config()` evaluated first — an unloadable config "
+        "would then die in the lifespan as exit 3 and crash-loop the unit (UPDATE_PLAN §3.7)"
+    )
 
 
 def test_a_genuine_import_of_app_main_exits_78(tmp_path) -> None:

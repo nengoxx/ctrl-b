@@ -180,6 +180,52 @@ class ServerCfg(BaseModel):
     poll_seconds: int = 5  # fleet status poll cadence
     feature_cycle_seconds: int = 6  # hero "now monitoring" auto-cycle period (online hosts only)
     debug: bool = False  # off by default — debug is an RCE surface (ARCHITECTURE §7)
+    #: `Host` header allowlist — the anti-DNS-rebinding rail (R73 §4, SECURITY_MODEL §2.7/§2.9).
+    #: EMPTY (the default) = not mounted at all: every name reaches the app, exactly as before.
+    #: Non-empty ⇒ `TrustedHostMiddleware` is mounted at app construction and every OTHER name is
+    #: answered `400 Invalid host header`, on HTTP **and** WebSocket scopes.
+    #:
+    #: **A name missing from a non-empty list answers 400 on every route, the Conf UI included** —
+    #: recovery is editing `config.yaml` by hand. So the list must carry every name AND address the
+    #: owner actually browses by (the ts.net name, the bare hostname, `localhost`, `127.0.0.1`, the
+    #: LAN literal, the 100.x literal). That is why it ships empty rather than pre-populated: only
+    #: the deploy knows its own names, and a guessed list would brick the panel on first boot.
+    #:
+    #: Patterns are exact names, or ONE leading `*.` wildcard (`*.ts.net`) — Starlette's own grammar,
+    #: validated below so a typo is a config refusal instead of an `AssertionError` at import.
+    trusted_hosts: list[str] = Field(default_factory=list)
+
+    @field_validator("trusted_hosts")
+    @classmethod
+    def _host_patterns(cls, v: list[str]) -> list[str]:
+        """Refuse a pattern `TrustedHostMiddleware` cannot use — HERE, where a bad value is a 422 with
+        a sentence, rather than at import where Starlette's own `assert` is an `AssertionError` in a
+        traceback with no config path in it (and, in the unit, a crash-loop instead of exit 78).
+
+        Three refusals, each one a value that would silently not mean what it reads as:
+        · a wildcard anywhere but a leading `*.` — Starlette's asserted grammar;
+        · a `:` — the matcher compares `host.split(":")[0]`, so a port here can never match anything
+          (and an IPv6 literal is unexpressible either way, for the same reason);
+        · a bare `*` — it turns the middleware into a pass-through, i.e. the rail silently off while
+          the config reads as on. "Off" already has a spelling: the empty list.
+        """
+        out: list[str] = []
+        for raw in v:
+            pattern = raw.strip()
+            bad = None
+            if not pattern:
+                bad = "an empty entry matches nothing"
+            elif pattern == "*":
+                bad = "'*' allows every host, i.e. the check off — leave the list empty for that"
+            elif "*" in pattern[1:] or (pattern.startswith("*") and not pattern.startswith("*.")):
+                bad = "a wildcard is only valid as a leading '*.' (e.g. '*.ts.net')"
+            elif ":" in pattern:
+                # (the Host header's port is split off before matching, so ':' can never match)
+                bad = "no port here — write the name alone"
+            if bad:
+                raise ValueError(f"server.trusted_hosts: {pattern!r} — {bad}")
+            out.append(pattern)
+        return out
 
 
 class ModelCfg(BaseModel):
@@ -607,10 +653,11 @@ class LiveCfg(VoiceServiceCfg):
     * SERVER knobs — `vad_threshold`/`silence_ms` ride `session.update` to Speaches; `frame_ms`,
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `allowed_origins` are the relay's own caps.
-    * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `barge_threshold`, `barge_in`, `ring`,
-      `echo_workaround` and the four S2.5 DICTATION knobs are PWA behavior (Speaches' `TurnDetection`
-      accepts exactly five fields, §4.1, so an interruption floor cannot be a server knob). They are
-      delivered verbatim by `GET /voice/status` (`live_call`) and nothing below the browser reads them.
+    * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`, `barge_threshold`,
+      `barge_in`, `ring`, `echo_workaround` and the four S2.5 DICTATION knobs are PWA behavior
+      (Speaches' `TurnDetection` accepts exactly five fields, §4.1, so an interruption floor cannot be
+      a server knob). They are delivered verbatim by `GET /voice/status` (`live_call`) and nothing
+      below the browser reads them.
 
     The dictation four ride this section rather than `voice.stt` because they configure THE SAME EAR
     the call uses — one realtime target, one set of client knobs (D71 §7-S2.5 / R70 §9.2). `voice.stt`
@@ -640,6 +687,15 @@ class LiveCfg(VoiceServiceCfg):
     #: Client outbound-buffer ceiling, in ms of audio, before the client closes + reconnects a fresh
     #: session (plan §3.1/F6 — `WebSocket.send()` has no awaitable backpressure).
     buffered_ceiling_ms: int = Field(default=1000, ge=100, le=10000)
+    #: The CLIENT pacer's backlog bound for a call leg, in ms of audio (A-F2 / R71). The uplink is
+    #: paced — a stall accrues frames instead of firing them all at the socket on recovery — and past
+    #: this much audio the OLDEST frames are dropped: in a live call the stale second is worthless and
+    #: the current one is the whole point. The exact mirror of `relay_queue_ms` one hop downstream,
+    #: same units and same bounds deliberately, so the two read as the one backpressure pair they are.
+    #: Dictation's pacer is LOSSLESS instead (a dictated phrase must arrive whole) and reads nothing
+    #: here. A client-side drop presents the same "strained" note the relay's drop does — one loss
+    #: chain, one signal.
+    call_backlog_ms: int = Field(default=1000, ge=200, le=20000)
     #: Normalized RMS floor for the barge-in energy gate. **0 = reuse `stt.auto_stop_threshold`** (plan
     #: §5.1), so the owner calibrates ONE number on the phone unless the call wants its own. Capped at
     #: 0.5 like its sibling — above that it is a mute, not a floor.
@@ -1725,7 +1781,7 @@ class CardImportCfg(BaseModel):
     enforced for EVERY container (§7) on the existing cap+1/413 posture — read one byte past the
     limit, which is the least that still proves "over" without materialising the excess.
 
-    - `max_bytes`: the multipart body cap. 15 MB = the media write path's own ceiling
+    - `max_bytes`: the request-body cap (a raw-body PUT since R73). 15 MB = the media write path's own ceiling
       (`media.write.max_bytes`), because a PNG card IS an image upload with metadata glued on.
     - `max_card_json_bytes`: the DECODED card JSON — the base64 out of a PNG chunk, the `card.json`
       member of a CHARX, or a bare `.json` body. It is what ends up serialised into `agent.yaml`

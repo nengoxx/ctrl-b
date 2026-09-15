@@ -320,3 +320,45 @@ async def handler(p: Path) -> str:
     # transitive: a helper that only *calls* a blocking helper is itself blocking
     trans = _sync_helper_calls_in_async(tmpl.format(body="_wrapper(p)"), "s.py")
     assert [h.split(": ", 1)[1] for h in trans] == ["handler: _wrapper()"]
+
+
+def _to_thread_targets(tree: ast.Module) -> set[str]:
+    """Every name passed as the FUNCTION argument of an `asyncio.to_thread(...)` call."""
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "to_thread"
+            and node.args
+            and isinstance(node.args[0], ast.Name)
+        ):
+            out.add(node.args[0].id)
+    return out
+
+
+def test_the_auto_router_is_reached_only_through_to_thread():
+    """audit B-3 — the guard above cannot see this one, and that is the point of pinning it by hand.
+
+    `_auto_route_agent` does no file IO itself: it calls `select_agent`, which loads every specialist's
+    `agent.yaml` fresh off disk, ONE MODULE OVER. `_blocking_helpers` builds its closure per file, so a
+    blocking helper reached through an import is invisible to it — which is exactly how one of the two
+    call sites (`start_steer_turn`) ended up hopped while the other (`chat`) ran on the loop.
+
+    D70 is what made it worth fixing: agents became plentiful (the gallery + card import) and each
+    `agent.yaml` now carries the card stash, so with `agent.auto_rotate` on, a new-thread turn blocked
+    the loop on N full YAML parses before its first token — stalling every OTHER request with it.
+
+    The correct shape passes the function as a REFERENCE, so a direct call node is the defect itself.
+    """
+    tree = ast.parse((BACKEND / "app" / "api" / "agent.py").read_text(encoding="utf-8"))
+    called = [
+        n.lineno
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_auto_route_agent"
+    ]
+    assert not called, (
+        f"`_auto_route_agent` is CALLED directly at api/agent.py:{called} — it parses every agent.yaml "
+        "on disk, so both call sites must be `await asyncio.to_thread(_auto_route_agent, ...)`"
+    )
+    assert "_auto_route_agent" in _to_thread_targets(tree), "the router is no longer hopped at all"

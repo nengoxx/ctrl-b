@@ -116,12 +116,35 @@ def book_slugs(directory: Path) -> list[str]:
     return sorted(p.stem for p in directory.glob(f"*{BOOK_SUFFIX}") if p.is_file())
 
 
+#: Books whose missing FILE has already been reported this process (audit B-4). A dangling attachment
+#: is a deliberately tolerated state — `delete_lorebook` says so ("a dangling attachment never fails a
+#: turn") and `LorebookPicker` renders the slug as `missing` — but the read seam runs once per
+#: attached slug PER TURN, so warning every time put one WARNING per turn, FOREVER, into the journal
+#: the deploy runbook tells the owner to read: noise about a state the UI already presents as fine,
+#: diluting the lines that are not. Once per book is the whole of it; the UNREADABLE arm keeps
+#: warning every time, because that one is a real defect and each occurrence is evidence.
+#: Keyed by PATH rather than by slug because the path is what identifies a book — the same slug in two
+#: workspaces is two books, and a memo that conflated them would silence the second one's first word.
+_MISSING_WARNED: set[str] = set()
+
+
+def _warn_once_missing(slug: str, path: Path) -> None:
+    key = str(path)
+    if key not in _MISSING_WARNED:
+        _MISSING_WARNED.add(key)
+        log.warning("lorebook %r: no file at %s — skipping (not repeated for this book)", slug, path)
+
+
 def load_book(directory: Path, slug: str) -> Lorebook | None:
     """One book, or `None` when the file is absent or unreadable.
 
     A listed book whose file is missing or malformed must NEVER fail a turn (§6.3): the owner
     attached a book, and the worst that may cost them is the entries it would have contributed.
     So the failure is a log line and a skip, here, once — every caller inherits it.
+
+    The MISSING arm says it once per book and then stays quiet (`_warn_once_missing`): a dangling
+    attachment is a tolerated steady state, and this seam runs every turn. The UNREADABLE arm below
+    repeats, deliberately — that one is a defect, not a state.
 
     The slug is VALIDATED here rather than trusted (K1): `lorebooks.books` in `config.yaml` and an
     agent's own `lorebooks:` list are hand-edited files that never pass the API's guard, and
@@ -137,7 +160,7 @@ def load_book(directory: Path, slug: str) -> Lorebook | None:
         return None
     p = book_path(directory, slug)
     if not p.is_file():
-        log.warning("lorebook %r: no file at %s — skipping", slug, p)
+        _warn_once_missing(slug, p)
         return None
     try:
         raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}

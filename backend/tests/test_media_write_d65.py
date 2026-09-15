@@ -711,3 +711,45 @@ def test_the_media_surface_accepts_no_post_and_no_multipart(home: Path) -> None:
     src = (Path(__file__).resolve().parents[1] / "app" / "api" / "media.py").read_text(encoding="utf-8")
     for token in ("UploadFile", "File(", "Form(", "router.post"):
         assert token not in src, f"{token} in api/media.py — uploads are raw-body PUT only (D65)"
+
+
+#: Every `(method, path)` in the LIVE app that may declare a form/multipart body. One entry, and it
+#: is pre-existing: `POST /api/voice/stt` spends an STT call and writes no owner file — the residual
+#: SECURITY_MODEL §2.7 already enumerates. A row added here is a SECURITY DECISION (it admits a
+#: route a cross-origin page can reach with no preflight), never a refactor's tidy-up.
+MULTIPART_ALLOWLIST = {("POST", "/api/voice/stt")}
+
+
+def test_no_route_in_the_whole_app_declares_a_form_body_outside_the_allowlist(home: Path) -> None:
+    """The APP-WIDE form-body invariant (R73 §8.2) — the pin that would have caught D70.
+
+    Its two older siblings above walk only `/api/media` and (in `test_attachments_d68.py`)
+    `/api/attachments`, so they are blind by construction to a new surface: D70 shipped
+    `POST /api/agents/import` and `POST /api/lorebooks/import` as multipart file uploads and neither
+    pin said a word, because neither path starts with the prefix it guards. Prose in SECURITY_MODEL
+    did not catch it either. A walk over EVERY live route against an explicit allowlist is the only
+    shape of this check that cannot go quietly blind again.
+
+    Why the property matters (R73 §1/§2): `multipart/form-data` is a CORS-SAFELISTED content type on
+    a safelisted method, so a page on any origin can fire one with no preflight — and CORS withholds
+    the RESPONSE, never the send, so the handler runs. Any route that accepts a form body is
+    therefore reachable from a hostile page in the owner's browser; a raw-body PUT is not.
+    """
+    with make_client() as c:
+        walked = iter_live_routes(c.app.router)
+        assert walked, "the live route walk found NO routes — the pin tests nothing"
+        offenders = sorted(
+            (method, path)
+            for path, methods, route in walked
+            if declares_multipart(route)
+            for method in methods
+            if (method, path) not in MULTIPART_ALLOWLIST
+        )
+    assert not offenders, (
+        f"{offenders} declare a form/multipart body — a cross-origin page can post to these with no "
+        "preflight. Owner-file writes are raw-body PUT (SECURITY_MODEL §2.7/§2.9); if a route really "
+        "must take a form, it needs a recorded waiver and a row in MULTIPART_ALLOWLIST."
+    )
+    # …and the allowlist itself is live, not a stale name: every entry must still be a real route.
+    live = {(method, path) for path, methods, _ in walked for method in methods}
+    assert MULTIPART_ALLOWLIST <= live, sorted(MULTIPART_ALLOWLIST - live)

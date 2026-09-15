@@ -12,14 +12,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   get: vi.fn(),
   put: vi.fn(),
-  post: vi.fn(),
+  putBytes: vi.fn(),
   del: vi.fn(),
   toast: vi.fn(),
 }));
 
 vi.mock("../../src/api/client", async (importActual) => {
   const actual = await importActual<typeof import("../../src/api/client")>();
-  return { ...actual, getJSON: h.get, putJSON: h.put, postForm: h.post, del: h.del };
+  return { ...actual, getJSON: h.get, putJSON: h.put, putBytes: h.putBytes, del: h.del };
 });
 vi.mock("../../src/store/toast", () => ({ pushToast: h.toast }));
 
@@ -40,7 +40,7 @@ beforeEach(() => {
 afterEach(() => {
   h.get.mockReset();
   h.put.mockReset();
-  h.post.mockReset();
+  h.putBytes.mockReset();
   h.del.mockReset();
   h.toast.mockReset();
 });
@@ -79,8 +79,8 @@ describe("the lorebook write hooks", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["lorebook", "hollow-sea"] });
   });
 
-  it("an IMPORT posts ONE multipart `file` field and stays SILENT on success", async () => {
-    h.post.mockResolvedValue({
+  it("an IMPORT sends the picked FILE as a raw-body PUT and stays SILENT on success", async () => {
+    h.putBytes.mockResolvedValue({
       slug: "traits",
       book: { name: "Traits", description: "", enabled: true, entries: [] },
       report: { mapped: [], stashed_keys: [], warnings: [] },
@@ -88,16 +88,20 @@ describe("the lorebook write hooks", () => {
     const { result } = renderHook(() => useImportLorebook(), { wrapper });
     result.current.mutate(new File(["{}"], "traits.json", { type: "application/json" }));
 
-    await waitFor(() => expect(h.post).toHaveBeenCalled());
-    const [path, form] = h.post.mock.calls[0] as [string, FormData];
+    await waitFor(() => expect(h.putBytes).toHaveBeenCalled());
+    const [path, body] = h.putBytes.mock.calls[0] as [string, Blob];
     expect(path).toBe("/api/lorebooks/import");
-    expect([...form.keys()]).toEqual(["file"]);
+    // Never multipart: the verb + the raw body ARE the cross-origin control (R73).
+    expect(body).toBeInstanceOf(File);
+    expect(body).not.toBeInstanceOf(FormData);
     // No success toast — the REPORT is the outcome, and a toast over it would say less.
     expect(h.toast).not.toHaveBeenCalled();
   });
 
   it("an import FAILURE renders the backend's own refusal (413/422/409 all carry a detail)", async () => {
-    h.post.mockRejectedValue(new Error("the lorebook is larger than lorebooks.max_import_bytes"));
+    h.putBytes.mockRejectedValue(
+      new Error("the lorebook is larger than lorebooks.max_import_bytes"),
+    );
     const { result } = renderHook(() => useImportLorebook(), { wrapper });
     result.current.mutate(new File(["x"], "big.json"));
     await waitFor(() =>

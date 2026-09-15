@@ -2,7 +2,9 @@
 
 Dev: Vite proxies `/api` → uvicorn (single origin, no CORS). Prod: this also serves the built
 `frontend/dist` via FastAPI's native `app.frontend()` SPA route (D55). `create_app()` wires the
-full API, the owner-media mounts and that frontend route; `lifespan` owns the runtime state.
+full API, the owner-media mounts, that frontend route and the app's ONE middleware — the optional
+`Host` allowlist, which must be added while the app is being built (R73, SECURITY_MODEL §2.9);
+`lifespan` owns the runtime state.
 
 Run:  uvicorn app.main:app --port 5433   (from backend/)
 
@@ -28,6 +30,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
 from app.adapters.inference import EndpointGates
@@ -134,6 +137,9 @@ _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 # (propagate=False); without this, every app logger falls through to a handler-less root and
 # Python's last-resort handler drops INFO — the D69 presence trail and the D2-A monitor lines
 # were never emitted. No-op when root already has handlers (pytest); journald stamps timestamps.
+# This owns the HANDLER and the root LEVEL, both at import (no settings exist yet, by design — the
+# preflight below may need to print before any config is trusted). The `app` logger's own level is
+# the one tunable thing and is set from `server.debug` in `lifespan`; root stays INFO there.
 logging.basicConfig(level=logging.INFO)
 # httpx logs one INFO line per request; the monitor's tailscale LocalAPI polls alone would put
 # thousands of them a day in the journal, drowning the app's own trail. Its errors still surface.
@@ -164,6 +170,17 @@ async def lifespan(app: FastAPI):
     # The config is already the shape this build understands: `_preflight_config()` refused at import
     # otherwise (UPDATE_PLAN §3.7). There is no fold here and no lazy write-back — that machinery left
     # `config.py` in slice 2, and this comment used to describe it.
+    #
+    # `server.debug` finally drives something (C-F5): the APP logger's level, here, where settings
+    # exist. Until now the only DEBUG trail the app writes — `_log_presence`'s per-tick line, which is
+    # the documented diagnostic for a drifted DHCP reservation — could not be turned on without
+    # editing source. Deliberately the `app` logger and NOT the root: uvicorn's `--ws-ping-interval 5`
+    # makes `websockets` log a frame every 5 s at DEBUG, so a root-level flip would bury the trail the
+    # flag was flipped to read. `basicConfig` above still owns the HANDLER (and root stays INFO);
+    # this owns one level. Read once at boot — a Conf edit of `debug` is restart-flagged already.
+    # Set BOTH ways rather than only on: a one-directional flip would leave the level wherever the
+    # last boot in this process put it, which in a test run is another test's config.
+    logging.getLogger("app").setLevel(logging.DEBUG if app.state.settings.server.debug else logging.INFO)
     app.state.fleet = FleetService(app.state.settings)
     app.state.services = ServiceService(app.state.settings, app.state.fleet)
     app.state.db = Database()
@@ -456,8 +473,13 @@ def _quoted(path: str) -> str:
     return f'"{path}"' if " " in path else path
 
 
-def _preflight_config() -> None:
+def _preflight_config() -> Settings:
     """Refuse to start on a config this build cannot load — at **import time**, before `create_app()`.
+
+    Returns the Settings it proved loadable, so the one caller that needs settings *while the app is
+    being BUILT* (`_mount_trusted_hosts`) reads this file once instead of twice. That is a HANDBACK,
+    not a cache: nothing stores it, the lifespan still loads independently (see the stop-line below),
+    and a `create_app()` called without one — every test that builds a fresh app — loads its own.
 
     Placement is measured, not stylistic (UPDATE_PLAN §3.7): `sys.exit(78)` here propagates as **78**,
     while the same call inside the FastAPI lifespan is swallowed by uvicorn's `except BaseException` and
@@ -482,9 +504,11 @@ def _preflight_config() -> None:
     visibly at call time while a refusing unit takes down the only UI there is to diagnose it from.
 
     **The stop-line, stated so it is not merely currently true** (Fable): this gate **decides, and
-    never constructs or repairs**. No writes, no auto-apply, no caching of settings for the app to
-    reuse — the lifespan loads independently, and the moment something here starts *fixing* what it
-    finds, the responsibility has stopped being coherent.
+    never constructs or repairs**. No writes, no auto-apply, no settings CACHE for the app to live off
+    — the lifespan loads independently and owns `app.state.settings`, and the moment something here
+    starts *fixing* what it finds, the responsibility has stopped being coherent. Handing back the
+    object it already validated does not cross that line: it is the same verdict, spelled with its
+    evidence attached, and nothing downstream may treat it as the app's settings.
 
     There is deliberately **no skip flag**. An escape hatch for a boot-blocking safety check is exactly
     the kind of environment variable that silently does something, which is what slice 3 spent itself
@@ -531,7 +555,9 @@ def _preflight_config() -> None:
         # it and dies in the lifespan instead, where uvicorn turns the failure into **exit 3**: not
         # covered by `RestartPreventExitStatus=78`, so the unit crash-loops (measured). Loading through
         # the real `load_settings` is the only check with the effective semantics, env overlay included.
-        load_settings()
+        # …and the object that proves it is the one `create_app` is handed below, so the boot path reads
+        # config.yaml once for the gate rather than twice for the gate and the `Host` allowlist.
+        return load_settings()
     except SystemExit:
         raise
     except cm.MigrationRefused as exc:  # downgrade · unparseable · symlink · anchors · broken agent.yaml
@@ -557,8 +583,44 @@ def _preflight_config() -> None:
         raise SystemExit(cm.EXIT_REFUSE) from None
 
 
-def create_app() -> FastAPI:
+def _mount_trusted_hosts(app: FastAPI, settings: Settings) -> None:
+    """Mount the `Host` allowlist when `server.trusted_hosts` is non-empty (R73 §4, SECURITY_MODEL
+    §2.9) — the belt-and-braces the raw-body-PUT rail cannot supply on its own.
+
+    The rail rests on "a cross-origin write is forced into a preflight nobody answers". DNS rebinding
+    removes the premise rather than defeating the rail: the attacker's page re-resolves their own name
+    to this address, so the request IS same-origin — no preflight, `Origin` says same-origin. What the
+    attacker never controls is the NAME they must send in `Host`, which is why every peer with our
+    threat model (Ollama, ComfyUI, Syncthing) ships a name check. Starlette's middleware runs for
+    `websocket` scopes as well as `http`, so it also backs up the WS `Origin` rail in `api/voice.py`.
+
+    **Three mechanics, all load-bearing:**
+    · **Here, not in the lifespan.** `add_middleware` raises once the app has started, so the mount
+      has to happen while the app is being BUILT — which is why the settings arrive as an ARGUMENT
+      rather than from `app.state.settings`, which the lifespan has not written yet. On the boot path
+      they are the very object the import-time `_preflight_config()` proved loadable (it refused with
+      exit 78 otherwise, so a raise here is not a case that survives to production); `create_app()`
+      called with none — a test building a fresh app — loads its own.
+    · **The `if` is the feature toggle.** An EMPTY allowlist mounted is not "allow everything" — it is
+      a middleware that matches no name and 400s every request, the panel included. Off means not
+      mounted.
+    · **`www_redirect=False`.** The default answers an unlisted host with a 307 to `www.<host>`
+      whenever that name IS listed — a redirect that echoes a client-supplied name into `Location`,
+      for a hostname shape nothing on a tailnet ever has. One answer for an unlisted name: 400.
+    """
+    hosts = settings.server.trusted_hosts
+    if not hosts:
+        return
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts, www_redirect=False)
+    logger.info("host allowlist active: %s", ", ".join(loggable(h) for h in hosts))
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Build the app. `settings` is the already-validated config the import-time gate below hands
+    over — passed only so the boot path does not read config.yaml a second time for the `Host`
+    allowlist. Omitted (every test that builds a fresh app), it loads one, which is the same path."""
     app = FastAPI(title="ctrl-b dashboard", version=__version__, lifespan=lifespan)
+    _mount_trusted_hosts(app, settings or load_settings())
 
     @app.exception_handler(RequestValidationError)
     async def _validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -719,5 +781,4 @@ def create_app() -> FastAPI:
     return app
 
 
-_preflight_config()  # ← before the app object exists; see the docstring
-app = create_app()
+app = create_app(_preflight_config())  # ← the gate runs before the app object exists; see its docstring

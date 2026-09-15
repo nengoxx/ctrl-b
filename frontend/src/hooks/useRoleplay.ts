@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { del, getJSON, postForm, putJSON } from "../api/client";
+import { del, getJSON, putBytes, putJSON } from "../api/client";
 import { pushToast } from "../store/toast";
 import { CONF_SECTIONS, useScopedQuery } from "./useScopedQuery";
 
@@ -197,16 +197,14 @@ export function useDeleteLorebook() {
   });
 }
 
-/** Import a book (§6.5) — MULTIPART, one `file` field, the `useImportAgent` shape verbatim. No success
- *  toast: the REPORT is the outcome, and a toast over it would say less at the same moment. */
+/** Import a book (§6.5) — the owner's picked `File` as a RAW-BODY PUT, the `useImportAgent` shape
+ *  verbatim (never multipart, never POST: the verb is the cross-origin control — R73 /
+ *  SECURITY_MODEL §2.9). No success toast: the REPORT is the outcome, and a toast over it would say
+ *  less at the same moment. */
 export function useImportLorebook() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (file: File) => {
-      const form = new FormData();
-      form.append("file", file);
-      return postForm<LorebookImportResult>("/api/lorebooks/import", form);
-    },
+    mutationFn: (file: File) => putBytes<LorebookImportResult>("/api/lorebooks/import", file),
     onSuccess: (res) => invalidateLorebooks(qc, res.slug),
     onError: (e: Error) => pushToast(e.message || "Import failed", "err"),
   });

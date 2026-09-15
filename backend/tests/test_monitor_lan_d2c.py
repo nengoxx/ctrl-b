@@ -288,6 +288,45 @@ def test_a_broken_lan_probe_never_costs_the_tailnet_its_edge() -> None:
     assert svc.state.devices["phone"].seen[LAN] == "unknown"  # …and the broken probe disarmed, quietly
 
 
+@contextlib.contextmanager
+def _exploding_reader(name: str, exc: BaseException):
+    """Make one whole presence READER raise, rather than one probe inside it."""
+    real = getattr(monitor, name)
+
+    async def boom(*_a, **_kw):
+        raise exc
+
+    setattr(monitor, name, boom)
+    try:
+        yield
+    finally:
+        setattr(monitor, name, real)
+
+
+@pytest.mark.parametrize("broken", ["read_lan_presence", "read_presence"])
+def test_a_reader_that_raises_costs_only_its_own_source(broken: str, caplog) -> None:
+    """C-F4 — the same isolation as the test above, ONE LEVEL UP: the join that actually spans both
+    sources was the last plain `gather` in the presence path, so a raise from either READER (not from
+    a probe inside it) still took the whole tick down — including the other source's edge.
+
+    Latent, because neither reader can raise on any current path; pinned anyway, because the argument
+    for isolating the probes is the argument for isolating this, and the cost of being wrong is the
+    shipped trigger silently never firing. The degrade is the existing rule rather than a new one: no
+    reading ⇒ `unknown` ⇒ DISARMED, which is what a check we could not make has meant since D50 M1.
+
+    Both arms run, because a fix that isolated only the LAN half would pass the half the audit named.
+    """
+    surviving = TAILNET if broken == "read_lan_presence" else LAN
+    scripted = _scripted_presence if surviving is TAILNET else _scripted_lan
+    svc, actions, _ = _service([_h("alpha")], devices=[_both()])
+    with _exploding_reader(broken, OSError("the socket went away")), scripted(["offline", "online"]):
+        run_async(svc.tick())
+        run_async(svc.tick())
+    assert actions.woken == ["alpha"]  # the surviving source's edge landed
+    assert svc.state.devices["phone"].seen[TAILNET if surviving is LAN else LAN] == "unknown"
+    assert "presence: the" in caplog.text  # …and the failure is in the journal, not swallowed
+
+
 def test_the_devices_and_the_health_address_are_probed_concurrently() -> None:
     """An absent device costs `count × timeout_s` (~3 s at the defaults), so sequential probes would
     spend most of a 30 s tick waiting. Pinned structurally rather than by timing: every probe must

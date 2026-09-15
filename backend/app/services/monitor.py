@@ -214,6 +214,33 @@ def _probe_answer(settled: PingResult | BaseException) -> PingResult:
     return settled
 
 
+def _source_answer(
+    settled: dict[str, DeviceReading] | BaseException, source: str
+) -> dict[str, DeviceReading]:
+    """One presence SOURCE's slot in the tick's join, as a reading map (C-F4) — `_probe_answer` one
+    level up, and for the same reason it gives.
+
+    That comment argues the case exactly: *"Under a plain `gather` ONE such `OSError` propagates out
+    of the whole presence read — taking down the tick that also carries the shipped TAILNET edge."*
+    It was true of the join that actually spans both sources too, which was the one plain `gather`
+    left. Neither reader can raise on any path today; "written not to" is not "cannot", and the
+    asymmetry — the LAN half isolating per probe while a raise anywhere else took the tailnet half
+    down with it — is the shape that eventually costs something.
+
+    An empty map is the right degrade, not a special case: every ip then misses the lookup in the
+    device loop and reads as `unknown`, which DISARMS — "a check we could not make is UNKNOWN" (D50
+    M1). Cancellation is re-raised rather than swallowed, exactly as `_probe_answer` does it: it
+    means the loop is shutting down, not that the owner's phone is unknown."""
+    if isinstance(settled, asyncio.CancelledError):
+        raise settled
+    if isinstance(settled, BaseException):
+        log.exception(
+            "presence: the %s read failed — treating every device as unknown", source, exc_info=settled
+        )
+        return {}
+    return settled
+
+
 async def read_lan_presence(
     ips: Sequence[str], *, count: int, timeout_s: float, health_ip: str | None
 ) -> dict[str, DeviceReading]:
@@ -455,7 +482,9 @@ class MonitorService:
         Two sources, one machine EACH per device (D2-C — see the module docstring for why they are not
         combined at the observation), read concurrently: the tailnet read is a 0.16 ms socket call and
         the LAN probe is up to `count × timeout_s` of ICMP, so serializing them would spend the
-        cheap one's latency waiting for the expensive one.
+        cheap one's latency waiting for the expensive one. Each source is ISOLATED in that join
+        (`_source_answer`) for the reason `_probe_answer` states one level down: a raise from either
+        reader must cost that source's readings, never the whole tick.
 
         Edges are COLLECTED across the whole device loop and fanned out ONCE (D50 M3): the owner
         walking in with a phone and a laptop is one arrival, and a fan-out per device — or per source
@@ -467,7 +496,7 @@ class MonitorService:
         self._reconcile_devices(wake.presence_devices)
         if not wake.presence_devices:
             return
-        readings, lan_readings = await asyncio.gather(
+        settled = await asyncio.gather(
             read_presence(
                 wake.tailscale_socket_path, [d.tailnet_ip for d in wake.presence_devices if d.tailnet_ip]
             ),
@@ -477,7 +506,11 @@ class MonitorService:
                 timeout_s=wake.lan_probe_timeout_s,
                 health_ip=wake.lan_health_ip,
             ),
+            return_exceptions=True,
         )
+        readings, lan_readings = [
+            _source_answer(s, source) for s, source in zip(settled, (TAILNET, LAN), strict=True)
+        ]
         # The await above is a reconfiguration window (15a review, MED): a Conf save lands between the
         # reads starting and returning, so re-check the LIVE config before they drive anything.
         # Without this, a stale reading could emit the edge 15b fires behind DESPITE the master switch,
