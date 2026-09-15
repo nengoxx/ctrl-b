@@ -48,6 +48,18 @@
 - **Open owner decision:** flip `trusted_hosts` ON by filling the list (recovery = hand-edit
   config.yaml if a name is missed); and whether the fleet pending word should ALSO be visible
   text (currently screen-reader only).
+- **SESSION CLOSED — the wave is 4 commits on main, tip `e5eee89`, UNPUSHED** (`c41cdc2` voice ·
+  `a808b10` security/BE · `9693de6` fleet · `e5eee89` docs; each carries its whole review trail).
+  Full gate green ×3 (last on the committed tree). **Dev units RESTARTED on the new code, health
+  200 — leave them running (D69 presence).** ⚠ Two things the restart did NOT deliver: the
+  ws-ping 5/5 flags live in the deploy TEMPLATES only — the installed dev/prod units pick them
+  up at the next `install.sh dev` / release install (v1.7.8), so the 10 s slot-release number is
+  not yet live anywhere; and `trusted_hosts` is empty ⇒ unmounted by design. **▶▶ NEXT SESSION
+  opens on: PUSH (owner's word owed) → the owner's poke round on dev (imports now PUT — any
+  hand-rolled multipart curl scripts must switch) → then S4 as pinned above, now also carrying
+  the wave's probes (the Honor-20 app-switch backlog · Serve's ping cadence over the proxied WS).**
+  The full audit→research→review record: memory `intermission-audit-2026-09-14` + D72 + the
+  §7/§13 addenda; dossiers R71–R73.
  — **THE OWNER'S TEST ROUND CLOSED with both verdicts PASS: the long-recording bar rules verified in BOTH latch cases (pre-typed draft + empty composer) and streaming dictation "works well" over the Serve HTTPS chain. The one question — does Tier-0 auto-stop collide with streaming dictation? — was source-verified NO COLLISION (the stop the owner felt was `dictation_idle_s`, by design). Serve RESTORED to prod :5433, verified. Zero app code this session. ▶▶ NEXT SESSION = S4 (plan §7) — the owner calibration + device round = THE PHASE GATE**; supersedes below where it speaks)
 
 - **The verdicts (the owner, in conversation; record folded into plan §7-S3.5's addendum as the
