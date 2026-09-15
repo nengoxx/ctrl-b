@@ -163,6 +163,30 @@ export function overlayPending(
   return changed ? out : hosts;
 }
 
+/** THE LIVENESS WORD every host CONTROL's accessible name carries — ONE rule for five states, so no two
+ *  fleets can drift about which fact outranks which. It lived in `themes/gacha/fleet.ts` until the
+ *  intermission wave (W6/D72) found the same defect class open on kit, cosmos, frontier and vapor: it
+ *  belongs beside `PendingKind`, which is the only thing that can tell these states apart.
+ *
+ *  THE RULE IT SERVES: the label of WHICHEVER control a pending host renders says that word. It is not a
+ *  nicety — D67 stretched the disabled window from ~100 ms to 90/180/300 s, and the ARM can INVERT inside
+ *  it: a pending shutdown is PRESENTED offline (the commanded end state below), so the control on screen
+ *  is the WAKE button, and a bare "wake corsair" on a machine whose shutdown is running is the sighted/
+ *  spoken contradiction the gacha-only fix already closed once (D67 sol confirm MED-2).
+ *
+ *  A PENDING RECORD OUTRANKS THE FLAG, both directions: REBOOTING because a pending reboot is presented
+ *  as online, SHUTTING DOWN because a pending shutdown is presented as offline — in both cases the raw
+ *  flag can no longer tell that machine from a settled one. ONLINE then outranks WAKING, which is the
+ *  chip's own older rule: the server's word beats an assumption the same poll is about to clear.
+ *
+ *  Lower case because these are sentences; gacha's chips spell their four states in caps themselves. */
+export function livenessWord(online: boolean, pending?: PendingKind): string {
+  if (pending === "reboot") return "rebooting";
+  if (pending === "shutdown") return "shutting down";
+  if (online) return "online";
+  return pending === "wake" ? "waking" : "sleeping";
+}
+
 /** Reactive read — the stable map reference (replaced only on real writes, per the createStore
  *  snapshot contract). */
 export function usePendingFleet(): ReadonlyMap<string, PendingEntry> {

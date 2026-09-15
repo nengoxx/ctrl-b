@@ -41,7 +41,7 @@ function rigArt(resolved: string | null | undefined, indexed: string): string | 
 }
 
 export function FrontierFleet({ active }: { active: boolean }) {
-  const { hosts, svcByHost, run, busy, isLoading, error } = useFleet();
+  const { hosts, svcByHost, run, busy, pending, isLoading, error } = useFleet();
   const selected = useFrontierSelection();
   // Owner art (D53 M2): the `rigs` pool + the `hero` cover. Never gates the render — with no owner
   // files (or no answer yet) every expression below falls through to the bundled art.
@@ -243,6 +243,7 @@ export function FrontierFleet({ active }: { active: boolean }) {
             art={(selectedP ?? displayP)!.art}
             plate={(selectedP ?? displayP)!.plate}
             busy={busy.has((selectedP ?? displayP)!.host.id)}
+            pending={pending.get((selectedP ?? displayP)!.host.id)?.kind}
             run={run}
             titleId={titleId}
           />

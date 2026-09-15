@@ -91,6 +91,9 @@ beforeEach(() => {
     svcByHost: new Map(),
     run: vi.fn(),
     busy: new Set<string>(),
+    // W6/D72: the sheet reads the pending record for its action names — an empty map is
+    // "nothing in flight", the state every case here is in.
+    pending: new Map<string, { kind: string }>(),
     isLoading: false,
     error: null,
   };

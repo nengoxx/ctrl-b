@@ -165,9 +165,11 @@ export interface FleetView {
    *  to hear. Cleared by poll agreement or window expiry, like the presentation itself. */
   busy: ReadonlySet<string>;
   /** Per-host pending power transition (the `PendingKind` via `.kind`) — presentation-grade state
-   *  (gacha's WAKING/REBOOTING chips + the wake ceremony's gate). `hosts` above is already presented
-   *  through it. The MAP itself is the seam, not a per-kind set: a consumer that needs to know WHICH
-   *  action asks the entry, and a fourth kind reaches every one of them with no new prop. */
+   *  (gacha's WAKING/REBOOTING chips + the wake ceremony's gate, and since W6/D72 the LABEL of
+   *  whichever power control every other fleet renders — `fleetPending#livenessWord`). `hosts` above
+   *  is already presented through it. The MAP itself is the seam, not a per-kind set: a consumer that
+   *  needs to know WHICH action asks the entry, and a fourth kind reaches every one of them with no
+   *  new prop. */
   pending: ReadonlyMap<string, { kind: PendingKind }>;
   run: ReturnType<typeof useFleetActions>["run"];
   feature: (i: number) => void; // user picks a host (now-dots) — holds the carousel

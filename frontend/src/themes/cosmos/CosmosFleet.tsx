@@ -78,7 +78,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
   // planet SIZE (services × health), and a service-heavy self planet on the innermost orbit reads wrong —
   // the owner curates the visual rhythm via the `computers:` YAML order instead (small first, etc.).
   // Safe here alone: cosmos is manual-selection and never reads the shared `featured` index (see useFleet).
-  const { hosts, svcByHost, isLoading, error, run, busy } = useFleet("config");
+  const { hosts, svcByHost, isLoading, error, run, busy, pending } = useFleet("config");
   const selected = useCosmosSelection();
 
   // Clear a selection whose host has left the fleet (config change / removal) — so the camera eases back to
@@ -410,6 +410,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
             host={(selectedHost ?? displayHost)!}
             services={svcByHost.get((selectedHost ?? displayHost)!.id) ?? []}
             busy={busy.has((selectedHost ?? displayHost)!.id)}
+            pending={pending.get((selectedHost ?? displayHost)!.id)?.kind}
             run={run}
             titleId={titleId}
             // Header chevrons step prev/next through the planets WITHOUT closing the sheet — the SAME select

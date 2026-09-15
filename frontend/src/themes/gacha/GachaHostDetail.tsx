@@ -2,6 +2,7 @@ import { FocalImg } from "../../components/FocalImg";
 import type { FleetRun } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
+import { livenessWord, type PendingKind } from "../../store/fleetPending";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
@@ -34,6 +35,9 @@ interface Props {
   mode: StarMode;
   /** A host action is in flight (`useFleet().busy`) — disables the whole bar. */
   busy: boolean;
+  /** This machine's pending power transition, if one is running (`useFleet().pending`) — the state word
+   *  the bar's names carry (W6/D72). `busy` above already spans the same window; this says WHY. */
+  pending?: PendingKind;
   run: FleetRun;
   titleId: string; // aria-labelledby target the sheet points at (the host name)
   /** Dismiss the dossier — the prototype's visible corner close (owner-restored 2026-08-02). Optional so
@@ -51,6 +55,7 @@ export function GachaHostDetail({
   art,
   mode,
   busy,
+  pending,
   run,
   titleId,
   onClose,
@@ -58,6 +63,11 @@ export function GachaHostDetail({
 }: Props) {
   const facts = hostDetailFacts(host, services);
   const online = facts.online;
+  // The state word each action's accessible name ends with (W6/D72) — the same rule the capsule card's
+  // and the track's labels already carry, now on the dossier's own bar: it is disabled for the whole
+  // 90/180/300 s grace window, and WHICH button renders is the PRESENTED liveness, so a pending
+  // shutdown puts "Wake" on screen and without this word the slip offers to wake a machine going down.
+  const state = livenessWord(online, pending);
   // The ruled star + Services input (§6.1/§4.8): CONFIGURED services, the same count the capsule card
   // rolls its rarity from — never the live list, which would make both flicker when a service blinks.
   const configured = (host.services ?? []).length;
@@ -193,13 +203,16 @@ export function GachaHostDetail({
           brand two-stop with the kit's verified `--accent-ink`, on the prototype's own 12px button radius,
           with the hard offset shadow this theme uses for anything that "sits on" a surface (the nav
           indicator, the user bubble); pressing it sinks the ticket into its own shadow. Shut down is the
-          quiet white pill: a machine's power-off should never be the loudest thing on its dossier. */}
+          quiet white pill: a machine's power-off should never be the loudest thing on its dossier.
+          Each name ends with the machine's state word so a dimmed ticket says WHY (W6/D72) — the kit /
+          cosmos / frontier shape, and the sentence this theme's cards and track already speak. */}
       <div className="gc-acts" aria-busy={busy || undefined}>
         {online ? (
           <>
             <button
               type="button"
               className="gc-act primary"
+              aria-label={`Reboot, ${state}`}
               disabled={busy}
               onClick={() => run("reboot", host)}
             >
@@ -208,6 +221,7 @@ export function GachaHostDetail({
             <button
               type="button"
               className="gc-act danger"
+              aria-label={`Shut down, ${state}`}
               disabled={busy}
               onClick={() => run("shutdown", host)}
             >
@@ -218,6 +232,7 @@ export function GachaHostDetail({
           <button
             type="button"
             className="gc-act primary"
+            aria-label={`Wake, ${state}`}
             disabled={busy}
             onClick={() => run("wake", host)}
           >

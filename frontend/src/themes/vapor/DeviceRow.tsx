@@ -2,6 +2,7 @@ import { memo, type MouseEvent } from "react";
 
 import type { FleetAction } from "../../hooks/useActions";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
+import { livenessWord, type PendingKind } from "../../store/fleetPending";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 
@@ -24,6 +25,9 @@ interface Props {
   featured: boolean;
   open: boolean;
   busy: boolean;
+  /** This machine's pending power transition, if one is running (`useFleet().pending`) — label copy only,
+   *  exactly as on the kit row (W6/D72). A primitive, so the `memo` barrier below still bails. */
+  pending?: PendingKind;
   // Host-PARAMETERIZED (not pre-bound to this row) so FleetTab can pass the controller's stable `toggleRow`
   // / `run` refs directly — a per-row `() => toggleRow(id, i)` closure would be a fresh prop each render and
   // defeat `memo`. The row supplies its own host/index back to the callback (see `toggle`/`invoke` below).
@@ -38,13 +42,27 @@ function act(e: MouseEvent, fn: () => void) {
   fn();
 }
 
-function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, onAction }: Props) {
+function DeviceRowImpl({
+  host,
+  services,
+  index,
+  featured,
+  open,
+  busy,
+  pending,
+  onToggle,
+  onAction,
+}: Props) {
   // Re-bind the host-parameterized callbacks to THIS row. These closures are recreated each render, but
   // they're only handed to DOM elements (not memoized children), so their identity is irrelevant to perf —
   // the memo barrier is on `DeviceRow`'s incoming props, which stay stable.
   const toggle = () => onToggle(host.id, index);
   const invoke = (action: FleetAction) => onAction(action, host);
   const online = !!host.status?.online;
+  // The state word every action name here carries (W6/D72) — vapor had the `.dev.busy` spinner and no
+  // word, so through a grace window its three buttons all read as if nothing were happening; and the arm
+  // INVERTS, so a pending shutdown renders the wake button.
+  const state = livenessWord(online, pending);
   const ping = host.status?.ping_ms ?? null;
   // Vantage-aware base for OUTBOUND links (D3 slice 2): over a VPN origin the LAN ip may be
   // unreachable, so links prefer vpn_host. Display strings below stay on `ip` (that's the LAN fact).
@@ -88,14 +106,14 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
             <button
               className="act reboot"
               data-act="reboot"
-              aria-label={`reboot ${host.name}`}
+              aria-label={`reboot ${host.name}, ${state}`}
               disabled={busy}
               onClick={(e) => act(e, () => invoke("reboot"))}
             />
             <button
               className="act stop"
               data-act="shutdown"
-              aria-label={`shutdown ${host.name}`}
+              aria-label={`shutdown ${host.name}, ${state}`}
               disabled={busy}
               onClick={(e) => act(e, () => invoke("shutdown"))}
             />
@@ -104,7 +122,7 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
           <button
             className="act wake"
             data-act="wake"
-            aria-label={`wake ${host.name}`}
+            aria-label={`wake ${host.name}, ${state}`}
             disabled={busy}
             onClick={(e) => act(e, () => invoke("wake"))}
           />
@@ -205,7 +223,11 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
               ↗ http://{base}
             </a>
           ) : (
-            <button disabled={busy} onClick={(e) => act(e, () => invoke("wake"))}>
+            <button
+              aria-label={`wake ${host.name}, ${state}`}
+              disabled={busy}
+              onClick={(e) => act(e, () => invoke("wake"))}
+            >
               wake
             </button>
           )}

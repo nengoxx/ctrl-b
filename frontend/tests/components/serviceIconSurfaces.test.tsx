@@ -121,6 +121,7 @@ fleet.view = {
   isLoading: false,
   error: null,
   busy: new Set(),
+  pending: new Map(), // W6/D72 — the kit row reads it for its action names
   run,
   toggleRow: noop,
 };

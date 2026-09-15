@@ -238,18 +238,22 @@ describe("the host action bar", () => {
     const h = offline();
     const { container, run } = renderD({ host: h });
     expect(acts(container).map((b) => b.textContent)).toEqual(["Wake"]);
-    fireEvent.click(screen.getByRole("button", { name: "Wake" }));
+    // The VISIBLE text is still the bare verb; the accessible NAME now ends with the machine's state
+    // word (W6/D72 — the whole-rule pin lives in `components/fleetPendingLabels.test.tsx`).
+    fireEvent.click(screen.getByRole("button", { name: "Wake, sleeping" }));
     expect(run).toHaveBeenCalledWith("wake", h);
   });
 
   it("an online machine offers Reboot + Shut down, each on its own typed action", () => {
     const { container, run, h } = renderD();
     expect(acts(container).map((b) => b.textContent)).toEqual(["Reboot", "Shut down"]);
-    fireEvent.click(screen.getByRole("button", { name: "Reboot" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reboot, online" }));
     expect(run).toHaveBeenCalledWith("reboot", h);
-    fireEvent.click(screen.getByRole("button", { name: "Shut down" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shut down, online" }));
     expect(run).toHaveBeenCalledWith("shutdown", h);
-    expect(screen.queryByRole("button", { name: "Wake" })).toBeNull();
+    // W6/D72: every name now ends with the state word, so the absence claim anchors on the wake
+    // PHRASE rather than a whole-name match (the cosmos precedent).
+    expect(screen.queryByRole("button", { name: /^Wake,/ })).toBeNull();
   });
 
   it("busy disables the WHOLE bar and says so, so a second action can't race the first", () => {

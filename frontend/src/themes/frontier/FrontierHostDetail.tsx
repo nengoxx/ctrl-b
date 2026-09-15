@@ -1,6 +1,7 @@
 import type { FleetRun } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
+import { livenessWord, type PendingKind } from "../../store/fleetPending";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 
@@ -22,6 +23,9 @@ interface Props {
   art?: string;
   plate: string; // the license plate — the SAME as the card
   busy: boolean; // host action in flight (disables the bar)
+  /** This machine's pending power transition, if one is running (`useFleet().pending`) — the state word
+   *  each pill's name carries (W6/D72). `busy` already spans the same window; this says WHY. */
+  pending?: PendingKind;
   run: FleetRun;
   titleId: string; // aria-labelledby target the sheet points at (the host name in the banner)
 }
@@ -63,10 +67,23 @@ const IconArrow = () => (
   </svg>
 );
 
-export function FrontierHostDetail({ host, services, art, plate, busy, run, titleId }: Props) {
+export function FrontierHostDetail({
+  host,
+  services,
+  art,
+  plate,
+  busy,
+  pending,
+  run,
+  titleId,
+}: Props) {
   // The values every theme's detail sheet derives the same way (council M6) — shared in lib/hostDetail.ts;
   // frontier's own WORDING (the meta tail, the services heading) composes from them right here.
   const { online, ping, ratio, seen } = hostDetailFacts(host, services);
+  // The state word each pill's accessible name ends with (W6/D72): the bar is held for the whole
+  // 90/180/300 s grace window, and WHICH pill renders is the presented liveness — a pending shutdown
+  // renders "Wake rig", which without the word would promise a wake on a rig that is powering down.
+  const state = livenessWord(online, pending);
 
   // Meta line — role · ip, then a live tail: online adds the ping (only when a value exists); offline reads as
   // WOL-ready when the host has a MAC to wake it, else powered down. Segments joined by " · " (prototype .ro2).
@@ -136,12 +153,14 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
 
       {/* Action bar — Reboot + Shut down when online, Wake rig when asleep. The typed-action `run` handles the
           confirm dialog (shutdown/reboot) + the pending-transition record + toasts; `busy` disables the bar (the prototype's
-          `.busy` dim is keyed off :disabled in CSS — the class is carried for prototype parity). */}
+          `.busy` dim is keyed off :disabled in CSS — the class is carried for prototype parity), and each
+          name ends with the rig's state word so a held pill says WHY (W6/D72). */}
       <div className="actbar">
         {online ? (
           <>
             <button
               className={"pill wake" + (busy ? " busy" : "")}
+              aria-label={`Reboot, ${state}`}
               disabled={busy}
               onClick={() => run("reboot", host)}
             >
@@ -150,6 +169,7 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
             </button>
             <button
               className={"pill stop" + (busy ? " busy" : "")}
+              aria-label={`Shut down, ${state}`}
               disabled={busy}
               onClick={() => run("shutdown", host)}
             >
@@ -159,6 +179,7 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
         ) : (
           <button
             className={"pill wake" + (busy ? " busy" : "")}
+            aria-label={`Wake rig, ${state}`}
             disabled={busy}
             onClick={() => run("wake", host)}
           >

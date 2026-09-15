@@ -669,6 +669,56 @@ describe("the three accessible names carry a pending REBOOT", () => {
   });
 });
 
+// ── THE SHUTTING-DOWN WORD (the intermission wave, W6/D72) ─────────────────────────────────────────
+// `livenessWord` moved to `store/fleetPending` and gained a FIFTH state on the way, because the same
+// missing-word defect the reboot round closed for gacha was still open on the four other fleets — and
+// the shutdown arm is the one that INVERTS: the overlay presents a pending-shutdown machine as OFFLINE,
+// so gacha's sleeping sentences were offering a wake on a machine already going down. The four older
+// wordings are pinned byte-identical in the describes above; these are the two new sentences.
+describe("the accessible names carry a pending SHUTDOWN", () => {
+  const asleep = host({
+    id: "b",
+    name: "atlas",
+    role: null,
+    os_type: "windows",
+    status: { ...host().status!, online: false, ping_ms: null },
+  });
+
+  it("openLabel — the status word, nothing else (the action half stays byte-identical)", () => {
+    expect(openLabel("atlas", false, "shutdown")).toBe("open atlas dossier, shutting down");
+  });
+
+  it("pickLabel — selection keeps its promise; the WAKE instruction goes", () => {
+    expect(pickLabel(asleep, 1, false, "shutdown")).toBe(
+      "atlas, windows, 1 stars, shutting down. Tap to select. Shutdown sequence in progress.",
+    );
+    expect(pickLabel(asleep, 1, true, "shutdown")).toBe(
+      "atlas, windows, 1 stars, shutting down. Selected. Shutdown sequence in progress.",
+    );
+  });
+
+  it("labelCover — the HERO no longer offers to develop a machine that is powering down", () => {
+    expect(labelCover(asleep, 1, true, "shutdown")).toBe(
+      "atlas, windows, 1 stars, on the cover, shutting down. Shutdown sequence in progress.",
+    );
+    expect(labelCover(asleep, 1, false, "shutdown")).toBe(
+      "atlas, windows, 1 stars, shutting down. Supporting cut-in. Puts it on the cover.",
+    );
+  });
+
+  it("never promises a wake, and an untouched sleeping machine still does", () => {
+    for (const said of [
+      openLabel("atlas", false, "shutdown"),
+      pickLabel(asleep, 1, false, "shutdown"),
+      pickLabel(asleep, 1, true, "shutdown"),
+      labelCover(asleep, 1, true, "shutdown"),
+    ]) {
+      expect(said).not.toMatch(/wake/i);
+    }
+    expect(pickLabel(asleep, 1, false)).toContain("tap again to run the wake sequence");
+  });
+});
+
 describe("issueLine — the masthead's own read (why cover ignores the counter)", () => {
   it("numbers the issue from the hero's fleet POSITION, zero-padded", () => {
     expect(issueLine(0, true)).toBe(`ISSUE 01 ${GACHA_COPY.sep} ONLINE`);

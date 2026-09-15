@@ -2,6 +2,7 @@ import type { MouseEvent } from "react";
 
 import { useFleet } from "../../hooks/useFleet";
 import { relativeTime } from "../../lib/relativeTime";
+import { livenessWord, type PendingKind } from "../../store/fleetPending";
 import type { Host, Service } from "../../types";
 import { ownerArtUrl, serviceBannerProps, useServiceBanners } from "./ownerArt";
 import { ServiceIcon } from "./ServiceIcon";
@@ -23,7 +24,7 @@ interface Props {
 }
 
 export function KitFleet({ active }: Props) {
-  const { hosts, svcByHost, open, isLoading, error, busy, run, toggleRow } = useFleet();
+  const { hosts, svcByHost, open, isLoading, error, busy, pending, run, toggleRow } = useFleet();
 
   // Summary stats — all derived from real data (no mock uptime/cpu/temp).
   const total = hosts.length;
@@ -62,6 +63,7 @@ export function KitFleet({ active }: Props) {
               services={svcByHost.get(h.id) ?? []}
               open={open.has(h.id)}
               busy={busy.has(h.id)}
+              pending={pending.get(h.id)?.kind}
               onToggle={() => toggleRow(h.id, i)}
               onWake={() => run("wake", h)}
               onStop={() => run("shutdown", h)}
@@ -106,17 +108,25 @@ interface RowProps {
   services: Service[];
   open: boolean;
   busy: boolean;
+  /** This machine's pending power transition, if one is running (`useFleet().pending`). Label copy only —
+   *  the row's DISABLED state already rides `busy`, which the same record feeds. `undefined` = settled. */
+  pending?: PendingKind;
   onToggle: () => void;
   onWake: () => void;
   onStop: () => void;
 }
 
-function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: RowProps) {
+function DeviceRow({ host, services, open, busy, pending, onToggle, onWake, onStop }: RowProps) {
   // The owner's BANNER for each service (the Kit Art System). The kit has no bundled pool of its own, so
   // the ladder is one rung: the owner's file, else nothing — and "nothing" means no class and no custom
   // property reach the row, i.e. the exact markup that shipped before this slice (§A5's kit-surface row).
   const bannerFor = useServiceBanners();
   const online = !!host.status?.online;
+  // The state word the action button's name carries (W6/D72, `store/fleetPending#livenessWord`): the
+  // control is disabled for the whole 90/180/300 s grace window, and which ARM renders is the presented
+  // liveness — so a pending shutdown puts the WAKE button on screen, and only this word keeps the name
+  // from promising a wake on a machine that is going down.
+  const state = livenessWord(online, pending);
   const ping = host.status?.ping_ms ?? null;
   const svcCount = services.length ? ` · ${services.length} svc` : "";
   // role · os (+ svc); "dormant" only when offline. Ping moved to the expanded meta (next to Last seen);
@@ -141,7 +151,7 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
         {online ? (
           <button
             className="act stop"
-            aria-label={`shut down ${host.name}`}
+            aria-label={`shut down ${host.name}, ${state}`}
             disabled={busy}
             onClick={(e) => act(e, onStop)}
           >
@@ -163,7 +173,7 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
         ) : (
           <button
             className="act wake"
-            aria-label={`wake ${host.name}`}
+            aria-label={`wake ${host.name}, ${state}`}
             disabled={busy}
             onClick={(e) => act(e, onWake)}
           >

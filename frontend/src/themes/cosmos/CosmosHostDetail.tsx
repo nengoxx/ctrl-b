@@ -1,6 +1,7 @@
 import type { FleetRun } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
+import { livenessWord, type PendingKind } from "../../store/fleetPending";
 import {
   hostArtProps,
   ownerArtUrl,
@@ -26,6 +27,9 @@ interface Props {
   host: Host;
   services: Service[];
   busy: boolean; // host action in flight (disables the bar)
+  /** This machine's pending power transition, if one is running (`useFleet().pending`) — the state word
+   *  the action bar's names carry (W6/D72). `busy` above already spans the same window; this says WHY. */
+  pending?: PendingKind;
   run: FleetRun;
   titleId: string; // aria-labelledby target the sheet points at (the host name)
   // Step to the prev (-1) / next (+1) planet WITHOUT closing the sheet (the same select path a tap-another-
@@ -84,11 +88,15 @@ const IconChevRight = () => (
   </svg>
 );
 
-export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }: Props) {
+export function CosmosHostDetail({ host, services, busy, pending, run, titleId, onStep }: Props) {
   // The values every theme's detail sheet derives the same way (council M6) — shared in lib/hostDetail.ts.
   // Cosmos reads `lastSeen` rather than the shared `seen`, because its ONLINE branch shows the deferred
   // uptime placeholder where frontier shows "now" — a real difference between the two sheets, kept.
   const { online, ping, lastSeen, ratio: svcCount } = hostDetailFacts(host, services);
+  // The state word each action's accessible name ends with (W6/D72): the bar is disabled for the whole
+  // 90/180/300 s grace window, and WHICH pill renders is the presented liveness — a pending shutdown puts
+  // "Wake" on screen, so without this word the sheet offers a wake on a machine that is going down.
+  const state = livenessWord(online, pending);
 
   // Online → "alive" (uptime, deferred → "—"); offline → last seen. Shown next to the status, no caption.
   const aliveOrSeen = online ? ALIVE_PLACEHOLDER : lastSeen;
@@ -166,17 +174,23 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
       {/* action bar — Wake when offline; Reboot + Shutdown when online; Ping always. The PRIMARY action (Wake /
           Reboot) is the glowing accent pill; Shut down is a danger ghost; Ping a quiet ghost. The typed-action
           `run` handles the confirm dialog (shutdown/reboot) + the pending-transition record + toasts;
-          `busy` disables it (and spans the grace window via useFleet). */}
+          `busy` disables it (and spans the grace window via useFleet), and each name ends with the
+          machine's state word so a dimmed pill says WHY (W6/D72). */}
       <div className="hd-actions">
         {online ? (
           <>
-            <button className="hd-act primary" disabled={busy} onClick={() => run("reboot", host)}>
+            <button
+              className="hd-act primary"
+              aria-label={`Reboot, ${state}`}
+              disabled={busy}
+              onClick={() => run("reboot", host)}
+            >
               <IconReboot />
               Reboot
             </button>
             <button
               className="hd-act danger icon-only"
-              aria-label="Shut down"
+              aria-label={`Shut down, ${state}`}
               disabled={busy}
               onClick={() => run("shutdown", host)}
             >
@@ -184,12 +198,25 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
             </button>
           </>
         ) : (
-          <button className="hd-act primary" disabled={busy} onClick={() => run("wake", host)}>
+          <button
+            className="hd-act primary"
+            aria-label={`Wake, ${state}`}
+            disabled={busy}
+            onClick={() => run("wake", host)}
+          >
             <IconPower />
             Wake
           </button>
         )}
-        <button className="hd-act" disabled={busy} onClick={() => run("ping", host)}>
+        {/* PING carries the word too: it is dimmed by the same `busy` for the same window, and a bar
+            where two pills explain themselves and the third simply greys is a bar that answers the
+            question inconsistently. */}
+        <button
+          className="hd-act"
+          aria-label={`Ping, ${state}`}
+          disabled={busy}
+          onClick={() => run("ping", host)}
+        >
           <IconPing />
           Ping
         </button>

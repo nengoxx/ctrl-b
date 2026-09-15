@@ -6,6 +6,7 @@ import {
   WAKE_WINDOW_MS,
   beginPending,
   clearPending,
+  livenessWord,
   overlayPending,
   pendingSnapshot,
   reconcilePending,
@@ -345,5 +346,31 @@ describe("overlayPending — the assumed-state presentation", () => {
     beginPending("ghost", "reboot");
     expect(overlayPending(unpolled)).toBe(unpolled);
     expect(unpolled[0].status).toBeNull();
+  });
+});
+
+// ── livenessWord — the state word every fleet's controls carry (W6/D72) ────────────────────────────
+// It moved here from `themes/gacha/fleet.ts` when the intermission wave found the same missing-word
+// defect open on kit, cosmos, frontier and vapor. Two claims are pinned: gacha's four shipped wordings
+// are byte-identical through the move, and the PENDING RECORD outranks the raw flag in BOTH directions —
+// which is what makes the word right on the arm the overlay actually renders.
+describe("livenessWord — one rule, five states", () => {
+  it("keeps gacha's four wordings byte-identical", () => {
+    expect(livenessWord(true)).toBe("online");
+    expect(livenessWord(false)).toBe("sleeping");
+    expect(livenessWord(false, "wake")).toBe("waking");
+    expect(livenessWord(true, "reboot")).toBe("rebooting");
+  });
+
+  it("says SHUTTING DOWN on the arm a pending shutdown actually renders", () => {
+    // `overlayPending` presents a pending-shutdown host as OFFLINE, so the control on screen is the WAKE
+    // one — the W6 inversion. Without this word its name promises a wake on a machine going down.
+    expect(livenessWord(false, "shutdown")).toBe("shutting down");
+  });
+
+  it("lets the pending record outrank the flag in both directions", () => {
+    expect(livenessWord(false, "reboot")).toBe("rebooting"); // presented online, polled offline
+    expect(livenessWord(true, "shutdown")).toBe("shutting down"); // still pingable, going down
+    expect(livenessWord(true, "wake")).toBe("online"); // …but the SERVER's word beats an assumption
   });
 });

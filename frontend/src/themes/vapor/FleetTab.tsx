@@ -32,6 +32,7 @@ export function FleetTab({ active }: Props) {
     isLoading,
     error,
     busy,
+    pending,
     run,
     feature,
     toggleRow,
@@ -73,6 +74,7 @@ export function FleetTab({ active }: Props) {
             featured={i === featured}
             open={open.has(h.id)}
             busy={busy.has(h.id)}
+            pending={pending.get(h.id)?.kind}
             onToggle={toggleRow}
             onAction={run}
           />

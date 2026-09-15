@@ -849,6 +849,7 @@ export function GachaFleet({ active }: { active: boolean }) {
             art={detailArt}
             mode={starMode}
             busy={busy.has(detail.host.id)}
+            pending={pending.get(detail.host.id)?.kind}
             run={run}
             titleId={titleId}
             onClose={closeDossier}

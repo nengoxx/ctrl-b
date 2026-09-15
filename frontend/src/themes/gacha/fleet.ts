@@ -3,7 +3,7 @@
 // reason `roster.ts` and `stars.ts` are: the §7 acceptance-matrix rows they own (0 / 1 / many hosts, a fleet
 // that has not resolved yet, a host with no role) are then ordinary unit tests rather than render assertions.
 
-import type { PendingKind } from "../../store/fleetPending";
+import { livenessWord, type PendingKind } from "../../store/fleetPending";
 import type { Host } from "../../types";
 import { GACHA_COPY, SCENE_TITLES, unitTags } from "./copy";
 
@@ -252,20 +252,10 @@ export function tapAction(
   return selected ? "wake" : "select";
 }
 
-/** The LIVENESS WORD every accessible name in this file carries — ONE rule for four states, so the three
- *  builders below cannot drift about which fact outranks which.
- *
- *  REBOOTING outranks online because a pending reboot is PRESENTED as online (`store/fleetPending`'s
- *  commanded-end-state overlay): the raw flag can no longer tell a rebooting machine from a settled one,
- *  and the pending record is the only thing that can. ONLINE then outranks WAKING, which is the chip's
- *  own rule and predates this — the server's word beats an assumption the same poll is about to clear.
- *
- *  Lower case because these are sentences; the chips spell the same four states in caps themselves. */
-function livenessWord(online: boolean, pending?: PendingKind): string {
-  if (pending === "reboot") return "rebooting";
-  if (online) return "online";
-  return pending === "wake" ? "waking" : "sleeping";
-}
+// The LIVENESS WORD the three builders below carry lives in `store/fleetPending` since the intermission
+// wave (W6/D72) — beside the `PendingKind` that is the only thing able to tell these states apart, and
+// shared with the four fleets that had no state word at all. Gacha's four wordings came through it
+// byte-identical; the fifth (`shutting down`) is new and arrives here in the two sentences below.
 
 /** The alt layouts' accessible name, and it says exactly as many steps as the control HAS (the lab's own
  *  two forms, `labelFor` and `labelPoster`, wording verbatim).
@@ -300,6 +290,14 @@ export function pickLabel(
     return selected
       ? `${head}Selected. Wake sequence in progress.`
       : `${head}Tap to select. Wake sequence in progress.`;
+  // A pending SHUTDOWN presents the machine OFFLINE, so without this arm the sleeping sentence below
+  // would offer a wake on a machine whose shutdown is still running — the W6 inversion, in gacha's
+  // own voice. Same shape as the waking arm: selection keeps its promise, only the wake instruction
+  // goes (the busy union refuses the tap either way).
+  if (pending === "shutdown")
+    return selected
+      ? `${head}Selected. Shutdown sequence in progress.`
+      : `${head}Tap to select. Shutdown sequence in progress.`;
   return selected
     ? `${head}Selected. Tap to run the wake sequence.`
     : `${head}Tap to select; tap again to run the wake sequence.`;
@@ -331,11 +329,15 @@ export function labelCover(
     const act =
       pending === "reboot"
         ? "Restart sequence in progress."
-        : online
-          ? "Opens the unit dossier."
-          : pending === "wake"
-            ? "Wake sequence in progress."
-            : "Develops the cover and wakes it.";
+        : // W6: a shutdown presents the machine OFFLINE, so the develop promise below would offer a
+          // wake on a hero that is powering down.
+          pending === "shutdown"
+          ? "Shutdown sequence in progress."
+          : online
+            ? "Opens the unit dossier."
+            : pending === "wake"
+              ? "Wake sequence in progress."
+              : "Develops the cover and wakes it.";
     return `${head}on the cover, ${word}. ${act}`;
   }
   // A waking (or rebooting) cut-in KEEPS its promote promise (owner ruling 2026-08-30, second pass):

@@ -133,13 +133,15 @@ describe("CosmosHostDetail — the derived values (M6 pinning)", () => {
     expect(run).toHaveBeenCalledWith("shutdown", h);
     fireEvent.click(screen.getByRole("button", { name: /ping/i }));
     expect(run).toHaveBeenCalledWith("ping", h);
-    expect(screen.queryByRole("button", { name: /^wake$/i })).toBeNull();
+    // W6/D72: every action name now ends with the machine's state word ("Reboot, online"), so the
+    // absence claim anchors on the wake PHRASE rather than a whole-name match.
+    expect(screen.queryByRole("button", { name: /^wake,/i })).toBeNull();
   });
 
   it("offline → Wake (+ Ping); busy disables the whole bar", () => {
     const h = host({ status: { ...host().status!, online: false, ping_ms: null } });
     const { run } = renderHD({ host: h });
-    fireEvent.click(screen.getByRole("button", { name: /^wake$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^wake, sleeping$/i }));
     expect(run).toHaveBeenCalledWith("wake", h);
     cleanup();
 
