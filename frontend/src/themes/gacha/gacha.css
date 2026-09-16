@@ -1527,6 +1527,14 @@
         top: 32px;
       }
     }
+    /* A PENDING chip takes the ribbon rung at EVERY width (owner ruling on D72's open question): the
+     * transition words are the long ones — SHUTTING DOWN is ~1.6× SLEEPING's width, which re-opens the
+     * star collision above the 380px cutoff (the same arithmetic as the block above, plus ~46px of
+     * pill). The rung below is clear of the stars at any width, the collision is transient by nature
+     * (a grace window is 90–300 s), and the chip returns to the top rung the moment the record ends. */
+    .gc-card:not(.feat):not(.wide) .state.pend {
+      top: 32px;
+    }
     /* ── THE `NEW` RIBBON — a DEMO (G6 item iv). The prototype hand-assigns a third `state` value on one
      * fixture card ("NEW"); no live field exists for it and none is invented here, so ONE card in the
      * track wears it purely so the owner can judge the look and rule on keep/drop/meaning at the device

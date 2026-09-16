@@ -217,9 +217,19 @@ describe("pingText — the ONE ping format, shared by the plate and the dossier 
 });
 
 describe("dossierSub — the dossier's ROLE · STATE line", () => {
-  it("spells the state in the same two words the card's chip uses", () => {
+  it("spells the state in the same words the card's chip uses", () => {
     expect(dossierSub(host(), true)).toBe(`WORKSTATION ${GACHA_COPY.sep} ONLINE`);
     expect(dossierSub(host(), false)).toBe(`WORKSTATION ${GACHA_COPY.sep} SLEEPING`);
+  });
+
+  it("speaks the grace-window states too — the chips' own inversion, closed on this line", () => {
+    // A pending shutdown is PRESENTED offline; before the visible-word ruling this line read SLEEPING
+    // on a machine that is going down. `livenessWord` is the one rule (W6/D72), here in gacha caps.
+    expect(dossierSub(host(), false, "shutdown")).toBe(
+      `WORKSTATION ${GACHA_COPY.sep} SHUTTING DOWN`,
+    );
+    expect(dossierSub(host(), false, "wake")).toBe(`WORKSTATION ${GACHA_COPY.sep} WAKING`);
+    expect(dossierSub(host(), true, "reboot")).toBe(`WORKSTATION ${GACHA_COPY.sep} REBOOTING`);
   });
 
   it("falls back to the OS when a machine declares no role — the plate's own pair", () => {

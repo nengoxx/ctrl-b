@@ -174,7 +174,7 @@ export function GachaHostDetail({
         <div className="gc-dossier-title">
           <span className="unit-no">UNIT DOSSIER</span>
           <h2 id={titleId}>{host.name}</h2>
-          <p>{dossierSub(host, online)}</p>
+          <p>{dossierSub(host, online, pending)}</p>
         </div>
       </div>
 

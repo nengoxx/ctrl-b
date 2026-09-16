@@ -2,6 +2,7 @@ import { useRef, useState, type CSSProperties } from "react";
 
 import { FocalImg } from "../../components/FocalImg";
 import { hostDetailFacts } from "../../lib/hostDetail";
+import { livenessWord } from "../../store/fleetPending";
 import { useThemeSetting } from "../../theme-engine/settings";
 import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
@@ -293,19 +294,13 @@ export function GachaPoster({
                       </span>
                       <span className="po-role">{roleLabel(host)}</span>
                     </span>
-                    {/* STATUS, always literal (§12.3 ④). `WAKING` and `REBOOTING` are licensed by the
-                      grace window (store/fleetPending) and by nothing else, and the window ends on
-                      agreement, expiry, or failure. REBOOTING outranks ONLINE because the overlay
-                      PRESENTS a rebooting machine as online; observed-online outranks WAKING. */}
-                    <span className="po-chip">
-                      {kind === "reboot"
-                        ? "REBOOTING"
-                        : online
-                          ? "ONLINE"
-                          : kind === "wake"
-                            ? "WAKING"
-                            : "SLEEPING"}
-                    </span>
+                    {/* STATUS, always literal (§12.3 ④), spelled by `livenessWord` in gacha caps — the
+                      SAME ranking every fleet's accessible names carry (W6/D72). The pending states are
+                      licensed by the grace window (store/fleetPending) and by nothing else, and the
+                      window ends on agreement, expiry, or failure; the shared word is what closed this
+                      chip's inversion (a pending shutdown is PRESENTED offline — the hand-rolled ladder
+                      read it as SLEEPING). */}
+                    <span className="po-chip">{livenessWord(online, kind).toUpperCase()}</span>
                     {/* THE CORNER TAG (owner, third walk) — the lab's `.po-jp`, revived as FLAVOUR: a
                       frozen pool glyph picked by fleet POSITION, never anything host-derived. It says
                       nothing about the machine, which is why it is `aria-hidden` and why the pool is in

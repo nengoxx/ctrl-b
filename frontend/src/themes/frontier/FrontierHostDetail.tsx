@@ -1,7 +1,7 @@
 import type { FleetRun } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
-import { livenessWord, type PendingKind } from "../../store/fleetPending";
+import { livenessWord, transitionWord, type PendingKind } from "../../store/fleetPending";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 
@@ -84,6 +84,15 @@ export function FrontierHostDetail({
   // 90/180/300 s grace window, and WHICH pill renders is the presented liveness — a pending shutdown
   // renders "Wake rig", which without the word would promise a wake on a rig that is powering down.
   const state = livenessWord(online, pending);
+  // …and the VISIBLE half (owner ruling on D72's open question): the banner's status chip speaks the
+  // transition word while the grace window runs — sentence-cased in frontier's voice — and returns to
+  // Online/Dormant byte-identical when the record clears.
+  const trans = transitionWord(online, pending);
+  const statText = trans
+    ? `${trans[0].toUpperCase()}${trans.slice(1)}…`
+    : online
+      ? "Online"
+      : "Dormant";
 
   // Meta line — role · ip, then a live tail: online adds the ping (only when a value exists); offline reads as
   // WOL-ready when the host has a MAC to wake it, else powered down. Segments joined by " · " (prototype .ro2).
@@ -118,7 +127,7 @@ export function FrontierHostDetail({
           <div className="ov" />
           <div className={"stat" + (online ? "" : " off")}>
             <span className="led" aria-hidden />
-            {online ? "Online" : "Dormant"}
+            {statText}
           </div>
           <h2 className="nm" id={titleId}>
             {host.name}

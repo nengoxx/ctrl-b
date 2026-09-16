@@ -2,7 +2,7 @@ import type { MouseEvent } from "react";
 
 import { useFleet } from "../../hooks/useFleet";
 import { relativeTime } from "../../lib/relativeTime";
-import { livenessWord, type PendingKind } from "../../store/fleetPending";
+import { livenessWord, transitionWord, type PendingKind } from "../../store/fleetPending";
 import type { Host, Service } from "../../types";
 import { ownerArtUrl, serviceBannerProps, useServiceBanners } from "./ownerArt";
 import { ServiceIcon } from "./ServiceIcon";
@@ -127,12 +127,19 @@ function DeviceRow({ host, services, open, busy, pending, onToggle, onWake, onSt
   // liveness — so a pending shutdown puts the WAKE button on screen, and only this word keeps the name
   // from promising a wake on a machine that is going down.
   const state = livenessWord(online, pending);
+  // …and the VISIBLE half (owner ruling on D72's open question): while the grace window runs, the
+  // subtitle's liveness slot says the transition word instead of "dormant"/nothing, so sighted eyes get
+  // the same reason the accessible name carries — a disabled button for 90/180/300 s otherwise explains
+  // itself to nobody.
+  const trans = transitionWord(online, pending);
   const ping = host.status?.ping_ms ?? null;
   const svcCount = services.length ? ` · ${services.length} svc` : "";
   // role · os (+ svc); "dormant" only when offline. Ping moved to the expanded meta (next to Last seen);
   // the LED conveys online at a glance, so the collapsed subtitle no longer carries it. Null role drops out.
   const sub =
-    [host.role, host.os_type, online ? null : "dormant"].filter(Boolean).join(" · ") + svcCount;
+    [host.role, host.os_type, trans ? `${trans}…` : online ? null : "dormant"]
+      .filter(Boolean)
+      .join(" · ") + svcCount;
 
   return (
     <div

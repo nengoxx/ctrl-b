@@ -187,6 +187,19 @@ export function livenessWord(online: boolean, pending?: PendingKind): string {
   return pending === "wake" ? "waking" : "sleeping";
 }
 
+/** The VISIBLE half of the same rule (the owner's ruling on D72's open question): the word above, but
+ *  only when it names a TRANSITION — a surface showing it replaces its steady liveness copy ("dormant",
+ *  "asleep", "Online") while the grace window runs, and renders byte-identical to before the moment the
+ *  record clears. `null` is the steady case, which includes a pending WAKE the server has already
+ *  confirmed: `livenessWord` says "online" there (the server's word beats the assumption), and painting
+ *  that steady word with in-progress dressing would promise motion where none is left. Each theme
+ *  formats the word in its own voice (casing/ellipsis) — the FACT is shared, the voice is not. */
+export function transitionWord(online: boolean, pending?: PendingKind): string | null {
+  if (!pending) return null;
+  const word = livenessWord(online, pending);
+  return word === "online" || word === "sleeping" ? null : word;
+}
+
 /** Reactive read — the stable map reference (replaced only on real writes, per the createStore
  *  snapshot contract). */
 export function usePendingFleet(): ReadonlyMap<string, PendingEntry> {

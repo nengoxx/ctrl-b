@@ -10,6 +10,7 @@ import {
   overlayPending,
   pendingSnapshot,
   reconcilePending,
+  transitionWord,
 } from "../../src/store/fleetPending";
 import type { Host } from "../../src/types";
 
@@ -372,5 +373,23 @@ describe("livenessWord — one rule, five states", () => {
     expect(livenessWord(false, "reboot")).toBe("rebooting"); // presented online, polled offline
     expect(livenessWord(true, "shutdown")).toBe("shutting down"); // still pingable, going down
     expect(livenessWord(true, "wake")).toBe("online"); // …but the SERVER's word beats an assumption
+  });
+});
+
+describe("transitionWord — the VISIBLE half of the same rule (owner ruling on D72's open question)", () => {
+  it("hands a surface the word only while it names a transition", () => {
+    expect(transitionWord(false, "wake")).toBe("waking");
+    expect(transitionWord(true, "reboot")).toBe("rebooting");
+    expect(transitionWord(false, "shutdown")).toBe("shutting down");
+    expect(transitionWord(false, "reboot")).toBe("rebooting"); // outranks the flag, both directions
+    expect(transitionWord(true, "shutdown")).toBe("shutting down");
+  });
+
+  it("is null for every steady state, so pre-ruling copy renders byte-identical", () => {
+    expect(transitionWord(true)).toBeNull();
+    expect(transitionWord(false)).toBeNull();
+    // A pending WAKE the server already confirmed is STEADY: `livenessWord` says "online" (the server's
+    // word beats the assumption), and in-progress dressing on a steady word would promise leftover motion.
+    expect(transitionWord(true, "wake")).toBeNull();
   });
 });

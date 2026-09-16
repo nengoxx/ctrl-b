@@ -9,6 +9,8 @@ import { describe, expect, it } from "vitest";
 import { GACHA_COPY, gachaGlyphSet } from "../../src/themes/gacha/copy";
 import { gacha } from "../../src/themes/gacha";
 
+import { cssRules } from "./cssRules";
+
 // gacha's CHROME re-skin — the LAYER-TRAP guard (the owner's G0 eyeball wave).
 //
 // gacha.css re-skins kit surfaces (`.kit-appbar`, `.kit-tabbar`, `.kit-tab-ind`, `.kit .switch`) from
@@ -209,6 +211,21 @@ describe("gacha chrome — the values live in tokens.css (council M7)", () => {
 // ── THE TRACK HEAD's HARD ACCENT DROP (owner ruling, the fourth E1 dev-unit walk) ────────────────────
 // "Can it have a shadow like the fleet button? So it's not just white… like the fleet button and the user
 // bubbles, the accent shadow." The theme's "sits ON the surface" motif, on the fleet heading's kanji.
+describe("gacha — the pending chip's ribbon rung (D72 addendum)", () => {
+  it("pins `.state.pend` at top: 32px, OUTSIDE every media query", () => {
+    // The Emma review's pin (LOW-1): the component test proves the CLASS lands, but deleting the rule —
+    // or the named bypass, moving it inside the 380px block so it only holds where the steady rule
+    // already did — would stay green while SHUTTING DOWN re-opens the measured 5★ star collision above
+    // 380px. So: the exact rule must exist with the rung, and no @media body may own `.pend`.
+    const rules = cssRules(css);
+    const pend = rules.find((r) => r.selector === ".gc-card:not(.feat):not(.wide) .state.pend");
+    expect(pend, "the pend rung rule must exist at top level").toBeDefined();
+    expect(pend!.declarations).toContain("top: 32px");
+    for (const r of rules.filter((r) => r.selector.startsWith("@media")))
+      expect(r.body, `${r.selector} must not own the pend rung`).not.toContain(".pend");
+  });
+});
+
 describe("gacha — the track head's accent drop", () => {
   it("reuses the motif's SHAPE and colour source, derived rather than restated", () => {
     // `--gc-ind-shadow` (nav pill) and `--gc-bubble-user-shadow` (user bubble) are both

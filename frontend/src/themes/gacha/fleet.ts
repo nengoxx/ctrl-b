@@ -125,10 +125,11 @@ export function pingText(ms: number): string {
 }
 
 /** The unit DOSSIER's subtitle (G2) — the prototype's `Workstation · ONLINE` line under the machine name
- *  (index.html:28, `${role} · ${status}`). Same role fallback as a capsule plate, and the state spelled in
- *  the same two words the card's chip uses, so the two surfaces describe a machine identically. */
-export function dossierSub(host: Host, online: boolean): string {
-  return `${roleLabel(host)} ${GACHA_COPY.sep} ${online ? "ONLINE" : "SLEEPING"}`;
+ *  (index.html:28, `${role} · ${status}`). Same role fallback as a capsule plate, and the state spelled by
+ *  `livenessWord` in the same caps the card's chip uses (W6/D72), so the two surfaces describe a machine
+ *  identically — a pending shutdown reads SHUTTING DOWN here too, not SLEEPING. */
+export function dossierSub(host: Host, online: boolean, pending?: PendingKind): string {
+  return `${roleLabel(host)} ${GACHA_COPY.sep} ${livenessWord(online, pending).toUpperCase()}`;
 }
 
 /** A machine's role in the arcade's voice: its configured role, falling back to the OS when it declares

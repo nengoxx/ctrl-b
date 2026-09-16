@@ -5178,3 +5178,16 @@ FIRST — rot silently, and the cost is paid by the next designer, who reads AGE
 the transport they need does not exist. The 2026-08-17 doc-truth pass said it and this wave measured
 it again: **a wave that touches a subsystem lands that subsystem's SPEC/DESIGN/doc-map rows in the
 same wave.**
+
+**Addendum (owner rulings 2026-09-16, closing the wave's two open decisions):** ④'s VISIBLE half is
+RULED IN and built — `transitionWord(online, pending)` beside `livenessWord` hands every fleet
+surface the word ONLY while it names a transition (waking/rebooting/shutting down; a
+server-confirmed wake is steady → nothing), each theme speaking it in its own voice: the kit and
+vapor rows' subtitle slot, cosmos's status pill and frontier's banner chip (lowercase/sentence-case
++ "…"), gacha in caps — whose card and poster chips now render `livenessWord` directly (the
+hand-rolled ladders read a pending shutdown as SLEEPING; deduped, SHUTTING DOWN added) and whose
+pair-card chip takes the ribbon rung (`.state.pend`) at every width, because the long words re-open
+the measured 5★ star collision the 380px media rule closed for the steady pair. Steady-state copy is
+byte-identical to before — the visible change exists only while a pending record does
+(`fleetPendingLabels.test.tsx` pins both halves). ⑥ is RULED OFF for this deploy: `trusted_hosts`
+stays empty — a documented, built feature awaiting a future opt-in, not a config item to fill now.

@@ -1,7 +1,7 @@
 import type { FleetRun } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
-import { livenessWord, type PendingKind } from "../../store/fleetPending";
+import { livenessWord, transitionWord, type PendingKind } from "../../store/fleetPending";
 import {
   hostArtProps,
   ownerArtUrl,
@@ -97,6 +97,9 @@ export function CosmosHostDetail({ host, services, busy, pending, run, titleId, 
   // 90/180/300 s grace window, and WHICH pill renders is the presented liveness — a pending shutdown puts
   // "Wake" on screen, so without this word the sheet offers a wake on a machine that is going down.
   const state = livenessWord(online, pending);
+  // …and the VISIBLE half (owner ruling on D72's open question): while the grace window runs, the
+  // status pill says the transition word; the steady copy comes back byte-identical when it clears.
+  const trans = transitionWord(online, pending);
 
   // Online → "alive" (uptime, deferred → "—"); offline → last seen. Shown next to the status, no caption.
   const aliveOrSeen = online ? ALIVE_PLACEHOLDER : lastSeen;
@@ -153,7 +156,7 @@ export function CosmosHostDetail({ host, services, busy, pending, run, titleId, 
           <span className={"hd-status" + (online ? " on" : "")}>
             <span className="led" aria-hidden />
             <span className="t">
-              {online ? "online" : "asleep"}
+              {trans ? `${trans}…` : online ? "online" : "asleep"}
               {host.role ? ` · ${host.role}` : ""}
             </span>
           </span>

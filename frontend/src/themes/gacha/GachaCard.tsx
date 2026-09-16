@@ -1,7 +1,7 @@
 import type { PointerEvent } from "react";
 
 import { FocalImg } from "../../components/FocalImg";
-import type { PendingKind } from "../../store/fleetPending";
+import { livenessWord, transitionWord, type PendingKind } from "../../store/fleetPending";
 import type { Host } from "../../types";
 import { openLabel, plateSub, type CapsuleShape } from "./fleet";
 import { GachaStar } from "./GachaStar";
@@ -95,17 +95,17 @@ export function GachaCard({ host, art, shape, mode, onOpen, isNew, pending }: Pr
             <GachaStar key={i} hi={isHighStar(i, mode)} />
           ))}
         </span>
-        {/* REBOOTING outranks ONLINE because a pending reboot is PRESENTED as online (the overlay's
-          commanded end state), so `online` alone can no longer tell the two apart; ONLINE then
-          outranks WAKING, which is the older rule — the server's word beats an assumption. */}
-        <span className={"state" + (online ? " on" : "")}>
-          {pending === "reboot"
-            ? "REBOOTING"
-            : online
-              ? "ONLINE"
-              : pending === "wake"
-                ? "WAKING"
-                : "SLEEPING"}
+        {/* The chip speaks `livenessWord`'s five states in gacha caps — the SAME ranking every fleet's
+          accessible names carry (W6/D72), which is what closed this chip's own inversion: a pending
+          shutdown is PRESENTED offline, and the hand-rolled ladder here used to read that as SLEEPING
+          on a machine that is going down. `.pend` drops a transition word to the ribbon rung on pair
+          cards (gacha.css): the long words re-open the 5★ star collision above the 380px cutoff. */}
+        <span
+          className={
+            "state" + (online ? " on" : "") + (transitionWord(online, pending) ? " pend" : "")
+          }
+        >
+          {livenessWord(online, pending).toUpperCase()}
         </span>
         {/* The `NEW` ribbon DEMO (G6 item iv). `aria-hidden` because it carries nothing: it is a look the
           owner is being shown, not a fact about the machine — and the button's own label already says the

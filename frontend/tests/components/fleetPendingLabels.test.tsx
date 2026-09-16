@@ -29,6 +29,7 @@ import type { PendingKind } from "../../src/store/fleetPending";
 import { KitFleet } from "../../src/theme-engine/kit/Fleet";
 import { CosmosHostDetail } from "../../src/themes/cosmos/CosmosHostDetail";
 import { FrontierHostDetail } from "../../src/themes/frontier/FrontierHostDetail";
+import { GachaCard } from "../../src/themes/gacha/GachaCard";
 import { GachaHostDetail } from "../../src/themes/gacha/GachaHostDetail";
 import { DeviceRow } from "../../src/themes/vapor/DeviceRow";
 import type { Host } from "../../src/types";
@@ -110,6 +111,27 @@ describe("the kit device row — the state word rides the control that renders",
     expect(label).toBe("wake alpha, shutting down");
     expect(container.querySelector<HTMLButtonElement>("button.act.wake")?.disabled).toBe(true);
   });
+
+  it("VISIBLE (owner ruling on D72's open question): the subtitle speaks the transition word", () => {
+    // The sighted half of the same rule — a disabled button for 90/180/300 s with no visible reason.
+    // The word rides the sub's liveness slot only while the grace window runs…
+    expect(kit(false, "shutdown").container.querySelector(".role")?.textContent).toContain(
+      "shutting down…",
+    );
+    cleanup();
+    expect(kit(false, "wake").container.querySelector(".role")?.textContent).toContain("waking…");
+    cleanup();
+    expect(kit(true, "reboot").container.querySelector(".role")?.textContent).toContain(
+      "rebooting…",
+    );
+    cleanup();
+    // …and the steady copy is byte-identical when no record exists (the pre-ruling look).
+    expect(kit(false).container.querySelector(".role")?.textContent).toBe(
+      "workstation · linux · dormant",
+    );
+    cleanup();
+    expect(kit(true).container.querySelector(".role")?.textContent).toBe("workstation · linux");
+  });
 });
 
 describe("cosmos's host sheet — the same rule on a bespoke action bar", () => {
@@ -151,6 +173,16 @@ describe("cosmos's host sheet — the same rule on a bespoke action bar", () => 
     // and the third simply greys answers the question inconsistently.
     expect(names(sheet(false, "shutdown").container)).toContain("Ping, shutting down");
   });
+
+  it("VISIBLE: the status pill speaks the transition word, then returns to its steady copy", () => {
+    expect(sheet(false, "shutdown").container.querySelector(".hd-status .t")?.textContent).toBe(
+      "shutting down… · workstation",
+    );
+    cleanup();
+    expect(sheet(false).container.querySelector(".hd-status .t")?.textContent).toBe(
+      "asleep · workstation",
+    );
+  });
 });
 
 describe("frontier's rig sheet — the same rule, frontier's own phrases", () => {
@@ -181,6 +213,14 @@ describe("frontier's rig sheet — the same rule, frontier's own phrases", () =>
 
   it("a pending REBOOT reads on the online arm", () => {
     expect(names(sheet(true, "reboot").container)).toContain("Reboot, rebooting");
+  });
+
+  it("VISIBLE: the banner chip sentence-cases the word, then returns to Online/Dormant", () => {
+    expect(sheet(false, "shutdown").container.querySelector(".stat")?.textContent).toBe(
+      "Shutting down…",
+    );
+    cleanup();
+    expect(sheet(false).container.querySelector(".stat")?.textContent).toBe("Dormant");
   });
 });
 
@@ -221,6 +261,18 @@ describe("vapor's device row — the spinner gains the word it never had", () =>
       expect.arrayContaining(["reboot alpha, rebooting", "shutdown alpha, rebooting"]),
     );
   });
+
+  it("VISIBLE: the sub's liveness slot speaks the word, then returns to its steady copy", () => {
+    expect(row(false, "shutdown").container.querySelector(".sub")?.textContent).toBe(
+      "linux · shutting down…",
+    );
+    cleanup();
+    expect(row(true, "reboot").container.querySelector(".sub")?.textContent).toBe(
+      "linux · rebooting…",
+    );
+    cleanup();
+    expect(row(false).container.querySelector(".sub")?.textContent).toBe("linux · asleep");
+  });
 });
 
 describe("gacha's unit dossier — the one bar in that theme that stayed silent", () => {
@@ -251,6 +303,47 @@ describe("gacha's unit dossier — the one bar in that theme that stayed silent"
   it("a pending SHUTDOWN inverts the arm — the Wake ticket says shutting down", () => {
     const label = names(slip(false, "shutdown").container).find((n) => n.startsWith("Wake"));
     expect(label).toBe("Wake, shutting down");
+  });
+
+  it("VISIBLE: the dossier subtitle spells the word in gacha caps, then returns to SLEEPING", () => {
+    // `dossierSub` now rides `livenessWord` — the card's chip and this line describe a machine
+    // identically, SHUTTING DOWN included (the chips' own inversion, closed the same way).
+    expect(slip(false, "shutdown").container.textContent).toContain("SHUTTING DOWN");
+    cleanup();
+    expect(slip(false).container.textContent).toContain("SLEEPING");
+  });
+});
+
+describe("gacha's capsule chip — the five states, and the transition rung", () => {
+  const card = (online: boolean, pending?: PendingKind) =>
+    render(
+      <GachaCard
+        host={host(online)}
+        art={null}
+        shape="pair"
+        mode="five"
+        onOpen={noop}
+        pending={pending}
+      />,
+    );
+
+  it("says SHUTTING DOWN — the hand-rolled ladder read a pending shutdown as SLEEPING", () => {
+    expect(card(false, "shutdown").container.querySelector(".state")?.textContent).toBe(
+      "SHUTTING DOWN",
+    );
+  });
+
+  it("a TRANSITION chip wears `.pend` — the ribbon rung at every width (gacha.css)", () => {
+    // SHUTTING DOWN is ~1.6× SLEEPING's width: on the TOP rung it re-opens the 5★ star collision the
+    // 380px media rule closed, so a pending chip takes the rung below for the grace window's duration.
+    expect(card(false, "shutdown").container.querySelector(".state.pend")).not.toBeNull();
+    cleanup();
+    expect(card(false, "wake").container.querySelector(".state.pend")).not.toBeNull();
+    cleanup();
+    // …and the steady chips keep the top rung: no `.pend`, byte-identical classes to before.
+    expect(card(false).container.querySelector(".state.pend")).toBeNull();
+    cleanup();
+    expect(card(true).container.querySelector(".state.pend")).toBeNull();
   });
 });
 

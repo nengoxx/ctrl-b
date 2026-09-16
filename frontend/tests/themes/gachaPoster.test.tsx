@@ -248,6 +248,18 @@ describe("the poster resolves through the fleet Surface", () => {
   });
 });
 
+// ── THE SHUTDOWN WORD (D72 addendum — the chip's own inversion, regression-pinned) ────────────────────
+describe("the chip through a pending SHUTDOWN", () => {
+  it("says SHUTTING DOWN — the removed hand-rolled ladder read this state as SLEEPING/ONLINE", () => {
+    // The Emma review's pin (LOW-2): the chip now renders `livenessWord`, but every existing poster
+    // case exercises WAKING or the steady pair — restoring the old four-state ladder would stay green.
+    // This is the arm that goes red on it.
+    const { container } = render(<GachaFleet active />);
+    act(() => void beginPending("pegasus", "shutdown"));
+    expect(slices(container)[0].querySelector(".po-chip")?.textContent).toBe("SHUTTING DOWN");
+  });
+});
+
 // ── ⑦ ⑧ ⑨ · SELECT-THEN-ACT ─────────────────────────────────────────────────────────────────────────
 describe("select-then-act", () => {
   it("a WAKING slice stays SELECTABLE — the grace window holds actions, never selection (owner 2026-08-30)", () => {

@@ -2,7 +2,7 @@ import { memo, type MouseEvent } from "react";
 
 import type { FleetAction } from "../../hooks/useActions";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
-import { livenessWord, type PendingKind } from "../../store/fleetPending";
+import { livenessWord, transitionWord, type PendingKind } from "../../store/fleetPending";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 
@@ -68,9 +68,15 @@ function DeviceRowImpl({
   // unreachable, so links prefer vpn_host. Display strings below stay on `ip` (that's the LAN fact).
   const base = serviceBase(host, window.location);
   const svcCount = services.length ? ` · ${services.length} svc` : "";
-  const sub = online
-    ? `${host.os_type} · ${ping != null ? `${ping}ms` : "online"}${svcCount}`
-    : `${host.os_type} · asleep${svcCount}`;
+  // The VISIBLE half of the W6 rule (owner ruling on D72's open question): while the grace window runs,
+  // the sub's liveness slot speaks the transition word — the ping/"asleep" copy comes back untouched the
+  // moment the record clears.
+  const trans = transitionWord(online, pending);
+  const sub = trans
+    ? `${host.os_type} · ${trans}…${svcCount}`
+    : online
+      ? `${host.os_type} · ${ping != null ? `${ping}ms` : "online"}${svcCount}`
+      : `${host.os_type} · asleep${svcCount}`;
 
   return (
     <div
