@@ -12,7 +12,48 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-15, TWENTY-FIFTH session — **THE INTERMISSION AUDIT + FIX WAVE (D72), owner-commissioned before S4: a 3-lane Opus audit of the whole v1.7.7→HEAD span ruled the architecture SOUND and surfaced 6 blockers; the full loop ran — R71/R72/R73 bought · adversarial plan review (7 amendments folded) · 3 implementer lanes · 2 review lenses + confirm rounds ALL RESOLVED · the gate green twice. ALL COMMITTED, UNPUSHED. ▶▶ NEXT SESSION = S4 unchanged (plan §7), which now also inherits the wave's probes**; supersedes below where it speaks)
+## Current state (2026-09-16, TWENTY-SIXTH session — **THE INTERMISSION IS CLOSED: the owner ruled both D72 open decisions in conversation, the visible-word slice ran build → blind Emma round → red-proven pins, the dev units got the ws-ping 5/5 flags via `install.sh dev`, and EVERYTHING IS PUSHED. ▶▶ NEXT SESSION = S4 STRAIGHT (plan §7), clean — the owner calibration + device round = THE PHASE GATE**; supersedes below where it speaks)
+
+- **The two rulings (owner, in conversation):** ① the fleet pending word IS visible text —
+  built as `60316a1` (feat(fleet)): `transitionWord(online, pending)` beside `livenessWord`
+  hands every surface the word ONLY while it names a transition (a server-confirmed wake is
+  steady → nothing); kit + vapor rows' subtitle slot · cosmos's status pill · frontier's banner
+  chip (each theme's own voice, "…"-suffixed) · gacha's card + poster chips now render
+  `livenessWord` directly (the hand-rolled ladders read a pending shutdown as SLEEPING — their
+  own inversion, closed) + `dossierSub` threads pending + **the `.state.pend` ribbon rung at
+  every width** (SHUTTING DOWN is ~1.6× SLEEPING — it re-opens the measured 5★ collision above
+  the 380px cutoff on the top rung). Steady copy byte-identical everywhere. ② `trusted_hosts`
+  stays EMPTY/unmounted on this deploy — a built, documented feature awaiting a future owner
+  opt-in, NOT a config item to fill now (both rulings recorded in the D72 addendum,
+  DECISIONS.md).
+- **The review:** blind Emma (hermes lane, self-contained) — **SHIP WITH FIXES**: runtime,
+  byte-identity, gacha ranking and CSS geometry all verified sound (she measured 14.3px
+  worst-case chip clearance in Chromium); her two LOW pins (the `.pend` rung source pin via the
+  `cssRules` scanner + the poster SHUTTING DOWN arm) landed and red-proven against their named
+  bypasses (deletion · move-inside-the-media-block · the restored ladder — all red). Confirm
+  round ruled NOT warranted: test-only additions, her prescriptions, red-proofs are the proof.
+- **⚠ For the owner's eyeball:** gacha pair cards now put WAKING/REBOOTING chips on the lower
+  (ribbon) rung at ALL widths — previously only below 380px (the uniform transition-rung rule).
+  Say the word if the look is wrong.
+- **Ops:** `install.sh dev` re-ran (config already schema 3, no migration) — **both dev units
+  RESTARTED with `--ws-ping-interval 5 --ws-ping-timeout 5` live in the unit** (health 200,
+  Vite 200), so the R72 10 s slot-release + the ~14.1 s ladder pair is now REAL on dev for S4's
+  phone round. Prod keeps the flags for the v1.7.8 release install, untouched v1.7.7 @
+  `578ffa7`. Dev units left RUNNING (D69).
+- **Gate 6/6 on the committed tree — FE 3,579/194 · BE 2,499** (counts in QUALITY.md). **PUSHED
+  2026-09-16 (the owner's word this session): the whole 8-commit backlog** (the intermission
+  wave `c41cdc2`·`a808b10`·`9693de6`·`e5eee89`·`8ca944d` + `16186e8` + `60316a1` + this docs
+  commit); origin == local.
+- **▶▶ NEXT SESSION: S4 (plan §7) — open it CLEAN.** Needs the OWNER + phone (afternoons): the
+  §4.1 knobs · `barge_threshold`/Tier-0 threshold · `tail_wait_ms` vs the measured 530–830 ms ·
+  `dictation_idle_s` feel · ring/hint feel · **`voice.live.enabled` flips ON as the round's
+  close = the phase gate**; decision point fixed-endpointing vs architecture ② (§2.1). S4 also
+  carries the wave's probes: the Honor-20 app-switch backlog · whether Serve preserves the 5 s
+  ping cadence over the proxied WS · capture constraints · `METER_FULL_RMS`. Reminder for the
+  poke round: the D70 imports are PUT now — hand-rolled multipart curl scripts must switch.
+  Phase 23 S7 + v1.7.8 sequencing unchanged (release E after the roleplay features).
+
+## Prior state (2026-09-15, TWENTY-FIFTH session — **THE INTERMISSION AUDIT + FIX WAVE (D72), owner-commissioned before S4: a 3-lane Opus audit of the whole v1.7.7→HEAD span ruled the architecture SOUND and surfaced 6 blockers; the full loop ran — R71/R72/R73 bought · adversarial plan review (7 amendments folded) · 3 implementer lanes · 2 review lenses + confirm rounds ALL RESOLVED · the gate green twice. ALL COMMITTED, UNPUSHED. ▶▶ NEXT SESSION = S4 unchanged (plan §7), which now also inherits the wave's probes**; supersedes below where it speaks)
 
 - **What the wave fixed (the audit finding → the landed shape):** ① the 1000 ms too-short floor
   was DEAD with streaming dictation on (`heldMs` measured after the tail wait — the owner's "the
