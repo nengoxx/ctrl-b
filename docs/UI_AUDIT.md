@@ -11,6 +11,12 @@ The original sections (1–6b) cover the performance + best-practices pass that 
 
 ## 1. State of the project
 
+> ⚠️ **§1–§2 are the 2026-06-01 snapshot the audit was written against — not today's frontend.** They
+> predate code-splitting (F6), the theme engine (D28–D52) and the `theme/` → `theme-engine/` +
+> `themes/<id>/` move, so the tree and bundle figures below are the audit's *premise*, not a current
+> map. For today's architecture read `docs/SPEC.md` / `docs/THEME_ENGINE.md` §14. The **findings**
+> (§3 onward) are still live — each carries its own status line, which is authoritative.
+
 The frontend is a **single-bundle React 19 SPA** ported from `vapor.html`. ~3.4k lines of TS/TSX across 31 files; 4 top-level tabs (Fleet / Agent / Utils / Conf); a typed-action loop and SSE event stream talking to FastAPI on `/api`. Bundle today: **340 KB JS + 60 KB CSS + 185 KB PNG = 583 KB** (single chunk). Build is clean.
 
 The architecture is sound. The issues below are refinements, not rewrites.

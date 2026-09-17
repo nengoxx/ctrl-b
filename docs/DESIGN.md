@@ -54,42 +54,52 @@ sketch is a summary. Python 3.14+, Pydantic v2, FastAPI. Read alongside `ARCHITE
 
 ## 1. Package layout
 
+As built (`ls backend/app/*` is the check — this tree is descriptive, not aspirational):
+
 ```
 backend/app/
-  domain/            # pure models + enums (no I/O, no framework imports)
-    host.py service.py event.py conversation.py agent.py result.py enums.py
-  core/              # protocols, registries, policies (the seams)
+  domain/            # pure pydantic + enums (no I/O, no framework imports)
+    enums.py host.py service.py event.py conversation.py agent.py plan.py
+    provider.py automation.py result.py
+  core/              # protocols, registries, pure policy (the seams) — never imports services/
     tool.py          # Tool protocol, ToolSpec, ToolResult, ToolRegistry
-    memory.py        # MemoryProvider protocol
-    notify.py        # NotificationChannel protocol
-    inference.py     # InferenceClient protocol + ModelRef resolution
-    skills.py        # SkillProvider + SkillSelector protocol
-    permissions.py   # PermissionPolicy (pure)
+    permissions.py   # decide() — the pure gate
+    memory.py skills.py agents.py                # the pluggable Protocols + store registries
+    provider_registry.py                         # A11/D48 resolver → Registry/ResolvedTarget (§9.1)
+    failover.py      # the value-agnostic failover generator (D43)
     events.py        # EventBus (in-proc pub/sub for SSE)
-    errors.py        # exception taxonomy
     redact.py        # secret redaction
+    media.py attachments.py                      # the two owner-file trees (D53/D65 · D68)
+    audio.py         # Pcm16Resampler — the live-voice relay's resampling (D71)
+    fsutil.py proc.py textmatch.py pwa.py        # small shared primitives
+                     # (no `errors.py` — exceptions live beside their seam, §11)
   services/
-    fleet.py         # ping/status fan-out, wake, shutdown (uses adapters)
+    action_service.py# THE execution chokepoint (gate consult + confirm-tokens + audit)
+    fleet.py svc.py  # ping/status + service-probe fan-out, TTL-cached
+    monitor.py wake_on_connect.py                # D2-A/D50 · D2-B
+    voice_live.py    # the LiveRelaySession behind WS /api/voice/live (D71)
+    conversation.py deps.py events.py            # thread/message repos, Deps, EventService
     actions/         # built-in actions register into the ToolRegistry
     tools/           # built-in utility tools (yt_captions, ip_info, dns_trace)
+    automations/     # repo · schedule · AutomationService · AutomationRunner (D49)
     agent/
       session.py     # AgentSession + the loop state machine  ← heart of the system
-      runner.py      # AgentRunner (per AgentDef: toolset build + loop)
-      compaction.py  # Compactor
-      subagents.py   # spawn_subagent tool + orchestration strategy
-      planning.py    # task_plan tool + Plan model
-    voice.py automations.py settings_service.py
-  adapters/
-    ssh.py wol.py ping.py subprocess.py            # fleet
-    openai_client.py mcp_client.py searxng.py      # inference + integrations
-    db/  (schema.sql, repositories.py, unit_of_work.py)
-    notify/ (webpush.py ntfy.py bot.py foreground.py)
-    memory/ (none.py file.py vector.py)
-  config.py main.py
-  api/ (routers; thin — validate, call a service, stream)
+      compaction.py  # the Compactor (D42)
+      subagents.py planning.py question.py       # spawn_subagents · task_plan · question (A2)
+      memory.py memory_tool.py core_memory*.py   # tier 1 (D26) · tier 2 (D57/D64)
+      prompts.py     # the PromptDef REGISTRY — every model-facing string (§5.8)
+      attachments.py attachment_tool.py          # the D68 feed + `read_attachment`
+      lorebooks.py lorebook_import.py card_import.py greeting.py examples.py macros.py   # D70
+      skills.py skill_tool.py selector.py routing.py steering.py exec.py proposals.py …
+  adapters/          # I/O, errors normalized to typed results; one construction site each
+    ssh.py wol.py tailnet.py                     # fleet + Tailscale
+    inference.py voice.py embeddings.py          # OpenAI-compatible chat / STT+TTS / vectors
+    mcp_client.py openapi_tools.py openterminal.py searxng.py
+  api/               # one router per resource; thin — validate, call a service, stream
+  config.py db.py main.py runtime.py
 ```
 
-Frontend layout per `ARCHITECTURE.md` §README; TS types in §14 below.
+Frontend layout: `ARCHITECTURE.md` §5 → `SPEC.md` §7; TS state + types in **§13** below.
 
 ---
 
@@ -348,18 +358,28 @@ class Thread(BaseModel):
     created_at: datetime; updated_at: datetime
     archived: bool = False
 
-# Parts: a discriminated union on `type`
-class TextPart(BaseModel):      type: Literal["text"]="text"; text: str
+# Parts: a discriminated union on `type` — SIX members, as built (domain/conversation.py)
+class TextPart(BaseModel):      type: Literal["text"]="text"; text: str = ""
+class ReasoningPart(BaseModel): type: Literal["reasoning"]="reasoning"; text: str = ""
+                                # a thinking model's CoT: rendered dimmed, EXCLUDED from the model's
+                                # next working context (scratchpad, not durable content)
 class ToolCallPart(BaseModel):  type: Literal["tool_call"]="tool_call"
                                 call_id: str; tool: str; args: dict; state: RunState
+                                invalid_raw: str | None = None   # ACA-13: the model's non-JSON arg
+                                # blob (≤200 chars). Present ⇒ do NOT invoke; synthesize the
+                                # JSON-repair steering error. `args` stays {} so the assembled
+                                # context never carries it. Rides the persisted part (resume-safe).
 class ToolResultPart(BaseModel):type: Literal["tool_result"]="tool_result"
                                 call_id: str; result: ToolResult
-class QuestionPart(BaseModel):  type: Literal["question"]="question"
-                                question: str; choices: list[str] = []; answer: str | None = None
-class PlanPart(BaseModel):      type: Literal["plan"]="plan"; plan: "Plan"
-class ErrorPart(BaseModel):     type: Literal["error"]="error"; message: str; retryable: bool
+class ErrorPart(BaseModel):     type: Literal["error"]="error"; message: str; retryable: bool = False
+class AttachmentPart(BaseModel):type: Literal["attachment"]="attachment"      # D68 — see the note below
+                                kind: Literal["image","text","pdf"]  # what the BYTES sniffed as
+                                name: str; mime: str; path: str      # path is store-relative:
+                                bytes: int = 0                       #   {thread_id}/{name}
+                                width: int | None = None; height: int | None = None
+                                inline_chars: int | None = None
 
-Part = Annotated[TextPart|ToolCallPart|ToolResultPart|QuestionPart|PlanPart|ErrorPart,
+Part = Annotated[TextPart|ReasoningPart|ToolCallPart|ToolResultPart|ErrorPart|AttachmentPart,
                  Field(discriminator="type")]
 
 class Message(BaseModel):
@@ -392,7 +412,13 @@ class Plan(BaseModel):     items: list[PlanItem]; updated_at: datetime
 A `ToolCallPart` and its matching `ToolResultPart` share `call_id`. The UI renders a command/action
 bubble from the pair; a `confirm`-gated call sits in `AWAITING_CONFIRM` until the user acts.
 
-> **Added by D68 (2026-09-01) — `AttachmentPart`, the seventh member of the union.** One file the owner
+**There is no `QuestionPart` and no `PlanPart`** — questions and plans are *tools*, not part kinds.
+The `question` builtin (A2) suspends its own `ToolCallPart` at `AWAITING_ANSWER` and the owner's
+reply becomes that call's `ToolResultPart`; `task_plan` likewise rides its `tool.result` (§12). One
+suspend/resume machinery, one bubble-from-the-pair rule — adding a part kind for either would have
+been a parallel path.
+
+> **Added by D68 (2026-09-01) — `AttachmentPart`, the sixth member of the union.** One file the owner
 > attached to a user turn, and **facts only: never the data, never a price** — the bytes live in
 > `$CTRLB_HOME/attachments/{thread_id}/{name}` and the part is the durable reference to them
 > (`{kind, name, path, mime, bytes, width?, height?, inline_chars?}`), because inlining base64 would put
@@ -817,7 +843,8 @@ path → identical downstream handling. Worst case it degrades to draft-into-bub
 ### 5.8 The prompt registry (Phase 18 / D56 — spec of record: [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md))
 
 `services/agent/prompts.py` is the **chokepoint every model-facing prompt text goes through** — one
-module owns every default text (**23 `PromptDef` ids**), one function resolves it, so a prompt can never
+module owns every default text (its `REGISTRY` dict *is* the id list; never counted here, it grows
+with every feature that speaks), one function resolves it, so a prompt can never
 be edited in one place and read from another. Not in it: the main system prompt + the SOUL.md personas
 (Class A — their own three-level chain in `session.py`), and the *data* a composed prompt frames (roster
 rows, skill bodies, memory sections) — the registry owns the WORDS, features concatenate their data after
@@ -1054,18 +1081,30 @@ small (D2).
 ```python
 # config.py — a plain pydantic `BaseModel` view over config.yaml (+ declared CTRLB_* env overrides).
 # NOT `BaseSettings`: the YAML is loaded/validated explicitly, and `extra="allow"` so config written by
-# a later phase round-trips losslessly instead of being dropped on save. 22 sections, in code order:
+# a later phase round-trips losslessly instead of being dropped on save. One section per subsystem
+# (config.py is the list — never counted here, it grows every phase), in code order:
 class Settings(BaseModel):
     model_config = {"extra": "allow"}
-    server: ServerCfg; appearance: AppearanceCfg
+    server: ServerCfg                                  # bind/port/debug + `trusted_hosts` (R73, §2.9)
+    appearance: AppearanceCfg
     providers: dict[str, ProviderCfg]                  # the A11/D48 connection map (see below)
     inference: InferenceCfg; agent: AgentCfg; memory: MemoryCfg
-    searxng: SearxngCfg; embeddings: EmbeddingsCfg; voice: VoiceCfg
+    searxng: SearxngCfg; embeddings: EmbeddingsCfg
+    voice: VoiceCfg                                    # .stt / .tts / .live (LiveCfg — D71 call+dictation)
     open_terminal: OpenTerminalCfg; shell: ShellCfg; tailscale: TailscaleCfg
     notifications: NotificationsCfg                    # foreground preferences only (F1) — §7
-    wake: WakeCfg; monitor: MonitorCfg                 # D2-B connect + D2-A presence; the monitor loop
+    wake: WakeCfg; monitor: MonitorCfg                 # D2-B connect + D2-A/D2-C presence; the monitor loop
     automations: AutomationsCfg                        # runner tunables; the definitions live in SQLite
-    media: dict[str, MediaNsCfg]                       # owner media state keyed by NAMESPACE (D53)
+    media: MediaCfg                                    # D65's FOLD: `.write` (max_bytes) + `.namespaces`
+                                                       # {ns: MediaNsCfg}. The namespaces moved DOWN one
+                                                       # level (`media.<ns>` → `media.namespaces.<ns>`)
+                                                       # so `write:` could sit beside them without
+                                                       # parsing as a namespace — config_version 1 → 2.
+    attachments: AttachmentsCfg                        # composer attachments (D68) — store + feed knobs
+    roleplay: RoleplayCfg                              # character agents: UI switch, import toolset,
+                                                       #   the owner persona (D70) — GLOBAL half only
+    lorebooks: LorebooksCfg                            # the lorebook subsystem (D70 §6) — its own
+                                                       #   section: books are roleplay-INDEPENDENT
     openapi_servers: list[OpenApiServerCfg]; mcp_servers: list[McpServerCfg]
     tool_overrides: dict[str, ToolOverride]            # per-tool, one unified object (D22 + D44 + D60 max_calls)
     prompts: dict[str, PromptOverride]                 # per-prompt-id overrides (D56, §5.8)
@@ -1279,8 +1318,12 @@ SECURITY_MODEL §2.9). Authority:
 > `DECISIONS.md` D7/D51.
 
 ```ts
-// types mirror the domain; generated from OpenAPI where practical
-type Part = TextPart | ToolCallPart | ToolResultPart | QuestionPart | PlanPart | ErrorPart;
+// types mirror the domain (src/types.ts) — the same SIX-member union as §4, same discriminator
+type Part =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | ToolCallPart | ToolResultPart | AttachmentPart
+  | { type: "error"; message: string; retryable: boolean };
 interface Message { id:string; role:Role; parts:Part[]; ts:string; }
 ```
 - **Server state** via TanStack Query, one key per resource (a flat name, or `[name, id]` for a

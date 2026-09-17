@@ -39,17 +39,18 @@ Phone-first (~390 px), widens gracefully to desktop.
 | Tab | What lives there |
 |---|---|
 | **Fleet** | Live host cards (ping/online state, per-host **services** with TCP-probed liveness), wake-on-LAN, shutdown/reboot, service start/stop/restart, expandable detail rows. Risky actions confirm before firing. |
-| **Agent** | A tool-calling LLM chat wired to the same action registry the UI uses. Confirm bubbles for gated calls, a live **plan panel** (TodoWrite-style checklist), markdown replies with copy / send-to-composer, per-message local/cloud switching, context **compaction** for long threads. |
+| **Agent** | A tool-calling LLM chat wired to the same action registry the UI uses. Confirm bubbles for gated calls, a live **plan panel** (TodoWrite-style checklist), markdown replies with copy / send-to-composer, per-message local/cloud switching, context **compaction** for long threads, **attachments** (images/text/PDFs the agent can re-read), and **characters** — conversational agents with imported V2/V3 cards, lorebooks and a visual gallery. |
 | **Utils** | One-shot utility tools (DNS trace, IP info, YouTube captions, …) — the same registry, UI-exposed. |
-| **Conf** | The whole `config.yaml` managed from the UI: hosts & services CRUD, inference/voice endpoints, integrations (MCP / OpenAPI / SearXNG / embeddings / open-terminal), skills & agents, per-tool overrides, prompts, memory panel, **scheduled automations** (cron-driven agent runs with run history, D49), notifications, theme & access (Tailscale HTTPS + QR). |
+| **Conf** | The whole `config.yaml` managed from the UI: hosts & services CRUD, inference/voice endpoints, integrations (MCP / OpenAPI / SearXNG / embeddings / open-terminal), skills & agents, per-tool overrides, prompts, memory panel, **scheduled automations** (cron-driven agent runs with run history, D49), the **media manager** (upload · crop · focal point · per-destination art libraries, D65), notifications, theme & access (Tailscale HTTPS). |
 
 **The agent** speaks to any OpenAI-compatible backend — local `llama.cpp` or a cloud router — and
 sees the action registry as OpenAI `tools`. It also gets: file-discovered **skills** (auto-narrowing
 toolsets that make weak local models reliable), **subagents** (bounded parallel delegation),
 **web search** (SearXNG), tools from **MCP servers** (Streamable HTTP + stdio) and **OpenAPI/REST
 tool servers**, durable **memory** (git-backed markdown, D26), and **voice** via OpenAI-compatible
-STT/TTS. Multiple **agent definitions** (model + prompt + tools + privilege) are configurable; one
-is default.
+STT/TTS — push-to-talk, chunked read-along playback, and a hands-free **call mode** with streaming
+dictation (the app's one WebSocket, media ingress only; ships off). Multiple **agent definitions**
+(model + prompt + tools + privilege) are configurable; one is default.
 
 **Themes**: a pluggable presentation layer — five themes (**cosmos** the default · vapor · minimal ·
 frontier · gacha) — swap the whole look from Conf, synced across devices.
@@ -119,7 +120,7 @@ cross-device through the backend (last-write-wins).
 | **Config = human-owned YAML** | `config.yaml` is the source of truth, UI-edited via masked read / unmask-on-write round-trips that never clobber a stored secret or a hand-written comment. `.env` overrides any scalar (`CTRLB_<SECTION>__<KEY>`). |
 | **Extend, don't migrate** | Growing dimensions live in one per-item object extended with optional fields (e.g. `tool_overrides: {tool: {description, agent_mode}}`) — never parallel name-keyed sibling maps. |
 | **Pluggable via Protocols** | Skills provider/selector, memory provider/backup, agent selector, subagent orchestrator — one consistent seam shape; defaults are file-based and stateless (live-editable). |
-| **Decisions are written down** | Locked architectural choices live in [`docs/DECISIONS.md`](./docs/DECISIONS.md) (D1–D57) and load-bearing invariants are pinned by **drift-guard tests** named for them (`test_memory_registry_d27.py`, `test_arch_invariants_qh9.py`, …) so docs can't silently rot. |
+| **Decisions are written down** | Every locked architectural choice is a numbered entry in [`docs/DECISIONS.md`](./docs/DECISIONS.md), and load-bearing invariants are pinned by **drift-guard tests** named for them (`test_memory_registry_d27.py`, `test_arch_invariants_qh9.py`, …) so docs can't silently rot. |
 | **OS-agnostic by construction** | All target-OS branching keys off `host.os_type` (the managed host), never the server's OS — a Linux server managing a Windows box is the same code path as the reverse. |
 
 ## Security model
@@ -368,7 +369,7 @@ archive/     v0.1 Flask app, dead inference helpers, early UI prototypes
 |---|---|
 | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | Living status + next steps — **start here** |
 | [`docs/DESIGN.md`](./docs/DESIGN.md) · [`docs/SPEC.md`](./docs/SPEC.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Concrete code design (data structures, agent loop, SSE wire protocol, extension cookbook) · verified as-built spec (C4 diagrams, inventories) · deployment profiles + OS invariants |
-| [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Every locked architectural decision (D1–D57) with rationale |
+| [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Every locked architectural decision (numbered `D#`) with rationale |
 | [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) | The trust boundary, gates, secret handling, safe-defaults checklist |
 | [`docs/THEME_ENGINE.md`](./docs/THEME_ENGINE.md) | The pluggable theme layer (tokens · Kit · Surfaces) |
 | [`docs/QUALITY.md`](./docs/QUALITY.md) · [`docs/QH_AUDIT.md`](./docs/QH_AUDIT.md) | The quality harness + its audit |

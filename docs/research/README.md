@@ -31,6 +31,21 @@ back from the dossier's header.
 - **Keep the implications section short and separate** from the evidence. Evidence ages slowly;
   our reading of it ages fast.
 
+## Finding-ID namespaces — `R#` here is NOT the only `R#`
+
+A dossier here is `R<n>`, numbered in this index and nowhere else. But `R#` is **also** used for
+*reviewer findings* inside feature plans (e.g. `VAPOR_ASSIMILATION_PLAN.md` R19/R20/R21, cited in
+HANDOFF as "R20 #1", "R21 ③"). Those are a different ledger and are not dossiers — which is why
+**R19, R20 and R21 are absent from the sequence below**; nothing is missing. When citing a dossier,
+write `docs/research/R<n>`; when citing a review finding, name its plan.
+
+The same overload exists for **`F#`**, in three places: `UI_AUDIT.md` findings F1–F29 · `ROADMAP.md`
+future features F1… (F1 = push-to-phone on fleet events) · frontier build slices F0–F5 in
+`FRONTIER_PLAN.md`/`TODO.md`. Three different "F1"s, all live. Always qualify the ledger.
+
+*(Do not renumber anything to fix this — the ids are cited in commits, HANDOFF and D-entries. Qualify
+at the citation site instead.)*
+
 ## Reference class — WHO to research (owner, 2026-07-25)
 
 **Research peer projects in THIS domain first.** ctrl-b is a self-hosted agent-chat app, so the

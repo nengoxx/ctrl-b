@@ -4,8 +4,11 @@
 amendments Emma-checked.** v2.2 = the ratified council close (§11; transport B unanimous; the
 §0b-2 overrule: bubble image display IS v1). v2.3 adds the owner's composer-UX rulings (quiet
 clip · in-composer thumbnails · the S5 expand slice) + the Emma amendment round's fixes (§11
-tail). **BUILD IN PROGRESS: S0 ✅ (`756996b` + the HEIC check: camera = JPEG) · S1 building ·
-R62 (composer grammar) in flight — it pins the §7 layout + S5 behavior before the S3/S5 briefs.**
+tail). **✅ BUILT — the whole §9 ladder: S0–S5 + the S6 owner device round and its fix wave +
+re-rounds №1–№4, every slice council-closed (per-slice as-built records in §11's tail). Pushed,
+UNRELEASED: the phase rides the v1.7.8 release.** Evidence bought along the way:
+[R62](./research/R62-attach-composer-grammar.md) (composer grammar — it pinned the §7 layout +
+S5 behavior before the S3/S5 briefs).
 
 Evidence: [`research/R61-chat-attachments-field.md`](./research/R61-chat-attachments-field.md) +
 [`R54`](./research/R54-crop-upload-client.md)/[`R55`](./research/R55-media-upload-backend.md) +
@@ -277,28 +280,38 @@ no-RAG ruling, stated (E-audit).
 
 ## §9 Slices (standing cadence per slice)
 
-- **S0** docs: D-entry · SECURITY_MODEL · ROADMAP/TODO rows · the HEIC device check — **✅ DONE
-  2026-09-01** (`756996b` + the check: NOT HEIC, camera = JPEG).
-- **S1** backend store + staging/claim transport + `AttachmentPart` + retention/sweep + steer-claim.
+**Every slice below is ✅ BUILT + council-closed** — the per-slice as-built records (deviations,
+review rounds, test counts) are in §11's tail, which is where the detail lives; the shas here are
+the entry points.
+
+- **S0** ✅ `756996b` — docs: D-entry · SECURITY_MODEL · ROADMAP/TODO rows · the HEIC device check
+  (the check: NOT HEIC, camera = JPEG).
+- **S1** ✅ `fce822e` + fix wave `eff4bfd` — backend store + staging/claim transport +
+  `AttachmentPart` + retention/sweep + steer-claim.
   Tests: traversal/symlink/oversize/sniff/decode refusals · mint-time name refusal (pre-stream) ·
   claim races (consumed id, expired id, two devices) · claim-is-the-only-writer pin · the
   unreferenced-file-in-live-dir reconcile (crash window) · sweep age bounds.
-- **S2** model feed: assembly branch + per-turn cache + assembled ceiling + **the estimator arm
+- **S2** ✅ `5c827b8` + `7ea2970` + `b5974f5` — model feed: assembly branch + per-turn cache +
+  assembled ceiling + **the estimator arm
   (explicit item + test — it silently degrades every long thread if skipped; O-sweep)** + the
   per-hop strip (**two-direction two-hop test**) + `read_attachment` + `InvocationContext.thread_id`
   + compaction manifest + resize notice.
-- **S3** FE: `useAttachments` + chips + the bubble branch (image display + tap-to-full-size) +
+- **S3** ✅ `bb290ca` + `eb964d2` + `9d151ab` — FE: `useAttachments` + chips + the bubble branch
+  (image display + tap-to-full-size) +
   the GET serving route (+ tests: image inline w/ sniffed type · text/pdf nosniff+disposition ·
   confinement refusals · 404 on unclaimed/missing) + attachment-only sends + variants parity —
   incl. the RULED docked-sheet placement (§7) and the dictation-auto-send-with-staged-files test
   (§7's mic pin) — + e2e.
-- **S4** PDF extraction sidecar + failure copy.
-- **S5** the composer expand affordance (owner-promoted 2026-09-01): R62-informed + owner-ruled
+- **S4** ✅ `e65f02a` + `6c31c1f` — PDF extraction sidecar + failure copy.
+- **S5** ✅ `115178e` + `dbc63ad` — the composer expand affordance (owner-promoted 2026-09-01):
+  R62-informed + owner-ruled
   behavior; line composer first, quiet trigger control per the §7 styling ruling. **The seam is
   already shared (E-amend c):** `useComposerChrome` owns auto-grow for all three variants, so the
   expansion behavior extends THAT hook while only LineComposer renders the initial affordance —
   no per-variant fork exists to write.
-- **S6** owner device round: phone pick/paste/send/re-read · attachment-only photo send · vision on
+- **S6** ✅ RAN 2026-09-02/03 — fix wave `8dce2ca` (+ `9a8b6d9`, `ee2bf55`) then the owner's live
+  re-rounds №1–№4 (`be0478e`…`9fd66ea`) — owner device round: phone pick/paste/send/re-read ·
+  attachment-only photo send · vision on
   OpenRouter · no-vision on qwen (expect the in-band ERROR) · a real PDF · a compacted-thread
   re-read via the manifest · the expand control on the phone's line composer.
 

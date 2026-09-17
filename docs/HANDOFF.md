@@ -101,7 +101,8 @@
   the wave's probes (the Honor-20 app-switch backlog · Serve's ping cadence over the proxied WS).**
   The full audit→research→review record: memory `intermission-audit-2026-09-14` + D72 + the
   §7/§13 addenda; dossiers R71–R73.
- — **THE OWNER'S TEST ROUND CLOSED with both verdicts PASS: the long-recording bar rules verified in BOTH latch cases (pre-typed draft + empty composer) and streaming dictation "works well" over the Serve HTTPS chain. The one question — does Tier-0 auto-stop collide with streaming dictation? — was source-verified NO COLLISION (the stop the owner felt was `dictation_idle_s`, by design). Serve RESTORED to prod :5433, verified. Zero app code this session. ▶▶ NEXT SESSION = S4 (plan §7) — the owner calibration + device round = THE PHASE GATE**; supersedes below where it speaks)
+
+## Prior state (2026-09-14, TWENTY-FOURTH session — **THE OWNER'S TEST ROUND CLOSED with both verdicts PASS: the long-recording bar rules verified in BOTH latch cases (pre-typed draft + empty composer) and streaming dictation "works well" over the Serve HTTPS chain. The one question — does Tier-0 auto-stop collide with streaming dictation? — was source-verified NO COLLISION (the stop the owner felt was `dictation_idle_s`, by design). Serve RESTORED to prod :5433, verified. Zero app code this session. ▶▶ NEXT SESSION = S4 (plan §7) — the owner calibration + device round = THE PHASE GATE**; supersedes below where it speaks)
 
 - **The verdicts (the owner, in conversation; record folded into plan §7-S3.5's addendum as the
   round-close block):** ① the bar rules PASS — tested with text already in the composer (the
@@ -687,10 +688,12 @@
   all three backdrop states on the real phone (blur/dim legibility) · a field-authored
   lorebook triggering live (§6.7 — `personality-traits` is attached to Lynette on dev) ·
   showcase/picker feel (incl. the §8.4 tap-inversion re-test) · read-along on a character
-  reply. **⚠ Mic needs HTTPS and Serve currently fronts PROD :5433** (`tailscale serve
-  status`); for the dev mic leg, point it at dev for the round (`tailscale serve --bg 5173`,
-  runbook HTTPS_TAILSCALE.md — HMR-websocket caveat noted there) and restore
-  `tailscale serve --bg 5433` after. Everything non-mic runs on plain :5173/:5434 as usual.
+  reply. **⚠ Mic needs HTTPS and Serve fronts PROD :5433** (`tailscale serve status`). For the dev
+  mic leg **do NOT hijack-and-restore prod's :443** — that dance is the OPS-1 burn class (a forgotten
+  restore leaves prod dark). Open the **additional** dev door instead, which never touches prod:
+  `tailscale serve --bg --https=8443 5173`, off with `tailscale serve --https=8443 off`. Runbook +
+  the HMR-websocket caveat: [`HTTPS_TAILSCALE.md`](./HTTPS_TAILSCALE.md). Everything non-mic runs on
+  plain :5173/:5434 as usual.
   Both dev units RUNNING (D69 — do NOT stop them); :5434 on `11ff928`, current for the BE.
 - Git after the closure docs commit: **104 commits unpushed over origin `04769d9`**; prod
   untouched v1.7.7 @ `578ffa7`; the v1.7.8 pipeline (Dependabot D1 → push → release E,
@@ -1398,6 +1401,11 @@
 
 ## ▶▶ THE PRE-RELEASE MENU (2026-09-03 — ALL the recorded options; the owner picks, nothing owed)
 
+> **⚠ PARTLY DISCHARGED — read against the Current state block, which rules.** A1 (Phase 22's close)
+> is done; Phases 23 and 24 have run since, and v1.7.8 now carries **config migration 2 → 3**
+> (rollback = restore the config backup FIRST, then v1.7.7). What is still live here is the *menu of
+> owner-owed rounds* (A2's prod device pair, edit-a-prompt, A13), not its release plan or sequencing.
+
 **A · Owed owner rounds (no build):**
  A1. Phase 22 CLOSE — the owner's word (all S6 re-rounds live on dev :5173; the stopped Emma
      closing-probe round re-runs on ask — every earlier finding RESOLVED).
@@ -1480,18 +1488,11 @@ for the final ROADMAP/ISSUES cleanup wave.
   (this docs commit included), **NOTHING PUSHED**. Prod untouched: **v1.7.7 @ `578ffa7`**.
 - **Dev units RUNNING** (:5434 + :5173); the wave is frontend-only, so :5173 serves it live.
 
-## ▶▶ NEXT (2026-09-03 — in order)
+## ▶▶ NEXT (2026-09-03) — ✅ ALL DISCHARGED
 
-1. **The owner re-rounds the S6 fixes on the phone (dev :5173):** the tail (clip above send ·
-   corner chevrons) · the app-switch survival (stage → camera app → back: the rail returns on
-   thumbnails) · the send after a restore. Their word closes Phase 22 (any new finding → fix wave
-   per the standing cadence).
-2. **The PUSH ruling** (owner's word) — **32 commits**: the 3 fleet-wave polish + the whole Phase
-   22 ladder + this fix wave. Then **release v1.7.8** (runbook §Release, Opus-operated · NO
-   config/DB migration · rollback v1.7.7 · pre-tag LOCAL e2e + the stale-pin sweep over the fleet
-   wave's labels AND the attachments/expand strings) → stop the dev units.
-3. **Standing menu unchanged:** owner device pair on prod + edit-a-prompt (easier post-release) ·
-   A13 design talk · parked ledger · **Phase 19 goes LAST** (1.8 RESERVED).
+The re-rounds ran (№1–№3, council-closed same day) and the push landed. ⚠ **The release plan this
+block carried is SUPERSEDED**: v1.7.8 now carries **config migration 2 → 3**, so rollback is
+*restore the config backup FIRST, then v1.7.7* — see the 2026-09-04 block above.
 
 ## Prior state (2026-09-02, cont. — S4 + S5 CLOSED: THE PHASE 22 BUILD LADDER IS COMPLETE; superseded above where it speaks)
 
@@ -1508,21 +1509,10 @@ for the final ROADMAP/ISSUES cleanup wave.
 - **Dev units RUNNING and the dev backend was RESTARTED onto the ladder tip** — :5173 serves the
   whole attachments feature for the owner's round.
 
-## ▶▶ NEXT (2026-09-02, post-ladder — the owner's items, in order)
+## ▶▶ NEXT (2026-09-02, post-ladder) — ✅ ALL DISCHARGED
 
-1. **S6 — THE OWNER DEVICE ROUND closes Phase 22** (plan §9-S6): phone pick/paste/send/re-read ·
-   attachment-only photo send · vision on OpenRouter · no-vision on qwen (expect the in-band
-   ERROR) · a real PDF · a compacted-thread re-read via the manifest · the expand control on the
-   line composer — PLUS the S3/S5 feel items now riding it: the rail/clip geometry · the expand
-   behavior (the taller-ceiling ruling is owner-overridable) · the steered-attachment reconcile
-   feel. Findings → fix waves per the standing cadence.
-2. **The PUSH ruling** (owner's word) — 27 commits: the 3 fleet-wave polish + the whole Phase 22
-   ladder. Then **release v1.7.8** (runbook §Release, Opus-operated · NO config/DB migration —
-   every D68 config row is additive with defaults · rollback v1.7.7 · pre-tag LOCAL e2e +
-   the stale-pin sweep over the fleet wave's labels AND the new attachments/expand strings) →
-   stop the dev units.
-3. **Standing menu unchanged:** owner device pair on prod + edit-a-prompt (easier post-release) ·
-   A13 design talk · parked ledger · **Phase 19 goes LAST** (1.8 RESERVED).
+S6 ran and Phase 22 closed 2026-09-03. ⚠ Its "NO config/DB migration · rollback v1.7.7" release
+plan is **SUPERSEDED** (v1.7.8 carries config migration 2 → 3 — the 2026-09-04 block rules).
 
 ## Prior state (2026-09-02 — S3 BUILT + REVIEWED + CLOSED; superseded above where it speaks)
 
@@ -1540,21 +1530,13 @@ for the final ROADMAP/ISSUES cleanup wave.
   Dev units RUNNING (⚠ the dev backend predates S1–S3 — restart `ctrl-b-dashboard-dev` before any
   owner poke at attachments).
 
-## ▶▶ NEXT (2026-09-02, post-S4 — in order)
+## ▶▶ NEXT (2026-09-02, post-S4) — ✅ ALL DISCHARGED
 
-1. **S4 IS CLOSED** (`e65f02a` + `6c31c1f`; blind round 2 MED both reviewer-REPRODUCED + 1 LOW →
-   fix wave → confirm RESOLVED, zero new; the S2 sidecar-sweep obligation MET; BE 2,145; full
-   record = plan §11's S4 blocks). **S5 (the expand affordance) is next** — main-seat ruling on
-   R62 §5's landed evidence (proceeding under the owner's continue directive, S6-overridable):
-   ≥3-line trigger · top-right · quiet per §7 · expansion = a TALLER AUTO-GROW CEILING on the
-   shared `useComposerChrome` seam (Signal's outcome; no modal, no second editor) · mic untouched
-   (peers hide it because their expanded is a mode; ours is a ceiling).
-2. **S6 — the owner device round** (plan §9-S6) closes the phase; the owner's word rules. It now
-   also carries: the S3 rail/clip geometry eyeball · the S5 expand feel/behavior override · the
-   steered-attachment reconcile feel.
-3. **The v1.7.8 pipeline still stands** (owner dev test round → PUSH ruling → release, runbook
-   §Release · rollback v1.7.7 · pre-tag LOCAL e2e + stale-pin sweep) → stop the dev units.
-4. **Standing menu unchanged:** device pair + edit-a-prompt · A13 · Phase 19 LAST (1.8 RESERVED).
+S5 and S6 both ran and closed. **The one durable thing here is the S5 design ruling** (main seat, on
+R62 §5's landed evidence): ≥3-line trigger · top-right · quiet per §7 · expansion = **a TALLER
+AUTO-GROW CEILING on the shared `useComposerChrome` seam** (Signal's outcome — no modal, no second
+editor) · mic untouched, because peers hide it only when their expanded state is a *mode* and ours is
+a *ceiling*. Full record: plan §11-S5. ⚠ Its "rollback v1.7.7" line is **SUPERSEDED** (see above).
 
 ## Prior state (2026-09-01, THIRD session, cont. — S2 BUILT + REVIEWED + CLOSED; superseded above where it speaks)
 
@@ -1571,19 +1553,10 @@ for the final ROADMAP/ISSUES cleanup wave.
 - **Local `main` = origin `a558d43` + 16 commits** (12 prior + `5c827b8` + `7ea2970` + `b5974f5` +
   this docs commit), **NOTHING PUSHED**. Prod untouched: **v1.7.7 @ `578ffa7`**. Dev units RUNNING.
 
-## ▶▶ NEXT (2026-09-01, post-S2 — in order)
+## ▶▶ NEXT (2026-09-01, post-S2) — ✅ ALL DISCHARGED
 
-1. **S3 (FE)** under the same cadence — the RAIL + quiet clip + the RULED docked-sheet placement +
-   the mic-auto-send-with-staged-files test + the GET route/bubble images + attachment-only sends
-   + e2e (plan §7/§9-S3).
-2. **S4 (PDF)** — pypdf extraction sidecar; **MUST include the sweep referenced-set arm for
-   sidecars** (the recorded S2 obligation). Then **S5** (expand affordance) → **S6** (owner device
-   round; the owner's word closes the phase).
-3. **The v1.7.8 pipeline still stands (the fleet wave, unchanged):** owner dev test round → PUSH
-   ruling (16 commits and counting) → release v1.7.8 (runbook §Release, Opus-operated · NO
-   migration · rollback v1.7.7 · pre-tag LOCAL e2e + stale-pin sweep) → stop the dev units.
-4. **The standing menu unchanged:** owner device pair on prod + edit-a-prompt · A13 · Phase 19
-   LAST (1.8 RESERVED).
+S3–S6 all ran and closed (the S2 sidecar sweep-arm obligation was MET at S4). ⚠ Its "NO migration ·
+rollback v1.7.7" release plan is **SUPERSEDED** (see above).
 
 ## Prior state (2026-09-01, THIRD session — THE S1 FIX WAVE: built + Emma-confirm RESOLVED; S1 IS CLOSED; superseded above where it speaks)
 
@@ -2247,7 +2220,7 @@ two-devices lost-update residual (council-accepted).
   positional-order family gallery = the recorded road-not-taken.
 - **NOTHING BUILT — by design.** The plan is the complete, council-closed build spec.
 
-## ▶▶ NEXT: START THE BUILD — MEDIA_MANAGER_PLAN §12, S0 first (a clean session; owner-ruled)
+## ▶▶ NEXT: START THE BUILD — MEDIA_MANAGER_PLAN §12, S0 first (a clean session; owner-ruled) — ✅ DISCHARGED: the ladder ran and **Phase 21 shipped as v1.7.7** (2026-08-27). Kept as the build's launch record.
 
 **The plan is the only brief needed: [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md) v2.1,
 council-closed on both lenses.** The ladder: **S0 docs → S1 backend (write API + the schema-7
@@ -2583,8 +2556,7 @@ chore, the 2026-08-12 precedent.)*
   (fastest) and AllTalk (best quality) — features must serve both; standing permission to probe
   emma↔vault services when needed.
 
-## ▶▶ NEXT (2026-08-21, third session, FINAL — the release-decision handoff; supersedes both
-## lists below where struck)
+## ▶▶ NEXT (2026-08-21, third session, FINAL — the release-decision handoff; supersedes both lists below where struck)
 
 **✅ PUSHED: origin = `main` @ `136e29d`** (owner's word, full pre-push gate green). Everything
 below is committed, gated, review-closed. Dev units RUNNING on the new code (backend restarted
@@ -2773,7 +2745,10 @@ archive sweep; where it conflicts with the 2026-08-21 blocks above, the above go
   same-day** (commits `f246096` W3 · `0b373f0` W1 · `19e9dfc` W5 · `e50d39b` W2; every slice
   Opus-implemented from a pinned council brief, per-slice Codex round — zero HIGHs, every MED/LOW
   folded same-day; full gate per slice):
-  - **W3** — media `revision` → `mtime:size:ino:ctime` (the `_stamp` recipe; closes R21 ①), and
+  - **W3** — media `revision` → `mtime:size:ino:ctime` (the `_stamp` recipe; closes R21 ①). *(⚠ In
+    this block and the ones below it, **`R19`/`R20`/`R21` are owner/Codex REVIEW-ROUND finding ids,
+    not `docs/research/` dossiers** — the two numbering spaces collide; dossier ids are always a
+    link into `docs/research/`. Convention: `docs/research/README.md`.)* Also in W3:
     the §14.11 SVG-filter waiver counter → an ENGINE-WIDE source sweep vs a declarative allowlist
     (`svgFilterWaivers.test.ts`; closes R21 ③). The sweep's dry run found cosmos's carved moon
     (`#cosmosCarve`) had shipped unrecorded since June — now **waiver ②, owner-ratified**.
@@ -2823,8 +2798,7 @@ archive sweep; where it conflicts with the 2026-08-21 blocks above, the above go
   automated** — the session pends) · ⑥ **ISS-3 CLOSED** (vapor + minimal appbar worked all along
   since D51 deleted the bespoke bar; owner-verified "looks good", menu icon included).
 
-## Prior ▶▶ (2026-08-20) — ~~the RELEASE DECISION~~ ✅ RELEASED v1.7.4 2026-08-20; superseded
-## where the 2026-08-21 blocks above say so (F1 ✅ built · C3 ✅ designed+S1 · A13 unblocked)
+## Prior ▶▶ (2026-08-20) — ~~the RELEASE DECISION~~ ✅ RELEASED v1.7.4 2026-08-20; superseded where the 2026-08-21 blocks above say so (F1 ✅ built · C3 ✅ designed+S1 · A13 unblocked)
 
 **D61 is BUILT and its live exercise ran 2026-08-20 (see path 2 below). The 2026-08-20 CLOSE-OUT
 SWEEP then drained the closeable backlog (owner: "close all the issues and fixes we can"):**

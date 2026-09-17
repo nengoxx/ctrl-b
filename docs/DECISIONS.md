@@ -18,6 +18,9 @@ manifest + service-worker app-shell cache).
 client is thin — Android support is a UI concern, not an architectural one, and the Vapor
 design is already mobile-first, so "Android" costs almost nothing extra.
 
+*(Port note: this entry was written against `:5432`; the service settled on **`:5433`** before the
+first deploy. Nothing else in D1 changed — read every `5432` below as `5433`.)*
+
 **The one real constraint — secure context for the mic:** browser mic capture (`getUserMedia` /
 `MediaRecorder`) only works in a **secure context**, which means **HTTPS** *or* **loopback**
 (`localhost`/`127.0.0.1`/`*.localhost`). A Tailscale IP (`100.x.x.x`) and LAN IPs (`192.168.x`)
@@ -732,7 +735,19 @@ whisper model warm server-side.
 
 ---
 
-## D20 — In-app HTTPS control: Tailscale Serve as a host-management capability (6c-2) ✏️ DESIGNED 2026-06-22 (not built)
+## D20 — In-app HTTPS control: Tailscale Serve as a host-management capability (6c-2) ✏️ DESIGNED 2026-06-22 · ✅ BUILT (except the QR, deleted by the owner)
+
+> **Status (corrected 2026-09-17).** Everything below shipped **except point 3, the QR** — which the
+> owner deleted 2026-07-28 ("just not something I want to do or need"); it is now a §P *parked* item
+> in [`ROADMAP.md`](./ROADMAP.md) and must not be revived. As built: the two typed actions
+> `tailscale_serve_enable` / `tailscale_serve_disable` (`services/actions/tailscale.py`, `Risk.MED`,
+> `serve` only — never `funnel`), the always-on read `GET /api/access/status` + the
+> `POST /api/access/serve` control (`api/access.py`), and the Conf → Access panel
+> (`hooks/useAccess.ts` → `tabs/ConfTab.tsx`). The daemon/serve status is read by `api/access.py`'s
+> own helper rather than a third registered action. The privilege exception the `/access/serve`
+> endpoint makes — `Actor.USER, Privilege.FULL`, so the two MED actions skip the confirm bubble — is
+> deliberate and documented in [`SECURITY_MODEL.md`](./SECURITY_MODEL.md) §2.2. *(The rationale below
+> is unchanged and still the design of record.)*
 
 **Decided 2026-06-22 (with the owner), after 6c-1 shipped the manual path.** `tailscale serve --bg 5173`
 (documented in `HTTPS_TAILSCALE.md`, **owner-verified working on the phone**) gives the mic its
@@ -5114,7 +5129,12 @@ process-wide session cap.
 
 **Scope + posture:** screen-on / app-foreground / Wake Lock (R14); `voice.live` extends
 `VoiceCfg` with a whole-feature `enabled` (ships OFF until the S4 owner round closes) and every
-tunable as a real Conf Settings row (owner ruling — no YAML-only knobs). §4.4
+tunable as a real Conf Settings row (owner ruling — no YAML-only knobs). **⚠ Amended at S3.5
+(2026-09-14, LIVE_VOICE_PLAN §7-S3.5): `enabled` is the CALL's switch, not the socket's.** The WS
+route and the `live_ear` status bit admit on **`enabled OR dictation`** (`api/voice.py`), because
+phrase-streaming dictation needs the same ear and no mouth — so the relay is reachable with
+`enabled` OFF whenever `voice.live.dictation` is ON. `voice.enabled` (the master) still outranks
+both. §4.4
 truncate-to-what-was-heard is DEFERRED to its own follow-up slice (council F1: the persistence
 seam the draft assumed does not exist); v1's interrupted-reply posture is recorded honestly in
 the plan. Build = **S0–S4 per plan §7**, one slice per session under the standing cadence;

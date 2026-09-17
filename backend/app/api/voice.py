@@ -138,9 +138,10 @@ def _origin_allowed(origin: str | None, host: str | None, allowed: list[str]) ->
     ATTACKER chose — a page served from `http://evil.example:5433` whose name is rebound to a tailnet
     IP sends a matching `Origin` and `Host`, and passes. That is the app's existing posture, not a new
     hole: rebinding equally defeats the absence-of-CORS defence on every plain-HTTP route here. The
-    real fix is app-wide **`Host` header validation** (`TrustedHostMiddleware`), already recorded as
-    D65-R1 in HARDENING_PLAN §8.2 / SECURITY_MODEL §2.7; the rule stays because it still stops the
-    ordinary hostile page and costs no configuration.
+    real fix is app-wide **`Host` header validation** (`TrustedHostMiddleware`), built at D72
+    (`main._mount_trusted_hosts`; ships with `server.trusted_hosts` EMPTY = off, owner opt-in —
+    SECURITY_MODEL §2.9/§2.10); the rule stays because it still stops the ordinary hostile page
+    and costs no configuration.
     """
     if not origin:
         return False

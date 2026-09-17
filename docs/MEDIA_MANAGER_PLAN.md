@@ -1,12 +1,17 @@
 # MEDIA_MANAGER_PLAN — the media manager v2: per-destination art LIBRARIES · upload · crop · focal point · reorder
 
-**Status: v2.1 — COUNCIL ROUND 2 CLOSED 2026-08-24, BOTH LENSES FINAL-CONFIRMED RESOLVED
+**Status: ✅ BUILT + RELEASED as v1.7.7 (2026-08-27, prod @ `578ffa7`).** The whole §12 ladder
+shipped — S0–S5, the W1–W10 owner-round waves, and S6 (the owner's phone device round, the
+phase's last slice) — with the per-slice as-built records inline in §12 and §2/§6. Design
+provenance: v2.1 — COUNCIL ROUND 2 CLOSED 2026-08-24, BOTH LENSES FINAL-CONFIRMED RESOLVED
 (record: §15; Emma correctness lens 1 HIGH + 9 MED · adversarial Opus architecture lens 5 HIGH +
 8 MED + 3 sweep; every finding ruled and folded; each lens's confirm rounds ran to an explicit
 "RESOLVED — ready to build"). The owner DECISION-SESSION rulings (§10) all stand, and the
 H5 refinement (role-family cards for data-derived keys, §6.1) is **OWNER-RATIFIED 2026-08-24**
-("we could try your suggestion first"). NOTHING BUILDS until the owner reads this document and
-rules the push.**
+("we could try your suggestion first").
+**⚠ Rolling back off v1.7.7 is a CONFIG rollback first:** the `config_version` 1→2 fold (§2.2)
+landed at this cutover, so restore the pre-cutover `config.yaml` backup the migration wrote (the
+runbook's §Rollback → CONFIG step names it) *before* checking out v1.7.6.
 
 Locks as **D65** (amending D52 §5.4 + D53/D54). MEDIA_PLAN.md (D53/D54) stays the authority on
 namespaces/roles/kinds/serving; this plan is the authority on writes, libraries, and management UI.
@@ -1494,7 +1499,8 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > explicit multi-window cast walk (framing outcomes were already judged good in the W10 round and
 > the reticle/preview probes; the fleet-backdrop proportional degrade stays the recorded weak spot
 > to watch).
-> **Rig teardown owed post-release:** `tailscale serve --https=8443 off` + stop the dev units.
+> **Rig teardown:** DONE at the release (`tailscale serve --https=8443 off` + dev units stopped) —
+> the recipe is kept because the second-Serve-port rig is how any future phone round runs.
 
 | finding | source | ruling |
 |---|---|---|

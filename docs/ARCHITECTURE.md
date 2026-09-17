@@ -50,7 +50,8 @@ streaming is SSE plus the one WebSocket, `WS /api/voice/live` (D71 §3.2, media 
 ## 3. Data model
 
 Superseded sketch — authoritative models live in **`DESIGN.md`** (§2 domain entities · §4 message
-`parts[]` · §9 the `Settings` config inventory, 15 sections) and **`SPEC.md` §6** (as-built config
+`parts[]` · §9 the `Settings` config inventory — one section per subsystem, `config.py` is the
+list) and **`SPEC.md` §6** (as-built config
 section table + SQLite schema). Secrets: `*`-marked fields are gitignored in YAML, masked on API
 read, redacted from output — the full model is **`SECURITY_MODEL.md` §4**.
 
@@ -104,7 +105,7 @@ as a Windows server on corsair running a Linux host. The server-OS branches are 
 allowlist** (pinned by the drift-guard `backend/tests/test_arch_invariants_qh9.py`):
 `fleet._ping_cmd` (local ping syntax — Windows `-n`/`-w`, Linux `-c`/`-W`, BSD/macOS `-c`/`-t`,
 decided at call time so a Termux profile stays alive) · `run_shell`'s per-OS shell
-(`services/actions/shell.py`) · `core/fsutil._fsync_dir` (directory-fsync durability no-op on Windows —
+(`services/actions/shell.py`) · `core/fsutil.fsync_dir` (directory-fsync durability no-op on Windows —
 git is the durable record regardless) · `tools/check.py` (venv/npm resolution, the runner's one OS
 chokepoint, outside the app). Any new server-OS branch must be consciously added to both the guard
 and this list. Paths use `pathlib`; the YAML writer preserves the existing file's CRLF/LF so a
@@ -125,6 +126,13 @@ a secure context (`getUserMedia` needs HTTPS off-localhost). Runbooks: `HTTPS_TA
 
 Owned by **[`SECURITY_MODEL.md`](./SECURITY_MODEL.md)** (trust boundary, the `decide()` gate,
 confirm-tokens, secret handling, the safe-defaults checklist). Two load-bearing facts kept here
-because code/config comment-anchors cite "§7": the backend binds **`127.0.0.1`** with Tailscale
-Serve as the only ingress, and **`debug=False` by default — an enabled debugger is a
-remote-code-execution surface**; never enable it on anything reachable.
+because code/config comment-anchors cite "§7":
+
+1. **The bind.** The **code default** is `127.0.0.1:5433` (`config.py` `ServerCfg`). The **deployed
+   PROD service binds `0.0.0.0:5433` — an OWNER WAIVER (2026-07-10)**: direct `http://emma:5433`
+   from the trusted home LAN + tailnet, never a public interface
+   (`deploy/linux/systemd/ctrl-b-dashboard.service`). **Tailscale Serve** HTTPS remains the only
+   remote ingress and the only secure context (mic). Never widen beyond that — SECURITY_MODEL §2.1
+   is the full statement.
+2. **`debug=False` by default — an enabled debugger is a remote-code-execution surface**; never
+   enable it on anything reachable.

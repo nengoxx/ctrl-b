@@ -11,14 +11,16 @@ Framework/library survey backing the choices in `DECISIONS.md`. Versions were cu
 ### Framework — React 19 + TypeScript + Vite 7 (chosen)
 
 - The three prior prototypes (`ws_claude`, `ws_claude_2`, `ws_codex_2`) all converged on
-  **React 19.2 + Vite 7.2 + TS 5.9 + TanStack Query 5.62 + lucide-react 0.468**. Reuse that
-  baseline — it's proven against this exact design and the team already knows it.
+  **React 19.2 + Vite 7.2 + TS 5.9 + TanStack Query 5.62 + ~~lucide-react 0.468~~**. Reuse that
+  baseline — it's proven against this exact design and the team already knows it. *(lucide-react was
+  dropped: see the icon note below.)*
 - "Snappy on Android" is **not** primarily a framework problem here. The app is small (4 tabs,
   a list, a chat log). React 19's compiler + Vite's code-splitting are more than enough. The
   wins that actually matter on a phone:
-  - Ship a **small bundle** (tree-shake icons — import individual `lucide-react` icons, not the
-    barrel; the Vapor design uses inline SVG masks for most glyphs anyway, so the icon dep stays
-    tiny).
+  - Ship a **small bundle**. ⚠ **SUPERSEDED on icons (UI_AUDIT F7, Slice 8):** the `lucide-react`
+    dependency was **removed**, not tree-shaken. Icons are **hand-inlined lucide geometry** in our own
+    components — the package is NOT a dep and must not be re-added (AGENTS.md). Do not follow the
+    original advice ("import individual `lucide-react` icons") kept here only as the 2026-05 premise.
   - **No layout thrash** in the chat log / status poll (virtualize only if a thread gets huge).
   - **PWA app-shell caching** so repeat opens are instant.
 - Lighter alternatives (Svelte 5, SolidJS) would shave a few KB and micro-bench faster, but

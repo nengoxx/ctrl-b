@@ -7,8 +7,12 @@
 >
 > **Status:** v1.1 — deep pass complete (voice · theme-kit internals · test suite & quality
 > guardrails, per owner request 2026-07-07) · **one user-facing bug found (SYS-13)** · **reviewed
-> by the owner 2026-07-07** — SYS-13 (fix) + SYS-14 (Linux CI) are scheduled pre-deploy in
-> `TODO.md` Phase 9; the remaining findings route per the §4 priority map.
+> by the owner 2026-07-07**. SYS-13 (fix) + SYS-14 (Linux CI) both shipped 2026-07-07, pre-deploy;
+> the remaining findings route per the §4 priority map.
+>
+> **⚠ THE §4 MAP IS AUTHORITATIVE FOR STATUS.** Each finding's §2/§3 body is the *original analysis*,
+> written in the present tense of 2026-07-07 — a fixed finding still describes its bug there. Shipped
+> items carry an inline ✅ on the heading, but always confirm against §4 before acting on a body.
 > **Method:** main-session code reading (Fable, high): `main.py`, `config.py` (full),
 > `runtime.py`, `db.py`, `services/{fleet,svc,deps,events,conversation,action_service}.py`,
 > `core/{tool,permissions,events,failover,memory}.py`, `api/{settings,integrations,events,agent,voice}.py`,
@@ -154,7 +158,7 @@ don't fix twice.
   standalone refactor, no longer "decide inside Slice 2" — ACA is closed and Slice 2 shipped the
   interim gate instead. Size M; home = the table in §4 below.
 
-### SYS-4 · Dev topology quietly widens the security boundary — **LOW-MED (documentation + one default)**
+### SYS-4 · Dev topology quietly widens the security boundary — **LOW-MED** — ✅ **DONE** (both halves, at the QH pass: the SECURITY_MODEL §2.1 dev-exposure paragraph = QH-6 `4c30c70`; the `target_port` default flipped 5173 → **5433** = QH-11, now `config.py` `target_port: int = 5433`)
 
 Prod is sound: backend binds `127.0.0.1`, uvicorn serves `dist`, Tailscale Serve is the only
 ingress. But **dev** runs Vite on `0.0.0.0` with `allowedHosts: true` (`vite.config.ts:59‑65`) and
@@ -162,9 +166,9 @@ proxies `/api` → the loopback backend — i.e. on the LAN, the backend's caref
 bypassed through the dev server, unauthenticated. Acceptable on a trusted home LAN and consistent
 with the tailnet trust model, but it is **not written down** — `SECURITY_MODEL.md` should carry a
 "dev-mode exposure" line so the boundary is a decision, not an accident. Rider:
-`TailscaleCfg.target_port` defaults to **5173** (the dev frontend); on emma prod, Serve should
-front the backend-served SPA (5433) — `DEPLOY_EMMA.md` presumably sets it, but the *default*
-encodes the dev topology, which is the wrong safe-default direction.
+`TailscaleCfg.target_port` defaulted to **5173** (the dev frontend); on emma prod, Serve should
+front the backend-served SPA (5433) — the *default* encoded the dev topology, which is the wrong
+safe-default direction. **Flipped to 5433 at QH-11.**
 
 ### SYS-5 · SPA fallback swallows unknown `/api/*` into `index.html` — **LOW** — ✅ **DONE**
 
@@ -291,7 +295,7 @@ performance/a11y is `UI_AUDIT.md`. Deploy-gate items are `PRE_DEPLOY.md`/`DEPLOY
 
 *Findings below are from the v1.1 deep pass (voice · theme-kit · quality guardrails).*
 
-### SYS-13 · `fillComposer` is broken against the now-controlled textareas — **MED-HIGH (confirmed user-facing bug)**
+### SYS-13 · `fillComposer` is broken against the now-controlled textareas — **MED-HIGH (confirmed user-facing bug)** — ✅ **DONE 2026-07-07** (`fillComposer` is now `setDraft(text)` + focus, exactly the fix below; `lib/composer.ts`)
 
 **The one real bug this audit found.** `fillComposer` (`lib/composer.ts:84‑90`) writes
 `ta.value = text` and dispatches a synthetic `input` event; its comment still says *"the textarea
@@ -317,9 +321,9 @@ missing:** a jsdom test that renders a controlled composer, calls `fillComposer`
 *store* draft — the existing `tests/lib/composer.test.ts` covers routing only, which is exactly why
 this survived. (Also a one-line e2e: tap edit on a confirm bubble → send → assert the sent body.)
 
-### SYS-14 · No CI, and the gate never runs on the deploy OS — **MED (production-readiness)**
+### SYS-14 · No CI, and the gate never runs on the deploy OS — **MED (production-readiness)** — ✅ **DONE 2026-07-07** (`.github/workflows/ci.yml`: `tools/check.py` on ubuntu-latest for every branch push/PR, and the full gate **+ `--e2e`** on every `v*` tag — the machine-checked release gate the runbook waits on)
 
-Grep-verified: `.github/workflows` does not exist. The entire quality bar is local git hooks
+Grep-verified **at the time of the audit**: `.github/workflows` did not exist. The entire quality bar is local git hooks
 (`.githooks/` pre-commit `--fast` / pre-push full) — excellent design (SYS §2), but (a) one
 `--no-verify` bypasses it with no backstop, and (b) **every check has only ever run on Windows**,
 while the deploy target is emma (Linux). The codebase is deliberately OS-agnostic and the risk is

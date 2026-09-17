@@ -454,6 +454,13 @@ tools + confirm bubbles) are DONE.**
 ### Phase 6c — HTTPS + Android verification — **sliced 6c-1 (manual + doc ✅) / 6c-2 (settings panel)**
 
 #### 6c-1 — manual Tailscale Serve setup + doc ✅ DONE 2026-06-22 (doc)
+
+> ⚠ **The two `--bg 5173` commands below are dated corsair-era HISTORY — do not copy-paste them on
+> emma.** emma's Serve fronts PROD :5433 on :443; pointing :443 at dev takes prod down until someone
+> remembers to restore it. Today's dev exposure is an ADDITIONAL door:
+> `tailscale serve --bg --https=8443 5173`. [`HTTPS_TAILSCALE.md`](./HTTPS_TAILSCALE.md) is the live
+> runbook.
+
 - [x] **Setup doc:** [`HTTPS_TAILSCALE.md`](./HTTPS_TAILSCALE.md) — `tailscale serve --bg 5173` puts the
       app behind a real TLS cert at the device's `*.ts.net` name (tailnet-only, **not** Funnel), so the
       mic's secure-context requirement is met on the phone. Coexists with the plain `http://corsair:5173`
@@ -1491,7 +1498,7 @@ owner eyeball; each passes `tools/check.py`.
       source ruling; autoscroll·413·cast-walk = live-use deferrals). Phase 21 **RELEASED v1.7.7**.
       *(Box ticked 2026-09-01 — doc-truth; the HANDOFF 2026-08-27 block is the record.)*
 
-## Phase 22 — Composer attachments: staged uploads · durable per-thread files · the re-readable injection — **✏️ DESIGN RATIFIED 2026-09-01 ([`D68`](./DECISIONS.md)) · spec = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) v2.2 (council-closed §11 + owner-ratified §0b; §9 = the slice ladder; build against the plan, NOT this list)**
+## Phase 22 — Composer attachments: staged uploads · durable per-thread files · the re-readable injection — **✅ BUILT 2026-09-03, UNRELEASED (rides v1.7.8)** · design ratified 2026-09-01 ([`D68`](./DECISIONS.md)) · spec = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) v2.2 (council-closed §11 + owner-ratified §0b; §9 = the slice ladder; build against the plan, NOT this list)
 
 Attach images/text/PDFs from the composer (ROADMAP A8): id-addressed staging `PUT` + claim-by-
 rename into `$CTRLB_HOME/attachments/{thread_id}/` · `AttachmentPart` joins the part union ·
@@ -1504,30 +1511,43 @@ build from a pinned brief → main-seat audit → Emma-lane review; each passes 
       (`756996b`) · the Honor 20 HEIC device check **RAN 2026-09-01: NOT HEIC** — the owner's
       camera photo admitted + decoded through the media picker (stored JFIF baseline post-export);
       camera source = JPEG, HEIC refusal copy stays for foreign files only.
-- [ ] S1 — Backend store + transport: staging mint/PUT (bare-name at mint, streamed cap, sniff,
+- [x] S1 — Backend store + transport: staging mint/PUT (bare-name at mint, streamed cap, sniff,
       text allowlist+decode) · claim-by-rename in the chat POST + steer drain · `AttachmentPart`
       (facts only) · retention (thread-delete hook · boot sweep incl. aged staging + unreferenced-
-      in-live-dir reconcile) · tests per plan §9 S1.
-- [ ] S2 — Model feed: `_assemble` array-content branch + per-turn revision-keyed data-URL cache +
+      in-live-dir reconcile) · tests per plan §9 S1. **CLOSED 2026-09-01** (+ the fix wave);
+      full record = plan §11-S1.
+- [x] S2 — Model feed: `_assemble` array-content branch + per-turn revision-keyed data-URL cache +
       `max_images_per_request` ceiling · estimator `AttachmentPart` arm (explicit test) · the
       per-hop `drop_unsupported_modalities` strip (`input_modalities` on the catalog entry →
       `ResolvedTarget`; two-direction two-hop test) · `read_attachment` + `InvocationContext.
       thread_id` (fail-closed) + no-arg manifest · compaction manifest lines · resize notice ·
-      `ATTACHMENT_ONLY_TEXT` + filename title/recall surrogates.
-- [ ] S3 — FE: `useAttachments` (reuse imageProbe/imageExport; downscale 2048/q0.85) · attach
+      `ATTACHMENT_ONLY_TEXT` + filename title/recall surrogates. **CLOSED 2026-09-01**; full
+      record = plan §11-S2.
+- [x] S3 — FE: `useAttachments` (reuse imageProbe/imageExport; downscale 2048/q0.85) · attach
       chrome in every composer variant · chips + paste/drop (`items` fallback) · the bubble branch
       (image display + tap-to-full-size) + the GET serving route (+ its §9 S3 tests) ·
-      attachment-only sends · e2e.
-- [ ] S4 — PDFs: pypdf sidecar extraction at claim (`to_thread`, soft bounds model-visible) ·
-      scanned-PDF failure copy · sidecar rides the S2 text path.
-- [ ] S5 — Composer expand affordance (owner-promoted 2026-09-01): the Telegram-style control once
+      attachment-only sends · e2e. **CLOSED 2026-09-02**; full record = plan §11-S3.
+- [x] S4 — PDFs: pypdf sidecar extraction at claim (`to_thread`, soft bounds model-visible) ·
+      scanned-PDF failure copy · sidecar rides the S2 text path. **CLOSED 2026-09-02**
+      (`e65f02a`+`6c31c1f` — the both-names-free claim walk + exclusive sidecar publish,
+      surrogate-safe); full record = plan §11-S4.
+- [x] S5 — Composer expand affordance (owner-promoted 2026-09-01): the Telegram-style control once
       the draft fills a couple of lines — LINE composer first, shared seam or nothing; behavior
       (fullscreen vs taller) owner-ruled on R62's evidence; quiet trigger per the §7 styling ruling.
-- [ ] S6 — Owner device round: phone pick/paste/send/re-read · attachment-only photo send ·
+      **CLOSED 2026-09-02** (`115178e`+`dbc63ad` — a taller ceiling on the shared chrome seam; the
+      `.line-row` wrapper retired S3's `order:-1` trick); full record = plan §11-S5.
+- [x] S6 — Owner device round: phone pick/paste/send/re-read · attachment-only photo send ·
       vision on OpenRouter · no-vision on qwen (expect the in-band ERROR) · a real PDF · a
       compacted-thread re-read via the manifest · the expand control on the phone's line composer.
+      **CLOSED 2026-09-03** — the round landed 3 findings, the fix wave plus re-rounds №1–№3 (the
+      line pill's CONTROL STACK · the staged-attachment persistence · the smooth grow/retarget under
+      the 112px ceiling) all ran the cadence to council-close the same day; records = plan §11's
+      S6-fix-wave + S6-re-rounds blocks.
 
-## Phase 23 — Characters are agents: the conversational-agent expansion · lorebooks · the visual agents surface — **✏️ DESIGN RATIFIED 2026-09-06 ([`D70`](./DECISIONS.md)) · spec = [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) (council-closed §13; §10 = the slice ladder; build against the plan, NOT this list)**
+**⇒ THE PHASE 22 LADDER IS COMPLETE (2026-09-03).** Built and council-closed, **UNRELEASED** — it
+rides **v1.7.8** with Phase 23's features (owner sequencing 2026-09-12).
+
+## Phase 23 — Characters are agents: the conversational-agent expansion · lorebooks · the visual agents surface — **S0–S6b ✅ CLOSED; S7 rides the owner's regular use (their ruling 2026-09-11)** · design ratified 2026-09-06 ([`D70`](./DECISIONS.md)) · spec = [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) (council-closed §13; §10 = the slice ladder; build against the plan, NOT this list)
 
 SillyTavern-class conversational characters as ordinary agents (one flat system, ruling 1) +
 lorebooks as a roleplay-independent subsystem. Standing cadence per slice: pinned Opus build →
@@ -1584,7 +1604,7 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       picker feel ✓ · read-along on a character reply ✓ — **the remainder rides the owner's
       regular use (their ruling 2026-09-11); their word closes the phase.**
 
-## Phase 24 — Live voice mode ("call mode"): the continuous ear · the call loop · barge-in — **✏️ DESIGN RATIFIED 2026-09-11 ([`D71`](./DECISIONS.md)) · spec = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) (council-closed §9; §7 = the slice ladder; build against the plan, NOT this list)**
+## Phase 24 — Live voice mode ("call mode"): the continuous ear · the call loop · barge-in — **S0–S3.5 ✅ BUILT (+ the D72 intermission wave); S4 (the phase gate) PENDING — needs the owner + phone** · design ratified 2026-09-11 ([`D71`](./DECISIONS.md)) · spec = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) (council-closed §9; §7 = the slice ladder; build against the plan, NOT this list)
 
 A hands-free voice conversation: Speaches-realtime as the ear behind a ctrl-b relay (the first
 WebSocket, D71's narrow admission), client-submitted turns through the untouched agent loop, C3
@@ -1648,6 +1668,19 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       waves `7a298ff`/`850d530`; TWO confirm rounds — the Fennec EAR-HOLD with the PRE-PLAY tap,
       `mouthLive` across reconnect, the race sweep, the transport catch, the hidden-page tail
       abandonment; full record = LIVE_VOICE_PLAN §7-S3).
+- [x] S3.5 — **Dictation DECOUPLED from the call** (the owner's question "is live dictation
+      call-only?" surfaced a latent gate coupling): the WS route and the `live_ear` status bit
+      admit on **`enabled OR dictation`** — dictation alone opens the EAR while the call bit stays
+      down, so the call door never appears; the four dictation knobs render in Conf **Voice · STT**
+      (grouping only — the keys stay `voice.live.*`, the one-home rule pinned); `voice.enabled`
+      (the master) still outranks both. **Council-CLOSED 2026-09-14** (`6b8b6b4`·`13b664c`·
+      `8409bd1`; Emma round → wave → confirm RESOLVED). The same day's owner round added two more
+      council-closed waves — **the WORKLET GATE** (AudioWorklet is SECURE-CONTEXT-ONLY, so streaming
+      dictation was dead on plain HTTP; `armDetector` now declines the leg up front and the degrade
+      names "needs HTTPS") and **the LONG-RECORDING BAR RULES** (the anchor tracks the button
+      finger-free; the composer row FREEZES while recording). Records = plan §7-S3.5 + its addenda.
+      ⚠ This is why `voice.live.enabled` being OFF does **not** mean the relay is unreachable —
+      D71's amendment note.
 - [ ] S4 — The owner calibration + device round (the phase gate): noise/quiet knob tuning on
       the real phone (+ the Tier-0 auto-stop threshold, same sitting); `voice.live.enabled`
       flips ON at its close. Decision point: fixed endpointing good → v1 stands; sluggish →

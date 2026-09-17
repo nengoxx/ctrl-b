@@ -26,8 +26,8 @@ ROLE="${1:-prod}"
 # ctrl-b-agent@.service). BOOT_UNITS = enabled --now (boot + start). ONDEMAND_UNITS = installed but NOT
 # enabled — the dev dashboards are on-demand (owner amendment 2026-07-10, revises the earlier "BOTH
 # always-on"): start them only when iterating. The agents ARE boot services: two template instances,
-# latest Opus (the main model since 2026-07-24) + pinned Fable 5 (on-request second opinion), both
-# effort high (tmux sessions ctrl-b-opus / ctrl-b-fable).
+# pinned Fable 5 (the MAIN seat since 2026-07-28 — designs, supervises, rules, audits) + latest Opus
+# (the subagent workforce), both effort high (tmux sessions ctrl-b-fable / ctrl-b-opus).
 case "$ROLE" in
   prod) REPO="${REPO:-$HOME/apps/ctrl-b}";   CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b}"
         RENDER_UNITS=(ctrl-b-dashboard.service)

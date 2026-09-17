@@ -3,7 +3,7 @@
 **Status: ✅ COUNCIL-SETTLED 2026-08-05 (draft → Codex READY WITH CHANGES + Opus lens SHIP
 WITH CHANGES → reconciled, §11 → BOTH confirm rounds folded: Opus all-RESOLVED + the two
 wire facts kept (probed format, unusable reason); Codex all-RESOLVED + the service-collision
-share rule + the pinned JS normalization). Recorded as D53; build slices = TODO M1a–M3.** Owner directives: ships IN v1.5.0 as a finished product — no deferred seams,
+share rule + the pinned JS normalization). Recorded as D53; build slices = TODO M1a–M3 (all shipped — §8).** Owner directives: ships IN v1.5.0 as a finished product — no deferred seams,
 no dead code, no unnecessary code; NAMED stack files; media slices BEFORE G6 palettes. Builds
 on the G5 surface (GACHA_PLAN §7.6 as-built; §5.2–§5.4 + §10.4 are the parent design).
 
@@ -63,12 +63,21 @@ $CTRLB_HOME/media/
   gacha/     {characters, banner, reel, oracle}/                (shipped, G5)
   frontier/  {rigs, hero, stack}/
   kit/       {services, service-banners, hosts, background, brand}/
+  agents/    {avatars, backgrounds}/                            (added by D70, Phase 23)
 ```
 
 > **End-state amendments since this map was drawn.** `kit/` grew to five roles (M4's three +
 > G6.3's `brand` — §12 and §12.1). `gacha/wallpaper/` was **REMOVED at G6.3** (owner ruling
 > 2026-08-06, §12.1 ②): the fleet backdrop's drop-in home is the shared `kit/background/`, and
-> what stayed gacha's is the `wallpaper` PIN, which sources from `characters/`. Everything below
+> what stayed gacha's is the `wallpaper` PIN, which sources from `characters/`. **A FOURTH
+> namespace, `agents`, was added by [D70](./DECISIONS.md) (Phase 23)** — two pool roles,
+> `avatars` and `backgrounds`, one registry row exactly as §1 promised
+> (`core/media.py:MEDIA_NAMESPACES` + the mirrored row in `theme-engine/mediaRegistry.ts`). It
+> declares **no bundled ids** (ctrl-b ships no character art, so a fresh install's libraries are
+> empty) and **no `slots`**: a pin binds an entry to a surface the NAMESPACE owns, and here the
+> binding lives on the agent instead (`AgentDef.avatar`/`.background`) — the per-agent binding
+> and its UI are [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §8's, the namespace row is this
+> document's. Everything below
 > and in §2 is the as-built record of the shape at the time it was written — a role's pin key and
 > its role folder are validated independently on both ends, so a pin outliving a folder is an
 > ordinary shape (`reel_figure` has always sourced from another role).
@@ -188,14 +197,17 @@ else in this section stands verbatim: the READ surface is untouched.**
 
 ## 8. Slices + gates (council M4 re-slice; BEFORE G6 — owner-ruled)
 
+**All slices ✅ SHIPPED in v1.5.0** (M1a–M3 closed 2026-08-05 — D53 feature-complete; M4/M4b the
+same week, their as-built records = §12/§12.1).
+
 | slice | content | gate |
 |---|---|---|
-| M1a | the config re-home ALONE (ns-generic model, `themes:` family deleted, readers/writers moved, dev configs hand-cleaned, ignored-old-keys test) — no behavior change | gate + gallery round-trip e2e |
-| M1b | `lib/media.ts` operations + the FE registry inversion (+ ConfTab `applicableNs`) + gacha refactored on top — behavior-identical (the §2 parity arms) + backend `warnings[]` removal with the gallery taking over | gate + gacha e2e unchanged |
-| M2 | frontier: registry rows (BE+FE), descriptor kinds land with their second consumer, rigs/hero/stack consumers, the `image` retirement, stack combo matrix | gate + owner eyeball (drop art on dev) |
-| M3 | kit services: registry row, `keyFor`, `ServiceIcon`, five surfaces, keyed gallery UI + collision/unmatched annotations | gate + owner eyeball on ≥2 themes + automated icon arms on all five |
-| ◐ M4 | **the KIT ART SYSTEM (D54, owner-ruled 2026-08-06 — BUILT same night; §12 below is the record).** Three more kit roles (`service-banners` · `hosts` · `background`) + the parent-surface primitives + the generic derived-key gallery model + the DefaultRoot background layer + cosmos as first adopter | gate + populated opt-out arms + owner device round (pre-v1.5.0, owner-ruled) |
-| ◐ M4b | **the G6.3 delta (owner device round 2026-08-06; §12.1 is the record).** The `brand` role (owner-droppable app-bar mark, masked + accent-tinted) + ONE home for the backdrop: gacha consumes `kit/background` and its own `wallpaper/` role is REMOVED, pin kept | gate + owner device round |
+| ✅ M1a | the config re-home ALONE (ns-generic model, `themes:` family deleted, readers/writers moved, dev configs hand-cleaned, ignored-old-keys test) — no behavior change | gate + gallery round-trip e2e |
+| ✅ M1b | `lib/media.ts` operations + the FE registry inversion (+ ConfTab `applicableNs`) + gacha refactored on top — behavior-identical (the §2 parity arms) + backend `warnings[]` removal with the gallery taking over | gate + gacha e2e unchanged |
+| ✅ M2 | frontier: registry rows (BE+FE), descriptor kinds land with their second consumer, rigs/hero/stack consumers, the `image` retirement, stack combo matrix | gate + owner eyeball (drop art on dev) |
+| ✅ M3 | kit services: registry row, `keyFor`, `ServiceIcon`, five surfaces, keyed gallery UI + collision/unmatched annotations | gate + owner eyeball on ≥2 themes + automated icon arms on all five |
+| ✅ M4 | **the KIT ART SYSTEM (D54, owner-ruled 2026-08-06 — BUILT same night; §12 below is the record).** Three more kit roles (`service-banners` · `hosts` · `background`) + the parent-surface primitives + the generic derived-key gallery model + the DefaultRoot background layer + cosmos as first adopter | gate + populated opt-out arms + owner device round (pre-v1.5.0, owner-ruled) |
+| ✅ M4b | **the G6.3 delta (owner device round 2026-08-06; §12.1 is the record).** The `brand` role (owner-droppable app-bar mark, masked + accent-tinted) + ONE home for the backdrop: gacha consumes `kit/background` and its own `wallpaper/` role is REMOVED, pin kept | gate + owner device round |
 | — | then G6 palettes → v1.5.0 (M4 rides the same release — owner re-ruled 2026-08-06) | |
 
 Each slice: Opus build → main-seat audit → Codex → owner eyeball (the standing cadence).

@@ -17,8 +17,9 @@
 > judged *"not safe to build as written"*; v2 closed the fundamentals; v3 closes the rest. Council
 > record: §9. Owner rulings: §8.
 > **✅ TERMINAL STATUS (noted 2026-08-12): all slices BUILT + RELEASED — first shipped in v1.3.0
-> (2026-07-28); the plain-form `update.sh` since proven with 4 clean runs (v1.4.0 · v1.4.1 ·
-> v1.5.1 · v1.6.0). Living runbook: `deploy/linux/README.md` §Release; per-release records:
+> (2026-07-28); the plain-form `update.sh` proven by then with 4 clean runs (v1.4.0 · v1.4.1 ·
+> v1.5.1 · v1.6.0) and by every release since, through v1.7.7 — which ran the chain's SECOND
+> step for real (§12a). Living runbook: `deploy/linux/README.md` §Release; per-release records:
 > [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md).**
 
 ---
@@ -462,7 +463,8 @@ comments, key order and 0600 intact; re-parse clean; `load_settings` still loads
 ## 12. Slice 2 — AS BUILT (2026-07-26)
 
 The fold left the config load path. `app/config_migration/steps.py` (the deletable file) + the split
-test suites; **488 lines removed from `config.py`**. `VERSION` → 1, `STEPS = (A11,)`.
+test suites; **488 lines removed from `config.py`**. `VERSION` → 1, `STEPS = (A11,)` *(the state at
+this slice; the chain has grown since — see §12a)*.
 
 **Gone from `config.py`:** `_migrate_legacy` and its five helpers · `_fold_agent_yaml_modes` ·
 `_SLOT_MAP` · `PendingMigration`/`_PENDING_MIGRATION` · `_materialize_migration` · the `.bak-a11-*`
@@ -512,6 +514,24 @@ on consumed keys and die with them (the owner's symmetric ruling) — including 
 rather than died; **slice 7's runbook gets a line**: skim the backup against the new file and re-add any
 comment worth keeping, and never restore an agent file from a pre-migration backup without re-saving it.
 ③ The env-only-secret hole is pinned by a test asserting today's behaviour; slice 3 closes it.
+
+### 12a. The step chain TODAY (transcribed from code, 2026-09-17)
+
+The machinery above has not changed; the chain it carries has grown, and a reader of §11/§12
+should not take their slice-time numbers as the live ones. **Read the code, not this list, when it
+matters** — `backend/app/config_migration/`:
+
+| `version` | Step | What it folds | Shipped in |
+|---|---|---|---|
+| 1 | `A11` (`retires=A11_RETIRED_ENV_PATHS`) | the provider-registry fold (D48) | v1.3.0 |
+| 2 | `MEDIA_V2` | `media.<ns>` → `media.namespaces.<ns>` + `roles.<role>.order` → `files` (D65; MEDIA_MANAGER_PLAN §2.2) | v1.7.7 |
+| 3 | `PRESENCE_DEVICES` (`retires=(("wake","presence_device_ips"),)`) | `wake.presence_device_ips` → `wake.presence_devices` (D69) | **owed — rides v1.7.8** |
+
+The number lives in the file `app/config_migration/VERSION` (**3** today), read by `update.sh`
+before checkout and exposed to code as `CONFIG_VERSION`; `STEPS` is assembled in
+`__init__.py::_load_steps()`, and a test asserts `CONFIG_VERSION == STEPS[-1].version`.
+**Consequence for the runbook:** rolling back *across* either cutover is a CONFIG rollback first
+(§Rollback → CONFIG), which is why the v1.7.7 and the coming v1.7.8 releases both carry that note.
 
 ---
 

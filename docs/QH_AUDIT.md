@@ -3,8 +3,10 @@
 > **What this is.** The task brief for a high-rigor audit of ctrl-b's **quality harness itself** —
 > the gates, tests, hooks, CI, and executable invariants that answer *"is this repo healthy enough
 > to commit, merge, or deploy?"* — run in a fresh session BEFORE the emma deploy. The audit's
-> report lands in §R below (same doc, UI_AUDIT pattern). Finding ids are **QH-#** (nothing
-> collides with UI_AUDIT F# · SYSTEM_AUDIT SYS-# · AGENT_CHAT_AUDIT ACA-# · ISSUES ISS-#).
+> report lands in §R below (same doc, UI_AUDIT pattern). Finding ids are **QH-#** — distinct from
+> UI_AUDIT F# · SYSTEM_AUDIT SYS-# · AGENT_CHAT_AUDIT ACA-# · PROMPTS_AUDIT PR-# · ISSUES ISS-#.
+> *(The `QH-#` prefix itself is unique. Two OTHER prefixes are not — `F#` and `R#` are each used by
+> more than one ledger; see `docs/research/README.md` §"Finding-ID namespaces" before citing either.)*
 >
 > **Status:** ✅ **DONE (2026-07-07)** — audit executed same day; report in **§R**, the
 > owner-requested depth extension in **§R-2**. **Verdict: GO (reconfirmed by the deep pass)** —

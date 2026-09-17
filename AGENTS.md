@@ -27,8 +27,18 @@ Current capabilities (the v1.0 app):
   tools and runs them through the same gated `ActionService` the UI buttons use (validate → risk/
   privilege gate → confirm-bubble for med/high risk → execute → audit). Integrations: SearXNG web
   search, an MCP client (Streamable-HTTP + stdio), curated open-terminal shell/file tools, a generic
-  OpenAPI provider, embeddings; plus **skills** and **agents/subagents**.
-- **Voice** — STT in / TTS out via OpenAI-compatible endpoints; push-to-talk mic (needs HTTPS).
+  OpenAPI provider, embeddings; plus **skills** and **agents/subagents**, tier-1 + tier-2 **memory**
+  (D57), and **composer attachments** (images/text/PDFs re-readable via `read_attachment`, D68).
+- **Characters & lorebooks** — conversational characters ARE ordinary agents (V2/V3 card import,
+  Voice/Duties assembly, the agent gallery + three-state backdrop) plus the roleplay-independent
+  **lorebook** subsystem (D70).
+- **Voice** — STT in / TTS out via OpenAI-compatible endpoints; push-to-talk mic (needs HTTPS);
+  chunked read-along TTS (D63); and **live voice / call mode** — a Speaches-realtime ear behind the
+  app's one WebSocket relay, with phrase-streaming dictation (D71; `voice.live.enabled` ships OFF).
+- **Unattended** — scheduled **automations** (cron defs in SQLite + attributed headless runs, D49),
+  the **fleet monitor** loop and the presence/LAN **wake triggers** (D50/D69).
+- **Media** — the owner's art library per namespace: upload, crop, focal point, reorder, through the
+  one typed write path (D53/D65).
 - **Utilities** — the Tools tab registry (YouTube captions, etc.).
 - **Conf** — manage settings, hosts/services, integrations, agents, skills, prompts through the UI
   (round-trips `config.yaml`); no hand-edited YAML for those.
@@ -128,7 +138,7 @@ only; everything else stays SSE down / HTTP up). `uvicorn` serves the API and th
 
 **OS-agnostic invariant.** Branch on the managed **host's** `os_type` (ping/SSH command shape), never on the
 *server's* OS. Server-OS branches are a **closed allowlist** (`fleet._ping_cmd` ping syntax · `run_shell`'s
-per-OS shell · `core/fsutil._fsync_dir` no-op · `tools/check.py`), pinned by `test_arch_invariants_qh9.py`. See
+per-OS shell · `core/fsutil.fsync_dir` no-op · `tools/check.py`), pinned by `test_arch_invariants_qh9.py`. See
 `docs/ARCHITECTURE.md §6` (the owner of this list).
 
 ---
@@ -165,6 +175,18 @@ improve — never weaken** them:
   the user types `!<cmd>` → `POST /api/exec`; the agent's own tool is `run_shell`), and **both gates
   default OFF**: `shell.user_exec_enabled` and `shell.agent_exec_enabled` are `False`
   (`app/config.py` `ShellCfg`) — don't expose arbitrary shell beyond the tailnet, don't bypass the gate.
+- **Owner-file writes are raw-body `PUT` — never multipart, never `POST`.** Three routes write the
+  owner's files: `PUT`/`DELETE /api/media/{ns}/files/{role}/{filename}` (D65), `PUT /api/attachments/
+  staging/{filename}` (D68), and `PUT /api/agents/import` + `PUT /api/lorebooks/import` (D70). Their
+  whole defence is a **negative**: a non-safelisted verb forces a CORS preflight, and **this app mounts
+  no CORS middleware and answers no `OPTIONS`**, so a cross-origin write dies unsent. Adding CORS
+  middleware — or accepting a multipart/form POST — silently removes it. App-wide allowlist:
+  **`POST /api/voice/stt` only**, pinned by `test_media_write_d65.py`'s whole-app form-body walk
+  (`MULTIPART_ALLOWLIST`). Adding a row there is a security decision. (SECURITY_MODEL §2.7/§2.9.)
+- **The one WebSocket is media ingress only.** `WS /api/voice/live` (D71) carries inbound audio frames
+  and nothing else — a spoken turn still goes out over `POST /api/agent/chat` + SSE. CORS does not
+  protect a WebSocket, so its `Origin` rail (`api/voice.py::_origin_allowed`) is the boundary; don't
+  loosen it, and don't route agent traffic through it. (SECURITY_MODEL §2.10.)
 - **SSH credentials + API keys live in `config.yaml`** (gitignored, masked on API read). Never commit or
   echo them. `paramiko` uses `AutoAddPolicy` — acceptable only inside the trusted tailnet.
 - **`debug` is off by default** (it's an RCE surface). Keep it off for anything reachable.

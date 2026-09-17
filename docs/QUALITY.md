@@ -231,8 +231,19 @@ because those helpers are unit-tested on their own.
 > two screens, the same deliberate trade). **No warning was fixed and no rule was touched; F13 stays
 > trigger-gated.** Attributed here on the standing principle, in both directions.
 
-Deferral status: all 101 stay in the F13 backlog. **This paragraph is the ONLY home for the
-count** (doc-truth ruling 2026-08-17) — other docs point here, no numbers.
+> **And 101 → 107 across Phase 24 (re-measured 2026-09-17, doc-audit pass):** `refs` **54** ·
+> `only-export-components` **28** · `set-state-in-effect` **24** · `exhaustive-deps` **1**. The +6
+> accumulated unattributed across the live-voice waves (S0.5's gesture chrome, S2a/S2b's call loop
+> and overlay, S2.5's streaming dictation) and the D72 intermission wave — the same two shapes as
+> every entry above: the latest-ref idiom in the gesture/call machines, and pure helpers exported
+> beside their component because they are unit-tested on their own. **No warning was fixed and no
+> rule was touched; F13 stays trigger-gated.** Recorded here rather than absorbed silently, on the
+> standing principle — and noted as a *lapse*: the waves that added them did not re-measure, which
+> is what let the published count sit stale for three weeks.
+
+Deferral status: all **107** stay in the F13 backlog. **This paragraph is the ONLY home for the
+count** (doc-truth ruling 2026-08-17) — other docs point here, no numbers. A wave that changes the
+number re-measures here, in the same wave.
 
 **Why deferred (assessed thoroughly 2026-07-02, all ~19 sites reviewed):**
 - Every current hit is an **intentional, correct, concurrent-safe** pattern: "sync an editable draft from

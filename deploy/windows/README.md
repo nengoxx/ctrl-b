@@ -1,8 +1,8 @@
 # Run ctrl-b dashboard (v2) on Windows
 
 Quick local/daily-driver run on a Windows machine. It listens on **:5433**, so it **coexists** with the legacy
-Flask app on **:5432** — no conflict. (This is the early, hand-built Windows path; the general multi-OS deploy
-lands in the repo reorg — see `docs/REORG_PLAN.md`.)
+Flask app on **:5432** — no conflict. This kit is current: it is the Windows half of the deploy layout that
+landed with the 2026-06-30 repo reorg. The always-on Linux/systemd path is [`../linux/README.md`](../linux/README.md).
 
 ## One-time setup
 **Double-click `setup.cmd`** (or `start.cmd` will tell you if it's needed). It:
@@ -48,4 +48,4 @@ if you've ever run `start.cmd -Tailscale`. Inspect/trigger it in **Task Schedule
   so fleet pings return empty and every host shows offline. Backend code changes need a manual restart; the
   **frontend** still hot-reloads via Vite in `-Dev`.
 - Config + DB default to the **app root** (`config.yaml`, `ctrlb.db`) since `CTRLB_HOME` is unset on Windows.
-- Paths are resolved relative to these scripts, so they keep working after the repo reorg.
+- Paths are resolved relative to these scripts, so they work from any clone location.

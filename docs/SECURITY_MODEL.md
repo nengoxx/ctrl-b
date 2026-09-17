@@ -469,6 +469,68 @@ port legitimately sends `Origin: null`, and a fail-closed rule would break the o
 **Safe-defaults fit:** the import surfaces add no toggle — the surviving property is the app-wide
 negative above. `trusted_hosts` is the one thing here to *set*, and §6 carries its row.
 
+### 2.10 The live-voice WebSocket — the one admitted ingress that CORS cannot reach (D71)
+
+`WS /api/voice/live` (`api/voice.py`, relay in `services/voice_live.py`) is the **only WebSocket in
+the codebase**. "SSE down, HTTP up" was an implicit invariant until live voice; D71 §3.2 admitted
+exactly one exception, for the one thing neither half of that rule can carry — **continuous media
+ingress**, minutes of raw pcm16 from the phone. It is **not an agent transport**: a spoken turn
+still goes out over `POST /api/agent/chat` and streams back as SSE, so the socket carries audio up
+and JSON status down and **no audio ever rides the downlink**. Keeping it that narrow is the whole
+basis of the admission; widening it to carry agent traffic re-opens a decision, not a refactor.
+
+**Browser CORS does not protect a WebSocket** — there is no preflight on an upgrade. So the absence
+of CORS middleware, which is the entire defence for the §2.7/§2.8/§2.9 write paths, buys this route
+*nothing*, and four rails stand in its place:
+
+- **The `Origin` rail — pre-`accept()`, and the actual boundary.** `_origin_allowed(origin, host,
+  allowed)` is a pure function so it can be reasoned about and tested directly. An origin must be
+  **PRESENT** (a browser always sends one; absent means a non-browser client, which is what the
+  tailnet trust boundary deliberately does not extend to *on this route*) and either appear
+  **verbatim** in `voice.live.allowed_origins` — exact strings, never patterns, because a pattern is
+  how an allowlist grows a bypass — or have an `Origin` whose `host:port` equals the request's own
+  `Host`. A refusal closes **before** `accept()`, so a rejected origin cannot even learn whether the
+  feature exists. The `allowed_origins` escape hatch exists for a second Serve name; leave it empty
+  unless a measurement says otherwise (S3.5 measured the same-host rule passing through Serve→Vite
+  with it EMPTY).
+- **The feature gate — also pre-`accept()`.** `(voice.live.enabled OR voice.live.dictation)` AND a
+  configured live chain AND a resolvable target/policy, else close; a browser sees a failed
+  handshake (HTTP 403), matching how the mic simply is not offered when `stt` is unconfigured.
+  **⚠ Read that gate exactly: `voice.live.enabled` is the CALL's switch, not the socket's.** With
+  `enabled` OFF and `dictation` ON — the dev box's own configuration — the relay is reachable.
+  `voice.enabled` (the master) outranks both. Do not reason about this route's off-state from
+  `enabled` alone.
+- **Admission is capped, and the cap is renderable.** `voice.live.max_sessions` is taken
+  post-`accept()` so the client gets a **typed** `{"type":"error","code":"busy"}` plus close **1013**
+  ("try again later") it can render, rather than an opaque handshake failure indistinguishable from
+  a misconfiguration. The slot has exactly ONE release, latched as the single `finally` on the
+  single acquire, so a failing upstream close cannot leak it.
+- **The relay bounds what it will relay.** Malformed/unknown control frames, binary before `start`,
+  a second `start`, or an oversized frame close 1008. Two budgets ride one rolling window because
+  they bound two different resources: a **count** budget (per-message CPU) and an **ms-of-audio**
+  budget (throughput) — together ~2× realtime, which is what stops a compliant-*looking* client from
+  shipping ~100× realtime inside the count budget. A realtime client is untouched.
+
+**Secrets:** the upstream key rides an `Authorization: Bearer` header the relay injects server-side
+(`voice_live.py`); it appears in **no log record and no downlink frame** on any failure path, which
+is test-pinned across the failure taxonomy (`upstream_refused` · `upstream_lost` · `session_limit` ·
+the start timeout). Unrelated to secrecy but load-bearing beside it: **the relay never sends
+`input_audio_buffer.commit` on any path** (R70 §1.2 arm A) — that is a correctness invariant, not a
+security one, but it lives in the same code and is equally easy to "helpfully" add back.
+
+**What this does NOT defend against: DNS rebinding.** The same-host rule compares two values the
+*attacker* chose — a page served from a name they control, rebound to this machine's address, sends
+a matching `Origin` and `Host` and passes. That is the app's pre-existing posture, not a new hole:
+rebinding equally removes the premise of the absence-of-CORS defence on every plain-HTTP route here
+(§2.7's residual). The app-wide answer is **`server.trusted_hosts`** (§2.9), which backs this route
+up too — `TrustedHostMiddleware` runs on **`websocket` scopes as well as `http`**, so a `Host`
+mismatch answers 400 at the handshake, before routing. It ships EMPTY, so today this residual stands
+here exactly as it stands everywhere else.
+
+**Safe-defaults fit:** `voice.live.enabled` and `voice.live.dictation` both default **OFF** (no
+socket route reachable at all until one is flipped), and `allowed_origins` defaults **empty** (the
+same-host rule alone). §6 carries the row.
+
 ---
 
 ## 3. Residual & accepted risks + known gaps
@@ -491,7 +553,8 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | **A persisted approval also auto-allows AGENT + headless re-runs of that exact call (D44)** | **accepted, deliberate** | Owner ruling ④ — approvals are actor-agnostic (§2.5). A grant given at a chat bubble silences the same call for the agent and headless subagents. Bounded by args-exact pinning, allow-only matching, the un-approvable forced-confirm rung, and the mandatory `[auto-allowed: …]` summary marker; revocable any time in Conf → Tools. Fail-closed on a miss (headless CONFIRM → DENIED, unchanged). |
 | **Approvals never expire in v1 (D44)** | **accepted** | No TTL / decay-on-disuse (that needs a queryable fire-log = an events-schema migration; reserved). A grant stands until revoked in Conf → Tools or `config.yaml`; revocation is live from the next invoke. |
 | **The media write API will have no kill switch (D65)** | **accepted, owner waiver 2026-08-24** | The whole-feature-toggle rule is knowingly waived: `PUT`/`DELETE /api/media/…` is specified unconditional. A toggle over one typed, allowlisted, registry-confined path buys nothing a rollback does not, and stays trivially additive (§2.7). *Ruled at S0; the routes land at S1.* |
-| **DNS rebinding reaches the whole API** (an attacker-controlled name re-resolving to the LAN/tailnet address is same-origin, so CORS never applies) | **open → Phase 19** | Pre-existing, whole-API; the D65 write path will raise the value of the target. Lean fix = `TrustedHostMiddleware`. Tracked in HARDENING §8.2 (§2.7). |
+| **DNS rebinding reaches the whole API** (an attacker-controlled name re-resolving to the LAN/tailnet address is same-origin, so CORS never applies — and it removes the premise of the §2.10 WS `Origin` rail the same way) | **open BY OWNER CHOICE — the rail is BUILT** | Pre-existing, whole-API. **`server.trusted_hosts` closes it (§2.9, R73/D72 ⑥) and is shipped** — but it ships **EMPTY = not mounted**, and the owner ruled 2026-09-16 that it stays empty until they opt in (the rail costs every name and address they browse by; a missing name answers 400 everywhere with a hand-edit of `config.yaml` as the only recovery). So the residual stands on this deploy, by decision rather than by omission. Scoped to the cleartext bind either way — TLS makes the Serve front door unrebindable. *(No longer a Phase 19 item: D72 closed the design question.)* |
+| **The one WebSocket is an ingress CORS cannot reach** (`WS /api/voice/live`, D71) | **accepted, gated + off by default** | §2.10. No preflight exists on an upgrade, so the absence of CORS middleware protects nothing here and the pre-`accept()` `Origin` rail is the boundary instead. Bounded by: both feature toggles defaulting OFF, a `max_sessions` slot, the relay's count+ms burst budgets, and the bearer never reaching a log or the downlink. Media ingress ONLY — a spoken turn still rides `POST /api/agent/chat` + SSE. |
 | **Safelisted-reachable POST mutations are a CLASS** — multipart (`POST /api/voice/stt`) plus the bodyless / path-param routes that run whatever content type a cross-origin form sends | **pre-existing, open → Phase 19** | CORS withholds a cross-origin read-back, never the send. Not introduced by D65 — surfaced by it, which is why §1's correction scopes the "first surface" claim to owner FILES. Enumeration + disposition = Packet ③ (HARDENING §8.2); §2.7 names three examples. |
 | **The steer queue is in-memory (D41)** | **accepted** | A backend restart loses queued-but-undrained steers — no durability is promised (mirrors the in-memory confirm-token stance). Single-user, the queue is seconds-lived; accepted. |
 
@@ -571,6 +634,11 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
       path's whole defence is that a cross-origin write is forced into a preflight nobody answers.
       This is a negative to preserve, not a setting to choose; the app-wide walk in
       `test_media_write_d65.py` is what enforces it, and its allowlist is the only place to change.
+- [ ] **`voice.live` is what you intend** (§2.10) — `enabled` (the call) and `dictation` (the
+      streaming mic) both default **off**, and **either one alone** makes `WS /api/voice/live`
+      reachable; `voice.live.allowed_origins` should stay **empty** unless a measurement proved the
+      same-host rule insufficient for your ingress (each entry is an exact origin string that
+      bypasses the rail — never a pattern).
 - [ ] **`server.trusted_hosts` reviewed** (§2.9) — empty means the DNS-rebinding residual stands;
       non-empty means every name NOT listed answers 400 on every route, the Conf UI included. If you
       fill it in, list every name and address you actually browse by (ts.net name · bare hostname ·
@@ -581,6 +649,6 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
 ---
 
 ## References
-- Enforced rules for agents: [`AGENTS.md`](../AGENTS.md) §6 · Deploy/exposure: [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) · DECISIONS D1 (Tailscale Serve HTTPS), D3 (hybrid execution model), D32 (topology), D44 (persisted approvals — §2.5), D65 (the media write path — §2.7; spec of record [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)), D68 (chat attachments — §2.8; [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md)), D70 (card/lorebook imports — §2.9; [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md), dossier [`R73`](./research/R73-cross-origin-write-defense.md)).
-- Code anchors: `config.py` (`ServerCfg`, `ShellCfg`, `ApprovalRule`/`ToolOverride`, `secret_values`/`mask_secrets`) · `core/permissions.py` (`decide`, `canonical_str`/`glob_escape`/`exact_arg_pins`/`approval_match`) · `core/tool.py` (registry, `ToolSpec`) · `services/action_service.py` (confirm-tokens, the gate consult + the `[auto-allowed: …]` marker) · `runtime.py` (`grant_approval`, `settings_write_lock`) · `core/redact.py` · `adapters/ssh.py`.
+- Enforced rules for agents: [`AGENTS.md`](../AGENTS.md) §6 · Deploy/exposure: [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) · DECISIONS D1 (Tailscale Serve HTTPS), D3 (hybrid execution model), D32 (topology), D44 (persisted approvals — §2.5), D65 (the media write path — §2.7; spec of record [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)), D68 (chat attachments — §2.8; [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md)), D70 (card/lorebook imports — §2.9; [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md), dossier [`R73`](./research/R73-cross-origin-write-defense.md)), D71 (the live-voice WebSocket admission — §2.10; [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §3), D72 (the intermission wave: the app-wide form-body pin + `trusted_hosts`).
+- Code anchors: `config.py` (`ServerCfg`, `ShellCfg`, `ApprovalRule`/`ToolOverride`, `secret_values`/`mask_secrets`) · `core/permissions.py` (`decide`, `canonical_str`/`glob_escape`/`exact_arg_pins`/`approval_match`) · `core/tool.py` (registry, `ToolSpec`) · `services/action_service.py` (confirm-tokens, the gate consult + the `[auto-allowed: …]` marker) · `runtime.py` (`grant_approval`, `settings_write_lock`) · `core/redact.py` · `adapters/ssh.py` · `api/voice.py` (`_origin_allowed`, the WS admission) · `services/voice_live.py` (the relay's bounds + the injected bearer) · `main.py` (`_mount_trusted_hosts`).
 - Hardening that closed the flagged gaps: [`PRE_DEPLOY.md`](./PRE_DEPLOY.md) steps 3 (secret-hygiene tests) + 4b (stale confirm-token recovery) — **both shipped 2026-07-02; the §3 register carries no open "gap → step N" rows.**

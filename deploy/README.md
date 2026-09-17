@@ -5,9 +5,9 @@ the repo root (`backend/` + `frontend/` + `config.yaml`), so these work from any
 
 | Target | Use it when | Start here |
 |---|---|---|
-| **Linux (systemd)** | Always-on server on a tailnet/LAN box (the **emma** daily-driver model — two isolated instances + HTTPS). | [`linux/README.md`](./linux/README.md) — the full runbook. From Windows: `python deploy/bootstrap.py`. |
+| **Linux (systemd)** | Always-on server on a tailnet/LAN box (the **emma** daily-driver model — two isolated instances + HTTPS). | [`linux/README.md`](./linux/README.md) — the full runbook. First deploy of a box: `python deploy/bootstrap.py` from any checkout with `config.yaml` + SSH to it. |
 | **Windows (double-click)** | Run it on a Windows PC (e.g. corsair) without systemd. | [`windows/README.md`](./windows/README.md) — `setup.cmd` once, then `start.cmd`. |
-| **Manual (no systemd)** | Quick foreground run on Linux/macOS without installing services. | `linux/run.sh prod` (build + uvicorn[+Serve]) · `linux/run.sh dev` (uvicorn + Vite). |
+| **Manual (no systemd)** | Quick foreground run on Linux/macOS without installing services. | `linux/run.sh prod` (build + uvicorn :5433) · `linux/run.sh dev` (uvicorn + Vite). HTTPS is separate: `linux/serve-https.sh`. |
 
 ## Files
 - **`bootstrap.py`** — the local-checkout→Linux SSH orchestrator (reads the target host from `config.yaml`,

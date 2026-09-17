@@ -1,10 +1,14 @@
 # Live voice mode ("call mode") — design draft v1
 
 > **Status: ✏️ DESIGN RATIFIED 2026-09-11 ([D71](./DECISIONS.md)) — the owner's word, after the
-> brief + the §2.1 discussion; nothing built yet. Build = Phase 24 (TODO), §7's S0–S4 ladder,
-> one slice per session under the standing cadence.** Council trail = §9 (blind Emma RETHINK →
-> all folded → confirm SHIP WITH CHANGES). This file owns the live-voice design; ROADMAP §C4 is
-> a pointer; D71 records the WebSocket admission.
+> brief + the §2.1 discussion. BUILD = Phase 24 (TODO), §7's S0–S4 ladder, one slice per session
+> under the standing cadence: S0 · S0.5 · S1 · S2a · S2b · S2.5 · S3 · S3.5 are ALL BUILT +
+> council-closed (per-slice as-built records live in §7), plus the D72 INTERMISSION wave (§7,
+> between S3.5 and S4); the owner's phone round CLOSED 2026-09-14 with both verdicts PASS.
+> ▶ S4 — the owner calibration + device round — is the PHASE GATE and the one open slice: it
+> needs the owner and their phone, and `voice.live.enabled` flips ON as its close.** Council
+> trail = §9 (blind Emma RETHINK → all folded → confirm SHIP WITH CHANGES). This file owns the
+> live-voice design; ROADMAP §C4 is a pointer; D71 records the WebSocket admission.
 
 ## 0. Evidence + as-built seams (verified at tip `4aa1a0b`, 2026-09-11)
 
@@ -1484,7 +1488,8 @@ counters device-local · ⑭ `voice.enabled` master outranks the `live` bit. All
 derivations from existing rulings/patterns — the owner's review of this list is their veto
 window.
 
-Still open:
+**The court is CLOSED — every item below is ruled** (kept for the rationale, not as work). The
+one live decision left in this phase is S4's: fixed endpointing vs architecture ②, item 5's tail.
 
 3. ~~**Browser priority**~~ **ANSWERED BY S0 + RULED (owner, 2026-09-12): Chrome is the
    first-class call browser.** Chrome's `"all"` AEC measured genuinely subtractive on the

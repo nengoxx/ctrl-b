@@ -50,16 +50,19 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
 - **Open (deferred past the first A1 slice — D16):** per-host privilege overrides? a time-boxed
   "full for next 10 min" escalation?
 
-### A2. Agent asks questions (clarifications, not just commands)
+### A2. Agent asks questions (clarifications, not just commands) — **✅ SHIPPED, exactly as designed below**
 
 - **What:** the agent can ask the user a question mid-task — for missing info or to disambiguate —
   exactly like Claude Code's question prompts, optionally with suggested answers.
 - **Design implication:** the chat protocol must be **typed message kinds**, not just text. v1
   already has `text` / `command|action` bubbles; add a **`question`** kind (prompt + optional
   choice chips + free text), and the agent loop must **pause for the answer** and resume.
-- **Locked design (✅ 2026-06-16 — reuse the confirm-suspend machinery; build deferred).** A2 is the
+- **Locked design (✅ 2026-06-16 — reuse the confirm-suspend machinery) — BUILT.** A2 is the
   *same shape* as the action-confirm flow that already works, so it **extends** that path rather than
-  adding a parallel one:
+  adding a parallel one. **Every bullet below is as-built** — `services/agent/question.py` (the
+  `question` builtin, `suspending=True`), `RunState.AWAITING_ANSWER`, the `tool.question` SSE event
+  (`services/agent/session.py`), and `POST /api/agent/resume {decision:"answer", answer}`
+  (`api/agent.py`). **Don't rebuild it; extend it.** The design of record:
   - A **`question` builtin tool** — sibling of `task_plan` (`services/agent/planning.py`,
     `category="builtin"`, `ui_exposed=False`, LOW). The agent calls it with
     `{prompt, choices?: list[str], allow_free_text?: bool}`.
@@ -78,8 +81,10 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
   automation), **fire a notification** (F1) and park the turn until answered, then resume. The key
   bridge: a low-privilege/scheduled agent that hits a decision point pings the phone, the owner
   answers, the agent continues.
-- **Open (only matters once automations exist — defer to build):** timeout/abandon behavior;
-  per-automation fallback when unattended (notify-and-wait / use-default / skip).
+- ~~Open (only matters once automations exist)~~ **— ANSWERED by D49:** an abandoned question
+  synthesizes a `SKIPPED` result like an abandoned confirm, and the unattended fallback is the
+  per-automation **`question_policy`** (`skip | use_default`, `domain/automation.py`). The
+  notify-and-wait third option stays unbuilt — it needs a real notification channel (F1).
 
 ### A4. Composer as a console — prefix routing & slash commands
 
@@ -546,7 +551,7 @@ one — only the browser binary can). That splits C2 into two features that must
 
 ---
 
-### C4. Live voice mode (continuous conversation) — **✏️ DESIGN IN PROGRESS 2026-09-11: [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) is the plan of record (R68 delta folded, blind design round run); this entry is now a pointer**
+### C4. Live voice mode (continuous conversation) — **✅ DESIGN RATIFIED 2026-09-11 ([`D71`](./DECISIONS.md)) · S0–S3.5 BUILT, S4 (the phase gate) PENDING · spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) · build = TODO Phase 24 (build against the plan, NOT this entry — it is now the pre-design evidence record)**
 
 - **What:** always-listening mic → VAD/endpointing → streaming or per-utterance STT → the existing
   agent turn → C3 chunked TTS, with barge-in (speaking over the bot kills playback + cancels the
@@ -569,9 +574,13 @@ one — only the browser binary can). That splits C2 into two features that must
   `voice.stt.auto_stop{,_silence_s,_threshold}` → `GET /voice/status` → an AnalyserNode in
   `useDictation` that ends the recording through the ordinary stop path (a hidden page ends it
   outright; a context that won't run degrades to push-to-talk).
-- **Scope when built:** screen-on / app-foreground / Wake Lock ("docked on a stand") — screen-off
-  always-listening needs a Capacitor shell (R14 §5) and Firefox cannot do it at all. Needs a
-  D-entry + the AEC device probe before any build.
+- **Scope as built:** screen-on / app-foreground / Wake Lock ("docked on a stand") — screen-off
+  always-listening needs a Capacitor shell (R14 §5) and Firefox cannot do it at all. ~~Needs a
+  D-entry + the AEC device probe before any build.~~ **Both done:** D71 ratified 2026-09-11, and
+  S0's phone AEC probe measured Chrome's `"all"` echo cancellation genuinely subtractive vs
+  Fennec's ineffective — hence the owner ruling "Chrome first-class, Fennec gets the ear-hold"
+  (plan §7-S0). **Architecture ① was chosen** (Speaches-realtime ear + the untouched agent loop +
+  C3 as the mouth); ② stays the fallback if S4 judges fixed endpointing sluggish.
 
 ## D. Fleet automation
 

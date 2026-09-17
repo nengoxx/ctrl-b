@@ -773,12 +773,22 @@ call the main seat DECLINED to widen: ToolCatalog's `.tcat-desc` click-only div 
 keyboard-access defect class — pre-existing, belongs to its own slice, recorded here rather than
 fixed in this one.
 
-### 8.6 Downstream registry growth — Phase 20 (D57)
+### 8.6 Downstream registry growth — later phases keep adding rows
 
-Recorded so the registry inventory here doesn't read as final: Core Memory added **five ids**
-(`core_memory_policy` · `core_memory_recall` · `consolidation` · `consolidation_promote` ·
-`memory_cap_error`) and gave `consolidation_nudge` a new `{{longterm}}` placeholder; D60 rewrote
-`consolidation` and appended `consolidation_dryrun` — the registry is now **24 ids**. Those texts
-and their coupling are owned by
-[`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md), not this phase; the mechanism (one registry row +
-one `resolve()` call) is unchanged, which was the point.
+Recorded so the registry inventory in this document doesn't read as final. **The live list is
+`REGISTRY` in `backend/app/services/agent/prompts.py` — read it there, never a count copied into
+prose** (`GET /api/prompts` serves the same list). Every addition below rode the unchanged
+mechanism — one registry row + one `resolve()` call — which was the point:
+
+- **Phase 20 / D57 (Core Memory)** — five ids (`core_memory_policy` · `core_memory_recall` ·
+  `consolidation` · `consolidation_promote` · `memory_cap_error`) plus a `{{longterm}}`
+  placeholder on `consolidation_nudge`; **D60** rewrote `consolidation` and appended
+  `consolidation_dryrun`. Texts + coupling owned by [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md).
+- **Phase 22 / D68 (attachments)** — no new id, but ONE shipped default was amended: `summarizer`
+  gained the clause that keeps `[attached: name (kind)]` filenames verbatim through a compaction
+  (they are the only surviving handle on a folded turn's files — `read_attachment` is
+  name-addressed). Owned by [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) §4.
+- **Phase 23 / D70 (characters are agents)** — six ids: `duties_agent` ·
+  `duties_conversational` · `voice_heading` · `duties_heading` · `persona_intro` ·
+  `lorebook_intro`. These are the universal Voice/Duties assembly's own texts; owned by
+  [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §4.

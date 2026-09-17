@@ -41,8 +41,8 @@ deploy/
 │       ├── ctrl-b-dashboard-dev.service      # DEV backend (:5434 --reload, ~/.ctrl-b-dev) — on-demand
 │       ├── ctrl-b-dashboard-dev-web.service  # DEV Vite (:5173 → :5434) — on-demand
 │       └── ctrl-b-agent@.service             # TEMPLATE: the ALWAYS-ON Claude agents — instances
-│                                             #   @opus  → tmux ctrl-b-opus  (opus alias = latest Opus, high) ← main
-│                                             #   @fable → tmux ctrl-b-fable (claude-fable-5, high)  ← 2nd opinion
+│                                             #   @fable → tmux ctrl-b-fable (claude-fable-5, high)  ← MAIN seat (2026-07-28)
+│                                             #   @opus  → tmux ctrl-b-opus  (opus alias = latest Opus, high) ← workforce
 └── windows/                  # the double-click Windows kit (setup/start/autostart)
 
 ../tools/                     # dev launchers (NOT deploy): start-claude.sh (Linux), claude-{fable,opus}.{ps1,cmd} (Windows), add-dev-worktree.sh
@@ -54,16 +54,20 @@ nothing on emma moves: the existing `~/github/ctrl-b` checkout IS the workspace;
 
 ## Deploy — two paths
 
-### A) Automated, one command from the local (Windows) checkout (recommended)
+### A) Automated, one command from a checkout that has `config.yaml` + SSH to the target (recommended)
 ```bash
 # from the repo root  (Bash tool needs dangerouslyDisableSandbox for LAN)
-backend/.venv/Scripts/python.exe deploy/bootstrap.py --dry-run     # preview the plan
-backend/.venv/Scripts/python.exe deploy/bootstrap.py               # prod: prereqs→config→prod-tree→install→https
-backend/.venv/Scripts/python.exe deploy/bootstrap.py --with-dev    # + the DEV instance AND the agent service
-backend/.venv/Scripts/python.exe deploy/bootstrap.py --claude-env  # + migrate the Claude Code memory/settings
+backend/.venv/bin/python deploy/bootstrap.py --dry-run     # preview the plan
+backend/.venv/bin/python deploy/bootstrap.py               # prod: prereqs→config→prod-tree→install→https
+backend/.venv/bin/python deploy/bootstrap.py --with-dev    # + the DEV instance AND the agent services
+backend/.venv/bin/python deploy/bootstrap.py --claude-env  # + migrate the Claude Code memory/settings
 #   --no-prereqs        skip sudo (you ran them)      --no-serve  skip Tailscale Serve
 #   --overwrite-config  force-replace the target's config.yaml (timestamped backup taken first)
 ```
+*(On a Windows checkout the interpreter is `backend\.venv\Scripts\python.exe` — the form the original
+v1.0.0 deploy ran, when the workspace still lived on corsair. Everything else is identical: the script
+resolves all paths against the TARGET user's `$HOME` and is OS-agnostic.)*
+
 Reads SSH creds from `config.yaml`; never prints the password; idempotent; writes only without `--dry-run`.
 **Config note:** after the first deploy the **target's** `~/.ctrl-b/config.yaml` is the canonical, living copy
 (the app rewrites it; you edit it via the settings UI) — re-runs leave it alone unless you pass
@@ -328,8 +332,6 @@ v1.5.1 (or fix forward); go deeper only accepting that device-side cleanup.
 
 Schema compatibility across a rollback is guaranteed by the **expand/contract policy** (D32 amendment):
 destructive migrations land at the earliest one release after the code stopped using the old shape.
-**First release (v1.0.0) has no previous tag** — rollback there is simply
-`systemctl --user disable --now ctrl-b-dashboard` (or fix forward with v1.0.1).
 
 **GitHub down at promote time?** Prod can fetch the tag straight from the workspace over the filesystem:
 `git -C ~/apps/ctrl-b fetch ~/github/ctrl-b 'refs/tags/*:refs/tags/*'` — same commit, LAN-only.

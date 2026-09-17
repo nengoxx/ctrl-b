@@ -6,8 +6,10 @@
 > + both confirm rounds folded → D52 recorded). Produced by the prep session from the owner's
 > FINISHED prototype (`design/prototypes/gacha/uploads/prot/capsule-arcade/` — the owner's
 > ruling 2026-08-02: that file set is FINAL; every other tree under `design/prototypes/gacha/`
-> is a prior iteration kept for provenance). **On conflict: D52 wins, then this plan.** Next:
-> build G0–G6 per §7.
+> is a prior iteration kept for provenance). **On conflict: D52 wins, then this plan.**
+> **✅ PHASE 17 IS DONE END TO END — G0–G6 (§7) + the M-series (MEDIA_PLAN §8) + the alt-fleet
+> E0–E5 (§12.6), shipped v1.5.0 → v1.6.0 (live on prod 2026-08-11).** This file is now the
+> build record; the design text below stands as the reason each piece is the way it is.
 > **Fidelity mandate: the owner wants visuals, colors and transitions/animations AS CLOSE AS
 > POSSIBLE to the prototype** — same bar as the Vapor-fidelity mandate (ARCHITECTURE), applied to
 > a NEW build instead of a port-of-record.
@@ -779,20 +781,20 @@ for the "04 / 04" counter.
 
 ## 7. Slice ladder (firmed at the lock session — council-amended)
 
-> **✅ G0 COMPLETE + OWNER-SIGNED 2026-08-02 (evening) — as-built record (§7.1 below the
-> ladder). G1 is next.** The G3 row is amended: the chat-bubble reskin was PULLED FORWARD
-> into G0 on the owner's request (values + type metrics shipped; only bubble POLISH remains
-> at G3 beside the oracle/composer work).
+> **✅ G0–G6 ALL COMPLETE + OWNER-SIGNED (2026-08-02 → 2026-08-06), shipped v1.5.0** — the
+> per-slice as-built records are §7.1–§7.7, below the ladder. The G3 row is amended: the
+> chat-bubble reskin was PULLED FORWARD into G0 on the owner's request (values + type metrics
+> shipped; only bubble POLISH remained at G3 beside the oracle/composer work).
 
 | Slice | Contents | Gate |
 |---|---|---|
-| G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps the palette variants — five then, seven + the dossier five since the 2026-08-06 re-ruling — a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
+| ✅ G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps the palette variants — five then, seven + the dossier five since the 2026-08-06 re-ruling — a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
 | ✅ G1 | **BUILT + OWNER-EYEBALLED 2026-08-02 (as-built §7.2)** — bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + the §6.4 slide set **incl. the eyeball-ruled SCENE slides**) + capsule track (cards/states/plates/shine + stars) + wallpaper + the geometry rule + the owner's own art in the bundled set | owner eyeball ✅ (3+ live rounds) |
 | ✅ G2 | **BUILT + OWNER-EYEBALLED 2026-08-02 night (as-built §7.3)** — dossier sheet (light inversion + the ruled grid + live service rows + the H3 ACTION BAR) + **the M3 capsule→dossier morph, owner-PULLED from G4 and made to visibly work** + swap morph + visible × + tap-outside close + **the full-screen ART SHOWCASE (owner ask)** — M6 extraction to `lib/hostDetail.ts` landed first; contrast gate gained the dossier's THEME_PAIRS rows | owner eyeball ✅ ("looks good", pushed) + contrast probe ✅ (48-combo matrix) |
 | ✅ G3 | **CLOSED 2026-08-04 (as-built §7.4; commits `6c5298d..5ce33d7` + the side-session re-rule `ba0b8b1`/`d65e7b7`) — device round PASSED wholesale, Gecko scanline branch NOT needed.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
 | ✅ G4 | **CLOSED 2026-08-04 (as-built §7.5; commits `dd1a056..fa86ed3`) — owner round PASSED on phone + desktop, 67% default kept, M2 device-confirmed.** The reel FIGURE (67% tunable default, all dials `--gc-figure-*` tokens, corrected baked glow — drop-shadow's length IS σ, §7.5 lesson) + M2 shipped prototype-exact with the seam promoted (flag deleted) + the type-scoped VT skip + degradation latches. Codex: READY WITH FIXES → wave → confirm all-resolved, residual LOWs closed | owner figure eyeball + Fennec+Chrome device round (incl. the one-line M2 check) |
-| ◐ G5 | **BUILT + REVIEW-COMPLETE 2026-08-05 (as-built §7.6; commits `ac621ed..8f6297a`) — OWNER FILE-DROP + GALLERY ROUND = the open gate.** The namespace-generic media surface per the ruled option (b): hardened read-only mount + per-role index (+`revision`), the `ThemeDef.media` gallery, the first SW runtimeCaching, per-namespace DEGRADE-NEVER-BRICK health, the reel-pool pin ruling. Codex arc: NOT READY → 2 waves + final → closed | owner file-drop + phone gallery round |
-| ◐ G6 | **BUILT + REVIEW-COMPLETE 2026-08-06 (as-built §7.7; uncommitted at write time, committed same day) — OWNER DEVICE ROUND = the open gate, then v1.5.0.** Per the 2026-08-06 pre-build rulings (all §4.4): TWO PICKERS. (i) ACCENT picker, SEVEN variants: arcade/midnight/indigo + ember/glacier/nebula + the RE-DERIVED eridu (green/blue walk) — each one `body[data-accent]` block per the §4.4 variant-block recipe + a `palettes.accents` row + a `contrast-matrix.ts` row. (ii) DOSSIER picker (gacha settings row → `body[data-gc-dossier]`, seg + the additive `swatch?` chip extension): slip (unchanged, keeps sticker button) + neon-purple (DEFAULT) · sunset-orange · rose-pink · aurora-violet with the neon-purple-panel flat button (re-measured, highlight included), vapor-style led/led-dim service dots, per-palette kicker + close-disc pairs, top strip kept. (iii) Wordmark swap → コントロール・ビー (§4.3). (iv) NEW-ribbon DEMO on ONE random host card (no semantics, no data seam — owner decides keep/drop/meaning at the device round; the pick is made ONCE per Fleet mount and sticks until that host leaves the fleet — never re-rolled on poll re-renders; empty fleet = no ribbon). (v) Dark-surface verification: disabled/focus/active state sheet + brand strip + star badge rendered on the darks. Dots-close-dossier: RULED KEEP (2026-08-06) — off the open list | owner device round (eyeball-heavy BY NATURE — budget several rounds, the G0 lesson) |
+| ✅ G5 | **BUILT + REVIEW-COMPLETE 2026-08-05 (as-built §7.6; commits `ac621ed..8f6297a`); shipped v1.5.0. The owner file-drop + gallery round was PARKED at the time and closed later inside the media manager's phone round (MEDIA_MANAGER_PLAN §12-S6).** The namespace-generic media surface per the ruled option (b): hardened read-only mount + per-role index (+`revision`), the `ThemeDef.media` gallery, the first SW runtimeCaching, per-namespace DEGRADE-NEVER-BRICK health, the reel-pool pin ruling. Codex arc: NOT READY → 2 waves + final → closed | owner file-drop + phone gallery round |
+| ✅ G6 | **BUILT + REVIEW-COMPLETE 2026-08-06 (as-built §7.7; uncommitted at write time, committed same day); the owner device round PASSED and v1.5.0 shipped.** Per the 2026-08-06 pre-build rulings (all §4.4): TWO PICKERS. (i) ACCENT picker, SEVEN variants: arcade/midnight/indigo + ember/glacier/nebula + the RE-DERIVED eridu (green/blue walk) — each one `body[data-accent]` block per the §4.4 variant-block recipe + a `palettes.accents` row + a `contrast-matrix.ts` row. (ii) DOSSIER picker (gacha settings row → `body[data-gc-dossier]`, seg + the additive `swatch?` chip extension): slip (unchanged, keeps sticker button) + neon-purple (DEFAULT) · sunset-orange · rose-pink · aurora-violet with the neon-purple-panel flat button (re-measured, highlight included), vapor-style led/led-dim service dots, per-palette kicker + close-disc pairs, top strip kept. (iii) Wordmark swap → コントロール・ビー (§4.3). (iv) NEW-ribbon DEMO on ONE random host card (no semantics, no data seam — owner decides keep/drop/meaning at the device round; the pick is made ONCE per Fleet mount and sticks until that host leaves the fleet — never re-rolled on poll re-renders; empty fleet = no ribbon). (v) Dark-surface verification: disabled/focus/active state sheet + brand strip + star badge rendered on the darks. Dots-close-dossier: RULED KEEP (2026-08-06) — off the open list | owner device round (eyeball-heavy BY NATURE — budget several rounds, the G0 lesson) |
 
 Each slice: Opus build from a pinned brief → main-seat audit → Codex round → owner eyeball
 (the D51 cadence). The theme joins `themeContract.test.ts` + the e2e structural/a11y groups at G0.
@@ -1127,8 +1129,9 @@ no-services and many-services hosts · missing/corrupt/deleted art (file AND slo
 all appbar/layout modes · reduced-motion and perf-lite · VT unsupported (older Gecko) · rapid
 tab switching (reel re-entrancy) · long host names on plates · Fennec AND Chrome device rounds.
 
-**§7.6 — G5 AS-BUILT (2026-08-05; ✅ code + reviews COMPLETE — ⏳ owner file-drop + gallery
-round pending).** Eleven commits `ac621ed..8f6297a` (4 build + 4 wave-1 + 2 wave-2 + 1 final);
+**§7.6 — G5 AS-BUILT (2026-08-05; ✅ code + reviews COMPLETE; shipped v1.5.0 — the owner
+file-drop + gallery round was parked and closed later in MEDIA_MANAGER_PLAN §12-S6).**
+Eleven commits `ac621ed..8f6297a` (4 build + 4 wave-1 + 2 wave-2 + 1 final);
 end state **BE 1301 (+47) / FE 1404 (+41) / 205 e2e**, gate green per commit; every security
 behavior live-verified against the dev backend (hostile drops, traversals, symlinks, the
 role-file collision). The record:
@@ -1179,8 +1182,8 @@ role-file collision). The record:
   and the phone gallery (order, pins, warnings, real touch). Owner cutouts have NO baked glow
   (expected; the gallery's reel hint + `art.ts` say so — the bake recipe is there if wanted).
 
-**§7.7 — G6 AS-BUILT (2026-08-06; ✅ code + reviews COMPLETE — ⏳ the owner DEVICE ROUND is the
-open gate).** The two pickers, the wordmark swap, the NEW-ribbon demo, the dark-surface
+**§7.7 — G6 AS-BUILT (2026-08-06; ✅ code + reviews COMPLETE; the owner DEVICE ROUND passed and
+v1.5.0 shipped).** The two pickers, the wordmark swap, the NEW-ribbon demo, the dark-surface
 verification. Diff +~1.3k/−100 across 23 files (+ `lib/chipBackground.ts`,
 `tests/stylelint/accentRules.test.ts` new); FE unit 1549→**1594** · Playwright 211→**231**
 (gacha contrast rows 1→12) · full gate 6/6, all main-seat re-run after every wave.
@@ -2863,12 +2866,10 @@ transform-only banner mechanics.
 
 ---
 
-## 12. The ensemble fleet — the ALTERNATIVE card layout (owner ask 2026-08-08; **PROPOSED — design drafted; post-1.5.0, unscheduled. The owner's word (2026-08-08): the ideas + design get a live DISCUSSION session — this section is the PRIMER for that conversation (prose back-and-forth, the converse-on-design rule), NOT a locked spec; nothing here builds before that session rules.**)
+## 12. The ensemble fleet — the ALTERNATIVE card layout (owner ask 2026-08-08; **✅ SHIPPED as v1.6.0** — the discussion session ran (§12.5's design lab), the owner signed the §12.6 translation plan, and slices E0–E5 built POSTER + COVER into production. §12.1–§12.4 are the design record that produced it; §12.6's tail is the as-built + release record.)
 
 *Evidence base: [R18](./research/R18-ensemble-collage-fleet.md) (probed 2026-08-07, both desktop
-engines) + the four reference images in `design/prototypes/gacha/Alt fleets/`. Nothing here is
-built; the section exists so the next session starts from a ruled design instead of re-buying the
-research.*
+engines) + the four reference images in `design/prototypes/gacha/Alt fleets/`.*
 
 ### 12.1 What the references actually say (main-seat image analysis)
 
@@ -2960,7 +2961,7 @@ don't have; a tap on the overhang opens the panel UNDERNEATH — R18 §3; the Tr
 itself keeps art inside the slices, only type crosses) · the collage layout (no generator, §12.1-2)
 · blend-mode duotone (Gecko scroller cost, §14.11).
 
-### 12.3 Open for the owner ruling
+### 12.3 Open for the owner ruling *(ALL RULED — by the §12.5 lab, the §12.6 signature and the E5 close 2026-08-11; kept because each question names a real design axis)*
 
 ① Confirm the BAND direction (ZZZ/True-Damage stack) over the comic-collage flavour — the research
 says collage cannot generate, but the owner picks the look. ② Shear angle + band height are

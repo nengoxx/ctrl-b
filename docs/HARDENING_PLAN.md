@@ -604,6 +604,9 @@ Releases since the spec: **v1.7.4** (2026-08-20) + the **v1.7.5 batch** (37 comm
 Every new or changed surface below is assigned to its packet + lens so no audit brief misses it.
 The §1 staleness rule still governs: H1 re-measures the inventory and the §8 sweep re-runs as a
 delta before H0 — this register is the qualitative half, written while the changes are fresh.
+**⚠ The rows below are COMPLETE ONLY THROUGH PHASE 21 (2026-08-26).** Three whole phases have
+landed since and are **unassigned** — the last row says what they are; do not read this table as
+the current inventory.
 
 | New/changed surface | What it added | Packet / lens |
 |---|---|---|
@@ -619,6 +622,7 @@ delta before H0 — this register is the qualitative half, written while the cha
 | **Prompt registry growth** | The consolidation family rewrite + D64's truncation-clause correction | Packet ② spot-check unchanged (still the best-tested unit) |
 | **D65 the media manager — Phase 21** (added 2026-08-24 at its S0; spec = [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)) | **Backend:** the first owner-file WRITE path (`PUT`/`DELETE /api/media/…`, raw body, the persist ladder + `.part` boot sweep + `fsutil._fsync_dir` promoted public), the `media.namespaces`/`media.write` config fold with its `files` migration step, and collation v2 (`library-v1` — bundled rows, `focal`/`hidden`/`listed` on the wire). **Frontend — the whole §12 module map, PINNED at design time so the audit inventory is knowable before the code exists:** `lib/mediaLibrary` (config transforms, theme-free) · `lib/focalPosition` · `lib/imageExport` **+ its worker** (`OffscreenCanvas` — a NEW off-main-thread surface) · `hooks/useMediaLibrary` (owns the serialized quiet `patch` queue + invalidation) · `hooks/useMediaUpload` (the sync-ref admission latch + two-phase retry) · `hooks/useFocalPosition` (**ResizeObserver per paint window** — the `--cv-*`/`--cv-hero-focus` CSS inheritance chain is REWRITTEN across ~10 sites) · `hooks/useOverlayBackGuard` (history/`popstate` single-closer) · `components/media/{SectionCard, GalleryModal, LibraryGrid, ItemDetail, FramingSheet, CropModal}` · **`components/FocalImg`** (S4 as-built: the per-window hook's component form — three of the nine paint windows are built inside a `.map()`, where a hook cannot be called; it is where the ResizeObserver fan-out actually lands) · dep **react-easy-crop@6.2.3** (8.6 KB gz). | **Packet ⑤ + DP-C** for every FE module above (the grid's decode budget — `loading="lazy"`/`decoding="async"`/`content-visibility`/in-flight decode cap — and the per-window ResizeObserver fan-out are the two named perf shapes; DP-C carries the descriptor/resolver seam) · **Packet ④** for the backend write path + the re-based `ctrlb-media` SW bound + the `?rev=` single-keying · **Packet ①** inherits only the new config keys + the migration step |
 | **Phase 21 AS-BUILT + the W1–W6 wave reshapes** (added 2026-08-26, **owner-requested**: *"add this feature for the hardening pass, just in case the design of the whole system isn't really well made"*) | The row above was written at S0, before the code existed; the phase then BUILT the whole ladder and reshaped it through six owner-round waves (record = MEDIA_MANAGER_PLAN §12): the §2.3 ③ sweep-on-order amendment (order intents state the WHOLE section) · every shipped default a first-class library entry (`builtin` display rows · `MediaRotationDef`) · `restoreDefaults` · **W5** the gacha hero seat retired (the carousel deals its opener; `bannerScenes`) · **W6** order = the ONLY priority system app-wide (every pool pin deleted — gacha `reel_figure`, frontier `hero`, kit `background`/`brand`; the two gacha character seats are the sole pin survivors) + the gallery redesign (tile-corner In-use toggle beside the drag handle · image-forward ItemDetail with the floating action pill · the one-word-one-meaning copy system · `MediaRoleDef.label`). | **DP-C carries an explicit WHOLE-SYSTEM design-fitness verdict** — not module-by-module only: is the library model (tier rule · order-as-only-priority · the seat exception · the active-resolver seam between theme ladders and the gallery) a sound, coherent design as built, or does the audit find load-bearing warts the waves papered over? The owner asked for exactly this judgement. **Packet ⑤** re-measures the gallery surfaces as shipped (the corner control + pill are new interactive layers on the tile) · Packet ④/① assignments above stand. |
+| **Phases 22–24 + the D72 wave — NOT YET ASSIGNED** (added 2026-09-17 by the plan-truth sweep; specs = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) · [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) · [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md)) | **D68 attachments** (a second owner-file write store + the `_assemble` array-content branch + the per-hop modality strip + `read_attachment` + the pypdf sidecar) · **D70 characters/lorebooks** (the AgentDef expansion, the universal Voice/Duties assembly, card import, the lorebook scan on every turn, the agents gallery + backdrop, the `agents` media namespace) · **D71 live voice** (the codebase's FIRST WebSocket — a relay holding an upstream realtime session, an AudioWorklet capture path, a paced uplink, `useLiveCall`'s state machine) · **D72** (the shared uplink pacer, the busy/reconnect ladder, the app-wide multipart pin, `server.trusted_hosts`). | **OPEN — H1 measures them and H0 assigns them.** Deliberately NOT guessed here: the WebSocket in particular has no packet that was written with a long-lived bidirectional connection in mind (§7's inventory predates it), which is itself an input to the packet ranking, ③'s scope, and the §2.3 journey list. |
 
 ## 8. The known-open register (2026-08-16 sweep of all 11 ledgers — every packet brief carries its slice)
 
@@ -650,7 +654,13 @@ stage ② owner-parked** — rest Packet ⑤, 2026-08-23) ·
 name that re-resolves to the app's LAN/tailnet address is *same-origin*, so no CORS control
 applies. Pre-existing and whole-API (not the media feature's); D65 recorded it because the write
 path raises the value of the target. **Lean fix = `TrustedHostMiddleware`** with the deploy's real
-names — **Packet ①** (bootstrap/app assembly), SECURITY_MODEL §2.7 · **D65-R2 (added
+names — **BUILT 2026-09-15 at [D72](./DECISIONS.md#d72)** (`main._mount_trusted_hosts`, driven by
+the additive `server.trusted_hosts`; it covers websocket scopes too, so it also backs the live-voice
+`Origin` rail). **It ships EMPTY = not mounted** — an empty allowlist that IS mounted 400s every
+route, and the list must name every address the owner browses by before it can be switched on — so
+**the rebinding residual still stands until the owner opts in**, one config line. Mechanics, the
+empty-list trap and the pre-deploy checklist row: SECURITY_MODEL §2.9. What remains for **Packet ①**
+is therefore the deploy-name question, not the mechanism · **D65-R2 (added
 2026-08-24; WIDENED from the `/voice/stt` instance to the CLASS at the S0 review):**
 **CORS-safelisted-reachable POST mutations.** A cross-origin page can *send* a safelisted `POST` —
 CORS withholds the read-back, never the send — so every POST route that runs without needing a JSON
@@ -659,8 +669,12 @@ owner file, spends an STT call) and **bodyless / path-param** routes, which exec
 type a form sends — e.g. `POST /api/automations/{id}/run-now`,
 `POST /api/integrations/rediscover`, `POST /api/agent/turns/{thread_id}/cancel`. (JSON-body POSTs
 are effectively content-type-guarded: a urlencoded body 422s first.) **Pre-existing, NOT introduced
-by D65** — surfaced by it, and deliberately not enumerated in the D-entry. **Packet ③ owns the
-enumeration and the disposition** (the three above are examples, not the list); SECURITY_MODEL §2.7 ·
+by D65** — surfaced by it, and deliberately not enumerated in the D-entry. **The MULTIPART shape is
+CLOSED as of D72 (2026-09-15):** an app-wide invariant walks every live route and refuses a handler
+declaring multipart/`UploadFile`, with the single allowlist entry `{("POST", "/api/voice/stt")}` —
+the one real file upload with no owner-corpus write behind it — and D70's two import routes moved to
+raw-body `PUT` on the same ruling. **What Packet ③ still owns is the BODYLESS / path-param
+enumeration and its disposition** (the three above are examples, not the list); SECURITY_MODEL §2.7 ·
 **D65-P4 (added 2026-08-24, per MEDIA_MANAGER_PLAN §9):** `build_index` **stats and header-probes
 EVERY file on every GET**, and the library model grows the tree by design (uploads are additive;
 delete is the only removal). Frequency is addressed by the plan's defect #3 (scope the index query
@@ -764,7 +778,12 @@ amendment), not a re-review of the whole plan. *(The council's H-C two-phase-cha
 is superseded by owner ruling 2026-08-23 — recorded, not erased; its underlying evidence, the
 F9/F13 fix-gating, survives as the audit-now/fix-on-numbers split.)*
 
-## 10. OWNER COURT — the rulings needed before execution (nothing here is decided)
+## 10. OWNER COURT — the rulings needed before execution (open unless an item says RULED)
+
+> **WHEN this phase runs is already ruled: LAST. (Owner, 2026-08-29, in conversation.)** Hardening
+> rides the **1.8 endgame** — the polish/feature waves come first, and Phase 19 is not to lead a
+> session menu before then. So the court below stays shut until the owner opens it; ⑤'s D58 lock
+> and the delta council check are the first moves when they do.
 
 ① **The critical user journeys** — proposed five: *wake a host → see it online* · *ask the
 agent → streamed answer* · *a scheduled automation fires attributably* · *cold PWA open on the

@@ -146,8 +146,10 @@ on emma is moved.)
 - **On-emma tandem agent runs it locally:** works too, but then the secret must reach emma first (I SFTP it, or you
   scp `config.yaml`), since that agent has no Windows access.
 
-**After deploy:** dashboard at `https://emma.<tailnet>.ts.net` (mic-ready); optional always-on dev with
-`systemctl --user enable --now ctrl-b-dashboard-dev.service` (→ `http://emma:5173`); attach an agent with
+**After deploy:** dashboard at `https://emma.<tailnet>.ts.net` (mic-ready); the dev instance on demand with
+`systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web` (→ `http://emma:5173`; the
+"always-on dev" of this 2026-06-29 plan was revised to ON-DEMAND by the owner 2026-07-10 — never
+boot-enable them); attach an agent with
 `ssh emma -t 'tmux attach -t ctrl-b-opus'` (or `ctrl-b-fable` — a bare `-t ctrl-b` is an ambiguous prefix of
 both). Backend is **native Python 3.14** (229/229 suite green on emma's 3.14).
 
@@ -206,14 +208,19 @@ prod's backend + data → not isolated). Per-instance control via the three syst
 ## Recommended architecture (researched)
 
 > ⚠️ **The single-`ctrl-b` diagram below is the EARLY sketch — superseded by D32 (two isolated instances).** The
-> TTY/tmux reasoning still holds; only the dashboard side grew from one service to two trees + three units. The
-> current, authoritative picture is in **D32** and `deploy/linux/README.md`:
+> TTY/tmux reasoning still holds; only the dashboard side grew from one service to two trees + four units. The
+> current, authoritative picture is **D32 (amended)** + `deploy/linux/README.md` — restated here so this box
+> cannot mislead:
 > ```
 > emma
-> ├─ PROD: ~/github/ctrl-b (sparse, tag-pinned) → ~/.ctrl-b → uvicorn :5433 → Tailscale Serve HTTPS :443   [no agent]
-> ├─ DEV : ~/github/ctrl-b-dev (dev branch)      → ~/.ctrl-b-dev → uvicorn :5434 --reload + Vite :5173
-> └─ tmux "ctrl-b": claude --remote-control … IN THE DEV TREE (1+ agents; 2nd writer → its own worktree)
+> ├─ PROD: ~/apps/ctrl-b (sparse clone, pinned to a TAG) → ~/.ctrl-b → uvicorn :5433 → Tailscale Serve HTTPS :443   [no agent]
+> ├─ DEV : ~/github/ctrl-b (THE WORKSPACE, always on `main`) → ~/.ctrl-b-dev → uvicorn :5434 --reload + Vite :5173
+> │         both dev units are ON-DEMAND (never boot-enabled)
+> └─ tmux ctrl-b-fable / ctrl-b-opus: claude --remote-control … IN THE WORKSPACE
+>           (ctrl-b-agent@fable = main seat · @opus = workforce; 2nd simultaneous writer → its own worktree)
 > ```
+> **There is no `dev` branch and no `~/github/ctrl-b-dev` tree** — those belong to the pre-amendment
+> two-branch narrative that the rest of this document records.
 
 The split is forced by one fact: **Claude Code `--remote-control` requires a TTY** — it cannot be a bare
 systemd/daemon process; the reliable headless pattern is **tmux/screen** (GitHub issues #29479, #30447; the
@@ -242,7 +249,13 @@ emma (Kubuntu, SSH-only)
 - **Install/run script** (`deploy/linux/` — Linux): create venv + `pip install`, `npm ci && npm run build`, install +
   enable the systemd units. Plus the Tailscale Serve wiring.
 
-## ✅ Decisions — ALL RESOLVED (see D32); kept as a record
+## ✅ Decisions — ALL RESOLVED (2026-06-29); kept as a record
+
+> ⚠️ These are the decisions **as taken on 2026-06-29**, i.e. D32 *before* its 2026-07-09 amendment.
+> Three were revised afterwards and the amended form is in the PRE-FLIGHT block at the top: the prod
+> tree is `~/apps/ctrl-b` (not `~/github/ctrl-b`), there is no `~/github/ctrl-b-dev` (the workspace IS
+> the dev tree), and dev is **on-demand**, not always-available (owner, 2026-07-10). The agents became
+> boot services (`ctrl-b-agent@fable`/`@opus`), not manual launches.
 
 1. **Dashboard mode** → BOTH, **fully isolated** (D32): PROD built-`dist` + a separate always-available DEV stack
    (own backend :5434 + Vite :5173, own `~/.ctrl-b-dev`). Not the earlier "PROD-only + dev-on-demand" nor a

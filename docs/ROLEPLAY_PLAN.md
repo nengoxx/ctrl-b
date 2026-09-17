@@ -2,7 +2,10 @@
 
 > **Status: ✏️ DESIGN v2 — RATIFIED 2026-09-06 ([`D70`](./DECISIONS.md); owner, in
 > conversation). COUNCIL-CLOSED same day (§13: blind Emma round BUILD WITH CHANGES → all 15
-> findings folded → confirm → micro-confirm CONFIRMED). Build = S0–S7 per §10, in progress.**
+> findings folded → confirm → micro-confirm CONFIRMED). BUILD = S0–S7 per §10: S0–S6 (incl. the
+> S6b backdrop round and its three waves) are ALL BUILT + council-closed, per-slice records in
+> §13; S7 — the owner device round — ran in part on 2026-09-11 and its remainder now rides the
+> owner's REGULAR USE by their ruling (§10-S7). Pushed, UNRELEASED: the phase rides v1.7.8.**
 > Eight owner design rounds are folded (§1 rulings 1–21); evidence = R64–R67 (§0/§12).
 >
 > **Authority:** this doc owns the agent-feature expansion (the new AgentDef
@@ -874,18 +877,22 @@ Phase 18 doc stays truthful.
 
 ## 10. Slice ladder (each: pinned Opus build → main-seat audit → blind Emma round → fix wave → close)
 
-- **S0 — the assembly core (BE):** the AgentDef fields + config section + macro pass + the
+**S0–S6 are ✅ BUILT + council-closed** (S4/S5/S6 also owner-closed; the S6b backdrop round's
+three waves ride S6). The per-slice as-built records — deviations, review rounds, owner rounds —
+are in §13, which is where the detail lives.
+
+- **S0 ✅ — the assembly core (BE):** the AgentDef fields + config section + macro pass + the
   Voice/Duties split (`DEFAULT_SYSTEM_PROMPT` → persona default + `duties_agent`; the new
   `duties_conversational` text) + scenario/persona blocks + the post-history tail slot.
   Golden-fixture assembly tests re-pin the new universal shape; a no-new-fields agent's diff
   vs today = exactly the restructured head, nothing else.
-- **S1 — greeting + example dialogue + voice (BE):** thread seeding, `<START>` parsing,
+- **S1 ✅ — greeting + example dialogue + voice (BE):** thread seeding, `<START>` parsing,
   pseudo-message emission, normalize-seam behavior on strict templates (the §4.2 named-system
   probe), the per-agent voice resolution (§8.5).
-- **S2 — card import (BE):** containers + sniffing + normalization + mapping + strip pass +
+- **S2 ✅ — card import (BE):** containers + sniffing + normalization + mapping + strip pass +
   avatar into the library + explicit minimal tools + the import report.
-- **S3 — lorebooks (BE):** storage/CRUD + scan + render/budget + bindings + book import.
-- **S4 — the agents surface (FE + the summary API):** **the BE half first (Emma F12): extend
+- **S3 ✅ — lorebooks (BE):** storage/CRUD + scan + render/budget + bindings + book import.
+- **S4 ✅ — the agents surface (FE + the summary API):** **the BE half first (Emma F12): extend
   `GET /agents` with a compact per-agent summary map — title · avatar · background · voice —
   including the resolved default** (today it returns only names + default, and the gallery/
   picker/who-line/backdrop would otherwise need N full agent+SOUL fetches per mount; media
@@ -895,14 +902,23 @@ Phase 18 doc stays truthful.
   the duties toggle · Conf group + persona editor · import UI + report · agent-picker
   avatars · the who-line avatar swap + its Appearance toggle (§8.5) · the §9a prompt-editor
   refinements.
-- **S5 — the lorebook FE:** manager + attachment picker.
-- **S6 — the three-state backdrop (FE/theme):** the appearance setting + gacha oracle
+- **S5 ✅ — the lorebook FE:** manager + attachment picker.
+- **S6 ✅ — the three-state backdrop (FE/theme):** the appearance setting + gacha oracle
   integration + the kit backdrop layer + the `off`-state surface behavior (§8.3, narrowed by
   the owner-confirmed §8.3a) — in-phase per ruling 13, default `operator`.
 - **S7 — the owner device round** (the phase gate): import a real card, talk to it on the
   phone, tools-in-character on both duties settings, all three backdrop states on the real
   phone (blur/dim legibility), a field-authored lorebook imported + triggering live (§6.7),
   the showcase + picker feel, read-along on a character reply.
+
+  > **S7 PARTLY RUN, then RE-SHAPED BY THE OWNER (2026-09-11, in conversation).** Ticked on
+  > their phone that session: phone-talk ✓ · all three backdrop states ✓ · the showcase/picker
+  > feel ✓ · read-along on a character reply ✓ · a real V2 card imported through the UI ✓
+  > (Seraphina — the import leg was delegated and PASSED; ⚠ it surfaced that `roleplay.enabled`
+  > had never been set on dev, so the import button was hidden: defaults false, now ON there).
+  > **Their ruling: no formal sitting for the rest — the remainder rides their REGULAR USE**: a
+  > field-authored lorebook triggering live (§6.7) and tools-in-character on BOTH duties
+  > settings. Their word on those two closes S7 and the phase; nothing is scheduled for it.
 
 ## 11. Open questions for the owner (the court)
 
@@ -923,9 +939,8 @@ existing TTS error path (ruling 21 as F6-narrowed → §3.1/§8.5). The one stan
 the gallery tap inversion (§8.4 — tap=edit, Talk=button; presented round 8, not vetoed;
 the S7 device round re-tests the feel either way).
 
-**Round 1 RAN (§13): BUILD WITH CHANGES, all 15 findings accepted + folded into the body.**
-**Next:** the Emma CONFIRM round on the folded fixes (`--resume latest`, context intact) →
-owner ratification → **D70** → the S0 build brief.
+**Round 1 RAN (§13): BUILD WITH CHANGES, all 15 findings accepted + folded into the body** — then
+the confirm + micro-confirm rounds closed it, the owner ratified, and D70 was recorded (§13).
 
 ## 12. Evidence coverage map (the owner's round-6 audit: every section → its backing, gaps named)
 
@@ -1619,11 +1634,6 @@ default + lynette); both units RUNNING (D69 observation continues).
   do not fold it into the fix wave.
 - **⚠ OPS: the Emma lane is UNAVAILABLE (owner's word, 2026-09-07)** — the OF fix wave runs
   build + main-seat audit; her review rounds resume when the owner says she is back.
-- **The ruled sequence:** the owner stopped the session here for a clean handoff. **The next
-  session opens on the OF-1/OF-2 fix wave** (pin → precedent → fix → sweep → gate) → the
-  owner's confirm on dev → THEIR WORD closes S4 → **S5** (lorebook FE: manager + attachment
-  picker + the §6.6 collapsed-entry editor + the `lorebooks.books` editor) — the owner asked
-  that S5 not start before they are back home.
 
 #### THE OF FIX WAVE (2026-09-07, seventh session — Emma back per the owner's word, so the wave ran the FULL cadence; council-CLOSED, awaits the owner's dev confirm)
 
@@ -1901,7 +1911,7 @@ contention class.
 **S6 owes nothing forward. The owner's phone round on the three states (dev :5173) is the
 natural close; then S7 — the owner device round — IS the phase gate (§10-S7).**
 
-### §13-S6b — THE OWNER'S BACKDROP ROUND (2026-09-08): four findings; wave 1 BUILT + COUNCIL-CLOSED (RESOLVED — SHIP); wave 2 designed + owner-confirmed, PENDING
+### §13-S6b — THE OWNER'S BACKDROP ROUND (2026-09-08): four findings; waves 1, 2 and 3 ALL BUILT + COUNCIL-CLOSED, and **S6b CLOSED by the owner 2026-09-09** (the per-wave records follow, in order)
 
 **The round (phone, in conversation), restated and owner-confirmed as four findings + a
 two-wave plan:** ① the agent form's avatar/backdrop picker is confusing (a thumb, a `choose`
@@ -2043,9 +2053,9 @@ gallery's `onPaste` upload path is not `caps.upload`-gated (pre-existing, inheri
 by the picker).
 
 **THE WAVE-2 FEEL ROUND LANDED (owner, 2026-09-08, in conversation): "it looks good" + TWO
-asks → WAVE 3, design RATIFIED same conversation ("sounds good"), BUILD OPENS NEXT SESSION.**
+asks → WAVE 3, design RATIFIED same conversation ("sounds good").**
 
-### WAVE 3 — bigger circles + the avatar's circular cutout (design RATIFIED 2026-09-08; not built)
+### WAVE 3 — bigger circles + the avatar's circular cutout (design RATIFIED 2026-09-08; ✅ BUILT 2026-09-09 — the design below, then the as-built + the feel-round wave)
 
 **The owner's asks:** ① the message-bubble avatar circle is too small · ② an exact circular
 cutout for the avatar (the bubbles' circle) alongside the whole-image framing the backdrop
