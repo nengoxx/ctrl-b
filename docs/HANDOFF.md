@@ -12,7 +12,35 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-16, TWENTY-SIXTH session — **THE INTERMISSION IS CLOSED: the owner ruled both D72 open decisions in conversation, the visible-word slice ran build → blind Emma round → red-proven pins, the dev units got the ws-ping 5/5 flags via `install.sh dev`, and EVERYTHING IS PUSHED. ▶▶ NEXT SESSION = S4 STRAIGHT (plan §7), clean — the owner calibration + device round = THE PHASE GATE**; supersedes below where it speaks)
+## Current state (2026-09-17, TWENTY-SEVENTH session — **THE DOC-HEALTH INTERMISSION: a full documentation truth + consistency + prune pass, owner-commissioned before S4. 3 Opus auditors (core spine incl. full README/SPEC/DESIGN · the 12 feature plans · ops/theming/audits) → the same 3 resumed as fixers under main-seat rulings; 47 findings + addendum applied across 35 files, gate 6/6, committed `35247b6` + this handoff commit, PUSHED. ▶▶ NEXT SESSION = S4 STRAIGHT (plan §7), unchanged**; supersedes below where it speaks)
+
+- **What was wrong (the pattern):** substance was healthy — as-built bodies, ladders, HANDOFF,
+  and the release/rollback runbooks all verified accurate — but **STATUS STAMPS, doc-map rows,
+  and cross-cutting inventories rot**: LIVE_VOICE said "nothing built yet" over 8 as-builts,
+  ATTACHMENTS "S1 building" over a done ladder, MEDIA_MANAGER "NOTHING BUILDS" over v1.7.7
+  shipped, TODO Phase 22 all unticked. All stamps now converge (CLAUDE.md rows = plan stamps =
+  TODO): P21 ✅ v1.7.7 · P22 ✅ built rides v1.7.8 · P23 S0–S6b closed, S7 rides owner use ·
+  P24 S0–S3.5 built, S4 gate pending.
+- **The HIGH:** `HTTPS_TAILSCALE.md` still taught corsair-era `serve --bg 5173` — on emma that
+  steals prod's :443. Rewritten to the emma truth (`--bg --https=443 5433`, `serve-https.sh`
+  canonical, safe dev door `--https=8443 5173`, never-do box) + the AudioWorklet
+  secure-context table.
+- **Spec/security truth:** DESIGN's `Part` union transcribed from code (Question/PlanPart never
+  existed; Reasoning/AttachmentPart in; §9 → the `MediaCfg` fold) · new **SECURITY_MODEL §2.10**
+  = the D71 WS ingress rails · AGENTS.md §6 gained the owner-file PUT rule + the app-wide
+  no-CORS/no-multipart negative (allowlist = `POST /api/voice/stt` alone) · ARCHITECTURE §7 now
+  states loopback default AND the prod 0.0.0.0 waiver · D20 stamp fixed (built except QR) ·
+  ROADMAP A2 marked shipped (the `question` builtin — don't rebuild it).
+- **Prune (owner mandate):** dead ▶▶ NEXT blocks collapsed keeping their durable rulings;
+  rot-prone literal counts → pointers (counts ONLY in QUALITY.md; eslint re-measured **107** —
+  the P24 waves didn't re-measure, noted as a process lapse); ID-namespace convention recorded
+  in `research/README.md` (research-R# ≠ review-R#; three unrelated F1s). HARDENING now flags
+  Phases 22–24 + D72 as **unassigned** in its §7 inventory (it predates the first WebSocket).
+- **Durable lesson (memory updated):** when closing a slice, sweep the plan's TOP (stamp +
+  headings), not just its ladder — and a sweep that CLAIMS completeness (D72 ⑤ "all four") is
+  itself a claim to verify (it was partial; now closed).
+
+## Prior state (2026-09-16, TWENTY-SIXTH session — **THE INTERMISSION IS CLOSED: the owner ruled both D72 open decisions in conversation, the visible-word slice ran build → blind Emma round → red-proven pins, the dev units got the ws-ping 5/5 flags via `install.sh dev`, and EVERYTHING IS PUSHED. ▶▶ NEXT SESSION = S4 STRAIGHT (plan §7), clean — the owner calibration + device round = THE PHASE GATE**; supersedes below where it speaks)
 
 - **The two rulings (owner, in conversation):** ① the fleet pending word IS visible text —
   built as `60316a1` (feat(fleet)): `transitionWord(online, pending)` beside `livenessWord`
