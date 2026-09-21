@@ -103,7 +103,7 @@ let minted: string[] = [];
 let revoked: string[] = [];
 /** The stubbed `getUserMedia` — what the ROUTE cases assert against (the constraints are the whole
  *  mechanism: on Chrome Android they decide the device's audio mode, R74 §1.3). */
-let gum: ReturnType<typeof vi.fn>;
+let gum: ReturnType<typeof vi.fn<(constraints: unknown) => Promise<unknown>>>;
 /** What a case wants `enumerateDevices()` to answer, in order of the reads it takes. */
 let enumerated: { kind: string; deviceId: string; label: string }[][] = [];
 
