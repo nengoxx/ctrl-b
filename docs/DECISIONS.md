@@ -5260,3 +5260,68 @@ overruled); `unmounted` carries `priorLeg` (the StrictMode reshape of S6-F3); S6
 the fact (max_session_s's ceiling is 7200). Local liveCall e2e 20/20 on the production build.
 Owed to the S4 sitting: the four-row routing probe · the §12.4 freeze probe · the recorded
 residual (a mic stolen AND returned entirely while hidden reports only at the next wake).
+
+## D74 — The in-call audio deck: route/device on the call screen, the transcript energy gate, and actions that aren't speech ✏️ RULED 2026-09-21 (owner, in conversation — "double check everything … and then we can build it yes" after the reconciled proposal; the same evening's poke round supplied the field evidence; evidence = [R76](./research/R76-noise-hallucination-gating.md) · [R77](./research/R77-android10-pres-route-residual.md) · [R78](./research/R78-barge-arm-readback.md); design of record = the D74 wave block in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7; council = blind Maya design round BUILD WITH CHANGES [3 MED · 1 LOW, all four folded pre-build] → blind Maya code round SHIP WITH FIXES [3 MED — F1/F2 accepted, F3 split] → fix wave, each fix red-proven → self-contained confirm)
+
+**The occasion.** The owner's D73 poke round, live in conversation: the S5 route knob shipped
+defaulting `speaker` and nobody had flipped it — the round reproduced the pre-S5 symptom with the
+fix built but OFF, and the recovery (Conf → redial) proved routing cannot live in Settings.
+The same round calibrated `barge_threshold` by hand (0.2/0.4/0.3 dead → 0.03 fires on street
+neighbours → **0.06 works**), caught two noise finals committed as real turns ("Yeah."/"Okay"),
+and correlated the "scratching" TTS with asterisk italics.
+
+**Ruled:**
+① **In-call route + input controls (owner ask), per-call and ephemeral** — reducer-owned state
+seeded at call start; an in-call change NEVER writes config (dialer semantics; the Conf knob stays
+the next-call default, which stays `speaker`). A route change is a **LEG CYCLE** — clean close +
+the existing redial, re-running the one acquisition block — never `applyConstraints` (R78: refused
+with platform AEC in use) and never overlapped captures (the loser pins the mode).
+② **The steering rule (R77):** on the headphones route with no explicit pick, when the audioinput
+list validates as Chrome Android's synthetic five AND a "Bluetooth headset" row stands, the open is
+steered "Headset earpiece" → "Wired headset" → "Speakerphone" and NEVER the bare default (the
+default selection prefers BT → SCO rises → A2DP suspends → MEDIA TTS is DISCARDED, and an AEC-off
+teardown restores nothing — the owner's phone dodges this only because its pair exposes no HFP
+row). A rung that will not open falls to the NEXT rung (code round F3b); label-set matching is
+capability-shaped; an explicit pick always wins. F3a (stricter structure validation) OVERRULED on
+the record: synthetic ids are per-origin hashes (nothing to validate), UA-sniffs are banned, and
+the residual desktop false-positive steers to a real, benign, overridable device. The confirm
+round held F3a with a NEW scenario (that coincidental desktop, every named rung busy while the
+system default works ⇒ a lost call the default tail would have carried) — **overruled again,
+sharpened**: on the one platform where the list shape occurs for real, the tail IS the silent-TTS
+trap, and a LOUD capture failure beats a silently dead call; the residual is recorded at the
+decision site (`candidateConstraints`' doc comment).
+③ **The transcript energy gate (call path only, fail-open):** the wiring's one EarMeter accrues
+ms-above-the-SILENCE-floor per utterance, epoch-keyed {leg, seq} and cleared only on the machine's
+ACCEPTED edges (code round F2); a final whose epoch-matched accrual < `voice.live.min_final_ms`
+(200; 0 = off) is dropped with a visible "too quiet" note — never silently; a final with NO epoch
+evidence PASSES. Grounds: R76's measured reproduction — Silero at 0.9 admits speech-shaped audio at
+RMS 0.003 that Parakeet transcribes fluently, the server exposes no counter-knob and no confidence,
+and a phrase denylist eats the confirm-gate "yes" (0/4 peers ship one). Dictation stays out (its
+draft is visible and editable); the revisit trigger is the owner asking for it there.
+④ **Trigger A goes m-of-n:** ≥75% of the rolling `min_speech_ms` window above the floor —
+`max(1, floor)` rounding (code round F1: ceil re-derives consecutive-frames at small windows) —
+window cleared on the mouth's rising edge (design round F3). The owner's calibrated 0.06 stands on
+dev; thresholds are NOT portable across routes (R78 — the headphones route changes AGC/preset), a
+recorded S4 caveat, not a second knob.
+⑤ **Actions are not speech:** `toSpeech` ends with a residual-`*` scrub (an asterisk is never
+speakable — closes the read-along mid-span leak, the owner's "scratching"), and
+`voice.tts.speak_actions: false` (default true) drops single-asterisk spans entirely — the
+SillyTavern "dialogue only" mode, pairing matched to the eye's markdown, an unclosed opener dropped
+to end-of-input, the streaming cut HOLDING at an em opener only under skip. The old "accepted
+residual" ruling on stray delimiters now stands on the scrub, not on tolerance — its "rare shape"
+premise died with roleplay.
+⑥ **Capture exclusivity:** a starting call awaits `releaseMic()` (a plain module slot driving
+dictation's own stop path) before opening its ear — two captures never coexist (R78: the live one
+pins the other's AEC mode). The Conf label probe serializes on its own latch (S5 review F2's race).
+⑦ **The overlay tells the truth behind `voice.live.debug`:** a wiring-assembled snapshot on
+CallView (grant readback settings-beside-capabilities · route/hold/armed/mouth flags · live RMS
+against the floor · per-final gate stats) — the overlay never touches the track; debug-off renders
+nothing. This is the surface that turns threshold guessing into one look (R78's diagnosis tree).
+⑧ **Hotwords stay honest:** the config field reaches only the whole-clip STT door and is inert on
+the Parakeet target (R76) — kept wired for whisper-class targets, with the finding named in code.
+
+**Build record:** two pinned Opus lanes (call machine · TTS-text/config), disjoint file ownership,
+gate 6/6 twice (pre- and post-fix-wave); the fix wave's three fixes each red-proven against the
+named bypass (ceil restored · unconditional close restored · the old one-attempt pin inverted).
+Also this session, same conversation: every Conf group starts collapsed (owner ask, `d5a787e`) and
+the D73 wave's two lint errors unblocked the FE gate (`1f50686`).

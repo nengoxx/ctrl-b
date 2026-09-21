@@ -1535,6 +1535,41 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > element, no playback-status contamination); F5 accepted as an explicit REVERSAL of the main
   > seat's own D73 ⑥.
 
+- **THE D74 WAVE — the in-call audio deck (owner-ruled 2026-09-21, the same evening; ruling =
+  DECISIONS D74, which holds the eight rulings; evidence = [R76](./research/R76-noise-hallucination-gating.md) ·
+  [R77](./research/R77-android10-pres-route-residual.md) · [R78](./research/R78-barge-arm-readback.md)).**
+  The owner's D73 poke round, run live in conversation, supplied the whole docket: the S5 route
+  knob sat on its `speaker` default (the fix built but OFF — proof routing cannot live in Conf),
+  the by-hand `barge_threshold` walk (0.2/0.4 dead → 0.03 fires on the street → **0.06 works**)
+  exposed the consecutive-frame brittleness AND R78's arithmetic finding, two noise finals
+  committed as turns, and the "scratching" TTS correlated with asterisk actions.
+
+  > **✅ BUILT 2026-09-21, same session** (two pinned Opus lanes — call machine · TTS-text/config —
+  > disjoint file ownership, neither committing; blind Maya design round BUILD WITH CHANGES 3 MED ·
+  > 1 LOW all folded PRE-build; blind Maya code round SHIP WITH FIXES 3 MED — F1 the m-of-n
+  > `max(1, floor)` rounding · F2 the meter keyed to ACCEPTED reducer transitions (prev/next
+  > threaded through `send`) · F3 split: the rung-walk accepted (`candidateConstraints` ladder,
+  > owner pick → steer rungs → tail, NEVER the bare default while the BT row stands), the
+  > structure-validation half overruled TWICE with the residual recorded at the decision site;
+  > every fix red-proven against its named bypass; confirm round F1/F2/F3b CONFIRMED; gate 6/6
+  > twice.) What landed: ① `RouteControls` on the CallOverlay — route toggle + device select,
+  > reducer-owned ephemeral state, the `routeChange`→`recapture` LEG CYCLE re-running the one
+  > extracted `acquire()` under the gen fence (never `applyConstraints`, never overlap) ② the R77
+  > steering ladder in the ONE `openMicStream` chokepoint ③ the ONE `EarMeter` (trigger window ·
+  > per-utterance epoch accrual · debug), `meterEdge` as the single edge chokepoint ④ the
+  > transcript gate: `final` carries `energyMs`/`minFinalMs`, the reducer drops epoch-matched
+  > too-quiet finals with `CALL_COPY.tooQuiet`, fail-OPEN without evidence, dictation out of scope
+  > ⑤ `toSpeech`'s residual-`*` scrub + `voice.tts.speak_actions` (skip mode: closed spans + the
+  > unclosed-opener drop + the ACTION_REWRITE stream hold — default mode holds nothing, the
+  > no-stall ruling now standing on the scrub) ⑥ `store/micRelease` capture exclusivity (a call
+  > awaits dictation's own stop) + the probe-latch serialization ⑦ the `CallDebug` snapshot on
+  > CallView behind `voice.live.debug` (250 ms tick, overlay never touches the track) ⑧ knobs
+  > `voice.live.min_final_ms` 200 · `voice.live.debug` false · `voice.tts.speak_actions` true —
+  > additive, no schema bump; client wire treats absence as OFF/legacy ⑨ `stt.hotwords` kept on
+  > the whole-clip door only, the R76 inertness named in code. ⚠ S4 caveats inherited: the barge
+  > floor is NOT portable across routes (R78 — headphones flips AGC/preset), and the owner's 0.06
+  > wants one re-check on the windowed rule.
+
 ## 8. Open questions for the owner (the court)
 
 **Owner rulings landed 2026-09-11 (in conversation):** ① §4.4 truncation as a follow-up slice —
