@@ -110,6 +110,11 @@ async def voice_status(request: Request) -> dict[str, object]:
         "barge_in": live.barge_in,
         "ring": live.ring,
         "echo_workaround": live.echo_workaround,
+        # D73 S5 — the capture pair. It reaches the browser for the same reason its neighbours do: the
+        # constraints and the device are `getUserMedia` arguments, and every capture this app opens
+        # (call and dictation alike) reads them from here rather than defaulting them locally.
+        "route": live.route,
+        "input_device": live.input_device,
         "max_session_s": live.max_session_s,
         "dictation": live.dictation,
         "tail_wait_ms": live.tail_wait_ms,

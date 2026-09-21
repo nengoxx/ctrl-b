@@ -12,7 +12,7 @@ import {
 } from "../lib/audioController";
 import { sendCallTranscript } from "../lib/composer";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
-import { startPcmCapture, type PcmCapture } from "../lib/pcmCapture";
+import { onHeadphones, startPcmCapture, type PcmCapture } from "../lib/pcmCapture";
 import { accrue, enqueueBounded, newPacer, pump, type PacerState } from "../lib/uplinkPacer";
 import { useStagedFiles } from "../store/attachments";
 import { cancelTurn, confirmOutstanding, getLiveTurn, useChatSlice } from "../store/chat";
@@ -121,6 +121,10 @@ export const CALL_COPY = {
   unknown: "not sure that sent — check the chat before repeating it",
   lost: "lost the connection",
   unconfigured: "live call is not configured",
+  /** D73 S5 — the picked capture device would not open, so this call is on the system default route
+   *  (`openMicStream`'s one retry). The call works; where the sound comes out may not be where the
+   *  owner asked for it, and that is worth one line on the overlay. */
+  deviceFallback: "that microphone wasn't available — using the default",
 } as const;
 
 /** The notes a FRESH LEG retracts — connection news, which a live connection has just made false.
@@ -205,8 +209,9 @@ export type CallSignal = { gen?: number } & (
   | { type: "degradedOver" } //                the strained note's hold expired (see DEGRADED_NOTE_MS)
   | { type: "setMuted"; on: boolean } //       the mute control (§6)
   /** The capture RESOLVED, carrying the one thing about it the rules depend on: whether this track
-   *  needs the ear-hold (§5.1 — `echo_workaround` resolved against the track's own AEC readback). */
-  | { type: "captureReady"; earHoldMode: boolean }
+   *  needs the ear-hold (§5.1 — `echo_workaround` resolved against the route and the track's own AEC
+   *  readback). `note` is the one thing about it the SCREEN depends on: the D73 device fallback. */
+  | { type: "captureReady"; earHoldMode: boolean; note?: string }
   | { type: "serverError"; code: string; message: string }
   | { type: "serverEnded" } //                 the relay said `state: ended`
   | { type: "barge" } //                       trigger A (voice) or B (tap) — the same edge
@@ -532,7 +537,10 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // The ear-hold RULE, taken ONCE from the track that actually opened (§5.1). It cannot be re-decided
       // later: `echo_workaround` is read at call start like every other knob (§4.5 — settings edited
       // mid-call apply to the NEXT call), and the capability belongs to this track, not to the browser.
-      return { state: { ...s, earHoldMode: sig.earHoldMode }, out: [] };
+      // The note is the capture's own news (the D73 device fallback) and rides the same arm: it is a
+      // fact about THIS track, learned at exactly this moment, and it is not connection news — so a
+      // reconnect's `CONNECTION_NOTES` retraction deliberately leaves it standing.
+      return { state: { ...s, earHoldMode: sig.earHoldMode, note: sig.note ?? s.note }, out: [] };
 
     case "turnSettled":
       // The brain finished without a mouth (a tool-only turn, TTS off, a reply that never synthesized).
@@ -886,6 +894,9 @@ export function useLiveCall(): CallView {
     const floor = knobs.barge_threshold || (voice.stt_auto_stop?.threshold ?? 0);
     void startPcmCapture({
       frameMs: knobs.frame_ms,
+      // D73 S5 — the capture pair, read at call start like every other knob (§4.5).
+      route: knobs.route,
+      deviceId: knobs.input_device,
       onFrame: (frame) => {
         // THE UPLINK GOES THROUGH THE PACER (A-F2, evidence docs/research/R71). Shipping each frame the
         // instant the worklet hands it over is safe at the ordinary cadence and fatal after a stall: the
@@ -956,18 +967,39 @@ export function useLiveCall(): CallView {
         // machine's answer the moment it exists, or audio flows to the relay while the screen says
         // Muted (and a final landing after the unmute would pass the reducer and submit it).
         cap.setMuted(ref.current.muted);
-        // The S0 ruling, per TRACK and never UA-sniffed: only a genuinely subtractive canceller lets the
-        // ear stay open under the reply, so only there can VOICE interrupt. Everywhere else the tap is
-        // the interrupt (§4.3) — and the ear is CLOSED while the reply speaks, which is the same readback
-        // read for its other consequence (S3). `on`/`off` are the owner's override of that reading; only
-        // `auto` consults the track. The two decisions are deliberately not one flag: `barge_in` may be
-        // off on a perfectly subtractive track (walkie-talkie by choice), which holds nothing.
-        bargeArmed.current = knobs.barge_in && cap.echoCancellation === "all";
+        // THE ROUTE-RESOLVED CAPTURE POLICY (D73 S5 / Maya F1). Both halves are decided HERE, together,
+        // from the same two facts — because they answer the same question and a version of this that
+        // let them disagree would arm voice barge-in against an ear the other half had just closed.
+        //
+        // The S0 ruling stands for the SPEAKER route, per TRACK and never UA-sniffed: only a genuinely
+        // subtractive canceller lets the ear stay open under the reply, so only there can VOICE
+        // interrupt. Everywhere else the tap is the interrupt (§4.3) — and the ear is CLOSED while the
+        // reply speaks, which is the same readback read for its other consequence (S3).
+        //
+        // On HEADPHONES the readback stops being the question. `echoCancellation: "all"` is a statement
+        // about how much of the page's own output the canceller subtracts from the mic, and headphones
+        // have no acoustic path to leak any of it (R74 §3): the ear needs no hold, and speech over the
+        // reply is genuinely the owner's, so barge-in arms on `barge_in` alone. That is the whole point
+        // of the route being ONE choice rather than a codec toggle — AEC off with the hold still armed
+        // would buy media-quality output and pay for it with an ear that closes on every reply.
+        //
+        // `on`/`off` remain the owner's override of the HOLD half only: the route moves what `auto`
+        // means, it does not outrank an explicit answer. And the two decisions stay deliberately
+        // separate flags: `barge_in` may be off on a perfectly open ear (walkie-talkie by choice).
+        const headphones = onHeadphones(knobs.route);
+        bargeArmed.current = knobs.barge_in && (headphones || cap.echoCancellation === "all");
         const hold = knobs.echo_workaround;
         send({
           type: "captureReady",
           earHoldMode:
-            hold === "on" ? true : hold === "off" ? false : cap.echoCancellation !== "all",
+            hold === "on"
+              ? true
+              : hold === "off"
+                ? false
+                : !headphones && cap.echoCancellation !== "all",
+          // The picked device did not open and the default took the call (R74 §2.2(b)). The call
+          // proceeds — it is the same ear on another route — and the overlay says which.
+          note: cap.fellBack ? CALL_COPY.deviceFallback : undefined,
           gen: ref.current.gen,
         });
         // …and the TRACK takes the machine's answer the moment it exists — the S2b confirm-F1 lesson

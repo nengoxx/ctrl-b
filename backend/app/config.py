@@ -654,7 +654,8 @@ class LiveCfg(VoiceServiceCfg):
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `allowed_origins` are the relay's own caps.
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`, `barge_threshold`,
-      `barge_in`, `ring`, `echo_workaround` and the four S2.5 DICTATION knobs are PWA behavior
+      `barge_in`, `ring`, `echo_workaround`, the D73 CAPTURE pair (`route`, `input_device`) and the
+      four S2.5 DICTATION knobs are PWA behavior
       (Speaches' `TurnDetection` accepts exactly five fields, §4.1, so an interruption floor cannot be
       a server knob). They are delivered verbatim by `GET /voice/status` (`live_call`) and nothing
       below the browser reads them.
@@ -709,6 +710,27 @@ class LiveCfg(VoiceServiceCfg):
     #: capability-detected per track at call start (OFF where `getSettings().echoCancellation` reads
     #: `"all"`, the protective ear-hold elsewhere) — NEVER UA-sniffed. `on`/`off` force one branch.
     echo_workaround: Literal["auto", "on", "off"] = "auto"
+
+    # ── D73 S5 · THE CAPTURE ROUTE (client; evidence R74) ──
+    # Both knobs govern EVERY capture this app opens — the call's and streaming/whole-clip dictation's
+    # alike (R74 §0.3: an unconstrained `audio: true` is in the same trap), so they sit with the other
+    # client knobs rather than under either feature.
+    #: Where the owner is listening. `speaker` = today's constraints (platform AEC), which on Chrome
+    #: Android leaves `ECHO_CANCELLER` in the stream's effects mask, puts the device into
+    #: `MODE_IN_COMMUNICATION` and re-tags the app's own output as voice-communication — the phone
+    #: speaker, at call quality (R74 §1.1–§1.3, verified in Chromium source). `headphones` = AEC off,
+    #: which empties that mask, skips the mode switch and lets TTS ride A2DP at media quality.
+    #: ONE owner-facing choice rather than two knobs that can disagree: with headphones on there is no
+    #: acoustic echo path at all, so the client resolves the ear-hold AND the barge-in arming from this
+    #: single field (R74 §9.2). Noise suppression stays on in both — it runs in software.
+    route: Literal["speaker", "headphones"] = "speaker"
+    #: The capture device, a browser-local `MediaDeviceInfo.deviceId`; "" = the system default. On
+    #: Android Chrome the audioinput list IS the route picker — selecting one calls
+    #: `AudioManager.setCommunicationDevice()`, which moves BOTH directions (R74 §2.2) — and it is the
+    #: only routing lever the web has there; on desktop it is an ordinary microphone choice. Requested
+    #: as `ideal`, never `exact`, so a device that has gone away falls back to the default instead of
+    #: failing the capture. OPAQUE to this process: nothing below the browser interprets it.
+    input_device: str = ""
 
     # ── S2.5 · phrase-by-phrase streaming DICTATION (client; R70 §9.2/§9.3) ──
     # The mic's hold/lock rides the same ear as the call: each utterance final appends to the composer

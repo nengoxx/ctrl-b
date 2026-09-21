@@ -27,6 +27,7 @@ import { useSections } from "../hooks/useSections";
 import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
 
 import { disclosureToggle } from "../lib/disclosure";
+import { listAudioInputs, type MicDevice } from "../lib/pcmCapture";
 import {
   DEFAULT_AGENT,
   pickAgentSection,
@@ -223,6 +224,66 @@ function Field(props: {
         aria-labelledby={labelId}
         onChange={(e) => props.onChange(e.target.value)}
       />
+    </div>
+  );
+}
+
+/** D73 S5 — the capture-device row (`voice.live.input_device`). On a phone this is the ROUTE picker
+ *  and nothing else: Android Chrome's audioinput list is the communication-device list, and selecting
+ *  one calls `setCommunicationDevice()`, which moves output as well as input (R74 §2.2). It is
+ *  labelled as what it is rather than as "microphone", because a control that silently moves where the
+ *  reply comes out has to say so.
+ *
+ *  Maya F4's three rules and no more. ① The list is READ, not assumed: `enumerateDevices()` on mount
+ *  (permission-free — it answers even with nothing granted) and again when the picker opens. ② That
+ *  second read may PROBE: before this origin has ever been granted a capture every label is empty, so
+ *  one throwaway `getUserMedia` earns them — taken from the owner's own tap, never on mount. ③ A
+ *  stored id the list does not contain is shown as the unavailable thing it is instead of standing as
+ *  a silent choice; the capture asks for it as `ideal`, so it falls back to the default anyway. */
+function DeviceRow(props: { value: string; onChange: (v: string) => void }) {
+  const labelId = useId();
+  const [devices, setDevices] = useState<MicDevice[] | null>(null);
+  // The mount read bails SYNCHRONOUSLY where the API is absent (jsdom, an insecure context): a hook
+  // that cannot learn anything must not schedule a state write either.
+  useEffect(() => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    let live = true;
+    void listAudioInputs().then((d) => {
+      if (live) setDevices(d);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const known = devices?.some((d) => d.deviceId === props.value) ?? false;
+  return (
+    <div className="confrow">
+      <div className="k">
+        <div className="label" id={labelId}>
+          Microphone / audio route
+        </div>
+        <div className="desc">
+          on a phone this picks the ROUTE — speakerphone, wired or Bluetooth headset — in both
+          directions · applies to dictation too · a device that is gone falls back to the system
+          default
+        </div>
+      </div>
+      <select
+        aria-labelledby={labelId}
+        value={props.value}
+        onFocus={() => void listAudioInputs(true).then(setDevices)}
+        onChange={(e) => props.onChange(e.target.value)}
+      >
+        <option value="">system default</option>
+        {(devices ?? []).map((d) => (
+          <option key={d.deviceId} value={d.deviceId}>
+            {d.label}
+          </option>
+        ))}
+        {props.value !== "" && !known && (
+          <option value={props.value}>saved device — not available</option>
+        )}
+      </select>
     </div>
   );
 }
@@ -787,6 +848,8 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   barge_in: true,
   ring: true,
   echo_workaround: "auto",
+  route: "speaker",
+  input_device: "",
   dictation: false,
   tail_wait_ms: 2000,
   dictation_idle_s: 15,
@@ -2807,6 +2870,30 @@ export function ConfTab({ active }: Props) {
               onPick={(v) => setLive("echo_workaround", v)}
             />
           </SettingRow>
+          {/* D73 S5 (evidence docs/research/R74) — ONE choice, not a codec toggle. On the phone,
+              asking for echo cancellation is what drops the whole device into communication mode and
+              drags the app's own output down with it; "headphones" clears the ask, so the reply rides
+              Bluetooth at media quality. It also resolves what "auto" above means: on headphones
+              there is no acoustic echo path, so the ear stays open under the reply and hands-free
+              interruption works. Governs dictation's microphone too. */}
+          <SettingRow
+            label="Audio route"
+            desc="where you're listening · headphones → full-quality sound over Bluetooth and hands-free interruption; speaker → echo cancellation, at call quality"
+          >
+            <Seg<string>
+              label="Audio route"
+              current={vlive?.route ?? "speaker"}
+              options={[
+                { val: "speaker", label: "speaker" },
+                { val: "headphones", label: "headphones" },
+              ]}
+              onPick={(v) => setLive("route", v)}
+            />
+          </SettingRow>
+          <DeviceRow
+            value={vlive?.input_device ?? ""}
+            onChange={(v) => setLive("input_device", v)}
+          />
           {/* Every bound below is copied from `LiveCfg`'s own `Field(...)` in backend/app/config.py —
               one control, two enforcers; a typed value outside them earns a visible 422 on save. */}
           <Field

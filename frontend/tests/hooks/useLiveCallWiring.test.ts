@@ -24,6 +24,8 @@ const h = vi.hoisted(() => ({
         barge_in: true,
         ring: "none",
         echo_workaround: "auto",
+        route: "speaker", //          D73 S5 — the capture pair; a case flips it to "headphones"
+        input_device: "",
         max_session_s: 600,
       },
       stt_auto_stop: { threshold: 0 },
@@ -69,6 +71,10 @@ const h = vi.hoisted(() => ({
    *  string modes at all) rather than Chromium's subtractive `"all"`? The ONE input to both the
    *  trigger-A arming and the S3 ear-hold decision. */
   fennec: false,
+  /** D73 S5 — did the picked `input_device` refuse to open, so the DEFAULT route took the call? */
+  fellBack: false,
+  /** …and what `startPcmCapture` was actually asked for, so a case can pin that the route reaches it. */
+  capOpts: null as { route?: string; deviceId?: string } | null,
   /** Holds `startPcmCapture` open when an arm needs the acquisition GAP itself. */
   capGate: Promise.resolve(),
 }));
@@ -108,13 +114,22 @@ vi.mock("../../src/lib/liveSocket", () => ({
     };
   },
 }));
-vi.mock("../../src/lib/pcmCapture", () => ({
-  startPcmCapture: async (opts: { onFrame: (f: { buf: ArrayBuffer; rms: number }) => void }) => {
+vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
+  // `onHeadphones` stays REAL: the route predicate is the thing under test in the D73 cases, and a
+  // mocked one would pin the harness's opinion of the string rather than the module's.
+  onHeadphones: (await importActual<typeof import("../../src/lib/pcmCapture")>()).onHeadphones,
+  startPcmCapture: async (opts: {
+    onFrame: (f: { buf: ArrayBuffer; rms: number }) => void;
+    route?: string;
+    deviceId?: string;
+  }) => {
     await h.capGate; // resolved by default; an arm swaps in a deferred to hold acquisition open
     h.mic = opts.onFrame;
+    h.capOpts = { route: opts.route, deviceId: opts.deviceId };
     return {
       sampleRate: 48000,
       echoCancellation: h.fennec ? true : "all",
+      fellBack: h.fellBack,
       setMuted: h.setMuted,
       setHeld: h.setHeld,
       stop: () => {},
@@ -132,7 +147,7 @@ vi.mock("../../src/store/composer", () => ({ appendDraft: h.appendDraft }));
 vi.mock("../../src/store/liveCall", () => ({ endCall: h.endCall }));
 vi.mock("../../src/hooks/useVoiceStatus", () => ({ useVoiceStatus: () => h.voice }));
 
-import { useLiveCall } from "../../src/hooks/useLiveCall";
+import { CALL_COPY, useLiveCall } from "../../src/hooks/useLiveCall";
 
 /** Move the playback status the way the real store does: write, then tell the listeners — in the same
  *  task, which is the whole S3 contract the wiring now rides (see the sync-hold suite). */
@@ -156,6 +171,10 @@ beforeEach(() => {
   h.audio = [];
   h.order = [];
   h.fennec = false;
+  h.fellBack = false;
+  h.capOpts = null;
+  h.voice.data.live_call.route = "speaker";
+  h.voice.data.live_call.input_device = "";
   h.voice.data.live_call.echo_workaround = "auto";
   h.voice.data.live_call.barge_threshold = 0; // trigger A DISARMED unless a case calibrates a floor
   h.capGate = Promise.resolve();
@@ -481,6 +500,28 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
     view.unmount();
   });
 
+  it("HEADPHONES resolve `auto` OFF on a leaking track — there is no path to leak down", async () => {
+    // Maya F1's first half. The `"all"` readback is a statement about how much of the page's own
+    // output the canceller subtracts from the mic; headphones have no acoustic path to carry any of
+    // it, so the readback stops being the question. The Fennec track — the one that ALWAYS holds on
+    // the speaker route — is deliberately the one used here.
+    h.voice.data.live_call.route = "headphones";
+    fennec();
+    const { step } = await call();
+    expect(h.capOpts?.route).toBe("headphones"); // …and the route reached the capture, not just the rule
+    await step(() => setPlay("playing"));
+    expect(h.setHeld).not.toHaveBeenCalledWith(true);
+    expect(h.prePlay).toBeNull(); // no hold mode ⇒ nothing to tap the mouth with
+  });
+
+  it("…but an EXPLICIT `on` still outranks the route — it moves what `auto` means, no more", async () => {
+    h.voice.data.live_call.route = "headphones";
+    h.voice.data.live_call.echo_workaround = "on";
+    const { step } = await call();
+    await step(() => setPlay("playing"));
+    expect(h.setHeld).toHaveBeenLastCalledWith(true);
+  });
+
   it("the ENGAGE is synchronous with the play edge — before React renders (review F2)", async () => {
     // The physics the subscription exists for: the controller's `emit` runs inside the media `play`
     // handler's own `set()`, and the hold must reach `track.enabled` in that SAME task — a hold that
@@ -603,6 +644,80 @@ describe("useLiveCall — THE UPLINK PACER (A-F2, evidence docs/research/R71)", 
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("useLiveCall — THE ROUTE-RESOLVED CAPTURE POLICY (D73 S5 / Maya F1)", () => {
+  /** Sustained speech over an audible reply: `min_speech_ms` worth of above-floor frames. */
+  const shout = async (): Promise<void> => {
+    const frame = (): { buf: ArrayBuffer; rms: number } => ({ buf: new ArrayBuffer(8), rms: 0.5 });
+    await act(async () => {
+      for (let i = 0; i < 15; i++) h.mic?.(frame()); // 15 × 20 ms = the configured 300 ms
+      await Promise.resolve();
+    });
+  };
+
+  /** Drive trigger A to the edge of a kill on a track whose AEC readback is NOT `"all"`. */
+  const bargeOnFennec = async (route: string): Promise<void> => {
+    h.voice.data.live_call.route = route;
+    h.voice.data.live_call.barge_threshold = 0.01;
+    h.fennec = true;
+    const { step } = await call();
+    await step(() => setPlay("playing"));
+    h.dismiss.mockClear();
+    await shout();
+  };
+
+  it("arms voice barge-in on HEADPHONES regardless of the AEC readback", async () => {
+    // Maya F1's second half, and the reason the two halves are resolved together: with the ear held
+    // open by the route, the interrupt must be armed by the route too — an install that read `"all"`
+    // for this half would ship an open mic that voice can never interrupt through.
+    vi.useFakeTimers();
+    try {
+      await bargeOnFennec("headphones");
+      expect(h.dismiss).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("…and the SPEAKER route keeps the S0 readback rule exactly as it was", async () => {
+    vi.useFakeTimers();
+    try {
+      await bargeOnFennec("speaker");
+      expect(h.dismiss).not.toHaveBeenCalled(); // the tap is the interrupt there (§4.3 trigger B)
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("`barge_in` off still holds everything — the route is not a second master switch", async () => {
+    vi.useFakeTimers();
+    try {
+      h.voice.data.live_call.barge_in = false;
+      await bargeOnFennec("headphones");
+      expect(h.dismiss).not.toHaveBeenCalled();
+    } finally {
+      h.voice.data.live_call.barge_in = true;
+      vi.useRealTimers();
+    }
+  });
+
+  it("carries the picked device down, and SAYS SO when the default had to take the call", async () => {
+    // R74 §2.2(b) — the Android failure is a null stream, so the capture retries without the device
+    // and the call proceeds on the default route. What must not happen is that it proceeds silently.
+    h.voice.data.live_call.input_device = "bt-headset";
+    h.fellBack = true;
+    const { view } = await call();
+    expect(h.capOpts?.deviceId).toBe("bt-headset");
+    expect(view.result.current.note).toBe(CALL_COPY.deviceFallback);
+    expect(view.result.current.phase).toBe("listening"); // …and the call is up regardless
+  });
+
+  it("a capture that opened what it asked for says nothing", async () => {
+    h.voice.data.live_call.input_device = "bt-headset";
+    const { view } = await call();
+    expect(view.result.current.note).toBeNull();
   });
 });
 

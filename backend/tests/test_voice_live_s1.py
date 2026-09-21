@@ -1015,6 +1015,8 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "barge_in": False,
             "ring": False,
             "echo_workaround": "on",
+            "route": "headphones",
+            "input_device": "dev-42",
             "max_session_s": 900,
             "dictation": True,
             "tail_wait_ms": 2500,
@@ -1034,6 +1036,11 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "barge_in": False,
         "ring": False,
         "echo_workaround": "on",
+        # D73 S5 — the capture pair. CLIENT knobs like their neighbours: they are `getUserMedia`
+        # arguments, so nothing below the browser reads them and they have to arrive here or be
+        # defaulted twice (the call's ear and dictation's open with the SAME two).
+        "route": "headphones",
+        "input_device": "dev-42",
         "max_session_s": 900,
         # S2.5 — the dictation four ride the SAME object (one ear, one set of client knobs). Nothing
         # in `useDictation`'s streaming branch may default one of these; they all arrive here.
@@ -1168,6 +1175,9 @@ def test_live_config_defaults() -> None:
     assert cfg.max_session_s == 1800  # aligned with Speaches' own 30-min hard expiry
     assert (cfg.min_speech_ms, cfg.buffered_ceiling_ms, cfg.barge_threshold) == (300, 1000, 0.0)
     assert (cfg.barge_in, cfg.ring, cfg.echo_workaround) == (True, True, "auto")
+    # D73 S5 — the capture pair ships as the ear this app has always opened: the platform AEC on the
+    # system default device. `headphones` and a picked route are both owner opt-ins.
+    assert (cfg.route, cfg.input_device) == ("speaker", "")
     assert (cfg.relay_queue_ms, cfg.start_timeout_s, cfg.allowed_origins) == (2000, 5.0, [])
     assert cfg.provider is None and cfg.fallbacks == []  # blank ⇒ resolve like stt
     # S2.5 — the dictation four. `dictation` ships OFF beside `enabled` (its own whole-feature toggle),
@@ -1191,6 +1201,9 @@ def test_live_config_defaults() -> None:
         {"relay_queue_ms": 10},
         {"start_timeout_s": 0},
         {"echo_workaround": "sometimes"},
+        # D73 S5 — the route is a CLOSED pair, not free text: the client branches on it, and a third
+        # spelling would silently resolve to the speaker branch while Conf showed something else.
+        {"route": "earpiece"},
         {"max_session_s": 5},
         # S2.5 — the dictation knobs are bounded for the same reason their neighbours are: a value
         # outside them wedges the mic (a 0 ms tail wait discards every trailing phrase; a 1 s idle

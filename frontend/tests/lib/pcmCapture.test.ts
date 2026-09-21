@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { startPcmCapture } from "../../src/lib/pcmCapture";
+import {
+  listAudioInputs,
+  micConstraints,
+  openMicStream,
+  startPcmCapture,
+} from "../../src/lib/pcmCapture";
 
 // lib/pcmCapture — the call's EAR, opened. The worklet's arithmetic is pinned by `pcmWorklet.test.ts`
 // (which evaluates the shipped source against a fake processor); what is pinned HERE is the chain's
@@ -55,6 +60,15 @@ class FakeTrack {
 let track: FakeTrack;
 let minted: string[] = [];
 let revoked: string[] = [];
+/** The stubbed `getUserMedia` — what the ROUTE cases assert against (the constraints are the whole
+ *  mechanism: on Chrome Android they decide the device's audio mode, R74 §1.3). */
+let gum: ReturnType<typeof vi.fn>;
+/** What a case wants `enumerateDevices()` to answer, in order of the reads it takes. */
+let enumerated: { kind: string; deviceId: string; label: string }[][] = [];
+
+/** The audio constraints of the `getUserMedia` call at `i`, as a plain object. */
+const askedAt = (i: number): Record<string, unknown> =>
+  (gum.mock.calls[i][0] as { audio: Record<string, unknown> }).audio;
 
 beforeEach(() => {
   track = new FakeTrack();
@@ -69,12 +83,15 @@ beforeEach(() => {
       connect() {}
     },
   );
+  gum = vi.fn(async () => ({
+    getAudioTracks: () => [track],
+    getTracks: () => [track],
+  }));
+  enumerated = [];
   vi.stubGlobal("navigator", {
     mediaDevices: {
-      getUserMedia: vi.fn(async () => ({
-        getAudioTracks: () => [track],
-        getTracks: () => [track],
-      })),
+      getUserMedia: gum,
+      enumerateDevices: vi.fn(async () => enumerated.shift() ?? []),
     },
   });
   URL.createObjectURL = vi.fn(() => {
@@ -188,5 +205,125 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     expect(track.stopped).toBe(1);
     expect(FakeContext.last?.closed).toBe(1);
     expect(revoked).toEqual(["blob:worklet"]);
+  });
+});
+
+// ── D73 S5 · THE ROUTE (evidence docs/research/R74) ──────────────────────────────────────────────
+
+describe("micConstraints — the route IS the constraint (R74 §1.3)", () => {
+  it("speaker asks for the subtractive mode; headphones clear the ask entirely", () => {
+    // Clearing AEC empties Android's platform-effects mask, which is the single bit that decides
+    // whether Chrome puts the device into MODE_IN_COMMUNICATION and re-tags its own output as
+    // voice-communication. `noiseSuppression` runs in software and survives both routes.
+    expect(micConstraints({ route: "speaker" })).toMatchObject({
+      echoCancellation: { ideal: "all" },
+      noiseSuppression: true,
+      channelCount: 1,
+    });
+    expect(micConstraints({ route: "headphones" })).toMatchObject({
+      echoCancellation: false,
+      noiseSuppression: true,
+      channelCount: 1,
+    });
+  });
+
+  it("an absent or unknown route is the SPEAKER route — a pre-S5 backend keeps today's ear", () => {
+    expect(micConstraints({})).toMatchObject({ echoCancellation: { ideal: "all" } });
+    expect(micConstraints({ route: "earpiece" })).toMatchObject({
+      echoCancellation: { ideal: "all" },
+    });
+  });
+
+  it("a device rides as IDEAL, never exact — and an empty one is not a constraint at all", () => {
+    expect(micConstraints({ deviceId: "dev-7" })).toMatchObject({ deviceId: { ideal: "dev-7" } });
+    expect(micConstraints({ deviceId: "" })).not.toHaveProperty("deviceId");
+  });
+});
+
+/** What `getUserMedia` rejects with. A browser throws a `DOMException`, which inherits from `Error`
+ *  there (WebIDL) — jsdom's deliberately does not, so a literal `new DOMException(...)` would be a
+ *  double the production code never meets. The NAME is the whole payload either way. */
+const gumError = (name: string): Error => Object.assign(new Error(name), { name });
+
+describe("openMicStream — the picked device's ONE retry (R74 §2.2(b))", () => {
+  it("falls back to the default when the picked device will not open, and SAYS so", async () => {
+    // The Android failure is not a constraint the browser relaxes: an unavailable communication
+    // device makes the stream come back null, i.e. getUserMedia rejects. `ideal` cannot save it —
+    // this retry can.
+    gum.mockRejectedValueOnce(gumError("NotReadableError"));
+    const opened = await openMicStream({ route: "headphones", deviceId: "gone" });
+    expect(opened.fellBack).toBe(true);
+    expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "gone" } });
+    expect(askedAt(1)).not.toHaveProperty("deviceId"); // …and the ROUTE survived the fallback
+    expect(askedAt(1)).toMatchObject({ echoCancellation: false });
+  });
+
+  it("a REFUSED permission is never retried — one prompt, one answer", async () => {
+    gum.mockRejectedValue(gumError("NotAllowedError"));
+    await expect(openMicStream({ deviceId: "dev-7" })).rejects.toThrow();
+    expect(gum).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failure with NO device picked is the plain failure it always was", async () => {
+    gum.mockRejectedValue(gumError("NotFoundError"));
+    await expect(openMicStream({})).rejects.toThrow();
+    expect(gum).toHaveBeenCalledTimes(1);
+  });
+
+  it("startPcmCapture opens with the route and carries the fallback up", async () => {
+    gum.mockRejectedValueOnce(gumError("NotReadableError"));
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: "headphones",
+      deviceId: "gone",
+      onFrame: () => {},
+      onEnded: () => {},
+    });
+    expect(cap.fellBack).toBe(true);
+    expect(askedAt(0)).toMatchObject({ echoCancellation: false });
+  });
+});
+
+describe("listAudioInputs — the picker's list (Maya F4)", () => {
+  const dev = (deviceId: string, label: string) => ({ kind: "audioinput", deviceId, label });
+
+  it("returns the labelled audio inputs and drops everything else", async () => {
+    enumerated = [
+      [dev("a", "Speakerphone"), { kind: "audiooutput", deviceId: "o", label: "Default" }],
+    ];
+    expect(await listAudioInputs()).toEqual([{ deviceId: "a", label: "Speakerphone" }]);
+    expect(gum).not.toHaveBeenCalled(); // enumeration alone opens no microphone
+  });
+
+  it("PROBES once for labels when every entry is nameless — and only when asked to", async () => {
+    // Labels are permission-gated: before this origin has been granted a capture the list is real but
+    // unnameable, which is not a list anyone can choose from.
+    enumerated = [
+      [dev("a", ""), dev("b", "")],
+      [dev("a", "Wired headset"), dev("b", "Bluetooth headset")],
+    ];
+    expect(await listAudioInputs(true)).toEqual([
+      { deviceId: "a", label: "Wired headset" },
+      { deviceId: "b", label: "Bluetooth headset" },
+    ]);
+    expect(gum).toHaveBeenCalledTimes(1);
+    expect(track.stopped).toBe(1); // the probe releases the mic it borrowed
+
+    // …and the same list WITHOUT the probe is simply empty: a nameless route is never an offer.
+    enumerated = [[dev("a", ""), dev("b", "")]];
+    gum.mockClear();
+    expect(await listAudioInputs()).toEqual([]);
+    expect(gum).not.toHaveBeenCalled();
+  });
+
+  it("a refused probe leaves the list empty rather than throwing at the picker", async () => {
+    enumerated = [[dev("a", "")]];
+    gum.mockRejectedValue(gumError("NotAllowedError"));
+    expect(await listAudioInputs(true)).toEqual([]);
+  });
+
+  it("a browser with no enumerateDevices answers with nothing", async () => {
+    vi.stubGlobal("navigator", { mediaDevices: undefined });
+    expect(await listAudioInputs(true)).toEqual([]);
   });
 });

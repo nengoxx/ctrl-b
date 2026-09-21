@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 
 import type { LiveCallWire, SttAutoStopWire } from "./useVoiceStatus";
 import { runComposer } from "../lib/composer";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
-import { attachPcmUplink, type PcmUplink } from "../lib/pcmCapture";
+import { attachPcmUplink, openMicStream, type PcmUplink } from "../lib/pcmCapture";
 import { accrue, DRAIN_PACE, enqueue, pump, type PacerState } from "../lib/uplinkPacer";
 import { appendDraft, clearDraft, getDraft } from "../store/composer";
 import { pushToast } from "../store/toast";
@@ -373,6 +373,13 @@ export function useDictation({
   const tailWaitMs = liveCall?.tail_wait_ms ?? 0;
   const idleMs = (liveCall?.dictation_idle_s ?? 0) * 1000;
   const maxMs = (liveCall?.dictation_max_s ?? 0) * 1000;
+  // D73 S5 — the CAPTURE pair, flattened for the same reason. Unlike the knobs above these govern the
+  // WHOLE-CLIP path too: the mic's `getUserMedia` used to pass no constraints at all (R51 §6.1), which
+  // R74 §0.3 showed is not neutral — an unconstrained request takes the platform AEC and drops the
+  // phone into communication mode exactly like a call would. Absent ⇒ speaker + system default, which
+  // is the ear this app has always opened.
+  const route = liveCall?.route;
+  const inputDevice = liveCall?.input_device;
   const streamWanted = !!liveEar && !!liveCall?.dictation && frameMs > 0 && tailWaitMs > 0;
 
   // Whether the browser will even hand us a mic. `navigator.mediaDevices` is undefined in an insecure
@@ -1138,7 +1145,14 @@ export function useDictation({
     try {
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // D73 S5 — the SAME route-derived constraints and the SAME input device the call opens with
+        // (`openMicStream`), which is what closes R51 §6.1. A picked device that will not open falls
+        // back to the default and says so, exactly as it does for a call: the recording proceeds,
+        // because a dictation refused over a missing headset is worse than one on the phone's own mic.
+        const opened = await openMicStream({ route, deviceId: inputDevice });
+        stream = opened.stream;
+        if (opened.fellBack)
+          pushToast("That microphone wasn't available — using the default", "info");
       } catch {
         // ABORTED FIRST (F1): the gesture let go while the browser was still asking. A rejection that
         // lands after that is the user's own release, not a new fact to report — and the toast and the
@@ -1244,7 +1258,16 @@ export function useDictation({
       // that newer attempt's token must survive this one's unwind.
       if (armRef.current === arm) armRef.current = null;
     }
-  }, [upload, preflight, armDetector, teardownDetector, dropStream, finishStream]);
+  }, [
+    upload,
+    preflight,
+    armDetector,
+    teardownDetector,
+    dropStream,
+    finishStream,
+    route,
+    inputDevice,
+  ]);
 
   /** Tap handler — the KEYBOARD/AT path since S0.5 (R69 §8.1: tap-to-start, tap-to-stop). idle → start,
    *  recording → stop + transcribe. Inert while unavailable/sending; the degraded explainers ride

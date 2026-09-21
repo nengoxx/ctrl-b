@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // R51 Tier 0 — the auto-stop dictation rows live in the Voice · STT group, hand-authored beside
@@ -94,6 +94,9 @@ const makeSettings = () => ({
       barge_in: true,
       ring: true,
       echo_workaround: "auto",
+      // D73 S5 — the capture pair, on the SAME object for the same reason.
+      route: "speaker",
+      input_device: "",
       // S2.5 — the dictation four ride the same object; a sibling `dictation:` map would be the
       // parallel-maps mistake the standing rule names.
       dictation: false,
@@ -383,5 +386,69 @@ describe("ConfTab · the Live call section (D71 §5.1)", () => {
     fireEvent.click(saveButton());
     expect(liveOf()?.barge_threshold).toBeNull();
     expect(liveOf()?.min_speech_ms).toBeNull();
+  });
+});
+
+describe("ConfTab · the capture route + device picker (D73 S5)", () => {
+  /** `enumerateDevices()` answers, in the order the reads take them. */
+  let lists: { kind: string; deviceId: string; label: string }[][] = [];
+  const setDevices = (present: boolean) => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: present
+        ? {
+            enumerateDevices: vi.fn(async () => lists.shift() ?? []),
+            getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+          }
+        : undefined,
+    });
+  };
+  const picker = () => liveGroup().getByLabelText<HTMLSelectElement>("Microphone / audio route");
+  const optionText = () => Array.from(picker().options).map((o) => o.textContent);
+
+  beforeEach(() => {
+    lists = [];
+    setDevices(true);
+  });
+  afterEach(() => setDevices(false));
+
+  it("renders the route Seg from the live config and saves the owner's pick", () => {
+    render(<ConfTab active />);
+    expect(liveGroup().getByRole("button", { name: "speaker" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    fireEvent.click(liveGroup().getByRole("button", { name: "headphones" }));
+    fireEvent.click(saveButton());
+    expect(liveOf()).toMatchObject({ route: "headphones" });
+    // …and the echo lever beside it is untouched: the route moves what `auto` MEANS, not the knob.
+    expect(liveOf()).toMatchObject({ echo_workaround: "auto" });
+  });
+
+  it("lists the browser's audio inputs — the system default first, always", async () => {
+    lists = [[{ kind: "audioinput", deviceId: "bt", label: "Bluetooth headset" }]];
+    render(<ConfTab active />);
+    await waitFor(() => expect(optionText()).toEqual(["system default", "Bluetooth headset"]));
+    fireEvent.change(picker(), { target: { value: "bt" } });
+    fireEvent.click(saveButton());
+    expect(liveOf()).toMatchObject({ input_device: "bt" });
+  });
+
+  it("a stored id the list does not carry is shown as UNAVAILABLE, never as a silent choice", async () => {
+    // Maya F4: Android ids are synthetic routes and desktop ids rot with a profile reset, so a saved
+    // id that stops appearing is not a durable choice. The capture asks for it as `ideal` and falls
+    // back to the default anyway — the picker's job is to stop pretending otherwise.
+    h.settings.voice.live.input_device = "vanished";
+    lists = [[{ kind: "audioinput", deviceId: "bt", label: "Bluetooth headset" }]];
+    render(<ConfTab active />);
+    await waitFor(() => expect(optionText()).toContain("Bluetooth headset"));
+    expect(optionText()).toContain("saved device — not available");
+    expect(picker().value).toBe("vanished"); // …and the save still round-trips it untouched
+  });
+
+  it("a browser that names nothing offers the system default alone", async () => {
+    lists = [[{ kind: "audioinput", deviceId: "a", label: "" }]];
+    render(<ConfTab active />);
+    await waitFor(() => expect(picker()).toBeTruthy());
+    expect(optionText()).toEqual(["system default"]);
   });
 });

@@ -71,7 +71,11 @@ vi.mock("../../src/lib/liveSocket", () => ({
     };
   },
 }));
-vi.mock("../../src/lib/pcmCapture", () => ({
+vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
+  // D73 S5 — the mic's own `getUserMedia` goes through this module now, so the capture half stays
+  // REAL: only the WORKLET graph is faked here (this suite has no AudioWorklet), and a stubbed opener
+  // would mean these cases never exercise the constraints the recording actually asks for.
+  ...(await importActual<typeof import("../../src/lib/pcmCapture")>()),
   attachPcmUplink: async (
     _ctx: unknown,
     _stream: unknown,
@@ -145,6 +149,8 @@ const KNOBS = {
   barge_in: true,
   ring: true,
   echo_workaround: "auto",
+  route: "speaker", //              D73 S5 — the capture pair the mic now opens with
+  input_device: "",
   max_session_s: 1800,
   dictation: true,
   tail_wait_ms: 2000,

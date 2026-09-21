@@ -657,3 +657,66 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
     expect(getDraft()).toBe("");
   });
 });
+
+describe("useDictation — the capture rides the ROUTE (D73 S5; closes the R51 §6.1 residual)", () => {
+  /** `/voice/status.live_call`, reduced to the two fields this suite is about. */
+  const knobs = (over: Record<string, unknown>) =>
+    ({ ...opts(false), liveCall: over }) as unknown as Parameters<typeof useDictation>[0];
+  /** The suite owns its own `getUserMedia` (rather than reading the shared fake's method back off
+   *  `navigator`) because the CONSTRAINTS are what these cases assert, and a handle beats a reach. */
+  let gum: ReturnType<typeof vi.fn>;
+  const stubMic = (fn: ReturnType<typeof vi.fn>) => {
+    gum = fn;
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: fn },
+    });
+  };
+  const asked = () => (gum.mock.calls[0][0] as { audio: Record<string, unknown> }).audio;
+
+  beforeEach(() => {
+    stubMic(vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })));
+  });
+
+  const arm = async (o: Parameters<typeof useDictation>[0]) => {
+    const view = renderHook(() => useDictation(o));
+    await act(async () => {
+      await view.result.current.start();
+    });
+    return view;
+  };
+
+  it("asks with the ROUTE's constraints and the picked device — never a bare `audio: true`", async () => {
+    // R74 §0.3: an unconstrained request is not neutral. It resolves to the platform AEC, which is
+    // exactly what drops the phone into communication mode — dictation was in the same trap the call
+    // was, and one builder now keeps the two asking identically.
+    await arm(knobs({ route: "headphones", input_device: "bt-headset" }));
+    expect(asked()).toMatchObject({
+      echoCancellation: false,
+      noiseSuppression: true,
+      channelCount: 1,
+      deviceId: { ideal: "bt-headset" },
+    });
+  });
+
+  it("no knobs at all (a pre-S5 backend) is the SPEAKER route, asked for explicitly", async () => {
+    await arm(opts(false));
+    expect(asked()).toMatchObject({ echoCancellation: { ideal: "all" }, channelCount: 1 });
+    expect(asked()).not.toHaveProperty("deviceId");
+  });
+
+  it("a device that will not open falls back to the default, records anyway, and SAYS so", async () => {
+    stubMic(
+      vi
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error("no"), { name: "NotReadableError" }))
+        .mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }),
+    );
+    const view = await arm(knobs({ route: "speaker", input_device: "gone" }));
+    expect(view.result.current.status).toBe("recording"); // the recording is the point; the route is not
+    expect(vi.mocked(pushToast)).toHaveBeenCalledWith(
+      "That microphone wasn't available — using the default",
+      "info",
+    );
+  });
+});
