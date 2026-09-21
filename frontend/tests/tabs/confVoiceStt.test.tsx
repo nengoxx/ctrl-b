@@ -74,6 +74,9 @@ const makeSettings = () => ({
       chunk_min_chars: 50,
       chunk_max_chars: 400,
       chunk_lookahead: 1,
+      // D74 — the TEXT knob on the same object as the chunk sizes (it rides the same payload to the
+      // playback queue), never a sibling map.
+      speak_actions: true,
       connect_timeout_s: 3,
       timeout_s: 30,
       extra_body: {},
@@ -94,6 +97,9 @@ const makeSettings = () => ({
       barge_in: true,
       ring: true,
       echo_workaround: "auto",
+      // D74 — the near-speech gate + its calibration readout (evidence docs/research/R76).
+      min_final_ms: 200,
+      debug: false,
       // D73 S5 — the capture pair, on the SAME object for the same reason.
       route: "speaker",
       input_device: "",
@@ -450,5 +456,65 @@ describe("ConfTab · the capture route + device picker (D73 S5)", () => {
     render(<ConfTab active />);
     await waitFor(() => expect(picker()).toBeTruthy());
     expect(optionText()).toEqual(["system default"]);
+  });
+});
+
+// ── D74 — the three new rows ─────────────────────────────────────────────────────────────────────
+// "Speak actions" is a TTS TEXT rule and belongs beside the other read-aloud rows; the near-speech
+// gate + its readout are call knobs and belong in the Live call section. Each is pinned where it
+// renders and how it coerces, for the reason every row above is: nothing here auto-renders from the
+// config shape, so a row in the wrong group or a string on the wire is only caught here.
+
+/** The Voice · TTS group's DOM anchor. */
+const ttsGroup = () => {
+  const el = document.getElementById("voice-tts");
+  if (!el) throw new Error("the Voice · TTS group is not rendered");
+  return within(el);
+};
+const ttsOf = (call = 0) =>
+  (h.save.mock.calls[call][0] as { voice?: { tts?: Record<string, unknown> } }).voice?.tts;
+
+describe("ConfTab · speak actions (D74)", () => {
+  it("renders the switch in the Voice · TTS group from the live config, and saves the flip", () => {
+    render(<ConfTab active />);
+    expect(ttsGroup().getByLabelText("Speak actions").getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(ttsGroup().getByLabelText("Speak actions"));
+    fireEvent.click(saveButton());
+    expect(ttsOf()).toMatchObject({ speak_actions: false });
+    // …and the chunk policy it travels with is untouched: one object, one save.
+    expect(ttsOf()).toMatchObject({ chunking: "sentence", chunk_lookahead: 1 });
+  });
+
+  it("lives in the TTS group ONLY — it is a text rule, not a call knob", () => {
+    render(<ConfTab active />);
+    expect(liveGroup().queryByLabelText("Speak actions")).toBeNull();
+    expect(sttGroup().queryByLabelText("Speak actions")).toBeNull();
+  });
+});
+
+describe("ConfTab · the near-speech gate + debug readout (D74)", () => {
+  it("renders both in the Live call group from the live config", () => {
+    render(<ConfTab active />);
+    expect(liveField("Min speech energy hold (ms)").value).toBe("200");
+    expect(liveGroup().getByLabelText("Call debug readout").getAttribute("aria-checked")).toBe(
+      "false",
+    );
+  });
+
+  it("saves the gate as a NUMBER and the readout as a boolean", () => {
+    render(<ConfTab active />);
+    fireEvent.change(liveField("Min speech energy hold (ms)"), { target: { value: "350" } });
+    fireEvent.click(liveGroup().getByLabelText("Call debug readout"));
+    fireEvent.click(saveButton());
+    expect(liveOf()).toMatchObject({ min_final_ms: 350, debug: true });
+  });
+
+  it("a CLEARED gate rides as NULL — 0 MEANS 'commit every final', so a blank must 422", () => {
+    // The `barge_threshold` rule, not the `silence_ms` one: this knob's floor IS zero and zero is a
+    // real setting (the pre-D74 commit), so a blank coercing to 0 would silently switch the gate off.
+    render(<ConfTab active />);
+    fireEvent.change(liveField("Min speech energy hold (ms)"), { target: { value: "" } });
+    fireEvent.click(saveButton());
+    expect(liveOf()?.min_final_ms).toBeNull();
   });
 });

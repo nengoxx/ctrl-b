@@ -67,6 +67,10 @@ export interface ChunkPolicy extends ChunkCfg {
   format: string;
   /** C3 S2 — speak each sentence as it streams instead of waiting for turn end (owner's toggle). */
   readAlong: boolean;
+  /** D74 — `false` drops roleplay ACTIONS (`*…*`) instead of speaking them. A `toSpeech` option, so
+   *  it rides the policy for the same reason the split does: one server-published source, snapshotted
+   *  per session (`Session.cfg`) so a Conf save cannot reshape a reply that is already half-spoken. */
+  speakActions: boolean;
 }
 
 const { emit, useStore, subscribe } = createStore();
@@ -99,6 +103,7 @@ let policy: ChunkPolicy = {
   lookahead: 1,
   format: "opus",
   readAlong: false,
+  speakActions: true,
 };
 
 /** Publish the server's chunk policy (called from the `/voice/status` query — no fetch of our own). */
@@ -554,7 +559,9 @@ async function synthWhole(
   // different feature, and this one is not it.)
   const cached = cache.get(id);
   if (cached) return cached;
-  const text = toSpeech(markdown);
+  // A reply that strips to NOTHING never reaches the wire — the pre-D63 guard, which D74 leans on: an
+  // all-action reply under `speakActions: false` is exactly this case, and it must not POST empty text.
+  const text = toSpeech(markdown, policy);
   if (!text) return null;
   const out = await requestTts(text, { agent });
   if (!out.ok) {
@@ -676,9 +683,10 @@ function startChunked(id: string, markdown: string, seq: number, agent: string |
     for (let i = 0; i < s.urls.length; i++)
       if (s.urls[i] && s.durations[i] === null) probeDuration(s, i);
   } else {
-    const plan = chunkPlan(toSpeech(markdown), policy);
+    const plan = chunkPlan(toSpeech(markdown, policy), policy);
     if (!plan.chunks.length) {
-      reset(); // nothing speakable (code-only reply) — same outcome as the `off` path's empty text
+      reset(); // nothing speakable (a code-only reply, or an all-action one under D74's skip) — the
+      // same outcome as the `off` path's empty text: no session, no request, nothing docked
       return;
     }
     if (plan.dropped) {
@@ -918,9 +926,9 @@ function finish(s: Session, a: HTMLAudioElement): void {
  *  flush: it plans from the FULL buffer (a construct that never closed must still be spoken) and takes
  *  the tail chunk, which every incremental plan withholds because growth can still rewrite it. */
 function planInto(s: Session, markdown: string, final: boolean): void {
-  const src = final ? markdown : stableMarkdownPrefix(markdown);
+  const src = final ? markdown : stableMarkdownPrefix(markdown, s.cfg);
   if (!final && src.length <= s.srcFed.length) return; // no NEW text is safe to speak yet
-  const plan = chunkPlanFrom(toSpeech(src), s.cfg, s.texts.length, final);
+  const plan = chunkPlanFrom(toSpeech(src, s.cfg), s.cfg, s.texts.length, final);
   s.srcFed = src;
   if (plan.dropped) s.dropped = true;
   if (!plan.chunks.length) return;
@@ -983,8 +991,8 @@ export function feedReadAlong(id: string, markdown: string, agent?: string | nul
   // Dismissed or muted while open: the generation moved on but the queue is still here. The user
   // stopped THIS message — a later boundary must not resurrect it from the top.
   if (session && session.id === id && session.seq !== reqSeq) return;
-  const src = stableMarkdownPrefix(markdown);
-  const plan = chunkPlanFrom(toSpeech(src), policy, 0);
+  const src = stableMarkdownPrefix(markdown, policy);
+  const plan = chunkPlanFrom(toSpeech(src, policy), policy, 0);
   if (!plan.chunks.length) return; // nothing has closed yet — no session, no docked player
   const a = ensureEl();
   const next = newSession(id, beginMessage(id, a), plan.chunks, true, agent ?? null);

@@ -79,6 +79,10 @@ async def voice_status(request: Request) -> dict[str, object]:
         "max_text_chars": tts.max_text_chars,
         "format": tts.chunk_format,
         "read_along": tts.chunk_read_along,
+        # D74 — whether roleplay ACTIONS are spoken. A text-shaping rule, so it rides the object the
+        # client's text pipeline already reads (`lib/toSpeech` is what applies it); nothing on this
+        # side of the wire ever sees the prose.
+        "speak_actions": tts.speak_actions,
     }
     # LIVE VOICE / call mode (D71 §5.1). The BIT is composed of three things, because the call needs
     # both ears and a mouth: a resolvable realtime target (the frozen client's chain), TTS configured
@@ -107,6 +111,12 @@ async def voice_status(request: Request) -> dict[str, object]:
         "call_backlog_ms": live.call_backlog_ms,
         "min_speech_ms": live.min_speech_ms,
         "barge_threshold": live.barge_threshold,
+        # D74 (evidence docs/research/R76) — the near-speech gate on a COMMITTED turn, and the
+        # calibration readout beside it. Client knobs like their neighbours, and necessarily so: the
+        # energy they gate on is measured in the browser, and the server-side VAD has no field left
+        # that would express either of them.
+        "min_final_ms": live.min_final_ms,
+        "debug": live.debug,
         "barge_in": live.barge_in,
         "ring": live.ring,
         "echo_workaround": live.echo_workaround,

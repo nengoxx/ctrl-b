@@ -97,6 +97,10 @@ export interface VoiceTts extends VoiceServiceCommon {
   // Meaningless under `chunking: "off"` (the plan is then one whole-message chunk), which is why it
   // lives in the same object as `chunking` rather than beside it.
   chunk_read_along: boolean;
+  // D74 — read roleplay ACTIONS (`*he leans in*`) aloud, or drop those spans. A text-shaping rule
+  // applied client-side by `lib/toSpeech`, published on the same `tts_chunking` payload the playback
+  // queue already reads; bold keeps unwrapping either way (emphasis is speech, an action is not).
+  speak_actions: boolean;
 }
 
 /** LIVE VOICE / call mode (Phase 24 / D71 §5.1 — `LiveCfg`, which extends the same `VoiceServiceCfg`
@@ -112,6 +116,11 @@ export interface VoiceLive extends VoiceServiceCommon {
   min_speech_ms: number; //   client interruption floor, 0..5000
   barge_threshold: number; // client RMS floor, 0..0.5; 0 = reuse `stt.auto_stop_threshold`
   barge_in: boolean; //       hands-free interruption; off = tap-to-interrupt only
+  // D74 — the near-speech gate on a COMMITTED turn (evidence docs/research/R76: Silero is nearly
+  // level-invariant, so a distant TV still produces confident finals and the server VAD is out of
+  // headroom). Client knobs: the energy is measured in the browser, and so is the readout.
+  min_final_ms: number; //    ms above the barge/silence floor before a final may become a turn; 0 = off
+  debug: boolean; //          show the call's live gate numbers on the overlay (calibration aid)
   ring: boolean; //           §6 overlay mode: the focal-anchored face ring, or art-only
   echo_workaround: string; // auto | on | off — the per-track loopback-AEC lever
   // D73 S5 — the CAPTURE pair (evidence docs/research/R74). One owner-facing choice plus the device

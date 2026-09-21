@@ -604,7 +604,12 @@ class SttServiceCfg(VoiceServiceCfg):
     hallucinations; on by default). `hotwords` is a space-separated bias list — proper nouns / fleet
     names whisper would otherwise mangle (e.g. "minig"→"mini G"). `vad_filter`/`hotwords` are
     faster-whisper/Speaches extras, sent to the server via `extra_body` by the adapter (they're not
-    standard OpenAI params), so a non-faster-whisper fallback just ignores/rejects them.
+    standard OpenAI params), so a non-faster-whisper fallback just ignores/rejects them. **Both are
+    MODEL-dependent, and on this install both are currently inert** (R76 §1.3, measured): a Parakeet
+    target ignores `hotwords` by design, and the owner's Speaches build no longer has a `vad_filter`
+    form field at all. They stay because the target is configuration — point `stt` at a whisper model
+    and both apply again — and because neither reaches the realtime ear in the first place: `live`
+    sends four fixed parameters, so nothing here has ever biased a CALL's transcription.
 
     The `auto_*` knobs are CLIENT behavior (nothing here transcribes): `auto_send` sends the transcript
     the moment it lands, and the `auto_stop` block (R51 Tier 0) ends the recording itself after
@@ -655,8 +660,8 @@ class LiveCfg(VoiceServiceCfg):
       `allowed_origins` are the relay's own caps.
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`, `barge_threshold`,
       `barge_in`, `ring`, `echo_workaround`, the D73 CAPTURE pair (`route`, `input_device`), the D73
-      S6 BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`) and the
-      four S2.5 DICTATION knobs are PWA behavior
+      S6 BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`), the D74 pair
+      (`min_final_ms`, `debug`) and the four S2.5 DICTATION knobs are PWA behavior
       (Speaches' `TurnDetection` accepts exactly five fields, §4.1, so an interruption floor cannot be
       a server knob). They are delivered verbatim by `GET /voice/status` (`live_call`) and nothing
       below the browser reads them.
@@ -705,6 +710,21 @@ class LiveCfg(VoiceServiceCfg):
     #: Hands-free interruption master (client). False ⇒ tap-to-interrupt only, which is also the honest
     #: degrade on a browser whose AEC does not remove the phone's own playback (§7-S0 ③, Fennec).
     barge_in: bool = True
+    #: D74 — the NEAR-SPEECH gate on a committed turn (client; evidence R76). Silero is nearly
+    #: level-invariant — speech at RMS 0.003, five times BELOW the default silence floor, still scores
+    #: 0.954 (R76 §④) — so a next-room conversation or a TV produces real finals, and the server has no
+    #: knob left to stop them (§②: `TurnDetection` is five fields and 0.9 is already out of headroom).
+    #: The field's answer is pipecat's: AND the model's probability with MEASURED LOUDNESS (R76 §4.1).
+    #: This is that AND's duration — how much of the utterance must have been above
+    #: `barge_threshold`'s floor (which falls back to `stt.auto_stop_threshold`, the one calibrated
+    #: number) before its final may become a user turn. **0 = off**, i.e. exactly the pre-D74 commit.
+    #: A CLIENT knob for the reason every one of its neighbours is: nothing below the browser measures
+    #: the microphone. Ceiling is `min_speech_ms`'s — past a few seconds it would eat whole sentences.
+    min_final_ms: int = Field(default=200, ge=0, le=5000)
+    #: Call DEBUG readout (client): the overlay renders the live gate numbers — energy, the hold the
+    #: gate has accumulated, what each final was judged on — instead of hiding them. Off ships; it is a
+    #: calibration aid for the S4 sitting, not a feature, and the phone is where it has to be read.
+    debug: bool = False
     #: §6 overlay mode: true = the focal-anchored face ring, false = art-only + transcript accent.
     ring: bool = True
     #: Per-track echo policy (§7-S0 ③, owner-ruled on measured device evidence): `auto` =
@@ -854,6 +874,13 @@ class TtsServiceCfg(VoiceServiceCfg):
     # unknowable mid-stream), which is why it lives beside `mode`. ON by default — owner ruling
     # 2026-09-06 after the device round passed (shipped OFF pending that round, the `auto_stop` precedent).
     chunk_read_along: bool = True
+    # D74 — ROLEPLAY ACTIONS. `*he leans in*` is a stage direction, not speech: with this False the
+    # client's markdown→prose pass (`lib/toSpeech`) DROPS single-asterisk spans instead of unwrapping
+    # them, while `**bold**` still unwraps (emphasis is speech; an action is not). True = today's
+    # behavior, which is why it ships True — the owner flips it per taste, and it costs a re-synth of
+    # nothing (the text is shaped client-side, before the first chunk reaches the wire). It rides
+    # `tts_chunking` because that is the object the playback queue already reads its text policy from.
+    speak_actions: bool = True
 
     @model_validator(mode="after")
     def _chunk_bounds(self) -> "TtsServiceCfg":

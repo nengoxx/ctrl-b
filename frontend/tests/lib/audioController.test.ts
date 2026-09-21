@@ -98,6 +98,7 @@ const OFF: ChunkPolicy = {
   lookahead: 1,
   format: "opus",
   readAlong: false,
+  speakActions: true,
 };
 /** Floors off so one sentence = one chunk; that keeps the queue cases about the QUEUE. */
 const chunked = (over: Partial<ChunkPolicy> = {}): ChunkPolicy => ({
@@ -824,6 +825,28 @@ describe("audioController — the chunk queue (D63)", () => {
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(result.current.id).toBeNull();
+  });
+
+  // D74 — an ALL-ACTION reply with actions switched off is the same case, reached by a new door: the
+  // text policy rides the published `ChunkPolicy`, so the plan is empty and nothing is docked. Both
+  // paths, because `off` synthesizes the whole message and `sentence` plans chunks.
+  it("an all-action reply speaks nothing when actions are off — in both chunking modes", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const md = "*She leans across the desk and watches the fleet wake up, host by host.*";
+    for (const p of [chunked({ speakActions: false }), { ...OFF, speakActions: false }]) {
+      setChunkPolicy(p);
+      await act(async () => {
+        await toggle("m1", md);
+      });
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(result.current.id).toBeNull();
+    }
+    // …and with actions ON (the shipped default) the very same reply does reach the wire.
+    setChunkPolicy(chunked());
+    await act(async () => {
+      await toggle("m1", md);
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });
 

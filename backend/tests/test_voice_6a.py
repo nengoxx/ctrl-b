@@ -514,6 +514,9 @@ def test_chunk_config_bounds_validate_at_load() -> None:
         1,
         True,
     )
+    # D74 — roleplay ACTIONS are spoken by default: the knob ships as today's behavior, so an install
+    # that never touches it hears exactly what it heard before (the owner flips it per taste).
+    assert ok.speak_actions is True
     for bad in (
         {"tts": {"chunk_min_chars": 401, "chunk_max_chars": 400}},  # floor above the cap
         {"tts": {"chunk_max_chars": 5000}},  # cap above the per-message limit (4096)
@@ -538,6 +541,7 @@ def test_api_status_carries_the_chunk_policy() -> None:
             "chunk_max_chars": 300,
             "chunk_lookahead": 2,
             "chunk_read_along": True,
+            "speak_actions": False,
         },
     )
     policy = c.get("/api/voice/status").json()["tts_chunking"]
@@ -550,6 +554,9 @@ def test_api_status_carries_the_chunk_policy() -> None:
         "max_text_chars": 4096,
         "format": "opus",
         "read_along": True,
+        # D74 — the text rule rides the same object: `lib/toSpeech` is the only thing that applies
+        # it, so this probe is how it reaches the client at all.
+        "speak_actions": False,
     }
 
 

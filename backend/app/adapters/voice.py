@@ -223,6 +223,18 @@ class VoiceClient:
             # vad_filter/hotwords are faster-whisper/Speaches extras (not standard OpenAI params), so they
             # ride `extra_body`; a service `extra_body` merges on top (wins). Model `extra_body` stays
             # chat-only (D48 homes it as chat passthrough).
+            #
+            # WHAT THESE TWO ACTUALLY REACH (R76 §1.3, source-read + probed on emma 2026-09-21): this
+            # whole-clip door is the ONLY one that carries them — the live/realtime ear sends four
+            # fixed parameters and never a bias list, so `hotwords` was never wired there and nothing
+            # is being removed here. `hotwords` is honored per EXECUTOR: faster-whisper takes it,
+            # Parakeet ignores it by design (`executors/parakeet.py`), so on a Parakeet STT model it
+            # is inert — it stays wired because the target model is configuration, not a constant, and
+            # the knob is exactly what a whisper target needs. `vad_filter` is a LOST parameter on the
+            # owner's Speaches build (no such form field any more; FastAPI discards it) and is kept
+            # for the same reason: it is still the contract of the faster-whisper HTTP door this
+            # adapter is written against, and an OpenAI-compatible endpoint that does not know either
+            # extra simply ignores it (the failover-chain posture stated above).
             extra: dict = {"vad_filter": policy.vad_filter}
             if policy.hotwords.strip():
                 extra["hotwords"] = policy.hotwords.strip()

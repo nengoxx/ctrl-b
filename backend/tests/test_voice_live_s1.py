@@ -1013,6 +1013,8 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "min_speech_ms": 250,
             "barge_threshold": 0.02,
             "barge_in": False,
+            "min_final_ms": 350,
+            "debug": True,
             "ring": False,
             "echo_workaround": "on",
             "route": "headphones",
@@ -1037,6 +1039,11 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "min_speech_ms": 250,
         "barge_threshold": 0.02,
         "barge_in": False,
+        # D74 (evidence docs/research/R76) — the near-speech gate on a committed turn and the
+        # calibration readout beside it. CLIENT knobs like every neighbour: the energy they judge is
+        # measured in the browser, and the server VAD has no field that could express either.
+        "min_final_ms": 350,
+        "debug": True,
         "ring": False,
         "echo_workaround": "on",
         # D73 S5 — the capture pair. CLIENT knobs like their neighbours: they are `getUserMedia`
@@ -1183,6 +1190,9 @@ def test_live_config_defaults() -> None:
     assert cfg.max_session_s == 1800  # aligned with Speaches' own 30-min hard expiry
     assert (cfg.min_speech_ms, cfg.buffered_ceiling_ms, cfg.barge_threshold) == (300, 1000, 0.0)
     assert (cfg.barge_in, cfg.ring, cfg.echo_workaround) == (True, True, "auto")
+    # D74 — the gate ships ON at 200 ms (a real default, not 0: R76 measured speech-like interference
+    # passing the server VAD outright), and the debug readout ships OFF like every diagnostic here.
+    assert (cfg.min_final_ms, cfg.debug) == (200, False)
     # D73 S5 — the capture pair ships as the ear this app has always opened: the platform AEC on the
     # system default device. `headphones` and a picked route are both owner opt-ins.
     assert (cfg.route, cfg.input_device) == ("speaker", "")
@@ -1229,6 +1239,11 @@ def test_live_config_defaults() -> None:
         # rejected at the floor; the ceiling is `max_session_s`'s, past which it could never fire.
         {"background_idle_s": -1},
         {"background_idle_s": 7201},
+        # D74 — the near-speech gate is bounded like `min_speech_ms`, whose family it joins: 0 is a
+        # REAL value (no gate at all), so only a negative one is rejected at the floor, and a
+        # multi-second hold would swallow whole sentences instead of gating them.
+        {"min_final_ms": -1},
+        {"min_final_ms": 5001},
     ],
 )
 def test_live_config_bounds_reject_wedging_values(bad: dict[str, Any]) -> None:

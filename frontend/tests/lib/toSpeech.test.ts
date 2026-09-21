@@ -64,6 +64,59 @@ describe("toSpeech", () => {
   it("an all-emoji reply speaks nothing (→ the caller never synthesizes)", () => {
     expect(toSpeech("🎉 ✅ 👋")).toBe("");
   });
+
+  // ── D74/S1 — the residual asterisk scrub ───────────────────────────────────────────────────────
+  // An asterisk is never speakable. Read-along deliberately does NOT cut on a single `*` (stalling
+  // beats muting, owner-ruled), so a multi-sentence roleplay action is cut mid-span and both halves
+  // used to carry a literal `*` into the synth text — the owner's measured "scratching".
+
+  it("scrubs a residual `*` from BOTH halves of a mid-span cut (the roleplay-action bug)", () => {
+    // the cut the feeder actually makes: the opener rides the first half, the closer the second
+    expect(toSpeech("*He leans in. ")).toBe("He leans in.");
+    expect(toSpeech("Then he smiles.* Hello.")).toBe("Then he smiles. Hello.");
+    expect(toSpeech("*He leans in.\nThen he smiles.*")).toBe("He leans in.\nThen he smiles.");
+  });
+
+  it("still unwraps a paired italic — the scrub only ever sees what pairing left behind", () => {
+    expect(toSpeech("that is *really* bad")).toBe("that is really bad");
+    expect(toSpeech("**emma** is *up*")).toBe("emma is up");
+  });
+
+  it("'3 * 4' loses its star to a space (accepted: it was never spoken as 'times' either)", () => {
+    expect(toSpeech("3 * 4")).toBe("3 4");
+  });
+
+  it("leaves a residual underscore alone — snake_case is out of the scrub's scope (D74/S1)", () => {
+    // Only `*` is scrubbed. An UNPAIRED `_` rides through untouched, exactly as before; a paired one
+    // is unwrapped by the italic pass above, which is pre-D74 behavior this slice does not touch.
+    expect(toSpeech("check auto_stop now")).toBe("check auto_stop now");
+  });
+
+  // ── D74/S2 — `speakActions: false` ─────────────────────────────────────────────────────────────
+  // An action is a stage direction, not speech. Pairing matches lib/markdown.tsx's `em` rule, so the
+  // ear drops exactly what the eye italicizes; bold still unwraps, because emphasis IS speech.
+
+  const skip = { speakActions: false } as const;
+
+  it("drops a closed action span, including one that runs over several lines", () => {
+    expect(toSpeech("*He leans in.* Hello there.", skip)).toBe("Hello there.");
+    expect(toSpeech("*He leans in.\nThen he smiles.* Hello.", skip)).toBe("Hello.");
+  });
+
+  it("drops an action the model never CLOSED, from its `*` to the end", () => {
+    expect(toSpeech("Hello. *He leans in and never stops", skip)).toBe("Hello.");
+  });
+
+  it("keeps bold, and keeps a lone `*` in prose from eating the rest of the reply", () => {
+    expect(toSpeech("**emma** is up. *He nods.* Done.", skip)).toBe("emma is up. Done.");
+    expect(toSpeech("The answer is 3 * 4. Done.", skip)).toBe("The answer is 3 4. Done.");
+    expect(toSpeech("Hello. **bold never closed", skip)).toBe("Hello. bold never closed");
+  });
+
+  it("an all-action reply speaks NOTHING (→ the caller never synthesizes, no empty POST)", () => {
+    expect(toSpeech("*He smiles.*", skip)).toBe("");
+    expect(toSpeech("*He smiles.*")).toBe("He smiles."); // …and is spoken in full by default
+  });
 });
 
 // C3 S2 — `stableMarkdownPrefix`: the half of read-along that decides how much of a STILL-STREAMING
@@ -124,12 +177,28 @@ describe("stableMarkdownPrefix", () => {
 
   it("does NOT cut single-char `*` / `_` — the accepted residual (owner-ruled)", () => {
     // Lone asterisks and snake_case pervade ordinary prose, so cutting on them would stall read-along
-    // constantly. The price: an emphasis span that closes across a feed boundary can speak its opening
-    // delimiter once — a few-word glitch at one chunk boundary, in a rare shape. This is the ONE
-    // construct excluded from the pipeline property test in tests/lib/ttsChunks.test.ts.
+    // constantly. The price used to be an audible one: a span that closed across a feed boundary spoke
+    // its opening delimiter. D74's scrub deletes it, so the cut now costs nothing you can HEAR — which
+    // is what keeps the no-stall ruling standing. This is the ONE construct excluded from the pipeline
+    // property test in tests/lib/ttsChunks.test.ts.
     expect(stableMarkdownPrefix("that is *really")).toBe("that is *really");
     expect(stableMarkdownPrefix("check auto_stop_sil")).toBe("check auto_stop_sil");
-    expect(toSpeech("that is *really")).toBe("that is *really"); // spoken with the delimiter…
-    expect(toSpeech("that is *really* bad")).toBe("that is really bad"); // …and without it at the flush
+    expect(toSpeech("that is *really")).toBe("that is really"); // …and the delimiter is scrubbed
+    expect(toSpeech("that is *really* bad")).toBe("that is really bad"); // …as it is at the flush
+  });
+
+  // ── D74/S2 — under `speakActions: false` the single-asterisk pair JOINS the list ────────────────
+  // The exclusion above holds because a leaked delimiter is inaudible. Under skip mode the WORDS are
+  // what a span decides, and where it ends is unknowable mid-stream — so this mode has to hold.
+
+  it("holds at an unclosed action opener under skip mode, and is identity once it closes", () => {
+    const skip = { speakActions: false } as const;
+    expect(stableMarkdownPrefix("Hello. *He leans", skip)).toBe("Hello. ");
+    expect(stableMarkdownPrefix("Hello. *He leans.* Ok", skip)).toBe("Hello. *He leans.* Ok");
+    // …and it is still an `em` opener it holds on, so ordinary prose costs read-along nothing.
+    expect(stableMarkdownPrefix("3 * 4 is twelve", skip)).toBe("3 * 4 is twelve");
+    expect(stableMarkdownPrefix("check auto_stop_sil", skip)).toBe("check auto_stop_sil");
+    // an unclosed BOLD is still cut by bold's own rule, one pass earlier — not read as an action
+    expect(stableMarkdownPrefix("emma is **up and re", skip)).toBe("emma is ");
   });
 });

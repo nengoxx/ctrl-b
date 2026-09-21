@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { chunkPlan, chunkPlanFrom, ttsChunks, type ChunkCfg } from "../../src/lib/ttsChunks";
-import { stableMarkdownPrefix, toSpeech } from "../../src/lib/toSpeech";
+import { stableMarkdownPrefix, toSpeech, type SpeechOpts } from "../../src/lib/toSpeech";
 
 // lib/ttsChunks (D63) — the pure TTS chunker: `toSpeech` prose in, an ordered chunk list out. Pins the
 // three rules in order (split · merge floor · cap, incl. the hard-cut fallback) and the per-message
@@ -177,16 +177,27 @@ const FIXTURES: Record<string, string> = {
     "Three things are left before the release.\n\n- tag the commit and push it\n" +
     "- wait for the CI release gate\n- re-pin the prod tree at the tag\n\n" +
     "Then the health check should answer.",
+  // D74/S1 — the roleplay shape that motivated the scrub. Read-along cuts INSIDE this action (single
+  // `*` is deliberately not a hold), so before the scrub the prefix spoke a literal delimiter and the
+  // finished plan did not — a real divergence. With the scrub both read the same words.
+  action:
+    "*She leans across the desk, watching the fleet wake up one host at a time.* " +
+    "corsair is answering the tailnet already, and emma never went down. " +
+    "*She taps the last card twice, then sits back.*",
 };
 
 /** Replay a reply one character at a time, exactly as the feeder will: cut the buffer at the first
  *  unclosed construct, speak that, plan from what the queue already holds. Asserts at EVERY step that
  *  the queue is still a prefix of the finished reply's plan, and hands the queue back for the flush. */
-function replay(md: string, c: ChunkCfg): string[] {
-  const whole = chunkPlan(toSpeech(md), c).chunks;
+function replay(md: string, c: ChunkCfg, o: SpeechOpts = {}): string[] {
+  const whole = chunkPlan(toSpeech(md, o), c).chunks;
   const queue: string[] = [];
   for (let i = 1; i <= md.length; i++) {
-    const step = chunkPlanFrom(toSpeech(stableMarkdownPrefix(md.slice(0, i))), c, queue.length);
+    const step = chunkPlanFrom(
+      toSpeech(stableMarkdownPrefix(md.slice(0, i), o), o),
+      c,
+      queue.length,
+    );
     queue.push(...step.chunks);
     expect(queue, `after ${i} of ${md.length} chars`).toEqual(whole.slice(0, queue.length));
   }
@@ -241,6 +252,27 @@ describe("ttsChunks — incremental (read-along)", () => {
       dropped: true,
     });
     expect(chunkPlanFrom("ab cd", c, 0, true).dropped).toBe(false); // still inside the budget
+  });
+
+  // D74 — the same property under `speakActions: false`, where a span decides WORDS rather than a
+  // delimiter: the prefix has to hold at an unclosed action, or the queue would speak text the
+  // finished reply deletes. Every fixture, so the hold cannot have broken any other shape.
+  it.each(Object.entries(FIXTURES))(
+    "%s: skipping actions keeps the same prefix property, and the flush completes it",
+    (_name, md) => {
+      const skip: SpeechOpts = { speakActions: false };
+      const whole = chunkPlan(toSpeech(md, skip), cfg()).chunks;
+      const queue = replay(md, cfg(), skip);
+      queue.push(...chunkPlanFrom(toSpeech(md, skip), cfg(), queue.length, true).chunks);
+      expect(queue).toEqual(whole);
+    },
+  );
+
+  it("an all-action reply plans to NOTHING under skip — no chunk, so no empty synth request", () => {
+    const skip: SpeechOpts = { speakActions: false };
+    const md = "*She leans across the desk and watches the fleet wake up, host by host.*";
+    expect(chunkPlan(toSpeech(md, skip), cfg()).chunks).toEqual([]);
+    expect(chunkPlan(toSpeech(md), cfg()).chunks.length).toBe(1); // …and is one chunk by default
   });
 
   it("is inert under `off` — one chunk of the whole message is not knowable mid-stream", () => {

@@ -293,6 +293,53 @@ def test_tool_overrides_put_is_gated_on_a_live_turn() -> None:
         os.environ.pop("CTRLB_DB", None)
 
 
+def test_d74_text_and_gate_knobs_round_trip_to_the_status_probe() -> None:
+    """D74: the three new knobs are ORDINARY fields on the sections they belong to — the TTS TEXT rule
+    on `voice.tts` beside the chunk policy it travels with, the near-speech gate + its readout on
+    `voice.live` beside the other client knobs — so they ride the existing per-section machinery with
+    nothing added for them. Pinned end to end (PUT → disk → live settings → `/voice/status`) for the
+    dictation four's reason: every one of them is applied in the BROWSER, so the probe is the only
+    surface that carries them, and a knob that saved but never arrived would look like a dead knob."""
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    cfg.write_text("server:\n  poll_seconds: 5\n", encoding="utf-8")
+    os.environ["CTRLB_CONFIG"] = str(cfg)
+    os.environ["CTRLB_DB"] = str(tmp / "t.db")
+    try:
+        with _client() as c:
+            # the shipped defaults reach the probe untouched — absent fields are defaults, no bump
+            body = c.get("/api/voice/status").json()
+            assert body["tts_chunking"]["speak_actions"] is True
+            assert (body["live_call"]["min_final_ms"], body["live_call"]["debug"]) == (200, False)
+
+            r = c.put(
+                "/api/settings",
+                json={
+                    "voice": {
+                        "tts": {"speak_actions": False},
+                        "live": {"min_final_ms": 350, "debug": True},
+                    }
+                },
+            )
+            assert r.status_code == 200, r.text
+            assert c.app.state.settings.voice.tts.speak_actions is False
+            live = c.app.state.settings.voice.live
+            assert (live.min_final_ms, live.debug) == (350, True)
+            assert "min_final_ms: 350" in cfg.read_text(encoding="utf-8")
+
+            body = c.get("/api/voice/status").json()
+            assert body["tts_chunking"]["speak_actions"] is False
+            assert (body["live_call"]["min_final_ms"], body["live_call"]["debug"]) == (350, True)
+
+            # …and an out-of-bounds gate earns the same visible 422 its neighbours do (nothing saved).
+            bad = c.put("/api/settings", json={"voice": {"live": {"min_final_ms": -1}}})
+            assert bad.status_code == 422, bad.text
+            assert c.app.state.settings.voice.live.min_final_ms == 350
+    finally:
+        os.environ.pop("CTRLB_CONFIG", None)
+        os.environ.pop("CTRLB_DB", None)
+
+
 def test_voice_live_dictation_knobs_round_trip_to_the_status_probe() -> None:
     """S2.5 coherence: the four dictation knobs are ORDINARY fields on `voice.live`, so they ride the
     existing per-section machinery — the strict-resolution gate that `voice` already trips, the YAML

@@ -854,6 +854,8 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   min_speech_ms: 300,
   barge_threshold: 0,
   barge_in: true,
+  min_final_ms: 200,
+  debug: false,
   ring: true,
   echo_workaround: "auto",
   route: "speaker",
@@ -1879,6 +1881,10 @@ export function ConfTab({ active }: Props) {
           // zero MEANS something (no idle bound at all), so a blank coercing to 0 would silently
           // switch the bound off instead of earning the visible 422.
           background_idle_s: numOrNull(draft.voice.live.background_idle_s),
+          // D74's near-speech gate takes `numOrNull` with them, for the same reason: its floor IS
+          // zero and zero MEANS something (commit every final, the pre-D74 behaviour), so a blank
+          // coercing to 0 would silently switch the gate off instead of earning the visible 422.
+          min_final_ms: numOrNull(draft.voice.live.min_final_ms),
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
@@ -2759,6 +2765,19 @@ export function ConfTab({ active }: Props) {
               label="Read along"
             />
           </SettingRow>
+          {/* D74 — roleplay actions. A TEXT rule, not a chunk size: it shapes what the markdown→prose
+              pass hands the synth, and rides the same `tts_chunking` payload to it. Bold is
+              unaffected on purpose — emphasis is something you say, a stage direction is not. */}
+          <SettingRow
+            label="Speak actions"
+            desc="read *actions* aloud — off → the words between single asterisks are skipped, and only the spoken part is read"
+          >
+            <Switch
+              on={!!vtts?.speak_actions}
+              onToggle={() => setTts("speak_actions", !vtts?.speak_actions)}
+              label="Speak actions"
+            />
+          </SettingRow>
           <SettingRow
             label="Chunk format"
             desc="per-chunk container — opus is gapless from a pipe; mp3 adds dead air at every seam"
@@ -2961,6 +2980,26 @@ export function ConfTab({ active }: Props) {
             value={String(vlive?.barge_threshold ?? "")}
             onChange={(v) => setLive("barge_threshold", v as unknown as number)}
           />
+          {/* D74 (evidence docs/research/R76) — the ear is nearly level-blind: speech from the next
+              room scores as confidently as speech into the phone, and the server has no knob left
+              that tells them apart. This one does it by LOUDNESS: a transcript only becomes your turn
+              if the microphone actually heard something near it for this long. */}
+          <Field
+            label="Min speech energy hold (ms)"
+            desc="how long the mic must be loud enough — near you, not across the room — before what it heard counts as your turn (0–5000); 0 turns the gate off and every transcript is sent"
+            value={String(vlive?.min_final_ms ?? "")}
+            onChange={(v) => setLive("min_final_ms", v as unknown as number)}
+          />
+          <SettingRow
+            label="Call debug readout"
+            desc="show the live microphone and gate numbers on the call screen — for calibrating the two thresholds above"
+          >
+            <Switch
+              on={!!vlive?.debug}
+              label="Call debug readout"
+              onToggle={() => setLive("debug", !vlive?.debug)}
+            />
+          </SettingRow>
           {/* W2/D72 — the call's own uplink bound. Its sibling knobs shape what the ear HEARS; this one
               bounds what a stalled link may hold back before the pacer drops the oldest audio, so a
               recovering connection replays a second of your voice rather than a minute of it. */}

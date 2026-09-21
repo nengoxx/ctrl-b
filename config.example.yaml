@@ -416,6 +416,8 @@ voice:
     chunk_min_chars: 50
     chunk_max_chars: 400   # split at the last word boundary under this (must be <= max_text_chars)
     chunk_lookahead: 1     # synth-ahead depth (1 = synthesize chunk N+1 while N plays)
+    speak_actions: true    # D74: read roleplay actions (*he leans in*) aloud; false DROPS those spans
+                           # (bold still reads — emphasis is speech, a stage direction is not)
   # Live voice / call mode (Phase 24, D71) — the realtime EAR behind `WS /api/voice/live`. Same
   # pointer shape as stt/tts; leave `provider` blank and it resolves exactly like `voice.stt` (one
   # Speaches box serves both doors). Shipped OFF: flip `enabled` when the call loop is calibrated.
@@ -434,6 +436,10 @@ voice:
                            # frames are dropped (the mirror of relay_queue_ms below, one hop upstream).
                            # Dictation's pacer is lossless instead and ignores this.
     barge_threshold: 0     # CLIENT RMS floor for the barge-in gate; 0 = reuse stt.auto_stop_threshold
+    min_final_ms: 200      # D74/R76: ms of mic energy ABOVE that floor an utterance must carry before
+                           # its transcript becomes a turn — the near-speech gate that keeps a TV or
+                           # the next room out of the conversation (0 = off, the pre-D74 commit)
+    debug: false           # CLIENT: show the live gate numbers on the call overlay (calibration aid)
     max_sessions: 1        # process-wide concurrent live sessions (a second connect gets `busy`)
     echo_workaround: auto  # auto | on | off — auto = capability-detected per track, never UA-sniffed
     barge_in: true         # CLIENT: hands-free interruption (false = tap-to-interrupt only)
