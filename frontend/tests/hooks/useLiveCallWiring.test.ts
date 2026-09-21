@@ -910,6 +910,56 @@ describe("useLiveCall — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R7
     expect(h.keepalive).toEqual([true]);
   });
 
+  it("a capture resolving AFTER a terminal never opens a leg (S6 review F1)", async () => {
+    // A close-class exit lands the machine terminal synchronously, but `disposed` waits for React's
+    // unmount commit — a capture resolving inside that window used to install itself, dial a fresh
+    // socket and re-write the busy marker on a call that was already over.
+    let open = (): void => {};
+    h.capGate = new Promise<void>((r) => {
+      open = r;
+    });
+    renderHook(() => useLiveCall());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide")); // the document dies while acquisition is pending
+    });
+    await act(async () => {
+      open();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.order).not.toContain("socket"); // the dead call never dialled
+  });
+
+  it("a wake lock resolving for a PREVIOUS generation is released, never stored (S6 review F2)", async () => {
+    // StrictMode's simulated remount is the real producer of this race: the first setup's request is
+    // still pending when `unmounted` moves the generation, and a sentinel stored then would make the
+    // re-take guard skip the acquisition the re-armed call actually needs.
+    const pending: ((lock: { released: boolean; release: () => Promise<void> }) => void)[] = [];
+    Object.defineProperty(navigator, "wakeLock", {
+      configurable: true,
+      value: { request: () => new Promise((res) => pending.push(res)) },
+    });
+    renderHook(() => useLiveCall(), { wrapper: StrictMode });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(pending.length).toBeGreaterThan(0);
+    const stale = {
+      released: false,
+      release: async () => {
+        stale.released = true;
+      },
+    };
+    await act(async () => {
+      pending[0](stale); // the FIRST request belongs to the generation the cleanup moved past
+      await Promise.resolve();
+    });
+    expect(stale.released).toBe(true);
+  });
+
   it("⑤ the wake lock is RE-TAKEN on the way back — the platform released it when we hid", async () => {
     installWakeLock();
     await call();

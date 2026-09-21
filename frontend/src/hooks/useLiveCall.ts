@@ -478,7 +478,11 @@ function reduce(s: CallState, sig: CallSignal): Step {
     // alone does not `close` — its component is ALREADY unmounting, and an `endCall()` here would end
     // the fresh call a redial's key bump is mounting in the same commit.
     return {
-      state: { ...CALL_INITIAL, phase: "ended", gen: s.gen + 1 },
+      // `priorLeg` survives the reset (S6 code-review F3, reshaped): StrictMode's simulated cleanup
+      // funnels through THIS arm, and its teardown clears the sessionStorage marker — so the state's
+      // copy is the only carrier left when the re-run's `remount` re-arms. A REAL exit loses nothing
+      // by it: a redial's key bump mounts a fresh instance whose state starts at CALL_INITIAL anyway.
+      state: { ...CALL_INITIAL, phase: "ended", priorLeg: s.priorLeg, gen: s.gen + 1 },
       out: [{ type: "teardown", close: sig.type !== "unmounted" }],
     };
   }
@@ -1093,10 +1097,16 @@ export function useLiveCall(): CallView {
     if (request === undefined) return;
     wakeLock.current = null;
     lockPending.current = true;
+    // The GENERATION rides the request (S6 code-review F2): a lock resolving after this call's exit
+    // must not become the NEXT call's sentinel — a stale sentinel makes the re-take guard above skip
+    // the acquisition the fresh call actually needs. Terminal-phase alone cannot tell the two apart:
+    // the next call's phase is not terminal.
+    const gen = ref.current.gen;
     void request
       .then((lock) => {
         lockPending.current = false;
-        if (isTerminal(ref.current.phase)) void lock.release().catch(() => {});
+        if (gen !== ref.current.gen || isTerminal(ref.current.phase))
+          void lock.release().catch(() => {});
         else wakeLock.current = lock;
       })
       .catch(() => {
@@ -1198,7 +1208,13 @@ export function useLiveCall(): CallView {
       onEnded: () => send({ type: "captureLost", gen: ref.current.gen }),
     })
       .then((cap) => {
-        if (disposed) {
+        // TERMINAL beside DISPOSED (S6 code-review F1): a close-class exit (`hidden`, `pagehide`, a
+        // hang-up) lands the machine terminal SYNCHRONOUSLY, but the unmount whose cleanup sets
+        // `disposed` waits for React's commit — and a capture resolving inside that window would
+        // install itself, open a leg and re-write the busy marker on a call that is already over.
+        // The gen fence upstairs cannot catch it: `openLeg` reads the LIVE generation, which the
+        // terminal has already moved to.
+        if (disposed || isTerminal(ref.current.phase)) {
           cap.stop();
           return;
         }

@@ -1041,6 +1041,23 @@ describe("callReduce — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R75
     expect(state.note).toBe(CALL_COPY.busy);
   });
 
+  it("⑦ `unmounted` PRESERVES priorLeg, and the re-arm carries it (S6 review F3, reshaped)", () => {
+    // StrictMode's simulated cleanup funnels through `unmounted`, whose teardown clears the
+    // sessionStorage marker — so the STATE's copy is the only carrier left when `remount` re-arms
+    // the second setup. A reset that dropped it would eat exactly the crashed-tab recovery this
+    // mechanism exists for, on the very server (dev) where that recovery gets exercised.
+    const marked = run(CALL_INITIAL, [{ type: "priorLeg" }]).state;
+    const dead = run(marked, [{ type: "unmounted" }]).state;
+    expect(dead.priorLeg).toBe(true);
+    const rearmed = run(dead, [{ type: "remount" }]).state;
+    expect(rearmed.priorLeg).toBe(true);
+    // …and the re-armed machine's first-dial busy still takes the recovery path.
+    const busy = run(rearmed, [
+      { type: "serverError", code: "busy", message: "a live call is already running" },
+    ]);
+    expect(busy.state.phase).toBe("connecting");
+  });
+
   it("⑦ …and WITH it takes the note-only ladder path — this phone's own unreaped slot", () => {
     const back = run(CALL_INITIAL, [
       { type: "priorLeg" },
