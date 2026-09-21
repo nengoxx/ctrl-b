@@ -5251,3 +5251,12 @@ until the probe proves the keepalive clean.
 was inert · F3 the fenced `earOutage` signal · F4 picker enumeration truth · F5 = ⑥'s reversal
 above · F6 the idle clock's reset/pause semantics). The reducer/normalize/reconnect fit was judged
 sound.
+
+**As-built (2026-09-21, same day):** S5 = `0388ad5` + `40b6f32` · S6 = `7b8cd80` + `4857d20`; both
+slices through the full cadence (pinned Opus build → main-seat review → blind Maya code round →
+fix wave → self-contained confirm, all on the Luna lane). Notable rulings from the code rounds:
+the ghost device option is `disabled` but the stored preference is NOT auto-cleared (F2 half-
+overruled); `unmounted` carries `priorLeg` (the StrictMode reshape of S6-F3); S6-F4 overruled on
+the fact (max_session_s's ceiling is 7200). Local liveCall e2e 20/20 on the production build.
+Owed to the S4 sitting: the four-row routing probe · the §12.4 freeze probe · the recorded
+residual (a mic stolen AND returned entirely while hidden reports only at the next wake).

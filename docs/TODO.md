@@ -1681,13 +1681,17 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       finger-free; the composer row FREEZES while recording). Records = plan §7-S3.5 + its addenda.
       ⚠ This is why `voice.live.enabled` being OFF does **not** mean the relay is unreachable —
       D71's amendment note.
-- [ ] S5 — The route wave (D73/R74): `voice.live.route` speaker|headphones (headphones = AEC off
+- [x] S5 — The route wave (D73/R74): `voice.live.route` speaker|headphones (headphones = AEC off
       → A2DP TTS + ear-hold auto→OFF), the input/route picker with fallback-and-say-so,
-      dictation on the same constraints (closes R51 §6.1). Build against the plan's D73 block.
-- [ ] S6 — The background wave (D73/R75): `voice.live.background` + A1–A7 (the ear-outage
+      dictation on the same constraints (closes R51 §6.1). *(✅ 2026-09-21 — `0388ad5` +
+      review wave `40b6f32`; blind Maya code round SHIP WITH FIXES, both folded; plan D73
+      block = the as-built record.)*
+- [x] S6 — The background wave (D73/R75): `voice.live.background` + A1–A7 (the ear-outage
       detector with the honest redial note · keepalive knob · `background_idle_s` 600 ·
-      wake-lock re-acquire · turn_done suppression in-call · busy-dial ladder unification ·
-      pagehide/visibilitychange split). Build against the plan's D73 block.
+      wake-lock re-acquire · turn_done suppression in-call · the priorLeg busy marker ·
+      pagehide/visibilitychange split). *(✅ 2026-09-21 — `7b8cd80` + review wave `4857d20`;
+      blind Maya code round SHIP WITH FIXES 1H·2M·1L, confirm CONFIRMED; liveCall e2e 20/20
+      local; plan D73 block = the as-built record.)*
 - [ ] S4 — The owner calibration + device round (the phase gate): noise/quiet knob tuning on
       the real phone (+ the Tier-0 auto-stop threshold, same sitting); `voice.live.enabled`
       flips ON at its close. Decision point: fixed endpointing good → v1 stands; sluggish →

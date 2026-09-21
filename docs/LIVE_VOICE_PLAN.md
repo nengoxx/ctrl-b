@@ -1445,7 +1445,10 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   the overlay says Listening (corrects R14 §3.2/§3.4). Two slices; both feed the S4 sitting, which
   inherits R74's four-row routing probe and R75's §12.4 lock-screen freeze probe.
 
-  > **S5 — the route wave (R74).** ① `voice.live.route: "speaker" | "headphones"` (default
+  > **S5 — the route wave (R74). ✅ BUILT 2026-09-21** (pinned Opus lane; commit `0388ad5` + the
+  > review wave `40b6f32`; code round = blind Maya SHIP WITH FIXES 2 MED — F1 the probe latch ·
+  > F2 half-accepted, the ghost option `disabled`, the auto-clear half OVERRULED with the plan
+  > wording amended; FE 3,640 · BE 2,500 at close). ① `voice.live.route: "speaker" | "headphones"` (default
   > `speaker`) — a real Conf row. `headphones` sets the capture constraints to
   > `{echoCancellation: false, noiseSuppression: true, channelCount: 1}` (NS is software-side on
   > Android, it stays) so the phone never enters comm mode and TTS rides A2DP at media quality;
@@ -1471,7 +1474,14 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > (probe-and-hide `setSinkId` Jitsi-style where it exists — desktop), BT-mic steering (classic-BT
   > SCO caps output at mono 8/16 kHz), a native shell, any UA-sniff.
   >
-  > **S6 — the background wave (R75, verdict SOUND WITH AMENDMENTS; all seven ACCEPTED, A3/A4
+  > **S6 — the background wave ✅ BUILT 2026-09-21** (pinned Opus lane; commit `7b8cd80` + the
+  > review wave `4857d20`; code round = blind Maya SHIP WITH FIXES 1 HIGH · 2 MED · 1 LOW — F1
+  > the acquisition-window terminal · F2 the gen-fenced wake lock · F3 accepted AS RESHAPED (her
+  > mechanism wrong, the StrictMode marker-loss real — `unmounted` now carries `priorLeg`) · F4
+  > OVERRULED on the fact (max_session_s's ceiling IS 7200); confirm round CONFIRMED, she re-ran
+  > the pins herself; local liveCall e2e 20/20 on the production build; FE 3,643 at close.
+  > ⚠ Recorded residual: a mic stolen AND returned entirely while hidden goes unreported until
+  > the next wake.) **(R75, verdict SOUND WITH AMENDMENTS; all seven ACCEPTED, A3/A4
   > shaped by the main seat, A4's default the owner's).** ① `voice.live.background: true` — the
   > page going hidden no longer ends the call; the machine's `hidden` arm becomes POLICY
   > (`background` off ⇒ today's clean end), and TEARDOWN moves to `pagehide` (A7 — bfcache is
