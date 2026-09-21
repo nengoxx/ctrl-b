@@ -8,7 +8,7 @@ import { useUISlice } from "../../../store/ui";
 import { useComposerSkin } from "../axes";
 import { AttachClip, AttachRail } from "./AttachRail";
 import { ExpandToggle } from "./ExpandToggle";
-import { SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
+import { PhoneIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { MicGestureChrome } from "./MicGestureChrome";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
@@ -122,6 +122,7 @@ export function KitComposer({
                 (mic.status === "recording" ? " rec" : "") +
                 (mic.status === "sending" ? " sending" : "") +
                 (gesture.pressing ? " pressing" : "") +
+                (gesture.mode === "call" ? " call" : "") +
                 (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
               }
               aria-label={gesture.label}
@@ -129,8 +130,12 @@ export function KitComposer({
               disabled={mic.status === "unavailable" || mic.status === "sending"}
               {...gesture.handlers}
             >
+              {/* Call mode wears the phone glyph (owner ask 2026-09-21) — the swap pops via
+                  kit-btn-pop on the remounted node; LineComposer's comment has the mechanism. */}
               {mic.status === "sending" ? (
                 <SpinnerIcon size={16} />
+              ) : gesture.mode === "call" ? (
+                <PhoneIcon size={16} />
               ) : (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                   <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z" />

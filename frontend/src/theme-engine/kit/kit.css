@@ -863,6 +863,23 @@ body[data-perf="lite"] .kit-composer {
 body[data-motion="reduced"] .kit-cbtn.mic.sending svg {
   animation: none; /* §14.11: the swapped-in spinner glyph alone says "transcribing" */
 }
+/* CALL MODE (owner ask 2026-09-21: the mode tap was invisible on the button — the label alone carried
+ * it). Two halves: the glyph is the phone (`composer/icons.tsx` PhoneIcon — the variants swap it in),
+ * and the chip takes a quiet accent tint, the `.sending` treatment's family without its fill so the two
+ * states stay distinct (tinted ring = call mode · filled chip + roll = transcribing). Line's filled
+ * accent circle (0,5,0) outspecifies this like it does `.sending` — there the glyph swap + pop are the
+ * mode, on a face that is already loud. */
+.kit-cbtn.mic.call {
+  color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+}
+/* …and the swap itself POPS (the owner's "light animation"): the mode flip remounts the svg, and the
+ * fresh node runs the kit's one appear pop — the same remount mechanism as the mic⇄send morph, gated
+ * to `full` with NOTHING under reduced (the glyph + tint alone say the mode there, §14.11).
+ * `:not(.sending)` keeps this (0,4,2) rule from outranking the spinner's roll (0,3,1). */
+body[data-motion="full"] .kit-cbtn.mic:not(.sending) svg {
+  animation: kit-btn-pop var(--dur-fast) var(--ease-out);
+}
 .kit-send {
   all: unset;
   cursor: pointer;

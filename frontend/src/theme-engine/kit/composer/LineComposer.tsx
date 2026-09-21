@@ -6,7 +6,7 @@ import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
 import { AttachClip, AttachRail } from "./AttachRail";
 import { ExpandToggle } from "./ExpandToggle";
-import { MicIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
+import { MicIcon, PhoneIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { MicGestureChrome } from "./MicGestureChrome";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
@@ -242,6 +242,7 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
                   (mic.status === "recording" ? " rec" : "") +
                   (mic.status === "sending" ? " sending" : "") +
                   (gesture.pressing ? " pressing" : "") +
+                  (gesture.mode === "call" ? " call" : "") +
                   (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
                 }
                 aria-label={gesture.label}
@@ -249,7 +250,16 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
                 disabled={mic.status === "unavailable" || mic.status === "sending"}
                 {...gesture.handlers}
               >
-                {mic.status === "sending" ? <SpinnerIcon size={22} /> : <MicIcon size={22} />}
+                {/* The MODE is the glyph (owner ask 2026-09-21): call mode wears the phone, and the
+                    swap itself pops — the fresh node runs kit-btn-pop, the same remount mechanism as
+                    the mic⇄send morph. All three variants carry the same three-way pick. */}
+                {mic.status === "sending" ? (
+                  <SpinnerIcon size={22} />
+                ) : gesture.mode === "call" ? (
+                  <PhoneIcon size={22} />
+                ) : (
+                  <MicIcon size={22} />
+                )}
               </button>
             )}
             {showSend && (

@@ -404,6 +404,10 @@ export interface MicGesture {
   /** The button's brief pressed look — the JS-toggled class the kit has always used here rather than
    *  CSS `:active`, which Fennec leaves wedged after a tap. */
   pressing: boolean;
+  /** The standing mode, for the button's own FACE (owner ask 2026-09-21: the flip has to be visible —
+   *  glyph + tint, not only the accessible name). Beside `chrome.mode`, which is the transient
+   *  gesture chrome's copy; the button renders between gestures, so it reads the standing one. */
+  mode: MicMode;
   /** `aria-label` + `title`: the MODE rides the accessible NAME, and there is no `aria-pressed` — both
    *  Telegram clients independently, and R69 §8.3's ruling for a dual-destination control. */
   label: string;
@@ -860,6 +864,7 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
 
   return {
     pressing: state.stage === "press",
+    mode,
     label: micLabel(mic.status, mode),
     handlers: {
       onPointerDown,

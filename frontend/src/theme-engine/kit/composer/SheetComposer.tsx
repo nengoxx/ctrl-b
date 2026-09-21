@@ -6,7 +6,7 @@ import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
 import { AttachClip, AttachRail } from "./AttachRail";
 import { ExpandToggle } from "./ExpandToggle";
-import { MicIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
+import { MicIcon, PhoneIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { MicGestureChrome } from "./MicGestureChrome";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
@@ -102,6 +102,7 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
                   (mic.status === "recording" ? " rec" : "") +
                   (mic.status === "sending" ? " sending" : "") +
                   (gesture.pressing ? " pressing" : "") +
+                  (gesture.mode === "call" ? " call" : "") +
                   (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
                 }
                 aria-label={gesture.label}
@@ -111,8 +112,16 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
               >
                 {/* vapor's stroke mic glyph at vapor's proportion (~26px in the 40px hit target) — owner
                     eyeball 2026-07-11: the docked variant keeps vapor's icon language, theme-colored.
-                    Graduated to the shared `MicIcon` at its second consumer (Phase E's LineComposer). */}
-                {mic.status === "sending" ? <SpinnerIcon size={26} /> : <MicIcon size={26} />}
+                    Graduated to the shared `MicIcon` at its second consumer (Phase E's LineComposer).
+                    Call mode wears the phone glyph instead (owner ask 2026-09-21) — the swap pops via
+                    kit-btn-pop on the remounted node, LineComposer's comment has the mechanism. */}
+                {mic.status === "sending" ? (
+                  <SpinnerIcon size={26} />
+                ) : gesture.mode === "call" ? (
+                  <PhoneIcon size={26} />
+                ) : (
+                  <MicIcon size={26} />
+                )}
               </button>
             )}
           </div>
