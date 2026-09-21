@@ -5229,9 +5229,12 @@ because Android freezes a silent hidden page after ~90 s with NO exemption for a
 goes deaf while the overlay says Listening; corrects R14): a resumed call redials and SAYS SO,
 never presenting as if it heard. ⑤ (owner) `background_idle_s` defaults to **600** (0=off) — a
 hidden, silent call ends cleanly with a note rather than holding a hot mic to the 30-min cap.
-⑥ (main seat, reshaping A6) The first-dial `busy` terminal unifies into the reconnect ladder —
-post-discard the slot is this phone's own ≤10 s zombie, so every busy dial takes W3's note-only
-path and exhaustion tells the truth; amends W3's `attempts === 0` arm and its e2e pin. ⑦ (main
+⑥ (main seat, reshaping A6 — REVERSED in the council round, Maya F5: two tabs or a second device
+make "another call is active" a real story a blanket ladder would erase) W3's first-dial-terminal
+arm and its e2e pin STAND; the discard door gets a narrow sessionStorage "live call in this tab"
+marker (written at leg open, cleared on clean end, surviving a discard's reload) — first-dial
+`busy` WITH the marker takes the note-only ladder path; without it, terminal. Ownership is never
+inferred from `attempts`. ⑦ (main
 seat) NOT built, with the mechanism named: an Android output dropdown (probe-and-hide where
 `setSinkId` exists), BT-mic steering (SCO caps output at mono 8/16 kHz), a native shell, UA-sniffs.
 ⑧ (main seat, R75 §12.3 adopted) The pacer stays main-thread, the ladder stays as-is, the mouth
@@ -5241,3 +5244,10 @@ needs nothing — three non-changes that are rulings so the next audit doesn't r
 S4 phase gate, which inherits R74's four-row routing probe and R75's §12.4 lock-screen freeze probe
 (the two facts source-reading cannot settle). The keepalive's MediaSession follow-on is PARKED
 until the probe proves the keepalive clean.
+
+**Council (2026-09-21, blind Maya — the first Luna-lane round): BUILD WITH CHANGES**, 2 HIGH +
+4 MED, sweep "none", all six ACCEPTED and folded into the plan's D73 block (F1 the route-resolved
+`{earHoldMode, bargeArmed}` pair · F2 the keepalive corrected to a constant-source node — zero×gain
+was inert · F3 the fenced `earOutage` signal · F4 picker enumeration truth · F5 = ⑥'s reversal
+above · F6 the idle clock's reset/pause semantics). The reducer/normalize/reconnect fit was judged
+sound.

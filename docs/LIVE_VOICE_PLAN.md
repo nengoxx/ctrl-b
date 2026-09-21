@@ -1449,15 +1449,21 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > `speaker`) — a real Conf row. `headphones` sets the capture constraints to
   > `{echoCancellation: false, noiseSuppression: true, channelCount: 1}` (NS is software-side on
   > Android, it stays) so the phone never enters comm mode and TTS rides A2DP at media quality;
-  > and it feeds the EAR-HOLD's `auto` resolution: under `headphones` auto resolves to hold OFF
-  > (with headphones worn there is no acoustic echo path — R74 §3's physical note), so the ear
-  > stays open under the reply and voice barge-in arms; under `speaker` auto keeps today's
-  > track-readback rule. Explicit `echo_workaround: on/off` still overrides — the route moves only
-  > what `auto` means, the derived-in-one-normalize discipline is untouched. ② An INPUT picker,
-  > labelled as what it is on Android (a route picker moving BOTH directions):
+  > and it feeds ONE route-resolved capture policy (Maya F1 — the review's first HIGH): the
+  > capture-ready block resolves `{earHoldMode, bargeArmed}` TOGETHER from the route — under
+  > `headphones` there is no acoustic echo path (R74 §3's physical note), so ear-hold auto→OFF
+  > AND `bargeArmed = knobs.barge_in` regardless of the AEC readback (the readback-`"all"` test
+  > is a statement about leak, and headphones have none); under `speaker` both keep today's
+  > track-readback rules. Explicit `echo_workaround: on/off` still overrides the hold half — the
+  > route moves only what `auto` means, and `earHeld` stays derived in the one normalize. ② An
+  > INPUT picker, labelled as what it is on Android (a route picker moving BOTH directions):
   > `voice.live.input_device` (deviceId, default "" = system default), a Conf picker fed by
-  > `enumerateDevices()`; a picked device that fails `getUserMedia` FALLS BACK to default and says
-  > so (R74 §2.2(b) — the failure is a null stream, not a constraint miss). ③ Dictation rides the
+  > `enumerateDevices()` — which (Maya F4) enumerates when the picker OPENS, re-enumerates after
+  > the first permission-granting capture, and treats empty labels or a missing stored id as
+  > "default / refresh required", never as a durable choice (Android ids are synthetic routes;
+  > desktop ids rot with a profile reset); a picked device that fails `getUserMedia` FALLS BACK
+  > to default and says so (R74 §2.2(b) — the failure is a null stream, not a constraint miss).
+  > ③ Dictation rides the
   > SAME route-derived constraints + input device (closes the R51 §6.1 no-constraints residual —
   > dictation currently flips comm mode too). ④ NOT BUILT, ruled: an output dropdown on Android
   > (probe-and-hide `setSinkId` Jitsi-style where it exists — desktop), BT-mic steering (classic-BT
@@ -1468,31 +1474,54 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > page going hidden no longer ends the call; the machine's `hidden` arm becomes POLICY
   > (`background` off ⇒ today's clean end), and TEARDOWN moves to `pagehide` (A7 — bfcache is
   > provably off mid-call, so pagehide is the document really dying). ② THE EAR-OUTAGE DETECTOR
-  > (A2, not optional): `pcmCapture` stamps the last worklet frame's arrival and listens for the
-  > track's `mute`/`unmute` (today only `ended`); on `visibilitychange→visible` + the Lifecycle
-  > `resume` event, a frame gap beyond a named threshold means the ear missed everything since —
-  > the wiring kills the leg, redials fresh through the EXISTING ladder, and the note says so in
-  > the owner's words. A resumed call must never present as if it heard. ③ THE KEEPALIVE KNOB
-  > (A3): `voice.live.background_keepalive: true` — while a call is live and the page hidden, the
-  > capture chain's 0-gain sink rises to an inaudible-but-nonzero level, making Blink's
-  > `IsAudible()` true, which removes the freeze AND background throttling wholesale (R75 §3.5;
-  > energy > 0 is the whole test). Its Android side effects are UNVERIFIED — the §12.4 phone probe
-  > validates before it is believed; if it proves clean, MediaSession lock-screen controls unlock
-  > later (parked, not in this wave). ④ THE BACKGROUND IDLE END (A4): `voice.live.
+  > (A2, not optional; shape = Maya F3): `pcmCapture` stamps the last worklet frame's arrival and
+  > listens for the track's `mute`/`unmute` (today only `ended`); on `visibilitychange→visible` +
+  > the Lifecycle `resume` event, a frame gap beyond a named threshold becomes ONE fenced
+  > `earOutage` reducer signal — a NO-OP when the phase is already `connecting`/terminal or the
+  > outage was handled for this `legSeq` (freeze recovery overlaps mute events and socket closes
+  > by nature); otherwise the effect closes the leg and the EXISTING `socketLost` path owns the
+  > single reconnect. The note says what happened in the owner's words — a resumed call must
+  > never present as if it heard. ③ THE KEEPALIVE KNOB (A3; mechanism CORRECTED by Maya F2 — the
+  > review's second HIGH: the worklet's outputs stay zero-filled, so raising the sink gain
+  > multiplies zero): `voice.live.background_keepalive: true` — while a call is live AND the page
+  > hidden, a `ConstantSourceNode` → tiny-gain (inaudible-but-nonzero) → destination node in the
+  > CAPTURE context we already own emits real energy, making Blink's `IsAudible()` true, which
+  > removes the freeze AND background throttling wholesale (R75 §3.5; energy > 0 is the whole
+  > test). No asset, no second media element, and it NEVER touches the mouth's playback status —
+  > `mouthLive` and the ear-hold cannot see it. Stopped on visible. Its Android side effects
+  > (audio focus, the notification) are UNVERIFIED — the §12.4 phone probe validates before it is
+  > believed; if it proves clean, MediaSession lock-screen controls unlock later (parked, not in
+  > this wave). ④ THE BACKGROUND IDLE END (A4; semantics = Maya F6): `voice.live.
   > background_idle_s: 600` (0 = off; the owner's 10 minutes) — hidden + no speech + no reply for
-  > the window ⇒ a clean `ended` with a note saying why, instead of a hot mic riding to the 30-min
-  > cap. ⑤ A1: the wake lock re-acquires on `visible` (5/5 field precedent; today's one request at
-  > mount leaves a returned call without it). ⑥ A5: `turn_done` foreground notifications are
-  > SUPPRESSED while a call is live (`useForegroundNotifications`' single chokepoint reads the
-  > call store; `agent_input` KEEPS notifying — a voice-reached approval gate is exactly when a
-  > notification earns its keep). ⑦ A6 reshaped lean: the first-dial `busy` terminal (W3's
-  > `attempts === 0` arm) UNIFIES into the ladder — after a tab discard the slot is this phone's
-  > own zombie for ≤10 s, so every busy dial takes the note-only path and the ladder's exhaustion
-  > states the truth (`busyHeld`, or the plain busy note when no leg ever came ready); one
-  > mechanism, no second mini-retry. AMENDS W3's "first-dial stays terminal" and its e2e pin.
+  > the window ⇒ the reducer's own `idleExpired` lands a clean `ended` with a note saying why,
+  > instead of a hot mic riding to the 30-min cap. The WIRING owns the timer; it resets on the
+  > reducer-observed activity edges (`speechStart`/`final` · `playbackStarted`/`Drained`), an
+  > outstanding CONFIRM GATE pauses it (ending a call while an approval waits destroys the
+  > interaction the `agent_input` notification just asked for), and the keepalive never counts
+  > (it exists outside the machine by construction). ⑤ A1: the wake lock re-acquires on `visible`
+  > (5/5 field precedent; today's one request at mount leaves a returned call without it). ⑥ A5:
+  > `turn_done` foreground notifications are SUPPRESSED while a call is live
+  > (`useForegroundNotifications`' single chokepoint reads the call store; `agent_input` KEEPS
+  > notifying — a voice-reached approval gate is exactly when a notification earns its keep).
+  > ⑦ A6, RESHAPED TWICE (the main seat's ladder unification was OVERRULED on Maya F5 — two tabs
+  > or a second device make "another call is active" a REAL story the ladder would erase): W3's
+  > first-dial-terminal arm and its e2e pin STAND. The discard door gets its own narrow key: a
+  > sessionStorage "live call in this tab" marker written at leg open and cleared on every clean
+  > end — it survives a tab discard's reload, so a first dial that finds `busy` WITH the marker
+  > standing is recovering this phone's own ≤10 s zombie and takes the note-only ladder path;
+  > without the marker, terminal, today's copy. Ownership is never inferred from `attempts`.
   > ⑧ RULED NO-CHANGE (R75 §12.3): the pacer stays on the main thread (MessagePort is pausable,
   > never throttleable — no starve-then-burst exists), the ladder stays (a live track registers
   > `DisableAggressiveThrottling`; 1 s alignment ⇒ ~15 s > the 10 s slot), the mouth needs nothing.
+  >
+  > **The council round (2026-09-21 — blind Maya, the FIRST review on the Luna lane):** verdict
+  > BUILD WITH CHANGES — 2 HIGH (F1 route/barge-arm mismatch · F2 the inert zero×gain keepalive,
+  > both folded above) · 4 MED (F3 outage/ladder race · F4 picker enumeration truth · F5 the busy
+  > unification overruled · F6 idle-clock semantics — all folded) · sweep "none" · the reducer/
+  > normalize/reconnect fit judged sound. Main-seat rulings: all six ACCEPTED; F2's fix re-derived
+  > leaner than the prescription (constant-source node over a looped clip — no asset, no second
+  > element, no playback-status contamination); F5 accepted as an explicit REVERSAL of the main
+  > seat's own D73 ⑥.
 
 ## 8. Open questions for the owner (the court)
 
