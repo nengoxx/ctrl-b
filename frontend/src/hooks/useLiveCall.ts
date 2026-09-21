@@ -53,6 +53,16 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // event from that stretch is dropped. Nothing is lost by it: interruption there is the tap, which is
 // every browser's interrupt anyway (§4.3's trigger B).
 //
+// THE CALL SURVIVES BACKGROUNDING (D73 S6, evidence docs/research/R75). Nothing in the web platform
+// ends a call because the page went hidden — our old `hidden`-ends-it arm was a policy, and it is now
+// a knob (`background`), with `pagehide` as the one signal that really means the document is dying.
+// What the policy cost to keep is an honesty problem, not a plumbing one: Chrome Android FREEZES a
+// hidden page that has made no sound for ~90 s, which pauses the audio graph — the ear goes deaf while
+// the track stays live, the socket stays open and this screen goes on saying Listening. So three arms
+// hold the line: the page is kept (inaudibly) audible while it is away, the ear is asked on every wake
+// whether it slept — `earOutage`, which redials and SAYS SO — and a backgrounded call nobody is in
+// ends itself rather than riding a hot mic to the session cap.
+//
 // THE GENERATION FENCE (delta round F7). Every asynchronous callback — a send's outcome, a cancel's
 // settlement, a reconnect timer, a socket event — carries the generation it was armed under, and the
 // reducer drops anything armed under a different one. Hanging up bumps the generation, so a hang-up's
@@ -99,6 +109,72 @@ const DEGRADED_NOTE_MS = 6000;
 const PENDING_JOIN = " ";
 const HARVEST_JOIN = "\n";
 
+/** How long a gap in the EAR's own frames means the ear stopped hearing (D73 S6 ② / A2, evidence
+ *  docs/research/R75 §3).
+ *
+ *  The failure it detects is silent by construction: Chrome Android freezes a hidden, inaudible page
+ *  (`kStopInBackground`, ON by default) and the freeze PAUSES the AudioContext, so the worklet's
+ *  `process()` stops being called while `track.readyState` stays `"live"`, the permission stays
+ *  granted, the socket stays open and the overlay goes on saying Listening. Nothing reports it; only
+ *  the missing frames do.
+ *
+ *  4 s is chosen against both ends of that gap and not by feel: the graph mints a frame every
+ *  `frame_ms` (40 ms by default), so this is two orders of magnitude past ordinary jitter and past any
+ *  main-thread stall the uplink pacer was built for (R71) — and it is a small fraction of the ~90 s of
+ *  background silence R75 §3.5 derives before a freeze can even begin, so nothing short of an ear that
+ *  genuinely stopped can trip it. NOT a config knob, for `DEGRADED_NOTE_MS`'s reason: it describes the
+ *  platform's behaviour, not a preference of the owner's. */
+const EAR_OUTAGE_MS = 4000;
+
+/** The signals that re-arm the background idle clock (D73 S6 ④ / Maya F6): the owner speaking, their
+ *  words landing, and the reply's mouth opening and closing — the four edges that mean a call is still
+ *  a conversation. `confirmHold` rides the same set as the PAUSE edge: it is not activity, but it is
+ *  the one other thing that changes whether the clock may run at all, and routing it through the same
+ *  "look again" call keeps one decision in one place. `speechStop` is deliberately out — its `final`
+ *  follows within the same breath and re-arms for it. */
+const IDLE_EDGES: ReadonlySet<CallSignal["type"]> = new Set([
+  "speechStart",
+  "final",
+  "playbackStarted",
+  "playbackDrained",
+  "confirmHold",
+]);
+
+/** THE TAB'S LIVE-CALL MARKER (D73 S6 ⑦ / R75 §9.2). `sessionStorage` because the key is exactly
+ *  per-tab and — the whole point — it SURVIVES the reload a discarded tab comes back through.
+ *
+ *  It answers one question the machine cannot otherwise ask: a FIRST dial refused `busy` is genuinely
+ *  another device holding the call, UNLESS this same tab was in a call a moment ago, in which case the
+ *  slot the relay has not reaped yet is this phone's own ≤10 s zombie (R72 §4). Ownership is never
+ *  inferred from `attempts` — two tabs, or a second device, make "another call is active" a real story
+ *  the ladder would erase (Maya F5, which the main seat's own unification lost to).
+ *
+ *  It is a HEURISTIC and the council ruled its hole bounded and acceptable: a tab killed without
+ *  running its teardown leaves the marker standing, so the next first dial reads a genuine
+ *  other-device refusal as its own zombie and spends the ladder (~14 s) before saying so — on a
+ *  single-user install, a slower answer to a question that is nearly always the other way round. */
+const BUSY_MARKER = "ctrlb-live-call";
+
+/** Write/clear the marker. Wrapped like any storage access: a private window, blocked site data or a
+ *  full quota all throw, and not one of them is a reason a call cannot be made. */
+function markLeg(on: boolean): void {
+  try {
+    if (on) sessionStorage.setItem(BUSY_MARKER, "1");
+    else sessionStorage.removeItem(BUSY_MARKER);
+  } catch {
+    // No marker, then: the busy arm simply keeps today's terminal, which is the safe default.
+  }
+}
+
+/** …and the read, taken ONCE at call start — before this call's own leg writes one. */
+function markStanding(): boolean {
+  try {
+    return sessionStorage.getItem(BUSY_MARKER) !== null;
+  } catch {
+    return false;
+  }
+}
+
 /** The overlay's own copy. Plain sentences, kept here so the machine's arms can pin them. */
 export const CALL_COPY = {
   busy: "another call is active",
@@ -125,6 +201,13 @@ export const CALL_COPY = {
    *  (`openMicStream`'s one retry). The call works; where the sound comes out may not be where the
    *  owner asked for it, and that is worth one line on the overlay. */
   deviceFallback: "that microphone wasn't available — using the default",
+  /** D73 S6 ② — the ear stopped hearing while the page was away (a frozen renderer, a stolen mic) and
+   *  the leg is being redialled. It says what the owner needs to know and nothing else: a resumed call
+   *  must never present as if it heard, and the stretch it missed is not recoverable. */
+  earAsleep: "the ear was asleep — nothing said while away was heard",
+  /** D73 S6 ④ — the background idle end. The terminal face already says "Call ended", so the note is
+   *  the REASON, which is the one thing a call that ended on its own owes the owner. */
+  idleBackground: "the call sat idle in the background",
 } as const;
 
 /** The notes a FRESH LEG retracts — connection news, which a live connection has just made false.
@@ -170,6 +253,12 @@ export interface CallState {
   earHoldMode: boolean;
   /** …and is it closed right now. DERIVED after every reduce (see `normalize`) — never set by an arm. */
   earHeld: boolean;
+  /** THIS TAB WAS IN A CALL WHEN IT LAST WENT AWAY (D73 S6 ⑦) — the `sessionStorage` marker was
+   *  standing when this machine started, which only happens when a leg opened here and no clean end
+   *  cleared it: a discarded tab's reload, a crash. Read ONCE at call start, like `earHoldMode`, and
+   *  consulted by exactly one rule — whether a FIRST dial's `busy` is another device or our own
+   *  unreaped slot. */
+  priorLeg: boolean;
   /** The call generation (F7). Bumped by every terminal and by hang-up. */
   gen: number;
   /** Reconnect attempts spent since the last `ready`. */
@@ -190,6 +279,7 @@ export const CALL_INITIAL: CallState = {
   mouthLive: false,
   earHoldMode: false,
   earHeld: false,
+  priorLeg: false,
   gen: 0,
   attempts: 0,
 };
@@ -212,6 +302,14 @@ export type CallSignal = { gen?: number } & (
    *  needs the ear-hold (§5.1 — `echo_workaround` resolved against the route and the track's own AEC
    *  readback). `note` is the one thing about it the SCREEN depends on: the D73 device fallback. */
   | { type: "captureReady"; earHoldMode: boolean; note?: string }
+  /** D73 S6 ⑦ — the tab's own live-call marker was standing when this machine started (see
+   *  `BUSY_MARKER`). Sent at call start, BEFORE this call's first leg writes its own. */
+  | { type: "priorLeg" }
+  /** D73 S6 ② — the ear missed a stretch: the frames stopped arriving while the page was away (a
+   *  frozen renderer, R75 §3.4) and the gap outran `EAR_OUTAGE_MS`. */
+  | { type: "earOutage" }
+  /** D73 S6 ④ — a BACKGROUNDED call sat past `background_idle_s` with no speech and no reply. */
+  | { type: "idleExpired" }
   | { type: "serverError"; code: string; message: string }
   | { type: "serverEnded" } //                 the relay said `state: ended`
   | { type: "barge" } //                       trigger A (voice) or B (tap) — the same edge
@@ -228,7 +326,10 @@ export type CallSignal = { gen?: number } & (
    *  ending it is `endCall()`, whose unmount IS the teardown — but the rule it carries is the same one
    *  `hidden` needs, and the two share this arm. */
   | { type: "hangup" }
-  | { type: "hidden" } //                      §5.3: the page went away — a clean end, not an error
+  /** The page went away — a clean end, not an error. WHO sends it changed at D73 S6: `pagehide`
+   *  always does (the document really dying, A7), and `visibilitychange→hidden` only while
+   *  `background` is off. The RULE it lands on is the hang-up's, unchanged. */
+  | { type: "hidden" }
   /** The machine's component is UNMOUNTING (the shell's `endCall`, or a redial's key bump). The arm
    *  exists for the FENCE, not the teardown: the wiring's callbacks — a socket frame already
    *  dispatched (`close()` only starts the handshake), a `cancelTurn` settlement, a send outcome —
@@ -257,6 +358,11 @@ export type CallEffect =
   | { type: "reconnect"; delayMs: number }
   /** (Re)arm the strained note's hold — the relay never says "recovered", so the client times it out. */
   | { type: "degradeHold" }
+  /** Close THIS leg and nothing else (D73 S6 ②). Deliberately not a reconnect: the close is what the
+   *  ONE existing `socketLost` arm reconnects from, so the ladder keeps its own accounting — the
+   *  outage spends a rung from wherever the ladder stands instead of minting a second counter beside
+   *  it (the `busy` arm's lesson, A-F3). */
+  | { type: "closeLeg" }
   /** Release everything. `close` additionally dismisses the overlay — the user's own exit gets no
    *  terminal screen (§6); an `error`/`ended` terminal keeps the overlay up to say why. */
   | { type: "teardown"; close: boolean };
@@ -383,7 +489,10 @@ function reduce(s: CallState, sig: CallSignal): Step {
   // first mount — this is a no-op, so the arm cannot disturb a call that is actually running.
   if (sig.type === "remount") {
     if (!isTerminal(s.phase)) return { state: s, out: [] };
-    return { state: { ...CALL_INITIAL, gen: s.gen }, out: [] };
+    // `priorLeg` is preserved beside the generation, and for a related reason: the first setup's
+    // teardown CLEARED the marker it was read from, so the re-arm is the only thing that can carry
+    // what this tab learned about the previous document into the call that actually runs.
+    return { state: { ...CALL_INITIAL, gen: s.gen, priorLeg: s.priorLeg }, out: [] };
   }
   if (isTerminal(s.phase)) return { state: s, out: [] };
 
@@ -638,7 +747,12 @@ function reduce(s: CallState, sig: CallSignal): Step {
           // (§4.5, e2e-pinned). The SAME refusal during a reconnect is the opposite fact (A-F3 / R72):
           // this install has one user, so the only session that can be holding the slot is this phone's
           // own dead leg, which the relay has not reaped yet.
-          if (s.attempts === 0) return terminal(s, "error", CALL_COPY.busy);
+          // …and since S6 ⑦ there is a THIRD case between them, with its own narrow evidence: a first
+          // dial from a tab whose own marker is still standing is a discarded tab coming back to the
+          // slot IT left behind (R75 §9.2 — the relay releases it within ~10 s). That takes the
+          // note-only path below, where the 1013 close drives the ladder that outlasts the slot. The
+          // marker is the whole test: without it the refusal stays the terminal it has always been.
+          if (s.attempts === 0 && !s.priorLeg) return terminal(s, "error", CALL_COPY.busy);
           // …and there it is a NOTE-ONLY NO-OP, deliberately driving nothing. A busy refusal is TWO
           // events on the wire — this typed frame, and the 1013 close that always follows it (RFC 6455
           // §7.4.1 "try again later"; `api/voice.py` sends both). The close is what the ONE existing
@@ -667,6 +781,33 @@ function reduce(s: CallState, sig: CallSignal): Step {
     case "captureLost":
       // §4.5: permission revoked, a real phone call stole the mic, a headset event.
       return terminal(s, "error", CALL_COPY.micLost);
+
+    case "priorLeg":
+      return { state: { ...s, priorLeg: true }, out: [] };
+
+    case "earOutage":
+      // THE EAR SLEPT (S6 ② / A2). The remedy is the one the ladder already owns — a fresh session, an
+      // honest note — so this arm does the smallest thing that gets there: paint the reconnect, say
+      // what happened, and CLOSE the leg. The close's `socketLost` is what actually redials, which is
+      // why no `attempts` are touched here: one outage spends one rung from wherever the ladder
+      // stands, exactly as a `busy` refusal does, and a reset would hand a wedged link an endless
+      // supply of them. The no-op guard is not an optimization — freeze recovery overlaps the track's
+      // own mute events and the socket's death by nature, so `visible` and `resume` and a close can
+      // all arrive about the same instant, and a leg must not be closed twice for one outage.
+      if (s.phase === "connecting") return { state: s, out: [] };
+      // The note deliberately does NOT join `CONNECTION_NOTES`: the fresh leg makes the ear work
+      // again, it does not make the missed stretch heard, and a note retracted 400 ms later is one the
+      // owner never read. It stands until something newer replaces it.
+      return {
+        state: { ...s, phase: "connecting", note: CALL_COPY.earAsleep },
+        out: [{ type: "closeLeg" }],
+      };
+
+    case "idleExpired":
+      // A BACKGROUNDED CALL NOBODY IS IN (S6 ④). A clean `ended`, like the session limit and unlike a
+      // failure — the mic being hot for ten minutes in a pocket is not an error, it is the thing this
+      // ends. The wiring only ever arms the clock while hidden, so reaching here means exactly that.
+      return terminal(s, "ended", CALL_COPY.idleBackground);
 
     case "failed":
       return terminal(s, "error", sig.note);
@@ -705,6 +846,15 @@ export function useLiveCall(): CallView {
   /** The strained note's hold — re-armed by every `degraded` frame, cleared by the teardown. */
   const degradeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wakeLock = useRef<WakeLockSentinel | null>(null);
+  /** One request in flight at a time (A1): the re-acquire runs on every return to the foreground, and
+   *  two overlapping requests would leave the loser sentinel held by nothing that can release it. */
+  const lockPending = useRef(false);
+  /** The BACKGROUND idle clock (S6 ④) — one timer, owned here, armed from `armIdle` alone. */
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** THE S6 KNOBS, latched at CALL START (§4.5 — settings edited mid-call apply to the NEXT call).
+   *  `null` until they arrive, which is also the honest answer for a page that hides before the call
+   *  has one: there is nothing to keep in the background yet, so the old clean end applies. */
+  const bg = useRef<{ background: boolean; keepalive: boolean; idleMs: number } | null>(null);
   /** Sustained above-floor milliseconds — trigger A's own clock, fed by the worklet's per-frame RMS. */
   const sustained = useRef(0);
   /** Trigger A is armed only on a track whose AEC is the subtractive `all` mode (the S0 ruling). */
@@ -727,6 +877,12 @@ export function useLiveCall(): CallView {
   const teardown = useCallback((): void => {
     clearTimeout(retryTimer.current);
     clearTimeout(degradeTimer.current);
+    clearTimeout(idleTimer.current);
+    // THE CLEAN END CLEARS THE MARKER (S6 ⑦). This is the one release path every exit funnels through
+    // — a terminal, a hang-up, the unmount — so it is the one place that can honestly say "this tab is
+    // not in a call any more". What does NOT reach here (a killed tab, a crash) is exactly the case
+    // the marker is for.
+    markLeg(false);
     socket.current?.close();
     socket.current = null;
     // The pacer dies with the leg it metered: whatever it still held is audio for a session that is over.
@@ -746,6 +902,9 @@ export function useLiveCall(): CallView {
    *  effect opens one), so one of the two rides a ref. Assigned during render — the latch-ref idiom
    *  `LineComposer` uses — and only ever read from a timer, long after this render is done. */
   const openLegRef = useRef<() => void>(() => {});
+  /** …and the same knot, tied the same way, for the idle clock: `send` re-arms it on the activity
+   *  edges and the clock's own expiry sends. Assigned during render, read only from inside callbacks. */
+  const armIdleRef = useRef<() => void>(() => {});
 
   const send = useCallback(
     function send(sig: CallSignal): void {
@@ -806,12 +965,22 @@ export function useLiveCall(): CallView {
             );
             break;
           }
+          case "closeLeg":
+            // Just the leg. Its `onClose` is the reconnect's trigger, and the leg fence in `openLeg`
+            // is what keeps a close this call asked for from driving a socket it has since replaced.
+            socket.current?.close();
+            break;
           case "teardown":
             teardown();
             if (eff.close) endCall();
             break;
         }
       }
+      // THE IDLE CLOCK'S EDGES (S6 ④), read from the SIGNAL rather than from a state diff: what re-arms
+      // the clock is activity — the owner spoke, their words landed, the reply started or stopped — and
+      // none of those is a single field to diff. Last, so `armIdle` reads the state this reduce wrote
+      // and a terminal's teardown has already cleared the timer it would otherwise re-arm.
+      if (IDLE_EDGES.has(sig.type)) armIdleRef.current();
     },
     [teardown],
   );
@@ -830,6 +999,10 @@ export function useLiveCall(): CallView {
     // reconnect (the socket dropping says nothing about whether the chat POST was taken).
     const leg = ++legSeq.current;
     const mine = (): boolean => legSeq.current === leg;
+    // THIS TAB IS IN A CALL (S6 ⑦), written at the leg rather than at the machine: what the marker
+    // claims is that the RELAY may be holding a slot for us, and it is opening a leg that makes that
+    // true. Cleared by the teardown, which every clean end runs.
+    markLeg(true);
     // A FRESH LEG GETS A FRESH PACER (see the ref): the old leg's queue is stale speech by definition —
     // a reconnect is a new session and §4.5 already declares the in-flight utterance lost — and its
     // banked budget was earned against a socket that is gone.
@@ -873,6 +1046,64 @@ export function useLiveCall(): CallView {
 
   openLegRef.current = openLeg;
 
+  /** THE BACKGROUND IDLE CLOCK (S6 ④ / Maya F6) — ONE timer, re-evaluated from ONE place.
+   *
+   *  Every caller says the same thing ("look again") and this decides, because every rule about the
+   *  clock is a rule about the CURRENT state rather than about the edge that arrived: is the page
+   *  hidden, is the bound on, is an approval outstanding, is the call still alive. A version where the
+   *  hidden handler armed and the speech handler re-armed and the confirm handler cleared would be
+   *  four copies of one rule, which is four chances for the next edge to be forgotten.
+   *
+   *  It CLEARS first, always — re-arming beats accumulating (the `degradeHold` precedent) — so a call
+   *  that came back to the foreground simply never re-arms, and the visible edge needs no branch of
+   *  its own. The confirm gate is a full re-arm rather than a resume: the remaining window is not worth
+   *  carrying, and being generous here can only ever delay an end the owner never asked for. */
+  const armIdle = useCallback((): void => {
+    clearTimeout(idleTimer.current);
+    const cfg = bg.current;
+    // `!(idleMs > 0)` deliberately: 0 is the owner's "off", and a knob a pre-S6 backend never sent
+    // arrives as NaN — both must land on "no clock", never on a `setTimeout(NaN)` that fires at once.
+    if (!cfg?.background || !(cfg.idleMs > 0)) return;
+    if (document.visibilityState !== "hidden") return; // only a BACKGROUNDED call is bounded
+    const s = ref.current;
+    // AN APPROVAL GATE PAUSES IT (Maya F6): ending the call while the owner is being asked something
+    // destroys the interaction the `agent_input` notification just asked them for. Allow or deny —
+    // either resolution re-arms through the same `confirmHold` edge that paused it.
+    if (isTerminal(s.phase) || s.confirmHold) return;
+    const gen = s.gen;
+    idleTimer.current = setTimeout(() => send({ type: "idleExpired", gen }), cfg.idleMs);
+  }, [send]);
+
+  armIdleRef.current = armIdle;
+
+  /** The screen lock, taken at mount AND re-taken on every return to the foreground (S6 ⑤ / A1): the
+   *  platform RELEASES the sentinel when the page hides, so a call the owner came back to would
+   *  otherwise be running without one — which is the whole reason 5/5 field projects re-acquire, and
+   *  MDN's own instruction. Feature-detected, never UA-sniffed; a browser without it keeps today's
+   *  screen behaviour. Idempotent: a lock still held is not re-requested. */
+  const takeWakeLock = useCallback((): void => {
+    if (lockPending.current) return;
+    if (wakeLock.current !== null && !wakeLock.current.released) return;
+    // The request is taken BEFORE the latch is set, deliberately: an optional chain that found no API
+    // short-circuits the `then`/`catch` with it, and a latch armed on a promise that will never settle
+    // would refuse every later attempt for the life of the call.
+    // (Explicit `=== undefined`, never a truthiness test: a Promise in a boolean conditional is the
+    // `no-misused-promises` trap, and the same line is written this way in `useForegroundNotifications`.)
+    const request: Promise<WakeLockSentinel> | undefined = navigator.wakeLock?.request("screen");
+    if (request === undefined) return;
+    wakeLock.current = null;
+    lockPending.current = true;
+    void request
+      .then((lock) => {
+        lockPending.current = false;
+        if (isTerminal(ref.current.phase)) void lock.release().catch(() => {});
+        else wakeLock.current = lock;
+      })
+      .catch(() => {
+        lockPending.current = false;
+      });
+  }, []);
+
   // ── the one start effect: capture, then the first leg ──────────────────────────────────────────
   useEffect(() => {
     // SETUP MUST BE CLEANUP'S SYMMETRIC PARTNER (the React effect contract StrictMode enforces by
@@ -886,6 +1117,16 @@ export function useLiveCall(): CallView {
       return;
     }
     let disposed = false;
+    // D73 S6 — the background knobs, LATCHED here with every other §4.5 read: what a call does when it
+    // goes away is decided when it starts, not by a `/voice/status` refetch in the middle of it.
+    bg.current = {
+      background: knobs.background,
+      keepalive: knobs.background_keepalive,
+      idleMs: knobs.background_idle_s * 1000,
+    };
+    // …and the tab's own marker, read BEFORE the first leg writes one (S6 ⑦). This order is the whole
+    // mechanism: what it can report is the PREVIOUS document's unfinished call, never this one's.
+    if (markStanding()) send({ type: "priorLeg", gen: ref.current.gen });
     // The call speaks every turn that STARTS after this moment, and deliberately not the one already
     // streaming (§4.5 — a reply half-read to an owner who was not yet in a call is not picked up). The
     // exclusion is a GATE on the status timeline, not an id: the streaming message is renamed to the
@@ -967,6 +1208,11 @@ export function useLiveCall(): CallView {
         // machine's answer the moment it exists, or audio flows to the relay while the screen says
         // Muted (and a final landing after the unmute would pass the reducer and submit it).
         cap.setMuted(ref.current.muted);
+        // …and the SAME lesson for the keepalive (S6 ③): the only thing that starts it is a hidden
+        // edge, and a call backgrounded inside the acquisition gap has already had its. Without this
+        // it would run with no keepalive at all and freeze ninety seconds later.
+        if (bg.current?.background && bg.current.keepalive && document.visibilityState === "hidden")
+          cap.setKeepalive(true);
         // THE ROUTE-RESOLVED CAPTURE POLICY (D73 S5 / Maya F1). Both halves are decided HERE, together,
         // from the same two facts — because they answer the same question and a version of this that
         // let them disagree would arm voice barge-in against an ear the other half had just closed.
@@ -1124,24 +1370,61 @@ export function useLiveCall(): CallView {
     send({ type: "uploadSettled", gen: ref.current.gen });
   }, [state.heldUpload, uploading, send]);
 
-  // ── screen + foreground (§5.3) ────────────────────────────────────────────────────────────────
+  // ── screen + foreground + THE BACKGROUND WAVE (§5.3 · D73 S6, evidence docs/research/R75) ──────
+  //
+  // A HIDDEN PAGE IS NO LONGER AN ENDED CALL. Nothing in the web platform ends one (R75 §0.1) and 5/5
+  // field projects keep theirs; ours ended because we said so, and `background` is that policy's
+  // switch. What ends a call for certain is `pagehide` — the document really dying (A7; bfcache is
+  // provably out of play mid-call, a live track and an open socket each block it) — and that listener
+  // is installed on its own, because `pagehide` can arrive with no `visibilitychange` in front of it.
+  //
+  // The other three arms are all one fact: a backgrounded Chrome Android page FREEZES about ninety
+  // seconds after its last sound, which pauses the audio graph and deafens the ear behind a screen
+  // still saying Listening (R75 §3). So the page is kept audible while it is away (the keepalive),
+  // it is asked on every return whether its ear slept (the outage check), and it is not allowed to sit
+  // there forever with a hot mic (the idle clock).
   useEffect(() => {
-    // Feature-detected, never UA-sniffed; a browser without it simply keeps today's screen behaviour.
-    void navigator.wakeLock
-      ?.request("screen")
-      .then((lock) => {
-        if (isTerminal(ref.current.phase)) void lock.release().catch(() => {});
-        else wakeLock.current = lock;
-      })
-      .catch(() => {});
-    const onHidden = (): void => {
-      // The call is foreground-only (R14 scope): a hidden page ends it CLEANLY — no half-alive
-      // background session, and no error face for something the owner did on purpose.
-      if (document.visibilityState === "hidden") send({ type: "hidden" });
+    takeWakeLock();
+    /** The ear-outage check (S6 ② / A2), run on the EDGE — before a fresh frame can re-stamp the gap.
+     *  That ordering is safe rather than lucky: a frozen graph mints NOTHING, so there is no backlog
+     *  waiting to flush, and the first post-resume frame costs a whole `frame_ms` of audio to exist. */
+    const checkEar = (): void => {
+      const cap = capture.current;
+      if (cap && cap.earGapMs() > EAR_OUTAGE_MS) send({ type: "earOutage", gen: ref.current.gen });
     };
-    document.addEventListener("visibilitychange", onHidden);
-    return () => document.removeEventListener("visibilitychange", onHidden);
-  }, [send]);
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") {
+        // THE POLICY (S6 ①). With `background` off — or before the knobs have arrived, where there is
+        // no call to keep yet — a hidden page ends it CLEANLY, exactly as it always did: no half-alive
+        // background session, and no error face for something the owner did on purpose.
+        if (!bg.current?.background) {
+          send({ type: "hidden" });
+          return;
+        }
+        if (bg.current.keepalive) capture.current?.setKeepalive(true);
+        armIdleRef.current();
+        return;
+      }
+      // Back in front of the owner: the page is audible on its own terms again, the background bound
+      // no longer applies, the screen lock has to be taken back, and the ear owes an honest answer.
+      capture.current?.setKeepalive(false);
+      armIdleRef.current();
+      takeWakeLock();
+      checkEar();
+    };
+    const onPagehide = (): void => send({ type: "hidden" });
+    document.addEventListener("visibilitychange", onVisibility);
+    // The Page Lifecycle unfreeze, which is the event the outage check is really about: a page can be
+    // resumed while still HIDDEN, and no visibility edge reports that. Both may fire for one wake —
+    // the reducer's own no-op is what makes that one outage (S6 ②).
+    document.addEventListener("resume", checkEar);
+    window.addEventListener("pagehide", onPagehide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("resume", checkEar);
+      window.removeEventListener("pagehide", onPagehide);
+    };
+  }, [send, takeWakeLock]);
 
   const interrupt = useCallback(() => send({ type: "barge", gen: ref.current.gen }), [send]);
 

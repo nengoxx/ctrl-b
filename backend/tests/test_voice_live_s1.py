@@ -1017,6 +1017,9 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "echo_workaround": "on",
             "route": "headphones",
             "input_device": "dev-42",
+            "background": False,
+            "background_keepalive": False,
+            "background_idle_s": 0,
             "max_session_s": 900,
             "dictation": True,
             "tail_wait_ms": 2500,
@@ -1041,6 +1044,11 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         # defaulted twice (the call's ear and dictation's open with the SAME two).
         "route": "headphones",
         "input_device": "dev-42",
+        # D73 S6 — the background three. CLIENT knobs again: only the browser can see a page go
+        # hidden, keep its audio graph audible, or time out a call nobody is talking to.
+        "background": False,
+        "background_keepalive": False,
+        "background_idle_s": 0,
         "max_session_s": 900,
         # S2.5 — the dictation four ride the SAME object (one ear, one set of client knobs). Nothing
         # in `useDictation`'s streaming branch may default one of these; they all arrive here.
@@ -1178,6 +1186,9 @@ def test_live_config_defaults() -> None:
     # D73 S5 — the capture pair ships as the ear this app has always opened: the platform AEC on the
     # system default device. `headphones` and a picked route are both owner opt-ins.
     assert (cfg.route, cfg.input_device) == ("speaker", "")
+    # D73 S6 — a hidden page KEEPS the call by default (R75: nothing in the platform ends it, and
+    # 5/5 field projects keep it), with the freeze defeat on and the owner's 10-minute idle bound.
+    assert (cfg.background, cfg.background_keepalive, cfg.background_idle_s) == (True, True, 600)
     assert (cfg.relay_queue_ms, cfg.start_timeout_s, cfg.allowed_origins) == (2000, 5.0, [])
     assert cfg.provider is None and cfg.fallbacks == []  # blank ⇒ resolve like stt
     # S2.5 — the dictation four. `dictation` ships OFF beside `enabled` (its own whole-feature toggle),
@@ -1214,6 +1225,10 @@ def test_live_config_defaults() -> None:
         {"dictation_idle_s": 3600},
         {"dictation_max_s": 1},
         {"dictation_max_s": 7200},
+        # D73 S6 — the background idle window. 0 is a REAL value (off), so only a negative one is
+        # rejected at the floor; the ceiling is `max_session_s`'s, past which it could never fire.
+        {"background_idle_s": -1},
+        {"background_idle_s": 7201},
     ],
 )
 def test_live_config_bounds_reject_wedging_values(bad: dict[str, Any]) -> None:

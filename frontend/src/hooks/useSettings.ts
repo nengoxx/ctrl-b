@@ -119,6 +119,11 @@ export interface VoiceLive extends VoiceServiceCommon {
   // they are modelled here rather than left to the relay's YAML-only caps.
   route: string; //           speaker | headphones — what `auto` echo handling means, and the AEC ask
   input_device: string; //    the capture deviceId; "" = the system default (on Android, the route)
+  // D73 S6 — the BACKGROUND three (evidence docs/research/R75). Client knobs like the pair above:
+  // only the browser sees a page go hidden, and the freeze the keepalive defeats is the renderer's.
+  background: boolean; //     does a hidden page keep the call (off = the pre-S6 clean end)
+  background_keepalive: boolean; // the inaudible constant source that keeps the page out of the freeze
+  background_idle_s: number; //     idle bound on a BACKGROUNDED call, s; 0 = off
   // S2.5 — phrase-by-phrase streaming dictation on the SAME ear (R70 §9.2). Its own whole-feature
   // toggle beside `enabled`: calls and streaming dictation are switched independently.
   dictation: boolean; //      the mic's hold/lock streams to the relay and appends phrase by phrase

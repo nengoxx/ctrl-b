@@ -144,6 +144,12 @@ export async function listAudioInputs(probe = false): Promise<MicDevice[]> {
     .map((d) => ({ deviceId: d.deviceId, label: d.label }));
 }
 
+/** The keepalive's amplitude (D73 S6 ③). Inaudible on any device — it is ~80 dB below a normal signal,
+ *  far under a phone speaker's own noise floor — and NONZERO, which is the whole requirement: Blink
+ *  asks `energy > 0` of the rendered bus and nothing more (R75 §13, verified at `audio_context.cc:157`).
+ *  Not a config knob: it is the platform's threshold, not the owner's preference. */
+const KEEPALIVE_GAIN = 1e-4;
+
 /** One uplink frame: pcm16 LE mono bytes, plus the RMS of the same samples (§4.3's energy gate reuses
  *  the worklet's own pass — there is deliberately no second AnalyserNode measuring the same audio). */
 export interface PcmFrame {
@@ -180,6 +186,31 @@ export interface PcmCapture {
    *  neither setter can answer over the other: a hold released while the owner is muted must not reopen
    *  the ear, and an unmute under a live hold must not either. */
   setHeld: (held: boolean) => void;
+  /** THE EAR'S OWN LIVENESS (D73 S6 ② / R75 §12.2 A2): milliseconds since the last frame this capture
+   *  actually HEARD. The number exists because the failure it measures is SILENT — Chrome Android
+   *  freezes a hidden, inaudible page and the freeze PAUSES the AudioContext (`base_audio_context.cc`,
+   *  R75 §3.4), so `process()` stops being called, no frames are minted, and every other observable
+   *  stays healthy: the track is `live`, the permission granted, the socket open, the overlay still
+   *  saying Listening. A gap is the one tell.
+   *
+   *  Frames arriving while the track is OS-MUTED (another app took the mic) do not count as hearing —
+   *  they are digital silence, and a stretch of them is exactly as deaf as a paused graph. That is what
+   *  the `mute`/`unmute` listeners are for; nothing else in the capture reads them.
+   *
+   *  A stamp of ARRIVAL, deliberately, not of some audio clock: the freeze mints nothing, so there is
+   *  no backlog to flush on resume and no way for a queued frame to pretend the ear was awake. */
+  earGapMs: () => number;
+  /** THE BACKGROUND KEEPALIVE (D73 S6 ③ / R75 §12.2 A3, mechanism per Maya F2). A `ConstantSourceNode`
+   *  through a tiny gain into THIS context's destination, started while the page is hidden.
+   *
+   *  Blink's audibility test is literally `energy > 0` on the destination bus (`audio_context.cc:157`),
+   *  and an audible page is `IsBackgrounded() == false`, which removes the freeze AND background
+   *  throttling wholesale. Raising the uplink chain's own sink gain does NOT work: the worklet writes
+   *  no output at all, so that path multiplies zero — hence a source of our own.
+   *
+   *  It lives here because this context is this module's, and it is invisible to everything above: it
+   *  is not playback, it has no status, and no rule in the call machine can see it. Idempotent. */
+  setKeepalive: (on: boolean) => void;
   /** Release everything: the worklet, the graph, the context, the track, and the Blob URL. Idempotent. */
   stop: () => void;
 }
@@ -267,14 +298,48 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
   // other's decision the moment the two overlapped.
   let muted = false;
   let held = false;
+  // THE EAR'S LIVENESS + THE KEEPALIVE (D73 S6 ②/③) — both are facts about the graph this function
+  // owns, so both live beside the track's two enable rules rather than being inferred upstairs.
+  let lastHeard = performance.now();
+  /** The track's OWN `muted` — the OS/another app has the mic (never our `track.enabled`, which is a
+   *  different property and this module's own two rules above). Frames still arrive; they are silence. */
+  let deaf = false;
+  let keepalive: { src: ConstantSourceNode; gain: GainNode } | null = null;
   const applyEnabled = (): void => {
     // Guarded on `stopped` for the same reason every other exit here is: a released track is not a muted
     // (or held) one, and re-enabling one the call has already torn down would be a lie about the ear.
     if (!stopped) track.enabled = !(muted || held);
   };
+  /** The keepalive's one switch (S6 ③). A `ConstantSourceNode` cannot be restarted once stopped, so
+   *  each ON mints a fresh pair and each OFF retires it — which also keeps "is it running?" a single
+   *  fact (the node's existence) rather than a flag beside it. */
+  const setKeepalive = (on: boolean): void => {
+    const want = on && !stopped && ctx !== null;
+    if (want === (keepalive !== null)) return;
+    if (keepalive) {
+      keepalive.src.stop();
+      keepalive.src.disconnect();
+      keepalive.gain.disconnect();
+      keepalive = null;
+      return;
+    }
+    if (!ctx) return;
+    // A constant source's `offset` defaults to 1, so the gain below IS the amplitude that reaches the
+    // destination — DC, which costs nothing to render and still counts as energy.
+    const src = ctx.createConstantSource();
+    const gain = ctx.createGain();
+    gain.gain.value = KEEPALIVE_GAIN;
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+    keepalive = { src, gain };
+  };
   const stop = (): void => {
     if (stopped) return;
     stopped = true;
+    // Before the context goes: the node is this graph's, and a keepalive outliving the call it kept
+    // alive would be a page held audible by nothing.
+    setKeepalive(false);
     for (const t of stream.getTracks()) t.stop();
     if (ctx) void ctx.close().catch(() => {});
     // The graph's own release (its Blob URL): the uplink owns what it minted, this owns the context
@@ -295,11 +360,25 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
       // The `stopped` guard stays HERE rather than riding the uplink's own `detached`: a released
       // CAPTURE must deliver nothing even in the window before `stop()` reaches the graph.
       onFrame: (frame) => {
-        if (!stopped) opts.onFrame(frame);
+        if (stopped) return;
+        // THE STAMP (S6 ②): only a frame the ear genuinely HEARD moves it. While the track is OS-muted
+        // the frames are silence, and counting them would tell the outage detector the ear was awake
+        // through exactly the stretch it slept.
+        if (!deaf) lastHeard = performance.now();
+        opts.onFrame(frame);
       },
     });
     track.addEventListener("ended", () => {
       if (!stopped) opts.onEnded();
+    });
+    // …and the two events beside it (S6 ②). `muted` is the TRACK's own property — the OS handing the
+    // mic to a phone call, a headset event — and it is not `ended`: the track comes back, which is
+    // why this pair only informs the stamp instead of failing the call the way `ended` does.
+    track.addEventListener("mute", () => {
+      deaf = true;
+    });
+    track.addEventListener("unmute", () => {
+      deaf = false;
     });
     return {
       sampleRate: ctx.sampleRate,
@@ -313,6 +392,8 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
         held = h;
         applyEnabled();
       },
+      earGapMs: () => performance.now() - lastHeard,
+      setKeepalive,
       stop,
     };
   } catch (e) {

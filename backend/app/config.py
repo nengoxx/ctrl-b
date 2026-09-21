@@ -654,7 +654,8 @@ class LiveCfg(VoiceServiceCfg):
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `allowed_origins` are the relay's own caps.
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`, `barge_threshold`,
-      `barge_in`, `ring`, `echo_workaround`, the D73 CAPTURE pair (`route`, `input_device`) and the
+      `barge_in`, `ring`, `echo_workaround`, the D73 CAPTURE pair (`route`, `input_device`), the D73
+      S6 BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`) and the
       four S2.5 DICTATION knobs are PWA behavior
       (Speaches' `TurnDetection` accepts exactly five fields, §4.1, so an interruption floor cannot be
       a server knob). They are delivered verbatim by `GET /voice/status` (`live_call`) and nothing
@@ -731,6 +732,31 @@ class LiveCfg(VoiceServiceCfg):
     #: as `ideal`, never `exact`, so a device that has gone away falls back to the default instead of
     #: failing the capture. OPAQUE to this process: nothing below the browser interprets it.
     input_device: str = ""
+
+    # ── D73 S6 · THE BACKGROUND WAVE (client; evidence R75) ──
+    # Nothing in the web platform ends a call because the page went hidden (R75 §0.1) — our old
+    # `hidden`-ends-the-call arm was a POLICY, and 5/5 field projects chose the opposite. These three
+    # are what make the opposite safe on Chrome Android, where the call does not fail loudly: the
+    # renderer's own page FREEZING pauses the AudioContext after ~90 s of background silence and the
+    # ear goes deaf while the overlay still says Listening (R75 §3, the pass's load-bearing find).
+    #: Does a hidden page KEEP the call? Off ⇒ the pre-S6 behavior (the page going away ends the call
+    #: cleanly). On either setting `pagehide` still tears down: a document that is really dying ends
+    #: its call (R75 §12.2 A7). Read at CALL START like every other client knob (§4.5).
+    background: bool = True
+    #: The freeze defeat (R75 §12.2 A3 · §3.5). While a call is live and the page hidden, the client
+    #: runs a `ConstantSourceNode` at an inaudible-but-NONZERO level into the capture context's
+    #: destination: Blink's audibility test is literally `energy > 0` (`audio_context.cc:157`), and an
+    #: audible page is neither frozen nor background-throttled. It is a deliberate defeat of a battery
+    #: protection, which is why it is its own switch — and its Android side effects are UNVERIFIED
+    #: until the §12.4 phone probe (S4). Inert while `background` is off (nothing to keep alive).
+    background_keepalive: bool = True
+    #: How long a BACKGROUNDED call may sit with no speech and no reply before it ends itself, s.
+    #: **0 = off.** Without it a pocketed phone rides a hot mic to `max_session_s` (R75 §12.2 A4); the
+    #: owner's 10 minutes. Ceiling = `max_session_s`'s own, since a window past the hard session cap
+    #: could never fire. The clock is the CLIENT's: it re-arms on speech and on the reply's playback,
+    #: and an outstanding confirm gate pauses it (ending a call while an approval waits would destroy
+    #: the interaction the `agent_input` notification just asked for).
+    background_idle_s: int = Field(default=600, ge=0, le=1800 * 4)
 
     # ── S2.5 · phrase-by-phrase streaming DICTATION (client; R70 §9.2/§9.3) ──
     # The mic's hold/lock rides the same ear as the call: each utterance final appends to the composer

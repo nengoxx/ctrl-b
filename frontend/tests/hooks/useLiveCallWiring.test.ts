@@ -1,6 +1,6 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { StrictMode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LiveDown } from "../../src/lib/liveSocket";
 
@@ -26,6 +26,10 @@ const h = vi.hoisted(() => ({
         echo_workaround: "auto",
         route: "speaker", //          D73 S5 — the capture pair; a case flips it to "headphones"
         input_device: "",
+        // D73 S6 — the background three. Defaults as the backend ships them; the S6 cases move them.
+        background: true,
+        background_keepalive: true,
+        background_idle_s: 600,
         max_session_s: 600,
       },
       stt_auto_stop: { threshold: 0 },
@@ -45,6 +49,10 @@ const h = vi.hoisted(() => ({
   frame: null as ((f: LiveDown) => void) | null,
   /** …and that leg's close, so a case can drop it the way a flaky link does. */
   close: null as (() => void) | null,
+  /** How many times the CLIENT asked to close a leg (S6 ② closes one; so does every teardown). In a
+   *  browser that close IS what calls `onClose`; here the case drives that half itself, so the two
+   *  halves of the reconnect stay separately visible. */
+  closes: 0,
   /** …and the CAPTURE's own door: the case IS the microphone (A-F2's pacer cases). */
   mic: null as ((f: { buf: ArrayBuffer; rms: number }) => void) | null,
   /** Every frame that actually reached the WIRE, by its identifying first byte and in order — the
@@ -73,6 +81,11 @@ const h = vi.hoisted(() => ({
   fennec: false,
   /** D73 S5 — did the picked `input_device` refuse to open, so the DEFAULT route took the call? */
   fellBack: false,
+  /** D73 S6 ② — how long ago the ear last heard a frame, in ms (the capture's own liveness). */
+  earGap: 0,
+  /** …and every `setKeepalive` the wiring asked for, in order (S6 ③): the node is invisible to the
+   *  machine by construction, so the CALLS are the only thing a test can hold it to. */
+  keepalive: [] as boolean[],
   /** …and what `startPcmCapture` was actually asked for, so a case can pin that the route reaches it. */
   capOpts: null as { route?: string; deviceId?: string } | null,
   /** Holds `startPcmCapture` open when an arm needs the acquisition GAP itself. */
@@ -109,7 +122,9 @@ vi.mock("../../src/lib/liveSocket", () => ({
       sendAudio: (buf: ArrayBuffer) => h.audio.push(new Uint8Array(buf)[0]),
       flush: () => {},
       stop: () => {},
-      close: () => {},
+      close: () => {
+        h.closes += 1;
+      },
       unknown: () => 0,
     };
   },
@@ -132,6 +147,8 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
       fellBack: h.fellBack,
       setMuted: h.setMuted,
       setHeld: h.setHeld,
+      earGapMs: () => h.earGap,
+      setKeepalive: (on: boolean) => h.keepalive.push(on),
       stop: () => {},
     };
   },
@@ -156,6 +173,24 @@ const setPlay = (status: string): void => {
   for (const cb of h.playbackSubs) cb();
 };
 
+/** The page going away and coming back (D73 S6). jsdom has no visibility model, so the property is
+ *  redefined and the event dispatched by hand — which is exactly the pair a browser delivers. */
+const visibility = (state: DocumentVisibilityState): void => {
+  Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+  document.dispatchEvent(new Event("visibilitychange"));
+};
+
+/** An in-memory `sessionStorage` (D73 S6 ⑦). Two reasons, both real: the marker's whole story is
+ *  "what the PREVIOUS document left behind", which a case has to be able to seed — and jsdom's own
+ *  Storage schedules a `setTimeout(0)` per write, which would land in every fake-timer assertion in
+ *  this file as a timer nothing here owns. */
+const sessionStore = new Map<string, string>();
+vi.stubGlobal("sessionStorage", {
+  getItem: (k: string) => sessionStore.get(k) ?? null,
+  setItem: (k: string, v: string) => void sessionStore.set(k, v),
+  removeItem: (k: string) => void sessionStore.delete(k),
+});
+
 beforeEach(() => {
   h.play = { status: "idle" };
   h.playbackSubs.clear();
@@ -167,7 +202,15 @@ beforeEach(() => {
   h.liveTurn = null;
   h.frame = null;
   h.close = null;
+  h.closes = 0;
   h.mic = null;
+  h.earGap = 0;
+  h.keepalive = [];
+  sessionStore.clear();
+  visibility("visible");
+  h.voice.data.live_call.background = true;
+  h.voice.data.live_call.background_keepalive = true;
+  h.voice.data.live_call.background_idle_s = 600;
   h.audio = [];
   h.order = [];
   h.fennec = false;
@@ -187,6 +230,12 @@ beforeEach(() => {
   h.setMuted.mockClear();
   h.setHeld.mockClear();
 });
+
+// Every case mounts a MACHINE that listens on the document itself (visibility, the Lifecycle resume,
+// pagehide — D73 S6). `globals: false` means Testing Library's auto-cleanup never registers, so
+// without this a call from an earlier case is still mounted and still answering those events, and
+// "what did the page hiding do" stops being a question about one machine.
+afterEach(cleanup);
 
 /** Mount the machine and connect it — `ready` is what makes the call `listening`. */
 async function call() {
@@ -738,6 +787,333 @@ describe("useLiveCall — StrictMode's simulated remount (S4's phone-round defec
       h.frame?.({ type: "state", state: "ready" });
     });
     expect(view.result.current.phase).toBe("listening");
+  });
+});
+
+describe("useLiveCall — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R75)", () => {
+  /** A minimal Screen Wake Lock API — jsdom has none, which is also the degrade the code promises
+   *  (feature-detected, never UA-sniffed). Every sentinel it hands out is remembered. */
+  const locks: { released: boolean; release: () => Promise<void> }[] = [];
+  const installWakeLock = (): void => {
+    Object.defineProperty(navigator, "wakeLock", {
+      configurable: true,
+      value: {
+        request: () => {
+          const lock = {
+            released: false,
+            release: async () => {
+              lock.released = true;
+            },
+          };
+          locks.push(lock);
+          return Promise.resolve(lock);
+        },
+      },
+    });
+  };
+
+  beforeEach(() => {
+    locks.length = 0;
+  });
+  afterEach(() => {
+    delete (navigator as unknown as Record<string, unknown>).wakeLock;
+  });
+
+  /** Hide the page and let the effects settle. */
+  const hide = async () => {
+    await act(async () => {
+      visibility("hidden");
+      await Promise.resolve();
+    });
+  };
+  const show = async () => {
+    await act(async () => {
+      visibility("visible");
+      await Promise.resolve();
+    });
+  };
+
+  it("① a hidden page KEEPS the call — the old end was a policy, and this is its switch", async () => {
+    const { view } = await call();
+    await hide();
+    expect(view.result.current.phase).toBe("listening"); // still up, still listening
+    expect(h.endCall).not.toHaveBeenCalled();
+    await show();
+    expect(view.result.current.phase).toBe("listening");
+  });
+
+  it("…and with `background` OFF it ends cleanly, exactly as it always did", async () => {
+    h.voice.data.live_call.background = false;
+    const { view } = await call();
+    await hide();
+    expect(view.result.current.phase).toBe("ended");
+    expect(h.endCall).toHaveBeenCalled();
+  });
+
+  it("① `pagehide` tears down whatever the knob says — the document is really dying (A7)", async () => {
+    // Installed on its own for a reason: a closed tab can deliver `pagehide` with no visibility edge
+    // in front of it, and a teardown that rode the policy branch would then never run at all.
+    const { view } = await call();
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+    expect(view.result.current.phase).toBe("ended");
+  });
+
+  it("③ the keepalive runs only while the page is away, and only when it is asked for", async () => {
+    const { view } = await call();
+    expect(h.keepalive).toEqual([]); // a visible page is audible on its own terms
+    await hide();
+    expect(h.keepalive).toEqual([true]);
+    await show();
+    expect(h.keepalive).toEqual([true, false]);
+    view.unmount();
+
+    h.keepalive = [];
+    h.voice.data.live_call.background_keepalive = false;
+    await call();
+    await hide();
+    expect(h.keepalive).toEqual([]); // …and the knob off means the freeze is simply accepted
+  });
+
+  it("③ …and a call backgrounded inside the ACQUISITION GAP still gets one", async () => {
+    // The S2b confirm-F1 lesson again: the only thing that starts the keepalive is a hidden edge, and
+    // this call's has already passed by the time there is a graph to start it on. Without the install
+    // applying the answer, the call would run with no keepalive and freeze ninety seconds later.
+    let open = (): void => {};
+    h.capGate = new Promise<void>((r) => {
+      open = r;
+    });
+    renderHook(() => useLiveCall());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await hide();
+    expect(h.keepalive).toEqual([]); // no graph yet — the tell that the gap is real
+    await act(async () => {
+      open();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.keepalive).toEqual([true]);
+  });
+
+  it("⑤ the wake lock is RE-TAKEN on the way back — the platform released it when we hid", async () => {
+    installWakeLock();
+    await call();
+    expect(locks).toHaveLength(1);
+    // Android releases the sentinel the moment the page hides; today's single request at mount would
+    // leave the returned call running without one.
+    await hide();
+    locks[0].released = true;
+    await show();
+    expect(locks).toHaveLength(2);
+    expect(locks[1].released).toBe(false);
+    // …and a lock still genuinely held is not re-requested.
+    await show();
+    expect(locks).toHaveLength(2);
+  });
+
+  it("② the ear-outage check: a gap past the threshold redials, a small one says nothing", async () => {
+    const { view } = await call();
+    await hide();
+    // The frames never stopped — a hidden page that was merely throttled hears everything.
+    h.earGap = 500;
+    await show();
+    expect(view.result.current.phase).toBe("listening");
+    expect(view.result.current.note).toBeNull();
+
+    // …and the freeze case: the graph was paused, so nothing was minted for the whole stretch.
+    await hide();
+    h.earGap = 90_000;
+    const before = h.closes;
+    await show();
+    expect(view.result.current.phase).toBe("connecting");
+    expect(view.result.current.note).toBe(CALL_COPY.earAsleep);
+    expect(h.closes).toBe(before + 1); // the LEG is closed — and nothing else is driven from here
+  });
+
+  it("② …and the close is what redials: one outage spends ONE rung of the existing ladder", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view } = await call();
+      await hide();
+      h.earGap = 90_000;
+      await show();
+      // In a browser the close above IS this callback; here the case plays the socket's half.
+      await act(async () => {
+        h.close?.();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(400); // the FIRST rung — the ladder kept its own accounting
+        await Promise.resolve();
+      });
+      await act(async () => {
+        h.frame?.({ type: "state", state: "ready" });
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("listening");
+      // The fresh leg retracts CONNECTION news; what the owner missed is not that, and stands.
+      expect(view.result.current.note).toBe(CALL_COPY.earAsleep);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("② one outage, however many wake events arrive for it", async () => {
+    const { view } = await call();
+    await hide();
+    h.earGap = 90_000;
+    const before = h.closes;
+    await act(async () => {
+      visibility("visible");
+      document.dispatchEvent(new Event("resume")); // the Lifecycle half of the same wake
+      await Promise.resolve();
+    });
+    expect(view.result.current.phase).toBe("connecting");
+    expect(h.closes).toBe(before + 1);
+  });
+
+  it("④ a backgrounded call that nobody is in ends itself — and says why", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view } = await call();
+      await act(async () => {
+        visibility("hidden");
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(599_000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("listening"); // not yet — the window is the owner's
+      await act(async () => {
+        vi.advanceTimersByTime(2000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("ended");
+      expect(view.result.current.note).toBe(CALL_COPY.idleBackground);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("④ …speech RE-ARMS it, a confirm gate PAUSES it, and coming back clears it", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, step, say } = await call();
+      await act(async () => {
+        visibility("hidden");
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(500_000);
+        await Promise.resolve();
+      });
+      await say("still here"); // the owner spoke into their pocket: the window starts over
+      await act(async () => {
+        vi.advanceTimersByTime(500_000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("thinking");
+
+      // An approval gate PAUSES the clock: ending the call while the owner is being asked something
+      // destroys the interaction the `agent_input` notification just asked them for.
+      await step(() => (h.confirm = true));
+      await act(async () => {
+        vi.advanceTimersByTime(3_600_000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("thinking"); // an hour later, still waiting for them
+
+      // …and coming back to the app takes the bound off entirely.
+      await act(async () => {
+        h.confirm = false;
+        visibility("visible");
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(3_600_000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("thinking");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("④ `background_idle_s: 0` is off, and so is a backend that never sent the knob", async () => {
+    vi.useFakeTimers();
+    try {
+      h.voice.data.live_call.background_idle_s = 0;
+      const { view } = await call();
+      await act(async () => {
+        visibility("hidden");
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(7_200_000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("listening");
+      view.unmount();
+
+      // A pre-S6 backend sends nothing at all, which arrives as NaN — the one value that must not
+      // become a `setTimeout(NaN)` firing on the next tick.
+      (h.voice.data.live_call as { background_idle_s?: number }).background_idle_s = undefined;
+      const older = await call();
+      await act(async () => {
+        visibility("hidden");
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(10_000);
+        await Promise.resolve();
+      });
+      expect(older.view.result.current.phase).toBe("listening");
+    } finally {
+      h.voice.data.live_call.background_idle_s = 600;
+      vi.useRealTimers();
+    }
+  });
+
+  it("⑦ the tab's marker turns a first-dial `busy` into the ladder, and only then", async () => {
+    // WITHOUT the marker — the shipped story, e2e-pinned: another device holds the call, terminal.
+    const first = renderHook(() => useLiveCall());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      h.frame?.({ type: "error", code: "busy", message: "a live call is already running" });
+      await Promise.resolve();
+    });
+    expect(first.result.current.phase).toBe("error");
+    expect(first.result.current.note).toBe(CALL_COPY.busy);
+    first.unmount();
+
+    // WITH it — a discarded tab coming back to the slot IT left behind (R75 §9.2). The teardown above
+    // cleared the key, so the case seeds it the way a tab that never ran one leaves it.
+    sessionStore.set("ctrlb-live-call", "1");
+    const back = renderHook(() => useLiveCall());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      h.frame?.({ type: "error", code: "busy", message: "a live call is already running" });
+      await Promise.resolve();
+    });
+    expect(back.result.current.phase).toBe("connecting");
+    expect(back.result.current.note).toBe(CALL_COPY.busyRetrying);
+    back.unmount();
+  });
+
+  it("⑦ …the marker is written at the leg and cleared by the teardown", async () => {
+    const { view } = await call();
+    expect(sessionStore.get("ctrlb-live-call")).toBe("1");
+    view.unmount();
+    expect(sessionStore.has("ctrlb-live-call")).toBe(false);
   });
 });
 

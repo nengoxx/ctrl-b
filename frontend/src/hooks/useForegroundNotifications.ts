@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { onNotify, type NotifySignal } from "../lib/notifyBus";
+import { callLive } from "../store/liveCall";
 import { setUI } from "../store/ui";
 import { useNotificationPrefs, type NotificationPrefs } from "./useNotificationPrefs";
 
@@ -65,8 +66,8 @@ export async function requestNotificationPermission(): Promise<
 
 /** The gate, as a pure predicate over its inputs — extracted so the whole matrix is testable without
  *  a DOM, and so the ordering is readable in one glance. Cheapest/most-decisive checks first:
- *  capability → master switch → this signal's class → the page is not in front of the user →
- *  permission. */
+ *  capability → master switch → this signal's class → a live call → the page is not in front of the
+ *  user → permission. */
 export function shouldNotify(
   signal: NotifySignal,
   prefs: NotificationPrefs | undefined,
@@ -74,11 +75,20 @@ export function shouldNotify(
     supported: boolean;
     visibility: DocumentVisibilityState;
     permission: NotificationPermission | "unsupported";
+    /** D73 S6 ⑥ — is a live call up (`store/liveCall`)? Since S6 a call SURVIVES the page going
+     *  hidden, so the one state where "hidden" used to mean "the user is elsewhere" now also covers
+     *  "the user is talking to it, in their pocket". */
+    callLive: boolean;
   },
 ): boolean {
   if (!env.supported) return false;
   if (!prefs?.enabled) return false;
   if (!prefs.events?.[signal.cls]) return false;
+  // A BACKGROUNDED CALL MUST NOT BUZZ PER REPLY (R75 §12.2 A5). Every spoken reply raises a
+  // `turn_done`, and the owner is listening to that reply — the notification announces something they
+  // just heard. `agent_input` deliberately still passes: an approval gate reached by voice is exactly
+  // when a notification earns its keep, and the call cannot resolve it on its own.
+  if (env.callLive && signal.cls === "turn_done") return false;
   // Visible ⇒ the user is looking at the app, and the toast/bubble UI already told them. A duplicate
   // OS notification on top of that is noise, and on desktop it steals focus attention for nothing.
   if (env.visibility !== "hidden") return false;
@@ -112,6 +122,7 @@ export function useForegroundNotifications(): void {
           supported: notificationsSupported(),
           visibility: document.visibilityState,
           permission: notificationPermission(),
+          callLive: callLive(),
         })
       )
         return;

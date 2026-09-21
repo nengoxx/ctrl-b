@@ -115,6 +115,12 @@ async def voice_status(request: Request) -> dict[str, object]:
         # (call and dictation alike) reads them from here rather than defaulting them locally.
         "route": live.route,
         "input_device": live.input_device,
+        # D73 S6 — the background three, here for the same reason: every one of them governs what the
+        # BROWSER does with a hidden page (keep the call, keep the graph audible, bound the idle
+        # stretch), and nothing below it can observe a page going away.
+        "background": live.background,
+        "background_keepalive": live.background_keepalive,
+        "background_idle_s": live.background_idle_s,
         "max_session_s": live.max_session_s,
         "dictation": live.dictation,
         "tail_wait_ms": live.tail_wait_ms,

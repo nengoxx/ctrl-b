@@ -35,6 +35,11 @@ const LIVE_CALL = {
   barge_in: true,
   ring: true,
   echo_workaround: "auto",
+  // D73 S6 — the background three, as the backend ships them. Nothing here hides the page, so they
+  // change no case; the fixture carries them because it is supposed to be what `/voice/status` sends.
+  background: true,
+  background_keepalive: true,
+  background_idle_s: 600,
   max_session_s: 1800,
 };
 

@@ -80,6 +80,18 @@ export interface LiveCallWire {
    *  picker (R74 §2.2) and the choice moves both directions. Asked for as `ideal`, so a device that
    *  is gone falls back to the default rather than failing the capture. */
   input_device: string;
+  /** D73 S6 — does a HIDDEN page keep the call (R75)? Off ⇒ the pre-S6 policy, where the page going
+   *  away ends it cleanly. `pagehide` tears down either way: a document that is really dying ends its
+   *  call, and that is the signal for it (R75 §12.2 A7 — bfcache is provably off mid-call). */
+  background: boolean;
+  /** …and the FREEZE DEFEAT that makes keeping it worth anything on Chrome Android (R75 §3.5): a
+   *  constant, inaudible-but-nonzero source into the capture context's destination, which makes
+   *  Blink's `IsAudible()` true and takes the page out of both the freeze path and background
+   *  throttling. Its own switch because it is a deliberate defeat of a battery protection. */
+  background_keepalive: boolean;
+  /** How long a BACKGROUNDED call may sit with no speech and no reply before it ends itself, in
+   *  seconds. **0 = off.** The alternative is a pocketed phone riding a hot mic to `max_session_s`. */
+  background_idle_s: number;
   /** The relay's own session cap, in seconds — surfaced so the overlay can be honest about the limit. */
   max_session_s: number;
   /** S2.5 — phrase-by-phrase streaming dictation: the mic's hold/lock rides the SAME ear, and each

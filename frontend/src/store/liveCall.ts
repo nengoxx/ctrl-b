@@ -65,3 +65,15 @@ export function endCall(): void {
 export function useCallMount(): number | null {
   return useStore(() => (requested ? seq : null));
 }
+
+/** IS A CALL UP, read OUTSIDE React (D73 S6 ⑥ / R75 §12.2 A5) — the `getLiveTurn()` shape, for the same
+ *  reason: the foreground-notification engine's gate runs inside a bus callback, not a render, and it
+ *  must not re-subscribe or re-render for a bit it only ever reads at the moment a signal arrives.
+ *
+ *  It answers "the overlay is mounted", which is this module's whole definition of a live call — a
+ *  terminal face still standing counts, deliberately: the owner is looking at the call screen either
+ *  way, and the only thing the answer gates is a notification the gate would only raise while the page
+ *  is hidden anyway. */
+export function callLive(): boolean {
+  return requested;
+}

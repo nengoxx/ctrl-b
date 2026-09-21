@@ -36,8 +36,37 @@ class FakeContext {
   createMediaStreamSource() {
     return { connect: () => {} };
   }
+  /** Every gain this context ever made: the uplink's silent sink, and (D73 S6 ③) the keepalive's. */
+  gains: { gain: { value: number }; disconnects: number }[] = [];
   createGain() {
-    return { gain: { value: 1 }, connect: () => {} };
+    const node = {
+      gain: { value: 1 },
+      disconnects: 0,
+      connect: () => {},
+      disconnect: () => {
+        node.disconnects += 1;
+      },
+    };
+    this.gains.push(node);
+    return node;
+  }
+  /** …and every constant source — the keepalive's, started while the page is hidden. */
+  sources: { started: number; stopped: number }[] = [];
+  createConstantSource() {
+    const src = {
+      started: 0,
+      stopped: 0,
+      start: () => {
+        src.started += 1;
+      },
+      stop: () => {
+        src.stopped += 1;
+      },
+      connect: () => {},
+      disconnect: () => {},
+    };
+    this.sources.push(src);
+    return src;
   }
   destination = {};
 }
@@ -46,6 +75,10 @@ class FakeTrack {
   stopped = 0;
   enabled = true;
   listeners: Record<string, (() => void)[]> = {};
+  /** Fire one of the track's own events the way the platform does (D73 S6 ② uses `mute`/`unmute`). */
+  fire(type: string) {
+    for (const cb of this.listeners[type] ?? []) cb();
+  }
   stop() {
     this.stopped += 1;
   }
@@ -57,7 +90,15 @@ class FakeTrack {
   }
 }
 
+/** What the worklet posts up: pcm16 bytes + the RMS of the same samples. */
+interface PcmFrameLike {
+  buf: ArrayBuffer;
+  rms: number;
+}
+
 let track: FakeTrack;
+/** The installed worklet's PORT — the case plays the audio thread through it (D73 S6 ②). */
+let workletPort: { onmessage: ((e: { data: PcmFrameLike }) => void) | null } | null = null;
 let minted: string[] = [];
 let revoked: string[] = [];
 /** The stubbed `getUserMedia` — what the ROUTE cases assert against (the constraints are the whole
@@ -72,6 +113,7 @@ const askedAt = (i: number): Record<string, unknown> =>
 
 beforeEach(() => {
   track = new FakeTrack();
+  workletPort = null;
   minted = [];
   revoked = [];
   FakeContext.last = null;
@@ -79,8 +121,11 @@ beforeEach(() => {
   vi.stubGlobal(
     "AudioWorkletNode",
     class {
-      port = { onmessage: null };
+      port = { onmessage: null as ((e: { data: PcmFrameLike }) => void) | null };
       connect() {}
+      constructor() {
+        workletPort = this.port;
+      }
     },
   );
   gum = vi.fn(async () => ({
@@ -205,6 +250,80 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     expect(track.stopped).toBe(1);
     expect(FakeContext.last?.closed).toBe(1);
     expect(revoked).toEqual(["blob:worklet"]);
+  });
+});
+
+// ── D73 S6 · THE EAR'S LIVENESS + THE KEEPALIVE (evidence docs/research/R75) ─────────────────────
+
+describe("startPcmCapture — the ear's own liveness (S6 ② / A2)", () => {
+  /** One frame from the audio thread, through the worklet's port exactly as the real one arrives. */
+  const heard = (): void =>
+    workletPort?.onmessage?.({ data: { buf: new ArrayBuffer(8), rms: 0.1 } });
+
+  it("measures the gap since the last frame it actually HEARD", async () => {
+    // The failure this exists for is SILENT: a frozen renderer pauses the AudioContext, so `process()`
+    // stops being called and no frames are minted — while the track stays `live`, the permission stays
+    // granted and the socket stays open. The missing frames are the only tell there is.
+    let clock = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    heard();
+    expect(cap.earGapMs()).toBe(0);
+    clock += 90_000; // the page was frozen for a minute and a half
+    expect(cap.earGapMs()).toBe(90_000);
+    heard(); // …and the graph resumed
+    expect(cap.earGapMs()).toBe(0);
+  });
+
+  it("a stretch of OS-MUTED frames is exactly as deaf as a paused graph", async () => {
+    // `track.muted` is the OS handing the mic to a phone call — NOT our own `track.enabled`, and not
+    // `ended`: the track comes back. The frames keep arriving and they are digital silence, so
+    // counting them as hearing would claim the ear was awake through the stretch it slept.
+    let clock = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    heard();
+    track.fire("mute");
+    clock += 30_000;
+    heard();
+    expect(cap.earGapMs()).toBe(30_000);
+    track.fire("unmute"); // the call ended and the mic is ours again
+    heard();
+    expect(cap.earGapMs()).toBe(0);
+  });
+});
+
+describe("startPcmCapture — the background keepalive (S6 ③ / Maya F2)", () => {
+  it("runs a constant source at an inaudible-but-NONZERO level, and retires it", async () => {
+    // Blink's audibility test is literally `energy > 0` on the destination bus, and an audible page is
+    // neither frozen nor background-throttled. Raising the uplink chain's own sink gain does nothing —
+    // the worklet writes no output at all, so that path multiplies zero.
+    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    const ctx = FakeContext.last;
+    expect(ctx?.sources).toHaveLength(0); // a foreground call needs nothing
+    cap.setKeepalive(true);
+    expect(ctx?.sources).toHaveLength(1);
+    expect(ctx?.sources[0].started).toBe(1);
+    const gain = ctx?.gains.at(-1)?.gain.value ?? 0;
+    expect(gain).toBeGreaterThan(0); // NONZERO is the whole requirement…
+    expect(gain).toBeLessThan(0.01); // …and inaudible is the other half of it
+
+    cap.setKeepalive(true); // idempotent: one node, however often the page says it is hidden
+    expect(ctx?.sources).toHaveLength(1);
+    cap.setKeepalive(false);
+    expect(ctx?.sources[0].stopped).toBe(1);
+    // A `ConstantSourceNode` cannot be restarted, so the next ON mints a fresh one.
+    cap.setKeepalive(true);
+    expect(ctx?.sources).toHaveLength(2);
+  });
+
+  it("dies with the capture — a page held audible by a call that is over is a leak", async () => {
+    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    cap.setKeepalive(true);
+    cap.stop();
+    expect(FakeContext.last?.sources[0].stopped).toBe(1);
+    cap.setKeepalive(true); // …and a released capture cannot be woken back up
+    expect(FakeContext.last?.sources).toHaveLength(1);
   });
 });
 

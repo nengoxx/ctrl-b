@@ -110,6 +110,7 @@ describe("shouldNotify · the gate matrix", () => {
     supported: true,
     visibility: "hidden" as DocumentVisibilityState,
     permission: "granted" as NotificationPermission | "unsupported",
+    callLive: false,
   };
 
   it("passes when every gate is satisfied", () => {
@@ -150,6 +151,19 @@ describe("shouldNotify · the gate matrix", () => {
     } as unknown as NotificationPrefs);
     expect(shouldNotify(signal({ cls: "host_up_down" }), partial, env)).toBe(true);
     expect(shouldNotify(signal({ cls: "agent_input" }), partial, env)).toBe(false); // a real `false` survives
+  });
+
+  it("suppresses turn_done while a CALL is live, and keeps agent_input (D73 S6 ⑥)", () => {
+    // Since S6 a call survives the page going hidden, so "hidden" no longer implies the owner is
+    // elsewhere — they may be talking to it with the phone in their pocket, and every spoken reply
+    // raises a `turn_done` for something they just HEARD. The approval gate is the opposite case: it
+    // is exactly when a notification earns its keep, and the call cannot resolve it on its own.
+    const calling = { ...env, callLive: true };
+    expect(shouldNotify(signal({ cls: "turn_done" }), ALL_ON, calling)).toBe(false);
+    expect(shouldNotify(signal({ cls: "agent_input" }), ALL_ON, calling)).toBe(true);
+    expect(shouldNotify(signal({ cls: "action_failed" }), ALL_ON, calling)).toBe(true);
+    // …and with no call up the class notifies exactly as it always did.
+    expect(shouldNotify(signal({ cls: "turn_done" }), ALL_ON, env)).toBe(true);
   });
 
   it("blocks while the page is visible (the toast UI already told the user)", () => {

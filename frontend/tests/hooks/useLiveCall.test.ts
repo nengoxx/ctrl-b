@@ -955,9 +955,119 @@ describe("callReduce — the interleaving sweep (S3 · F4 · F5 · F6)", () => {
 
 describe("callReduce — the page going away (§5.3)", () => {
   it("ends the call CLEANLY, like a hang-up and not like a failure", () => {
+    // Since D73 S6 the WIRING decides who sends this — `pagehide` always, `visibilitychange` only
+    // with `background` off — but the rule it lands on is unchanged, and still shared with hang-up.
     const { state, out } = run(speaking, [{ type: "hidden" }]);
     expect(state.phase).toBe("ended");
     expect(out).toEqual([{ type: "teardown", close: true }]);
+  });
+});
+
+describe("callReduce — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R75)", () => {
+  // ② THE EAR-OUTAGE. The freeze is SILENT: the audio graph is paused, so no frames are minted, while
+  // the track stays live, the socket stays open and the overlay goes on saying Listening. The machine's
+  // whole job here is to stop presenting a resumed call as if it heard.
+
+  it("② lands on the reconnect, says what was missed, and closes the leg — nothing more", () => {
+    const { state, out } = run(listening, [{ type: "earOutage" }]);
+    expect(state.phase).toBe("connecting");
+    expect(state.note).toBe(CALL_COPY.earAsleep);
+    expect(out).toEqual([{ type: "closeLeg" }]);
+    // The LADDER keeps its own accounting: the close this effect asks for is what the existing
+    // `socketLost` arm reconnects from, and it is that arm — not this one — that spends a rung.
+    expect(state.attempts).toBe(0);
+    const closed = run(state, [{ type: "socketLost" }]);
+    expect(closed.state.attempts).toBe(1);
+    expect(closed.out).toEqual([{ type: "reconnect", delayMs: 400 }]);
+  });
+
+  it("② is a NO-OP once the reconnect owns the phase — one outage closes one leg", () => {
+    // Freeze recovery overlaps the track's own mute events and the socket's death by nature, so
+    // `visible`, the Lifecycle `resume` and a close can all land at about the same instant.
+    const reconnecting = run(listening, [{ type: "earOutage" }]).state;
+    const again = run(reconnecting, [{ type: "earOutage" }]);
+    expect(again.out).toEqual([]);
+    expect(again.state).toBe(reconnecting);
+    // …and a call that already ended is not redialled by a wake event either.
+    const dead = run(listening, [{ type: "hangup" }]).state;
+    expect(run(dead, [{ type: "earOutage" }]).out).toEqual([]);
+  });
+
+  it("② leaves the MOUTH alone — a reply mid-sentence keeps speaking through it (S3)", () => {
+    const { state } = run(speaking, [{ type: "earOutage" }]);
+    expect(state.mouthLive).toBe(true); // C3 rides HTTP; the ear's outage says nothing about it
+    expect(state.phase).toBe("connecting");
+  });
+
+  it("② the note SURVIVES the fresh leg — what was missed is not connection news", () => {
+    // `ready` retracts connection news because a live connection has just made it false. This is a
+    // statement about a stretch of conversation the ear never heard, which reconnecting cannot undo —
+    // and a note retracted 400 ms later is one the owner never read.
+    const back = run(run(listening, [{ type: "earOutage" }]).state, [{ type: "ready" }]);
+    expect(back.state.phase).toBe("listening");
+    expect(back.state.note).toBe(CALL_COPY.earAsleep);
+  });
+
+  // ④ THE BACKGROUND IDLE END. The wiring owns the clock (only while hidden, paused by a confirm
+  // gate); what the reducer owns is the disposition.
+
+  it("④ the idle expiry is a clean END with the reason on it, never an error", () => {
+    const { state, out } = run(listening, [{ type: "idleExpired" }]);
+    expect(state.phase).toBe("ended"); // a hot mic in a pocket is not a failure
+    expect(state.note).toBe(CALL_COPY.idleBackground);
+    expect(out).toEqual([{ type: "teardown", close: false }]);
+  });
+
+  it("④ …and it is a terminal like the others: anything queued is HARVESTED, not lost", () => {
+    const queued = run(listening, [
+      { type: "confirmHold", on: true },
+      { type: "final", text: "held words" },
+    ]).state;
+    const { out } = run(queued, [{ type: "idleExpired" }]);
+    expect(out).toEqual([
+      { type: "harvest", lines: ["held words"] },
+      { type: "teardown", close: false },
+    ]);
+  });
+
+  // ⑦ THE TAB'S MARKER. Ownership of the relay's slot is never inferred from `attempts` — two tabs or
+  // a second device make "another call is active" a real story (Maya F5). The marker is the evidence.
+
+  it("⑦ a first dial's `busy` stays TERMINAL without the marker", () => {
+    const { state } = run(CALL_INITIAL, [
+      { type: "serverError", code: "busy", message: "a live call is already running" },
+    ]);
+    expect(state.phase).toBe("error");
+    expect(state.note).toBe(CALL_COPY.busy);
+  });
+
+  it("⑦ …and WITH it takes the note-only ladder path — this phone's own unreaped slot", () => {
+    const back = run(CALL_INITIAL, [
+      { type: "priorLeg" },
+      { type: "serverError", code: "busy", message: "a live call is already running" },
+    ]);
+    expect(back.state.phase).toBe("connecting"); // the 1013 close drives the redial, as ever
+    expect(back.state.note).toBe(CALL_COPY.busyRetrying);
+    expect(back.out).toEqual([]); // note-only: the arm drives nothing (H2 — one rung per refusal)
+    expect(back.state.attempts).toBe(0);
+  });
+
+  it("⑦ …and it changes nothing else: a ladder spent on refusals still ends, on the busy truth", () => {
+    let s = run(CALL_INITIAL, [
+      { type: "priorLeg" },
+      { type: "serverError", code: "busy", message: "still busy" },
+    ]).state;
+    for (let i = 0; i < 6; i++) {
+      s = run(s, [
+        { type: "socketLost" },
+        { type: "serverError", code: "busy", message: "still busy" },
+      ]).state;
+    }
+    // …and the rung after the last one: the ladder is spent, and the note it ends on is the one the
+    // refusals put up, not `lost` — the owner is not being sent to look at their Wi-Fi.
+    const done = run(s, [{ type: "socketLost" }]);
+    expect(done.state.phase).toBe("error");
+    expect(done.state.note).toBe(CALL_COPY.busyHeld);
   });
 });
 

@@ -850,6 +850,9 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   echo_workaround: "auto",
   route: "speaker",
   input_device: "",
+  background: true,
+  background_keepalive: true,
+  background_idle_s: 600,
   dictation: false,
   tail_wait_ms: 2000,
   dictation_idle_s: 15,
@@ -1864,6 +1867,10 @@ export function ConfTab({ active }: Props) {
           // W2/D72's pacer bound takes the bare `Number` too: it is floored at 200 server-side,
           // so zero is not a value it can mean.
           call_backlog_ms: Number(draft.voice.live.call_backlog_ms),
+          // D73 S6's idle window takes `numOrNull`, with the three above it: its floor IS zero and
+          // zero MEANS something (no idle bound at all), so a blank coercing to 0 would silently
+          // switch the bound off instead of earning the visible 422.
+          background_idle_s: numOrNull(draft.voice.live.background_idle_s),
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
@@ -2894,6 +2901,32 @@ export function ConfTab({ active }: Props) {
             value={vlive?.input_device ?? ""}
             onChange={(v) => setLive("input_device", v)}
           />
+          {/* D73 S6 (evidence docs/research/R75) — the background pair. Nothing in the browser ends a
+              call because you switched apps; that was our own policy, and this is the switch for it.
+              The keepalive is its own row because it is a deliberate defeat of a battery protection:
+              Android freezes a silent backgrounded page after about a minute and a half, which pauses
+              the audio graph — the ear goes deaf while the screen still says Listening. A whisper of
+              inaudible sound keeps the page awake, and costs battery for it. */}
+          <SettingRow
+            label="Keep the call in the background"
+            desc="switching apps or locking the screen no longer hangs up · closing the tab still does"
+          >
+            <Switch
+              on={!!vlive?.background}
+              label="Keep the call in the background"
+              onToggle={() => setLive("background", !vlive?.background)}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Keep the ear awake"
+            desc="plays an inaudible tone so the phone doesn't freeze the page and deafen the call — costs battery; off → a backgrounded call may stop hearing after a couple of minutes (it says so and reconnects)"
+          >
+            <Switch
+              on={!!vlive?.background_keepalive}
+              label="Keep the ear awake in the background"
+              onToggle={() => setLive("background_keepalive", !vlive?.background_keepalive)}
+            />
+          </SettingRow>
           {/* Every bound below is copied from `LiveCfg`'s own `Field(...)` in backend/app/config.py —
               one control, two enforcers; a typed value outside them earns a visible 422 on save. */}
           <Field
@@ -2928,6 +2961,14 @@ export function ConfTab({ active }: Props) {
             desc="ms of your voice the call may hold on a stalled link (200–20000) — past it the oldest audio is dropped, not queued"
             value={String(vlive?.call_backlog_ms ?? "")}
             onChange={(v) => setLive("call_backlog_ms", v as unknown as number)}
+          />
+          {/* D73 S6 — the bound on a call you walked away from. It only runs while the app is in the
+              background, and an approval waiting for your tap pauses it. */}
+          <Field
+            label="Background idle end"
+            desc="seconds of no talking and no reply before a backgrounded call ends itself (0–7200) — 0 turns it off and the call runs to the session limit"
+            value={String(vlive?.background_idle_s ?? "")}
+            onChange={(v) => setLive("background_idle_s", v as unknown as number)}
           />
           <SectionRefEditor
             primaryDesc="realtime provider · model — blank rides Voice STT's chain"
