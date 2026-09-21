@@ -1681,10 +1681,18 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       finger-free; the composer row FREEZES while recording). Records = plan §7-S3.5 + its addenda.
       ⚠ This is why `voice.live.enabled` being OFF does **not** mean the relay is unreachable —
       D71's amendment note.
+- [ ] S5 — The route wave (D73/R74): `voice.live.route` speaker|headphones (headphones = AEC off
+      → A2DP TTS + ear-hold auto→OFF), the input/route picker with fallback-and-say-so,
+      dictation on the same constraints (closes R51 §6.1). Build against the plan's D73 block.
+- [ ] S6 — The background wave (D73/R75): `voice.live.background` + A1–A7 (the ear-outage
+      detector with the honest redial note · keepalive knob · `background_idle_s` 600 ·
+      wake-lock re-acquire · turn_done suppression in-call · busy-dial ladder unification ·
+      pagehide/visibilitychange split). Build against the plan's D73 block.
 - [ ] S4 — The owner calibration + device round (the phase gate): noise/quiet knob tuning on
       the real phone (+ the Tier-0 auto-stop threshold, same sitting); `voice.live.enabled`
       flips ON at its close. Decision point: fixed endpointing good → v1 stands; sluggish →
-      architecture ② gets designed (plan §2.1).
+      architecture ② gets designed (plan §2.1). **Now also carries (D73): R74's four-row
+      routing probe + R75's §12.4 lock-screen freeze probe** (+ the D72 wave's standing probes).
 
 ## Cross-cutting / don't-forget
 

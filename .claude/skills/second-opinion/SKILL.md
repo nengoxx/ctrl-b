@@ -122,18 +122,21 @@ release motivating it), both of which would have been discovered mid-build.
 
 ## Codex — the invocation
 
-### The Hermes `emma` lane — same backend, use when the Codex CLI is logged out
+### The Hermes `maya` lane — the blind reviewer when the Codex CLI is logged out
 
-Proven on the D60 + D61 council rounds (2026-08-19). Hermes profile `emma` carries its own fresh
-codex credential and the same `gpt-5.6-sol`; `--ignore-rules` makes it a BLIND reviewer (no memory
-injection, no skills, no SOUL/AGENTS — and her background memory system never engages, so she
-writes nothing). Restrict toolsets; the brief still forbids writes (there is no sandbox flag):
+> **▲ LANE MOVED (owner, 2026-09-21): the `emma` profile (`gpt-5.6-sol`) is RETIRED for reviews —
+> sol usage/cost was climbing. Use MAYA = the DEFAULT Hermes profile (`◆default`,
+> `gpt-5.6-luna-900k`) — "pretty much the same kind of instructions", Luna instead of Sol.** The
+> mechanics below are unchanged from the emma-era lane (proven on the D60 + D61 council rounds);
+> only the model pin moved. `--ignore-rules` still makes it a BLIND reviewer (no memory injection,
+> no skills, no SOUL/AGENTS — and the background memory system never engages, so nothing is
+> written). Restrict toolsets; the brief still forbids writes (there is no sandbox flag):
 
 ```bash
 S=<scratchpad>
 ~/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main \
   -z "$(cat "$S/review-prompt.txt")" \
-  -m gpt-5.6-sol --reasoning high --ignore-rules -t file,terminal \
+  -m gpt-5.6-luna-900k --reasoning high --ignore-rules -t file,terminal \
   --in /home/emma/github/ctrl-b \
   > "$S/review.md" 2> "$S/review.err" < /dev/null
 ```

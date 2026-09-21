@@ -5211,3 +5211,33 @@ the measured 5★ star collision the 380px media rule closed for the steady pair
 byte-identical to before — the visible change exists only while a pending record does
 (`fleetPendingLabels.test.tsx` pins both halves). ⑥ is RULED OFF for this deploy: `trusted_hosts`
 stays empty — a documented, built feature awaiting a future opt-in, not a config item to fill now.
+
+## D73 — Call audio routing + background calls: the route knob, Android's real selector, and the call that survives the pocket ✏️ RULED 2026-09-21 (owner, in conversation — the S4 round's first dial surfaced both; evidence = [R74](./research/R74-android-call-audio-routing.md) · [R75](./research/R75-background-call-survival.md); design of record = the D73 wave block in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7; council = blind Maya design round, the FIRST on the Luna lane)
+
+**What was ruled, and by whom.** ① (owner) The BT-speaker distortion is fixed by ROUTE, not a
+selector: `voice.live.route: speaker|headphones` — `headphones` drops `echoCancellation` (R74's
+verified single-bit escape from Android's communication mode, TTS back on A2DP) AND resolves the
+ear-hold's `auto` to OFF (worn headphones have no echo path ⇒ open-mic voice barge-in). ② (owner)
+An INPUT device picker ships, honestly labelled: on Android the audioinput list IS the platform's
+route picker (five synthetic communication devices, moving both directions) — the only lever the
+web has; output selection is platform-impossible there (0/5 peers ship one; the ChatGPT-selector
+premise was corrected — none exists on web or iOS). ③ Dictation adopts the same route-derived
+constraints (it rode the comm-mode trap via bare `audio:true`; closes R51 §6.1). ④ (owner, amending
+§5.3's foreground-only scope) Calls SURVIVE backgrounding: `voice.live.background` default ON, with
+R75's amendment set A1–A7 accepted in full — the load-bearing one being the EAR-OUTAGE detector,
+because Android freezes a silent hidden page after ~90 s with NO exemption for a live mic (the ear
+goes deaf while the overlay says Listening; corrects R14): a resumed call redials and SAYS SO,
+never presenting as if it heard. ⑤ (owner) `background_idle_s` defaults to **600** (0=off) — a
+hidden, silent call ends cleanly with a note rather than holding a hot mic to the 30-min cap.
+⑥ (main seat, reshaping A6) The first-dial `busy` terminal unifies into the reconnect ladder —
+post-discard the slot is this phone's own ≤10 s zombie, so every busy dial takes W3's note-only
+path and exhaustion tells the truth; amends W3's `attempts === 0` arm and its e2e pin. ⑦ (main
+seat) NOT built, with the mechanism named: an Android output dropdown (probe-and-hide where
+`setSinkId` exists), BT-mic steering (SCO caps output at mono 8/16 kHz), a native shell, UA-sniffs.
+⑧ (main seat, R75 §12.3 adopted) The pacer stays main-thread, the ladder stays as-is, the mouth
+needs nothing — three non-changes that are rulings so the next audit doesn't re-litigate them.
+
+**Slices:** S5 (route + picker + dictation constraints) · S6 (background + A1–A7). Both feed the
+S4 phase gate, which inherits R74's four-row routing probe and R75's §12.4 lock-screen freeze probe
+(the two facts source-reading cannot settle). The keepalive's MediaSession follow-on is PARKED
+until the probe proves the keepalive clean.

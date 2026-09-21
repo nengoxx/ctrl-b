@@ -1431,6 +1431,69 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   and quiet; the §4.1 knobs tuned by feel; the Tier 0 auto-stop threshold calibrated in the same
   sitting; `enabled` flips ON as the round's close.
 
+- **THE D73 WAVE — call audio routing + background calls (owner-ruled 2026-09-21, in conversation;
+  evidence = [R74](./research/R74-android-call-audio-routing.md) ·
+  [R75](./research/R75-background-call-survival.md); the S4 round itself surfaced both).** The
+  owner's first S4 dial found TTS on the phone speaker, distorted, with BT headphones worn — R74
+  verified the communication-mode trap at Chromium source (a non-empty platform-effects mask flips
+  `MODE_IN_COMMUNICATION`; `echoCancellation:false` is the whole escape on Chrome Android; plain
+  `audio:true` is IN the trap, dictation included) and corrected the output-selector premise
+  (platform-impossible on Android web; 0/5 peers ship one; the INPUT list is Android's route
+  picker). The owner also ruled calls SURVIVE backgrounding — amending §5.3's foreground-only
+  scope — and R75 ruled the one-knob shape SOUND WITH AMENDMENTS, its load-bearing find being the
+  renderer freeze with NO microphone term: ~90 s of background silence and the ear goes DEAF while
+  the overlay says Listening (corrects R14 §3.2/§3.4). Two slices; both feed the S4 sitting, which
+  inherits R74's four-row routing probe and R75's §12.4 lock-screen freeze probe.
+
+  > **S5 — the route wave (R74).** ① `voice.live.route: "speaker" | "headphones"` (default
+  > `speaker`) — a real Conf row. `headphones` sets the capture constraints to
+  > `{echoCancellation: false, noiseSuppression: true, channelCount: 1}` (NS is software-side on
+  > Android, it stays) so the phone never enters comm mode and TTS rides A2DP at media quality;
+  > and it feeds the EAR-HOLD's `auto` resolution: under `headphones` auto resolves to hold OFF
+  > (with headphones worn there is no acoustic echo path — R74 §3's physical note), so the ear
+  > stays open under the reply and voice barge-in arms; under `speaker` auto keeps today's
+  > track-readback rule. Explicit `echo_workaround: on/off` still overrides — the route moves only
+  > what `auto` means, the derived-in-one-normalize discipline is untouched. ② An INPUT picker,
+  > labelled as what it is on Android (a route picker moving BOTH directions):
+  > `voice.live.input_device` (deviceId, default "" = system default), a Conf picker fed by
+  > `enumerateDevices()`; a picked device that fails `getUserMedia` FALLS BACK to default and says
+  > so (R74 §2.2(b) — the failure is a null stream, not a constraint miss). ③ Dictation rides the
+  > SAME route-derived constraints + input device (closes the R51 §6.1 no-constraints residual —
+  > dictation currently flips comm mode too). ④ NOT BUILT, ruled: an output dropdown on Android
+  > (probe-and-hide `setSinkId` Jitsi-style where it exists — desktop), BT-mic steering (classic-BT
+  > SCO caps output at mono 8/16 kHz), a native shell, any UA-sniff.
+  >
+  > **S6 — the background wave (R75, verdict SOUND WITH AMENDMENTS; all seven ACCEPTED, A3/A4
+  > shaped by the main seat, A4's default the owner's).** ① `voice.live.background: true` — the
+  > page going hidden no longer ends the call; the machine's `hidden` arm becomes POLICY
+  > (`background` off ⇒ today's clean end), and TEARDOWN moves to `pagehide` (A7 — bfcache is
+  > provably off mid-call, so pagehide is the document really dying). ② THE EAR-OUTAGE DETECTOR
+  > (A2, not optional): `pcmCapture` stamps the last worklet frame's arrival and listens for the
+  > track's `mute`/`unmute` (today only `ended`); on `visibilitychange→visible` + the Lifecycle
+  > `resume` event, a frame gap beyond a named threshold means the ear missed everything since —
+  > the wiring kills the leg, redials fresh through the EXISTING ladder, and the note says so in
+  > the owner's words. A resumed call must never present as if it heard. ③ THE KEEPALIVE KNOB
+  > (A3): `voice.live.background_keepalive: true` — while a call is live and the page hidden, the
+  > capture chain's 0-gain sink rises to an inaudible-but-nonzero level, making Blink's
+  > `IsAudible()` true, which removes the freeze AND background throttling wholesale (R75 §3.5;
+  > energy > 0 is the whole test). Its Android side effects are UNVERIFIED — the §12.4 phone probe
+  > validates before it is believed; if it proves clean, MediaSession lock-screen controls unlock
+  > later (parked, not in this wave). ④ THE BACKGROUND IDLE END (A4): `voice.live.
+  > background_idle_s: 600` (0 = off; the owner's 10 minutes) — hidden + no speech + no reply for
+  > the window ⇒ a clean `ended` with a note saying why, instead of a hot mic riding to the 30-min
+  > cap. ⑤ A1: the wake lock re-acquires on `visible` (5/5 field precedent; today's one request at
+  > mount leaves a returned call without it). ⑥ A5: `turn_done` foreground notifications are
+  > SUPPRESSED while a call is live (`useForegroundNotifications`' single chokepoint reads the
+  > call store; `agent_input` KEEPS notifying — a voice-reached approval gate is exactly when a
+  > notification earns its keep). ⑦ A6 reshaped lean: the first-dial `busy` terminal (W3's
+  > `attempts === 0` arm) UNIFIES into the ladder — after a tab discard the slot is this phone's
+  > own zombie for ≤10 s, so every busy dial takes the note-only path and the ladder's exhaustion
+  > states the truth (`busyHeld`, or the plain busy note when no leg ever came ready); one
+  > mechanism, no second mini-retry. AMENDS W3's "first-dial stays terminal" and its e2e pin.
+  > ⑧ RULED NO-CHANGE (R75 §12.3): the pacer stays on the main thread (MessagePort is pausable,
+  > never throttleable — no starve-then-burst exists), the ladder stays (a live track registers
+  > `DisableAggressiveThrottling`; 1 s alignment ⇒ ~15 s > the 10 s slot), the mouth needs nothing.
+
 ## 8. Open questions for the owner (the court)
 
 **Owner rulings landed 2026-09-11 (in conversation):** ① §4.4 truncation as a follow-up slice —
