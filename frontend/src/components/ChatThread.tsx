@@ -763,6 +763,28 @@ interface Props {
 
 const SCROLLER_ID = "app-scroll";
 
+// ── the bubble-arrival animation (owner ask 2026-09-21: the WhatsApp-class appear) ───────────────
+// The store marks LIVE appends with the client-only `fresh` flag (types.ts — the `queued` class), so
+// bulk loads/reloads never animate. What this layer adds is the once-and-only-once discipline:
+//   · the decision LATCHES at mount (a streaming bubble re-renders per token, and a class that
+//     dropped after the first paint would cancel the animation it started);
+//   · a module-level ledger of ids that already animated, so a pane remount (tab/theme switch)
+//     re-rendering the same fresh messages does not replay them. Grows one id per live message per
+//     session — session-bounded, like the store's own raw-line caches.
+// One wrapper per MESSAGE (display: contents — no box, the log's layout is untouched) because a
+// single message renders several `.b` roots (the reply + its command bubbles); the stylesheet
+// animates `.b-wrap.arrive > .b`, motion-gated like every kit animation. The "everything shifts up"
+// half of the WhatsApp feel is the existing stick-to-bottom pin — growth scrolls, nothing else moves.
+const arrivedIds = new Set<string>();
+
+function ArriveWrap({ id, fresh, children }: { id: string; fresh?: true; children: ReactNode }) {
+  const [arrive] = useState(() => fresh === true && !arrivedIds.has(id));
+  useEffect(() => {
+    if (arrive) arrivedIds.add(id);
+  }, [arrive, id]);
+  return <div className={arrive ? "b-wrap arrive" : "b-wrap"}>{children}</div>;
+}
+
 export function ChatThread({ active, chat, emptyState }: Props) {
   // The caller owns the `useAgentChat()` derivation (D29 §14.2) and passes it in — a body needs it anyway
   // for plan placement, so this avoids a second O(n) pairing. `resultByCall` is memoized there;
@@ -853,19 +875,20 @@ export function ChatThread({ active, chat, emptyState }: Props) {
           </div>
         ))}
       {messages.map((m, i) => (
-        <Bubbles
-          key={m.id}
-          m={m}
-          streaming={status === "streaming" && m.id === streamingId}
-          resultFor={resultFor}
-          // F20 — only the latest message is eligible for retry, and only when chat is in
-          // error state. Historical errors elsewhere in the log stay quiet.
-          canRetry={i === messages.length - 1 && status === "error"}
-          onRetry={onRetry}
-          resolvedDefault={resolvedDefault}
-          ttsOn={ttsOn}
-          agentArt={agentArt}
-        />
+        <ArriveWrap key={m.id} id={m.id} fresh={m.fresh}>
+          <Bubbles
+            m={m}
+            streaming={status === "streaming" && m.id === streamingId}
+            resultFor={resultFor}
+            // F20 — only the latest message is eligible for retry, and only when chat is in
+            // error state. Historical errors elsewhere in the log stay quiet.
+            canRetry={i === messages.length - 1 && status === "error"}
+            onRetry={onRetry}
+            resolvedDefault={resolvedDefault}
+            ttsOn={ttsOn}
+            agentArt={agentArt}
+          />
+        </ArriveWrap>
       ))}
     </div>
   );

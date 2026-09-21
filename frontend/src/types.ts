@@ -364,6 +364,11 @@ export interface ChatMessage {
   // only (never on a durable message, which carries real `AttachmentPart`s instead). Same optimistic-
   // only class as `queued` above.
   pending_attachments?: PendingAttachment[];
+  // Client-only (the `queued` class): this message was appended LIVE — by a send, a streamed reply
+  // starting, a steer, or a local note — as opposed to arriving in a bulk load/reload/fold. The
+  // bubble-arrival animation reads it (ChatThread), so history never animates on open and a reconnect
+  // reload never replays the whole log. Never set from the durable messages endpoint.
+  fresh?: true;
 }
 
 export interface Thread {

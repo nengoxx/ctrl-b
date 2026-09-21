@@ -87,6 +87,46 @@ describe("ChatThread empty state", () => {
   });
 });
 
+// ── the bubble-arrival animation (owner ask 2026-09-21) — the `fresh` → `.arrive` contract ───────
+describe("bubble arrival", () => {
+  const bubble = (id: string, fresh?: true): ChatMessage => ({
+    id,
+    thread_id: "t1",
+    role: "user",
+    actor: "user",
+    ts: new Date().toISOString(),
+    tokens: null,
+    compacted: false,
+    parts: [{ type: "text", text: `hello ${id}` }],
+    ...(fresh ? { fresh } : {}),
+  });
+  const chatWith = (...messages: ChatMessage[]): AgentChat => ({ ...emptyChat(), messages });
+
+  it("a LIVE-appended message arrives animated; a loaded one does not", () => {
+    const { container } = render(
+      <ChatThread active chat={chatWith(bubble("arr-loaded"), bubble("arr-live", true))} />,
+    );
+    const wraps = container.querySelectorAll(".b-wrap");
+    expect(wraps.length).toBe(2);
+    expect(wraps[0].classList.contains("arrive")).toBe(false); // bulk-loaded: no flag, no animation
+    expect(wraps[1].classList.contains("arrive")).toBe(true);
+  });
+
+  it("the arrival LATCHES: a re-render keeps the class (a per-token render must not cancel it)", () => {
+    const view = render(<ChatThread active chat={chatWith(bubble("arr-latch", true))} />);
+    view.rerender(<ChatThread active chat={chatWith(bubble("arr-latch", true))} />);
+    expect(view.container.querySelector(".b-wrap.arrive")).toBeTruthy();
+  });
+
+  it("…and is once-per-id: a REMOUNT of the same fresh message never replays it", () => {
+    const first = render(<ChatThread active chat={chatWith(bubble("arr-once", true))} />);
+    expect(first.container.querySelector(".b-wrap.arrive")).toBeTruthy();
+    first.unmount(); // a tab/theme switch remounts the pane; the module ledger remembers the id
+    const second = render(<ChatThread active chat={chatWith(bubble("arr-once", true))} />);
+    expect(second.container.querySelector(".b-wrap.arrive")).toBeNull();
+  });
+});
+
 describe("A4 chat live region (F5 Gate A)", () => {
   it("marks the chat-log as a polite log region, idle → aria-busy false", () => {
     const { container } = render(<ChatThread active chat={emptyChat()} />);

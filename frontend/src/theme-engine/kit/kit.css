@@ -4335,6 +4335,28 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   flex-direction: column;
   gap: 14px;
 }
+/* BUBBLE ARRIVAL (owner ask 2026-09-21 — the WhatsApp-class appear). The wrapper is ChatThread's
+ * per-message chokepoint: `display: contents` keeps the log's flex layout owning the `.b` children
+ * directly, and `.arrive` is latched ON MOUNT for live-appended messages only (the store's `fresh`
+ * flag — bulk loads never carry it, so opening a thread animates nothing). A short rise + fade,
+ * transform/opacity only (§14.11), riding the stick-to-bottom pin for the "everything shifts up"
+ * half. Motion-gated to `full`; NOTHING under reduced — the bubble simply appears there. */
+.b-wrap {
+  display: contents;
+}
+body[data-motion="full"] .kit .b-wrap.arrive > .b {
+  animation: kit-bubble-in var(--dur-slow) var(--ease-out);
+}
+@keyframes kit-bubble-in {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
 .kit .b .who {
   font-size: 10px;
   letter-spacing: 0.06em;

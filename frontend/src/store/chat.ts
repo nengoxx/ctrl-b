@@ -162,6 +162,7 @@ function makeQueuedBubble(entryId: string, kind: "message" | "exec", text: strin
     tokens: null,
     compacted: false,
     queued: entryId,
+    fresh: true,
   };
 }
 
@@ -889,6 +890,7 @@ function pushLocal(role: "system" | "user", text: string): void {
         ts: new Date().toISOString(),
         tokens: null,
         compacted: false,
+        fresh: true,
       },
     ],
   });
@@ -936,6 +938,7 @@ function emptyAssistant(id: string, agent: string | null = null): ChatMessage {
     tokens: null,
     compacted: false,
     agent,
+    fresh: true,
   };
 }
 
@@ -2429,6 +2432,7 @@ export async function sendMessage(
     ts: new Date().toISOString(),
     tokens: null,
     compacted: false,
+    fresh: true,
     ...(previews.length ? { pending_attachments: previews } : {}),
   };
   const reqBody = {
