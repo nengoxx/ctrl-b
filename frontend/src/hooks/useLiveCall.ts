@@ -233,6 +233,12 @@ export type CallSignal = { gen?: number } & (
    *  Deliberately NOT `hangup` itself: its `close: true` would `endCall()`, and on a redial's
    *  remount that would kill the fresh call the owner just asked for. */
   | { type: "unmounted" }
+  /** The start effect's SETUP is running (again). Dev-only in practice: StrictMode runs every effect
+   *  setup → cleanup → setup on the same instance, state surviving, so the cleanup's `unmounted` has
+   *  just landed the machine terminal — and without a symmetric re-arm every call on the dev server
+   *  dies at birth ("Call ended", no note, redial included). Carries no `gen` ON PURPOSE: it is the
+   *  one signal that must land across the generation the cleanup moved. */
+  | { type: "remount" }
   | { type: "failed"; note: string } //        the call could not start at all
 );
 
@@ -364,6 +370,15 @@ function reduce(s: CallState, sig: CallSignal): Step {
       state: { ...CALL_INITIAL, phase: "ended", gen: s.gen + 1 },
       out: [{ type: "teardown", close: sig.type !== "unmounted" }],
     };
+  }
+  // The re-arm HAS to outrank the terminal guard — the terminal it recovers from is the one the
+  // cleanup's `unmounted` just wrote. The generation is PRESERVED, not reset: everything the first
+  // setup armed (a capture promise, a socket frame) was fenced out by the cleanup's bump, and a
+  // fresh run re-reads `ref.current.gen` live. On a machine that is not terminal — the genuine
+  // first mount — this is a no-op, so the arm cannot disturb a call that is actually running.
+  if (sig.type === "remount") {
+    if (!isTerminal(s.phase)) return { state: s, out: [] };
+    return { state: { ...CALL_INITIAL, gen: s.gen }, out: [] };
   }
   if (isTerminal(s.phase)) return { state: s, out: [] };
 
@@ -852,6 +867,11 @@ export function useLiveCall(): CallView {
 
   // ── the one start effect: capture, then the first leg ──────────────────────────────────────────
   useEffect(() => {
+    // SETUP MUST BE CLEANUP'S SYMMETRIC PARTNER (the React effect contract StrictMode enforces by
+    // running setup → cleanup → setup on one instance, state surviving). The cleanup below lands the
+    // machine terminal through `unmounted`; this re-arm is what lets the second setup — and only a
+    // setup facing that terminal — start the call anyway. A genuine first mount reduces to a no-op.
+    send({ type: "remount" });
     if (voice === undefined) return; // the knobs have not arrived yet — nothing to configure from
     if (!knobs) {
       send({ type: "failed", note: CALL_COPY.unconfigured });

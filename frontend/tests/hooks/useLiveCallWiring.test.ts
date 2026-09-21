@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
+import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LiveDown } from "../../src/lib/liveSocket";
@@ -602,6 +603,26 @@ describe("useLiveCall — THE UPLINK PACER (A-F2, evidence docs/research/R71)", 
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("useLiveCall — StrictMode's simulated remount (S4's phone-round defect)", () => {
+  it("setup → cleanup → setup still connects: the re-run must re-arm the machine", async () => {
+    // React's dev-only StrictMode runs every effect's setup, cleanup, setup on the SAME instance —
+    // state survives, only the effects re-run. The cleanup's `unmounted` deliberately lands the
+    // machine terminal with the generation moved (the ghost fence), so the SETUP must be its
+    // symmetric partner and re-arm from terminal, or every call on the Vite dev server dies at
+    // birth: "Call ended", no note, and each "Call again" repeats it. The production build never
+    // double-invokes and the e2e layer drives that build, which is exactly why only this wrapper
+    // can pin the path.
+    const view = renderHook(() => useLiveCall(), { wrapper: StrictMode });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      h.frame?.({ type: "state", state: "ready" });
+    });
+    expect(view.result.current.phase).toBe("listening");
   });
 });
 

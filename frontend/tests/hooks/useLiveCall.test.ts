@@ -987,3 +987,22 @@ describe("callReduce — the unmount fence (S2b audit — §4.3 hang-up-discards
     expect(state.gen).toBe(dead.gen + 1);
   });
 });
+
+describe("callReduce — the remount re-arm (StrictMode's setup→cleanup→setup)", () => {
+  it("re-arms a terminal machine to a fresh call, PRESERVING the moved generation", () => {
+    // The terminal it faces is the one the cleanup's `unmounted` wrote a moment earlier; the
+    // generation must NOT rewind, or every callback the fence turned into a ghost comes back.
+    const dead = run(listening, [{ type: "unmounted" }]).state;
+    const { state, out } = run(dead, [{ type: "remount" }]);
+    expect(state).toEqual({ ...CALL_INITIAL, gen: dead.gen });
+    expect(out).toEqual([]);
+    // …and the re-armed machine actually answers a fresh leg.
+    expect(run(state, [{ type: "ready" }]).state.phase).toBe("listening");
+  });
+
+  it("is a no-op on a live machine — the genuine first mount", () => {
+    const { state, out } = run(listening, [{ type: "remount" }]);
+    expect(state).toBe(listening);
+    expect(out).toEqual([]);
+  });
+});
