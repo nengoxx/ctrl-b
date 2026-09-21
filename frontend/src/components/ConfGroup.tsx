@@ -16,10 +16,12 @@ export function ConfGroup(props: {
   //: (D25), so a `<button>`/`<a>`/`Switch` here would re-create the nested-interactive violation and
   //: double-fire on click/Enter. For an interactive section affordance, put it in the body, not here.
   right?: ReactNode;
-  defaultCollapsed?: boolean;
   children: ReactNode;
 }) {
-  const [collapsed, toggle] = useCollapsed(props.id, props.defaultCollapsed);
+  // Collapsed until the owner opens it (owner ruling 2026-09-21: a Conf page of 20+ groups reads as an
+  // index, not a wall). The persisted per-id choice wins from the first toggle, and deep links
+  // (`openConfGroup` → `setCollapsed(id, false)`) force-expand their target regardless.
+  const [collapsed, toggle] = useCollapsed(props.id, true);
   return (
     // `id` doubles as the collapse key AND a DOM anchor (D35 §F0: the hosted-utils group is a scroll-to
     // target). Group ids are already unique collapse keys; the one reused id ("agent-tools") lives in

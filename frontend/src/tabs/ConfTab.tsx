@@ -2180,7 +2180,7 @@ export function ConfTab({ active }: Props) {
       {/* Phase 18 / D56 — the prompt registry. Sits right after Inference (the model-facing texts
           belong beside the model), and owns its own draft + Save bar: `prompts:` is written by the
           editor's batched map, not by this tab's settings draft. */}
-      <ConfGroup id="prompts" num="03" title="Prompts" right={promptsRight} defaultCollapsed>
+      <ConfGroup id="prompts" num="03" title="Prompts" right={promptsRight}>
         <PromptsEditor />
       </ConfGroup>
 
@@ -3109,27 +3109,21 @@ export function ConfTab({ active }: Props) {
       {/* D70 §8.4 — the GLOBALS only. The per-agent list, its form and the add disclosure moved to the
           agents gallery (its own section), so this group is `agent.*` config and nothing else; the
           header summary says what it now holds rather than counting agents that are no longer here. */}
-      <ConfGroup id="agents" num="15" title="Agents" right="defaults · routing" defaultCollapsed>
+      <ConfGroup id="agents" num="15" title="Agents" right="defaults · routing">
         <AgentGlobals cfg={agentCfg} />
       </ConfGroup>
 
       {/* D70 §9 — the roleplay GLOBALS (the mode switch · the character tools · the owner's persona)
           and the lorebook scan budgets. Both sit right after Agents because that is what they are
           about; both own their reads and their partial PUTs (see `RoleplayEditor`). */}
-      <ConfGroup id="roleplay" num="16" title="Roleplay" right={roleplayRight} defaultCollapsed>
+      <ConfGroup id="roleplay" num="16" title="Roleplay" right={roleplayRight}>
         <RoleplayEditor />
       </ConfGroup>
 
       {/* D70 §6.6 — the MANAGER first (the books themselves, their entries, import), then the globals
           that apply to all of them. One group, not two: the collapse key and the hand-numbered `num`
           chain both live on the id, and deep links point at it. */}
-      <ConfGroup
-        id="lorebooks"
-        num="17"
-        title="Lorebooks"
-        right="books · scan · budget"
-        defaultCollapsed
-      >
+      <ConfGroup id="lorebooks" num="17" title="Lorebooks" right="books · scan · budget">
         <LorebooksEditor />
         <LorebookGlobals />
       </ConfGroup>
@@ -3138,33 +3132,15 @@ export function ConfTab({ active }: Props) {
           panel owns (ConfTab is long enough, and phone width is the primary viewport). The records live
           in SQLite behind `AutomationService`, NOT in config.yaml — so this group has no draft and no
           save bar: every row edit is its own request. */}
-      <ConfGroup
-        id={AUTOMATIONS_GROUP_ID}
-        num="18"
-        title="Automations"
-        right={automationsRight}
-        defaultCollapsed
-      >
+      <ConfGroup id={AUTOMATIONS_GROUP_ID} num="18" title="Automations" right={automationsRight}>
         <AutomationsPanel />
       </ConfGroup>
 
-      <ConfGroup
-        id="skills"
-        num="19"
-        title="Skills"
-        right={`${skillNames.length} discovered`}
-        defaultCollapsed
-      >
+      <ConfGroup id="skills" num="19" title="Skills" right={`${skillNames.length} discovered`}>
         <SkillsEditor enabled={skillsEnabled} />
       </ConfGroup>
 
-      <ConfGroup
-        id="memory"
-        num="20"
-        title="Memory"
-        right={memoryCfg.enabled ? "on" : "off"}
-        defaultCollapsed
-      >
+      <ConfGroup id="memory" num="20" title="Memory" right={memoryCfg.enabled ? "on" : "off"}>
         <MemoryEditor cfg={memoryCfg} />
       </ConfGroup>
 
@@ -3202,7 +3178,6 @@ export function ConfTab({ active }: Props) {
           num={tailNum(hostedTail.indexOf("agents"))}
           title="Agents · gallery"
           right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
-          defaultCollapsed
         >
           <AgentsContent />
         </ConfGroup>
@@ -3448,7 +3423,6 @@ export function ConfTab({ active }: Props) {
             num={tailNum(hostedTail.length + 1 + i)}
             title={def.title}
             right={`media/${ns}/`}
-            defaultCollapsed
           >
             <MediaGallery ns={ns} def={def} />
           </ConfGroup>
