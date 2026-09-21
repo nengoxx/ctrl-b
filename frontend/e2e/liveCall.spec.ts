@@ -35,6 +35,10 @@ const LIVE_CALL = {
   barge_in: true,
   ring: true,
   echo_workaround: "auto",
+  // D73 S5 — the route pair, backend defaults (added with the S5-review fix wave; the fixture is
+  // supposed to be what `/voice/status` sends, S5 itself forgot its own two).
+  route: "speaker",
+  input_device: "",
   // D73 S6 — the background three, as the backend ships them. Nothing here hides the page, so they
   // change no case; the fixture carries them because it is supposed to be what `/voice/status` sends.
   background: true,

@@ -89,6 +89,9 @@ export function micConstraints(req: MicRequest): MediaTrackConstraints {
 export async function openMicStream(
   req: MicRequest,
 ): Promise<{ stream: MediaStream; fellBack: boolean }> {
+  // The picker's label probe first, if one is mid-flight (S5 review F1) — its throwaway grab could
+  // otherwise hold the very route this capture is about to ask for.
+  if (probeInFlight) await probeInFlight;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(req) });
     return { stream, fellBack: false };
@@ -122,6 +125,13 @@ export interface MicDevice {
  * choice, and a stored id that stops appearing here is treated by the picker as "not available",
  * never as something still standing.
  */
+/** The label probe in flight, or null (S5 review F1). The probe's throwaway capture can hold the
+ *  Android communication device for the instant it lives, and a REAL capture opening inside that
+ *  instant would fail over to the default route for no true reason — so `openMicStream` awaits any
+ *  running probe first. One direction only, deliberately: while a real capture is LIVE the labels
+ *  are already earned, so the probe branch below never fires against one. */
+let probeInFlight: Promise<void> | null = null;
+
 export async function listAudioInputs(probe = false): Promise<MicDevice[]> {
   // Annotated rather than asserted: the DOM lib types this as always present, and it is not — an
   // insecure context has no `mediaDevices` at all (the mic's own `micCapable` gate rests on that).
@@ -131,9 +141,19 @@ export async function listAudioInputs(probe = false): Promise<MicDevice[]> {
     (await md.enumerateDevices()).filter((d) => d.kind === "audioinput");
   let inputs = await read();
   if (probe && inputs.length > 0 && inputs.every((d) => !d.label)) {
-    try {
+    const run = (async () => {
       const stream = await md.getUserMedia({ audio: micConstraints({}) });
       for (const t of stream.getTracks()) t.stop();
+    })();
+    // The latch holds the SETTLED promise, never the rejection: its one consumer only cares that
+    // the probe's tracks are gone, not why.
+    probeInFlight = run
+      .catch(() => {})
+      .finally(() => {
+        probeInFlight = null;
+      });
+    try {
+      await run;
       inputs = await read();
     } catch {
       // Still no permission. The picker keeps the system default as its only offer, which is honest.

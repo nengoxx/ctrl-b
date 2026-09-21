@@ -571,6 +571,17 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
     expect(h.setHeld).toHaveBeenLastCalledWith(true);
   });
 
+  it("…and an EXPLICIT `off` outranks the SPEAKER route's leaking track the same way (S5 review)", async () => {
+    // The symmetric half of the override pin, on the route where `auto` would have held: the owner
+    // who says `off` has answered the leak question themselves, and the route must not re-ask it.
+    h.voice.data.live_call.route = "speaker";
+    h.voice.data.live_call.echo_workaround = "off";
+    fennec();
+    const { step } = await call();
+    await step(() => setPlay("playing"));
+    expect(h.setHeld).not.toHaveBeenCalledWith(true);
+  });
+
   it("the ENGAGE is synchronous with the play edge — before React renders (review F2)", async () => {
     // The physics the subscription exists for: the controller's `emit` runs inside the media `play`
     // handler's own `set()`, and the hold must reach `track.enabled` in that SAME task — a hold that

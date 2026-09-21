@@ -441,6 +441,40 @@ describe("listAudioInputs — the picker's list (Maya F4)", () => {
     expect(await listAudioInputs(true)).toEqual([]);
   });
 
+  it("openMicStream WAITS for a probe in flight — the throwaway grab never races a real capture (S5 review F1)", async () => {
+    // The probe's instant of holding the Android communication device must be over before a real
+    // capture asks for a route — or the capture fails over to the default for no true reason.
+    enumerated = [
+      [dev("a", ""), dev("b", "")],
+      [dev("a", "Wired headset"), dev("b", "Bluetooth headset")],
+    ];
+    const order: string[] = [];
+    let releaseProbe!: () => void;
+    gum.mockImplementationOnce(() => {
+      order.push("probe-open");
+      return new Promise((res) => {
+        releaseProbe = () => {
+          order.push("probe-done");
+          res({ getAudioTracks: () => [track], getTracks: () => [track] });
+        };
+      });
+    });
+    const listing = listAudioInputs(true);
+    // The probe branch sits behind the enumeration's own microtasks — wait for ITS gUM, not a count.
+    await vi.waitFor(() => expect(order).toContain("probe-open"));
+    gum.mockImplementationOnce(() => {
+      order.push("real-open");
+      return Promise.resolve({ getAudioTracks: () => [track], getTracks: () => [track] });
+    });
+    const opening = openMicStream({ deviceId: "b" });
+    await Promise.resolve();
+    expect(order).toEqual(["probe-open"]); // the real capture is parked behind the latch
+    releaseProbe();
+    await listing;
+    await opening;
+    expect(order).toEqual(["probe-open", "probe-done", "real-open"]);
+  });
+
   it("a browser with no enumerateDevices answers with nothing", async () => {
     vi.stubGlobal("navigator", { mediaDevices: undefined });
     expect(await listAudioInputs(true)).toEqual([]);

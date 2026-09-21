@@ -1460,8 +1460,10 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > `voice.live.input_device` (deviceId, default "" = system default), a Conf picker fed by
   > `enumerateDevices()` — which (Maya F4) enumerates when the picker OPENS, re-enumerates after
   > the first permission-granting capture, and treats empty labels or a missing stored id as
-  > "default / refresh required", never as a durable choice (Android ids are synthetic routes;
-  > desktop ids rot with a profile reset); a picked device that fails `getUserMedia` FALLS BACK
+  > never RE-PICKABLE (rendered "not available", disabled) — but the STORED preference itself is
+  > kept, not auto-cleared: a headset merely off its charger vanishes from the list, and the
+  > `ideal` + fallback-note mechanics already make the absent case graceful (S5 code-review F2
+  > ruling — half accepted, half overruled); a picked device that fails `getUserMedia` FALLS BACK
   > to default and says so (R74 §2.2(b) — the failure is a null stream, not a constraint miss).
   > ③ Dictation rides the
   > SAME route-derived constraints + input device (closes the R51 §6.1 no-constraints residual —

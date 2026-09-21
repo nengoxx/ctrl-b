@@ -280,8 +280,16 @@ function DeviceRow(props: { value: string; onChange: (v: string) => void }) {
             {d.label}
           </option>
         ))}
+        {/* `disabled` (S5 review F2, half-accepted): the ghost can be SEEN and left standing — a
+            headset merely off its charger keeps its saved place, and the capture's `ideal` +
+            fallback note make the absent case graceful — but it must never be actively RE-PICKED
+            as if it were on the list. The auto-clear half of that finding was overruled: erasing
+            the owner's standing preference because the device is momentarily away punishes the
+            common case. */}
         {props.value !== "" && !known && (
-          <option value={props.value}>saved device — not available</option>
+          <option value={props.value} disabled>
+            saved device — not available
+          </option>
         )}
       </select>
     </div>
