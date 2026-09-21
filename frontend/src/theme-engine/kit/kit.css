@@ -9204,6 +9204,75 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   color: var(--bg);
   box-shadow: none;
 }
+/* THE READBACK BLOCK (D74 S7) — an instrument panel, not a surface: monospace so the columns line up
+ * against each other frame to frame, small, left-aligned inside a centred cluster, and scrollable
+ * rather than wrapping (a wrapped readout is unreadable at a glance, which is the only way it is ever
+ * read). It exists only while `voice.live.debug` is on. */
+.kit .kit-call-debug {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--bg) 82%, transparent);
+  color: var(--text-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: start;
+  white-space: pre;
+  overflow-x: auto;
+}
+/* THE IN-CALL ROUTE ROW (D74 S2) — "where am I listening" + which ear, on their own line above the
+ * furniture. Both controls are QUIET (the Mute recipe, unlit): they are settings, not actions, and the
+ * screen's two loud controls stay the hang-up and an engaged Mute. They wrap rather than shrink,
+ * because at 360 px a squeezed select is unreadable and a second line costs nothing. */
+.kit .kit-call-route {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+.kit .kit-call-routebtn,
+.kit .kit-call-device {
+  all: unset;
+  cursor: pointer;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--text-2);
+  background: color-mix(in oklch, var(--bg) 62%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+/* `all: unset` takes the native arrow with it, so the select carries its own affordance. */
+.kit .kit-call-device {
+  padding-inline-end: 26px;
+  background-image: linear-gradient(45deg, transparent 50%, currentcolor 50%),
+    linear-gradient(135deg, currentcolor 50%, transparent 50%);
+  background-position:
+    right 14px center,
+    right 9px center;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+.kit .kit-call-routebtn:focus-visible,
+.kit .kit-call-device:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* DISABLED means the leg is moving (connecting) or gone (a terminal): the control says so instead of
+ * swallowing the tap. */
+.kit .kit-call-routebtn:disabled,
+.kit .kit-call-device:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
 /* THE IN-OVERLAY CONFIRM ROW (§4.5 · §6) — a line and two buttons; the chat card keeps the full
  * context, and this is only the tap the privilege gate requires. */
 .kit .kit-call-confirm {

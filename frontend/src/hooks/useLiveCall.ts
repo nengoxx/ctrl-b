@@ -12,12 +12,13 @@ import {
 } from "../lib/audioController";
 import { sendCallTranscript } from "../lib/composer";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
-import { onHeadphones, startPcmCapture, type PcmCapture } from "../lib/pcmCapture";
+import { onHeadphones, startPcmCapture, type MicRequest, type PcmCapture } from "../lib/pcmCapture";
 import { accrue, enqueueBounded, newPacer, pump, type PacerState } from "../lib/uplinkPacer";
 import { useStagedFiles } from "../store/attachments";
 import { cancelTurn, confirmOutstanding, getLiveTurn, useChatSlice } from "../store/chat";
 import { appendDraft } from "../store/composer";
 import { endCall } from "../store/liveCall";
+import { releaseMic } from "../store/micRelease";
 import { useVoiceStatus } from "./useVoiceStatus";
 
 // THE CALL MACHINE (Phase 24 / D71 §4.2 · §4.3 · §4.5) — one owner for the ear, the brain and the mouth.
@@ -140,6 +141,32 @@ const IDLE_EDGES: ReadonlySet<CallSignal["type"]> = new Set([
   "confirmHold",
 ]);
 
+/** How much of trigger A's window has to be above the floor before the kill fires (D74 S4 ⑥).
+ *
+ *  What it replaces is a CONSECUTIVE run: one frame under the floor reset the clock to zero, so the
+ *  owner had to produce `min_speech_ms` of UNBROKEN above-floor energy to interrupt — which is not
+ *  what speech looks like at a 20–40 ms frame, where a stop consonant or the breath between two
+ *  syllables is a hole several frames wide. Same floor, same window; a MAJORITY of it instead of all
+ *  of it.
+ *
+ *  3/4 rather than a knob, deliberately: it is the shape of the detector, not a preference of the
+ *  owner's. The two things the S4 gate calibrates are the floor (`barge_threshold`) and the window
+ *  (`min_speech_ms`), and a third dial on the same decision makes both of those harder to read. */
+const BARGE_HIT_RATIO = 0.75;
+
+/** How often the debug block re-reads, ms (D74 S7). The measurements it shows arrive on the audio
+ *  callback at 25–50 Hz, and re-rendering the overlay per frame to show them is exactly the trade the
+ *  meter's ref refused — so the block SAMPLES instead. 250 ms is fast enough to watch a syllable move
+ *  the peak and slow enough to be invisible in a profile; the block only exists while the owner has
+ *  the `debug` knob on. Not a knob of its own: it is a property of reading, not of the call. */
+const DEBUG_TICK_MS = 250;
+
+/** How long the debug readout's PEAK holds, ms (D74 S7 / R78 §6.2). The whole C1 diagnosis is "is the
+ *  line above the hill", and without a hold the owner cannot see a floor their voice never reaches —
+ *  the instantaneous number is already back under it by the time the eye arrives. R78's own
+ *  recommendation, and about one spoken phrase. Not a knob: it is a property of human eyesight. */
+const PEAK_HOLD_MS = 2000;
+
 /** THE TAB'S LIVE-CALL MARKER (D73 S6 ⑦ / R75 §9.2). `sessionStorage` because the key is exactly
  *  per-tab and — the whole point — it SURVIVES the reload a discarded tab comes back through.
  *
@@ -205,6 +232,11 @@ export const CALL_COPY = {
    *  the leg is being redialled. It says what the owner needs to know and nothing else: a resumed call
    *  must never present as if it heard, and the stretch it missed is not recoverable. */
   earAsleep: "the ear was asleep — nothing said while away was heard",
+  /** D74 S5 — a final the EAR has no energy to account for: the relay answered a stretch of near
+   *  silence with a plausible sentence (R76), and the microphone says nobody said it. The line owns
+   *  up to the DISCARD rather than explaining the mechanism — what the owner needs to know is that
+   *  their words did not go, and that saying it louder is the remedy. */
+  tooQuiet: "too quiet — didn't take that",
   /** D73 S6 ④ — the background idle end. The terminal face already says "Call ended", so the note is
    *  the REASON, which is the one thing a call that ended on its own owes the owner. */
   idleBackground: "the call sat idle in the background",
@@ -253,6 +285,13 @@ export interface CallState {
   earHoldMode: boolean;
   /** …and is it closed right now. DERIVED after every reduce (see `normalize`) — never set by an arm. */
   earHeld: boolean;
+  /** THE ROUTE THIS CALL IS ON, and the device it asked for (D74 S2) — EPHEMERAL, per call. Seeded
+   *  from the knobs by the capture that actually opened (`captureReady`) and moved only by the
+   *  owner's in-call control, which deliberately writes NO config: §4.5 says settings edited mid-call
+   *  apply to the next call, and the Conf pair stays exactly that — the next call's default. What the
+   *  owner does on the call screen is about THIS call, and it dies with it. */
+  route: string;
+  inputDevice: string;
   /** THIS TAB WAS IN A CALL WHEN IT LAST WENT AWAY (D73 S6 ⑦) — the `sessionStorage` marker was
    *  standing when this machine started, which only happens when a leg opened here and no clean end
    *  cleared it: a discarded tab's reload, a crash. Read ONCE at call start, like `earHoldMode`, and
@@ -279,6 +318,8 @@ export const CALL_INITIAL: CallState = {
   mouthLive: false,
   earHoldMode: false,
   earHeld: false,
+  route: "",
+  inputDevice: "",
   priorLeg: false,
   gen: 0,
   attempts: 0,
@@ -291,7 +332,12 @@ export type CallSignal = { gen?: number } & (
   | { type: "socketLost" } //                  the leg closed while the call was still wanted
   | { type: "speechStart" }
   | { type: "speechStop" }
-  | { type: "final"; text: string }
+  /** …with THE TRANSCRIPT GATE's two numbers (D74 S5), carried on the signal because the rule is the
+   *  reducer's and the measurement is the wiring's. `energyMs` is the ear's own accrual for the
+   *  utterance this final is about — ABSENT when no epoch matched, which is the fail-open case: a
+   *  final nobody measured is unmeasured, not quiet. `minFinalMs` is the owner's knob, delivered the
+   *  same way every other §4.1 tunable is; absent or 0 means the gate is off. */
+  | { type: "final"; text: string; energyMs?: number; minFinalMs?: number }
   /** The uplink is losing audio — the relay's own overflow state, or (A-F2) our own bounded queue
    *  dropping its oldest frames. ONE signal for both, deliberately: it is one loss chain, and two notes
    *  for it would be two things saying the same thing. */
@@ -301,7 +347,11 @@ export type CallSignal = { gen?: number } & (
   /** The capture RESOLVED, carrying the one thing about it the rules depend on: whether this track
    *  needs the ear-hold (§5.1 — `echo_workaround` resolved against the route and the track's own AEC
    *  readback). `note` is the one thing about it the SCREEN depends on: the D73 device fallback. */
-  | { type: "captureReady"; earHoldMode: boolean; note?: string }
+  | { type: "captureReady"; earHoldMode: boolean; note?: string; route: string; deviceId: string }
+  /** D74 S2 — the owner moved the route, the input device, or both, WHILE the call is up. Legal only
+   *  in the settled phases; anywhere else it is a no-op, because there is either a leg already being
+   *  opened or no ear left to move. */
+  | { type: "routeChange"; route?: string; deviceId?: string }
   /** D73 S6 ⑦ — the tab's own live-call marker was standing when this machine started (see
    *  `BUSY_MARKER`). Sent at call start, BEFORE this call's first leg writes its own. */
   | { type: "priorLeg" }
@@ -363,6 +413,11 @@ export type CallEffect =
    *  outage spends a rung from wherever the ladder stands instead of minting a second counter beside
    *  it (the `busy` arm's lesson, A-F3). */
   | { type: "closeLeg" }
+  /** THE ROUTE CYCLE (D74 S2): close this leg cleanly, release the ear, and run the SAME acquisition
+   *  the mount effect runs — under the new constraints. In-place `applyConstraints` is rejected by
+   *  design (R78 §8: the mode is pinned by the live source for the device, and the round-trip reports
+   *  success on a set it never widened), so the only honest way to change the route is a new track. */
+  | { type: "recapture"; route: string; deviceId: string }
   /** Release everything. `close` additionally dismisses the overlay — the user's own exit gets no
    *  terminal screen (§6); an `error`/`ended` terminal keeps the overlay up to say why. */
   | { type: "teardown"; close: boolean };
@@ -373,6 +428,12 @@ interface Step {
 }
 
 const isTerminal = (p: CallPhase): boolean => p === "error" || p === "ended";
+
+/** The phases a ROUTE CYCLE is legal in (D74 S2) — the call is up and settled. `connecting` is out
+ *  because a leg is already being opened there and a second acquisition racing it is exactly what the
+ *  generation fence exists to prevent; the terminals are out because there is no ear left to move. */
+const isStable = (p: CallPhase): boolean =>
+  p === "listening" || p === "thinking" || p === "speaking";
 
 /** Every reason a queued utterance may not go out right now (§4.3's one mechanism, four holds). */
 function held(s: CallState): boolean {
@@ -590,6 +651,25 @@ function reduce(s: CallState, sig: CallSignal): Step {
       const text = sig.text.trim();
       // Empty finals are discarded (§4.5's no-speech path): nothing submits, the flag clears.
       if (!text) return { state: { ...s, waitingFinal: false }, out: [] };
+      // THE TRANSCRIPT GATE (D74 S5 ③). A Whisper-family endpoint does not answer noise with nothing
+      // — it answers with a PLAUSIBLE SENTENCE (R76), and on a call that sentence is submitted to the
+      // agent as if the owner had said it. The relay cannot tell; the client can, because it already
+      // measures what the microphone heard. So a final the EAR cannot account for is dropped, with
+      // one line saying so — never silently, because a discarded utterance the owner believes went
+      // out is the worse failure of the two.
+      //
+      // FAIL-OPEN BY CONSTRUCTION: it fires only when there IS epoch-matched evidence. A final that
+      // arrives after a reconnect, or a second final for one speech segment, carries no accrual — and
+      // absence of evidence is not evidence of silence. AFTER the empty check on purpose: a no-speech
+      // final is already handled, and it deserves no note.
+      if (
+        sig.energyMs !== undefined &&
+        sig.minFinalMs !== undefined &&
+        sig.minFinalMs > 0 &&
+        sig.energyMs < sig.minFinalMs
+      ) {
+        return { state: { ...s, waitingFinal: false, note: CALL_COPY.tooQuiet }, out: [] };
+      }
       return drain({ ...s, waitingFinal: false, heard: text, pending: [...s.pending, text] });
     }
 
@@ -653,7 +733,62 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // The note is the capture's own news (the D73 device fallback) and rides the same arm: it is a
       // fact about THIS track, learned at exactly this moment, and it is not connection news — so a
       // reconnect's `CONNECTION_NOTES` retraction deliberately leaves it standing.
-      return { state: { ...s, earHoldMode: sig.earHoldMode, note: sig.note ?? s.note }, out: [] };
+      // …and the ROUTE PAIR rides the same arm (D74 S2), for the same reason: it is what the capture
+      // that actually opened was asked for, learned at exactly this moment. That makes this the ONE
+      // seeding point — the machine never reads the knobs itself — and it re-states the pair after a
+      // route cycle, so the control the owner just moved and the ear they are talking into cannot
+      // drift apart.
+      return {
+        state: {
+          ...s,
+          earHoldMode: sig.earHoldMode,
+          note: sig.note ?? s.note,
+          route: sig.route,
+          inputDevice: sig.deviceId,
+        },
+        out: [],
+      };
+
+    case "routeChange": {
+      // ILLEGAL OUTSIDE THE SETTLED PHASES, as a NO-OP rather than a queued intent: the control is
+      // disabled there anyway, and an intent parked across a reconnect would fire an acquisition at
+      // whatever moment the leg happened to come up (the "a wait that parks a decision open widens
+      // every ownership window it spans" lesson, S3).
+      if (!isStable(s.phase)) return { state: s, out: [] };
+      const route = sig.route ?? s.route;
+      const deviceId = sig.deviceId ?? s.inputDevice;
+      // Nothing moved — and re-dialling for nothing costs the owner a reconnect they did not ask for.
+      if (route === s.route && deviceId === s.inputDevice) return { state: s, out: [] };
+      return {
+        state: {
+          ...s,
+          route,
+          inputDevice: deviceId,
+          // The SCREEN is honest about what is happening: this is a fresh leg on a fresh ear, and the
+          // ladder starts clean because it is a deliberate redial, not a failure to recover from.
+          phase: "connecting",
+          attempts: 0,
+          // The utterance in flight dies with the track, exactly as it does on a `socketLost`: the
+          // audio is gone and no session will endpoint it.
+          userSpeechActive: false,
+          waitingFinal: false,
+          // …and a kill in flight is released rather than left standing: its `killSettled` was armed
+          // under the generation this arm is about to move, so nothing would ever clear the flag and
+          // the pending queue would be held for the rest of the call.
+          killing: false,
+          // The HOLD belongs to the track (§5.1, resolved ONCE per capture), so it dies with it; the
+          // fresh `captureReady` decides it again under the new route. `earHeld` follows in normalize.
+          earHoldMode: false,
+          // THE FENCE (F7). The old leg's frames, its close, this capture's `onEnded` and any send
+          // outcome armed under it all become ghosts — which is the point: the redial below is driven
+          // by the acquisition, not by the close, so a `socketLost` from the leg we are closing must
+          // not spend a rung of a ladder that is not running. The one thing it costs is an in-flight
+          // chat POST's outcome, which is a note the owner loses, not speech (the queue is kept).
+          gen: s.gen + 1,
+        },
+        out: [{ type: "recapture", route, deviceId }],
+      };
+    }
 
     case "turnSettled":
       // The brain finished without a mouth (a tool-only turn, TTS off, a reply that never synthesized).
@@ -819,9 +954,197 @@ function reduce(s: CallState, sig: CallSignal): Step {
   return { state: s, out: [] };
 }
 
+// ── THE EAR METER (D74 S4 ⑥) ─────────────────────────────────────────────────────────────────────
+//
+// ONE accumulator over the worklet's own per-frame RMS, and every consumer in this call reads what it
+// wrote: trigger A's windowed floor, the transcript gate's per-utterance evidence (S5), and the debug
+// readback (S7). They started as three readings of the same number in three places, which is how two
+// of them end up disagreeing about what the microphone actually heard.
+//
+// It lives in the WIRING, not the reducer: it is a measurement, arriving on the audio callback at
+// 25–50 Hz, and re-rendering React for it is exactly the trade the dictation meter's ref already
+// refused. What the reducer gets is the DECISION — `barge`, or a final's accrual on its own signal.
+
+interface EarMeter {
+  /** The last frame's RMS, and the loudest one still inside `PEAK_HOLD_MS` (S7). */
+  rms: number;
+  peak: number;
+  peakAt: number;
+  /** TRIGGER A's rolling window: one slot per frame of `min_speech_ms`, oldest overwritten, with the
+   *  count kept incrementally so a frame costs no scan. */
+  window: boolean[];
+  at: number;
+  hits: number;
+  /** THE UTTERANCE EPOCH (S5) — which (leg, utterance) the accrual below is evidence about, or `null`
+   *  when no utterance is open and there is therefore NO evidence to offer. The distinction is the
+   *  gate's whole fail-open rule: a final with no matching epoch is not quiet, it is unmeasured. */
+  epoch: { leg: number; seq: number } | null;
+  seq: number;
+  /** …and the accrual: ms of frames at or above the SILENCE floor since this utterance's speech-start. */
+  accruedMs: number;
+  accruedPeak: number;
+  /** What the LAST final was judged on, kept for the debug block. An `accruedMs` of 0 beside a
+   *  non-zero `chars` is the fail-open signature — a final that arrived with no epoch behind it. */
+  last: { accruedMs: number; peak: number; chars: number } | null;
+}
+
+function newEarMeter(): EarMeter {
+  return {
+    rms: 0,
+    peak: 0,
+    peakAt: 0,
+    window: [],
+    at: 0,
+    hits: 0,
+    epoch: null,
+    seq: 0,
+    accruedMs: 0,
+    accruedPeak: 0,
+    last: null,
+  };
+}
+
+/** One frame, consumed ONCE. Everything below reads what this wrote. */
+function meterFrame(m: EarMeter, rms: number, frameMs: number, silenceFloor: number): void {
+  const now = performance.now();
+  m.rms = rms;
+  // A decaying peak hold rather than a ring of samples: the reading it feeds is an eyeball one, and a
+  // 2 s ring at 50 Hz would be 100 numbers kept so a human can read the largest of them.
+  if (rms >= m.peak || now - m.peakAt > PEAK_HOLD_MS) {
+    m.peak = rms;
+    m.peakAt = now;
+  }
+  if (m.epoch !== null && rms >= silenceFloor) {
+    m.accruedMs += frameMs;
+    if (rms > m.accruedPeak) m.accruedPeak = rms;
+  }
+}
+
+/** Push one above-floor answer into trigger A's window; true when the window now carries enough. */
+function bargeWindow(m: EarMeter, above: boolean, frames: number): boolean {
+  if (m.window.length !== frames) {
+    m.window = new Array<boolean>(frames).fill(false);
+    m.at = 0;
+    m.hits = 0;
+  }
+  if (m.window[m.at] !== above) m.hits += above ? 1 : -1;
+  m.window[m.at] = above;
+  m.at = (m.at + 1) % frames;
+  // FLOOR, not ceil (code round F1): the ratio exists to TOLERATE dips, and ceil quietly walks it
+  // back to consecutive-frames at small windows (n=2 ⇒ 2-of-2 — the exact brittleness S4 removed).
+  // The max(1) keeps a one-frame window meaning "one hit", never "zero fires it".
+  return m.hits >= Math.max(1, Math.floor(frames * BARGE_HIT_RATIO));
+}
+
+function clearBarge(m: EarMeter): void {
+  m.window.fill(false);
+  m.at = 0;
+  m.hits = 0;
+}
+
+function openUtterance(m: EarMeter, leg: number): void {
+  m.seq += 1;
+  m.epoch = { leg, seq: m.seq };
+  m.accruedMs = 0;
+  m.accruedPeak = 0;
+}
+
+function closeUtterance(m: EarMeter): void {
+  m.epoch = null;
+  m.accruedMs = 0;
+  m.accruedPeak = 0;
+}
+
+/**
+ * THE METER'S EDGES, decided in ONE place — the `IDLE_EDGES` precedent, for the same reason: every
+ * rule about what voids the ear's evidence is a rule about the SIGNAL that arrived, and a copy of it
+ * inside each arm is a copy the next edge gets forgotten in.
+ *
+ * WHAT CLEARS WHAT, and why they are not the same set (S5 / review F2):
+ *  · the trigger's WINDOW clears on the mouth's rising edge, because the reply's own start transient
+ *    is not the owner talking and must not pre-fill a window that is about to kill the reply;
+ *  · the UTTERANCE's accrual clears wherever the thing it is evidence about ends or becomes
+ *    unknowable — a new speech-start (which opens the next one), the final it was collected for, a
+ *    mute, a leg that died, a leg that came up, and the route cycle;
+ *  · and MUTE clears both, because "the ear is closed" has to mean it.
+ */
+function meterEdge(
+  m: EarMeter,
+  sig: CallSignal,
+  leg: number,
+  prev: CallState,
+  next: CallState,
+): void {
+  switch (sig.type) {
+    case "speechStart":
+      // ONLY when the reducer TOOK it (code round F2): a muted/held speech-start is ignored by the
+      // machine, and an epoch opened for it would attribute the next frames to an utterance that,
+      // as far as the call is concerned, never happened. The accepted transition is the state diff,
+      // never a re-derivation of the arm's own eligibility rules.
+      if (next.userSpeechActive && !prev.userSpeechActive) openUtterance(m, leg);
+      break;
+    case "final":
+      m.last = { accruedMs: m.accruedMs, peak: m.accruedPeak, chars: sig.text.trim().length };
+      closeUtterance(m);
+      break;
+    case "playbackStarted":
+      clearBarge(m);
+      break;
+    case "setMuted":
+      clearBarge(m);
+      closeUtterance(m);
+      break;
+    case "ready":
+    case "socketLost":
+      closeUtterance(m);
+      break;
+    case "routeChange":
+      // Same F2 gate, other direction: a route change the reducer REFUSED (outside the stable
+      // phases, or nothing moved) must not throw away evidence for an utterance that is still
+      // live. An accepted cycle paints `connecting`, and that edge is the truth to key on.
+      if (next.phase !== prev.phase) closeUtterance(m);
+      break;
+  }
+}
+
 // ── the wiring ───────────────────────────────────────────────────────────────────────────────────
 
-/** What the overlay renders + the two things it can do. */
+/**
+ * THE READBACK BLOCK (D74 S7, evidence docs/research/R78 §6.2) — every field the S4 calibration
+ * sitting needs, on the screen the owner is holding, and read-only in the strictest sense: nothing
+ * here touches the track. It is assembled here rather than in the overlay for exactly that reason
+ * (review F4) — a screen that can reach a live MediaStreamTrack is a screen that can change one.
+ *
+ * `null` unless the `debug` knob is on; the overlay renders nothing extra when it is off.
+ */
+export interface CallDebug {
+  /** The PAIR (R78 §1.4): the mode GRANTED, beside what the device was offering at open. */
+  ecSettings: string | boolean | undefined;
+  ecCapabilities: readonly (string | boolean)[] | undefined;
+  /** The effective route pair and the hold lever — the floor is unreadable without them (§3.4). */
+  route: string;
+  echoWorkaround: string;
+  /** …and the three flags the arming decision produced. Rendered TOGETHER on purpose: `bargeArmed`
+   *  and `earHoldMode` are the same readback read twice and can never honestly disagree. */
+  bargeArmed: boolean;
+  earHoldMode: boolean;
+  earHeld: boolean;
+  mouthLive: boolean;
+  /** Which ear actually opened, and whether it is the one that was asked for. */
+  deviceLabel: string;
+  deviceId: string;
+  fellBack: boolean;
+  /** The whole C1 arithmetic: the live level, the 2 s peak hold, and the line they are measured
+   *  against. Without the hold the owner cannot see a floor their voice never reaches. */
+  rms: number;
+  rmsPeak2s: number;
+  floor: number;
+  /** …and what the last final was judged on (S5). `accruedMs: 0` beside a non-zero `chars` is the
+   *  fail-open signature — a final that arrived with no epoch behind it. */
+  lastFinal: { accruedMs: number; peak: number; chars: number } | null;
+}
+
+/** What the overlay renders + the things it can do. */
 export interface CallView {
   phase: CallPhase;
   heard: string;
@@ -833,6 +1156,16 @@ export interface CallView {
   interrupt: () => void;
   /** Mute/unmute the ear. The track goes silent; the frames keep flowing (see `PcmCapture.setMuted`). */
   toggleMute: () => void;
+  /** D74 S2 — THIS CALL's route pair, and the two ways to move it. Per call: neither writes config. */
+  route: string;
+  inputDevice: string;
+  /** …and whether moving it is legal right now. The control renders disabled otherwise rather than
+   *  silently swallowing the tap — a dead-looking control is honest; an inert live-looking one is not. */
+  canRoute: boolean;
+  setRoute: (route: string) => void;
+  setInputDevice: (deviceId: string) => void;
+  /** D74 S7 — the readback block, or `null` with the knob off (which is every ordinary call). */
+  debug: CallDebug | null;
 }
 
 export function useLiveCall(): CallView {
@@ -844,6 +1177,14 @@ export function useLiveCall(): CallView {
 
   const voice = useVoiceStatus().data;
   const knobs = voice?.live_call;
+  /** Trigger A's RMS floor (§4.1's table: `barge_threshold` 0 ⇒ reuse Tier 0's, same detector family).
+   *  Hoisted out of the start effect by D74 S1 so the acquisition can be re-run without it. */
+  const floor = knobs?.barge_threshold || (voice?.stt_auto_stop?.threshold ?? 0);
+  /** …and Tier 0's floor ON ITS OWN, which is what the transcript gate measures against (D74 S5). The
+   *  two are deliberately different questions: `barge_threshold` is "loud enough to interrupt a reply
+   *  through whatever the AEC left", this one is "louder than silence". Reusing the barge floor here
+   *  would throw away every quiet-but-real utterance on a call calibrated for interruption. */
+  const silenceFloor = voice?.stt_auto_stop?.threshold ?? 0;
   const capture = useRef<PcmCapture | null>(null);
   const socket = useRef<LiveSocket | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -859,8 +1200,9 @@ export function useLiveCall(): CallView {
    *  `null` until they arrive, which is also the honest answer for a page that hides before the call
    *  has one: there is nothing to keep in the background yet, so the old clean end applies. */
   const bg = useRef<{ background: boolean; keepalive: boolean; idleMs: number } | null>(null);
-  /** Sustained above-floor milliseconds — trigger A's own clock, fed by the worklet's per-frame RMS. */
-  const sustained = useRef(0);
+  /** THE ONE EAR METER (D74 S4 ⑥) — trigger A's window, the transcript gate's accrual and the debug
+   *  readback, all off the worklet's per-frame RMS, measured once. */
+  const meter = useRef<EarMeter>(newEarMeter());
   /** Trigger A is armed only on a track whose AEC is the subtractive `all` mode (the S0 ruling). */
   const bargeArmed = useRef(false);
   /** The held-upload retry is ONE PER HOLD (§4.5); this latch is what makes it one. A fresh `held`
@@ -909,10 +1251,14 @@ export function useLiveCall(): CallView {
   /** …and the same knot, tied the same way, for the idle clock: `send` re-arms it on the activity
    *  edges and the clock's own expiry sends. Assigned during render, read only from inside callbacks. */
   const armIdleRef = useRef<() => void>(() => {});
+  /** …and once more for THE ACQUISITION (D74 S2): `send` runs the `recapture` effect, and `acquire`
+   *  needs `openLeg`, which needs `send`. Same latch-ref idiom, same read-only-from-a-callback rule. */
+  const acquireRef = useRef<(req: MicRequest, alive: () => boolean) => void>(() => {});
 
   const send = useCallback(
     function send(sig: CallSignal): void {
-      const { state: next, out } = callReduce(ref.current, sig);
+      const prev = ref.current;
+      const { state: next, out } = callReduce(prev, sig);
       if (next !== ref.current) {
         ref.current = next;
         setState(next);
@@ -974,6 +1320,32 @@ export function useLiveCall(): CallView {
             // is what keeps a close this call asked for from driving a socket it has since replaced.
             socket.current?.close();
             break;
+          case "recapture": {
+            // THE ROUTE CYCLE (D74 S2) — the hang-up path's RELEASE without its terminal, then S1's
+            // acquisition again. The order is the teardown's, for the teardown's reasons: the socket
+            // first (a clean close releases the relay's slot synchronously, so the redial below is
+            // never refused `busy` by our own leg — and the S6 ⑦ marker covers the window if it is),
+            // then the leg's pacer, then the ear.
+            const gen = ref.current.gen;
+            clearTimeout(retryTimer.current);
+            socket.current?.close();
+            socket.current = null;
+            pacer.current = null;
+            overflowed.current = false;
+            // The pre-play tap closes over the capture it is about to release (S3 confirm F2), so it
+            // goes with it; the fresh capture registers its own if its track needs one.
+            setCallPrePlay(null);
+            capture.current?.stop();
+            capture.current = null;
+            // NOT `markLeg(false)`: this tab is still in a call. And the fence is the generation this
+            // arm just moved — a hang-up or a terminal inside the acquisition gap moves it again, and
+            // the capture that resolves afterwards stops itself exactly as the mount path's does.
+            acquireRef.current(
+              { route: eff.route, deviceId: eff.deviceId },
+              () => ref.current.gen === gen,
+            );
+            break;
+          }
           case "teardown":
             teardown();
             if (eff.close) endCall();
@@ -985,6 +1357,9 @@ export function useLiveCall(): CallView {
       // none of those is a single field to diff. Last, so `armIdle` reads the state this reduce wrote
       // and a terminal's teardown has already cleared the timer it would otherwise re-arm.
       if (IDLE_EDGES.has(sig.type)) armIdleRef.current();
+      // …and the EAR METER's, the same way and for the same reason (D74 S4/S5). After the reduce,
+      // because the `final` arm has already been handed the accrual this may now clear.
+      meterEdge(meter.current, sig, legSeq.current, prev, next);
     },
     [teardown],
   );
@@ -1032,7 +1407,17 @@ export function useLiveCall(): CallView {
             send({ type: "speechStop", gen });
             break;
           case "transcript":
-            if (frame.final) send({ type: "final", text: frame.text, gen });
+            // THE TRANSCRIPT GATE's evidence (D74 S5), offered only when the accrual belongs to THIS
+            // leg's open utterance. Anything else carries none, and the reducer passes it: a final
+            // nobody measured is unmeasured, not quiet.
+            if (frame.final)
+              send({
+                type: "final",
+                text: frame.text,
+                energyMs: meter.current.epoch?.leg === leg ? meter.current.accruedMs : undefined,
+                minFinalMs: knobs.min_final_ms,
+                gen,
+              });
             break;
           case "error":
             send({ type: "serverError", code: frame.code, message: frame.message, gen });
@@ -1114,6 +1499,195 @@ export function useLiveCall(): CallView {
       });
   }, []);
 
+  /**
+   * THE ACQUISITION, as ONE re-callable function (D74 S1).
+   *
+   * It was the mount effect's own body until the route cycle (S2) needed to run it a SECOND time,
+   * under different constraints and without a remount — and a second copy of "open the ear, decide
+   * the hold, arm the trigger, open the leg" is exactly the parallel implementation the house rules
+   * forbid. Nothing about it moved in the extraction: the same generation fence, the same
+   * disposed/terminal guards, the same order, the same effects.
+   *
+   * @param req   what to open the ear WITH. At mount it is the knobs' pair (§4.5 — read at call
+   *              start); a route cycle passes the owner's IN-CALL choice, which is per-call and never
+   *              writes config, so the Conf knob stays the next call's default.
+   * @param alive the CALLER's own fence. The mount effect's is its `disposed` local, which has to stay
+   *              per-RUN: StrictMode's first setup must go on refusing its own late capture even after
+   *              the second setup has started a real one.
+   */
+  const acquire = useCallback(
+    (req: MicRequest, alive: () => boolean): void => {
+      if (!knobs) return;
+      // Trigger A's window, in FRAMES — the same `min_speech_ms` the consecutive run spent, read once
+      // here rather than divided on every frame (D74 S4 ⑥).
+      const bargeFrames = Math.max(1, Math.ceil(knobs.min_speech_ms / knobs.frame_ms));
+      // THE EAR IS TAKEN BEFORE IT IS OPENED (D74 S6 ⑧, evidence docs/research/R78 §2.3): a live
+      // dictation capture PINS the echo-cancellation mode of the next one on the same device, so a
+      // call opening beside one silently inherits whatever dictation asked for — with a readback that
+      // honestly reports a mode this call never chose. Stop, THEN open. It resolves at once when
+      // nothing was recording, which is every ordinary call.
+      void releaseMic()
+        .then(() =>
+          startPcmCapture({
+            frameMs: knobs.frame_ms,
+            // D73 S5 — the capture pair, read at call start like every other knob (§4.5).
+            route: req.route,
+            deviceId: req.deviceId,
+            onFrame: (frame) => {
+              // THE UPLINK GOES THROUGH THE PACER (A-F2, evidence docs/research/R71). Shipping each frame the
+              // instant the worklet hands it over is safe at the ordinary cadence and fatal after a stall: the
+              // worklet's MessagePort deliveries queue while the main thread is blocked and then dispatch in
+              // ONE tick, which the relay's rolling 2×-realtime budget reads as a protocol violation and
+              // answers with `error{code:"protocol"}` + close 1008 — a call that simply ends, mid-sentence,
+              // with no reconnect. Dictation has metered this wire since S2.5; the call now spends from the
+              // same bucket (`lib/uplinkPacer`), under the CALL's backlog rule: drop-OLDEST past
+              // `call_backlog_ms`, because a call has a clock on both sides and a second of stale speech
+              // endpoints a turn the owner has moved past (R71 §5.3).
+              //
+              // WHAT IT DOES NOT CONSULT: `muted`/`held`. Both are `track.enabled` — the frames keep flowing,
+              // as SILENCE, which is exactly what the server VAD must observe to endpoint (`pcmCapture`'s one
+              // rule). So there is no stranded tail here and no flush-on-mute question: the queue is pumped by
+              // a callback that never stops arriving while the capture is alive.
+              const p = pacer.current;
+              if (p) {
+                if (enqueueBounded(p, frame.buf, knobs.frame_ms, knobs.call_backlog_ms)) {
+                  // The client's own drop presents the RELAY'S signal, locally raised: one loss chain, one
+                  // note, one hold that times out the same way (`degraded` → `degradeHold`). Once per burst —
+                  // see the `overflowed` latch.
+                  if (!overflowed.current) {
+                    overflowed.current = true;
+                    send({ type: "degraded", gen: ref.current.gen });
+                  }
+                } else overflowed.current = false;
+                accrue(p);
+                // The pump reads the LIVE socket rather than closing over one: a frame paced out across the
+                // handshake of a fresh leg belongs to that leg, and `sendAudio` drops it anyway while the
+                // socket is not OPEN (the reconnect gap, exactly as before the pacer).
+                pump(p, knobs.frame_ms, (buf) => socket.current?.sendAudio(buf));
+              }
+              // THE EAR METER, FED ONCE (D74 S4 ⑥): trigger A below, the transcript gate's accrual (S5)
+              // and the debug readback (S7) all read what this line wrote. It sits OUTSIDE every guard
+              // below on purpose — what the microphone heard does not stop being true because the
+              // interrupt happens to be disarmed.
+              const m = meter.current;
+              meterFrame(m, frame.rms, knobs.frame_ms, silenceFloor);
+              // TRIGGER A (§4.3): the worklet already owns the samples, so the sustained-energy floor is
+              // measured on the frames we CAPTURE — never a second AnalyserNode over the same audio, and
+              // deliberately never inside the pump: what the owner said is a fact about the microphone, not
+              // about what the uplink found room for. A dropped frame is one the ear will not transcribe; it
+              // is still speech over an audible reply, and it must still count toward the interrupt.
+              // A floor of 0 means neither knob was calibrated, and "every frame is speech" would make a
+              // cough kill the reply — so the automatic trigger simply stays disarmed until S4 sets one.
+              // Gated on the MOUTH, not the phase (S3, the same audit as the `barge` arm): what trigger A
+              // measures is speech over an audible reply, and the reducer's own gate reads `mouthLive` — a
+              // clock that stopped at the rendered phase would spend the reconnect window unable to accrue
+              // toward a kill the tap could still fire.
+              if (!bargeArmed.current || floor <= 0 || !ref.current.mouthLive) {
+                clearBarge(m);
+                return;
+              }
+              // …and the RUN is now an m-of-n WINDOW (D74 S4 ⑥, see `BARGE_HIT_RATIO`): a frame under the
+              // floor costs ONE slot instead of the whole clock, because the holes inside a spoken word
+              // are exactly what a consecutive run could never survive.
+              if (bargeWindow(m, frame.rms >= floor, bargeFrames)) {
+                clearBarge(m);
+                send({ type: "barge", gen: ref.current.gen });
+              }
+            },
+            onEnded: () => send({ type: "captureLost", gen: ref.current.gen }),
+          }),
+        )
+        .then((cap) => {
+          // TERMINAL beside DISPOSED (S6 code-review F1): a close-class exit (`hidden`, `pagehide`, a
+          // hang-up) lands the machine terminal SYNCHRONOUSLY, but the unmount whose cleanup sets
+          // `disposed` waits for React's commit — and a capture resolving inside that window would
+          // install itself, open a leg and re-write the busy marker on a call that is already over.
+          // The gen fence upstairs cannot catch it: `openLeg` reads the LIVE generation, which the
+          // terminal has already moved to.
+          if (!alive() || isTerminal(ref.current.phase)) {
+            cap.stop();
+            return;
+          }
+          capture.current = cap;
+          // MUTE ACROSS THE ACQUISITION GAP (S2b confirm F1): a Mute tapped while `getUserMedia` was
+          // still pending changed the RULE but had no track to change — so the track takes the
+          // machine's answer the moment it exists, or audio flows to the relay while the screen says
+          // Muted (and a final landing after the unmute would pass the reducer and submit it).
+          cap.setMuted(ref.current.muted);
+          // …and the SAME lesson for the keepalive (S6 ③): the only thing that starts it is a hidden
+          // edge, and a call backgrounded inside the acquisition gap has already had its. Without this
+          // it would run with no keepalive at all and freeze ninety seconds later.
+          if (
+            bg.current?.background &&
+            bg.current.keepalive &&
+            document.visibilityState === "hidden"
+          )
+            cap.setKeepalive(true);
+          // THE ROUTE-RESOLVED CAPTURE POLICY (D73 S5 / Maya F1). Both halves are decided HERE, together,
+          // from the same two facts — because they answer the same question and a version of this that
+          // let them disagree would arm voice barge-in against an ear the other half had just closed.
+          //
+          // The S0 ruling stands for the SPEAKER route, per TRACK and never UA-sniffed: only a genuinely
+          // subtractive canceller lets the ear stay open under the reply, so only there can VOICE
+          // interrupt. Everywhere else the tap is the interrupt (§4.3) — and the ear is CLOSED while the
+          // reply speaks, which is the same readback read for its other consequence (S3).
+          //
+          // On HEADPHONES the readback stops being the question. `echoCancellation: "all"` is a statement
+          // about how much of the page's own output the canceller subtracts from the mic, and headphones
+          // have no acoustic path to leak any of it (R74 §3): the ear needs no hold, and speech over the
+          // reply is genuinely the owner's, so barge-in arms on `barge_in` alone. That is the whole point
+          // of the route being ONE choice rather than a codec toggle — AEC off with the hold still armed
+          // would buy media-quality output and pay for it with an ear that closes on every reply.
+          //
+          // `on`/`off` remain the owner's override of the HOLD half only: the route moves what `auto`
+          // means, it does not outrank an explicit answer. And the two decisions stay deliberately
+          // separate flags: `barge_in` may be off on a perfectly open ear (walkie-talkie by choice).
+          //
+          // …and the route it reads is the one THIS acquisition asked for (D74 S1/S2), not the knob: an
+          // in-call route cycle re-opens the ear under a different answer, and both halves have to move
+          // with it or the fresh track would be governed by the previous route's decisions.
+          const headphones = onHeadphones(req.route);
+          bargeArmed.current =
+            knobs.barge_in && (headphones || cap.readback.echoCancellation === "all");
+          const hold = knobs.echo_workaround;
+          send({
+            type: "captureReady",
+            earHoldMode:
+              hold === "on"
+                ? true
+                : hold === "off"
+                  ? false
+                  : !headphones && cap.readback.echoCancellation !== "all",
+            // The picked device did not open and the default took the call (R74 §2.2(b)). The call
+            // proceeds — it is the same ear on another route — and the overlay says which.
+            note: cap.fellBack ? CALL_COPY.deviceFallback : undefined,
+            // …and what this acquisition ASKED for (D74 S2): what the in-call control renders, and
+            // what the next route change merges its half-payload against.
+            route: req.route ?? "",
+            deviceId: req.deviceId ?? "",
+            gen: ref.current.gen,
+          });
+          // …and the TRACK takes the machine's answer the moment it exists — the S2b confirm-F1 lesson
+          // beside the mute line above, in the other direction: the rule can already be TRUE here (a reply
+          // was audible while `getUserMedia` was pending), and a hold that only ever reaches the track on
+          // its next CHANGE would leave the ear open for exactly that stretch.
+          cap.setHeld(ref.current.earHeld);
+          // THE PRE-PLAY TAP (confirm round F2): on a leaking track the mouth closes the ear BEFORE it
+          // asks the element to play — observation, however synchronous, races the audio thread. The tap
+          // is a bare "close now": stable until the play event's own reduce confirms it (nothing can
+          // transition `earHeld` in that gap), and a rejected play's status edge is what reopens it.
+          if (ref.current.earHoldMode) setCallPrePlay(() => cap.setHeld(true));
+          openLeg();
+        })
+        .catch((e: unknown) => {
+          if (alive()) send({ type: "failed", note: micFailure(e) });
+        });
+    },
+    [knobs, floor, silenceFloor, openLeg, send],
+  );
+
+  acquireRef.current = acquire;
+
   // ── the one start effect: capture, then the first leg ──────────────────────────────────────────
   useEffect(() => {
     // SETUP MUST BE CLEANUP'S SYMMETRIC PARTNER (the React effect contract StrictMode enforces by
@@ -1142,143 +1716,7 @@ export function useLiveCall(): CallView {
     // exclusion is a GATE on the status timeline, not an id: the streaming message is renamed to the
     // server's id mid-flight, and a captured id stops matching the message it was meant to exclude.
     setCallVoice(true, getLiveTurn() !== null);
-    const floor = knobs.barge_threshold || (voice.stt_auto_stop?.threshold ?? 0);
-    void startPcmCapture({
-      frameMs: knobs.frame_ms,
-      // D73 S5 — the capture pair, read at call start like every other knob (§4.5).
-      route: knobs.route,
-      deviceId: knobs.input_device,
-      onFrame: (frame) => {
-        // THE UPLINK GOES THROUGH THE PACER (A-F2, evidence docs/research/R71). Shipping each frame the
-        // instant the worklet hands it over is safe at the ordinary cadence and fatal after a stall: the
-        // worklet's MessagePort deliveries queue while the main thread is blocked and then dispatch in
-        // ONE tick, which the relay's rolling 2×-realtime budget reads as a protocol violation and
-        // answers with `error{code:"protocol"}` + close 1008 — a call that simply ends, mid-sentence,
-        // with no reconnect. Dictation has metered this wire since S2.5; the call now spends from the
-        // same bucket (`lib/uplinkPacer`), under the CALL's backlog rule: drop-OLDEST past
-        // `call_backlog_ms`, because a call has a clock on both sides and a second of stale speech
-        // endpoints a turn the owner has moved past (R71 §5.3).
-        //
-        // WHAT IT DOES NOT CONSULT: `muted`/`held`. Both are `track.enabled` — the frames keep flowing,
-        // as SILENCE, which is exactly what the server VAD must observe to endpoint (`pcmCapture`'s one
-        // rule). So there is no stranded tail here and no flush-on-mute question: the queue is pumped by
-        // a callback that never stops arriving while the capture is alive.
-        const p = pacer.current;
-        if (p) {
-          if (enqueueBounded(p, frame.buf, knobs.frame_ms, knobs.call_backlog_ms)) {
-            // The client's own drop presents the RELAY'S signal, locally raised: one loss chain, one
-            // note, one hold that times out the same way (`degraded` → `degradeHold`). Once per burst —
-            // see the `overflowed` latch.
-            if (!overflowed.current) {
-              overflowed.current = true;
-              send({ type: "degraded", gen: ref.current.gen });
-            }
-          } else overflowed.current = false;
-          accrue(p);
-          // The pump reads the LIVE socket rather than closing over one: a frame paced out across the
-          // handshake of a fresh leg belongs to that leg, and `sendAudio` drops it anyway while the
-          // socket is not OPEN (the reconnect gap, exactly as before the pacer).
-          pump(p, knobs.frame_ms, (buf) => socket.current?.sendAudio(buf));
-        }
-        // TRIGGER A (§4.3): the worklet already owns the samples, so the sustained-energy floor is
-        // measured on the frames we CAPTURE — never a second AnalyserNode over the same audio, and
-        // deliberately never inside the pump: what the owner said is a fact about the microphone, not
-        // about what the uplink found room for. A dropped frame is one the ear will not transcribe; it
-        // is still speech over an audible reply, and it must still count toward the interrupt.
-        // A floor of 0 means neither knob was calibrated, and "every frame is speech" would make a
-        // cough kill the reply — so the automatic trigger simply stays disarmed until S4 sets one.
-        // Gated on the MOUTH, not the phase (S3, the same audit as the `barge` arm): what trigger A
-        // measures is speech over an audible reply, and the reducer's own gate reads `mouthLive` — a
-        // clock that stopped at the rendered phase would spend the reconnect window unable to accrue
-        // toward a kill the tap could still fire.
-        if (!bargeArmed.current || floor <= 0 || !ref.current.mouthLive) {
-          sustained.current = 0;
-          return;
-        }
-        if (frame.rms < floor) {
-          sustained.current = 0;
-          return;
-        }
-        sustained.current += knobs.frame_ms;
-        if (sustained.current >= knobs.min_speech_ms) {
-          sustained.current = 0;
-          send({ type: "barge", gen: ref.current.gen });
-        }
-      },
-      onEnded: () => send({ type: "captureLost", gen: ref.current.gen }),
-    })
-      .then((cap) => {
-        // TERMINAL beside DISPOSED (S6 code-review F1): a close-class exit (`hidden`, `pagehide`, a
-        // hang-up) lands the machine terminal SYNCHRONOUSLY, but the unmount whose cleanup sets
-        // `disposed` waits for React's commit — and a capture resolving inside that window would
-        // install itself, open a leg and re-write the busy marker on a call that is already over.
-        // The gen fence upstairs cannot catch it: `openLeg` reads the LIVE generation, which the
-        // terminal has already moved to.
-        if (disposed || isTerminal(ref.current.phase)) {
-          cap.stop();
-          return;
-        }
-        capture.current = cap;
-        // MUTE ACROSS THE ACQUISITION GAP (S2b confirm F1): a Mute tapped while `getUserMedia` was
-        // still pending changed the RULE but had no track to change — so the track takes the
-        // machine's answer the moment it exists, or audio flows to the relay while the screen says
-        // Muted (and a final landing after the unmute would pass the reducer and submit it).
-        cap.setMuted(ref.current.muted);
-        // …and the SAME lesson for the keepalive (S6 ③): the only thing that starts it is a hidden
-        // edge, and a call backgrounded inside the acquisition gap has already had its. Without this
-        // it would run with no keepalive at all and freeze ninety seconds later.
-        if (bg.current?.background && bg.current.keepalive && document.visibilityState === "hidden")
-          cap.setKeepalive(true);
-        // THE ROUTE-RESOLVED CAPTURE POLICY (D73 S5 / Maya F1). Both halves are decided HERE, together,
-        // from the same two facts — because they answer the same question and a version of this that
-        // let them disagree would arm voice barge-in against an ear the other half had just closed.
-        //
-        // The S0 ruling stands for the SPEAKER route, per TRACK and never UA-sniffed: only a genuinely
-        // subtractive canceller lets the ear stay open under the reply, so only there can VOICE
-        // interrupt. Everywhere else the tap is the interrupt (§4.3) — and the ear is CLOSED while the
-        // reply speaks, which is the same readback read for its other consequence (S3).
-        //
-        // On HEADPHONES the readback stops being the question. `echoCancellation: "all"` is a statement
-        // about how much of the page's own output the canceller subtracts from the mic, and headphones
-        // have no acoustic path to leak any of it (R74 §3): the ear needs no hold, and speech over the
-        // reply is genuinely the owner's, so barge-in arms on `barge_in` alone. That is the whole point
-        // of the route being ONE choice rather than a codec toggle — AEC off with the hold still armed
-        // would buy media-quality output and pay for it with an ear that closes on every reply.
-        //
-        // `on`/`off` remain the owner's override of the HOLD half only: the route moves what `auto`
-        // means, it does not outrank an explicit answer. And the two decisions stay deliberately
-        // separate flags: `barge_in` may be off on a perfectly open ear (walkie-talkie by choice).
-        const headphones = onHeadphones(knobs.route);
-        bargeArmed.current = knobs.barge_in && (headphones || cap.echoCancellation === "all");
-        const hold = knobs.echo_workaround;
-        send({
-          type: "captureReady",
-          earHoldMode:
-            hold === "on"
-              ? true
-              : hold === "off"
-                ? false
-                : !headphones && cap.echoCancellation !== "all",
-          // The picked device did not open and the default took the call (R74 §2.2(b)). The call
-          // proceeds — it is the same ear on another route — and the overlay says which.
-          note: cap.fellBack ? CALL_COPY.deviceFallback : undefined,
-          gen: ref.current.gen,
-        });
-        // …and the TRACK takes the machine's answer the moment it exists — the S2b confirm-F1 lesson
-        // beside the mute line above, in the other direction: the rule can already be TRUE here (a reply
-        // was audible while `getUserMedia` was pending), and a hold that only ever reaches the track on
-        // its next CHANGE would leave the ear open for exactly that stretch.
-        cap.setHeld(ref.current.earHeld);
-        // THE PRE-PLAY TAP (confirm round F2): on a leaking track the mouth closes the ear BEFORE it
-        // asks the element to play — observation, however synchronous, races the audio thread. The tap
-        // is a bare "close now": stable until the play event's own reduce confirms it (nothing can
-        // transition `earHeld` in that gap), and a rejected play's status edge is what reopens it.
-        if (ref.current.earHoldMode) setCallPrePlay(() => cap.setHeld(true));
-        openLeg();
-      })
-      .catch((e: unknown) => {
-        if (!disposed) send({ type: "failed", note: micFailure(e) });
-      });
+    acquire({ route: knobs.route, deviceId: knobs.input_device }, () => !disposed);
     return () => {
       disposed = true;
       // THROUGH THE REDUCER, not a bare `teardown()`: the `unmounted` arm moves the generation FIRST,
@@ -1444,16 +1882,62 @@ export function useLiveCall(): CallView {
 
   const interrupt = useCallback(() => send({ type: "barge", gen: ref.current.gen }), [send]);
 
-  /** The mute control: the TRACK first (the samples go silent immediately, before any render), then the
-   *  rule change. Trigger A's own clock is reset with it — silent frames read ~0 RMS and would decay it
-   *  anyway, but a counter left standing at the edge of its floor is a barge-in waiting to fire off
-   *  audio nobody sent, and "the ear is closed" has to mean it. */
+  /** The mute control: the TRACK first (the samples go silent immediately, before any render), then
+   *  the rule change. The ear meter's own reset rides the `setMuted` EDGE since D74 S4 — silent frames
+   *  read ~0 RMS and would decay the window anyway, but a window left standing at the edge of its
+   *  floor is a barge-in waiting to fire off audio nobody sent, and "the ear is closed" has to mean
+   *  it. Moved into `meterEdge` so mute is not the one caller that hand-clears the meter. */
   const toggleMute = useCallback((): void => {
     const on = !ref.current.muted;
     capture.current?.setMuted(on);
-    if (on) sustained.current = 0;
     send({ type: "setMuted", on, gen: ref.current.gen });
   }, [send]);
+
+  /** THE IN-CALL ROUTE CONTROLS (D74 S2). Two half-payloads onto ONE signal, because they are one
+   *  decision — "what should this ear be" — and the reducer merges whichever half arrives against the
+   *  standing pair. Neither writes config: the Conf knobs stay the NEXT call's default (§4.5). */
+  const setRoute = useCallback(
+    (route: string): void => send({ type: "routeChange", route, gen: ref.current.gen }),
+    [send],
+  );
+  const setInputDevice = useCallback(
+    (deviceId: string): void => send({ type: "routeChange", deviceId, gen: ref.current.gen }),
+    [send],
+  );
+
+  // ── the readback block (D74 S7 / R78 §6.2) ─────────────────────────────────────────────────────
+  // SNAPSHOTTED at mount like every other §4.5 knob (and exactly as the overlay's `ring` is): what a
+  // call shows is decided when it starts, not by a `/voice/status` refetch in the middle of it.
+  const [debugOn] = useState(() => knobs?.debug ?? false);
+  const [debug, setDebug] = useState<CallDebug | null>(null);
+  useEffect(() => {
+    if (!debugOn) return;
+    const read = (): void => {
+      const cap = capture.current;
+      const m = meter.current;
+      const s = ref.current;
+      setDebug({
+        ecSettings: cap?.readback.echoCancellation,
+        ecCapabilities: cap?.readback.echoCapabilities,
+        route: s.route,
+        echoWorkaround: knobs?.echo_workaround ?? "",
+        bargeArmed: bargeArmed.current,
+        earHoldMode: s.earHoldMode,
+        earHeld: s.earHeld,
+        mouthLive: s.mouthLive,
+        deviceLabel: cap?.readback.label ?? "",
+        deviceId: cap?.readback.deviceId ?? "",
+        fellBack: cap?.fellBack ?? false,
+        rms: m.rms,
+        rmsPeak2s: m.peak,
+        floor,
+        lastFinal: m.last,
+      });
+    };
+    read();
+    const id = setInterval(read, DEBUG_TICK_MS);
+    return () => clearInterval(id);
+  }, [debugOn, knobs, floor]);
 
   return {
     phase: state.phase,
@@ -1463,6 +1947,12 @@ export function useLiveCall(): CallView {
     muted: state.muted,
     interrupt,
     toggleMute,
+    route: state.route,
+    inputDevice: state.inputDevice,
+    canRoute: isStable(state.phase),
+    setRoute,
+    setInputDevice,
+    debug,
   };
 }
 

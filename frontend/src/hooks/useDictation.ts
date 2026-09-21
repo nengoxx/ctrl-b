@@ -6,6 +6,7 @@ import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocke
 import { attachPcmUplink, openMicStream, type PcmUplink } from "../lib/pcmCapture";
 import { accrue, DRAIN_PACE, enqueue, pump, type PacerState } from "../lib/uplinkPacer";
 import { appendDraft, clearDraft, getDraft } from "../store/composer";
+import { setMicRelease } from "../store/micRelease";
 import { pushToast } from "../store/toast";
 
 // Phase 6b-1 — push-to-talk dictation (tap to start, tap to stop). The idiomatic React home for the
@@ -569,6 +570,51 @@ export function useDictation({
     if (s) dropStream(s);
     rec.stop();
   }, [abortArming, dropStream]);
+
+  /** D74 S6 ⑧ — the pending HANDOVER's resolver, or null. One at a time: a second ask rides the
+   *  first rather than orphaning it, which is how a promise nobody can resolve would be minted. */
+  const freeRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
+
+  /** The microphone is no longer this hook's. Called from every path that releases the stream — or
+   *  that never opened one — which is the same set of places that stop its tracks. Idempotent. */
+  const earFreed = useCallback((): void => {
+    const pending = freeRef.current;
+    if (!pending) return;
+    freeRef.current = null;
+    pending.resolve();
+  }, []);
+
+  /**
+   * HAND THE EAR TO A STARTING CALL (D74 S6 ⑧, evidence docs/research/R78 §2.3).
+   *
+   * A live capture pins the platform's echo-cancellation mode for the next one on the same device, so
+   * a call opening beside a running dictation can silently inherit the route dictation asked for. The
+   * remedy is stop-then-open, and the STOP is the one this hook already owns: the draft is harvested
+   * by the release choreography under its own rules (②/③/⑤), never by a second mechanism bolted on
+   * beside it.
+   *
+   * Resolves when nothing here holds a stream any more — immediately when nothing did. The one window
+   * it cannot bound is a `getUserMedia` sitting on an unanswered permission prompt; that is the
+   * owner's dialog, and it ends when they answer it.
+   */
+  const yieldMic = useCallback((): Promise<void> => {
+    if (!armRef.current && !recRef.current) return Promise.resolve();
+    if (!freeRef.current) {
+      let resolve = (): void => {};
+      const promise = new Promise<void>((res) => {
+        resolve = res;
+      });
+      freeRef.current = { promise, resolve };
+    }
+    const pending = freeRef.current;
+    stop();
+    return pending.promise;
+  }, [stop]);
+
+  useEffect(() => {
+    setMicRelease(yieldMic);
+    return () => setMicRelease(null);
+  }, [yieldMic]);
 
   /** Release ONLY the Web Audio half of the detector (interval · nodes · context). Split out because
    *  the energy detector is allowed to degrade while the hidden-page stop is NOT (MED-1): a context
@@ -1158,6 +1204,9 @@ export function useDictation({
         // lands after that is the user's own release, not a new fact to report — and the toast and the
         // teardown below both belong to the CURRENT attempt, whose detector/listener this one must not
         // touch. (The non-aborted path is unchanged: a real denial still explains itself.)
+        // …and either way this attempt holds no stream, so a call waiting on the ear may have it
+        // (D74 S6 ⑧ — every path that ends without one says so, exactly as the four track-stops do).
+        earFreed();
         if (arm.aborted) return false;
         teardownDetector(); // every failed start leaves the detector state clean (MED-2)
         pushToast("Microphone permission denied", "err");
@@ -1168,6 +1217,7 @@ export function useDictation({
       // acquisition window must never produce.
       if (arm.aborted) {
         stream.getTracks().forEach((t) => t.stop());
+        earFreed();
         return false;
       }
       const mime = pickMime();
@@ -1178,6 +1228,7 @@ export function useDictation({
         // Construction can throw (no supported container) — release the stream we just opened.
         teardownDetector();
         stream.getTracks().forEach((t) => t.stop());
+        earFreed();
         pushToast("Recording isn't supported on this browser", "err");
         return false;
       }
@@ -1195,6 +1246,10 @@ export function useDictation({
         if (recRef.current === rec) recRef.current = null;
         teardownDetector(); // BEFORE the upload enters `sending` — the watcher dies with the recording
         stream.getTracks().forEach((t) => t.stop()); // release the mic indicator
+        // …and the ear is free from THIS line, not from the end of the release choreography (D74 S6
+        // ⑧): the flush and its tail wait are the RELAY's business, and a call held behind them
+        // would wait seconds for a microphone that is already back.
+        earFreed();
         // THE CLIP LEAVES THE REFS HERE, once, before anything decides what becomes of it — the F2
         // ownership rule applied to the recording itself now that S2.5 can hold the decision open for
         // `tail_wait_ms` (see `upload`'s `@param clip`).
@@ -1241,6 +1296,7 @@ export function useDictation({
         const live = streamRef.current;
         if (live) dropStream(live);
         stream.getTracks().forEach((t) => t.stop());
+        earFreed(); // D74 S6 ⑧ — the tracks are gone, so a waiting call may open its own
         startedAtRef.current = 0;
         pushToast("Recording failed", "err");
         setPhase("idle");
@@ -1264,6 +1320,7 @@ export function useDictation({
     armDetector,
     teardownDetector,
     dropStream,
+    earFreed,
     finishStream,
     route,
     inputDevice,

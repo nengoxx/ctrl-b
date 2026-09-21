@@ -18,6 +18,7 @@ import { FakeMediaRecorder, mockStt, recordOnce, setMediaDevices } from "./dicta
 import { runComposer } from "../../src/lib/composer";
 import { getChatStatus } from "../../src/store/chat";
 import { clearDraft, getDraft } from "../../src/store/composer";
+import { releaseMic } from "../../src/store/micRelease";
 import { pushToast } from "../../src/store/toast";
 
 const opts = (autoSend = false) => ({ sttReady: true, statusStamp: 1, autoSend });
@@ -718,5 +719,53 @@ describe("useDictation — the capture rides the ROUTE (D73 S5; closes the R51 �
       "That microphone wasn't available — using the default",
       "info",
     );
+  });
+});
+
+describe("useDictation — handing the EAR to a call (D74 S6 ⑧, evidence docs/research/R78 §2.3)", () => {
+  it("stops a live recording, WAITS for the microphone, and harvests by its own rules", async () => {
+    // A live capture pins the platform's echo-cancellation mode for the next one on the same device,
+    // so the call must not open beside this one. The stop is dictation's OWN — which is what keeps
+    // the recorded clip on its ordinary path into the draft instead of being thrown away by a second
+    // mechanism bolted on for the call's benefit. (The clock is nudged past the 1000 ms floor exactly
+    // as `recordOnce` does: what this case is about is a REAL recording being taken over.)
+    mockStt(200, { text: "mid sentence" });
+    const { result } = renderHook(() => useDictation(opts(false)));
+    act(() => result.current.toggle());
+    await waitFor(() => expect(result.current.status).toBe("recording"));
+
+    const realNow = Date.now;
+    const at = realNow() + 1200;
+    Date.now = () => at;
+    try {
+      await act(async () => {
+        await releaseMic();
+      });
+    } finally {
+      Date.now = realNow;
+    }
+    expect(result.current.status).not.toBe("recording");
+    await waitFor(() => expect(getDraft()).toBe("mid sentence"));
+  });
+
+  it("resolves at once when nothing is recording — every ordinary call", async () => {
+    renderHook(() => useDictation(opts(false)));
+    let settled = false;
+    await act(async () => {
+      await releaseMic().then(() => {
+        settled = true;
+      });
+    });
+    expect(settled).toBe(true);
+  });
+
+  it("withdraws the offer on unmount — a dead composer leaves no live handover behind", async () => {
+    const { result, unmount } = renderHook(() => useDictation(opts(false)));
+    act(() => result.current.toggle());
+    await waitFor(() => expect(result.current.status).toBe("recording"));
+    unmount();
+    await act(async () => {
+      await releaseMic(); // nobody is offering: this must neither hang nor throw
+    });
   });
 });

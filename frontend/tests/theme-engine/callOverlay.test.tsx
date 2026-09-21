@@ -1,6 +1,7 @@
 import { cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { CallDebug } from "../../src/hooks/useLiveCall";
 import type { AwaitingConfirm } from "../../src/store/chat";
 
 const h = vi.hoisted(() => {
@@ -12,6 +13,12 @@ const h = vi.hoisted(() => {
     muted: boolean;
     interrupt: ReturnType<typeof vi.fn>;
     toggleMute: ReturnType<typeof vi.fn>;
+    route: string;
+    inputDevice: string;
+    canRoute: boolean;
+    setRoute: ReturnType<typeof vi.fn>;
+    setInputDevice: ReturnType<typeof vi.fn>;
+    debug: CallDebug | null;
   } = {
     phase: "listening",
     heard: "",
@@ -20,6 +27,12 @@ const h = vi.hoisted(() => {
     muted: false,
     interrupt: vi.fn(),
     toggleMute: vi.fn(),
+    route: "speaker",
+    inputDevice: "",
+    canRoute: true,
+    setRoute: vi.fn(),
+    setInputDevice: vi.fn(),
+    debug: null,
   };
   return {
     call,
@@ -84,9 +97,15 @@ beforeEach(() => {
     note: null,
     userSpeechActive: false,
     muted: false,
+    route: "speaker",
+    inputDevice: "",
+    canRoute: true,
+    debug: null,
   };
   h.call.interrupt.mockClear();
   h.call.toggleMute.mockClear();
+  h.call.setRoute.mockClear();
+  h.call.setInputDevice.mockClear();
   h.ring = true;
   h.knobs = true;
   h.awaiting = null;
@@ -283,6 +302,95 @@ describe("CallOverlay — the in-overlay confirm row (§4.5)", () => {
   it("no gate outstanding, no row", () => {
     render(<Host open={true} />);
     expect(document.querySelector(".kit-call-confirm")).toBeNull();
+  });
+});
+
+describe("CallOverlay — the in-call route controls (D74 S2)", () => {
+  const routeBtn = () => screen.getByRole<HTMLButtonElement>("button", { name: /^Use / });
+
+  it("names the ACTION and asks for the other route — never writing config", () => {
+    render(<Host open={true} />);
+    expect(routeBtn().textContent).toBe("Use headphones");
+    routeBtn().click();
+    expect(h.call.setRoute).toHaveBeenCalledWith("headphones");
+
+    cleanup();
+    h.call = { ...h.call, route: "headphones" };
+    render(<Host open={true} />);
+    expect(routeBtn().textContent).toBe("Use speaker");
+  });
+
+  it("is DISABLED while the route may not move, rather than swallowing the tap", () => {
+    h.call = { ...h.call, phase: "connecting", canRoute: false };
+    render(<Host open={true} />);
+    expect(routeBtn().disabled).toBe(true);
+    expect(screen.getByLabelText<HTMLSelectElement>("Microphone / audio route").disabled).toBe(
+      true,
+    );
+  });
+
+  it("keeps a stored device that the list does not contain — shown, disabled, never cleared", () => {
+    // A headset merely off its charger keeps the owner's standing choice (the S5 review-F2 rule the
+    // Conf row ships under); the capture asks for it as `ideal` and falls back with a note anyway.
+    h.call = { ...h.call, inputDevice: "gone" };
+    render(<Host open={true} />);
+    const ghost = screen.getByRole<HTMLOptionElement>("option", {
+      name: "saved device — not available",
+    });
+    expect(ghost.disabled).toBe(true);
+    expect(ghost.value).toBe("gone");
+  });
+
+  it("is gone on a terminal — there is no ear to move", () => {
+    h.call = { ...h.call, phase: "ended" };
+    render(<Host open={true} />);
+    expect(screen.queryByRole("button", { name: /^Use / })).toBeNull();
+  });
+});
+
+describe("CallOverlay — the readback block (D74 S7)", () => {
+  const snapshot: CallDebug = {
+    ecSettings: true,
+    ecCapabilities: [true, "all"],
+    route: "headphones",
+    echoWorkaround: "auto",
+    bargeArmed: true,
+    earHoldMode: false,
+    earHeld: false,
+    mouthLive: false,
+    deviceLabel: "Headset earpiece",
+    deviceId: "ear-1234567890",
+    fellBack: false,
+    rms: 0.031,
+    rmsPeak2s: 0.184,
+    floor: 0.01,
+    lastFinal: { accruedMs: 320, peak: 0.21, chars: 14 },
+  };
+
+  it("renders NOTHING extra with the knob off", () => {
+    render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")).toBeNull();
+  });
+
+  it('prints the readback PAIR uncoerced — `true` and `"all"` must stay distinguishable', () => {
+    // They mean opposite things (R78 §0): a boolean `true` on Android says the platform-AEC bit was
+    // ABSENT when the constraint resolved, i.e. software AEC3, which cancels nothing of our own TTS.
+    // A block that printed both as "true" would hide the single top split of the diagnosis tree.
+    h.call = { ...h.call, debug: snapshot };
+    render(<Host open={true} />);
+    const text = document.querySelector(".kit-call-debug")!.textContent;
+    expect(text).toContain("ec    true");
+    expect(text).toContain('caps [true,"all"]');
+    expect(text).toContain("floor 0.010"); // …and the levels line up against each other
+    expect(text).toContain("peak2s 0.184");
+    expect(text).toContain("320ms");
+  });
+
+  it("is never also a tap-to-interrupt — it rides the cluster's pointer-down stop", () => {
+    h.call = { ...h.call, phase: "speaking", debug: snapshot };
+    render(<Host open={true} />);
+    fireEvent.pointerDown(document.querySelector(".kit-call-debug")!);
+    expect(h.call.interrupt).not.toHaveBeenCalled();
   });
 });
 

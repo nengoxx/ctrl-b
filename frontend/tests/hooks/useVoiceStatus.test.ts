@@ -47,6 +47,7 @@ describe("useVoiceStatus · the D63 chunk policy reaches the playback controller
         max_text_chars: 2048,
         format: "wav",
         read_along: true,
+        speak_actions: false,
       },
     });
     const { result } = renderHook(() => useVoiceStatus(), { wrapper });
@@ -60,7 +61,33 @@ describe("useVoiceStatus · the D63 chunk policy reaches the playback controller
       lookahead: 2,
       format: "wav",
       readAlong: true,
+      speakActions: false,
     });
+  });
+
+  // D74 — the one field that must NOT read as `false` when it is missing: a backend that predates the
+  // knob would otherwise start deleting words from every reply. Absent ⇒ today's behavior.
+  it("defaults `speakActions` to true when the wire omits it (an older backend)", async () => {
+    mockStatus({
+      stt: true,
+      tts: true,
+      stt_auto_send: false,
+      tts_chunking: {
+        mode: "sentence",
+        min_words: 4,
+        min_chars: 50,
+        max_chars: 400,
+        lookahead: 1,
+        max_text_chars: 4096,
+        format: "opus",
+        read_along: true,
+      },
+    });
+    const { result } = renderHook(() => useVoiceStatus(), { wrapper });
+    await waitFor(() => expect(result.current.data?.tts).toBe(true));
+    expect(h.setChunkPolicy).toHaveBeenCalledWith(
+      expect.objectContaining({ speakActions: true }) as unknown,
+    );
   });
 
   it("a payload without the block leaves the controller on its whole-message default", async () => {

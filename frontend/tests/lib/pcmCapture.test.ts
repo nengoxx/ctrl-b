@@ -150,7 +150,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
   it("opens the chain when the context is running, and reads the echo capability back", async () => {
     const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
     expect(cap.sampleRate).toBe(48000);
-    expect(cap.echoCancellation).toBe("all");
+    expect(cap.readback.echoCancellation).toBe("all");
     expect(track.stopped).toBe(0);
   });
 
@@ -403,6 +403,109 @@ describe("openMicStream — the picked device's ONE retry (R74 §2.2(b))", () =>
   });
 });
 
+describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R77)", () => {
+  /** Chrome Android's synthetic communication-device list, as `enumerateDevices()` returns it: the
+   *  localized default entry, then the fixed English route names. `bt` is the whole fork. */
+  const android = (opts: { bt?: boolean; earpiece?: boolean } = {}) => [
+    { kind: "audioinput", deviceId: "default", label: "Default" },
+    { kind: "audioinput", deviceId: "spk", label: "Speakerphone" },
+    ...(opts.earpiece === false
+      ? []
+      : [{ kind: "audioinput", deviceId: "ear", label: "Headset earpiece" }]),
+    ...(opts.bt ? [{ kind: "audioinput", deviceId: "bt", label: "Bluetooth headset" }] : []),
+  ];
+
+  it("steers the DEFAULT away from Bluetooth on the headphones route — to the earpiece", async () => {
+    // The trap: the default selection prefers the BT row, SCO starts, AOSP suspends the A2DP output,
+    // and its frames are discarded — so the media-path TTS the headphones route exists for is not
+    // degraded but SILENT, with no mode exit to restore anything afterwards.
+    enumerated = [android({ bt: true })];
+    await openMicStream({ route: "headphones" });
+    expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "ear" }, echoCancellation: false });
+  });
+
+  it("…and to the SPEAKERPHONE when the phone offers no earpiece row", async () => {
+    // Speakerphone always exists in that list, which is what makes "never fall through to the
+    // default while the BT row stands" a structural guarantee rather than a hope. It forces
+    // FOR_COMMUNICATION only — a slot STRATEGY_MEDIA never reads — so A2DP keeps the reply.
+    enumerated = [android({ bt: true, earpiece: false })];
+    await openMicStream({ route: "headphones" });
+    expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "spk" } });
+  });
+
+  it("steers NOWHERE when the Bluetooth row is absent — there is nothing to avoid", async () => {
+    enumerated = [android()];
+    await openMicStream({ route: "headphones" });
+    expect(askedAt(0)).not.toHaveProperty("deviceId");
+  });
+
+  it("an EXPLICIT pick always wins, and the speaker route is never steered", async () => {
+    enumerated = [android({ bt: true }), android({ bt: true })];
+    await openMicStream({ route: "headphones", deviceId: "bt" });
+    expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "bt" } });
+    // The speaker route is already in communication mode by construction (R74 §1) — moving its
+    // device would change a shipped behaviour this rule has no evidence about.
+    await openMicStream({ route: "speaker" });
+    expect(askedAt(1)).not.toHaveProperty("deviceId");
+    expect(gum).toHaveBeenCalledTimes(2);
+  });
+
+  it("a list that is NOT Chrome's synthetic five steers nothing (a desktop, Fennec)", async () => {
+    // Capability-shaped, not UA-sniffed: the evidence is the list itself, and any label outside the
+    // fixed set means this is a real device enumeration, where none of R77's mechanism applies.
+    enumerated = [
+      [
+        { kind: "audioinput", deviceId: "default", label: "Default - Microphone (Realtek)" },
+        { kind: "audioinput", deviceId: "m1", label: "Microphone (Realtek Audio)" },
+        { kind: "audioinput", deviceId: "bt", label: "Bluetooth headset" },
+      ],
+    ];
+    await openMicStream({ route: "headphones" });
+    expect(askedAt(0)).not.toHaveProperty("deviceId");
+  });
+
+  it("a steer rung that will not open falls to the NEXT rung, never the bare default (F3)", async () => {
+    // The earpiece is momentarily unopenable (`MakeLowLatencyInputStream` answers a null stream as a
+    // failed getUserMedia, R74 §2.2(b)). The walk moves to the guaranteed Speakerphone rung — a bare
+    // default here would be the SCO trap the whole ladder exists to avoid, and the old shape threw
+    // instead, ending a call over a transient the next rung survives.
+    enumerated = [android({ bt: true })];
+    gum.mockRejectedValueOnce(gumError("NotReadableError"));
+    const opened = await openMicStream({ route: "headphones" });
+    expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "ear" } });
+    expect(askedAt(1)).toMatchObject({ deviceId: { ideal: "spk" } });
+    expect(opened.fellBack).toBe(false); // the owner picked nothing — no note to show them
+
+    // …while a DENIED permission aborts the walk: no rung improves on "no".
+    enumerated = [android({ bt: true })];
+    gum.mockRejectedValueOnce(gumError("NotAllowedError"));
+    await expect(openMicStream({ route: "headphones" })).rejects.toMatchObject({
+      name: "NotAllowedError",
+    });
+  });
+
+  it("the picked-device FALLBACK is steered too — it must not fall back into the trap", async () => {
+    enumerated = [android({ bt: true })];
+    gum.mockRejectedValueOnce(gumError("NotReadableError"));
+    const opened = await openMicStream({ route: "headphones", deviceId: "usb-gone" });
+    expect(opened.fellBack).toBe(true);
+    expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "usb-gone" } });
+    expect(askedAt(1)).toMatchObject({ deviceId: { ideal: "ear" } }); // …not the bare default
+  });
+
+  it("an EXHAUSTED ladder is the plain failure — the bare default is never asked (F3)", async () => {
+    // Every rung refused (code round F3 reshaped the old one-attempt pin into this walk): the caller
+    // gets the failure, and not one of the attempts was the un-steered default — falling back into
+    // it would be falling back into the silent SCO route the ladder exists to avoid.
+    enumerated = [android({ bt: true })];
+    gum.mockRejectedValue(gumError("NotReadableError"));
+    await expect(openMicStream({ route: "headphones" })).rejects.toThrow();
+    expect(gum).toHaveBeenCalledTimes(2); // ear, then the guaranteed speakerphone — nothing else
+    expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "ear" } });
+    expect(askedAt(1)).toMatchObject({ deviceId: { ideal: "spk" } });
+  });
+});
+
 describe("listAudioInputs — the picker's list (Maya F4)", () => {
   const dev = (deviceId: string, label: string) => ({ kind: "audioinput", deviceId, label });
 
@@ -473,6 +576,35 @@ describe("listAudioInputs — the picker's list (Maya F4)", () => {
     await listing;
     await opening;
     expect(order).toEqual(["probe-open", "probe-done", "real-open"]);
+  });
+
+  it("SERIALIZES a second probe onto the first instead of overwriting the latch (D74 S6 ⑧)", async () => {
+    // Two pickers opening in the same breath used to mint two throwaway captures AND leave the latch
+    // pointing at the newer one — so a real capture would wait on that and open while the OLDER
+    // probe still held the Android communication device, which is the exact race the latch exists
+    // to close. One probe, one grab, both callers answered.
+    enumerated = [
+      [dev("a", "")],
+      [dev("a", "")],
+      [dev("a", "Speakerphone")],
+      [dev("a", "Speakerphone")],
+    ];
+    let releaseProbe!: () => void;
+    gum.mockImplementationOnce(
+      () =>
+        new Promise((res) => {
+          releaseProbe = () => res({ getAudioTracks: () => [track], getTracks: () => [track] });
+        }),
+    );
+    const first = listAudioInputs(true);
+    await vi.waitFor(() => expect(gum).toHaveBeenCalledTimes(1));
+    const second = listAudioInputs(true);
+    await Promise.resolve();
+    expect(gum).toHaveBeenCalledTimes(1); // …the second one opened no microphone of its own
+    releaseProbe();
+    expect(await first).toEqual([{ deviceId: "a", label: "Speakerphone" }]);
+    expect(await second).toEqual([{ deviceId: "a", label: "Speakerphone" }]);
+    expect(gum).toHaveBeenCalledTimes(1);
   });
 
   it("a browser with no enumerateDevices answers with nothing", async () => {

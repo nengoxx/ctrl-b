@@ -36,6 +36,10 @@ export interface TtsChunkingWire {
   format: string;
   /** C3 S2 — speak each sentence as it streams instead of waiting for turn end. */
   read_along: boolean;
+  /** D74 — speak roleplay ACTIONS (`*he smiles*`)? Optional, and absent reads as TRUE: a backend that
+   *  predates the knob has to keep today's behavior, and a missing field must never silently start
+   *  deleting words from a reply. */
+  speak_actions?: boolean;
 }
 
 /** The `live_call` object, in wire spelling (`LiveCfg`, backend/app/config.py — delivered shape-only by
@@ -106,6 +110,22 @@ export interface LiveCallWire {
   dictation_idle_s: number;
   /** The hard cap on any one streaming dictation session, s (R70 §9.3) — `hold` included. */
   dictation_max_s: number;
+  /** D74 S5 — THE TRANSCRIPT GATE: how many milliseconds of above-SILENCE-floor microphone energy a
+   *  call utterance must have carried before its final is taken, ms. **0 = off.** It exists because a
+   *  Whisper-family endpoint answers a stretch of noise with a plausible sentence rather than with
+   *  nothing (R76), and the client is the only end that knows what the microphone actually heard.
+   *  Measured against `stt_auto_stop.threshold` and deliberately NOT `barge_threshold` — "louder than
+   *  silence" is a different question from "loud enough to interrupt a reply".
+   *
+   *  OPTIONAL, and absent reads as OFF: a pre-D74 backend has no such knob, and a client that
+   *  invented one would be discarding the owner's words on a number nobody chose. The backend ships
+   *  200 as its default. */
+  min_final_ms?: number;
+  /** D74 S7 — the call overlay's READBACK block: the track's resolved echo-cancellation mode beside
+   *  its open-time capability, the live RMS against the floor, and the flags the arming decision was
+   *  taken from (R78 §6.2). Diagnostic only; off renders nothing extra. Optional for the same reason
+   *  as the knob above — absent is off. */
+  debug?: boolean;
 }
 
 export interface VoiceStatus {
@@ -154,6 +174,7 @@ export function useVoiceStatus() {
           lookahead: c.lookahead,
           format: c.format,
           readAlong: c.read_along,
+          speakActions: c.speak_actions ?? true,
         });
       }
       return status;

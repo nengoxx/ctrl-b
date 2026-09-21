@@ -605,7 +605,7 @@ describe("callReduce — MUTE (§6, the one mechanism)", () => {
 
 /** A call on a track whose AEC is NOT the subtractive mode (Fennec, §7-S0 ③) — the ear-hold's own. */
 const holding = run(CALL_INITIAL, [
-  { type: "captureReady", earHoldMode: true },
+  { type: "captureReady", earHoldMode: true, route: "speaker", deviceId: "" },
   { type: "ready" },
 ]).state;
 /** …and the same call with the reply speaking, i.e. with the ear actually closed. */
@@ -1131,5 +1131,132 @@ describe("callReduce — the remount re-arm (StrictMode's setup→cleanup→setu
     const { state, out } = run(listening, [{ type: "remount" }]);
     expect(state).toBe(listening);
     expect(out).toEqual([]);
+  });
+});
+
+// ── D74 S5: THE TRANSCRIPT GATE (evidence docs/research/R76) ─────────────────────────────────────
+
+describe("callReduce — the transcript gate (D74 S5)", () => {
+  /** A final carrying the ear's own accrual for it, against the owner's floor. */
+  const heard = (text: string, energyMs?: number): CallSignal => ({
+    type: "final",
+    text,
+    energyMs,
+    minFinalMs: 200,
+  });
+
+  it("DISCARDS a final the ear cannot account for, and says so", () => {
+    // Whisper does not answer noise with nothing — it answers with a plausible sentence, which on a
+    // call is submitted to the agent as if the owner had said it.
+    const { state, out } = run(listening, [heard("Thank you for watching.", 40)]);
+    expect(out).toEqual([]);
+    expect(state.pending).toEqual([]);
+    expect(state.heard).toBe(""); // …and the transcript line does not show words nobody said
+    expect(state.waitingFinal).toBe(false);
+    expect(state.note).toBe(CALL_COPY.tooQuiet);
+  });
+
+  it("takes one the ear DID hear", () => {
+    const { state, out } = run(listening, [heard("what time is it", 900)]);
+    expect(submits(out)).toEqual(["what time is it"]);
+    expect(state.note).toBeNull();
+  });
+
+  it("FAILS OPEN with no epoch-matched evidence — unmeasured is not quiet", () => {
+    // A final arriving across a reconnect belongs to a leg whose accrual is gone. Absence of
+    // evidence must never cost the owner their words.
+    expect(submits(run(listening, [heard("still there?")]).out)).toEqual(["still there?"]);
+  });
+
+  it("is OFF when the knob is 0 or absent — the pre-D74 backend, and the owner's own switch", () => {
+    for (const minFinalMs of [0, undefined]) {
+      const { out } = run(listening, [{ type: "final", text: "barely", energyMs: 1, minFinalMs }]);
+      expect(submits(out)).toEqual(["barely"]);
+    }
+  });
+
+  it("never fires on an EMPTY final — that one is already handled, and deserves no note", () => {
+    const { state, out } = run(listening, [heard("   ", 0)]);
+    expect(out).toEqual([]);
+    expect(state.note).toBeNull();
+  });
+
+  it("the MUTED drop still outranks it — one rule, no window where the words go out", () => {
+    const muted = run(listening, [{ type: "setMuted", on: true }]).state;
+    const { state } = run(muted, [heard("the doorbell", 900)]);
+    expect(state.pending).toEqual([]);
+    expect(state.note).toBeNull(); // muted is not "too quiet" — the ear was closed on purpose
+  });
+});
+
+// ── D74 S2: THE ROUTE LEG CYCLE (evidence docs/research/R77 · R78 §8) ────────────────────────────
+
+/** A connected call that has said which ear it opened — the seed every route case starts from. */
+const routed = run(CALL_INITIAL, [
+  { type: "captureReady", earHoldMode: false, route: "speaker", deviceId: "" },
+  { type: "ready" },
+]).state;
+
+describe("callReduce — the route cycle (D74 S2)", () => {
+  it("seeds the pair from the capture that actually opened", () => {
+    expect(routed.route).toBe("speaker");
+    expect(routed.inputDevice).toBe("");
+  });
+
+  it("moves the route: a fresh leg on a fresh ear, with the generation moved", () => {
+    const { state, out } = run(routed, [{ type: "routeChange", route: "headphones" }]);
+    expect(state.route).toBe("headphones");
+    expect(state.inputDevice).toBe(""); // the half not sent is kept
+    expect(state.phase).toBe("connecting");
+    expect(state.gen).toBe(routed.gen + 1);
+    expect(state.attempts).toBe(0);
+    // The HOLD belongs to the released track; the fresh `captureReady` decides it again.
+    expect(state.earHoldMode).toBe(false);
+    expect(out).toEqual([{ type: "recapture", route: "headphones", deviceId: "" }]);
+  });
+
+  it("…and the device half alone, against the standing route", () => {
+    const { state, out } = run(routed, [{ type: "routeChange", deviceId: "bt-headset" }]);
+    expect(state.route).toBe("speaker");
+    expect(out).toEqual([{ type: "recapture", route: "speaker", deviceId: "bt-headset" }]);
+  });
+
+  it("KEEPS the queue and the mute — a route change is not the owner leaving", () => {
+    // Never-lose-speech is about what the owner said, and they did not choose to discard it; the
+    // closed ear is their standing answer and the fresh capture takes it the moment it exists.
+    const held = run(routed, [
+      { type: "playbackStarted" }, //          the mouth holds the queue
+      { type: "final", text: "keep this" },
+    ]).state;
+    expect(held.pending).toEqual(["keep this"]);
+    const { state } = run(held, [
+      { type: "setMuted", on: true },
+      { type: "routeChange", route: "headphones" },
+    ]);
+    expect(state.pending).toEqual(["keep this"]);
+    expect(state.muted).toBe(true);
+    expect(state.mouthLive).toBe(true); // C3 rides HTTP — the reply is still audible
+  });
+
+  it("releases a kill in flight: its settlement was armed under the old generation", () => {
+    // Without this the flag would stand for the rest of the call and every utterance after it would
+    // queue behind a hold nothing can clear.
+    const killing = run(routed, [{ type: "playbackStarted" }, { type: "barge" }]).state;
+    expect(killing.killing).toBe(true);
+    expect(run(killing, [{ type: "routeChange", route: "headphones" }]).state.killing).toBe(false);
+  });
+
+  it("is INERT outside the settled phases, and when nothing actually moved", () => {
+    // `connecting` is already opening a leg; a terminal has no ear left to move.
+    for (const from of [CALL_INITIAL, run(routed, [{ type: "socketLost" }]).state]) {
+      const { state, out } = run(from, [{ type: "routeChange", route: "headphones" }]);
+      expect(out).toEqual([]);
+      expect(state.route).toBe(from.route); // …and the pair is not quietly moved either
+    }
+    expect(run(routed, [{ type: "hangup" }, { type: "routeChange", route: "x" }]).out).toEqual([
+      { type: "teardown", close: true },
+    ]);
+    // …and re-picking what is already live costs no reconnect.
+    expect(run(routed, [{ type: "routeChange", route: "speaker" }]).out).toEqual([]);
   });
 });

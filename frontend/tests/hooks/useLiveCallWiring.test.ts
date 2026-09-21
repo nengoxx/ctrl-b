@@ -31,6 +31,8 @@ const h = vi.hoisted(() => ({
         background_keepalive: true,
         background_idle_s: 600,
         max_session_s: 600,
+        // D74 — the transcript gate's floor, OFF unless a case arms it.
+        min_final_ms: 0,
       },
       stt_auto_stop: { threshold: 0 },
     },
@@ -88,6 +90,9 @@ const h = vi.hoisted(() => ({
   keepalive: [] as boolean[],
   /** …and what `startPcmCapture` was actually asked for, so a case can pin that the route reaches it. */
   capOpts: null as { route?: string; deviceId?: string } | null,
+  /** How many captures this call has RELEASED (D74 S2): a route cycle must not leave the old ear open
+   *  beside the new one — overlapping captures pin the platform's echo mode (R78 §2.3). */
+  capStops: 0,
   /** Holds `startPcmCapture` open when an arm needs the acquisition GAP itself. */
   capGate: Promise.resolve(),
 }));
@@ -143,13 +148,20 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
     h.capOpts = { route: opts.route, deviceId: opts.deviceId };
     return {
       sampleRate: 48000,
-      echoCancellation: h.fennec ? true : "all",
+      readback: {
+        echoCancellation: h.fennec ? true : "all",
+        echoCapabilities: h.fennec ? [true] : [true, "all"],
+        label: "Speakerphone",
+        deviceId: h.voice.data.live_call.input_device,
+      },
       fellBack: h.fellBack,
       setMuted: h.setMuted,
       setHeld: h.setHeld,
       earGapMs: () => h.earGap,
       setKeepalive: (on: boolean) => h.keepalive.push(on),
-      stop: () => {},
+      stop: () => {
+        h.capStops += 1;
+      },
     };
   },
 }));
@@ -165,6 +177,9 @@ vi.mock("../../src/store/liveCall", () => ({ endCall: h.endCall }));
 vi.mock("../../src/hooks/useVoiceStatus", () => ({ useVoiceStatus: () => h.voice }));
 
 import { CALL_COPY, useLiveCall } from "../../src/hooks/useLiveCall";
+// REAL, deliberately (D74 S6 ⑧): the handover is the seam under test, and a mocked one would pin the
+// harness's opinion of it rather than the module both sides actually share.
+import { setMicRelease } from "../../src/store/micRelease";
 
 /** Move the playback status the way the real store does: write, then tell the listeners — in the same
  *  task, which is the whole S3 contract the wiring now rides (see the sync-hold suite). */
@@ -216,10 +231,14 @@ beforeEach(() => {
   h.fennec = false;
   h.fellBack = false;
   h.capOpts = null;
+  h.capStops = 0;
   h.voice.data.live_call.route = "speaker";
   h.voice.data.live_call.input_device = "";
   h.voice.data.live_call.echo_workaround = "auto";
   h.voice.data.live_call.barge_threshold = 0; // trigger A DISARMED unless a case calibrates a floor
+  h.voice.data.live_call.min_final_ms = 0; // …and the transcript gate OFF unless a case arms it
+  setMicRelease(null); // nobody holds the ear unless a case says so
+  h.voice.data.stt_auto_stop.threshold = 0;
   h.capGate = Promise.resolve();
   h.sendCall.mockReset();
   h.sendCall.mockResolvedValue("accepted");
@@ -778,6 +797,256 @@ describe("useLiveCall — THE ROUTE-RESOLVED CAPTURE POLICY (D73 S5 / Maya F1)",
     h.voice.data.live_call.input_device = "bt-headset";
     const { view } = await call();
     expect(view.result.current.note).toBeNull();
+  });
+});
+
+describe("useLiveCall — the ear is TAKEN before it is opened (D74 S6 ⑧)", () => {
+  it("stops a live dictation capture FIRST, and does not open its own until it lets go", async () => {
+    // Overlapping captures pin the echo mode for each other (R78 §2.3): a call opening beside a live
+    // dictation gets whatever dictation asked for, and reports it honestly — which is the worst
+    // shape of this bug, because the readback is then right about the wrong thing.
+    const order: string[] = [];
+    let free!: () => void;
+    setMicRelease(() => {
+      order.push("dictation-stop");
+      return new Promise<void>((res) => {
+        free = () => {
+          order.push("dictation-free");
+          res();
+        };
+      });
+    });
+
+    const view = renderHook(() => useLiveCall());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(order).toEqual(["dictation-stop"]);
+    expect(h.capOpts).toBeNull(); // …and the call's own capture has NOT been asked for
+
+    await act(async () => {
+      free();
+      await Promise.resolve();
+    });
+    expect(order).toEqual(["dictation-stop", "dictation-free"]);
+    expect(h.capOpts).not.toBeNull();
+    view.unmount();
+  });
+});
+
+describe("useLiveCall — TRIGGER A's m-of-n window (D74 S4 ⑥)", () => {
+  const frame = (rms: number): { buf: ArrayBuffer; rms: number } => ({
+    buf: new ArrayBuffer(8),
+    rms,
+  });
+  const speak = async (pattern: number[]): Promise<void> => {
+    await act(async () => {
+      for (const rms of pattern) h.mic?.(frame(rms));
+      await Promise.resolve();
+    });
+  };
+  const loud = (n: number): number[] => Array.from({ length: n }, () => 0.5);
+
+  /** A call with the floor calibrated and a reply audible — the only state trigger A measures in. */
+  const overAReply = async () => {
+    h.voice.data.live_call.barge_threshold = 0.01;
+    const c = await call();
+    await c.step(() => setPlay("playing"));
+    h.dismiss.mockClear();
+    return c;
+  };
+
+  it("survives the holes inside a spoken word — a consecutive run could not", async () => {
+    // 15 frames = the configured 300 ms window at 20 ms, with ONE under the floor where a stop
+    // consonant or a breath lands. The old rule zeroed the clock there and demanded 15 more unbroken
+    // frames, which is why a real interruption could be held down by its own consonants.
+    await overAReply();
+    await speak([...loud(7), 0.001, ...loud(7)]);
+    expect(h.dismiss).toHaveBeenCalled();
+  });
+
+  it("…but a window that is mostly silence still does nothing", async () => {
+    // The floor's whole job: a cough, a door, one loud syllable in a quiet room must not kill a reply.
+    await overAReply();
+    await speak(Array.from({ length: 40 }, (_, i) => (i % 2 === 0 ? 0.5 : 0.001)));
+    expect(h.dismiss).not.toHaveBeenCalled();
+  });
+
+  it("tolerates the floor's full share of holes — 11 of 15 fires (code round F1)", async () => {
+    // floor(15 × 0.75) = 11, and the rounding is the finding: ceil demanded 12, which at small
+    // windows walks all the way back to consecutive-frames — the exact brittleness this rule
+    // replaced. Four holes in fifteen frames is a word's worth of stop consonants, not silence.
+    await overAReply();
+    await speak([...loud(3), 0.001, ...loud(3), 0.001, ...loud(3), 0.001, ...loud(2), 0.001]);
+    expect(h.dismiss).toHaveBeenCalled();
+  });
+
+  it("CLEARS on the mouth's RISING EDGE — the reply's own start may not pre-fill it (review F3)", async () => {
+    await overAReply();
+    await speak(loud(10)); // one frame short of the 11 the window needs
+    expect(h.dismiss).not.toHaveBeenCalled();
+    // A read-along chunk boundary: the mouth pauses for synthesis and starts again. `mouthLive` never
+    // went down, so nothing else clears the window — and without this rule the reply's own attack
+    // transient would be counted as the owner interrupting.
+    await act(async () => {
+      setPlay("loading");
+      setPlay("playing");
+    });
+    await speak(loud(1));
+    expect(h.dismiss).not.toHaveBeenCalled();
+    await speak(loud(11)); // …and a genuine interruption still lands
+    expect(h.dismiss).toHaveBeenCalled();
+  });
+});
+
+describe("useLiveCall — THE TRANSCRIPT GATE's epochs (D74 S5, evidence docs/research/R76)", () => {
+  const mic = (rms: number, n: number): void => {
+    for (let i = 0; i < n; i++) h.mic?.({ buf: new ArrayBuffer(8), rms });
+  };
+
+  /** A gated call: 200 ms of above-floor energy owed per utterance, with a real silence floor. */
+  const gated = async () => {
+    h.voice.data.live_call.min_final_ms = 200;
+    h.voice.data.stt_auto_stop.threshold = 0.01; // the SILENCE floor — never the barge one
+    return call();
+  };
+
+  /** One utterance, with `n` frames of `rms` between the ear's own start and stop. */
+  const utterance = async (text: string, rms: number, n: number): Promise<void> => {
+    await act(async () => {
+      h.frame?.({ type: "speech_started" });
+      mic(rms, n);
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text, final: true });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+
+  it("DROPS a final the microphone cannot account for", async () => {
+    const { view } = await gated();
+    await utterance("Thank you for watching.", 0.001, 30); // 600 ms of near-silence
+    expect(texts()).toEqual([]);
+    expect(view.result.current.note).toBe(CALL_COPY.tooQuiet);
+    expect(view.result.current.heard).toBe("");
+  });
+
+  it("…and takes one it CAN — the same 600 ms, actually spoken", async () => {
+    const { view } = await gated();
+    await utterance("what time is it", 0.2, 30);
+    expect(texts()).toEqual(["what time is it"]);
+    expect(view.result.current.note).toBeNull();
+  });
+
+  it("the epoch OPENS at speech-start: energy before it is not this utterance's", async () => {
+    // Room noise while the reply was playing, a throat clear before the ear armed — none of it is
+    // evidence that the sentence the relay just produced was said.
+    const { view } = await gated();
+    await act(async () => {
+      mic(0.5, 50); // a full second of loud, BEFORE the ear said the owner started
+      await Promise.resolve();
+    });
+    await utterance("mm-hmm", 0.001, 5);
+    expect(texts()).toEqual([]);
+    expect(view.result.current.note).toBe(CALL_COPY.tooQuiet);
+  });
+
+  it("a leg that DIED voids the evidence, and the gate then fails OPEN (review F2)", async () => {
+    // Post-reconnect finals are not noise evidence: the accrual belonged to a session that is gone,
+    // and absence of evidence must never cost the owner their words. Both edges clear it — the death
+    // and the `ready` that follows — which is why neither of them needs the other to be right.
+    const { view } = await gated();
+    await act(async () => {
+      h.frame?.({ type: "speech_started" });
+      mic(0.5, 20);
+    });
+    await act(async () => {
+      h.close?.(); // the link drops mid-utterance
+    });
+    await act(async () => {
+      h.frame?.({ type: "state", state: "ready" }); // …and the ladder's leg comes up
+      h.frame?.({ type: "transcript", text: "are you there", final: true });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(texts()).toEqual(["are you there"]);
+    expect(view.result.current.note).not.toBe(CALL_COPY.tooQuiet);
+  });
+
+  it("a REFUSED route change voids nothing — the meter keys on ACCEPTED edges (code round F2)", async () => {
+    // `setRoute` to the route the call is already on is a reducer no-op, and the meter must follow
+    // the machine, not the signal: an edge that closed the epoch here turned a near-silent
+    // hallucinated final into a fail-open PASS — no evidence beating bad evidence.
+    const { view } = await gated();
+    await act(async () => {
+      h.frame?.({ type: "speech_started" });
+      mic(0.001, 30); // 600 ms the microphone can NOT account for
+      await Promise.resolve();
+    });
+    await act(async () => {
+      view.result.current.setRoute("speaker"); // already the route — the reducer refuses it
+    });
+    await act(async () => {
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text: "Yeah.", final: true });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(texts()).toEqual([]); // the gate kept its evidence, and the evidence says no
+    expect(view.result.current.note).toBe(CALL_COPY.tooQuiet);
+  });
+});
+
+describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/research/R77 · R78 §8)", () => {
+  /** Let the re-acquisition's promise chain settle — the capture resolves a microtask or two later,
+   *  exactly as the mount path's does. */
+  const settle = async (): Promise<void> => {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+
+  it("closes the leg, RELEASES the old ear, and re-acquires under the new route", async () => {
+    // In-place `applyConstraints` is refused by the platform on an AEC-using Android source (R78 §8),
+    // so the only honest route change is a new track — and the old one must be gone before the new one
+    // opens, or the two overlap and the loser pins the echo mode for both (R78 §2.3).
+    const { view, step } = await call();
+    expect(h.capOpts?.route).toBe("speaker");
+    const closes = h.closes;
+
+    await step(() => view.result.current.setRoute("headphones"));
+    expect(view.result.current.phase).toBe("connecting"); // the screen says what is happening
+    expect(h.closes).toBe(closes + 1);
+    expect(h.capStops).toBe(1);
+
+    await settle();
+    expect(h.capOpts?.route).toBe("headphones");
+    await act(async () => {
+      h.frame?.({ type: "state", state: "ready" });
+    });
+    expect(view.result.current.phase).toBe("listening");
+    expect(view.result.current.route).toBe("headphones");
+  });
+
+  it("the DEVICE half rides the same cycle, and the route it was on survives", async () => {
+    const { view, step } = await call();
+    await step(() => view.result.current.setInputDevice("bt-headset"));
+    await settle();
+    expect(h.capOpts).toEqual({ route: "speaker", deviceId: "bt-headset" });
+    expect(view.result.current.inputDevice).toBe("bt-headset");
+  });
+
+  it("is refused while the leg is down — and says so through `canRoute`", async () => {
+    const { view, step } = await call();
+    await act(async () => {
+      h.close?.(); // the link dropped: the ladder owns the phase now
+    });
+    expect(view.result.current.canRoute).toBe(false);
+    await step(() => view.result.current.setRoute("headphones"));
+    await settle();
+    expect(h.capOpts?.route).toBe("speaker"); // …nothing re-acquired
+    expect(h.capStops).toBe(0);
   });
 });
 

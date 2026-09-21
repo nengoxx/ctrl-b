@@ -47,12 +47,17 @@ export type MicRequest = {
   deviceId?: string;
 };
 
-const HEADPHONES = "headphones";
+/** The two answers the route knob takes. Exported since D74 S2 put the choice on the call screen: the
+ *  overlay's toggle has to be able to NAME them, and a fourth file spelling `"headphones"` by hand is
+ *  how one of them eventually gets it wrong. `SPEAKER` is the default in the sense that everything
+ *  which is not the headphones case IS the speaker case — see the predicate below. */
+export const ROUTE_HEADPHONES = "headphones";
+export const ROUTE_SPEAKER = "speaker";
 
 /** The one place the route string is read. A predicate rather than a comparison spread across three
  *  files: the constraints, the ear-hold and the barge-in arming must all answer it the same way. */
 export function onHeadphones(route: string | undefined): boolean {
-  return route === HEADPHONES;
+  return route === ROUTE_HEADPHONES;
 }
 
 /** The constraints EVERY capture in this app opens with (the call's, dictation's).
@@ -92,17 +97,106 @@ export async function openMicStream(
   // The picker's label probe first, if one is mid-flight (S5 review F1) — its throwaway grab could
   // otherwise hold the very route this capture is about to ask for.
   if (probeInFlight) await probeInFlight;
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(req) });
-    return { stream, fellBack: false };
-  } catch (e) {
-    const name = e instanceof Error ? e.name : "";
-    if (!req.deviceId || name === "NotAllowedError" || name === "SecurityError") throw e;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: micConstraints({ route: req.route }),
-    });
-    return { stream, fellBack: true };
+  // The WALK (code round F3): each candidate in order, aborting only on the two failures more
+  // attempts cannot improve — a denied permission is denied for every rung. `fellBack` stays what it
+  // has always meant: the OWNER'S pick did not carry this call (a steer rung falling to its neighbour
+  // is this module's own business, not a note for the screen — the owner picked nothing).
+  const list = await candidateConstraints(req);
+  let lastErr: unknown;
+  for (let i = 0; i < list.length; i++) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: list[i] });
+      return { stream, fellBack: i > 0 && !!req.deviceId };
+    } catch (e) {
+      lastErr = e;
+      const name = e instanceof Error ? e.name : "";
+      if (name === "NotAllowedError" || name === "SecurityError") throw e;
+    }
   }
+  throw lastErr;
+}
+
+// ── THE STEERING RULE (D74 S3, evidence docs/research/R77) ───────────────────────────────────────
+// "The system default input" is NOT neutral on Android. Chrome picks the MOST UNIQUE communication
+// device, and with a classic BT headset connected that is the Bluetooth row (R77 §1.2) — which starts
+// SCO, which makes AOSP suspend the A2DP output, whose frames are then DISCARDED ("Simulate write to
+// HAL when suspended"). The headphones route's entire purpose — media-quality TTS down the A2DP path
+// — becomes SILENCE; and because that route clears AEC there is no communication-mode exit to restore
+// anything on teardown either (R77 §2.1). So where the page can SEE that trap it steers around it, to
+// a row that leaves `STRATEGY_MEDIA` alone: the earpiece first (picking it forces nothing at all),
+// then the wired headset, then the speakerphone (which forces `FOR_COMMUNICATION` only — a slot
+// `STRATEGY_MEDIA` never reads).
+//
+// CAPABILITY-SHAPED, NEVER UA-SNIFFED. The test is that the audioinput list IS Chrome's fixed
+// synthetic communication-device list — five names hardcoded in English in
+// `CommunicationDeviceSelector.java` — and that the Bluetooth row is in it. A desktop's real
+// microphones, or Fennec's, match nothing and steer nowhere. An explicit owner pick always wins:
+// this only ever resolves the EMPTY device, i.e. "system default".
+//
+// It cannot fire on a page that has never been granted a capture (the labels are permission-gated and
+// `listAudioInputs` drops unnameable rows), which is the honest degrade: with no list there is no
+// evidence, and the request goes out exactly as it did before this rule existed.
+
+/** Chrome's synthetic communication-device names (`DEVICE_NAMES`), and the Bluetooth row the whole
+ *  fork turns on. */
+const ROUTE_LABELS: ReadonlySet<string> = new Set([
+  "Speakerphone",
+  "Wired headset",
+  "Headset earpiece",
+  "Bluetooth headset",
+  "USB audio",
+]);
+const BT_ROW = "Bluetooth headset";
+/** Where to steer, in R77 §5's own ranking: rows 3′ then 3 — least forced first. */
+const STEER_TO: readonly string[] = ["Headset earpiece", "Wired headset", "Speakerphone"];
+
+/** The audioinput list AS Chrome's synthetic route list, or `null` when it is anything else. */
+function syntheticRoutes(inputs: MicDevice[]): Map<string, string> | null {
+  const rows = new Map<string, string>();
+  for (const d of inputs) {
+    // The default entry is the one row that cannot be matched by NAME — its label is Chrome's own
+    // localized "Default …" string. Every other row has to be one of the five, or this is not the
+    // list (a desktop's "Microphone (Realtek…)" fails here, which is exactly the intent).
+    if (d.deviceId === "default" || d.deviceId === "communications") continue;
+    if (!ROUTE_LABELS.has(d.label)) return null;
+    rows.set(d.label, d.deviceId);
+  }
+  // Speakerphone ALWAYS exists in that list (`setDeviceExistence(ID_SPEAKERPHONE, true)`), so its
+  // absence means this is not the list either — and it is the steer's guaranteed last rung, which is
+  // what makes "never fall through to the default while the BT row stands" structural rather than
+  // hopeful.
+  return rows.has("Speakerphone") ? rows : null;
+}
+
+/** Every constraint set this request may open with, IN ORDER (code round F3 reshaped the single
+ *  `steered()` resolution into this ladder): the owner's explicit pick first when there is one, then —
+ *  for the headphones route on the synthetic list with a Bluetooth row standing — each steer rung that
+ *  exists, and NEVER the bare default while that row stands (the default selection is the SCO trap,
+ *  R77 (a)). Everywhere else the tail is the plain default request, exactly as before the steer
+ *  existed. `openMicStream` walks this list, so a steered rung that will not open falls to the NEXT
+ *  rung instead of throwing — the Speakerphone rung's guaranteed presence still bounds the walk.
+ *
+ *  THE MISSING TAIL IS A RULING, not an oversight (D74 code round F3a, overruled twice on the
+ *  record): a desktop whose every audioinput label coincidentally equals Chrome's five Android-only
+ *  synthetic names AND whose named devices are all busy while the system default works would fail
+ *  here where a default tail would have carried it. Accepted residual — on the one platform where
+ *  this list shape occurs for real, that tail is the silent-TTS SCO trap (R77), and a LOUD capture
+ *  failure (the owner sees the mic error) beats a silently dead call every time. */
+async function candidateConstraints(req: MicRequest): Promise<MediaTrackConstraints[]> {
+  const out: MediaTrackConstraints[] = [];
+  if (req.deviceId) out.push(micConstraints(req));
+  if (onHeadphones(req.route)) {
+    const rows = syntheticRoutes(await listAudioInputs());
+    if (rows?.has(BT_ROW)) {
+      for (const label of STEER_TO) {
+        const id = rows.get(label);
+        if (id !== undefined) out.push(micConstraints({ ...req, deviceId: id }));
+      }
+      return out;
+    }
+  }
+  out.push(micConstraints({ route: req.route }));
+  return out;
 }
 
 /** One selectable capture device, reduced to what a picker can render. */
@@ -141,22 +235,33 @@ export async function listAudioInputs(probe = false): Promise<MicDevice[]> {
     (await md.enumerateDevices()).filter((d) => d.kind === "audioinput");
   let inputs = await read();
   if (probe && inputs.length > 0 && inputs.every((d) => !d.label)) {
-    const run = (async () => {
-      const stream = await md.getUserMedia({ audio: micConstraints({}) });
-      for (const t of stream.getTracks()) t.stop();
-    })();
-    // The latch holds the SETTLED promise, never the rejection: its one consumer only cares that
-    // the probe's tracks are gone, not why.
-    probeInFlight = run
-      .catch(() => {})
-      .finally(() => {
-        probeInFlight = null;
-      });
-    try {
-      await run;
+    // ONE PROBE AT A TIME (D74 S6 ⑧). A second ask landing while the first is still in flight used to
+    // mint a SECOND throwaway capture and overwrite the latch — so `openMicStream` would then wait on
+    // the newer probe while the older one was still holding the Android communication device, which
+    // is precisely the race the latch exists to close. Riding the probe already running costs
+    // nothing: what a caller wants is the LABELS, and they land for everyone at once.
+    const running = probeInFlight;
+    if (running) {
+      await running;
       inputs = await read();
-    } catch {
-      // Still no permission. The picker keeps the system default as its only offer, which is honest.
+    } else {
+      const run = (async () => {
+        const stream = await md.getUserMedia({ audio: micConstraints({}) });
+        for (const t of stream.getTracks()) t.stop();
+      })();
+      // The latch holds the SETTLED promise, never the rejection: its one consumer only cares that
+      // the probe's tracks are gone, not why.
+      probeInFlight = run
+        .catch(() => {})
+        .finally(() => {
+          probeInFlight = null;
+        });
+      try {
+        await run;
+        inputs = await read();
+      } catch {
+        // Still no permission. The picker keeps the system default as its only offer, which is honest.
+      }
     }
   }
   return inputs
@@ -177,14 +282,39 @@ export interface PcmFrame {
   rms: number;
 }
 
+/**
+ * WHAT THE TRACK ITSELF SAYS (D74 S7, evidence docs/research/R78 §1.4 · §6.2).
+ *
+ * Read ONCE, at open, because all four are synchronous property reads that never change for the life
+ * of a track — and because the one question they answer together is "what did we actually get", which
+ * is a fact about the moment it opened.
+ *
+ * The PAIR is the point. `getSettings().echoCancellation` is the GRANT of the resolved mode, computed
+ * from the ENUMERATION-time effects mask; `getCapabilities().echoCancellation` is computed from the
+ * OPEN-time one. Chromium has a commented-out `CHECK` sitting exactly on the mismatch
+ * (`crbug.com/405165917`), and comparing the two is the one free field probe that separates "the
+ * device stopped offering the canceller" from "it offered it and we did not get it".
+ */
+export interface MicReadback {
+  /** `"all"` on a Chromium that granted the system-loopback mode, `true`/`false` on a boolean-only
+   *  implementation, `undefined` when the browser reports nothing at all. The ONE input to the
+   *  trigger-A arming decision — and it is passed up RAW, never coerced: `"all"` and `true` mean
+   *  opposite things here and a boolean cast would erase the difference. */
+  echoCancellation: string | boolean | undefined;
+  /** …and the other sample. `undefined` where the browser has no audio-track capabilities at all,
+   *  reported honestly rather than defaulted (R78 §7). */
+  echoCapabilities: readonly (string | boolean)[] | undefined;
+  /** Which device actually opened, in the browser's own words. */
+  label: string;
+  deviceId: string;
+}
+
 export interface PcmCapture {
   /** The context's REAL rate — what `start.sample_rate` must declare (§3.1: the browser gives 44.1k or
    *  48k by device and there is no reliable way to ask for 24k, so the relay resamples from this). */
   sampleRate: number;
-  /** `getSettings().echoCancellation` for the live track: `"all"` on a Chromium that granted the
-   *  system-loopback mode, `true`/`false` on a boolean-only implementation, `undefined` when the browser
-   *  reports nothing at all. The one input to the trigger-A arming decision. */
-  echoCancellation: string | boolean | undefined;
+  /** The live track's own readback — the arming decision's input, and the overlay's debug block. */
+  readback: MicReadback;
   /** D73 S5 — the configured `input_device` could not be opened and the DEFAULT route carries this
    *  call instead (`openMicStream`'s one retry). The caller says so; a silent fallback would leave the
    *  owner looking at a picked headset while the reply comes out of the phone. */
@@ -400,9 +530,20 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
     track.addEventListener("unmute", () => {
       deaf = false;
     });
+    const settings = track.getSettings();
     return {
       sampleRate: ctx.sampleRate,
-      echoCancellation: track.getSettings().echoCancellation,
+      readback: {
+        echoCancellation: settings.echoCancellation,
+        // Feature-detected rather than assumed: MDN/BCD coverage for audio-track capabilities has
+        // historically been uneven, and an absent API must read as `undefined`, not as "no modes".
+        echoCapabilities:
+          typeof track.getCapabilities === "function"
+            ? track.getCapabilities().echoCancellation
+            : undefined,
+        label: track.label,
+        deviceId: settings.deviceId ?? "",
+      },
       fellBack,
       setMuted: (m: boolean) => {
         muted = m;
