@@ -12,7 +12,59 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-17, TWENTY-SEVENTH session — **THE DOC-HEALTH INTERMISSION: a full documentation truth + consistency + prune pass, owner-commissioned before S4. 3 Opus auditors (core spine incl. full README/SPEC/DESIGN · the 12 feature plans · ops/theming/audits) → the same 3 resumed as fixers under main-seat rulings; 47 findings + addendum applied across 35 files, gate 6/6, committed `35247b6` + this handoff commit, PUSHED. ▶▶ NEXT SESSION = S4 STRAIGHT (plan §7), unchanged**; supersedes below where it speaks)
+## Current state (2026-09-21, TWENTY-EIGHTH session — **S4 OPENED AND GREW THE D73 WAVE, closed same-day: the owner's first phone dial found the dev-only StrictMode call-death (fixed, red-proven) + the BT speaker distortion; two Opus research passes (R74 routing · R75 background survival) → D73 ruled → Maya design round (the FIRST on the LUNA lane — emma/sol RETIRED by the owner, cost) → two pinned-Opus build slices → two Maya code rounds + fix waves + confirms, ALL CONFIRMED. Also shipped: the visible mic⇄call mode flip + the WhatsApp-class bubble-arrival animation. ⚠ 14 COMMITS UNPUSHED (`bd4d5bc`→`ee715ae`). ▶▶ NEXT SESSION = the owner's verdicts from their poke round (they are checking the app now) → the two D73 phone probes → the S4 §4.1 calibration sitting (the phase gate) → PUSH on their word**; supersedes below where it speaks)
+
+- **The two openers (owner, on the phone):** ① every dev call died "Call ended" at birth —
+  StrictMode's setup→cleanup→setup left the machine terminal; fixed in the reducer's own idiom
+  (`remount` re-arms a terminal machine PRESERVING the moved generation), red-proven with a
+  StrictMode-wrapped wiring mount. Dev-only; e2e drives the production build, which is why the
+  harness was green around it. ② TTS on the speaker, distorted, with BT headphones worn.
+- **The D73 wave (design of record = the plan's D73 block; ruling = DECISIONS D73; evidence =
+  [R74](./research/R74-android-call-audio-routing.md)/[R75](./research/R75-background-call-survival.md)):**
+  **S5** `voice.live.route` speaker|headphones (headphones = `echoCancellation:false` — R74's
+  source-verified single-bit escape from Android's communication mode → A2DP TTS — AND the
+  route-resolved `{earHoldMode, bargeArmed}` pair: open ear + voice barge-in, no echo path
+  exists) · the input picker that IS Android's route selector (enumerate-on-open, gesture-gated
+  label probe, ghost devices disabled-never-cleared) · dictation on the same constraints (R51
+  §6.1 closed — bare `audio:true` was IN the trap). Output selection is platform-impossible on
+  Android (0/5 peers ship one; the ChatGPT-selector premise CORRECTED — none exists anywhere).
+  **S6** `voice.live.background` ON (amends §5.3) + `background_keepalive` (ConstantSourceNode —
+  the zero×gain first cut was ruled INERT by the design round) + `background_idle_s` 600 (owner's
+  10 min) + the ear-outage detector ("the ear was asleep" — Chrome freezes a silent hidden page
+  in ~90 s with NO mic exemption, R75's load-bearing find, corrects R14) + wake-lock re-acquire +
+  turn_done suppressed in-call + the `priorLeg` busy marker (first-dial busy WITH it = the
+  discard-recovery ladder; W3's terminal arm and e2e pin STAND — the main seat's unification was
+  OVERRULED by the design round) + the pagehide/visibilitychange split.
+- **The cadence, both slices:** pinned Opus build → main-seat review → blind Maya code round →
+  fix wave → self-contained confirm. S5 = `0388ad5`+`40b6f32` (2 MED; the ghost-option auto-clear
+  half OVERRULED). S6 = `7b8cd80`+`4857d20` (1 HIGH — the acquisition-window terminal — + 2 MED +
+  1 LOW; F3 accepted AS RESHAPED, F4 OVERRULED on the fact). Confirms CONFIRMED, she re-ran the
+  pins. Gate: **FE 3,643/194 · BE 2,502 · typecheck · local liveCall e2e 20/20 on the production
+  build** (counts in QUALITY.md).
+- **⚠ THE MAYA LANE (owner ruling + two burned gotchas, in `use-codex-and-fable-correctly` +
+  the second-opinion SKILL):** emma/sol is RETIRED for reviews; Maya = the ◆default profile,
+  `-m gpt-5.6-luna-900k`. Her shell starts in `/home/emma/workspace` (a DIFFERENT git repo) —
+  commit-scoped briefs must pin every git command `git -C /home/emma/github/ctrl-b` with FULL
+  shas, or the review honestly reports "commit not present".
+- **Also this session:** the mode flip goes visible (`5ac91a0` — PhoneIcon on the button, accent
+  tint, kit-btn-pop; the first cut read a field the hook didn't expose — caught by the REAL
+  `tsc -b` gate; bare `npx tsc --noEmit` is a NO-OP here, never trust it) · bubble arrival
+  (`84f812a` — store-side client-only `fresh` flag set ONLY by live-append builders, ArriveWrap
+  latch + module ledger, `kit-bubble-in` motion-gated; bulk loads/reloads never animate; verified
+  live in Chromium — the user bubble's rise is masked by the keyboard collapse, BY the platform).
+- **Ops:** dev units RUNNING (D69) on the full wave (backend restarted; `/voice/status` serves
+  all five D73 knobs). Serve: prod :443 → :5433 untouched (v1.7.7) + the DEV DOOR
+  **`--https=8443 → :5173` OPENED this session** for the phone round — `tailscale serve
+  --https=8443 off` when it should close. The WS origin rail passes at :8443 (verified 101
+  end-to-end). Owner flipped dev `voice.live.enabled` ON in Conf during the round.
+- **▶▶ NEXT SESSION opens on the owner's poke verdicts**, then: R74's four-row routing probe ·
+  R75's §12.4 freeze probe (3 min lock-screen silence → speak; validates the keepalive before it
+  is believed) · the recorded residual (a mic stolen AND returned entirely while hidden reports
+  only at the next wake) · then the S4 §4.1 calibration sitting = THE PHASE GATE
+  (`voice.live.enabled` ships-ON flip at its close). **PUSH the 14-commit backlog on the owner's
+  word.** v1.7.8 sequencing unchanged (release E after Phase 23 S7).
+
+## Prior state (2026-09-17, TWENTY-SEVENTH session — **THE DOC-HEALTH INTERMISSION: a full documentation truth + consistency + prune pass, owner-commissioned before S4. 3 Opus auditors (core spine incl. full README/SPEC/DESIGN · the 12 feature plans · ops/theming/audits) → the same 3 resumed as fixers under main-seat rulings; 47 findings + addendum applied across 35 files, gate 6/6, committed `35247b6` + this handoff commit, PUSHED. ▶▶ NEXT SESSION = S4 STRAIGHT (plan §7), unchanged**; supersedes below where it speaks)
 
 - **What was wrong (the pattern):** substance was healthy — as-built bodies, ladders, HANDOFF,
   and the release/rollback runbooks all verified accurate — but **STATUS STAMPS, doc-map rows,
