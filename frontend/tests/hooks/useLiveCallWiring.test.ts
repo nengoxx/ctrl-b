@@ -1477,6 +1477,44 @@ describe("useLiveCall — the speech-threshold redial (2026-09-22)", () => {
       // in the reducer suite.)
       view.unmount();
     })());
+
+  it("a mid-call Conf save moves NOTHING — the base is seeded at call start (§4.5, Maya F1)", async () => {
+    const { view, step } = await call();
+    expect(view.result.current.vad).toBe(0.9);
+    // The owner saves voice.live.vad_threshold in Conf and /voice/status refetches: the SAME knobs
+    // object the hook reads changes under it. Neither the pill nor a later leg may move.
+    await step(() => {
+      h.voice.data.live_call.vad_threshold = 0.5;
+    });
+    expect(view.result.current.vad).toBe(0.9);
+    view.unmount();
+  });
+
+  it("a threshold redial CLEARS trigger A's window — old-floor hits cannot finish a kill (Maya F2)", async () => {
+    h.voice.data.live_call.barge_threshold = 0.01;
+    const { view, step } = await call(); // `all` readback ⇒ armed
+    await step(() => setPlay("playing")); // something to interrupt, straight through the redial
+    h.dismiss.mockClear();
+    const loud = (n: number) => {
+      for (let i = 0; i < n; i++) h.mic?.({ buf: new ArrayBuffer(8), rms: 0.5 });
+    };
+    // 8 above-floor frames: under the 11-of-15 bar, so nothing fires yet…
+    await act(async () => {
+      loud(8);
+    });
+    expect(h.dismiss).not.toHaveBeenCalled();
+    await act(async () => {
+      view.result.current.setVad(0.5);
+      await Promise.resolve();
+    });
+    // …and the ear keeps delivering across the leg swap. WITHOUT the meter edge these 5 land on the
+    // old 8 (13 ≥ 11) and a ghost kill fires off hits judged by the floor the owner just left.
+    await act(async () => {
+      loud(5);
+    });
+    expect(h.dismiss).not.toHaveBeenCalled();
+    view.unmount();
+  });
 });
 
 describe("useLiveCall — the unmount fence (S2b audit)", () => {

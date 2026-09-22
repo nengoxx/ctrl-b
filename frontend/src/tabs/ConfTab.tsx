@@ -2970,13 +2970,13 @@ export function ConfTab({ active }: Props) {
           />
           <Field
             label="Minimum speech"
-            desc="ms of talking before it counts as interrupting (0–5000) — a cough should cost nothing"
+            desc="ms of talking before it counts as interrupting (0–5000) — a cough should cost nothing; only with hands-free interruption on"
             value={String(vlive?.min_speech_ms ?? "")}
             onChange={(v) => setLive("min_speech_ms", v as unknown as number)}
           />
           <Field
             label="Interruption threshold"
-            desc="mic level counted as talking over the reply (0–0.5) — 0 reuses the STT silence threshold"
+            desc="mic level counted as talking over the reply (0–0.5) — 0 reuses the STT silence threshold; only with hands-free interruption on"
             value={String(vlive?.barge_threshold ?? "")}
             onChange={(v) => setLive("barge_threshold", v as unknown as number)}
           />

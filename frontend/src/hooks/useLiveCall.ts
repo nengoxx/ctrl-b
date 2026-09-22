@@ -292,12 +292,17 @@ export interface CallState {
    *  owner does on the call screen is about THIS call, and it dies with it. */
   route: string;
   inputDevice: string;
-  /** THIS CALL's server-VAD threshold, or `null` for the knob's (the in-call speech-threshold
+  /** THIS CALL's server-VAD threshold, or `null` for the base below (the in-call speech-threshold
    *  control, 2026-09-22) — EPHEMERAL per call, the route pair's own carve-out from §4.5: what the
    *  owner does on the call screen is about THIS call and dies with it; the Conf knob stays the
    *  next call's default. It survives reconnects and route cycles by construction — `openLeg`
    *  reads the LIVE state, and a recalibrated room does not change because the leg did. */
   vadOverride: number | null;
+  /** …and THE BASE it overrides: the knob's value, SEEDED ONCE at the first `captureReady` exactly
+   *  as the route pair is (both blind rounds converged on this — Maya F1 · design F6): a view or a
+   *  reconnect that read the live query instead would let a mid-call Conf save move the pill and
+   *  the next leg's declaration, against §4.5. `null` = a pre-field backend; the control hides. */
+  vadBase: number | null;
   /** THIS TAB WAS IN A CALL WHEN IT LAST WENT AWAY (D73 S6 ⑦) — the `sessionStorage` marker was
    *  standing when this machine started, which only happens when a leg opened here and no clean end
    *  cleared it: a discarded tab's reload, a crash. Read ONCE at call start, like `earHoldMode`, and
@@ -327,6 +332,7 @@ export const CALL_INITIAL: CallState = {
   route: "",
   inputDevice: "",
   vadOverride: null,
+  vadBase: null,
   priorLeg: false,
   gen: 0,
   attempts: 0,
@@ -354,7 +360,16 @@ export type CallSignal = { gen?: number } & (
   /** The capture RESOLVED, carrying the one thing about it the rules depend on: whether this track
    *  needs the ear-hold (§5.1 — `echo_workaround` resolved against the route and the track's own AEC
    *  readback). `note` is the one thing about it the SCREEN depends on: the D73 device fallback. */
-  | { type: "captureReady"; earHoldMode: boolean; note?: string; route: string; deviceId: string }
+  | {
+      type: "captureReady";
+      earHoldMode: boolean;
+      note?: string;
+      route: string;
+      deviceId: string;
+      /** The knob's threshold at call start — the seed for `vadBase`, taken on the FIRST capture
+       *  and kept across route cycles (a recapture must not re-read a knob edited mid-call). */
+      vadBase?: number;
+    }
   /** D74 S2 — the owner moved the route, the input device, or both, WHILE the call is up. Legal only
    *  in the settled phases; anywhere else it is a no-op, because there is either a leg already being
    *  opened or no ear left to move. */
@@ -763,6 +778,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
           note: sig.note ?? s.note,
           route: sig.route,
           inputDevice: sig.deviceId,
+          // Seeded ONCE, on the first capture — a route cycle's fresh `captureReady` must not
+          // re-read a knob the owner may have edited mid-call (§4.5; Maya F1 / design F6).
+          vadBase: s.vadBase ?? sig.vadBase ?? null,
         },
         out: [],
       };
@@ -1147,6 +1165,16 @@ function meterEdge(
       // live. An accepted cycle paints `connecting`, and that edge is the truth to key on.
       if (next.phase !== prev.phase) closeUtterance(m);
       break;
+    case "setVad":
+      // The redial's edge (Maya F2). Same accepted-transition gate as the route cycle — and here
+      // the trigger WINDOW clears too: the capture keeps delivering frames straight through the
+      // leg swap, so hits accrued under the OLD threshold could otherwise complete a window and
+      // fire a barge judged by a floor the owner just moved away from.
+      if (next.phase !== prev.phase) {
+        clearBarge(m);
+        closeUtterance(m);
+      }
+      break;
   }
 }
 
@@ -1448,11 +1476,12 @@ export function useLiveCall(): CallView {
       url: liveSocketUrl(),
       sampleRate: cap.sampleRate,
       ceilingMs: knobs.buffered_ceiling_ms,
-      // THIS CALL's threshold, read off the LIVE state (never latched): the in-call control's
-      // override when one stands, else the knob — and a reconnect re-declares it, so a recalibrated
-      // call survives its own network. Both absent (a pre-field backend's status) → the option stays
-      // undefined and `start` omits the field, which is that relay's own default.
-      vadThreshold: ref.current.vadOverride ?? knobs.vad_threshold,
+      // THIS CALL's threshold, read off the LIVE MACHINE STATE and never the query (Maya F1): the
+      // in-call override when one stands, else the base seeded at call start — so a reconnect
+      // re-declares the recalibrated value, and a Conf save mid-call moves NOTHING until the next
+      // call (§4.5). Both null (a pre-field backend) → `start` omits the field, that relay's own
+      // default.
+      vadThreshold: ref.current.vadOverride ?? ref.current.vadBase ?? undefined,
       onFrame: (frame) => {
         if (!mine()) return;
         switch (frame.type) {
@@ -1726,6 +1755,9 @@ export function useLiveCall(): CallView {
             // what the next route change merges its half-payload against.
             route: req.route ?? "",
             deviceId: req.deviceId ?? "",
+            // The speech-threshold BASE rides the same seeding arm as the pair (see the signal's
+            // doc); the reducer keeps the first call's answer across recaptures.
+            vadBase: knobs.vad_threshold,
             gen: ref.current.gen,
           });
           // …and the TRACK takes the machine's answer the moment it exists — the S2b confirm-F1 lesson
@@ -2019,7 +2051,7 @@ export function useLiveCall(): CallView {
     canRoute: isStable(state.phase),
     setRoute,
     setInputDevice,
-    vad: state.vadOverride ?? knobs?.vad_threshold ?? null,
+    vad: state.vadOverride ?? state.vadBase,
     setVad,
     debug,
   };

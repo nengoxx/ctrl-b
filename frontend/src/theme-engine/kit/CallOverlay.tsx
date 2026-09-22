@@ -118,8 +118,11 @@ function RouteControls({ call }: { call: CallView }) {
   // The Output/Input captions exist because the owner could not tell which control was which
   // (2026-09-22): the button MOVES THE MOUTH, the select PICKS THE EAR, and nothing on either said
   // so. Visual only (`aria-hidden`) — each control's own accessible name already carries the fact.
+  // A FRAGMENT, not a row (design round F1): the deck is the one flex row, and every captioned
+  // control is its direct child — a wrapper here would freeze "Output+Input" into a group the
+  // wrap keeps together, an arbitrary pairing the fourth control would inherit.
   return (
-    <div className="kit-call-route">
+    <>
       <div className="kit-call-io">
         <span className="kit-call-iolabel" aria-hidden>
           Output
@@ -158,9 +161,18 @@ function RouteControls({ call }: { call: CallView }) {
           )}
         </select>
       </div>
-    </div>
+    </>
   );
 }
+
+/** The slider's own window on the 0–1 knob — deliberately NARROWER than the two real enforcers
+ *  (`LiveCfg`'s Field and `_parse_start`, both 0–1), because the extremes are degenerate on a live
+ *  call: 1.0 is a dead ear (nothing scores above it) and 0 makes every noise a turn. Conf keeps the
+ *  full range; a knob set outside this band still shows TRUE on the pill while the thumb clamps
+ *  (design round F4 — the narrowing is the design, this comment is its record). */
+const VAD_MIN = 0.05;
+const VAD_MAX = 0.95;
+const VAD_STEP = 0.05;
 
 /**
  * THE SPEECH-THRESHOLD SLIDER (owner ask 2026-09-22) — the server-VAD confidence floor, on the deck,
@@ -168,10 +180,15 @@ function RouteControls({ call }: { call: CallView }) {
  * and re-opening Conf mid-call to move it was the whole complaint.
  *
  * The pill shows the number; tapping it drops a vertical slider (the Android volume gesture, the
- * owner's own reference). The DRAG is local state — only the RELEASE commits, because a commit is a
- * leg redial (`start.vad_threshold` rides the one message that opens a leg; the relay's
- * one-`session.update` pin is why there is no in-band change) and a redial per drag-tick would cycle
- * the connection through every pixel of the gesture.
+ * owner's own reference) — UP IS A HIGHER FLOOR, A DEAFER EAR, which is why the track carries the
+ * two end words: the number is a confidence the owner has no model for, the words are the polarity
+ * (design round F5 — the first draft of this file got it backwards in its own comment). The DRAG is
+ * local state — only the RELEASE (or Enter) commits, because a commit is a leg redial
+ * (`start.vad_threshold` rides the one message that opens a leg; the relay's one-`session.update`
+ * pin is why there is no in-band change) and a redial per drag-tick or per arrow-press would cycle
+ * the connection through the gesture. Escape CANCELS (draft discarded, focus back on the pill), an
+ * outside tap closes — the NavMenu non-modal popover contract, on the capture phase because the
+ * deck's own pointer-down stop keeps bubble listeners deaf to taps on its sibling controls.
  *
  * Per call, never config — the route pair's rule (§4.5): the Conf knob stays the next call's default.
  * Renders nothing against a backend whose status predates the field: a control that cannot say what
@@ -181,6 +198,22 @@ function VadControl({ call }: { call: CallView }) {
   const [open, setOpen] = useState(false);
   /** The drag's own value, `null` between gestures (the pill then speaks the machine's truth). */
   const [draft, setDraft] = useState<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // A CLOSE without a commit discards the draft, in the ONE place every close passes through —
+    // the pill must never keep showing a value the machine never took (Escape, an outside tap and
+    // the pill's own re-tap all land here).
+    if (!open) {
+      setDraft(null);
+      return;
+    }
+    const onDown = (e: PointerEvent): void => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [open]);
   if (call.vad === null) return null;
   const value = draft ?? call.vad;
   const commit = (): void => {
@@ -188,38 +221,59 @@ function VadControl({ call }: { call: CallView }) {
     setDraft(null);
   };
   return (
-    <div className="kit-call-io">
+    <div className="kit-call-io" ref={rootRef}>
       <span className="kit-call-iolabel" aria-hidden>
         Speech
       </span>
       <button
+        ref={pillRef}
         type="button"
         className="kit-call-routebtn"
-        aria-label="Speech threshold"
+        // The value is IN the name (design sweep ①): `aria-label` replaces the text content, and a
+        // reader given only "Speech threshold" would have no number at all.
+        aria-label={`Speech threshold ${value.toFixed(2)}`}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         {value.toFixed(2)}
       </button>
       {open && (
-        <div className="kit-call-vadpop">
+        <div
+          className="kit-call-vadpop"
+          onKeyDown={(e) => {
+            // Swallowed BEFORE the overlay's modalKeyDown sees it — Escape here means "close the
+            // popover", and letting it bubble would HANG UP THE CALL (design round F3).
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              setOpen(false); // the close effect discards the draft — one chokepoint
+              pillRef.current?.focus();
+            }
+          }}
+        >
+          <span className="kit-call-vadend" aria-hidden>
+            deafer
+          </span>
           {/* `orient` is Firefox's own vertical-slider attribute; the CSS `writing-mode` pair covers
               Chromium. Spread past the JSX prop types — it is a real DOM attribute React forwards. */}
           <input
             type="range"
             className="kit-call-vadslider"
             aria-label="Speech threshold"
-            min={0.05}
-            max={0.95}
-            step={0.05}
+            min={VAD_MIN}
+            max={VAD_MAX}
+            step={VAD_STEP}
             value={value}
             disabled={!call.canRoute}
             {...{ orient: "vertical" }}
             onChange={(e) => setDraft(Number(e.target.value))}
             onPointerUp={commit}
-            onKeyUp={commit}
-            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+            }}
           />
+          <span className="kit-call-vadend" aria-hidden>
+            keener
+          </span>
         </div>
       )}
     </div>

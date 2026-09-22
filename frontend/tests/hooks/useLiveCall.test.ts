@@ -1296,6 +1296,23 @@ describe("callReduce — the speech-threshold change (2026-09-22)", () => {
     expect(run(moved, [{ type: "setVad", value: 0.5 }]).out).toEqual([]);
   });
 
+  it("seeds the BASE once, at the first capture — a recapture must not re-read an edited knob", () => {
+    // Maya F1 / design F6 (both blind rounds, independently): the machine owns the base the way it
+    // owns the route pair, so a mid-call Conf save can move neither the pill nor a later leg.
+    const seeded = run(CALL_INITIAL, [
+      { type: "captureReady", earHoldMode: false, route: "speaker", deviceId: "", vadBase: 0.9 },
+      { type: "ready" },
+    ]).state;
+    expect(seeded.vadBase).toBe(0.9);
+    // The route cycle's fresh captureReady arrives carrying a DIFFERENT knob value (the owner saved
+    // Conf mid-call) — the first call's answer stands.
+    const recycled = run(seeded, [
+      { type: "routeChange", route: "headphones" },
+      { type: "captureReady", earHoldMode: false, route: "headphones", deviceId: "", vadBase: 0.5 },
+    ]).state;
+    expect(recycled.vadBase).toBe(0.9);
+  });
+
   it("SURVIVES a route cycle and a reconnect — the room did not change because the leg did", () => {
     const moved = run(routed, [{ type: "setVad", value: 0.5 }, { type: "ready" }]).state;
     expect(run(moved, [{ type: "routeChange", route: "headphones" }]).state.vadOverride).toBe(0.5);

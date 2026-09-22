@@ -401,7 +401,7 @@ voice:
                             # NOT remove the phone's own playback, so an open ear during `speaking` would
                             # hear the character: the ear pauses, interruption is tap-only there).
                             # Capability-detected per track at call start, NEVER UA-sniffed.
-    barge_in: true
+    barge_in: false         # ships OFF since the 2026-09-22 re-ruling (D74 addendum ⑨) — voice interrupt is an opt-in
     ring: true              # §6 overlay mode: true = the focal-anchored face ring; false = art-only + transcript accent
 ```
 
@@ -1582,6 +1582,28 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > unmoved, ear untouched); `/voice/status.live_call` now carries `vad_threshold` as the slider's
   > seed; the persisting crackle + its either-control-recapture-sometimes-clears-it datapoint
   > recorded as **ISS-16** for the S4 sitting.
+  > **The round's hardening pass (owner-ordered, same day):** blind Maya correctness round (SHIP
+  > WITH FIXES, 3 MED) ∥ blind Opus design/UX round (SHIP WITH CHANGES, 5 MED/LOW + 3 sweep) —
+  > disjoint lenses, and they CONVERGED on the one structural finding (Maya F1 ≡ design F6: the
+  > base read the live query). All accepted; landed as: `vadBase` SEEDED ONCE at `captureReady`
+  > (the route pair's own pattern — a mid-call Conf save moves neither the pill nor a later leg,
+  > §4.5) · `meterEdge` clears trigger A's window + epoch on an accepted `setVad` (old-floor hits
+  > cannot finish a kill across the redial) · explicit JSON `null` in `start.vad_threshold` is a
+  > 1008, not a silent fallback · the deck is ONE flex row (RouteControls a fragment — the fourth
+  > control lands as a peer) · a top scrim + `--text-2` captions (the veil's light end) · the
+  > popover keeps the NavMenu contract (outside tap closes on CAPTURE, Escape closes the POPOVER —
+  > it used to bubble into `modalKeyDown` and HANG UP — draft discarded at one chokepoint) ·
+  > VAD_MIN/MAX/STEP named with the narrowing's why · polarity words on the track ends (up =
+  > deafer; the first draft's comment had it backwards) · the pill's aria-label carries the value ·
+  > keyboard commits on Enter only (no redial per arrow) · 44px drag column · the two
+  > barge-gated Conf rows say "only with hands-free interruption on" · §5.1 `barge_in: false` ·
+  > config.example names the verified 0.06 (speaker route, NOT portable — R78). Every fix
+  > red-proven against its named bypass (the query-read, the deleted meter edge, `.get() is None`,
+  > the unswallowed Escape). Declined, recorded: an explicit "(this call)" marker on the pill +
+  > a Conf pointer (design F6-secondary, LOW — the next call's pill already speaks the reset);
+  > an e2e slider arm (Maya LOW — the unit/wiring pins + the S4 phone round carry it). Maya
+  > confirm round ruled not warranted (fixes are her prescriptions verbatim, red-proven); the
+  > design lens confirmed by follow-up.
 
 ## 8. Open questions for the owner (the court)
 

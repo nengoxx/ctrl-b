@@ -362,7 +362,8 @@ describe("CallOverlay — the in-call route controls (D74 S2)", () => {
 });
 
 describe("CallOverlay — the speech-threshold slider (2026-09-22)", () => {
-  const pill = () => screen.getByRole<HTMLButtonElement>("button", { name: "Speech threshold" });
+  // The pill's accessible name CARRIES the value (design sweep ①) — hence the prefix match.
+  const pill = () => screen.getByRole<HTMLButtonElement>("button", { name: /^Speech threshold/ });
   const slider = () => screen.getByRole<HTMLInputElement>("slider", { name: "Speech threshold" });
 
   it("the pill speaks the machine's value; the slider appears on tap and commits ON RELEASE only", () => {
@@ -389,7 +390,30 @@ describe("CallOverlay — the speech-threshold slider (2026-09-22)", () => {
     // A control that cannot say what the threshold IS must not offer to move it.
     h.call = { ...h.call, vad: null };
     render(<Host open={true} />);
-    expect(screen.queryByRole("button", { name: "Speech threshold" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Speech threshold/ })).toBeNull();
+  });
+
+  it("Escape in the popover closes the POPOVER — never the call (design round F3)", () => {
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    fireEvent.change(slider(), { target: { value: "0.5" } });
+    fireEvent.keyDown(slider(), { key: "Escape" });
+    // The overlay's own Escape rule is "hang up" (`modalKeyDown`); the popover must swallow it…
+    expect(h.close).not.toHaveBeenCalled();
+    expect(screen.queryByRole("slider", { name: "Speech threshold" })).toBeNull();
+    // …and a cancel DISCARDS the drag: the pill goes back to speaking the machine's truth.
+    expect(h.call.setVad).not.toHaveBeenCalled();
+    expect(pill().textContent).toBe("0.90");
+  });
+
+  it("an outside tap closes the popover and discards the drag (the NavMenu popover contract)", () => {
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    fireEvent.change(slider(), { target: { value: "0.5" } });
+    fireEvent.pointerDown(overlay());
+    expect(screen.queryByRole("slider", { name: "Speech threshold" })).toBeNull();
+    expect(h.call.setVad).not.toHaveBeenCalled();
+    expect(pill().textContent).toBe("0.90");
   });
 
   it("a slider gesture is never ALSO a tap-to-interrupt — the deck's stop covers the popover", () => {

@@ -536,6 +536,7 @@ def test_start_vad_threshold_overrides_the_knob_in_the_one_session_update() -> N
         True,  # a bool is not a threshold
         -0.1,  # under the floor
         1.5,  # over the ceiling
+        None,  # explicit null is a malformed VALUE, not an omission (Maya F3)
     ],
 )
 def test_malformed_start_vad_threshold_is_a_protocol_close(vad: Any) -> None:

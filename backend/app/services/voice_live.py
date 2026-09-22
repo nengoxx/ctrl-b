@@ -350,10 +350,13 @@ class LiveRelaySession:
             )
         # THE SESSION's VAD threshold, optional (the in-call speech-threshold control, 2026-09-22).
         # Validated with `sample_rate`'s own strictness — same boundary, same rules (bool is not a
-        # number; bounds are the config field's, `LiveCfg.vad_threshold`'s 0..1) — and absent means
-        # the config knob, which keeps every pre-existing client byte-identical.
-        vad = data.get("vad_threshold")
-        if vad is not None:
+        # number; bounds are the config field's, `LiveCfg.vad_threshold`'s 0..1; NaN/Infinity fail
+        # the chained bounds) — and ABSENT means the config knob, which keeps every pre-existing
+        # client byte-identical. Presence-checked, never `.get(...) is None` (Maya F3): an explicit
+        # JSON `null` is a malformed value, not an omission — a client that believes it declared a
+        # threshold must not silently run on the knob.
+        if "vad_threshold" in data:
+            vad = data["vad_threshold"]
             if not isinstance(vad, int | float) or isinstance(vad, bool):
                 raise _ProtocolError("start.vad_threshold must be a number")
             if not 0.0 <= vad <= 1.0:

@@ -9229,29 +9229,29 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
 .kit .kit-call-top {
   position: relative;
   margin-bottom: auto;
-  padding: calc(10px + env(safe-area-inset-top)) 18px 0;
-  /* The deck is itself the row: the route pair (one flex group) and the speech pill sit side by
-   * side under one gap rhythm, wrapping at narrow widths exactly as the pair does internally. */
+  padding: calc(10px + env(safe-area-inset-top)) 18px 14px;
+  /* The deck is ITSELF the one flex row (design round F1): every captioned control is a direct
+   * child, so they wrap as PEERS at narrow widths — a nested row would freeze an arbitrary
+   * grouping the next control inherits. */
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   align-items: flex-start;
   gap: 8px 10px;
-}
-/* THE IN-CALL ROUTE ROW (D74 S2) — "where am I listening" + which ear, on the top deck. Both controls
- * are QUIET (the Mute recipe, unlit): they are settings, not actions, and the screen's two loud
- * controls stay the hang-up and an engaged Mute. They wrap rather than shrink, because at 360 px a
- * squeezed select is unreadable and a second line costs nothing. */
-.kit .kit-call-route {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 8px 10px;
+  /* The deck sits in the veil's LIGHT end (design round F2) — the body's text enjoys the 88%
+   * wash at the bottom, this row gets 24%. The mirrored recipe buys the captions the same floor:
+   * heaviest under the status bar, gone by the deck's lower edge. */
+  background: linear-gradient(
+    color-mix(in oklch, var(--bg) 62%, transparent),
+    color-mix(in oklch, var(--bg) 30%, transparent) 70%,
+    transparent
+  );
 }
 /* One control + its micro-caption (Output / Input / Speech) — the caption exists because the pills
  * read identical and the owner could not tell mouth from ear. Visual furniture only (`aria-hidden`).
- * `position: relative` is the speech pill's popover anchor. */
+ * `position: relative` is the speech pill's popover anchor. The controls themselves are QUIET (the
+ * Mute recipe, unlit): settings, not actions — the screen's two loud controls stay the hang-up and
+ * an engaged Mute. */
 .kit .kit-call-io {
   position: relative;
   display: grid;
@@ -9266,18 +9266,23 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  padding: 10px 8px;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  padding: 8px;
   border-radius: 14px;
   border: 1px solid var(--line);
-  background: color-mix(in oklch, var(--bg) 76%, transparent);
+  background: color-mix(in oklch, var(--bg) 82%, transparent);
 }
 /* The vertical range: Chromium reads the writing-mode pair, Firefox the `orient` attribute the
- * component sets — both get "up = higher" (`direction: rtl` flips the vertical axis). Native track
- * + thumb via `accent-color`, the framing sheet's own precedent. */
+ * component sets — both get "up = a HIGHER floor = a DEAFER ear" (`direction: rtl` flips the
+ * vertical axis; the polarity words are the popover's own end captions, F5). 44px wide — the drag
+ * target is the whole column, and a 24px column was the one sub-4mm target on the screen (design
+ * sweep ③). Native track + thumb via `accent-color`, the framing sheet's own precedent. */
 .kit .kit-call-vadslider {
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 24px;
+  width: 44px;
   height: 132px;
   accent-color: var(--accent);
   touch-action: none;
@@ -9285,11 +9290,18 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
 .kit .kit-call-vadslider:disabled {
   opacity: 0.45;
 }
+/* The polarity, in words (F5): a bare confidence number carries no model of which way is quiet. */
+.kit .kit-call-vadend {
+  font-size: 10px;
+  color: var(--text-3);
+}
 .kit .kit-call-iolabel {
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-3);
+  /* `--text-2`, not 3: the caption sits over near-raw art even behind the deck's scrim (F2), and a
+   * caption that exists to disambiguate must survive a light backdrop. */
+  color: var(--text-2);
 }
 .kit .kit-call-routebtn,
 .kit .kit-call-device {
