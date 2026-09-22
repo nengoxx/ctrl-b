@@ -324,9 +324,16 @@ describe("CallOverlay — the in-call route controls (D74 S2)", () => {
     h.call = { ...h.call, phase: "connecting", canRoute: false };
     render(<Host open={true} />);
     expect(routeBtn().disabled).toBe(true);
-    expect(screen.getByLabelText<HTMLSelectElement>("Microphone / audio route").disabled).toBe(
-      true,
-    );
+    expect(screen.getByLabelText<HTMLSelectElement>("Input microphone").disabled).toBe(true);
+  });
+
+  it("a route tap on the top deck is never ALSO an interrupt", () => {
+    // The row moved out of the cluster (owner, 2026-09-22) and so out from under ITS pointer-down
+    // stop — the top deck carries its own, and this is the pin that keeps it there.
+    h.call = { ...h.call, phase: "speaking" };
+    render(<Host open={true} />);
+    fireEvent.pointerDown(routeBtn());
+    expect(h.call.interrupt).not.toHaveBeenCalled();
   });
 
   it("keeps a stored device that the list does not contain — shown, disabled, never cleared", () => {

@@ -1564,11 +1564,18 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > no-stall ruling now standing on the scrub) ⑥ `store/micRelease` capture exclusivity (a call
   > awaits dictation's own stop) + the probe-latch serialization ⑦ the `CallDebug` snapshot on
   > CallView behind `voice.live.debug` (250 ms tick, overlay never touches the track) ⑧ knobs
-  > `voice.live.min_final_ms` 200 · `voice.live.debug` false · `voice.tts.speak_actions` true —
+  > `voice.live.min_final_ms` 200 · `voice.live.debug` false · `voice.tts.speak_actions` true
+  > (→ **false**, owner re-ruling 2026-09-22 after the first live round — dialogue-only default) —
   > additive, no schema bump; client wire treats absence as OFF/legacy ⑨ `stt.hotwords` kept on
   > the whole-clip door only, the R76 inertness named in code. ⚠ S4 caveats inherited: the barge
   > floor is NOT portable across routes (R78 — headphones flips AGC/preset), and the owner's 0.06
   > wants one re-check on the windowed rule.
+  > **Owner round 2026-09-22 (the deck's first poke):** the route row moved to a TOP DECK above
+  > the ring (its own pointer-down stop, pinned) with Output/Input micro-captions — the two pills
+  > read identical — and the select's `all: unset` top-skew centred (`line-height` = control
+  > height); `speak_actions` re-ruled **false** (dialogue-only default); the persisting crackle +
+  > its either-control-recapture-sometimes-clears-it datapoint recorded as **ISS-16** for the S4
+  > sitting.
 
 ## 8. Open questions for the owner (the court)
 

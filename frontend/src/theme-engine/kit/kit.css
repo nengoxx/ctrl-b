@@ -9222,16 +9222,38 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   white-space: pre;
   overflow-x: auto;
 }
-/* THE IN-CALL ROUTE ROW (D74 S2) — "where am I listening" + which ear, on their own line above the
- * furniture. Both controls are QUIET (the Mute recipe, unlit): they are settings, not actions, and the
- * screen's two loud controls stay the hang-up and an engaged Mute. They wrap rather than shrink,
- * because at 360 px a squeezed select is unreadable and a second line costs nothing. */
+/* THE TOP DECK (owner move, 2026-09-22) — the route row rides above the ring. The overlay root is a
+ * bottom-anchored flex column (`justify-content: flex-end`), so `margin-bottom: auto` on the first
+ * item is the whole pinning: it absorbs the free space and the body stays at the bottom. `position:
+ * relative` for the same reason `.kit-call-body` has it — the art layer is absolute underneath. */
+.kit .kit-call-top {
+  position: relative;
+  margin-bottom: auto;
+  padding: calc(10px + env(safe-area-inset-top)) 18px 0;
+}
+/* THE IN-CALL ROUTE ROW (D74 S2) — "where am I listening" + which ear, on the top deck. Both controls
+ * are QUIET (the Mute recipe, unlit): they are settings, not actions, and the screen's two loud
+ * controls stay the hang-up and an engaged Mute. They wrap rather than shrink, because at 360 px a
+ * squeezed select is unreadable and a second line costs nothing. */
 .kit .kit-call-route {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 8px 10px;
+}
+/* One control + its micro-caption (Output / Input) — the caption exists because the two pills read
+ * identical and the owner could not tell mouth from ear. Visual furniture only (`aria-hidden`). */
+.kit .kit-call-io {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+}
+.kit .kit-call-iolabel {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 .kit .kit-call-routebtn,
 .kit .kit-call-device {
@@ -9241,6 +9263,10 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   padding: 0 14px;
   border-radius: 999px;
   font-size: 13px;
+  /* `all: unset` leaves the select's single-line value sitting at the TOP of its 36px box (the line
+   * box is ~19px and nothing centres it — the owner saw the skew). A line box the height of the
+   * control is the centring; labels never wrap here (the select ellipsizes, the button is fixed copy). */
+  line-height: 36px;
   text-align: center;
   color: var(--text-2);
   background: color-mix(in oklch, var(--bg) 62%, transparent);

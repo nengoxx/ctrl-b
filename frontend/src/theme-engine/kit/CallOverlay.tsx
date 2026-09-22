@@ -115,36 +115,49 @@ function RouteControls({ call }: { call: CallView }) {
   // The action, named — the Mute button's pattern, and the one screen readers announce as what it
   // does. A button reading "Speaker" would be describing a state the ring already carries.
   const flip = headphones ? "Use speaker" : "Use headphones";
+  // The Output/Input captions exist because the owner could not tell which control was which
+  // (2026-09-22): the button MOVES THE MOUTH, the select PICKS THE EAR, and nothing on either said
+  // so. Visual only (`aria-hidden`) — each control's own accessible name already carries the fact.
   return (
     <div className="kit-call-route">
-      <button
-        type="button"
-        className="kit-call-routebtn"
-        disabled={!call.canRoute}
-        aria-label={flip}
-        onClick={() => call.setRoute(headphones ? ROUTE_SPEAKER : ROUTE_HEADPHONES)}
-      >
-        {flip}
-      </button>
-      <select
-        className="kit-call-device"
-        aria-label="Microphone / audio route"
-        disabled={!call.canRoute}
-        value={call.inputDevice}
-        onChange={(e) => call.setInputDevice(e.target.value)}
-      >
-        <option value="">system default</option>
-        {devices.map((d) => (
-          <option key={d.deviceId} value={d.deviceId}>
-            {d.label}
-          </option>
-        ))}
-        {call.inputDevice !== "" && !known && (
-          <option value={call.inputDevice} disabled>
-            saved device — not available
-          </option>
-        )}
-      </select>
+      <div className="kit-call-io">
+        <span className="kit-call-iolabel" aria-hidden>
+          Output
+        </span>
+        <button
+          type="button"
+          className="kit-call-routebtn"
+          disabled={!call.canRoute}
+          aria-label={flip}
+          onClick={() => call.setRoute(headphones ? ROUTE_SPEAKER : ROUTE_HEADPHONES)}
+        >
+          {flip}
+        </button>
+      </div>
+      <div className="kit-call-io">
+        <span className="kit-call-iolabel" aria-hidden>
+          Input
+        </span>
+        <select
+          className="kit-call-device"
+          aria-label="Input microphone"
+          disabled={!call.canRoute}
+          value={call.inputDevice}
+          onChange={(e) => call.setInputDevice(e.target.value)}
+        >
+          <option value="">system default</option>
+          {devices.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label}
+            </option>
+          ))}
+          {call.inputDevice !== "" && !known && (
+            <option value={call.inputDevice} disabled>
+              saved device — not available
+            </option>
+          )}
+        </select>
+      </div>
     </div>
   );
 }
@@ -284,6 +297,16 @@ export function CallOverlay({ close }: { close: () => boolean }) {
           <i className="kit-call-ring-stroke" />
         </div>
       )}
+      {/* THE TOP DECK (owner move, 2026-09-22) — the route row lives ABOVE the ring, not in the
+          bottom cluster with Mute: they are settings about the call, not actions in it, and the
+          furniture row was cramped. Its own pointer-down stop, because it sits outside the
+          cluster's — moving the route is never also a tap-to-interrupt. Gone on a terminal, like
+          Mute — there is no ear to move. */}
+      {!terminal && (
+        <div className="kit-call-top" onPointerDown={(e) => e.stopPropagation()}>
+          <RouteControls call={call} />
+        </div>
+      )}
       <div className="kit-call-body">
         <p className="kit-call-phase" id={labelId}>
           {phaseLabel(call.phase, call.userSpeechActive, call.muted)}
@@ -329,11 +352,6 @@ export function CallOverlay({ close }: { close: () => boolean }) {
               </div>
             </div>
           )}
-          {/* THE ROUTE ROW (D74 S2) — inside the cluster, so the pointer-down stop above covers it
-              and moving the route is never also a tap-to-interrupt. Its own line rather than the
-              furniture row's: a select needs width, and three controls plus a hang-up do not fit a
-              360 px viewport side by side. Gone on a terminal, like Mute — there is no ear to move. */}
-          {!terminal && <RouteControls call={call} />}
           <div className="kit-call-controls">
             {/* MUTE (§6). The accessible name FLIPS rather than riding `aria-pressed` — the mic
                 gesture's pattern, and the one screen readers announce as the action it is. */}
