@@ -3,10 +3,10 @@ import { useEffect } from "react";
 import { FocalFace } from "../../../../components/FocalFace";
 import { useAgentArt, type AgentArt } from "../../../../hooks/useAgentArt";
 import {
-  effectiveAgent,
   getDefaultAgent,
   getKnownAgents,
   getKnownSkills,
+  routedAgent,
   useVerbsVersion,
 } from "../../../../lib/composer";
 import { getSessionAgent, useThreadAgent } from "../../../../store/chat";
@@ -84,11 +84,15 @@ export function ToolsMenuSheet() {
   // `effectiveAgent` ladder over `validSessionAgent`, shared with the agent backdrop since D70 S6 (see its
   // note in `lib/composer.ts`, which mirrors the server's own routing line). DISPLAY only: neither pin and
   // no send path is touched, and `armed` (the dot) still keys off the one-shot alone.
+  //
+  // ONE EXPRESSION FOR BOTH SURFACES (review round C3): this used to be a hand-rolled copy of the backdrop's
+  // ladder, and the copies had already diverged — an ARMED NAME the roster no longer has folded to the
+  // default for the backdrop and matched NO row here, i.e. the group claimed the message went nowhere while
+  // the server would route it to the default. `routedAgent` is the fold, so that case now checks the default
+  // row. What is passed is the ARMED pick alone, never `composerScope.spent`: this panel shows what is armed
+  // for the NEXT message, while the held pick is only about which face the surface is wearing right now.
   const threadAgent = useThreadAgent();
-  const routedAgent =
-    scope.agent !== undefined
-      ? scope.agent
-      : effectiveAgent(getSessionAgent(), threadAgent, agents);
+  const routed = routedAgent(scope.agent, getSessionAgent(), threadAgent, agents);
 
   return (
     <div
@@ -106,12 +110,12 @@ export function ToolsMenuSheet() {
           <AgentRow
             name={getDefaultAgent()}
             tag="default"
-            on={routedAgent === null}
+            on={routed === null}
             value={null}
             art={art}
           />
           {agents.map((n) => (
-            <AgentRow key={n} name={n} on={routedAgent === n} value={n} art={art} />
+            <AgentRow key={n} name={n} on={routed === n} value={n} art={art} />
           ))}
         </div>
       </div>

@@ -17,6 +17,9 @@ import {
   removeSteer,
   resumeCall,
   retryLastTurn,
+  // The text-part join moved to the store when the call screen became its second reader (owner ask
+  // 2026-09-22) — one filter, so "what was said" cannot mean two things.
+  textOf,
 } from "../store/chat";
 import { openConfGroup } from "../store/groupScroll";
 import { useUISlice } from "../store/ui";
@@ -49,12 +52,6 @@ function hm(iso: string): string {
 function reasoningOf(parts: Part[]): string {
   return parts
     .filter((p) => p.type === "reasoning")
-    .map((p) => p.text)
-    .join("");
-}
-function textOf(parts: Part[]): string {
-  return parts
-    .filter((p) => p.type === "text")
     .map((p) => p.text)
     .join("");
 }

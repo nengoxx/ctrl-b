@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadAgents, loadSkills } from "../../src/lib/composer";
 import { openThread, setSessionAgent, startNewThread } from "../../src/store/chat";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
-import { clearComposerScope, getComposerScope } from "../../src/store/composerScope";
+import { clearComposerScope, getComposerScope, setScopeAgent } from "../../src/store/composerScope";
 import { clearDraft } from "../../src/store/composer";
 import { setPlanSheetOpen, usePlanSheetOpen } from "../../src/store/planSheet";
 import { mergeComposerSlots } from "../../src/theme-engine/kit/composer/mergeSlots";
@@ -212,6 +212,26 @@ describe("tools menu — arming", () => {
     expect(trigger(container).querySelector(".tools-dot")).toBe(null); // reflected ≠ armed
     // …and the DISPLAY normalization never touches the sticky value the send path reads
     expect(getComposerScope().agent).toBe(undefined);
+  });
+
+  // Review round C3 — and this one is a BEHAVIOUR CHANGE, recorded: the checked row used to compare the
+  // ARMED name verbatim, so a pick the roster no longer has (an agent deleted or renamed while the arming
+  // stood) left every radio unchecked — the same "the message goes nowhere" lie the sticky case above was
+  // fixed for, and the backdrop was already folding it to the default. Both surfaces take one expression
+  // now (`lib/composer#routedAgent`), and the fold is the server's own answer for an unknown `agent`.
+  it("an ARMED name that isn't configured reads as the DEFAULT row too", () => {
+    const { container } = renderComposer();
+    fireEvent.click(trigger(container));
+    act(() => {
+      setScopeAgent("ghost");
+    });
+    expect(
+      radios(container)
+        .filter((r) => r.checked)
+        .map(rowName),
+    ).toEqual(["default"]);
+    // …and the ARMING itself is untouched by the display fold: the send still carries what was picked.
+    expect(getComposerScope().agent).toBe("ghost");
   });
 
   it("picking the DEFAULT row over a sticky pick arms an explicit `null` (not 'nothing armed')", () => {

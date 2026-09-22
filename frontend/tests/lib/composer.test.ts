@@ -17,6 +17,9 @@ vi.mock("../../src/store/chat", () => ({
   setSessionAgent: vi.fn(),
   setSessionPrivilege: vi.fn(),
   pushSystemNote: vi.fn(),
+  // `idle` = the send OWNS the turn, so the take stashes the pick (the C2 hold). The steer arm below
+  // flips it to `streaming` per-test.
+  getChatStatus: vi.fn(() => "idle"),
 }));
 vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
 
@@ -340,6 +343,50 @@ describe("runComposer × the one-shot menu scope (A6)", () => {
       agent: null,
     });
     expect(getComposerScope().agent).toBe(undefined); // spent like any other arming
+  });
+
+  // Review round C2 — the take MOVES the pick to `spent` and `runComposer`'s own `finally` releases it
+  // when the send settles. Driven through the REAL dispatch path on purpose: the backdrop's settle arm
+  // exercises the store rule by calling the release itself, so only THIS arm fails if the `finally`
+  // stops running (the red-proof's named bypass).
+  it("the held pick rides the send and is released by runComposer's OWN settle (review round C2)", async () => {
+    let settle!: (v: "accepted") => void;
+    vi.mocked(chat.sendMessage).mockReturnValueOnce(
+      new Promise((r) => {
+        settle = r;
+      }),
+    );
+    setScopeAgent("ops");
+    runComposer("wake the vault");
+    // In flight: armed is spent, but the pick is HELD — the surface keeps the armed agent's face.
+    expect(getComposerScope().agent).toBe(undefined);
+    expect(getComposerScope().spent).toBe("ops");
+    settle("accepted");
+    await act(async () => {}); // drain the microtask the finally rides
+    expect(getComposerScope().spent).toBe(undefined); // settled: the ladder takes the surface back
+  });
+
+  // Fix-wave round 2 (arch F1): with a turn already STREAMING this POST is a D41 steer, whose
+  // `sendMessage` settles at the 202 — before the steered reply exists. A stash there would release
+  // within one round-trip and hold nothing, so the steer never stashes: the pick still routes (it is
+  // consumed and rides the wire), but the surface reverts at dispatch, the honest reading of an
+  // unobservable reply edge.
+  it("a STEER (turn streaming) consumes the pick for routing but HOLDS nothing", async () => {
+    vi.mocked(chat.getChatStatus).mockReturnValue("streaming");
+    try {
+      setScopeAgent("ops");
+      runComposer("and check the disks");
+      expect(chat.sendMessage).toHaveBeenCalledWith("and check the disks", {
+        raw: "and check the disks",
+        agent: "ops",
+      });
+      expect(getComposerScope().agent).toBe(undefined); // consumed…
+      expect(getComposerScope().spent).toBe(undefined); // …but never held
+      await act(async () => {}); // the settle finds nothing to release, and releases nothing
+      expect(getComposerScope().spent).toBe(undefined);
+    } finally {
+      vi.mocked(chat.getChatStatus).mockReturnValue("idle");
+    }
   });
 
   it("an explicit `/skill` send WINS: the arming is cleared, never merged", async () => {

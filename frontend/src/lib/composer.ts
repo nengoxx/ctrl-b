@@ -21,6 +21,7 @@ import { getJSON } from "../api/client";
 import { isUploading, reserveStaged, stagedIds } from "../store/attachments";
 import {
   compactThread,
+  getChatStatus,
   pushSystemNote,
   runShell,
   sendMessage,
@@ -31,7 +32,7 @@ import {
   startNewThread,
 } from "../store/chat";
 import { setDraft } from "../store/composer";
-import { clearComposerScope, takeComposerScope } from "../store/composerScope";
+import { clearComposerScope, releaseSpent, takeComposerScope } from "../store/composerScope";
 import { createStore } from "../store/createStore";
 import { setUI } from "../store/ui";
 import type { PromptsDoc } from "../types";
@@ -176,6 +177,33 @@ export function effectiveAgent(
   agents: readonly string[],
 ): string | null {
   return validSessionAgent(sticky || threadAgent, agents);
+}
+
+/** …and the SAME LADDER WITH AN EXPLICIT PICK FOLDED IN — the third member of this family, and the one
+ *  every surface that has to say "whose message is this" actually takes (review round C3: the backdrop
+ *  and the tools menu had each grown their own copy of it, and the copies had already diverged).
+ *
+ *  `pick` is `composerScope`'s tri-state, and each value means something different:
+ *    · `undefined` — nothing picked, so the answer is `effectiveAgent`'s ladder, untouched;
+ *    · `null` — picked "the configured default", EXPLICITLY. It beats a sticky `/agent` pick, because
+ *      that is who the picked message actually runs as (the send puts `agent: null` on the wire);
+ *    · a name — that specialist, folded through the same `validSessionAgent` the ladder mirrors, so a
+ *      pick the roster no longer has reads as the DEFAULT rather than as nothing. That fold is the
+ *      server's own behaviour (an unknown `agent` resolves to the default), and it is what the menu's
+ *      checked row used to get wrong: it compared the raw name and left the whole group unchecked,
+ *      claiming the message went nowhere.
+ *
+ *  PURE over its four inputs, for the reason the two below it are: the menu reads the module set and the
+ *  non-reactive sticky pin, the backdrop reads the roster query and the reactive one. */
+export function routedAgent(
+  pick: string | null | undefined,
+  sticky: string | null,
+  threadAgent: string | null,
+  agents: readonly string[],
+): string | null {
+  return pick === undefined
+    ? effectiveAgent(sticky, threadAgent, agents)
+    : validSessionAgent(pick, agents);
 }
 
 export async function loadAgents(): Promise<void> {
@@ -481,14 +509,32 @@ export function runComposer(raw: string): boolean {
   // arriving inside the first POST's accept window cannot name the same ids twice. The reservation is
   // released by whoever refused it, which is why it is taken here — one step from the send that owns
   // it — and never earlier.
-  const scope = takeComposerScope();
+  //
+  // …and the take now also HOLDS the agent pick for the turn it belongs to (review round C2 — the
+  // store's header carries the why). It stashes ONLY when this send OWNS the turn (fix-wave round 2,
+  // arch F1): with a turn already streaming this POST is a D41 steer, and a steer's `sendMessage`
+  // settles at the 202 — before the steered reply exists — so a stash here would release within one
+  // round-trip and the hold would never cover the very case it was built for. The steer therefore
+  // never holds (its pick reverts at dispatch, the honest reading of an unobservable reply edge).
+  // The release is this `finally`: it runs when the send settles, whichever way it settled, so a
+  // refused or failed send hands the surface back at once while a streaming one keeps the armed
+  // agent's face up through their own reply — and it names the take's own HOLD TOKEN, so an older
+  // send settling late can never take a newer send's hold with it (two sends armed at the same agent
+  // defeated the old value compare).
+  const scope = takeComposerScope(getChatStatus() !== "streaming");
   const attachments = reserveStaged();
-  void sendMessage(text, {
-    raw: text,
-    ...(scope.agent !== undefined ? { agent: scope.agent } : {}),
-    ...(scope.skills.length ? { skills: scope.skills } : {}),
-    ...(attachments.length ? { attachments } : {}),
-  });
+  void (async () => {
+    try {
+      await sendMessage(text, {
+        raw: text,
+        ...(scope.agent !== undefined ? { agent: scope.agent } : {}),
+        ...(scope.skills.length ? { skills: scope.skills } : {}),
+        ...(attachments.length ? { attachments } : {}),
+      });
+    } finally {
+      if (scope.hold !== null) releaseSpent(scope.hold);
+    }
+  })();
   return true;
 }
 

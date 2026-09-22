@@ -123,6 +123,10 @@ async def voice_status(request: Request) -> dict[str, object]:
         # override rides `start.vad_threshold` on the next leg, never a config write.
         "vad_threshold": live.vad_threshold,
         "ring": live.ring,
+        # The reply as CAPTIONS on the call screen (owner ask 2026-09-22). A presentation knob like
+        # `ring` beside it: the words it draws are already in the browser's own chat store, so this
+        # end is only ever asked whether to draw them.
+        "captions": live.captions,
         "echo_workaround": live.echo_workaround,
         # D73 S5 — the capture pair. It reaches the browser for the same reason its neighbours do: the
         # constraints and the device are `getUserMedia` arguments, and every capture this app opens

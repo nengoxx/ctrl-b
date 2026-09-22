@@ -75,6 +75,10 @@ export interface LiveCallWire {
   vad_threshold?: number;
   /** §6 overlay mode — the focal-anchored face ring. S2b renders it; S2a's minimal overlay does not. */
   ring: boolean;
+  /** The agent's reply as fading CAPTIONS on the call screen (owner ask 2026-09-22). Optional for the
+   *  usual reason — a backend that predates the field says nothing, and the overlay's own `?? true`
+   *  dresses the `LiveCfg` default rather than inventing a second one. */
+  captions?: boolean;
   /** `auto | on | off` — the loopback-AEC fallback lever. S0 ruled `auto` = off where the live track
    *  reads `echoCancellation: "all"`; the protective ear-hold elsewhere is S3. */
   echo_workaround: string;

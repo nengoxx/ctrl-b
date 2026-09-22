@@ -683,6 +683,36 @@ export function confirmAwaiting(): AwaitingConfirm | null {
   return awaitingMemo;
 }
 
+/** A message's VISIBLE prose: its text parts, joined in order. Reasoning and tool parts are excluded
+ *  by construction — the store keeps those as parts of their own, and everything that renders "what was
+ *  said" means this one. Lives here rather than in either reader because it has two: the transcript
+ *  bubbles (`components/ChatThread`) and the call screen's captions (`kit/CallOverlay`, through
+ *  `lastReply` below), and two copies of a filter is how one of them starts including reasoning. */
+export function textOf(parts: Part[]): string {
+  return parts
+    .filter((p) => p.type === "text")
+    .map((p) => p.text)
+    .join("");
+}
+
+/** The thread's LAST assistant message — its id and its prose — or `null` when there is none. The call
+ *  captions' whole source (owner ask 2026-09-22), and a non-reactive reader in the family of
+ *  `getChatStatus`/`getLiveTurn`: the caption block takes it through `useChatSlice` for the live text
+ *  and calls it directly to latch its mount-time floor.
+ *
+ *  The ID rides along because the caller needs to tell one reply from another — the captions may only
+ *  show a turn that STARTED after the call did (§4.5), and "is this still the reply that was already
+ *  there" is an identity question. Deliberately NOT scanned back to the user boundary
+ *  (`useAutoTts.finalReply`'s rule, whose question is a different one): a turn's later step is still
+ *  the last thing the agent said, and that is what the screen should be showing. */
+export function lastReply(): { id: string; text: string } | null {
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const m = state.messages[i];
+    if (m.role === "assistant") return { id: m.id, text: textOf(m.parts) };
+  }
+  return null;
+}
+
 /** Fetch one thread's persisted history. Split from the state write so a caller can decide what to do
  *  with a FAILED fetch before it has touched the view (see `openThread`). */
 async function fetchMessages(threadId: string): Promise<ChatMessage[]> {

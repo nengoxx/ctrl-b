@@ -659,9 +659,10 @@ class LiveCfg(VoiceServiceCfg):
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `allowed_origins` are the relay's own caps.
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`, `barge_threshold`,
-      `barge_in`, `ring`, `echo_workaround`, the D73 CAPTURE pair (`route`, `input_device`), the D73
-      S6 BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`), the D74 pair
-      (`min_final_ms`, `debug`) and the four S2.5 DICTATION knobs are PWA behavior
+      `barge_in`, `ring`, `captions`, `echo_workaround`, the D73 CAPTURE pair (`route`,
+      `input_device`), the D73 S6 BACKGROUND three (`background`, `background_keepalive`,
+      `background_idle_s`), the D74 pair (`min_final_ms`, `debug`) and the four S2.5 DICTATION
+      knobs are PWA behavior
       (Speaches' `TurnDetection` accepts exactly five fields, §4.1, so an interruption floor cannot be
       a server knob). They are delivered verbatim by `GET /voice/status` (`live_call`) and nothing
       below the browser reads them.
@@ -729,6 +730,13 @@ class LiveCfg(VoiceServiceCfg):
     debug: bool = False
     #: §6 overlay mode: true = the focal-anchored face ring, false = art-only + transcript accent.
     ring: bool = True
+    #: THE REPLY, AS CAPTIONS on the call screen (client; owner ask 2026-09-22): the agent's answer as
+    #: small fading text above the heard-you line, growing as it streams. A CLIENT knob for the reason
+    #: `ring` is — it decides what the overlay draws, and the text it draws is already in the browser's
+    #: own chat store; nothing below the browser is asked for a word of it. Read once at call start
+    #: (§4.5), like every knob on this object: a Conf save mid-call applies to the NEXT call. Ships ON
+    #: — a call that shows what was SAID but not what was ANSWERED was the owner's whole complaint.
+    captions: bool = True
     #: Per-track echo policy (§7-S0 ③, owner-ruled on measured device evidence): `auto` =
     #: capability-detected per track at call start (OFF where `getSettings().echoCancellation` reads
     #: `"all"`, the protective ear-hold elsewhere) — NEVER UA-sniffed. `on`/`off` force one branch.

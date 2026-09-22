@@ -122,6 +122,7 @@ export interface VoiceLive extends VoiceServiceCommon {
   min_final_ms: number; //    ms above the barge/silence floor before a final may become a turn; 0 = off
   debug: boolean; //          show the call's live gate numbers on the overlay (calibration aid)
   ring: boolean; //           §6 overlay mode: the focal-anchored face ring, or art-only
+  captions: boolean; //       the reply as fading text on the call screen (owner ask 2026-09-22)
   echo_workaround: string; // auto | on | off — the per-track loopback-AEC lever
   // D73 S5 — the CAPTURE pair (evidence docs/research/R74). One owner-facing choice plus the device
   // it opens, read by every capture the app makes (the call's and dictation's alike), which is why

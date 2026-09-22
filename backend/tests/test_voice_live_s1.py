@@ -1046,6 +1046,7 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "min_final_ms": 350,
             "debug": True,
             "ring": False,
+            "captions": False,
             "echo_workaround": "on",
             "route": "headphones",
             "input_device": "dev-42",
@@ -1078,6 +1079,9 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "min_final_ms": 350,
         "debug": True,
         "ring": False,
+        # The call screen's two PRESENTATION knobs travel together (owner ask 2026-09-22): what the
+        # overlay draws over the art, and whether it draws the reply the browser already holds.
+        "captions": False,
         "echo_workaround": "on",
         # D73 S5 — the capture pair. CLIENT knobs like their neighbours: they are `getUserMedia`
         # arguments, so nothing below the browser reads them and they have to arrive here or be

@@ -96,6 +96,7 @@ const makeSettings = () => ({
       barge_threshold: 0,
       barge_in: true,
       ring: true,
+      captions: true,
       echo_workaround: "auto",
       // D74 — the near-speech gate + its calibration readout (evidence docs/research/R76).
       min_final_ms: 200,
@@ -353,6 +354,10 @@ describe("ConfTab · the Live call section (D71 §5.1)", () => {
       "true",
     );
     expect(liveGroup().getByLabelText("Live call ring").getAttribute("aria-checked")).toBe("true");
+    // The ring's presentation sibling (owner ask 2026-09-22) — ON by default, like the ring itself.
+    expect(liveGroup().getByLabelText("Live call captions").getAttribute("aria-checked")).toBe(
+      "true",
+    );
     expect(liveGroup().getByRole("button", { name: "auto" }).getAttribute("aria-pressed")).toBe(
       "true",
     );

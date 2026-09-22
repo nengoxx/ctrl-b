@@ -857,6 +857,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   min_final_ms: 200,
   debug: false,
   ring: true,
+  captions: true,
   echo_workaround: "auto",
   route: "speaker",
   input_device: "",
@@ -2887,6 +2888,19 @@ export function ConfTab({ active }: Props) {
               on={!!vlive?.ring}
               label="Live call ring"
               onToggle={() => setLive("ring", !vlive?.ring)}
+            />
+          </SettingRow>
+          {/* The ring's presentation sibling (owner ask 2026-09-22): the call screen showed what YOU
+              said and never what came back. The words are already in the chat — this row only says
+              whether the call screen draws them too. */}
+          <SettingRow
+            label="Call captions"
+            desc="the reply as text on the call screen, above what you said; off → only what you said"
+          >
+            <Switch
+              on={!!vlive?.captions}
+              label="Live call captions"
+              onToggle={() => setLive("captions", !vlive?.captions)}
             />
           </SettingRow>
           <SettingRow
