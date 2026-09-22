@@ -9259,7 +9259,8 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   justify-items: center;
 }
 /* THE SPEECH-THRESHOLD POPOVER (2026-09-22) — the Android-volume gesture: a small card dropping from
- * the pill with ONE vertical slider, up = keener ear. The confirm card's surface recipe; absolute so
+ * the pill with ONE vertical slider, up = a DEAFER ear (a higher confidence floor hears less — F5:
+ * the track's own end words carry the polarity). The confirm card's surface recipe; absolute so
  * opening it never reflows the deck (a layout jump under the finger mid-gesture is the failure). */
 .kit .kit-call-vadpop {
   position: absolute;
