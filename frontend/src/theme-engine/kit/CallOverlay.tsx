@@ -1,6 +1,14 @@
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 
 import { FocalImg } from "../../components/FocalImg";
+import { Glyph } from "../../components/icons";
 import { useActiveBackdrop } from "../../hooks/useActiveBackdrop";
 import { useFocalAnchor } from "../../hooks/useFocalPosition";
 import {
@@ -13,12 +21,19 @@ import { useVoiceStatus } from "../../hooks/useVoiceStatus";
 import { modalKeyDown } from "../../lib/focusTrap";
 import {
   listAudioInputs,
-  onHeadphones,
   ROUTE_HEADPHONES,
   ROUTE_SPEAKER,
+  ROUTE_SPEAKER_HIFI,
   type MicDevice,
 } from "../../lib/pcmCapture";
-import { confirmAwaiting, resumeCall, useChatSlice } from "../../store/chat";
+import {
+  confirmAwaiting,
+  getLiveTurn,
+  lastReply,
+  resumeCall,
+  useChatSlice,
+} from "../../store/chat";
+import { getComposerScope } from "../../store/composerScope";
 import { startCall } from "../../store/liveCall";
 
 // THE CALL SCREEN (Phase 24 / D71 §6) — the agent's art full-bleed, the call's state on a ring over the
@@ -28,6 +43,8 @@ import { startCall } from "../../store/liveCall";
 //
 // THE BACKDROP NEVER GOES AWAY (owner ruling): `useActiveBackdrop` ALONE — the active agent's bound
 // background, its avatar standing in, else the plain theme surface. A call with Lynette looks like HER.
+// Taken WITHOUT the composer's armed one-shot (`useActiveBackdrop(false)`, review round C1), because a
+// call does not route through it — see the call at the bottom of this file.
 // Gacha's oracle art deliberately does NOT participate: the call wears agent identity, not fleet
 // flavour. The paint is the shipped recipe (`FocalImg` + `.kit-backdrop-art`'s cover + a separate veil),
 // not a new one — text-over-art legibility is the three-state-backdrop lesson (§8.3a), not an invention.
@@ -74,6 +91,218 @@ function phaseLabel(phase: CallPhase, speaking: boolean, muted: boolean): string
   }
 }
 
+// ── THE DECK'S GLYPHS (D75, owner ask 2026-09-22) ────────────────────────────────────────────────
+// Hand-inlined lucide geometry on the house `Glyph` frame (`components/icons.tsx` carries the rule and
+// the reason `lucide-react` is not a dependency). Local to this file because they are this deck's
+// vocabulary — three ROUTES — and not house chrome; if a second surface ever names a route they move
+// up to the shell set. Every one is `aria-hidden` by the frame: the pill and the rows carry the words.
+
+/** lucide `volume-2` — the plain loudspeaker (the echo-cancelled, call-quality route). */
+function SpeakerIcon({ size }: { size?: number } = {}) {
+  return (
+    <Glyph size={size}>
+      <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+      <path d="M16 9a5 5 0 0 1 0 6" />
+      <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+    </Glyph>
+  );
+}
+
+/** lucide `speaker` — the hi-fi BOX, for the same loudspeaker without the call processing. The two
+ *  speaker routes have to be told apart at a glance on a pill the size of a thumb, and a waves-count
+ *  difference is not that; a different OBJECT is. */
+function HifiSpeakerIcon({ size }: { size?: number } = {}) {
+  return (
+    <Glyph size={size}>
+      <rect width="16" height="20" x="4" y="2" rx="2" />
+      <path d="M12 6h.01" />
+      <circle cx="12" cy="14" r="4" />
+      <path d="M12 14h.01" />
+    </Glyph>
+  );
+}
+
+/** lucide `headphones` — one path, the band and both cups. */
+function HeadphonesIcon({ size }: { size?: number } = {}) {
+  return (
+    <Glyph size={size}>
+      <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" />
+    </Glyph>
+  );
+}
+
+/**
+ * THE DECK'S POPOVER MECHANICS, stated ONCE (D75, extracted from `VadControl`).
+ *
+ * Three rules, and every one of them was learned the hard way on this screen, so a second control
+ * re-deriving them is a second chance to get one wrong:
+ *   · the outside close listens on the CAPTURE phase, because the deck's own pointer-down stop (which
+ *     keeps a control tap from being a tap-to-interrupt) makes bubble listeners deaf to taps on its
+ *     sibling controls. It closes through `dismiss` like every other close (design round L3): one
+ *     close, one focus rule, so a tap-away cannot leave focus on a node that has just unmounted;
+ *   · ESCAPE IS SWALLOWED — this overlay's own Escape rule is `modalKeyDown`, i.e. HANG UP THE CALL
+ *     (design round F3), so a popover that let it bubble would end the call instead of closing itself;
+ *   · a keyboard close hands focus back to the pill it came from, which is the only element still on
+ *     screen that the gesture can be continued from.
+ * It is deliberately NOT modal: the NavMenu popover contract, which the rest of the app already wears.
+ *
+ * WHERE THE SWALLOW HANGS IS THE WHOLE OF RULE TWO (review round A1, found independently by the visual
+ * e2e probe and the correctness lens — and against what this file's own comments claimed). Opening a
+ * popover leaves focus ON THE PILL, which is the popover's SIBLING: a handler on the popover node never
+ * sees that keydown at all, it bubbles pill → `.kit-call-io` → the overlay → `modalKeyDown` → the call
+ * ends. So the handler rides the element that already carries `rootRef` — the `.kit-call-io` wrapper,
+ * the one ancestor of BOTH — and is gated on `open`, because an Escape with the popover closed must
+ * still reach the overlay and hang up. (NavMenu's other half, focus-on-open, is deliberately NOT copied:
+ * a root-level swallow is the leaner equivalent and leaves the pill as the one thing to tab back to.
+ * The unit arm that was supposed to hold this fired on a ROW — a focus state the UI never reaches —
+ * which is exactly why it passed over a live bug; E1's arm now fires on the pill.)
+ */
+function useDeckPopover() {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLButtonElement>(null);
+  /** Close and put the finger back where it started — the ONE close a keyboard, a pick or a tap-away
+   *  takes. Stable, so the outside-close effect below re-subscribes on `open` alone. */
+  const dismiss = useCallback((): void => {
+    setOpen(false);
+    pillRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent): void => {
+      if (!rootRef.current?.contains(e.target as Node)) dismiss();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [open, dismiss]);
+  const onKeyDown = (e: ReactKeyboardEvent): void => {
+    // The `open` gate is not defensive: this handler sits on the control's ROOT, which is mounted for
+    // the whole call, so without it the deck would become three places the call cannot be hung up from.
+    if (!open || e.key !== "Escape") return;
+    e.stopPropagation();
+    dismiss();
+  };
+  return { open, setOpen, rootRef, pillRef, dismiss, onKeyDown };
+}
+
+/** The three routes as the picker offers them, in the order they escalate away from call processing.
+ *  The VALUES are the `pcmCapture` constants and never string literals — the consts' own comment says
+ *  why (a fourth file spelling a route by hand is how one of them eventually gets it wrong), and the
+ *  hints are the bargain each one strikes, because that is the whole content of the choice.
+ *
+ *  THE WORDS ARE THE OWNER'S, NOT THE MECHANISM'S (review round A4): "hi-fi" claims a fidelity the
+ *  route does not promise — what it actually is, is the loudspeaker WITHOUT the call processing, so it
+ *  is CLEAN, and the hint says what that costs. The stored value stays `speaker-hifi`: it is config the
+ *  owner's file already holds, and renaming a value to improve a label is a migration bought for
+ *  nothing. The glyphs are unchanged on purpose (main-seat overrule of the design round's other half):
+ *  at 18px a different OBJECT is the only difference the eye resolves. */
+const ROUTE_CHOICES = [
+  {
+    val: ROUTE_SPEAKER,
+    name: "Speaker",
+    hint: "echo-cancelled · phone-call sound",
+    Icon: SpeakerIcon,
+  },
+  {
+    val: ROUTE_SPEAKER_HIFI,
+    name: "Speaker (clean)",
+    hint: "clear audio · mic pauses while it speaks",
+    Icon: HifiSpeakerIcon,
+  },
+  {
+    val: ROUTE_HEADPHONES,
+    name: "Headphones",
+    hint: "clear audio · for when you're wearing them",
+    Icon: HeadphonesIcon,
+  },
+] as const;
+
+/**
+ * THE OUTPUT PICKER (D75 ④, owner ask 2026-09-22) — STATE-FIRST, and that is a fix, not a style.
+ *
+ * The control it replaces was a button labelled with the ACTION ("Use headphones" while on speaker),
+ * the Mute pattern. On Mute that reads right because there are two states and the button is the only
+ * thing on screen naming either; here the owner read the label as the STATE and reported the crackle
+ * INVERTED — they believed they were on headphones while the call was on the speaker route (ISS-16).
+ * With three routes the action-label shape does not even survive: there is no "the other one".
+ *
+ * So the pill SHOWS where the sound is going (the current route's glyph, the name in its accessible
+ * name since the pill has no words) and tapping opens the list — the owner's own instruction, "the
+ * hint will be the list when you click". Picking writes nothing to config — the per-call rule the route
+ * pair has always had (§4.5); the Conf row stays the next call's default.
+ *
+ * A `menu` OF `menuitemradio`s, not a `radiogroup` (review round A6): the ARIA radio group promises
+ * arrow-key selection with a roving tabindex, and this is a chip that names a state and opens a small
+ * exclusive list — `PrivilegeChip`'s exact shape, which is the pattern this house already ships for it.
+ * `aria-checked` stays: one of three, and which one is the whole content of the card.
+ */
+function OutputPicker({ call }: { call: CallView }) {
+  const pop = useDeckPopover();
+  // An unknown route is the plain speaker case, the same way the capture resolves it (`wantsAec`) —
+  // the pill must never go blank because a backend answered with something this build has no glyph for.
+  // The fallback names ITS row rather than riding list position (review sweep): the array's order is a
+  // presentation choice, and a reorder must not silently move where an unknown route lands.
+  const current =
+    ROUTE_CHOICES.find((c) => c.val === call.route) ??
+    ROUTE_CHOICES.find((c) => c.val === ROUTE_SPEAKER) ??
+    ROUTE_CHOICES[0];
+  return (
+    <div className="kit-call-io pop-deck" ref={pop.rootRef} onKeyDown={pop.onKeyDown}>
+      <span className="kit-call-iolabel" aria-hidden>
+        Sound
+      </span>
+      <button
+        ref={pop.pillRef}
+        type="button"
+        className="kit-call-routebtn kit-call-iconpill"
+        disabled={!call.canRoute}
+        // The STATE, not the action (see the block comment): the pill shows a glyph, so its name is
+        // the only place a reader — or the owner checking their own report — learns where they are.
+        // The tail is the affordance a chevron would have drawn (design S2, overruled on the owner's
+        // "just icons"): the chip says it can be changed instead of showing that it can.
+        aria-label={`Sound: ${current.name} — tap to change`}
+        aria-haspopup="menu"
+        aria-expanded={pop.open}
+        onClick={() => pop.setOpen(!pop.open)}
+      >
+        <current.Icon />
+      </button>
+      {pop.open && (
+        <div className="kit-call-pop kit-call-routepop" role="menu" aria-label="Sound">
+          {ROUTE_CHOICES.map((c) => (
+            <button
+              key={c.val}
+              type="button"
+              role="menuitemradio"
+              // Checked against the RESOLVED row, never the raw string (Maya A2): an unknown route
+              // falls to the plain-speaker row above, and the capture resolves it the same way
+              // (`wantsAec`), so this is the truth rather than a convenience — a card with no checked
+              // row would claim the sound is going nowhere.
+              aria-checked={c.val === current.val}
+              className="kit-call-routeopt"
+              disabled={!call.canRoute}
+              onClick={() => {
+                call.setRoute(c.val);
+                pop.dismiss();
+              }}
+            >
+              <c.Icon />
+              <span className="kit-call-routename">
+                {c.name}
+                {/* The tick beside the tint (design L1, the tools-row precedent): over a translucent
+                    card on art, a colour wash alone is one cue for the one question the owner already
+                    got wrong once. Decorative — `aria-checked` is the stated fact. */}
+                {c.val === current.val && <span aria-hidden> ✓</span>}
+              </span>
+              <span className="kit-call-routehint">{c.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * THE IN-CALL ROUTE CONTROLS (D74 S2) — where am I listening, and through which ear.
  *
@@ -110,36 +339,31 @@ function RouteControls({ call }: { call: CallView }) {
       md.removeEventListener("devicechange", read);
     };
   }, []);
-  const headphones = onHeadphones(call.route);
   const known = devices.some((d) => d.deviceId === call.inputDevice);
-  // The action, named — the Mute button's pattern, and the one screen readers announce as what it
-  // does. A button reading "Speaker" would be describing a state the ring already carries.
-  const flip = headphones ? "Use speaker" : "Use headphones";
-  // The Output/Input captions exist because the owner could not tell which control was which
-  // (2026-09-22): the button MOVES THE MOUTH, the select PICKS THE EAR, and nothing on either said
-  // so. Visual only (`aria-hidden`) — each control's own accessible name already carries the fact.
+  // The captions exist because the owner could not tell which control was which (2026-09-22): the
+  // pill moves where the SOUND comes out, the select picks which MIC is heard, and nothing on either
+  // said so. Visual only (`aria-hidden`) — each control's own accessible name already carries the fact.
+  //
+  // "Sound" and "Mic", not "Output" and "Input" (review round A5): the Output/Input pair claims a
+  // mouth/ear split the platform does not honour — on Android the input list IS the router, and
+  // picking a row there moves BOTH directions (R74 §2.2). Two words that each name one thing the
+  // owner can point at beat two that name a symmetry we do not have.
+  //
   // A FRAGMENT, not a row (design round F1): the deck is the one flex row, and every captioned
-  // control is its direct child — a wrapper here would freeze "Output+Input" into a group the
+  // control is its direct child — a wrapper here would freeze "Sound+Mic" into a group the
   // wrap keeps together, an arbitrary pairing the fourth control would inherit.
+  //
+  // THE EAR STAYS NATIVE (D75 ④): the Output pill grew a picker of its own because there is no OS
+  // affordance behind it — Android has no page-reachable output selector at all (R79 §4, re-verified
+  // 2026-09-22), the "route" is a fiction we assemble out of capture constraints. The INPUT list is a
+  // real device enumeration, and a `<select>` opens the platform's own picker, which is the better
+  // control on a phone. Two shapes because they are two different things, not an inconsistency.
   return (
     <>
+      <OutputPicker call={call} />
       <div className="kit-call-io">
         <span className="kit-call-iolabel" aria-hidden>
-          Output
-        </span>
-        <button
-          type="button"
-          className="kit-call-routebtn"
-          disabled={!call.canRoute}
-          aria-label={flip}
-          onClick={() => call.setRoute(headphones ? ROUTE_SPEAKER : ROUTE_HEADPHONES)}
-        >
-          {flip}
-        </button>
-      </div>
-      <div className="kit-call-io">
-        <span className="kit-call-iolabel" aria-hidden>
-          Input
+          Mic
         </span>
         <select
           className="kit-call-device"
@@ -187,33 +411,23 @@ const VAD_STEP = 0.05;
  * (`start.vad_threshold` rides the one message that opens a leg; the relay's one-`session.update`
  * pin is why there is no in-band change) and a redial per drag-tick or per arrow-press would cycle
  * the connection through the gesture. Escape CANCELS (draft discarded, focus back on the pill), an
- * outside tap closes — the NavMenu non-modal popover contract, on the capture phase because the
- * deck's own pointer-down stop keeps bubble listeners deaf to taps on its sibling controls.
+ * outside tap closes — `useDeckPopover` owns all three rules now (D75 ④), and the Output picker
+ * wears the same ones.
  *
  * Per call, never config — the route pair's rule (§4.5): the Conf knob stays the next call's default.
  * Renders nothing against a backend whose status predates the field: a control that cannot say what
  * the threshold IS must not offer to move it.
  */
 function VadControl({ call }: { call: CallView }) {
-  const [open, setOpen] = useState(false);
+  const pop = useDeckPopover();
   /** The drag's own value, `null` between gestures (the pill then speaks the machine's truth). */
   const [draft, setDraft] = useState<number | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const pillRef = useRef<HTMLButtonElement>(null);
+  // A CLOSE without a commit discards the draft, in the ONE place every close passes through — the
+  // pill must never keep showing a value the machine never took (Escape, an outside tap and the
+  // pill's own re-tap all land on the popover's `open`, which is why the discard hangs off it).
   useEffect(() => {
-    // A CLOSE without a commit discards the draft, in the ONE place every close passes through —
-    // the pill must never keep showing a value the machine never took (Escape, an outside tap and
-    // the pill's own re-tap all land here).
-    if (!open) {
-      setDraft(null);
-      return;
-    }
-    const onDown = (e: PointerEvent): void => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown, true);
-    return () => document.removeEventListener("pointerdown", onDown, true);
-  }, [open]);
+    if (!pop.open) setDraft(null);
+  }, [pop.open]);
   if (call.vad === null) return null;
   const value = draft ?? call.vad;
   const commit = (): void => {
@@ -221,35 +435,28 @@ function VadControl({ call }: { call: CallView }) {
     setDraft(null);
   };
   return (
-    <div className="kit-call-io" ref={rootRef}>
+    <div className="kit-call-io" ref={pop.rootRef} onKeyDown={pop.onKeyDown}>
       <span className="kit-call-iolabel" aria-hidden>
         Speech
       </span>
       <button
-        ref={pillRef}
+        ref={pop.pillRef}
         type="button"
         className="kit-call-routebtn"
+        // Disabled with its two deck siblings (design M2): a commit is a leg redial, and while the leg
+        // is moving (connecting, a reconnect) the pill must say so like the pair beside it — not open a
+        // popover onto a dead slider.
+        disabled={!call.canRoute}
         // The value is IN the name (design sweep ①): `aria-label` replaces the text content, and a
         // reader given only "Speech threshold" would have no number at all.
         aria-label={`Speech threshold ${value.toFixed(2)}`}
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        aria-expanded={pop.open}
+        onClick={() => pop.setOpen(!pop.open)}
       >
         {value.toFixed(2)}
       </button>
-      {open && (
-        <div
-          className="kit-call-vadpop"
-          onKeyDown={(e) => {
-            // Swallowed BEFORE the overlay's modalKeyDown sees it — Escape here means "close the
-            // popover", and letting it bubble would HANG UP THE CALL (design round F3).
-            if (e.key === "Escape") {
-              e.stopPropagation();
-              setOpen(false); // the close effect discards the draft — one chokepoint
-              pillRef.current?.focus();
-            }
-          }}
-        >
+      {pop.open && (
+        <div className="kit-call-pop kit-call-vadpop">
           <span className="kit-call-vadend" aria-hidden>
             deafer
           </span>
@@ -276,6 +483,120 @@ function VadControl({ call }: { call: CallView }) {
           </span>
         </div>
       )}
+    </div>
+  );
+}
+
+/** How close to the bottom counts as "still following", in px. The chat log's own stick rule, at the
+ *  scale of a three-line box: 140px of slack there is most of this block. */
+const FOLLOW_SLACK_PX = 8;
+
+/**
+ * THE CAPTIONS (owner ask 2026-09-22) — the agent's reply as text on the call screen, three lines of
+ * it, fading at whichever edge hides more, growing as it streams. The screen said what the EAR heard and
+ * never what came BACK; on a phone that is the half you cannot re-read, because the reply is in the
+ * chat behind an overlay you would have to hang up to see.
+ *
+ * It renders the thread's LAST assistant message, which is already in this browser (`store/chat`) —
+ * no wire, no second copy of the reply, and nothing to keep in step: the same deltas that fill the
+ * transcript fill this. The subscription returns a STRING (the `createStore` snapshot contract), so a
+ * reasoning or tool delta on the same message costs no render here.
+ *
+ * THE CALL-SCOPE RULE (§4.5), and it is the whole reason this component has state at all: captions may
+ * show only a turn that STARTED after the call did. A reply already streaming at mount is the owner
+ * reading silently before they dialled — the same exclusion `setCallVoice(true, getLiveTurn() !== null)`
+ * makes for the MOUTH, expressed the same way it is there: as a GATE ON THE STATUS TIMELINE, never as
+ * the excluded message's id (a fresh turn's optimistic placeholder is RENAMED mid-stream when
+ * `message.start` adopts the server's id, so a captured id stops matching the very message it was meant
+ * to exclude). Once that turn has settled the FLOOR is latched — the last reply then is the last one
+ * this block may not show — and the next reply, being a message that did not exist, is the call's own.
+ *
+ * DELIBERATELY NOT A LIVE REGION: the reply is being SPOKEN, and an `aria-live` here would read the
+ * whole of it over its own audio. It is ordinary text in a dialog — readable on demand, announced by
+ * nobody. (`.kit-call-heard` keeps its live region for the opposite reason: nothing says that aloud.)
+ */
+function CallCaptions() {
+  // `undefined` = the gate is still shut (a turn was live at mount); a string/null is the latched
+  // floor. One `useState` initializer, because mount-time IS call start (the overlay's own key rule).
+  const [floor, setFloor] = useState<string | null | undefined>(() =>
+    getLiveTurn() !== null ? undefined : (lastReply()?.id ?? null),
+  );
+  // "Is a turn live" asked of the store, through the same expression the latch above took — one
+  // statement of the question, so the gate cannot open on a condition the floor never tested.
+  const turnLive = useChatSlice(() => getLiveTurn() !== null);
+  // The gate OPENS the instant that turn settles, and it is latched DURING RENDER (React's own
+  // adjusting-state-while-rendering pattern) rather than from an effect: the floor is what the very
+  // next line reads, so deferring it to a commit would paint one frame of the excluded reply first.
+  // It can run at most once — `floor` leaves `undefined` and never returns to it.
+  if (floor === undefined && !turnLive) setFloor(lastReply()?.id ?? null);
+  // THE FLOOR TRACKS until the call's first turn has RUN (review F5, a belt): the latched id can
+  // VANISH — a client-only placeholder from a failed pre-call send is dropped by any `reloadChat` —
+  // and then `lastReply` returns an OLDER durable message whose id no longer matches, painting a
+  // pre-call reply. The discriminator is the same one the gate itself rides, the STATUS TIMELINE: a
+  // real call reply always passes through a live turn on this thread's own subscription, so until one
+  // has, any change of last-settled-reply is pre-call history re-arranging itself, and the floor
+  // simply follows it. From the first live turn on, the floor is fixed — a vanishing id after that
+  // resolves to the call's own replies, which may show.
+  const turnRan = useRef(false);
+  if (turnLive) turnRan.current = true;
+  if (floor !== undefined && !turnLive && !turnRan.current) {
+    const id = lastReply()?.id ?? null;
+    if (id !== floor) setFloor(id);
+  }
+  const said = useChatSlice(() => {
+    const reply = lastReply();
+    if (reply === null || floor === undefined || reply.id === floor) return "";
+    return reply.text;
+  });
+
+  // AUTO-FOLLOW, and only while the owner has not scrolled away: growth pins to the bottom, a scroll
+  // up parks it. The chat log's rule and its shape (a ref + a scroll handler), NOT its code — that one
+  // is bound to `#app-scroll`, the shell's single content pane, which this overlay covers.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
+  // Which edge is hiding something — what the stylesheet fades (and nothing else may decide: CSS
+  // cannot ask whether a box overflows). Measured from the same reads the follow rule uses, so the
+  // fade and the pin can never disagree about where the box is.
+  const [edges, setEdges] = useState({ above: false, below: false });
+  const measure = (el: HTMLElement): void => {
+    const slack = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stick.current = slack <= FOLLOW_SLACK_PX;
+    const above = el.scrollTop > 0;
+    const below = slack > 0;
+    setEdges((e) => (e.above === above && e.below === below ? e : { above, below }));
+  };
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    if (stick.current) el.scrollTop = el.scrollHeight;
+    // Measured HERE rather than left to the scroll event the line above fires: growth alone moves no
+    // scrollbar, so a box that just became scrollable while already at its end would keep the edges it
+    // was painted with.
+    measure(el);
+  }, [said]);
+
+  if (said === "") return null; // nothing said yet, or a tool-only turn: no empty box
+  return (
+    <div
+      className={
+        "kit-call-said" + (edges.above ? " more-above" : "") + (edges.below ? " more-below" : "")
+      }
+      ref={boxRef}
+      // Its own pointer-down stop (the cluster's rule): this block SCROLLS, and a drag to read the
+      // start of a reply must never also be a tap-to-interrupt.
+      //
+      // …ONLY WHILE IT ACTUALLY SCROLLS, though (review round B1): stopping unconditionally put a dead
+      // zone directly above the line that says "tap to interrupt", over the text the owner is most
+      // likely to be looking at when they want to interrupt. The bargain, stated: a SHORT reply is a
+      // live interrupt target like the rest of the surface, a LONG one is a reading surface a drag can
+      // be started on, and everywhere else on the overlay always interrupts. The same two edge reads
+      // the fade and the follow rule take answer it, so the three can never disagree about the box.
+      onPointerDown={(e) => {
+        if (edges.above || edges.below) e.stopPropagation();
+      }}
+      onScroll={(e) => measure(e.currentTarget)}
+    >
+      {said}
     </div>
   );
 }
@@ -314,7 +635,13 @@ final ${
 }
 
 export function CallOverlay({ close }: { close: () => boolean }) {
-  const art = useActiveBackdrop();
+  // SCOPE-FREE, and that is a correctness fix (review round C1 — two blind lenses, same finding): a
+  // call's turns go out through `sendCallTranscript`, which deliberately does NOT spend the composer's
+  // armed one-shot (its own docblock says why — a spoken utterance is not the message the owner armed).
+  // So an arming previews an agent the call will never route to, and painting it here would be the call
+  // screen telling the owner they are talking to someone they are not. Every OTHER consumer keeps the
+  // default: they paint, or report, what the CHAT surface routes, and there the armed pick is the truth.
+  const art = useActiveBackdrop(false);
   const call = useLiveCall();
   // The §6 mode knob, SNAPSHOTTED (audit A LOW). Read live off the query, a mid-call `/voice/status`
   // refetch — a Conf save, a window refocus — would flip the overlay's indicator under a call in
@@ -328,8 +655,21 @@ export function CallOverlay({ close }: { close: () => boolean }) {
   // `useComposer().liveReady` (= `/voice/status`'s own `live` bit) is up, and the mic's mode boots to
   // `mic` with no memory every load. So the `?? true` below is not a race to win; it is the `LiveCfg`
   // field default dressing a state the door does not admit.
-  const ringKnob = useVoiceStatus().data?.live_call?.ring;
-  const [ringMode] = useState(() => ringKnob ?? true);
+  //
+  // ONE read of the query feeds BOTH snapshots (review sweep): two `useVoiceStatus()` calls in one
+  // component are two subscriptions to the same observer for the same payload, and a second one is
+  // also a second chance for the two to be taken from different reads.
+  const liveKnobs = useVoiceStatus().data?.live_call;
+  const [ringMode] = useState(() => liveKnobs?.ring ?? true);
+  // …and the captions knob, on exactly the same terms and for exactly the same reasons (the paragraph
+  // above is this one's too): a presentation choice, frozen for the call, re-read by the next one.
+  const [captions] = useState(() => liveKnobs?.captions ?? true);
+  // A pick armed in the composer WAITS OUT the call, and now the screen says so once (design M5): the
+  // backdrop preview made arming feel like "the next thing I say runs as them", and a call quietly
+  // routing past it (the C1 rule) would be the wave's own inversion class again — a promise the screen
+  // makes that the routing does not keep. Snapshotted at mount like the knobs above: arming MID-call
+  // changes nothing about this call, so the line must not appear mid-call either.
+  const [armedParked] = useState(() => getComposerScope().agent !== undefined);
   // WHAT is waiting for an Allow/Deny (§4.5). Reference-stable by the selector's contract, so this
   // subscription costs one render per change of gate and none per streamed part.
   const awaiting = useChatSlice(() => confirmAwaiting());
@@ -427,6 +767,9 @@ export function CallOverlay({ close }: { close: () => boolean }) {
         </div>
       )}
       <div className="kit-call-body">
+        {/* The reply, above the state line and the heard line both — the answer reads down into what
+            you said, the way the chat does. Nothing at all with the knob off: no wrapper, no gap. */}
+        {captions && <CallCaptions />}
         <p className="kit-call-phase" id={labelId}>
           {phaseLabel(call.phase, call.userSpeechActive, call.muted)}
         </p>
@@ -439,6 +782,16 @@ export function CallOverlay({ close }: { close: () => boolean }) {
           {call.userSpeechActive ? "…" : call.heard}
         </p>
         {call.note !== null && call.note !== "" && <p className="kit-call-note">{call.note}</p>}
+        {/* Its own line, not a `call.note`: the machine's note slot carries transient transport truths
+            and this is a standing fact about the whole call (design M5). Gone on a terminal — there is
+            no routing left to be honest about — and RETIRED once the first utterance lands (confirm
+            round N2): by then it has done its work, and a standing sentence in the transient-news slot
+            teaches the owner to skip the very line the next real note arrives on. */}
+        {armedParked && !terminal && call.heard === "" && (
+          <p className="kit-call-note">
+            calls run without the composer's agent pick — it stays for your next typed message
+          </p>
+        )}
         <div className="kit-call-cluster" onPointerDown={(e) => e.stopPropagation()}>
           {/* D74 S7 — inside the cluster, so reading it is never also a tap-to-interrupt. Absent
               entirely with the knob off: no wrapper, no spacing, nothing. */}

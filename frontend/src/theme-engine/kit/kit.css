@@ -8949,7 +8949,7 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   flex-direction: column;
   justify-content: flex-end;
   background: var(--bg);
-  color: var(--text-1);
+  color: var(--text);
   /* The state colour every piece below reads — one declaration per phase, set on the root. */
   --call-accent: var(--accent);
   /* …and the state's STILL reading of itself: the stroke/dot opacity, which is what keeps the phases
@@ -8963,6 +8963,17 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
    * overrides these two inline, in the overlay's own pixels. */
   --call-ring-x: 50%;
   --call-ring-y: 33%;
+  /* THE CAPTIONS' box: three lines of reply and the depth of its edge fade. Tuning knobs like the
+   * ring's, in the same place, for the same reason — this file is where the feel-round numbers live
+   * or the component collects them. The height is stated as LINES × line-height so changing either
+   * one keeps the box exactly three lines tall. */
+  --call-said-lines: 3;
+  --call-said-lh: 1.45;
+  /* …as a share of the box, not a length: the mask is positioned against the padding box, so a
+   * percentage keeps the fade the same fraction of a line whatever the two numbers above become.
+   * 12%, not 22% (design round L2): at 22% the fade ate a third of the top line's height, so the
+   * partially-visible line read as damaged rather than as continuing. A hint of an edge is the job. */
+  --call-said-fade: 12%;
 }
 .kit .kit-call.ph-thinking {
   --call-accent: var(--text-2);
@@ -9094,6 +9105,53 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-ring-stroke {
   padding: 20px 18px calc(24px + env(safe-area-inset-bottom));
   text-align: center;
 }
+/* THE CAPTIONS (owner ask 2026-09-22) — the reply as text, above the state line: three lines of it,
+ * scrollable, and faded at whichever edge is hiding something. Left-aligned inside the centred body,
+ * because prose centred line by line is unreadable at three lines — the readback block's rule, one
+ * rung up in size.
+ *
+ * FULL-STRENGTH TEXT (design round M1): this is the most-read thing on the screen and it was the least
+ * legible one on it — `--text-2` over near-raw art, at 13px. The SIZE is what keeps it subordinate to
+ * the 16px heard line; dimming it as well was paying the rank twice.
+ *
+ * THE FADE IS PER-EDGE, AND CONDITIONAL, which is the whole of why it takes two classes instead of one
+ * unconditional mask: a mask that always fades both edges dims a one-line reply top and bottom, and
+ * dims the STREAMING line — the newest words, at the bottom, which are the reason the box is there.
+ * So the component measures what is actually out of view and says so; an edge with nothing beyond it
+ * keeps its stop opaque, and the gradient is then a uniform black mask, i.e. no mask at all. One
+ * declaration, two one-line overrides, because `mask-image` does not compose.
+ *
+ * `overscroll-behavior: contain`: this is the only scroller on a fixed full-screen overlay, and a
+ * flick past its end must not start scrolling the app underneath it. */
+.kit .kit-call-said {
+  max-height: calc(var(--call-said-lines) * var(--call-said-lh) * 1em);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-size: 13px;
+  line-height: var(--call-said-lh);
+  color: var(--text);
+  text-align: start;
+  --call-said-a: #000;
+  --call-said-b: #000;
+  -webkit-mask-image: linear-gradient(
+    var(--call-said-a),
+    #000 var(--call-said-fade),
+    #000 calc(100% - var(--call-said-fade)),
+    var(--call-said-b)
+  );
+  mask-image: linear-gradient(
+    var(--call-said-a),
+    #000 var(--call-said-fade),
+    #000 calc(100% - var(--call-said-fade)),
+    var(--call-said-b)
+  );
+}
+.kit .kit-call-said.more-above {
+  --call-said-a: transparent;
+}
+.kit .kit-call-said.more-below {
+  --call-said-b: transparent;
+}
 .kit .kit-call-phase {
   margin: 0;
   font-size: 13px;
@@ -9136,7 +9194,7 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   min-height: 2.6em;
   font-size: 16px;
   line-height: 1.3;
-  color: var(--text-1);
+  color: var(--text);
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -9195,7 +9253,7 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
 /* Mute is a QUIET control until it is on — and then it is unmistakable, because a closed ear that looks
  * like an open one is the one state this screen must never fumble. */
 .kit .kit-call-mute {
-  color: var(--text-1);
+  color: var(--text);
   background: color-mix(in oklch, var(--bg) 62%, transparent);
   box-shadow: inset 0 0 0 1px var(--line);
 }
@@ -9229,10 +9287,15 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
 .kit .kit-call-top {
   position: relative;
   margin-bottom: auto;
-  padding: calc(10px + env(safe-area-inset-top)) 18px 14px;
+  /* The deck's own side inset, as a token because a SECOND rule needs the same number: the Output
+   * picker's card hangs off this element and lines up with its content edge (see `.kit-call-routepop`). */
+  --call-deck-pad: 18px;
+  padding: calc(10px + env(safe-area-inset-top)) var(--call-deck-pad) 14px;
   /* The deck is ITSELF the one flex row (design round F1): every captioned control is a direct
    * child, so they wrap as PEERS at narrow widths — a nested row would freeze an arbitrary
-   * grouping the next control inherits. */
+   * grouping the next control inherits. The wrap is the SAFETY NET and not the layout (D75 ④,
+   * owner ask — the deck must hold one line): the sizing that keeps it from firing above a 320px
+   * viewport is `.kit-call-device`'s cap, whose comment carries the arithmetic. */
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -9247,8 +9310,8 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
     transparent
   );
 }
-/* One control + its micro-caption (Output / Input / Speech) — the caption exists because the pills
- * read identical and the owner could not tell mouth from ear. Visual furniture only (`aria-hidden`).
+/* One control + its micro-caption (Sound / Mic / Speech) — the caption exists because the pills
+ * read identical and the owner could not tell one from the other. Visual furniture only (`aria-hidden`).
  * `position: relative` is the speech pill's popover anchor. The controls themselves are QUIET (the
  * Mute recipe, unlit): settings, not actions — the screen's two loud controls stay the hang-up and
  * an engaged Mute. */
@@ -9258,22 +9321,87 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   gap: 3px;
   justify-items: center;
 }
-/* THE SPEECH-THRESHOLD POPOVER (2026-09-22) — the Android-volume gesture: a small card dropping from
- * the pill with ONE vertical slider, up = a DEAFER ear (a higher confidence floor hears less — F5:
- * the track's own end words carry the polarity). The confirm card's surface recipe; absolute so
- * opening it never reflows the deck (a layout jump under the finger mid-gesture is the failure). */
-.kit .kit-call-vadpop {
+/* …except the cell whose card is anchored to the DECK (design round S3 · L1): dropping its own
+ * `position` is the whole mechanism — the next positioned ancestor is `.kit-call-top`. */
+.kit .kit-call-io.pop-deck {
+  position: static;
+}
+/* THE DECK'S POPOVER SURFACE, stated ONCE (D75) — the confirm card's recipe, dropping from the control
+ * it belongs to. Absolute, so opening one never reflows the deck (a layout jump under the finger
+ * mid-gesture is the failure). The two variants below differ only in WHAT THEY HANG OFF, which is the
+ * one thing their CONTENTS decide: a card no wider than its pill centres on the pill, and a card wider
+ * than the whole control hangs off the DECK (`.pop-deck`, which drops that cell's own positioning so
+ * the deck — already `relative` — becomes the containing block). */
+.kit .kit-call-pop {
   position: absolute;
   top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  z-index: 1;
   display: grid;
-  gap: 4px;
-  justify-items: center;
   padding: 8px;
   border-radius: 14px;
   border: 1px solid var(--line);
   background: color-mix(in oklch, var(--bg) 82%, transparent);
+}
+/* THE SPEECH-THRESHOLD POPOVER (2026-09-22) — the Android-volume gesture: ONE vertical slider,
+ * up = a DEAFER ear (a higher confidence floor hears less — F5: the track's own end words carry the
+ * polarity). Narrower than its pill, so it hangs CENTRED and cannot reach a viewport edge. */
+.kit .kit-call-vadpop {
+  left: 50%;
+  transform: translateX(-50%);
+  gap: 4px;
+  justify-items: center;
+}
+/* THE OUTPUT PICKER (D75 ④, re-anchored by the review round) — three rows, each a glyph + a name + the
+ * bargain it strikes. It is far wider than the 44px pill it drops from, so it hangs off THE DECK: its
+ * left edge is the deck's content edge and its width is capped by what is left of the deck, which makes
+ * "inside the viewport" structural rather than a `vw` guess that has to be re-derived every time a
+ * number on this row moves (the old `min(78vw, 260px)` was exactly that guess, and at 320px it put the
+ * card's right edge past the screen once the hints grew). `top: calc(100% + 6px)` is inherited and now
+ * measures the DECK, so the card clears all three controls instead of overlapping its neighbours. */
+.kit .kit-call-routepop {
+  left: var(--call-deck-pad);
+  gap: 2px;
+  width: max-content;
+  max-width: calc(100% - 2 * var(--call-deck-pad));
+}
+/* One route row: the glyph and the name on the first line, the hint under both. QUIET like every
+ * deck control — the checked row is the only lit thing in the card. */
+.kit .kit-call-routeopt {
+  all: unset;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 1px 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 10px;
+  color: var(--text-2);
+}
+.kit .kit-call-routeopt > svg {
+  grid-row: 1;
+}
+.kit .kit-call-routeopt[aria-checked="true"] {
+  color: var(--text);
+  background: color-mix(in oklch, var(--accent) 18%, transparent);
+}
+.kit .kit-call-routeopt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.kit .kit-call-routeopt:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.kit .kit-call-routename {
+  font-size: 13px;
+}
+/* The hint spans the row under the glyph column: it is the longest text in the card and indenting it
+ * to the name would cost the two words that make the bargain legible. */
+.kit .kit-call-routehint {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text-3);
 }
 /* The vertical range: Chromium reads the writing-mode pair, Firefox the `orient` attribute the
  * component sets — both get "up = a HIGHER floor = a DEAFER ear" (`direction: rtl` flips the
@@ -9308,18 +9436,31 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
 .kit .kit-call-device {
   all: unset;
   cursor: pointer;
-  min-height: 36px;
+  /* 44px, the house floor for a touch target (design round M2): these are the two controls on this
+   * screen a finger reaches for MID-CALL, and at 36px they were the only sub-44px targets left on it —
+   * the hang-up, Mute and the slider column are all 44 already. */
+  min-height: 44px;
   padding: 0 14px;
   border-radius: 999px;
   font-size: 13px;
-  /* `all: unset` leaves the select's single-line value sitting at the TOP of its 36px box (the line
-   * box is ~19px and nothing centres it — the owner saw the skew). A line box the height of the
-   * control is the centring; labels never wrap here (the select ellipsizes, the button is fixed copy). */
-  line-height: 36px;
+  /* `all: unset` leaves the select's single-line value sitting at the TOP of its box (the line box is
+   * ~19px and nothing centres it — the owner saw the skew). A line box the height of the control is the
+   * centring, which is why this number MOVES WITH the one above; labels never wrap here (the select
+   * ellipsizes, the button is fixed copy). */
+  line-height: 44px;
   text-align: center;
   color: var(--text-2);
   background: color-mix(in oklch, var(--bg) 62%, transparent);
   box-shadow: inset 0 0 0 1px var(--line);
+}
+/* THE ICON PILL (D75 ④) — the Sound control shows the current route's glyph and nothing else, so it
+ * drops the text pill's side padding for a SQUARE target at the same 44px height the row is built on.
+ * The glyph centres by grid rather than by `line-height`, which is a rule about text. */
+.kit .kit-call-iconpill {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  padding: 0;
 }
 /* `all: unset` takes the native arrow with it, so the select carries its own affordance. */
 .kit .kit-call-device {
@@ -9333,13 +9474,36 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
     5px 5px,
     5px 5px;
   background-repeat: no-repeat;
-  max-width: 100%;
+  /* THE ONE-LINE CAP (D75 ④, owner ask): the deck must never wrap to a second line, and the only
+   * control here whose width is not ours is this one — a device label like "Default - Bluetooth
+   * headset (Freebuds Pro)" would push the row over on its own.
+   *
+   * THE ARITHMETIC, recomputed for the 44px targets (design round M2 — and the first cut of it was
+   * wrong in a way worth recording: a cell is as wide as the WIDER of its control and its caption, and
+   * "OUTPUT" at ~43px was wider than the 40px pill it was measured as). At a 320px viewport:
+   *   36px deck padding + 44px Sound pill + 128px (40vw) device cap + ~54px Speech pill + 2 × 10px gap
+   *   ≈ 282px inside 320 — about 38px of slack.
+   * The captions are the other half of each cell and none of them wins it now: SOUND ≈ 36px and MIC
+   * ≈ 24px sit under wider controls, SPEECH ≈ 44px under the ~54px pill. That is what keeps `flex-wrap`
+   * below from ever firing; the wrap stays as the degenerate-viewport safety net, not as the layout. */
+  max-width: min(40vw, 200px);
+  white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 .kit .kit-call-routebtn:focus-visible,
 .kit .kit-call-device:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+/* AN OPEN PILL IS LIT (design M3): the popover card is deck-anchored, so nothing GEOMETRIC ties it to
+ * the pill it came from — the lit trigger is that tie. Rides `aria-expanded` so the state and the
+ * styling cannot disagree, and covers the Speech pill for free. `:not(:disabled)` is the confirm
+ * round's N1 floor: a leg leaving mid-popover disables the pill under its own open card, and
+ * lit-and-dimmed at once would be the deck contradicting itself. */
+.kit .kit-call-routebtn[aria-expanded="true"]:not(:disabled) {
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 /* DISABLED means the leg is moving (connecting) or gone (a terminal): the control says so instead of
  * swallowing the tap. */
@@ -9377,7 +9541,7 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
 .kit .kit-call-deny {
   min-height: 40px;
   padding: 0 18px;
-  color: var(--text-1);
+  color: var(--text);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 /* MUTED — the STATIC look, and the LAST word in this block on purpose: no pulse implies no ear, so the
