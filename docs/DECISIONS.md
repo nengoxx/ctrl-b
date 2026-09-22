@@ -5108,6 +5108,18 @@ grouping).
 under the standing cadence (pinned Opus build → main-seat audit → blind Emma round → fix wave
 → close); S7 = the owner device round gates the phase.
 
+**Addendum (owner re-ruling 2026-09-22, §8.3a item 2):** the composer's **one-shot armed pick now
+PREVIEWS its agent's backdrop**, immediately, before the message is sent — superseding §8.3a's
+exclusion of it ("a single-message target is not a change of operator"). The rule §8.3a states is
+that the surface belongs to whoever the NEXT message runs as, and arming a pick is the owner saying
+exactly that, so `useActiveBackdrop` now imports `composerScope` BY DESIGN and resolves through one
+exported pure function (`resolveBackdropAgent`) over the menu's own checked-row expression: armed
+`null` = explicitly the default, which previews the default's art even over a sticky `/agent` pick,
+and an armed name the roster no longer has folds to the default through the same `validSessionAgent`
+the server's ladder mirrors. The one-shot is SPENT on dispatch, so the preview reverts to the ladder
+when the message goes — the reversion is the routing truth, not a flicker. **The per-bubble
+`m.agent` exclusion STANDS unchanged.**
+
 ## D71 — Live voice mode ("call mode"): the Speaches-realtime ear · client-submitted turns · the WebSocket admission ✏️ RATIFIED 2026-09-11 (owner, in conversation — "okay then" after the brief + the reference-projects discussion; spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md); evidence = [R51](./research/R51-realtime-voice-chat.md) + [R68](./research/R68-live-voice-deltas.md); council = blind Emma design round RETHINK [2 HIGH · 7 MED, sweep "none", architecture ① affirmed; all nine ACCEPTED, both HIGHs code-verified] → confirm SHIP WITH CHANGES [all four folded] — plan §9 verbatim)
 
 **The architecture (R51 §9.3 ①, twice re-affirmed):** Speaches `/v1/realtime?intent=transcription`
@@ -5335,8 +5347,173 @@ Ephemeral per call like the route pair; the Conf knob stays the next call's defa
 also moved to a top deck above the ring with Output/Input/Speech captions (ISS-16 records the
 crackle datapoint the captions serve).
 
+**Addendum (owner ask 2026-09-22, same day — the call screen shows the REPLY):** ⑪ **`voice.live.captions`**,
+a CLIENT knob beside `ring` that **ships ON**: the agent's answer as small fading text in the call
+body, above the heard-you line, three lines tall, scrollable and auto-following as the reply
+streams. The words are the browser's own (`store/chat`'s last assistant message, its text parts
+joined — the join moved to the store when the call screen became its second reader), so no wire
+field, no second copy and nothing to keep in step. It obeys §4.5 twice: the knob is snapshotted at
+mount like the ring's, and the block may show only a turn that STARTED after the call did — the
+same exclusion the MOUTH makes, expressed the same way (a gate on the status timeline, never the
+excluded message's id, which a `message.start` adoption renames). Deliberately NOT an `aria-live`
+region: the reply is being spoken, and announcing it over its own audio is the one thing this must
+not do.
+
 **Build record:** two pinned Opus lanes (call machine · TTS-text/config), disjoint file ownership,
 gate 6/6 twice (pre- and post-fix-wave); the fix wave's three fixes each red-proven against the
 named bypass (ceil restored · unconditional close restored · the old one-attempt pin inverted).
 Also this session, same conversation: every Conf group starts collapsed (owner ask, `d5a787e`) and
 the D73 wave's two lint errors unblocked the FE gate (`1f50686`).
+
+## D75 — The hi-fi speaker route + the EC-release race: clean loudspeaker audio without self-hearing ✏️ RULED 2026-09-22 (main seat, from the owner's crackle/echo report and their own live isolation of the EC correlation; evidence = [R79](./research/R79-peer-call-audio-echo.md) · [R80](./research/R80-comm-mode-crackle.md); design of record = the D75 block in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7; the open root cause stays ISS-16)
+
+**The occasion.** The owner's D74 deck round: in-call TTS **crackles with echo cancellation engaged
+and is clean with it off** — they isolated that correlation themselves, on their own phone, by
+flipping the route mid-call. Two dossiers were commissioned on it. R80 read Chromium at today's HEAD
+and settled the mechanism questions (what our playback pipe can and cannot change; why flipping a
+control *sometimes* clears the crackle); R79 read eight peers' call modes and settled what the field
+actually does. Neither found the root cause — no phone in either session — and the report itself had
+arrived **state-inverted**, because the deck's Output button named the ACTION ("Use headphones" while
+on the speaker route) and the owner read it as the state.
+
+**What was ruled.**
+
+① **The third route — `voice.live.route: speaker-hifi`** (R80 §10-①, ranked first there because it is
+the only option with device evidence): the loudspeaker with `echoCancellation: false`. It is the same
+single-bit escape from Android's communication mode that `headphones` takes (R74 §1.3), on the route
+that *does* have an acoustic echo path — so the bargain is the other one: media-path audio, and an ear
+that CLOSES while the reply speaks, with the tap as the only interrupt. **It needs no new rule
+anywhere**: the capture-ready block already resolves the ear-hold's `auto` arm from the track's own
+readback, and an EC-off track reads back something other than `"all"`, so the hold arms and the barge
+stays disarmed by the rules that were already there. The cost is a capability we are not using —
+`barge_in` ships OFF since the D74 addendum — and the field's own resting posture is half-duplex
+anyway (R79 §5: Open WebUI is deaf for the *whole assistant turn* out of the box, `voiceInterruption`
+default false). **Additive at every layer**: the `Literal` widens, no stored value changes meaning,
+no config migration. The EC-off steering ladder (R77's SCO trap) moves onto the predicate rather than
+the name — the trap is a property of EC-off capture, and the new route rides the same physics.
+
+② **The §5.2 hardening: a readback-mismatch detector plus ONE delayed re-open.** R80 §5 explained the
+"flipping a control sometimes clears it" latch and it is an ordering race in our own code: the
+communication mode is evaluated only for the FIRST input stream and restored only when the LAST one is
+released — in the audio service, after a mojo round trip — while our recapture calls `stop()` and
+`getUserMedia` back to back with no barrier. Lose it and the device keeps the mode *and*, by R78
+§2.3's pin, hands the "EC-off" track EC-ON. The readback is a free detector we already take, so: when
+an EC-off ask reads back engaged, release the stream, wait `EC_RELEASE_RETRY_MS` (250, a named
+platform constant, not a knob) and open once more; accept the second result either way and surface
+`ecStuck` as a note. **Detection-driven, never an unconditional delay** — the beat exists only on the
+path a mismatch takes. The opposite mismatch (asked AEC, got none) is a legitimate degrade the
+existing resolution already answers and deliberately does not trip it. And the note is advisory only:
+everything that governs the ear reads the READBACK, so a stuck track is treated as the subtractive
+track it *is*.
+
+③ **REFUTED for the record — do not rebuild.** (a) The desktop **loopback-`RTCPeerConnection` AEC
+reference** has ZERO Android value (R80 §6, verified at build-flag level): with `echoCancellation:
+false` there is no AEC instance to feed, and with it on we get the *platform* canceller, which takes
+its reference from the device's own output path and cannot be fed by a page. (b) **A page output
+selector on Android** — re-verified dead 2026-09-22 (R79 §4: every flag, BCD entry and chromestatus
+row unmoved; 0/8 peers ship one). The **input** list IS Android's router, and we already ship it.
+(c) **Software AEC on Android** is compiled out — `kChromeWide`, `kLoopbackBased` and
+`EnforceSystemEchoCancellation` are all behind build flags off for Android, reachable by no flag,
+field-trial param or origin trial.
+
+④ **RECORDED, not built:** R80 §10-② — make the ear-hold RELEASE the capture instead of disabling the
+track, so the device leaves comm mode while the mouth speaks: platform AEC while listening, media path
+while speaking. Strictly better than ① if it works, and the mechanism the owner has now stumbled into
+twice. It costs three designable things (locally minted silent frames so the relay can still endpoint
+through the hold; a `getUserMedia` per turn with a fresh `SetCommunicationDevice()` and SCO cycling on
+the BT arm; ②'s race becoming per-turn). **Its own slice, behind a knob, with a device round** — not
+folded into this wave.
+
+⑤ **The crackle's root cause stays OPEN as ISS-16**, with the S4 probe ladder (R80 §10-④, in order:
+`chunking: "off"` → `latencyHint: "playback"` on the capture context → `chrome://media-internals` over
+`chrome://inspect`). ① is a MITIGATION and is recorded as one. R80's §7-S1 insurance was taken in the
+same wave — `probeDuration` now releases its throwaway element, because Android caps a page at ten
+output streams and open-webui#29969 is that cap killing a peer's TTS in our exact shape.
+
+**Folded in, same wave: the deck goes state-first.** The Output control becomes an ICON pill showing
+where the sound is going, tapping it opens a three-row list with each route's bargain as a
+hint (the owner's own instruction: "the hint will be the list when you click"). This is a correctness
+fix, not a restyle — the action-labelled button is what inverted their report — and with three routes
+the action-label shape does not survive anyway: there is no "the other one". The deck also gets a hard
+one-line rule at a 320px viewport (the Input select's width cap is the arithmetic; `flex-wrap` stays
+as the degenerate-viewport safety net), and the popover mechanics the speech slider had learned the
+hard way — capture-phase outside close, Escape SWALLOWED so it closes the popover instead of hanging
+up the call, focus returned to the pill — are extracted into one hook both controls wear.
+
+**THE TRIPLE-BLIND REVIEW ROUND (owner-ordered, 2026-09-22; fix wave landed 2026-09-23 next session —
+the as-built detail lives in the plan's D75 block).** Three independent lenses over the built wave:
+blind Maya correctness (**SHIP WITH FIXES** — 1 MED: the picker's `aria-checked` compared the RAW
+route string, so an unknown route checked no row while the pill and the capture both resolved it to
+the plain speaker; fixed to compare the RESOLVED row), Opus correctness/architecture (**SHIP WITH
+FIXES/CHANGES** — headline: **Escape with a popover open HUNG UP THE CALL**, because the swallow sat
+on the popover node while focus sat on its sibling the PILL; the unit arm that was supposed to hold it
+fired on a row, a focus state the UI never reaches — the handler now rides the `.kit-call-io` root,
+gated on `open`, and the arm fires on the pill; plus: the call surface painted the composer's armed
+pick which calls never route by; the `ecStuck` docstring contradicted the code; the backdrop ladder and
+the tools menu each held a diverged copy of the routing fold — now ONE pure `routedAgent` in
+`lib/composer`), and Opus design/UX (**SHIP WITH CHANGES** — H2: the post-send preview collapse, since
+ordinary threads carry no pin, ruled as the SPENT-HOLD: the take stashes the pick, `runComposer`'s own
+`finally` releases it at settle, resolution = armed ?? spent ?? ladder; H3: captions stop
+tap-to-interrupt only while actually scrollable; the 44px targets; **Sound/Mic** over Output/Input —
+an input pick moves BOTH directions; "Speaker (clean)" over "hi-fi" with symptom-honest hints; the
+picker re-anchored to the deck; full-strength caption text, fade 12%; `menu`/`menuitemradio` over
+`radiogroup` — the `PrivilegeChip` precedent). **Two blind convergences** (the strongest finding
+class): the Escape hang-up was found independently by the temp visual e2e probe and the correctness
+lens the same hour; the call-surface armed-pick lie converged blind across the correctness and design
+lenses. **Main-seat overrules, recorded:** M4's glyph half — the hi-fi CABINET stays (at 18px a
+different object is the only difference the eye resolves); S2's visible chevron — the owner said
+"just icons", the affordance rides the aria-label tail; the design lens's gallery half of the
+scope-free finding — the gallery/AgentTab/gacha readers KEEP the armed pick (they report what the CHAT
+surface paints, where it is the truth); only the CALL surface goes scope-free
+(`useActiveBackdrop(false)`).
+
+**FIX-WAVE ROUND 2 (2026-09-22, the completed wave's own three-lane blind round: Maya on Luna ·
+Opus arch/data-flow · Opus design/UX; as-built = the plan's D75 block).** A SECOND blind convergence
+round: Maya and the arch lens independently found the spent-hold's release guard unsound (value
+equality + the take clobbering a live hold), and the arch lens added the deeper fact — a D41 steer's
+`sendMessage` settles at the 202, so the hold never covered the steer at all. Ruled and landed:
+**the hold is TOKEN-OWNED** (`takeComposerScope(stash)` returns a `TakenScope` with a hold
+generation; `releaseSpent(hold)` no-ops for a stale token; an unarmed take PRESERVES a live hold;
+the stash gate is `getChatStatus() !== "streaming"` — a steer never holds) and **`clearComposerScope`
+no longer touches the hold** (amending this entry's earlier "hand-clear clears both": the clear row
+means the NEXT message, a hold belongs to the send in flight). Plus: `previewAgent` exported beside
+its fields; the captions floor TRACKS until the call's first turn has run (a vanished placeholder id
+must not resurrect pre-call history — the reviewer's own `said === ""` condition was rejected as
+ineffective, the timeline is the discriminator); the route fallback names its row; `asked`→`engaged`;
+the Speech pill disables with its siblings; the open pill is LIT (`aria-expanded` styling);
+`aria-haspopup="menu"`; a ✓ on the checked row; the "calls run without the composer's agent pick"
+note when dialling with a pick armed; Conf route copy (per-call vs default + the barge_in caveat);
+`voiceFailed` → "the reply is text only". **Overruled/deferred, recorded:** Maya's hung-transport
+hold (the hold's lifetime EQUALS the send's by design; Stop settles both) · Maya's roster-authority
+split (boot-window transient, self-heals; re-plumbing the menu's data source is its own slice) · the
+design lens's mic-label display map (mic-centric words would HIDE that the input list IS the router,
+R74 §2.2, and mask R77's "Speakerphone" trap word — the Sound-pill-vs-moved-output residual is
+platform-unfixable and recorded as a limitation) · release-at-settle vs hold-through-the-voice
+DEFERRED into the open owner question below (it is the same decision) · the dismiss-onto-a-disabled-
+pill focus drop (pre-existing class; Back gesture + tap unaffected — NOTE from the confirm round:
+the Speech pill's new disabled state widens it to two instances, since a slider commit redials with
+its popover still open; still LOW, the whole class is recorded here for whoever next touches
+`useDeckPopover`). All accepted fixes red-proven
+against named bypasses; gate 6/6 · liveCall 40/40 · agent-backdrop 20/20 on the production build.
+
+**The confirm rounds (same session):** the arch lens — **SHIP**, all seven resolutions CONFIRMED
+with line proof, two judged stronger than its own prescriptions (the generation token; "clear never
+touches the hold" as the uniform rule); it recorded two sub-bar F5 residuals (the belt is inert on a
+mount-with-a-live-turn path; a durable reply arriving before any live turn on the slice would be
+tracked into the floor) and the widened focus class noted above. The design lens — **CONFIRMED on
+all eight landed fixes and the M4 deferral**; it WITHDREW its H1 relabel on the R77 counter-argument
+but pressed a leaner H1 form (an INDETERMINATE Sound pill after a synthetic mic pick — stop
+asserting, not relabel; MED now): **DEFERRED TO S4, recorded** — an unconditional indeterminate
+fires false-dimmed when the pick AGREES with the route, and a contradiction-aware one needs the
+synthetic-row→output truth table only the S4 device round produces. Its two new LOWs landed in the
+same wave: N1, the lit rule floors on `:not(:disabled)` (a leg leaving mid-popover must not paint a
+lit-and-dimmed pill); N2, the armed-pick note RETIRES at the first heard utterance (a standing
+sentence in the transient-news slot teaches the owner to skip the next real note). Maya's confirm
+was ruled not warranted: her one accepted finding's fix is her own prescription (the opaque hold
+token), landed verbatim and red-proven — the D74 precedent.
+
+**Open owner question:** should the composer's agent pick stay a ONE-SHOT (the spent-hold makes the
+preview truthful through the armed message's own reply) or become a STICKY switch? The routing
+semantics are the owner's to rule; the backdrop now previews correctly either way. New evidence for
+the sticky option (design M4): the settle-edge revert lands roughly when the reply's VOICE starts,
+so with auto-TTS on, a one-shot preview reverts while the armed character is still speaking.

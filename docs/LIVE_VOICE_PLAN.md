@@ -513,6 +513,12 @@ from every state, §4.2). Text-over-art legibility inherits the three-state-back
   toggle. Whether it earns a first-run micro-hint is feel-round material.
 - **The transcript line shows what the ear heard YOU say** (catch mishearings instantly); the
   reply is what you *hear*, and lands in the chat as always.
+- **…and the reply as CAPTIONS above it — `voice.live.captions`, a Conf row beside the ring's,
+  ships ON (owner ask 2026-09-22):** the last assistant message's text, three lines tall,
+  scrollable, edge-faded and auto-following as it streams — the half of the conversation the call
+  screen could not show, because re-reading it meant hanging up. Client-side from the chat store
+  (no wire field); snapshotted at mount like `ring`, and scoped to turns that START after the call
+  does — the §4.5 exclusion the read-along override already makes for the mouth.
 - **The in-overlay confirm row** (§4.5) is part of the overlay's state set — **Allow and Deny
   ONLY** (coherence sweep: the chat card's other two stay chat-card affordances — an
   "always"-grant deserves the chat's full context, and "edit" is keyboard territory; the full
@@ -1448,7 +1454,8 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > **S5 — the route wave (R74). ✅ BUILT 2026-09-21** (pinned Opus lane; commit `0388ad5` + the
   > review wave `40b6f32`; code round = blind Maya SHIP WITH FIXES 2 MED — F1 the probe latch ·
   > F2 half-accepted, the ghost option `disabled`, the auto-clear half OVERRULED with the plan
-  > wording amended; FE 3,640 · BE 2,500 at close). ① `voice.live.route: "speaker" | "headphones"` (default
+  > wording amended; FE 3,640 · BE 2,500 at close). ① `voice.live.route: "speaker" | "headphones"`
+  > (**widened to a third answer, `"speaker-hifi"`, by D75 ① below** — additive, default unmoved) (default
   > `speaker`) — a real Conf row. `headphones` sets the capture constraints to
   > `{echoCancellation: false, noiseSuppression: true, channelCount: 1}` (NS is software-side on
   > Android, it stays) so the phone never enters comm mode and TTS rides A2DP at media quality;
@@ -1604,6 +1611,146 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > an e2e slider arm (Maya LOW — the unit/wiring pins + the S4 phone round carry it). Maya
   > confirm round ruled not warranted (fixes are her prescriptions verbatim, red-proven); the
   > design lens confirmed by follow-up.
+
+- **THE D75 WAVE — the hi-fi speaker route + the EC-release race (main seat, 2026-09-22; ruling =
+  DECISIONS D75, which holds the five rulings; evidence = [R79](./research/R79-peer-call-audio-echo.md) ·
+  [R80](./research/R80-comm-mode-crackle.md); the open root cause stays ISS-16).** The owner's deck
+  round reported in-call TTS **crackling with echo cancellation engaged and clean with it off** — a
+  correlation they isolated themselves by flipping the route mid-call, and which arrived
+  state-INVERTED because the Output button named the ACTION ("Use headphones" while on speaker). Two
+  commissioned dossiers settled the mechanism half: R80 read Chromium at HEAD (our playback pipe
+  cannot change the route, the usage tag or the buffer class — the media element already gets the
+  glitch-RESISTANT configuration; the "flipping a control sometimes clears it" latch is an ordering
+  race in OUR code; software AEC and the loopback-reference trick are compiled out on Android), and
+  R79 read eight peers (nobody does anything smarter that is page-reachable; the field's resting
+  posture is half-duplex, Open WebUI deaf for the whole assistant turn by default; Android output
+  selection re-verified dead at 0/8). Neither found the root cause — no phone in either session.
+
+  > **✅ BUILT 2026-09-22, same day.** What landed: ① **`voice.live.route: "speaker-hifi"`** — the
+  > loudspeaker with `echoCancellation: false`. ONE predicate carries it: `wantsAec(route)` beside
+  > `onHeadphones`, and `micConstraints` asks `{ideal:"all"}` only where it is true. It needed **zero
+  > logic** in the capture-ready block, which is the design's own proof — the ear-hold's `auto` arm
+  > already reads the TRACK (`!headphones && readback !== "all"`), so an EC-off loudspeaker track
+  > arms the hold and leaves `bargeArmed` false by the rules that were already there; `echo_workaround
+  > on/off` still outranks. The R77 steering ladder's gate moved from "the headphones route" to "any
+  > EC-off route": the SCO trap it guards is a property of EC-OFF CAPTURE (no comm-mode flip ⇒
+  > `STRATEGY_MEDIA` ⇒ a default selection that starts SCO suspends the output into silence, with no
+  > mode exit left to restore anything), and the new route rides the same physics. ② **The
+  > readback-mismatch detector + ONE delayed re-open** (`openEcChecked`, `EC_RELEASE_RETRY_MS` = 250,
+  > a named platform constant): when an EC-off ask reads back ENGAGED the stream is released, a beat
+  > is waited, and the open runs once more — the only barrier the platform offers, since the mode is
+  > restored asynchronously in the audio service when the LAST input stream is released (R80 §5.1) and
+  > nothing surfaces "it's gone". Detection-driven, never an unconditional delay; the opposite
+  > mismatch (asked AEC, got none) is a legitimate degrade and does not trip it; the second result is
+  > accepted either way and `PcmCapture.ecStuck` surfaces through the `captureReady.note` seam
+  > `deviceFallback` uses (**fellBack wins the one line** — it names a choice the owner made that did
+  > not carry). The note is ADVISORY: a stuck track is governed by its readback, so the ear is safe
+  > either way. ③ **`probeDuration` releases its throwaway element** (`removeAttribute("src")` +
+  > `load()`, after the duration is read — detaching resets it to NaN): R80 §7-S1's insurance against
+  > the ten-output-stream Android cap that killed a peer's TTS (open-webui#29969). ④ **The deck goes
+  > STATE-FIRST**: the Output control is an icon pill showing the current route (`aria-label` =
+  > "Sound: <name> — tap to change"), tapping opens a three-row `menu` of `menuitemradio`s (the
+  > `PrivilegeChip` shape — review round A6; the first cut said `radiogroup`, which promises the
+  > roving arrow-key selection this chip does not make) carrying each route's bargain as a hint;
+  > the popover mechanics are extracted into one `useDeckPopover` the speech slider now wears too
+  > (capture-phase outside close · Escape SWALLOWED — it would otherwise reach `modalKeyDown` and hang
+  > up the call · focus back to the pill), with one `.kit-call-pop` surface and two anchoring variants.
+  > The Input select stays NATIVE (the OS picker is the affordance where a real device list exists)
+  > with a hard width cap, so the deck holds ONE LINE at a 320px viewport — `flex-wrap` stays as the
+  > degenerate-viewport safety net, not as the layout.
+  >
+  > **The route table, as built:**
+  >
+  > | `route` | capture | device audio mode | TTS path | the ear under the reply |
+  > |---|---|---|---|---|
+  > | `speaker` (default) | `echoCancellation: {ideal:"all"}` | `MODE_IN_COMMUNICATION` | voice-communication, call quality | OPEN where the readback is `"all"` (subtractive), else the hold |
+  > | `speaker-hifi` | `echoCancellation: false` | untouched | `AAUDIO_USAGE_MEDIA` | HELD while the mouth speaks; the tap is the interrupt |
+  > | `headphones` | `echoCancellation: false` | untouched | `AAUDIO_USAGE_MEDIA` (A2DP) | OPEN — worn headphones have no acoustic echo path |
+  >
+  > **Not built, ruled (D75 ③/④):** the loopback-`RTCPeerConnection` AEC reference (zero Android
+  > value at build-flag level) · a page output selector on Android (re-verified dead) · software AEC
+  > on Android (compiled out) · R80 §10-②, the per-turn capture RELEASE during the mouth (AEC while
+  > listening, media path while speaking) — **recorded as the designed follow-up behind a knob; it
+  > needs its own slice and a device round.** ⚠ **The crackle's ROOT CAUSE stays ISS-16**, whose probe
+  > ladder the S4 sitting inherits; ① is a mitigation and is recorded as one.
+  >
+  > **THE TRIPLE-BLIND REVIEW ROUND + FIX WAVE (owner-ordered; reviews 2026-09-22, the wave landed
+  > across that session and the next — the verdicts, convergences and overrules are recorded in
+  > DECISIONS D75; this is the as-built).** What the wave changed, by cluster:
+  > **A (the deck)** — the popover ESCAPE handler moved to the `.kit-call-io` ROOT, gated on `open`
+  > (the headline: focus sits on the PILL, the popover's sibling, so a handler on the popover node
+  > never saw the keydown and Escape hung up the call — found blind by BOTH the temp e2e probe and
+  > the correctness lens; with the popover closed Escape still reaches `modalKeyDown` and hangs up,
+  > which is the gate's whole reason) · `aria-checked` compares the RESOLVED row, never the raw route
+  > string (Maya — an unknown route now checks the plain-speaker row, the same fold `wantsAec` takes) ·
+  > 44px touch targets (routebtn/device `min-height`, the icon pill 44×44, `line-height` moving with
+  > it) · the picker card re-anchored to the DECK (`.pop-deck` drops the cell's own positioning; width
+  > capped by the deck's content box, so "inside the viewport" is structural, not a `vw` guess) ·
+  > copy: **Speaker** "echo-cancelled · phone-call sound" / **Speaker (clean)** "clear audio · mic
+  > pauses while it speaks" / **Headphones** "clear audio · for when you're wearing them" (the Conf
+  > Seg says "speaker (clean)" too — the stored value stays `speaker-hifi`, a rename is a migration
+  > bought for nothing) · captions **Sound**/**Mic**, not Output/Input (an input pick moves BOTH
+  > directions on Android — R74 §2.2) · `role="menu"`/`menuitemradio` · the outside tap closes via
+  > `dismiss()` (one close, one focus rule) · the four `--text-1` ghosts → `var(--text)`.
+  > **B (captions)** — the pointer-down stop fires ONLY while an edge is actually hidden (a short
+  > reply stays a live interrupt target; the dead zone sat directly above the line saying "tap to
+  > interrupt") · full-strength `var(--text)` (M1 — it was the most-read, least-legible thing on the
+  > screen) · fade 12% · ONE `useVoiceStatus` read feeding both knob snapshots.
+  > **C (the armed pick)** — `useActiveBackdrop(armedPick = true)` and the CALL overlay passes
+  > `false`: calls route by the ladder alone (`sendCallTranscript` never spends the one-shot), so the
+  > call screen must not wear an armed face it will not route to; every CHAT reader keeps the pick ·
+  > **THE SPENT-HOLD**: `takeComposerScope()` stashes the pick it spends into `spent` ATOMICALLY
+  > (the `/verb` path's clear stashes nothing; the hand-clear clears both), `runComposer`'s own
+  > `finally` releases it when the send settles, and the backdrop resolves armed ?? spent ?? ladder —
+  > the preview holds through the armed message's own reply and reverts at settle, never mid-send
+  > (H2: ordinary threads carry no pin, so the old collapse fell to the DEFAULT's art for exactly the
+  > turn the preview promised) · the routing fold is ONE pure `routedAgent(pick, sticky, thread,
+  > agents)` in `lib/composer` beside `effectiveAgent` — the backdrop and the tools menu's checked
+  > row had each grown a copy and the copies had DIVERGED (an armed name the roster lost folded to
+  > the default for one and checked no row in the other; both now take the server's own fold) · the
+  > `ecStuck` docstring now states the value-dependent rule its code enforces (an `"all"` stuck track
+  > lifts the hold and leaves barge armable) · the e2e `LIVE_CALL` fixture carries `captions: true` +
+  > `vad_threshold: 0.4` · Conf copy ordered to the Seg.
+  > **Tests** — the Escape arms fire on the PILL (the previously-unreachable focus state the old arm
+  > missed is now the pinned one) + the closed-popover hang-up arm; the spent-hold arms drive the
+  > REAL store and the REAL `runComposer` `finally` (red-proof: short-circuiting the `finally` fails
+  > exactly one arm); the scope-free-call arms pin `useActiveBackdrop(false)`; both sides of the B1
+  > bargain (short reply interrupts, scrolling reply reads). The temp visual spec re-ran with its
+  > Escape assertion restored, then was deleted before commit (a capture probe, never suite).
+  >
+  > **FIX-WAVE ROUND 2, as built (2026-09-22 — the completed wave's own three-lane blind round;
+  > verdicts + rulings in DECISIONS D75).** The spent-hold became TOKEN-OWNED in `composerScope`:
+  > `takeComposerScope(stash: boolean)` returns `TakenScope {agent, skills, hold}` — it stashes only
+  > when the caller says the send OWNS the turn (`runComposer` passes `getChatStatus() !==
+  > "streaming"`, so a D41 steer, whose POST settles at the 202, never holds), an unarmed take
+  > preserves a live hold, every stash bumps a module `holdSeq`, and `releaseSpent(hold)` (the
+  > `finally`'s call, replacing `setSpentScope`) no-ops for a stale token — two same-name sends can
+  > no longer release each other. `clearComposerScope` leaves the hold standing (the clear row is
+  > about the NEXT message). `previewAgent(scope)` is the store's own armed-??-held expression;
+  > `useActiveBackdrop` takes it. The captions floor gained the timeline belt: a `turnRan` ref set
+  > while a turn is live, and until the first one the floor TRACKS `lastReply()` — a vanished
+  > client-only placeholder id can no longer resurrect pre-call history (the fixture arms now route
+  > call replies through a turn, the real store's only path). Deck: the Speech pill disables with
+  > its siblings; the open pill is lit off `[aria-expanded="true"]`; `aria-haspopup="menu"` on the
+  > Sound pill (deliberately not the Speech pill — a slider disclosure is no menu); a decorative ✓
+  > on the checked row; the route fallback finds the SPEAKER row by value. New furniture: dialling
+  > with a composer pick armed shows one `.kit-call-note` line ("calls run without the composer's
+  > agent pick — it stays for your next typed message"), mount-snapshotted, gone on terminals.
+  > Copy: Conf's route desc leads "the next call's default — the call screen changes it for a call
+  > in progress" and its headphones clause names the Hands-free interruption switch; `voiceFailed`
+  > says "the reply is text only". Rename `asked`→`engaged` in `openEcChecked`. **Recorded, not
+  > built:** the mic-label display map (declined — the input list IS the router, R74 §2.2, and
+  > "Speakerphone" is R77's trap word; the Sound-pill-vs-moved-output mismatch is platform-unfixable
+  > and rides the S4 round) · the hung-transport hold + the roster-authority split + the
+  > dismiss-onto-disabled-pill focus drop (residuals, D75) · release-at-settle vs
+  > hold-through-the-voice (folded into the open one-shot-vs-sticky owner question). Red-proofs: the
+  > gen guard, the steer gate and the floor belt each fail exactly their named arm when detached.
+  > **Confirm rounds:** arch lens SHIP, all CONFIRMED with line proof; design lens CONFIRMED on
+  > every landed fix, its H1 relabel WITHDRAWN (R77's trap word) and its leaner H1 form — an
+  > indeterminate Sound pill after a synthetic mic pick — **deferred to S4** (needs the device's
+  > synthetic-row→output truth table; an unconditional version false-dims agreeing picks). Its two
+  > new LOWs landed same-wave: the lit-pill rule floors on `:not(:disabled)` (N1) and the
+  > armed-pick note retires at the first heard utterance (N2). Full record: DECISIONS D75.
 
 ## 8. Open questions for the owner (the court)
 
