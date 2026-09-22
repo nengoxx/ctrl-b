@@ -506,7 +506,10 @@ of CORS middleware, which is the entire defence for the §2.7/§2.8/§2.9 write 
   a misconfiguration. The slot has exactly ONE release, latched as the single `finally` on the
   single acquire, so a failing upstream close cannot leak it.
 - **The relay bounds what it will relay.** Malformed/unknown control frames, binary before `start`,
-  a second `start`, or an oversized frame close 1008. Two budgets ride one rolling window because
+  a second `start`, or an oversized frame close 1008. The one client-supplied session parameter —
+  `start.vad_threshold`, optional, the in-call speech-threshold control (2026-09-22) — is
+  bounds-validated at the same boundary (a number in 0–1, bool rejected) and folds into the relay's
+  one `session.update`; it tunes VAD sensitivity for that session only and touches no config. Two budgets ride one rolling window because
   they bound two different resources: a **count** budget (per-message CPU) and an **ms-of-audio**
   budget (throughput) — together ~2× realtime, which is what stops a compliant-*looking* client from
   shipping ~100× realtime inside the count budget. A realtime client is untouched.

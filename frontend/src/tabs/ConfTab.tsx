@@ -853,7 +853,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   silence_ms: 700,
   min_speech_ms: 300,
   barge_threshold: 0,
-  barge_in: true,
+  barge_in: false,
   min_final_ms: 200,
   debug: false,
   ring: true,

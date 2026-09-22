@@ -1570,12 +1570,18 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > the whole-clip door only, the R76 inertness named in code. ⚠ S4 caveats inherited: the barge
   > floor is NOT portable across routes (R78 — headphones flips AGC/preset), and the owner's 0.06
   > wants one re-check on the windowed rule.
-  > **Owner round 2026-09-22 (the deck's first poke):** the route row moved to a TOP DECK above
-  > the ring (its own pointer-down stop, pinned) with Output/Input micro-captions — the two pills
-  > read identical — and the select's `all: unset` top-skew centred (`line-height` = control
-  > height); `speak_actions` re-ruled **false** (dialogue-only default); the persisting crackle +
-  > its either-control-recapture-sometimes-clears-it datapoint recorded as **ISS-16** for the S4
-  > sitting.
+  > **Owner round 2026-09-22 (the deck's first poke; ruling = the D74 addendum ⑨/⑩):** the route
+  > row moved to a TOP DECK above the ring (its own pointer-down stop, pinned) with
+  > Output/Input/Speech micro-captions — the pills read identical — and the select's `all: unset`
+  > top-skew centred (`line-height` = control height); `speak_actions` AND `barge_in` re-ruled
+  > **false** (dialogue-only default; voice interrupt an opt-in, verified at 0.06 first); **the
+  > SPEECH-THRESHOLD SLIDER landed on the deck** — the pill drops a vertical Android-volume slider,
+  > release commits ONE leg redial carrying `start.vad_threshold` (the wire's one new optional
+  > field, validated at `_parse_start`; the relay's one-`session.update` pin stands; per-call like
+  > the route pair, `vadOverride` on CallState, `setVad`→`redialLeg`→the existing `openLeg`, gen
+  > unmoved, ear untouched); `/voice/status.live_call` now carries `vad_threshold` as the slider's
+  > seed; the persisting crackle + its either-control-recapture-sometimes-clears-it datapoint
+  > recorded as **ISS-16** for the S4 sitting.
 
 ## 8. Open questions for the owner (the court)
 

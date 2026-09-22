@@ -1260,3 +1260,47 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     expect(run(routed, [{ type: "routeChange", route: "speaker" }]).out).toEqual([]);
   });
 });
+
+describe("callReduce — the speech-threshold change (2026-09-22)", () => {
+  it("moves the threshold: a fresh LEG on the SAME ear — no recapture, no generation move", () => {
+    const { state, out } = run(routed, [{ type: "setVad", value: 0.5 }]);
+    expect(state.vadOverride).toBe(0.5);
+    expect(state.phase).toBe("connecting");
+    expect(state.attempts).toBe(0);
+    // The whole reason this is not `routeChange`: the capture stands, so the hold rule, the mute and
+    // the generation all stand with it — the leg fence owns the old socket's ghosts.
+    expect(state.gen).toBe(routed.gen);
+    expect(out).toEqual([{ type: "redialLeg" }]);
+  });
+
+  it("KEEPS the queue, the mute and the capture-owned flags across the redial", () => {
+    const held = run(routed, [
+      { type: "playbackStarted" },
+      { type: "final", text: "keep this" },
+      { type: "setMuted", on: true },
+    ]).state;
+    const { state } = run(held, [{ type: "setVad", value: 0.35 }]);
+    expect(state.pending).toEqual(["keep this"]);
+    expect(state.muted).toBe(true);
+    expect(state.earHoldMode).toBe(held.earHoldMode);
+    expect(state.mouthLive).toBe(true); // C3 rides HTTP — the reply plays through the redial
+  });
+
+  it("is INERT outside the settled phases, and when the value already stands", () => {
+    for (const from of [CALL_INITIAL, run(routed, [{ type: "socketLost" }]).state]) {
+      const { state, out } = run(from, [{ type: "setVad", value: 0.5 }]);
+      expect(out).toEqual([]);
+      expect(state.vadOverride).toBeNull();
+    }
+    const moved = run(routed, [{ type: "setVad", value: 0.5 }, { type: "ready" }]).state;
+    expect(run(moved, [{ type: "setVad", value: 0.5 }]).out).toEqual([]);
+  });
+
+  it("SURVIVES a route cycle and a reconnect — the room did not change because the leg did", () => {
+    const moved = run(routed, [{ type: "setVad", value: 0.5 }, { type: "ready" }]).state;
+    expect(run(moved, [{ type: "routeChange", route: "headphones" }]).state.vadOverride).toBe(0.5);
+    expect(run(moved, [{ type: "socketLost" }]).state.vadOverride).toBe(0.5);
+    // …and dies with the call: a redial rebuilds from CALL_INITIAL, whose override is the knob's.
+    expect(CALL_INITIAL.vadOverride).toBeNull();
+  });
+});

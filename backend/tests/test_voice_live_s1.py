@@ -517,6 +517,34 @@ def test_session_update_carries_the_full_turn_detection_and_the_language() -> No
     assert fake.url.startswith("ws://ear:9000/")
 
 
+def test_start_vad_threshold_overrides_the_knob_in_the_one_session_update() -> None:
+    """The in-call speech-threshold control (2026-09-22): `start.vad_threshold` is THIS session's
+    server-VAD floor — it replaces the config knob inside the one `session.update` the relay sends,
+    and it never writes config (the next plain `start` gets the knob again)."""
+    fake = FakeSpeaches([created()])
+    app = _fake_app(fake, live_cfg={"vad_threshold": 0.55, "silence_ms": 900})
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": 48000, "vad_threshold": 0.35})
+        assert _json(ws) == {"type": "state", "state": "ready"}
+    assert fake.one("session.update")["session"]["turn_detection"]["threshold"] == 0.35
+
+
+@pytest.mark.parametrize(
+    "vad",
+    [
+        "0.5",  # a string is not a number
+        True,  # a bool is not a threshold
+        -0.1,  # under the floor
+        1.5,  # over the ceiling
+    ],
+)
+def test_malformed_start_vad_threshold_is_a_protocol_close(vad: Any) -> None:
+    with _fake_app(FakeSpeaches([created()])).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": 48000, "vad_threshold": vad})
+        assert _json(ws)["code"] == "protocol"
+        assert _closed(ws)[0] == 1008
+
+
 def test_blank_language_omits_the_field_entirely() -> None:
     """Never `null`: Speaches dumps the session with `exclude_defaults`, so a null can neither reset a
     language nor be usefully sent (§7-S0 ②)."""
@@ -1013,6 +1041,7 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "min_speech_ms": 250,
             "barge_threshold": 0.02,
             "barge_in": False,
+            "vad_threshold": 0.4,
             "min_final_ms": 350,
             "debug": True,
             "ring": False,
@@ -1039,6 +1068,9 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "min_speech_ms": 250,
         "barge_threshold": 0.02,
         "barge_in": False,
+        # The one SERVER-side VAD knob the client renders (the in-call speech-threshold control,
+        # 2026-09-22): the slider's seed, overridden per leg via `start.vad_threshold`.
+        "vad_threshold": 0.4,
         # D74 (evidence docs/research/R76) — the near-speech gate on a committed turn and the
         # calibration readout beside it. CLIENT knobs like every neighbour: the energy they judge is
         # measured in the browser, and the server VAD has no field that could express either.
@@ -1189,7 +1221,9 @@ def test_live_config_defaults() -> None:
     assert (cfg.frame_ms, cfg.max_frame_bytes, cfg.max_sessions) == (40, 32768, 1)
     assert cfg.max_session_s == 1800  # aligned with Speaches' own 30-min hard expiry
     assert (cfg.min_speech_ms, cfg.buffered_ceiling_ms, cfg.barge_threshold) == (300, 1000, 0.0)
-    assert (cfg.barge_in, cfg.ring, cfg.echo_workaround) == (True, True, "auto")
+    # `barge_in` ships OFF since the 2026-09-22 owner re-ruling (voice interrupt verified at the
+    # calibration, then ruled an opt-in rather than the resting state).
+    assert (cfg.barge_in, cfg.ring, cfg.echo_workaround) == (False, True, "auto")
     # D74 — the gate ships ON at 200 ms (a real default, not 0: R76 measured speech-like interference
     # passing the server VAD outright), and the debug readout ships OFF like every diagnostic here.
     assert (cfg.min_final_ms, cfg.debug) == (200, False)

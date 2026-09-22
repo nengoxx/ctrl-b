@@ -8,8 +8,10 @@ counter.
 
 **What crosses the wire**
 
-* **Uplink (phone → relay):** one JSON `start` (`{"type":"start","sample_rate":<Hz>}`), then raw
-  binary pcm16 LE mono frames at the declared rate, plus the JSON controls `flush` and `stop`.
+* **Uplink (phone → relay):** one JSON `start` (`{"type":"start","sample_rate":<Hz>,
+  "vad_threshold":<0–1>?}` — the optional threshold is this SESSION's server-VAD floor, the in-call
+  control's carrier; absent → the config knob), then raw binary pcm16 LE mono frames at the declared
+  rate, plus the JSON controls `flush` and `stop`.
 * **Uplink (relay → Speaches):** `input_audio_buffer.append` with base64 pcm16 @ **24 kHz**, as TEXT
   frames — one binary frame kills the session (§7-S0 ②), which is why the plan's binary uplink stops
   at the relay and pays ~33 % base64 overhead on the loopback leg.
@@ -247,6 +249,12 @@ class LiveRelaySession:
         #: The rate the client DECLARED in `start`, kept beside the resampler it built rather than read
         #: back off it: the caps below reason about the client's own wire, not about the 24 kHz one.
         self._client_rate: int | None = None
+        #: THIS SESSION's VAD threshold, when `start` carried one (the in-call speech-threshold
+        #: control, owner 2026-09-22) — `None` means the config knob, which is every pre-existing
+        #: client. Per SESSION by construction: it rides the one message that opens a leg, so a
+        #: mid-call change is a redial on the client's side and this object never re-decides
+        #: anything (`_configure_upstream` still sends its ONE `session.update`).
+        self._vad_override: float | None = None
         #: Downlink writes come from two tasks (the client pump's protocol errors and the upstream
         #: pump's events), so they are serialized — an ASGI `send` is not re-entrant.
         self._send_lock = asyncio.Lock()
@@ -340,6 +348,17 @@ class LiveRelaySession:
             raise _ProtocolError(
                 f"start.sample_rate {rate} outside the accepted {MIN_SAMPLE_RATE}–{MAX_SAMPLE_RATE} Hz"
             )
+        # THE SESSION's VAD threshold, optional (the in-call speech-threshold control, 2026-09-22).
+        # Validated with `sample_rate`'s own strictness — same boundary, same rules (bool is not a
+        # number; bounds are the config field's, `LiveCfg.vad_threshold`'s 0..1) — and absent means
+        # the config knob, which keeps every pre-existing client byte-identical.
+        vad = data.get("vad_threshold")
+        if vad is not None:
+            if not isinstance(vad, int | float) or isinstance(vad, bool):
+                raise _ProtocolError("start.vad_threshold must be a number")
+            if not 0.0 <= vad <= 1.0:
+                raise _ProtocolError(f"start.vad_threshold {vad} outside the accepted 0–1")
+            self._vad_override = float(vad)
         return rate
 
     @staticmethod
@@ -428,7 +447,9 @@ class LiveRelaySession:
         session: dict[str, Any] = {
             "turn_detection": {
                 "type": "server_vad",
-                "threshold": self._cfg.vad_threshold,
+                # The client's per-session answer outranks the knob (see `_vad_override`) — decided
+                # once, HERE, in the one update this relay ever sends.
+                "threshold": self._cfg.vad_threshold if self._vad_override is None else self._vad_override,
                 "prefix_padding_ms": 0,
                 "silence_duration_ms": self._cfg.silence_ms,
                 "create_response": False,

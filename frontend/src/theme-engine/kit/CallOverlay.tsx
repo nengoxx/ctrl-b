@@ -162,6 +162,70 @@ function RouteControls({ call }: { call: CallView }) {
   );
 }
 
+/**
+ * THE SPEECH-THRESHOLD SLIDER (owner ask 2026-09-22) — the server-VAD confidence floor, on the deck,
+ * because the right value changes with the ROOM (a street needs a deaf ear, a quiet desk a keen one)
+ * and re-opening Conf mid-call to move it was the whole complaint.
+ *
+ * The pill shows the number; tapping it drops a vertical slider (the Android volume gesture, the
+ * owner's own reference). The DRAG is local state — only the RELEASE commits, because a commit is a
+ * leg redial (`start.vad_threshold` rides the one message that opens a leg; the relay's
+ * one-`session.update` pin is why there is no in-band change) and a redial per drag-tick would cycle
+ * the connection through every pixel of the gesture.
+ *
+ * Per call, never config — the route pair's rule (§4.5): the Conf knob stays the next call's default.
+ * Renders nothing against a backend whose status predates the field: a control that cannot say what
+ * the threshold IS must not offer to move it.
+ */
+function VadControl({ call }: { call: CallView }) {
+  const [open, setOpen] = useState(false);
+  /** The drag's own value, `null` between gestures (the pill then speaks the machine's truth). */
+  const [draft, setDraft] = useState<number | null>(null);
+  if (call.vad === null) return null;
+  const value = draft ?? call.vad;
+  const commit = (): void => {
+    if (draft !== null && draft !== call.vad) call.setVad(draft);
+    setDraft(null);
+  };
+  return (
+    <div className="kit-call-io">
+      <span className="kit-call-iolabel" aria-hidden>
+        Speech
+      </span>
+      <button
+        type="button"
+        className="kit-call-routebtn"
+        aria-label="Speech threshold"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {value.toFixed(2)}
+      </button>
+      {open && (
+        <div className="kit-call-vadpop">
+          {/* `orient` is Firefox's own vertical-slider attribute; the CSS `writing-mode` pair covers
+              Chromium. Spread past the JSX prop types — it is a real DOM attribute React forwards. */}
+          <input
+            type="range"
+            className="kit-call-vadslider"
+            aria-label="Speech threshold"
+            min={0.05}
+            max={0.95}
+            step={0.05}
+            value={value}
+            disabled={!call.canRoute}
+            {...{ orient: "vertical" }}
+            onChange={(e) => setDraft(Number(e.target.value))}
+            onPointerUp={commit}
+            onKeyUp={commit}
+            onBlur={commit}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** A number the eye can compare against a floor: three decimals, never exponent notation. */
 const lvl = (n: number): string => n.toFixed(3);
 /** The echo readback, printed so `"all"` and `true` are visually DISTINGUISHABLE (R78 §6.2) — they
@@ -305,6 +369,7 @@ export function CallOverlay({ close }: { close: () => boolean }) {
       {!terminal && (
         <div className="kit-call-top" onPointerDown={(e) => e.stopPropagation()}>
           <RouteControls call={call} />
+          <VadControl call={call} />
         </div>
       )}
       <div className="kit-call-body">

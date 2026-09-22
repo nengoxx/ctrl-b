@@ -112,6 +112,10 @@ export interface LiveSocketOpts {
   sampleRate: number;
   /** `/voice/status.live_call.buffered_ceiling_ms` — the outbound buffer ceiling, in ms of audio. */
   ceilingMs: number;
+  /** THIS LEG's server-VAD threshold (the in-call speech-threshold control, 2026-09-22), declared in
+   *  `start` beside the rate. Omitted (an old backend's status carries none) → the relay's config
+   *  knob decides, exactly as before the field existed. */
+  vadThreshold?: number;
   onFrame: (frame: LiveDown) => void;
   onClose: (code: number, reason: string) => void;
   /** Test seam: the constructor to use. Production passes nothing and gets the global `WebSocket`. */
@@ -142,7 +146,13 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
   ws.onopen = () => {
     // The handshake, and it must be FIRST: the relay builds its resampler from this rate and treats a
     // leading binary frame as a protocol error.
-    ws.send(JSON.stringify({ type: "start", sample_rate: Math.round(opts.sampleRate) }));
+    ws.send(
+      JSON.stringify({
+        type: "start",
+        sample_rate: Math.round(opts.sampleRate),
+        ...(opts.vadThreshold !== undefined && { vad_threshold: opts.vadThreshold }),
+      }),
+    );
   };
   ws.onmessage = (e: MessageEvent) => {
     if (typeof e.data !== "string") return; // binary downlink is not a thing on this route

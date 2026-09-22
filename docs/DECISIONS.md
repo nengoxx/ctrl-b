@@ -5322,6 +5322,19 @@ nothing. This is the surface that turns threshold guessing into one look (R78's 
 ⑧ **Hotwords stay honest:** the config field reaches only the whole-clip STT door and is inert on
 the Parakeet target (R76) — kept wired for whisper-class targets, with the finding named in code.
 
+**Addendum (owner round 2026-09-22, the deck's first poke):** ⑨ **`voice.tts.speak_actions` and
+`voice.live.barge_in` both re-ruled FALSE by default** — dialogue-only is the resting state, and
+voice interrupt (verified working at 0.06) is an opt-in, not a default; tap-to-interrupt stays every
+call's interrupt. ⑩ **The speech threshold joins the deck** (the owner's Android-volume slider): the
+server-VAD floor becomes per-call adjustable via the ONE new wire field `start.vad_threshold`
+(optional, 0–1, validated at `_parse_start` with `sample_rate`'s strictness) — the relay folds it
+into its one `session.update`, so the one-update pin STANDS and there is deliberately NO in-band
+change: a mid-call move is a LEG REDIAL (`setVad` → `redialLeg` → the existing `openLeg`, which
+reads the live state), the ear untouched, the generation unmoved (the leg fence owns socket ghosts).
+Ephemeral per call like the route pair; the Conf knob stays the next call's default. The route row
+also moved to a top deck above the ring with Output/Input/Speech captions (ISS-16 records the
+crackle datapoint the captions serve).
+
 **Build record:** two pinned Opus lanes (call machine · TTS-text/config), disjoint file ownership,
 gate 6/6 twice (pre- and post-fix-wave); the fix wave's three fixes each red-proven against the
 named bypass (ceil restored · unconditional close restored · the old one-attempt pin inverted).

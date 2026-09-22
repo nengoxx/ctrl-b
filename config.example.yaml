@@ -425,7 +425,7 @@ voice:
     enabled: false         # whole-feature toggle; `voice.enabled` above outranks it
     # provider: voice      # blank → resolve like voice.stt (the common case)
     # model: parakeet      # the realtime `model` query param; blank inherits stt's
-    vad_threshold: 0.9     # Silero speech-probability floor (Speaches' own server-VAD default)
+    vad_threshold: 0.9     # Silero speech-probability floor (Speaches' default); the next call's base — the call screen's Speech slider overrides it per call
     silence_ms: 700        # silence run that ends an utterance (100–10000); rides session.update
     min_speech_ms: 300     # CLIENT interruption floor — speech shorter than this is not a barge-in
     frame_ms: 40           # uplink frame duration (10–200); also the flush burst's granularity
@@ -442,7 +442,7 @@ voice:
     debug: false           # CLIENT: show the live gate numbers on the call overlay (calibration aid)
     max_sessions: 1        # process-wide concurrent live sessions (a second connect gets `busy`)
     echo_workaround: auto  # auto | on | off — auto = capability-detected per track, never UA-sniffed
-    barge_in: true         # CLIENT: hands-free interruption (false = tap-to-interrupt only)
+    barge_in: false        # CLIENT: hands-free interruption (default off = tap-to-interrupt only)
     ring: true             # CLIENT: overlay mode — true = focal-anchored face ring
     # Streaming DICTATION (S2.5) — the mic's hold/lock rides the SAME realtime ear as the call, and
     # each utterance final appends to the composer draft live. Independent of `enabled` in both

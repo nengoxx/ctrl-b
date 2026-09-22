@@ -9230,6 +9230,13 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   position: relative;
   margin-bottom: auto;
   padding: calc(10px + env(safe-area-inset-top)) 18px 0;
+  /* The deck is itself the row: the route pair (one flex group) and the speech pill sit side by
+   * side under one gap rhythm, wrapping at narrow widths exactly as the pair does internally. */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 8px 10px;
 }
 /* THE IN-CALL ROUTE ROW (D74 S2) — "where am I listening" + which ear, on the top deck. Both controls
  * are QUIET (the Mute recipe, unlit): they are settings, not actions, and the screen's two loud
@@ -9242,12 +9249,41 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   align-items: flex-start;
   gap: 8px 10px;
 }
-/* One control + its micro-caption (Output / Input) — the caption exists because the two pills read
- * identical and the owner could not tell mouth from ear. Visual furniture only (`aria-hidden`). */
+/* One control + its micro-caption (Output / Input / Speech) — the caption exists because the pills
+ * read identical and the owner could not tell mouth from ear. Visual furniture only (`aria-hidden`).
+ * `position: relative` is the speech pill's popover anchor. */
 .kit .kit-call-io {
+  position: relative;
   display: grid;
   gap: 3px;
   justify-items: center;
+}
+/* THE SPEECH-THRESHOLD POPOVER (2026-09-22) — the Android-volume gesture: a small card dropping from
+ * the pill with ONE vertical slider, up = keener ear. The confirm card's surface recipe; absolute so
+ * opening it never reflows the deck (a layout jump under the finger mid-gesture is the failure). */
+.kit .kit-call-vadpop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 8px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--bg) 76%, transparent);
+}
+/* The vertical range: Chromium reads the writing-mode pair, Firefox the `orient` attribute the
+ * component sets — both get "up = higher" (`direction: rtl` flips the vertical axis). Native track
+ * + thumb via `accent-color`, the framing sheet's own precedent. */
+.kit .kit-call-vadslider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 24px;
+  height: 132px;
+  accent-color: var(--accent);
+  touch-action: none;
+}
+.kit .kit-call-vadslider:disabled {
+  opacity: 0.45;
 }
 .kit .kit-call-iolabel {
   font-size: 10px;

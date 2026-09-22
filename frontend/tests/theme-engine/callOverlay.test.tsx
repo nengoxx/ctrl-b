@@ -18,6 +18,8 @@ const h = vi.hoisted(() => {
     canRoute: boolean;
     setRoute: ReturnType<typeof vi.fn>;
     setInputDevice: ReturnType<typeof vi.fn>;
+    vad: number | null;
+    setVad: ReturnType<typeof vi.fn>;
     debug: CallDebug | null;
   } = {
     phase: "listening",
@@ -32,6 +34,8 @@ const h = vi.hoisted(() => {
     canRoute: true,
     setRoute: vi.fn(),
     setInputDevice: vi.fn(),
+    vad: 0.9,
+    setVad: vi.fn(),
     debug: null,
   };
   return {
@@ -100,12 +104,14 @@ beforeEach(() => {
     route: "speaker",
     inputDevice: "",
     canRoute: true,
+    vad: 0.9,
     debug: null,
   };
   h.call.interrupt.mockClear();
   h.call.toggleMute.mockClear();
   h.call.setRoute.mockClear();
   h.call.setInputDevice.mockClear();
+  h.call.setVad.mockClear();
   h.ring = true;
   h.knobs = true;
   h.awaiting = null;
@@ -352,6 +358,46 @@ describe("CallOverlay — the in-call route controls (D74 S2)", () => {
     h.call = { ...h.call, phase: "ended" };
     render(<Host open={true} />);
     expect(screen.queryByRole("button", { name: /^Use / })).toBeNull();
+  });
+});
+
+describe("CallOverlay — the speech-threshold slider (2026-09-22)", () => {
+  const pill = () => screen.getByRole<HTMLButtonElement>("button", { name: "Speech threshold" });
+  const slider = () => screen.getByRole<HTMLInputElement>("slider", { name: "Speech threshold" });
+
+  it("the pill speaks the machine's value; the slider appears on tap and commits ON RELEASE only", () => {
+    render(<Host open={true} />);
+    expect(pill().textContent).toBe("0.90");
+    expect(screen.queryByRole("slider", { name: "Speech threshold" })).toBeNull();
+    fireEvent.click(pill());
+    // The DRAG is local — a redial per drag-tick would cycle the connection through the gesture.
+    fireEvent.change(slider(), { target: { value: "0.5" } });
+    expect(h.call.setVad).not.toHaveBeenCalled();
+    expect(pill().textContent).toBe("0.50"); // …but the pill follows the finger
+    fireEvent.pointerUp(slider());
+    expect(h.call.setVad).toHaveBeenCalledWith(0.5);
+  });
+
+  it("a release with nothing moved commits nothing — no redial for a tap on the slider", () => {
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    fireEvent.pointerUp(slider());
+    expect(h.call.setVad).not.toHaveBeenCalled();
+  });
+
+  it("renders NOTHING against a backend whose status predates the field", () => {
+    // A control that cannot say what the threshold IS must not offer to move it.
+    h.call = { ...h.call, vad: null };
+    render(<Host open={true} />);
+    expect(screen.queryByRole("button", { name: "Speech threshold" })).toBeNull();
+  });
+
+  it("a slider gesture is never ALSO a tap-to-interrupt — the deck's stop covers the popover", () => {
+    h.call = { ...h.call, phase: "speaking" };
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    fireEvent.pointerDown(slider());
+    expect(h.call.interrupt).not.toHaveBeenCalled();
   });
 });
 

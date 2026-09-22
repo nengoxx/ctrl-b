@@ -292,6 +292,12 @@ export interface CallState {
    *  owner does on the call screen is about THIS call, and it dies with it. */
   route: string;
   inputDevice: string;
+  /** THIS CALL's server-VAD threshold, or `null` for the knob's (the in-call speech-threshold
+   *  control, 2026-09-22) — EPHEMERAL per call, the route pair's own carve-out from §4.5: what the
+   *  owner does on the call screen is about THIS call and dies with it; the Conf knob stays the
+   *  next call's default. It survives reconnects and route cycles by construction — `openLeg`
+   *  reads the LIVE state, and a recalibrated room does not change because the leg did. */
+  vadOverride: number | null;
   /** THIS TAB WAS IN A CALL WHEN IT LAST WENT AWAY (D73 S6 ⑦) — the `sessionStorage` marker was
    *  standing when this machine started, which only happens when a leg opened here and no clean end
    *  cleared it: a discarded tab's reload, a crash. Read ONCE at call start, like `earHoldMode`, and
@@ -320,6 +326,7 @@ export const CALL_INITIAL: CallState = {
   earHeld: false,
   route: "",
   inputDevice: "",
+  vadOverride: null,
   priorLeg: false,
   gen: 0,
   attempts: 0,
@@ -352,6 +359,12 @@ export type CallSignal = { gen?: number } & (
    *  in the settled phases; anywhere else it is a no-op, because there is either a leg already being
    *  opened or no ear left to move. */
   | { type: "routeChange"; route?: string; deviceId?: string }
+  /** The owner moved the SPEECH THRESHOLD while the call is up (2026-09-22) — the server-VAD floor,
+   *  which only a fresh leg can carry (`start.vad_threshold` rides the one message that opens one;
+   *  the relay's one-`session.update` pin is the reason there is no in-band change). Same phase rule
+   *  as `routeChange`, same reason — but the EAR is untouched, so the effect is a leg redial, not a
+   *  recapture, and the generation does not move (the leg fence owns socket ghosts). */
+  | { type: "setVad"; value: number }
   /** D73 S6 ⑦ — the tab's own live-call marker was standing when this machine started (see
    *  `BUSY_MARKER`). Sent at call start, BEFORE this call's first leg writes its own. */
   | { type: "priorLeg" }
@@ -418,6 +431,11 @@ export type CallEffect =
    *  design (R78 §8: the mode is pinned by the live source for the device, and the round-trip reports
    *  success on a set it never widened), so the only honest way to change the route is a new track. */
   | { type: "recapture"; route: string; deviceId: string }
+  /** THE LEG REDIAL (the speech-threshold change): `openLeg` again, nothing else — it closes the old
+   *  socket itself, mints the fresh leg number that ghosts the old one's callbacks, and reads the
+   *  threshold off the LIVE state. The capture, the meter, the pacer rule and the generation all
+   *  stand: this is what a reconnect already does, minus the ladder, on purpose. */
+  | { type: "redialLeg" }
   /** Release everything. `close` additionally dismisses the overlay — the user's own exit gets no
    *  terminal screen (§6); an `error`/`ended` terminal keeps the overlay up to say why. */
   | { type: "teardown"; close: boolean };
@@ -787,6 +805,31 @@ function reduce(s: CallState, sig: CallSignal): Step {
           gen: s.gen + 1,
         },
         out: [{ type: "recapture", route, deviceId }],
+      };
+    }
+
+    case "setVad": {
+      // The route cycle's phase rule, for the route cycle's reason (a leg is already being opened in
+      // `connecting`; the terminals have nothing to redial) — and the same no-op on "nothing moved",
+      // because a redial for the same threshold costs the owner a reconnect for nothing.
+      if (!isStable(s.phase)) return { state: s, out: [] };
+      if (sig.value === s.vadOverride) return { state: s, out: [] };
+      return {
+        state: {
+          ...s,
+          vadOverride: sig.value,
+          // The screen is honest about the redial, exactly as the route cycle is: a fresh leg, the
+          // ladder clean because this is deliberate. The utterance in flight dies with the leg
+          // (`socketLost`'s own rule); the EAR and its meter stand, so `earHoldMode`/`earHeld` are
+          // untouched and — unlike the route cycle — the GENERATION does not move: no capture is
+          // being replaced, the leg fence ghosts the old socket's frames, and an in-flight chat
+          // POST's outcome should still land.
+          phase: "connecting",
+          attempts: 0,
+          userSpeechActive: false,
+          waitingFinal: false,
+        },
+        out: [{ type: "redialLeg" }],
       };
     }
 
@@ -1164,6 +1207,11 @@ export interface CallView {
   canRoute: boolean;
   setRoute: (route: string) => void;
   setInputDevice: (deviceId: string) => void;
+  /** The EFFECTIVE speech threshold (override ?? knob), for the in-call slider — `null` when the
+   *  backend predates the field, which is also the control's "don't render" answer. */
+  vad: number | null;
+  /** Move it for THIS call (a leg redial; per call, never a config write — the route pair's rule). */
+  setVad: (value: number) => void;
   /** D74 S7 — the readback block, or `null` with the knob off (which is every ordinary call). */
   debug: CallDebug | null;
 }
@@ -1320,6 +1368,14 @@ export function useLiveCall(): CallView {
             // is what keeps a close this call asked for from driving a socket it has since replaced.
             socket.current?.close();
             break;
+          case "redialLeg":
+            // The speech-threshold change. `openLeg` IS the mechanism: it closes the standing socket,
+            // bumps the leg number (so the old leg's close never reaches the machine), mints the fresh
+            // pacer, and sends a `start` built from the LIVE state — which the reducer just wrote the
+            // new threshold into. Same close-then-dial window as `recapture`, same `busy` coverage
+            // (the S6 ⑦ marker + the discard-recovery ladder).
+            openLegRef.current();
+            break;
           case "recapture": {
             // THE ROUTE CYCLE (D74 S2) — the hang-up path's RELEASE without its terminal, then S1's
             // acquisition again. The order is the teardown's, for the teardown's reasons: the socket
@@ -1392,6 +1448,11 @@ export function useLiveCall(): CallView {
       url: liveSocketUrl(),
       sampleRate: cap.sampleRate,
       ceilingMs: knobs.buffered_ceiling_ms,
+      // THIS CALL's threshold, read off the LIVE state (never latched): the in-call control's
+      // override when one stands, else the knob — and a reconnect re-declares it, so a recalibrated
+      // call survives its own network. Both absent (a pre-field backend's status) → the option stays
+      // undefined and `start` omits the field, which is that relay's own default.
+      vadThreshold: ref.current.vadOverride ?? knobs.vad_threshold,
       onFrame: (frame) => {
         if (!mine()) return;
         switch (frame.type) {
@@ -1904,6 +1965,12 @@ export function useLiveCall(): CallView {
     (deviceId: string): void => send({ type: "routeChange", deviceId, gen: ref.current.gen }),
     [send],
   );
+  /** The speech-threshold control (2026-09-22) — the same shape as the pair above: one signal, the
+   *  reducer owns the rule, nothing here writes config. */
+  const setVad = useCallback(
+    (value: number): void => send({ type: "setVad", value, gen: ref.current.gen }),
+    [send],
+  );
 
   // ── the readback block (D74 S7 / R78 §6.2) ─────────────────────────────────────────────────────
   // SNAPSHOTTED at mount like every other §4.5 knob (and exactly as the overlay's `ring` is): what a
@@ -1952,6 +2019,8 @@ export function useLiveCall(): CallView {
     canRoute: isStable(state.phase),
     setRoute,
     setInputDevice,
+    vad: state.vadOverride ?? knobs?.vad_threshold ?? null,
+    setVad,
     debug,
   };
 }

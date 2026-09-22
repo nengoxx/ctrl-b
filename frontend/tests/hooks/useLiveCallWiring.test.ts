@@ -33,6 +33,8 @@ const h = vi.hoisted(() => ({
         max_session_s: 600,
         // D74 — the transcript gate's floor, OFF unless a case arms it.
         min_final_ms: 0,
+        // The server-VAD knob the slider seeds from (2026-09-22).
+        vad_threshold: 0.9,
       },
       stt_auto_stop: { threshold: 0 },
     },
@@ -64,6 +66,8 @@ const h = vi.hoisted(() => ({
    *  whole assertion is an ORDERING — a rule that reaches the track one render late is a rule that was
    *  not applied while the first frames went out. */
   order: [] as string[],
+  /** What each opened leg DECLARED as its `start` threshold, in order (the in-call slider's wire). */
+  vadSent: [] as (number | undefined)[],
   sendCall: vi.fn<(text: string) => Promise<string>>(),
   setCallVoice: vi.fn(),
   openGate: vi.fn(),
@@ -115,9 +119,11 @@ vi.mock("../../src/lib/composer", () => ({ sendCallTranscript: h.sendCall }));
 vi.mock("../../src/lib/liveSocket", () => ({
   liveSocketUrl: () => "ws://x/api/voice/live",
   openLiveSocket: (opts: {
+    vadThreshold?: number;
     onFrame: (f: LiveDown) => void;
     onClose: (code: number, reason: string) => void;
   }) => {
+    h.vadSent.push(opts.vadThreshold);
     h.frame = opts.onFrame;
     // The leg's own unannounced close — a dropped tailnet link, the one close the machine reconnects
     // through. Bound per leg, so a case can drop THIS leg and watch the ladder open the next one.
@@ -228,6 +234,7 @@ beforeEach(() => {
   h.voice.data.live_call.background_idle_s = 600;
   h.audio = [];
   h.order = [];
+  h.vadSent = [];
   h.fennec = false;
   h.fellBack = false;
   h.capOpts = null;
@@ -1445,6 +1452,31 @@ describe("useLiveCall — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R7
     view.unmount();
     expect(sessionStore.has("ctrlb-live-call")).toBe(false);
   });
+});
+
+describe("useLiveCall — the speech-threshold redial (2026-09-22)", () => {
+  it("every leg declares the knob's threshold; a `setVad` redial declares the override — same ear", () =>
+    (async () => {
+      const { view } = await call();
+      expect(h.vadSent).toEqual([0.9]);
+      await act(async () => {
+        view.result.current.setVad(0.5);
+        await Promise.resolve();
+      });
+      // A SECOND leg opened carrying the override — and the capture was never touched: this is a
+      // redial, not the route cycle's recapture.
+      expect(h.vadSent).toEqual([0.9, 0.5]);
+      expect(h.capStops).toBe(0);
+      await act(async () => {
+        h.frame?.({ type: "state", state: "ready" });
+      });
+      expect(view.result.current.phase).toBe("listening");
+      expect(view.result.current.vad).toBe(0.5);
+      // (That a reconnect re-declares it follows from the same line the second leg just proved:
+      // `openLeg` reads the LIVE state — and the override's survival across `socketLost` is pinned
+      // in the reducer suite.)
+      view.unmount();
+    })());
 });
 
 describe("useLiveCall — the unmount fence (S2b audit)", () => {

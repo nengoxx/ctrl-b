@@ -118,6 +118,10 @@ async def voice_status(request: Request) -> dict[str, object]:
         "min_final_ms": live.min_final_ms,
         "debug": live.debug,
         "barge_in": live.barge_in,
+        # The ONE server-side VAD knob the client renders (the in-call speech-threshold control,
+        # 2026-09-22): it seeds the slider and is the base a per-call override replaces — the
+        # override rides `start.vad_threshold` on the next leg, never a config write.
+        "vad_threshold": live.vad_threshold,
         "ring": live.ring,
         "echo_workaround": live.echo_workaround,
         # D73 S5 — the capture pair. It reaches the browser for the same reason its neighbours do: the

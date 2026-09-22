@@ -67,8 +67,12 @@ export interface LiveCallWire {
    *  §4.1 table: same detector family as Tier 0, calibrated in the same S4 sitting). */
   barge_threshold: number;
   /** Automatic (voice) interruption. OFF ⇒ walkie-talkie: speech over the reply still transcribes and
-   *  queues; the tap stays every browser's interrupt. */
+   *  queues; the tap stays every browser's interrupt. Ships OFF (owner re-ruling 2026-09-22). */
   barge_in: boolean;
+  /** The SERVER-side VAD confidence floor (0–1) — the one server knob the client renders, because the
+   *  in-call speech-threshold control seeds from it and overrides it per leg (`start.vad_threshold`).
+   *  Optional: a pre-field backend's status carries none, and the control simply doesn't render. */
+  vad_threshold?: number;
   /** §6 overlay mode — the focal-anchored face ring. S2b renders it; S2a's minimal overlay does not. */
   ring: boolean;
   /** `auto | on | off` — the loopback-AEC fallback lever. S0 ruled `auto` = off where the live track

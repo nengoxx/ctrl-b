@@ -709,7 +709,9 @@ class LiveCfg(VoiceServiceCfg):
     barge_threshold: float = Field(default=0.0, ge=0.0, le=0.5)
     #: Hands-free interruption master (client). False ⇒ tap-to-interrupt only, which is also the honest
     #: degrade on a browser whose AEC does not remove the phone's own playback (§7-S0 ③, Fennec).
-    barge_in: bool = True
+    #: Ships OFF since the owner re-ruling 2026-09-22 (post-calibration: voice interrupt verified at
+    #: 0.06, then ruled an opt-in rather than the resting state) — the flip in Conf is the feature.
+    barge_in: bool = False
     #: D74 — the NEAR-SPEECH gate on a committed turn (client; evidence R76). Silero is nearly
     #: level-invariant — speech at RMS 0.003, five times BELOW the default silence floor, still scores
     #: 0.954 (R76 §④) — so a next-room conversation or a TV produces real finals, and the server has no
