@@ -309,26 +309,26 @@ def test_d74_text_and_gate_knobs_round_trip_to_the_status_probe() -> None:
         with _client() as c:
             # the shipped defaults reach the probe untouched — absent fields are defaults, no bump
             body = c.get("/api/voice/status").json()
-            assert body["tts_chunking"]["speak_actions"] is True
+            assert body["tts_chunking"]["speak_actions"] is False
             assert (body["live_call"]["min_final_ms"], body["live_call"]["debug"]) == (200, False)
 
             r = c.put(
                 "/api/settings",
                 json={
                     "voice": {
-                        "tts": {"speak_actions": False},
+                        "tts": {"speak_actions": True},
                         "live": {"min_final_ms": 350, "debug": True},
                     }
                 },
             )
             assert r.status_code == 200, r.text
-            assert c.app.state.settings.voice.tts.speak_actions is False
+            assert c.app.state.settings.voice.tts.speak_actions is True
             live = c.app.state.settings.voice.live
             assert (live.min_final_ms, live.debug) == (350, True)
             assert "min_final_ms: 350" in cfg.read_text(encoding="utf-8")
 
             body = c.get("/api/voice/status").json()
-            assert body["tts_chunking"]["speak_actions"] is False
+            assert body["tts_chunking"]["speak_actions"] is True
             assert (body["live_call"]["min_final_ms"], body["live_call"]["debug"]) == (350, True)
 
             # …and an out-of-bounds gate earns the same visible 422 its neighbours do (nothing saved).

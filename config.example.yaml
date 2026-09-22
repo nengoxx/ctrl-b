@@ -416,7 +416,7 @@ voice:
     chunk_min_chars: 50
     chunk_max_chars: 400   # split at the last word boundary under this (must be <= max_text_chars)
     chunk_lookahead: 1     # synth-ahead depth (1 = synthesize chunk N+1 while N plays)
-    speak_actions: true    # D74: read roleplay actions (*he leans in*) aloud; false DROPS those spans
+    speak_actions: false   # D74: read roleplay actions (*he leans in*) aloud; false (default) DROPS those spans
                            # (bold still reads — emphasis is speech, a stage direction is not)
   # Live voice / call mode (Phase 24, D71) — the realtime EAR behind `WS /api/voice/live`. Same
   # pointer shape as stt/tts; leave `provider` blank and it resolves exactly like `voice.stt` (one

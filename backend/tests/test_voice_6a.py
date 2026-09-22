@@ -514,9 +514,9 @@ def test_chunk_config_bounds_validate_at_load() -> None:
         1,
         True,
     )
-    # D74 — roleplay ACTIONS are spoken by default: the knob ships as today's behavior, so an install
-    # that never touches it hears exactly what it heard before (the owner flips it per taste).
-    assert ok.speak_actions is True
+    # D74 — roleplay ACTIONS are DROPPED by default (owner re-ruling 2026-09-22, after the first
+    # live round): an untouched install reads dialogue only; the flip to spoken actions is per taste.
+    assert ok.speak_actions is False
     for bad in (
         {"tts": {"chunk_min_chars": 401, "chunk_max_chars": 400}},  # floor above the cap
         {"tts": {"chunk_max_chars": 5000}},  # cap above the per-message limit (4096)

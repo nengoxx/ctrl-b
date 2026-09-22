@@ -876,11 +876,12 @@ class TtsServiceCfg(VoiceServiceCfg):
     chunk_read_along: bool = True
     # D74 — ROLEPLAY ACTIONS. `*he leans in*` is a stage direction, not speech: with this False the
     # client's markdown→prose pass (`lib/toSpeech`) DROPS single-asterisk spans instead of unwrapping
-    # them, while `**bold**` still unwraps (emphasis is speech; an action is not). True = today's
-    # behavior, which is why it ships True — the owner flips it per taste, and it costs a re-synth of
-    # nothing (the text is shaped client-side, before the first chunk reaches the wire). It rides
+    # them, while `**bold**` still unwraps (emphasis is speech; an action is not). Shipped True at
+    # D74 (legacy-faithful), flipped to False by owner re-ruling 2026-09-22 after the first live
+    # round — dialogue-only is the wanted default. The client's wire-absence fallbacks stay `true`
+    # on purpose: absence means a pre-D74 backend, and a pre-D74 backend SPOKE actions. It rides
     # `tts_chunking` because that is the object the playback queue already reads its text policy from.
-    speak_actions: bool = True
+    speak_actions: bool = False
 
     @model_validator(mode="after")
     def _chunk_bounds(self) -> "TtsServiceCfg":

@@ -5305,7 +5305,9 @@ dev; thresholds are NOT portable across routes (R78 — the headphones route cha
 recorded S4 caveat, not a second knob.
 ⑤ **Actions are not speech:** `toSpeech` ends with a residual-`*` scrub (an asterisk is never
 speakable — closes the read-along mid-span leak, the owner's "scratching"), and
-`voice.tts.speak_actions: false` (default true) drops single-asterisk spans entirely — the
+`voice.tts.speak_actions: false` (shipped default true; **re-ruled FALSE 2026-09-22** — the owner's
+first live round wanted dialogue-only as the resting state; the client's wire-absence fallbacks
+stay `true`, absence = a pre-D74 backend that spoke actions) drops single-asterisk spans entirely — the
 SillyTavern "dialogue only" mode, pairing matched to the eye's markdown, an unclosed opener dropped
 to end-of-input, the streaming cut HOLDING at an em opener only under skip. The old "accepted
 residual" ruling on stray delimiters now stands on the scrub, not on tolerance — its "rare shape"
