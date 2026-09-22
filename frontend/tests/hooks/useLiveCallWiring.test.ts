@@ -354,7 +354,7 @@ describe("useLiveCall — the mouth, watched", () => {
       h.failures = 1;
     });
     expect(view.result.current.phase).toBe("listening");
-    expect(view.result.current.note).toBe("voice failed — the reply is in the chat");
+    expect(view.result.current.note).toBe("voice failed — the reply is text only");
   });
 });
 

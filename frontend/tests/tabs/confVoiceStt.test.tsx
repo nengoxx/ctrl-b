@@ -435,6 +435,15 @@ describe("ConfTab · the capture route + device picker (D73 S5)", () => {
     expect(liveOf()).toMatchObject({ echo_workaround: "auto" });
   });
 
+  it("offers the THIRD route — EC off on the loudspeaker (D75 ①)", () => {
+    // The row is the next call's default; the call deck's own picker is the per-call answer. Both
+    // name the same three, and this is the one that has to reach config.
+    render(<ConfTab active />);
+    fireEvent.click(liveGroup().getByRole("button", { name: "speaker (clean)" }));
+    fireEvent.click(saveButton());
+    expect(liveOf()).toMatchObject({ route: "speaker-hifi" });
+  });
+
   it("lists the browser's audio inputs — the system default first, always", async () => {
     lists = [[{ kind: "audioinput", deviceId: "bt", label: "Bluetooth headset" }]];
     render(<ConfTab active />);

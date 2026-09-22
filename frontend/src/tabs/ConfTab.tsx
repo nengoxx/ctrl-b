@@ -2923,16 +2923,24 @@ export function ConfTab({ active }: Props) {
               drags the app's own output down with it; "headphones" clears the ask, so the reply rides
               Bluetooth at media quality. It also resolves what "auto" above means: on headphones
               there is no acoustic echo path, so the ear stays open under the reply and hands-free
-              interruption works. Governs dictation's microphone too. */}
+              interruption works. Governs dictation's microphone too.
+              D75 ① (evidence docs/research/R80) — the THIRD answer: the same escape from
+              communication mode, on the loudspeaker. It buys the clean audio the owner's phone only
+              gets with echo cancellation off, and pays for it with an ear that closes while the reply
+              speaks (the tap is then the only interrupt) — the same bargain the headphones route
+              makes, on the route that does have an acoustic echo path. */}
           <SettingRow
             label="Audio route"
-            desc="where you're listening · headphones → full-quality sound over Bluetooth and hands-free interruption; speaker → echo cancellation, at call quality"
+            desc="the next call's default — the call screen changes it for a call in progress · speaker → echo cancellation, at phone-call quality; speaker (clean) → clear loudspeaker sound, but the mic pauses while the reply speaks (tap to interrupt); headphones → clear sound; only with Hands-free interruption on does talking over the reply cut it off"
           >
             <Seg<string>
               label="Audio route"
               current={vlive?.route ?? "speaker"}
               options={[
                 { val: "speaker", label: "speaker" },
+                // The LABEL is the call deck's ("clean", not "hi-fi" — it claims no fidelity, only the
+                // absence of call processing); the VALUE is the shipped config string and stays put.
+                { val: "speaker-hifi", label: "speaker (clean)" },
                 { val: "headphones", label: "headphones" },
               ]}
               onPick={(v) => setLive("route", v)}

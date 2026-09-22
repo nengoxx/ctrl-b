@@ -219,7 +219,10 @@ export const CALL_COPY = {
    *  already carries the action (Call again) — so the note says what happened, not what tripped. */
   protocol: "the connection had a problem",
   micLost: "the microphone stopped",
-  voiceFailed: "voice failed — the reply is in the chat",
+  // "…text only", never a PLACE (design L2): with captions on the reply is on THIS screen, and copy
+  // sending the owner to the chat while they are reading it here would be the screen contradicting
+  // itself. The reducer cannot see the captions knob, so the words name the mode, not the location.
+  voiceFailed: "voice failed — the reply is text only",
   refused: "couldn't send that — it's back in the composer",
   unknown: "not sure that sent — check the chat before repeating it",
   lost: "lost the connection",
@@ -228,6 +231,11 @@ export const CALL_COPY = {
    *  (`openMicStream`'s one retry). The call works; where the sound comes out may not be where the
    *  owner asked for it, and that is worth one line on the overlay. */
   deviceFallback: "that microphone wasn't available — using the default",
+  /** D75 ③ — an EC-off route asked for the media path and the track came back with the canceller
+   *  still engaged, twice (R80 §5: the mode is restored only when the LAST input stream is released,
+   *  and our re-open can beat that release). The call works and the ear is safe either way; what the
+   *  owner has lost is the clean audio they picked the route FOR, and nothing else would say so. */
+  ecStuck: "the echo canceller didn't let go — audio may still be processed",
   /** D73 S6 ② — the ear stopped hearing while the page was away (a frozen renderer, a stolen mic) and
    *  the leg is being redialled. It says what the owner needs to know and nothing else: a resumed call
    *  must never present as if it heard, and the stretch it missed is not recoverable. */
@@ -1729,6 +1737,18 @@ export function useLiveCall(): CallView {
           // of the route being ONE choice rather than a codec toggle — AEC off with the hold still armed
           // would buy media-quality output and pay for it with an ear that closes on every reply.
           //
+          // …and SPEAKER (HI-FI) needs not one line of logic here, which is the point of resolving both
+          // halves from the track (D75 ①, verified against this block rather than assumed): it is not
+          // the headphones case, so `headphones` is false; it cleared AEC, so the readback comes back
+          // something other than `"all"` — which arms the ear-hold's `auto` branch and leaves
+          // `bargeArmed` false. Ear closed while the mouth speaks, tap as the interrupt: exactly the
+          // ruled bargain, reached by the rules that were already here.
+          //
+          // THE READBACK GOVERNS, NOT THE ASK — which is the honest ear when the flip does not take
+          // (D75 ③ / R80 §5.2): a `speaker-hifi` capture whose track came back EC-ON reads `"all"` and
+          // is treated as the subtractive track it IS, so the hold lifts and — with `barge_in` on — the
+          // interrupt arms. `cap.ecStuck` says so on the screen; it never contradicts these two flags.
+          //
           // `on`/`off` remain the owner's override of the HOLD half only: the route moves what `auto`
           // means, it does not outrank an explicit answer. And the two decisions stay deliberately
           // separate flags: `barge_in` may be off on a perfectly open ear (walkie-talkie by choice).
@@ -1750,7 +1770,16 @@ export function useLiveCall(): CallView {
                   : !headphones && cap.readback.echoCancellation !== "all",
             // The picked device did not open and the default took the call (R74 §2.2(b)). The call
             // proceeds — it is the same ear on another route — and the overlay says which.
-            note: cap.fellBack ? CALL_COPY.deviceFallback : undefined,
+            //
+            // ONE LINE, and the FALLBACK wins it (D75 ③): the device note is about a choice the owner
+            // MADE that did not carry, which is theirs to re-make; a stuck canceller is a platform race
+            // they cannot act on. When both are true the fallback is also the likelier explanation of
+            // the second — it says the capture did not open on the route that was asked for at all.
+            note: cap.fellBack
+              ? CALL_COPY.deviceFallback
+              : cap.ecStuck
+                ? CALL_COPY.ecStuck
+                : undefined,
             // …and what this acquisition ASKED for (D74 S2): what the in-call control renders, and
             // what the next route change merges its half-payload against.
             route: req.route ?? "",

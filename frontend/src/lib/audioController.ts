@@ -232,7 +232,7 @@ function startEl(a: HTMLAudioElement): ReturnType<HTMLMediaElement["play"]> {
   return a.play();
 }
 
-/** MOUTH FAILURES, counted (§4.5's "voice failed — the reply is in the chat"). The transport `status`
+/** MOUTH FAILURES, counted (§4.5's "voice failed" note). The transport `status`
  *  cannot carry this: a rejected `play()` publishes "paused" and a media error resets to "idle", and the
  *  call machine reads both of those as ordinary user/drain transitions. So the failure is its own
  *  explicit tick — a monotonic counter the machine watches for an INCREMENT, which is the one shape that
@@ -405,8 +405,16 @@ function probeDuration(s: Session, i: number): void {
   const done = (): void => {
     probe.removeEventListener("loadedmetadata", done);
     probe.removeEventListener("error", done);
-    if (s.seq !== reqSeq || session !== s) return; // MED-7's rule, applied to the probe
+    // The number FIRST, then the element goes, on BOTH paths (R80 §7-S1): Android caps a page at TEN
+    // concurrent output streams (`kMaxOutputStreams`, verified in Chromium source) and open-webui#29969
+    // is that cap biting a peer in our exact shape — TTS dead with `AUDIO_RENDERER_ERROR` after ten
+    // replies. A metadata-only load SHOULD hold no stream at all; one probe per chunk over a long
+    // read-along reply is enough of them that "should" is not worth resting on, and this release makes
+    // it irrelevant. Order is load-bearing — detaching the source resets `duration` to NaN.
     const d = probe.duration;
+    probe.removeAttribute("src");
+    probe.load();
+    if (s.seq !== reqSeq || session !== s) return; // MED-7's rule, applied to the probe
     if (!Number.isFinite(d) || d <= 0 || s.durations[i] === d) return;
     s.durations[i] = d;
     publishTimeline(s); // an estimate resolving to exact shifts the totals — the bar refines

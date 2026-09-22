@@ -37,27 +37,47 @@ import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "./pcmWorklet";
 // It is ONE choice, not a codec toggle, because the physics come in a pair: with headphones on the
 // head there is no acoustic echo path, so AEC off AND the ear-hold off is the honest configuration
 // (R74 §9.2). `useLiveCall` resolves both halves from this one field — see its capture-ready block.
+//
+// THE THIRD ANSWER (D75 ①, evidence docs/research/R80 §10-①): `speaker-hifi` — the LOUDSPEAKER with
+// echo cancellation OFF. It is the same escape from comm mode that `headphones` takes, on the route
+// that has an acoustic echo path, so the bargain is the other one: media-path audio (the owner proved
+// it clean on their phone where the EC-on route crackles — ISS-16), paid for with an ear that CLOSES
+// while the reply speaks, and the tap as the only interrupt. Nothing in use is lost by offering it:
+// `barge_in` ships OFF (D74 addendum ⑨), and the field's own posture is half-duplex by default
+// (R79 §5 — Open WebUI is deaf for the whole assistant turn out of the box). The ear-hold needs no new
+// rule for it: the hold's `auto` arm already reads the TRACK, and an EC-off track reads back non-`all`.
 
 /** `voice.live.route`. Typed loosely at the seam because it arrives over the wire like
- *  `echo_workaround` does; anything that is not the headphones case IS the speaker case. */
+ *  `echo_workaround` does; anything that is not one of the named answers IS the plain speaker case. */
 export type MicRequest = {
-  /** `"speaker"` (default) or `"headphones"`. Absent ⇒ speaker — a pre-S5 backend gets today's ear. */
+  /** `"speaker"` (default), `"speaker-hifi"` or `"headphones"`. Absent ⇒ speaker — a pre-S5 backend
+   *  gets today's ear. */
   route?: string;
   /** `voice.live.input_device` — a browser-local `deviceId`, "" = the system default. */
   deviceId?: string;
 };
 
-/** The two answers the route knob takes. Exported since D74 S2 put the choice on the call screen: the
- *  overlay's toggle has to be able to NAME them, and a fourth file spelling `"headphones"` by hand is
+/** The three answers the route knob takes. Exported since D74 S2 put the choice on the call screen: the
+ *  overlay's picker has to be able to NAME them, and a fourth file spelling `"headphones"` by hand is
  *  how one of them eventually gets it wrong. `SPEAKER` is the default in the sense that everything
- *  which is not the headphones case IS the speaker case — see the predicate below. */
+ *  which is not a named answer IS the plain speaker case — see the predicates below. */
 export const ROUTE_HEADPHONES = "headphones";
 export const ROUTE_SPEAKER = "speaker";
+export const ROUTE_SPEAKER_HIFI = "speaker-hifi";
 
 /** The one place the route string is read. A predicate rather than a comparison spread across three
  *  files: the constraints, the ear-hold and the barge-in arming must all answer it the same way. */
 export function onHeadphones(route: string | undefined): boolean {
   return route === ROUTE_HEADPHONES;
+}
+
+/** …and the OTHER question the same string answers (D75 ①): does this route want the platform's
+ *  canceller at all? TRUE only for the plain-speaker case. Both EC-off routes share every consequence
+ *  that matters below — the empty effects mask, the skipped `MODE_IN_COMMUNICATION` flip, the media-path
+ *  output, the R77 SCO trap and the ear-hold's `auto` arm — so they are asked as ONE predicate rather
+ *  than as two comparisons that could drift apart. */
+export function wantsAec(route: string | undefined): boolean {
+  return !onHeadphones(route) && route !== ROUTE_SPEAKER_HIFI;
 }
 
 /** The constraints EVERY capture in this app opens with (the call's, dictation's).
@@ -73,7 +93,7 @@ export function onHeadphones(route: string | undefined): boolean {
  *  the other half of that rule. */
 export function micConstraints(req: MicRequest): MediaTrackConstraints {
   const audio: Record<string, unknown> = {
-    echoCancellation: onHeadphones(req.route) ? false : { ideal: "all" },
+    echoCancellation: wantsAec(req.route) ? { ideal: "all" } : false,
     noiseSuppression: true,
     channelCount: 1,
   };
@@ -120,8 +140,8 @@ export async function openMicStream(
 // "The system default input" is NOT neutral on Android. Chrome picks the MOST UNIQUE communication
 // device, and with a classic BT headset connected that is the Bluetooth row (R77 §1.2) — which starts
 // SCO, which makes AOSP suspend the A2DP output, whose frames are then DISCARDED ("Simulate write to
-// HAL when suspended"). The headphones route's entire purpose — media-quality TTS down the A2DP path
-// — becomes SILENCE; and because that route clears AEC there is no communication-mode exit to restore
+// HAL when suspended"). The media-quality TTS an EC-off route exists for — down the A2DP path —
+// becomes SILENCE; and because those routes clear AEC there is no communication-mode exit to restore
 // anything on teardown either (R77 §2.1). So where the page can SEE that trap it steers around it, to
 // a row that leaves `STRATEGY_MEDIA` alone: the earpiece first (picking it forces nothing at all),
 // then the wired headset, then the speakerphone (which forces `FOR_COMMUNICATION` only — a slot
@@ -170,7 +190,7 @@ function syntheticRoutes(inputs: MicDevice[]): Map<string, string> | null {
 
 /** Every constraint set this request may open with, IN ORDER (code round F3 reshaped the single
  *  `steered()` resolution into this ladder): the owner's explicit pick first when there is one, then —
- *  for the headphones route on the synthetic list with a Bluetooth row standing — each steer rung that
+ *  for any EC-OFF route on the synthetic list with a Bluetooth row standing — each steer rung that
  *  exists, and NEVER the bare default while that row stands (the default selection is the SCO trap,
  *  R77 (a)). Everywhere else the tail is the plain default request, exactly as before the steer
  *  existed. `openMicStream` walks this list, so a steered rung that will not open falls to the NEXT
@@ -185,7 +205,13 @@ function syntheticRoutes(inputs: MicDevice[]): Map<string, string> | null {
 async function candidateConstraints(req: MicRequest): Promise<MediaTrackConstraints[]> {
   const out: MediaTrackConstraints[] = [];
   if (req.deviceId) out.push(micConstraints(req));
-  if (onHeadphones(req.route)) {
+  // THE GATE IS THE EC ANSWER, not the headphones name (D75 ①): the trap this ladder avoids is a
+  // property of EC-OFF CAPTURE — an empty effects mask means no comm-mode flip, so the output stays on
+  // `STRATEGY_MEDIA` and an SCO link started by the default selection suspends it into silence, with no
+  // mode exit left to restore anything. `speaker-hifi` rides exactly the same physics as `headphones`,
+  // so it rides the same steer; the plain speaker route is in comm mode by construction and is left
+  // alone (moving its device would change a shipped behaviour this rule has no evidence about).
+  if (!wantsAec(req.route)) {
     const rows = syntheticRoutes(await listAudioInputs());
     if (rows?.has(BT_ROW)) {
       for (const label of STEER_TO) {
@@ -319,6 +345,15 @@ export interface PcmCapture {
    *  call instead (`openMicStream`'s one retry). The caller says so; a silent fallback would leave the
    *  owner looking at a picked headset while the reply comes out of the phone. */
   fellBack: boolean;
+  /** D75 ③ — this capture ASKED for echo cancellation off and the track came back with it ON, twice
+   *  (see `openEcChecked`). Advisory only: everything that governs the ear reads the READBACK and never
+   *  the ask, so a stuck track is governed as the track it IS — and which track that is depends on the
+   *  readback's VALUE, not merely on the mismatch (review round C4; `useLiveCall`'s capture-ready block
+   *  states the same rule from the other side). An `"all"` readback is the genuinely subtractive mode, so
+   *  the hold LIFTS and — with `barge_in` on — the voice interrupt arms, exactly as for a speaker-route
+   *  track; only a bare `true` (or `false`/absent) readback leaves the hold armed. What the owner loses
+   *  is the route's whole point — media-path audio — and nothing else on the screen could tell them. */
+  ecStuck: boolean;
   /** MUTE (§6's call furniture, D71 delta round F3 — the ONE mechanism). `track.enabled = false` keeps
    *  the graph running and the uplink FLOWING: the samples become digital silence, and the frames keep
    *  going out. That is the point — Speaches endpoints an utterance by OBSERVING silence, so starving it
@@ -429,14 +464,66 @@ export async function attachPcmUplink(
   }
 }
 
+// ── THE EC-RELEASE BARRIER (D75 ③, evidence docs/research/R80 §5) ────────────────────────────────
+// The communication mode is evaluated ONLY for the FIRST input stream (`has_input_streams` early-return)
+// and restored ONLY when the LAST one is released — and that release happens in the audio SERVICE, after
+// a mojo round trip, while our recapture calls `stop()` and `getUserMedia` back to back with no barrier
+// (R80 §5.1–§5.2, verified in Chromium source). Lose that race and two things are true at once: the
+// device stays in `MODE_IN_COMMUNICATION`, and — R78 §2.3's pin — `EchoCancellationContainer` collapses
+// our naked `echoCancellation: false` onto the mode of the still-live first source, so an "EC-off" ask
+// comes back EC-ON. The crackle survives the flip, which is exactly the owner's "sometimes it clears it".
+//
+// The readback is the free detector, and the fix is DETECTION-DRIVEN: nothing waits unless the flip is
+// observed to have failed. Only then is the stream released and the open run once more, with a beat in
+// between for the old stream's release to reach the service — which is all the "barrier" the platform
+// offers, since no API surfaces "the old input stream is gone".
+
+/** How long to give the audio service to reap the released input stream before asking again, ms. A
+ *  PLATFORM property like `EAR_OUTAGE_MS` in `useLiveCall` — an IPC round trip's order of magnitude,
+ *  not a preference — so it is a named constant here rather than a config knob nobody could calibrate. */
+const EC_RELEASE_RETRY_MS = 250;
+
+/** Did this track come back with the canceller ENGAGED? `"all"` and `true` are both engaged (R78 §1.3 —
+ *  they differ in which canceller, never in whether); anything else, `undefined` included, is not. */
+function ecEngaged(v: string | boolean | undefined): boolean {
+  return v === true || v === "all";
+}
+
+/** `openMicStream`, plus the ONE re-open a failed EC-off flip earns (D75 ③).
+ *
+ *  THE OPPOSITE MISMATCH IS NOT A FAILURE and deliberately does not reach here: a route that asked for
+ *  AEC and got none is a phone with no canceller, which is a legitimate degrade the capture-ready
+ *  resolution already handles by arming the ear-hold (R78 §1.3 — that is what a `false`/`undefined`
+ *  readback under an AEC ask MEANS). Only the EC-OFF direction has a race to lose.
+ *
+ *  The second result is accepted either way: one retry is the barrier, and a second wait would be a
+ *  delay dressed as a fix. A `getUserMedia` that throws on the retry propagates exactly as the first
+ *  one's would — the caller renders it as the call's error terminal. */
+async function openEcChecked(
+  req: MicRequest,
+): Promise<{ stream: MediaStream; fellBack: boolean; ecStuck: boolean }> {
+  const opened = await openMicStream(req);
+  // Named for what it HOLDS — the readback, this file's governing truth — never for the ask (review F6).
+  const engaged = ecEngaged(opened.stream.getAudioTracks()[0]?.getSettings().echoCancellation);
+  if (wantsAec(req.route) || !engaged) return { ...opened, ecStuck: false };
+  for (const t of opened.stream.getTracks()) t.stop();
+  await new Promise((resolve) => setTimeout(resolve, EC_RELEASE_RETRY_MS));
+  const again = await openMicStream(req);
+  return {
+    ...again,
+    ecStuck: ecEngaged(again.stream.getAudioTracks()[0]?.getSettings().echoCancellation),
+  };
+}
+
 /**
  * Open the call's capture chain. Throws whatever `getUserMedia` throws (a denied permission, an absent
  * device) — the caller renders that as the call's error terminal; everything it allocated before a later
  * failure is released on the way out.
  */
 export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture> {
-  // §4.1's constraints, now ROUTE-DERIVED and shared with dictation (D73 S5 — `micConstraints`).
-  const { stream, fellBack } = await openMicStream(opts);
+  // §4.1's constraints, now ROUTE-DERIVED and shared with dictation (D73 S5 — `micConstraints`), and
+  // since D75 ③ checked against the track that actually opened before anything is built on it.
+  const { stream, fellBack, ecStuck } = await openEcChecked(opts);
   const track = stream.getAudioTracks()[0];
 
   let ctx: AudioContext | null = null;
@@ -545,6 +632,7 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
         deviceId: settings.deviceId ?? "",
       },
       fellBack,
+      ecStuck,
       setMuted: (m: boolean) => {
         muted = m;
         applyEnabled();

@@ -5,6 +5,7 @@ import {
   micConstraints,
   openMicStream,
   startPcmCapture,
+  wantsAec,
 } from "../../src/lib/pcmCapture";
 
 // lib/pcmCapture — the call's EAR, opened. The worklet's arithmetic is pinned by `pcmWorklet.test.ts`
@@ -74,6 +75,10 @@ class FakeContext {
 class FakeTrack {
   stopped = 0;
   enabled = true;
+  /** What `getSettings().echoCancellation` READS BACK — the D75 ③ detector's whole input, so a case
+   *  that is about the flip not taking sets it. `"all"` is the platform-AEC grant, i.e. the default
+   *  every AEC-asking case here expects. */
+  ec: string | boolean | undefined = "all";
   listeners: Record<string, (() => void)[]> = {};
   /** Fire one of the track's own events the way the platform does (D73 S6 ② uses `mute`/`unmute`). */
   fire(type: string) {
@@ -83,7 +88,7 @@ class FakeTrack {
     this.stopped += 1;
   }
   getSettings() {
-    return { echoCancellation: "all" };
+    return { echoCancellation: this.ec };
   }
   addEventListener(type: string, cb: () => void) {
     (this.listeners[type] ||= []).push(cb);
@@ -357,6 +362,21 @@ describe("micConstraints — the route IS the constraint (R74 §1.3)", () => {
     expect(micConstraints({ deviceId: "dev-7" })).toMatchObject({ deviceId: { ideal: "dev-7" } });
     expect(micConstraints({ deviceId: "" })).not.toHaveProperty("deviceId");
   });
+
+  it("SPEAKER (HI-FI) clears the ask too — the third route is EC-off on the loudspeaker (D75 ①)", () => {
+    // The bargain, and the reason there is a third answer at all: the escape from communication mode
+    // is `echoCancellation: false` and nothing else (R74 §1.3), so the loudspeaker can have the media
+    // path too — at the cost of an ear that closes under the reply, which the readback already arms.
+    expect(wantsAec("speaker")).toBe(true);
+    expect(wantsAec("speaker-hifi")).toBe(false);
+    expect(wantsAec("headphones")).toBe(false);
+    expect(wantsAec(undefined)).toBe(true); // absent ⇒ the plain speaker case, as it always was
+    expect(micConstraints({ route: "speaker-hifi" })).toMatchObject({
+      echoCancellation: false,
+      noiseSuppression: true,
+      channelCount: 1,
+    });
+  });
 });
 
 /** What `getUserMedia` rejects with. A browser throws a `DOMException`, which inherits from `Error`
@@ -390,6 +410,7 @@ describe("openMicStream — the picked device's ONE retry (R74 §2.2(b))", () =>
   });
 
   it("startPcmCapture opens with the route and carries the fallback up", async () => {
+    track.ec = false; // the EC-off ask took — no D75 ③ re-open in this case's way
     gum.mockRejectedValueOnce(gumError("NotReadableError"));
     const cap = await startPcmCapture({
       frameMs: 20,
@@ -450,6 +471,16 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
     expect(gum).toHaveBeenCalledTimes(2);
   });
 
+  it("SPEAKER (HI-FI) is steered too — the trap belongs to EC-OFF capture, not to the name (D75 ①)", async () => {
+    // The SCO trap is a property of the empty effects mask: no comm-mode flip ⇒ the output stays on
+    // STRATEGY_MEDIA ⇒ a default selection that starts SCO suspends it into silence, with no mode
+    // exit left to restore anything. The hi-fi route rides exactly that physics, so it rides the
+    // ladder; the plain speaker route is in comm mode by construction and is still left alone.
+    enumerated = [android({ bt: true })];
+    await openMicStream({ route: "speaker-hifi" });
+    expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "ear" }, echoCancellation: false });
+  });
+
   it("a list that is NOT Chrome's synthetic five steers nothing (a desktop, Fennec)", async () => {
     // Capability-shaped, not UA-sniffed: the evidence is the list itself, and any label outside the
     // fixed set means this is a real device enumeration, where none of R77's mechanism applies.
@@ -503,6 +534,84 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
     expect(gum).toHaveBeenCalledTimes(2); // ear, then the guaranteed speakerphone — nothing else
     expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "ear" } });
     expect(askedAt(1)).toMatchObject({ deviceId: { ideal: "spk" } });
+  });
+});
+
+// ── D75 ③ · THE EC-RELEASE RACE (evidence docs/research/R80 §5) ──────────────────────────────────
+
+describe("startPcmCapture — the readback-mismatch detector + its ONE retry", () => {
+  /** An EC-off capture, opened. The cases below differ only in what the track READS BACK. */
+  const openHifi = () =>
+    startPcmCapture({ frameMs: 20, route: "speaker-hifi", onFrame: () => {}, onEnded: () => {} });
+
+  it("re-opens ONCE when an EC-off ask comes back EC-ON, and says so when it stays stuck", async () => {
+    // The race: Android evaluates the communication mode only for the FIRST input stream and restores
+    // it only when the LAST is released — in the audio service, after our renderer-side `stop()`. Lose
+    // that race and the new capture inherits both the mode AND (R78 §2.3) the old source's pinned
+    // echo-cancellation mode, so the "EC-off" route comes up EC-on and the crackle survives the flip.
+    // The readback is the free detector; the release + one beat is the only barrier the platform offers.
+    track.ec = "all"; // …and it stays stuck across both opens
+    const cap = await openHifi();
+    expect(gum).toHaveBeenCalledTimes(2);
+    expect(askedAt(0)).toMatchObject({ echoCancellation: false });
+    expect(askedAt(1)).toMatchObject({ echoCancellation: false });
+    expect(cap.ecStuck).toBe(true);
+  });
+
+  it("…and the retry is ONE: a second result is ACCEPTED either way", async () => {
+    // A flip that takes on the re-open is the ordinary case this exists for, and it reports nothing —
+    // there is no news in a route that worked. A second wait would be a delay dressed as a fix.
+    const clean = new FakeTrack();
+    clean.ec = false;
+    track.ec = "all";
+    gum.mockImplementationOnce(async () => ({
+      getAudioTracks: () => [track],
+      getTracks: () => [track],
+    }));
+    gum.mockImplementation(async () => ({
+      getAudioTracks: () => [clean],
+      getTracks: () => [clean],
+    }));
+    const cap = await openHifi();
+    expect(gum).toHaveBeenCalledTimes(2);
+    expect(track.stopped).toBe(1); // the stuck stream is RELEASED — that release IS the barrier
+    expect(cap.ecStuck).toBe(false);
+  });
+
+  it("a clean EC-off open opens ONCE — nothing waits unless the flip is seen to have failed", async () => {
+    // Detection-driven, never an unconditional delay: the single `getUserMedia` is the whole proof,
+    // because the beat only exists on the path a mismatch takes.
+    track.ec = false;
+    const cap = await openHifi();
+    expect(gum).toHaveBeenCalledTimes(1);
+    expect(cap.ecStuck).toBe(false);
+  });
+
+  it("the OPPOSITE mismatch is a legitimate degrade and must NOT trip it", async () => {
+    // A route that asked for AEC and got none is a phone with no platform canceller — which is what a
+    // `false` readback under an AEC ask MEANS (R78 §1.3), and the capture-ready resolution already
+    // answers it by arming the protective ear-hold. Re-opening would cost a beat and change nothing.
+    track.ec = false;
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: "speaker",
+      onFrame: () => {},
+      onEnded: () => {},
+    });
+    expect(gum).toHaveBeenCalledTimes(1);
+    expect(cap.ecStuck).toBe(false);
+  });
+
+  it("a retry that cannot open propagates exactly as the first attempt's failure does", async () => {
+    // The retry lives inside the existing error shape: nothing new is caught here, so a denied or
+    // unavailable second open reaches the caller as the call's error terminal, like any other.
+    track.ec = "all";
+    gum.mockImplementationOnce(async () => ({
+      getAudioTracks: () => [track],
+      getTracks: () => [track],
+    }));
+    gum.mockRejectedValue(gumError("NotReadableError"));
+    await expect(openHifi()).rejects.toThrow();
   });
 });
 

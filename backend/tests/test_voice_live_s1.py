@@ -1261,8 +1261,9 @@ def test_live_config_defaults() -> None:
         {"relay_queue_ms": 10},
         {"start_timeout_s": 0},
         {"echo_workaround": "sometimes"},
-        # D73 S5 — the route is a CLOSED pair, not free text: the client branches on it, and a third
-        # spelling would silently resolve to the speaker branch while Conf showed something else.
+        # D73 S5 — the route is a CLOSED SET, not free text: the client branches on it, and an
+        # unlisted spelling would silently resolve to the speaker branch while Conf showed something
+        # else. D75 ① widened the set to three; it did not open it.
         {"route": "earpiece"},
         {"max_session_s": 5},
         # S2.5 — the dictation knobs are bounded for the same reason their neighbours are: a value
@@ -1288,6 +1289,18 @@ def test_live_config_defaults() -> None:
 def test_live_config_bounds_reject_wedging_values(bad: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         LiveCfg(**bad)
+
+
+@pytest.mark.parametrize("route", ["speaker", "speaker-hifi", "headphones"])
+def test_the_route_admits_all_three_answers_d75(route: str) -> None:
+    """D75 ① — `speaker-hifi` joins the closed set, ADDITIVELY: no migration, no moved default.
+
+    The widening is the whole backend half of the ruling, so it is pinned as a set rather than as one
+    new value: every stored answer a deployed config can already hold stays legal, and the client's
+    third branch (EC off on the loudspeaker, the ear-hold armed by the track's own readback) is
+    unreachable if this literal ever narrows again.
+    """
+    assert LiveCfg.model_validate({"route": route}).route == route
 
 
 def test_voice_cfg_mounts_live() -> None:
