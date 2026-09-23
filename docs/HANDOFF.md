@@ -12,7 +12,55 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-22, THIRTY-SECOND session — **THE D75 WAVE IS CLOSED: the fix wave verified/completed, a FRESH three-lane blind round run over the finished wave (Maya·Luna ∥ Opus arch ∥ Opus design), its consolidated fix wave 2 built + red-proven, both Opus confirm rounds CONFIRMED (arch: SHIP), everything COMMITTED in five scoped commits. ⚠ 5 COMMITS UNPUSHED over origin `80bd388`; PUSH on the owner's word.**)
+## Current state (2026-09-23, THIRTY-THIRD session — **THE D75 ⑥ COUPLING ROUND + THE BT MEDIA-PATH PROBE, all in-conversation the same morning: the owner proposed coupling the clean bargain to the interruption toggle, WALKED IT BACK on the walkie-talkie cost, ruled Speaker (clean) the SHIPPED DEFAULT; the device probe ran live and CONFIRMED the media-path claim; the flip is BUILT, gate 6/6, dev restarted. ⚠ 8 COMMITS UNPUSHED over origin `80bd388`; PUSH on the owner's word. ▶▶ NEXT SESSION = the AFTERNOON SITTING — the card is in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7's D75 addendum.**)
+
+**① The ruling (DECISIONS D75 ⑥).** The derivation ("clean whenever interruptions are off") was
+proposed by the owner and walked back on its one real cost: an EC-on speaker ear with `barge_in`
+off queues talk-over and drains it as **ONE message** (§4.3 — the owner confirmed that shape is
+exactly what they expect), and the derivation would close that ear. Ruled: all three routes stay;
+**`speaker-hifi` (Speaker (clean)) = the shipped default** — the friction answer is the default,
+not a coupling (do not re-propose). **BT auto-detection REFUSED for the record** — the owner's own
+two devices defeat it both ways (car: headset rows + loudspeaker acoustics ⇒ still needs EC;
+headphones: no HFP row per R77 ⇒ detection never sees them).
+
+**② The probe (owner's phone, BT headphones arm — the plan's D75 addendum holds the card + results).**
+Q1 Speaker (clean) → the HEADPHONES, clean, zero page-side routing (the media path follows the
+system's own routing — the claim that makes the clean default right). Q2 Speaker (EC on) → PINNED
+to the phone loudspeaker, crackling — comm mode never steers SCO on the Honor 20; this decodes
+D74's "doesn't switch to Bluetooth". Q3 the crackle tracks EC ALONE (both EC-off routes
+indistinguishable). **R77 premise SHIFTED:** the Mic picker showed *a headset mic* row ("I think")
+where R77 said none exists — confirm the exact label at the sitting; don't pick it (it would steer
+capture into the phone-call path; the ladder guards it).
+
+**③ The build (`f1ca014`, gate 6/6 ×1 full):** `LiveCfg.route` default → `"speaker-hifi"` ·
+ConfTab's `LIVE_FALLBACK` seed + Seg fallback · the barge_in row now says it is INERT on speaker
+(clean) (the one new trap the clean default creates) · `useVoiceStatus`'s stale two-route comment
+fixed · `config.example.yaml` gains the route row · the BE default test repinned · docs (D75 ⑥ +
+plan addendum + ISS-16 datapoint). Additive — a default only reaches configs that never wrote the
+key; **the owner's config wrote `speaker` in the D74 round**, so `/voice/status` still serves
+`"speaker"` (CORRECT, not a bug) until their Conf hand flips it. `8148272` = the afternoon card.
+Dev RESTARTED, health 200; both units RUNNING for the sitting; the :8443 door is open.
+
+**▶▶ THE AFTERNOON SITTING (the card, plan §7 D75 addendum):** *self-serve* — Conf → Audio route →
+speaker (clean) if they want it standing · the headset-mic row's exact label · the CAR arm (Q1–Q3 +
+mic list; expected: headset rows present, clean route echo-free via A2DP because the ear is held) ·
+the remaining D75 pokes (captions on a real call · backdrop arm→preview→send→hold→revert). *The
+ISS-16 probe ladder* (route = **Speaker, EC-on**, same longish reply, ONE variable per arm):
+**P1** Conf → Voice · TTS → chunked synthesis → off — vanishes ⇒ seam-shaped (flip back after) ·
+**P2** `latencyHint: "playback"` — a ONE-LINE dev edit at `pcmCapture.ts:588`
+(`new AudioContext({ latencyHint: "playback" })`), applied live between arms and REVERTED after (a
+diagnostic, deliberately not a knob) — vanishes ⇒ R80 §3.2 answered, and a playback-hint capture
+during calls becomes the real fix candidate (would make EC-on speaker + interruptions usable
+again; its own small slice + review round if taken) · **P3** (optional, phone on USB)
+`chrome://inspect` → media-internals during a crackling reply. Both P1+P2 no-change is also an
+answer: the glitch lives below the page. **Then:** the standing D73/D74 probes + the S4 §4.1
+close-out (unchanged inheritance: the indeterminate-pill question · one-shot-vs-sticky · the R75
+§12.4 freeze probe) · **PUSH the 8 commits on the owner's word.**
+
+**The commits (⚠ ALL UNPUSHED, origin `80bd388`):** the five D75-wave commits below (`7ebbbb5` →
+`bec11db`) + `f1ca014` the default flip + `8148272` the afternoon card + this handoff commit.
+
+## Prior state (2026-09-22, THIRTY-SECOND session — **THE D75 WAVE IS CLOSED: the fix wave verified/completed, a FRESH three-lane blind round run over the finished wave (Maya·Luna ∥ Opus arch ∥ Opus design), its consolidated fix wave 2 built + red-proven, both Opus confirm rounds CONFIRMED (arch: SHIP), everything COMMITTED in five scoped commits. ⚠ 5 COMMITS UNPUSHED over origin `80bd388`; PUSH on the owner's word.**)
 
 **① The inherited fix wave, verified complete.** Every A/B/C item landed — including C3, which the THIRTY-FIRST probe called missing: it had landed under the rename **`routedAgent`** (the probe grepped the old `resolveBackdropAgent` name). Completed the three real gaps: the B1 test arm expected `more-below` where the component's own follow rule pins growth to the bottom (the dead lane's last edit — fixed to `more-above`); a REAL settle arm now drives `runComposer`'s own `finally` (the old arm simulated the release by hand, so the named red-proof couldn't hold); the temp spec was repointed off the dead session's tmpfs and its **Escape assertion restored** (then deleted pre-commit, as pinned). The D item (the triple-blind record + open owner question into D75/plan, the stale `radiogroup` wording corrected to the landed `menu`/`menuitemradio`) written. Screenshots re-captured ×2 and sent to the owner.
 
