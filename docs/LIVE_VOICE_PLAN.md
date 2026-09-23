@@ -1808,6 +1808,31 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > `chrome://media-internals` during a crackling reply — prints the opened output params +
   > underruns, and answers whether the Honor 20 grants LOW_LATENCY in comm mode at all. Both P1
   > and P2 "no change" is ALSO an answer: the glitch then lives below the page (P3's territory).
+  >
+  > **THE AFTERNOON SITTING — RECORD (2026-09-23, in conversation).** The owner arrived with the
+  > crackle GONE on Speaker (EC on), BT disconnected, chunked synthesis on or off — and then caught
+  > it RETURNING the moment `speak_actions` went ON: **the datapoint that re-orders the ISS-16
+  > ladder** (recorded there in full — the toggle is most plausibly a LENGTH / read-along
+  > catch-up proxy, so the new arms are A chunking-off · B read-along-off · C a short plain reply,
+  > all with `speak_actions` ON; the capture-side `latencyHint` diagnostic drops to last). NOT run
+  > this sitting: the car arm · the headset-mic label with the pair CONNECTED (the four-row Mic list
+  > they saw with NOTHING connected — `System default · Default · Speakerphone · Headset earpiece`
+  > — is exactly R77's predicted list: **"Headset earpiece" is Chrome's fixed name for the phone's
+  > own EARPIECE**, the receiver held to the ear on a phone call, not a Bluetooth row; "System
+  > default" is our empty-constraint row and "Default" is Chrome's own default entry, two names for
+  > the same routing decision — a candidate for hiding Chrome's row, not done) · P3. **Rulings +
+  > small fixes landed this sitting (one commit):** the Speech pill goes ROUND (wears
+  > `kit-call-iconpill`: a 44px disc, the number unchanged at 13px) · the Mic select drops its drawn
+  > arrow ("just the name" — the caption + the platform picker are the affordance) · the heard line
+  > keeps its `…` through `waitingFinal`, so the previous final no longer surfaces during the STT
+  > round-trip (`CallView.waitingFinal` exposed; the pair is the machine's own words-in-flight
+  > predicate) · the chat log's ResizeObserver now also watches the log itself (the "slightly
+  > scrolled up on return to the agent tab" report: content growing AFTER the one-frame tab-entry
+  > pin was never re-pinned, because a scroller's own box does not change when its content does —
+  > hypothesis-driven; the owner's next return to the tab verifies). Workflow ruling the same
+  > sitting: the Opus workforce is **Opus 5.5** from now on (CLAUDE.md; the alias, not a pin). The
+  > owner's standing route is back on Speaker (EC on) by their own Conf hand; the clean default
+  > stays the shipped default.
 
 ## 8. Open questions for the owner (the court)
 
