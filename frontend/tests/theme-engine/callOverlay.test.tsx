@@ -10,6 +10,7 @@ const h = vi.hoisted(() => {
     heard: string;
     note: string | null;
     userSpeechActive: boolean;
+    waitingFinal: boolean;
     muted: boolean;
     interrupt: ReturnType<typeof vi.fn>;
     toggleMute: ReturnType<typeof vi.fn>;
@@ -26,6 +27,7 @@ const h = vi.hoisted(() => {
     heard: "",
     note: null,
     userSpeechActive: false,
+    waitingFinal: false,
     muted: false,
     interrupt: vi.fn(),
     toggleMute: vi.fn(),
@@ -114,6 +116,7 @@ beforeEach(() => {
     heard: "",
     note: null,
     userSpeechActive: false,
+    waitingFinal: false,
     muted: false,
     route: "speaker",
     inputDevice: "",
@@ -279,6 +282,23 @@ describe("CallOverlay — the two ring modes (§6)", () => {
       render(<Host open={true} />);
       expect(overlay().className).toContain("speech");
     }
+  });
+
+  it("the heard line holds its `…` through waitingFinal — the previous final never surfaces during the STT round-trip (owner, 2026-09-23)", () => {
+    const heard = () => document.querySelector(".kit-call-heard")!.textContent;
+    h.call = { ...h.call, heard: "wake the vault" };
+    const view = render(<Host open={true} />);
+    expect(heard()).toBe("wake the vault");
+    h.call = { ...h.call, userSpeechActive: true };
+    view.rerender(<Host open={true} />);
+    expect(heard()).toBe("…");
+    // The segment closed; the transcript is still in flight. The OLD final must not pop back in here.
+    h.call = { ...h.call, userSpeechActive: false, waitingFinal: true };
+    view.rerender(<Host open={true} />);
+    expect(heard()).toBe("…");
+    h.call = { ...h.call, waitingFinal: false, heard: "lock the vault" };
+    view.rerender(<Host open={true} />);
+    expect(heard()).toBe("lock the vault");
   });
 });
 

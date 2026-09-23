@@ -9344,7 +9344,9 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
 }
 /* THE SPEECH-THRESHOLD POPOVER (2026-09-22) — the Android-volume gesture: ONE vertical slider,
  * up = a DEAFER ear (a higher confidence floor hears less — F5: the track's own end words carry the
- * polarity). Narrower than its pill, so it hangs CENTRED and cannot reach a viewport edge. */
+ * polarity). Hangs CENTRED under its pill: at 60px (the 44px slider column + the card's padding) it
+ * overhangs the 44px disc by 8px a side, inside the deck's 18px pad, so it cannot reach a viewport
+ * edge. */
 .kit .kit-call-vadpop {
   left: 50%;
   transform: translateX(-50%);
@@ -9454,26 +9456,21 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 /* THE ICON PILL (D75 ④) — the Sound control shows the current route's glyph and nothing else, so it
- * drops the text pill's side padding for a SQUARE target at the same 44px height the row is built on.
- * The glyph centres by grid rather than by `line-height`, which is a rule about text. */
+ * drops the text pill's side padding for a SQUARE target at the same 44px height the row is built on:
+ * with the 999px radius that is a CIRCLE. The Speech pill wears it too (owner, 2026-09-23: "completely
+ * round") — its four-character number is ~27px at 13px, well inside the 44px disc, so no smaller type.
+ * The content centres by grid rather than by `line-height`, which is a rule about text. */
 .kit .kit-call-iconpill {
   display: grid;
   place-items: center;
   width: 44px;
   padding: 0;
 }
-/* `all: unset` takes the native arrow with it, so the select carries its own affordance. */
+/* `all: unset` takes the native arrow with it, and NO arrow is drawn back (owner, 2026-09-23: "drop the
+ * drop-down arrow, keep the name" — the pill read too wide): the Sound pill already dropped its chevron
+ * on the same "just the name" ruling, and the MIC caption plus the platform picker a tap opens are the
+ * affordance. The select is still a native combobox to assistive tech. */
 .kit .kit-call-device {
-  padding-inline-end: 26px;
-  background-image: linear-gradient(45deg, transparent 50%, currentcolor 50%),
-    linear-gradient(135deg, currentcolor 50%, transparent 50%);
-  background-position:
-    right 14px center,
-    right 9px center;
-  background-size:
-    5px 5px,
-    5px 5px;
-  background-repeat: no-repeat;
   /* THE ONE-LINE CAP (D75 ④, owner ask): the deck must never wrap to a second line, and the only
    * control here whose width is not ours is this one — a device label like "Default - Bluetooth
    * headset (Freebuds Pro)" would push the row over on its own.
@@ -9481,11 +9478,11 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
    * THE ARITHMETIC, recomputed for the 44px targets (design round M2 — and the first cut of it was
    * wrong in a way worth recording: a cell is as wide as the WIDER of its control and its caption, and
    * "OUTPUT" at ~43px was wider than the 40px pill it was measured as). At a 320px viewport:
-   *   36px deck padding + 44px Sound pill + 128px (40vw) device cap + ~54px Speech pill + 2 × 10px gap
-   *   ≈ 282px inside 320 — about 38px of slack.
-   * The captions are the other half of each cell and none of them wins it now: SOUND ≈ 36px and MIC
-   * ≈ 24px sit under wider controls, SPEECH ≈ 44px under the ~54px pill. That is what keeps `flex-wrap`
-   * below from ever firing; the wrap stays as the degenerate-viewport safety net, not as the layout. */
+   *   36px deck padding + 44px Sound pill + 128px (40vw) device cap + 44px Speech pill + 2 × 10px gap
+   *   ≈ 272px inside 320 — about 48px of slack (the Speech pill went round on 2026-09-23, ~54 → 44).
+   * The captions are the other half of each cell and none of them wins it: SOUND ≈ 36px and MIC ≈ 24px
+   * sit under wider controls, SPEECH ≈ 44px ties its pill. That is what keeps `flex-wrap` below from
+   * ever firing; the wrap stays as the degenerate-viewport safety net, not as the layout. */
   max-width: min(40vw, 200px);
   white-space: nowrap;
   overflow: hidden;

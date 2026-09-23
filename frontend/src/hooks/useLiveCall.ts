@@ -1229,6 +1229,9 @@ export interface CallView {
   heard: string;
   note: string | null;
   userSpeechActive: boolean;
+  /** A speech segment closed and its transcript is still in flight — the overlay keeps its `…` up
+   *  (owner, 2026-09-23: the LAST final showing for the STT round-trip read as a stale pop). */
+  waitingFinal: boolean;
   /** The ear is closed (§6) — a STATIC look on the ring/accent, never a pulse. */
   muted: boolean;
   /** Trigger B — a tap outside the control cluster during `speaking` (§4.3). Inert elsewhere. */
@@ -2072,6 +2075,7 @@ export function useLiveCall(): CallView {
     heard: state.heard,
     note: state.note,
     userSpeechActive: state.userSpeechActive,
+    waitingFinal: state.waitingFinal,
     muted: state.muted,
     interrupt,
     toggleMute,

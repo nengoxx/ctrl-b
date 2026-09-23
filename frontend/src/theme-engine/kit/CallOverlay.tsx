@@ -442,7 +442,7 @@ function VadControl({ call }: { call: CallView }) {
       <button
         ref={pop.pillRef}
         type="button"
-        className="kit-call-routebtn"
+        className="kit-call-routebtn kit-call-iconpill"
         // Disabled with its two deck siblings (design M2): a commit is a leg redial, and while the leg
         // is moving (connecting, a reconnect) the pill must say so like the pair beside it — not open a
         // popover onto a dead slider.
@@ -774,12 +774,15 @@ export function CallOverlay({ close }: { close: () => boolean }) {
           {phaseLabel(call.phase, call.userSpeechActive, call.muted)}
         </p>
         {/* What the ear heard YOU say (§6) — so a mishearing is visible instantly. The `…` is the
-            live-speech state: the ear has an open segment and no transcript for it yet. In NO-RING mode
-            this line carries the state indicator too (the dot is `aria-hidden`, so the live region still
-            announces only the words). */}
+            live-speech state: the ear has an open segment and no transcript for it yet — and it HOLDS
+            through `waitingFinal`, the STT round-trip after the segment closes (owner, 2026-09-23:
+            the previous final surfacing for those milliseconds read as a stale line popping in before
+            the real one). The pair is the machine's own "words in flight" predicate (§4.2's iron rule).
+            In NO-RING mode this line carries the state indicator too (the dot is `aria-hidden`, so the
+            live region still announces only the words). */}
         <p className="kit-call-heard" aria-live="polite">
           {!ringMode && <span className="kit-call-dot" aria-hidden />}
-          {call.userSpeechActive ? "…" : call.heard}
+          {call.userSpeechActive || call.waitingFinal ? "…" : call.heard}
         </p>
         {call.note !== null && call.note !== "" && <p className="kit-call-note">{call.note}</p>}
         {/* Its own line, not a `call.note`: the machine's note slot carries transient transport truths
