@@ -1790,6 +1790,24 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > inert-on-clean clause; the owner's own config wrote `speaker` in the D74 round, so their standing
   > default moves only by their Conf hand. **Car arm still owed** (Q1–Q3 + the mic list from the
   > car — expected: headset rows present, clean route echo-free via A2DP because the ear is held).
+  >
+  > **THE AFTERNOON SITTING CARD (2026-09-23, owner-requested).** *Self-serve:* ① Conf → Audio
+  > route → **speaker (clean)** if they want the clean default standing (their config still says
+  > `speaker`) · ② the headset-mic row's EXACT label (Mic picker, BT connected — the R77 premise
+  > check; don't pick it) · ③ the CAR arm above · ④ the remaining D75 pokes if not yet done
+  > (captions on a real call · backdrop: arm → instant preview → send → holds through the reply →
+  > reverts at settle). *The ISS-16 probe ladder* (R80 §10-④; route = **Speaker, the EC-on one**,
+  > same longish reply per arm, ONE variable at a time): **P1** Conf → Voice · TTS → chunked
+  > synthesis → **off** — crackle vanishes ⇒ seam-shaped (flip back to `sentence` after; first
+  > audio will be slower whole-blob on that arm, expected) · **P2** the capture context opens with
+  > `latencyHint: "playback"` — a ONE-LINE dev edit at `pcmCapture.ts:588` applied live between
+  > arms (a diagnostic, deliberately not a knob; reverted after) — crackle vanishes ⇒ R80 §3.2
+  > answered: the LOW_LATENCY capture stream is the culprit, and a playback-hint capture during
+  > calls becomes the real fix candidate (would make EC-on speaker + interruptions usable again) ·
+  > **P3** (optional; needs the phone on USB at the computer) `chrome://inspect` from emma →
+  > `chrome://media-internals` during a crackling reply — prints the opened output params +
+  > underruns, and answers whether the Honor 20 grants LOW_LATENCY in comm mode at all. Both P1
+  > and P2 "no change" is ALSO an answer: the glitch then lives below the page (P3's territory).
 
 ## 8. Open questions for the owner (the court)
 
