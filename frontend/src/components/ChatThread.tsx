@@ -825,11 +825,17 @@ export function ChatThread({ active, chat, emptyState }: Props) {
       stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
     };
     el.addEventListener("scroll", onScroll, { passive: true });
-    // Re-pin when the pane resizes (keyboard/toolbar via 100dvh) or the composer grows (typing).
+    // Re-pin when the pane resizes (keyboard/toolbar via 100dvh) or the composer grows (typing) — and
+    // when the LOG itself grows after a pin (owner report 2026-09-23: "back on the agent tab it sits
+    // slightly scrolled up"). The tab-entry jump below measures `scrollHeight` one frame after the
+    // switch, but bubble images, lazy art and late layout keep adding height after that frame, and a
+    // scroller's own box does not change when its content does — only the log's box does.
     const ro = new ResizeObserver(pin);
     ro.observe(el);
     const comp = document.getElementById("composer");
     if (comp) ro.observe(comp);
+    const log = document.getElementById("chatlog");
+    if (log) ro.observe(log);
     return () => {
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
