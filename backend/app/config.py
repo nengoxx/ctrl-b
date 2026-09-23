@@ -755,13 +755,17 @@ class LiveCfg(VoiceServiceCfg):
     #: acoustic echo path at all, so the client resolves the ear-hold AND the barge-in arming from this
     #: single field (R74 §9.2). Noise suppression stays on in both — it runs in software.
     #: `speaker-hifi` (D75 ①, evidence R80 §10-①) is the THIRD answer and a purely ADDITIVE one — no
-    #: config migration, since every stored value stays legal and the default is unmoved: the
-    #: loudspeaker with AEC off, i.e. `headphones`' escape from comm mode on the route that does have
-    #: an acoustic echo path. The client needs no new rule for it — an AEC-off track reads back
-    #: something other than `"all"`, which is what already arms the protective ear-hold — so the
-    #: bargain is clean media-path audio (the owner's phone crackles with EC engaged, ISS-16) paid for
-    #: with an ear that closes while the reply speaks and the tap as the only interrupt.
-    route: Literal["speaker", "speaker-hifi", "headphones"] = "speaker"
+    #: config migration, since every stored value stays legal: the loudspeaker with AEC off, i.e.
+    #: `headphones`' escape from comm mode on the route that does have an acoustic echo path. The
+    #: client needs no new rule for it — an AEC-off track reads back something other than `"all"`,
+    #: which is what already arms the protective ear-hold — so the bargain is clean media-path audio
+    #: (the owner's phone crackles with EC engaged, ISS-16) paid for with an ear that closes while the
+    #: reply speaks and the tap as the only interrupt. It is the DEFAULT since D75 ⑥ (the 2026-09-23
+    #: probe: EC off rides the media path, which follows the system's own routing — BT when connected,
+    #: loudspeaker otherwise — while EC on stays pinned to the loudspeaker): the clean bargain is the
+    #: right resting posture for a `barge_in`-off install, and a default only reaches configs that
+    #: never wrote the key.
+    route: Literal["speaker", "speaker-hifi", "headphones"] = "speaker-hifi"
     #: The capture device, a browser-local `MediaDeviceInfo.deviceId`; "" = the system default. On
     #: Android Chrome the audioinput list IS the route picker — selecting one calls
     #: `AudioManager.setCommunicationDevice()`, which moves BOTH directions (R74 §2.2) — and it is the

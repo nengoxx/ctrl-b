@@ -859,7 +859,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   ring: true,
   captions: true,
   echo_workaround: "auto",
-  route: "speaker",
+  route: "speaker-hifi",
   input_device: "",
   background: true,
   background_keepalive: true,
@@ -2869,7 +2869,7 @@ export function ConfTab({ active }: Props) {
           </SettingRow>
           <SettingRow
             label="Hands-free interruption"
-            desc="talk over the reply to cut it off; off → tap the call screen to interrupt"
+            desc="talk over the reply to cut it off; off → tap the call screen to interrupt · needs an open-ear route (speaker or headphones) — on speaker (clean) the mic pauses during replies, so this switch does nothing"
           >
             <Switch
               on={!!vlive?.barge_in}
@@ -2935,7 +2935,7 @@ export function ConfTab({ active }: Props) {
           >
             <Seg<string>
               label="Audio route"
-              current={vlive?.route ?? "speaker"}
+              current={vlive?.route ?? "speaker-hifi"}
               options={[
                 { val: "speaker", label: "speaker" },
                 // The LABEL is the call deck's ("clean", not "hi-fi" — it claims no fidelity, only the

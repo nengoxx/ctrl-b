@@ -5517,3 +5517,25 @@ preview truthful through the armed message's own reply) or become a STICKY switc
 semantics are the owner's to rule; the backdrop now previews correctly either way. New evidence for
 the sticky option (design M4): the settle-edge revert lands roughly when the reply's VOICE starts,
 so with auto-TTS on, a one-shot preview reverts while the armed character is still speaking.
+
+**ADDENDUM ⑥ — the coupling round (owner, 2026-09-23, in conversation).** The owner proposed
+COUPLING the clean bargain to the interruption toggle — `barge_in` off ⇒ EC off + the ear-hold on
+every route, dissolving the third route into a derivation — and, on hearing its one real cost,
+WALKED IT BACK: an EC-on speaker call with `barge_in` off carries the walkie-talkie hold (words
+spoken over the reply join §4.3's ordered pending queue and drain as ONE message when the reply
+ends — the owner confirmed that single-message shape is exactly what they expect), and the
+derivation would close that ear. **Ruled instead: all three routes stay, and `speaker-hifi`
+(Speaker (clean)) becomes the SHIPPED DEFAULT for `voice.live.route`** — the friction answer is the
+default, not a coupling (do not re-propose the derivation). Additive: a default only reaches
+configs that never wrote the key; the owner's own config wrote `speaker` in the D74 round and moves
+by their Conf hand or the deck's per-call pill. **The BT media-path probe returned the same day — the claim HOLDS
+(clean route → headphones via the media path, zero page-side routing; EC on → pinned to the
+loudspeaker, crackling; the crackle tracked EC alone) — and the flip is BUILT** (the plan's D75
+addendum holds the card, results and the one shifted fact: a possible headset-mic row on the
+owner's pair, which R77 said didn't exist — confirm its label before anyone trusts R77's
+no-HFP-row premise again). **BT auto-detection REFUSED for the record:** a BT input row cannot say
+whether the sink has an acoustic path back to the mic — the owner's own two devices prove both
+failure modes (the car: headset rows + loudspeaker acoustics ⇒ still needs EC; their headphones:
+NO HFP row at all, R77 — detection would never even see them). The clean route needs no detection:
+EC off rides the MEDIA path, which follows the system's own routing (BT when connected,
+loudspeaker otherwise) — the probe verifies exactly that claim on the device.

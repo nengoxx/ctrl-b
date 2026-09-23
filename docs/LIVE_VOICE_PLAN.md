@@ -1455,8 +1455,8 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > review wave `40b6f32`; code round = blind Maya SHIP WITH FIXES 2 MED — F1 the probe latch ·
   > F2 half-accepted, the ghost option `disabled`, the auto-clear half OVERRULED with the plan
   > wording amended; FE 3,640 · BE 2,500 at close). ① `voice.live.route: "speaker" | "headphones"`
-  > (**widened to a third answer, `"speaker-hifi"`, by D75 ① below** — additive, default unmoved) (default
-  > `speaker`) — a real Conf row. `headphones` sets the capture constraints to
+  > (**widened to a third answer, `"speaker-hifi"`, by D75 ① below** — additive; the default moved
+  > to `speaker-hifi` by D75 ⑥ after the 2026-09-23 device probe) — a real Conf row. `headphones` sets the capture constraints to
   > `{echoCancellation: false, noiseSuppression: true, channelCount: 1}` (NS is software-side on
   > Android, it stays) so the phone never enters comm mode and TTS rides A2DP at media quality;
   > and it feeds ONE route-resolved capture policy (Maya F1 — the review's first HIGH): the
@@ -1751,6 +1751,45 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > synthetic-row→output truth table; an unconditional version false-dims agreeing picks). Its two
   > new LOWs landed same-wave: the lit-pill rule floors on `:not(:disabled)` (N1) and the
   > armed-pick note retires at the first heard utterance (N2). Full record: DECISIONS D75.
+
+  > **D75 ADDENDUM — the coupling round + the BT media-path probe (owner, 2026-09-23, in
+  > conversation; ruling = DECISIONS D75 ⑥).** The barge-derivation ("clean whenever interruptions
+  > are off") was proposed and WALKED BACK on the walkie-talkie cost (an open EC-on speaker ear with
+  > `barge_in` off queues talk-over as ONE drained message — a capability the owner keeps). Ruled:
+  > all three routes stay; **Speaker (clean) becomes the shipped default for `voice.live.route`**,
+  > built AFTER the probe below returns; BT auto-detection refused (the car/headphones pair defeats
+  > it both ways — DECISIONS D75 ⑥ has the argument).
+  >
+  > **THE BT MEDIA-PATH PROBE (runs now — dev :8443; car arm whenever the owner is next in it).**
+  > The claim under test: EC off rides Android's MEDIA path, which follows the system's own routing
+  > — so the clean route should reach a connected BT sink (A2DP) with no page-side routing at all,
+  > which is what makes the clean DEFAULT the right friction fix. Three questions, one sitting, BT
+  > headphones connected, `barge_in` off, each arm = the deck's Sound pill mid-call or a fresh call:
+  > **Q1** Speaker (clean): does the reply come out the HEADPHONES at media quality? (yes ⇒ the
+  > claim holds ⇒ build the default flip). **Q2** Speaker (EC on): where does the reply go —
+  > headset-at-phone-call-quality (SCO), loudspeaker, or earpiece? (names the D74 "doesn't switch
+  > to Bluetooth" datapoint). **Q3** does the crackle track EC-on regardless of sink? Plus the R77
+  > observation: with BT connected, which rows the Mic picker shows (the owner's pair is expected
+  > to show NO headset row). **The car arm repeats Q1–Q3 in the car** — expected to differ exactly
+  > where it matters: headset input rows present, loudspeaker acoustics, so clean-route audio via
+  > A2DP with the ear held should be echo-free WITHOUT EC. Report per arm: sink · quality (clean /
+  > crackle / phone-call-thin) · any latency oddity · whether the mic heard them normally after the
+  > reply. If a route flip ever reads stuck, the one-line note names it (`ecStuck`).
+  >
+  > **PROBE RESULTS (owner, same day, BT headphones arm — the claim HOLDS; the default flip BUILT):**
+  > **Q1** Speaker (clean) → the headphones, clean — the media path followed the system's routing
+  > with zero page-side work. **Q2** Speaker (EC on) → the PHONE LOUDSPEAKER, crackling — comm mode
+  > stays pinned to the loudspeaker on the Honor 20 rather than steering SCO, which decodes the D74
+  > "doesn't switch to Bluetooth" report. **Q3** the crackle appeared ONLY on the EC-on arm; both
+  > EC-off routes were indistinguishable (both → headphones, both clean). **The R77 observation
+  > SHIFTED:** the Mic picker showed default · speakerphone mic · *a headset mic* ("I think") — R77
+  > expected NO headset row from this pair; if that row is real, picking it would steer capture into
+  > the phone-call path (the steering ladder guards it; default remains the right pick). Confirm the
+  > exact label at the next sitting. **The flip (built same day):** `LiveCfg.route` default →
+  > `"speaker-hifi"` + the ConfTab seed/fallback + the example-config row + the barge_in row's
+  > inert-on-clean clause; the owner's own config wrote `speaker` in the D74 round, so their standing
+  > default moves only by their Conf hand. **Car arm still owed** (Q1–Q3 + the mic list from the
+  > car — expected: headset rows present, clean route echo-free via A2DP because the ear is held).
 
 ## 8. Open questions for the owner (the court)
 

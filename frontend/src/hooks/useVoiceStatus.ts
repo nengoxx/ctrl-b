@@ -82,9 +82,10 @@ export interface LiveCallWire {
   /** `auto | on | off` — the loopback-AEC fallback lever. S0 ruled `auto` = off where the live track
    *  reads `echoCancellation: "all"`; the protective ear-hold elsewhere is S3. */
   echo_workaround: string;
-  /** D73 S5 — `"speaker"` (default) or `"headphones"`, the owner's one answer to "where am I
-   *  listening". It decides the capture constraints (headphones ⇒ `echoCancellation: false`, which is
-   *  what keeps Chrome Android out of communication mode and TTS on the A2DP media path — R74 §1.3)
+  /** D73 S5 — `"speaker"`, `"speaker-hifi"` (the default since D75 ⑥) or `"headphones"`, the owner's
+   *  one answer to "where am I listening". It decides the capture constraints (both EC-off routes ⇒
+   *  `echoCancellation: false`, which is what keeps Chrome Android out of communication mode and TTS
+   *  on the media path, following the system's own routing — R74 §1.3, verified on-device 2026-09-23)
    *  AND, with them, the ear-hold and the barge-in arming: headphones have no acoustic echo path, so
    *  neither half has anything to protect against. Read by EVERY capture, dictation's included. */
   route: string;

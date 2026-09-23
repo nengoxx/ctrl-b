@@ -1232,9 +1232,10 @@ def test_live_config_defaults() -> None:
     # D74 — the gate ships ON at 200 ms (a real default, not 0: R76 measured speech-like interference
     # passing the server VAD outright), and the debug readout ships OFF like every diagnostic here.
     assert (cfg.min_final_ms, cfg.debug) == (200, False)
-    # D73 S5 — the capture pair ships as the ear this app has always opened: the platform AEC on the
-    # system default device. `headphones` and a picked route are both owner opt-ins.
-    assert (cfg.route, cfg.input_device) == ("speaker", "")
+    # D73 S5 / D75 ⑥ — the capture pair ships as the CLEAN bargain on the system default device:
+    # EC off ⇒ media-path audio following the system's own routing, ear held during replies (the
+    # 2026-09-23 device probe's verdict). `speaker` (platform AEC) and `headphones` are owner picks.
+    assert (cfg.route, cfg.input_device) == ("speaker-hifi", "")
     # D73 S6 — a hidden page KEEPS the call by default (R75: nothing in the platform ends it, and
     # 5/5 field projects keep it), with the freeze defeat on and the owner's 10-minute idle bound.
     assert (cfg.background, cfg.background_keepalive, cfg.background_idle_s) == (True, True, 600)

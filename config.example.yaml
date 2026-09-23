@@ -442,7 +442,11 @@ voice:
     debug: false           # CLIENT: show the live gate numbers on the call overlay (calibration aid)
     max_sessions: 1        # process-wide concurrent live sessions (a second connect gets `busy`)
     echo_workaround: auto  # auto | on | off — auto = capability-detected per track, never UA-sniffed
-    barge_in: false        # CLIENT: hands-free interruption (default off = tap-to-interrupt only); when on, the owner-verified floor was barge_threshold 0.06 on the SPEAKER route (NOT route-portable — R78)
+    barge_in: false        # CLIENT: hands-free interruption (default off = tap-to-interrupt only); when on, the owner-verified floor was barge_threshold 0.06 on the SPEAKER route (NOT route-portable — R78); needs an open-ear route — inert on speaker-hifi
+    route: speaker-hifi    # CLIENT: speaker (platform AEC → comm mode, open ear) | speaker-hifi (D75 ⑥
+                           # DEFAULT: EC off → clean media-path audio following the system's own routing,
+                           # mic pauses while the reply speaks) | headphones (EC off, open ear — only
+                           # honest with no acoustic echo path)
     ring: true             # CLIENT: overlay mode — true = focal-anchored face ring
     # Streaming DICTATION (S2.5) — the mic's hold/lock rides the SAME realtime ear as the call, and
     # each utterance final appends to the composer draft live. Independent of `enabled` in both
