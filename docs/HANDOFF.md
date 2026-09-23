@@ -12,7 +12,47 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-23, THIRTY-THIRD session — **THE D75 ⑥ COUPLING ROUND + THE BT MEDIA-PATH PROBE, all in-conversation the same morning: the owner proposed coupling the clean bargain to the interruption toggle, WALKED IT BACK on the walkie-talkie cost, ruled Speaker (clean) the SHIPPED DEFAULT; the device probe ran live and CONFIRMED the media-path claim; the flip is BUILT, gate 6/6, dev restarted. ⚠ 8 COMMITS UNPUSHED over origin `80bd388`; PUSH on the owner's word. ▶▶ NEXT SESSION = the AFTERNOON SITTING — the card is in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7's D75 addendum.**)
+## Current state (2026-09-23 afternoon, THIRTY-FOURTH session — **THE AFTERNOON SITTING, live in conversation: the crackle's `speak_actions` datapoint (ISS-16 ladder RE-ORDERED), four small owner-ruled fixes built + gated + committed, the Opus workforce moved to 5.5. ⚠ 19 COMMITS UNPUSHED over origin `e571ef9` (the earlier "8 over `80bd388`" was wrong — `80bd388` itself is unpushed; `git fetch` verified 09-23); PUSH on the owner's word. ▶▶ NEXT = the owner runs the re-ordered ISS-16 arms A/B/C (ISSUES.md) on the phone, then S4.**)
+
+**① The crackle (ISS-16, rewritten).** The owner arrived with it GONE on Speaker (EC on), BT off,
+chunking on or off — then caught it RETURNING the instant `speak_actions` went ON (they had seen it
+once before and withheld it). Code-truth: that toggle changes ONE thing (`toSpeech` keeps the `*…*`
+spans + read-along cuts eagerly instead of holding at an unclosed `*`), so on a roleplay reply ON =
+several times more speech in more, earlier chunks, long enough for playback to CATCH UP and park
+between chunks (`playNext` → `waiting` → `"loading"`: the pooled output stream Stop()/Start()s at
+each gap — R80 §10-④-1's seam class). Reading: `speak_actions` is a LENGTH / catch-up PROXY, not the
+asterisks. **The ladder is now A** chunking `off` · **B** read-along OFF · **C** a short plain reply
+— all with `speak_actions` ON, Speaker EC-on, BT off, one variable each; plus "is the crackle AT
+the sentence pauses or THROUGH the words?". The capture-side `latencyHint: "playback"` diagnostic
+drops to LAST (safe in itself — bigger uplink bursts, coarser barge granularity by tens of ms —
+but it targets the wrong side of the pipe on this evidence). The morning's BT correlation is
+UNPROVEN (the toggle was plausibly ON then). Seam-shaped fix candidates recorded in ISS-16 (deeper
+lookahead + pre-buffer · a silent clip holding the element's stream open · gapless WebAudio under
+the playback hint). Reproduction recipe on file.
+
+**② Built this sitting (FE only; gate: check-all green, FE 3,781/194):** `0f7e435` the Speech
+pill goes ROUND (`kit-call-iconpill`) + the Mic select loses its drawn arrow + the heard line
+holds `…` through `waitingFinal` (`CallView.waitingFinal` exposed; the old final no longer flashes
+during the STT round-trip; +1 test) · `3da4091` the chat log's ResizeObserver also watches
+`#chatlog` (the "slightly scrolled up on return to the agent tab" report — content growing after
+the one-frame tab-entry pin; hypothesis-driven, the owner verifies) · `b8330d7` ISS-16 + the plan's
+sitting record · `99f9f83` CLAUDE.md + the second-opinion skill: **Opus 5.5** (`claude-opus-5-5`,
+released 09-22) is the workforce — via the `opus` ALIAS, nothing pinned (the installed CLI 2.1.280
+already resolves it to 5.5; a session on an older build spawns Opus 5 until it restarts — this one
+did). Backend untouched; no dev restart needed (Vite HMR — reload the page).
+
+**③ Explained, not changed:** the four-row Mic list with nothing connected (`System default ·
+Default · Speakerphone · Headset earpiece`) is R77's predicted list — "Headset earpiece" is
+Chrome's fixed name for the phone's OWN earpiece, not a BT row; "System default" (ours, empty
+constraint) and "Default" (Chrome's) name the same routing decision — hiding Chrome's row is a
+candidate cleanup, not done. Custom voices per agent = already covered (the agent's voice id).
+
+**▶▶ NEXT:** the owner runs arms A/B/C (afternoon, phone) → the answer picks the fix slice (seam
+class ⇒ its own small slice + review round) → the car arm + the headset-mic label with the pair
+connected → the standing D73/D74 probes + the S4 §4.1 close-out → **PUSH the 19 commits on the
+owner's word**.
+
+## Prior state (2026-09-23, THIRTY-THIRD session — **THE D75 ⑥ COUPLING ROUND + THE BT MEDIA-PATH PROBE, all in-conversation the same morning: the owner proposed coupling the clean bargain to the interruption toggle, WALKED IT BACK on the walkie-talkie cost, ruled Speaker (clean) the SHIPPED DEFAULT; the device probe ran live and CONFIRMED the media-path claim; the flip is BUILT, gate 6/6, dev restarted. ⚠ 8 COMMITS UNPUSHED over origin `80bd388`; PUSH on the owner's word. ▶▶ NEXT SESSION = the AFTERNOON SITTING — the card is in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7's D75 addendum.**)
 
 **① The ruling (DECISIONS D75 ⑥).** The derivation ("clean whenever interruptions are off") was
 proposed by the owner and walked back on its one real cost: an EC-on speaker ear with `barge_in`
