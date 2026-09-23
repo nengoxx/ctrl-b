@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-23 afternoon, THIRTY-FOURTH session — **THE AFTERNOON SITTING, live in conversation: the crackle's `speak_actions` datapoint (ISS-16 ladder RE-ORDERED), four small owner-ruled fixes built + gated + committed, the Opus workforce moved to 5.5. ⚠ 19 COMMITS UNPUSHED over origin `e571ef9` (the earlier "8 over `80bd388`" was wrong — `80bd388` itself is unpushed; `git fetch` verified 09-23); PUSH on the owner's word. ▶▶ NEXT = the owner runs the re-ordered ISS-16 arms A/B/C (ISSUES.md) on the phone, then S4.**)
+## Current state (2026-09-23 afternoon, THIRTY-FOURTH session — **THE AFTERNOON SITTING, live in conversation: the crackle's `speak_actions` datapoint (ISS-16 ladder RE-ORDERED), six small owner-ruled fixes built + gated + committed, the launchers pinned to Fable 5.1 / Opus 5.5, TTS switched to PocketTTS on dev — and EVERYTHING PUSHED (origin `dbe97f6` + this handoff). ▶▶ NEXT = the owner runs the ladder card (§④ below) before the next session; it opens on their results.**)
 
 **① The crackle (ISS-16, rewritten).** The owner arrived with it GONE on Speaker (EC on), BT off,
 chunking on or off — then caught it RETURNING the instant `speak_actions` went ON (they had seen it
@@ -48,10 +48,42 @@ Chrome's fixed name for the phone's OWN earpiece, not a BT row; "System default"
 constraint) and "Default" (Chrome's) name the same routing decision — hiding Chrome's row is a
 candidate cleanup, not done. Custom voices per agent = already covered (the agent's voice id).
 
-**▶▶ NEXT:** the owner runs arms A/B/C (afternoon, phone) → the answer picks the fix slice (seam
-class ⇒ its own small slice + review round) → the car arm + the headset-mic label with the pair
-connected → the standing D73/D74 probes + the S4 §4.1 close-out → **PUSH the 19 commits on the
-owner's word**.
+**④ The late sitting (same conversation, after ①–③): EVERYTHING PUSHED** (`git push` at
+`dbe97f6`, the full pre-push gate 6/6: pytest · pyright · FE check-all; origin was `e571ef9`).
+Landed: **the Mic picker shows ONE "default" row** — Chrome's virtual `default`/`communications`
+rows are dropped at `listAudioInputs` (both pickers' one source); they were not just a duplicate of
+the empty pick: an explicit id wins `candidateConstraints` outright, so "Default" on an EC-off route
+would have skipped the SCO steer (R77's silent-TTS trap) · the Speech number goes weight 600 +
+tabular figures ("round or thicker") · **every Claude Code launcher pinned to explicit owner-tested
+ids** — `claude-fable-5-1` / `claude-opus-5-5` (policy in CLAUDE.md; `tools/start-claude.sh`,
+`~/script/fable`, `claude-workspace.service` (daemon-reloaded, NOT restarted — that kills the
+owner's live workspace session), `~/.claude/settings.json` `model` + `env.ANTHROPIC_DEFAULT_OPUS_MODEL`)
+· ⚠ `dbe97f6` carries BOTH the picker slice and the pins slice in one commit (a failed pre-commit
+hook — Prettier on the new test — left both staged; cosmetic). **TTS SWITCHED TO POCKETTTS on the
+DEV config** (owner ask; `PUT /api/settings`: provider `emma-pockettts` → `http://127.0.0.1:8890/v1`,
+model `pocket-tts` with catalog `voice: nova` + `format: wav`; fallbacks Kokoro-on-Speaches then
+vault-alltalk; secrets verified intact; live synth 200 `audio/wav` served-by `emma-pockettts`).
+PocketTTS facts: voice = WAV stem in `~/.local/share/tts/voices/pocket` (subfolders ok, e.g.
+`openai-map/nova`), WAV-only whatever is asked (hence the catalog `format`), no listing endpoint,
+voice REQUIRED. **Prod is NOT flipped.** The owner picks per-agent voices after listening
+(`AgentDef.voice` = the stem); the voice inventory is in the `pockettts-tts-endpoint` memory. ⚠
+**This changes the pipe UNDER the crackle ladder** (WAV chunks instead of opus; CPU synthesis is
+slower per chunk ⇒ more read-along catch-up gaps): the ladder now starts with a re-baseline arm.
+
+**▶▶ NEXT SESSION OPENS ON THE OWNER'S RESULTS** — the card they run before it (also given in
+conversation): *the crackle ladder* (Sound pill → **Speaker** (EC on) · `speak_actions` ON · BT off ·
+a roleplay agent · the SAME long in-character ask each arm): **0** baseline on PocketTTS, chunking
+`sentence` + read-along ON — crackle? and is it AT the sentence pauses or THROUGH the words? ·
+**A** chunked synthesis `off` · **B** chunking `sentence` + read-along OFF · **C** read-along ON
+again, a plain non-roleplay agent, a short question · **D** Speaker (clean) with `speak_actions` ON
+(does the D75 mitigation hold under the new condition?) · restore chunking `sentence` + read-along
+ON after. *The polish checks:* the heard line shows `…` (never the previous sentence) between
+finishing speaking and the new transcript · the round Speech pill + heavier number · the Mic pill
+reads "default" and is narrower · `nova` as the default voice, and which cloned voices they want per
+agent. *Still owed from the card:* captions on a real call · backdrop arm→preview→send→hold→revert
+· the car arm · the headset-mic label with the BT pair connected. Then: the fix slice the ladder
+picks (seam class ⇒ its own small slice + review round) → the standing D73/D74 probes → the S4
+§4.1 close-out → prod TTS flip rides the next release.
 
 ## Prior state (2026-09-23, THIRTY-THIRD session — **THE D75 ⑥ COUPLING ROUND + THE BT MEDIA-PATH PROBE, all in-conversation the same morning: the owner proposed coupling the clean bargain to the interruption toggle, WALKED IT BACK on the walkie-talkie cost, ruled Speaker (clean) the SHIPPED DEFAULT; the device probe ran live and CONFIRMED the media-path claim; the flip is BUILT, gate 6/6, dev restarted. ⚠ 8 COMMITS UNPUSHED over origin `80bd388`; PUSH on the owner's word. ▶▶ NEXT SESSION = the AFTERNOON SITTING — the card is in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7's D75 addendum.**)
 
