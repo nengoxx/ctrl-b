@@ -174,10 +174,10 @@ const STEER_TO: readonly string[] = ["Headset earpiece", "Wired headset", "Speak
 function syntheticRoutes(inputs: MicDevice[]): Map<string, string> | null {
   const rows = new Map<string, string>();
   for (const d of inputs) {
-    // The default entry is the one row that cannot be matched by NAME — its label is Chrome's own
-    // localized "Default …" string. Every other row has to be one of the five, or this is not the
-    // list (a desktop's "Microphone (Realtek…)" fails here, which is exactly the intent).
-    if (d.deviceId === "default" || d.deviceId === "communications") continue;
+    // Every row has to be one of the five, or this is not the list (a desktop's "Microphone
+    // (Realtek…)" fails here, which is exactly the intent). Chrome's own localized "Default …" entry
+    // — the one row that could never be matched by NAME — never reaches here: `listAudioInputs`
+    // drops it at the source.
     if (!ROUTE_LABELS.has(d.label)) return null;
     rows.set(d.label, d.deviceId);
   }
@@ -290,8 +290,15 @@ export async function listAudioInputs(probe = false): Promise<MicDevice[]> {
       }
     }
   }
+  // Chrome's virtual `default` / `communications` rows are DROPPED, not offered (owner, 2026-09-23:
+  // "System default" and "Default" side by side — "one entry"). They name the same routing decision
+  // as the picker's own empty pick, and they are the worse spelling of it: an explicit `deviceId`
+  // wins the constraint ladder outright (`candidateConstraints`), so picking "Default" on an EC-off
+  // route would step around the SCO steer and walk into the silent-TTS trap the ladder exists to
+  // avoid. The empty pick rides the ladder; nothing is lost by hiding the row.
   return inputs
     .filter((d) => d.deviceId && d.label)
+    .filter((d) => d.deviceId !== "default" && d.deviceId !== "communications")
     .map((d) => ({ deviceId: d.deviceId, label: d.label }));
 }
 

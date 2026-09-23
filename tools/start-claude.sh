@@ -30,13 +30,15 @@ MODEL="${3:-${MODEL:-opus}}"                        # positional > env > default
 EFFORT="${EFFORT:-high}"
 PERM="${PERM:-bypassPermissions}"
 
-# Friendly aliases. NOTE (owner 2026-07-28): the MAIN seat is now FABLE 5 — Opus is the subagent
+# Friendly aliases. NOTE (owner 2026-07-28): the MAIN seat is now FABLE — Opus is the subagent
 # workforce; the systemd boot instances pass their model explicitly (@fable/@opus). This script's
 # bare default stays `opus` for back-compat of manual launches; pass `fable` for the main seat.
-# The `opus` alias tracks Claude Code's latest Opus; full ids pass through.
+# BOTH resolve to EXPLICIT, OWNER-TESTED ids (owner policy 2026-09-23: new releases are wonky
+# until tried by hand, so nothing here rides Claude Code's floating `opus`/`fable` aliases — bump
+# these two lines only after the owner has tested the new version). Full ids pass through.
 case "$MODEL" in
-  fable) MODEL="claude-fable-5" ;;
-  opus)  MODEL="opus" ;;
+  fable) MODEL="claude-fable-5-1" ;;
+  opus)  MODEL="claude-opus-5-5" ;;
 esac
 
 command -v tmux  >/dev/null || { echo "tmux not found — sudo apt install -y tmux"; exit 1; }

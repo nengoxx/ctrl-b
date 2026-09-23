@@ -264,8 +264,7 @@ function DeviceRow(props: { value: string; onChange: (v: string) => void }) {
         </div>
         <div className="desc">
           on a phone this picks the ROUTE — speakerphone, wired or Bluetooth headset — in both
-          directions · applies to dictation too · a device that is gone falls back to the system
-          default
+          directions · applies to dictation too · a device that is gone falls back to the default
         </div>
       </div>
       <select
@@ -274,7 +273,7 @@ function DeviceRow(props: { value: string; onChange: (v: string) => void }) {
         onFocus={() => void listAudioInputs(true).then(setDevices)}
         onChange={(e) => props.onChange(e.target.value)}
       >
-        <option value="">system default</option>
+        <option value="">default</option>
         {(devices ?? []).map((d) => (
           <option key={d.deviceId} value={d.deviceId}>
             {d.label}

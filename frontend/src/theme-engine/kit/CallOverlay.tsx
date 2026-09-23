@@ -372,7 +372,7 @@ function RouteControls({ call }: { call: CallView }) {
           value={call.inputDevice}
           onChange={(e) => call.setInputDevice(e.target.value)}
         >
-          <option value="">system default</option>
+          <option value="">default</option>
           {devices.map((d) => (
             <option key={d.deviceId} value={d.deviceId}>
               {d.label}
@@ -442,7 +442,7 @@ function VadControl({ call }: { call: CallView }) {
       <button
         ref={pop.pillRef}
         type="button"
-        className="kit-call-routebtn kit-call-iconpill"
+        className="kit-call-routebtn kit-call-iconpill kit-call-vadpill"
         // Disabled with its two deck siblings (design M2): a commit is a leg redial, and while the leg
         // is moving (connecting, a reconnect) the pill must say so like the pair beside it — not open a
         // popover onto a dead slider.

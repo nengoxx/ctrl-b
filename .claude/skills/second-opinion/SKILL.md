@@ -14,11 +14,13 @@ judge the result rather than adopting it.**
 > designs, supervises, rules and audits. **Opus (high) subagents carry the heavy token work**:
 > implementation, research, mechanical and operational tasks. The table below is written for that
 > arrangement. *(Until 2026-07-28 it was the other way round — Opus main, Fable an on-request
-> reviewer. The mechanics in this file did not change; only who sits where.)* **The Opus version is
-> always the LATEST — Opus 5.5 since 2026-09-22 (owner ruling 2026-09-23).** `model: "opus"` is the
-> alias, never a pinned id; it resolves to 5.5 from Claude Code 2.1.280 (a session on an older build
-> keeps spawning Opus 5 until it restarts — `claude --model opus -p … --output-format json | jq
-> .modelUsage` shows what the installed CLI resolves to).
+> reviewer. The mechanics in this file did not change; only who sits where.)* **Versions are
+> explicit owner-tested PINS (owner policy 2026-09-23): Opus 5.5 · Fable 5.1.** The Agent tool's
+> `model: "opus"` resolves through `~/.claude/settings.json` → `env.ANTHROPIC_DEFAULT_OPUS_MODEL`
+> (= `claude-opus-5-5`), so a new Opus reaches subagents only when the owner bumps that pin after
+> testing it — never on a Claude Code update. (`claude --model opus -p ok --output-format json | jq
+> .modelUsage` shows what a fresh process resolves to; a running session keeps its start-time
+> mapping until it restarts.)
 
 | Situation | Use | Cost posture |
 |---|---|---|

@@ -626,6 +626,21 @@ describe("listAudioInputs — the picker's list (Maya F4)", () => {
     expect(gum).not.toHaveBeenCalled(); // enumeration alone opens no microphone
   });
 
+  it("drops Chrome's virtual default/communications rows — the picker's empty pick IS that choice (owner, 2026-09-23)", async () => {
+    // Offering "Default" beside the empty pick showed one decision twice, and the explicit id is the
+    // worse spelling: it wins the constraint ladder outright and would skip the SCO steer.
+    enumerated = [
+      [
+        dev("default", "Default - Microphone (Realtek)"),
+        dev("communications", "Communications - Microphone (Realtek)"),
+        dev("m1", "Microphone (Realtek Audio)"),
+      ],
+    ];
+    expect(await listAudioInputs()).toEqual([
+      { deviceId: "m1", label: "Microphone (Realtek Audio)" },
+    ]);
+  });
+
   it("PROBES once for labels when every entry is nameless — and only when asked to", async () => {
     // Labels are permission-gated: before this origin has been granted a capture the list is real but
     // unnameable, which is not a list anyone can choose from.

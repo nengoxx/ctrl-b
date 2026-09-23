@@ -1,8 +1,9 @@
 # Handoff — start here for a fresh session
 
 > ## ▲▲ READ FIRST — WHO YOU ARE (owner, 2026-07-28)
-> **The MAIN model is now FABLE 5 on high.** It supervises: designs the work and the project itself,
-> rules, and audits. **Opus 5 (high) subagents carry all the heavy token work** — implementation from
+> **The MAIN model is FABLE on high (`claude-fable-5-1` since 2026-09-23).** It supervises: designs
+> the work and the project itself, rules, and audits. **Opus (`claude-opus-5-5`, high) subagents
+> carry all the heavy token work** (versions = explicit owner-tested pins, CLAUDE.md) — implementation from
 > pinned briefs, research, mechanical + operational tasks including runbook releases. **Codex
 > `gpt-5.6-sol` high** remains the standing co-reviewer, launched whenever review is warranted.
 > *(This inverts the 2026-07-24 arrangement. The METHOD is unchanged — judgement in the main seat,

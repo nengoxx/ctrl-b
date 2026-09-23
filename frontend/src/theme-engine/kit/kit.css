@@ -9466,6 +9466,13 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   width: 44px;
   padding: 0;
 }
+/* THE SPEECH NUMBER (owner, 2026-09-23: "0.90" in the disc read thin and janky — "round or thicker"):
+ * a heavier weight and tabular figures, so the four characters sit as one solid block and a 0.05
+ * step never shifts the glyphs sideways. Same 13px as the rest of the deck. */
+.kit .kit-call-vadpill {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 /* `all: unset` takes the native arrow with it, and NO arrow is drawn back (owner, 2026-09-23: "drop the
  * drop-down arrow, keep the name" — the pill read too wide): the Sound pill already dropped its chevron
  * on the same "just the name" ruling, and the MIC caption plus the platform picker a tap opens are the

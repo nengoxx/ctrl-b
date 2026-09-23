@@ -444,10 +444,10 @@ describe("ConfTab · the capture route + device picker (D73 S5)", () => {
     expect(liveOf()).toMatchObject({ route: "speaker-hifi" });
   });
 
-  it("lists the browser's audio inputs — the system default first, always", async () => {
+  it("lists the browser's audio inputs — the default first, always", async () => {
     lists = [[{ kind: "audioinput", deviceId: "bt", label: "Bluetooth headset" }]];
     render(<ConfTab active />);
-    await waitFor(() => expect(optionText()).toEqual(["system default", "Bluetooth headset"]));
+    await waitFor(() => expect(optionText()).toEqual(["default", "Bluetooth headset"]));
     fireEvent.change(picker(), { target: { value: "bt" } });
     fireEvent.click(saveButton());
     expect(liveOf()).toMatchObject({ input_device: "bt" });
@@ -465,11 +465,11 @@ describe("ConfTab · the capture route + device picker (D73 S5)", () => {
     expect(picker().value).toBe("vanished"); // …and the save still round-trips it untouched
   });
 
-  it("a browser that names nothing offers the system default alone", async () => {
+  it("a browser that names nothing offers the default alone", async () => {
     lists = [[{ kind: "audioinput", deviceId: "a", label: "" }]];
     render(<ConfTab active />);
     await waitFor(() => expect(picker()).toBeTruthy());
-    expect(optionText()).toEqual(["system default"]);
+    expect(optionText()).toEqual(["default"]);
   });
 });
 

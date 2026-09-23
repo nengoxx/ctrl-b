@@ -163,7 +163,7 @@ seam; if the seam is missing, propose one in `DECISIONS.md` (new D-entry) before
 End commit messages crediting the model that authored the change, e.g.:
 
 ```
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 ```
 
 (or `Claude Opus 5.5 <noreply@anthropic.com>` when running in the Opus session — emma boots BOTH
@@ -172,15 +172,19 @@ agents: `ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b-fable` / `ctr
 
 ## Who does what (owner, 2026-07-28)
 
-**Fable 5 on high is the MAIN model** — it *supervises*: designs the work and the project itself,
-rules on conflicts, and audits. **Opus 5.5 (high) subagents carry the heavy token work** —
+**Fable (5.1) on high is the MAIN model** — it *supervises*: designs the work and the project
+itself, rules on conflicts, and audits. **Opus (5.5, high) subagents carry the heavy token work** —
 implementation from pinned briefs, research, mechanical and operational tasks (including
 runbook-driven releases). **Codex `gpt-5.6-sol` high** stays the standing co-reviewer: launch it
-whenever a review is warranted, small slices included. *(Owner, 2026-09-23: the workforce moves to
-**Opus 5.5** (`claude-opus-5-5`, released 2026-09-22) — always the LATEST Opus. Nothing is pinned:
-the Agent tool's `model: "opus"` and the `@opus` unit's `--model opus` both ride Claude Code's alias,
-which resolves to 5.5 from CLI 2.1.280; a session started on an older build still spawns Opus 5
-until it restarts.)*
+whenever a review is warranted, small slices included.
+
+**Model versions are EXPLICIT, OWNER-TESTED PINS — never a floating alias (owner policy,
+2026-09-23).** New releases "are a little bit wonky" until tried by hand, so a launcher switches to
+a new version only after the owner has tested it. As of 2026-09-23: main seat `claude-fable-5-1`,
+workforce `claude-opus-5-5`. The pins live in `tools/start-claude.sh` (the `@fable`/`@opus`
+units), `~/script/fable` + `~/.config/systemd/user/claude-workspace.service` (the workspace
+session), and `~/.claude/settings.json` (`model` + `env.ANTHROPIC_DEFAULT_OPUS_MODEL`, which is
+what the Agent tool's `model: "opus"` resolves through). Bump all of them together, after the test.
 
 *(This inverts the 2026-07-24 arrangement, where Opus held the main seat and Fable was an on-request
 second opinion. The METHOD is unchanged — judgement in the main seat, execution in subagents; only
