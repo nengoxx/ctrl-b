@@ -11,19 +11,23 @@ judge the result rather than adopting it.**
 ## Which mechanism
 
 > **▶ MODEL LAYER INVERTED (owner, 2026-07-28).** The MAIN seat is now **Fable 5 on high** — it
-> designs, supervises, rules and audits. **Opus 5 (high) subagents carry the heavy token work**:
+> designs, supervises, rules and audits. **Opus (high) subagents carry the heavy token work**:
 > implementation, research, mechanical and operational tasks. The table below is written for that
 > arrangement. *(Until 2026-07-28 it was the other way round — Opus main, Fable an on-request
-> reviewer. The mechanics in this file did not change; only who sits where.)*
+> reviewer. The mechanics in this file did not change; only who sits where.)* **The Opus version is
+> always the LATEST — Opus 5.5 since 2026-09-22 (owner ruling 2026-09-23).** `model: "opus"` is the
+> alias, never a pinned id; it resolves to 5.5 from Claude Code 2.1.280 (a session on an older build
+> keeps spawning Opus 5 until it restarts — `claude --model opus -p … --output-format json | jq
+> .modelUsage` shows what the installed CLI resolves to).
 
 | Situation | Use | Cost posture |
 |---|---|---|
 | Review of code/design **we wrote** — correctness, edge cases, failure modes | **Codex** (`gpt-5.6-sol`, high) | cheap — use freely |
 | Reading many files to answer a question | **`Explore`** subagent | cheap |
-| Bounded research on external projects / the field | **`general-purpose`** subagent (Opus 5 high) | the workforce — use freely |
-| Well-specified implementation from a pinned brief | **`general-purpose`** subagent (Opus 5 high) | the workforce — use freely |
-| Mechanical / operational work, runbook procedures, releases | **`general-purpose`** subagent (Opus 5 high) | the workforce — use freely |
-| An independent CLAUDE lens on the main seat's own design | **ONE Opus 5 subagent** briefed adversarially | occasional — the mirror of the old Fable tier |
+| Bounded research on external projects / the field | **`general-purpose`** subagent (Opus 5.5 high) | the workforce — use freely |
+| Well-specified implementation from a pinned brief | **`general-purpose`** subagent (Opus 5.5 high) | the workforce — use freely |
+| Mechanical / operational work, runbook procedures, releases | **`general-purpose`** subagent (Opus 5.5 high) | the workforce — use freely |
+| An independent CLAUDE lens on the main seat's own design | **ONE Opus 5.5 subagent** briefed adversarially | occasional — the mirror of the old Fable tier |
 | **Design, architecture, supervision, audits, a judgement call, a ruling** | **the MAIN SEAT (Fable 5) — never delegate** | — |
 
 **Standing owner directive (2026-07-22, reaffirmed 2026-07-26):** launch a Codex review **whenever
@@ -36,7 +40,7 @@ a MED in the fix.
 > is what the MAIN SESSION is for** — read it as the job description of the chair you are sitting in,
 > not as a delegation recipe. The parts that still describe delegation (brief discipline, "tell it
 > what is already known", bounded reading, an explicit verdict) transfer verbatim to briefing an
-> **Opus 5** subagent for an adversarial review of your own design.
+> **Opus 5.5** subagent for an adversarial review of your own design.
 
 #### Historical form — "the senior software engineer" (owner directive, 2026-07-26)
 

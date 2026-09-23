@@ -166,17 +166,21 @@ End commit messages crediting the model that authored the change, e.g.:
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 ```
 
-(or `Claude Opus 5 <noreply@anthropic.com>` when running in the Opus session — emma boots BOTH
+(or `Claude Opus 5.5 <noreply@anthropic.com>` when running in the Opus session — emma boots BOTH
 agents: `ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b-fable` / `ctrl-b-opus`.
 **Match the model to the session you're in: `tmux display-message -p '#S'`.**)
 
 ## Who does what (owner, 2026-07-28)
 
 **Fable 5 on high is the MAIN model** — it *supervises*: designs the work and the project itself,
-rules on conflicts, and audits. **Opus 5 (high) subagents carry the heavy token work** —
+rules on conflicts, and audits. **Opus 5.5 (high) subagents carry the heavy token work** —
 implementation from pinned briefs, research, mechanical and operational tasks (including
 runbook-driven releases). **Codex `gpt-5.6-sol` high** stays the standing co-reviewer: launch it
-whenever a review is warranted, small slices included.
+whenever a review is warranted, small slices included. *(Owner, 2026-09-23: the workforce moves to
+**Opus 5.5** (`claude-opus-5-5`, released 2026-09-22) — always the LATEST Opus. Nothing is pinned:
+the Agent tool's `model: "opus"` and the `@opus` unit's `--model opus` both ride Claude Code's alias,
+which resolves to 5.5 from CLI 2.1.280; a session started on an older build still spawns Opus 5
+until it restarts.)*
 
 *(This inverts the 2026-07-24 arrangement, where Opus held the main seat and Fable was an on-request
 second opinion. The METHOD is unchanged — judgement in the main seat, execution in subagents; only
