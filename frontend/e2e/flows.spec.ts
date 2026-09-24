@@ -220,7 +220,9 @@ test("Conf — an editor form's inputs are findable by their label (D25 associat
 }) => {
   await page.goto("/");
   await page.locator("#tabbtn-conf").click();
-  // The Computers group is expanded by default; expand the vault machine row to reveal its form.
+  // Every ConfGroup ships COLLAPSED (owner ruling 2026-09-21), so open Computers first — its header is the
+  // disclosure — then expand the vault machine row to reveal its form.
+  await page.locator("#computers .conftitle").click();
   await page.locator(".mwrap > .confrow").filter({ hasText: "vault" }).first().click();
   // getByLabel resolves an input only via its accessible name — proof the labels are associated.
   // `exact` on both: getByLabel matches SUBSTRINGS, so a label containing another's text resolves
@@ -241,8 +243,10 @@ test("Conf — changing the vapor palette updates body[data-accent]", async ({ p
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 3, 22)");
 
   await page.locator("#tabbtn-conf").click();
+  // Every ConfGroup ships COLLAPSED (owner ruling 2026-09-21): open Appearance by its header first.
+  await page.locator("#appearance .conftitle").click();
 
-  // Appearance group is expanded by default. Theme-engine model (D28): the skin is "Vapor"; the
+  // Theme-engine model (D28): the skin is "Vapor"; the
   // "Palette" swatch picker (a radiogroup of color chips) switches vapor's accent on the SHARED axis
   // (Vapor/Aqua/Ember → body[data-accent], D51 V2). Each chip is a role=radio named by the palette.
   await page.getByRole("radio", { name: "Aqua", exact: true }).click();

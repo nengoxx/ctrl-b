@@ -16,6 +16,7 @@ test("Conf · Inference — timeout + prompt controls + primary/fallback pickers
   page,
 }) => {
   const inf = page.locator("#inference");
+  await inf.locator(".conftitle").click(); // every group ships collapsed (owner ruling 2026-09-21)
   // primary picker: llamacpp is sole-model → the model select auto-hides; the openrouter fallback shows one.
   await expect(inf.getByLabel("Default provider")).toHaveValue("llamacpp");
   await expect(inf.getByLabel("Default model")).toHaveCount(0);
@@ -119,6 +120,7 @@ test("Conf · Voice STT — every knob + primary/fallback pickers (no failover s
   page,
 }) => {
   const stt = page.locator("#voice-stt");
+  await stt.locator(".conftitle").click(); // every group ships collapsed (owner ruling 2026-09-21)
   await expect(stt.getByRole("switch", { name: "Voice enabled" })).toBeVisible();
   await expect(stt.getByLabel("Language")).toHaveValue("en");
   await expect(stt.getByRole("switch", { name: "STT VAD filter" })).toBeVisible();
@@ -148,6 +150,7 @@ test("Conf · Voice TTS — auto-read + format + timeouts + pickers", async ({ p
   await page.reload();
   await page.locator("#tabbtn-conf").click();
   const tts = page.locator("#voice-tts");
+  await tts.locator(".conftitle").click(); // every group ships collapsed (owner ruling 2026-09-21)
   await expect(tts.getByRole("switch", { name: "Auto read-aloud" })).toBeVisible();
   // the Format segmented control stays (C8 service fallback: model format > service format)
   // `name:` is substring-matching by default — C3's "Chunk format" seg made the bare "Format" ambiguous
@@ -167,13 +170,15 @@ test("Conf · Voice TTS — auto-read + format + timeouts + pickers", async ({ p
 
 test("Conf · Embeddings — picker + enabled + timeout + per-model dim", async ({ page }) => {
   const emb = page.locator("#embeddings");
+  await emb.locator(".conftitle").click(); // every group ships collapsed (owner ruling 2026-09-21)
   await expect(emb.getByLabel("Embeddings default provider")).toHaveValue("openrouter");
   await expect(emb.getByLabel("Embeddings default model")).toHaveValue("qwen-embed");
   await expect(emb.getByLabel("Read timeout")).toHaveValue("60");
   await expect(emb.getByRole("switch", { name: "Embeddings enabled" })).toBeVisible();
 
   // the vector dim moved to the per-model row (D48 C8). Open the openrouter card; the qwen-embed row
-  // (2nd model) carries dim 2560 in its auto-opened Advanced fold.
+  // (2nd model) carries dim 2560 in its auto-opened Advanced fold. Providers ships collapsed too.
+  await page.locator("#providers .conftitle").click();
   await page.locator("#providers").getByText("openrouter", { exact: true }).click();
   const dim = page.locator("#providers .model-row").nth(1).getByLabel("Model embedding dim");
   await expect(dim).toHaveValue("2560");

@@ -92,7 +92,9 @@ const FOUR_TABS = [
   { id: "fleet", label: "Fleet", content: "vault" },
   { id: "agent", label: "Agent", content: null },
   { id: "utils", label: "Tools", content: "Yt Captions" },
-  { id: "conf", label: "Conf", content: "Inference" },
+  // "chat backend" = the Inference group's header caption, visible while every group ships collapsed (owner
+  // ruling 2026-09-21); the title word "Inference" also sits in a hidden provider row, which `.first()` found.
+  { id: "conf", label: "Conf", content: "chat backend" },
 ] as const;
 
 for (const t of FOUR_TABS) {
@@ -128,7 +130,9 @@ for (const t of FOUR_TABS) {
 const FRONTIER_TABS = [
   { id: "fleet", label: "Fleet", content: "THE FRONTIER" }, // the badlands map label
   { id: "agent", label: "Agent", content: "Frontier Comms" }, // the empty-state hero
-  { id: "conf", label: "Conf", content: "Inference" },
+  // "chat backend" = the Inference group's header caption, visible while every group ships collapsed (owner
+  // ruling 2026-09-21); the title word "Inference" also sits in a hidden provider row, which `.first()` found.
+  { id: "conf", label: "Conf", content: "chat backend" },
 ] as const;
 
 // ── gacha boot — its 3-tab bar (fleet/agent/conf; utils hosted in Conf), D52 G0 ──
@@ -138,7 +142,9 @@ const FRONTIER_TABS = [
 const GACHA_TABS = [
   { id: "fleet", label: "Fleet", content: "vault" },
   { id: "agent", label: "Agent", content: "Lucky Relay" },
-  { id: "conf", label: "Conf", content: "Inference" },
+  // "chat backend" = the Inference group's header caption, visible while every group ships collapsed (owner
+  // ruling 2026-09-21); the title word "Inference" also sits in a hidden provider row, which `.first()` found.
+  { id: "conf", label: "Conf", content: "chat backend" },
 ] as const;
 
 for (const t of GACHA_TABS) {

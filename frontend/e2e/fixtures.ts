@@ -436,6 +436,20 @@ export async function mockApi(page: Page): Promise<void> {
  *  chain is skipped and the blob applies verbatim. Since D51 V0 a spec that wants VAPOR (or any non-default
  *  skin) must seed it explicitly: an unseeded boot lands on the cosmos default. The appearance server-mock
  *  is unseeded (`updated_at: null`), so the reconcile round-trip HOLDS the seeded pick. */
+/** Open every collapsed ConfGroup on the Conf tab. Every group ships COLLAPSED (owner ruling 2026-09-21),
+ *  so an arm that measures the tab as a whole — its scroll range, the first ON switch's geometry — opens
+ *  them all first; an arm about ONE group clicks that group's own `.conftitle` instead (conf.spec's idiom). */
+export async function openAllConfGroups(page: Page): Promise<void> {
+  await expect(page.locator("#tab-conf .confgroup").first()).toBeVisible();
+  // By ID, not `.all()` over the collapsed set: `.all()` hands back nth-locators that RE-RESOLVE against
+  // a set each click shrinks, so the later ones point past its end.
+  const ids = await page
+    .locator("#tab-conf .confgroup.collapsed")
+    .evaluateAll((els) => els.map((el) => el.id));
+  for (const id of ids) await page.locator(`#${id} > .conftitle`).click();
+  await expect(page.locator("#tab-conf .confgroup.collapsed")).toHaveCount(0);
+}
+
 export async function seedUI(page: Page, ui: Record<string, unknown>): Promise<void> {
   await page.addInitScript((blob) => {
     localStorage.setItem("ctrlb.ui", JSON.stringify(blob));

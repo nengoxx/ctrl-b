@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { expect, planThread, seedThread, seedUI, test } from "./fixtures";
+import { expect, openAllConfGroups, planThread, seedThread, seedUI, test } from "./fixtures";
 
 // The SECTION LAYOUT SYSTEM v1 lever (D35 / FRONTIER_PLAN §6-F0) driven end-to-end on the REAL built app. A
 // SMOKE (no axe, no screenshots) that rides the existing e2e projects — it seeds the device-local `ui.layout`
@@ -390,6 +390,7 @@ test("gacha · chrome fidelity: floating nav pill, white indicator + pink hard s
 
   // 5. The toggles: the TWO-stop pink→violet track, a white knob, the prototype's 48×28 geometry.
   await page.locator("#tabbtn-conf").click();
+  await openAllConfGroups(page); // the switches live inside groups that ship collapsed
   const knob = page.locator(".kit .switch.on .knob").first();
   await expect(knob).toBeVisible();
   const sw = await knob.evaluate((el) => {
@@ -1207,6 +1208,7 @@ test("gacha · the ARCADE composer skin: a flat cabinet panel here, and the same
   // ── and the picker offers it everywhere (the D37 contract's visible half) ──
   await seedUI(page, { theme: "cosmos", mode: "dark", accent: "violet", tab: "conf", v: 1 });
   await page.goto("/");
+  await page.locator("#appearance .conftitle").click(); // every group ships collapsed (owner ruling 2026-09-21)
   const row = page.locator(".confrow", { hasText: "Composer skin" }).first();
   await expect(row).toBeVisible();
   const labels = await row.evaluate((el) =>
@@ -1947,6 +1949,9 @@ test("kit shell: a section returns to where it was left; a fresh boot still star
   await page.locator("#tabbtn-conf").click();
   await expect(page.locator("#tab-conf")).toBeVisible();
   await expect(page.locator("#providers")).toBeVisible();
+  // …and every group ships collapsed (owner ruling 2026-09-21), which leaves the tab too short to prove
+  // anything about restoration — open them all, the way a long Conf sitting does.
+  await openAllConfGroups(page);
   await expect
     .poll(() => scroller.evaluate((el) => el.scrollHeight - el.clientHeight))
     .toBeGreaterThan(1000);
