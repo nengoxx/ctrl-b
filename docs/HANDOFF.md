@@ -13,37 +13,68 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-24, THIRTY-FIFTH session — **THE OWNER'S LADDER RESULTS + a polish sitting, live in conversation: the crackle did NOT reproduce on PocketTTS on any arm (ISS-16 datapoint — the endpoint is now the prime suspect, counter-arm = one Conf flip back to Kokoro); five owner-ruled polish fixes built + gated (FE 3,783/194) + committed; the ganyu voice (Maia's) wired into PocketTTS and made the DEV default; the composer agent-pick AUDIT delivered in conversation — recommendation: STICKY (fold into the session pin), OWNER RULING PENDING. Nothing pushed this sitting.**)
+## Current state (2026-09-24, THIRTY-FIFTH session — **THE OWNER'S LADDER RESULTS + a polish sitting + THE STICKY-PICK RULING, all in conversation: the crackle did NOT reproduce on PocketTTS on any arm (ISS-16 → a formal DORMANT record); seven owner-ruled polish fixes built + gated + committed; the ganyu voice (Maia's) wired into PocketTTS as the DEV default; the composer agent-pick audit → OWNER RULED STICKY → the slice BUILT (Opus 5.5 headless) + main-seat-audited + committed at `88a27ad` (FE 3,766/194; e2e agent-backdrop 22/22). ⚠ 7 commits UNPUSHED over origin `db3289a`. The owner is REBOOTING emma after this handoff so Claude Code runs on 2.1.280 — dev units are now BOOT-ENABLED and Serve persists, so dev :5434 / Vite :5173 / the `:8443` HTTPS door come back on their own. ▶▶ NEXT SESSION = the owner's eyeball round over everything below + the sticky slice's OWED REVIEW ROUND, then push.**)
 
-**① ISS-16.** Arm 0 (re-baseline on PocketTTS), a redial, A, B, C: all clean, `speak_actions` ON.
-The only variable against the reproducing evening is the TTS endpoint (Kokoro/Speaches → PocketTTS),
-so the crackle most likely lived in the Speaches leg (compressed-chunk decode or its chunk timing),
-not in the page's seams. Recorded in ISSUES ISS-16 with the counter-arm (provider back to
-`emma-speaches` for one long roleplay reply). Fix candidates stay parked.
+**⓪ Why the reboot (the CLI gotcha, now in the `orchestrate-with-opus-subagents` memory):** this
+session ran on a 2.1.278 binary; with the workforce pinned to `claude-opus-5-5` the Agent tool
+dies (`400 … version 2.1.280 or newer is required`). The build went through the INSTALLED 2.1.280
+binary headless instead (`claude --model claude-opus-5-5 -p "$(cat brief)"
+--dangerously-skip-permissions --output-format json`, ~24 min, 92 turns, $5.92) — a working
+fallback lane; after the reboot the Agent tool's `model: "opus"` works again as documented.
 
-**② Built (FE only, Vite HMR — reload the page):** the call captions box 3 → 4 lines and the edge
-fade 12% → 15% (`--call-said-lines`/`--call-said-fade`) · the metrics disclosure toggles on the
-who-line's IDENTITY run only (`.who-id`: avatar · name · chip · time), never the empty run or the
-read-aloud button (its dead `stopPropagation`s removed) · the `CORSAIR` endpoint chip leaves the
-who-line on ordinary turns (it leads the disclosure's call row now, "served by" for AT) and stays
-ONLY on a degraded serve, warn-coloured · the who-line face 32 → 40px, borderless (the 1px ring was
-the "lighter outline / not quite round"), with 4px more before the name · the who-line 10 → 11px at
-weight 600. Tests re-pinned (+1: the empty run does not toggle).
+**① ISS-16 → DORMANT (formal record in ISSUES).** Arm 0 (re-baseline on PocketTTS), a redial, A, B,
+C: all clean, `speak_actions` ON. The single variable against the reproducing evening is the TTS
+endpoint (Kokoro/Speaches → PocketTTS), so the Speaches leg is the prime suspect — **NOT proven**.
+The record carries: what is established with evidence, what is not, both mitigations in place, the
+ONE-FLIP counter-arm (provider back to `emma-speaches`, one long roleplay reply), the resurfacing
+ladder A–E, and the ranked fix candidates from the D75 wave. Nothing to build unless it resurfaces.
 
-**③ Voice.** `ganyu.wav` symlinked into the PocketTTS voices dir → Maia's exact sample; **PocketTTS
-gotcha learned: the server never appends `.wav`, a bare stem works only once `.cache/<stem>.emb`
-exists — synthesize once with `<stem>.wav` first** (memory updated). Dev catalog default voice
-`nova` → `ganyu` via `PUT /api/settings` (providers map + base fingerprint; secrets verified
-unchanged). Prod untouched. Maia's Hermes config untouched.
+**② The polish (FE only; Vite HMR — reload the page; commits `6a17aa5` · `96db989` · `6d582df`):**
+call captions box 3 → **6 lines**, fade 12 → 15%, **12px stand-off below** it and a **6px side
+inset** (`--call-said-lines/-fade/-gap/-inset`) · the metrics disclosure toggles on the who-line's
+IDENTITY run only (`.who-id`: avatar · name · chip · time) — the empty run and the read-aloud
+button are inert (their dead `stopPropagation`s removed) · the `CORSAIR` endpoint chip leaves the
+who-line on ordinary turns (it leads the disclosure's call row, "served by" for AT) and stays ONLY
+on a degraded serve, warn-coloured · the who-line face 32 → **40px, borderless** (the 1px ring was
+the "lighter outline / not quite round"), 4px more before the name · the who-line **11px, weight
+600** · the tools-menu faces borderless too. **ISS-17 added:** rename `/clear` → `/new` (owner).
 
-**④ The audit (the owner's ask: "does the menu selector's design hold?").** Delivered in
-conversation; the evidence line was added under D75's open owner question. ▶▶ **NEXT = the owner
-rules one-shot vs sticky**; if sticky, the slice is: the menu's agent rows write `pinSessionAgent`
-(the `/agent` + "Talk" seam), the default row clears it, and `composerScope` loses `agent`/`spent`/
-the hold token/`previewAgent`/`routedAgent`'s pick arg + `CallOverlay`'s `armedPick=false` and its
-parked note — the skills section stays one-shot. Open detail: the default row inside a
-thread-pinned (D70 §4.2) conversation (clear ⇒ the thread pin resurfaces; pin the default by name
-instead). Then the standing D73/D74 probes → S4 close-out.
+**③ Voice.** `ganyu.wav` symlinked into the PocketTTS voices dir → Maia's exact sample
+(`…/derived/ganyu/VO_Ganyu_About_the_Vision.wav`, the file her Hermes config names; her config
+untouched); **dev catalog default voice `nova` → `ganyu`** via `PUT /api/settings` (full providers
+map + `providers_base`; secrets verified unchanged). Prod untouched. **PocketTTS gotcha: the server
+never appends `.wav` — a bare stem works only once `.cache/<stem>.emb` exists, so synthesize once
+with `<stem>.wav` first** (`pockettts-tts-endpoint` memory). **The Karpathy skill** is copied to
+`~/.ctrl-b-dev/skills/karpathy-guidelines/` (the owner wanted to see how the menu shows a skill;
+discovered live by `/api/skills`).
+
+**④ THE STICKY-PICK SLICE (`88a27ad`; D75 "RULED 2026-09-24").** The owner's ruling on the audit:
+"I don't want to switch agents just for a singular message… I can just manually switch back at any
+time." Built: the menu's agent rows write the session pin through `pinSessionAgent` (the `/agent` +
+gallery Talk seam) — so the backdrop, the who-line, the TTS voice and a CALL all follow one ladder;
+skills stay one-shot in the renamed `store/composerSkills`; `routedAgent`, the spent/hold/token
+machinery, `previewAgent`, `useActiveBackdrop`'s `armedPick`, `sendMessage`'s `agent` option,
+`getSessionAgent` and the call's parked note are DELETED. **`defaultAgentPin(threadAgent)`** (new,
+`lib/composer`) is the ONE expression for "back to the default" — a clear, or the default BY NAME
+inside a thread-pinned conversation — taken by the menu's default row AND the gallery's Talk (the
+main seat's follow-up on the build's nuance 5). Menu copy: "active agent" / "skills · next message".
+Recorded residuals (the build's report, all ruled acceptable): a TYPO'd sticky pin reads as the
+default row and cannot be cleared by re-clicking it (pick another row, then default) · a default
+that is also a specialist folder reads checked on both rows · a mid-stream pick re-points only
+later sends (the `/agent` semantics). **OWED: the review round** (a fix wave needs its own — the
+standing cadence: Codex/Maya blind pass over `88a27ad`, then a fix wave if warranted). The six
+Conf-tab e2e arms that fail locally (`flows` palette/editor-form, `a11y` vapor/cosmos Conf) were
+failing BEFORE the slice (proven in a clean worktree) — a pre-existing flake class, not this slice's.
+
+**▶▶ NEXT SESSION (after the reboot — `tmux display-message -p '#S'`, effort HIGH):** ① the owner's
+eyeball round: the who-line (40px face, no ring, 11px/600, tap zone = identity only, chip gone unless
+a fallback served) · the tools menu (borderless faces; "active agent" sticky — pick, send, CALL:
+the call answers as the picked agent; the default row; the section labels at 320px) · the call
+captions (6 lines, the stand-off, the inset) · the ganyu default voice · the Karpathy skill row ·
+the 6-arm e2e flake class (worth a look at `flows`/`a11y` Conf locators) ② the sticky slice's
+review round ③ `git push` on the owner's word (7 commits) ④ ISS-17 `/clear` → `/new` (trivial) ⑤
+then the standing D73/D74 probes → the S4 §4.1 close-out → prod TTS flip + v1.7.8. **Dev units
+are now `enabled` (boot) — the on-demand rule stands as policy; disable again when the owner says.**
 
 ## Prior state (2026-09-23 afternoon, THIRTY-FOURTH session — **THE AFTERNOON SITTING, live in conversation: the crackle's `speak_actions` datapoint (ISS-16 ladder RE-ORDERED), six small owner-ruled fixes built + gated + committed, the launchers pinned to Fable 5.1 / Opus 5.5, TTS switched to PocketTTS on dev — and EVERYTHING PUSHED (origin `dbe97f6` + this handoff). ▶▶ NEXT = the owner runs the ladder card (§④ below) before the next session; it opens on their results.**)
 
