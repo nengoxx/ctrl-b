@@ -5517,6 +5517,13 @@ preview truthful through the armed message's own reply) or become a STICKY switc
 semantics are the owner's to rule; the backdrop now previews correctly either way. New evidence for
 the sticky option (design M4): the settle-edge revert lands roughly when the reply's VOICE starts,
 so with auto-TTS on, a one-shot preview reverts while the armed character is still speaking.
+**Evidence for STICKY, 2026-09-24 (owner's phone round):** the owner picked an agent in the menu,
+saw the backdrop switch, started a call, and the call answered as the previous agent — reported as a
+bug ("it doesn't switch the agent"), i.e. the owner's mental model of the menu pick is a SWITCH, and
+the "calls run without the composer's agent pick" note did not change that. The main seat's audit
+of the same date (HANDOFF, the 2026-09-24 sitting) recommends folding the menu's agent section into
+the existing session pin (`pinSessionAgent`, the `/agent` + AgentsTab "Talk" seam) and deleting the
+one-shot's spent/hold/token machinery; the owner rules.
 
 **ADDENDUM ⑥ — the coupling round (owner, 2026-09-23, in conversation).** The owner proposed
 COUPLING the clean bargain to the interruption toggle — `barge_in` off ⇒ EC off + the ear-hold on

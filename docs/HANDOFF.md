@@ -13,7 +13,39 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-23 afternoon, THIRTY-FOURTH session — **THE AFTERNOON SITTING, live in conversation: the crackle's `speak_actions` datapoint (ISS-16 ladder RE-ORDERED), six small owner-ruled fixes built + gated + committed, the launchers pinned to Fable 5.1 / Opus 5.5, TTS switched to PocketTTS on dev — and EVERYTHING PUSHED (origin `dbe97f6` + this handoff). ▶▶ NEXT = the owner runs the ladder card (§④ below) before the next session; it opens on their results.**)
+## Current state (2026-09-24, THIRTY-FIFTH session — **THE OWNER'S LADDER RESULTS + a polish sitting, live in conversation: the crackle did NOT reproduce on PocketTTS on any arm (ISS-16 datapoint — the endpoint is now the prime suspect, counter-arm = one Conf flip back to Kokoro); five owner-ruled polish fixes built + gated (FE 3,783/194) + committed; the ganyu voice (Maia's) wired into PocketTTS and made the DEV default; the composer agent-pick AUDIT delivered in conversation — recommendation: STICKY (fold into the session pin), OWNER RULING PENDING. Nothing pushed this sitting.**)
+
+**① ISS-16.** Arm 0 (re-baseline on PocketTTS), a redial, A, B, C: all clean, `speak_actions` ON.
+The only variable against the reproducing evening is the TTS endpoint (Kokoro/Speaches → PocketTTS),
+so the crackle most likely lived in the Speaches leg (compressed-chunk decode or its chunk timing),
+not in the page's seams. Recorded in ISSUES ISS-16 with the counter-arm (provider back to
+`emma-speaches` for one long roleplay reply). Fix candidates stay parked.
+
+**② Built (FE only, Vite HMR — reload the page):** the call captions box 3 → 4 lines and the edge
+fade 12% → 15% (`--call-said-lines`/`--call-said-fade`) · the metrics disclosure toggles on the
+who-line's IDENTITY run only (`.who-id`: avatar · name · chip · time), never the empty run or the
+read-aloud button (its dead `stopPropagation`s removed) · the `CORSAIR` endpoint chip leaves the
+who-line on ordinary turns (it leads the disclosure's call row now, "served by" for AT) and stays
+ONLY on a degraded serve, warn-coloured · the who-line face 32 → 40px, borderless (the 1px ring was
+the "lighter outline / not quite round"), with 4px more before the name · the who-line 10 → 11px at
+weight 600. Tests re-pinned (+1: the empty run does not toggle).
+
+**③ Voice.** `ganyu.wav` symlinked into the PocketTTS voices dir → Maia's exact sample; **PocketTTS
+gotcha learned: the server never appends `.wav`, a bare stem works only once `.cache/<stem>.emb`
+exists — synthesize once with `<stem>.wav` first** (memory updated). Dev catalog default voice
+`nova` → `ganyu` via `PUT /api/settings` (providers map + base fingerprint; secrets verified
+unchanged). Prod untouched. Maia's Hermes config untouched.
+
+**④ The audit (the owner's ask: "does the menu selector's design hold?").** Delivered in
+conversation; the evidence line was added under D75's open owner question. ▶▶ **NEXT = the owner
+rules one-shot vs sticky**; if sticky, the slice is: the menu's agent rows write `pinSessionAgent`
+(the `/agent` + "Talk" seam), the default row clears it, and `composerScope` loses `agent`/`spent`/
+the hold token/`previewAgent`/`routedAgent`'s pick arg + `CallOverlay`'s `armedPick=false` and its
+parked note — the skills section stays one-shot. Open detail: the default row inside a
+thread-pinned (D70 §4.2) conversation (clear ⇒ the thread pin resurfaces; pin the default by name
+instead). Then the standing D73/D74 probes → S4 close-out.
+
+## Prior state (2026-09-23 afternoon, THIRTY-FOURTH session — **THE AFTERNOON SITTING, live in conversation: the crackle's `speak_actions` datapoint (ISS-16 ladder RE-ORDERED), six small owner-ruled fixes built + gated + committed, the launchers pinned to Fable 5.1 / Opus 5.5, TTS switched to PocketTTS on dev — and EVERYTHING PUSHED (origin `dbe97f6` + this handoff). ▶▶ NEXT = the owner runs the ladder card (§④ below) before the next session; it opens on their results.**)
 
 **① The crackle (ISS-16, rewritten).** The owner arrived with it GONE on Speaker (EC on), BT off,
 chunking on or off — then caught it RETURNING the instant `speak_actions` went ON (they had seen it
