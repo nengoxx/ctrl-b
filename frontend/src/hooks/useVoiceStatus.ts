@@ -77,8 +77,9 @@ export interface LiveCallWire {
    *  dresses the `LiveCfg` default rather than inventing a second one. */
   captions?: boolean;
   /** D76 §B — `auto | on | off`: is the ear held while the reply plays? `on` = always, `off` = never,
-   *  `auto` = the leak probe (D76 S2) — until S2 lands, held where the track's AEC readback is not
-   *  `"all"` (the S0 ruling, per track, never UA-sniffed). */
+   *  `auto` = the leak probe: never held on a track whose AEC readback is `"all"` (the S0 ruling, per
+   *  track, never UA-sniffed); anywhere else each chunk starts held and is released for the rest of it
+   *  when the first `PROBE_MS` of held audio stays under the effective floor (D76 §B.3). */
   mic_hold: string;
   /** D76 §C (evidence R83) — the RELATIVE near-speech gate, all in dB. `floor_dbfs` is the bootstrap
    *  ceiling (the floor before a noise estimate, and its cap meanwhile); the three MARGINS are relative

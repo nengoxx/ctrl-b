@@ -42,6 +42,8 @@ const h = vi.hoisted(() => ({
         playback_margin_db: 10,
         min_dbfs: -60,
         max_dbfs: -20,
+        // D74 S7 — the readback block, OFF unless a case asks for it (the probe's evidence line).
+        debug: false,
       },
       stt_auto_stop: { threshold: 0 },
     },
@@ -92,9 +94,16 @@ const h = vi.hoisted(() => ({
   setMuted: vi.fn(),
   setHeld: vi.fn((held: boolean) => {
     h.order.push(`held:${String(held)}`);
+    h.heldNow = held;
   }),
   /** The controller's registered pre-play tap (S3 confirm F2) — null when nothing is registered. */
   prePlay: null as (() => void) | null,
+  /** …and its CHUNK-START signal (D76 §B.3), the leak probe's clock: the case plays the element's
+   *  `playing` by calling it with the chunk's index. */
+  chunkStart: null as ((idx: number) => void) | null,
+  /** The capture's hold as the machine last set it — what a case playing the capture classifies its
+   *  frames by (`uplinked = !held`, the real capture's rule for an unmuted ear). */
+  heldNow: false,
   /** Is the opened track a boolean-only AEC (Fennec: `getSettings().echoCancellation === true`, and no
    *  string modes at all) rather than Chromium's subtractive `"all"`? The ONE input to both the
    *  trigger-A arming and the S3 ear-hold decision. */
@@ -130,6 +139,9 @@ vi.mock("../../src/lib/audioController", () => ({
   useMouthFailures: () => h.failures,
   setCallPrePlay: (cb: (() => void) | null) => {
     h.prePlay = cb;
+  },
+  setCallChunkStart: (cb: ((idx: number) => void) | null) => {
+    h.chunkStart = cb;
   },
   getPlayStatus: () => h.play.status,
   subscribePlayback: (cb: () => void) => {
@@ -255,6 +267,8 @@ beforeEach(() => {
   h.play = { status: "idle" };
   h.playbackSubs.clear();
   h.prePlay = null;
+  h.chunkStart = null;
+  h.heldNow = false;
   h.chat = { status: "idle" };
   h.confirm = false;
   h.failures = 0;
@@ -284,6 +298,7 @@ beforeEach(() => {
   h.voice.data.live_call.min_final_ms = 0; // the transcript gate OFF unless a case arms it
   h.voice.data.live_call.playback_margin_db = 10;
   h.voice.data.live_call.floor_dbfs = -45;
+  h.voice.data.live_call.debug = false;
   localStore.clear();
   h.cue.mockClear();
   setMicRelease(null); // nobody holds the ear unless a case says so
@@ -619,7 +634,7 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
 
   it("MEDIA resolves `auto` from the readback like any route — a leaking track HOLDS (D76 §B)", async () => {
     // D76 deleted the headphones branch: the route is the EC ask and nothing else, so `auto` reads the
-    // TRACK on every route. PROVISIONAL until D76 S2's per-chunk leak probe replaces this readback rule.
+    // TRACK on every route — and on a leaking one, the leak probe then decides each chunk (below).
     h.voice.data.live_call.route = "media";
     fennec();
     const { step } = await call();
@@ -663,6 +678,213 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
       setPlay("playing");
       expect(h.setHeld).toHaveBeenCalledWith(true); // same task — no render happened yet
     });
+  });
+});
+
+describe("useLiveCall — THE LEAK PROBE, wired (D76 S2 · §B.3/§B.4)", () => {
+  // The harness plays the CAPTURE: a frame is uplinked unless the machine has the ear held
+  // (`h.heldNow`, the real capture's `uplinked = !(muted || held)` for an unmuted ear). The probe
+  // itself is the wiring's: it arms on the controller's chunk-start, takes the loudest HELD frame of
+  // `PROBE_MS` (600 ms = 30 frames at the harness's 20 ms), and judges it against the effective floor.
+  const PROBE_FRAMES = 30;
+  const rmsAt = (dbfs: number): number => 10 ** (dbfs / 20);
+  const tagged = (n: number): ArrayBuffer => {
+    const buf = new ArrayBuffer(8);
+    new Uint8Array(buf).fill(n);
+    return buf;
+  };
+  /** `n` capture frames at `dbfs`, tagged `tag`, classified the way the real capture would. */
+  const frames = (dbfs: number, n: number, tag = 1): void => {
+    for (let i = 0; i < n; i++)
+      h.mic?.({ buf: tagged(tag), rms: rmsAt(dbfs), uplinked: !h.heldNow });
+  };
+  /** One second of a quiet room at −50 dBFS with the mouth silent: the noise tracker's bootstrap
+   *  window closes and the effective floor is min(−50 + 10, −45) = −45 (the harness's ceiling). */
+  const room = () => act(async () => frames(-50, 50));
+  /** A leaking track (no subtractive canceller) — the only kind `auto` probes. */
+  const leaky = () => {
+    h.fennec = true;
+  };
+  /** The reply's chunk `idx` becoming audible: the controller's `playing`, via the registered clock. */
+  const chunk = (idx: number) => act(async () => h.chunkStart?.(idx));
+  /** What reaches the WIRE next: feed `n` frames tagged 9 at `dbfs`, then bank-and-pump until the
+   *  pacer's queue (≤ 50 frames, ≤ 25 per pump) has shipped all of them — and count the tagged frames
+   *  that went up as HEARD (a held one goes up as the zero buffer). */
+  const shipped = async (dbfs: number, n = 5): Promise<number> => {
+    h.audio.length = 0;
+    await act(async () => {
+      frames(dbfs, n, 9);
+      for (let i = 0; i < 4; i++) {
+        vi.advanceTimersByTime(5000);
+        frames(dbfs, 1, 5);
+      }
+    });
+    return h.audio.filter((b) => b === 9).length;
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("a chunk that stays UNDER the floor is RELEASED — what follows goes up as heard", async () => {
+    leaky();
+    const c = await call();
+    await room();
+    await c.step(() => setPlay("playing"));
+    expect(h.heldNow).toBe(true); // the reply starts held
+    expect(h.chunkStart).not.toBeNull(); // …and the probe's clock is registered
+    await chunk(0);
+    await act(async () => frames(-60, PROBE_FRAMES)); // −60 dBFS: nothing of the reply reaches the mic
+    expect(h.heldNow).toBe(false); // released for the rest of this chunk
+    expect(await shipped(-60)).toBe(5); // …and the owner's frames go up as they are
+    // The NEXT chunk starts held again — per chunk, not per reply.
+    await chunk(1);
+    expect(h.heldNow).toBe(true);
+  });
+
+  it("a chunk that REACHES the floor stays HELD — silence keeps going up", async () => {
+    leaky();
+    const c = await call();
+    await room();
+    await c.step(() => setPlay("playing"));
+    await chunk(0);
+    await act(async () => frames(-20, PROBE_FRAMES)); // the loudspeaker: the reply is in the mic
+    expect(h.heldNow).toBe(true);
+    expect(await shipped(-20)).toBe(0); // every one of them went up as the zero buffer
+  });
+
+  it("the MAX rule: a soft onset and a loud second half is a leak", async () => {
+    leaky();
+    const c = await call();
+    await room();
+    await c.step(() => setPlay("playing"));
+    await chunk(0);
+    await act(async () => {
+      frames(-60, PROBE_FRAMES / 2); //  the output path's latency: quiet…
+      frames(-20, PROBE_FRAMES / 2); //  …then the reply arrives
+    });
+    expect(h.heldNow).toBe(true);
+  });
+
+  it("a window the mouth does not fill decides NOTHING — the next reply is not released by it", async () => {
+    leaky();
+    const c = await call();
+    await room();
+    await c.step(() => setPlay("playing"));
+    await chunk(0);
+    await act(async () => frames(-60, 10)); // a third of the window…
+    await c.step(() => setPlay("paused")); // …and the reply ends
+    expect(h.heldNow).toBe(false); // nothing is speaking
+    await c.step(() => setPlay("playing")); // the next reply, before its chunk-start lands
+    await act(async () => frames(-60, PROBE_FRAMES - 10)); // would complete a stale window
+    expect(h.heldNow).toBe(true); // the discarded probe cannot release this reply
+  });
+
+  it("MUTED frames do not count — digital silence proves nothing about the reply", async () => {
+    leaky();
+    const c = await call();
+    await room();
+    await c.step(() => setPlay("playing"));
+    await chunk(0);
+    await c.step(() => c.view.result.current.toggleMute());
+    await act(async () => {
+      for (let i = 0; i < PROBE_FRAMES; i++) h.mic?.({ buf: tagged(1), rms: 0, uplinked: false }); // the disabled track
+    });
+    await c.step(() => c.view.result.current.toggleMute());
+    await act(async () => frames(-60, PROBE_FRAMES - 1));
+    expect(h.heldNow).toBe(true); // the muted stretch filled none of the window
+    await act(async () => frames(-60, 1));
+    expect(h.heldNow).toBe(false); // …its own 30 held frames did
+  });
+
+  it("the DROP CUE's frames are not probe frames — our own tone is not the reply", async () => {
+    leaky();
+    h.voice.data.live_call.min_final_ms = 200;
+    const c = await call();
+    await room();
+    await act(async () => {
+      h.frame?.({ type: "speech_started" });
+      frames(-60, 30); // under the −45 floor: the gate drops it, and the cue plays
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text: "Thank you for watching.", final: true });
+      await Promise.resolve();
+    });
+    expect(h.cue).toHaveBeenCalledTimes(1);
+    await c.step(() => setPlay("playing")); // the reply starts inside the cue's window
+    await chunk(0);
+    const cueFrames = Math.ceil(CUE_HOLD_MS / h.voice.data.live_call.frame_ms);
+    await act(async () => frames(-60, cueFrames + PROBE_FRAMES - 1));
+    expect(h.heldNow).toBe(true); // the cue's frames passed the window by
+    await act(async () => frames(-60, 1));
+    expect(h.heldNow).toBe(false);
+  });
+
+  it("BEFORE the room has a noise floor the probe cannot release (§B.4) — the first reply", async () => {
+    leaky();
+    const c = await call(); // no quiet second yet: the tracker has no estimate
+    await c.step(() => setPlay("playing"));
+    await chunk(0);
+    await act(async () => frames(-60, PROBE_FRAMES));
+    expect(h.heldNow).toBe(true);
+  });
+
+  it("no probe under `mic_hold: on` — held for the reply, whatever the mic hears", async () => {
+    leaky();
+    h.voice.data.live_call.mic_hold = "on";
+    const c = await call();
+    await room();
+    expect(h.chunkStart).toBeNull(); // nothing to decide, so no clock
+    await c.step(() => setPlay("playing"));
+    await act(async () => frames(-60, PROBE_FRAMES * 2));
+    expect(h.heldNow).toBe(true);
+  });
+
+  it("no probe on a SUBTRACTIVE canceller under `auto`, and no hold (§B.4)", async () => {
+    const c = await call(); // readback `"all"`
+    await room();
+    expect(h.chunkStart).toBeNull();
+    await c.step(() => setPlay("playing"));
+    expect(h.heldNow).toBe(false);
+  });
+
+  it("a RECAPTURE mid-reply holds the fresh ear at once and re-probes at the next chunk", async () => {
+    leaky();
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await room();
+    await c.step(() => setPlay("playing"));
+    await chunk(0);
+    await act(async () => frames(-60, PROBE_FRAMES));
+    expect(h.heldNow).toBe(false); // chunk 0 released
+    await act(async () => {
+      vi.advanceTimersByTime(250); // the debug block samples
+    });
+    expect(c.view.result.current.debug?.probe).toEqual({
+      idx: 0,
+      maxDb: expect.closeTo(-60, 5) as number,
+      floor: -45,
+      released: true,
+    });
+
+    await c.step(() => c.view.result.current.setRoute("media")); // mid-reply
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.capStops).toBe(1);
+    expect(h.heldNow).toBe(true); // the fresh ear is installed HELD under the live reply
+    expect(h.chunkStart).not.toBeNull(); // …with its own clock
+    await chunk(1);
+    await act(async () => frames(-60, PROBE_FRAMES));
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    // Chunk 1 WAS probed — and held, because the fresh ear has no noise floor yet (§B.4).
+    expect(c.view.result.current.debug?.probe).toMatchObject({ idx: 1, released: false });
+    expect(h.heldNow).toBe(true);
   });
 });
 

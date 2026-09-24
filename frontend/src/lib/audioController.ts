@@ -286,6 +286,23 @@ export function setCallPrePlay(cb: (() => void) | null): void {
   callPrePlay = cb;
 }
 
+/** THE CALL'S CHUNK-START SIGNAL (D76 §B.3) — the leak probe's clock. The status cannot carry it: every
+ *  chunk is a fresh `src` whose `playing` fires with the transport already latched at "playing", so the
+ *  call sees one idle→playing EDGE per reply and nothing at the seams. This is invoked from the
+ *  element's own `playing` event instead, with the index of the chunk that just became AUDIBLE (the live
+ *  queue's `playIdx`; `0` for a whole-message clip under the `off` policy). Exactly ONCE per chunk: a
+ *  stall re-fires `playing` on the chunk it interrupted (the design micro-confirm), and that is not a
+ *  new start — see `chunkReported`. Null when no call needs it; the call's teardown clears it on every
+ *  exit. */
+let callChunkStart: ((idx: number) => void) | null = null;
+export function setCallChunkStart(cb: ((idx: number) => void) | null): void {
+  callChunkStart = cb;
+}
+/** The last chunk the signal above reported, keyed by the GENERATION that owned it. `reqSeq` moves on
+ *  every new message, replay and reset, so a key from an older generation never suppresses anything —
+ *  the slot resets itself when the session changes or ends, with no write site to remember. */
+let chunkReported: { seq: number; idx: number } | null = null;
+
 /** Start the shared element — the ONE door to an audible `play()` (the silent, muted prime keeps its
  *  own path). Every future play site goes through here or it reopens the pre-play leak. */
 function startEl(a: HTMLAudioElement): ReturnType<HTMLMediaElement["play"]> {
@@ -504,6 +521,17 @@ function ensureEl(): HTMLAudioElement {
   a.addEventListener("play", () => {
     if (priming) return; // the gesture unlock is not playback — see `primeAudio`
     set({ status: "playing" });
+  });
+  // `playing`, not `play`: `play` is the REQUEST (output may still be buffering), `playing` is audio
+  // actually starting — the moment the leak probe's window has to open on (D76 §B.3).
+  a.addEventListener("playing", () => {
+    if (priming) return; // the silent unlock is no chunk
+    const s = liveSession();
+    const idx = s ? s.playIdx : 0; // no queue ⇒ the `off` policy's one whole-message clip
+    if (idx < 0) return;
+    if (chunkReported?.seq === reqSeq && chunkReported.idx === idx) return; // a stall's resume
+    chunkReported = { seq: reqSeq, idx };
+    callChunkStart?.(idx);
   });
   a.addEventListener("pause", () => {
     if (priming) return;

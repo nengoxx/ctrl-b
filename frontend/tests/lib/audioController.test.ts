@@ -12,6 +12,7 @@ import {
   feedReadAlong,
   markStreamRetag,
   seekFraction,
+  setCallChunkStart,
   setCallPrePlay,
   getPlayStatus,
   setCallVoice,
@@ -84,6 +85,7 @@ class FakeAudio {
     this.paused = false;
     this.ended = false;
     this.emit("play");
+    this.emit("playing"); // the request, then audio actually starting — the spec's order
   }
   pause() {
     this.paused = true;
@@ -1088,6 +1090,71 @@ describe("audioController — the chunk queue (D63)", () => {
       await toggle("m1", md);
     });
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("audioController — the call's CHUNK-START signal (D76 §B.3)", () => {
+  // The leak probe's clock. The transport status cannot carry it — every chunk is a fresh `src` whose
+  // `playing` fires with the status already latched at "playing" — so the element's own `playing`
+  // event reports the chunk that just became audible, ONCE per chunk.
+  const REPLY = "One. Two. Three."; // → 3 chunks with the floors off
+  const seen: number[] = [];
+  beforeEach(() => {
+    seen.length = 0;
+    setCallChunkStart((idx) => seen.push(idx));
+  });
+  afterEach(() => setCallChunkStart(null));
+
+  it("reports each chunk as it becomes audible — 0, 1, 2", async () => {
+    setChunkPolicy(chunked());
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    expect(seen).toEqual([0]);
+    for (let i = 0; i < 2; i++) {
+      await act(async () => lastAudio.emit("ended"));
+      await flush();
+    }
+    expect(seen).toEqual([0, 1, 2]);
+  });
+
+  it("a `playing` RE-FIRED on the same chunk (a stall's resume) is not a new start", async () => {
+    setChunkPolicy(chunked());
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    act(() => {
+      lastAudio.emit("waiting"); // the buffer ran dry…
+      lastAudio.emit("playing"); // …and playback resumed, on the chunk it never left
+    });
+    expect(seen).toEqual([0]);
+    await act(async () => lastAudio.emit("ended"));
+    await flush();
+    expect(seen).toEqual([0, 1]); // the next chunk still reports
+  });
+
+  it("the whole-message clip (`chunking: off`) reports idx 0, once per clip", async () => {
+    await act(async () => {
+      await toggle("m1", "hello");
+    });
+    act(() => lastAudio.emit("playing"));
+    expect(seen).toEqual([0]);
+    await act(async () => {
+      await toggle("m2", "again"); // a new clip is a new generation: its idx 0 is a new start
+    });
+    expect(seen).toEqual([0, 0]);
+  });
+
+  it("unregistered (the call's teardown), nothing is reported", async () => {
+    setCallChunkStart(null);
+    setChunkPolicy(chunked());
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    expect(seen).toEqual([]);
   });
 });
 

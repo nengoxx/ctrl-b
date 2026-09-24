@@ -25,7 +25,8 @@ import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "./pcmWorklet";
 // AEC measurably does nothing against the phone's own output. So the capability is READ BACK per track
 // (never UA-sniffed) and handed up; the machine arms the automatic interrupt only on `"all"` — and
 // everywhere else it arms the EAR-HOLD instead (`setHeld`, S3), which is the same readback read for its
-// other consequence: an ear that cannot be left open under the reply is held while the reply speaks.
+// other consequence: an ear that cannot be left open under the reply is held while the reply speaks
+// (under `mic_hold: auto` per CHUNK — the leak probe releases a chunk that does not leak, D76 §B.3).
 // Since D76 §B.1 a hold is a CLASSIFICATION, not a closed track: every frame still arrives with its real
 // level and a `uplinked` bit, and the call machine substitutes silence on the way up (see `setHeld`).
 
@@ -378,7 +379,7 @@ export interface PcmCapture {
    *  the owner's privacy switch and the OS mic indicator. The call machine sends a held frame up as a
    *  zeroed buffer of the same length, so the SERVER still receives exactly the digital silence it used
    *  to (its endpointing and silence timers are untouched), while the CLIENT keeps hearing — which is
-   *  what the leak probe (D76 S2) measures. `uplinked = !(muted || held)`: the two still share one
+   *  what the leak probe (D76 §B.3) measures. `uplinked = !(muted || held)`: the two still share one
    *  effective rule for what goes up, so a hold released while the owner is muted sends nothing, and an
    *  unmute under a live hold sends nothing either. */
   setHeld: (held: boolean) => void;

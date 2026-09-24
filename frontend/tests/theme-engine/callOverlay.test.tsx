@@ -843,7 +843,6 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     route: "media",
     micHold: "auto",
     bargeArmed: true,
-    earHoldMode: false,
     earHeld: false,
     mouthLive: false,
     deviceLabel: "Headset earpiece",
@@ -857,6 +856,7 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     noiseSettled: false,
     voiceLevel: -22.46,
     lastFinal: { accruedMs: 320, peakDb: -13.6, chars: 14 },
+    probe: null,
   };
 
   it("renders NOTHING extra with the knob off", () => {
@@ -888,6 +888,21 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     const text = document.querySelector(".kit-call-debug")!.textContent;
     expect(text).toContain("floor -52.0 (pinned)");
     expect(text).toContain("noise -61.0 (settled)");
+  });
+
+  it("prints the leak probe's last verdict — S3's per-chunk evidence line (D76 §B.3)", () => {
+    h.call = { ...h.call, debug: snapshot };
+    const { unmount } = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain("probe —");
+    unmount();
+    h.call = {
+      ...h.call,
+      debug: { ...snapshot, probe: { idx: 2, maxDb: -57.34, floor: -45, released: true } },
+    };
+    render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
+      "probe #2   max -57.3   floor -45.0   released",
+    );
   });
 
   it("is never also a tap-to-interrupt — it rides the cluster's pointer-down stop", () => {

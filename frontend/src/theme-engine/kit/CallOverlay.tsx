@@ -732,9 +732,9 @@ function DebugBlock({ d }: { d: CallDebug }) {
     <pre className="kit-call-debug" aria-hidden>
       {`ec    ${raw(d.ecSettings)}   caps ${raw(d.ecCapabilities)}
 route ${d.route || "—"}   hold ${d.micHold || "—"}   fellBack ${d.fellBack ? "yes" : "no"}
-arm   ${d.bargeArmed ? "yes" : "no"}   holdMode ${d.earHoldMode ? "yes" : "no"}   held ${
-        d.earHeld ? "yes" : "no"
-      }   mouth ${d.mouthLive ? "yes" : "no"}
+arm   ${d.bargeArmed ? "yes" : "no"}   held ${d.earHeld ? "yes" : "no"}   mouth ${
+        d.mouthLive ? "yes" : "no"
+      }
 dev   ${d.deviceLabel || "—"} ${d.deviceId ? `[${d.deviceId.slice(0, 8)}]` : ""}
 dBFS  ${db(d.level)}   peak2s ${db(d.levelPeak2s)}   floor ${db(d.floor)} ${
         d.floorPinned ? "(pinned)" : "(auto)"
@@ -744,6 +744,13 @@ final ${
         d.lastFinal === null
           ? "—"
           : `${d.lastFinal.accruedMs}ms   peak ${db(d.lastFinal.peakDb)}   chars ${d.lastFinal.chars}`
+      }
+probe ${
+        d.probe === null
+          ? "—"
+          : `#${d.probe.idx}   max ${db(d.probe.maxDb)}   floor ${db(d.probe.floor)}   ${
+              d.probe.released ? "released" : "held"
+            }`
       }`}
     </pre>
   );

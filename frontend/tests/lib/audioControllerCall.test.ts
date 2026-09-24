@@ -109,6 +109,18 @@ describe("primeAudio — the gesture unlock (§6)", () => {
   });
 });
 
+describe("primeAudio — the call's chunk-start signal ignores it (D76 §B.3)", () => {
+  it("the silent unlock's `playing` is no chunk — the probe's clock never hears it", async () => {
+    const { primeAudio, setCallChunkStart } = await controller();
+    const seen: number[] = [];
+    setCallChunkStart((idx) => seen.push(idx));
+    primeAudio();
+    FakeAudio.made[0].emit("playing"); // still priming: the unlock's promise has not settled
+    expect(seen).toEqual([]);
+    setCallChunkStart(null);
+  });
+});
+
 describe("primeAudio — when it must do nothing", () => {
   it("a rejected unlock leaves exactly today's behaviour, and never throws into the gesture", async () => {
     vi.stubGlobal(

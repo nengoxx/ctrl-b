@@ -6,6 +6,7 @@ import {
   markStreamRetag,
   openCallVoiceGate,
   type PlayStatus,
+  setCallChunkStart,
   setCallPrePlay,
   setCallVoice,
   subscribePlayback,
@@ -75,6 +76,14 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // carries silence in place of those frames (D76 §B.1 — the client still hears them) and every event
 // from that stretch is dropped. Nothing is lost by it: interruption there is the tap, which is every
 // browser's interrupt anyway (§4.3's trigger B).
+//
+// THE LEAK PROBE (`mic_hold: auto`, D76 §B.3). Not every leaking TRACK leaks: a phone playing into a car
+// or a pair of headphones hears nothing of the reply, and holding it deafens the owner for no reason.
+// So under `auto` the hold is decided per CHUNK, by listening: every chunk starts held, the wiring
+// takes the loudest held frame of its first `PROBE_MS`, and a chunk whose loudest frame stayed under
+// the effective floor is released for the rest of it (`probeOpen`). The next chunk asks again — a
+// device that starts leaking mid-reply is caught one chunk later. `on` holds every reply regardless;
+// `off` never holds; `auto` on a subtractive (`"all"`) canceller never holds, and never probes.
 //
 // THE RELATIVE GATE (D76 §C). What counts as the owner speaking is measured in dBFS against a floor
 // that FOLLOWS the room — a minimum-tracking noise estimate, the owner's own learned voice level, a
@@ -183,6 +192,14 @@ const IDLE_EDGES: ReadonlySet<CallSignal["type"]> = new Set([
  *  `playback_margin_db`, D76 §C.6) and the window (`min_speech_ms`), and a third dial on the same
  *  decision makes both of those harder to read. */
 const BARGE_HIT_RATIO = 0.75;
+
+/** THE LEAK PROBE'S WINDOW, ms (D76 §B.3): how much of each chunk's start is listened to, HELD, before
+ *  the chunk is released or kept held — the deaf window the owner accepted over a self-transcribed turn.
+ *  A platform/latency safety constant, not a preference: it has to outlast the output path's own
+ *  latency so the reply's leak has arrived before the probe judges it — and Bluetooth output latency
+ *  (A2DP ~100–250 ms) only exists on the paths that do not leak, while a loudspeaker leaks within tens
+ *  of ms. S3 measures it (the debug block's probe line). Not a knob, for `EAR_OUTAGE_MS`'s reason. */
+const PROBE_MS = 600;
 
 /** How often the debug block re-reads, ms (D74 S7). The measurements it shows arrive on the audio
  *  callback at 25–50 Hz, and re-rendering the overlay per frame to show them is exactly the trade the
@@ -302,6 +319,15 @@ const CONNECTION_NOTES: readonly string[] = [CALL_COPY.strained, CALL_COPY.busyR
 
 export type CallPhase = "connecting" | "listening" | "thinking" | "speaking" | "error" | "ended";
 
+/** `mic_hold` (D76 §B): `on` = held under every reply, `off` = never, `auto` = the leak probe. */
+export type HoldMode = "auto" | "on" | "off";
+
+/** Does this capture RUN the leak probe — `auto` on an ear whose canceller does not subtract the reply?
+ *  The one predicate: the normalize reads it for the hold, the wiring for whether to listen at all. */
+const probes = (s: CallState): boolean => s.holdMode === "auto" && !s.ecAll;
+/** …and can this capture be held at ALL (the pre-play tap's question): `on`, or a probing `auto`. */
+const mayHold = (s: CallState): boolean => s.holdMode === "on" || probes(s);
+
 export interface CallState {
   phase: CallPhase;
   /** Between the server VAD's `speech_started` and `speech_stopped`. */
@@ -329,9 +355,19 @@ export interface CallState {
    *  THIS; only what the screen says reads `phase`. Maintained by the playback signals whatever the
    *  phase logic decides to do with them. */
   mouthLive: boolean;
-  /** Does THIS call's track need the ear-hold at all (`mic_hold`, D76 §B — resolved ONCE at capture
-   *  from the track's own AEC readback — never UA-sniffed, never re-decided mid-call). */
-  earHoldMode: boolean;
+  /** THE HOLD POLICY this capture runs under (`mic_hold`, D76 §B) — read at `captureReady` like every
+   *  other §4.5 knob, never re-decided mid-call. `off` until a capture exists: no track, no hold. */
+  holdMode: HoldMode;
+  /** Did the ear that actually opened come back with the SUBTRACTIVE canceller (`echoCancellation ===
+   *  "all"`, the S0 ruling — the track's readback, never UA-sniffed)? Under `auto` it is the whole
+   *  answer: a canceller that subtracts the reply needs no hold and no probe (D76 §B.4). */
+  ecAll: boolean;
+  /** The chunk the mouth last STARTED (`chunkStarted`, −1 before any) — what a `probeResult` must be
+   *  about to count. */
+  probeIdx: number;
+  /** The leak probe RELEASED this chunk (D76 §B.3): its first `PROBE_MS` stayed under the floor. Every
+   *  chunk starts `false` (held) and a silent mouth clears it (see `normalize`). */
+  probeOpen: boolean;
   /** Is the canceller ENGAGED on the ear that actually opened — the track's readback, never the ask
    *  (ISS-18 review F3): an EC-off route whose capture came back EC-on (`ecStuck`) is still IN comm
    *  mode, and only this bit knows it. Seeded on `captureReady`; what `leavesComm` measures against. */
@@ -347,7 +383,7 @@ export interface CallState {
   inputDevice: string;
   /** THIS TAB WAS IN A CALL WHEN IT LAST WENT AWAY (D73 S6 ⑦) — the `sessionStorage` marker was
    *  standing when this machine started, which only happens when a leg opened here and no clean end
-   *  cleared it: a discarded tab's reload, a crash. Read ONCE at call start, like `earHoldMode`, and
+   *  cleared it: a discarded tab's reload, a crash. Read ONCE at call start, like `holdMode`, and
    *  consulted by exactly one rule — whether a FIRST dial's `busy` is another device or our own
    *  unreaped slot. */
   priorLeg: boolean;
@@ -369,7 +405,10 @@ export const CALL_INITIAL: CallState = {
   confirmHold: false,
   muted: false,
   mouthLive: false,
-  earHoldMode: false,
+  holdMode: "off",
+  ecAll: false,
+  probeIdx: -1,
+  probeOpen: false,
   earHeld: false,
   route: "",
   ecOn: false,
@@ -398,12 +437,13 @@ export type CallSignal = { gen?: number } & (
   | { type: "degraded" }
   | { type: "degradedOver" } //                the strained note's hold expired (see DEGRADED_NOTE_MS)
   | { type: "setMuted"; on: boolean } //       the mute control (§6)
-  /** The capture RESOLVED, carrying the one thing about it the rules depend on: whether this track
-   *  needs the ear-hold (`mic_hold`, D76 §B — resolved against the track's own AEC
-   *  readback). `note` is the one thing about it the SCREEN depends on: the D73 device fallback. */
+  /** The capture RESOLVED, carrying the two things about it the hold depends on (D76 §B): the policy
+   *  (`mic_hold`, read at call start) and whether the track's own AEC readback is the subtractive
+   *  `"all"`. `note` is the one thing about it the SCREEN depends on: the D73 device fallback. */
   | {
       type: "captureReady";
-      earHoldMode: boolean;
+      holdMode: HoldMode;
+      ecAll: boolean;
       note?: string;
       route: string;
       /** The readback's EC truth (`ecEngaged`); absent ⇒ derived from the route's ask (tests). */
@@ -427,6 +467,13 @@ export type CallSignal = { gen?: number } & (
   | { type: "barge" } //                       trigger A (voice) or B (tap) — the same edge
   | { type: "killSettled" }
   | { type: "playbackStarted" }
+  /** THE CHUNK-START (D76 §B.3): chunk `idx` of the reply just became audible — the controller's
+   *  `setCallChunkStart`, once per chunk (a stall's re-fired `playing` is deduped at the source). The
+   *  chunk starts HELD; the probe that judges it arms on this edge, never on the status edge. */
+  | { type: "chunkStarted"; idx: number }
+  /** …and the probe's verdict on chunk `idx`: did its first `PROBE_MS` of held audio reach the
+   *  effective floor? Measured in the wiring (the meter's split); decided here. */
+  | { type: "probeResult"; idx: number; leak: boolean }
   | { type: "playbackDrained" }
   | { type: "playbackFailed" }
   | { type: "turnSettled" } //                 chat status left `streaming`
@@ -573,7 +620,9 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
       // MODE describing a track nobody holds, would both outlive the thing they were about. The next
       // call re-reads the mode from its own track.
       mouthLive: false,
-      earHoldMode: false,
+      holdMode: "off",
+      ecAll: false,
+      probeOpen: false,
       earHeld: false,
       gen: s.gen + 1,
     },
@@ -585,18 +634,23 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
  * The whole conversation loop, as one pure function.
  *
  * THE EAR-HOLD IS DERIVED, NOT DECIDED (S3): `earHeld` is normalized once here, after the arm has had its
- * say, rather than being maintained by every arm that could move one of its three inputs. A rule spread
+ * say, rather than being maintained by every arm that could move one of its inputs. A rule spread
  * across a dozen arms is a rule with a dozen chances to be forgotten by the next one.
  */
 export function callReduce(s: CallState, sig: CallSignal): Step {
   const step = reduce(s, sig);
-  // `earHoldMode` is the track's (does this ear leak?), `mouthLive` the transport's (is the reply
-  // audible?), and `!killing` the machine's own: an interrupt in flight has ALREADY silenced the mouth
-  // synchronously, and holding the ear until the cancel settles would eat the first word of exactly the
-  // sentence the owner interrupted with.
-  const earHeld = step.state.earHoldMode && step.state.mouthLive && !step.state.killing;
-  if (earHeld === step.state.earHeld) return step;
-  return { state: { ...step.state, earHeld }, out: step.out };
+  const st = step.state;
+  // A probe's release is about ONE chunk of ONE reply: a mouth that went silent (drained, failed,
+  // killed, a terminal) takes it with it, so the next reply starts held without any arm remembering to.
+  const probeOpen = st.probeOpen && st.mouthLive;
+  // The POLICY is the capture's (`holdMode` × `ecAll` × the probe's verdict, D76 §B), `mouthLive` the
+  // transport's (is the reply audible?), and `!killing` the machine's own: an interrupt in flight has
+  // ALREADY silenced the mouth synchronously, and holding the ear until the cancel settles would eat
+  // the first word of exactly the sentence the owner interrupted with.
+  const earHeld =
+    st.mouthLive && !st.killing && (st.holdMode === "on" || (probes(st) && !probeOpen));
+  if (earHeld === st.earHeld && probeOpen === st.probeOpen) return step;
+  return { state: { ...st, earHeld, probeOpen }, out: step.out };
 }
 
 function reduce(s: CallState, sig: CallSignal): Step {
@@ -760,8 +814,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
 
     case "playbackStarted": {
       // The transport spoke, so the flag lands FIRST and unconditionally — what the phase logic below
-      // decides to do about it is a separate question (see `mouthLive`).
-      const open = mouth(s, true);
+      // decides to do about it is a separate question (see `mouthLive`). The mouth (re)starting is a
+      // chunk nobody has probed yet, so it starts HELD (D76 §B.3); its `chunkStarted` re-arms the probe.
+      const open = { ...mouth(s, true), probeOpen: false };
       // §4.2's iron rule (confirm-round MED 2). The mouth is about to open while the owner is mid-word,
       // or while their words are still in flight: that IS a barge-in, and it is killed BEFORE the first
       // audible sample rather than after it.
@@ -777,6 +832,18 @@ function reduce(s: CallState, sig: CallSignal): Step {
       if (s.phase === "connecting") return { state: open, out: [] };
       return { state: { ...open, phase: "speaking" }, out: [] };
     }
+
+    case "chunkStarted":
+      // A NEW chunk is audible: it starts held, whatever the last one's verdict was (D76 §B.3 — per
+      // chunk, not per reply). Recorded on every policy — only `probes()` ever reads it.
+      return { state: { ...s, probeIdx: sig.idx, probeOpen: false }, out: [] };
+
+    case "probeResult":
+      // THE VERDICT, fenced twice: by the generation (a recapture moved it — this verdict is about the
+      // old ear), and by the CHUNK (a verdict about any chunk but the one now playing is history). Only
+      // a probing capture takes one: `on` holds regardless and `off`/`"all"` never hold.
+      if (!probes(s) || sig.idx !== s.probeIdx || !s.mouthLive) return { state: s, out: [] };
+      return { state: { ...s, probeOpen: !sig.leak }, out: [] };
 
     case "playbackDrained": {
       // The mouth stopped: the flag goes down even where the arm declines to move the phase, because a
@@ -803,8 +870,8 @@ function reduce(s: CallState, sig: CallSignal): Step {
     }
 
     case "captureReady":
-      // The ear-hold RULE, taken ONCE from the track that actually opened (§5.1). It cannot be re-decided
-      // later: `mic_hold` is read at call start like every other knob (§4.5 — settings edited
+      // The ear-hold POLICY, taken ONCE from the track that actually opened (§5.1). It cannot be
+      // re-decided later: `mic_hold` is read at call start like every other knob (§4.5 — settings edited
       // mid-call apply to the NEXT call), and the capability belongs to this track, not to the browser.
       // The note is the capture's own news (the D73 device fallback) and rides the same arm: it is a
       // fact about THIS track, learned at exactly this moment, and it is not connection news — so a
@@ -817,7 +884,11 @@ function reduce(s: CallState, sig: CallSignal): Step {
       return {
         state: {
           ...s,
-          earHoldMode: sig.earHoldMode,
+          holdMode: sig.holdMode,
+          ecAll: sig.ecAll,
+          // A FRESH EAR IS UNPROBED (D76 §B.4): a recapture while the mouth is live holds at once (under
+          // `auto` without a subtractive canceller) and the next `chunkStarted` probes again.
+          probeOpen: false,
           note: sig.note ?? s.note,
           route: sig.route,
           ecOn: sig.ecOn ?? wantsAec(sig.route),
@@ -859,7 +930,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
           killing: false,
           // The HOLD belongs to the track (§5.1, resolved ONCE per capture), so it dies with it; the
           // fresh `captureReady` decides it again under the new route. `earHeld` follows in normalize.
-          earHoldMode: false,
+          holdMode: "off",
+          ecAll: false,
+          probeOpen: false,
           // THE FENCE (F7). The old leg's frames, its close, this capture's `onEnded` and any send
           // outcome armed under it all become ghosts — which is the point: the redial below is driven
           // by the acquisition, not by the close, so a `socketLost` from the leg we are closing must
@@ -1285,12 +1358,15 @@ export interface CallDebug {
   /** The effective route pair and the hold lever — the floor is unreadable without them (§3.4). */
   route: string;
   micHold: string;
-  /** …and the three flags the arming decision produced. Rendered TOGETHER on purpose: `bargeArmed`
-   *  and `earHoldMode` are the same readback read twice and can never honestly disagree. */
+  /** …and the flags the arming decision produced, rendered TOGETHER on purpose: whether voice can
+   *  interrupt, whether the ear is closed right now, and whether the mouth is audible. */
   bargeArmed: boolean;
-  earHoldMode: boolean;
   earHeld: boolean;
   mouthLive: boolean;
+  /** THE LEAK PROBE'S LAST VERDICT (D76 §B.3 — S3's evidence line): which chunk, the loudest held
+   *  frame of its window, the effective floor it was judged against (dBFS), and whether it released.
+   *  `null` until a probe has decided (and always, on a capture that does not probe). */
+  probe: { idx: number; maxDb: number; floor: number; released: boolean } | null;
   /** Which ear actually opened, and whether it is the one that was asked for. */
   deviceLabel: string;
   deviceId: string;
@@ -1404,6 +1480,14 @@ export function useLiveCall(): CallView {
    *  that ran on `performance.now()` would expire unheard across a freeze. 0 = no cue playing.
    *  Wiring-owned, like `overflowed`: it is about what this capture sends. */
   const cueFramesLeft = useRef(0);
+  /** THE LEAK PROBE'S MEASUREMENT (D76 §B.3) — the chunk it is judging, the generation it was armed
+   *  under, how many HELD frames of its `PROBE_MS` window are still to come, and the loudest of those
+   *  seen so far (dBFS). `null` = no probe listening. Wiring-owned, by the ear meter's split: the frames
+   *  arrive at 25–50 Hz and are a measurement; the reducer gets the VERDICT (`probeResult`). */
+  const probe = useRef<{ idx: number; gen: number; framesLeft: number; max: number } | null>(null);
+  /** …and the last verdict, kept for the debug block (S3's evidence line): what was heard, what it was
+   *  judged against, and which way it went. */
+  const lastProbe = useRef<CallDebug["probe"]>(null);
 
   /** Release EVERYTHING, on every exit path (§6's "hang up = immediate full teardown"). Idempotent. */
   const teardown = useCallback((): void => {
@@ -1427,6 +1511,8 @@ export function useLiveCall(): CallView {
     dismiss(); // an ended call does not keep talking
     setCallVoice(false, false);
     setCallPrePlay(null); // the pre-play tap dies with the capture it closes over
+    setCallChunkStart(null); // …and so does the probe's clock
+    probe.current = null;
     const lock = wakeLock.current;
     wakeLock.current = null;
     void lock?.release().catch(() => {});
@@ -1525,8 +1611,12 @@ export function useLiveCall(): CallView {
             pacer.current = null;
             overflowed.current = false;
             // The pre-play tap closes over the capture it is about to release (S3 confirm F2), so it
-            // goes with it; the fresh capture registers its own if its track needs one.
+            // goes with it; the fresh capture registers its own if its track needs one. The probe's
+            // clock and any probe it armed go the same way (D76 §B.4): the fresh ear re-probes from
+            // the next chunk, and a verdict about the old one is fenced out by the generation anyway.
             setCallPrePlay(null);
+            setCallChunkStart(null);
+            probe.current = null;
             // The OLD ear's learned level goes back under the OLD device's key (D76 §C.3) before the
             // fresh capture seeds from whatever its own key holds.
             persistVoice(gate.current);
@@ -1793,7 +1883,7 @@ export function useLiveCall(): CallView {
               // below compares a level against anything.
               const db = rmsToDbfs(frame.rms);
               // THE PARTITION (D76 §B.2). The noise tracker takes UPLINKED frames only; a HELD frame is
-              // the leak probe's alone (D76 §B.3 — S2 builds it), and nothing here reads one. And it PAUSES
+              // the leak probe's alone (D76 §B.3, below), and nothing else here reads one. And it PAUSES
               // while the mouth is live (R83 §8, the S0b code round MED 1): on the call route the ear
               // stays open under the reply and the canceller's residue is not the room — a long reply
               // would ratchet the minimum up, half a window at a time, into the next quiet turn.
@@ -1801,6 +1891,34 @@ export function useLiveCall(): CallView {
               // THE effective floor for this frame — the one normalize (`gateFloor`); every reader below
               // takes this number.
               const floor = gateFloor(g, knobs);
+              // THE LEAK PROBE (D76 §B.3) — the other side of the partition. It listens ONLY to frames
+              // held BECAUSE OF THE HOLD: the capture did not uplink this frame (`!frame.uplinked`),
+              // the machine says the ear is held right now, and the owner has not muted it — a muted
+              // frame is digital silence and proves nothing. A drop-cue frame is not a probe frame
+              // either: that is our own tone on this device's output, not the reply. Neither kind
+              // counts toward the window; they just pass it by.
+              const pr = probe.current;
+              if (pr !== null) {
+                // The reply stopped (drained, killed, failed) or the ear was replaced before the window
+                // filled: nothing left to decide about this chunk.
+                if (pr.gen !== ref.current.gen || !ref.current.mouthLive) probe.current = null;
+                else if (!frame.uplinked && !inCue && ref.current.earHeld && !ref.current.muted) {
+                  pr.max = Math.max(pr.max, db);
+                  pr.framesLeft -= 1;
+                  if (pr.framesLeft <= 0) {
+                    probe.current = null;
+                    // LEAK ⇔ the loudest held frame reached THE effective floor (§B.3's one-floor rule
+                    // — the gate's own number, never a second threshold). And before the room has a
+                    // noise estimate at all there is nothing to be quieter than (§B.4): held.
+                    const leak = g.noise.floor === null || pr.max >= floor;
+                    lastProbe.current = { idx: pr.idx, maxDb: pr.max, floor, released: !leak };
+                    send({ type: "probeResult", idx: pr.idx, leak, gen: pr.gen });
+                    // The verdict reaches the capture before the NEXT frame is classified — the
+                    // playback subscription's same-task rule, applied to the release.
+                    capture.current?.setHeld(ref.current.earHeld);
+                  }
+                }
+              }
               // THE EAR METER, FED ONCE (D74 S4 ⑥): trigger A below, the transcript gate's accrual (S5),
               // the voice learner's samples and the readouts all read what this line wrote. It sits
               // OUTSIDE every guard below on purpose — what the microphone heard does not stop being
@@ -1884,15 +2002,17 @@ export function useLiveCall(): CallView {
           // never contradicts these two flags.
           //
           // `on`/`off` are the owner's override of the HOLD half only; the two decisions stay separate
-          // flags (`barge_in` may be off on a perfectly open ear — walkie-talkie by choice).
-          // `auto` IS PROVISIONAL until D76 S2's per-chunk leak probe replaces this readback rule.
+          // flags (`barge_in` may be off on a perfectly open ear — walkie-talkie by choice). And under
+          // `auto` a leaking readback is only the QUESTION: the leak probe answers it per chunk (D76
+          // §B.3), so a phone on a car's Bluetooth or a pair of headphones is not held for nothing.
           const ecAll = cap.readback.echoCancellation === "all";
           bargeArmed.current = knobs.barge_in && ecAll;
           const hold = knobs.mic_hold;
           send({
             type: "captureReady",
             ecOn: ecEngaged(cap.readback.echoCancellation),
-            earHoldMode: hold === "on" ? true : hold === "off" ? false : !ecAll,
+            holdMode: hold === "on" || hold === "off" ? hold : "auto",
+            ecAll,
             // The picked device did not open and the default took the call (R74 §2.2(b)). The call
             // proceeds — it is the same ear on another route — and the overlay says which.
             //
@@ -1920,7 +2040,31 @@ export function useLiveCall(): CallView {
           // asks the element to play — observation, however synchronous, races the audio thread. The tap
           // is a bare "close now": stable until the play event's own reduce confirms it (nothing can
           // transition `earHeld` in that gap), and a rejected play's status edge is what reopens it.
-          if (ref.current.earHoldMode) setCallPrePlay(() => cap.setHeld(true));
+          // Under `auto` that is EVERY chunk's play, not just the reply's first: the last chunk's
+          // release must not carry into the next one's first samples, and it is the next chunk's
+          // `chunkStarted` (on `playing`) that confirms the hold in the machine. A play request also
+          // ENDS whatever probe was still listening: the chunk it was judging is over, and the frames
+          // from here on belong to the next one.
+          if (mayHold(ref.current))
+            setCallPrePlay(() => {
+              probe.current = null;
+              cap.setHeld(true);
+            });
+          // THE PROBE'S CLOCK (D76 §B.3): only a capture that probes registers it — `on` holds
+          // regardless, `off` and a subtractive canceller never hold, so there is nothing to decide.
+          if (probes(ref.current)) {
+            const probeFrames = Math.ceil(PROBE_MS / knobs.frame_ms);
+            setCallChunkStart((idx) => {
+              const gen = ref.current.gen;
+              send({ type: "chunkStarted", idx, gen });
+              // Armed only on an ear the machine actually holds (a kill in flight has released it):
+              // the probe measures what a HELD ear hears, and it never inherits an older chunk's.
+              probe.current = ref.current.earHeld
+                ? { idx, gen, framesLeft: probeFrames, max: -Infinity }
+                : null;
+              cap.setHeld(ref.current.earHeld); // same task as the audible start (see the tap above)
+            });
+          }
           openLeg();
         })
         .catch((e: unknown) => {
@@ -1996,6 +2140,10 @@ export function useLiveCall(): CallView {
       const was = prevPlay.current;
       if (was === status) return; // the store emits for time/intent too — only the status edge matters
       prevPlay.current = status;
+      // Every status edge is the mouth starting, pausing, gapping or stopping — whatever leak probe was
+      // still listening was about the chunk BEFORE it (D76 §B.3), and it ends here, deterministically,
+      // rather than at whichever frame next notices. A starting chunk re-arms on its own `playing`.
+      probe.current = null;
       const gen = ref.current.gen;
       if (status === "playing") send({ type: "playbackStarted", gen });
       // Synthesis that never produced a sample is the mouth FAILING; audio that played and stopped is
@@ -2167,7 +2315,6 @@ export function useLiveCall(): CallView {
         route: s.route,
         micHold: knobs?.mic_hold ?? "",
         bargeArmed: bargeArmed.current,
-        earHoldMode: s.earHoldMode,
         earHeld: s.earHeld,
         mouthLive: s.mouthLive,
         deviceLabel: cap?.readback.label ?? "",
@@ -2181,6 +2328,7 @@ export function useLiveCall(): CallView {
         noiseSettled: g.noise.settled,
         voiceLevel: g.voiceLevel,
         lastFinal: m.last,
+        probe: lastProbe.current,
       });
     };
     read();
