@@ -1509,6 +1509,18 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > `s.ecOn && !wantsAec(next)`. Test gaps closed: the wiring arm pins the mark BEFORE the ear is
   > released (`retagAtStops`). Arms: an owner-paused reply survives the mark and resumes; the whole-clip
   > gate unloads-then-holds; `leavesComm` reads `ecOn`.
+  > **The Opus design lens (same round): SHIP WITH CHANGES — all taken.** D1 the in-call drop broke the
+  > wiring's drain invariant (`loading → idle` = the mouth failing; a queue can finish from the open
+  > latch's "loading"): a false "voice failed" after a heard reply — the drop now publishes `paused`
+  > first, on both paths (pinned: the in-call finish's last edge is `paused → idle`) · D2 ISS-16's
+  > candidate (b) (a silent clip holding the stream open) would silently undo ISS-18 — amended in ISSUES,
+  > with the note that the stream's in-call LIFETIME changed at `b8ebffa` (closes ~5 s after each reply
+  > now; "an ordinary call pays nothing" means no hold and no unload beyond the finish — not an
+  > unchanged stream) · D3 StrictMode ran the discard notice twice on dev — a once-flag · D4 R81's
+  > header · S1 (recorded, accepted): hanging up an EC-on call is also a comm-mode exit, and the retag
+  > belongs to the call (`setCallVoice(false)` ends it), so a bubble REPLAYED within ~5 s of hanging up
+  > reuses the VOICE-tagged stream (from the earpiece with no BT connected) — narrowed from ~15 s by the
+  > finish unload; not a call-mode defect.
 
 - **THE D73 WAVE — call audio routing + background calls (owner-ruled 2026-09-21, in conversation;
   evidence = [R74](./research/R74-android-call-audio-routing.md) ·

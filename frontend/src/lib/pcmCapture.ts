@@ -491,9 +491,8 @@ export async function attachPcmUplink(
 const EC_RELEASE_RETRY_MS = 250;
 
 /** Did this track come back with the canceller ENGAGED? `"all"` and `true` are both engaged (R78 §1.3 —
- *  they differ in which canceller, never in whether); anything else, `undefined` included, is not. */
-/** Is the canceller ENGAGED on this readback — Chrome's `"all"` or a plain `true` elsewhere. Exported for
- *  the call machine's `ecOn` (ISS-18): the comm-mode truth is the track's readback, never the ask. */
+ *  they differ in which canceller, never in whether); anything else, `undefined` included, is not.
+ *  Exported for the call machine's `ecOn` (ISS-18): the comm-mode truth is the readback, never the ask. */
 export function ecEngaged(v: string | boolean | undefined): boolean {
   return v === true || v === "all";
 }

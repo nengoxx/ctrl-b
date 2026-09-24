@@ -11,7 +11,7 @@ stream tagged with the CURRENT mode (`AAUDIO_USAGE_MEDIA`), and how long does it
 **Occasion:** owner's phone round 2026-09-24 (Honor 20, Chrome): after an EC-on → EC-off flip, TTS keeps
 coming out of the phone speaker until "a longer silence"; EC-off → on re-routes at once.
 **Builds on:** [`R80`](R80-comm-mode-crackle.md) §3.2/§3.3/§5 · [`R74`](R74-android-call-audio-routing.md)
-§1.1–1.2 · [`R77`](R77-android10-pres-route-residual.md) §1.1/§1.5/§3. **Drove:** nothing yet.
+§1.1–1.2 · [`R77`](R77-android10-pres-route-residual.md) §1.1/§1.5/§3. **Drove:** ISS-18 → the fresh-stream slice (LIVE_VOICE_PLAN §7 "THE ISS-18 SLICE": the in-call finish unload, `markStreamRetag`, the first-`src` hold).
 **Corrects:** R80 §1 + §3.3 (the prime) and R80 §3.1 (which config function applies) — §2.
 
 | Source | Pin | How read |

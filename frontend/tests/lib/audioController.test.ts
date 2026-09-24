@@ -13,7 +13,9 @@ import {
   markStreamRetag,
   seekFraction,
   setCallPrePlay,
+  getPlayStatus,
   setCallVoice,
+  subscribePlayback,
   setChunkPolicy,
   STREAM_RETAG_MS,
   toggle,
@@ -553,6 +555,28 @@ describe("audioController — the chunk queue (D63)", () => {
         expect(result.current.status).toBe("loading");
       } finally {
         spy.mockRestore();
+      }
+    });
+
+    // Design review D1: the call wiring reads `loading → idle` as the mouth FAILING and `→ paused` as
+    // the reply finishing; the in-call drop must therefore publish "paused" BEFORE its unload's "idle"
+    // — a queue can finish straight from the open latch's "loading".
+    it("the in-call finish publishes `paused` before the unload's `idle` (the wiring's drain edge)", async () => {
+      const edges: string[] = [];
+      let last = getPlayStatus();
+      const off = subscribePlayback(() => {
+        const now = getPlayStatus();
+        if (now !== last) edges.push(`${last}→${now}`);
+        last = now;
+      });
+      try {
+        setCallVoice(true, false);
+        await playThrough("m1");
+        expect(edges.at(-1)).toBe("paused→idle");
+        expect(edges).not.toContain("loading→idle");
+        expect(edges).not.toContain("playing→idle");
+      } finally {
+        off();
       }
     });
 

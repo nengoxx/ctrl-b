@@ -145,8 +145,10 @@ describe("App — the discard notice", () => {
     Object.defineProperty(document, "wasDiscarded", { value: true, configurable: true });
     const toasts = renderHook(() => useToasts());
     render(<App />);
-    const notice = toasts.result.current.find((t) => t.text.includes("discarded this page"));
-    expect(notice?.sticky).toBe(true);
+    render(<App />); // StrictMode's double effect on dev, or a second mount: still ONE notice
+    const notices = toasts.result.current.filter((t) => t.text.includes("discarded this page"));
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.sticky).toBe(true);
   });
 
   it("an ordinary boot — the bit absent or false — says nothing", () => {

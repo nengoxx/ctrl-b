@@ -527,7 +527,11 @@ function ensureEl(): HTMLAudioElement {
       return;
     }
     if (callVoice.active) {
-      reset(); // ISS-18: an ended element is a client too (R81 §1) — in a call, unload it
+      // ISS-18: an ended element is a client too (R81 §1) — in a call, unload it. THROUGH "paused"
+      // first (design review D1): the call wiring reads `loading → idle` as the mouth FAILING and
+      // `→ paused` as the reply finishing, so the drop must publish the finish before the unload.
+      set({ status: "paused" });
+      reset();
       return;
     }
     a.currentTime = 0;
@@ -1008,6 +1012,11 @@ function finish(s: Session, a: HTMLAudioElement): void {
   // after the reply ended, and that stream may carry the route the call has just LEFT. The call screen
   // has no replay control to lose; a replay from the chat log re-synthesizes through the cache anyway.
   if (callVoice.active) {
+    // …THROUGH "paused" first (design review D1): a queue can finish from the open latch's "loading"
+    // (drained closed with nothing left to plan), and the call wiring reads `loading → idle` as the
+    // mouth failing — "voice failed" after a reply the owner heard. The finish is published as the
+    // `paused` the wiring has always drained on; the unload's `idle` then means nothing to it.
+    set({ status: "paused" });
     dropSession(s);
     return;
   }

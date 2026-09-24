@@ -209,12 +209,14 @@ function useAppViewport(): void {
 // restored after a discard (Chrome ≥ 68; absent elsewhere ⇒ no note). Surfaced as a sticky toast so it is
 // still there when the owner looks — a discard means the call died with the page, and the fix is a phone
 // setting (R75 §2.3), not code; the page cannot tell them that unless it says it was discarded.
+let discardNoticed = false; // once per page: StrictMode runs the effect twice on dev (design review D3)
 function useDiscardNotice(): void {
   useEffect(() => {
-    if ((document as { wasDiscarded?: boolean }).wasDiscarded === true)
-      pushToast("the browser discarded this page while it was away and reloaded it", "info", {
-        sticky: true,
-      });
+    if (discardNoticed || (document as { wasDiscarded?: boolean }).wasDiscarded !== true) return;
+    discardNoticed = true;
+    pushToast("the browser discarded this page while it was away and reloaded it", "info", {
+      sticky: true,
+    });
   }, []);
 }
 
