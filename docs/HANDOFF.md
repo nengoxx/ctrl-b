@@ -13,7 +13,66 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-24 evening, THIRTY-SIXTH session — **THE STICKY SLICE'S OWED REVIEW ROUND, RUN AND CLOSED: the owner confirmed the two eyeball items that mattered (pick → a CALL answers as the picked agent; the in-call transcript reads well), the full gate was re-proven green at `b807a02`, then a blind Maya ∥ Opus round over `88a27ad` → ONE real fix (the menu's rows now come from the roster query through a shared `useActiveAgent` hook) + three stale comments, gate 6/6, FE 3,767/194, e2e agent-backdrop 22/22. **LATE SITTING (same evening): the owner RULED S1 (session-scoped, like `/agent` — persist both later, maybe), EVERYTHING PUSHED (origin `502ddf6` + the ISS-17 commit after it), and ISS-17 `/clear` → `/new` BUILT (the verb row + 38 comment sites + every test that typed it; the suggest-grammar prefix pair is now `new`/`new-host`; FE 3,767/194). ▶▶ NEXT = the rest of the eyeball list → the standing D73/D74 probes → S4.**)
+## Current state (2026-09-24 night, THIRTY-SIXTH session, THE LATE SITTING — **THE OWNER'S S4 ROUND №1 DECODED + THE ISS-18 SLICE BUILT, DOUBLE-REVIEWED, CONFIRMED, PUSHED. The round: car (EC-on route → the car speakers, correct; the car mic + the quiet-final gate = "had to shout") · headphones (the Mic rows = `default · Speakerphone · Headset earpiece` — R77's no-HFP-row premise STANDS; a mid-reply flip stayed on the phone speaker until a later reply = ISS-18) · lock screen (deaf in ~2 s, no reply audible = ISS-19, device-setting probe first) · noise → short false words (the same gate, other side) · ISS-13/14 PARKED won't-fix (owner scope ruling) · the reload-on-every-return on dev = VITE's HMR client, not the app. **Built:** R81 (Chromium source, verified — the output stream's tag is fixed at `src` assignment; pooled; `pause()` = 15 s, unload + 5 s = fresh) → the fresh-stream slice (`markStreamRetag` · the in-call finish UNLOADS · the first-`src` hold, 5500 ms platform constant) + the boot-time discard notice (`document.wasDiscarded` → sticky toast); blind Maya DO NOT SHIP [3 MED] + Opus SHIP WITH CHANGES [1 MED · 3 LOW · S1] → both fix waves built → both CONFIRMED. FE 3,780/194, gate 6/6. ▶▶ NEXT SESSION OPENS ON THE OWNER'S PHONE CARD (below).**)
+
+**① The round, decoded (record: LIVE_VOICE_PLAN §7 "S4 ROUND №1"; ISSUES ISS-18/19).** Car: comm
+mode ⇒ the hands-free profile ⇒ the car is the sink for the EC-on route (correct), and the CAPTURE
+too (the car mic, narrowband, other gain) — "had to shout" reads as the §4.3 quiet-final gate
+(`min_final_ms` 200 above the 0.06 floor, calibrated on the phone mic) dropping ordinary speech;
+the confirming signal is the "too quiet — didn't take that" note. Headphones: "Headset earpiece" is
+Chrome's name for the phone's OWN earpiece; the 09-23 "headset mic, I think" was this row. The
+mid-reply flip = ISS-18 (mechanism R74 S2 + R80 §3.3 + R81). Lock screen = ISS-19 (R75 §2.3's
+EMUI power management is the prime suspect; the S6 keepalive holds the page audible to CHROME's
+freezer, not to the OS). Noise → "yeah"/"mm hmm" = noises clearing the same 200 ms floor. The
+Vite reload: `vite/dist/client/client.mjs` reloads after a lost HMR socket; prod's built assets
+never do; the dev-web unit could serve `vite preview` for phone rounds (no HMR) — owner's call.
+
+**② THE ISS-18 SLICE (`b8ebffa` + the fix waves `f06adb1` · `ba599bc`; record in the plan §7 "THE
+ISS-18 SLICE").** In a CALL a finished reply is UNLOADED (through `reset()` → `unloadEl`, the one
+door, which stamps `unloadedAt`), never parked; `markStreamRetag()` (called by the call wiring when a
+recapture LEAVES comm mode — `leavesComm = s.ecOn && !wantsAec(next)`, `ecOn` = the track's
+readback seeded on `captureReady`) unloads a silent mouth (idle, or a parked queue) and arms the
+hold; the next reply's FIRST `src` waits `STREAM_RETAG_MS` (5500) from the unload under the queue's
+"loading", with `retagGate` unloading whatever is still loaded at that moment (both paths); the
+play index stays at −1 while the hold stands and one timer only (both red-proven); a reply PLAYING
+at the flip finishes on the old route and the deck says "the new route takes effect from the next
+reply"; an owner-PAUSED reply survives the mark; the in-call drop publishes `paused` before the
+unload's `idle` (the wiring's drain invariant); an ordinary call pays no hold. **Discard notice:**
+a page restored after the browser discarded it says so once, sticky — the discriminator for ISS-19.
+**Review trail:** Maya F1 (paused ≠ silence) · F2 (the whole-clip gate) · F3 (`ecOn`, not the ask);
+Opus D1 (the drain edge) · D2 (ISS-16's candidate (b) amended; the in-call stream LIFETIME changed
+— it closes ~5 s after each reply now) · D3 (StrictMode double toast) · D4 (R81 header) · S1 (a
+bubble replayed within ~5 s of hanging up an EC-on call rides the VOICE stream — accepted). Both
+confirm rounds CONFIRMED. **Not phone-tested** — R81's chain is verified at Chromium source, the
+behaviour on the Honor 20 is the next round's to prove.
+
+**▶▶ THE OWNER'S PHONE CARD (next session opens on the answers; dev :8443, reload the page first —
+FE-only, no restart):**
+1. **ISS-18, flip mid-reply:** call on the EC-on speaker route, headphones connected → while a
+   reply plays, Sound pill → headphones. Expect: the deck notes "the new route takes effect from
+   the next reply", the reply finishes on the phone speaker, the NEXT reply comes out of the
+   headphones with at most ~5 s of "loading" before it. Then the same flip while SILENT → the next
+   reply on the headphones with no wait beyond the LLM's. Then back to EC-on → immediate (as before).
+2. **ISS-18, the zero-code probe (R81 §3, REASONED only):** on an EC-off route with headphones
+   connected, Mic pill → "Headset earpiece" — does even a reply ALREADY playing move to the
+   headphones at once (at voice-call volume)? Yes ⇒ a route-only lever exists; no ⇒ R81 §5's OEM
+   question answered.
+3. **ISS-19, the device setting FIRST:** Settings → Battery → App launch → Chrome → Manage manually
+   (all three ON) + dismiss any "power-intensive app" prompt for Chrome. Then: start a call · speak
+   · lock the screen · wait 3 min · unlock · speak. Expect either it hears you (setting was the
+   cause) or it died — and on return, does the toast "the browser discarded this page…" show? (yes
+   ⇒ the OS killed the tab; no ⇒ the page lived and the ear froze — R75 §12's A2/A3 arms next).
+4. **The car on the CLEAN route** (phone mic stays wideband; reply via A2DP): transcription and
+   cut-offs vs round №1; watch for "too quiet — didn't take that". If still poor: Speech slider
+   0.90 → ~0.70. At home, if false short words persist: Conf → `min_final_ms` 200 → 300.
+5. **App switch** (owed): mid-call, another app for ~20 s, back — stall, burst, or nothing? And the
+   Vite reload on return: expected on dev; say if you want the dev-web unit on `vite preview`.
+
+**▶▶ AFTER THE CARD:** the fixes it picks → the S4 §4.1 close-out (`LiveCfg.enabled` default →
+ON, Phase 24 S4 checked, plan §7 as-built) → prod TTS flip → v1.7.8 (config backup FIRST — the
+2→3 migration).
+
+## Prior state (2026-09-24 evening, THIRTY-SIXTH session — **THE STICKY SLICE'S OWED REVIEW ROUND, RUN AND CLOSED: the owner confirmed the two eyeball items that mattered (pick → a CALL answers as the picked agent; the in-call transcript reads well), the full gate was re-proven green at `b807a02`, then a blind Maya ∥ Opus round over `88a27ad` → ONE real fix (the menu's rows now come from the roster query through a shared `useActiveAgent` hook) + three stale comments, gate 6/6, FE 3,767/194, e2e agent-backdrop 22/22. **LATE SITTING (same evening): the owner RULED S1 (session-scoped, like `/agent` — persist both later, maybe), EVERYTHING PUSHED (origin `502ddf6` + the ISS-17 commit after it), and ISS-17 `/clear` → `/new` BUILT (the verb row + 38 comment sites + every test that typed it; the suggest-grammar prefix pair is now `new`/`new-host`; FE 3,767/194). ▶▶ NEXT = the rest of the eyeball list → the standing D73/D74 probes → S4.**)
 
 **① The round (record in DECISIONS D75, after the RULED line).** Maya (Luna, high, blind, `-z
 --ignore-rules`) SHIP WITH FIXES [1 MED — the late-thread-pin window, RULED a residual: tens of ms,
