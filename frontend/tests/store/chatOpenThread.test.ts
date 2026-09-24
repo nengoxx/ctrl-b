@@ -156,7 +156,7 @@ describe("openThread vs the reconciling loaders", () => {
 
     // `loaded` is not observable directly, so read it through the behaviour it gates: clear the view
     // (which leaves `threadId` null) and mount again. A stale reset would make this load the
-    // most-recent thread, i.e. undo a `/clear` the owner just performed.
+    // most-recent thread, i.e. undo a `/new` the owner just performed.
     startNewThread();
     await initChat();
     expect(result.current.threadId).toBeNull();
@@ -208,7 +208,7 @@ describe("two explicit opens — intent order, not completion order (R2 verify, 
     expect(result.current.messages.some((m) => m.role === "system")).toBe(false);
   });
 
-  it("a /clear supersedes a pending open — its fetch must not swap in afterwards", async () => {
+  it("a /new supersedes a pending open — its fetch must not swap in afterwards", async () => {
     const { openThread, startNewThread, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());
     net.hold("/api/threads/late/messages");
@@ -314,7 +314,7 @@ describe("the open thread's pinned agent", () => {
     expect(result.current.threadAgent).toBeNull(); // `slow`'s pin must not paint `fast`
   });
 
-  it("a /clear resets the pin — a fresh thread is minted unpinned", async () => {
+  it("a /new resets the pin — a fresh thread is minted unpinned", async () => {
     threadList = [{ id: "pinned", agent: "lynette" }];
     const { openThread, startNewThread, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());
@@ -328,11 +328,11 @@ describe("the open thread's pinned agent", () => {
 
 // ── the view's identity vs the loaders parked against the OLD one (the 1c review's F3) ────────────────
 // `loadGen` is what makes a reconciliation discard itself when the view has moved on, and only
-// `openThread` used to bump it — so a `/clear` and a wire MINT changed the view's identity while a cold
+// `openThread` used to bump it — so a `/new` and a wire MINT changed the view's identity while a cold
 // `initChat` (or a `reloadChat`) sat parked mid-fetch, and that load then landed the OLD thread's history
 // AND its pin on the conversation the owner had just started.
 describe("a changed view identity invalidates the loads parked against the old one", () => {
-  it("a /clear kills a parked cold load — history and pin alike", async () => {
+  it("a /new kills a parked cold load — history and pin alike", async () => {
     threadList = [{ id: "recent-thread", agent: "lynette" }];
     const { initChat, startNewThread, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());

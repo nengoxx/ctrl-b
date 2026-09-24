@@ -10,7 +10,7 @@ import { useFrontierArt } from "./ownerArt";
 // passes it). It COMPOSES the shared `<ChatThread/>` (never forks it — §15's "shared + reskinned" band); the
 // bespoke part is the backdrop: the 3-layer bobbing rig-stack that reads as a centered hero in the empty
 // state and RECEDES to a dim living-background watermark once the thread has messages (§14.13 #8 applied over
-// time). All of that recede/reverse is CSS-only, driven by the `data-thread` attribute below — a `/clear`
+// time). All of that recede/reverse is CSS-only, driven by the `data-thread` attribute below — a `/new`
 // empties the store (startNewThread) so the reversal is free (no JS transition bookkeeping).
 //
 // Parity with the default AgentTab: it renders the SAME `.sec` header + PrivilegeChip (functionality parity,
@@ -20,7 +20,7 @@ import { useFrontierArt } from "./ownerArt";
 
 // Empty-state suggestion chips (theme DATA, not shared code — the M3 suggestion-chip pattern: generic prompts
 // that FILL the composer, never auto-send). Fleet-agnostic on purpose (no invented host names). They live
-// inside the empty state, so a `/clear` re-shows them for free. Owner-tunable. TWO short chips (owner eyeball
+// inside the empty state, so a `/new` re-shows them for free. Owner-tunable. TWO short chips (owner eyeball
 // round 6): the longest ("Wake a rig and start its services") was dropped so both fit ONE row at 390px and the
 // whole empty state clears the docked composer without scrolling.
 const CHIPS = ["Which rigs are online?", "Any incidents today?"] as const;
@@ -56,7 +56,7 @@ function RigStack() {
 }
 
 // The empty-state hero content — rendered INSIDE `.chat-log` (via ChatThread's `emptyState` slot), so it
-// re-appears on `/clear` automatically. The rig-stack sits OUTSIDE the log (behind it). Order (owner eyeball
+// re-appears on `/new` automatically. The rig-stack sits OUTSIDE the log (behind it). Order (owner eyeball
 // round 6): the `<h2>` title sits at the TOP (in the gap under the section header — no big top padding now);
 // the `.fr-below` wrapper's padding-top then pushes the hint + chips DOWN below the floating stack, so the
 // three read top→bottom as title · stack · hint+chips, and the whole state fits a 390px pane without scroll.

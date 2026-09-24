@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-24 evening, THIRTY-SIXTH session — **THE STICKY SLICE'S OWED REVIEW ROUND, RUN AND CLOSED: the owner confirmed the two eyeball items that mattered (pick → a CALL answers as the picked agent; the in-call transcript reads well), the full gate was re-proven green at `b807a02`, then a blind Maya ∥ Opus round over `88a27ad` → ONE real fix (the menu's rows now come from the roster query through a shared `useActiveAgent` hook) + three stale comments, gate 6/6, FE 3,767/194, e2e agent-backdrop 22/22. ⚠ 8 commits UNPUSHED over origin `db3289a`. ▶▶ NEXT = `git push` on the owner's word · ISS-17 · the S1 owner question (persist the switch across a PWA relaunch?) · then the standing D73/D74 probes → S4.**)
+## Current state (2026-09-24 evening, THIRTY-SIXTH session — **THE STICKY SLICE'S OWED REVIEW ROUND, RUN AND CLOSED: the owner confirmed the two eyeball items that mattered (pick → a CALL answers as the picked agent; the in-call transcript reads well), the full gate was re-proven green at `b807a02`, then a blind Maya ∥ Opus round over `88a27ad` → ONE real fix (the menu's rows now come from the roster query through a shared `useActiveAgent` hook) + three stale comments, gate 6/6, FE 3,767/194, e2e agent-backdrop 22/22. **LATE SITTING (same evening): the owner RULED S1 (session-scoped, like `/agent` — persist both later, maybe), EVERYTHING PUSHED (origin `502ddf6` + the ISS-17 commit after it), and ISS-17 `/clear` → `/new` BUILT (the verb row + 38 comment sites + every test that typed it; the suggest-grammar prefix pair is now `new`/`new-host`; FE 3,767/194). ▶▶ NEXT = the rest of the eyeball list → the standing D73/D74 probes → S4.**)
 
 **① The round (record in DECISIONS D75, after the RULED line).** Maya (Luna, high, blind, `-z
 --ignore-rules`) SHIP WITH FIXES [1 MED — the late-thread-pin window, RULED a residual: tens of ms,
@@ -42,8 +42,8 @@ every `tools-*` class defined) · after the wave: FE check-all green (3,767/194)
 22/22 on a preview build. FE-only — Vite HMR, reload the page; no dev restart. Dev units still
 boot-enabled (the on-demand rule stands as policy).
 
-**▶▶ NEXT SESSION:** ① push the 8 commits on the owner's word ② ISS-17 `/clear` → `/new` (trivial)
-③ the S1 question above ④ the rest of the 35th session's eyeball list still unconfirmed (the who-line
+**▶▶ NEXT SESSION:** ~~① push~~ DONE ~~② ISS-17~~ DONE ~~③ S1~~ RULED session-scoped ④ the rest of
+the 35th session's eyeball list still unconfirmed (the who-line
 40px/no-ring/11px-600 + identity-only tap zone + the chip only on a degraded serve · the borderless
 tools faces + the section labels at 320px · the ganyu default voice · the Karpathy skill row · the
 6-arm Conf e2e flake class) ⑤ the standing D73/D74 probes → the S4 §4.1 close-out → prod TTS flip +

@@ -91,7 +91,7 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
 - **What:** the chat composer doubles as a command console (Claude-Code-style):
   - `!<cmd>` → run shell directly via guarded `run_shell`. **Only** command prefix; sigil
     **configurable in settings** (default `!`). No `$`/`>`.
-  - `/<command> [args]` → **slash commands** for app/agent verbs (`/wake`, `/sleep`, `/clear`,
+  - `/<command> [args]` → **slash commands** for app/agent verbs (`/wake`, `/sleep`, `/new` (ex-`/clear`, ISS-17),
     `/model`, `/help`, …) → typed actions or UI ops, **including `/local` and `/cloud`** to force
     the inference backend for one message (replaces the disliked `k:`/`o:`). Extensible/custom
     slash commands managed in settings (Integrations).

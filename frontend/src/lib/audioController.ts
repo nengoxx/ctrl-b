@@ -254,7 +254,7 @@ export function useMouthFailures(): number {
 type ChunkState = "pending" | "ok" | "failed";
 
 /** The ONE retained message's queue. Retention is single-message by design (D63): starting a different
- *  message revokes these URLs, `/clear` reaps everything, and an older message replays by re-synthesis
+ *  message revokes these URLs, `/new` reaps everything, and an older message replays by re-synthesis
  *  (synth runs ~6× realtime, so that is cheaper than holding N blobs per reply). */
 interface Session {
   id: string;
@@ -1235,7 +1235,7 @@ export function dismiss(): void {
   reset();
 }
 
-/** Revoke cached object URLs (e.g. on `/clear`). Cheap; keeps a long session from leaking blobs. */
+/** Revoke cached object URLs (e.g. on `/new`). Cheap; keeps a long session from leaking blobs. */
 export function clearAudioCache(): void {
   for (const url of cache.values()) URL.revokeObjectURL(url);
   cache.clear();

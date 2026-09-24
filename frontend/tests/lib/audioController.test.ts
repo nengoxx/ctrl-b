@@ -718,7 +718,7 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(revoked).toEqual(expect.arrayContaining(["blob:1", "blob:2"]));
   });
 
-  it("`/clear` reaps the queue too", async () => {
+  it("`/new` reaps the queue too", async () => {
     await act(async () => {
       await toggle("m1", REPLY);
     });

@@ -35,7 +35,7 @@ interface ChatState {
   status: ChatStatus;
   streamingId: string | null; // the message currently receiving deltas (drives caret/dots)
   // `/privilege <level>` session override (A1/D16), null → follow the agent's own privilege. Reactive
-  // (unlike sessionMode) so the chip reflects it; session-scoped, so `/clear` keeps it.
+  // (unlike sessionMode) so the chip reflects it; session-scoped, so `/new` keeps it.
   sessionPrivilege: Privilege | null;
   // The sticky agent pick (7d) — `/agent <name>`, the agents gallery's Talk, the composer tools menu's
   // agent rows, all through `lib/composer#pinSessionAgent` — null → the thread's / configured default
@@ -85,7 +85,7 @@ let loadGen = 0;
 //: swap happens last owns the view — which is right for reconciliations but wrong between two USER
 //: decisions: of two rapid "open thread" taps, the LATER intent must win even if its fetch resolves
 //: first. Every `openThread` claims a ticket at ENTRY (same-thread opens included — re-opening the
-//: current thread is also a decision that supersedes a pending open), `/clear` claims one too, and a
+//: current thread is also a decision that supersedes a pending open), `/new` claims one too, and a
 //: swap is abandoned when its ticket has been superseded.
 let openSeq = 0;
 const { emit, useStore } = createStore();
@@ -126,7 +126,7 @@ export function alwaysEligibleFor(callId: string): boolean {
 // `reloadChat` (the durable floor never carries raw lines).
 //
 // THREAD-SCOPED (Codex FE FIX C / reviewer LOW-9): a per-thread map so a stale harvest can never append
-// another thread's raw lines into the current composer, and a `/clear` / thread switch prunes the old
+// another thread's raw lines into the current composer, and a `/new` / thread switch prunes the old
 // thread's entries wholesale (`dropAllRaw`). entry_ids are server-unique, but the nesting makes the
 // pruning trivial + keeps the scoping honest rather than relying on that uniqueness.
 const rawByEntry: Record<string, Record<string, string>> = {};
@@ -145,7 +145,7 @@ function pruneRaw(threadId: string, keep: Set<string>): void {
   const m = rawByEntry[threadId];
   if (m) for (const e of Object.keys(m)) if (!keep.has(e)) delete m[e];
 }
-/** Drop EVERY thread's raw lines — a `/clear` full reset (no queued steer survives it). */
+/** Drop EVERY thread's raw lines — a `/new` full reset (no queued steer survives it). */
 function dropAllRaw(): void {
   for (const k of Object.keys(rawByEntry)) delete rawByEntry[k];
 }
@@ -505,7 +505,7 @@ function setWireThread(id: string): void {
     set({ threadId: id });
     return;
   }
-  // A MINT is a change of view identity, exactly like an open or a `/clear` — so it invalidates every
+  // A MINT is a change of view identity, exactly like an open or a `/new` — so it invalidates every
   // parked reconciliation too (the S6 review's F3). Without this a cold `initChat` that started before
   // the send lands the OLD thread's history, and its pin, over the conversation just created.
   loadGen++;
@@ -522,7 +522,7 @@ export function setSessionPrivilege(p: Privilege | null): void {
 // A `pending_attachments` preview is a LIVE object URL handed over by the composer rail the moment a
 // send is accepted (`sendMessage`'s transfer point). From then on the message list owns it, so the
 // message list is where it dies: every wholesale replacement of `messages` — `reloadChat` swapping in
-// the durable bubble, a steer rollback, `/clear`, a thread switch — revokes whatever the new list no
+// the durable bubble, a steer rollback, `/new`, a thread switch — revokes whatever the new list no
 // longer carries. One rule, at the single chokepoint every message write already goes through.
 
 const livePreviews = new Set<string>();
@@ -801,7 +801,7 @@ export async function openThread(threadId: string): Promise<boolean> {
     const history = fetchMessages(threadId); // …started FIRST: the history is what the open lives or dies by
     const pin = fetchThreadAgent(threadId);
     const msgs = await history;
-    if (ticket !== openSeq) return false; // a newer open (or /clear) superseded this one mid-fetch
+    if (ticket !== openSeq) return false; // a newer open (or /new) superseded this one mid-fetch
     if (getChatStatus() === "streaming") {
       // A turn started during the fetch — the pre-check above is not enough on its own.
       pushSystemNote("// a turn is running — stop it or wait before opening another thread");
@@ -825,7 +825,7 @@ export async function openThread(threadId: string): Promise<boolean> {
     //
     // `threadId` alone is the whole guard, deliberately — an open ticket must NOT be part of it (the
     // main-seat audit of wave 1c). Every navigation the ticket would have caught moves `threadId` first
-    // (another open's swap, a `/clear`, a wire mint), so this comparison already refuses every stale
+    // (another open's swap, a `/new`, a wire mint), so this comparison already refuses every stale
     // write; and a pin that is "stale" by ticket for the thread STILL ON SCREEN is by definition the
     // right value for what the owner is looking at. Including the ticket actively broke the same-thread
     // RE-OPEN: `openThread` claims a ticket unconditionally at entry, before the same-id early return —
@@ -928,7 +928,7 @@ export function pushUserEcho(text: string): void {
   pushLocal("user", text);
 }
 
-/** `/clear`: drop back to a fresh, thread-less view. History stays in SQLite; the next send mints a
+/** `/new`: drop back to a fresh, thread-less view. History stays in SQLite; the next send mints a
  *  new thread (the server creates one when `thread_id` is null). */
 export function startNewThread(): void {
   // ACA-10 / S2-C: don't clear out from under a live turn — the reset would strand the streaming
@@ -937,18 +937,18 @@ export function startNewThread(): void {
     pushSystemNote("// a turn is running — stop it or wait before clearing");
     return;
   }
-  openSeq++; // a /clear supersedes any pending explicit open — its fetch must not swap in afterwards
+  openSeq++; // a /new supersedes any pending explicit open — its fetch must not swap in afterwards
   loadGen++; // …and every parked RECONCILIATION with it (the S6 review's F3): a cold `initChat` or a
   // `reloadChat` captured its generation before this clear, and would otherwise land its messages AND
   // the pin that came with them on the fresh empty view the owner just asked for. Same reasoning as the
-  // ticket above, one rung down: `/clear` changes the view's identity, so every in-flight load for the
+  // ticket above, one rung down: `/new` changes the view's identity, so every in-flight load for the
   // identity it replaced is stale by definition.
   clearAudioCache(); // 6b-2: revoke this thread's TTS blobs + stop any playback
   lastTurnId = null; // D39: a fresh thread view starts a fresh per-turn event ordering
   lastSeq = 0;
-  dropAllRaw(); // FIX C — prune every thread's harvested raw lines (no queued steer survives a /clear)
+  dropAllRaw(); // FIX C — prune every thread's harvested raw lines (no queued steer survives a /new)
   lastHarvestSig = null; // FIX E — a fresh view forgets the last harvest receipt (mirrors the backend clear)
-  // …and the fresh view pins nobody: a `/clear` thread is minted unpinned (the sticky `/agent` pick is
+  // …and the fresh view pins nobody: a `/new` thread is minted unpinned (the sticky `/agent` pick is
   // session-scoped and deliberately SURVIVES, which is why only this one resets).
   set({ threadId: null, messages: [], status: "idle", streamingId: null, threadAgent: null });
 }
@@ -1610,7 +1610,7 @@ async function streamTurn(
         skillsByCall[q.callId] = skillIds(q.skills) ?? turnSkills;
       }
       // The thread THIS turn belongs to, captured BEFORE the reload await (verify-5, fix 3). The
-      // notify calls below used to read `state.threadId` after it, so a `/clear` interleaving during
+      // notify calls below used to read `state.threadId` after it, so a `/new` interleaving during
       // the reload (the view is idle by then — `startNewThread` is allowed) re-namespaced this turn's
       // signals under the NEW thread (or the no-thread fallback), breaking the live↔replay collapse.
       const notifyThread = str(payload.threadId) ?? state.threadId;
@@ -1855,7 +1855,7 @@ export async function reattachTurn(
   const ctx: TurnCtx = { claimed: true, settled: false, gen: -1 }; // no placeholder — a fresh message.start creates a bubble
   const reduce = makeTurnReducer(ctx);
   // FIX C — the thread this re-attach operates on. Every await below re-checks the view still sits on it
-  // (an async re-attach can resolve after a `/clear` or a new-thread switch) and bails before mutating,
+  // (an async re-attach can resolve after a `/new` or a new-thread switch) and bails before mutating,
   // so a stale re-attach never reloads/settles ANOTHER thread. Captured at entry (== `threadId` in
   // production; tolerant of an isolated call where the store thread was never set).
   const enteredOn = state.threadId;
@@ -2091,7 +2091,7 @@ interface SteerQueueEntry {
  *  the sent message. Also prunes this thread's `rawByEntry` of anything no longer queued.
  *
  *  FIX C — takes the `threadId` it was fetched FOR and no-ops if the owner has switched threads since
- *  (an async probe/re-attach can resolve after a `/clear` or a new-thread send): a stale queue must
+ *  (an async probe/re-attach can resolve after a `/new` or a new-thread send): a stale queue must
  *  never mutate a different thread's message list. */
 function reconcileSteerQueue(threadId: string, queue: SteerQueueEntry[]): void {
   if (state.threadId !== threadId) return; // FIX C — thread switched under this async reconcile
@@ -2150,7 +2150,7 @@ async function probeAndReattach(threadId: string, force = false): Promise<void> 
       active?: boolean;
       steer_queue?: SteerQueueEntry[];
     };
-    // FIX C — the probe awaited; bail if the owner switched threads under us (a `/clear` or a new-thread
+    // FIX C — the probe awaited; bail if the owner switched threads under us (a `/new` or a new-thread
     // send resolving before this fire-and-forget probe). A stale probe must never mutate another thread.
     if (state.threadId !== threadId) return;
     // Track BEFORE the reconcile (HIGH-2): did we hold optimistic queued bubbles going in? If so, a
@@ -2571,7 +2571,7 @@ function compactionNote(removed: number, truncated: boolean, rejected = false): 
  *  4e). Full history stays in SQLite; only the live working context shrinks. `instructions` (D42) is
  *  the `/compact <text>` steer passed through to the summarizer prompt (null = no steer). */
 export async function compactThread(instructions: string | null = null): Promise<void> {
-  // Codex FIX C — capture the target thread at entry. `/compact` is async; a `/clear`+new-thread in
+  // Codex FIX C — capture the target thread at entry. `/compact` is async; a `/new`+new-thread in
   // the response gap would otherwise land this thread's breadcrumb in the now-current thread's view.
   // The compaction itself succeeds server-side regardless; only the client note is thread-scoped.
   const threadId = state.threadId;

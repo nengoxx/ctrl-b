@@ -112,7 +112,7 @@ describe("useComposerSuggest — open policy", () => {
     expect(result.current.suggest.open).toBe(false);
     expect(getComposerOverlay()).toBe("menu"); // …and the popover does NOT fight back on the next render
 
-    act(() => result.current.suggest.onDraftChange("/cl"));
+    act(() => result.current.suggest.onDraftChange("/ne"));
     expect(result.current.suggest.open).toBe(true);
     expect(getComposerOverlay()).toBe("suggest");
   });
@@ -143,21 +143,21 @@ describe("useComposerSuggest — keyboard", () => {
 
   it("Enter accepts the active row: the token is replaced and a trailing space appended", () => {
     const { result, base } = harness();
-    act(() => result.current.suggest.onDraftChange("/cle"));
+    act(() => result.current.suggest.onDraftChange("/ne"));
     act(() => result.current.suggest.onKeyDown(key("Enter")));
-    expect(result.current.draft).toBe("/clear ");
+    expect(result.current.draft).toBe("/new ");
     expect(base).not.toHaveBeenCalled(); // the popover beat the send handler
   });
 
   it("Tab accepts too; Shift+Tab falls through (focus must still leave the field)", () => {
     const { result, base } = harness();
-    act(() => result.current.suggest.onDraftChange("/cle"));
+    act(() => result.current.suggest.onDraftChange("/ne"));
     act(() => result.current.suggest.onKeyDown(key("Tab")));
-    expect(result.current.draft).toBe("/clear ");
+    expect(result.current.draft).toBe("/new ");
 
-    act(() => result.current.suggest.onDraftChange("/cle"));
+    act(() => result.current.suggest.onDraftChange("/ne"));
     act(() => result.current.suggest.onKeyDown(key("Tab", { shiftKey: true })));
-    expect(result.current.draft).toBe("/cle");
+    expect(result.current.draft).toBe("/ne");
     expect(base).toHaveBeenCalled();
   });
 
@@ -185,7 +185,7 @@ describe("useComposerSuggest — keyboard", () => {
     expect(esc.stopPropagation).toHaveBeenCalled();
     expect(base).not.toHaveBeenCalled();
 
-    act(() => result.current.suggest.onDraftChange("/cl"));
+    act(() => result.current.suggest.onDraftChange("/ne"));
     expect(result.current.suggest.open).toBe(true);
   });
 
@@ -214,21 +214,21 @@ describe("useComposerSuggest — keyboard", () => {
 
   it("Enter mid-IME-composition neither accepts nor sends", () => {
     const { result, base } = harness();
-    act(() => result.current.suggest.onDraftChange("/cle"));
+    act(() => result.current.suggest.onDraftChange("/ne"));
     const enter = key("Enter", { composing: true });
     act(() => result.current.suggest.onKeyDown(enter));
-    expect(result.current.draft).toBe("/cle"); // not accepted
+    expect(result.current.draft).toBe("/ne"); // not accepted
     expect(base).not.toHaveBeenCalled(); // and not sent
     expect(enter.preventDefault).not.toHaveBeenCalled(); // the input method keeps the keystroke
   });
 });
 
 // Codex, v1.3.2 fix wave — a fully typed verb that SHARES its prefix with a longer candidate (built-in
-// `clear` + skill `clear-cache`) used to be accepted by Enter instead of sent. The rule is about the
+// `new` + skill `new-host`) used to be accepted by Enter instead of sent. The rule is about the
 // ACTIVE row, so it also covers the sole-candidate case the grammar used to special-case.
 describe("useComposerSuggest — Enter on an already-complete verb", () => {
   beforeEach(async () => {
-    await loadSkillSet(["clear-cache"]);
+    await loadSkillSet(["new-host"]);
   });
   afterEach(async () => {
     await loadSkillSet([]); // the verb sets are module state — hand the next describe an empty one
@@ -236,24 +236,24 @@ describe("useComposerSuggest — Enter on an already-complete verb", () => {
 
   it("Enter falls through to send when the active row is exactly what's typed; Tab still accepts", () => {
     const { result, base } = harness();
-    act(() => result.current.suggest.onDraftChange("/clear"));
-    expect(result.current.suggest.items.map((i) => i.value)).toEqual(["clear", "clear-cache"]);
-    expect(result.current.suggest.open).toBe(true); // the exact row is still LISTED — `clear-cache` needs it
+    act(() => result.current.suggest.onDraftChange("/new"));
+    expect(result.current.suggest.items.map((i) => i.value)).toEqual(["new", "new-host"]);
+    expect(result.current.suggest.open).toBe(true); // the exact row is still LISTED — `new-host` needs it
 
     act(() => result.current.suggest.onKeyDown(key("Enter")));
-    expect(result.current.draft).toBe("/clear"); // not re-inserted
+    expect(result.current.draft).toBe("/new"); // not re-inserted
     expect(base).toHaveBeenCalledTimes(1); // the send handler got the keystroke
 
     act(() => result.current.suggest.onKeyDown(key("Tab")));
-    expect(result.current.draft).toBe("/clear "); // Tab is the explicit completion key
+    expect(result.current.draft).toBe("/new "); // Tab is the explicit completion key
   });
 
   it("arrow-selecting the longer row makes it non-exact again → Enter accepts", () => {
     const { result, base } = harness();
-    act(() => result.current.suggest.onDraftChange("/clear"));
+    act(() => result.current.suggest.onDraftChange("/new"));
     act(() => result.current.suggest.onKeyDown(key("ArrowDown")));
     act(() => result.current.suggest.onKeyDown(key("Enter")));
-    expect(result.current.draft).toBe("/clear-cache ");
+    expect(result.current.draft).toBe("/new-host ");
     expect(base).not.toHaveBeenCalled();
   });
 
@@ -303,12 +303,12 @@ describe("useComposerSuggest — case-only skill siblings", () => {
     expect(base).toHaveBeenCalledTimes(1);
   });
 
-  it("the other kinds stay case-INSENSITIVE: `/CLEAR` is a fully-typed built-in and sends", () => {
+  it("the other kinds stay case-INSENSITIVE: `/NEW` is a fully-typed built-in and sends", () => {
     const { result, base } = harness();
-    act(() => result.current.suggest.onDraftChange("/CLEAR"));
-    expect(result.current.suggest.items.map((i) => i.value)).toEqual(["clear"]);
+    act(() => result.current.suggest.onDraftChange("/NEW"));
+    expect(result.current.suggest.items.map((i) => i.value)).toEqual(["new"]);
     act(() => result.current.suggest.onKeyDown(key("Enter")));
-    expect(result.current.draft).toBe("/CLEAR"); // routing lowercases the verb — nothing to complete
+    expect(result.current.draft).toBe("/NEW"); // routing lowercases the verb — nothing to complete
     expect(base).toHaveBeenCalledTimes(1);
   });
 });
@@ -379,11 +379,11 @@ describe("SuggestPopover in a real Kit composer", () => {
     expect(list().hasAttribute("inert")).toBe(true);
     expect(list().getAttribute("aria-hidden")).toBe(null); // inert ALONE — never both
 
-    fireEvent.change(ta, { target: { value: "/cle" } });
+    fireEvent.change(ta, { target: { value: "/ne" } });
     expect(list().classList.contains("open")).toBe(true);
     expect(list().hasAttribute("inert")).toBe(false);
     const rows = rowValues(container);
-    expect(rows).toEqual(["clear"]);
+    expect(rows).toEqual(["new"]);
 
     fireEvent.keyDown(ta, { key: "Escape" }); // dismiss — the popover closes, the draft stays
     expect(list().classList.contains("open")).toBe(false);
@@ -400,13 +400,13 @@ describe("SuggestPopover in a real Kit composer", () => {
   it("releases the retained rows when the exit transition ends", () => {
     const { container } = renderComposer();
     const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
-    fireEvent.change(ta, { target: { value: "/cle" } });
+    fireEvent.change(ta, { target: { value: "/ne" } });
     fireEvent.keyDown(ta, { key: "Escape" });
-    expect(rowValues(container)).toEqual(["clear"]); // retained through the slide
+    expect(rowValues(container)).toEqual(["new"]); // retained through the slide
 
     const list = container.querySelector<HTMLElement>("ul#composer-suggest")!;
     fireEvent.transitionEnd(list, { propertyName: "transform" }); // the other leg releases NOTHING
-    expect(rowValues(container)).toEqual(["clear"]);
+    expect(rowValues(container)).toEqual(["new"]);
     fireEvent.transitionEnd(list, { propertyName: "opacity" });
     expect(rowValues(container)).toEqual([]); // …and the closed shell now reconciles zero rows
   });
@@ -419,15 +419,15 @@ describe("SuggestPopover in a real Kit composer", () => {
   it("releases them when a LATE displacement cancels the running exit transition", () => {
     const { container } = renderComposer();
     const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
-    fireEvent.change(ta, { target: { value: "/cle" } });
+    fireEvent.change(ta, { target: { value: "/ne" } });
     fireEvent.keyDown(ta, { key: "Escape" }); // a normal close — the slide starts, rows retained
-    expect(rowValues(container)).toEqual(["clear"]);
+    expect(rowValues(container)).toEqual(["new"]);
 
     const list = container.querySelector<HTMLElement>("ul#composer-suggest")!;
     act(() => setComposerOverlay("menu")); // …and INSIDE the exit window, another overlay opens
-    expect(rowValues(container)).toEqual(["clear"]); // still retained — no event has fired yet
+    expect(rowValues(container)).toEqual(["new"]); // still retained — no event has fired yet
     fireEvent.transitionCancel(list, { propertyName: "transform" }); // the other leg releases NOTHING
-    expect(rowValues(container)).toEqual(["clear"]);
+    expect(rowValues(container)).toEqual(["new"]);
     fireEvent.transitionCancel(list, { propertyName: "opacity" }); // the snap killed the fade
     expect(rowValues(container)).toEqual([]);
     // a stray trailing event on the already-released shell is a no-op, not a crash or a re-render loop
@@ -441,8 +441,8 @@ describe("SuggestPopover in a real Kit composer", () => {
     setUI({ motion: "reduced" });
     const { container } = renderComposer();
     const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
-    fireEvent.change(ta, { target: { value: "/cle" } });
-    expect(rowValues(container)).toEqual(["clear"]);
+    fireEvent.change(ta, { target: { value: "/ne" } });
+    expect(rowValues(container)).toEqual(["new"]);
     fireEvent.keyDown(ta, { key: "Escape" });
     expect(rowValues(container)).toEqual([]); // released at the close edge, no transitionend needed
   });
@@ -452,8 +452,8 @@ describe("SuggestPopover in a real Kit composer", () => {
   it("releases them synchronously when another composer overlay takes the slot", () => {
     const { container } = renderComposer();
     const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
-    fireEvent.change(ta, { target: { value: "/cle" } });
-    expect(rowValues(container)).toEqual(["clear"]);
+    fireEvent.change(ta, { target: { value: "/ne" } });
+    expect(rowValues(container)).toEqual(["new"]);
     act(() => setComposerOverlay("plan")); // the plan sheet claims the space
     expect(container.querySelector("ul#composer-suggest")!.classList.contains("open")).toBe(false);
     expect(rowValues(container)).toEqual([]);
@@ -463,10 +463,10 @@ describe("SuggestPopover in a real Kit composer", () => {
   it("a reopen renders the new query's rows, never the retained ones", () => {
     const { container } = renderComposer();
     const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
-    fireEvent.change(ta, { target: { value: "/cle" } });
-    expect(rowValues(container)).toEqual(["clear"]);
+    fireEvent.change(ta, { target: { value: "/ne" } });
+    expect(rowValues(container)).toEqual(["new"]);
     fireEvent.keyDown(ta, { key: "Escape" });
-    expect(rowValues(container)).toEqual(["clear"]); // retained while closing
+    expect(rowValues(container)).toEqual(["new"]); // retained while closing
 
     fireEvent.change(ta, { target: { value: "/comp" } }); // typing re-arms the popover
     expect(container.querySelector("ul#composer-suggest")!.classList.contains("open")).toBe(true);
@@ -476,10 +476,10 @@ describe("SuggestPopover in a real Kit composer", () => {
   it("tapping a row accepts it (pointerdown, before the field can blur) and writes the draft store", () => {
     const { container } = renderComposer();
     const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
-    fireEvent.change(ta, { target: { value: "/cle" } });
+    fireEvent.change(ta, { target: { value: "/ne" } });
     const opt = container.querySelector<HTMLElement>("#composer-suggest [role=option]")!;
     fireEvent.pointerDown(opt);
-    expect(getDraft()).toBe("/clear ");
-    expect(ta.value).toBe("/clear ");
+    expect(getDraft()).toBe("/new ");
+    expect(ta.value).toBe("/new ");
   });
 });

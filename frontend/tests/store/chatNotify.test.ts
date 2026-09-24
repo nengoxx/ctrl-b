@@ -572,8 +572,8 @@ describe("the non-live transports publish the same signals", () => {
     expect(captured).toHaveLength(0);
   });
 
-  it("a buffered turn keys its signals under the ORIGINATING thread when a `/clear` lands mid-reload", async () => {
-    // The buffered path publishes AFTER `await reloadChat()`. A `/clear` is legal in that window (the
+  it("a buffered turn keys its signals under the ORIGINATING thread when a `/new` lands mid-reload", async () => {
+    // The buffered path publishes AFTER `await reloadChat()`. A `/new` is legal in that window (the
     // view is already idle), and it nulls `state.threadId` — so reading the scope after the await
     // filed this turn's signals under the NEW thread (here: the no-thread fallback), and a device that
     // saw the live frame would have buzzed a second time. Fix 3 captures the scope BEFORE the await.
@@ -590,7 +590,7 @@ describe("the non-live transports publish the same signals", () => {
             permission: { callId: "c1", token: "t", tool: "shutdown_host", prompt: "confirm?" },
           }),
         } as unknown as Response);
-      startNewThread(); // the owner taps /clear exactly while the reload's re-read is in flight
+      startNewThread(); // the owner taps /new exactly while the reload's re-read is in flight
       cleared = true;
       return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
     });

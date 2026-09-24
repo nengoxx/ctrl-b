@@ -141,7 +141,7 @@ describe.each(VARIANTS)("%s composer — the expand affordance", (name, Variant)
     draftAt(3);
     fireEvent.click(toggle()!);
     // The draft clearing IS the exit, which is why this one act covers every path that clears it: the
-    // send button, Enter, `/clear`, and the dictation auto-send (pinned to clear the draft in
+    // send button, Enter, `/new`, and the dictation auto-send (pinned to clear the draft in
     // tests/hooks/attachmentDictation.test.ts) all land here.
     act(() => {
       content = 0;

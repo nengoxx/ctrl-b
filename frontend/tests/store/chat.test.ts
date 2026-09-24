@@ -2729,7 +2729,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
   });
 
   it("a stale re-attach does not settle/reload another thread after a switch (FIX C)", async () => {
-    // Establish t1, then start a re-attach whose JSON terminal is DEFERRED; switch threads (/clear)
+    // Establish t1, then start a re-attach whose JSON terminal is DEFERRED; switch threads (/new)
     // before it resolves. The thread-switch guard must bail so the fresh view is never mutated.
     mockStream([
       { event: "thread", data: { threadId: "t1" } },
@@ -2810,7 +2810,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
         await new Promise((r) => setTimeout(r, 320)); // drain the post-done discovery probe
       });
     }
-    // 2) /clear prunes rawByEntry (dropAllRaw).
+    // 2) /new prunes rawByEntry (dropAllRaw).
     act(() => {
       startNewThread();
     });

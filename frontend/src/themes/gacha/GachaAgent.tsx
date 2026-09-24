@@ -48,7 +48,7 @@ import { useGachaRoster } from "./useGachaRoster";
  *  strings the prototype never wrote; the oracle's own name carries the theme's Japanese). */
 const CHIPS = ["Which units are awake?", "Any incidents today?"] as const;
 
-// The empty state renders INSIDE `.chat-log` (ChatThread's `emptyState` slot), so `/clear` re-shows it for
+// The empty state renders INSIDE `.chat-log` (ChatThread's `emptyState` slot), so `/new` re-shows it for
 // free. NO heading, unlike frontier's: the oracle block above is permanently on screen and already carries
 // the tab's `<h1>` — a second title would say the same thing twice, 40px apart.
 function GachaEmptyState() {

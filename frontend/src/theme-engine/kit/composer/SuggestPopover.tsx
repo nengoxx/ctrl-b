@@ -49,7 +49,7 @@ export function SuggestPopover({ suggest }: { suggest: ComposerSuggest }) {
 
   // WHAT THE SHELL RENDERS — its own state, not `items` directly, because the shell OUTLIVES the list.
   // While open it mirrors the live completions; when it closes it KEEPS them for the .2s exit slide (the
-  // list usually empties in the same frame — the token was accepted, `/clear ` completing nothing — so
+  // list usually empties in the same frame — the token was accepted, `/new ` completing nothing — so
   // rendering `items` would play the slide on a bare shell). Both edges are React's documented "adjust
   // state while rendering" pattern: the re-render happens before paint, so neither shows a stale or empty
   // frame, and no effect/ref is read during render.

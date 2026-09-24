@@ -127,8 +127,8 @@ describe("runComposer routing", () => {
     expect(chat.setSessionMode).not.toHaveBeenCalled();
   });
 
-  it("`/clear` and `/compact` map to their thread actions", () => {
-    runComposer("/clear");
+  it("`/new` and `/compact` map to their thread actions", () => {
+    runComposer("/new");
     expect(chat.startNewThread).toHaveBeenCalled();
     // bare `/compact` → no steer (null instructions), D42.
     runComposer("/compact");
@@ -283,7 +283,7 @@ describe("runComposer × staged attachments (D68 §7)", () => {
     addStaged({ localId: "u", name: "photo.png", kind: "image", status: "uploading" });
     expect(runComposer("!ls")).toBe(true);
     expect(chat.runShell).toHaveBeenCalledWith("ls");
-    expect(runComposer("/clear")).toBe(true);
+    expect(runComposer("/new")).toBe(true);
     expect(chat.startNewThread).toHaveBeenCalled();
   });
 
@@ -384,7 +384,7 @@ describe("runComposer × the one-shot menu skills (A6)", () => {
       "/llamacpp",
       "/agent",
       "/agent ops",
-      "/clear",
+      "/new",
       "/compact",
       "/nope",
       "/help",
@@ -669,7 +669,7 @@ describe("getCompletions (A2)", () => {
         return Promise.resolve({
           ok: true,
           json: () =>
-            Promise.resolve([{ name: "deploy" }, { name: "clear" }, { name: "cloud-sync" }]),
+            Promise.resolve([{ name: "deploy" }, { name: "new" }, { name: "cloud-sync" }]),
         } as Response);
       if (u.includes("/api/providers"))
         return Promise.resolve({
@@ -695,12 +695,14 @@ describe("getCompletions (A2)", () => {
   });
 
   it("first token: built-ins, then skills, then providers (the routing precedence, in that order)", () => {
-    expect(values("/c")).toEqual(["compact", "consolidate", "clear", "cloud-sync", "cloudy"]);
-    expect(kinds("/c")).toEqual(["builtin", "builtin", "builtin", "skill", "provider"]);
+    expect(values("/c")).toEqual(["compact", "consolidate", "cloud-sync", "cloudy"]);
+    expect(kinds("/c")).toEqual(["builtin", "builtin", "skill", "provider"]);
+    expect(values("/n")).toEqual(["new"]); // the built-in — the same-named SKILL is shadowed (below)
+    expect(kinds("/n")).toEqual(["builtin"]);
   });
 
   it("drops names a higher tier shadows — they could never route", () => {
-    // the `clear` SKILL is shadowed by the built-in (above); `deploy` the PROVIDER by the `deploy` skill;
+    // the `new` SKILL is shadowed by the built-in (above); `deploy` the PROVIDER by the `deploy` skill;
     // `help` the PROVIDER by the built-in.
     expect(kinds("/dep")).toEqual(["skill"]);
     expect(kinds("/hel")).toEqual(["builtin"]);
@@ -728,10 +730,10 @@ describe("getCompletions (A2)", () => {
   });
 
   it("a fully typed candidate is STILL listed — 'nothing to accept' is the hook's Enter rule, not a filter", () => {
-    // It has to be: `clear` shares its prefix with `clear-cache`, so dropping the exact row would hide the
+    // It has to be: `new` shares its prefix with `new-host`, so dropping the exact row would hide the
     // one the user is on. useComposerSuggest falls Enter through to send when the ACTIVE row is exact.
-    expect(values("/clea")).toEqual(["clear"]);
-    expect(values("/clear")).toEqual(["clear"]);
+    expect(values("/ne")).toEqual(["new"]);
+    expect(values("/new")).toEqual(["new"]);
     expect(values("/agent research")).toEqual(["research"]);
   });
 
@@ -815,7 +817,7 @@ describe("getCompletions (A2)", () => {
   });
 
   it("`insert` replaces the whole token — the first one keeps its sigil, later ones don't", () => {
-    expect(getCompletions("/clea")[0]?.insert).toBe("/clear");
+    expect(getCompletions("/ne")[0]?.insert).toBe("/new");
     expect(getCompletions("/agent re")[0]?.insert).toBe("research");
   });
 

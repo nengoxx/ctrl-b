@@ -110,7 +110,7 @@ export function useComposerSuggest({
   const active = items.length ? Math.min(activeIndex, items.length - 1) : 0;
 
   // The active row is ALREADY exactly what's typed → accepting it would only re-insert it, so Enter is
-  // the user asking to SEND (`/clear` next to a `clear-cache` skill must send, not complete itself).
+  // the user asking to SEND (`/new` next to a `new-host` skill must send, not complete itself).
   // One rule where there used to be a grammar-side "sole fully-typed candidate suggests nothing" special
   // case: this covers the sole candidate too, and unlike it stays correct with siblings in the list —
   // arrowing (or tapping) onto a LONGER row makes the active one non-exact again, so Enter accepts.

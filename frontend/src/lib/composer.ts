@@ -8,7 +8,7 @@
 //                       as a command bubble and the agent sees it next turn. Handles disabled
 //                       (403), thread-busy (409) and queued-as-a-steer (202, D41).
 //   /<verb> [args]    → slash commands. /<provider> forces the inference backend (A11/D48 — one verb
-//                       per configured provider, replacing the old /local //cloud); /clear starts a
+//                       per configured provider, replacing the old /local //cloud); /new starts a
 //                       fresh thread; /help lists commands. A /verb that matches a discovered skill
 //                       invokes it for that message (4.5, user-invoked).
 //   anything else     → natural-language agent chat.
@@ -319,7 +319,7 @@ const BUILTIN_VERBS: readonly BuiltinVerb[] = [
     // The whole verb is "send the owner's own consolidation prompt as this message" — see below.
     run: (rest, raw) => void runConsolidate(rest, raw),
   },
-  { verb: "clear", help: "start a new thread", run: () => startNewThread() },
+  { verb: "new", help: "start a new thread", run: () => startNewThread() },
   { verb: "help", help: "show this list", run: () => pushSystemNote(helpText()) },
 ];
 
@@ -570,7 +570,7 @@ function routeSlash(text: string): void {
     // also its lookup key server-side (`resolve_skills` matches by exact name).
     // A6: an EXPLICIT slash-routed send WINS over the tools/skills menu — the ticked skills are dropped,
     // not merged (the owner just routed this message by hand). Same at the provider branch below; a verb
-    // that sends NO message (/help, /clear, /agent…) leaves the ticks alone — they're for the next message.
+    // that sends NO message (/help, /new, /agent…) leaves the ticks alone — they're for the next message.
     if (rest) {
       clearComposerSkills();
       void sendMessage(rest, { skills: [skill], raw });
@@ -612,8 +612,8 @@ export interface Completion {
  *  precedence, shadowed names dropped since they'd never route); `/agent <tab>` → configured agent names;
  *  `/privilege <tab>` (or its `/priv` alias) → the shared privilege ladder. Pure: no state, no effects.
  *
- *  A fully-typed candidate is still LISTED (it may share a prefix with a longer one — `clear` beside
- *  `clear-cache`); "there is nothing to accept, so Enter belongs to the send handler" is a KEY rule and
+ *  A fully-typed candidate is still LISTED (it may share a prefix with a longer one — `new` beside
+ *  `new-host`); "there is nothing to accept, so Enter belongs to the send handler" is a KEY rule and
  *  lives with the other keys, in `useComposerSuggest`. */
 export function getCompletions(draft: string): Completion[] {
   const text = draft.replace(/^\s+/, "");

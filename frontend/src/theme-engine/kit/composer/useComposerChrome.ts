@@ -307,7 +307,7 @@ export function useComposerChrome(
   }, [draft, taRef]);
 
   // LEAVABLE + SELF-RESETTING: the draft clearing IS the exit — send, the dictation auto-send (which
-  // bypasses `useComposer().send` and clears the draft itself) and `/clear` all land here, so the next
+  // bypasses `useComposer().send` and clears the draft itself) and `/new` all land here, so the next
   // message starts at the baseline with no per-path plumbing. Keyed on the draft rather than on the
   // send seam for exactly that reason.
   useEffect(() => {
