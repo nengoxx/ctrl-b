@@ -1,5 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  renderHook,
+  screen,
+} from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,7 +14,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // REAL component over mocked hook boundaries (the composerSteer/chatThread posture) plus the REAL `ui`
 // and `chat` stores, because what "Talk" does is a fact about those two and not about this component.
 
-const h = vi.hoisted(() => ({ importMutate: vi.fn(), importPending: false, roleplayOn: false }));
+const h = vi.hoisted(() => ({
+  importMutate: vi.fn(),
+  importPending: false,
+  roleplayOn: false,
+  /** The OPEN thread's own D70 §4.2 pin, as `useThreadAgent` reports it — `null` = an unpinned thread. */
+  threadAgent: null as string | null,
+}));
 
 const list = {
   agents: [] as string[],
@@ -85,9 +98,15 @@ vi.mock("../../src/hooks/useRoleplay", async (importActual) => ({
   ...(await importActual<typeof import("../../src/hooks/useRoleplay")>()),
   useLorebooks: () => ({ data: [] }),
 }));
+// The thread pin is store state that only `openThread`'s list read writes; the harness hands Talk the
+// value directly. Everything else about the chat store stays REAL — Talk's pin is read back through it.
+vi.mock("../../src/store/chat", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/store/chat")>()),
+  useThreadAgent: () => h.threadAgent,
+}));
 
 import { AgentsTab } from "../../src/tabs/AgentsTab";
-import { getSessionAgent, setSessionAgent } from "../../src/store/chat";
+import { setSessionAgent, useSessionAgent } from "../../src/store/chat";
 import { getUI, setUI } from "../../src/store/ui";
 
 const cards = () => screen.getAllByRole("button", { name: /Talk to/ });
@@ -103,6 +122,7 @@ beforeEach(() => {
   h.importMutate.mockReset();
   h.importPending = false;
   h.roleplayOn = false;
+  h.threadAgent = null;
   setUI({ theme: "minimal", tab: "agents", layout: "auto", appbarMode: "visible" });
 });
 afterEach(cleanup);
@@ -151,9 +171,10 @@ describe("AgentsTab · the card grid", () => {
 describe("AgentsTab · the two verbs", () => {
   it("TALK pins the session agent and lands on the chat section", () => {
     list.agents = ["scout"];
+    const pin = renderHook(() => useSessionAgent());
     render(<AgentsTab active />);
     fireEvent.click(screen.getByRole("button", { name: "Talk to scout" }));
-    expect(getSessionAgent()).toBe("scout"); // the `/agent <name>` seam, not a second pinning path
+    expect(pin.result.current).toBe("scout"); // the `/agent <name>` seam, not a second pinning path
     expect(getUI().tab).toBe("agent");
   });
 
@@ -161,9 +182,24 @@ describe("AgentsTab · the two verbs", () => {
     list.agents = ["scout"];
     list.default = "scout";
     setSessionAgent("coder");
+    const pin = renderHook(() => useSessionAgent());
     render(<AgentsTab active />);
     fireEvent.click(screen.getByRole("button", { name: "Talk to scout" }));
-    expect(getSessionAgent()).toBeNull();
+    expect(pin.result.current).toBeNull();
+  });
+
+  it("TALK on the resolved default inside a thread PINNED to a character pins the default BY NAME (D75 ruling)", () => {
+    // A clear here would let the thread's character resurface (the ladder: sticky, else the thread's
+    // pin). The same `defaultAgentPin` expression the tools menu's default row takes decides it — and
+    // it names the default off the composer's own `/api/agents` load, which this harness leaves at its
+    // "default" seed, so the list's resolved default is set to match (in the app both are one endpoint).
+    list.agents = ["lynette"];
+    list.default = "default";
+    h.threadAgent = "lynette";
+    const pin = renderHook(() => useSessionAgent());
+    render(<AgentsTab active />);
+    fireEvent.click(screen.getByRole("button", { name: "Talk to default" }));
+    expect(pin.result.current).toBe("default"); // by NAME — not the clear the unpinned arm above gets
   });
 
   it("a card TAP opens that agent's editor — the very row the list has always opened", () => {

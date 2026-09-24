@@ -1,11 +1,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadAgents, loadSkills } from "../../src/lib/composer";
-import { openThread, setSessionAgent, startNewThread } from "../../src/store/chat";
+import {
+  openThread,
+  setSessionAgent,
+  startNewThread,
+  useChat,
+  useSessionAgent,
+} from "../../src/store/chat";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
-import { clearComposerScope, getComposerScope, setScopeAgent } from "../../src/store/composerScope";
+import { clearComposerSkills, useComposerSkills } from "../../src/store/composerSkills";
 import { clearDraft } from "../../src/store/composer";
 import { setPlanSheetOpen, usePlanSheetOpen } from "../../src/store/planSheet";
 import { mergeComposerSlots } from "../../src/theme-engine/kit/composer/mergeSlots";
@@ -14,8 +20,9 @@ import { kitToolsMenuSlots } from "../../src/theme-engine/kit/composer/toolsMenu
 
 // A6 — the composer tools/skills MENU, driven through a REAL Kit composer with the addon composed in the
 // way DefaultRoot composes it (mergeComposerSlots → the variant's slots). Covers the trigger↔panel aria
-// contract, the one-shot arming the rows write, and the shared overlay slot (opening the menu closes the
-// plan sheet). The store mechanics live in tests/store/composerScope|composerOverlay.test.ts.
+// contract, the two lifetimes the rows write (the agent = the STICKY session pin, the D75 ruling of
+// 2026-09-24; the skills = a one-shot for the next message), and the shared overlay slot (opening the menu
+// closes the plan sheet). The store mechanics live in tests/store/composerSkills|composerOverlay.test.ts.
 
 // D70 §10-S4 — `GET /agents` now also carries the SUMMARY map. Only `ops` binds an avatar here, so the
 // avatar assertions below read a mixed list (the shape the picker actually meets).
@@ -54,7 +61,7 @@ const SKILLS = [{ name: "deploy" }, { name: "backups" }];
 
 beforeEach(async () => {
   clearDraft();
-  clearComposerScope();
+  clearComposerSkills();
   setSessionAgent(null);
   setComposerOverlay(null);
   localStorage.clear();
@@ -99,6 +106,25 @@ const radios = (c: HTMLElement) =>
   Array.from(c.querySelectorAll<HTMLInputElement>("#composer-tools input[type=radio]"));
 const rowName = (r: HTMLInputElement) =>
   r.closest("label")?.querySelector(".tools-name")?.textContent;
+const checkedRows = (c: HTMLElement) =>
+  radios(c)
+    .filter((r) => r.checked)
+    .map(rowName);
+/** Read-only probes on the REAL stores the rows write: the sticky pin, the chat's last line (the
+ *  `// agent → …` note the seam pushes), and the ticked skills. */
+function probes() {
+  const pin = renderHook(() => useSessionAgent());
+  const chat = renderHook(() => useChat());
+  const skills = renderHook(() => useComposerSkills());
+  return {
+    pin: () => pin.result.current,
+    lastNote: () => {
+      const part = chat.result.current.messages.at(-1)?.parts[0];
+      return part?.type === "text" ? part.text : undefined;
+    },
+    skills: () => skills.result.current,
+  };
+}
 
 describe("tools menu — trigger/panel wiring", () => {
   it("the trigger declares its popup and points at the panel only while it exists", () => {
@@ -115,7 +141,9 @@ describe("tools menu — trigger/panel wiring", () => {
     expect(btn.getAttribute("aria-controls")).toBe("composer-tools");
     expect(panelOpen(container)).toBe(true);
     expect(panel(container).getAttribute("role")).toBe("region");
-    expect(panel(container).getAttribute("aria-label")).toContain("next message");
+    expect(panel(container).getAttribute("aria-label")).toBe(
+      "active agent, and skills for the next message",
+    );
 
     fireEvent.click(btn); // the trigger is also the close gesture
     expect(panelOpen(container)).toBe(false);
@@ -151,50 +179,49 @@ describe("tools menu — trigger/panel wiring", () => {
   });
 });
 
-describe("tools menu — arming", () => {
-  it("picking an agent + ticking skills arms the one-shot, and the trigger shows the armed marker", () => {
+// THE AGENT SECTION IS A STICKY SWITCH (D75 ruling, 2026-09-24): a row is `/agent <name>` by another hand
+// — it writes the session pin through the one seam (`pinSessionAgent`), pushes the same note, and holds
+// until switched again. Nothing about it is pending, so it never lights the trigger's dot.
+describe("tools menu — the agent switch (sticky)", () => {
+  it("picking a row PINS the session agent and pushes the `/agent` note — no dot, nothing pending", () => {
+    const p = probes();
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
     fireEvent.click(radios(container)[1]); // "ops"
-    fireEvent.click(
-      container.querySelectorAll<HTMLButtonElement>("#composer-tools [role=checkbox]")[0],
-    );
-    expect(getComposerScope()).toEqual({ agent: "ops", skills: ["deploy"] });
-
-    const btn = trigger(container);
-    expect(btn.querySelector(".tools-dot")).not.toBe(null); // the armed dot, readable with the panel shut
-    expect(btn.getAttribute("aria-label")).toContain("agent ops");
-    expect(btn.getAttribute("aria-label")).toContain("deploy");
-    expect(
-      radios(container)
-        .filter((r) => r.checked)
-        .map(rowName),
-    ).toEqual(["ops"]);
-  });
-
-  it("the clear row appears only when armed and drops the arming", () => {
-    const { container } = renderComposer();
-    fireEvent.click(trigger(container));
-    expect(container.querySelector(".tools-clear")).toBe(null);
-    fireEvent.click(radios(container)[1]);
-    fireEvent.click(container.querySelector<HTMLButtonElement>(".tools-clear")!);
-    expect(getComposerScope().agent).toBe(undefined);
-    expect(getComposerScope().skills).toEqual([]);
+    expect(p.pin()).toBe("ops");
+    expect(p.lastNote()).toBe("// agent → ops");
+    expect(checkedRows(container)).toEqual(["ops"]);
     expect(trigger(container).querySelector(".tools-dot")).toBe(null);
+    expect(container.querySelector(".tools-clear")).toBe(null); // the clear row is the skills' alone
   });
 
-  // Codex, round 2 — the checked row must describe where the next message ACTUALLY goes. With a sticky
-  // `/agent ops` in force and nothing armed, "default" ticked was a lie: the send would have gone to `ops`.
-  it("with a sticky `/agent ops` and nothing armed, the STICKY row reads as checked", () => {
+  it("the DEFAULT row CLEARS the pin in an unpinned thread, and reads checked", () => {
     setSessionAgent("ops");
+    const p = probes();
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
-    expect(
-      radios(container)
-        .filter((r) => r.checked)
-        .map(rowName),
-    ).toEqual(["ops"]);
-    expect(trigger(container).querySelector(".tools-dot")).toBe(null); // reflected ≠ armed
+    expect(checkedRows(container)).toEqual(["ops"]);
+    fireEvent.click(radios(container)[0]); // the "default" row
+    expect(p.pin()).toBe(null); // a CLEAR, exactly bare `/agent`
+    expect(p.lastNote()).toBe("// agent → default (default)");
+    expect(checkedRows(container)).toEqual(["default"]);
+  });
+
+  it("the default's NAME as the pin reads as the default row too (the thread-pinned representation)", () => {
+    setSessionAgent("default");
+    const { container } = renderComposer();
+    fireEvent.click(trigger(container));
+    expect(checkedRows(container)).toEqual(["default"]);
+  });
+
+  it("the checked row follows the pin REACTIVELY — a `/agent` made elsewhere repaints the open panel", () => {
+    const { container } = renderComposer();
+    fireEvent.click(trigger(container));
+    expect(checkedRows(container)).toEqual(["default"]);
+    act(() => setSessionAgent("research")); // `/agent research`, the gallery's Talk — any other hand
+    expect(checkedRows(container)).toEqual(["research"]);
+    act(() => setSessionAgent(null));
+    expect(checkedRows(container)).toEqual(["default"]);
   });
 
   // Codex, verify round — `/agent typo` stays sticky ON PURPOSE (the backend falls back to the default and
@@ -202,52 +229,45 @@ describe("tools menu — arming", () => {
   // unchecked, i.e. the panel claiming the next message goes nowhere. The default row is where it goes.
   it("a sticky agent that isn't configured reads as the DEFAULT row, not an empty group", () => {
     setSessionAgent("typo");
+    const p = probes();
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
-    expect(
-      radios(container)
-        .filter((r) => r.checked)
-        .map(rowName),
-    ).toEqual(["default"]);
-    expect(trigger(container).querySelector(".tools-dot")).toBe(null); // reflected ≠ armed
-    // …and the DISPLAY normalization never touches the sticky value the send path reads
-    expect(getComposerScope().agent).toBe(undefined);
+    expect(checkedRows(container)).toEqual(["default"]);
+    expect(p.pin()).toBe("typo"); // the DISPLAY fold never touches the pin the send path reads
   });
+});
 
-  // Review round C3 — and this one is a BEHAVIOUR CHANGE, recorded: the checked row used to compare the
-  // ARMED name verbatim, so a pick the roster no longer has (an agent deleted or renamed while the arming
-  // stood) left every radio unchecked — the same "the message goes nowhere" lie the sticky case above was
-  // fixed for, and the backdrop was already folding it to the default. Both surfaces take one expression
-  // now (`lib/composer#routedAgent`), and the fold is the server's own answer for an unknown `agent`.
-  it("an ARMED name that isn't configured reads as the DEFAULT row too", () => {
+// THE SKILLS SECTION STAYS A ONE-SHOT: ticked for the next message, spent on dispatch — and it is the only
+// thing the trigger's dot, its label and the clear row speak for.
+describe("tools menu — the skills one-shot", () => {
+  it("ticking a skill lights the dot and names it in the trigger's label", () => {
+    const p = probes();
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
-    act(() => {
-      setScopeAgent("ghost");
-    });
-    expect(
-      radios(container)
-        .filter((r) => r.checked)
-        .map(rowName),
-    ).toEqual(["default"]);
-    // …and the ARMING itself is untouched by the display fold: the send still carries what was picked.
-    expect(getComposerScope().agent).toBe("ghost");
+    const btn = trigger(container);
+    expect(btn.getAttribute("aria-label")).toBe("choose the agent, or skills for the next message");
+    fireEvent.click(
+      container.querySelectorAll<HTMLButtonElement>("#composer-tools [role=checkbox]")[0],
+    );
+    expect(p.skills()).toEqual(["deploy"]);
+    expect(btn.querySelector(".tools-dot")).not.toBe(null); // readable with the panel shut
+    expect(btn.getAttribute("aria-label")).toBe("next message: skills deploy — tap to change");
   });
 
-  it("picking the DEFAULT row over a sticky pick arms an explicit `null` (not 'nothing armed')", () => {
+  it("the clear row appears only with a skill ticked, and drops the skills — never the agent", () => {
     setSessionAgent("ops");
+    const p = probes();
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
-    fireEvent.click(radios(container)[0]); // the "default" row
-    expect(getComposerScope().agent).toBe(null); // a REAL pick — runComposer forwards `agent: null`
-    expect(
-      radios(container)
-        .filter((r) => r.checked)
-        .map(rowName),
-    ).toEqual(["default"]);
-    // …and the trigger says so, rather than lighting a dot it can't explain
-    expect(trigger(container).querySelector(".tools-dot")).not.toBe(null);
-    expect(trigger(container).getAttribute("aria-label")).toContain("agent default");
+    expect(container.querySelector(".tools-clear")).toBe(null);
+    fireEvent.click(
+      container.querySelectorAll<HTMLButtonElement>("#composer-tools [role=checkbox]")[1],
+    );
+    fireEvent.click(container.querySelector<HTMLButtonElement>(".tools-clear")!);
+    expect(p.skills()).toEqual([]);
+    expect(p.pin()).toBe("ops"); // the standing switch is not the clear row's business
+    expect(trigger(container).querySelector(".tools-dot")).toBe(null);
+    expect(container.querySelector(".tools-clear")).toBe(null);
   });
 });
 
@@ -375,5 +395,24 @@ describe("tools menu — the open thread's pinned agent", () => {
     });
     // …and when it lands, the group follows WITHOUT being reopened — nothing else rerenders it now.
     await waitFor(() => expect(rowName(radios(container).find((r) => r.checked)!)).toBe("ops"));
+  });
+
+  // The default row's second representation: inside a thread pinned to `ops`, a CLEAR would let `ops`
+  // resurface (the server's ladder: the sticky pick, else the thread's), so the row pins the default BY
+  // NAME — which outranks the thread's pin — and reads checked from that name.
+  it("in a thread-PINNED conversation the default row pins the default BY NAME, and reads checked", async () => {
+    const release = serveThread("ops");
+    release();
+    const p = probes();
+    await act(async () => {
+      await openThread("t1");
+    });
+    const { container } = renderComposer();
+    fireEvent.click(trigger(container));
+    await waitFor(() => expect(checkedRows(container)).toEqual(["ops"])); // the thread's pin answers
+    fireEvent.click(radios(container)[0]); // the "default" row
+    expect(p.pin()).toBe("default"); // a PIN at the default's name, not a clear
+    expect(p.lastNote()).toBe("// agent → default (default)");
+    expect(checkedRows(container)).toEqual(["default"]);
   });
 });

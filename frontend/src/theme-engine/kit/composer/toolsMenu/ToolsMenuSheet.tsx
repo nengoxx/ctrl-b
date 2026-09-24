@@ -3,20 +3,21 @@ import { useEffect } from "react";
 import { FocalFace } from "../../../../components/FocalFace";
 import { useAgentArt, type AgentArt } from "../../../../hooks/useAgentArt";
 import {
+  defaultAgentPin,
+  effectiveAgent,
   getDefaultAgent,
   getKnownAgents,
   getKnownSkills,
-  routedAgent,
+  pinSessionAgent,
   useVerbsVersion,
 } from "../../../../lib/composer";
-import { getSessionAgent, useThreadAgent } from "../../../../store/chat";
+import { useSessionAgent, useThreadAgent } from "../../../../store/chat";
 import { releaseComposerOverlay, useComposerOverlayOpen } from "../../../../store/composerOverlay";
 import {
-  clearComposerScope,
-  setScopeAgent,
-  toggleScopeSkill,
-  useComposerScope,
-} from "../../../../store/composerScope";
+  clearComposerSkills,
+  toggleComposerSkill,
+  useComposerSkills,
+} from "../../../../store/composerSkills";
 
 // The tools/skills MENU panel (A6) — the `overlay` slot half of the addon. Geometry is the plan sheet's
 // idiom (a positioned SIBLING of `.kit-composer`, anchored off the measured `--composer-h`, tucking behind
@@ -32,11 +33,13 @@ import {
 // prop; BottomSheet applies the same thing imperatively to its below-the-fold content). `pointer-events:
 // none` on the closed shell is the pointer half of the same contract.
 //
-// Two sections, two one-shot semantics for the NEXT message only (nothing here is sticky — `/agent <name>`
-// remains the sticky switch):
-//   • AGENT  — radio: the configured specialists plus a "default" row (arms `agent: null`, which BEATS a
-//     sticky `/agent <name>` for this one message — see store/composerScope's tri-state).
-//   • SKILLS — checkboxes: the discovered skills, ticked into the next message's `skills`.
+// Two sections, two lifetimes (D75 ruling, 2026-09-24):
+//   • AGENT  — radio: the ACTIVE agent, STICKY. A row is the same switch `/agent <name>` and the agents
+//     gallery's Talk button flip (`lib/composer#pinSessionAgent` → `store/chat` `sessionAgent`), so it
+//     holds until switched again. The "default" row clears the pin — or, inside a thread that carries its
+//     own D70 §4.2 pin, pins the default BY NAME, because a clear would let the thread's agent resurface.
+//   • SKILLS — checkboxes: the discovered skills, ticked for the NEXT message only (`store/composerSkills`,
+//     spent on dispatch).
 // Both read the composer's own verb sets (`lib/composer`), the same source `/agent`/`/<skill>` route from —
 // so the menu can never offer something the router wouldn't accept, and it costs no extra fetch.
 
@@ -51,7 +54,7 @@ const AGENT_RADIO_NAME = "composer-tools-agent";
 
 export function ToolsMenuSheet() {
   const open = useComposerOverlayOpen("menu");
-  const scope = useComposerScope();
+  const ticked = useComposerSkills();
   // Re-derive when a loader installs a fresh set (a version, not the sets — createStore's snapshot
   // contract; see `useVerbsVersion`). Derived per render: the lists are tiny.
   useVerbsVersion();
@@ -67,68 +70,55 @@ export function ToolsMenuSheet() {
   // D70 §8.4 — the picker's rows lead with the agent's avatar where it has one. Resolved ONCE here and
   // threaded down: the rows are a `.map()`, and one resolver serves the whole group (`useAgentArt`).
   const art = useAgentArt();
-  const armed = scope.agent !== undefined || scope.skills.length > 0;
-  // The radio group must tell the TRUTH about where the next message goes: the armed pick if the menu armed
-  // one, else the ladder a plain send would route by — the sticky `/agent <name>`, else the OPEN THREAD's
-  // own pin (wave 1c: a thread pinned to a character routes there, and the group used to check the default
-  // row over it), else the configured default.
+  const armed = ticked.length > 0;
+  // The radio group checks the ACTIVE agent: the server's routing ladder (`effectiveAgent`, the one the
+  // agent backdrop paints by) — the sticky pin, else the OPEN THREAD's own pin, else the configured
+  // default. A pin that isn't a configured agent folds to the default row (the server's own answer for
+  // an unknown name), and a pin AT the default's name — what the default row writes inside a pinned
+  // thread — folds there too, so the default row reads checked in both of its representations.
   //
-  // The two pins are read DIFFERENTLY, and the difference is not an oversight. The STICKY one stays
-  // non-reactive: it changes only by SENDING `/agent …`, and typing that `/` hands the overlay slot to the
-  // suggest popover, which CLOSES this panel; reopening re-reads (`open` flipping IS a re-render, so the
-  // mounted panel re-reads exactly as remounting used to). The THREAD pin cannot ride that argument — it
-  // arrives on its own, from `openThread`'s LATE list read, and can therefore land while the panel is up
-  // (the S6 review's F2: the group sat on the default row for the whole window). So it is subscribed.
-  //
-  // A pin that isn't a CONFIGURED agent reads as the default row (Codex, verify round) — the
-  // `effectiveAgent` ladder over `validSessionAgent`, shared with the agent backdrop since D70 S6 (see its
-  // note in `lib/composer.ts`, which mirrors the server's own routing line). DISPLAY only: neither pin and
-  // no send path is touched, and `armed` (the dot) still keys off the one-shot alone.
-  //
-  // ONE EXPRESSION FOR BOTH SURFACES (review round C3): this used to be a hand-rolled copy of the backdrop's
-  // ladder, and the copies had already diverged — an ARMED NAME the roster no longer has folded to the
-  // default for the backdrop and matched NO row here, i.e. the group claimed the message went nowhere while
-  // the server would route it to the default. `routedAgent` is the fold, so that case now checks the default
-  // row. What is passed is the ARMED pick alone, never `composerScope.spent`: this panel shows what is armed
-  // for the NEXT message, while the held pick is only about which face the surface is wearing right now.
+  // BOTH pins are subscribed: the sticky one because this panel WRITES it (a pick must repaint the
+  // open group), and because `/agent` or the gallery's Talk can move it from elsewhere; the thread pin
+  // because it arrives on its own, from `openThread`'s LATE list read, and can land while the panel is up.
+  const defaultAgent = getDefaultAgent();
   const threadAgent = useThreadAgent();
-  const routed = routedAgent(scope.agent, getSessionAgent(), threadAgent, agents);
+  const active = effectiveAgent(useSessionAgent(), threadAgent, agents) ?? defaultAgent;
 
   return (
     <div
       className={"tools-sheet" + (open ? " open" : "")}
       id={TOOLS_SHEET_ID}
       role="region"
-      aria-label="agent and skills for the next message"
+      aria-label="active agent, and skills for the next message"
       inert={!open}
     >
       <div className="tools-sec">
         <div className="tools-lbl" id={AGENTS_LABEL_ID}>
-          agent
+          active agent
         </div>
         <div className="tools-list" role="radiogroup" aria-labelledby={AGENTS_LABEL_ID}>
           <AgentRow
-            name={getDefaultAgent()}
+            name={defaultAgent}
             tag="default"
-            on={routed === null}
-            value={null}
-            art={art}
+            on={active === defaultAgent}
+            pin={defaultAgentPin(threadAgent)}
+            avatar={art(null).avatar}
           />
           {agents.map((n) => (
-            <AgentRow key={n} name={n} on={routed === n} value={n} art={art} />
+            <AgentRow key={n} name={n} on={active === n} pin={n} avatar={art(n).avatar} />
           ))}
         </div>
       </div>
       <div className="tools-sec">
         <div className="tools-lbl" id={SKILLS_LABEL_ID}>
-          skills
+          skills · next message
         </div>
         {skills.length === 0 ? (
           <p className="tools-empty">// none discovered</p>
         ) : (
           <div className="tools-list" role="group" aria-labelledby={SKILLS_LABEL_ID}>
             {skills.map((n) => {
-              const on = scope.skills.includes(n);
+              const on = ticked.includes(n);
               return (
                 <button
                   key={n}
@@ -136,7 +126,7 @@ export function ToolsMenuSheet() {
                   role="checkbox"
                   aria-checked={on}
                   className={"tools-row" + (on ? " on" : "")}
-                  onClick={() => toggleScopeSkill(n)}
+                  onClick={() => toggleComposerSkill(n)}
                 >
                   <span className="tools-tick" aria-hidden>
                     {on ? "✓" : ""}
@@ -148,11 +138,12 @@ export function ToolsMenuSheet() {
           </div>
         )}
       </div>
-      {/* Only when something IS armed — an always-present "clear" reads as an action with nothing to do.
-          Picking stays sticky-until-sent, so the panel never closes on a pick: agent + skills are usually
-          armed together, and the trigger is the close gesture. */}
+      {/* Only when a skill IS ticked — an always-present "clear" reads as an action with nothing to do.
+          It clears the skills alone: the agent is a standing switch, and its own "default" row is how it
+          goes back. The panel never closes on a pick — agent + skills are usually chosen together, and
+          the trigger is the close gesture. */}
       {armed && (
-        <button type="button" className="tools-clear" onClick={clearComposerScope}>
+        <button type="button" className="tools-clear" onClick={clearComposerSkills}>
           clear
         </button>
       )}
@@ -160,7 +151,8 @@ export function ToolsMenuSheet() {
   );
 }
 
-/** One agent radio row. `value` is what gets armed — `null` for the default/root agent.
+/** One agent radio row. `pin` is what choosing it hands `pinSessionAgent` — the agent's name, or `""`
+ *  (the session-pin CLEAR) for the default row outside a thread-pinned conversation.
  *
  *  D70 §8.4 — the name is LED by the agent's avatar as a small circle when it has one; an agent with no
  *  art (every agent before this phase) renders exactly the row it always did.
@@ -175,16 +167,15 @@ function AgentRow({
   name,
   tag,
   on,
-  value,
-  art,
+  pin,
+  avatar,
 }: {
   name: string;
   tag?: string;
   on: boolean;
-  value: string | null;
-  art: (name: string | null) => AgentArt;
+  pin: string;
+  avatar: AgentArt["avatar"];
 }) {
-  const avatar = art(value).avatar;
   return (
     <label className={"tools-row" + (on ? " on" : "")}>
       <input
@@ -192,7 +183,7 @@ function AgentRow({
         className="tools-radio"
         name={AGENT_RADIO_NAME}
         checked={on}
-        onChange={() => setScopeAgent(value)}
+        onChange={() => pinSessionAgent(pin)}
       />
       <span className="tools-tick" aria-hidden>
         {on ? "•" : ""}

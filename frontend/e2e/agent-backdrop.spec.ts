@@ -344,3 +344,130 @@ test.describe("gacha integrates through its own body", () => {
     await expect(page.locator(".kit-backdrop-strip, .kit-backdrop-pin")).toHaveCount(0);
   });
 });
+
+// THE COMPOSER MENU'S AGENT ROWS ARE A STICKY SWITCH (D75 ruling, 2026-09-24): a row pins the session agent
+// through the same seam `/agent <name>` drives, so the backdrop switches the moment it is picked and STAYS
+// — through the send, the reply and after it — until another row is picked. The unit suite proves the
+// ladder; this arm proves it through the real built menu, the real send path and the real cascade.
+test.describe("the composer menu's agent pick is sticky", () => {
+  const LYNETTE_BG = "/api/media/agents/files/backgrounds/lynette.webp";
+  const msg = (id: string, role: string, text: string) => ({
+    id,
+    thread_id: "t1",
+    role,
+    parts: [{ type: "text", text }],
+    actor: role,
+    ts: "2026-01-01T00:00:00Z",
+    tokens: null,
+    compacted: false,
+  });
+
+  test("pick → the backdrop switches and stays through and after the reply; the default row reverts", async ({
+    page,
+    pageErrors,
+  }) => {
+    // A second agent with her OWN background, registered AFTER `boot`'s routes so these win.
+    const frame = (event: string, data: unknown) =>
+      `event: ${event}\r\ndata: ${JSON.stringify(data)}\r\n\r\n`;
+    let sentAgent: unknown = "unsent";
+    await boot(page, "minimal", "operator");
+    await page.route("**/api/media/agents", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...AGENT_MEDIA,
+          roles: {
+            avatars: [],
+            backgrounds: [
+              ...AGENT_MEDIA.roles.backgrounds,
+              {
+                ...AGENT_MEDIA.roles.backgrounds[0],
+                name: "lynette",
+                file: "lynette.webp",
+                url: LYNETTE_BG,
+              },
+            ],
+          },
+        }),
+      }),
+    );
+    await page.route("**/api/agents", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          agents: ["lynette"],
+          default: "default",
+          summaries: {
+            ...AGENT_ROSTER.summaries,
+            lynette: {
+              title: "Lynette",
+              description: "",
+              avatar: "",
+              background: "lynette.webp",
+              voice: "",
+            },
+          },
+        }),
+      }),
+    );
+    await page.route(`**${LYNETTE_BG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "image/gif",
+        body: Buffer.from("R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==", "base64"),
+      }),
+    );
+    await page.route("**/api/agent/chat", (route) => {
+      sentAgent = (route.request().postDataJSON() as { agent?: unknown }).agent;
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body:
+          frame("thread", { threadId: "t1" }) +
+          frame("message.start", { messageId: "m2", agent: "lynette" }) +
+          frame("text.delta", { messageId: "m2", delta: "hello from lynette" }) +
+          frame("done", { state: "completed" }),
+      });
+    });
+    await page.route("**/api/threads/t1/messages", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          msg("m1", "user", "hi there"),
+          msg("m2", "assistant", "hello from lynette"),
+        ]),
+      }),
+    );
+    // The overrides above land on the NEXT read — reload so the roster and the library are the new ones.
+    await page.reload();
+    await page.waitForSelector("#tab-agent.active");
+
+    const art = page.locator("#tab-agent > .kit-backdrop-strip img.kit-backdrop-art");
+    await expect(art).toHaveAttribute("src", /hall\.webp/);
+
+    const trigger = page.locator("#composer .kit-cbtn.tools");
+    const row = (name: string) =>
+      page.locator("#composer-tools label.tools-row").filter({
+        has: page.locator(".tools-name", { hasText: new RegExp(`^${name}$`) }),
+      });
+    await trigger.click();
+    await row("lynette").click();
+    await expect(art).toHaveAttribute("src", /lynette\.webp/); // switched on the pick…
+    await expect(trigger).not.toHaveClass(/armed/); // …and nothing is pending: it is a switch, not a shot
+    await trigger.click(); // close the panel — the trigger is the close gesture
+
+    await page.locator(".kit-composer textarea").fill("hi there");
+    await page.locator("#cmd-send").click();
+    await expect(page.getByText("hello from lynette").first()).toBeVisible();
+    expect(sentAgent).toBe("lynette"); // the send carried the sticky pin
+    await expect(art).toHaveAttribute("src", /lynette\.webp/); // …and the surface STAYED after the reply
+
+    await trigger.click();
+    await row("default").click(); // the default row clears the pin
+    await expect(art).toHaveAttribute("src", /hall\.webp/);
+    expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+  });
+});

@@ -33,7 +33,6 @@ import {
   resumeCall,
   useChatSlice,
 } from "../../store/chat";
-import { getComposerScope } from "../../store/composerScope";
 import { startCall } from "../../store/liveCall";
 
 // THE CALL SCREEN (Phase 24 / D71 §6) — the agent's art full-bleed, the call's state on a ring over the
@@ -43,8 +42,8 @@ import { startCall } from "../../store/liveCall";
 //
 // THE BACKDROP NEVER GOES AWAY (owner ruling): `useActiveBackdrop` ALONE — the active agent's bound
 // background, its avatar standing in, else the plain theme surface. A call with Lynette looks like HER.
-// Taken WITHOUT the composer's armed one-shot (`useActiveBackdrop(false)`, review round C1), because a
-// call does not route through it — see the call at the bottom of this file.
+// It is the same routing ladder every send follows (the session pin the composer menu writes, else the
+// thread's pin, else the default), so the face on the call screen is the agent the call's turns run as.
 // Gacha's oracle art deliberately does NOT participate: the call wears agent identity, not fleet
 // flavour. The paint is the shipped recipe (`FocalImg` + `.kit-backdrop-art`'s cover + a separate veil),
 // not a new one — text-over-art legibility is the three-state-backdrop lesson (§8.3a), not an invention.
@@ -635,13 +634,7 @@ final ${
 }
 
 export function CallOverlay({ close }: { close: () => boolean }) {
-  // SCOPE-FREE, and that is a correctness fix (review round C1 — two blind lenses, same finding): a
-  // call's turns go out through `sendCallTranscript`, which deliberately does NOT spend the composer's
-  // armed one-shot (its own docblock says why — a spoken utterance is not the message the owner armed).
-  // So an arming previews an agent the call will never route to, and painting it here would be the call
-  // screen telling the owner they are talking to someone they are not. Every OTHER consumer keeps the
-  // default: they paint, or report, what the CHAT surface routes, and there the armed pick is the truth.
-  const art = useActiveBackdrop(false);
+  const art = useActiveBackdrop();
   const call = useLiveCall();
   // The §6 mode knob, SNAPSHOTTED (audit A LOW). Read live off the query, a mid-call `/voice/status`
   // refetch — a Conf save, a window refocus — would flip the overlay's indicator under a call in
@@ -664,12 +657,6 @@ export function CallOverlay({ close }: { close: () => boolean }) {
   // …and the captions knob, on exactly the same terms and for exactly the same reasons (the paragraph
   // above is this one's too): a presentation choice, frozen for the call, re-read by the next one.
   const [captions] = useState(() => liveKnobs?.captions ?? true);
-  // A pick armed in the composer WAITS OUT the call, and now the screen says so once (design M5): the
-  // backdrop preview made arming feel like "the next thing I say runs as them", and a call quietly
-  // routing past it (the C1 rule) would be the wave's own inversion class again — a promise the screen
-  // makes that the routing does not keep. Snapshotted at mount like the knobs above: arming MID-call
-  // changes nothing about this call, so the line must not appear mid-call either.
-  const [armedParked] = useState(() => getComposerScope().agent !== undefined);
   // WHAT is waiting for an Allow/Deny (§4.5). Reference-stable by the selector's contract, so this
   // subscription costs one render per change of gate and none per streamed part.
   const awaiting = useChatSlice(() => confirmAwaiting());
@@ -785,16 +772,6 @@ export function CallOverlay({ close }: { close: () => boolean }) {
           {call.userSpeechActive || call.waitingFinal ? "…" : call.heard}
         </p>
         {call.note !== null && call.note !== "" && <p className="kit-call-note">{call.note}</p>}
-        {/* Its own line, not a `call.note`: the machine's note slot carries transient transport truths
-            and this is a standing fact about the whole call (design M5). Gone on a terminal — there is
-            no routing left to be honest about — and RETIRED once the first utterance lands (confirm
-            round N2): by then it has done its work, and a standing sentence in the transient-news slot
-            teaches the owner to skip the very line the next real note arrives on. */}
-        {armedParked && !terminal && call.heard === "" && (
-          <p className="kit-call-note">
-            calls run without the composer's agent pick — it stays for your next typed message
-          </p>
-        )}
         <div className="kit-call-cluster" onPointerDown={(e) => e.stopPropagation()}>
           {/* D74 S7 — inside the cluster, so reading it is never also a tap-to-interrupt. Absent
               entirely with the knob off: no wrapper, no spacing, nothing. */}

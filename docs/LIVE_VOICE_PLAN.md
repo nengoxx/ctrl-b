@@ -1000,7 +1000,8 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > **Main-seat rulings recorded:** tap-to-interrupt is IN S2a (§4.3's trigger B always exists —
   > and it is the only interrupt on a dirty-echo browser) · the trigger-A capability gate ships
   > here, the full Fennec EAR-HOLD stays S3 · `sendCallTranscript` does NOT spend the armed
-  > one-shot composer scope (the pick belongs to the message the owner is typing) · the F2 drain
+  > one-shot composer scope (the pick belongs to the message the owner is typing; *superseded
+  > 2026-09-24, D75 ruling: the agent pick is sticky, and calls follow it*) · the F2 drain
   > reclassification (loading = mouth busy; drain = playing|loading → paused/idle) accepted as
   > the ruling's completion · Emma's ttsAuto sub-claim overruled at the GATE (it only ever ADDS a
   > voice) — while the call DOOR's one-time `dismiss()` is the separate act that silences the
@@ -1696,6 +1697,9 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > reply stays a live interrupt target; the dead zone sat directly above the line saying "tap to
   > interrupt") · full-strength `var(--text)` (M1 — it was the most-read, least-legible thing on the
   > screen) · fade 12% · ONE `useVoiceStatus` read feeding both knob snapshots.
+  > *(Superseded 2026-09-24 (DECISIONS D75 ruling): C, the spent-hold, `routedAgent`, fix-wave 2's
+  > token-owned hold and the call's parked-pick note were all DELETED — the menu's agent pick is the
+  > sticky session pin; only the skills stay one-shot.)*
   > **C (the armed pick)** — `useActiveBackdrop(armedPick = true)` and the CALL overlay passes
   > `false`: calls route by the ladder alone (`sendCallTranscript` never spends the one-shot), so the
   > call screen must not wear an armed face it will not route to; every CHAT reader keeps the pick ·

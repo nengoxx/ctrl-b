@@ -12,7 +12,6 @@ import {
   retryLastTurn,
   runShell,
   sendMessage,
-  getSessionAgent,
   setSessionAgent,
   startNewThread,
   stopTurn,
@@ -3049,15 +3048,15 @@ describe("steering queue — client (Slice 5, D41)", () => {
   });
 });
 
-// ── A6 — the PER-MESSAGE agent. The composer tools/skills menu arms a one-shot agent for the next message;
-// it rides the per-turn `ChatRequest.agent` field the backend already accepts (zero backend change), with
-// the same one-shot-beats-sticky precedence `mode` has: opts.agent → the sticky `/agent <name>` session
-// pick → null (the server default). Unlike mode/skills it is NOT stashed per-turn — resume/answer carry no
-// `agent` — so a steer has no pin to re-point; the second case locks that in from the outside. ──
-describe("per-message agent (A6)", () => {
+// ── The agent on the wire. Every send carries the STICKY session pick (`/agent <name>`, the gallery's Talk,
+// the composer tools menu's agent rows — D75 ruling, 2026-09-24) in the per-turn `ChatRequest.agent`
+// field, else null (the server's ladder: the thread's pin, else the default). Unlike mode/skills it is NOT
+// stashed per-turn — resume/answer carry no `agent` — so a steer has no pin to re-point; the last case
+// locks that in from the outside. ──
+describe("the sticky agent on the wire", () => {
   const enc = new TextEncoder();
 
-  it("precedence: the one-shot agent beats the sticky /agent pick, which beats the server default", async () => {
+  it("a send carries the sticky pick, else null — and every later send follows it until it moves", async () => {
     let body: Record<string, unknown> = {};
     globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
       body = JSON.parse(init!.body as string) as Record<string, unknown>;
@@ -3068,32 +3067,30 @@ describe("per-message agent (A6)", () => {
     await act(async () => {
       await sendMessage("hi");
     });
-    expect(body.agent).toBe(null); // nothing armed, nothing sticky → the server's default
+    expect(body.agent).toBe(null); // nothing sticky → the server's ladder
 
-    setSessionAgent("ops"); // the sticky `/agent ops`
+    setSessionAgent("ops"); // `/agent ops`, or the menu's `ops` row
     await act(async () => {
       await sendMessage("hi");
     });
     expect(body.agent).toBe("ops");
-
     await act(async () => {
-      await sendMessage("hi", { agent: "research" }); // the menu's one-shot for THIS message
+      await sendMessage("hi"); // not spent by the send before it
     });
-    expect(body.agent).toBe("research");
+    expect(body.agent).toBe("ops");
 
-    setSessionAgent(null); // …and the sticky pick is untouched by the one-shot
+    setSessionAgent(null); // the menu's default row / bare `/agent`
     await act(async () => {
       await sendMessage("hi");
     });
     expect(body.agent).toBe(null);
   });
 
-  // D70 S6 — the sticky pick is REACTIVE now (it lives in ChatState beside `sessionPrivilege`), because a
-  // surface renders it: the agent backdrop paints the ACTIVE agent's art, and "active" is this pin. The
-  // signatures did not move, so this is the ONE new claim: a subscriber is notified, and the imperative
-  // read agrees with what the subscriber saw. Driven through the real hook (not the store internals) —
-  // a `useSyncExternalStore` binding that never emits is exactly the failure this catches.
-  it("the sticky pick NOTIFIES subscribers — and `getSessionAgent` agrees with what they see", () => {
+  // D70 S6 — the sticky pick is REACTIVE (it lives in ChatState beside `sessionPrivilege`), because
+  // surfaces render it: the agent backdrop paints the ACTIVE agent's art, and the tools menu checks its
+  // row. Driven through the real hook (not the store internals) — a `useSyncExternalStore` binding that
+  // never emits is exactly the failure this catches.
+  it("the sticky pick NOTIFIES subscribers", () => {
     setSessionAgent(null);
     let renders = 0;
     const { result } = renderHook(() => {
@@ -3107,38 +3104,12 @@ describe("per-message agent (A6)", () => {
       setSessionAgent("lynette");
     });
     expect(result.current).toBe("lynette"); // the subscriber saw it
-    expect(getSessionAgent()).toBe("lynette"); // …and the imperative read is the same value
     expect(renders).toBeGreaterThan(before); // it really re-rendered, rather than reading stale state
 
     act(() => {
       setSessionAgent(null); // back to the default — the clear notifies too
     });
     expect(result.current).toBe(null);
-    expect(getSessionAgent()).toBe(null);
-  });
-
-  // Codex, round 2 — the opts.agent is applied by PROPERTY PRESENCE, not `??`. `agent: null` is the menu's
-  // "default" row armed on purpose: it must BEAT a sticky `/agent ops` for this one message, where a `??`
-  // fallback would silently hand the message to `ops` while the menu showed "default" ticked.
-  it("an explicit `agent: null` overrides the sticky pick — and leaves it standing for the next send", async () => {
-    let body: Record<string, unknown> = {};
-    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
-      body = JSON.parse(init!.body as string) as Record<string, unknown>;
-      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
-    });
-    renderHook(() => useChat());
-
-    setSessionAgent("ops");
-    await act(async () => {
-      await sendMessage("hi", { agent: null }); // the menu's default row, armed over the sticky pick
-    });
-    expect(body.agent).toBe(null);
-
-    await act(async () => {
-      await sendMessage("hi"); // one-shot spent → the sticky pick is back in charge
-    });
-    expect(body.agent).toBe("ops");
-    setSessionAgent(null);
   });
 
   it("resume and answer payloads carry NO `agent` key — the server resolves the suspended turn's own", async () => {
@@ -3156,9 +3127,9 @@ describe("per-message agent (A6)", () => {
       { event: "done", data: { state: "suspended" } },
     ]);
     renderHook(() => useChat());
-    setSessionAgent("ops"); // a sticky pick that must NOT leak into a continuation
+    setSessionAgent("ops"); // the turn's agent — which must NOT be re-sent on a continuation
     await act(async () => {
-      await sendMessage("wake", { agent: "research" });
+      await sendMessage("wake");
     });
 
     const bodies: Record<string, unknown>[] = [];
@@ -3216,9 +3187,11 @@ describe("per-message agent (A6)", () => {
     });
     expect(hook.result.current.status).toBe("streaming");
 
+    setSessionAgent("ops"); // switched mid-turn — the steer is the first send to carry it
     await act(async () => {
-      await sendMessage("steer", { agent: "ops", mode: "local", skills: ["backups"] });
+      await sendMessage("steer", { mode: "local", skills: ["backups"] });
     });
+    setSessionAgent(null);
     expect(steerBody.agent).toBe("ops"); // the steer's own agent rode its own POST
 
     // The live turn suspends on a confirm — the pins taken at part.added must be the FRESH send's.

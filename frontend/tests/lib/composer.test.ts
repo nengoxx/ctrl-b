@@ -17,20 +17,20 @@ vi.mock("../../src/store/chat", () => ({
   setSessionAgent: vi.fn(),
   setSessionPrivilege: vi.fn(),
   pushSystemNote: vi.fn(),
-  // `idle` = the send OWNS the turn, so the take stashes the pick (the C2 hold). The steer arm below
-  // flips it to `streaming` per-test.
-  getChatStatus: vi.fn(() => "idle"),
 }));
 vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
 
 import {
+  defaultAgentPin,
   effectiveAgent,
   fillComposer,
   getCompletions,
+  getDefaultAgent,
   getKnownSkills,
   loadAgents,
   loadProviders,
   loadSkills,
+  pinSessionAgent,
   runComposer,
 } from "../../src/lib/composer";
 import { PRIVILEGE_LEVELS } from "../../src/lib/privilege";
@@ -38,11 +38,10 @@ import { addStaged, clearStaged, stagedFiles, stagedIds } from "../../src/store/
 import * as chat from "../../src/store/chat";
 import { clearDraft, getDraft, setDraft, useDraft } from "../../src/store/composer";
 import {
-  clearComposerScope,
-  getComposerScope,
-  setScopeAgent,
-  toggleScopeSkill,
-} from "../../src/store/composerScope";
+  clearComposerSkills,
+  takeComposerSkills,
+  toggleComposerSkill,
+} from "../../src/store/composerSkills";
 import { setUI } from "../../src/store/ui";
 
 // loadSkills/loadAgents fire a best-effort fetch on import; make it a quiet no-op so nothing hits the
@@ -307,89 +306,30 @@ describe("runComposer × staged attachments (D68 §7)", () => {
   });
 });
 
-// A6 — the composer tools/skills MENU arms a ONE-SHOT scope for the NEXT message; `runComposer` is where it
-// is applied or overridden. The pinned precedence rule: a plain NL send CARRIES the arming (and spends it);
-// an EXPLICIT `/verb` send WINS over the menu — it spends the arming WITHOUT applying it.
-describe("runComposer × the one-shot menu scope (A6)", () => {
-  beforeEach(() => clearComposerScope());
+// A6 — the composer tools/skills MENU ticks ONE-SHOT skills for the NEXT message; `runComposer` is where
+// they are applied or overridden. The pinned precedence rule: a plain NL send CARRIES the ticks (and spends
+// them); an EXPLICIT `/verb` send WINS over the menu — it spends the ticks WITHOUT applying them. The
+// menu's AGENT section is not part of this: it writes the sticky session pin (D75 ruling, 2026-09-24),
+// which `sendMessage` reads like every send does — so no branch here ever passes an `agent`.
+describe("runComposer × the one-shot menu skills (A6)", () => {
+  beforeEach(() => clearComposerSkills());
 
-  it("a plain NL send carries the armed agent + skills, then clears the arming", () => {
-    setScopeAgent("ops");
-    toggleScopeSkill("deploy");
+  it("a plain NL send carries the ticked skills, then clears them — and never names an agent", () => {
+    toggleComposerSkill("deploy");
     runComposer("wake the vault");
     expect(chat.sendMessage).toHaveBeenCalledWith("wake the vault", {
       raw: "wake the vault",
-      agent: "ops",
       skills: ["deploy"],
     });
-    expect(getComposerScope().agent).toBe(undefined); // spent by the message it rode
-    expect(getComposerScope().skills).toEqual([]);
+    expect(takeComposerSkills()).toEqual([]); // spent by the message it rode
   });
 
-  it("nothing armed → the call shape is exactly what it was before A6 (NO `agent` key)", () => {
+  it("nothing ticked → the call shape is exactly what it was before A6", () => {
     runComposer("wake the vault");
     expect(chat.sendMessage).toHaveBeenCalledWith("wake the vault", { raw: "wake the vault" });
-    // the key's ABSENCE is the contract — `sendMessage` falls back to the sticky `/agent` on it
-    expect("agent" in (vi.mocked(chat.sendMessage).mock.calls[0][1] ?? {})).toBe(false);
   });
 
-  // Codex, round 2 — the tri-state's reason to exist: with a sticky `/agent ops` set, picking the menu's
-  // "default" row must SAY so on the wire. `null` is a pick, not "nothing picked".
-  it("an armed `null` (the menu's default row) is forwarded as an explicit `agent: null`", () => {
-    setScopeAgent(null);
-    runComposer("wake the vault");
-    expect(chat.sendMessage).toHaveBeenCalledWith("wake the vault", {
-      raw: "wake the vault",
-      agent: null,
-    });
-    expect(getComposerScope().agent).toBe(undefined); // spent like any other arming
-  });
-
-  // Review round C2 — the take MOVES the pick to `spent` and `runComposer`'s own `finally` releases it
-  // when the send settles. Driven through the REAL dispatch path on purpose: the backdrop's settle arm
-  // exercises the store rule by calling the release itself, so only THIS arm fails if the `finally`
-  // stops running (the red-proof's named bypass).
-  it("the held pick rides the send and is released by runComposer's OWN settle (review round C2)", async () => {
-    let settle!: (v: "accepted") => void;
-    vi.mocked(chat.sendMessage).mockReturnValueOnce(
-      new Promise((r) => {
-        settle = r;
-      }),
-    );
-    setScopeAgent("ops");
-    runComposer("wake the vault");
-    // In flight: armed is spent, but the pick is HELD — the surface keeps the armed agent's face.
-    expect(getComposerScope().agent).toBe(undefined);
-    expect(getComposerScope().spent).toBe("ops");
-    settle("accepted");
-    await act(async () => {}); // drain the microtask the finally rides
-    expect(getComposerScope().spent).toBe(undefined); // settled: the ladder takes the surface back
-  });
-
-  // Fix-wave round 2 (arch F1): with a turn already STREAMING this POST is a D41 steer, whose
-  // `sendMessage` settles at the 202 — before the steered reply exists. A stash there would release
-  // within one round-trip and hold nothing, so the steer never stashes: the pick still routes (it is
-  // consumed and rides the wire), but the surface reverts at dispatch, the honest reading of an
-  // unobservable reply edge.
-  it("a STEER (turn streaming) consumes the pick for routing but HOLDS nothing", async () => {
-    vi.mocked(chat.getChatStatus).mockReturnValue("streaming");
-    try {
-      setScopeAgent("ops");
-      runComposer("and check the disks");
-      expect(chat.sendMessage).toHaveBeenCalledWith("and check the disks", {
-        raw: "and check the disks",
-        agent: "ops",
-      });
-      expect(getComposerScope().agent).toBe(undefined); // consumed…
-      expect(getComposerScope().spent).toBe(undefined); // …but never held
-      await act(async () => {}); // the settle finds nothing to release, and releases nothing
-      expect(getComposerScope().spent).toBe(undefined);
-    } finally {
-      vi.mocked(chat.getChatStatus).mockReturnValue("idle");
-    }
-  });
-
-  it("an explicit `/skill` send WINS: the arming is cleared, never merged", async () => {
+  it("an explicit `/skill` send WINS: the ticks are cleared, never merged", async () => {
     globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
       String(url).includes("/api/skills")
         ? Promise.resolve({
@@ -399,16 +339,14 @@ describe("runComposer × the one-shot menu scope (A6)", () => {
         : Promise.resolve({ ok: false } as Response),
     );
     await loadSkills();
-    setScopeAgent("ops");
-    toggleScopeSkill("backups");
+    toggleComposerSkill("backups");
     runComposer("/deploy do it");
-    // the hand-routed skill alone — no `agent`, no `backups`
+    // the hand-routed skill alone — no `backups`
     expect(chat.sendMessage).toHaveBeenCalledWith("do it", {
       skills: ["deploy"],
       raw: "/deploy do it",
     });
-    expect(getComposerScope().agent).toBe(undefined);
-    expect(getComposerScope().skills).toEqual([]);
+    expect(takeComposerSkills()).toEqual([]);
   });
 
   it("an explicit `/<provider> <msg>` send wins the same way", async () => {
@@ -421,18 +359,18 @@ describe("runComposer × the one-shot menu scope (A6)", () => {
         : Promise.resolve({ ok: false } as Response),
     );
     await loadProviders();
-    setScopeAgent("ops");
+    toggleComposerSkill("deploy");
     runComposer("/llamacpp ping");
     expect(chat.sendMessage).toHaveBeenCalledWith("ping", {
       mode: "llamacpp",
       raw: "/llamacpp ping",
     });
-    expect(getComposerScope().agent).toBe(undefined);
+    expect(takeComposerSkills()).toEqual([]);
   });
 
   // The RETENTION matrix (Codex, round 2 — named cases): one rule, "a line that SENDS a message spends the
-  // arming; a line that doesn't, leaves it", checked across every routing branch at once.
-  it("scope retention: only a line that SENDS spends the arming", async () => {
+  // ticks; a line that doesn't, leaves them", checked across every routing branch at once.
+  it("retention: only a line that SENDS spends the ticks", async () => {
     globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
       String(url).includes("/api/providers")
         ? Promise.resolve({
@@ -442,7 +380,7 @@ describe("runComposer × the one-shot menu scope (A6)", () => {
         : Promise.resolve({ ok: false } as Response),
     );
     await loadProviders();
-    // bare verbs + an unknown one: no message goes out, so the arming is still for the NEXT message
+    // bare verbs + an unknown one: no message goes out, so the ticks are still for the NEXT message
     for (const line of [
       "/llamacpp",
       "/agent",
@@ -451,20 +389,56 @@ describe("runComposer × the one-shot menu scope (A6)", () => {
       "/compact",
       "/nope",
       "/help",
+      // `!shell` doesn't go through the agent at all — nothing to apply the ticks to
+      "!ls -la",
     ]) {
-      setScopeAgent("ops");
-      toggleScopeSkill("deploy");
+      toggleComposerSkill("deploy");
       runComposer(line);
-      expect(getComposerScope(), line).toEqual({ agent: "ops", skills: ["deploy"] });
-      clearComposerScope();
+      expect(takeComposerSkills(), line).toEqual(["deploy"]);
     }
-    // `!shell` doesn't go through the agent at all — nothing to apply the arming to, so it survives
-    setScopeAgent("ops");
-    runComposer("!ls -la");
     expect(chat.runShell).toHaveBeenCalledWith("ls -la");
-    expect(getComposerScope().agent).toBe("ops");
     // and none of those lines sent a MESSAGE — `/compact` runs the summarizer, `/agent` flips the sticky
     expect(chat.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+// The ONE seam that sets "who am I talking to": `/agent`, the gallery's Talk, and the tools menu's agent
+// rows all end here. A pin AT the default's name is a real pin (the menu's default row writes it inside a
+// thread-pinned conversation, where a clear would let the thread's agent resurface) — and its note must
+// say "default", not the typo's "not configured" (the default is never among the SPECIALIST names).
+describe("pinSessionAgent — the sticky switch", () => {
+  beforeEach(async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+      String(url).includes("/api/agents")
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ agents: ["ops"], default: "maya" }),
+          } as Response)
+        : Promise.resolve({ ok: false } as Response),
+    );
+    await loadAgents();
+  });
+  const lastNote = () => vi.mocked(chat.pushSystemNote).mock.calls.at(-1)?.[0];
+
+  it('`""` CLEARS the pin — back to the thread\'s pin, else the default', () => {
+    pinSessionAgent("");
+    expect(chat.setSessionAgent).toHaveBeenLastCalledWith(null);
+    expect(lastNote()).toBe("// agent → maya (default)");
+  });
+
+  it("the default's own NAME pins it — with the default's note, not the typo's", () => {
+    pinSessionAgent("maya");
+    expect(chat.setSessionAgent).toHaveBeenLastCalledWith("maya");
+    expect(lastNote()).toBe("// agent → maya (default)");
+  });
+
+  it("a specialist pins; an unknown name still pins, and the note says it will fall back", () => {
+    pinSessionAgent("ops");
+    expect(chat.setSessionAgent).toHaveBeenLastCalledWith("ops");
+    expect(lastNote()).toBe("// agent → ops");
+    pinSessionAgent("typo");
+    expect(chat.setSessionAgent).toHaveBeenLastCalledWith("typo");
+    expect(lastNote()).toBe("// agent → typo (not configured — will fall back to default)");
   });
 });
 
@@ -505,7 +479,7 @@ describe("`/consolidate [dry]` (D61 ①)", () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const lastNote = () => vi.mocked(chat.pushSystemNote).mock.calls.at(-1)?.[0] ?? "";
 
-  beforeEach(() => clearComposerScope());
+  beforeEach(() => clearComposerSkills());
 
   it("bare: sends the `consolidation` prompt as the message, with the raw line for a Stop-harvest", async () => {
     mockApis(true);
@@ -524,25 +498,24 @@ describe("`/consolidate [dry]` (D61 ①)", () => {
     });
   });
 
-  it("an EXPLICIT send wins over the armed menu scope, like /skill and /<provider>", async () => {
+  it("an EXPLICIT send wins over the menu's ticked skills, like /skill and /<provider>", async () => {
     mockApis(true);
-    setScopeAgent("ops");
-    toggleScopeSkill("deploy");
+    toggleComposerSkill("deploy");
     runComposer("/consolidate");
     // SYNCHRONOUS: spent before the two reads, not after them (a clear parked behind the awaits
-    // would eat an arming the owner makes while they are in flight).
-    expect(getComposerScope()).toEqual({ agent: undefined, skills: [] });
+    // would eat a tick the owner makes while they are in flight).
+    expect(takeComposerSkills()).toEqual([]);
     await flush();
     expect(chat.sendMessage).toHaveBeenCalledWith("MERGE ONE FAMILY.", { raw: "/consolidate" });
   });
 
-  it("an arming made DURING the reads is for the NEXT message, and survives this one", async () => {
+  it("a tick made DURING the reads is for the NEXT message, and survives this one", async () => {
     mockApis(true);
     runComposer("/consolidate");
-    setScopeAgent("research"); // the owner opens the menu while the two GETs are in flight
+    toggleComposerSkill("research"); // the owner opens the menu while the two GETs are in flight
     await flush();
     expect(chat.sendMessage).toHaveBeenCalledWith("MERGE ONE FAMILY.", { raw: "/consolidate" });
-    expect(getComposerScope().agent).toBe("research"); // untouched by the send it did not arm
+    expect(takeComposerSkills()).toEqual(["research"]); // untouched by the send it did not carry
   });
 
   it("an unknown argument is a note, and nothing is sent (no fetch at all)", async () => {
@@ -557,13 +530,13 @@ describe("`/consolidate [dry]` (D61 ①)", () => {
   it("the auto_write guard, both directions", async () => {
     // `dry` with writes ON would really write — refused, naming the switch that makes it dry.
     mockApis(true);
-    setScopeAgent("ops");
+    toggleComposerSkill("deploy");
     runComposer("/consolidate dry");
     await flush();
     expect(chat.sendMessage).not.toHaveBeenCalled();
     expect(lastNote()).toContain("auto-write OFF");
-    // …and the refusal has still SPENT the arming: the attempt is what supersedes the menu.
-    expect(getComposerScope().agent).toBe(undefined);
+    // …and the refusal has still SPENT the ticks: the attempt is what supersedes the menu.
+    expect(takeComposerSkills()).toEqual([]);
 
     // …and the live form with writes OFF is refused too: every step-2/3 write would be denied, so
     // the run is structurally broken rather than degraded — and the note is only actionable BEFORE
@@ -662,6 +635,20 @@ describe("effectiveAgent — the server's routing ladder, mirrored", () => {
     expect(effectiveAgent(null, "ghost", agents)).toBeNull();
     expect(effectiveAgent(null, null, agents)).toBeNull();
     expect(effectiveAgent(null, "lynette", [])).toBeNull(); // roster not loaded yet
+  });
+});
+
+// D75 ruling (2026-09-24) — "back to the default" is ONE expression for both doors (the tools menu's
+// default row, the gallery's Talk on the default): a clear, unless the open thread carries its own pin,
+// where a clear would let the thread's character resurface and the default must be pinned by name.
+describe("defaultAgentPin — what 'back to the default' hands the session pin", () => {
+  it("is the CLEAR in an unpinned thread — nothing pinned is the honest resting state", () => {
+    expect(defaultAgentPin(null)).toBe("");
+  });
+
+  it("is the default BY NAME inside a thread pinned to a character", () => {
+    expect(defaultAgentPin("lynette")).toBe(getDefaultAgent());
+    expect(defaultAgentPin("lynette")).not.toBe("");
   });
 });
 

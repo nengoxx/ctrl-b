@@ -37,12 +37,13 @@ interface ChatState {
   // `/privilege <level>` session override (A1/D16), null → follow the agent's own privilege. Reactive
   // (unlike sessionMode) so the chip reflects it; session-scoped, so `/clear` keeps it.
   sessionPrivilege: Privilege | null;
-  // The sticky `/agent <name>` pick (7d), null → the thread's / configured default AgentDef. REACTIVE
-  // since D70 S6 for exactly the reason `sessionPrivilege` is — a surface renders it: the agent backdrop
-  // paints the ACTIVE agent's art, and "active" is this pin (§8.3a item 2). It lives in ChatState rather
-  // than beside `sessionMode`/`turnMode` as a second module-level store because that is the shape this
-  // file already has for "a session pick a surface reflects"; `set()` + `useChatSlice` are the whole
-  // upgrade, and `getSessionAgent`/`setSessionAgent` keep their signatures so no caller moves.
+  // The sticky agent pick (7d) — `/agent <name>`, the agents gallery's Talk, the composer tools menu's
+  // agent rows, all through `lib/composer#pinSessionAgent` — null → the thread's / configured default
+  // AgentDef. REACTIVE for exactly the reason `sessionPrivilege` is — surfaces render it: the agent
+  // backdrop paints the ACTIVE agent's art, and "active" is this pin (§8.3a item 2); the tools menu
+  // checks its row. It lives in ChatState rather than beside `sessionMode`/`turnMode` as a second
+  // module-level store because that is the shape this file already has for "a session pick a surface
+  // reflects".
   // Per-message only (not persisted on the thread): a resume/answer payload carries no `agent` at all,
   // so a continuation finishes on the SUSPENDED TURN's own agent (the server resolves it), not on
   // whatever is sticky now.
@@ -471,18 +472,14 @@ let turnMode: ChatMode | null = null;
 // Module-level + non-reactive like `turnMode`; `null`-equivalent is the empty list.
 let turnSkills: string[] = [];
 
-// The sticky `/agent <name>` pick lives in ChatState (see its field note). These three are its whole API.
+// The sticky agent pick lives in ChatState (see its field note). These two are its whole API.
 export function setSessionAgent(name: string | null): void {
   set({ sessionAgent: name });
 }
-/** The sticky pick, non-reactively — the composer menu needs it to show which agent the next message
- *  would ACTUALLY run on when nothing is armed (A6 tri-state), and it reads it outside a subscription. */
-export function getSessionAgent(): string | null {
-  return state.sessionAgent;
-}
 /** The sticky pick, REACTIVELY (D70 §8.3a item 2) — for a surface that must repaint when the owner
- *  switches character (`/agent`, the gallery's Talk button), i.e. the agent backdrop. A slice, not
- *  `useChat()`: the store emits on every streamed token, and this value changes about twice a session. */
+ *  switches agent (`/agent`, the gallery's Talk button, the tools menu's agent rows): the agent backdrop
+ *  and the tools menu's checked row. A slice, not `useChat()`: the store emits on every streamed token,
+ *  and this value changes a handful of times a session. */
 export function useSessionAgent(): string | null {
   return useChatSlice((s) => s.sessionAgent);
 }
@@ -490,10 +487,9 @@ export function useSessionAgent(): string | null {
 // The OPEN THREAD's pinned agent (see its field note). Read-only to the app: it is not a pick anyone
 // makes here, it is what the loaded thread already carries, so the writes live at the load seams.
 /** The thread pin, REACTIVELY — the twin of `useSessionAgent` for every surface that must follow it: the
- *  agent backdrop, and the composer menu's A6 tri-state. There is deliberately NO non-reactive getter
- *  beside it (there was, for one release): unlike the sticky pick, this value arrives on its own from
- *  `openThread`'s late pin read, so a snapshot taken at render time can be stale while the surface is
- *  still up. Same slice reasoning as its twin: it changes once per thread switch, while the store emits
+ *  agent backdrop, and the composer menu's checked row. There is deliberately NO non-reactive getter
+ *  beside it: this value arrives on its own from `openThread`'s late pin read, so a snapshot taken at
+ *  render time can be stale while the surface is still up. Same slice reasoning as its twin: it changes once per thread switch, while the store emits
  *  on every streamed token. */
 export function useThreadAgent(): string | null {
   return useChatSlice((s) => s.threadAgent);
@@ -2407,7 +2403,6 @@ export async function sendMessage(
   opts?: {
     mode?: ChatMode;
     skills?: string[];
-    agent?: string | null;
     raw?: string;
     /** Staged `attachment_id`s the server claims into this thread (D68 §3). Supplied by
      *  `runComposer`'s natural-language branch — the ONE place that reads the staging store — so
@@ -2431,14 +2426,11 @@ export async function sendMessage(
   const steering = state.status === "streaming";
   const mode = opts?.mode ?? sessionMode ?? null;
   const skills = opts?.skills ?? []; // explicit /skill-name invocations (4.5)
-  // A6 — the per-message agent, same one-shot-beats-sticky precedence as `mode`: the composer menu's
-  // armed pick wins for THIS message, else the sticky `/agent <name>` session pick, else the server
-  // default (null). Applied by PROPERTY PRESENCE, not `??`: `agent: null` is a REAL pick (the menu's
-  // "default" row, armed on purpose over a sticky specialist) and `??` would silently fall through it
-  // back to the sticky agent. NOT stashed per-turn like turnMode/turnSkills: the resume/answer payloads
-  // carry no `agent` (the server resolves the suspended turn's own), so there is no pin a steer could
-  // re-point — a steer's agent rides its own POST, exactly like its `mode`.
-  const agent = opts && "agent" in opts ? (opts.agent ?? null) : state.sessionAgent;
+  // The agent is the sticky session pick (`/agent`, Talk, the tools menu's agent rows), else the
+  // server's ladder (null → the thread's pin, else the configured default). NOT stashed per-turn like
+  // turnMode/turnSkills: the resume/answer payloads carry no `agent` (the server resolves the suspended
+  // turn's own), so there is no pin a steer could re-point — a steer's agent rides its own POST.
+  const agent = state.sessionAgent;
   if (!steering) {
     turnMode = mode;
     turnSkills = skills;

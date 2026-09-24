@@ -21,7 +21,6 @@ import { getJSON } from "../api/client";
 import { isUploading, reserveStaged, stagedIds } from "../store/attachments";
 import {
   compactThread,
-  getChatStatus,
   pushSystemNote,
   runShell,
   sendMessage,
@@ -32,7 +31,7 @@ import {
   startNewThread,
 } from "../store/chat";
 import { setDraft } from "../store/composer";
-import { clearComposerScope, releaseSpent, takeComposerScope } from "../store/composerScope";
+import { clearComposerSkills, takeComposerSkills } from "../store/composerSkills";
 import { createStore } from "../store/createStore";
 import { setUI } from "../store/ui";
 import type { PromptsDoc } from "../types";
@@ -147,8 +146,8 @@ export function getDefaultAgent(): string {
  *  default: the tools menu's radio group (which would otherwise leave the whole group unchecked, i.e.
  *  claim the message goes nowhere) and, since D70 §8.3a, the agent backdrop (which would otherwise paint
  *  nothing where the default's own art belongs). ONE fold, PURE over its two inputs, because the two
- *  callers read those inputs differently: the menu takes the module set + the non-reactive pin, the
- *  backdrop takes the roster query + the reactive one. */
+ *  callers read the agent list differently: the menu takes the module set, the backdrop the roster
+ *  query. */
 export function validSessionAgent(sticky: string | null, agents: readonly string[]): string | null {
   return sticky !== null && agents.includes(sticky) ? sticky : null;
 }
@@ -163,14 +162,16 @@ export function validSessionAgent(sticky: string | null, agents: readonly string
  *      never looks at `thread.agent` once that is set;
  *    · a FALSY one yields to the thread. `pinSessionAgent("")` — Talk on the default agent
  *      (`AgentsTab`) — is falsy on the server too, so the thread pin winning over `""` is the server's
- *      own behaviour, not a gap to plug;
+ *      own behaviour, not a gap to plug (a surface that must beat the thread's pin with the default
+ *      pins the default BY NAME — the tools menu's default row does);
  *    · an unknown name from EITHER pin folds to `null` = the resolved default, via the same
  *      `validSessionAgent` every caller already shares.
  *
  *  The FE learned the thread's pin (`ChatState.threadAgent`) only in wave 1c: before it, opening a thread
  *  pinned to a character replied as that character while the backdrop painted the default (owner glance
  *  2026-09-08). PURE over its three inputs for the same reason `validSessionAgent` is — the menu reads
- *  the module set and the non-reactive pins, the backdrop the roster query and the reactive ones. */
+ *  the module set, the backdrop the roster query. It is the ONE answer to "who is the active agent":
+ *  the backdrop paints it and the tools menu checks its row, so the two cannot disagree. */
 export function effectiveAgent(
   sticky: string | null,
   threadAgent: string | null,
@@ -179,31 +180,15 @@ export function effectiveAgent(
   return validSessionAgent(sticky || threadAgent, agents);
 }
 
-/** …and the SAME LADDER WITH AN EXPLICIT PICK FOLDED IN — the third member of this family, and the one
- *  every surface that has to say "whose message is this" actually takes (review round C3: the backdrop
- *  and the tools menu had each grown their own copy of it, and the copies had already diverged).
- *
- *  `pick` is `composerScope`'s tri-state, and each value means something different:
- *    · `undefined` — nothing picked, so the answer is `effectiveAgent`'s ladder, untouched;
- *    · `null` — picked "the configured default", EXPLICITLY. It beats a sticky `/agent` pick, because
- *      that is who the picked message actually runs as (the send puts `agent: null` on the wire);
- *    · a name — that specialist, folded through the same `validSessionAgent` the ladder mirrors, so a
- *      pick the roster no longer has reads as the DEFAULT rather than as nothing. That fold is the
- *      server's own behaviour (an unknown `agent` resolves to the default), and it is what the menu's
- *      checked row used to get wrong: it compared the raw name and left the whole group unchecked,
- *      claiming the message went nowhere.
- *
- *  PURE over its four inputs, for the reason the two below it are: the menu reads the module set and the
- *  non-reactive sticky pin, the backdrop reads the roster query and the reactive one. */
-export function routedAgent(
-  pick: string | null | undefined,
-  sticky: string | null,
-  threadAgent: string | null,
-  agents: readonly string[],
-): string | null {
-  return pick === undefined
-    ? effectiveAgent(sticky, threadAgent, agents)
-    : validSessionAgent(pick, agents);
+/** What a "back to the default" gesture hands `pinSessionAgent` — the tools menu's default row and the
+ *  gallery's Talk on the default agent, through ONE expression so the two doors cannot disagree (D75
+ *  ruling, 2026-09-24). Ordinarily the session-pin CLEAR (`""`): nothing pinned is the honest resting
+ *  state (the ladder falls through to the thread, then the configured default, and 7e-g auto-routing
+ *  stays possible). Inside a thread that carries its own D70 §4.2 pin, though, a clear would let the
+ *  thread's character resurface — so there the default is pinned BY NAME, which the ladder ranks above
+ *  the thread. */
+export function defaultAgentPin(threadAgent: string | null): string {
+  return threadAgent !== null ? defaultAgent : "";
 }
 
 export async function loadAgents(): Promise<void> {
@@ -272,24 +257,24 @@ interface BuiltinVerb {
 /** The built-in verbs — ONE table driving dispatch (`routeSlash`), the `/help` listing, and the composer's
  *  first-token suggestions, so the three can't drift. Adding a verb is one row. Skills and providers are
  *  DISCOVERED (the sets above), so they stay out of the table and keep their own dynamic `/help` lines. */
-/** PIN THE SESSION AGENT — the whole body of the `/agent` verb, extracted so a SECOND affordance can
- *  drive the same seam rather than mint one (D70 §8.4: the agents gallery's Talk button).
+/** PIN THE SESSION AGENT — the whole body of the `/agent` verb, extracted so the other affordances
+ *  drive the same seam rather than mint one: the agents gallery's Talk button (D70 §8.4) and the
+ *  composer tools menu's agent rows (the D75 sticky ruling).
  *
  *  `name` is a slug, or `""` for "back to the configured default" — the bare-`/agent` case, which is a
- *  session-agent CLEAR rather than a pin at the default's name. The name is validated against the
- *  configured set (best-effort): an unknown one still pins, the backend resolves it gracefully, and
- *  the note says so, so a typo is visible. */
+ *  session-agent CLEAR rather than a pin at the default's name. A pin AT the default's name is a real
+ *  pin too (it outranks a thread's own pin, which a clear would let resurface — the tools menu's
+ *  default row inside a pinned thread) and gets the default's note, not the typo's. Any other name is
+ *  validated against the configured set (best-effort): an unknown one still pins, the backend resolves
+ *  it gracefully, and the note says so, so a typo is visible. */
 export function pinSessionAgent(name: string): void {
-  if (!name) {
-    setSessionAgent(null);
-    pushSystemNote(`// agent → ${defaultAgent} (default)`);
-    return;
-  }
-  setSessionAgent(name);
+  setSessionAgent(name || null);
   pushSystemNote(
-    knownAgents.has(name)
-      ? `// agent → ${name}`
-      : `// agent → ${name} (not configured — will fall back to default)`,
+    !name || name === defaultAgent
+      ? `// agent → ${defaultAgent} (default)`
+      : knownAgents.has(name)
+        ? `// agent → ${name}`
+        : `// agent → ${name} (not configured — will fall back to default)`,
   );
 }
 
@@ -386,10 +371,10 @@ async function runConsolidate(rest: string, raw: string): Promise<void> {
     return;
   }
   const dry = arg === "dry";
-  // A6: an EXPLICIT slash-routed send supersedes the menu arming, spent SYNCHRONOUSLY — before the
-  // reads below, so an arming the owner makes WHILE they are in flight is left for the next message.
+  // A6: an EXPLICIT slash-routed send supersedes the menu's ticked skills, spent SYNCHRONOUSLY — before
+  // the reads below, so a tick the owner makes WHILE they are in flight is left for the next message.
   // A refusal further down has therefore also spent it: deliberate, the attempt is what supersedes.
-  clearComposerScope();
+  clearComposerSkills();
   // The dry run is dry STRUCTURALLY (§16b-1): `memory.auto_write` OFF is what refuses the writes —
   // the prompt only tells the model why. So the switch decides which form is runnable at all, and
   // BOTH mismatches refuse: a `dry` run with writes on would really write, and a live run with
@@ -489,11 +474,10 @@ export function runComposer(raw: string): boolean {
   }
   // Plain NL send. `raw` == `text` here (no prefix), but pass it explicitly so a queued steer restores
   // the exact line on Stop (D41 §6) — the raw-line map is keyed uniformly for every send path.
-  // A6: this is the message the tools/skills menu armed, so its one-shot scope rides along and is SPENT
-  // here (`take` = read + clear). Absent fields are omitted rather than passed empty so the call shape is
-  // unchanged when nothing is armed — and the armed agent is forwarded by PRESENCE (`!== undefined`), so
-  // an explicit "the configured default" pick reaches `sendMessage` as a real `agent: null` and overrides
-  // the sticky `/agent` there, instead of looking like no pick at all.
+  // A6: this is the message the tools/skills menu's skills were ticked for, so they ride along and are
+  // SPENT here (`take` = read + clear); absent, the field is omitted rather than passed empty. The AGENT
+  // is not this branch's business: the menu's agent rows write the sticky session pin, and `sendMessage`
+  // reads it like every other send does.
   //
   // D68 §7 — the STAGED ATTACHMENTS are consumed HERE, in the natural-language branch, and nowhere
   // else. Two consequences, both deliberate:
@@ -509,32 +493,13 @@ export function runComposer(raw: string): boolean {
   // arriving inside the first POST's accept window cannot name the same ids twice. The reservation is
   // released by whoever refused it, which is why it is taken here — one step from the send that owns
   // it — and never earlier.
-  //
-  // …and the take now also HOLDS the agent pick for the turn it belongs to (review round C2 — the
-  // store's header carries the why). It stashes ONLY when this send OWNS the turn (fix-wave round 2,
-  // arch F1): with a turn already streaming this POST is a D41 steer, and a steer's `sendMessage`
-  // settles at the 202 — before the steered reply exists — so a stash here would release within one
-  // round-trip and the hold would never cover the very case it was built for. The steer therefore
-  // never holds (its pick reverts at dispatch, the honest reading of an unobservable reply edge).
-  // The release is this `finally`: it runs when the send settles, whichever way it settled, so a
-  // refused or failed send hands the surface back at once while a streaming one keeps the armed
-  // agent's face up through their own reply — and it names the take's own HOLD TOKEN, so an older
-  // send settling late can never take a newer send's hold with it (two sends armed at the same agent
-  // defeated the old value compare).
-  const scope = takeComposerScope(getChatStatus() !== "streaming");
+  const skills = takeComposerSkills();
   const attachments = reserveStaged();
-  void (async () => {
-    try {
-      await sendMessage(text, {
-        raw: text,
-        ...(scope.agent !== undefined ? { agent: scope.agent } : {}),
-        ...(scope.skills.length ? { skills: scope.skills } : {}),
-        ...(attachments.length ? { attachments } : {}),
-      });
-    } finally {
-      if (scope.hold !== null) releaseSpent(scope.hold);
-    }
-  })();
+  void sendMessage(text, {
+    raw: text,
+    ...(skills.length ? { skills } : {}),
+    ...(attachments.length ? { attachments } : {}),
+  });
   return true;
 }
 
@@ -545,9 +510,11 @@ export function runComposer(raw: string): boolean {
  *    route as a slash command. A transcript is always a plain message.
  *  · **the typed draft is untouched.** Dictation appends to the draft and sends the whole draft; a call
  *    submits the utterance ALONE and leaves whatever is in the composer exactly where the owner left it.
- *  · **the armed one-shot scope is NOT spent.** `runComposer` takes `takeComposerScope()` because the
- *    owner armed it for the message they are typing; a spoken utterance is not that message, and
- *    silently disarming their pick mid-call would be a surprise they never asked for.
+ *  · **the ticked one-shot skills are NOT spent.** `runComposer` takes `takeComposerSkills()` because
+ *    the owner ticked them for the message they are typing; a spoken utterance is not that message, and
+ *    silently unticking them mid-call would be a surprise they never asked for. The AGENT is no
+ *    exception to anything: it follows the routing ladder like every send (`sendMessage` reads the
+ *    sticky pin), so the call answers as the agent the tools menu shows.
  *
  *  What it DOES share is the staged-attachment reservation, deliberately (§4.5, owner-ratified: stage a
  *  photo, start the call, ask about it) — including the upload HOLD, which here returns `"held"` rather
@@ -605,11 +572,11 @@ function routeSlash(text: string): void {
     // /skill-name <task> → run the task with that skill explicitly active (user-invoked, 4.5). The
     // CANONICAL name goes to the backend, not the lowercased verb — a skill's name is free-form and is
     // also its lookup key server-side (`resolve_skills` matches by exact name).
-    // A6: an EXPLICIT slash-routed send WINS over the tools/skills menu — the arming is dropped, not
-    // merged (the owner just routed this message by hand). Same at the provider branch below; a verb that
-    // sends NO message (/help, /clear, /agent…) leaves the arming alone — it's still for the next message.
+    // A6: an EXPLICIT slash-routed send WINS over the tools/skills menu — the ticked skills are dropped,
+    // not merged (the owner just routed this message by hand). Same at the provider branch below; a verb
+    // that sends NO message (/help, /clear, /agent…) leaves the ticks alone — they're for the next message.
     if (rest) {
-      clearComposerScope();
+      clearComposerSkills();
       void sendMessage(rest, { skills: [skill], raw });
     } else pushSystemNote(`// /${skill} needs a task: /${skill} <what to do>`);
     // `!bucket`: a verb whose fold IS a known skill stays with the skills tier even when the case is
@@ -618,7 +585,7 @@ function routeSlash(text: string): void {
   } else if (!bucket && knownProviders.has(verb)) {
     // /<provider> [msg] → force that inference backend. With args = one-shot; bare = sticky.
     if (rest) {
-      clearComposerScope();
+      clearComposerSkills();
       void sendMessage(rest, { mode: verb, raw });
     } else {
       setSessionMode(verb);

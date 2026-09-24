@@ -5119,6 +5119,8 @@ and an armed name the roster no longer has folds to the default through the same
 the server's ladder mirrors. The one-shot is SPENT on dispatch, so the preview reverts to the ladder
 when the message goes — the reversion is the routing truth, not a flicker. **The per-bubble
 `m.agent` exclusion STANDS unchanged.**
+*(Superseded 2026-09-24 (D75 ruling): the menu's agent pick is no longer a one-shot — it IS the
+sticky session pin, so the backdrop simply follows the ladder; see D75 "RULED 2026-09-24".)*
 
 ## D71 — Live voice mode ("call mode"): the Speaches-realtime ear · client-submitted turns · the WebSocket admission ✏️ RATIFIED 2026-09-11 (owner, in conversation — "okay then" after the brief + the reference-projects discussion; spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md); evidence = [R51](./research/R51-realtime-voice-chat.md) + [R68](./research/R68-live-voice-deltas.md); council = blind Emma design round RETHINK [2 HIGH · 7 MED, sweep "none", architecture ① affirmed; all nine ACCEPTED, both HIGHs code-verified] → confirm SHIP WITH CHANGES [all four folded] — plan §9 verbatim)
 
@@ -5524,6 +5526,10 @@ the "calls run without the composer's agent pick" note did not change that. The 
 of the same date (HANDOFF, the 2026-09-24 sitting) recommends folding the menu's agent section into
 the existing session pin (`pinSessionAgent`, the `/agent` + AgentsTab "Talk" seam) and deleting the
 one-shot's spent/hold/token machinery; the owner rules.
+**RULED 2026-09-24 (owner): STICKY.** The menu's agent section writes the session pin
+(`pinSessionAgent`), the default row clears it (and pins the default by name inside a thread-pinned
+conversation); the one-shot agent machinery (spent/hold/token/`previewAgent`/`routedAgent`/`armedPick`/
+the call's parked note) DELETED; skills stay one-shot.
 
 **ADDENDUM ⑥ — the coupling round (owner, 2026-09-23, in conversation).** The owner proposed
 COUPLING the clean bargain to the interruption toggle — `barge_in` off ⇒ EC off + the ear-hold on

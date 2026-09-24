@@ -256,6 +256,9 @@ back to the analysis.
   `mergeComposerSlots` (the DefaultRoot inline slot-drop limitation is dead), and the
   `store/composerOverlay` one-overlay-at-a-time coordinator. Typed verbs beat menu picks; arming is
   spent on send. Residual (LOW, recorded): a 409/Stop-harvest after dispatch loses the armed pick.
+  **Amended 2026-09-24 (D75 ruling):** the agent radio is now a STICKY switch — it writes the session
+  pin through `lib/composer#pinSessionAgent` (the `/agent` + gallery Talk seam); only the skill ticks
+  stay one-shot (`store/composerSkills`), so the 409 residual now concerns the skills alone.
   Original seam note kept below for provenance — noted 2026-07-11 (owner, at the A2
   composer-surface eyeball): surface the selection control as a **menu in the composer**, at the
   controls **leading edge beside the plan pill**. The layout seam already exists and is additive:

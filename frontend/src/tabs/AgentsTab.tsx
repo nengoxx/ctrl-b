@@ -10,7 +10,8 @@ import { useSections } from "../hooks/useSections";
 import { pickRoleplay } from "../hooks/useRoleplay";
 import { useSettings } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
-import { pinSessionAgent } from "../lib/composer";
+import { defaultAgentPin, pinSessionAgent } from "../lib/composer";
+import { useThreadAgent } from "../store/chat";
 
 // THE AGENTS GALLERY (D70 / ROLEPLAY_PLAN §8.4) — one home for every agent regardless of kind, and
 // the section the per-agent editor moved OUT of Conf into. Conf keeps the `agent.*` globals and
@@ -170,15 +171,19 @@ export function AgentsContent() {
 
   const specialists = (list?.agents ?? []).filter((n) => n !== DEFAULT_AGENT);
   const resolvedDefault = list?.default ?? DEFAULT_AGENT;
+  // The OPEN thread's own pin — what "Talk to the default" has to mean depends on it (see `talk`).
+  const threadAgent = useThreadAgent();
   // The root/default agent first, then the list route's own order. The default ALWAYS exists (it is
   // the workspace itself), which is why a fresh install shows one card rather than an empty state.
   const names = [DEFAULT_AGENT, ...specialists];
   const skillNames = skillList.map((s) => s.name);
 
   const talk = (name: string) => {
-    // The `/agent` seam verbatim: the resolved default is a session-agent CLEAR (bare `/agent`),
-    // anything else a pin. Then the ONE nav chokepoint, which is where the chat log lives.
-    pinSessionAgent(name === resolvedDefault ? "" : name);
+    // The `/agent` seam verbatim: a specialist is a pin; the resolved default is whatever "back to the
+    // default" means for the OPEN thread (`defaultAgentPin` — a clear, or the default by name inside a
+    // thread pinned to a character), the same expression the tools menu's default row takes. Then the
+    // ONE nav chokepoint, which is where the chat log lives.
+    pinSessionAgent(name === resolvedDefault ? defaultAgentPin(threadAgent) : name);
     navigate("agent");
   };
 

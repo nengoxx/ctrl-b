@@ -54,8 +54,8 @@ const h = vi.hoisted(() => {
     /** The chat store, as the captions read it: is a turn live, and what is the last reply. */
     turnLive: false,
     reply: null as { id: string; text: string } | null,
-    /** The backdrop hook, as a SPY: what this surface asks it for is a claim of its own (C1). */
-    backdrop: vi.fn(() => undefined),
+    /** The backdrop hook, as a SPY: what this surface asks it for is a claim of its own. */
+    backdrop: vi.fn((): { url: string } | undefined => undefined),
   };
 });
 
@@ -80,7 +80,6 @@ vi.mock("../../src/store/chat", () => ({
 }));
 vi.mock("../../src/store/liveCall", () => ({ startCall: h.startCall }));
 
-import { clearComposerScope, setScopeAgent } from "../../src/store/composerScope";
 import { CallOverlay } from "../../src/theme-engine/kit/CallOverlay";
 
 // kit/CallOverlay — the call screen's MODAL CONTRACT and its PRESENTATION (D71 §6). The machine itself
@@ -182,12 +181,22 @@ describe("CallOverlay — the focus contract", () => {
     expect(h.close).toHaveBeenCalledTimes(1);
   });
 
-  it("takes the backdrop WITHOUT the composer's armed pick (review round C1)", () => {
-    // A call's turns go out through `sendCallTranscript`, which deliberately never spends the one-shot
-    // — so an armed pick is an agent this call will not route to, and a face this screen must not wear.
-    // Every other consumer takes the default; the opt-out is this surface's alone, so it is pinned here.
-    render(<Host open={true} />);
-    expect(h.backdrop).toHaveBeenCalledWith(false);
+  it("wears the ACTIVE agent's backdrop — the same ladder the call's turns route by (D75 ruling)", () => {
+    // A call's turns go out through `sendCallTranscript`, and `sendMessage` reads the sticky pin the
+    // tools menu writes, so the face on this screen is the agent the menu shows. No opt-out, no argument:
+    // the hook-level ladder claim lives in agentBackdrop's suite.
+    h.backdrop.mockReturnValue({ url: "/api/media/agents/files/backgrounds/lynette.webp" });
+    try {
+      render(<Host open={true} />);
+      expect(h.backdrop).toHaveBeenCalledWith();
+      expect(document.querySelector(".kit-call-art img")!.getAttribute("src")).toContain(
+        "lynette.webp",
+      );
+      // …and nothing about the pick is "parked" any more: the note slot carries only the machine's news.
+      expect(document.querySelector(".kit-call-note")).toBeNull();
+    } finally {
+      h.backdrop.mockReturnValue(undefined);
+    }
   });
 
   it("leaves the tap-to-interrupt surface alone (§4.3 trigger B)", () => {
@@ -450,45 +459,6 @@ describe("CallOverlay — mute (§6's furniture)", () => {
     // The class is what the STATIC muted look hangs off — no pulse implies no ear.
     expect(overlay().className).toContain("muted");
     expect(document.querySelector(".kit-call-phase")!.textContent).toBe("Muted");
-  });
-});
-
-describe("CallOverlay — the parked composer pick (design M5)", () => {
-  // The backdrop preview made arming feel like "the next thing I say runs as them"; a call routes
-  // past the pick (C1), and the screen says so once instead of letting the promise dangle.
-  it("dialling with a pick armed shows the one-line truth; nothing armed shows nothing", () => {
-    try {
-      setScopeAgent("lynette");
-      render(<Host open={true} />);
-      expect(screen.getByText(/calls run without the composer's agent pick/)).toBeTruthy();
-    } finally {
-      clearComposerScope();
-    }
-    cleanup();
-    render(<Host open={true} />);
-    expect(screen.queryByText(/calls run without/)).toBeNull();
-  });
-
-  it("…and not on a terminal — there is no routing left to be honest about", () => {
-    try {
-      setScopeAgent("lynette");
-      h.call = { ...h.call, phase: "ended" };
-      render(<Host open={true} />);
-      expect(screen.queryByText(/calls run without/)).toBeNull();
-    } finally {
-      clearComposerScope();
-    }
-  });
-
-  it("…and RETIRES once the first utterance lands — the note slot goes back to transient news (N2)", () => {
-    try {
-      setScopeAgent("lynette");
-      h.call = { ...h.call, heard: "wake the vault" };
-      render(<Host open={true} />);
-      expect(screen.queryByText(/calls run without/)).toBeNull();
-    } finally {
-      clearComposerScope();
-    }
   });
 });
 

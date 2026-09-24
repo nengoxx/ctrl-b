@@ -622,7 +622,8 @@ this narrows it.*
    subscribable (`useSyncExternalStore`) keeping the `getSessionAgent`/`setSessionAgent`
    signatures — every existing caller untouched — plus a new `useSessionAgent()`; the
    valid-in-roster derivation already inline in `ToolsMenuSheet.tsx:83-90` is EXTRACTED and
-   shared, not duplicated.
+   shared, not duplicated. *(Superseded 2026-09-24 (DECISIONS D75 ruling): the menu's agent pick
+   is now the STICKY session pin itself — no one-shot exists to include or exclude.)*
 3. **The setting**: `agentBackdrop: "operator" | "full" | "off"`, default `"operator"` — a
    **synced** appearance field (the `chatAvatarsVisible` class: `UIState` + the appearance doc
    + backend `AppearanceCfg.agent_backdrop`, additive, no migration), healed at read against a

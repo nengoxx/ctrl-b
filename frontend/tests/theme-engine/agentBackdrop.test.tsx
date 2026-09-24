@@ -58,15 +58,8 @@ vi.mock("../../src/hooks/useAgentChat", () => ({ useAgentChat: () => chat.view }
 
 import { useActiveBackdrop } from "../../src/hooks/useActiveBackdrop";
 import type { MediaFile } from "../../src/hooks/useMedia";
-import { routedAgent } from "../../src/lib/composer";
-import { openThread, setSessionAgent, startNewThread } from "../../src/store/chat";
-import {
-  clearComposerScope,
-  getComposerScope,
-  releaseSpent,
-  setScopeAgent,
-  takeComposerScope,
-} from "../../src/store/composerScope";
+import { pinSessionAgent, runComposer } from "../../src/lib/composer";
+import { getChatStatus, openThread, setSessionAgent, startNewThread } from "../../src/store/chat";
 import { setUI } from "../../src/store/ui";
 import { AgentTab } from "../../src/tabs/AgentTab";
 import { DefaultRoot } from "../../src/theme-engine/kit/DefaultRoot";
@@ -152,11 +145,6 @@ beforeEach(() => {
 afterEach(() => {
   setSessionAgent(null);
   startNewThread(); // …and the THREAD pin with it: both rungs of the ladder start each arm empty
-  clearComposerScope(); // …and the one-shot, which outranks both since 2026-09-22
-  // …and any HELD pick, through the store's own doors: a hand-clear no longer touches a hold (arch
-  // F3), so the reset stashes a throwaway and releases it — the take replaces whatever was held.
-  setScopeAgent("__reset");
-  releaseSpent(takeComposerScope(true).hold ?? 0);
   setUI({ agentBackdrop: "operator" });
   cleanup();
 });
@@ -298,11 +286,11 @@ describe("which agent the backdrop belongs to (§8.3a item 2)", () => {
   });
 });
 
-describe("the composer's ARMED one-shot previews its agent (owner re-ruling 2026-09-22)", () => {
-  // §8.3a used to EXCLUDE the one-shot: a single-message target was ruled "not a change of operator".
-  // The owner re-ruled it — arming a pick should show you who you are about to talk to, before you
-  // send — so the menu's own checked-row ladder and this surface now answer the same question with the
-  // same expression. These arms drive the REAL store (`setScopeAgent`, what the menu's rows call).
+describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-24)", () => {
+  // The menu's agent rows used to arm a ONE-SHOT that this surface previewed and then HELD through the
+  // armed turn. The owner ruled it sticky instead: a row is `/agent <name>` by another hand
+  // (`pinSessionAgent`, the seam the rows call), so the backdrop is just the ladder — and it STAYS on the
+  // picked agent after the send, because nothing about the pick is spent any more.
   beforeEach(() => {
     media.by = {
       agents: {
@@ -312,166 +300,75 @@ describe("the composer's ARMED one-shot previews its agent (owner re-ruling 2026
       },
     };
   });
-
-  const src = (c: HTMLElement) =>
-    c.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src");
-
-  it("repaints the moment a specialist is armed — the preview IS the feature", () => {
-    const view = draw(<AgentTab active />);
-    expect(src(view.container)).toBe(painted("hall"));
-    act(() => {
-      setScopeAgent("lynette");
-    });
-    expect(src(view.container)).toBe(painted("lynette"));
-  });
-
-  it("armed at THE DEFAULT paints the default's art even over a sticky pick", () => {
-    // The tri-state's `null`: "the configured default, explicitly", which the send puts on the wire as
-    // `agent: null`. The armed message runs as the default, so the default is whose art belongs here.
-    setSessionAgent("lynette");
-    const view = draw(<AgentTab active />);
-    expect(src(view.container)).toBe(painted("lynette"));
-    act(() => {
-      setScopeAgent(null);
-    });
-    expect(src(view.container)).toBe(painted("hall"));
-  });
-
-  it("an armed name the roster no longer has folds to the default, not to nothing", () => {
-    setScopeAgent("ghost");
-    expect(src(draw(<AgentTab active />).container)).toBe(painted("hall"));
-  });
-
-  it("un-arming by HAND hands the surface back to the ladder at once", () => {
-    setSessionAgent("lynette");
-    setScopeAgent(null);
-    const view = draw(<AgentTab active />);
-    expect(src(view.container)).toBe(painted("hall"));
-    act(() => {
-      clearComposerScope(); // the menu's own "clear" row — and it drops a held pick too
-    });
-    expect(src(view.container)).toBe(painted("lynette"));
-  });
-
-  it("routedAgent — the routing claim, without a roster or a render", () => {
-    const agents = ["lynette", "ops"];
-    // UNTOUCHED: the ladder, unchanged by this rule.
-    expect(routedAgent(undefined, "ops", "lynette", agents)).toBe("ops");
-    expect(routedAgent(undefined, null, "lynette", agents)).toBe("lynette");
-    // PICKED: it outranks both pins, in all three of its meanings.
-    expect(routedAgent("lynette", "ops", null, agents)).toBe("lynette");
-    expect(routedAgent(null, "ops", "lynette", agents)).toBeNull();
-    expect(routedAgent("ghost", "ops", null, agents)).toBeNull();
-  });
-});
-
-describe("the preview HOLDS through the armed message's own turn (review round C2)", () => {
-  // The one-shot is spent at DISPATCH, and reverting the paint there put the ladder's face up for
-  // exactly the turn the armed agent was answering: an ordinary thread carries no pin, so the surface
-  // collapsed to the DEFAULT at the send moment and never came back. The pick is therefore MOVED to
-  // `spent` by the take and released when that send settles — and these arms drive the REAL store
-  // functions the dispatch chokepoint calls, not a stand-in for them.
-  beforeEach(() => {
-    media.by = {
-      agents: {
-        ns: "agents",
-        collation: "library-v1",
-        roles: { backgrounds: [file("hall"), file("lynette")] },
-      },
-    };
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
   });
 
   const src = (c: HTMLElement) =>
     c.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src");
 
-  it("arm → send → the armed agent's face stays up → the ladder takes it back at settle", () => {
-    setScopeAgent("lynette");
-    const view = draw(<AgentTab active />);
-    expect(src(view.container)).toBe(painted("lynette"));
-    let hold: number | null = null;
-    act(() => {
-      // THE DISPATCH: read + clear + stash, one step, because a window where the pick is neither
-      // armed nor held is a frame of the wrong face. `true` = this send owns the turn.
-      const taken = takeComposerScope(true);
-      expect(taken.agent).toBe("lynette");
-      hold = taken.hold;
-    });
-    expect(getComposerScope().agent).toBeUndefined(); // disarmed: the NEXT message is unpicked…
-    expect(src(view.container)).toBe(painted("lynette")); // …and THIS one still wears her face
-    act(() => {
-      releaseSpent(hold!); // `runComposer`'s `finally`, when the send settles
-    });
-    expect(src(view.container)).toBe(painted("hall"));
-  });
+  /** One completed SSE turn — the whole of what a send needs to settle. */
+  function serveCompletedTurn() {
+    const bytes = new TextEncoder().encode(
+      `event: done\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`,
+    );
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        body: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        headers: {
+          get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+        },
+        json: async () => [],
+      } as unknown as Response),
+    );
+  }
 
-  it("a /verb-style clear NEVER stashes — the hand-routed send previews nobody", () => {
-    // `clearComposerScope` is the drop-WITHOUT-applying path (an explicit `/verb` routes by hand and
-    // wins over the menu). Nothing was spent, so there is nothing to keep painting.
-    setScopeAgent("lynette");
+  it("a pick repaints at once, and STAYS through and after the send it rides", async () => {
     const view = draw(<AgentTab active />);
-    act(() => {
-      clearComposerScope();
-    });
-    expect(getComposerScope().spent).toBeUndefined();
-    expect(src(view.container)).toBe(painted("hall"));
-  });
-
-  it("a hand-clear during the hold leaves it STANDING — the hold belongs to the send in flight", () => {
-    // Fix-wave round 2 (arch F3), inverting this arm's first shape: the menu's clear row un-arms the
-    // NEXT message; the turn already streaming keeps its face until its own send settles.
-    setScopeAgent("lynette");
-    const view = draw(<AgentTab active />);
-    let hold: number | null = null;
-    act(() => {
-      hold = takeComposerScope(true).hold;
-    });
-    expect(src(view.container)).toBe(painted("lynette"));
-    act(() => {
-      clearComposerScope();
-    });
-    expect(src(view.container)).toBe(painted("lynette")); // the in-flight turn keeps its face…
-    act(() => {
-      releaseSpent(hold!);
-    });
-    expect(src(view.container)).toBe(painted("hall")); // …until ITS OWN settle
-  });
-
-  it("a NEW arming outranks the held pick — the next message is what the surface belongs to", () => {
-    setSessionAgent("lynette");
-    setScopeAgent(null); // armed at the default, then sent: the hold is `null`
-    const view = draw(<AgentTab active />);
-    act(() => {
-      takeComposerScope(true);
-    });
     expect(src(view.container)).toBe(painted("hall"));
     act(() => {
-      setScopeAgent("lynette");
+      pinSessionAgent("lynette"); // the menu's row
     });
     expect(src(view.container)).toBe(painted("lynette"));
+    serveCompletedTurn();
+    await act(async () => {
+      runComposer("hello"); // the real dispatch chokepoint — it no longer spends or holds any pick
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[0]).toBe("/api/agent/chat"); // it really sent
+    expect(getChatStatus()).not.toBe("streaming"); // …the send settled…
+    expect(src(view.container)).toBe(painted("lynette")); // …and her face is still up
   });
 
-  it("the CALL surface ignores both stages — it routes through neither (C1)", () => {
-    // `useActiveBackdrop(false)` is what `CallOverlay` takes: a call's turns go out through
-    // `sendCallTranscript`, which never spends the one-shot, so the armed (or held) pick is an agent
-    // the call will not reach. The hook-level claim lives here; the wiring is pinned in callOverlay's
-    // own suite.
-    setScopeAgent("lynette");
+  it("the CALL screen's read (`useActiveBackdrop()`, no argument) paints the picked agent too", () => {
+    // A call's turns route by the same ladder (`sendMessage` reads the sticky pin), so the call surface
+    // wears the menu's pick — the call-side wiring is pinned in callOverlay's own suite.
+    act(() => {
+      pinSessionAgent("lynette");
+    });
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
-    expect(renderHook(() => useActiveBackdrop(true), { wrapper }).result.current?.url).toBe(
+    expect(renderHook(() => useActiveBackdrop(), { wrapper }).result.current?.url).toBe(
       painted("lynette"),
     );
-    expect(renderHook(() => useActiveBackdrop(false), { wrapper }).result.current?.url).toBe(
-      painted("hall"),
-    );
-    // …and the same for a pick that is merely HELD, which is the state a call is most likely to open in.
+  });
+
+  it("the default row (a clear) hands the surface back to the ladder", () => {
+    setSessionAgent("lynette");
+    const view = draw(<AgentTab active />);
+    expect(src(view.container)).toBe(painted("lynette"));
     act(() => {
-      takeComposerScope(true);
+      pinSessionAgent("");
     });
-    expect(renderHook(() => useActiveBackdrop(false), { wrapper }).result.current?.url).toBe(
-      painted("hall"),
-    );
+    expect(src(view.container)).toBe(painted("hall"));
   });
 });
 
@@ -655,6 +552,19 @@ describe("the OPEN THREAD's pin is the ladder's second rung (wave 1c)", () => {
     expect(src(view.container)).toBe(painted("hall")); // no thread open yet: the resolved default
     await openPinned("lynette");
     expect(src(view.container)).toBe(painted("lynette"));
+  });
+
+  it("the default's NAME as the sticky pin beats the thread's character — the menu's default row", async () => {
+    // What the tools menu's default row writes inside a pinned thread (D75 ruling): a CLEAR would let
+    // the thread's pin resurface, so the row pins the default BY NAME — truthy, so it outranks the
+    // thread on the server's ladder — and the fold lands on the default's own art.
+    await openPinned("lynette");
+    const view = draw(<AgentTab active />);
+    expect(src(view.container)).toBe(painted("lynette"));
+    act(() => {
+      pinSessionAgent("default");
+    });
+    expect(src(view.container)).toBe(painted("hall"));
   });
 });
 

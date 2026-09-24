@@ -1,13 +1,12 @@
 import { useEffect } from "react";
 
 import { XIcon } from "../../../../components/icons";
-import { getDefaultAgent, useVerbsVersion } from "../../../../lib/composer";
 import {
   releaseComposerOverlay,
   toggleComposerOverlay,
   useComposerOverlayOpen,
 } from "../../../../store/composerOverlay";
-import { useComposerScope } from "../../../../store/composerScope";
+import { useComposerSkills } from "../../../../store/composerSkills";
 import { runMicCancel, useMicCancelOffered } from "../../../../store/micCancel";
 import { TOOLS_SHEET_ID } from "./ToolsMenuSheet";
 
@@ -16,9 +15,11 @@ import { TOOLS_SHEET_ID } from "./ToolsMenuSheet";
 // the same class the mic wears, so every composer SKIN (glass/sleek/bezel) already styles it and every
 // LAYOUT already sizes/snaps it — no new chrome vocabulary.
 //
-// It carries the only always-visible feedback the one-shot has: an ARMED dot when the menu has pointed the
-// next message at an agent and/or some skills. Without it the arming is invisible the moment the panel
-// closes, and a message would silently ride a scope the owner forgot about.
+// It carries the only always-visible feedback the skills one-shot has: an ARMED dot when the menu has
+// ticked skills for the next message. Without it the ticks are invisible the moment the panel closes, and
+// a message would silently ride skills the owner forgot about. The agent section does not light it: the
+// agent is a standing switch, not a pending one, and the chat already shows who is active (the backdrop,
+// the who-line, the `// agent → …` note the pick pushes).
 //
 // IT IS ALSO THE LOCKED RECORDING'S CANCEL (Phase 24 / S0.5 feel round OF-5, owner 2026-09-13). While a
 // hold-to-record is LOCKED the hand is free and WCAG 2.5.1 wants a real tap target for "discard this" —
@@ -63,22 +64,13 @@ export function ToolsMenuTrigger() {
   useEffect(() => {
     if (cancelling && open) releaseComposerOverlay("menu");
   }, [cancelling, open]);
-  const scope = useComposerScope();
-  // The label can name the DEFAULT agent (below), so re-render when a loader installs a fresh set — the
-  // same version subscription the panel uses.
-  useVerbsVersion();
-  const armed = scope.agent !== undefined || scope.skills.length > 0;
-  // The label spells the arming out — the dot alone can't say WHAT is armed, and this control has no
-  // visible text of its own. `agent: null` IS an arming (the menu's default row, pinning this message to
-  // the configured default over any sticky `/agent`), so it names the default agent rather than going
-  // quiet and leaving a lit dot unexplained.
-  const armedParts = [
-    ...(scope.agent !== undefined ? [`agent ${scope.agent ?? getDefaultAgent()}`] : []),
-    ...(scope.skills.length ? [`skills ${scope.skills.join(", ")}`] : []),
-  ];
-  const menuLabel = armedParts.length
-    ? `next message: ${armedParts.join(" · ")} — tap to change`
-    : "choose an agent or skills for the next message";
+  const skills = useComposerSkills();
+  const armed = skills.length > 0;
+  // The label spells the ticks out — the dot alone can't say WHAT is armed, and this control has no
+  // visible text of its own.
+  const menuLabel = armed
+    ? `next message: skills ${skills.join(", ")} — tap to change`
+    : "choose the agent, or skills for the next message";
   // The MORPH swaps the whole contract, not just the glyph: the name, the click, and every `aria-*` that
   // describes a popup this button no longer opens.
   const label = cancelling ? "cancel recording" : menuLabel;
