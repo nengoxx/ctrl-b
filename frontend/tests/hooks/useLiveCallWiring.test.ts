@@ -23,8 +23,8 @@ const h = vi.hoisted(() => ({
         barge_threshold: 0,
         barge_in: true,
         ring: "none",
-        echo_workaround: "auto",
-        route: "speaker", //          D73 S5 — the capture pair; a case flips it to "headphones"
+        mic_hold: "auto",
+        route: "call", //             D73 S5 — the capture pair; a case flips it to "media"
         input_device: "",
         // D73 S6 — the background three. Defaults as the backend ships them; the S6 cases move them.
         background: true,
@@ -33,8 +33,8 @@ const h = vi.hoisted(() => ({
         max_session_s: 600,
         // D74 — the transcript gate's floor, OFF unless a case arms it.
         min_final_ms: 0,
-        // The server-VAD knob the slider seeds from (2026-09-22).
-        vad_threshold: 0.9,
+        // The Silero threshold, delivered like its neighbours (Conf is its only door — D76 §D).
+        vad_threshold: 0.6,
       },
       stt_auto_stop: { threshold: 0 },
     },
@@ -67,7 +67,6 @@ const h = vi.hoisted(() => ({
    *  not applied while the first frames went out. */
   order: [] as string[],
   /** What each opened leg DECLARED as its `start` threshold, in order (the in-call slider's wire). */
-  vadSent: [] as (number | undefined)[],
   sendCall: vi.fn<(text: string) => Promise<string>>(),
   setCallVoice: vi.fn(),
   openGate: vi.fn(),
@@ -127,11 +126,9 @@ vi.mock("../../src/lib/composer", () => ({ sendCallTranscript: h.sendCall }));
 vi.mock("../../src/lib/liveSocket", () => ({
   liveSocketUrl: () => "ws://x/api/voice/live",
   openLiveSocket: (opts: {
-    vadThreshold?: number;
     onFrame: (f: LiveDown) => void;
     onClose: (code: number, reason: string) => void;
   }) => {
-    h.vadSent.push(opts.vadThreshold);
     h.frame = opts.onFrame;
     // The leg's own unannounced close — a dropped tailnet link, the one close the machine reconnects
     // through. Bound per leg, so a case can drop THIS leg and watch the ladder open the next one.
@@ -149,10 +146,9 @@ vi.mock("../../src/lib/liveSocket", () => ({
   },
 }));
 vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
-  // `onHeadphones` stays REAL: the route predicate is the thing under test in the D73 cases, and a
-  // mocked one would pin the harness's opinion of the string rather than the module's.
-  onHeadphones: (await importActual<typeof import("../../src/lib/pcmCapture")>()).onHeadphones,
-  // …and `wantsAec` with it: the reducer's `leavesComm` edge (ISS-18) is the module's rule too.
+  // `wantsAec` stays REAL: the route predicate is the thing under test in the D73 cases (and the
+  // reducer's `leavesComm` edge, ISS-18), and a mocked one would pin the harness's opinion of the
+  // string rather than the module's.
   wantsAec: (await importActual<typeof import("../../src/lib/pcmCapture")>()).wantsAec,
   ecEngaged: (await importActual<typeof import("../../src/lib/pcmCapture")>()).ecEngaged,
   startPcmCapture: async (opts: {
@@ -245,14 +241,13 @@ beforeEach(() => {
   h.voice.data.live_call.background_idle_s = 600;
   h.audio = [];
   h.order = [];
-  h.vadSent = [];
   h.fennec = false;
   h.fellBack = false;
   h.capOpts = null;
   h.capStops = 0;
-  h.voice.data.live_call.route = "speaker";
+  h.voice.data.live_call.route = "call";
   h.voice.data.live_call.input_device = "";
-  h.voice.data.live_call.echo_workaround = "auto";
+  h.voice.data.live_call.mic_hold = "auto";
   h.voice.data.live_call.barge_threshold = 0; // trigger A DISARMED unless a case calibrates a floor
   h.voice.data.live_call.min_final_ms = 0; // …and the transcript gate OFF unless a case arms it
   setMicRelease(null); // nobody holds the ear unless a case says so
@@ -525,7 +520,7 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
   });
 
   it("`on` and `off` are the owner's override of that reading, not a second reading", async () => {
-    h.voice.data.live_call.echo_workaround = "on";
+    h.voice.data.live_call.mic_hold = "on";
     const forced = await call(); // …on a track that reads `all` and would otherwise hold nothing
     await forced.step(() => setPlay("playing"));
     expect(h.setHeld).toHaveBeenLastCalledWith(true);
@@ -533,7 +528,7 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
 
     h.setHeld.mockClear();
     h.play = { status: "idle" };
-    h.voice.data.live_call.echo_workaround = "off";
+    h.voice.data.live_call.mic_hold = "off";
     fennec();
     const never = await call();
     await never.step(() => setPlay("playing"));
@@ -586,33 +581,33 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
     view.unmount();
   });
 
-  it("HEADPHONES resolve `auto` OFF on a leaking track — there is no path to leak down", async () => {
-    // Maya F1's first half. The `"all"` readback is a statement about how much of the page's own
-    // output the canceller subtracts from the mic; headphones have no acoustic path to carry any of
-    // it, so the readback stops being the question. The Fennec track — the one that ALWAYS holds on
-    // the speaker route — is deliberately the one used here.
-    h.voice.data.live_call.route = "headphones";
+  it("MEDIA resolves `auto` from the readback like any route — a leaking track HOLDS (D76 §B)", async () => {
+    // D76 deleted the headphones branch: the route is the EC ask and nothing else, so `auto` reads the
+    // TRACK on every route. PROVISIONAL until D76 S2's per-chunk leak probe replaces this readback rule.
+    h.voice.data.live_call.route = "media";
     fennec();
     const { step } = await call();
-    expect(h.capOpts?.route).toBe("headphones"); // …and the route reached the capture, not just the rule
+    expect(h.capOpts?.route).toBe("media"); // …and the route reached the capture, not just the rule
+    await step(() => setPlay("playing"));
+    expect(h.setHeld).toHaveBeenLastCalledWith(true);
+    expect(h.prePlay).not.toBeNull(); // hold mode ⇒ the pre-play tap is registered
+  });
+
+  it("…and an EXPLICIT `off` outranks it — the owner who knows there is no echo path says so", async () => {
+    h.voice.data.live_call.route = "media";
+    h.voice.data.live_call.mic_hold = "off";
+    fennec();
+    const { step } = await call();
     await step(() => setPlay("playing"));
     expect(h.setHeld).not.toHaveBeenCalledWith(true);
     expect(h.prePlay).toBeNull(); // no hold mode ⇒ nothing to tap the mouth with
   });
 
-  it("…but an EXPLICIT `on` still outranks the route — it moves what `auto` means, no more", async () => {
-    h.voice.data.live_call.route = "headphones";
-    h.voice.data.live_call.echo_workaround = "on";
-    const { step } = await call();
-    await step(() => setPlay("playing"));
-    expect(h.setHeld).toHaveBeenLastCalledWith(true);
-  });
-
-  it("…and an EXPLICIT `off` outranks the SPEAKER route's leaking track the same way (S5 review)", async () => {
+  it("…and an EXPLICIT `off` outranks the CALL route's leaking track the same way (S5 review)", async () => {
     // The symmetric half of the override pin, on the route where `auto` would have held: the owner
     // who says `off` has answered the leak question themselves, and the route must not re-ask it.
-    h.voice.data.live_call.route = "speaker";
-    h.voice.data.live_call.echo_workaround = "off";
+    h.voice.data.live_call.route = "call";
+    h.voice.data.live_call.mic_hold = "off";
     fennec();
     const { step } = await call();
     await step(() => setPlay("playing"));
@@ -754,35 +749,44 @@ describe("useLiveCall — THE ROUTE-RESOLVED CAPTURE POLICY (D73 S5 / Maya F1)",
     });
   };
 
-  /** Drive trigger A to the edge of a kill on a track whose AEC readback is NOT `"all"`. */
-  const bargeOnFennec = async (route: string): Promise<void> => {
+  /** Drive trigger A to the edge of a kill on `route`, with the track reading back `"all"` or not. */
+  const bargeOn = async (route: string, leaking: boolean): Promise<void> => {
     h.voice.data.live_call.route = route;
     h.voice.data.live_call.barge_threshold = 0.01;
-    h.fennec = true;
+    h.fennec = leaking;
     const { step } = await call();
     await step(() => setPlay("playing"));
     h.dismiss.mockClear();
     await shout();
   };
 
-  it("arms voice barge-in on HEADPHONES regardless of the AEC readback", async () => {
-    // Maya F1's second half, and the reason the two halves are resolved together: with the ear held
-    // open by the route, the interrupt must be armed by the route too — an install that read `"all"`
-    // for this half would ship an open mic that voice can never interrupt through.
+  it("arms voice barge-in on a SUBTRACTIVE readback, whatever route asked for it", async () => {
+    // The readback governs, not the ask (D75 ③): a MEDIA capture whose track came back `"all"` is
+    // the subtractive track it IS, so the ear is open and the interrupt arms with it.
     vi.useFakeTimers();
     try {
-      await bargeOnFennec("headphones");
+      await bargeOn("media", false);
       expect(h.dismiss).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("…and the SPEAKER route keeps the S0 readback rule exactly as it was", async () => {
+  it("…and a LEAKING readback never arms it, on either route (D76: no headphones branch)", async () => {
     vi.useFakeTimers();
     try {
-      await bargeOnFennec("speaker");
+      await bargeOn("media", true);
       expect(h.dismiss).not.toHaveBeenCalled(); // the tap is the interrupt there (§4.3 trigger B)
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("…the CALL route keeps the S0 readback rule exactly as it was", async () => {
+    vi.useFakeTimers();
+    try {
+      await bargeOn("call", true);
+      expect(h.dismiss).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -792,7 +796,7 @@ describe("useLiveCall — THE ROUTE-RESOLVED CAPTURE POLICY (D73 S5 / Maya F1)",
     vi.useFakeTimers();
     try {
       h.voice.data.live_call.barge_in = false;
-      await bargeOnFennec("headphones");
+      await bargeOn("call", false);
       expect(h.dismiss).not.toHaveBeenCalled();
     } finally {
       h.voice.data.live_call.barge_in = true;
@@ -1002,7 +1006,7 @@ describe("useLiveCall — THE TRANSCRIPT GATE's epochs (D74 S5, evidence docs/re
       await Promise.resolve();
     });
     await act(async () => {
-      view.result.current.setRoute("speaker"); // already the route — the reducer refuses it
+      view.result.current.setRoute("call"); // already the route — the reducer refuses it
     });
     await act(async () => {
       h.frame?.({ type: "speech_stopped" });
@@ -1030,21 +1034,21 @@ describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/researc
     // so the only honest route change is a new track — and the old one must be gone before the new one
     // opens, or the two overlap and the loser pins the echo mode for both (R78 §2.3).
     const { view, step } = await call();
-    expect(h.capOpts?.route).toBe("speaker");
+    expect(h.capOpts?.route).toBe("call");
     const closes = h.closes;
 
-    await step(() => view.result.current.setRoute("headphones"));
+    await step(() => view.result.current.setRoute("media"));
     expect(view.result.current.phase).toBe("connecting"); // the screen says what is happening
     expect(h.closes).toBe(closes + 1);
     expect(h.capStops).toBe(1);
 
     await settle();
-    expect(h.capOpts?.route).toBe("headphones");
+    expect(h.capOpts?.route).toBe("media");
     await act(async () => {
       h.frame?.({ type: "state", state: "ready" });
     });
     expect(view.result.current.phase).toBe("listening");
-    expect(view.result.current.route).toBe("headphones");
+    expect(view.result.current.route).toBe("media");
   });
 
   // ISS-18 (R81): a flip OUT of comm mode tells the mouth to open a fresh output stream — before the
@@ -1052,7 +1056,7 @@ describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/researc
   it("tells the mouth to re-tag on the EC-on → EC-off flip, and only then", async () => {
     const { view, step } = await call();
     h.retags = 0;
-    await step(() => view.result.current.setRoute("headphones"));
+    await step(() => view.result.current.setRoute("media"));
     expect(h.retags).toBe(1);
     expect(h.retagAtStops).toBe(0); // …told BEFORE the ear was released, as the record claims
     expect(h.capStops).toBe(1);
@@ -1060,7 +1064,7 @@ describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/researc
     await act(async () => {
       h.frame?.({ type: "state", state: "ready" });
     });
-    await step(() => view.result.current.setRoute("speaker"));
+    await step(() => view.result.current.setRoute("call"));
     expect(h.retags).toBe(1); // back INTO comm mode: nothing stale to close
   });
 
@@ -1068,7 +1072,7 @@ describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/researc
     const { view, step } = await call();
     await step(() => view.result.current.setInputDevice("bt-headset"));
     await settle();
-    expect(h.capOpts).toEqual({ route: "speaker", deviceId: "bt-headset" });
+    expect(h.capOpts).toEqual({ route: "call", deviceId: "bt-headset" });
     expect(view.result.current.inputDevice).toBe("bt-headset");
   });
 
@@ -1078,9 +1082,9 @@ describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/researc
       h.close?.(); // the link dropped: the ladder owns the phase now
     });
     expect(view.result.current.canRoute).toBe(false);
-    await step(() => view.result.current.setRoute("headphones"));
+    await step(() => view.result.current.setRoute("media"));
     await settle();
-    expect(h.capOpts?.route).toBe("speaker"); // …nothing re-acquired
+    expect(h.capOpts?.route).toBe("call"); // …nothing re-acquired
     expect(h.capStops).toBe(0);
   });
 });
@@ -1479,69 +1483,6 @@ describe("useLiveCall — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R7
     expect(sessionStore.get("ctrlb-live-call")).toBe("1");
     view.unmount();
     expect(sessionStore.has("ctrlb-live-call")).toBe(false);
-  });
-});
-
-describe("useLiveCall — the speech-threshold redial (2026-09-22)", () => {
-  it("every leg declares the knob's threshold; a `setVad` redial declares the override — same ear", () =>
-    (async () => {
-      const { view } = await call();
-      expect(h.vadSent).toEqual([0.9]);
-      await act(async () => {
-        view.result.current.setVad(0.5);
-        await Promise.resolve();
-      });
-      // A SECOND leg opened carrying the override — and the capture was never touched: this is a
-      // redial, not the route cycle's recapture.
-      expect(h.vadSent).toEqual([0.9, 0.5]);
-      expect(h.capStops).toBe(0);
-      await act(async () => {
-        h.frame?.({ type: "state", state: "ready" });
-      });
-      expect(view.result.current.phase).toBe("listening");
-      expect(view.result.current.vad).toBe(0.5);
-      // (That a reconnect re-declares it follows from the same line the second leg just proved:
-      // `openLeg` reads the LIVE state — and the override's survival across `socketLost` is pinned
-      // in the reducer suite.)
-      view.unmount();
-    })());
-
-  it("a mid-call Conf save moves NOTHING — the base is seeded at call start (§4.5, Maya F1)", async () => {
-    const { view, step } = await call();
-    expect(view.result.current.vad).toBe(0.9);
-    // The owner saves voice.live.vad_threshold in Conf and /voice/status refetches: the SAME knobs
-    // object the hook reads changes under it. Neither the pill nor a later leg may move.
-    await step(() => {
-      h.voice.data.live_call.vad_threshold = 0.5;
-    });
-    expect(view.result.current.vad).toBe(0.9);
-    view.unmount();
-  });
-
-  it("a threshold redial CLEARS trigger A's window — old-floor hits cannot finish a kill (Maya F2)", async () => {
-    h.voice.data.live_call.barge_threshold = 0.01;
-    const { view, step } = await call(); // `all` readback ⇒ armed
-    await step(() => setPlay("playing")); // something to interrupt, straight through the redial
-    h.dismiss.mockClear();
-    const loud = (n: number) => {
-      for (let i = 0; i < n; i++) h.mic?.({ buf: new ArrayBuffer(8), rms: 0.5 });
-    };
-    // 8 above-floor frames: under the 11-of-15 bar, so nothing fires yet…
-    await act(async () => {
-      loud(8);
-    });
-    expect(h.dismiss).not.toHaveBeenCalled();
-    await act(async () => {
-      view.result.current.setVad(0.5);
-      await Promise.resolve();
-    });
-    // …and the ear keeps delivering across the leg swap. WITHOUT the meter edge these 5 land on the
-    // old 8 (13 ≥ 11) and a ghost kill fires off hits judged by the floor the owner just left.
-    await act(async () => {
-      loud(5);
-    });
-    expect(h.dismiss).not.toHaveBeenCalled();
-    view.unmount();
   });
 });
 

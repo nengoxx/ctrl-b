@@ -1,5 +1,5 @@
 """The config-shape migration steps (`docs/UPDATE_PLAN.md` §3) — today: the A11 fold (step 1),
-D65's media fold (step 2) and D2-C's presence-device fold (step 3).
+D65's media fold (step 2), D2-C's presence-device fold (step 3) and D76's live-call fold (step 4).
 
 **This file is the deletable part.** It holds every piece of knowledge about the legacy config shapes:
 the `inference.local`/`cloud`/`fallbacks` slots, the `voice.stt`/`voice.tts` `primary`/`fallback` pairs,
@@ -31,7 +31,7 @@ import copy
 import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 from urllib.parse import urlsplit
 
 from app.config import MODEL_REF_HOMES, model_ref_at
@@ -797,3 +797,90 @@ PRESENCE_DEVICES = Step(
     apply=presence_devices_apply,
     retires=(("wake", "presence_device_ips"),),
 )
+
+
+# ── step 4: D76's live-call fold (`config_version` 3 → 4) ────────────────────────────────────────
+#
+# Three knobs of `voice.live` change meaning or name in one ruling (LIVE_VOICE_PLAN §7, the D76 block,
+# §E), and `voice.live` stays the ONE flat object it was:
+#
+#   1. `route: speaker | speaker-hifi | headphones` → `route: media | call`. The axis was always the
+#      mic's echo-cancellation ask, i.e. media path vs call path: `speaker` asked for AEC (→ `call`),
+#      `speaker-hifi` and `headphones` both opened the mic AEC-off (→ `media`; what `headphones` added
+#      on top — never holding the ear — is `mic_hold`'s job now).
+#   2. `echo_workaround` → `mic_hold`, values carried unchanged. New-wins, the house rule.
+#   3. `vad_threshold` re-bounded to 0.5–0.8 and `silence_ms` to 500–1200 (R84). A stored 0.9 is the
+#      known bad SHIPPED default (Speaches' own, and the END threshold at the cliff), so it maps to the
+#      new default 0.6 rather than clamping to the new ceiling; any other stored value is clamped. An
+#      absent key stays absent — the new default reaches it through the model, not the file.
+#
+# A value this step does not recognise (a route spelled some fourth way, a threshold that is not a
+# number) is left exactly as written, so validation reports it as it would have yesterday. Retires no
+# env override: `voice.live.*` is two levels deep, beyond the one-level `CTRLB_<SECTION>__<KEY>` grammar.
+
+#: The route fold. Keyed by the only three values the pre-D76 `Literal` admitted.
+_LIVE_ROUTE_FOLD: dict[str, str] = {"speaker": "call", "speaker-hifi": "media", "headphones": "media"}
+#: The one stored Silero threshold that is not clamped but REPLACED (the shipped default that R84
+#: condemned) and what it becomes — the new `LiveCfg.vad_threshold` default.
+_LIVE_VAD_SHIPPED, _LIVE_VAD_NEW = 0.9, 0.6
+#: `(key, lo, hi)` — the new bounds, restated here because a step must stay true to the shape it
+#: migrates TO even after `LiveCfg` moves on (the step is frozen knowledge; the model is not).
+_LIVE_CLAMPS: tuple[tuple[str, float, float], ...] = (("vad_threshold", 0.5, 0.8), ("silence_ms", 500, 1200))
+
+
+def _live_block(config: Mapping[str, Any]) -> dict[str, Any]:
+    """`voice.live` as a mapping, or `{}` when either level is absent or some other shape — nothing to
+    fold then, and `applies` answers False."""
+    voice = config.get("voice")
+    live = voice.get("live") if isinstance(voice, dict) else None
+    return live if isinstance(live, dict) else {}
+
+
+def _is_number(v: Any) -> TypeGuard[int | float]:
+    # `isinstance(True, int)` is True — a bool here is a malformed knob, left for validation to report.
+    return isinstance(v, int | float) and not isinstance(v, bool)
+
+
+def _live_fold(live: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """The whole step over one `voice.live` mapping: `(the folded mapping, the keys it consumed)`.
+
+    Shared by `applies` (did anything change?) and `apply`, so the trigger and the fold can never
+    disagree — the postcondition (`applies` False on what landed) holds by construction.
+    """
+    out = dict(live)
+    consumed: list[str] = []
+    route = out.get("route")
+    if isinstance(route, str) and route in _LIVE_ROUTE_FOLD:
+        out["route"] = _LIVE_ROUTE_FOLD[route]
+    if "echo_workaround" in out:
+        legacy = out.pop("echo_workaround")
+        out.setdefault("mic_hold", legacy)
+        consumed.append("echo_workaround")
+    if out.get("vad_threshold") == _LIVE_VAD_SHIPPED and _is_number(out["vad_threshold"]):
+        out["vad_threshold"] = _LIVE_VAD_NEW
+    for key, lo, hi in _LIVE_CLAMPS:
+        v = out.get(key)
+        if _is_number(v) and not lo <= v <= hi:
+            out[key] = lo if v < lo else hi
+    return out, consumed
+
+
+def live_voice_applies(ctx: Context) -> bool:
+    """True while `voice.live` holds any key in a shape the fold would change — an old route value,
+    the legacy `echo_workaround` (present in ANY shape), the shipped 0.9, or an out-of-bounds number."""
+    live = _live_block(ctx.config)
+    return bool(live) and _live_fold(live)[0] != live
+
+
+def live_voice_apply(ctx: Context) -> Plan:
+    """Fold `voice.live` into the D76 shape and consume `echo_workaround`."""
+    raw: dict[str, Any] = copy.deepcopy(dict(ctx.config))
+    live = _live_block(raw)
+    folded, consumed = _live_fold(live)
+    live.clear()
+    live.update(folded)
+    return Plan(config=raw, consumes=[("voice", "live", key) for key in consumed])
+
+
+#: Step 4 — the D76 live-call fold.
+LIVE_VOICE_D76 = Step(version=4, applies=live_voice_applies, apply=live_voice_apply)

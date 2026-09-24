@@ -9342,9 +9342,9 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
     transparent
   );
 }
-/* One control + its micro-caption (Sound / Mic / Speech) — the caption exists because the pills
- * read identical and the owner could not tell one from the other. Visual furniture only (`aria-hidden`).
- * `position: relative` is the speech pill's popover anchor. The controls themselves are QUIET (the
+/* One control + its micro-caption (Sound / Mic) — the caption exists because the pills read
+ * identical and the owner could not tell one from the other. Visual furniture only (`aria-hidden`).
+ * `position: relative` is a centred popover's anchor. The controls themselves are QUIET (the
  * Mute recipe, unlit): settings, not actions — the screen's two loud controls stay the hang-up and
  * an engaged Mute. */
 .kit .kit-call-io {
@@ -9360,10 +9360,10 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
 }
 /* THE DECK'S POPOVER SURFACE, stated ONCE (D75) — the confirm card's recipe, dropping from the control
  * it belongs to. Absolute, so opening one never reflows the deck (a layout jump under the finger
- * mid-gesture is the failure). The two variants below differ only in WHAT THEY HANG OFF, which is the
- * one thing their CONTENTS decide: a card no wider than its pill centres on the pill, and a card wider
- * than the whole control hangs off the DECK (`.pop-deck`, which drops that cell's own positioning so
- * the deck — already `relative` — becomes the containing block). */
+ * mid-gesture is the failure). What a card hangs off is the one thing its CONTENTS decide: a card no
+ * wider than its pill would centre on the pill, and a card wider than the whole control hangs off the
+ * DECK (`.pop-deck`, which drops that cell's own positioning so the deck — already `relative` —
+ * becomes the containing block). The Output picker's card is the latter. */
 .kit .kit-call-pop {
   position: absolute;
   top: calc(100% + 6px);
@@ -9374,24 +9374,13 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   border: 1px solid var(--line);
   background: color-mix(in oklch, var(--bg) 82%, transparent);
 }
-/* THE SPEECH-THRESHOLD POPOVER (2026-09-22) — the Android-volume gesture: ONE vertical slider,
- * up = a DEAFER ear (a higher confidence floor hears less — F5: the track's own end words carry the
- * polarity). Hangs CENTRED under its pill: at 60px (the 44px slider column + the card's padding) it
- * overhangs the 44px disc by 8px a side, inside the deck's 18px pad, so it cannot reach a viewport
- * edge. */
-.kit .kit-call-vadpop {
-  left: 50%;
-  transform: translateX(-50%);
-  gap: 4px;
-  justify-items: center;
-}
-/* THE OUTPUT PICKER (D75 ④, re-anchored by the review round) — three rows, each a glyph + a name + the
+/* THE OUTPUT PICKER (D75 ④, re-anchored by the review round; D76 §A: two rows) — each a glyph + a name + the
  * bargain it strikes. It is far wider than the 44px pill it drops from, so it hangs off THE DECK: its
  * left edge is the deck's content edge and its width is capped by what is left of the deck, which makes
  * "inside the viewport" structural rather than a `vw` guess that has to be re-derived every time a
  * number on this row moves (the old `min(78vw, 260px)` was exactly that guess, and at 320px it put the
  * card's right edge past the screen once the hints grew). `top: calc(100% + 6px)` is inherited and now
- * measures the DECK, so the card clears all three controls instead of overlapping its neighbours. */
+ * measures the DECK, so the card clears every control instead of overlapping its neighbours. */
 .kit .kit-call-routepop {
   left: var(--call-deck-pad);
   gap: 2px;
@@ -9437,32 +9426,11 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   line-height: 1.35;
   color: var(--text-3);
 }
-/* The picker's one footer (ISS-18): the rows' own hint face, indented to their text edge, under all
- * three — it is about the picker, not a route. */
+/* The picker's one footer (ISS-18): the rows' own hint face, indented to their text edge, under both
+ * rows — it is about the picker, not a route. */
 .kit .kit-call-routefoot {
   padding: 4px 8px 2px;
   opacity: 0.8;
-}
-/* The vertical range: Chromium reads the writing-mode pair, Firefox the `orient` attribute the
- * component sets — both get "up = a HIGHER floor = a DEAFER ear" (`direction: rtl` flips the
- * vertical axis; the polarity words are the popover's own end captions, F5). 44px wide — the drag
- * target is the whole column, and a 24px column was the one sub-4mm target on the screen (design
- * sweep ③). Native track + thumb via `accent-color`, the framing sheet's own precedent. */
-.kit .kit-call-vadslider {
-  writing-mode: vertical-lr;
-  direction: rtl;
-  width: 44px;
-  height: 132px;
-  accent-color: var(--accent);
-  touch-action: none;
-}
-.kit .kit-call-vadslider:disabled {
-  opacity: 0.45;
-}
-/* The polarity, in words (F5): a bare confidence number carries no model of which way is quiet. */
-.kit .kit-call-vadend {
-  font-size: 10px;
-  color: var(--text-3);
 }
 .kit .kit-call-iolabel {
   font-size: 10px;
@@ -9478,7 +9446,7 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   cursor: pointer;
   /* 44px, the house floor for a touch target (design round M2): these are the two controls on this
    * screen a finger reaches for MID-CALL, and at 36px they were the only sub-44px targets left on it —
-   * the hang-up, Mute and the slider column are all 44 already. */
+   * the hang-up and Mute are 44 already. */
   min-height: 44px;
   padding: 0 14px;
   border-radius: 999px;
@@ -9495,21 +9463,13 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
 }
 /* THE ICON PILL (D75 ④) — the Sound control shows the current route's glyph and nothing else, so it
  * drops the text pill's side padding for a SQUARE target at the same 44px height the row is built on:
- * with the 999px radius that is a CIRCLE. The Speech pill wears it too (owner, 2026-09-23: "completely
- * round") — its four-character number is ~27px at 13px, well inside the 44px disc, so no smaller type.
- * The content centres by grid rather than by `line-height`, which is a rule about text. */
+ * with the 999px radius that is a CIRCLE. The content centres by grid rather than by `line-height`,
+ * which is a rule about text. */
 .kit .kit-call-iconpill {
   display: grid;
   place-items: center;
   width: 44px;
   padding: 0;
-}
-/* THE SPEECH NUMBER (owner, 2026-09-23: "0.90" in the disc read thin and janky — "round or thicker"):
- * a heavier weight and tabular figures, so the four characters sit as one solid block and a 0.05
- * step never shifts the glyphs sideways. Same 13px as the rest of the deck. */
-.kit .kit-call-vadpill {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 /* `all: unset` takes the native arrow with it, and NO arrow is drawn back (owner, 2026-09-23: "drop the
  * drop-down arrow, keep the name" — the pill read too wide): the Sound pill already dropped its chevron
@@ -9523,11 +9483,11 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
    * THE ARITHMETIC, recomputed for the 44px targets (design round M2 — and the first cut of it was
    * wrong in a way worth recording: a cell is as wide as the WIDER of its control and its caption, and
    * "OUTPUT" at ~43px was wider than the 40px pill it was measured as). At a 320px viewport:
-   *   36px deck padding + 44px Sound pill + 128px (40vw) device cap + 44px Speech pill + 2 × 10px gap
-   *   ≈ 272px inside 320 — about 48px of slack (the Speech pill went round on 2026-09-23, ~54 → 44).
-   * The captions are the other half of each cell and none of them wins it: SOUND ≈ 36px and MIC ≈ 24px
-   * sit under wider controls, SPEECH ≈ 44px ties its pill. That is what keeps `flex-wrap` below from
-   * ever firing; the wrap stays as the degenerate-viewport safety net, not as the layout. */
+   *   36px deck padding + 44px Sound pill + 128px (40vw) device cap + 10px gap ≈ 218px inside 320
+   *   (D76 deleted the Speech pill that used to share the row).
+   * The captions are the other half of each cell and neither wins it: SOUND ≈ 36px and MIC ≈ 24px sit
+   * under wider controls. That is what keeps `flex-wrap` below from ever firing; the wrap stays as the
+   * degenerate-viewport safety net, not as the layout. */
   max-width: min(40vw, 200px);
   white-space: nowrap;
   overflow: hidden;
@@ -9540,7 +9500,7 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
 }
 /* AN OPEN PILL IS LIT (design M3): the popover card is deck-anchored, so nothing GEOMETRIC ties it to
  * the pill it came from — the lit trigger is that tie. Rides `aria-expanded` so the state and the
- * styling cannot disagree, and covers the Speech pill for free. `:not(:disabled)` is the confirm
+ * styling cannot disagree. `:not(:disabled)` is the confirm
  * round's N1 floor: a leg leaving mid-popover disables the pill under its own open card, and
  * lit-and-dimmed at once would be the deck contradicting itself. */
 .kit .kit-call-routebtn[aria-expanded="true"]:not(:disabled) {

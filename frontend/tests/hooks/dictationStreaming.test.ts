@@ -148,8 +148,8 @@ const KNOBS = {
   barge_threshold: 0,
   barge_in: true,
   ring: true,
-  echo_workaround: "auto",
-  route: "speaker", //              D73 S5 — the capture pair the mic now opens with
+  mic_hold: "auto",
+  route: "call" as const, //        D73 S5 — the capture pair the mic now opens with
   input_device: "",
   max_session_s: 1800,
   dictation: true,

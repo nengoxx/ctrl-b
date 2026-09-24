@@ -659,10 +659,10 @@ class LiveCfg(VoiceServiceCfg):
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `allowed_origins` are the relay's own caps.
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`, `barge_threshold`,
-      `barge_in`, `ring`, `captions`, `echo_workaround`, the D73 CAPTURE pair (`route`,
-      `input_device`), the D73 S6 BACKGROUND three (`background`, `background_keepalive`,
-      `background_idle_s`), the D74 pair (`min_final_ms`, `debug`) and the four S2.5 DICTATION
-      knobs are PWA behavior
+      `barge_in`, `ring`, `captions`, `mic_hold`, the D76 GATE six (`floor_dbfs`, the three
+      margins, `min_dbfs`/`max_dbfs`), the D73 CAPTURE pair (`route`, `input_device`), the D73 S6
+      BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`), the D74 pair
+      (`min_final_ms`, `debug`) and the four S2.5 DICTATION knobs are PWA behavior
       (Speaches' `TurnDetection` accepts exactly five fields, §4.1, so an interruption floor cannot be
       a server knob). They are delivered verbatim by `GET /voice/status` (`live_call`) and nothing
       below the browser reads them.
@@ -678,15 +678,19 @@ class LiveCfg(VoiceServiceCfg):
     enabled: bool = False
 
     # ── the two knobs that ride `session.update` verbatim (§4.1; the ONLY server-side VAD knobs) ──
-    #: Silero speech probability floor. Default = Speaches' own server-VAD default (§7-S0 "defaults
-    #: 0.9/0/550 ms"), so an unconfigured install behaves exactly like the smoke-verified server.
-    vad_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
+    #: Silero speech probability floor (D76 §D, evidence R84). Silero's END threshold is
+    #: `threshold − 0.15`, and THAT is what cuts quiet or narrowband speech mid-phrase — the start
+    #: threshold is not the noise lever (the relative floor, `floor_dbfs` and friends below, is). 0.6
+    #: sits in the field's consensus band; the old 0.9 was a Speaches-only outlier that put the end
+    #: threshold at the cliff. Bounded 0.5–0.8: below it the start admits breath and hum, above it the
+    #: end threshold cuts again. Conf is the only door — the in-call override is gone (D76).
+    vad_threshold: float = Field(default=0.6, ge=0.5, le=0.8)
     #: `turn_detection.silence_duration_ms` — the silence run that ends an utterance. 700 ms is the
     #: plan §5.1 field default (above Speaches' 550 ms: R70's latency law is
     #: `max(silence_ms, 3000 − phrase_ms) + ~0.5 s`, so a hair more silence buys fewer mid-sentence cuts
-    #: without touching the 3 s VAD-window floor). Bounded both ways: ~0 would end every clip before a
-    #: word, unbounded would never end one (the `auto_stop_silence_s` precedent).
-    silence_ms: int = Field(default=700, ge=100, le=10000)
+    #: without touching the 3 s VAD-window floor). Bounded 500–1200 (D76 §D): below it a breath between
+    #: clauses ends the turn, above it the reply waits on silence the owner can feel.
+    silence_ms: int = Field(default=700, ge=500, le=1200)
 
     # ── client-side behavior, delivered by `GET /voice/status` and read only by the PWA ──
     #: Interruption floor: speech shorter than this never counts as a barge-in (livekit's
@@ -737,35 +741,46 @@ class LiveCfg(VoiceServiceCfg):
     #: (§4.5), like every knob on this object: a Conf save mid-call applies to the NEXT call. Ships ON
     #: — a call that shows what was SAID but not what was ANSWERED was the owner's whole complaint.
     captions: bool = True
-    #: Per-track echo policy (§7-S0 ③, owner-ruled on measured device evidence): `auto` =
-    #: capability-detected per track at call start (OFF where `getSettings().echoCancellation` reads
-    #: `"all"`, the protective ear-hold elsewhere) — NEVER UA-sniffed. `on`/`off` force one branch.
-    echo_workaround: Literal["auto", "on", "off"] = "auto"
+    #: THE MIC HOLD (D76 §B; Conf "Mic off while it speaks", CONFIG ONLY — never on the deck): is the
+    #: ear held while the reply plays? `on` = held for every reply, whatever the output. `off` = never
+    #: held (a loudspeaker can then transcribe its own reply — the client's near-speech gate is the
+    #: only turn boundary left). `auto` = the per-chunk leak probe (D76 S2). **Until S2 lands, `auto`
+    #: behaves as the D73 route-derived rule**: held where the track's AEC readback is not `"all"`
+    #: (capability-detected per track, NEVER UA-sniffed — §7-S0 ③), free where it is.
+    mic_hold: Literal["auto", "on", "off"] = "auto"
+
+    # ── D76 §C · THE RELATIVE GATE (client; evidence R83) ──
+    # The near-speech gate and the barge floor move from one absolute linear RMS number to a floor in
+    # dBFS RELATIVE to the measured room: max(noise + `noise_margin_db`, voiceLevel −
+    # `voice_margin_db`), clamped into [`min_dbfs`, `max_dbfs`]; the barge floor adds
+    # `playback_margin_db` on top while the reply plays. `floor_dbfs` is the BOOTSTRAP CEILING — the
+    # floor before any noise estimate exists, and the most the provisional estimate may ask for until
+    # the first full window. Three MARGINS (dB, relative) · two CLAMP BOUNDS (dBFS, absolute) · one
+    # bootstrap ceiling (dBFS). Delivered by `GET /voice/status` like every client knob — and UNUSED by
+    # the client until D76 S0b wires the estimator (additive now so the shape lands once).
+    floor_dbfs: float = Field(default=-45.0, ge=-90.0, le=0.0)
+    noise_margin_db: float = Field(default=10.0, ge=0.0, le=40.0)
+    voice_margin_db: float = Field(default=10.0, ge=0.0, le=40.0)
+    playback_margin_db: float = Field(default=10.0, ge=0.0, le=40.0)
+    min_dbfs: float = Field(default=-60.0, ge=-90.0, le=0.0)
+    max_dbfs: float = Field(default=-20.0, ge=-90.0, le=0.0)
 
     # ── D73 S5 · THE CAPTURE ROUTE (client; evidence R74) ──
     # Both knobs govern EVERY capture this app opens — the call's and streaming/whole-clip dictation's
     # alike (R74 §0.3: an unconstrained `audio: true` is in the same trap), so they sit with the other
     # client knobs rather than under either feature.
-    #: Where the owner is listening. `speaker` = today's constraints (platform AEC), which on Chrome
-    #: Android leaves `ECHO_CANCELLER` in the stream's effects mask, puts the device into
-    #: `MODE_IN_COMMUNICATION` and re-tags the app's own output as voice-communication — the phone
-    #: speaker, at call quality (R74 §1.1–§1.3, verified in Chromium source). `headphones` = AEC off,
-    #: which empties that mask, skips the mode switch and lets TTS ride A2DP at media quality.
-    #: ONE owner-facing choice rather than two knobs that can disagree: with headphones on there is no
-    #: acoustic echo path at all, so the client resolves the ear-hold AND the barge-in arming from this
-    #: single field (R74 §9.2). Noise suppression stays on in both — it runs in software.
-    #: `speaker-hifi` (D75 ①, evidence R80 §10-①) is the THIRD answer and a purely ADDITIVE one — no
-    #: config migration, since every stored value stays legal: the loudspeaker with AEC off, i.e.
-    #: `headphones`' escape from comm mode on the route that does have an acoustic echo path. The
-    #: client needs no new rule for it — an AEC-off track reads back something other than `"all"`,
-    #: which is what already arms the protective ear-hold — so the bargain is clean media-path audio
-    #: (the owner's phone crackles with EC engaged, ISS-16) paid for with an ear that closes while the
-    #: reply speaks and the tap as the only interrupt. It is the DEFAULT since D75 ⑥ (the 2026-09-23
-    #: probe: EC off rides the media path, which follows the system's own routing — BT when connected,
-    #: loudspeaker otherwise — while EC on stays pinned to the loudspeaker): the clean bargain is the
-    #: right resting posture for a `barge_in`-off install, and a default only reaches configs that
-    #: never wrote the key.
-    route: Literal["speaker", "speaker-hifi", "headphones"] = "speaker-hifi"
+    #: How the reply is PLAYED, which is decided by how the mic is OPENED (D76 §A; the axis is
+    #: media/call, not speaker/headphones). `media` (default) = AEC off (`echoCancellation: false`):
+    #: the stream's effects mask stays empty, the device stays out of comm mode and TTS rides the
+    #: platform's MEDIA path, which follows the system's own routing — Bluetooth when connected (A2DP,
+    #: media quality), the loudspeaker otherwise (the D75 ⑥ probe, 2026-09-23). `call` = the platform
+    #: AEC ask (`{ideal: "all"}`), which on Chrome Android leaves `ECHO_CANCELLER` in the effects mask,
+    #: puts the device into `MODE_IN_COMMUNICATION` and re-tags the app's own output as
+    #: voice-communication — phone-call mode, echo-cancelled, the hands-free device's own mic (R74
+    #: §1.1–§1.3, verified in Chromium source). Media's bargain on a loudspeaker is an ear that closes
+    #: while the reply speaks (`mic_hold`); call's is call-quality audio (the owner's phone crackles
+    #: with EC engaged, ISS-16). Noise suppression stays on in both — it runs in software.
+    route: Literal["media", "call"] = "media"
     #: The capture device, a browser-local `MediaDeviceInfo.deviceId`; "" = the system default. On
     #: Android Chrome the audioinput list IS the route picker — selecting one calls
     #: `AudioManager.setCommunicationDevice()`, which moves BOTH directions (R74 §2.2) — and it is the

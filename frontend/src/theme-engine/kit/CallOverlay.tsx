@@ -19,13 +19,7 @@ import {
 } from "../../hooks/useLiveCall";
 import { useVoiceStatus } from "../../hooks/useVoiceStatus";
 import { modalKeyDown } from "../../lib/focusTrap";
-import {
-  listAudioInputs,
-  ROUTE_HEADPHONES,
-  ROUTE_SPEAKER,
-  ROUTE_SPEAKER_HIFI,
-  type MicDevice,
-} from "../../lib/pcmCapture";
+import { listAudioInputs, ROUTE_CALL, ROUTE_MEDIA, type MicDevice } from "../../lib/pcmCapture";
 import {
   confirmAwaiting,
   getLiveTurn,
@@ -93,10 +87,10 @@ function phaseLabel(phase: CallPhase, speaking: boolean, muted: boolean): string
 // ── THE DECK'S GLYPHS (D75, owner ask 2026-09-22) ────────────────────────────────────────────────
 // Hand-inlined lucide geometry on the house `Glyph` frame (`components/icons.tsx` carries the rule and
 // the reason `lucide-react` is not a dependency). Local to this file because they are this deck's
-// vocabulary — three ROUTES — and not house chrome; if a second surface ever names a route they move
+// vocabulary — the two ROUTES — and not house chrome; if a second surface ever names a route they move
 // up to the shell set. Every one is `aria-hidden` by the frame: the pill and the rows carry the words.
 
-/** lucide `volume-2` — the plain loudspeaker (the echo-cancelled, call-quality route). */
+/** lucide `volume-2` — the CALL route (echo-cancelled, phone-call mode). */
 function SpeakerIcon({ size }: { size?: number } = {}) {
   return (
     <Glyph size={size}>
@@ -107,9 +101,9 @@ function SpeakerIcon({ size }: { size?: number } = {}) {
   );
 }
 
-/** lucide `speaker` — the hi-fi BOX, for the same loudspeaker without the call processing. The two
- *  speaker routes have to be told apart at a glance on a pill the size of a thumb, and a waves-count
- *  difference is not that; a different OBJECT is. */
+/** lucide `speaker` — the hi-fi BOX, for the MEDIA route (no call processing). The two routes have to
+ *  be told apart at a glance on a pill the size of a thumb, and a waves-count difference is not that; a
+ *  different OBJECT is. */
 function HifiSpeakerIcon({ size }: { size?: number } = {}) {
   return (
     <Glyph size={size}>
@@ -121,17 +115,8 @@ function HifiSpeakerIcon({ size }: { size?: number } = {}) {
   );
 }
 
-/** lucide `headphones` — one path, the band and both cups. */
-function HeadphonesIcon({ size }: { size?: number } = {}) {
-  return (
-    <Glyph size={size}>
-      <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" />
-    </Glyph>
-  );
-}
-
 /**
- * THE DECK'S POPOVER MECHANICS, stated ONCE (D75, extracted from `VadControl`).
+ * THE DECK'S POPOVER MECHANICS, stated ONCE (D75, extracted from the since-deleted speech slider).
  *
  * Three rules, and every one of them was learned the hard way on this screen, so a second control
  * re-deriving them is a second chance to get one wrong:
@@ -176,7 +161,7 @@ function useDeckPopover() {
   }, [open, dismiss]);
   const onKeyDown = (e: ReactKeyboardEvent): void => {
     // The `open` gate is not defensive: this handler sits on the control's ROOT, which is mounted for
-    // the whole call, so without it the deck would become three places the call cannot be hung up from.
+    // the whole call, so without it every deck control would be a place the call cannot hang up from.
     if (!open || e.key !== "Escape") return;
     e.stopPropagation();
     dismiss();
@@ -184,35 +169,24 @@ function useDeckPopover() {
   return { open, setOpen, rootRef, pillRef, dismiss, onKeyDown };
 }
 
-/** The three routes as the picker offers them, in the order they escalate away from call processing.
+/** The two routes as the picker offers them (D76 §A — the axis is media/call, not speaker/headphones).
  *  The VALUES are the `pcmCapture` constants and never string literals — the consts' own comment says
- *  why (a fourth file spelling a route by hand is how one of them eventually gets it wrong), and the
- *  hints are the bargain each one strikes, because that is the whole content of the choice.
- *
- *  THE WORDS ARE THE OWNER'S, NOT THE MECHANISM'S (review round A4): "hi-fi" claims a fidelity the
- *  route does not promise — what it actually is, is the loudspeaker WITHOUT the call processing, so it
- *  is CLEAN, and the hint says what that costs. The stored value stays `speaker-hifi`: it is config the
- *  owner's file already holds, and renaming a value to improve a label is a migration bought for
- *  nothing. The glyphs are unchanged on purpose (main-seat overrule of the design round's other half):
- *  at 18px a different OBJECT is the only difference the eye resolves. */
+ *  why — and the hints are the bargain each one strikes, because that is the whole content of the
+ *  choice. Whether the mic pauses while the reply speaks is NOT a route's property any more; it is
+ *  `mic_hold`'s, which is config only (D76 §B). The glyphs are a different OBJECT each (main-seat
+ *  overrule of the D75 design round): at 18px that is the only difference the eye resolves. */
 const ROUTE_CHOICES = [
   {
-    val: ROUTE_SPEAKER,
-    name: "Speaker",
-    hint: "echo-cancelled · phone-call sound",
-    Icon: SpeakerIcon,
-  },
-  {
-    val: ROUTE_SPEAKER_HIFI,
-    name: "Speaker (clean)",
-    hint: "clear audio · mic pauses while it speaks",
+    val: ROUTE_MEDIA,
+    name: "Media",
+    hint: "clear audio · follows Bluetooth like music, phone speaker otherwise",
     Icon: HifiSpeakerIcon,
   },
   {
-    val: ROUTE_HEADPHONES,
-    name: "Headphones",
-    hint: "clear audio · for when you're wearing them",
-    Icon: HeadphonesIcon,
+    val: ROUTE_CALL,
+    name: "Call",
+    hint: "phone-call mode · echo-cancelled · hands-free mic",
+    Icon: SpeakerIcon,
   },
 ] as const;
 
@@ -223,7 +197,7 @@ const ROUTE_CHOICES = [
  * the Mute pattern. On Mute that reads right because there are two states and the button is the only
  * thing on screen naming either; here the owner read the label as the STATE and reported the crackle
  * INVERTED — they believed they were on headphones while the call was on the speaker route (ISS-16).
- * With three routes the action-label shape does not even survive: there is no "the other one".
+ * An action label on a state the owner already misread once is the shape this picker exists to end.
  *
  * So the pill SHOWS where the sound is going (the current route's glyph, the name in its accessible
  * name since the pill has no words) and tapping opens the list — the owner's own instruction, "the
@@ -233,17 +207,17 @@ const ROUTE_CHOICES = [
  * A `menu` OF `menuitemradio`s, not a `radiogroup` (review round A6): the ARIA radio group promises
  * arrow-key selection with a roving tabindex, and this is a chip that names a state and opens a small
  * exclusive list — `PrivilegeChip`'s exact shape, which is the pattern this house already ships for it.
- * `aria-checked` stays: one of three, and which one is the whole content of the card.
+ * `aria-checked` stays: one of two, and which one is the whole content of the card.
  */
 function OutputPicker({ call }: { call: CallView }) {
   const pop = useDeckPopover();
-  // An unknown route is the plain speaker case, the same way the capture resolves it (`wantsAec`) —
+  // An unknown route is the media case, the same way the capture resolves it (`wantsAec`) —
   // the pill must never go blank because a backend answered with something this build has no glyph for.
   // The fallback names ITS row rather than riding list position (review sweep): the array's order is a
   // presentation choice, and a reorder must not silently move where an unknown route lands.
   const current =
     ROUTE_CHOICES.find((c) => c.val === call.route) ??
-    ROUTE_CHOICES.find((c) => c.val === ROUTE_SPEAKER) ??
+    ROUTE_CHOICES.find((c) => c.val === ROUTE_MEDIA) ??
     ROUTE_CHOICES[0];
   return (
     <div className="kit-call-io pop-deck" ref={pop.rootRef} onKeyDown={pop.onKeyDown}>
@@ -274,7 +248,7 @@ function OutputPicker({ call }: { call: CallView }) {
               type="button"
               role="menuitemradio"
               // Checked against the RESOLVED row, never the raw string (Maya A2): an unknown route
-              // falls to the plain-speaker row above, and the capture resolves it the same way
+              // falls to the media row above, and the capture resolves it the same way
               // (`wantsAec`), so this is the truth rather than a convenience — a card with no checked
               // row would claim the sound is going nowhere.
               aria-checked={c.val === current.val}
@@ -392,104 +366,6 @@ function RouteControls({ call }: { call: CallView }) {
         </select>
       </div>
     </>
-  );
-}
-
-/** The slider's own window on the 0–1 knob — deliberately NARROWER than the two real enforcers
- *  (`LiveCfg`'s Field and `_parse_start`, both 0–1), because the extremes are degenerate on a live
- *  call: 1.0 is a dead ear (nothing scores above it) and 0 makes every noise a turn. Conf keeps the
- *  full range; a knob set outside this band still shows TRUE on the pill while the thumb clamps
- *  (design round F4 — the narrowing is the design, this comment is its record). */
-const VAD_MIN = 0.05;
-const VAD_MAX = 0.95;
-const VAD_STEP = 0.05;
-
-/**
- * THE SPEECH-THRESHOLD SLIDER (owner ask 2026-09-22) — the server-VAD confidence floor, on the deck,
- * because the right value changes with the ROOM (a street needs a deaf ear, a quiet desk a keen one)
- * and re-opening Conf mid-call to move it was the whole complaint.
- *
- * The pill shows the number; tapping it drops a vertical slider (the Android volume gesture, the
- * owner's own reference) — UP IS A HIGHER FLOOR, A DEAFER EAR, which is why the track carries the
- * two end words: the number is a confidence the owner has no model for, the words are the polarity
- * (design round F5 — the first draft of this file got it backwards in its own comment). The DRAG is
- * local state — only the RELEASE (or Enter) commits, because a commit is a leg redial
- * (`start.vad_threshold` rides the one message that opens a leg; the relay's one-`session.update`
- * pin is why there is no in-band change) and a redial per drag-tick or per arrow-press would cycle
- * the connection through the gesture. Escape CANCELS (draft discarded, focus back on the pill), an
- * outside tap closes — `useDeckPopover` owns all three rules now (D75 ④), and the Output picker
- * wears the same ones.
- *
- * Per call, never config — the route pair's rule (§4.5): the Conf knob stays the next call's default.
- * Renders nothing against a backend whose status predates the field: a control that cannot say what
- * the threshold IS must not offer to move it.
- */
-function VadControl({ call }: { call: CallView }) {
-  const pop = useDeckPopover();
-  /** The drag's own value, `null` between gestures (the pill then speaks the machine's truth). */
-  const [draft, setDraft] = useState<number | null>(null);
-  // A CLOSE without a commit discards the draft, in the ONE place every close passes through — the
-  // pill must never keep showing a value the machine never took (Escape, an outside tap and the
-  // pill's own re-tap all land on the popover's `open`, which is why the discard hangs off it).
-  useEffect(() => {
-    if (!pop.open) setDraft(null);
-  }, [pop.open]);
-  if (call.vad === null) return null;
-  const value = draft ?? call.vad;
-  const commit = (): void => {
-    if (draft !== null && draft !== call.vad) call.setVad(draft);
-    setDraft(null);
-  };
-  return (
-    <div className="kit-call-io" ref={pop.rootRef} onKeyDown={pop.onKeyDown}>
-      <span className="kit-call-iolabel" aria-hidden>
-        Speech
-      </span>
-      <button
-        ref={pop.pillRef}
-        type="button"
-        className="kit-call-routebtn kit-call-iconpill kit-call-vadpill"
-        // Disabled with its two deck siblings (design M2): a commit is a leg redial, and while the leg
-        // is moving (connecting, a reconnect) the pill must say so like the pair beside it — not open a
-        // popover onto a dead slider.
-        disabled={!call.canRoute}
-        // The value is IN the name (design sweep ①): `aria-label` replaces the text content, and a
-        // reader given only "Speech threshold" would have no number at all.
-        aria-label={`Speech threshold ${value.toFixed(2)}`}
-        aria-expanded={pop.open}
-        onClick={() => pop.setOpen(!pop.open)}
-      >
-        {value.toFixed(2)}
-      </button>
-      {pop.open && (
-        <div className="kit-call-pop kit-call-vadpop">
-          <span className="kit-call-vadend" aria-hidden>
-            deafer
-          </span>
-          {/* `orient` is Firefox's own vertical-slider attribute; the CSS `writing-mode` pair covers
-              Chromium. Spread past the JSX prop types — it is a real DOM attribute React forwards. */}
-          <input
-            type="range"
-            className="kit-call-vadslider"
-            aria-label="Speech threshold"
-            min={VAD_MIN}
-            max={VAD_MAX}
-            step={VAD_STEP}
-            value={value}
-            disabled={!call.canRoute}
-            {...{ orient: "vertical" }}
-            onChange={(e) => setDraft(Number(e.target.value))}
-            onPointerUp={commit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit();
-            }}
-          />
-          <span className="kit-call-vadend" aria-hidden>
-            keener
-          </span>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -625,7 +501,7 @@ function DebugBlock({ d }: { d: CallDebug }) {
   return (
     <pre className="kit-call-debug" aria-hidden>
       {`ec    ${raw(d.ecSettings)}   caps ${raw(d.ecCapabilities)}
-route ${d.route || "—"}   hold ${d.echoWorkaround || "—"}   fellBack ${d.fellBack ? "yes" : "no"}
+route ${d.route || "—"}   hold ${d.micHold || "—"}   fellBack ${d.fellBack ? "yes" : "no"}
 arm   ${d.bargeArmed ? "yes" : "no"}   holdMode ${d.earHoldMode ? "yes" : "no"}   held ${
         d.earHeld ? "yes" : "no"
       }   mouth ${d.mouthLive ? "yes" : "no"}
@@ -757,7 +633,6 @@ export function CallOverlay({ close }: { close: () => boolean }) {
       {!terminal && (
         <div className="kit-call-top" onPointerDown={(e) => e.stopPropagation()}>
           <RouteControls call={call} />
-          <VadControl call={call} />
         </div>
       )}
       <div className="kit-call-body">

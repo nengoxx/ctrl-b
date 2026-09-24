@@ -27,57 +27,39 @@ import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "./pcmWorklet";
 // everywhere else it arms the EAR-HOLD instead (`setHeld`, S3), which is the same readback read for its
 // other consequence: an ear that cannot be left open under the reply is closed while the reply speaks.
 
-// ── THE ROUTE (D73 S5, evidence docs/research/R74) ───────────────────────────────────────────────
+// ── THE ROUTE (D73 S5 → D76 §A; evidence docs/research/R74, R80) ─────────────────────────────────
 // Chrome Android puts the whole device into `MODE_IN_COMMUNICATION` — and re-tags the page's OWN
 // output as voice-communication, i.e. the earpiece/speaker at call quality — as soon as it satisfies
 // an echo-cancellation request with the platform's canceller (§1.1–§1.3, verified in source). Clearing
 // AEC empties the effects mask, which is the single bit that decides the switch, so TTS goes back down
-// the A2DP media path. `noiseSuppression` runs in software and stays on either way.
+// the MEDIA path, which follows the system's own routing — Bluetooth when connected, the loudspeaker
+// otherwise (the D75 ⑥ probe). `noiseSuppression` runs in software and stays on either way.
 //
-// It is ONE choice, not a codec toggle, because the physics come in a pair: with headphones on the
-// head there is no acoustic echo path, so AEC off AND the ear-hold off is the honest configuration
-// (R74 §9.2). `useLiveCall` resolves both halves from this one field — see its capture-ready block.
-//
-// THE THIRD ANSWER (D75 ①, evidence docs/research/R80 §10-①): `speaker-hifi` — the LOUDSPEAKER with
-// echo cancellation OFF. It is the same escape from comm mode that `headphones` takes, on the route
-// that has an acoustic echo path, so the bargain is the other one: media-path audio (the owner proved
-// it clean on their phone where the EC-on route crackles — ISS-16), paid for with an ear that CLOSES
-// while the reply speaks, and the tap as the only interrupt. Nothing in use is lost by offering it:
-// `barge_in` ships OFF (D74 addendum ⑨), and the field's own posture is half-duplex by default
-// (R79 §5 — Open WebUI is deaf for the whole assistant turn out of the box). The ear-hold needs no new
-// rule for it: the hold's `auto` arm already reads the TRACK, and an EC-off track reads back non-`all`.
+// So the axis is MEDIA vs CALL, not speaker vs headphones (D76 §A): `media` = AEC off, the media path;
+// `call` = the `{ideal: "all"}` ask, phone-call mode, echo-cancelled, the hands-free device's own mic.
+// Whether the ear is held while the reply plays is NOT this knob's question any more — it is
+// `mic_hold`'s (D76 §B), answered in `useLiveCall`'s capture-ready block from the track's readback.
 
-/** `voice.live.route`. Typed loosely at the seam because it arrives over the wire like
- *  `echo_workaround` does; anything that is not one of the named answers IS the plain speaker case. */
+/** `voice.live.route`. Typed loosely at the seam because it arrives over the wire like `mic_hold` does;
+ *  anything that is not `ROUTE_CALL` IS the media case. */
 export type MicRequest = {
-  /** `"speaker"` (default), `"speaker-hifi"` or `"headphones"`. Absent ⇒ speaker — a pre-S5 backend
-   *  gets today's ear. */
+  /** `"media"` (default) or `"call"`. Absent ⇒ media — the backend's own default. */
   route?: string;
   /** `voice.live.input_device` — a browser-local `deviceId`, "" = the system default. */
   deviceId?: string;
 };
 
-/** The three answers the route knob takes. Exported since D74 S2 put the choice on the call screen: the
- *  overlay's picker has to be able to NAME them, and a fourth file spelling `"headphones"` by hand is
- *  how one of them eventually gets it wrong. `SPEAKER` is the default in the sense that everything
- *  which is not a named answer IS the plain speaker case — see the predicates below. */
-export const ROUTE_HEADPHONES = "headphones";
-export const ROUTE_SPEAKER = "speaker";
-export const ROUTE_SPEAKER_HIFI = "speaker-hifi";
+/** The two answers the route knob takes. Exported because the call screen's picker has to NAME them,
+ *  and a second file spelling `"call"` by hand is how one of them eventually gets it wrong. */
+export const ROUTE_MEDIA = "media";
+export const ROUTE_CALL = "call";
 
-/** The one place the route string is read. A predicate rather than a comparison spread across three
- *  files: the constraints, the ear-hold and the barge-in arming must all answer it the same way. */
-export function onHeadphones(route: string | undefined): boolean {
-  return route === ROUTE_HEADPHONES;
-}
-
-/** …and the OTHER question the same string answers (D75 ①): does this route want the platform's
- *  canceller at all? TRUE only for the plain-speaker case. Both EC-off routes share every consequence
- *  that matters below — the empty effects mask, the skipped `MODE_IN_COMMUNICATION` flip, the media-path
- *  output, the R77 SCO trap and the ear-hold's `auto` arm — so they are asked as ONE predicate rather
- *  than as two comparisons that could drift apart. */
+/** The one place the route string is read: does this route want the platform's canceller? TRUE only
+ *  for `call`. Everything EC-off shares every consequence that matters below — the empty effects mask,
+ *  the skipped `MODE_IN_COMMUNICATION` flip, the media-path output, the R77 SCO trap — so it is asked
+ *  as ONE predicate rather than as comparisons spread across files that could drift apart. */
 export function wantsAec(route: string | undefined): boolean {
-  return !onHeadphones(route) && route !== ROUTE_SPEAKER_HIFI;
+  return route === ROUTE_CALL;
 }
 
 /** The constraints EVERY capture in this app opens with (the call's, dictation's).
@@ -205,12 +187,12 @@ function syntheticRoutes(inputs: MicDevice[]): Map<string, string> | null {
 async function candidateConstraints(req: MicRequest): Promise<MediaTrackConstraints[]> {
   const out: MediaTrackConstraints[] = [];
   if (req.deviceId) out.push(micConstraints(req));
-  // THE GATE IS THE EC ANSWER, not the headphones name (D75 ①): the trap this ladder avoids is a
-  // property of EC-OFF CAPTURE — an empty effects mask means no comm-mode flip, so the output stays on
-  // `STRATEGY_MEDIA` and an SCO link started by the default selection suspends it into silence, with no
-  // mode exit left to restore anything. `speaker-hifi` rides exactly the same physics as `headphones`,
-  // so it rides the same steer; the plain speaker route is in comm mode by construction and is left
-  // alone (moving its device would change a shipped behaviour this rule has no evidence about).
+  // THE GATE IS THE EC ANSWER (D75 ①): the trap this ladder avoids is a property of EC-OFF CAPTURE —
+  // an empty effects mask means no comm-mode flip, so the output stays on `STRATEGY_MEDIA` and an SCO
+  // link started by the default selection suspends it into silence, with no mode exit left to restore
+  // anything. The `media` route rides exactly those physics, so it rides the steer; `call` is in comm
+  // mode by construction and is left alone (moving its device would change a shipped behaviour this
+  // rule has no evidence about).
   if (!wantsAec(req.route)) {
     const rows = syntheticRoutes(await listAudioInputs());
     if (rows?.has(BT_ROW)) {
@@ -357,7 +339,7 @@ export interface PcmCapture {
    *  the ask, so a stuck track is governed as the track it IS — and which track that is depends on the
    *  readback's VALUE, not merely on the mismatch (review round C4; `useLiveCall`'s capture-ready block
    *  states the same rule from the other side). An `"all"` readback is the genuinely subtractive mode, so
-   *  the hold LIFTS and — with `barge_in` on — the voice interrupt arms, exactly as for a speaker-route
+   *  the hold LIFTS and — with `barge_in` on — the voice interrupt arms, exactly as for a call-route
    *  track; only a bare `true` (or `false`/absent) readback leaves the hold armed. What the owner loses
    *  is the route's whole point — media-path audio — and nothing else on the screen could tell them. */
   ecStuck: boolean;
@@ -367,7 +349,7 @@ export interface PcmCapture {
    *  of frames instead would leave a half-spoken phrase open to merge with whatever is said after the
    *  unmute. Nothing else about the capture changes. */
   setMuted: (muted: boolean) => void;
-  /** THE EAR-HOLD (S3 · §5.1's `echo_workaround`, the S0 ruling): the PROTECTIVE close, for a track whose
+  /** THE EAR-HOLD (S3 · `mic_hold`, D76 §B; the S0 ruling): the PROTECTIVE close, for a track whose
    *  AEC readback is not the subtractive `"all"` mode. There the phone's own playback rides back into the
    *  capture at near-full level (Fennec, measured — §7-S0 ③), so an ear left open under the reply would
    *  transcribe the character's own words into the owner's next message. While the mouth is audible the

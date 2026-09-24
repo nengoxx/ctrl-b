@@ -34,16 +34,23 @@ const LIVE_CALL = {
   call_backlog_ms: 1000,
   barge_in: true,
   ring: true,
-  // D75 — the two knobs the deck round added (captions on, a mid-band speech floor), for the same
-  // reason the pairs below are here: the fixture is supposed to be what `/voice/status` sends, and a
-  // field missing here is a field the client silently meets as `undefined` where production never does
-  // — the Speech pill renders on `vad_threshold` being a number at all.
+  // D75 — captions on, and the Silero threshold, for the same reason the pairs below are here: the
+  // fixture is supposed to be what `/voice/status` sends, and a field missing here is a field the
+  // client silently meets as `undefined` where production never does.
   captions: true,
-  vad_threshold: 0.4,
-  echo_workaround: "auto",
-  // D73 S5 — the route pair, backend defaults (added with the S5-review fix wave; the fixture is
-  // supposed to be what `/voice/status` sends, S5 itself forgot its own two).
-  route: "speaker",
+  vad_threshold: 0.6,
+  // D76 §B/§C — the mic hold and the relative gate's six, as the backend ships them.
+  mic_hold: "auto",
+  floor_dbfs: -45,
+  noise_margin_db: 10,
+  voice_margin_db: 10,
+  playback_margin_db: 10,
+  min_dbfs: -60,
+  max_dbfs: -20,
+  // D73 S5 — the route pair (added with the S5-review fix wave; the fixture is supposed to be what
+  // `/voice/status` sends, S5 itself forgot its own two). `call` keeps the AEC ask these cases were
+  // written against; the backend default is `media`.
+  route: "call",
   input_device: "",
   // D73 S6 — the background three, as the backend ships them. Nothing here hides the page, so they
   // change no case; the fixture carries them because it is supposed to be what `/voice/status` sends.

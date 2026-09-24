@@ -605,7 +605,7 @@ describe("callReduce — MUTE (§6, the one mechanism)", () => {
 
 /** A call on a track whose AEC is NOT the subtractive mode (Fennec, §7-S0 ③) — the ear-hold's own. */
 const holding = run(CALL_INITIAL, [
-  { type: "captureReady", earHoldMode: true, route: "speaker", deviceId: "" },
+  { type: "captureReady", earHoldMode: true, route: "call", deviceId: "" },
   { type: "ready" },
 ]).state;
 /** …and the same call with the reply speaking, i.e. with the ear actually closed. */
@@ -719,7 +719,7 @@ describe("callReduce — the mouth is not the phase (S3 · mouthLive)", () => {
   });
 });
 
-describe("callReduce — the Fennec EAR-HOLD (S3 · §5.1's `echo_workaround`)", () => {
+describe("callReduce — the Fennec EAR-HOLD (S3 · `mic_hold`, D76 §B)", () => {
   it("closes the ear while the reply speaks, and opens it when the reply ends", () => {
     expect(holding.earHoldMode).toBe(true);
     expect(holding.earHeld).toBe(false); // nothing is speaking yet
@@ -1193,53 +1193,51 @@ describe("callReduce — the transcript gate (D74 S5)", () => {
 
 /** A connected call that has said which ear it opened — the seed every route case starts from. */
 const routed = run(CALL_INITIAL, [
-  { type: "captureReady", earHoldMode: false, route: "speaker", deviceId: "" },
+  { type: "captureReady", earHoldMode: false, route: "call", deviceId: "" },
   { type: "ready" },
 ]).state;
 
 describe("callReduce — the route cycle (D74 S2)", () => {
   it("seeds the pair from the capture that actually opened", () => {
-    expect(routed.route).toBe("speaker");
+    expect(routed.route).toBe("call");
     expect(routed.inputDevice).toBe("");
   });
 
   it("moves the route: a fresh leg on a fresh ear, with the generation moved", () => {
-    const { state, out } = run(routed, [{ type: "routeChange", route: "headphones" }]);
-    expect(state.route).toBe("headphones");
+    const { state, out } = run(routed, [{ type: "routeChange", route: "media" }]);
+    expect(state.route).toBe("media");
     expect(state.inputDevice).toBe(""); // the half not sent is kept
     expect(state.phase).toBe("connecting");
     expect(state.gen).toBe(routed.gen + 1);
     expect(state.attempts).toBe(0);
     // The HOLD belongs to the released track; the fresh `captureReady` decides it again.
     expect(state.earHoldMode).toBe(false);
-    // speaker (EC on) → headphones (EC off) LEAVES comm mode: the mouth must re-tag (ISS-18 / R81).
-    expect(out).toEqual([
-      { type: "recapture", route: "headphones", deviceId: "", leavesComm: true },
-    ]);
+    // call (EC on) → media (EC off) LEAVES comm mode: the mouth must re-tag (ISS-18 / R81).
+    expect(out).toEqual([{ type: "recapture", route: "media", deviceId: "", leavesComm: true }]);
   });
 
   it("…and the device half alone, against the standing route", () => {
     const { state, out } = run(routed, [{ type: "routeChange", deviceId: "bt-headset" }]);
-    expect(state.route).toBe("speaker");
+    expect(state.route).toBe("call");
     // the route did not move, so comm mode was not left
     expect(out).toEqual([
-      { type: "recapture", route: "speaker", deviceId: "bt-headset", leavesComm: false },
+      { type: "recapture", route: "call", deviceId: "bt-headset", leavesComm: false },
     ]);
   });
 
-  // ISS-18 (R81): only an EC-on → EC-off flip leaves comm mode. A flip between the two EC-off routes,
-  // or INTO comm mode, opens nothing stale — the reverse direction re-routes on its own (R81 §3).
+  // ISS-18 (R81): only an EC-on → EC-off flip leaves comm mode. A device move on the EC-off route,
+  // or a flip INTO comm mode, opens nothing stale — the reverse direction re-routes on its own (R81 §3).
   it("`leavesComm` is the EC-on → EC-off edge only", () => {
-    const onClean = run(routed, [{ type: "routeChange", route: "speaker-hifi" }]);
-    expect(onClean.out[0]).toMatchObject({ type: "recapture", leavesComm: true });
-    const cleanState = run(onClean.state, [
-      { type: "captureReady", earHoldMode: false, route: "speaker-hifi", deviceId: "" },
+    const onMedia = run(routed, [{ type: "routeChange", route: "media" }]);
+    expect(onMedia.out[0]).toMatchObject({ type: "recapture", leavesComm: true });
+    const mediaState = run(onMedia.state, [
+      { type: "captureReady", earHoldMode: false, route: "media", deviceId: "" },
       { type: "ready" },
     ]).state;
-    expect(run(cleanState, [{ type: "routeChange", route: "headphones" }]).out[0]).toMatchObject({
+    expect(run(mediaState, [{ type: "routeChange", deviceId: "bt" }]).out[0]).toMatchObject({
       leavesComm: false,
     });
-    expect(run(cleanState, [{ type: "routeChange", route: "speaker" }]).out[0]).toMatchObject({
+    expect(run(mediaState, [{ type: "routeChange", route: "call" }]).out[0]).toMatchObject({
       leavesComm: false,
     });
   });
@@ -1249,17 +1247,18 @@ describe("callReduce — the route cycle (D74 S2)", () => {
   // a comm-mode exit; a route that asked for EC and did not get it never entered.
   it("`leavesComm` reads the readback's `ecOn`, not the requested route", () => {
     const stuck = run(CALL_INITIAL, [
-      { type: "captureReady", earHoldMode: false, route: "speaker-hifi", deviceId: "", ecOn: true },
+      { type: "captureReady", earHoldMode: false, route: "media", deviceId: "", ecOn: true },
       { type: "ready" },
     ]).state;
-    expect(run(stuck, [{ type: "routeChange", route: "headphones" }]).out[0]).toMatchObject({
+    // A device move keeps the (EC-off) route, and the stuck ear's comm mode is still left by it.
+    expect(run(stuck, [{ type: "routeChange", deviceId: "bt" }]).out[0]).toMatchObject({
       leavesComm: true,
     });
     const neverIn = run(CALL_INITIAL, [
-      { type: "captureReady", earHoldMode: false, route: "speaker", deviceId: "", ecOn: false },
+      { type: "captureReady", earHoldMode: false, route: "call", deviceId: "", ecOn: false },
       { type: "ready" },
     ]).state;
-    expect(run(neverIn, [{ type: "routeChange", route: "headphones" }]).out[0]).toMatchObject({
+    expect(run(neverIn, [{ type: "routeChange", route: "media" }]).out[0]).toMatchObject({
       leavesComm: false,
     });
   });
@@ -1269,7 +1268,7 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     // does not belong on the overlay's note line; it is a static footer in the Sound picker.
     const speaking = run(routed, [{ type: "playbackStarted" }]).state;
     expect(speaking.mouthLive).toBe(true);
-    const mid = run(speaking, [{ type: "routeChange", route: "headphones" }]).state;
+    const mid = run(speaking, [{ type: "routeChange", route: "media" }]).state;
     expect(mid.note).toBe(speaking.note);
   });
 
@@ -1283,7 +1282,7 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     expect(held.pending).toEqual(["keep this"]);
     const { state } = run(held, [
       { type: "setMuted", on: true },
-      { type: "routeChange", route: "headphones" },
+      { type: "routeChange", route: "media" },
     ]);
     expect(state.pending).toEqual(["keep this"]);
     expect(state.muted).toBe(true);
@@ -1295,13 +1294,13 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     // queue behind a hold nothing can clear.
     const killing = run(routed, [{ type: "playbackStarted" }, { type: "barge" }]).state;
     expect(killing.killing).toBe(true);
-    expect(run(killing, [{ type: "routeChange", route: "headphones" }]).state.killing).toBe(false);
+    expect(run(killing, [{ type: "routeChange", route: "media" }]).state.killing).toBe(false);
   });
 
   it("is INERT outside the settled phases, and when nothing actually moved", () => {
     // `connecting` is already opening a leg; a terminal has no ear left to move.
     for (const from of [CALL_INITIAL, run(routed, [{ type: "socketLost" }]).state]) {
-      const { state, out } = run(from, [{ type: "routeChange", route: "headphones" }]);
+      const { state, out } = run(from, [{ type: "routeChange", route: "media" }]);
       expect(out).toEqual([]);
       expect(state.route).toBe(from.route); // …and the pair is not quietly moved either
     }
@@ -1309,67 +1308,6 @@ describe("callReduce — the route cycle (D74 S2)", () => {
       { type: "teardown", close: true },
     ]);
     // …and re-picking what is already live costs no reconnect.
-    expect(run(routed, [{ type: "routeChange", route: "speaker" }]).out).toEqual([]);
-  });
-});
-
-describe("callReduce — the speech-threshold change (2026-09-22)", () => {
-  it("moves the threshold: a fresh LEG on the SAME ear — no recapture, no generation move", () => {
-    const { state, out } = run(routed, [{ type: "setVad", value: 0.5 }]);
-    expect(state.vadOverride).toBe(0.5);
-    expect(state.phase).toBe("connecting");
-    expect(state.attempts).toBe(0);
-    // The whole reason this is not `routeChange`: the capture stands, so the hold rule, the mute and
-    // the generation all stand with it — the leg fence owns the old socket's ghosts.
-    expect(state.gen).toBe(routed.gen);
-    expect(out).toEqual([{ type: "redialLeg" }]);
-  });
-
-  it("KEEPS the queue, the mute and the capture-owned flags across the redial", () => {
-    const held = run(routed, [
-      { type: "playbackStarted" },
-      { type: "final", text: "keep this" },
-      { type: "setMuted", on: true },
-    ]).state;
-    const { state } = run(held, [{ type: "setVad", value: 0.35 }]);
-    expect(state.pending).toEqual(["keep this"]);
-    expect(state.muted).toBe(true);
-    expect(state.earHoldMode).toBe(held.earHoldMode);
-    expect(state.mouthLive).toBe(true); // C3 rides HTTP — the reply plays through the redial
-  });
-
-  it("is INERT outside the settled phases, and when the value already stands", () => {
-    for (const from of [CALL_INITIAL, run(routed, [{ type: "socketLost" }]).state]) {
-      const { state, out } = run(from, [{ type: "setVad", value: 0.5 }]);
-      expect(out).toEqual([]);
-      expect(state.vadOverride).toBeNull();
-    }
-    const moved = run(routed, [{ type: "setVad", value: 0.5 }, { type: "ready" }]).state;
-    expect(run(moved, [{ type: "setVad", value: 0.5 }]).out).toEqual([]);
-  });
-
-  it("seeds the BASE once, at the first capture — a recapture must not re-read an edited knob", () => {
-    // Maya F1 / design F6 (both blind rounds, independently): the machine owns the base the way it
-    // owns the route pair, so a mid-call Conf save can move neither the pill nor a later leg.
-    const seeded = run(CALL_INITIAL, [
-      { type: "captureReady", earHoldMode: false, route: "speaker", deviceId: "", vadBase: 0.9 },
-      { type: "ready" },
-    ]).state;
-    expect(seeded.vadBase).toBe(0.9);
-    // The route cycle's fresh captureReady arrives carrying a DIFFERENT knob value (the owner saved
-    // Conf mid-call) — the first call's answer stands.
-    const recycled = run(seeded, [
-      { type: "routeChange", route: "headphones" },
-      { type: "captureReady", earHoldMode: false, route: "headphones", deviceId: "", vadBase: 0.5 },
-    ]).state;
-    expect(recycled.vadBase).toBe(0.9);
-  });
-
-  it("SURVIVES a route cycle and a reconnect — the room did not change because the leg did", () => {
-    const moved = run(routed, [{ type: "setVad", value: 0.5 }, { type: "ready" }]).state;
-    expect(run(moved, [{ type: "routeChange", route: "headphones" }]).state.vadOverride).toBe(0.5);
-    expect(run(moved, [{ type: "socketLost" }]).state.vadOverride).toBe(0.5);
-    // …and dies with the call: a redial rebuilds from CALL_INITIAL, whose override is the knob's.
-    expect(CALL_INITIAL.vadOverride).toBeNull();
+    expect(run(routed, [{ type: "routeChange", route: "call" }]).out).toEqual([]);
   });
 });

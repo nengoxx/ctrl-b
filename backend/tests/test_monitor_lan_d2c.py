@@ -719,7 +719,7 @@ def test_the_fold_turns_each_legacy_ip_into_a_device_and_deletes_the_old_key(tmp
     ]
     assert doc["wake"]["cooldown_s"] == 300  # the sibling knob is untouched
     assert "# the owner's own note" in text
-    assert doc[CONFIG_VERSION_KEY] == 3
+    assert doc[CONFIG_VERSION_KEY] == cm.CONFIG_VERSION  # the chain's last step stamps, not step 3
     # …and the app can read what the migration wrote.
     devices = load_settings(home / "config.yaml").wake.presence_devices
     assert [(d.name, d.tailnet_ip, d.lan_ip) for d in devices] == [
@@ -778,6 +778,6 @@ def test_the_fold_is_idempotent_and_stamps_the_marker(tmp_path, monkeypatch) -> 
     before = (home / "config.yaml").read_bytes()
     fresh = cm.context_from_env()
     assert cm.needs_migration(fresh) is False
-    assert cm.read_marker(fresh.config) == cm.CONFIG_VERSION == 3
+    assert cm.read_marker(fresh.config) == cm.CONFIG_VERSION
     assert cm.apply(cm.context_from_env()).wrote is False
     assert (home / "config.yaml").read_bytes() == before

@@ -2,6 +2,7 @@ import { cleanup, createEvent, fireEvent, render, screen } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CallDebug } from "../../src/hooks/useLiveCall";
+import { ROUTE_MEDIA } from "../../src/lib/pcmCapture";
 import type { AwaitingConfirm } from "../../src/store/chat";
 
 const h = vi.hoisted(() => {
@@ -19,8 +20,6 @@ const h = vi.hoisted(() => {
     canRoute: boolean;
     setRoute: ReturnType<typeof vi.fn>;
     setInputDevice: ReturnType<typeof vi.fn>;
-    vad: number | null;
-    setVad: ReturnType<typeof vi.fn>;
     debug: CallDebug | null;
   } = {
     phase: "listening",
@@ -31,13 +30,11 @@ const h = vi.hoisted(() => {
     muted: false,
     interrupt: vi.fn(),
     toggleMute: vi.fn(),
-    route: "speaker",
+    route: "call",
     inputDevice: "",
     canRoute: true,
     setRoute: vi.fn(),
     setInputDevice: vi.fn(),
-    vad: 0.9,
-    setVad: vi.fn(),
     debug: null,
   };
   return {
@@ -117,17 +114,15 @@ beforeEach(() => {
     userSpeechActive: false,
     waitingFinal: false,
     muted: false,
-    route: "speaker",
+    route: "call",
     inputDevice: "",
     canRoute: true,
-    vad: 0.9,
     debug: null,
   };
   h.call.interrupt.mockClear();
   h.call.toggleMute.mockClear();
   h.call.setRoute.mockClear();
   h.call.setInputDevice.mockClear();
-  h.call.setVad.mockClear();
   h.ring = true;
   h.captions = true;
   h.knobs = true;
@@ -505,58 +500,67 @@ describe("CallOverlay — the in-call route controls (D74 S2 · the D75 picker)"
   const routeRows = () => screen.getAllByRole("menuitemradio");
   const rowCount = () => screen.queryAllByRole("menuitemradio").length;
 
-  it("SHOWS the current route and offers all three — state-first, never the action (D75 ④)", () => {
+  it("SHOWS the current route and offers both — state-first, never the action (D75 ④ · D76 §A)", () => {
     // The control it replaced named the ACTION ("Use headphones" while on speaker), and the owner
     // read that as the STATE: their whole crackle report arrived inverted (ISS-16). The pill's
     // accessible name is now where they are, because the pill itself is only a glyph — plus the
     // "tap to change" tail that carries the affordance no chevron draws.
     render(<Host open={true} />);
-    expect(outputPill().getAttribute("aria-label")).toBe("Sound: Speaker — tap to change");
+    expect(outputPill().getAttribute("aria-label")).toBe("Sound: Call — tap to change");
     expect(rowCount()).toBe(0); // closed until asked
     fireEvent.click(outputPill());
-    expect(routeRows().map((r) => r.getAttribute("aria-checked"))).toEqual([
-      "true",
-      "false",
-      "false",
-    ]);
+    // Media first (the default), then Call — and the checked row is the one the machine is on.
+    expect(routeRows().map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "true"]);
 
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /clean/ }));
-    expect(h.call.setRoute).toHaveBeenCalledWith("speaker-hifi");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /^Media/ }));
+    expect(h.call.setRoute).toHaveBeenCalledWith(ROUTE_MEDIA);
     expect(rowCount()).toBe(0); // …and the picker closes on the pick
 
-    // …and the pill then speaks the route the machine came back with, for each of the three.
-    for (const [route, name] of [
-      ["speaker-hifi", "Speaker (clean)"],
-      ["headphones", "Headphones"],
-    ] as const) {
-      cleanup();
-      h.call = { ...h.call, route };
-      render(<Host open={true} />);
-      expect(outputPill().getAttribute("aria-label")).toBe(`Sound: ${name} — tap to change`);
-    }
+    // …and the pill then speaks the route the machine came back with.
+    cleanup();
+    h.call = { ...h.call, route: ROUTE_MEDIA };
+    render(<Host open={true} />);
+    expect(outputPill().getAttribute("aria-label")).toBe("Sound: Media — tap to change");
   });
 
-  it("an UNKNOWN route checks the plain-speaker row — never a card with no answer at all", () => {
-    // The capture resolves anything that is not a named answer as the speaker case (`wantsAec`), so
-    // the card says the same thing. A `radiogroup` with nothing checked would claim the sound is
-    // going nowhere, and this pill is the one the owner reads to check their own report (ISS-16).
+  it("each row carries the bargain it strikes, and the footer stays (D76 §A)", () => {
+    render(<Host open={true} />);
+    fireEvent.click(outputPill());
+    const [media, call] = routeRows();
+    expect(media.textContent).toContain("follows Bluetooth like music, phone speaker otherwise");
+    expect(call.textContent).toContain("phone-call mode · echo-cancelled · hands-free mic");
+    expect(document.querySelector(".kit-call-routefoot")?.textContent).toBe(
+      "a change mid-reply starts with the next reply",
+    );
+  });
+
+  it("an UNKNOWN route checks the media row — never a card with no answer at all", () => {
+    // The capture resolves anything that is not `call` as the media case (`wantsAec`), so the card
+    // says the same thing. A card with nothing checked would claim the sound is going nowhere, and
+    // this pill is the one the owner reads to check their own report (ISS-16).
     h.call = { ...h.call, route: "from-a-newer-build" };
     render(<Host open={true} />);
-    expect(outputPill().getAttribute("aria-label")).toBe("Sound: Speaker — tap to change");
+    expect(outputPill().getAttribute("aria-label")).toBe("Sound: Media — tap to change");
     fireEvent.click(outputPill());
-    expect(routeRows().map((r) => r.getAttribute("aria-checked"))).toEqual([
-      "true",
-      "false",
-      "false",
-    ]);
+    expect(routeRows().map((r) => r.getAttribute("aria-checked"))).toEqual(["true", "false"]);
   });
 
   it("writes NO config — the pick is this call's, the Conf row stays the next one's default", () => {
     render(<Host open={true} />);
     fireEvent.click(outputPill());
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /^Headphones/ }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /^Media/ }));
     expect(h.call.setRoute).toHaveBeenCalledTimes(1);
-    expect(h.call.setRoute).toHaveBeenCalledWith("headphones");
+    expect(h.call.setRoute).toHaveBeenCalledWith(ROUTE_MEDIA);
+  });
+
+  it("the deck is Sound and Mic only — the Speech slider is gone (D76 §D)", () => {
+    render(<Host open={true} />);
+    expect(screen.queryByRole("button", { name: /^Speech threshold/ })).toBeNull();
+    expect(screen.queryByRole("slider")).toBeNull();
+    const captions = Array.from(document.querySelectorAll(".kit-call-top .kit-call-iolabel")).map(
+      (e) => e.textContent,
+    );
+    expect(captions).toEqual(["Sound", "Mic"]);
   });
 
   it("Escape closes the PICKER with focus ON THE PILL — the call stands (review round A1)", () => {
@@ -574,7 +578,7 @@ describe("CallOverlay — the in-call route controls (D74 S2 · the D75 picker)"
     expect(h.call.setRoute).not.toHaveBeenCalled();
   });
 
-  it("…and from a ROW too (the vad popover's rule, shared)", () => {
+  it("…and from a ROW too (the deck popover's rule, shared)", () => {
     render(<Host open={true} />);
     fireEvent.click(outputPill());
     fireEvent.keyDown(routeRows()[0], { key: "Escape" });
@@ -637,96 +641,12 @@ describe("CallOverlay — the in-call route controls (D74 S2 · the D75 picker)"
   });
 });
 
-describe("CallOverlay — the speech-threshold slider (2026-09-22)", () => {
-  // The pill's accessible name CARRIES the value (design sweep ①) — hence the prefix match.
-  const pill = () => screen.getByRole<HTMLButtonElement>("button", { name: /^Speech threshold/ });
-  const slider = () => screen.getByRole<HTMLInputElement>("slider", { name: "Speech threshold" });
-
-  it("the pill speaks the machine's value; the slider appears on tap and commits ON RELEASE only", () => {
-    render(<Host open={true} />);
-    expect(pill().textContent).toBe("0.90");
-    expect(screen.queryByRole("slider", { name: "Speech threshold" })).toBeNull();
-    fireEvent.click(pill());
-    // The DRAG is local — a redial per drag-tick would cycle the connection through the gesture.
-    fireEvent.change(slider(), { target: { value: "0.5" } });
-    expect(h.call.setVad).not.toHaveBeenCalled();
-    expect(pill().textContent).toBe("0.50"); // …but the pill follows the finger
-    fireEvent.pointerUp(slider());
-    expect(h.call.setVad).toHaveBeenCalledWith(0.5);
-  });
-
-  it("a release with nothing moved commits nothing — no redial for a tap on the slider", () => {
-    render(<Host open={true} />);
-    fireEvent.click(pill());
-    fireEvent.pointerUp(slider());
-    expect(h.call.setVad).not.toHaveBeenCalled();
-  });
-
-  it("renders NOTHING against a backend whose status predates the field", () => {
-    // A control that cannot say what the threshold IS must not offer to move it.
-    h.call = { ...h.call, vad: null };
-    render(<Host open={true} />);
-    expect(screen.queryByRole("button", { name: /^Speech threshold/ })).toBeNull();
-  });
-
-  it("dims with its deck siblings while the leg is moving (design M2)", () => {
-    // A commit is a leg redial: while the leg is down the pill says so like the pair beside it,
-    // instead of opening a popover onto a dead slider.
-    h.call = { ...h.call, canRoute: false };
-    render(<Host open={true} />);
-    expect(pill().disabled).toBe(true);
-  });
-
-  it("Escape with focus ON THE PILL closes the popover, not the call (review round A1)", () => {
-    // The slider's popover had the same unreachable-focus gap the picker's did: opening it leaves
-    // focus on the pill, a SIBLING of the popover the swallow used to hang on.
-    render(<Host open={true} />);
-    const p = pill();
-    p.focus();
-    fireEvent.click(p);
-    fireEvent.keyDown(p, { key: "Escape" });
-    expect(h.close).not.toHaveBeenCalled();
-    expect(screen.queryByRole("slider", { name: "Speech threshold" })).toBeNull();
-  });
-
-  it("Escape in the popover closes the POPOVER — never the call (design round F3)", () => {
-    render(<Host open={true} />);
-    fireEvent.click(pill());
-    fireEvent.change(slider(), { target: { value: "0.5" } });
-    fireEvent.keyDown(slider(), { key: "Escape" });
-    // The overlay's own Escape rule is "hang up" (`modalKeyDown`); the popover must swallow it…
-    expect(h.close).not.toHaveBeenCalled();
-    expect(screen.queryByRole("slider", { name: "Speech threshold" })).toBeNull();
-    // …and a cancel DISCARDS the drag: the pill goes back to speaking the machine's truth.
-    expect(h.call.setVad).not.toHaveBeenCalled();
-    expect(pill().textContent).toBe("0.90");
-  });
-
-  it("an outside tap closes the popover and discards the drag (the NavMenu popover contract)", () => {
-    render(<Host open={true} />);
-    fireEvent.click(pill());
-    fireEvent.change(slider(), { target: { value: "0.5" } });
-    fireEvent.pointerDown(overlay());
-    expect(screen.queryByRole("slider", { name: "Speech threshold" })).toBeNull();
-    expect(h.call.setVad).not.toHaveBeenCalled();
-    expect(pill().textContent).toBe("0.90");
-  });
-
-  it("a slider gesture is never ALSO a tap-to-interrupt — the deck's stop covers the popover", () => {
-    h.call = { ...h.call, phase: "speaking" };
-    render(<Host open={true} />);
-    fireEvent.click(pill());
-    fireEvent.pointerDown(slider());
-    expect(h.call.interrupt).not.toHaveBeenCalled();
-  });
-});
-
 describe("CallOverlay — the readback block (D74 S7)", () => {
   const snapshot: CallDebug = {
     ecSettings: true,
     ecCapabilities: [true, "all"],
-    route: "headphones",
-    echoWorkaround: "auto",
+    route: "media",
+    micHold: "auto",
     bargeArmed: true,
     earHoldMode: false,
     earHeld: false,

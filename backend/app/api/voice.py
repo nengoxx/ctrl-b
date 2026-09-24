@@ -118,16 +118,26 @@ async def voice_status(request: Request) -> dict[str, object]:
         "min_final_ms": live.min_final_ms,
         "debug": live.debug,
         "barge_in": live.barge_in,
-        # The ONE server-side VAD knob the client renders (the in-call speech-threshold control,
-        # 2026-09-22): it seeds the slider and is the base a per-call override replaces — the
-        # override rides `start.vad_threshold` on the next leg, never a config write.
+        # The Silero threshold, delivered like its neighbours so the client can show what the relay
+        # runs. Conf is its only door (D76 §D): the in-call override and its `start` field are gone,
+        # and the relay reads the config value for its one `session.update`.
         "vad_threshold": live.vad_threshold,
         "ring": live.ring,
         # The reply as CAPTIONS on the call screen (owner ask 2026-09-22). A presentation knob like
         # `ring` beside it: the words it draws are already in the browser's own chat store, so this
         # end is only ever asked whether to draw them.
         "captions": live.captions,
-        "echo_workaround": live.echo_workaround,
+        # D76 §B — the mic hold while the reply plays (`auto` = the leak probe, D76 S2).
+        "mic_hold": live.mic_hold,
+        # D76 §C (evidence R83) — the relative gate: the bootstrap ceiling, the three margins, the two
+        # clamp bounds. Client knobs for the reason `min_final_ms` is: the level they gate on is
+        # measured in the browser.
+        "floor_dbfs": live.floor_dbfs,
+        "noise_margin_db": live.noise_margin_db,
+        "voice_margin_db": live.voice_margin_db,
+        "playback_margin_db": live.playback_margin_db,
+        "min_dbfs": live.min_dbfs,
+        "max_dbfs": live.max_dbfs,
         # D73 S5 — the capture pair. It reaches the browser for the same reason its neighbours do: the
         # constraints and the device are `getUserMedia` arguments, and every capture this app opens
         # (call and dictation alike) reads them from here rather than defaulting them locally.

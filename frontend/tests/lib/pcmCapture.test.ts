@@ -4,6 +4,8 @@ import {
   listAudioInputs,
   micConstraints,
   openMicStream,
+  ROUTE_CALL,
+  ROUTE_MEDIA,
   startPcmCapture,
   wantsAec,
 } from "../../src/lib/pcmCapture";
@@ -153,7 +155,12 @@ beforeEach(() => {
 
 describe("startPcmCapture — the context has to actually RUN", () => {
   it("opens the chain when the context is running, and reads the echo capability back", async () => {
-    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+    });
     expect(cap.sampleRate).toBe(48000);
     expect(cap.readback.echoCancellation).toBe("all");
     expect(track.stopped).toBe(0);
@@ -163,7 +170,12 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     // The one mechanism: disabling the track silences the samples while the worklet keeps shipping
     // them, because Speaches has to OBSERVE the silence to endpoint a half-spoken phrase. Stopping
     // the uplink instead would leave that utterance open to merge with whatever is said after.
-    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+    });
     cap.setMuted(true);
     expect(track.enabled).toBe(false);
     expect(track.stopped).toBe(0); // the ear is closed, not released
@@ -180,10 +192,15 @@ describe("startPcmCapture — the context has to actually RUN", () => {
   });
 
   it("the EAR-HOLD is the same mechanism, and the two never answer for each other (S3)", async () => {
-    // Mute is the owner's and the hold is the machine's (§5.1's `echo_workaround`), so they overlap
+    // Mute is the owner's and the hold is the machine's (`mic_hold`, D76 §B), so they overlap
     // freely: whichever is standing keeps the track disabled, and only BOTH being clear reopens it. A
     // setter writing `track.enabled` on its own would silently revoke the other's decision.
-    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+    });
     cap.setHeld(true);
     expect(track.enabled).toBe(false);
     cap.setMuted(true);
@@ -214,7 +231,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
         }
       },
     );
-    await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    await startPcmCapture({ frameMs: 20, route: ROUTE_CALL, onFrame: () => {}, onEnded: () => {} });
     expect(FakeContext.last?.resumes).toBe(1);
   });
 
@@ -232,7 +249,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       },
     );
     await expect(
-      startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} }),
+      startPcmCapture({ frameMs: 20, route: ROUTE_CALL, onFrame: () => {}, onEnded: () => {} }),
     ).rejects.toThrow();
     expect(track.stopped).toBe(1); // the mic light goes out
     expect(FakeContext.last?.closed).toBe(1);
@@ -250,7 +267,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       },
     );
     await expect(
-      startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} }),
+      startPcmCapture({ frameMs: 20, route: ROUTE_CALL, onFrame: () => {}, onEnded: () => {} }),
     ).rejects.toThrow();
     expect(track.stopped).toBe(1);
     expect(FakeContext.last?.closed).toBe(1);
@@ -271,7 +288,12 @@ describe("startPcmCapture — the ear's own liveness (S6 ② / A2)", () => {
     // granted and the socket stays open. The missing frames are the only tell there is.
     let clock = 1000;
     vi.spyOn(performance, "now").mockImplementation(() => clock);
-    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+    });
     heard();
     expect(cap.earGapMs()).toBe(0);
     clock += 90_000; // the page was frozen for a minute and a half
@@ -286,7 +308,12 @@ describe("startPcmCapture — the ear's own liveness (S6 ② / A2)", () => {
     // counting them as hearing would claim the ear was awake through the stretch it slept.
     let clock = 1000;
     vi.spyOn(performance, "now").mockImplementation(() => clock);
-    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+    });
     heard();
     track.fire("mute");
     clock += 30_000;
@@ -303,7 +330,12 @@ describe("startPcmCapture — the background keepalive (S6 ③ / Maya F2)", () =
     // Blink's audibility test is literally `energy > 0` on the destination bus, and an audible page is
     // neither frozen nor background-throttled. Raising the uplink chain's own sink gain does nothing —
     // the worklet writes no output at all, so that path multiplies zero.
-    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+    });
     const ctx = FakeContext.last;
     expect(ctx?.sources).toHaveLength(0); // a foreground call needs nothing
     cap.setKeepalive(true);
@@ -323,7 +355,12 @@ describe("startPcmCapture — the background keepalive (S6 ③ / Maya F2)", () =
   });
 
   it("dies with the capture — a page held audible by a call that is over is a leak", async () => {
-    const cap = await startPcmCapture({ frameMs: 20, onFrame: () => {}, onEnded: () => {} });
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+    });
     cap.setKeepalive(true);
     cap.stop();
     expect(FakeContext.last?.sources[0].stopped).toBe(1);
@@ -332,50 +369,43 @@ describe("startPcmCapture — the background keepalive (S6 ③ / Maya F2)", () =
   });
 });
 
-// ── D73 S5 · THE ROUTE (evidence docs/research/R74) ──────────────────────────────────────────────
+// ── D73 S5 → D76 §A · THE ROUTE (evidence docs/research/R74) ─────────────────────────────────────
 
 describe("micConstraints — the route IS the constraint (R74 §1.3)", () => {
-  it("speaker asks for the subtractive mode; headphones clear the ask entirely", () => {
+  it("call asks for the subtractive mode; media clears the ask entirely", () => {
     // Clearing AEC empties Android's platform-effects mask, which is the single bit that decides
     // whether Chrome puts the device into MODE_IN_COMMUNICATION and re-tags its own output as
     // voice-communication. `noiseSuppression` runs in software and survives both routes.
-    expect(micConstraints({ route: "speaker" })).toMatchObject({
+    expect(micConstraints({ route: ROUTE_CALL })).toMatchObject({
       echoCancellation: { ideal: "all" },
       noiseSuppression: true,
       channelCount: 1,
     });
-    expect(micConstraints({ route: "headphones" })).toMatchObject({
+    expect(micConstraints({ route: ROUTE_MEDIA })).toMatchObject({
       echoCancellation: false,
       noiseSuppression: true,
       channelCount: 1,
     });
   });
 
-  it("an absent or unknown route is the SPEAKER route — a pre-S5 backend keeps today's ear", () => {
-    expect(micConstraints({})).toMatchObject({ echoCancellation: { ideal: "all" } });
-    expect(micConstraints({ route: "earpiece" })).toMatchObject({
-      echoCancellation: { ideal: "all" },
-    });
+  it("an absent or unknown route is the MEDIA route — the backend's own default", () => {
+    expect(micConstraints({})).toMatchObject({ echoCancellation: false });
+    expect(micConstraints({ route: "earpiece" })).toMatchObject({ echoCancellation: false });
+  });
+
+  it("wantsAec is TRUE for the call route alone — the one predicate every consumer asks (D76 §A)", () => {
+    // The route is the EC ask and nothing else now: whether the ear is held under the reply is
+    // `mic_hold`'s question (D76 §B), so there is no second predicate over the same string.
+    expect(ROUTE_CALL).toBe("call");
+    expect(ROUTE_MEDIA).toBe("media");
+    expect(wantsAec(ROUTE_CALL)).toBe(true);
+    expect(wantsAec(ROUTE_MEDIA)).toBe(false);
+    expect(wantsAec(undefined)).toBe(false); // absent ⇒ media, the backend's default
   });
 
   it("a device rides as IDEAL, never exact — and an empty one is not a constraint at all", () => {
     expect(micConstraints({ deviceId: "dev-7" })).toMatchObject({ deviceId: { ideal: "dev-7" } });
     expect(micConstraints({ deviceId: "" })).not.toHaveProperty("deviceId");
-  });
-
-  it("SPEAKER (HI-FI) clears the ask too — the third route is EC-off on the loudspeaker (D75 ①)", () => {
-    // The bargain, and the reason there is a third answer at all: the escape from communication mode
-    // is `echoCancellation: false` and nothing else (R74 §1.3), so the loudspeaker can have the media
-    // path too — at the cost of an ear that closes under the reply, which the readback already arms.
-    expect(wantsAec("speaker")).toBe(true);
-    expect(wantsAec("speaker-hifi")).toBe(false);
-    expect(wantsAec("headphones")).toBe(false);
-    expect(wantsAec(undefined)).toBe(true); // absent ⇒ the plain speaker case, as it always was
-    expect(micConstraints({ route: "speaker-hifi" })).toMatchObject({
-      echoCancellation: false,
-      noiseSuppression: true,
-      channelCount: 1,
-    });
   });
 });
 
@@ -390,7 +420,7 @@ describe("openMicStream — the picked device's ONE retry (R74 §2.2(b))", () =>
     // device makes the stream come back null, i.e. getUserMedia rejects. `ideal` cannot save it —
     // this retry can.
     gum.mockRejectedValueOnce(gumError("NotReadableError"));
-    const opened = await openMicStream({ route: "headphones", deviceId: "gone" });
+    const opened = await openMicStream({ route: ROUTE_MEDIA, deviceId: "gone" });
     expect(opened.fellBack).toBe(true);
     expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "gone" } });
     expect(askedAt(1)).not.toHaveProperty("deviceId"); // …and the ROUTE survived the fallback
@@ -414,7 +444,7 @@ describe("openMicStream — the picked device's ONE retry (R74 §2.2(b))", () =>
     gum.mockRejectedValueOnce(gumError("NotReadableError"));
     const cap = await startPcmCapture({
       frameMs: 20,
-      route: "headphones",
+      route: ROUTE_MEDIA,
       deviceId: "gone",
       onFrame: () => {},
       onEnded: () => {},
@@ -436,12 +466,13 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
     ...(opts.bt ? [{ kind: "audioinput", deviceId: "bt", label: "Bluetooth headset" }] : []),
   ];
 
-  it("steers the DEFAULT away from Bluetooth on the headphones route — to the earpiece", async () => {
+  it("steers the DEFAULT away from Bluetooth on the media route — to the earpiece", async () => {
     // The trap: the default selection prefers the BT row, SCO starts, AOSP suspends the A2DP output,
-    // and its frames are discarded — so the media-path TTS the headphones route exists for is not
-    // degraded but SILENT, with no mode exit to restore anything afterwards.
+    // and its frames are discarded — so the media-path TTS the media route exists for is not
+    // degraded but SILENT, with no mode exit to restore anything afterwards. The trap belongs to
+    // EC-OFF capture (the empty effects mask), which is exactly what `media` is.
     enumerated = [android({ bt: true })];
-    await openMicStream({ route: "headphones" });
+    await openMicStream({ route: ROUTE_MEDIA });
     expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "ear" }, echoCancellation: false });
   });
 
@@ -450,35 +481,25 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
     // default while the BT row stands" a structural guarantee rather than a hope. It forces
     // FOR_COMMUNICATION only — a slot STRATEGY_MEDIA never reads — so A2DP keeps the reply.
     enumerated = [android({ bt: true, earpiece: false })];
-    await openMicStream({ route: "headphones" });
+    await openMicStream({ route: ROUTE_MEDIA });
     expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "spk" } });
   });
 
   it("steers NOWHERE when the Bluetooth row is absent — there is nothing to avoid", async () => {
     enumerated = [android()];
-    await openMicStream({ route: "headphones" });
+    await openMicStream({ route: ROUTE_MEDIA });
     expect(askedAt(0)).not.toHaveProperty("deviceId");
   });
 
-  it("an EXPLICIT pick always wins, and the speaker route is never steered", async () => {
+  it("an EXPLICIT pick always wins, and the call route is never steered", async () => {
     enumerated = [android({ bt: true }), android({ bt: true })];
-    await openMicStream({ route: "headphones", deviceId: "bt" });
+    await openMicStream({ route: ROUTE_MEDIA, deviceId: "bt" });
     expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "bt" } });
-    // The speaker route is already in communication mode by construction (R74 §1) — moving its
+    // The call route is already in communication mode by construction (R74 §1) — moving its
     // device would change a shipped behaviour this rule has no evidence about.
-    await openMicStream({ route: "speaker" });
+    await openMicStream({ route: ROUTE_CALL });
     expect(askedAt(1)).not.toHaveProperty("deviceId");
     expect(gum).toHaveBeenCalledTimes(2);
-  });
-
-  it("SPEAKER (HI-FI) is steered too — the trap belongs to EC-OFF capture, not to the name (D75 ①)", async () => {
-    // The SCO trap is a property of the empty effects mask: no comm-mode flip ⇒ the output stays on
-    // STRATEGY_MEDIA ⇒ a default selection that starts SCO suspends it into silence, with no mode
-    // exit left to restore anything. The hi-fi route rides exactly that physics, so it rides the
-    // ladder; the plain speaker route is in comm mode by construction and is still left alone.
-    enumerated = [android({ bt: true })];
-    await openMicStream({ route: "speaker-hifi" });
-    expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "ear" }, echoCancellation: false });
   });
 
   it("a list that is NOT Chrome's synthetic five steers nothing (a desktop, Fennec)", async () => {
@@ -491,7 +512,7 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
         { kind: "audioinput", deviceId: "bt", label: "Bluetooth headset" },
       ],
     ];
-    await openMicStream({ route: "headphones" });
+    await openMicStream({ route: ROUTE_MEDIA });
     expect(askedAt(0)).not.toHaveProperty("deviceId");
   });
 
@@ -502,7 +523,7 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
     // instead, ending a call over a transient the next rung survives.
     enumerated = [android({ bt: true })];
     gum.mockRejectedValueOnce(gumError("NotReadableError"));
-    const opened = await openMicStream({ route: "headphones" });
+    const opened = await openMicStream({ route: ROUTE_MEDIA });
     expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "ear" } });
     expect(askedAt(1)).toMatchObject({ deviceId: { ideal: "spk" } });
     expect(opened.fellBack).toBe(false); // the owner picked nothing — no note to show them
@@ -510,7 +531,7 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
     // …while a DENIED permission aborts the walk: no rung improves on "no".
     enumerated = [android({ bt: true })];
     gum.mockRejectedValueOnce(gumError("NotAllowedError"));
-    await expect(openMicStream({ route: "headphones" })).rejects.toMatchObject({
+    await expect(openMicStream({ route: ROUTE_MEDIA })).rejects.toMatchObject({
       name: "NotAllowedError",
     });
   });
@@ -518,7 +539,7 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
   it("the picked-device FALLBACK is steered too — it must not fall back into the trap", async () => {
     enumerated = [android({ bt: true })];
     gum.mockRejectedValueOnce(gumError("NotReadableError"));
-    const opened = await openMicStream({ route: "headphones", deviceId: "usb-gone" });
+    const opened = await openMicStream({ route: ROUTE_MEDIA, deviceId: "usb-gone" });
     expect(opened.fellBack).toBe(true);
     expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "usb-gone" } });
     expect(askedAt(1)).toMatchObject({ deviceId: { ideal: "ear" } }); // …not the bare default
@@ -530,7 +551,7 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
     // it would be falling back into the silent SCO route the ladder exists to avoid.
     enumerated = [android({ bt: true })];
     gum.mockRejectedValue(gumError("NotReadableError"));
-    await expect(openMicStream({ route: "headphones" })).rejects.toThrow();
+    await expect(openMicStream({ route: ROUTE_MEDIA })).rejects.toThrow();
     expect(gum).toHaveBeenCalledTimes(2); // ear, then the guaranteed speakerphone — nothing else
     expect(askedAt(0)).toMatchObject({ deviceId: { ideal: "ear" } });
     expect(askedAt(1)).toMatchObject({ deviceId: { ideal: "spk" } });
@@ -541,17 +562,17 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
 
 describe("startPcmCapture — the readback-mismatch detector + its ONE retry", () => {
   /** An EC-off capture, opened. The cases below differ only in what the track READS BACK. */
-  const openHifi = () =>
-    startPcmCapture({ frameMs: 20, route: "speaker-hifi", onFrame: () => {}, onEnded: () => {} });
+  const openMedia = () =>
+    startPcmCapture({ frameMs: 20, route: ROUTE_MEDIA, onFrame: () => {}, onEnded: () => {} });
 
   it("re-opens ONCE when an EC-off ask comes back EC-ON, and says so when it stays stuck", async () => {
     // The race: Android evaluates the communication mode only for the FIRST input stream and restores
     // it only when the LAST is released — in the audio service, after our renderer-side `stop()`. Lose
     // that race and the new capture inherits both the mode AND (R78 §2.3) the old source's pinned
-    // echo-cancellation mode, so the "EC-off" route comes up EC-on and the crackle survives the flip.
+    // echo-cancellation mode, so the EC-off media route comes up EC-on and the crackle survives the flip.
     // The readback is the free detector; the release + one beat is the only barrier the platform offers.
     track.ec = "all"; // …and it stays stuck across both opens
-    const cap = await openHifi();
+    const cap = await openMedia();
     expect(gum).toHaveBeenCalledTimes(2);
     expect(askedAt(0)).toMatchObject({ echoCancellation: false });
     expect(askedAt(1)).toMatchObject({ echoCancellation: false });
@@ -572,7 +593,7 @@ describe("startPcmCapture — the readback-mismatch detector + its ONE retry", (
       getAudioTracks: () => [clean],
       getTracks: () => [clean],
     }));
-    const cap = await openHifi();
+    const cap = await openMedia();
     expect(gum).toHaveBeenCalledTimes(2);
     expect(track.stopped).toBe(1); // the stuck stream is RELEASED — that release IS the barrier
     expect(cap.ecStuck).toBe(false);
@@ -582,7 +603,7 @@ describe("startPcmCapture — the readback-mismatch detector + its ONE retry", (
     // Detection-driven, never an unconditional delay: the single `getUserMedia` is the whole proof,
     // because the beat only exists on the path a mismatch takes.
     track.ec = false;
-    const cap = await openHifi();
+    const cap = await openMedia();
     expect(gum).toHaveBeenCalledTimes(1);
     expect(cap.ecStuck).toBe(false);
   });
@@ -594,7 +615,7 @@ describe("startPcmCapture — the readback-mismatch detector + its ONE retry", (
     track.ec = false;
     const cap = await startPcmCapture({
       frameMs: 20,
-      route: "speaker",
+      route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
     });
@@ -611,7 +632,7 @@ describe("startPcmCapture — the readback-mismatch detector + its ONE retry", (
       getTracks: () => [track],
     }));
     gum.mockRejectedValue(gumError("NotReadableError"));
-    await expect(openHifi()).rejects.toThrow();
+    await expect(openMedia()).rejects.toThrow();
   });
 });
 

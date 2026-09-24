@@ -50,14 +50,13 @@ class FakeSocket {
   }
 }
 
-function leg(opts?: { ceilingMs?: number; sampleRate?: number; vadThreshold?: number }) {
+function leg(opts?: { ceilingMs?: number; sampleRate?: number }) {
   const frames: LiveDown[] = [];
   const closes: { code: number; reason: string }[] = [];
   const socket = openLiveSocket({
     url: "ws://x/api/voice/live",
     sampleRate: opts?.sampleRate ?? 48000,
     ceilingMs: opts?.ceilingMs ?? 1000,
-    vadThreshold: opts?.vadThreshold,
     onFrame: (f) => frames.push(f),
     onClose: (code, reason) => closes.push({ code, reason }),
     make: (url) => new FakeSocket(url) as unknown as WebSocket,
@@ -66,22 +65,12 @@ function leg(opts?: { ceilingMs?: number; sampleRate?: number; vadThreshold?: nu
 }
 
 describe("liveSocket — the uplink", () => {
-  it("sends `start` with the MEASURED rate before anything else", () => {
+  it("sends `start` with the MEASURED rate before anything else — and nothing else (D76 §D)", () => {
     const { ws } = leg({ sampleRate: 44100 });
     expect(ws.sent).toEqual([]); // nothing before the upgrade completes
     ws.open();
     expect(ws.sent).toEqual([JSON.stringify({ type: "start", sample_rate: 44100 })]);
     expect(ws.binaryType).toBe("arraybuffer");
-  });
-
-  it("declares THIS LEG's speech threshold in `start` when given — and omits the field when not", () => {
-    // The omission half is the compatibility contract: a plain `start` is byte-identical to the
-    // pre-field wire, so an old relay never sees a key it would have to ignore.
-    const { ws } = leg({ sampleRate: 48000, vadThreshold: 0.35 });
-    ws.open();
-    expect(ws.sent).toEqual([
-      JSON.stringify({ type: "start", sample_rate: 48000, vad_threshold: 0.35 }),
-    ]);
   });
 
   it("ships audio only while OPEN — the reconnect gap drops frames, it does not throw", () => {

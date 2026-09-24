@@ -848,7 +848,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   connect_timeout_s: 3,
   timeout_s: 30,
   extra_body: {},
-  vad_threshold: 0.9,
+  vad_threshold: 0.6,
   silence_ms: 700,
   min_speech_ms: 300,
   barge_threshold: 0,
@@ -857,8 +857,14 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   debug: false,
   ring: true,
   captions: true,
-  echo_workaround: "auto",
-  route: "speaker-hifi",
+  mic_hold: "auto",
+  floor_dbfs: -45,
+  noise_margin_db: 10,
+  voice_margin_db: 10,
+  playback_margin_db: 10,
+  min_dbfs: -60,
+  max_dbfs: -20,
+  route: "media",
   input_device: "",
   background: true,
   background_keepalive: true,
@@ -1856,12 +1862,12 @@ export function ConfTab({ active }: Props) {
           chunk_max_chars: Number(draft.voice.tts.chunk_max_chars),
           chunk_lookahead: Number(draft.voice.tts.chunk_lookahead),
         },
-        // D71 §5.1. `silence_ms` takes the bare `Number` its neighbours take — the backend floors it at
-        // 100, so a cleared field earns the same visible 422. The other three take `numOrNull`, for the
-        // documented reason the wake timings do: their floor is ZERO and zero is a MEANINGFUL value
-        // (`barge_threshold: 0` = reuse the STT threshold; `min_speech_ms: 0` = no floor;
-        // `vad_threshold: 0` = every frame is speech), so a blank coercing to 0 would silently change
-        // the call's behaviour instead of surfacing the mistake.
+        // D71 §5.1. `silence_ms` and `vad_threshold` take the bare `Number` their neighbours take — the
+        // backend floors them at 500 / 0.5 (D76), so a cleared field earns the same visible 422. The
+        // other two take `numOrNull`, for the documented reason the wake timings do: their floor is
+        // ZERO and zero is a MEANINGFUL value (`barge_threshold: 0` = reuse the STT threshold;
+        // `min_speech_ms: 0` = no floor), so a blank coercing to 0 would silently change the call's
+        // behaviour instead of surfacing the mistake.
         // S2.5's three dictation numbers take the bare `Number` `silence_ms` takes, for its reason:
         // every one of them is floored well above 0 server-side (500 / 3 / 10), so zero is not a
         // value any of them can mean — a cleared field earns the same visible 422.
@@ -2902,45 +2908,38 @@ export function ConfTab({ active }: Props) {
               onToggle={() => setLive("captions", !vlive?.captions)}
             />
           </SettingRow>
+          {/* D76 §B — CONFIG ONLY (never on the call deck): the ear-hold while the reply plays. */}
           <SettingRow
-            label="Echo cancellation"
-            desc="auto → detected per microphone at call start (never guessed from the browser name)"
+            label="Mic off while it speaks"
+            desc="auto decides per reply (D76) · on = always, whatever the output · off = never (a loudspeaker may transcribe its own reply)"
           >
             <Seg<string>
-              label="Echo cancellation"
-              current={vlive?.echo_workaround ?? "auto"}
+              label="Mic off while it speaks"
+              current={vlive?.mic_hold ?? "auto"}
               options={[
                 { val: "auto", label: "auto" },
                 { val: "on", label: "on" },
                 { val: "off", label: "off" },
               ]}
-              onPick={(v) => setLive("echo_workaround", v)}
+              onPick={(v) => setLive("mic_hold", v)}
             />
           </SettingRow>
-          {/* D73 S5 (evidence docs/research/R74) — ONE choice, not a codec toggle. On the phone,
+          {/* D76 §A (evidence docs/research/R74, R80) — the axis is MEDIA vs CALL: on the phone,
               asking for echo cancellation is what drops the whole device into communication mode and
-              drags the app's own output down with it; "headphones" clears the ask, so the reply rides
-              Bluetooth at media quality. It also resolves what "auto" above means: on headphones
-              there is no acoustic echo path, so the ear stays open under the reply and hands-free
-              interruption works. Governs dictation's microphone too.
-              D75 ① (evidence docs/research/R80) — the THIRD answer: the same escape from
-              communication mode, on the loudspeaker. It buys the clean audio the owner's phone only
-              gets with echo cancellation off, and pays for it with an ear that closes while the reply
-              speaks (the tap is then the only interrupt) — the same bargain the headphones route
-              makes, on the route that does have an acoustic echo path. */}
+              drags the app's own output down with it. `media` clears the ask, so the reply rides the
+              media path (Bluetooth when connected, the loudspeaker otherwise); `call` keeps it —
+              phone-call mode, echo-cancelled, the hands-free device's own mic. Whether the mic pauses
+              while the reply speaks is the row above's question. Governs dictation's microphone too. */}
           <SettingRow
             label="Audio route"
-            desc="the next call's default — the call screen changes it for a call in progress · speaker → echo cancellation, at phone-call quality; speaker (clean) → clear loudspeaker sound, but the mic pauses while the reply speaks (tap to interrupt); headphones → clear sound; only with Hands-free interruption on does talking over the reply cut it off"
+            desc="media follows Bluetooth like music, phone speaker otherwise · call = phone-call mode, echo-cancelled, the hands-free device's mic"
           >
-            <Seg<string>
+            <Seg<"media" | "call">
               label="Audio route"
-              current={vlive?.route ?? "speaker-hifi"}
+              current={vlive?.route ?? "media"}
               options={[
-                { val: "speaker", label: "speaker" },
-                // The LABEL is the call deck's ("clean", not "hi-fi" — it claims no fidelity, only the
-                // absence of call processing); the VALUE is the shipped config string and stays put.
-                { val: "speaker-hifi", label: "speaker (clean)" },
-                { val: "headphones", label: "headphones" },
+                { val: "media", label: "media" },
+                { val: "call", label: "call" },
               ]}
               onPick={(v) => setLive("route", v)}
             />
@@ -2979,13 +2978,13 @@ export function ConfTab({ active }: Props) {
               one control, two enforcers; a typed value outside them earns a visible 422 on save. */}
           <Field
             label="Speech threshold"
-            desc="how sure the ear must be that it heard speech (0–1) — raise it in a noisy room"
+            desc="how sure the ear must be that it heard speech (0.5–0.8) — lower it if quiet words get cut off"
             value={String(vlive?.vad_threshold ?? "")}
             onChange={(v) => setLive("vad_threshold", v as unknown as number)}
           />
           <Field
             label="Silence window"
-            desc="ms of silence that ends what you were saying (100–10000) — lower it for a snappier reply, raise it if it cuts you off mid-sentence"
+            desc="ms of silence that ends what you were saying (500–1200) — lower it for a snappier reply, raise it if it cuts you off mid-sentence"
             value={String(vlive?.silence_ms ?? "")}
             onChange={(v) => setLive("silence_ms", v as unknown as number)}
           />

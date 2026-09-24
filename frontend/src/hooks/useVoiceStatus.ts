@@ -69,9 +69,9 @@ export interface LiveCallWire {
   /** Automatic (voice) interruption. OFF ⇒ walkie-talkie: speech over the reply still transcribes and
    *  queues; the tap stays every browser's interrupt. Ships OFF (owner re-ruling 2026-09-22). */
   barge_in: boolean;
-  /** The SERVER-side VAD confidence floor (0–1) — the one server knob the client renders, because the
-   *  in-call speech-threshold control seeds from it and overrides it per leg (`start.vad_threshold`).
-   *  Optional: a pre-field backend's status carries none, and the control simply doesn't render. */
+  /** The SERVER-side Silero threshold (0.5–0.8, D76 §D), delivered like its neighbours so the client
+   *  can show what the relay runs. Conf is its only door; the relay reads it from config. Optional: a
+   *  pre-field backend's status carries none. */
   vad_threshold?: number;
   /** §6 overlay mode — the focal-anchored face ring. S2b renders it; S2a's minimal overlay does not. */
   ring: boolean;
@@ -79,16 +79,27 @@ export interface LiveCallWire {
    *  usual reason — a backend that predates the field says nothing, and the overlay's own `?? true`
    *  dresses the `LiveCfg` default rather than inventing a second one. */
   captions?: boolean;
-  /** `auto | on | off` — the loopback-AEC fallback lever. S0 ruled `auto` = off where the live track
-   *  reads `echoCancellation: "all"`; the protective ear-hold elsewhere is S3. */
-  echo_workaround: string;
-  /** D73 S5 — `"speaker"`, `"speaker-hifi"` (the default since D75 ⑥) or `"headphones"`, the owner's
-   *  one answer to "where am I listening". It decides the capture constraints (both EC-off routes ⇒
-   *  `echoCancellation: false`, which is what keeps Chrome Android out of communication mode and TTS
-   *  on the media path, following the system's own routing — R74 §1.3, verified on-device 2026-09-23)
-   *  AND, with them, the ear-hold and the barge-in arming: headphones have no acoustic echo path, so
-   *  neither half has anything to protect against. Read by EVERY capture, dictation's included. */
-  route: string;
+  /** D76 §B — `auto | on | off`: is the ear held while the reply plays? `on` = always, `off` = never,
+   *  `auto` = the leak probe (D76 S2) — until S2 lands, held where the track's AEC readback is not
+   *  `"all"` (the S0 ruling, per track, never UA-sniffed). */
+  mic_hold: string;
+  /** D76 §C (evidence R83) — the RELATIVE near-speech gate, all in dB. `floor_dbfs` is the bootstrap
+   *  ceiling (the floor before a noise estimate, and its cap meanwhile); the three MARGINS are relative
+   *  dB (noise +, own voice −, playback +); `min_dbfs`/`max_dbfs` clamp the effective floor. Delivered
+   *  now, READ by nothing until D76 S0b wires the estimator. */
+  floor_dbfs: number;
+  noise_margin_db: number;
+  voice_margin_db: number;
+  playback_margin_db: number;
+  min_dbfs: number;
+  max_dbfs: number;
+  /** D76 §A — `"media"` (default) or `"call"`: how the mic is opened, which decides how the reply is
+   *  played. `media` ⇒ `echoCancellation: false`, which keeps Chrome Android out of communication mode
+   *  and TTS on the media path, following the system's own routing — Bluetooth when connected, the
+   *  loudspeaker otherwise (R74 §1.3, verified on-device 2026-09-23). `call` ⇒ the platform AEC ask:
+   *  phone-call mode, echo-cancelled, the hands-free device's own mic. Read by EVERY capture,
+   *  dictation's included. */
+  route: "media" | "call";
   /** D73 S5 — the capture `deviceId`; "" = the system default. On Android this list is the ROUTE
    *  picker (R74 §2.2) and the choice moves both directions. Asked for as `ideal`, so a device that
    *  is gone falls back to the default rather than failing the capture. */

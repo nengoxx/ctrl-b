@@ -517,33 +517,18 @@ def test_session_update_carries_the_full_turn_detection_and_the_language() -> No
     assert fake.url.startswith("ws://ear:9000/")
 
 
-def test_start_vad_threshold_overrides_the_knob_in_the_one_session_update() -> None:
-    """The in-call speech-threshold control (2026-09-22): `start.vad_threshold` is THIS session's
-    server-VAD floor — it replaces the config knob inside the one `session.update` the relay sends,
-    and it never writes config (the next plain `start` gets the knob again)."""
+@pytest.mark.parametrize("vad", [0.35, "0.5", True, None, 1.5])
+def test_a_start_vad_threshold_is_ignored_like_any_unknown_key(vad: Any) -> None:
+    """D76 §D — the in-call Silero override is GONE: `start` carries `sample_rate` alone, and a
+    `vad_threshold` beside it is treated exactly like every other key `start` does not know — ignored,
+    never a protocol close. The one `session.update` sends the CONFIG value whatever the client said
+    (a stale client from before the deletion keeps working; it just no longer steers the threshold)."""
     fake = FakeSpeaches([created()])
     app = _fake_app(fake, live_cfg={"vad_threshold": 0.55, "silence_ms": 900})
     with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
-        ws.send_json({"type": "start", "sample_rate": 48000, "vad_threshold": 0.35})
-        assert _json(ws) == {"type": "state", "state": "ready"}
-    assert fake.one("session.update")["session"]["turn_detection"]["threshold"] == 0.35
-
-
-@pytest.mark.parametrize(
-    "vad",
-    [
-        "0.5",  # a string is not a number
-        True,  # a bool is not a threshold
-        -0.1,  # under the floor
-        1.5,  # over the ceiling
-        None,  # explicit null is a malformed VALUE, not an omission (Maya F3)
-    ],
-)
-def test_malformed_start_vad_threshold_is_a_protocol_close(vad: Any) -> None:
-    with _fake_app(FakeSpeaches([created()])).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
         ws.send_json({"type": "start", "sample_rate": 48000, "vad_threshold": vad})
-        assert _json(ws)["code"] == "protocol"
-        assert _closed(ws)[0] == 1008
+        assert _json(ws) == {"type": "state", "state": "ready"}
+    assert fake.one("session.update")["session"]["turn_detection"]["threshold"] == 0.55
 
 
 def test_blank_language_omits_the_field_entirely() -> None:
@@ -699,10 +684,11 @@ def test_an_unprocessed_committed_cannot_shorten_the_burst() -> None:
     assert _flush_silence_ms(88, silence_ms=700, relay_queue_ms=8000) == pytest.approx(3200, abs=40)
 
 
-def test_a_dominant_silence_ms_widens_the_burst() -> None:
-    """The `max()`'s other branch: `silence_ms` above the 3 s window (legal up to 10 s) must widen the
-    burst — the endpoint needs `silence_ms` of TRAILING silence, however long the buffer is."""
-    assert _flush_silence_ms(5, silence_ms=5000) == pytest.approx(5200, abs=40)
+def test_the_silence_ceiling_keeps_the_burst_at_the_window_pad() -> None:
+    """D76 §D bounds `silence_ms` to 500–1200, so even its CEILING sits under Silero's 3 s window and the
+    `max()` always lands on the window: the burst stays `3000 + 200` at the longest legal silence. (The
+    relay keeps the `max()` — the endpoint needs `silence_ms` of trailing silence, whatever the bound.)"""
+    assert _flush_silence_ms(5, silence_ms=1200) == pytest.approx(3200, abs=40)
 
 
 def test_flush_with_nothing_fed_injects_nothing() -> None:
@@ -1042,13 +1028,19 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "min_speech_ms": 250,
             "barge_threshold": 0.02,
             "barge_in": False,
-            "vad_threshold": 0.4,
+            "vad_threshold": 0.7,
             "min_final_ms": 350,
             "debug": True,
             "ring": False,
             "captions": False,
-            "echo_workaround": "on",
-            "route": "headphones",
+            "mic_hold": "on",
+            "floor_dbfs": -40.0,
+            "noise_margin_db": 12.0,
+            "voice_margin_db": 8.0,
+            "playback_margin_db": 6.0,
+            "min_dbfs": -70.0,
+            "max_dbfs": -25.0,
+            "route": "call",
             "input_device": "dev-42",
             "background": False,
             "background_keepalive": False,
@@ -1070,9 +1062,9 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "min_speech_ms": 250,
         "barge_threshold": 0.02,
         "barge_in": False,
-        # The one SERVER-side VAD knob the client renders (the in-call speech-threshold control,
-        # 2026-09-22): the slider's seed, overridden per leg via `start.vad_threshold`.
-        "vad_threshold": 0.4,
+        # The Silero threshold, delivered like its neighbours; Conf is its only door (D76 §D — the
+        # in-call override and its `start` field are gone).
+        "vad_threshold": 0.7,
         # D74 (evidence docs/research/R76) — the near-speech gate on a committed turn and the
         # calibration readout beside it. CLIENT knobs like every neighbour: the energy they judge is
         # measured in the browser, and the server VAD has no field that could express either.
@@ -1082,11 +1074,20 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         # The call screen's two PRESENTATION knobs travel together (owner ask 2026-09-22): what the
         # overlay draws over the art, and whether it draws the reply the browser already holds.
         "captions": False,
-        "echo_workaround": "on",
+        # D76 §B — the mic hold while the reply plays.
+        "mic_hold": "on",
+        # D76 §C (R83) — the relative gate: bootstrap ceiling, three margins, two clamp bounds. CLIENT
+        # knobs: the level they gate on is measured in the browser.
+        "floor_dbfs": -40.0,
+        "noise_margin_db": 12.0,
+        "voice_margin_db": 8.0,
+        "playback_margin_db": 6.0,
+        "min_dbfs": -70.0,
+        "max_dbfs": -25.0,
         # D73 S5 — the capture pair. CLIENT knobs like their neighbours: they are `getUserMedia`
         # arguments, so nothing below the browser reads them and they have to arrive here or be
         # defaulted twice (the call's ear and dictation's open with the SAME two).
-        "route": "headphones",
+        "route": "call",
         "input_device": "dev-42",
         # D73 S6 — the background three. CLIENT knobs again: only the browser can see a page go
         # hidden, keep its audio graph audible, or time out a call nobody is talking to.
@@ -1222,20 +1223,24 @@ def test_reg_helper_registries_stay_valid() -> None:
 def test_live_config_defaults() -> None:
     cfg = LiveCfg()
     assert cfg.enabled is False  # ships OFF until S4 (the whole-feature-toggle rule)
-    assert (cfg.vad_threshold, cfg.silence_ms) == (0.9, 700)  # the two session.update knobs
+    # the two session.update knobs — D76 §D: 0.6 (R84; the old 0.9 put Silero's END threshold at the cliff)
+    assert (cfg.vad_threshold, cfg.silence_ms) == (0.6, 700)
     assert (cfg.frame_ms, cfg.max_frame_bytes, cfg.max_sessions) == (40, 32768, 1)
     assert cfg.max_session_s == 1800  # aligned with Speaches' own 30-min hard expiry
     assert (cfg.min_speech_ms, cfg.buffered_ceiling_ms, cfg.barge_threshold) == (300, 1000, 0.0)
     # `barge_in` ships OFF since the 2026-09-22 owner re-ruling (voice interrupt verified at the
     # calibration, then ruled an opt-in rather than the resting state).
-    assert (cfg.barge_in, cfg.ring, cfg.echo_workaround) == (False, True, "auto")
+    assert (cfg.barge_in, cfg.ring, cfg.mic_hold) == (False, True, "auto")
+    # D76 §C (R83) — the relative gate's six, all dB: the bootstrap ceiling, three margins, two bounds.
+    assert (cfg.floor_dbfs, cfg.min_dbfs, cfg.max_dbfs) == (-45.0, -60.0, -20.0)
+    assert (cfg.noise_margin_db, cfg.voice_margin_db, cfg.playback_margin_db) == (10.0, 10.0, 10.0)
     # D74 — the gate ships ON at 200 ms (a real default, not 0: R76 measured speech-like interference
     # passing the server VAD outright), and the debug readout ships OFF like every diagnostic here.
     assert (cfg.min_final_ms, cfg.debug) == (200, False)
-    # D73 S5 / D75 ⑥ — the capture pair ships as the CLEAN bargain on the system default device:
-    # EC off ⇒ media-path audio following the system's own routing, ear held during replies (the
-    # 2026-09-23 device probe's verdict). `speaker` (platform AEC) and `headphones` are owner picks.
-    assert (cfg.route, cfg.input_device) == ("speaker-hifi", "")
+    # D76 §A — the capture pair ships as `media` on the system default device: EC off ⇒ media-path
+    # audio following the system's own routing (the 2026-09-23 device probe's verdict). `call`
+    # (platform AEC, comm mode) is the owner's pick.
+    assert (cfg.route, cfg.input_device) == ("media", "")
     # D73 S6 — a hidden page KEEPS the call by default (R75: nothing in the platform ends it, and
     # 5/5 field projects keep it), with the freeze defeat on and the owner's 10-minute idle bound.
     assert (cfg.background, cfg.background_keepalive, cfg.background_idle_s) == (True, True, 600)
@@ -1250,10 +1255,12 @@ def test_live_config_defaults() -> None:
 @pytest.mark.parametrize(
     "bad",
     [
-        {"vad_threshold": 1.5},
-        {"vad_threshold": -0.1},
-        {"silence_ms": 0},
-        {"silence_ms": 60000},
+        # D76 §D (R84) — Silero re-bounded 0.5–0.8, the silence run 500–1200.
+        {"vad_threshold": 0.49},
+        {"vad_threshold": 0.81},
+        {"vad_threshold": 0.9},
+        {"silence_ms": 499},
+        {"silence_ms": 1201},
         {"frame_ms": 1},
         {"max_frame_bytes": 0},
         {"max_sessions": 0},
@@ -1261,11 +1268,21 @@ def test_live_config_defaults() -> None:
         {"barge_threshold": 0.9},
         {"relay_queue_ms": 10},
         {"start_timeout_s": 0},
-        {"echo_workaround": "sometimes"},
+        {"mic_hold": "sometimes"},
         # D73 S5 — the route is a CLOSED SET, not free text: the client branches on it, and an
-        # unlisted spelling would silently resolve to the speaker branch while Conf showed something
-        # else. D75 ① widened the set to three; it did not open it.
+        # unlisted spelling would silently resolve to one branch while Conf showed something else.
+        # D76 §A narrowed it to media/call; the pre-D76 spellings are the migration's, never the model's.
         {"route": "earpiece"},
+        {"route": "speaker"},
+        {"route": "speaker-hifi"},
+        {"route": "headphones"},
+        # D76 §C — the gate's dB knobs: margins 0–40 dB, levels within −90..0 dBFS.
+        {"noise_margin_db": -1},
+        {"voice_margin_db": 41},
+        {"playback_margin_db": -0.5},
+        {"floor_dbfs": 1},
+        {"min_dbfs": -91},
+        {"max_dbfs": 0.5},
         {"max_session_s": 5},
         # S2.5 — the dictation knobs are bounded for the same reason their neighbours are: a value
         # outside them wedges the mic (a 0 ms tail wait discards every trailing phrase; a 1 s idle
@@ -1292,15 +1309,10 @@ def test_live_config_bounds_reject_wedging_values(bad: dict[str, Any]) -> None:
         LiveCfg(**bad)
 
 
-@pytest.mark.parametrize("route", ["speaker", "speaker-hifi", "headphones"])
-def test_the_route_admits_all_three_answers_d75(route: str) -> None:
-    """D75 ① — `speaker-hifi` joins the closed set, ADDITIVELY: no migration, no moved default.
-
-    The widening is the whole backend half of the ruling, so it is pinned as a set rather than as one
-    new value: every stored answer a deployed config can already hold stays legal, and the client's
-    third branch (EC off on the loudspeaker, the ear-hold armed by the track's own readback) is
-    unreachable if this literal ever narrows again.
-    """
+@pytest.mark.parametrize("route", ["media", "call"])
+def test_the_route_admits_media_and_call_d76(route: str) -> None:
+    """D76 §A — the axis is media/call (the mic's echo-cancellation ask), pinned as a set: the client
+    branches on exactly these two (`wantsAec(route) ≡ route === "call"`)."""
     assert LiveCfg.model_validate({"route": route}).route == route
 
 

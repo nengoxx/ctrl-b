@@ -15,7 +15,6 @@ import { sendCallTranscript } from "../lib/composer";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
 import {
   ecEngaged,
-  onHeadphones,
   startPcmCapture,
   wantsAec,
   type MicRequest,
@@ -55,7 +54,7 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // `ready` lands back on `speaking` rather than telling the owner the floor is theirs over a voice they
 // can still hear.
 //
-// THE EAR-HOLD (S3 · §5.1's `echo_workaround`, the S0 device ruling). Where the track's AEC is the
+// THE EAR-HOLD (S3 · `mic_hold`, D76 §B; the S0 device ruling). Where the track's AEC is the
 // subtractive `"all"` mode the ear stays open under the reply and voice barge-in is real. Where it is
 // not — Fennec, measured at near-full leak — an open ear would transcribe the character's own words
 // into the owner's next message, so while the mouth is audible the ear CLOSES (`earHeld`) and every
@@ -296,7 +295,7 @@ export interface CallState {
    *  THIS; only what the screen says reads `phase`. Maintained by the playback signals whatever the
    *  phase logic decides to do with them. */
   mouthLive: boolean;
-  /** Does THIS call's track need the ear-hold at all (§5.1's `echo_workaround`, resolved ONCE at capture
+  /** Does THIS call's track need the ear-hold at all (`mic_hold`, D76 §B — resolved ONCE at capture
    *  from the track's own AEC readback — never UA-sniffed, never re-decided mid-call). */
   earHoldMode: boolean;
   /** Is the canceller ENGAGED on the ear that actually opened — the track's readback, never the ask
@@ -312,17 +311,6 @@ export interface CallState {
    *  owner does on the call screen is about THIS call, and it dies with it. */
   route: string;
   inputDevice: string;
-  /** THIS CALL's server-VAD threshold, or `null` for the base below (the in-call speech-threshold
-   *  control, 2026-09-22) — EPHEMERAL per call, the route pair's own carve-out from §4.5: what the
-   *  owner does on the call screen is about THIS call and dies with it; the Conf knob stays the
-   *  next call's default. It survives reconnects and route cycles by construction — `openLeg`
-   *  reads the LIVE state, and a recalibrated room does not change because the leg did. */
-  vadOverride: number | null;
-  /** …and THE BASE it overrides: the knob's value, SEEDED ONCE at the first `captureReady` exactly
-   *  as the route pair is (both blind rounds converged on this — Maya F1 · design F6): a view or a
-   *  reconnect that read the live query instead would let a mid-call Conf save move the pill and
-   *  the next leg's declaration, against §4.5. `null` = a pre-field backend; the control hides. */
-  vadBase: number | null;
   /** THIS TAB WAS IN A CALL WHEN IT LAST WENT AWAY (D73 S6 ⑦) — the `sessionStorage` marker was
    *  standing when this machine started, which only happens when a leg opened here and no clean end
    *  cleared it: a discarded tab's reload, a crash. Read ONCE at call start, like `earHoldMode`, and
@@ -352,8 +340,6 @@ export const CALL_INITIAL: CallState = {
   route: "",
   ecOn: false,
   inputDevice: "",
-  vadOverride: null,
-  vadBase: null,
   priorLeg: false,
   gen: 0,
   attempts: 0,
@@ -379,7 +365,7 @@ export type CallSignal = { gen?: number } & (
   | { type: "degradedOver" } //                the strained note's hold expired (see DEGRADED_NOTE_MS)
   | { type: "setMuted"; on: boolean } //       the mute control (§6)
   /** The capture RESOLVED, carrying the one thing about it the rules depend on: whether this track
-   *  needs the ear-hold (§5.1 — `echo_workaround` resolved against the route and the track's own AEC
+   *  needs the ear-hold (`mic_hold`, D76 §B — resolved against the track's own AEC
    *  readback). `note` is the one thing about it the SCREEN depends on: the D73 device fallback. */
   | {
       type: "captureReady";
@@ -389,20 +375,11 @@ export type CallSignal = { gen?: number } & (
       /** The readback's EC truth (`ecEngaged`); absent ⇒ derived from the route's ask (tests). */
       ecOn?: boolean;
       deviceId: string;
-      /** The knob's threshold at call start — the seed for `vadBase`, taken on the FIRST capture
-       *  and kept across route cycles (a recapture must not re-read a knob edited mid-call). */
-      vadBase?: number;
     }
   /** D74 S2 — the owner moved the route, the input device, or both, WHILE the call is up. Legal only
    *  in the settled phases; anywhere else it is a no-op, because there is either a leg already being
    *  opened or no ear left to move. */
   | { type: "routeChange"; route?: string; deviceId?: string }
-  /** The owner moved the SPEECH THRESHOLD while the call is up (2026-09-22) — the server-VAD floor,
-   *  which only a fresh leg can carry (`start.vad_threshold` rides the one message that opens one;
-   *  the relay's one-`session.update` pin is the reason there is no in-band change). Same phase rule
-   *  as `routeChange`, same reason — but the EAR is untouched, so the effect is a leg redial, not a
-   *  recapture, and the generation does not move (the leg fence owns socket ghosts). */
-  | { type: "setVad"; value: number }
   /** D73 S6 ⑦ — the tab's own live-call marker was standing when this machine started (see
    *  `BUSY_MARKER`). Sent at call start, BEFORE this call's first leg writes its own. */
   | { type: "priorLeg" }
@@ -476,11 +453,6 @@ export type CallEffect =
        *  reply (`audioController.markStreamRetag`, ISS-18 / R81). */
       leavesComm: boolean;
     }
-  /** THE LEG REDIAL (the speech-threshold change): `openLeg` again, nothing else — it closes the old
-   *  socket itself, mints the fresh leg number that ghosts the old one's callbacks, and reads the
-   *  threshold off the LIVE state. The capture, the meter, the pacer rule and the generation all
-   *  stand: this is what a reconnect already does, minus the ladder, on purpose. */
-  | { type: "redialLeg" }
   /** Release everything. `close` additionally dismisses the overlay — the user's own exit gets no
    *  terminal screen (§6); an `error`/`ended` terminal keeps the overlay up to say why. */
   | { type: "teardown"; close: boolean };
@@ -791,7 +763,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
 
     case "captureReady":
       // The ear-hold RULE, taken ONCE from the track that actually opened (§5.1). It cannot be re-decided
-      // later: `echo_workaround` is read at call start like every other knob (§4.5 — settings edited
+      // later: `mic_hold` is read at call start like every other knob (§4.5 — settings edited
       // mid-call apply to the NEXT call), and the capability belongs to this track, not to the browser.
       // The note is the capture's own news (the D73 device fallback) and rides the same arm: it is a
       // fact about THIS track, learned at exactly this moment, and it is not connection news — so a
@@ -809,9 +781,6 @@ function reduce(s: CallState, sig: CallSignal): Step {
           route: sig.route,
           ecOn: sig.ecOn ?? wantsAec(sig.route),
           inputDevice: sig.deviceId,
-          // Seeded ONCE, on the first capture — a route cycle's fresh `captureReady` must not
-          // re-read a knob the owner may have edited mid-call (§4.5; Maya F1 / design F6).
-          vadBase: s.vadBase ?? sig.vadBase ?? null,
         },
         out: [],
       };
@@ -858,31 +827,6 @@ function reduce(s: CallState, sig: CallSignal): Step {
           gen: s.gen + 1,
         },
         out: [{ type: "recapture", route, deviceId, leavesComm }],
-      };
-    }
-
-    case "setVad": {
-      // The route cycle's phase rule, for the route cycle's reason (a leg is already being opened in
-      // `connecting`; the terminals have nothing to redial) — and the same no-op on "nothing moved",
-      // because a redial for the same threshold costs the owner a reconnect for nothing.
-      if (!isStable(s.phase)) return { state: s, out: [] };
-      if (sig.value === s.vadOverride) return { state: s, out: [] };
-      return {
-        state: {
-          ...s,
-          vadOverride: sig.value,
-          // The screen is honest about the redial, exactly as the route cycle is: a fresh leg, the
-          // ladder clean because this is deliberate. The utterance in flight dies with the leg
-          // (`socketLost`'s own rule); the EAR and its meter stand, so `earHoldMode`/`earHeld` are
-          // untouched and — unlike the route cycle — the GENERATION does not move: no capture is
-          // being replaced, the leg fence ghosts the old socket's frames, and an in-flight chat
-          // POST's outcome should still land.
-          phase: "connecting",
-          attempts: 0,
-          userSpeechActive: false,
-          waitingFinal: false,
-        },
-        out: [{ type: "redialLeg" }],
       };
     }
 
@@ -1200,16 +1144,6 @@ function meterEdge(
       // live. An accepted cycle paints `connecting`, and that edge is the truth to key on.
       if (next.phase !== prev.phase) closeUtterance(m);
       break;
-    case "setVad":
-      // The redial's edge (Maya F2). Same accepted-transition gate as the route cycle — and here
-      // the trigger WINDOW clears too: the capture keeps delivering frames straight through the
-      // leg swap, so hits accrued under the OLD threshold could otherwise complete a window and
-      // fire a barge judged by a floor the owner just moved away from.
-      if (next.phase !== prev.phase) {
-        clearBarge(m);
-        closeUtterance(m);
-      }
-      break;
   }
 }
 
@@ -1229,7 +1163,7 @@ export interface CallDebug {
   ecCapabilities: readonly (string | boolean)[] | undefined;
   /** The effective route pair and the hold lever — the floor is unreadable without them (§3.4). */
   route: string;
-  echoWorkaround: string;
+  micHold: string;
   /** …and the three flags the arming decision produced. Rendered TOGETHER on purpose: `bargeArmed`
    *  and `earHoldMode` are the same readback read twice and can never honestly disagree. */
   bargeArmed: boolean;
@@ -1273,11 +1207,6 @@ export interface CallView {
   canRoute: boolean;
   setRoute: (route: string) => void;
   setInputDevice: (deviceId: string) => void;
-  /** The EFFECTIVE speech threshold (override ?? knob), for the in-call slider — `null` when the
-   *  backend predates the field, which is also the control's "don't render" answer. */
-  vad: number | null;
-  /** Move it for THIS call (a leg redial; per call, never a config write — the route pair's rule). */
-  setVad: (value: number) => void;
   /** D74 S7 — the readback block, or `null` with the knob off (which is every ordinary call). */
   debug: CallDebug | null;
 }
@@ -1434,14 +1363,6 @@ export function useLiveCall(): CallView {
             // is what keeps a close this call asked for from driving a socket it has since replaced.
             socket.current?.close();
             break;
-          case "redialLeg":
-            // The speech-threshold change. `openLeg` IS the mechanism: it closes the standing socket,
-            // bumps the leg number (so the old leg's close never reaches the machine), mints the fresh
-            // pacer, and sends a `start` built from the LIVE state — which the reducer just wrote the
-            // new threshold into. Same close-then-dial window as `recapture`, same `busy` coverage
-            // (the S6 ⑦ marker + the discard-recovery ladder).
-            openLegRef.current();
-            break;
           case "recapture": {
             // THE ROUTE CYCLE (D74 S2) — the hang-up path's RELEASE without its terminal, then S1's
             // acquisition again. The order is the teardown's, for the teardown's reasons: the socket
@@ -1518,12 +1439,6 @@ export function useLiveCall(): CallView {
       url: liveSocketUrl(),
       sampleRate: cap.sampleRate,
       ceilingMs: knobs.buffered_ceiling_ms,
-      // THIS CALL's threshold, read off the LIVE MACHINE STATE and never the query (Maya F1): the
-      // in-call override when one stands, else the base seeded at call start — so a reconnect
-      // re-declares the recalibrated value, and a Conf save mid-call moves NOTHING until the next
-      // call (§4.5). Both null (a pre-field backend) → `start` omits the field, that relay's own
-      // default.
-      vadThreshold: ref.current.vadOverride ?? ref.current.vadBase ?? undefined,
       onFrame: (frame) => {
         if (!mine()) return;
         switch (frame.type) {
@@ -1755,54 +1670,32 @@ export function useLiveCall(): CallView {
             document.visibilityState === "hidden"
           )
             cap.setKeepalive(true);
-          // THE ROUTE-RESOLVED CAPTURE POLICY (D73 S5 / Maya F1). Both halves are decided HERE, together,
-          // from the same two facts — because they answer the same question and a version of this that
-          // let them disagree would arm voice barge-in against an ear the other half had just closed.
+          // THE CAPTURE POLICY (D73 S5 → D76 §B). Both halves are decided HERE, together, from the
+          // same readback — because they answer the same question and a version of this that let them
+          // disagree would arm voice barge-in against an ear the other half had just closed.
           //
-          // The S0 ruling stands for the SPEAKER route, per TRACK and never UA-sniffed: only a genuinely
-          // subtractive canceller lets the ear stay open under the reply, so only there can VOICE
-          // interrupt. Everywhere else the tap is the interrupt (§4.3) — and the ear is CLOSED while the
-          // reply speaks, which is the same readback read for its other consequence (S3).
+          // The S0 ruling, per TRACK and never UA-sniffed: only a genuinely subtractive canceller lets
+          // the ear stay open under the reply, so only there can VOICE interrupt. Everywhere else the
+          // tap is the interrupt (§4.3) — and, under `mic_hold: auto`, the ear is CLOSED while the reply
+          // speaks, which is the same readback read for its other consequence (S3). The `media` route
+          // needs no line of its own: it clears AEC, so its readback comes back something other than
+          // `"all"`, which holds the ear and leaves `bargeArmed` false.
           //
-          // On HEADPHONES the readback stops being the question. `echoCancellation: "all"` is a statement
-          // about how much of the page's own output the canceller subtracts from the mic, and headphones
-          // have no acoustic path to leak any of it (R74 §3): the ear needs no hold, and speech over the
-          // reply is genuinely the owner's, so barge-in arms on `barge_in` alone. That is the whole point
-          // of the route being ONE choice rather than a codec toggle — AEC off with the hold still armed
-          // would buy media-quality output and pay for it with an ear that closes on every reply.
+          // THE READBACK GOVERNS, NOT THE ASK (D75 ③ / R80 §5.2): a `media` capture whose track came
+          // back EC-ON reads `"all"` and is treated as the subtractive track it IS, so the hold lifts
+          // and — with `barge_in` on — the interrupt arms. `cap.ecStuck` says so on the screen; it
+          // never contradicts these two flags.
           //
-          // …and SPEAKER (HI-FI) needs not one line of logic here, which is the point of resolving both
-          // halves from the track (D75 ①, verified against this block rather than assumed): it is not
-          // the headphones case, so `headphones` is false; it cleared AEC, so the readback comes back
-          // something other than `"all"` — which arms the ear-hold's `auto` branch and leaves
-          // `bargeArmed` false. Ear closed while the mouth speaks, tap as the interrupt: exactly the
-          // ruled bargain, reached by the rules that were already here.
-          //
-          // THE READBACK GOVERNS, NOT THE ASK — which is the honest ear when the flip does not take
-          // (D75 ③ / R80 §5.2): a `speaker-hifi` capture whose track came back EC-ON reads `"all"` and
-          // is treated as the subtractive track it IS, so the hold lifts and — with `barge_in` on — the
-          // interrupt arms. `cap.ecStuck` says so on the screen; it never contradicts these two flags.
-          //
-          // `on`/`off` remain the owner's override of the HOLD half only: the route moves what `auto`
-          // means, it does not outrank an explicit answer. And the two decisions stay deliberately
-          // separate flags: `barge_in` may be off on a perfectly open ear (walkie-talkie by choice).
-          //
-          // …and the route it reads is the one THIS acquisition asked for (D74 S1/S2), not the knob: an
-          // in-call route cycle re-opens the ear under a different answer, and both halves have to move
-          // with it or the fresh track would be governed by the previous route's decisions.
-          const headphones = onHeadphones(req.route);
-          bargeArmed.current =
-            knobs.barge_in && (headphones || cap.readback.echoCancellation === "all");
-          const hold = knobs.echo_workaround;
+          // `on`/`off` are the owner's override of the HOLD half only; the two decisions stay separate
+          // flags (`barge_in` may be off on a perfectly open ear — walkie-talkie by choice).
+          // `auto` IS PROVISIONAL until D76 S2's per-chunk leak probe replaces this readback rule.
+          const ecAll = cap.readback.echoCancellation === "all";
+          bargeArmed.current = knobs.barge_in && ecAll;
+          const hold = knobs.mic_hold;
           send({
             type: "captureReady",
             ecOn: ecEngaged(cap.readback.echoCancellation),
-            earHoldMode:
-              hold === "on"
-                ? true
-                : hold === "off"
-                  ? false
-                  : !headphones && cap.readback.echoCancellation !== "all",
+            earHoldMode: hold === "on" ? true : hold === "off" ? false : !ecAll,
             // The picked device did not open and the default took the call (R74 §2.2(b)). The call
             // proceeds — it is the same ear on another route — and the overlay says which.
             //
@@ -1819,9 +1712,6 @@ export function useLiveCall(): CallView {
             // what the next route change merges its half-payload against.
             route: req.route ?? "",
             deviceId: req.deviceId ?? "",
-            // The speech-threshold BASE rides the same seeding arm as the pair (see the signal's
-            // doc); the reducer keeps the first call's answer across recaptures.
-            vadBase: knobs.vad_threshold,
             gen: ref.current.gen,
           });
           // …and the TRACK takes the machine's answer the moment it exists — the S2b confirm-F1 lesson
@@ -2061,12 +1951,6 @@ export function useLiveCall(): CallView {
     (deviceId: string): void => send({ type: "routeChange", deviceId, gen: ref.current.gen }),
     [send],
   );
-  /** The speech-threshold control (2026-09-22) — the same shape as the pair above: one signal, the
-   *  reducer owns the rule, nothing here writes config. */
-  const setVad = useCallback(
-    (value: number): void => send({ type: "setVad", value, gen: ref.current.gen }),
-    [send],
-  );
 
   // ── the readback block (D74 S7 / R78 §6.2) ─────────────────────────────────────────────────────
   // SNAPSHOTTED at mount like every other §4.5 knob (and exactly as the overlay's `ring` is): what a
@@ -2083,7 +1967,7 @@ export function useLiveCall(): CallView {
         ecSettings: cap?.readback.echoCancellation,
         ecCapabilities: cap?.readback.echoCapabilities,
         route: s.route,
-        echoWorkaround: knobs?.echo_workaround ?? "",
+        micHold: knobs?.mic_hold ?? "",
         bargeArmed: bargeArmed.current,
         earHoldMode: s.earHoldMode,
         earHeld: s.earHeld,
@@ -2116,8 +2000,6 @@ export function useLiveCall(): CallView {
     canRoute: isStable(state.phase),
     setRoute,
     setInputDevice,
-    vad: state.vadOverride ?? state.vadBase,
-    setVad,
     debug,
   };
 }

@@ -111,8 +111,8 @@ export interface VoiceTts extends VoiceServiceCommon {
  *  exactly as every other unmodelled key in this doc does. */
 export interface VoiceLive extends VoiceServiceCommon {
   enabled: boolean; //        whole-feature toggle (the master `voice.enabled` still outranks it)
-  vad_threshold: number; //   Silero speech-probability floor, 0..1 — rides `session.update`
-  silence_ms: number; //      the silence run that ends an utterance, 100..10000
+  vad_threshold: number; //   Silero speech-probability floor, 0.5..0.8 (D76/R84) — rides `session.update`
+  silence_ms: number; //      the silence run that ends an utterance, 500..1200
   min_speech_ms: number; //   client interruption floor, 0..5000
   barge_threshold: number; // client RMS floor, 0..0.5; 0 = reuse `stt.auto_stop_threshold`
   barge_in: boolean; //       hands-free interruption; off = tap-to-interrupt only
@@ -123,11 +123,18 @@ export interface VoiceLive extends VoiceServiceCommon {
   debug: boolean; //          show the call's live gate numbers on the overlay (calibration aid)
   ring: boolean; //           §6 overlay mode: the focal-anchored face ring, or art-only
   captions: boolean; //       the reply as fading text on the call screen (owner ask 2026-09-22)
-  echo_workaround: string; // auto | on | off — the per-track loopback-AEC lever
+  mic_hold: string; //        auto | on | off — is the ear held while the reply plays (D76 §B)
+  // D76 §C (evidence R83) — the RELATIVE gate, in dB; client knobs, no Conf rows until D76 S1.
+  floor_dbfs: number; //      bootstrap ceiling, dBFS
+  noise_margin_db: number; // floor ≥ noise + this
+  voice_margin_db: number; // floor ≥ own voice − this
+  playback_margin_db: number; // barge floor = floor + this while the reply plays
+  min_dbfs: number; //        clamp bounds on the effective floor, dBFS
+  max_dbfs: number;
   // D73 S5 — the CAPTURE pair (evidence docs/research/R74). One owner-facing choice plus the device
   // it opens, read by every capture the app makes (the call's and dictation's alike), which is why
   // they are modelled here rather than left to the relay's YAML-only caps.
-  route: string; //           speaker | headphones — what `auto` echo handling means, and the AEC ask
+  route: "media" | "call"; // the AEC ask, i.e. media path vs phone-call mode (D76 §A)
   input_device: string; //    the capture deviceId; "" = the system default (on Android, the route)
   // D73 S6 — the BACKGROUND three (evidence docs/research/R75). Client knobs like the pair above:
   // only the browser sees a page go hidden, and the freeze the keepalive defeats is the renderer's.

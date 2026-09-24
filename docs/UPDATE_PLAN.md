@@ -526,8 +526,9 @@ matters** — `backend/app/config_migration/`:
 | 1 | `A11` (`retires=A11_RETIRED_ENV_PATHS`) | the provider-registry fold (D48) | v1.3.0 |
 | 2 | `MEDIA_V2` | `media.<ns>` → `media.namespaces.<ns>` + `roles.<role>.order` → `files` (D65; MEDIA_MANAGER_PLAN §2.2) | v1.7.7 |
 | 3 | `PRESENCE_DEVICES` (`retires=(("wake","presence_device_ips"),)`) | `wake.presence_device_ips` → `wake.presence_devices` (D69) | **owed — rides v1.7.8** |
+| 4 | `LIVE_VOICE_D76` | `voice.live`: `route` speaker→call · speaker-hifi/headphones→media; `echo_workaround` → `mic_hold`; `vad_threshold` 0.9→0.6, else clamped to 0.5–0.8; `silence_ms` clamped to 500–1200 (D76; LIVE_VOICE_PLAN §7 the D76 block §E) | **owed — unreleased** |
 
-The number lives in the file `app/config_migration/VERSION` (**3** today), read by `update.sh`
+The number lives in the file `app/config_migration/VERSION` (**4** today), read by `update.sh`
 before checkout and exposed to code as `CONFIG_VERSION`; `STEPS` is assembled in
 `__init__.py::_load_steps()`, and a test asserts `CONFIG_VERSION == STEPS[-1].version`.
 **Consequence for the runbook:** rolling back *across* either cutover is a CONFIG rollback first

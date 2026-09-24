@@ -691,7 +691,7 @@ describe("useDictation — the capture rides the ROUTE (D73 S5; closes the R51 �
     // R74 §0.3: an unconstrained request is not neutral. It resolves to the platform AEC, which is
     // exactly what drops the phone into communication mode — dictation was in the same trap the call
     // was, and one builder now keeps the two asking identically.
-    await arm(knobs({ route: "headphones", input_device: "bt-headset" }));
+    await arm(knobs({ route: "media", input_device: "bt-headset" }));
     expect(asked()).toMatchObject({
       echoCancellation: false,
       noiseSuppression: true,
@@ -700,9 +700,9 @@ describe("useDictation — the capture rides the ROUTE (D73 S5; closes the R51 �
     });
   });
 
-  it("no knobs at all (a pre-S5 backend) is the SPEAKER route, asked for explicitly", async () => {
+  it("no knobs at all (a pre-S5 backend) is the MEDIA route, asked for explicitly", async () => {
     await arm(opts(false));
-    expect(asked()).toMatchObject({ echoCancellation: { ideal: "all" }, channelCount: 1 });
+    expect(asked()).toMatchObject({ echoCancellation: false, channelCount: 1 });
     expect(asked()).not.toHaveProperty("deviceId");
   });
 
@@ -713,7 +713,7 @@ describe("useDictation — the capture rides the ROUTE (D73 S5; closes the R51 �
         .mockRejectedValueOnce(Object.assign(new Error("no"), { name: "NotReadableError" }))
         .mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }),
     );
-    const view = await arm(knobs({ route: "speaker", input_device: "gone" }));
+    const view = await arm(knobs({ route: "call", input_device: "gone" }));
     expect(view.result.current.status).toBe("recording"); // the recording is the point; the route is not
     expect(vi.mocked(pushToast)).toHaveBeenCalledWith(
       "That microphone wasn't available — using the default",

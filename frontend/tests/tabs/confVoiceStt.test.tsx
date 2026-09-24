@@ -90,19 +90,26 @@ const makeSettings = () => ({
       connect_timeout_s: 3,
       timeout_s: 30,
       extra_body: {},
-      vad_threshold: 0.9,
+      vad_threshold: 0.6,
       silence_ms: 700,
       min_speech_ms: 300,
       barge_threshold: 0,
       barge_in: true,
       ring: true,
       captions: true,
-      echo_workaround: "auto",
+      mic_hold: "auto",
+      // D76 §C — the relative gate's six (no Conf rows until D76 S1; they round-trip untouched).
+      floor_dbfs: -45,
+      noise_margin_db: 10,
+      voice_margin_db: 10,
+      playback_margin_db: 10,
+      min_dbfs: -60,
+      max_dbfs: -20,
       // D74 — the near-speech gate + its calibration readout (evidence docs/research/R76).
       min_final_ms: 200,
       debug: false,
       // D73 S5 — the capture pair, on the SAME object for the same reason.
-      route: "speaker",
+      route: "media",
       input_device: "",
       // S2.5 — the dictation four ride the same object; a sibling `dictation:` map would be the
       // parallel-maps mistake the standing rule names.
@@ -361,7 +368,7 @@ describe("ConfTab · the Live call section (D71 §5.1)", () => {
     expect(liveGroup().getByRole("button", { name: "auto" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
-    expect(liveField("Speech threshold").value).toBe("0.9");
+    expect(liveField("Speech threshold").value).toBe("0.6");
     expect(liveField("Silence window").value).toBe("700");
     expect(liveField("Minimum speech").value).toBe("300");
     expect(liveField("Interruption threshold").value).toBe("0");
@@ -379,7 +386,7 @@ describe("ConfTab · the Live call section (D71 §5.1)", () => {
     expect(liveOf()).toMatchObject({
       enabled: true,
       ring: false,
-      echo_workaround: "off",
+      mic_hold: "off",
       silence_ms: 900, // coerced, not the typed "900"
       barge_threshold: 0.02,
     });
@@ -425,23 +432,34 @@ describe("ConfTab · the capture route + device picker (D73 S5)", () => {
 
   it("renders the route Seg from the live config and saves the owner's pick", () => {
     render(<ConfTab active />);
-    expect(liveGroup().getByRole("button", { name: "speaker" }).getAttribute("aria-pressed")).toBe(
+    expect(liveGroup().getByRole("button", { name: "media" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
-    fireEvent.click(liveGroup().getByRole("button", { name: "headphones" }));
+    fireEvent.click(liveGroup().getByRole("button", { name: "call" }));
     fireEvent.click(saveButton());
-    expect(liveOf()).toMatchObject({ route: "headphones" });
-    // …and the echo lever beside it is untouched: the route moves what `auto` MEANS, not the knob.
-    expect(liveOf()).toMatchObject({ echo_workaround: "auto" });
+    expect(liveOf()).toMatchObject({ route: "call" });
+    // …and the mic hold beside it is untouched: two separate questions since D76 (§A vs §B).
+    expect(liveOf()).toMatchObject({ mic_hold: "auto" });
   });
 
-  it("offers the THIRD route — EC off on the loudspeaker (D75 ①)", () => {
+  it("offers exactly TWO routes — the axis is media/call (D76 §A)", () => {
     // The row is the next call's default; the call deck's own picker is the per-call answer. Both
-    // name the same three, and this is the one that has to reach config.
+    // name the same two, and this is the one that has to reach config.
     render(<ConfTab active />);
-    fireEvent.click(liveGroup().getByRole("button", { name: "speaker (clean)" }));
+    const seg = liveGroup().getByRole("button", { name: "media" }).parentElement!;
+    expect(
+      within(seg)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["media", "call"]);
+  });
+
+  it('the mic hold is its own row — "Mic off while it speaks" (D76 §B, config only)', () => {
+    render(<ConfTab active />);
+    expect(liveGroup().getByText("Mic off while it speaks")).toBeTruthy();
+    fireEvent.click(liveGroup().getByRole("button", { name: "on" }));
     fireEvent.click(saveButton());
-    expect(liveOf()).toMatchObject({ route: "speaker-hifi" });
+    expect(liveOf()).toMatchObject({ mic_hold: "on", route: "media" });
   });
 
   it("lists the browser's audio inputs — the default first, always", async () => {
