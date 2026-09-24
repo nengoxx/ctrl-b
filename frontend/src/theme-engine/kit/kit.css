@@ -1437,15 +1437,15 @@ body[data-perf="lite"] .kit .tools-sheet {
   font-size: 11px;
 }
 /* the agent rows' AVATAR (D70 §8.4) — the field's circle convention at picker size. `flex-shrink: 0`
- * beside the `flex: 1` name, and a token border so a dark portrait still reads as a disc on a dark row.
- * The SAME window as the who-line's face at another diameter (wave 3), so it takes the same painted-box
- * recipe and the same measurement-free framing — see `.who-face` above. */
+ * beside the `flex: 1` name. The SAME window as the who-line's face at another diameter (wave 3), so
+ * it takes the same painted-box recipe and the same measurement-free framing — see `.who-face` — and
+ * since 2026-09-24 the same NO-BORDER rule, for the same reason (the token ring painted over the
+ * picture's edge read as a lighter halo and a not-quite-round disc here too; owner). */
 .kit .tools-sheet .tools-face {
   flex-shrink: 0;
   width: var(--kit-tools-face);
   height: var(--kit-tools-face);
   border-radius: 999px;
-  border: 1px solid var(--line-2);
   background-color: var(--surface-2);
   background-size: cover;
   background-position: 50% 50%;
