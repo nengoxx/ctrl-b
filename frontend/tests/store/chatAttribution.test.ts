@@ -175,8 +175,15 @@ describe("D62 · the disclosure rows", () => {
       USAGE,
     );
     expect(rows).toHaveLength(3);
-    expect(rows[0].segs.map((s) => s.text)).toEqual(["qwen3.6-max", "8.1k (6.9k cached)", "512"]);
-    expect(rows[0].segs[1].sr).toBe("input tokens"); // the arrow's words, for a screen reader
+    // the endpoint leads the call row (it left the who-line, 2026-09-24), then the model
+    expect(rows[0].segs.map((s) => s.text)).toEqual([
+      "openrouter",
+      "qwen3.6-max",
+      "8.1k (6.9k cached)",
+      "512",
+    ]);
+    expect(rows[0].segs[0].sr).toBe("served by");
+    expect(rows[0].segs[2].sr).toBe("input tokens"); // the arrow's words, for a screen reader
     expect(rows[1].segs.map((s) => s.text)).toEqual(["99% of 8.2k", "12.3s", "42 tok/s"]);
     expect(rows[2]).toMatchObject({ warn: true });
     expect(rows[2].segs.map((s) => s.text)).toEqual(["fallback from corsair", "2 failed hops"]);
@@ -184,18 +191,21 @@ describe("D62 · the disclosure rows", () => {
 
   it("omits every segment whose datum is absent", () => {
     const rows = metricRows({ served: "corsair", degraded: false }, { duration_ms: 900 });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].segs.map((s) => s.text)).toEqual(["900ms"]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].segs.map((s) => s.text)).toEqual(["corsair"]);
+    expect(rows[1].segs.map((s) => s.text)).toEqual(["900ms"]);
   });
 
   it("has nothing to disclose for a message with no attribution at all", () => {
     expect(metricRows(null, null)).toEqual([]);
-    expect(metricRows({ served: "corsair", degraded: false }, null)).toEqual([]);
+    // …but a bare endpoint IS something to disclose since it left the who-line (2026-09-24)
+    expect(metricRows({ served: "corsair", degraded: false }, null)).toHaveLength(1);
   });
 
   it("says what it knows when a fallback served but the primary is unknown", () => {
     const rows = metricRows({ served: "openrouter", degraded: true }, null);
-    expect(rows[0].segs.map((s) => s.text)).toEqual(["served by a fallback"]);
+    expect(rows[0].segs.map((s) => s.text)).toEqual(["openrouter"]);
+    expect(rows[1].segs.map((s) => s.text)).toEqual(["served by a fallback"]);
   });
 });
 
@@ -207,7 +217,12 @@ describe("D62 · the review fix wave", () => {
       { served: "corsair", degraded: false, context_window: 262144 },
       { model: "qwen3.6-max", input_tokens: 2100, cached_tokens: 12000, output_tokens: 38 },
     );
-    expect(rows[0].segs.map((s) => s.text)).toEqual(["qwen3.6-max", "14k (12k cached)", "38"]);
+    expect(rows[0].segs.map((s) => s.text)).toEqual([
+      "corsair",
+      "qwen3.6-max",
+      "14k (12k cached)",
+      "38",
+    ]);
     expect(rows[1].segs[0].text).toBe("5% of 262k"); // 14100 ÷ 262144, not 2100 ÷ 262144
   });
 
@@ -216,7 +231,7 @@ describe("D62 · the review fix wave", () => {
       { served: "openrouter", degraded: false, context_window: 262144 },
       { input_tokens: 8100, cached_tokens: 6900 },
     );
-    expect(rows[0].segs.map((s) => s.text)).toEqual(["8.1k (6.9k cached)"]);
+    expect(rows[0].segs.map((s) => s.text)).toEqual(["openrouter", "8.1k (6.9k cached)"]);
     expect(rows[1].segs[0].text).toBe("3% of 262k");
   });
 });

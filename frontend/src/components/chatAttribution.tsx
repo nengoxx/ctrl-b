@@ -4,18 +4,21 @@ import { FocalFace } from "./FocalFace";
 import type { BoundArt } from "../hooks/useAgentArt";
 import type { CallUsage, ChatMessage, MessageSource } from "../types";
 
-// D62 — per-message SERVE ATTRIBUTION for the assistant who-line: the always-on endpoint chip
-// (`⏺ ASSISTANT · CORSAIR · 14:32`, warn-coloured when a fallback saved the turn) and the tap-to-reveal
-// metrics disclosure under it. Lives beside ChatThread because it is who-line furniture, not a bubble:
-// ChatThread owns the bubble tree and hands this component the label + the trailing who-line extras.
+// D62 — per-message SERVE ATTRIBUTION for the assistant who-line: the endpoint chip (`⏺ ASSISTANT ·
+// OPENROUTER · 14:32`, warn-coloured — and since 2026-09-24 shown ONLY — when a fallback saved the
+// turn) and the tap-to-reveal metrics disclosure under it. Lives beside ChatThread because it is
+// who-line furniture, not a bubble: ChatThread owns the bubble tree and hands this component the label
+// + the trailing who-line extras.
 //
 // Two rules run through everything here:
 //   • EVERY segment omits itself when its datum is absent. The backend records what the endpoint
 //     reported and nothing else, so a partial report renders fewer segments — never a zero, never an
 //     "unknown". A message with no `source` and no `usage` (every pre-D62 row, every user turn) renders
 //     the plain old who-line and is not tappable at all.
-//   • The model id lives in `usage.model` and the endpoint in `source.served` — the who-line shows the
-//     ENDPOINT (the owner's own friendly name, legible at 10px), the disclosure shows the model.
+//   • The model id lives in `usage.model` and the endpoint in `source.served`. Both are DISCLOSURE
+//     material now (owner, 2026-09-24: "the metrics already say which model it was" — the always-on
+//     `CORSAIR` beside the name was noise on every ordinary turn). The who-line keeps the chip for the
+//     one case where it is news: a DEGRADED serve, where the warn colour is the whole point of it.
 
 /** Tokens in the who-line's register: `512` · `8.1k` · `262k`. One decimal only where it earns its
  *  place (under 10k), so a context window reads `262k` rather than `262.1k`. */
@@ -57,11 +60,12 @@ interface Row {
 }
 
 /** The disclosure's content, as data (pure — the unit under test):
- *    `qwen3.6-max · ↑ 8.1k (6.9k cached) · ↓ 512`
+ *    `corsair · qwen3.6-max · ↑ 8.1k (6.9k cached) · ↓ 512`
  *    `31% of 262k · 12.3s · 41 tok/s`
  *    `↯ fallback from corsair · 2 failed hops`   (degraded only, warn)
- *  Empty rows are dropped, so `[]` means "nothing to disclose" — which is also what makes the
- *  who-line non-tappable. */
+ *  The endpoint leads the call row (it left the who-line, see the header) — endpoint then model, the
+ *  order the routing resolves them in. Empty rows are dropped, so `[]` means "nothing to disclose" —
+ *  which is also what makes the who-line non-tappable. */
 export function metricRows(
   source: MessageSource | null | undefined,
   usage: CallUsage | null | undefined,
@@ -76,6 +80,7 @@ export function metricRows(
     inTok != null ? (cachedTok != null && cachedTok > inTok ? inTok + cachedTok : inTok) : null;
 
   const call: Seg[] = [];
+  if (source?.served) call.push({ sr: "served by", text: source.served });
   if (usage?.model) call.push({ text: usage.model });
   if (totalIn != null) {
     const cached = cachedTok != null ? ` (${kTokens(cachedTok)} cached)` : "";
@@ -127,15 +132,19 @@ function MetricLine({ row }: { row: Row }) {
   );
 }
 
-/** The assistant who-line: `⏺ ASSISTANT · CORSAIR · 14:32`, plus the metrics disclosure it toggles.
+/** The assistant who-line: `⏺ ASSISTANT · 14:32`, plus the metrics disclosure it toggles.
  *
- *  Tapping ANYWHERE on the line toggles (owner ruling — and deliberately no visual affordance hint).
+ *  Tapping the IDENTITY toggles — the avatar, the name, the chip when there is one, the time — and
+ *  nothing else on the line does (owner re-ruling 2026-09-24, narrowing the 2026-08-20 "anywhere":
+ *  the read-aloud button is a 15px target at the far right, and a thumb that missed it landed in the
+ *  row's empty run and opened the metrics instead). So the tap handler sits on the `.who-id` span,
+ *  not the row: the run between the time and the button is inert, and the button is outside the
+ *  zone rather than inside it stopping propagation. Deliberately still no visual affordance hint.
  *  Keyboard/AT operability follows D25's BREAKOUT pattern rather than `disclosureToggle`: the line can
  *  contain the read-aloud button, and a `role="button"` row containing a button is the very
- *  `nested-interactive` violation D25 fixed on the fleet row. So the row stays a plain `<div onClick>`
- *  and the real toggle is a child `<button aria-expanded>` — sr-only here (the kit's `.bs-close-sr`
- *  recipe) because the owner ruled out a visible affordance. Nested controls stop propagation so they
- *  don't double-fire (`TtsButton`).
+ *  `nested-interactive` violation D25 fixed on the fleet row. So the row stays a plain `<div>` and the
+ *  real toggle is a sibling `<button aria-expanded>` — sr-only here (the kit's `.bs-close-sr` recipe)
+ *  because the owner ruled out a visible affordance.
  *
  *  `children` are the trailing who-line extras ChatThread owns (the working/thinking tag, the
  *  read-aloud toggle) — passed in rather than re-implemented here. */
@@ -169,39 +178,29 @@ export function BotWhoLine({
   const toggle = () => setOpen((o) => !o);
   return (
     <>
-      <div
-        className={"who" + (avatar ? " has-avatar" : "")}
-        onClick={rows.length ? toggle : undefined}
-      >
-        {/* Decoration: the speaker is already the label right beside it, so a name here would make AT
-            announce the same turn twice — which is why the face can be a painted box rather than an
-            `<img>` (see `FocalFace`). */}
-        {avatar && <FocalFace className="who-face" src={avatar.url} art={avatar.focus} />}
-        {label} ·{" "}
-        {source && (
-          <>
-            <span className={"who-ep" + (source.degraded ? " degraded" : "")}>
-              <span className="who-sr">
-                {source.degraded ? "served after a fallback by " : "served by "}
-              </span>
-              {source.served}
-            </span>{" "}
-            ·{" "}
-          </>
-        )}
-        {time}
+      <div className={"who" + (avatar ? " has-avatar" : "")}>
+        <span className="who-id" onClick={rows.length ? toggle : undefined}>
+          {/* Decoration: the speaker is already the label right beside it, so a name here would make
+              AT announce the same turn twice — which is why the face can be a painted box rather than
+              an `<img>` (see `FocalFace`). */}
+          {avatar && <FocalFace className="who-face" src={avatar.url} art={avatar.focus} />}
+          {label} ·{" "}
+          {/* The chip only when it is NEWS (the header): a fallback served this turn. An ordinary
+              serve says nothing here — the endpoint is the disclosure's first word. */}
+          {source?.degraded && (
+            <>
+              <span className="who-ep degraded">
+                <span className="who-sr">served after a fallback by </span>
+                {source.served}
+              </span>{" "}
+              ·{" "}
+            </>
+          )}
+          {time}
+        </span>
         {children}
         {rows.length > 0 && (
-          <button
-            className="who-sr"
-            aria-expanded={open}
-            // stopPropagation, or the click bubbles to the row's own toggle and the pair cancels out
-            // (D62 review F2) — the same guard TtsButton already carries.
-            onClick={(e) => {
-              e.stopPropagation();
-              toggle();
-            }}
-          >
+          <button className="who-sr" aria-expanded={open} onClick={toggle}>
             message details
           </button>
         )}

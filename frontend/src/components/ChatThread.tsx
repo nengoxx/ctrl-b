@@ -344,8 +344,8 @@ function ThinkBlock({ text, open }: { text: string; open?: boolean }) {
  *  the docked MiniPlayer hosts the scrubber. Subscribes only to *its own* status, so the ~4×/sec
  *  timeupdate that drives the player doesn't re-render every bubble.
  *
- *  D62/D25: the who-line around it is now tap-to-disclose, so this stops propagation — a nested
- *  control must not fire the row's toggle too (the DeviceRow breakout rule). */
+ *  D62/D25: the who-line's metrics disclosure toggles on its IDENTITY run only (`BotWhoLine`, owner
+ *  2026-09-24) — this button sits outside that zone, so a tap here reaches nothing else. */
 function TtsButton({ id, text, agent }: { id: string; text: string; agent: string | null }) {
   const mine = usePlayback((p) => (p.id === id ? p.status : "idle"));
   const playing = mine === "playing";
@@ -356,8 +356,7 @@ function TtsButton({ id, text, agent }: { id: string; text: string; agent: strin
       className={"tts-play" + (playing ? " playing" : "") + (loading ? " loading" : "")}
       aria-label={playing ? "pause read-aloud" : "read aloud"}
       title={playing ? "pause" : "read aloud"}
-      onClick={(e) => {
-        e.stopPropagation();
+      onClick={() => {
         // D70 §8.5 — read it in the turn's OWN agent's voice; null ⇒ the global chain (voice.py's
         // `_voice_id` resolves the default on an absent agent, so the field is simply omitted).
         void playMessage(id, text, agent);

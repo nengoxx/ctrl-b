@@ -533,9 +533,10 @@ describe("A3 14d · the created-automation card", () => {
   });
 });
 
-// ── D62 — the who-line's serve attribution: the always-on endpoint chip (warn-coloured when a fallback
-// saved the turn) and the tap-anywhere metrics disclosure. The data half (the reducer fold, the
-// formatters, the segment rules) lives in tests/store/chatAttribution.test.ts; this is the render half.
+// ── D62 — the who-line's serve attribution: the endpoint chip (since 2026-09-24 ONLY when a fallback
+// saved the turn, warn-coloured) and the metrics disclosure, tapped on the line's IDENTITY run. The data
+// half (the reducer fold, the formatters, the segment rules) lives in tests/store/chatAttribution.test.ts;
+// this is the render half.
 function botChat(over: Partial<ChatMessage> = {}): AgentChat {
   const msg: ChatMessage = {
     id: "m1",
@@ -563,16 +564,18 @@ const FULL: Partial<ChatMessage> = {
 };
 
 describe("D62 · the endpoint chip", () => {
-  it("names the endpoint that served, in the who-line", () => {
+  it("keeps the endpoint OUT of the who-line on an ordinary serve — it is disclosure material (2026-09-24)", () => {
     const { container } = render(<ChatThread active chat={botChat(FULL)} />);
-    const chip = container.querySelector(".b.bot .who .who-ep");
-    expect(chip?.textContent).toContain("corsair"); // uppercased by the caption's text-transform
+    expect(container.querySelector(".b.bot .who .who-ep")).toBeNull();
+    expect(container.querySelector(".b.bot .who")?.textContent).not.toContain("corsair");
   });
 
-  it("takes the warn class on a fallback serve — the segment, not the whole line", () => {
+  it("names the endpoint, warn-classed, only on a fallback serve — the segment, not the whole line", () => {
     const degraded = { source: { served: "openrouter", degraded: true, from: "corsair" } };
     const { container } = render(<ChatThread active chat={botChat(degraded)} />);
-    expect(container.querySelector(".b.bot .who .who-ep")?.className).toContain("degraded");
+    const chip = container.querySelector(".b.bot .who .who-ep");
+    expect(chip?.className).toContain("degraded");
+    expect(chip?.textContent).toContain("openrouter"); // uppercased by the caption's text-transform
     expect(container.querySelector(".b.bot .who")?.className).toBe("who"); // the line stays plain
   });
 
@@ -587,27 +590,37 @@ describe("D62 · the endpoint chip", () => {
 });
 
 describe("D62 · the metrics disclosure", () => {
-  it("is closed until the who-line is tapped, and toggles back", () => {
+  it("is closed until the identity run is tapped, and toggles back", () => {
     const { container } = render(<ChatThread active chat={botChat(FULL)} />);
     const who = container.querySelector(".b.bot .who") as HTMLElement;
+    const id = who.querySelector(".who-id") as HTMLElement;
     const toggle = who.querySelector("button") as HTMLButtonElement;
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(container.querySelector(".who-meta")).toBeNull();
 
-    act(() => who.click()); // tap ANYWHERE on the line (the owner's ruling)
+    act(() => id.click()); // the avatar · name · time run (owner re-ruling 2026-09-24)
     expect(container.querySelector(".who-meta")).toBeTruthy();
     expect(who.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
 
-    act(() => who.click());
+    act(() => id.click());
     expect(container.querySelector(".who-meta")).toBeNull();
+  });
+
+  it("does NOT toggle from the row's empty run — a thumb that misses the read-aloud button lands there", () => {
+    const { container } = render(<ChatThread active chat={botChat(FULL)} />);
+    const who = container.querySelector(".b.bot .who") as HTMLElement;
+    act(() => who.click()); // the row itself, outside the identity span
+    expect(container.querySelector(".who-meta")).toBeNull();
+    expect(who.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("reads the call, the cost and — only on a fallback — what was lost", () => {
     const rows = (c: HTMLElement) =>
       [...c.querySelectorAll(".who-meta-row")].map((r) => r.textContent);
     const plain = render(<ChatThread active chat={botChat(FULL)} />);
-    act(() => (plain.container.querySelector(".b.bot .who") as HTMLElement).click());
+    act(() => (plain.container.querySelector(".b.bot .who .who-id") as HTMLElement).click());
     const lines = rows(plain.container);
+    expect(lines[0]).toContain("corsair"); // the endpoint leads the call row now
     expect(lines[0]).toContain("qwen3.6-max");
     expect(lines[0]).toContain("8.1k (6.9k cached)");
     expect(lines[1]).toContain("12.3s");
@@ -623,7 +636,7 @@ describe("D62 · the metrics disclosure", () => {
         })}
       />,
     );
-    act(() => (degraded.container.querySelector(".b.bot .who") as HTMLElement).click());
+    act(() => (degraded.container.querySelector(".b.bot .who .who-id") as HTMLElement).click());
     const warn = degraded.container.querySelector(".who-meta-row.warn");
     expect(warn?.textContent).toContain("fallback from corsair");
     expect(warn?.textContent).toContain("2 failed hops");
@@ -631,21 +644,21 @@ describe("D62 · the metrics disclosure", () => {
 
   it("carries the arrows' words for a screen reader", () => {
     const { container } = render(<ChatThread active chat={botChat(FULL)} />);
-    act(() => (container.querySelector(".b.bot .who") as HTMLElement).click());
+    act(() => (container.querySelector(".b.bot .who .who-id") as HTMLElement).click());
     const sr = [...container.querySelectorAll(".who-meta .who-sr")].map((s) =>
       s.textContent?.trim(),
     );
-    expect(sr).toEqual(["input tokens", "output tokens"]);
+    expect(sr).toEqual(["served by", "input tokens", "output tokens"]);
   });
 });
 
 describe("D62 · the review fix wave", () => {
-  it("the keyboard toggle opens on ONE activation — its click must not bubble into the row's (F2)", () => {
+  it("the keyboard toggle opens on ONE activation — its click must not reach a second toggle (F2)", () => {
     const { container } = render(<ChatThread active chat={botChat(FULL)} />);
     const who = container.querySelector(".b.bot .who") as HTMLElement;
     const button = who.querySelector("button") as HTMLButtonElement;
 
-    act(() => button.click()); // a keyboard/AT activation clicks the button, which lives INSIDE the row
+    act(() => button.click()); // a keyboard/AT activation clicks the button, a sibling of the tap zone
     expect(container.querySelector(".who-meta")).toBeTruthy(); // pre-fix: bubbled → double-toggle → closed
     expect(button.getAttribute("aria-expanded")).toBe("true");
 
@@ -673,7 +686,8 @@ describe("D70 · the who-line avatar swap", () => {
     expect(face.tagName).toBe("SPAN");
     expect(face.style.backgroundImage).toBe(`url("${AVATAR}")`);
     expect(face.textContent).toBe(""); // decoration — the speaker is the label beside it
-    expect(who.firstElementChild).toBe(face); // the DOT'S position, ahead of the label
+    // the DOT'S position, ahead of the label — inside the identity run since the 2026-09-24 tap zone
+    expect(who.querySelector(".who-id")?.firstElementChild).toBe(face);
   });
 
   // WAVE 3 — the face HONOURS the owner's framing, at zero per-bubble cost. The claim is exactly that
@@ -743,14 +757,13 @@ describe("D70 · the who-line avatar swap", () => {
     expect(who.querySelector(".who-face")).toBeNull();
   });
 
-  it("moves nothing else in the line — label, endpoint chip and time keep their space", () => {
+  it("moves nothing else in the line — label and time keep their space", () => {
     art.url = AVATAR;
     const { container } = render(
       <ChatThread active chat={botChat({ agent: "lynette", ...FULL })} />,
     );
     const who = container.querySelector(".b.bot .who") as HTMLElement;
-    expect(who.querySelector(".who-ep")?.textContent).toContain("corsair");
-    expect(who.textContent).toMatch(/^lynette · .*corsair · \d\d:\d\d/);
+    expect(who.textContent).toMatch(/^lynette · \d\d:\d\d/);
   });
 
   it("wears the DEFAULT agent's avatar on a turn with no agent of its own (7e-c)", () => {
