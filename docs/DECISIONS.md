@@ -5583,3 +5583,59 @@ failure modes (the car: headset rows + loudspeaker acoustics ⇒ still needs EC;
 NO HFP row at all, R77 — detection would never even see them). The clean route needs no detection:
 EC off rides the MEDIA path, which follows the system's own routing (BT when connected,
 loudspeaker otherwise) — the probe verifies exactly that claim on the device.
+
+## D76 — The call's few controls: Media/Call · the self-deciding mic hold · one relative Sensitivity ✏️ RULED 2026-09-25 (main seat, from the owner's S4 rounds №1/№2 in conversation — "as few dials as possible, only the ones that matter", "I want it automatic — Bluetooth when connected, the phone speaker when not", "the mic off when the agent speaks as a separate option"; evidence = [R82](./research/R82-single-sensitivity-dial.md) · [R83](./research/R83-portable-energy-floor.md) · [R84](./research/R84-silero-threshold-calibration.md) · [R85](./research/R85-hermes-openwebui-voice-controls.md) (+ [R76](./research/R76-noise-hallucination-gating.md)); design of record = the D76 block in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7; council = blind Maya design round RETHINK [10 findings, all folded] → confirm STILL BLOCKED [2 residuals, both folded] → micro-confirm, recorded in the plan block)
+
+**The occasion.** Round №1 in the car: "had to shout" — every quiet final dropped by the D74 energy
+gate. At home: noises clearing the same gate as short false turns. And the standing complaint:
+with the config's route on Speaker (the echo-cancelled, comm-mode row) the reply left the PHONE
+speaker with headphones connected, so the owner picked the Headphones row by hand on every call.
+Four research passes settled the facts (all main-seat re-verified at source): the gate's floor
+(0.06 linear = −24.4 dBFS) is 10–35 dB stricter than every shipped default and was calibrated for
+barge-in on the phone mic; Chrome on Android has NO adaptive gain (a fixed +6 dB), so AGC cannot
+rescue a car mic; our fork's Silero threshold 0.9 is an outlier whose END threshold (0.75) cuts
+quiet/narrowband speech mid-word — and the START threshold barely changes what gets in, so it was
+never the noise lever; the media path already follows Bluetooth like music, which means the
+"automatic" output the owner asked for existed all along behind a misnamed row.
+
+**What was ruled.**
+
+① **Output is `route: media | call`.** Media (default) = today's EC-off constraints, the platform's
+media path — Bluetooth when connected, the loudspeaker otherwise. Call = the `{ideal:"all"}` ask,
+comm mode, the hands-free device's own mic. The Headphones row is deleted: its only content was
+"media + no mic pause", which ② now decides. The picker's axis is named for what it IS.
+
+② **The mic hold is its own knob, `mic_hold: auto | on | off`, CONFIG ONLY** (was
+`echo_workaround`, mislabelled "Echo cancellation"). `on`/`off` are absolute and ignore the output
+— the owner's separate option. `auto` is the LEAK PROBE: the hold stops being `track.enabled=false`
+(a held mic hears digital silence and can measure nothing) and becomes uplink silence substitution
+— the server receives exactly today's silence, the client keeps hearing. At EVERY chunk's audible
+start (a new controller callback, `setCallChunkStart`, the `setCallPrePlay` shape — the status edge
+fires once per reply, the `playing` event once per chunk) the ear holds `PROBE_MS` (600) and reads
+the held frames' maximum against the effective floor of ③: a leak that could pass the gate holds
+the chunk; anything less releases it. Frames are classified `uplinked` at capture; tracker,
+learner and gate read only uplinked frames, the probe only held ones. The per-chunk deaf window is
+the owner's accepted trade over a self-transcribed turn.
+
+③ **Sensitivity is ONE deck control, relative and in dB; the Speech slider leaves the deck.** The
+floor = max(noise floor + 10 dB, own voice − 10 dB) — the WebRTC minimum-tracking floor (1 s
+bootstrap, 5 s windows) and the talker's own learned level (from turns clearly above the floor,
+never during playback; keyed by the actual capture device in `UIState`). Permissive bootstrap:
+until one full window, the floor may not exceed `floor_dbfs` (−45); the own-voice term applies as
+soon as it is known (seeded per device), so a seeded call is TV-proof from the first frame. Dragging the marker on the
+live meter pins a manual dBFS floor for the call (Discord's auto-or-slider shape); the gate's rule
+(`min_final_ms` of frames at or above the floor) is unchanged; the drop gains a sound cue (R85 —
+the car cannot read a note); the barge floor is the same floor + `playback_margin_db` during
+playback (Hermes' phase-split). `barge_threshold` is deleted.
+
+④ **Silero is Conf-only: `vad_threshold` 0.9 → 0.6, bounded 0.5–0.8; `silence_ms` 700, bounded
+500–1200.** The in-call slider, its `redialLeg` path and the `start.vad_threshold` wire field go.
+
+⑤ **Config migration 3 → 4, one step, write-back deletes the old keys**: the route renames, the
+knob rename, `barge_threshold` dropped, a stored `0.9` → `0.6` (the known bad default; other
+values clamped). `voice.live` stays the one flat unified object; the six new gate fields are
+additive.
+
+**Recorded, not built:** the text self-echo backstop (a final during playback matching the reply's
+words is dropped) — the fallback if the phone round shows probe misses. **The gate stays the only
+turn boundary**; the server transcribes whatever it is sent.
