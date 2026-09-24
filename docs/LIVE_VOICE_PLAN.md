@@ -1482,9 +1482,11 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > (`retagArmed`; red-proven); the fired timer IS the spent window; the whole-clip path waits the same
   > way on its own clock ④ the retag belongs to the call — `setCallVoice(false)` ends it ⑤ an
   > ordinary call (no flip) pays NOTHING: no hold, no unload beyond the in-call finish. **A reply
-  > PLAYING at the flip finishes on the old route** and the deck says so once
-  > (`CALL_COPY.routeNextReply`, on the flip that causes it — the reducer's `routeChange` with
-  > `mouthLive`). Tests: reducer (`leavesComm` = the EC-on → EC-off edge only; the mid-reply note) ·
+  > PLAYING at the flip finishes on the old route** and the Sound picker's static footer says so
+  > ("a change mid-reply starts with the next reply"). *Amended 2026-09-24 (owner ruling): it began
+  > as a dynamic overlay note (`CALL_COPY.routeNextReply`, set by `routeChange` with `mouthLive`) —
+  > "good for testing but doesn't belong in production"; the note was removed, the footer is the
+  > production form.* Tests: reducer (`leavesComm` = the EC-on → EC-off edge only; the mid-reply note) ·
   > wiring (the mock counts `markStreamRetag`: once on the flip out, none on the flip back) · controller
   > (parked-outside-a-call vs unloaded-in-a-call · the hold with chunks landing mid-hold via read-along
   > feeding, both mechanisms red-proven, the spent window · a mark mid-reply · no mark no wait).
@@ -1492,7 +1494,9 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > the NEXT reply on the headphones with at most ~5 s of "loading" before it; flip while silent → the
   > next reply on the headphones with no visible wait beyond the LLM's; the zero-code earpiece-row
   > PROBE (R81 §3, REASONED only): EC-off leg + Mic row "Headset earpiece" — does even a playing reply
-  > move to the headphones at once (at voice-call volume)?
+  > move to the headphones at once (at voice-call volume)? **ANSWERED 2026-09-24 (owner's phone):
+  > NO — changing the Mic row mid-reply moved nothing. There is no route-only lever on the Honor 20;
+  > R81's deterministic sequence (this slice) is the only path (R81 §5 closed).**
   > **The slice's review round (same session): blind Maya (Luna, high) DO NOT SHIP [3 MED] ∥ Opus 5.5
   > design lens (verdict in the round's record below).** All three Maya findings ACCEPTED and fixed in
   > the same wave: **F1** `paused` is not silence — the mark reset any paused mouth, so a reply the

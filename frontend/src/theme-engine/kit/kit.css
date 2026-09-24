@@ -9437,6 +9437,12 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   line-height: 1.35;
   color: var(--text-3);
 }
+/* The picker's one footer (ISS-18): the rows' own hint face, indented to their text edge, under all
+ * three — it is about the picker, not a route. */
+.kit .kit-call-routefoot {
+  padding: 4px 8px 2px;
+  opacity: 0.8;
+}
 /* The vertical range: Chromium reads the writing-mode pair, Firefox the `orient` attribute the
  * component sets — both get "up = a HIGHER floor = a DEAFER ear" (`direction: rtl` flips the
  * vertical axis; the polarity words are the popover's own end captions, F5). 44px wide — the drag

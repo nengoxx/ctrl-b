@@ -142,7 +142,11 @@ latency, which usually takes longer than 5 s.
 ## 5. What I could not determine
 
 - Whether Magic UI 3.x keeps AOSP's `STRATEGY_PHONE` `FORCE_NONE` → A2DP order, and whether the deck's
-  "Headset earpiece" row is PreS's `ID_EARPIECE`. One phone probe settles both.
+  "Headset earpiece" row is PreS's `ID_EARPIECE`. One phone probe settles both. **Settled 2026-09-24
+  (owner's Honor 20, S4 round №2): changing the Mic row mid-reply moved NOTHING — the §3 earpiece-row
+  lever does not exist on this device (either the OEM engine diverges from the AOSP order or the row is
+  not `ID_EARPIECE`; the two are not separable from the page). The §4 deterministic sequence is the
+  only path, as the ranking already assumed.**
 - Whether the audio service on Android can ever take the `managed_device_output_stream_create_callback_`
   path instead of the proxy (`output_controller.cc:310`). I assumed not, following R80 §6's compiled-out
   AEC arms, but did not re-read it.

@@ -244,10 +244,6 @@ export const CALL_COPY = {
    *  and our re-open can beat that release). The call works and the ear is safe either way; what the
    *  owner has lost is the clean audio they picked the route FOR, and nothing else would say so. */
   ecStuck: "the echo canceller didn't let go — audio may still be processed",
-  /** ISS-18 (R81): a flip OUT of comm mode while a reply plays cannot move that reply — its physical
-   *  output stream was tagged when it opened and nothing re-tags it — so the screen says which reply
-   *  the new route reaches, instead of letting the owner think the flip failed. */
-  routeNextReply: "the new route takes effect from the next reply",
   /** D73 S6 ② — the ear stopped hearing while the page was away (a frozen renderer, a stolen mic) and
    *  the leg is being redialled. It says what the owner needs to know and nothing else: a resumed call
    *  must never present as if it heard, and the stretch it missed is not recoverable. */
@@ -831,14 +827,14 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // Nothing moved — and re-dialling for nothing costs the owner a reconnect they did not ask for.
       if (route === s.route && deviceId === s.inputDevice) return { state: s, out: [] };
       // ISS-18 (R81): leaving comm mode re-tags nothing already open. A reply PLAYING at the flip
-      // finishes on the old route; the note says so, once, on the flip that causes it.
+      // finishes on the old route. The Sound picker's footer says so, statically, where the choice is
+      // made (owner ruling 2026-09-24) — not a note on the overlay's line, which read as an alarm.
       const leavesComm = s.ecOn && !wantsAec(route);
       return {
         state: {
           ...s,
           route,
           inputDevice: deviceId,
-          note: leavesComm && s.mouthLive ? CALL_COPY.routeNextReply : s.note,
           // The SCREEN is honest about what is happening: this is a fresh leg on a fresh ear, and the
           // ladder starts clean because it is a deliberate redial, not a failure to recover from.
           phase: "connecting",

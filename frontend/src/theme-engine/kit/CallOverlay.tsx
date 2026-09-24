@@ -296,6 +296,13 @@ function OutputPicker({ call }: { call: CallView }) {
               <span className="kit-call-routehint">{c.hint}</span>
             </button>
           ))}
+          {/* ISS-18 (R81): a flip out of comm mode cannot move a reply already playing — its output
+              stream was tagged when it opened. A footer under the choices, not a note on the overlay's
+              line (owner ruling 2026-09-24): it is a property of the picker, said once where the
+              choice is made, and it never reads as an alarm. */}
+          <span className="kit-call-routehint kit-call-routefoot" aria-hidden>
+            a change mid-reply starts with the next reply
+          </span>
         </div>
       )}
     </div>

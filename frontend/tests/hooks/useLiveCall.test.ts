@@ -1264,13 +1264,13 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     });
   });
 
-  it("a flip out of comm mode MID-REPLY says the new route starts with the next reply; a silent one says nothing", () => {
+  it("a flip out of comm mode MID-REPLY leaves the note line alone — the picker's footer carries that fact", () => {
+    // Owner ruling 2026-09-24: "the new route takes effect from the next reply" is not an alarm and
+    // does not belong on the overlay's note line; it is a static footer in the Sound picker.
     const speaking = run(routed, [{ type: "playbackStarted" }]).state;
     expect(speaking.mouthLive).toBe(true);
     const mid = run(speaking, [{ type: "routeChange", route: "headphones" }]).state;
-    expect(mid.note).toBe(CALL_COPY.routeNextReply);
-    const silent = run(routed, [{ type: "routeChange", route: "headphones" }]).state;
-    expect(silent.note).not.toBe(CALL_COPY.routeNextReply);
+    expect(mid.note).toBe(speaking.note);
   });
 
   it("KEEPS the queue and the mute — a route change is not the owner leaving", () => {
