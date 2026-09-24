@@ -9342,9 +9342,9 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
     transparent
   );
 }
-/* One control + its micro-caption (Sound / Mic) — the caption exists because the pills read
+/* One control + its micro-caption (Sound / Mic / Sensitivity) — the caption exists because the pills read
  * identical and the owner could not tell one from the other. Visual furniture only (`aria-hidden`).
- * `position: relative` is a centred popover's anchor. The controls themselves are QUIET (the
+ * `position: relative` is a centred popover's anchor (the Sensitivity meter's). The controls themselves are QUIET (the
  * Mute recipe, unlit): settings, not actions — the screen's two loud controls stay the hang-up and
  * an engaged Mute. */
 .kit .kit-call-io {
@@ -9432,6 +9432,119 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
   padding: 4px 8px 2px;
   opacity: 0.8;
 }
+/* THE SENSITIVITY POPOVER (D76 §C.7) — the deleted Speech slider's footprint and anchoring, re-used: ONE
+ * vertical column hanging CENTRED under its own cell (it is barely wider than the cell's caption, so
+ * it cannot reach a viewport edge from inside the deck's pad). Top to bottom: the mode caption (Auto,
+ * or the pinned value as the button that releases it), "less", the meter, "more sensitive". */
+.kit .kit-call-senspop {
+  left: 50%;
+  transform: translateX(-50%);
+  gap: 4px;
+  justify-items: center;
+}
+/* The polarity, in words — the meter's axis is dBFS and a line on a bar carries no model of which way
+ * is keen. Also the release button's second line, in the same face. */
+.kit .kit-call-sensend {
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--text-3);
+}
+/* The mode caption: plain words in Auto, a quiet text button while a pin stands (the value, then how to
+ * give it back). ONE box for both — the same two lines, the same padding — so a pin landing never moves
+ * the column under the finger that set it (found by the e2e arm, which clicks twice on one measure).
+ * Tabular figures so a re-pin never shifts it sideways. */
+.kit .kit-call-sensmode {
+  all: unset;
+  display: grid;
+  justify-items: center;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.kit button.kit-call-sensmode {
+  cursor: pointer;
+  color: var(--accent);
+}
+.kit button.kit-call-sensmode:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit button.kit-call-sensmode:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+/* THE METER — the old slider's 44 × 132 column (44px: the drag target is the whole column, and a
+ * narrower one was the one sub-4mm target on this screen). `position: relative` anchors its three
+ * layers. No `overflow: hidden`: the floor line sits ON the value, half above and half below, and at
+ * either end that half must not be clipped away. */
+.kit .kit-call-meter {
+  --meter-h: 132px;
+  position: relative;
+  width: 44px;
+  height: var(--meter-h);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--text) 8%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+/* The level: a full-height layer SCALED from the bottom (the tick writes `scaleY`) — transform-only, so a
+ * redraw is a composite, never a layout (THEME_ENGINE §14.11). The short transition turns the 100 ms
+ * samples into movement; reduced motion drops it and the bar steps. */
+.kit .kit-call-meterfill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: bottom;
+  transform: scaleY(0);
+  background: color-mix(in oklch, var(--text-2) 45%, transparent);
+  transition: transform 100ms linear;
+}
+body[data-motion="reduced"] .kit .kit-call-meterfill {
+  transition: none;
+}
+/* The floor: a 2px accent line, lifted by `--f` (0 = bottom = `min_dbfs`, 1 = top = `max_dbfs`) — the
+ * tick writes the fraction, the stylesheet owns the geometry. Hidden (opacity) until there is a floor. No
+ * transition: while the owner drags it, it must be under the finger, not catching up. */
+.kit .kit-call-metermark {
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0;
+  transform: translateY(calc(var(--f, 0) * -1 * var(--meter-h)));
+  pointer-events: none;
+}
+/* THE INPUT — the native range, laid over the whole column and invisible: Chromium reads the
+ * writing-mode pair, Firefox the `orient` attribute the component sets, and both put `min` at the
+ * BOTTOM (`direction: rtl` flips the vertical axis) — the same polarity the line is drawn in. The focus
+ * ring is drawn on the column, since the thing focused has no pixels. */
+.kit .kit-call-meterrange {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  opacity: 0;
+  cursor: pointer;
+  touch-action: none;
+}
+.kit .kit-call-meterrange:disabled {
+  cursor: default;
+}
+.kit .kit-call-meter:has(.kit-call-meterrange:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .kit-call-meter:has(.kit-call-meterrange:disabled) {
+  opacity: 0.45;
+}
 .kit .kit-call-iolabel {
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -9483,11 +9596,12 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
    * THE ARITHMETIC, recomputed for the 44px targets (design round M2 — and the first cut of it was
    * wrong in a way worth recording: a cell is as wide as the WIDER of its control and its caption, and
    * "OUTPUT" at ~43px was wider than the 40px pill it was measured as). At a 320px viewport:
-   *   36px deck padding + 44px Sound pill + 128px (40vw) device cap + 10px gap ≈ 218px inside 320
-   *   (D76 deleted the Speech pill that used to share the row).
-   * The captions are the other half of each cell and neither wins it: SOUND ≈ 36px and MIC ≈ 24px sit
-   * under wider controls. That is what keeps `flex-wrap` below from ever firing; the wrap stays as the
-   * degenerate-viewport safety net, not as the layout. */
+   *   36px deck padding + 44px Sound pill + 128px (40vw) device cap + 64px Sensitivity cell
+   *   + 2 × 10px gap ≈ 292px inside 320 (at 360: 144px cap, ≈ 308px).
+   * The captions are the other half of each cell: SOUND ≈ 36px and MIC ≈ 24px sit under wider
+   * controls, but SENSITIVITY (≈ 64px, measured in Chromium by the D76 S1 e2e arm) WINS its cell over
+   * the 44px pill — that 64 is the caption's, not the control's. That is what keeps `flex-wrap` below
+   * from ever firing; the wrap stays as the degenerate-viewport safety net, not as the layout. */
   max-width: min(40vw, 200px);
   white-space: nowrap;
   overflow: hidden;

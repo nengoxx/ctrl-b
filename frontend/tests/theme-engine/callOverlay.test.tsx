@@ -21,6 +21,9 @@ const h = vi.hoisted(() => {
     setRoute: ReturnType<typeof vi.fn>;
     setInputDevice: ReturnType<typeof vi.fn>;
     debug: CallDebug | null;
+    readLevel: ReturnType<typeof vi.fn>;
+    floorAuto: boolean;
+    setFloorPin: ReturnType<typeof vi.fn>;
   } = {
     phase: "listening",
     heard: "",
@@ -36,6 +39,10 @@ const h = vi.hoisted(() => {
     setRoute: vi.fn(),
     setInputDevice: vi.fn(),
     debug: null,
+    // The Sensitivity meter's sampler (D76 §C.7) — a READER the meter polls, never a field.
+    readLevel: vi.fn(() => ({ level: null as number | null, floor: null as number | null })),
+    floorAuto: true,
+    setFloorPin: vi.fn(),
   };
   return {
     call,
@@ -63,7 +70,13 @@ vi.mock("../../src/hooks/useVoiceStatus", () => ({
   // the ring's snapshot is taken AT MOUNT, so what that case does is a property worth stating (and the
   // reason it is unreachable is the call door, not this component).
   useVoiceStatus: () =>
-    h.knobs ? { data: { live_call: { ring: h.ring, captions: h.captions } } } : { data: undefined },
+    h.knobs
+      ? {
+          data: {
+            live_call: { ring: h.ring, captions: h.captions, min_dbfs: -60, max_dbfs: -20 },
+          },
+        }
+      : { data: undefined },
 }));
 vi.mock("../../src/store/chat", () => ({
   confirmAwaiting: (): AwaitingConfirm | null => h.awaiting,
@@ -118,7 +131,11 @@ beforeEach(() => {
     inputDevice: "",
     canRoute: true,
     debug: null,
+    floorAuto: true,
   };
+  h.call.readLevel.mockReset();
+  h.call.readLevel.mockImplementation(() => ({ level: null, floor: null }));
+  h.call.setFloorPin.mockClear();
   h.call.interrupt.mockClear();
   h.call.toggleMute.mockClear();
   h.call.setRoute.mockClear();
@@ -553,14 +570,14 @@ describe("CallOverlay — the in-call route controls (D74 S2 · the D75 picker)"
     expect(h.call.setRoute).toHaveBeenCalledWith(ROUTE_MEDIA);
   });
 
-  it("the deck is Sound and Mic only — the Speech slider is gone (D76 §D)", () => {
+  it("the deck is Sound · Mic · Sensitivity — the Speech slider is gone (D76 §C.7 · §D)", () => {
     render(<Host open={true} />);
     expect(screen.queryByRole("button", { name: /^Speech threshold/ })).toBeNull();
-    expect(screen.queryByRole("slider")).toBeNull();
+    expect(screen.queryByRole("slider")).toBeNull(); // the meter's range exists only while it is open
     const captions = Array.from(document.querySelectorAll(".kit-call-top .kit-call-iolabel")).map(
       (e) => e.textContent,
     );
-    expect(captions).toEqual(["Sound", "Mic"]);
+    expect(captions).toEqual(["Sound", "Mic", "Sensitivity"]);
   });
 
   it("Escape closes the PICKER with focus ON THE PILL — the call stands (review round A1)", () => {
@@ -611,6 +628,10 @@ describe("CallOverlay — the in-call route controls (D74 S2 · the D75 picker)"
     render(<Host open={true} />);
     expect(outputPill().disabled).toBe(true);
     expect(screen.getByLabelText<HTMLSelectElement>("Input microphone").disabled).toBe(true);
+    // …and the third control on the same rule: no capture, no numbers, no meter.
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: /^Sensitivity:/ }).disabled).toBe(
+      true,
+    );
   });
 
   it("a route tap on the top deck is never ALSO an interrupt", () => {
@@ -638,6 +659,180 @@ describe("CallOverlay — the in-call route controls (D74 S2 · the D75 picker)"
     h.call = { ...h.call, phase: "ended" };
     render(<Host open={true} />);
     expect(screen.queryByRole("button", { name: /^Sound:/ })).toBeNull();
+  });
+});
+
+describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
+  const pill = () => screen.getByRole<HTMLButtonElement>("button", { name: /^Sensitivity:/ });
+  const range = () => screen.getByRole<HTMLInputElement>("slider", { name: "Sensitivity floor" });
+  const fill = () => document.querySelector<HTMLElement>(".kit-call-meterfill")!;
+  const mark = () => document.querySelector<HTMLElement>(".kit-call-metermark")!;
+  /** The fixture's bounds (`min_dbfs` −60 · `max_dbfs` −20): the meter's whole axis. */
+  const MIN = -60;
+  const MAX = -20;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    return () => vi.useRealTimers();
+  });
+
+  it("names the floor's STATE — auto, or the owner's pin — and opens a dialog, not a menu", () => {
+    render(<Host open={true} />);
+    expect(pill().getAttribute("aria-label")).toBe("Sensitivity: auto");
+    expect(pill().getAttribute("aria-haspopup")).toBe("dialog");
+    expect(screen.queryByRole("dialog", { name: "Sensitivity" })).toBeNull(); // closed until asked
+    fireEvent.click(pill());
+    expect(screen.getByRole("dialog", { name: "Sensitivity" })).toBeTruthy();
+    // Auto is plain WORDS, not a button: there is nothing to release.
+    expect(screen.queryByRole("button", { name: /^Back to auto/ })).toBeNull();
+    // …the mode, then what a touch does (both states are two lines — the column must not move).
+    expect(document.querySelector(".kit-call-sensmode")!.textContent).toBe("Autodrag to pin");
+  });
+
+  it("the BAR follows the sampled level over [min_dbfs, max_dbfs] — at the tick, never per frame", () => {
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45 }));
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    // Read once on open: −40 is halfway up −60…−20; the floor −45 is 15/40 of the way.
+    expect(fill().style.transform).toBe("scaleY(0.5)");
+    expect(mark().style.getPropertyValue("--f")).toBe("0.375");
+    expect(mark().style.opacity).toBe("1");
+    // A new level is not painted until the next tick…
+    h.call.readLevel.mockImplementation(() => ({ level: -30, floor: -45 }));
+    vi.advanceTimersByTime(99);
+    expect(fill().style.transform).toBe("scaleY(0.5)");
+    vi.advanceTimersByTime(1);
+    expect(fill().style.transform).toBe("scaleY(0.75)");
+    // …and past either end the bar is empty / full, never out of its column.
+    h.call.readLevel.mockImplementation(() => ({ level: -90, floor: -45 }));
+    vi.advanceTimersByTime(100);
+    expect(fill().style.transform).toBe("scaleY(0)");
+    h.call.readLevel.mockImplementation(() => ({ level: -3, floor: -45 }));
+    vi.advanceTimersByTime(100);
+    expect(fill().style.transform).toBe("scaleY(1)");
+  });
+
+  it("no frame yet → an empty bar and NO line (nothing measured is nothing drawn)", () => {
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    expect(fill().style.transform).toBe("scaleY(0)");
+    expect(mark().style.opacity).toBe("0");
+  });
+
+  it("POLARITY: bottom = min_dbfs = MORE sensitive, top = max_dbfs = less", () => {
+    // The Speech slider's own comment once had this backwards; the axis is pinned here from three
+    // sides — the range's bounds, the end words in reading order, and where the line sits at `min`.
+    h.call.readLevel.mockImplementation(() => ({ level: -50, floor: MIN }));
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    expect(range().min).toBe(String(MIN));
+    expect(range().max).toBe(String(MAX));
+    const ends = Array.from(document.querySelectorAll(".kit-call-senspop > .kit-call-sensend")).map(
+      (e) => e.textContent,
+    );
+    expect(ends).toEqual(["less", "more sensitive"]); // top first, bottom last
+    expect(mark().style.getPropertyValue("--f")).toBe("0"); // the floor at `min` sits at the BOTTOM
+    // …and the range reads the floor in the owner's words.
+    expect(range().value).toBe(String(MIN));
+    expect(range().getAttribute("aria-valuetext")).toBe("\u221260 dB");
+  });
+
+  it("a DRAG pins at the tick cadence — never per pointer move — and the lift hands over the last value", () => {
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45 }));
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    fireEvent.pointerDown(range());
+    fireEvent.change(range(), { target: { value: "-50" } });
+    fireEvent.change(range(), { target: { value: "-52" } });
+    // The line is under the finger at once (a style write)…
+    expect(mark().style.getPropertyValue("--f")).toBe(String((-52 - MIN) / (MAX - MIN)));
+    // …but the machine has heard nothing yet.
+    expect(h.call.setFloorPin).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100);
+    expect(h.call.setFloorPin).toHaveBeenCalledTimes(1);
+    expect(h.call.setFloorPin).toHaveBeenLastCalledWith(-52);
+    // A move after the tick, then the LIFT: the last value lands on the lift, not a tick later.
+    fireEvent.change(range(), { target: { value: "-38" } });
+    fireEvent.pointerUp(range());
+    expect(h.call.setFloorPin).toHaveBeenCalledTimes(2);
+    expect(h.call.setFloorPin).toHaveBeenLastCalledWith(-38);
+    // Every value is inside the bounds, whole dB.
+    for (const [v] of h.call.setFloorPin.mock.calls as [number][]) {
+      expect(Number.isInteger(v) && v >= MIN && v <= MAX).toBe(true);
+    }
+  });
+
+  it("a KEYBOARD step pins at once — there is no drag to batch", () => {
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    fireEvent.change(range(), { target: { value: "-41" } });
+    expect(h.call.setFloorPin).toHaveBeenCalledWith(-41);
+  });
+
+  it("a PINNED floor names its value, and the caption becomes the button that gives it back", () => {
+    const view = render(<Host open={true} />);
+    fireEvent.click(pill());
+    fireEvent.change(range(), { target: { value: "-38" } });
+    // The machine answers the pin (the real hook flips `floorAuto` through its own state).
+    h.call = { ...h.call, floorAuto: false };
+    view.rerender(<Host open={true} />);
+    expect(pill().getAttribute("aria-label")).toBe("Sensitivity: \u221238 dB");
+    const back = screen.getByRole("button", { name: "Back to auto \u2014 pinned at \u221238 dB" });
+    fireEvent.click(back);
+    expect(h.call.setFloorPin).toHaveBeenLastCalledWith(null);
+    // The button unmounts; focus lands on the column, never on <body> outside the dialog.
+    expect(document.activeElement).toBe(range());
+    h.call = { ...h.call, floorAuto: true };
+    view.rerender(<Host open={true} />);
+    expect(pill().getAttribute("aria-label")).toBe("Sensitivity: auto");
+    expect(screen.queryByRole("button", { name: /^Back to auto/ })).toBeNull();
+  });
+
+  it("the tick runs ONLY while the popover is open — closed, the ear is not read at all", () => {
+    render(<Host open={true} />);
+    expect(h.call.readLevel).not.toHaveBeenCalled(); // closed from the start: no interval
+    fireEvent.click(pill());
+    vi.advanceTimersByTime(300);
+    const reads = h.call.readLevel.mock.calls.length;
+    expect(reads).toBe(4); // the read on open + three ticks
+    fireEvent.click(pill()); // close
+    vi.advanceTimersByTime(1000);
+    expect(h.call.readLevel).toHaveBeenCalledTimes(reads);
+  });
+
+  it("…and hanging up with it open clears the interval too", () => {
+    const view = render(<Host open={true} />);
+    fireEvent.click(pill());
+    const reads = h.call.readLevel.mock.calls.length;
+    view.rerender(<Host open={false} />);
+    vi.advanceTimersByTime(1000);
+    expect(h.call.readLevel).toHaveBeenCalledTimes(reads);
+  });
+
+  it("Escape closes the METER, not the call — the deck popover's rule, shared", () => {
+    render(<Host open={true} />);
+    const p = pill();
+    p.focus();
+    fireEvent.click(p);
+    fireEvent.keyDown(p, { key: "Escape" });
+    expect(h.close).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Sensitivity" })).toBeNull();
+    expect(document.activeElement).toBe(pill());
+  });
+
+  it("dragging the column is never ALSO a tap-to-interrupt", () => {
+    h.call = { ...h.call, phase: "speaking" };
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    fireEvent.pointerDown(range());
+    expect(h.call.interrupt).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Sensitivity" })).toBeTruthy(); // not an outside tap
+  });
+
+  it("with no bounds to draw against there is no meter at all (the call door forbids that state)", () => {
+    h.knobs = false;
+    render(<Host open={true} />);
+    expect(screen.queryByRole("button", { name: /^Sensitivity:/ })).toBeNull();
   });
 });
 

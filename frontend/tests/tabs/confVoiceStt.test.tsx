@@ -97,7 +97,7 @@ const makeSettings = () => ({
       ring: true,
       captions: true,
       mic_hold: "auto",
-      // D76 §C — the relative gate's six (no Conf rows until D76 S1; they round-trip untouched).
+      // D76 §C — the relative gate's six (Conf rows since D76 S1, in the Live call group).
       floor_dbfs: -45,
       noise_margin_db: 10,
       voice_margin_db: 10,
@@ -540,6 +540,12 @@ describe("ConfTab · the near-speech gate + debug readout (D74)", () => {
     expect(liveOf()).toMatchObject({ min_final_ms: 350, debug: true });
   });
 
+  it("the gate's desc says the floor is automatic now (D76 §C) — the knob keeps its name", () => {
+    render(<ConfTab active />);
+    const row = liveField("Min speech energy hold (ms)").closest(".confrow")!;
+    expect(row.textContent).toContain("above the sensitivity floor");
+  });
+
   it("a CLEARED gate rides as NULL — 0 MEANS 'commit every final', so a blank must 422", () => {
     // The `min_speech_ms` rule, not the `silence_ms` one: this knob's floor IS zero and zero is a
     // real setting (the pre-D74 commit), so a blank coercing to 0 would silently switch the gate off.
@@ -547,5 +553,59 @@ describe("ConfTab · the near-speech gate + debug readout (D74)", () => {
     fireEvent.change(liveField("Min speech energy hold (ms)"), { target: { value: "" } });
     fireEvent.click(saveButton());
     expect(liveOf()?.min_final_ms).toBeNull();
+  });
+});
+
+describe("ConfTab · the relative gate rows (D76 §C)", () => {
+  /** Label → key, in the order the rows sit after the gate's own row. */
+  const ROWS: [string, string][] = [
+    ["Sensitivity floor (dBFS)", "floor_dbfs"],
+    ["Noise margin (dB)", "noise_margin_db"],
+    ["Voice margin (dB)", "voice_margin_db"],
+    ["Interrupt margin (dB)", "playback_margin_db"],
+    ["Lowest floor (dBFS)", "min_dbfs"],
+    ["Highest floor (dBFS)", "max_dbfs"],
+  ];
+
+  it("renders the six in the Live call group, after the energy hold, from the live config", () => {
+    render(<ConfTab active />);
+    expect(ROWS.map(([label]) => liveField(label).value)).toEqual([
+      "-45",
+      "10",
+      "10",
+      "10",
+      "-60",
+      "-20",
+    ]);
+    // …in that order, directly after the gate they tune.
+    const labels = Array.from(
+      document.getElementById("voice-live")!.querySelectorAll(".confrow .label"),
+    ).map((e) => e.textContent);
+    const at = labels.indexOf("Min speech energy hold (ms)");
+    expect(labels.slice(at + 1, at + 1 + ROWS.length)).toEqual(ROWS.map(([label]) => label));
+  });
+
+  it("saves every one coerced to a NUMBER on `voice.live`", () => {
+    render(<ConfTab active />);
+    const typed = ["-50", "12", "8", "6", "-70", "-25"];
+    ROWS.forEach(([label], i) =>
+      fireEvent.change(liveField(label), { target: { value: typed[i] } }),
+    );
+    fireEvent.click(saveButton());
+    expect(liveOf()).toMatchObject({
+      floor_dbfs: -50,
+      noise_margin_db: 12,
+      voice_margin_db: 8,
+      playback_margin_db: 6,
+      min_dbfs: -70,
+      max_dbfs: -25,
+    });
+  });
+
+  it("a CLEARED one rides as NULL — 0 is a real value for all six, so a blank must 422", () => {
+    render(<ConfTab active />);
+    ROWS.forEach(([label]) => fireEvent.change(liveField(label), { target: { value: "" } }));
+    fireEvent.click(saveButton());
+    for (const [, key] of ROWS) expect(liveOf()?.[key]).toBeNull();
   });
 });

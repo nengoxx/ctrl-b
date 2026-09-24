@@ -435,3 +435,68 @@ test("the BACK gesture hangs up instead of navigating the app out from under the
 
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
+
+// ── D76 S1: the deck's Sensitivity meter (§C.7) ───────────────────────────────────────────────────
+
+test("the deck is Sound · Mic · Sensitivity on ONE line at 360px, and the meter opens on Auto", async ({
+  page,
+  pageErrors,
+}) => {
+  // The owner's phone width is the one that matters (the deck must hold one line — D75 ④); 360 is the
+  // common Android floor, narrower than both projects' default viewports.
+  await page.setViewportSize({ width: 360, height: 740 });
+  const { relay } = await boot(page);
+  await startCall(page);
+  await relay.say({ type: "state", state: "ready" });
+
+  const cells = page.locator(`${overlay} .kit-call-top > .kit-call-io`);
+  await expect(page.locator(`${overlay} .kit-call-top .kit-call-iolabel`)).toHaveText([
+    "Sound",
+    "Mic",
+    "Sensitivity",
+  ]);
+  // ONE LINE: the wrap is the degenerate-viewport safety net, never the layout.
+  const tops = await cells.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
+  expect(new Set(tops).size, `cell tops ${tops.join(",")}`).toBe(1);
+
+  const pill = page.getByRole("button", { name: "Sensitivity: auto" });
+  await expect(pill).toBeEnabled();
+  await pill.click();
+  const meter = page.getByRole("dialog", { name: "Sensitivity" });
+  await expect(meter).toBeVisible();
+  await expect(meter.locator(".kit-call-sensmode")).toHaveText(/^Auto/);
+  // The card stays on screen at this width (it hangs centred under the deck's last cell).
+  const box = (await meter.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(360);
+  // THE REAL CHAIN: the fake mic is a full-scale 440 Hz tone (≈ −3 dBFS, above `max_dbfs`), so the
+  // sampled bar reaches the top of the column through worklet → hook → `readLevel` → the tick.
+  await expect
+    .poll(() =>
+      meter.locator(".kit-call-meterfill").evaluate((e) => (e as HTMLElement).style.transform),
+    )
+    .toBe("scaleY(1)");
+
+  // POLARITY IN A REAL ENGINE (the one place jsdom cannot answer it: the vertical range's axis is
+  // the writing-mode pair). The column's BOTTOM is `min_dbfs` — the most sensitive — and its TOP is
+  // `max_dbfs`; a tap pins, and the pill names the pin.
+  const column = (await meter.locator(".kit-call-meter").boundingBox())!;
+  const cx = column.x + column.width / 2;
+  await page.mouse.click(cx, column.y + column.height - 1);
+  await expect(page.getByRole("button", { name: "Sensitivity: \u221260 dB" })).toBeVisible();
+  // The pin landing did not move the column: the second tap is aimed with the FIRST measure.
+  expect(await meter.locator(".kit-call-meter").boundingBox()).toEqual(column);
+  await page.mouse.click(cx, column.y + 1);
+  await expect(page.getByRole("button", { name: "Sensitivity: \u221220 dB" })).toBeVisible();
+  // …and the caption is now the way back to Auto.
+  await meter.getByRole("button", { name: /^Back to auto/ }).click();
+  await expect(page.getByRole("button", { name: "Sensitivity: auto" })).toBeVisible();
+  await expect(meter.locator(".kit-call-sensmode")).toHaveText(/^Auto/);
+
+  // Escape closes the METER and the call stands.
+  await page.keyboard.press("Escape");
+  await expect(meter).toHaveCount(0);
+  await expect(page.locator(overlay)).toBeVisible();
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});

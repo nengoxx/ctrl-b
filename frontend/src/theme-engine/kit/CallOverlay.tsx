@@ -115,6 +115,21 @@ function HifiSpeakerIcon({ size }: { size?: number } = {}) {
   );
 }
 
+/** lucide `audio-lines` — the SENSITIVITY control (D76 §C.7): a level, which is what the popover shows.
+ *  Not a gauge or a dial: the control is a meter with a line on it, and the glyph says "level". */
+function LevelIcon({ size }: { size?: number } = {}) {
+  return (
+    <Glyph size={size}>
+      <path d="M2 10v3" />
+      <path d="M6 6v11" />
+      <path d="M10 3v18" />
+      <path d="M14 8v7" />
+      <path d="M18 5v13" />
+      <path d="M22 10v3" />
+    </Glyph>
+  );
+}
+
 /**
  * THE DECK'S POPOVER MECHANICS, stated ONCE (D75, extracted from the since-deleted speech slider).
  *
@@ -369,6 +384,220 @@ function RouteControls({ call }: { call: CallView }) {
   );
 }
 
+/** How often the Sensitivity meter re-reads the ear, ms (D76 §F) — a property of reading, like
+ *  `DEBUG_TICK_MS`: the level arrives on the audio callback at 25–50 Hz, and the meter SAMPLES it rather
+ *  than following it (the D74 S7 rule — never per frame, never a render per frame). 100 ms is fast enough
+ *  for a syllable to move the bar and slow enough to cost nothing; the tick runs only while the popover
+ *  is open. It is also the most often a drag re-pins the floor. Not a knob: nothing about the call
+ *  changes with it. */
+const METER_TICK_MS = 100;
+
+/** A dBFS value the way the owner reads it: whole decibels, a real minus sign (U+2212 — the hyphen
+ *  reads as a dash beside a number this small), and the unit. */
+function dbLabel(n: number): string {
+  const r = Math.round(n);
+  return `${r < 0 ? "−" : ""}${Math.abs(r)} dB`;
+}
+
+/** Where `db` sits on the meter, 0 (bottom, `min`) … 1 (top, `max`) — clamped, so a level below the
+ *  range is an empty bar and one above it a full one. A degenerate range (the two bounds are separate
+ *  Conf fields and nothing orders them) reads as a step at `max` rather than a division by zero. */
+function meterFrac(db: number, min: number, max: number): number {
+  if (max <= min) return db >= max ? 1 : 0;
+  return Math.min(1, Math.max(0, (db - min) / (max - min)));
+}
+
+/**
+ * THE SENSITIVITY CONTROL (D76 §C.7) — the deck's third control, and the Speech slider's successor in
+ * PATTERN only (`useDeckPopover`, the captioned icon pill, the vertical column, the end words). What it
+ * shows is new: a LIVE METER — the bar is the mic's level right now, the accent line is the floor the
+ * gate measures against — because a relative floor is only legible beside the voice it is relative to.
+ *
+ * AUTO is the default and the floor moves by itself (the noise tracker and the own-voice learner,
+ * `lib/levelGate`). DRAGGING THE LINE PINS a manual floor for THIS call — Discord's shape: it writes
+ * nothing, dies with the call, and applies from the next frame with no leg redial. Tapping the caption
+ * above the meter hands the floor back to Auto.
+ *
+ * POLARITY, stated once because the slider this replaces got it backwards in its own comment: the axis
+ * is dBFS, BOTTOM = `min_dbfs`, TOP = `max_dbfs`. A LOWER floor admits quieter sound, so DOWN IS MORE
+ * SENSITIVE — which is what the two end words say.
+ *
+ * ONE INPUT MECHANISM — the native range, overlaid transparent on the whole 44 × 132 column: the drag
+ * target is the column (not a thumb), the keyboard and assistive tech get a real slider for free, and
+ * no pointer arithmetic is re-derived here. What the eye sees is ours (the bar, the line); what the
+ * finger and the reader touch is the platform's.
+ *
+ * NOTHING HERE RENDERS PER TICK: the bar, the line and the range's value are written through refs by the
+ * one interval, which runs only while the popover is open. React sees a render only when the PIN
+ * changes, which is what the pill's accessible name says.
+ */
+function SensitivityControl({ call, min, max }: { call: CallView; min: number; max: number }) {
+  const { open, setOpen, rootRef, pillRef, onKeyDown } = useDeckPopover();
+  const { readLevel, setFloorPin } = call;
+  // The pinned VALUE, for the words (the pill's name, the caption). The view carries only whether a
+  // pin stands (`floorAuto`, which stays the truth for that); the value is this control's own because
+  // this control is the only thing that ever sets one — a mirror of its own last write, not a copy of
+  // the machine's state.
+  const [pinDb, setPinDb] = useState<number | null>(null);
+  const pinned = !call.floorAuto;
+  const pinText = pinDb === null ? "pinned" : dbLabel(pinDb);
+  const fillRef = useRef<HTMLElement>(null);
+  const markRef = useRef<HTMLElement>(null);
+  const rangeRef = useRef<HTMLInputElement>(null);
+  /** A pointer is down on the column — the tick then leaves the range's value to the finger. */
+  const dragging = useRef(false);
+  /** The drag's latest value, not yet handed to the machine (the tick flushes it — at most one pin per
+   *  tick, never one per pointer move). */
+  const pending = useRef<number | null>(null);
+
+  const commit = useCallback(
+    (v: number): void => {
+      pending.current = null;
+      setFloorPin(v);
+      setPinDb(v);
+    },
+    [setFloorPin],
+  );
+  const placeMark = useCallback(
+    (floor: number | null): void => {
+      const mark = markRef.current;
+      if (!mark) return;
+      mark.style.opacity = floor === null ? "0" : "1";
+      if (floor !== null) mark.style.setProperty("--f", String(meterFrac(floor, min, max)));
+    },
+    [min, max],
+  );
+
+  /** The finger lifted (or the platform took the gesture): stop batching, and hand the drag's last value
+   *  over now rather than at the next tick. */
+  const release = useCallback((): void => {
+    dragging.current = false;
+    if (pending.current !== null) commit(pending.current);
+  }, [commit]);
+
+  useEffect(() => {
+    if (!open) return;
+    // The LIFT is heard on the document, capture phase: a mouse drag that leaves the column releases
+    // off it, and a lift the column never saw would leave the tick deferring to a finger that is gone.
+    document.addEventListener("pointerup", release, true);
+    document.addEventListener("pointercancel", release, true);
+    const tick = (): void => {
+      if (pending.current !== null) commit(pending.current);
+      const { level, floor } = readLevel();
+      if (fillRef.current)
+        fillRef.current.style.transform = `scaleY(${level === null ? 0 : meterFrac(level, min, max)})`;
+      placeMark(floor);
+      const range = rangeRef.current;
+      if (range && floor !== null && !dragging.current) {
+        range.value = String(Math.round(floor));
+        range.setAttribute("aria-valuetext", dbLabel(floor));
+      }
+    };
+    tick();
+    const id = setInterval(tick, METER_TICK_MS);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("pointerup", release, true);
+      document.removeEventListener("pointercancel", release, true);
+      // A close never drops the drag's last value (the finger lifted as the card went).
+      release();
+    };
+  }, [open, readLevel, commit, release, placeMark, min, max]);
+
+  return (
+    <div className="kit-call-io" ref={rootRef} onKeyDown={onKeyDown}>
+      <span className="kit-call-iolabel" aria-hidden>
+        Sensitivity
+      </span>
+      <button
+        ref={pillRef}
+        type="button"
+        className="kit-call-routebtn kit-call-iconpill"
+        // Disabled with its two deck siblings, on THEIR rule: while the leg is moving there may be no
+        // capture at all, and a meter with no numbers must not open onto a dead column.
+        disabled={!call.canRoute}
+        // The STATE is in the name (the Sound pill's rule): the pill is a glyph, so this is the only
+        // place a reader learns whether the floor is the machine's or theirs.
+        aria-label={`Sensitivity: ${pinned ? pinText : "auto"}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <LevelIcon />
+      </button>
+      {open && (
+        <div className="kit-call-pop kit-call-senspop" role="dialog" aria-label="Sensitivity">
+          {/* The caption IS the Auto affordance: a button only while there is a pin to release, plain
+              words when the floor is already the machine's (a button that does nothing is a lie).
+              BOTH states are two lines in the same box — the mode, then what a touch does — because
+              the column below must not move when a pin lands: the owner's finger is on it. */}
+          {pinned ? (
+            <button
+              type="button"
+              className="kit-call-sensmode"
+              disabled={!call.canRoute}
+              aria-label={`Back to auto — pinned at ${pinText}`}
+              onClick={() => {
+                pending.current = null;
+                setFloorPin(null);
+                setPinDb(null);
+                // This button is about to unmount (Auto is plain words), and focus left on a removed
+                // node falls to <body> — OUTSIDE the overlay, where Escape reaches neither this card's
+                // swallow nor the overlay's own rule (found by the e2e arm). The column stays in the
+                // card, and it is the next thing a keyboard would move anyway.
+                rangeRef.current?.focus();
+              }}
+            >
+              {pinText}
+              <span className="kit-call-sensend">tap for auto</span>
+            </button>
+          ) : (
+            <span className="kit-call-sensmode">
+              Auto
+              <span className="kit-call-sensend">drag to pin</span>
+            </span>
+          )}
+          <span className="kit-call-sensend" aria-hidden>
+            less
+          </span>
+          <div className="kit-call-meter">
+            <i className="kit-call-meterfill" ref={fillRef} aria-hidden />
+            <i className="kit-call-metermark" ref={markRef} aria-hidden />
+            {/* `orient` is Firefox's own vertical-slider attribute; the CSS `writing-mode` pair covers
+                Chromium (the deleted Speech slider's recipe). UNCONTROLLED on purpose: its value is
+                written by the tick through the ref, so an Auto floor moving by itself costs no render. */}
+            <input
+              ref={rangeRef}
+              type="range"
+              className="kit-call-meterrange"
+              aria-label="Sensitivity floor"
+              min={min}
+              max={max}
+              step={1}
+              disabled={!call.canRoute}
+              {...{ orient: "vertical" }}
+              onPointerDown={() => {
+                dragging.current = true;
+              }}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                // The line follows the finger NOW (a style write, no render); the machine hears it at
+                // the next tick. A keyboard step has no drag to batch, so it pins at once.
+                placeMark(v);
+                if (dragging.current) pending.current = v;
+                else commit(v);
+              }}
+            />
+          </div>
+          <span className="kit-call-sensend" aria-hidden>
+            more sensitive
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** How close to the bottom counts as "still following", in px. The chat log's own stick rule, at the
  *  scale of a three-line box: 140px of slack there is most of this block. */
 const FOLLOW_SLACK_PX = 8;
@@ -544,6 +773,14 @@ export function CallOverlay({ close }: { close: () => boolean }) {
   // …and the captions knob, on exactly the same terms and for exactly the same reasons (the paragraph
   // above is this one's too): a presentation choice, frozen for the call, re-read by the next one.
   const [captions] = useState(() => liveKnobs?.captions ?? true);
+  // …and the Sensitivity meter's range (D76 §C.7: `min_dbfs`…`max_dbfs`), on the same terms. No
+  // numbers, no meter: a control that cannot say where the floor may go must not offer to move it (the
+  // Speech slider's own rule) — and the call door makes that state unreachable anyway.
+  const [meterRange] = useState(() =>
+    typeof liveKnobs?.min_dbfs === "number" && typeof liveKnobs.max_dbfs === "number"
+      ? { min: liveKnobs.min_dbfs, max: liveKnobs.max_dbfs }
+      : null,
+  );
   // WHAT is waiting for an Allow/Deny (§4.5). Reference-stable by the selector's contract, so this
   // subscription costs one render per change of gate and none per streamed part.
   const awaiting = useChatSlice(() => confirmAwaiting());
@@ -637,6 +874,9 @@ export function CallOverlay({ close }: { close: () => boolean }) {
       {!terminal && (
         <div className="kit-call-top" onPointerDown={(e) => e.stopPropagation()}>
           <RouteControls call={call} />
+          {meterRange !== null && (
+            <SensitivityControl call={call} min={meterRange.min} max={meterRange.max} />
+          )}
         </div>
       )}
       <div className="kit-call-body">

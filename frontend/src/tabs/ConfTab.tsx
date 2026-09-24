@@ -1889,6 +1889,15 @@ export function ConfTab({ active }: Props) {
           // zero and zero MEANS something (commit every final, the pre-D74 behaviour), so a blank
           // coercing to 0 would silently switch the gate off instead of earning the visible 422.
           min_final_ms: numOrNull(draft.voice.live.min_final_ms),
+          // D76 §C's gate six take `numOrNull` for the same reason: zero is a MEANINGFUL value for
+          // every one of them (a 0 dB margin is "no margin"; 0 dBFS is a floor nothing reaches), so a
+          // blank coercing to 0 would silently reconfigure the gate instead of earning the visible 422.
+          floor_dbfs: numOrNull(draft.voice.live.floor_dbfs),
+          noise_margin_db: numOrNull(draft.voice.live.noise_margin_db),
+          voice_margin_db: numOrNull(draft.voice.live.voice_margin_db),
+          playback_margin_db: numOrNull(draft.voice.live.playback_margin_db),
+          min_dbfs: numOrNull(draft.voice.live.min_dbfs),
+          max_dbfs: numOrNull(draft.voice.live.max_dbfs),
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
@@ -2998,9 +3007,51 @@ export function ConfTab({ active }: Props) {
               if the microphone actually heard something near it for this long. */}
           <Field
             label="Min speech energy hold (ms)"
-            desc="how long the mic must be loud enough — near you, not across the room — before what it heard counts as your turn (0–5000); 0 turns the gate off and every transcript is sent"
+            desc="how long the mic must sit above the sensitivity floor before a transcript counts as your turn (0–5000); 0 turns the gate off"
             value={String(vlive?.min_final_ms ?? "")}
             onChange={(v) => setLive("min_final_ms", v as unknown as number)}
+          />
+          {/* D76 §C (evidence docs/research/R83) — the floor that gate measures against, now RELATIVE:
+              the room's noise plus a margin, or your own learned level minus one, whichever is higher,
+              kept inside the two bounds. The call screen's Sensitivity meter shows it live and can pin
+              it for one call; these are the defaults every call starts from. */}
+          <Field
+            label="Sensitivity floor (dBFS)"
+            desc="the loudest the automatic floor may sit while the call is still learning the room, and the floor when nothing is known yet (−90–0) — lower = more sensitive"
+            value={String(vlive?.floor_dbfs ?? "")}
+            onChange={(v) => setLive("floor_dbfs", v as unknown as number)}
+          />
+          <Field
+            label="Noise margin (dB)"
+            desc="how far above the room's noise floor your voice must sit to count (0–40)"
+            value={String(vlive?.noise_margin_db ?? "")}
+            onChange={(v) => setLive("noise_margin_db", v as unknown as number)}
+          />
+          <Field
+            label="Voice margin (dB)"
+            desc="how far below your own usual level still counts as you — a TV across the room falls under it (0–40)"
+            value={String(vlive?.voice_margin_db ?? "")}
+            onChange={(v) => setLive("voice_margin_db", v as unknown as number)}
+          />
+          <Field
+            label="Interrupt margin (dB)"
+            desc="extra loudness needed to talk over a playing reply (0–40); only with hands-free interruption on"
+            value={String(vlive?.playback_margin_db ?? "")}
+            onChange={(v) => setLive("playback_margin_db", v as unknown as number)}
+          />
+          {/* The bounds are a PAIR, written as the file's other pair is (Quiet from / Quiet until): two
+              rows, one value each. The meter's axis is this range too. */}
+          <Field
+            label="Lowest floor (dBFS)"
+            desc="the automatic floor never sits below this (−90–0) — the most sensitive the call gets"
+            value={String(vlive?.min_dbfs ?? "")}
+            onChange={(v) => setLive("min_dbfs", v as unknown as number)}
+          />
+          <Field
+            label="Highest floor (dBFS)"
+            desc="…and never above this (−90–0) — the least sensitive"
+            value={String(vlive?.max_dbfs ?? "")}
+            onChange={(v) => setLive("max_dbfs", v as unknown as number)}
           />
           <SettingRow
             label="Call debug readout"
