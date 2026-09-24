@@ -5557,10 +5557,10 @@ arrow-key step through the native radio group is a real switch plus a chat-log n
 the phone taps ④ the three residuals of the build itself: a typo'd pin reads as the default row and
 cannot be cleared by re-clicking it (an already-checked radio fires no change — pick another row, then
 default) · a default that is also a specialist folder reads checked on both rows · a mid-stream pick
-re-points only later sends. **Open owner question (Opus S1):** `sessionAgent` is NOT persisted, so an
-Android PWA relaunch silently returns to the default — identical to `/agent` today and truthfully
-shown by every surface, but the menu is now the switch the owner uses; persist it (the way the draft
-persists) or leave it session-scoped?
+re-points only later sends. **RULED (owner, 2026-09-24, Opus S1):** `sessionAgent` stays SESSION-SCOPED — it is the same pin
+`/agent` writes, so both drop to the default on a PWA relaunch, truthfully shown by every surface.
+"Keep it that way for now; maybe we'll change it to persist for both in the future" — if that day
+comes, persist the ONE field and all three doors (`/agent`, Talk, the menu) follow.
 
 **ADDENDUM ⑥ — the coupling round (owner, 2026-09-23, in conversation).** The owner proposed
 COUPLING the clean bargain to the interruption toggle — `barge_in` off ⇒ EC off + the ear-hold on
