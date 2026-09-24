@@ -1,3 +1,4 @@
+import { CUE_HOLD_MS } from "../../src/lib/callCue";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -137,7 +138,10 @@ vi.mock("../../src/lib/audioController", () => ({
   },
 }));
 vi.mock("../../src/lib/composer", () => ({ sendCallTranscript: h.sendCall }));
-vi.mock("../../src/lib/callCue", () => ({ playDropCue: h.cue }));
+vi.mock("../../src/lib/callCue", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/lib/callCue")>()),
+  playDropCue: h.cue,
+}));
 vi.mock("../../src/lib/liveSocket", () => ({
   liveSocketUrl: () => "ws://x/api/voice/live",
   openLiveSocket: (opts: {
@@ -1110,6 +1114,61 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
     await utterance("Thank you for watching.", 0.001, 30); // −60 dBFS, under the −45 bootstrap floor
     expect(h.cue).toHaveBeenCalledTimes(1);
     expect(h.cue).toHaveBeenCalledWith(h.ctx);
+  });
+
+  it("the NOISE tracker pauses while the mouth is live — a reply's residue is not the room (S0b round MED 1)", async () => {
+    // No estimate ⇒ the effective floor is the −45 bootstrap ceiling. A full second of −60 dBFS frames
+    // UNDER a playing reply must not teach the tracker; the same second in silence must.
+    const c = await call();
+    await c.step(() => setPlay("playing"));
+    await act(async () => {
+      frames(0.001, 60); // −60 dBFS × 1.2 s while the reply plays
+    });
+    expect(c.view.result.current.readLevel().floor).toBe(-45);
+    await c.step(() => setPlay("idle"));
+    await act(async () => {
+      frames(0.001, 60); // the same, in silence: the 1 s bootstrap window closes → min(−60 + 10, −45)
+    });
+    expect(c.view.result.current.readLevel().floor).toBe(-50);
+  });
+
+  it("the drop cue's window rides up as SILENCE — the tone the owner hears never reaches the ear (S0b round MED 2)", async () => {
+    h.voice.data.live_call.min_final_ms = 200;
+    vi.useFakeTimers();
+    try {
+      await call();
+      await act(async () => {
+        vi.advanceTimersByTime(5000); // bank a full bucket so frames ship at once
+      });
+      await utterance("Thank you for watching.", 0.001, 30); // −60 dBFS: dropped, the cue fires
+      expect(h.cue).toHaveBeenCalledTimes(1);
+      const tagged = (n: number): ArrayBuffer => {
+        const buf = new ArrayBuffer(8);
+        new Uint8Array(buf).fill(n);
+        return buf;
+      };
+      await act(async () => {
+        vi.advanceTimersByTime(5000); // re-bank the pacer's bucket the utterance just spent
+      });
+      h.audio.length = 0;
+      // The window is counted in FRAMES (the ear's clock): every frame inside it goes up as silence,
+      // the first one after it as heard.
+      const window = Math.ceil(CUE_HOLD_MS / h.voice.data.live_call.frame_ms);
+      await act(async () => {
+        for (let i = 0; i < window; i++) h.mic?.({ buf: tagged(7), rms: 0.3, uplinked: true });
+        h.mic?.({ buf: tagged(9), rms: 0.3, uplinked: true });
+        // The pacer ships ≤ 25 frames per pump and the dropped utterance's leftovers sit ahead: bank
+        // again and feed one more frame so every queued buffer is pumped before the assertion.
+        vi.advanceTimersByTime(5000);
+        h.mic?.({ buf: tagged(5), rms: 0.3, uplinked: true });
+      });
+      // Not one tagged-7 frame reached the wire (the window), the 9 after it did — once.
+      expect(h.audio).not.toContain(7);
+      expect(h.audio.filter((b) => b === 9)).toHaveLength(1);
+      expect(h.audio.filter((b) => b === 0).length).toBeGreaterThanOrEqual(window);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("the BARGE floor is the effective floor raised by `playback_margin_db` (§C.6)", async () => {

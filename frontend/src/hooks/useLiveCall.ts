@@ -11,7 +11,7 @@ import {
   subscribePlayback,
   useMouthFailures,
 } from "../lib/audioController";
-import { playDropCue } from "../lib/callCue";
+import { CUE_HOLD_MS, playDropCue } from "../lib/callCue";
 import { sendCallTranscript } from "../lib/composer";
 import {
   DBFS_SILENCE,
@@ -1397,6 +1397,13 @@ export function useLiveCall(): CallView {
    *  mirrored client-side: a drop RAISES the strained note once and an enqueue that drops nothing lowers
    *  the latch, so a struggling link re-arms the note instead of re-rendering the overlay per frame. */
   const overflowed = useRef(false);
+  /** How many more FRAMES the DROP CUE is audible for — frames inside the window ride up as silence, so
+   *  the tone the owner hears cannot be heard by the EAR on a route without a canceller (the S0b code
+   *  round: a cue that reaches the relay is a new quiet final, which drops, which cues…). Counted in
+   *  frames, not wall-clock, for the liveness stamp's reason: frames ARE the ear's clock — a window
+   *  that ran on `performance.now()` would expire unheard across a freeze. 0 = no cue playing.
+   *  Wiring-owned, like `overflowed`: it is about what this capture sends. */
+  const cueFramesLeft = useRef(0);
 
   /** Release EVERYTHING, on every exit path (§6's "hang up = immediate full teardown"). Idempotent. */
   const teardown = useCallback((): void => {
@@ -1537,7 +1544,10 @@ export function useLiveCall(): CallView {
           case "dropCue": {
             // On the capture's own context (`lib/callCue`); an ear already released plays nothing.
             const ctx = capture.current?.context;
-            if (ctx) playDropCue(ctx);
+            if (ctx && knobs) {
+              playDropCue(ctx);
+              cueFramesLeft.current = Math.ceil(CUE_HOLD_MS / knobs.frame_ms);
+            }
             break;
           }
           case "teardown":
@@ -1756,9 +1766,14 @@ export function useLiveCall(): CallView {
               // frames keep arriving whatever the classification, so there is no stranded tail here and no
               // flush-on-mute question: the queue is pumped by a callback that never stops while the
               // capture is alive.
+              // …and the drop cue's own window rides up as silence too (the S0b code round, MED 2): the
+              // tone plays on this device's output, and on a media route the microphone hears it.
+              const inCue = cueFramesLeft.current > 0;
+              if (inCue) cueFramesLeft.current -= 1;
+              const uplinked = frame.uplinked && !inCue;
               const p = pacer.current;
               if (p) {
-                const up = frame.uplinked ? frame.buf : silenceLike(frame.buf);
+                const up = uplinked ? frame.buf : silenceLike(frame.buf);
                 if (enqueueBounded(p, up, knobs.frame_ms, knobs.call_backlog_ms)) {
                   // The client's own drop presents the RELAY'S signal, locally raised: one loss chain, one
                   // note, one hold that times out the same way (`degraded` → `degradeHold`). Once per burst —
@@ -1778,8 +1793,11 @@ export function useLiveCall(): CallView {
               // below compares a level against anything.
               const db = rmsToDbfs(frame.rms);
               // THE PARTITION (D76 §B.2). The noise tracker takes UPLINKED frames only; a HELD frame is
-              // the leak probe's alone (D76 §B.3 — S2 builds it), and nothing here reads one.
-              if (frame.uplinked) trackNoise(g.noise, db, knobs.frame_ms);
+              // the leak probe's alone (D76 §B.3 — S2 builds it), and nothing here reads one. And it PAUSES
+              // while the mouth is live (R83 §8, the S0b code round MED 1): on the call route the ear
+              // stays open under the reply and the canceller's residue is not the room — a long reply
+              // would ratchet the minimum up, half a window at a time, into the next quiet turn.
+              if (uplinked && !ref.current.mouthLive) trackNoise(g.noise, db, knobs.frame_ms);
               // THE effective floor for this frame — the one normalize (`gateFloor`); every reader below
               // takes this number.
               const floor = gateFloor(g, knobs);
@@ -1788,7 +1806,7 @@ export function useLiveCall(): CallView {
               // OUTSIDE every guard below on purpose — what the microphone heard does not stop being
               // true because the interrupt happens to be disarmed.
               const m = meter.current;
-              meterFrame(m, db, frame.uplinked, knobs.frame_ms, floor, ref.current.mouthLive);
+              meterFrame(m, db, uplinked, knobs.frame_ms, floor, ref.current.mouthLive);
               // TRIGGER A (§4.3): the worklet already owns the samples, so the sustained-energy floor is
               // measured on the frames we CAPTURE — never a second AnalyserNode over the same audio, and
               // deliberately never inside the pump: what the owner said is a fact about the microphone, not
@@ -1809,7 +1827,7 @@ export function useLiveCall(): CallView {
               // reply is audible whenever this line runs, and what the AEC left of it must not interrupt
               // itself. Only an UPLINKED frame can count (the §B.2 partition): a held one is the reply's
               // own leak by definition, exactly the silence it used to arrive as.
-              const above = frame.uplinked && db >= floor + knobs.playback_margin_db;
+              const above = uplinked && db >= floor + knobs.playback_margin_db;
               if (bargeWindow(m, above, bargeFrames)) {
                 clearBarge(m);
                 send({ type: "barge", gen: ref.current.gen });
