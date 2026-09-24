@@ -97,11 +97,17 @@ const h = vi.hoisted(() => ({
   /** How many captures this call has RELEASED (D74 S2): a route cycle must not leave the old ear open
    *  beside the new one — overlapping captures pin the platform's echo mode (R78 §2.3). */
   capStops: 0,
+  /** ISS-18 — `markStreamRetag` calls (see the audioController mock). */
+  retags: 0,
   /** Holds `startPcmCapture` open when an arm needs the acquisition GAP itself. */
   capGate: Promise.resolve(),
 }));
 
 vi.mock("../../src/lib/audioController", () => ({
+  /** ISS-18: how many times the route cycle told the mouth to open a FRESH output stream. */
+  markStreamRetag: () => {
+    h.retags += 1;
+  },
   dismiss: h.dismiss,
   openCallVoiceGate: h.openGate,
   setCallVoice: h.setCallVoice,
@@ -144,6 +150,8 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
   // `onHeadphones` stays REAL: the route predicate is the thing under test in the D73 cases, and a
   // mocked one would pin the harness's opinion of the string rather than the module's.
   onHeadphones: (await importActual<typeof import("../../src/lib/pcmCapture")>()).onHeadphones,
+  // …and `wantsAec` with it: the reducer's `leavesComm` edge (ISS-18) is the module's rule too.
+  wantsAec: (await importActual<typeof import("../../src/lib/pcmCapture")>()).wantsAec,
   startPcmCapture: async (opts: {
     onFrame: (f: { buf: ArrayBuffer; rms: number }) => void;
     route?: string;
@@ -1034,6 +1042,21 @@ describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/researc
     });
     expect(view.result.current.phase).toBe("listening");
     expect(view.result.current.route).toBe("headphones");
+  });
+
+  // ISS-18 (R81): a flip OUT of comm mode tells the mouth to open a fresh output stream — before the
+  // ear is released, so a silent mouth's 5 s runs alongside the redial; a flip back in tells it nothing.
+  it("tells the mouth to re-tag on the EC-on → EC-off flip, and only then", async () => {
+    const { view, step } = await call();
+    h.retags = 0;
+    await step(() => view.result.current.setRoute("headphones"));
+    expect(h.retags).toBe(1);
+    await settle();
+    await act(async () => {
+      h.frame?.({ type: "state", state: "ready" });
+    });
+    await step(() => view.result.current.setRoute("speaker"));
+    expect(h.retags).toBe(1); // back INTO comm mode: nothing stale to close
   });
 
   it("the DEVICE half rides the same cycle, and the route it was on survives", async () => {

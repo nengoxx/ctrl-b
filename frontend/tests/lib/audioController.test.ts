@@ -1,23 +1,26 @@
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({ toast: vi.fn<(text: string, kind?: string) => void>() }));
 vi.mock("../../src/store/toast", () => ({ pushToast: h.toast }));
 
 import {
+  type ChunkPolicy,
   clearAudioCache,
   dismiss,
   endTurnSpeak,
   feedReadAlong,
+  markStreamRetag,
   seekFraction,
   setCallPrePlay,
+  setCallVoice,
   setChunkPolicy,
+  STREAM_RETAG_MS,
   toggle,
   togglePlay,
   useMouthFailures,
   usePlayback,
   usePlayIntent,
-  type ChunkPolicy,
 } from "../../src/lib/audioController";
 
 // lib/audioController — the shared TTS playback singleton. We replace the DOM <audio> with a
@@ -42,6 +45,8 @@ class FakeAudio {
   ended = false;
   /** The autoplay guard, or a decode the engine refused: `play()` rejects. */
   playRejects = false;
+  /** `play()` calls, for the ISS-18 arms (one fresh stream = one start). */
+  plays = 0;
   private listeners: Record<string, (() => void)[]> = {};
   constructor() {
     // The controller builds its ONE player element lazily and then keeps it forever, so the FIRST
@@ -68,6 +73,7 @@ class FakeAudio {
     this.emit("loadedmetadata");
   }
   async play() {
+    this.plays += 1;
     if (this.playRejects) throw new DOMException("blocked", "NotAllowedError");
     this.paused = false;
     this.ended = false;
@@ -349,6 +355,140 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(lastAudio.src).toBe("blob:1");
     // chunk 1 playing + chunk 2 in flight; chunk 3 is NOT requested yet (depth 1).
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  // ── ISS-18 / R81 — THE FRESH STREAM AFTER A COMM-MODE EXIT ──
+  // In a CALL a finished reply is UNLOADED, not parked (a parked chunk 0 is a client holding the pooled
+  // physical stream, R81 §1); and after a flip that left comm mode the NEXT reply's first chunk waits
+  // out Chromium's 5 s close window from that unload, so it opens a MEDIA-tagged stream. Nothing waits
+  // without the flip.
+  describe("the call's fresh stream (ISS-18)", () => {
+    /** Play a chunked reply through to its end, emitting `ended` per chunk. */
+    const playThrough = async (id: string) => {
+      await act(async () => {
+        await toggle(id, REPLY);
+      });
+      await flush();
+      for (let i = 0; i < 6; i++) {
+        await act(async () => lastAudio.emit("ended"));
+        await flush();
+      }
+    };
+    afterEach(() => setCallVoice(false, false));
+
+    it("outside a call the finished reply PARKS on chunk 0 (unchanged); in a call it is UNLOADED", async () => {
+      const { result } = renderHook(() => usePlayback((p) => p));
+      await playThrough("m1");
+      expect(result.current.status).toBe("paused"); // parked for replay
+      expect(lastAudio.src).toBe("blob:1"); // …on chunk 0
+
+      setCallVoice(true, false);
+      await playThrough("m2");
+      expect(result.current.status).toBe("idle"); // dropped
+      expect(lastAudio.src).toBe(""); // and the element unloaded — no client on the stream
+    });
+
+    /** Only the CLOCK the unload stamp reads is faked (`performance.now`); timers stay real, so React
+     *  and the queue's own `setTimeout`s run as they do in the app. The window is then advanced to
+     *  within `LEFT` ms of expiry and the hold is a short REAL wait. */
+    const LEFT = 250;
+    const wait = (ms: number) =>
+      act(async () => void (await new Promise((r) => setTimeout(r, ms))));
+    // The CLOCK the unload stamp reads is a spy on `performance.now` — never fake timers, which freeze
+    // that clock for React too and poison every later arm in the file. Timers stay real.
+    let clock = 0;
+    const fakeClock = () => {
+      clock = 0;
+      return vi.spyOn(performance, "now").mockImplementation(() => clock);
+    };
+
+    it("after `markStreamRetag` the next reply's FIRST chunk waits out the window from the unload; later chunks and later replies don't", async () => {
+      const spy = fakeClock();
+      try {
+        setChunkPolicy(chunked({ lookahead: 2 }));
+        const { result } = renderHook(() => usePlayback((p) => p));
+        setCallVoice(true, false);
+        await playThrough("m1"); // in a call: the finish unloads, and the unload stamps the clock
+        expect(lastAudio.src).toBe("");
+        clock += STREAM_RETAG_MS - LEFT; // most of the window has passed…
+        markStreamRetag(); // …when the route leaves comm mode; mouth silent: nothing more to unload
+        // The call's reply arrives the way a call's replies do — READ-ALONG fed while it streams.
+        act(() => feedReadAlong("m2", "One. Two.")); // "One." closes; chunk 0 alone on the wire
+        await flush(); // chunk 0's synth lands…
+        expect(result.current.status).toBe("loading"); // …and is HELD, honestly
+        expect(lastAudio.src).toBe("");
+        // …and MORE of the reply lands during the hold: the window is open now (chunk 0 pinned the
+        // target), so chunks 1–2 go on the wire, land, and re-enter `playNext` through the latch.
+        act(() => feedReadAlong("m2", "One. Two. Three. Four."));
+        await flush();
+        expect(vi.mocked(globalThis.fetch).mock.calls.length).toBeGreaterThan(4); // m1's 3 + chunk 0 + more
+        expect(lastAudio.src).toBe(""); // still held — and NOT chunk 1 (the re-entry met the gate)
+        await wait(LEFT / 4);
+        expect(lastAudio.src).toBe(""); // not early
+        const playsBefore = lastAudio.plays;
+        await wait(LEFT * 2);
+        expect(lastAudio.src).toBe("blob:4"); // the fresh stream opened, on chunk 0 of m2
+        expect(result.current.status).toBe("playing");
+        // the re-entries must not have armed more timers, or chunk 0 would start once per timer
+        expect(lastAudio.plays).toBe(playsBefore + 1);
+        await act(async () => {
+          await endTurnSpeak("m2", "One. Two. Three. Four."); // AWAITED: a floating close leaks into the next arm
+        });
+        for (let i = 0; i < 8; i++) {
+          await act(async () => lastAudio.emit("ended"));
+          await flush();
+        }
+        // the window is spent: the next reply plays at once
+        await act(async () => {
+          await toggle("m3", REPLY);
+        });
+        await flush();
+        expect(result.current.status).toBe("playing");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("a mark while a reply PLAYS lets it finish on the old stream and holds only the reply after it", async () => {
+      const spy = fakeClock();
+      try {
+        const { result } = renderHook(() => usePlayback((p) => p));
+        setCallVoice(true, false);
+        await act(async () => {
+          await toggle("m1", REPLY);
+        });
+        await flush();
+        expect(result.current.status).toBe("playing");
+        markStreamRetag();
+        expect(result.current.status).toBe("playing"); // untouched — it finishes where it is
+        for (let i = 0; i < 6; i++) {
+          await act(async () => lastAudio.emit("ended"));
+          await flush();
+        }
+        expect(lastAudio.src).toBe(""); // the finish unloaded it: the window runs from HERE
+        clock += STREAM_RETAG_MS - LEFT;
+        await act(async () => {
+          await toggle("m2", REPLY);
+        });
+        await flush();
+        expect(result.current.status).toBe("loading"); // held for what is left of it
+        await wait(LEFT * 2);
+        expect(result.current.status).toBe("playing");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("no mark, no wait — an ordinary call reply plays the moment its first chunk lands", async () => {
+      const { result } = renderHook(() => usePlayback((p) => p));
+      setCallVoice(true, false);
+      await playThrough("m1");
+      await act(async () => {
+        await toggle("m2", REPLY);
+      });
+      await flush();
+      expect(result.current.status).toBe("playing");
+    });
   });
 
   it("carries the agent on EVERY chunk — one reply is read in one voice (D70 §8.5)", async () => {

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Item ② (§14.15.1) — the theme-fault boundary + Reset-as-pick, wired in App.tsx. App is otherwise a thin
@@ -103,6 +103,7 @@ vi.mock("../src/hooks/useForegroundNotifications", () => ({
 }));
 
 import App from "../src/App";
+import { useToasts } from "../src/store/toast";
 import { setThemeSetting, setUI } from "../src/store/ui";
 import { setPlanSheetOpen, usePlanSheetOpen } from "../src/store/planSheet";
 
@@ -130,6 +131,33 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => undefined); // silence React's caught-error noise
 });
 afterEach(cleanup); // globals:false → register RTL cleanup explicitly
+
+// THE DISCARD NOTICE (Phase 24 S4, owner round 2026-09-24): a page restored after the browser DISCARDED
+// it says so, once, sticky — the one bit that tells "the OS killed the call" from a benign reload.
+describe("App — the discard notice", () => {
+  const NullRoot = () => null;
+  afterEach(() => {
+    delete (document as { wasDiscarded?: boolean }).wasDiscarded;
+  });
+
+  it("a page restored after a discard pushes the sticky notice", () => {
+    hoisted.root = NullRoot;
+    Object.defineProperty(document, "wasDiscarded", { value: true, configurable: true });
+    const toasts = renderHook(() => useToasts());
+    render(<App />);
+    const notice = toasts.result.current.find((t) => t.text.includes("discarded this page"));
+    expect(notice?.sticky).toBe(true);
+  });
+
+  it("an ordinary boot — the bit absent or false — says nothing", () => {
+    hoisted.root = NullRoot;
+    Object.defineProperty(document, "wasDiscarded", { value: false, configurable: true });
+    const toasts = renderHook(() => useToasts());
+    const before = toasts.result.current.length; // the store is module-level: the arm above's sticky toast stands
+    render(<App />);
+    expect(toasts.result.current.length).toBe(before);
+  });
+});
 
 describe("App theme-fault boundary (item ②)", () => {
   it("a Root that throws on render shows the fault fallback (not a blank screen)", () => {

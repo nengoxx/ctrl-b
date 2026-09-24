@@ -181,11 +181,61 @@ export function primeAudio(): void {
  *  either. */
 let callVoice: { active: boolean; waiting: boolean } = { active: false, waiting: false };
 
+// ── THE FRESH STREAM AFTER A COMM-MODE EXIT (ISS-18, R81) ───────────────────────────────────────
+// Chrome tags a physical output stream with the Android usage of the moment it is OPENED (VOICE under
+// comm mode, MEDIA otherwise — R74 S2), pools it per `AudioParameters`, and closes it only after
+// `kStreamCloseDelaySeconds = 5` with no client (R80 §3.3). The element's renderer is that client: a
+// paused OR ended element holds a mixer on the stream for a further 10 s (R81 §1). So a reply played
+// after the call left comm mode — the route flipped to headphones / the clean speaker — kept coming
+// out of the PHONE SPEAKER for up to 15 s (the owner's S4 round, 2026-09-24): the stale VOICE-tagged
+// stream, forced to the speaker by the mode it was born under, reused by the next `src`.
+// R81 §0's VERIFIED sequence for a fresh MEDIA-tagged stream: UNLOAD the element (`load()` tears the
+// renderer down — `reset()` is that one door), wait ≥ 5 s with nothing touching the dispatcher, and
+// only then assign the next `src` (the tag is fixed at assignment, not at `play()`). Two consequences,
+// both here: in a CALL a finished reply is dropped rather than parked (a parked chunk 0 is a client),
+// and a reply that would start inside the window waits it out — but ONLY after a flip that left comm
+// mode (`markStreamRetag`); an ordinary call pays nothing.
+/** Chromium's close delay plus IPC slack (R81 §0: "budget 5.5 s"). The platform's number, not a knob
+ *  — the same reasoning as `pcmCapture`'s `KEEPALIVE_GAIN`. */
+export const STREAM_RETAG_MS = 5500;
+/** When the element was last UNLOADED (`reset()`), on `performance.now()`'s clock; the dispatcher's
+ *  5 s runs from there. -Infinity = never, or long enough ago not to matter. */
+let unloadedAt = -Infinity;
+/** A route flip left comm mode and the next reply must open a FRESH stream: hold its first `src` until
+ *  `unloadedAt + STREAM_RETAG_MS`. Cleared by the assignment that opens that stream. */
+let retagPending = false;
+/** A hold is ARMED for the queue's first chunk: chunks landing meanwhile re-enter `playNext` through the
+ *  waiting latch, and without this each landing would arm another timer that restarts chunk 0. */
+let retagArmed = false;
+
+/** The call left comm mode (an EC-on → EC-off recapture, `useLiveCall`). A mouth that is silent — idle,
+ *  or parked on an ended clip — is unloaded NOW so the 5 s starts now; one mid-reply finishes on the old
+ *  route (honestly, the screen says so) and is unloaded by its own `finish`; one still SYNTHESIZING is
+ *  left alone (a reset would dismiss the reply the owner is waiting for) and unloads at its end too.
+ *  Either way the next reply waits out what is left. */
+export function markStreamRetag(): void {
+  retagPending = true;
+  if (pb.status === "idle" || pb.status === "paused") reset();
+}
+
+/** Milliseconds the next `src` assignment must still wait for a fresh stream; 0 when no retag is
+ *  pending or the window has passed. */
+function retagHold(): number {
+  if (!retagPending) return 0;
+  return Math.max(0, unloadedAt + STREAM_RETAG_MS - performance.now());
+}
+
+/** The fresh stream is being opened by this `src` assignment — the retag is done. */
+function retagDone(): void {
+  retagPending = false;
+}
+
 /** Arm/disarm the override. `waitForSettle` is "a turn was already streaming when this call started" —
  *  the override stays silent until `openCallVoiceGate`. The call's teardown clears it on EVERY exit
  *  path. */
 export function setCallVoice(active: boolean, waitForSettle: boolean): void {
   const waiting = active && waitForSettle;
+  if (!active) retagPending = false; // ISS-18: the retag belongs to the call; its teardown ends it
   if (callVoice.active === active && callVoice.waiting === waiting) return;
   callVoice = { active, waiting };
   emit(); // the feeder is a hook: flipping the override has to re-run its gates
@@ -465,6 +515,10 @@ function ensureEl(): HTMLAudioElement {
       playNext(s); // advance the queue: next chunk's src, or rewind if this was the last
       return;
     }
+    if (callVoice.active) {
+      reset(); // ISS-18: an ended element is a client too (R81 §1) — in a call, unload it
+      return;
+    }
     a.currentTime = 0;
     set({ current: 0, status: "paused" }); // reset to start, ready to replay
   });
@@ -486,12 +540,17 @@ function liveSession(): Session | null {
 
 function reset(): void {
   reqSeq++; // invalidate any in-flight synth so a dismissed clip never starts playing
+  retagArmed = false; // a hold armed for the queue this reset ends is moot (its callback bails on `seq`)
   if (session) {
     session.abort.abort(); // ≤ `lookahead` wasted synths per cancel, by construction
     session.waiting = false;
   }
   if (el) {
     el.pause();
+    // The UNLOAD (R81 §0 step 1 — `load()` is what tears the renderer down and starts the dispatcher's
+    // 5 s). Stamped only when there was a source to unload: a bare re-`load()` of an empty element
+    // touches no stream, and re-stamping it would only make `retagHold` wait for nothing.
+    if (el.src) unloadedAt = performance.now();
     el.removeAttribute("src");
     el.load();
   }
@@ -594,6 +653,13 @@ async function playWhole(
     reset();
     return;
   }
+  // ISS-18: the same fresh-stream wait as the chunked path's first chunk, on this path's own clock.
+  const hold = retagHold();
+  if (hold > 0) {
+    await new Promise<void>((r) => setTimeout(r, hold));
+    if (seq !== reqSeq) return;
+  }
+  retagDone();
   a.src = url;
   a.currentTime = 0;
   try {
@@ -826,6 +892,7 @@ function playNext(s: Session): void {
     pump(s);
     return;
   }
+  const opening = s.playIdx < 0; // this chunk OPENS the element (ISS-18's gate reads it below)
   s.waiting = false;
   s.playIdx = i;
   // A forward seek that latched on a not-yet-synthesized chunk pays out HERE, exactly once: it belongs
@@ -837,6 +904,31 @@ function playNext(s: Session): void {
     s.seek = null;
   }
   const span = s.tl.spans[i];
+  // ISS-18: a session's FIRST chunk opens the physical stream (R81 §0 step 3 — the tag is fixed here),
+  // so if a retag is pending it waits out the dispatcher's window under the same honest "loading" the
+  // synthesis gaps publish, and re-enters through this function. Later chunks share the stream.
+  if (opening) {
+    const hold = retagHold();
+    if (hold > 0) {
+      // NOTHING is loaded, and the index must say so for as long as the hold stands: a chunk landing
+      // meanwhile re-enters through the latch, and an advanced index would send it past this gate —
+      // loading chunk 1 on the stale stream and skipping chunk 0 altogether.
+      s.playIdx = -1;
+      s.waiting = true;
+      set({ status: "loading" });
+      if (retagArmed) return; // that re-entry: the timer is already set
+      retagArmed = true;
+      setTimeout(() => {
+        retagArmed = false;
+        if (s.seq !== reqSeq || session !== s) return;
+        retagDone(); // the timer WAS the wait — the way back in must not measure it again
+        s.waiting = false;
+        playNext(s); // re-derives the first playable chunk and opens the fresh stream
+      }, hold);
+      return;
+    }
+    retagDone();
+  }
   a.src = s.urls[i]!;
   a.currentTime = 0;
   // The fraction can only become seconds once the element knows how long this chunk REALLY is; until
@@ -897,6 +989,14 @@ function dropSession(s: Session): void {
 }
 
 function finish(s: Session, a: HTMLAudioElement): void {
+  // IN A CALL the finished reply is DROPPED, not parked (ISS-18 / R81 §1): the rewind below assigns
+  // chunk 0 back to the element, which keeps a mixer — a client — on the physical stream for 10 s
+  // after the reply ended, and that stream may carry the route the call has just LEFT. The call screen
+  // has no replay control to lose; a replay from the chat log re-synthesizes through the cache anyway.
+  if (callVoice.active) {
+    dropSession(s);
+    return;
+  }
   const first = s.states.indexOf("ok");
   // ANY failed chunk drops the QUEUE, not just the player: a retained session replays with its
   // failed chunks skipped forever — never re-requesting them long after the TTS server came back

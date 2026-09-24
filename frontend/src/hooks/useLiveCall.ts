@@ -3,16 +3,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   dismiss,
   getPlayStatus,
+  markStreamRetag,
   openCallVoiceGate,
+  type PlayStatus,
   setCallPrePlay,
   setCallVoice,
   subscribePlayback,
   useMouthFailures,
-  type PlayStatus,
 } from "../lib/audioController";
 import { sendCallTranscript } from "../lib/composer";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
-import { onHeadphones, startPcmCapture, type MicRequest, type PcmCapture } from "../lib/pcmCapture";
+import {
+  onHeadphones,
+  startPcmCapture,
+  wantsAec,
+  type MicRequest,
+  type PcmCapture,
+} from "../lib/pcmCapture";
 import { accrue, enqueueBounded, newPacer, pump, type PacerState } from "../lib/uplinkPacer";
 import { useStagedFiles } from "../store/attachments";
 import { cancelTurn, confirmOutstanding, getLiveTurn, useChatSlice } from "../store/chat";
@@ -236,6 +243,10 @@ export const CALL_COPY = {
    *  and our re-open can beat that release). The call works and the ear is safe either way; what the
    *  owner has lost is the clean audio they picked the route FOR, and nothing else would say so. */
   ecStuck: "the echo canceller didn't let go — audio may still be processed",
+  /** ISS-18 (R81): a flip OUT of comm mode while a reply plays cannot move that reply — its physical
+   *  output stream was tagged when it opened and nothing re-tags it — so the screen says which reply
+   *  the new route reaches, instead of letting the owner think the flip failed. */
+  routeNextReply: "the new route takes effect from the next reply",
   /** D73 S6 ② — the ear stopped hearing while the page was away (a frozen renderer, a stolen mic) and
    *  the leg is being redialled. It says what the owner needs to know and nothing else: a resumed call
    *  must never present as if it heard, and the stretch it missed is not recoverable. */
@@ -453,7 +464,14 @@ export type CallEffect =
    *  the mount effect runs — under the new constraints. In-place `applyConstraints` is rejected by
    *  design (R78 §8: the mode is pinned by the live source for the device, and the round-trip reports
    *  success on a set it never widened), so the only honest way to change the route is a new track. */
-  | { type: "recapture"; route: string; deviceId: string }
+  | {
+      type: "recapture";
+      route: string;
+      deviceId: string;
+      /** The flip leaves comm mode (EC on → off): the mouth must open a FRESH output stream for the next
+       *  reply (`audioController.markStreamRetag`, ISS-18 / R81). */
+      leavesComm: boolean;
+    }
   /** THE LEG REDIAL (the speech-threshold change): `openLeg` again, nothing else — it closes the old
    *  socket itself, mints the fresh leg number that ghosts the old one's callbacks, and reads the
    *  threshold off the LIVE state. The capture, the meter, the pacer rule and the generation all
@@ -803,11 +821,15 @@ function reduce(s: CallState, sig: CallSignal): Step {
       const deviceId = sig.deviceId ?? s.inputDevice;
       // Nothing moved — and re-dialling for nothing costs the owner a reconnect they did not ask for.
       if (route === s.route && deviceId === s.inputDevice) return { state: s, out: [] };
+      // ISS-18 (R81): leaving comm mode re-tags nothing already open. A reply PLAYING at the flip
+      // finishes on the old route; the note says so, once, on the flip that causes it.
+      const leavesComm = wantsAec(s.route) && !wantsAec(route);
       return {
         state: {
           ...s,
           route,
           inputDevice: deviceId,
+          note: leavesComm && s.mouthLive ? CALL_COPY.routeNextReply : s.note,
           // The SCREEN is honest about what is happening: this is a fresh leg on a fresh ear, and the
           // ladder starts clean because it is a deliberate redial, not a failure to recover from.
           phase: "connecting",
@@ -830,7 +852,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
           // chat POST's outcome, which is a note the owner loses, not speech (the queue is kept).
           gen: s.gen + 1,
         },
-        out: [{ type: "recapture", route, deviceId }],
+        out: [{ type: "recapture", route, deviceId, leavesComm }],
       };
     }
 
@@ -1422,6 +1444,10 @@ export function useLiveCall(): CallView {
             // never refused `busy` by our own leg — and the S6 ⑦ marker covers the window if it is),
             // then the leg's pacer, then the ear.
             const gen = ref.current.gen;
+            // ISS-18 (R81): the mouth's next reply must open a FRESH output stream once comm mode is
+            // left — told BEFORE the ear is released, so a silent mouth is unloaded and its 5 s starts
+            // alongside the redial rather than after it.
+            if (eff.leavesComm) markStreamRetag();
             clearTimeout(retryTimer.current);
             socket.current?.close();
             socket.current = null;

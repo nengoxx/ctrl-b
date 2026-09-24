@@ -1212,13 +1212,45 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     expect(state.attempts).toBe(0);
     // The HOLD belongs to the released track; the fresh `captureReady` decides it again.
     expect(state.earHoldMode).toBe(false);
-    expect(out).toEqual([{ type: "recapture", route: "headphones", deviceId: "" }]);
+    // speaker (EC on) → headphones (EC off) LEAVES comm mode: the mouth must re-tag (ISS-18 / R81).
+    expect(out).toEqual([
+      { type: "recapture", route: "headphones", deviceId: "", leavesComm: true },
+    ]);
   });
 
   it("…and the device half alone, against the standing route", () => {
     const { state, out } = run(routed, [{ type: "routeChange", deviceId: "bt-headset" }]);
     expect(state.route).toBe("speaker");
-    expect(out).toEqual([{ type: "recapture", route: "speaker", deviceId: "bt-headset" }]);
+    // the route did not move, so comm mode was not left
+    expect(out).toEqual([
+      { type: "recapture", route: "speaker", deviceId: "bt-headset", leavesComm: false },
+    ]);
+  });
+
+  // ISS-18 (R81): only an EC-on → EC-off flip leaves comm mode. A flip between the two EC-off routes,
+  // or INTO comm mode, opens nothing stale — the reverse direction re-routes on its own (R81 §3).
+  it("`leavesComm` is the EC-on → EC-off edge only", () => {
+    const onClean = run(routed, [{ type: "routeChange", route: "speaker-hifi" }]);
+    expect(onClean.out[0]).toMatchObject({ type: "recapture", leavesComm: true });
+    const cleanState = run(onClean.state, [
+      { type: "captureReady", earHoldMode: false, route: "speaker-hifi", deviceId: "" },
+      { type: "ready" },
+    ]).state;
+    expect(run(cleanState, [{ type: "routeChange", route: "headphones" }]).out[0]).toMatchObject({
+      leavesComm: false,
+    });
+    expect(run(cleanState, [{ type: "routeChange", route: "speaker" }]).out[0]).toMatchObject({
+      leavesComm: false,
+    });
+  });
+
+  it("a flip out of comm mode MID-REPLY says the new route starts with the next reply; a silent one says nothing", () => {
+    const speaking = run(routed, [{ type: "playbackStarted" }]).state;
+    expect(speaking.mouthLive).toBe(true);
+    const mid = run(speaking, [{ type: "routeChange", route: "headphones" }]).state;
+    expect(mid.note).toBe(CALL_COPY.routeNextReply);
+    const silent = run(routed, [{ type: "routeChange", route: "headphones" }]).state;
+    expect(silent.note).not.toBe(CALL_COPY.routeNextReply);
   });
 
   it("KEEPS the queue and the mute — a route change is not the owner leaving", () => {

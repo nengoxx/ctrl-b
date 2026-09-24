@@ -14,6 +14,7 @@ import { useForegroundNotifications } from "./hooks/useForegroundNotifications";
 import { crashBtn, crashBtnQuiet, crashMessage, crashShell } from "./lib/crashScreen";
 import { isAnyDirty } from "./store/dirty";
 import { usePlanOpenAutoClose } from "./store/planSheet";
+import { pushToast } from "./store/toast";
 import { useUISlice } from "./store/ui";
 import { useComposerSkin, useOutlines } from "./theme-engine/kit/axes";
 import { DEFAULT_THEME, defaultSwitchTarget } from "./theme-engine/resolve";
@@ -33,6 +34,7 @@ export default function App() {
   useEventStream(); // live activity feed → refresh fleet on any recorded action (effects only, no re-render)
   useAppViewport(); // --app-h tracks the visual viewport (keyboard-aware dvh) — effect only
   useUnsavedGuard(); // warn before unload if any editor has unsaved changes — effect only
+  useDiscardNotice(); // say so when the browser threw this page away while it was in the background
 
   // App re-renders ONLY on a theme change (the reactive reads it keeps: `useActiveRoot` resolves the Root
   // for the skin, and `theme` below keys item ②'s fault boundary — both fire on the same skin change, so no
@@ -196,6 +198,23 @@ function useAppViewport(): void {
       vv.removeEventListener("resize", apply);
       vv.removeEventListener("scroll", apply);
     };
+  }, []);
+}
+
+// THE DISCARD NOTICE (Phase 24 S4, owner round 2026-09-24). On the owner's phone the page came back
+// RELOADED after every app switch, and a locked screen went deaf within seconds — two symptoms with two
+// candidate causes that look identical from the page: the OS (or Chrome under memory pressure) DISCARDING
+// the tab and restoring it by reload, or something benign (on dev, Vite's client reloads after its HMR
+// socket drops). `document.wasDiscarded` is the one bit that tells them apart: true only on a page
+// restored after a discard (Chrome ≥ 68; absent elsewhere ⇒ no note). Surfaced as a sticky toast so it is
+// still there when the owner looks — a discard means the call died with the page, and the fix is a phone
+// setting (R75 §2.3), not code; the page cannot tell them that unless it says it was discarded.
+function useDiscardNotice(): void {
+  useEffect(() => {
+    if ((document as { wasDiscarded?: boolean }).wasDiscarded === true)
+      pushToast("the browser discarded this page while it was away and reloaded it", "info", {
+        sticky: true,
+      });
   }, []);
 }
 

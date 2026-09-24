@@ -1438,6 +1438,62 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   and quiet; the §4.1 knobs tuned by feel; the Tier 0 auto-stop threshold calibrated in the same
   sitting; `enabled` flips ON as the round's close.
 
+  > **S4 ROUND №1 (owner, 2026-09-24, car + BT headphones + lock screen; the card = the 36th
+  > session's handoff).** *The car, default route (their config's `speaker`, EC on ⇒ comm mode):*
+  > the reply came out of the CAR speakers — correct (comm mode ⇒ the hands-free profile ⇒ the car,
+  > at phone-call quality; the clean route would reach it over A2DP at media quality); capture was
+  > the car's mic over the same profile, and the owner had to nearly SHOUT to be transcribed, with
+  > cut-offs — read as the §4.3 quiet-final gate (`min_final_ms` 200 above the 0.06 barge floor,
+  > calibrated on the phone mic at home) dropping ordinary speech from a narrowband, differently-gained
+  > car mic; **owed: the car on the CLEAN route** (phone mic stays wideband; reply via A2DP), then the
+  > Speech slider 0.90 → ~0.70 if still poor; the "too quiet — didn't take that" note is the
+  > confirming signal. *Headphones:* the Mic picker rows are `default · Speakerphone · Headset
+  > earpiece`, unchanged with the pair disconnected — **"Headset earpiece" is Chrome's name for the
+  > phone's own earpiece; the R77 no-HFP-row premise STANDS** (the 09-23 "headset mic, I think" was
+  > this row). A flip to headphones MID-REPLY kept the reply on the phone speaker until the next
+  > reply after a silence; the reverse flip was immediate; a later flip was immediate too — **ISS-18**
+  > (the pooled, tag-latched output stream, R74 S2 + R80 §3.3; R81 buys the fix sequence). *Lock
+  > screen:* the ear went deaf within ~1–2 s and no reply was audible — **ISS-19** (device-setting
+  > probe first: R75 §2.3's EMUI power management; the new boot-time discard toast is the
+  > discriminator). *Noise:* background noise sometimes lands as short false words ("yeah", "mm hmm")
+  > — the same gate from the other side: a noise that clears the 200 ms floor is transcribed; one fixed
+  > floor cannot serve the car AND the sofa, so the car re-run decides how far apart they are
+  > (`min_final_ms` → 300 is the home-side dial). *App switch:* not run this round (it worked in an
+  > earlier one). *Rulings:* ISS-13/ISS-14 parked as won't-fix (scope). The reload-on-every-return on
+  > dev is Vite's HMR client, not the app (ISS-19's note).
+
+  > **THE ISS-18 SLICE — the fresh output stream after a comm-mode exit (built 2026-09-24, same
+  > session; evidence [R81](./research/R81-output-stream-retag-after-mode-exit.md)).** Mechanism
+  > (R74 S2 + R80 §3.3 + R81): Chrome tags a physical output stream with the Android usage of the
+  > moment it OPENS, pools it per `AudioParameters`, and closes it 5 s after its last client; the
+  > mouth's element is that client, and a paused/ended element holds a mixer on it for 10 s more —
+  > so after a flip OUT of comm mode the next reply reused the VOICE-tagged stream (forced to the
+  > loudspeaker by the mode it was born under) for up to 15 s, and `finish()`'s rewind-hold on chunk 0
+  > re-armed the clock. **Built, in `lib/audioController`:** ① in a CALL a finished reply is DROPPED
+  > (unloaded — `reset()` is the one unload door and stamps `unloadedAt`), not parked; the whole-clip
+  > `ended` unloads too ② `markStreamRetag()` — called by `useLiveCall`'s `recapture` effect when the
+  > flip LEAVES comm mode (`leavesComm = wantsAec(old) && !wantsAec(new)`, a pure edge on the reducer's
+  > effect) — unloads a silent mouth NOW (idle or parked; a SYNTHESIZING or playing one is left alone)
+  > and arms the hold ③ the next reply's FIRST `src` assignment waits `STREAM_RETAG_MS` (5500 = Chromium's
+  > `kStreamCloseDelaySeconds` + IPC slack — a platform constant like `KEEPALIVE_GAIN`, not a knob) from
+  > the unload, under the queue's honest "loading"; the play index stays at −1 for as long as the hold
+  > stands (a chunk landing mid-hold re-enters through the latch and must meet the gate — without this
+  > it loaded chunk 1 on the stale stream and skipped chunk 0; red-proven) and one timer only
+  > (`retagArmed`; red-proven); the fired timer IS the spent window; the whole-clip path waits the same
+  > way on its own clock ④ the retag belongs to the call — `setCallVoice(false)` ends it ⑤ an
+  > ordinary call (no flip) pays NOTHING: no hold, no unload beyond the in-call finish. **A reply
+  > PLAYING at the flip finishes on the old route** and the deck says so once
+  > (`CALL_COPY.routeNextReply`, on the flip that causes it — the reducer's `routeChange` with
+  > `mouthLive`). Tests: reducer (`leavesComm` = the EC-on → EC-off edge only; the mid-reply note) ·
+  > wiring (the mock counts `markStreamRetag`: once on the flip out, none on the flip back) · controller
+  > (parked-outside-a-call vs unloaded-in-a-call · the hold with chunks landing mid-hold via read-along
+  > feeding, both mechanisms red-proven, the spent window · a mark mid-reply · no mark no wait).
+  > **Owed to the phone:** flip to headphones mid-reply → the note, the reply finishes on the speaker,
+  > the NEXT reply on the headphones with at most ~5 s of "loading" before it; flip while silent → the
+  > next reply on the headphones with no visible wait beyond the LLM's; the zero-code earpiece-row
+  > PROBE (R81 §3, REASONED only): EC-off leg + Mic row "Headset earpiece" — does even a playing reply
+  > move to the headphones at once (at voice-call volume)?
+
 - **THE D73 WAVE — call audio routing + background calls (owner-ruled 2026-09-21, in conversation;
   evidence = [R74](./research/R74-android-call-audio-routing.md) ·
   [R75](./research/R75-background-call-survival.md); the S4 round itself surfaced both).** The
