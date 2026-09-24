@@ -1,17 +1,16 @@
 import { useEffect } from "react";
 
 import { FocalFace } from "../../../../components/FocalFace";
+import { useActiveAgent } from "../../../../hooks/useActiveAgent";
 import { useAgentArt, type AgentArt } from "../../../../hooks/useAgentArt";
+import { DEFAULT_AGENT, useAgentRoster } from "../../../../hooks/useAgents";
 import {
   defaultAgentPin,
-  effectiveAgent,
-  getDefaultAgent,
-  getKnownAgents,
   getKnownSkills,
   pinSessionAgent,
   useVerbsVersion,
 } from "../../../../lib/composer";
-import { useSessionAgent, useThreadAgent } from "../../../../store/chat";
+import { useThreadAgent } from "../../../../store/chat";
 import { releaseComposerOverlay, useComposerOverlayOpen } from "../../../../store/composerOverlay";
 import {
   clearComposerSkills,
@@ -40,8 +39,13 @@ import {
 //     own D70 §4.2 pin, pins the default BY NAME, because a clear would let the thread's agent resurface.
 //   • SKILLS — checkboxes: the discovered skills, ticked for the NEXT message only (`store/composerSkills`,
 //     spent on dispatch).
-// Both read the composer's own verb sets (`lib/composer`), the same source `/agent`/`/<skill>` route from —
-// so the menu can never offer something the router wouldn't accept, and it costs no extra fetch.
+// The skills read the composer's own verb set (`lib/composer`), the same source `/<skill>` routes from — so
+// the menu can never offer a skill the router wouldn't accept, and it costs no extra fetch. The AGENTS read
+// the always-on ROSTER QUERY (`useAgentRoster`) — the same source the backdrop paints by — and NOT the
+// composer's module-level `/agent` set: that Set is best-effort (filled once at import, refreshed only by
+// a save, kept as-is on a failed load), so after a failed first load it listed no agent and checked the
+// default row while the backdrop painted the pinned character (the sticky slice's review, 2026-09-24).
+// `useActiveAgent` is the one subscription both surfaces take for the checked row.
 
 /** The panel element id — one composer is mounted at a time, like `#composer-suggest`/`#cmd-input`. */
 export const TOOLS_SHEET_ID = "composer-tools";
@@ -65,24 +69,27 @@ export function ToolsMenuSheet() {
   // plan outlives the composer's mount; an open menu doesn't.)
   useEffect(() => () => releaseComposerOverlay("menu"), []);
 
-  const agents = getKnownAgents();
+  // The roster, and its resolved default — `DEFAULT_AGENT` stands in until the query lands (the gallery's
+  // own fallback); the rows fill in on the same render the backdrop would.
+  const roster = useAgentRoster().data;
+  const agents = roster?.agents ?? [];
+  const defaultAgent = roster?.default ?? DEFAULT_AGENT;
   const skills = getKnownSkills();
   // D70 §8.4 — the picker's rows lead with the agent's avatar where it has one. Resolved ONCE here and
   // threaded down: the rows are a `.map()`, and one resolver serves the whole group (`useAgentArt`).
   const art = useAgentArt();
   const armed = ticked.length > 0;
-  // The radio group checks the ACTIVE agent: the server's routing ladder (`effectiveAgent`, the one the
-  // agent backdrop paints by) — the sticky pin, else the OPEN THREAD's own pin, else the configured
-  // default. A pin that isn't a configured agent folds to the default row (the server's own answer for
-  // an unknown name), and a pin AT the default's name — what the default row writes inside a pinned
-  // thread — folds there too, so the default row reads checked in both of its representations.
-  //
-  // BOTH pins are subscribed: the sticky one because this panel WRITES it (a pick must repaint the
-  // open group), and because `/agent` or the gallery's Talk can move it from elsewhere; the thread pin
+  // The radio group checks the ACTIVE agent: the server's routing ladder (`useActiveAgent`, the one
+  // subscription the agent backdrop paints by) — the sticky pin, else the OPEN THREAD's own pin, else the
+  // configured default. A pin that isn't a configured agent folds to the default row (the server's own
+  // answer for an unknown name), and a pin AT the default's name — what the default row writes inside a
+  // pinned thread — folds there too, so the default row reads checked in both of its representations.
+  // Both pins are subscribed inside the hook: the sticky one because this panel WRITES it (a pick must
+  // repaint the open group) and `/agent` or the gallery's Talk can move it from elsewhere; the thread pin
   // because it arrives on its own, from `openThread`'s LATE list read, and can land while the panel is up.
-  const defaultAgent = getDefaultAgent();
+  const active = useActiveAgent() ?? defaultAgent;
+  // …read here too, for what the default row WRITES (`defaultAgentPin`): a clear, or the default by name.
   const threadAgent = useThreadAgent();
-  const active = effectiveAgent(useSessionAgent(), threadAgent, agents) ?? defaultAgent;
 
   return (
     <div
@@ -101,7 +108,7 @@ export function ToolsMenuSheet() {
             name={defaultAgent}
             tag="default"
             on={active === defaultAgent}
-            pin={defaultAgentPin(threadAgent)}
+            pin={defaultAgentPin(threadAgent, defaultAgent)}
             avatar={art(null).avatar}
           />
           {agents.map((n) => (

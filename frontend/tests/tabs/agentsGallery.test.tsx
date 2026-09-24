@@ -190,16 +190,16 @@ describe("AgentsTab · the two verbs", () => {
 
   it("TALK on the resolved default inside a thread PINNED to a character pins the default BY NAME (D75 ruling)", () => {
     // A clear here would let the thread's character resurface (the ladder: sticky, else the thread's
-    // pin). The same `defaultAgentPin` expression the tools menu's default row takes decides it — and
-    // it names the default off the composer's own `/api/agents` load, which this harness leaves at its
-    // "default" seed, so the list's resolved default is set to match (in the app both are one endpoint).
-    list.agents = ["lynette"];
-    list.default = "default";
+    // pin). The same `defaultAgentPin` expression the tools menu's default row takes decides it — fed
+    // the LIST's resolved default (a specialist promoted to the default here, to prove the name is the
+    // list's own and not the composer's module-set copy, which this harness never loads).
+    list.agents = ["lynette", "ari"];
+    list.default = "ari";
     h.threadAgent = "lynette";
     const pin = renderHook(() => useSessionAgent());
     render(<AgentsTab active />);
-    fireEvent.click(screen.getByRole("button", { name: "Talk to default" }));
-    expect(pin.result.current).toBe("default"); // by NAME — not the clear the unpinned arm above gets
+    fireEvent.click(screen.getByRole("button", { name: "Talk to ari" }));
+    expect(pin.result.current).toBe("ari"); // by NAME — not the clear the unpinned arm above gets
   });
 
   it("a card TAP opens that agent's editor — the very row the list has always opened", () => {

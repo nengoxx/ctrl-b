@@ -1,7 +1,5 @@
-import { effectiveAgent } from "../lib/composer";
-import { useSessionAgent, useThreadAgent } from "../store/chat";
+import { useActiveAgent } from "./useActiveAgent";
 import { useAgentArt, type BoundArt } from "./useAgentArt";
-import { useAgentRoster } from "./useAgents";
 
 // WHICH agent's art the backdrop paints (D70 §8.3a item 2) — the one answer every backdrop consumer
 // takes, so the rule lives once instead of in each theme's body.
@@ -25,9 +23,10 @@ import { useAgentRoster } from "./useAgents";
 // `null` is handed to `useAgentArt`'s resolver on purpose rather than resolved here: `art(null)` already
 // means "whichever agent a bare turn runs as", so the default's slug is looked up in exactly one place.
 //
-// THE LADDER ITSELF LIVES IN `lib/composer` (`effectiveAgent`, over `validSessionAgent`) — one pure claim
-// about routing, taken by this hook AND by the tools menu's checked row, which is the only way those two
-// can keep answering the same question the same way.
+// THE LADDER ITSELF LIVES IN `lib/composer` (`effectiveAgent`, over `validSessionAgent`), and the ONE
+// subscription that feeds it — the session pin, the thread pin, the roster QUERY — is `useActiveAgent`,
+// taken by this hook AND by the tools menu's checked row, which is the only way those two can keep
+// answering the same question the same way.
 
 /** The ACTIVE agent's bound `background`, its `avatar` when it binds no background, or `undefined` when
  *  there is neither to paint — the agent binds nothing, binds entries the library no longer holds, or binds
@@ -42,14 +41,6 @@ import { useAgentRoster } from "./useAgents";
  *  the call screen wears it too, because a call's turns route by the same ladder. */
 export function useActiveBackdrop(): BoundArt | undefined {
   const art = useAgentArt();
-  const sticky = useSessionAgent();
-  // …and the OPEN THREAD's pin, the ladder's second rung (reactive: opening another conversation must
-  // repaint, exactly as switching character does).
-  const thread = useThreadAgent();
-  // The SPECIALIST list, from the same always-on query `useAgentArt` reads (one observer's worth of data,
-  // shared by key) — not `getKnownAgents()`, whose module-level Set is non-reactive and so could not
-  // repaint the backdrop when an agent is created or renamed.
-  const agents = useAgentRoster().data?.agents;
-  const a = art(effectiveAgent(sticky, thread, agents ?? []));
+  const a = art(useActiveAgent());
   return a.background ?? a.avatar;
 }

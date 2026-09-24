@@ -1495,8 +1495,9 @@ body[data-perf="lite"] .kit .tools-sheet {
 body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
   border-color: color-mix(in oklch, var(--accent) 40%, transparent);
 }
-/* the ARMED marker: the one always-visible sign that the next message is pointed somewhere. It must read
- * with the panel CLOSED, so it rides the trigger's top-right corner rather than living in the panel. */
+/* the ARMED marker: the one always-visible sign that the next message carries ticked SKILLS (the agent is a
+ * standing switch since D75 and never lights it). It must read with the panel CLOSED, so it rides the
+ * trigger's top-right corner rather than living in the panel. */
 .kit .kit-cbtn.tools .tools-dot {
   position: absolute;
   top: 3px;

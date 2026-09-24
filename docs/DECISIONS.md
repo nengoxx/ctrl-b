@@ -5530,6 +5530,37 @@ one-shot's spent/hold/token machinery; the owner rules.
 (`pinSessionAgent`), the default row clears it (and pins the default by name inside a thread-pinned
 conversation); the one-shot agent machinery (spent/hold/token/`previewAgent`/`routedAgent`/`armedPick`/
 the call's parked note) DELETED; skills stay one-shot.
+**The sticky slice's review round (2026-09-24, `88a27ad` + its fix wave):** blind Maya (Luna, high)
+correctness pass SHIP WITH FIXES [1 MED] ∥ Opus 5.5 design/integration pass SHIP WITH CHANGES
+[1 MED · 3 LOW · 1 sweep]; the owner had already confirmed the integration claim on the phone (pick →
+a CALL answers as the picked agent; the in-call transcript reads well). **Fixed:** Opus F1 — the menu's
+agent rows read the composer's module-level `/agent` Set (filled once at import, refreshed only by a
+save, kept as-is on a failed load) while the backdrop read the roster QUERY, so after a failed first
+load (the PWA opening from its shell before Tailscale is up) the menu listed no agent and checked
+"default" while the backdrop painted the pinned character — now ONE subscription,
+`hooks/useActiveAgent` (session pin · thread pin · roster query → `effectiveAgent`), taken by the
+backdrop AND the menu; the menu's rows, default-row name and checked row all come from the query;
+`defaultAgentPin(threadAgent, defaultName)` is pure over the default's name (the gallery passes the
+list's resolved default, the menu the roster's); the module getters `getKnownAgents`/`getDefaultAgent`
+deleted (routing keeps its Set private). Pinned by a served-a-different-roster arm. Opus F3's three
+stale comments fixed (`effectiveAgent`'s "Talk passes `""`" example, kit.css's armed-dot note, ROADMAP
+A6's "typed verbs beat menu picks" — for the agent, `/agent` and the row are now the SAME write, last
+one wins). **Residuals, recorded and accepted:** ① (Maya F-1, MED-by-mechanism) a default-row click in
+the window between `openThread`'s history swap and its LATE thread-pin read clears instead of pinning
+by name, and the thread's character resurfaces when the pin lands — the window is the list read's
+excess latency over the history read (tens of ms on this LAN) and opens right after a thread tap that
+navigates away from the menu, so it is unreachable by hand; not worth a serialising mechanism ② (Opus
+F2) a default pinned BY NAME outlives the thread it was set for and reads identically to a clear (same
+row checked, same `// agent → X (default)` note), and while it stands an explicit `body.agent` disables
+7e-g auto-routing — the way out is the default row in an UNPINNED thread (a clear) ③ (Opus F4) each
+arrow-key step through the native radio group is a real switch plus a chat-log note — keyboard only,
+the phone taps ④ the three residuals of the build itself: a typo'd pin reads as the default row and
+cannot be cleared by re-clicking it (an already-checked radio fires no change — pick another row, then
+default) · a default that is also a specialist folder reads checked on both rows · a mid-stream pick
+re-points only later sends. **Open owner question (Opus S1):** `sessionAgent` is NOT persisted, so an
+Android PWA relaunch silently returns to the default — identical to `/agent` today and truthfully
+shown by every surface, but the menu is now the switch the owner uses; persist it (the way the draft
+persists) or leave it session-scoped?
 
 **ADDENDUM ⑥ — the coupling round (owner, 2026-09-23, in conversation).** The owner proposed
 COUPLING the clean bargain to the interruption toggle — `barge_in` off ⇒ EC off + the ear-hold on

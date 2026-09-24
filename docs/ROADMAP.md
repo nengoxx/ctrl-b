@@ -257,8 +257,10 @@ back to the analysis.
   `store/composerOverlay` one-overlay-at-a-time coordinator. Typed verbs beat menu picks; arming is
   spent on send. Residual (LOW, recorded): a 409/Stop-harvest after dispatch loses the armed pick.
   **Amended 2026-09-24 (D75 ruling):** the agent radio is now a STICKY switch — it writes the session
-  pin through `lib/composer#pinSessionAgent` (the `/agent` + gallery Talk seam); only the skill ticks
-  stay one-shot (`store/composerSkills`), so the 409 residual now concerns the skills alone.
+  pin through `lib/composer#pinSessionAgent` (the `/agent` + gallery Talk seam) — so for the agent,
+  "typed verbs beat menu picks" no longer applies: `/agent` and the row are the SAME write, last one
+  wins; only the skill ticks stay one-shot (`store/composerSkills`), so the 409 residual and the
+  verbs-beat-picks rule now concern the skills alone.
   Original seam note kept below for provenance — noted 2026-07-11 (owner, at the A2
   composer-surface eyeball): surface the selection control as a **menu in the composer**, at the
   controls **leading edge beside the plan pill**. The layout seam already exists and is additive:

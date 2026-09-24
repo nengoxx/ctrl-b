@@ -25,7 +25,6 @@ import {
   effectiveAgent,
   fillComposer,
   getCompletions,
-  getDefaultAgent,
   getKnownSkills,
   loadAgents,
   loadProviders,
@@ -641,14 +640,18 @@ describe("effectiveAgent — the server's routing ladder, mirrored", () => {
 // D75 ruling (2026-09-24) — "back to the default" is ONE expression for both doors (the tools menu's
 // default row, the gallery's Talk on the default): a clear, unless the open thread carries its own pin,
 // where a clear would let the thread's character resurface and the default must be pinned by name.
+// PURE over both inputs: the default's NAME is the caller's (the roster query's `default`), not the module
+// `/agent` set's copy — the sticky slice's review round (2026-09-24) found the menu and the backdrop reading
+// different lists, and the fix made every surface-facing fold take the list it subscribes to.
 describe("defaultAgentPin — what 'back to the default' hands the session pin", () => {
   it("is the CLEAR in an unpinned thread — nothing pinned is the honest resting state", () => {
-    expect(defaultAgentPin(null)).toBe("");
+    expect(defaultAgentPin(null, "default")).toBe("");
+    expect(defaultAgentPin(null, "ari")).toBe(""); // whatever the default is called
   });
 
-  it("is the default BY NAME inside a thread pinned to a character", () => {
-    expect(defaultAgentPin("lynette")).toBe(getDefaultAgent());
-    expect(defaultAgentPin("lynette")).not.toBe("");
+  it("is the default BY NAME inside a thread pinned to a character — the caller's name, verbatim", () => {
+    expect(defaultAgentPin("lynette", "default")).toBe("default");
+    expect(defaultAgentPin("lynette", "ari")).toBe("ari"); // a specialist promoted to the default
   });
 });
 

@@ -183,7 +183,9 @@ export function AgentsContent() {
     // default" means for the OPEN thread (`defaultAgentPin` — a clear, or the default by name inside a
     // thread pinned to a character), the same expression the tools menu's default row takes. Then the
     // ONE nav chokepoint, which is where the chat log lives.
-    pinSessionAgent(name === resolvedDefault ? defaultAgentPin(threadAgent) : name);
+    pinSessionAgent(
+      name === resolvedDefault ? defaultAgentPin(threadAgent, resolvedDefault) : name,
+    );
     navigate("agent");
   };
 

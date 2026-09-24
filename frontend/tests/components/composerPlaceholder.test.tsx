@@ -32,6 +32,13 @@ vi.mock("../../src/hooks/useAgentArt", () => ({
     title: name ?? "default",
   }),
 }));
+vi.mock("../../src/hooks/useAgents", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/hooks/useAgents")>()),
+  // …and the ROSTER query the tools menu's agent rows + `useActiveAgent` read directly since the sticky
+  // slice's review round (the same list the backdrop paints by): the not-yet-landed answer, for the
+  // same reason — the menu's rows are not what this file asserts on.
+  useAgentRoster: () => ({ data: undefined }),
+}));
 vi.mock("../../src/hooks/useComposer", () => ({
   useComposer: () => ({
     draft: "",

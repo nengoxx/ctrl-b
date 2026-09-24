@@ -110,6 +110,13 @@ const checkedRows = (c: HTMLElement) =>
   radios(c)
     .filter((r) => r.checked)
     .map(rowName);
+/** Open the panel and wait for the agent rows: they come from the ROSTER QUERY (`useAgentRoster`, the
+ *  list the backdrop paints by — the sticky slice's review round), which lands after the first paint; the
+ *  default row alone is drawn until it does. `n` = the rows expected, default row included. */
+async function openMenu(c: HTMLElement, n = 3): Promise<void> {
+  fireEvent.click(trigger(c));
+  await waitFor(() => expect(radios(c).length).toBe(n));
+}
 /** Read-only probes on the REAL stores the rows write: the sticky pin, the chat's last line (the
  *  `// agent → …` note the seam pushes), and the ticked skills. */
 function probes() {
@@ -162,9 +169,9 @@ describe("tools menu — trigger/panel wiring", () => {
     expect(barIdx).toBeGreaterThan(panelIdx);
   });
 
-  it("lists the configured agents as ONE native radio group (plus a default row), skills as checkboxes", () => {
+  it("lists the configured agents as ONE native radio group (plus a default row), skills as checkboxes", async () => {
     const { container } = renderComposer();
-    fireEvent.click(trigger(container));
+    await openMenu(container);
     const rows = radios(container);
     expect(rows.map(rowName)).toEqual(["default", "ops", "research"]);
     expect(rows[0].checked).toBe(true); // default is the resting pick
@@ -183,10 +190,10 @@ describe("tools menu — trigger/panel wiring", () => {
 // — it writes the session pin through the one seam (`pinSessionAgent`), pushes the same note, and holds
 // until switched again. Nothing about it is pending, so it never lights the trigger's dot.
 describe("tools menu — the agent switch (sticky)", () => {
-  it("picking a row PINS the session agent and pushes the `/agent` note — no dot, nothing pending", () => {
+  it("picking a row PINS the session agent and pushes the `/agent` note — no dot, nothing pending", async () => {
     const p = probes();
     const { container } = renderComposer();
-    fireEvent.click(trigger(container));
+    await openMenu(container);
     fireEvent.click(radios(container)[1]); // "ops"
     expect(p.pin()).toBe("ops");
     expect(p.lastNote()).toBe("// agent → ops");
@@ -195,11 +202,11 @@ describe("tools menu — the agent switch (sticky)", () => {
     expect(container.querySelector(".tools-clear")).toBe(null); // the clear row is the skills' alone
   });
 
-  it("the DEFAULT row CLEARS the pin in an unpinned thread, and reads checked", () => {
+  it("the DEFAULT row CLEARS the pin in an unpinned thread, and reads checked", async () => {
     setSessionAgent("ops");
     const p = probes();
     const { container } = renderComposer();
-    fireEvent.click(trigger(container));
+    await openMenu(container);
     expect(checkedRows(container)).toEqual(["ops"]);
     fireEvent.click(radios(container)[0]); // the "default" row
     expect(p.pin()).toBe(null); // a CLEAR, exactly bare `/agent`
@@ -207,16 +214,16 @@ describe("tools menu — the agent switch (sticky)", () => {
     expect(checkedRows(container)).toEqual(["default"]);
   });
 
-  it("the default's NAME as the pin reads as the default row too (the thread-pinned representation)", () => {
+  it("the default's NAME as the pin reads as the default row too (the thread-pinned representation)", async () => {
     setSessionAgent("default");
     const { container } = renderComposer();
-    fireEvent.click(trigger(container));
+    await openMenu(container);
     expect(checkedRows(container)).toEqual(["default"]);
   });
 
-  it("the checked row follows the pin REACTIVELY — a `/agent` made elsewhere repaints the open panel", () => {
+  it("the checked row follows the pin REACTIVELY — a `/agent` made elsewhere repaints the open panel", async () => {
     const { container } = renderComposer();
-    fireEvent.click(trigger(container));
+    await openMenu(container);
     expect(checkedRows(container)).toEqual(["default"]);
     act(() => setSessionAgent("research")); // `/agent research`, the gallery's Talk — any other hand
     expect(checkedRows(container)).toEqual(["research"]);
@@ -227,13 +234,37 @@ describe("tools menu — the agent switch (sticky)", () => {
   // Codex, verify round — `/agent typo` stays sticky ON PURPOSE (the backend falls back to the default and
   // routeSlash already warned), but "typo" matches no row: reflecting it verbatim left EVERY radio
   // unchecked, i.e. the panel claiming the next message goes nowhere. The default row is where it goes.
-  it("a sticky agent that isn't configured reads as the DEFAULT row, not an empty group", () => {
+  it("a sticky agent that isn't configured reads as the DEFAULT row, not an empty group", async () => {
     setSessionAgent("typo");
     const p = probes();
     const { container } = renderComposer();
-    fireEvent.click(trigger(container));
+    await openMenu(container);
     expect(checkedRows(container)).toEqual(["default"]);
     expect(p.pin()).toBe("typo"); // the DISPLAY fold never touches the pin the send path reads
+  });
+
+  // The sticky slice's review round (2026-09-24): the rows, the default row's NAME and the checked row all
+  // come from the ROSTER QUERY — the list the backdrop paints by — and never from the composer's
+  // module-level `/agent` set. That Set is filled once at import and kept as-is on a failed load, so a
+  // menu drawn from it after a failed first load (the PWA opening from its shell before Tailscale is up)
+  // listed no agent and checked "default" while the backdrop, drawn from the retrying query, painted the
+  // pinned character. Here the module set holds the harness's `ops`/`research`; the query is served a
+  // DIFFERENT roster, and the menu shows the query's.
+  it("draws its rows from the ROSTER QUERY, not the composer's module-level `/agent` set", async () => {
+    const base = globalThis.fetch;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).includes("/api/agents") && !String(url).includes("/api/media/"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ agents: ["lynette"], default: "ari", summaries: {} }),
+        } as Response);
+      return base(url, init);
+    });
+    setSessionAgent("lynette"); // unknown to the module set — the query knows her
+    const { container } = renderComposer();
+    await openMenu(container, 2); // "ari" + "lynette" — the query's roster, not the set's three
+    expect(radios(container).map(rowName)).toEqual(["ari", "lynette"]);
+    expect(checkedRows(container)).toEqual(["lynette"]); // …so the fold checks HER row, not "default"
   });
 });
 

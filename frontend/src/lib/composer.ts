@@ -116,7 +116,10 @@ export async function loadSkills(): Promise<void> {
 void loadSkills();
 
 /** Configured agent names, so `/agent <name>` can validate + the default is known (7d). Best-effort,
- *  same as the skills set; an unknown name still routes (the backend resolves gracefully).
+ *  same as the skills set; an unknown name still routes (the backend resolves gracefully). PRIVATE to
+ *  routing: a SURFACE that has to show the roster (the tools menu, the backdrop) reads the always-on
+ *  roster QUERY through `hooks/useActiveAgent`, never this Set — it is filled once at import, refreshed
+ *  only by a save, and keeps whatever it had when a load fails.
  *
  *  A plain Set for the same reason as the providers one: `GET /api/agents` lists only folders that
  *  EQUAL their own slug (`backend/app/config.py` `list_agent_names`: `_slug(p.name) == p.name`, with
@@ -127,17 +130,6 @@ const knownAgents = new Set<string>();
 let defaultAgent = "default";
 let agentsGen = 0;
 
-/** The configured SPECIALIST agent names (the `default`/root agent is not among them — `GET /api/agents`
- *  reports it separately). Same copy-not-the-Set contract as `getKnownSkills`. */
-export function getKnownAgents(): string[] {
-  return [...knownAgents];
-}
-
-/** The resolved default agent's slug — what "no agent pick" means, for labelling the menu's default row. */
-export function getDefaultAgent(): string {
-  return defaultAgent;
-}
-
 /** The sticky `/agent` pick REDUCED TO A CONFIGURED AGENT, or `null` for "the resolved default".
  *
  *  `/agent typo` stays sticky on purpose — the backend falls back to the default agent and `routeSlash`
@@ -145,9 +137,9 @@ export function getDefaultAgent(): string {
  *  say WHICH agent the next message actually runs as therefore has to fold the unknown name back to the
  *  default: the tools menu's radio group (which would otherwise leave the whole group unchecked, i.e.
  *  claim the message goes nowhere) and, since D70 §8.3a, the agent backdrop (which would otherwise paint
- *  nothing where the default's own art belongs). ONE fold, PURE over its two inputs, because the two
- *  callers read the agent list differently: the menu takes the module set, the backdrop the roster
- *  query. */
+ *  nothing where the default's own art belongs). ONE fold, PURE over its two inputs — the agent list is
+ *  an argument, not the module Set above, so the surfaces can feed it the roster query they subscribe to
+ *  (`hooks/useActiveAgent`). */
 export function validSessionAgent(sticky: string | null, agents: readonly string[]): string | null {
   return sticky !== null && agents.includes(sticky) ? sticky : null;
 }
@@ -160,18 +152,20 @@ export function validSessionAgent(sticky: string | null, agents: readonly string
  *    · a TRUTHY sticky pick wins OUTRIGHT — including a typo'd one, which resolves to the default rather
  *      than falling through to the thread's pin. `/agent typo` sends `body.agent="typo"`, and the server
  *      never looks at `thread.agent` once that is set;
- *    · a FALSY one yields to the thread. `pinSessionAgent("")` — Talk on the default agent
- *      (`AgentsTab`) — is falsy on the server too, so the thread pin winning over `""` is the server's
- *      own behaviour, not a gap to plug (a surface that must beat the thread's pin with the default
- *      pins the default BY NAME — the tools menu's default row does);
+ *    · a FALSY one yields to the thread. A CLEAR (`pinSessionAgent("")`, stored as `null` — bare
+ *      `/agent`, or "back to the default" in an unpinned thread) sends no `agent` at all, so the thread
+ *      pin winning over it is the server's own behaviour, not a gap to plug (a surface that must beat
+ *      the thread's pin with the default pins the default BY NAME — `defaultAgentPin` does, for the
+ *      tools menu's default row and the gallery's Talk alike);
  *    · an unknown name from EITHER pin folds to `null` = the resolved default, via the same
  *      `validSessionAgent` every caller already shares.
  *
  *  The FE learned the thread's pin (`ChatState.threadAgent`) only in wave 1c: before it, opening a thread
  *  pinned to a character replied as that character while the backdrop painted the default (owner glance
- *  2026-09-08). PURE over its three inputs for the same reason `validSessionAgent` is — the menu reads
- *  the module set, the backdrop the roster query. It is the ONE answer to "who is the active agent":
- *  the backdrop paints it and the tools menu checks its row, so the two cannot disagree. */
+ *  2026-09-08). PURE over its three inputs for the same reason `validSessionAgent` is, and subscribed
+ *  ONCE, in `hooks/useActiveAgent` (the session pin · the thread pin · the roster query), so that it is
+ *  the ONE answer to "who is the active agent": the backdrop paints it and the tools menu checks its
+ *  row from the same three inputs, so the two cannot disagree. */
 export function effectiveAgent(
   sticky: string | null,
   threadAgent: string | null,
@@ -186,9 +180,11 @@ export function effectiveAgent(
  *  state (the ladder falls through to the thread, then the configured default, and 7e-g auto-routing
  *  stays possible). Inside a thread that carries its own D70 §4.2 pin, though, a clear would let the
  *  thread's character resurface — so there the default is pinned BY NAME, which the ladder ranks above
- *  the thread. */
-export function defaultAgentPin(threadAgent: string | null): string {
-  return threadAgent !== null ? defaultAgent : "";
+ *  the thread. `defaultName` is the caller's resolved default (the roster query's `default`) — an
+ *  argument for the same reason `effectiveAgent`'s list is: the surfaces subscribe to the roster, and
+ *  the module Set here is routing's best-effort copy. */
+export function defaultAgentPin(threadAgent: string | null, defaultName: string): string {
+  return threadAgent !== null ? defaultName : "";
 }
 
 export async function loadAgents(): Promise<void> {
