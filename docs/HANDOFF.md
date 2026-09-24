@@ -13,7 +13,43 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-24, THIRTY-FIFTH session — **THE OWNER'S LADDER RESULTS + a polish sitting + THE STICKY-PICK RULING, all in conversation: the crackle did NOT reproduce on PocketTTS on any arm (ISS-16 → a formal DORMANT record); seven owner-ruled polish fixes built + gated + committed; the ganyu voice (Maia's) wired into PocketTTS as the DEV default; the composer agent-pick audit → OWNER RULED STICKY → the slice BUILT (Opus 5.5 headless) + main-seat-audited + committed at `88a27ad` (FE 3,766/194; e2e agent-backdrop 22/22). ⚠ 7 commits UNPUSHED over origin `db3289a`. The owner is REBOOTING emma after this handoff so Claude Code runs on 2.1.280 — dev units are now BOOT-ENABLED and Serve persists, so dev :5434 / Vite :5173 / the `:8443` HTTPS door come back on their own. ▶▶ NEXT SESSION = the owner's eyeball round over everything below + the sticky slice's OWED REVIEW ROUND, then push.**)
+## Current state (2026-09-24 evening, THIRTY-SIXTH session — **THE STICKY SLICE'S OWED REVIEW ROUND, RUN AND CLOSED: the owner confirmed the two eyeball items that mattered (pick → a CALL answers as the picked agent; the in-call transcript reads well), the full gate was re-proven green at `b807a02`, then a blind Maya ∥ Opus round over `88a27ad` → ONE real fix (the menu's rows now come from the roster query through a shared `useActiveAgent` hook) + three stale comments, gate 6/6, FE 3,767/194, e2e agent-backdrop 22/22. ⚠ 8 commits UNPUSHED over origin `db3289a`. ▶▶ NEXT = `git push` on the owner's word · ISS-17 · the S1 owner question (persist the switch across a PWA relaunch?) · then the standing D73/D74 probes → S4.**)
+
+**① The round (record in DECISIONS D75, after the RULED line).** Maya (Luna, high, blind, `-z
+--ignore-rules`) SHIP WITH FIXES [1 MED — the late-thread-pin window, RULED a residual: tens of ms,
+right after a thread tap that navigates away from the menu] ∥ Opus 5.5 (the Agent tool works again on
+2.1.281 — `model: "opus"`, no headless lane needed) SHIP WITH CHANGES [1 MED · 3 LOW · 1 sweep].
+**The fix wave (one commit):** Opus F1 — the menu read the composer's module-level `/agent` Set
+(filled once at import, kept as-is on a failed load) while the backdrop read the roster QUERY, so a
+failed first load (PWA shell before Tailscale) left the menu unable to switch while the backdrop
+painted the pinned character → NEW `hooks/useActiveAgent` (session pin · thread pin · roster query →
+`effectiveAgent`), taken by `useActiveBackdrop` AND `ToolsMenuSheet`; the menu's rows/default
+name/checked row all from the query (`DEFAULT_AGENT` stands in until it lands, the gallery's own
+fallback); `defaultAgentPin(threadAgent, defaultName)` pure over the default's name (menu → roster's,
+gallery → list's); `getKnownAgents`/`getDefaultAgent` DELETED (routing's Set is private again). Pinned
+by a served-a-different-roster arm (the set holds ops/research, the query serves ari/lynette, the menu
+shows the query's and checks lynette). F3's three stale comments fixed. The placeholder test mocks the
+roster hook (its own no-QueryClient convention). **Residuals recorded in D75:** Maya F-1 · Opus F2 (a
+default pinned BY NAME outlives its thread, reads like a clear, disables 7e-g auto-routing while set —
+the way out is the default row in an unpinned thread) · Opus F4 (arrow keys = a pin + note per step,
+keyboard only) · the build's own three. **OPEN OWNER QUESTION (Opus S1):** `sessionAgent` is not
+persisted — an Android PWA relaunch returns to the default (same as `/agent` today, truthfully shown);
+now that the menu IS the switch, persist it or keep it session-scoped?
+
+**② Verified this session:** the full gate at `b807a02` 6/6 BEFORE touching anything (the mid-task
+worry: nothing was left half-built — no dangling references to the deleted one-shot machinery in code;
+every `tools-*` class defined) · after the wave: FE check-all green (3,767/194), e2e `agent-backdrop`
+22/22 on a preview build. FE-only — Vite HMR, reload the page; no dev restart. Dev units still
+boot-enabled (the on-demand rule stands as policy).
+
+**▶▶ NEXT SESSION:** ① push the 8 commits on the owner's word ② ISS-17 `/clear` → `/new` (trivial)
+③ the S1 question above ④ the rest of the 35th session's eyeball list still unconfirmed (the who-line
+40px/no-ring/11px-600 + identity-only tap zone + the chip only on a degraded serve · the borderless
+tools faces + the section labels at 320px · the ganyu default voice · the Karpathy skill row · the
+6-arm Conf e2e flake class) ⑤ the standing D73/D74 probes → the S4 §4.1 close-out → prod TTS flip +
+v1.7.8.
+
+## Prior state (2026-09-24, THIRTY-FIFTH session — **THE OWNER'S LADDER RESULTS + a polish sitting + THE STICKY-PICK RULING, all in conversation: the crackle did NOT reproduce on PocketTTS on any arm (ISS-16 → a formal DORMANT record); seven owner-ruled polish fixes built + gated + committed; the ganyu voice (Maia's) wired into PocketTTS as the DEV default; the composer agent-pick audit → OWNER RULED STICKY → the slice BUILT (Opus 5.5 headless) + main-seat-audited + committed at `88a27ad` (FE 3,766/194; e2e agent-backdrop 22/22). ⚠ 7 commits UNPUSHED over origin `db3289a`. The owner is REBOOTING emma after this handoff so Claude Code runs on 2.1.280 — dev units are now BOOT-ENABLED and Serve persists, so dev :5434 / Vite :5173 / the `:8443` HTTPS door come back on their own. ▶▶ NEXT SESSION = the owner's eyeball round over everything below + the sticky slice's OWED REVIEW ROUND, then push.**)
 
 **⓪ Why the reboot (the CLI gotcha, now in the `orchestrate-with-opus-subagents` memory):** this
 session ran on a 2.1.278 binary; with the workforce pinned to `claude-opus-5-5` the Agent tool
