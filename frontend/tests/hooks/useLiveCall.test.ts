@@ -1244,6 +1244,26 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     });
   });
 
+  // Review F3: the edge is measured against the EAR's EC TRUTH (the readback), not the route it asked
+  // for — an EC-off ask that came back EC-on (`ecStuck`) is still in comm mode, and leaving it later IS
+  // a comm-mode exit; a route that asked for EC and did not get it never entered.
+  it("`leavesComm` reads the readback's `ecOn`, not the requested route", () => {
+    const stuck = run(CALL_INITIAL, [
+      { type: "captureReady", earHoldMode: false, route: "speaker-hifi", deviceId: "", ecOn: true },
+      { type: "ready" },
+    ]).state;
+    expect(run(stuck, [{ type: "routeChange", route: "headphones" }]).out[0]).toMatchObject({
+      leavesComm: true,
+    });
+    const neverIn = run(CALL_INITIAL, [
+      { type: "captureReady", earHoldMode: false, route: "speaker", deviceId: "", ecOn: false },
+      { type: "ready" },
+    ]).state;
+    expect(run(neverIn, [{ type: "routeChange", route: "headphones" }]).out[0]).toMatchObject({
+      leavesComm: false,
+    });
+  });
+
   it("a flip out of comm mode MID-REPLY says the new route starts with the next reply; a silent one says nothing", () => {
     const speaking = run(routed, [{ type: "playbackStarted" }]).state;
     expect(speaking.mouthLive).toBe(true);

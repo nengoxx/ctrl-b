@@ -47,6 +47,8 @@ class FakeAudio {
   playRejects = false;
   /** `play()` calls, for the ISS-18 arms (one fresh stream = one start). */
   plays = 0;
+  /** `load()` calls — an UNLOAD is one of them. */
+  loads = 0;
   private listeners: Record<string, (() => void)[]> = {};
   constructor() {
     // The controller builds its ONE player element lazily and then keeps it forever, so the FIRST
@@ -66,7 +68,9 @@ class FakeAudio {
   removeAttribute() {
     this.src = "";
   }
-  load() {}
+  load() {
+    this.loads += 1;
+  }
   /** Answer a duration probe: its blob's metadata reads. */
   meta(d: number) {
     this.duration = d;
@@ -474,6 +478,79 @@ describe("audioController — the chunk queue (D63)", () => {
         expect(result.current.status).toBe("loading"); // held for what is left of it
         await wait(LEFT * 2);
         expect(result.current.status).toBe("playing");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    // Review F1: `paused` is not silence. A reply the OWNER paused mid-play is left resumable by the
+    // mark; the gate unloads whatever is still loaded when the NEXT reply opens, and waits from there.
+    it("a mark leaves an owner-PAUSED reply resumable; the next reply's gate unloads it and waits", async () => {
+      const spy = fakeClock();
+      try {
+        const { result } = renderHook(() => usePlayback((p) => p));
+        setCallVoice(true, false);
+        await act(async () => {
+          await toggle("m1", REPLY);
+        });
+        await flush();
+        act(() => togglePlay()); // the owner pauses mid-reply
+        expect(result.current.status).toBe("paused");
+        markStreamRetag();
+        expect(result.current.status).toBe("paused"); // untouched — still theirs to resume
+        expect(lastAudio.src).toBe("blob:1"); // still loaded (a client on the stale stream, knowingly)
+        act(() => togglePlay()); // …and it does resume
+        expect(result.current.status).toBe("playing");
+        for (let i = 0; i < 6; i++) {
+          await act(async () => lastAudio.emit("ended"));
+          await flush();
+        }
+        expect(lastAudio.src).toBe(""); // finished in-call: unloaded, stamped NOW
+        clock += STREAM_RETAG_MS - LEFT;
+        await act(async () => {
+          await toggle("m2", REPLY);
+        });
+        await flush();
+        expect(result.current.status).toBe("loading");
+        await wait(LEFT * 2);
+        expect(result.current.status).toBe("playing");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    // Review F2: the whole-clip path. A mark lands while the NEXT reply is still synthesizing and the
+    // element still holds the previous clip (`beginMessage` only pauses): the gate unloads it at the
+    // assignment and waits from THAT unload, instead of assigning onto the stale stream.
+    it("whole-clip: the gate unloads a still-loaded element before the held assignment", async () => {
+      setChunkPolicy(OFF);
+      const spy = fakeClock();
+      try {
+        const { result } = renderHook(() => usePlayback((p) => p));
+        setCallVoice(true, false);
+        await act(async () => {
+          await toggle("m1", "hello");
+        });
+        expect(result.current.status).toBe("playing");
+        expect(lastAudio.src).toBe("blob:1");
+        const calls = deferredFetch(); // m2's synth stays pending…
+        act(() => {
+          void toggle("m2", "world"); // beginMessage PAUSES m1's clip; the element keeps its src
+        });
+        expect(result.current.status).toBe("loading");
+        expect(lastAudio.src).toBe("blob:1");
+        markStreamRetag(); // loading ⇒ left alone (no reset), the retag is pending
+        expect(lastAudio.src).toBe("blob:1");
+        const loads = lastAudio.loads;
+        await act(async () => {
+          calls[0].resolve(okRes());
+          await Promise.resolve();
+        });
+        await flush();
+        // the gate: unloaded NOW (one `load()`), stamped, and the assignment is HELD
+        expect(lastAudio.loads).toBe(loads + 1);
+        expect(lastAudio.src).toBe("");
+        expect(result.current.status).toBe("loading");
       } finally {
         spy.mockRestore();
       }

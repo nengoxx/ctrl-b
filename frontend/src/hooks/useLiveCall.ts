@@ -14,6 +14,7 @@ import {
 import { sendCallTranscript } from "../lib/composer";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
 import {
+  ecEngaged,
   onHeadphones,
   startPcmCapture,
   wantsAec,
@@ -302,6 +303,10 @@ export interface CallState {
   /** Does THIS call's track need the ear-hold at all (§5.1's `echo_workaround`, resolved ONCE at capture
    *  from the track's own AEC readback — never UA-sniffed, never re-decided mid-call). */
   earHoldMode: boolean;
+  /** Is the canceller ENGAGED on the ear that actually opened — the track's readback, never the ask
+   *  (ISS-18 review F3): an EC-off route whose capture came back EC-on (`ecStuck`) is still IN comm
+   *  mode, and only this bit knows it. Seeded on `captureReady`; what `leavesComm` measures against. */
+  ecOn: boolean;
   /** …and is it closed right now. DERIVED after every reduce (see `normalize`) — never set by an arm. */
   earHeld: boolean;
   /** THE ROUTE THIS CALL IS ON, and the device it asked for (D74 S2) — EPHEMERAL, per call. Seeded
@@ -349,6 +354,7 @@ export const CALL_INITIAL: CallState = {
   earHoldMode: false,
   earHeld: false,
   route: "",
+  ecOn: false,
   inputDevice: "",
   vadOverride: null,
   vadBase: null,
@@ -384,6 +390,8 @@ export type CallSignal = { gen?: number } & (
       earHoldMode: boolean;
       note?: string;
       route: string;
+      /** The readback's EC truth (`ecEngaged`); absent ⇒ derived from the route's ask (tests). */
+      ecOn?: boolean;
       deviceId: string;
       /** The knob's threshold at call start — the seed for `vadBase`, taken on the FIRST capture
        *  and kept across route cycles (a recapture must not re-read a knob edited mid-call). */
@@ -803,6 +811,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
           earHoldMode: sig.earHoldMode,
           note: sig.note ?? s.note,
           route: sig.route,
+          ecOn: sig.ecOn ?? wantsAec(sig.route),
           inputDevice: sig.deviceId,
           // Seeded ONCE, on the first capture — a route cycle's fresh `captureReady` must not
           // re-read a knob the owner may have edited mid-call (§4.5; Maya F1 / design F6).
@@ -823,7 +832,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
       if (route === s.route && deviceId === s.inputDevice) return { state: s, out: [] };
       // ISS-18 (R81): leaving comm mode re-tags nothing already open. A reply PLAYING at the flip
       // finishes on the old route; the note says so, once, on the flip that causes it.
-      const leavesComm = wantsAec(s.route) && !wantsAec(route);
+      const leavesComm = s.ecOn && !wantsAec(route);
       return {
         state: {
           ...s,
@@ -1791,6 +1800,7 @@ export function useLiveCall(): CallView {
           const hold = knobs.echo_workaround;
           send({
             type: "captureReady",
+            ecOn: ecEngaged(cap.readback.echoCancellation),
             earHoldMode:
               hold === "on"
                 ? true

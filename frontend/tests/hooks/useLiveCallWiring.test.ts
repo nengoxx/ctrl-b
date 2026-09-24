@@ -97,8 +97,9 @@ const h = vi.hoisted(() => ({
   /** How many captures this call has RELEASED (D74 S2): a route cycle must not leave the old ear open
    *  beside the new one — overlapping captures pin the platform's echo mode (R78 §2.3). */
   capStops: 0,
-  /** ISS-18 — `markStreamRetag` calls (see the audioController mock). */
+  /** ISS-18 — `markStreamRetag` calls (see the audioController mock), and `capStops` at the last one. */
   retags: 0,
+  retagAtStops: -1,
   /** Holds `startPcmCapture` open when an arm needs the acquisition GAP itself. */
   capGate: Promise.resolve(),
 }));
@@ -107,6 +108,7 @@ vi.mock("../../src/lib/audioController", () => ({
   /** ISS-18: how many times the route cycle told the mouth to open a FRESH output stream. */
   markStreamRetag: () => {
     h.retags += 1;
+    h.retagAtStops = h.capStops; // how many ears had been released when the mouth was told
   },
   dismiss: h.dismiss,
   openCallVoiceGate: h.openGate,
@@ -152,6 +154,7 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
   onHeadphones: (await importActual<typeof import("../../src/lib/pcmCapture")>()).onHeadphones,
   // …and `wantsAec` with it: the reducer's `leavesComm` edge (ISS-18) is the module's rule too.
   wantsAec: (await importActual<typeof import("../../src/lib/pcmCapture")>()).wantsAec,
+  ecEngaged: (await importActual<typeof import("../../src/lib/pcmCapture")>()).ecEngaged,
   startPcmCapture: async (opts: {
     onFrame: (f: { buf: ArrayBuffer; rms: number }) => void;
     route?: string;
@@ -1051,6 +1054,8 @@ describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/researc
     h.retags = 0;
     await step(() => view.result.current.setRoute("headphones"));
     expect(h.retags).toBe(1);
+    expect(h.retagAtStops).toBe(0); // …told BEFORE the ear was released, as the record claims
+    expect(h.capStops).toBe(1);
     await settle();
     await act(async () => {
       h.frame?.({ type: "state", state: "ready" });

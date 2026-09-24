@@ -208,14 +208,25 @@ let retagPending = false;
  *  waiting latch, and without this each landing would arm another timer that restarts chunk 0. */
 let retagArmed = false;
 
-/** The call left comm mode (an EC-on → EC-off recapture, `useLiveCall`). A mouth that is silent — idle,
- *  or parked on an ended clip — is unloaded NOW so the 5 s starts now; one mid-reply finishes on the old
- *  route (honestly, the screen says so) and is unloaded by its own `finish`; one still SYNTHESIZING is
- *  left alone (a reset would dismiss the reply the owner is waiting for) and unloads at its end too.
- *  Either way the next reply waits out what is left. */
+/** The call left comm mode (an EC-on → EC-off recapture, `useLiveCall`). A mouth that is SILENT — idle,
+ *  or parked on a finished queue — is unloaded NOW so the 5 s overlaps the owner's next question; every
+ *  other state is left alone: a reply mid-play finishes on the old route (the screen says so), one still
+ *  synthesizing must not be dismissed, and a reply the OWNER paused stays resumable (review F1 — `paused`
+ *  alone is not silence). Whatever is still loaded when the next reply opens is unloaded by the gate
+ *  itself (`retagGate`), so the window always runs from a real unload. */
 export function markStreamRetag(): void {
   retagPending = true;
-  if (pb.status === "idle" || pb.status === "paused") reset();
+  const s = liveSession();
+  if (pb.status === "idle" || (pb.status === "paused" && s?.parked)) reset();
+}
+
+/** The gate at a FIRST `src` assignment: with a retag pending, an element still holding the previous
+ *  clip is unloaded HERE (review F2 — `beginMessage` only pauses, and a paused element is a client on
+ *  the stale stream), and the wait runs from that unload. Returns the ms still to wait. */
+function retagGate(a: HTMLAudioElement): number {
+  if (!retagPending) return 0;
+  if (a.src) unloadEl(a);
+  return retagHold();
 }
 
 /** Milliseconds the next `src` assignment must still wait for a fresh stream; 0 when no retag is
@@ -545,17 +556,20 @@ function reset(): void {
     session.abort.abort(); // ≤ `lookahead` wasted synths per cancel, by construction
     session.waiting = false;
   }
-  if (el) {
-    el.pause();
-    // The UNLOAD (R81 §0 step 1 — `load()` is what tears the renderer down and starts the dispatcher's
-    // 5 s). Stamped only when there was a source to unload: a bare re-`load()` of an empty element
-    // touches no stream, and re-stamping it would only make `retagHold` wait for nothing.
-    if (el.src) unloadedAt = performance.now();
-    el.removeAttribute("src");
-    el.load();
-  }
+  if (el) unloadEl(el);
   pb = IDLE;
   emit();
+}
+
+/** THE UNLOAD (R81 §0 step 1) — the one door: `load()` is what tears the renderer down and starts the
+ *  dispatcher's 5 s, so the stamp is taken here and only when there was a source to unload (a bare
+ *  re-`load()` of an empty element touches no stream, and re-stamping would make the wait longer for
+ *  nothing). `reset()` and the retag gate both come through here. */
+function unloadEl(a: HTMLAudioElement): void {
+  a.pause();
+  if (a.src) unloadedAt = performance.now();
+  a.removeAttribute("src");
+  a.load();
 }
 
 // ── the wire ─────────────────────────────────────────────────────────────────────────────────────
@@ -653,8 +667,8 @@ async function playWhole(
     reset();
     return;
   }
-  // ISS-18: the same fresh-stream wait as the chunked path's first chunk, on this path's own clock.
-  const hold = retagHold();
+  // ISS-18: the same fresh-stream gate as the chunked path's first chunk, on this path's own clock.
+  const hold = retagGate(a);
   if (hold > 0) {
     await new Promise<void>((r) => setTimeout(r, hold));
     if (seq !== reqSeq) return;
@@ -908,7 +922,7 @@ function playNext(s: Session): void {
   // so if a retag is pending it waits out the dispatcher's window under the same honest "loading" the
   // synthesis gaps publish, and re-enters through this function. Later chunks share the stream.
   if (opening) {
-    const hold = retagHold();
+    const hold = retagGate(a);
     if (hold > 0) {
       // NOTHING is loaded, and the index must say so for as long as the hold stands: a chunk landing
       // meanwhile re-enters through the latch, and an advanced index would send it past this gate —

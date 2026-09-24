@@ -1493,6 +1493,22 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > next reply on the headphones with no visible wait beyond the LLM's; the zero-code earpiece-row
   > PROBE (R81 §3, REASONED only): EC-off leg + Mic row "Headset earpiece" — does even a playing reply
   > move to the headphones at once (at voice-call volume)?
+  > **The slice's review round (same session): blind Maya (Luna, high) DO NOT SHIP [3 MED] ∥ Opus 5.5
+  > design lens (verdict in the round's record below).** All three Maya findings ACCEPTED and fixed in
+  > the same wave: **F1** `paused` is not silence — the mark reset any paused mouth, so a reply the
+  > OWNER had paused mid-play was destroyed by the flip; now only an idle mouth or a PARKED (finished)
+  > queue is unloaded at the mark, a user-paused reply stays resumable, and whatever is still loaded
+  > when the next reply opens is unloaded by the gate itself · **F2** the whole-clip path could assign
+  > onto the stale stream — a mark during the next reply's synthesis (element still holding the previous
+  > clip, `beginMessage` only pauses) was left alone and the assignment measured the wait from an old
+  > stamp; now `retagGate` unloads a still-loaded element AT the first assignment and the 5.5 s run from
+  > that unload (both paths; `unloadEl` is the one door, `reset()` goes through it) · **F3** `leavesComm`
+  > measured the REQUESTED route, so an EC-off ask that came back EC-on (`ecStuck`) — still in comm mode
+  > — never counted as leaving it; the machine now carries `ecOn` (seeded on `captureReady` from the
+  > track's readback, `ecEngaged`; absent ⇒ the ask, for the reducer arms) and the edge is
+  > `s.ecOn && !wantsAec(next)`. Test gaps closed: the wiring arm pins the mark BEFORE the ear is
+  > released (`retagAtStops`). Arms: an owner-paused reply survives the mark and resumes; the whole-clip
+  > gate unloads-then-holds; `leavesComm` reads `ecOn`.
 
 - **THE D73 WAVE — call audio routing + background calls (owner-ruled 2026-09-21, in conversation;
   evidence = [R74](./research/R74-android-call-audio-routing.md) ·
