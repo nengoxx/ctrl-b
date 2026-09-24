@@ -8986,11 +8986,17 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   /* THE CAPTIONS' box: four lines of reply and the depth of its edge fade. Tuning knobs like the
    * ring's, in the same place, for the same reason — this file is where the feel-round numbers live
    * or the component collects them. The height is stated as LINES × line-height so changing either
-   * one keeps the box exactly that many lines tall. Four, not three, since the owner's phone round of
-   * 2026-09-24: the ring left a wide empty band above three lines, and the extra line is taken from
-   * that band, not from the heard line below. */
-  --call-said-lines: 4;
+   * one keeps the box exactly that many lines tall. Six, not three, since the owner's phone round of
+   * 2026-09-24 (three, then four, then "you can only see four lines at once"): the ring left a wide
+   * empty band above the box, and the extra lines are taken from that band, not from the heard line
+   * below — which the box now also stands off from (`--call-said-gap`). */
+  --call-said-lines: 6;
   --call-said-lh: 1.45;
+  /* The box's own stand-off from the state + heard lines under it, on top of the body's 6px grid
+   * gap ("too close to the user transcription"), and its side inset inside the body's 18px gutter
+   * ("a tiny bit more margin on the right and left edges since the text is quite small"). */
+  --call-said-gap: 12px;
+  --call-said-inset: 6px;
   /* …as a share of the box, not a length: the mask is positioned against the padding box, so a
    * percentage keeps the fade the same fraction of a line whatever the two numbers above become.
    * 22% ate a third of the top line's height (design round L2), so the partially-visible line read as
@@ -9148,6 +9154,8 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-ring-stroke {
  * flick past its end must not start scrolling the app underneath it. */
 .kit .kit-call-said {
   max-height: calc(var(--call-said-lines) * var(--call-said-lh) * 1em);
+  margin-bottom: var(--call-said-gap);
+  padding-inline: var(--call-said-inset);
   overflow-y: auto;
   overscroll-behavior: contain;
   font-size: 13px;
