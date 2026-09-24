@@ -1299,6 +1299,12 @@ def test_live_config_defaults() -> None:
         # multi-second hold would swallow whole sentences instead of gating them.
         {"min_final_ms": -1},
         {"min_final_ms": 5001},
+        # D76 §C.4 — the relative floor's clamp: its two bounds are each bounded to dBFS, and ORDERED
+        # by the model validator (inverted or equal bounds pin every automatic floor to one number).
+        {"min_dbfs": -95.0},
+        {"max_dbfs": 1.0},
+        {"min_dbfs": -20.0, "max_dbfs": -60.0},
+        {"min_dbfs": -40.0, "max_dbfs": -40.0},
     ],
 )
 def test_live_config_bounds_reject_wedging_values(bad: dict[str, Any]) -> None:

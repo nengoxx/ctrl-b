@@ -762,6 +762,16 @@ class LiveCfg(VoiceServiceCfg):
     min_dbfs: float = Field(default=-60.0, ge=-90.0, le=0.0)
     max_dbfs: float = Field(default=-20.0, ge=-90.0, le=0.0)
 
+    @model_validator(mode="after")
+    def _floor_bounds(self) -> "LiveCfg":
+        """The one ordering the relative floor needs (D76 §C.4): the clamp's low end below its high end.
+        Inverted bounds would pin every automatic floor to one number and draw the deck's meter over
+        an empty range. Checked at LOAD so a bad Conf save 422s (the `TtsServiceCfg` chunk-bounds
+        precedent) instead of deafening the call."""
+        if self.min_dbfs >= self.max_dbfs:
+            raise ValueError(f"min_dbfs ({self.min_dbfs}) must be < max_dbfs ({self.max_dbfs})")
+        return self
+
     # ── D73 S5 · THE CAPTURE ROUTE (client; evidence R74) ──
     # Both knobs govern EVERY capture this app opens — the call's and streaming/whole-clip dictation's
     # alike (R74 §0.3: an unconstrained `audio: true` is in the same trap), so they sit with the other
