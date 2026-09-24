@@ -642,7 +642,8 @@ class LiveRelaySession:
         therefore NEVER commits — not here, not anywhere. What it does instead is arithmetic on the
         endpointing law: a stop needs either no speech in the trailing 3 s or a closed segment with the
         buffer past 3000 ms, so `max(3000, silence_ms) + 200` ms of zero-frames satisfies whichever of
-        the two applies — WHATEVER the ear's buffer holds. Unpaced on purpose: this leg is loopback,
+        the two applies — WHATEVER the ear's buffer holds. (The expression states the LAW; with
+        `silence_ms` bounded ≤ 1200 since D76 the max is 3000 every time — a constant 3200 ms pad.) Unpaced on purpose: this leg is loopback,
         off the client's metered wire, and the measured release→text tail is 530–830 ms.
 
         **The burst is deliberately a CONSTANT worst-case pad, not `3000 − fed_ms` (F3, two review

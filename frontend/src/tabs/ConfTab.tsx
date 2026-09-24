@@ -2874,7 +2874,7 @@ export function ConfTab({ active }: Props) {
           </SettingRow>
           <SettingRow
             label="Hands-free interruption"
-            desc="talk over the reply to cut it off; off → tap the call screen to interrupt · needs an open-ear route (speaker or headphones) — on speaker (clean) the mic pauses during replies, so this switch does nothing"
+            desc="talk over the reply to cut it off; off → tap the call screen to interrupt · works only while the mic is OPEN under the reply: on the call route (echo-cancelled) always; on media only when 'Mic off while it speaks' leaves it open"
           >
             <Switch
               on={!!vlive?.barge_in}

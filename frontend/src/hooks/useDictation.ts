@@ -377,8 +377,10 @@ export function useDictation({
   // D73 S5 — the CAPTURE pair, flattened for the same reason. Unlike the knobs above these govern the
   // WHOLE-CLIP path too: the mic's `getUserMedia` used to pass no constraints at all (R51 §6.1), which
   // R74 §0.3 showed is not neutral — an unconstrained request takes the platform AEC and drops the
-  // phone into communication mode exactly like a call would. Absent ⇒ speaker + system default, which
-  // is the ear this app has always opened.
+  // phone into communication mode exactly like a call would. Absent ⇒ MEDIA + system default (D76 §A:
+  // the model's own default, and the backend always sends the key — "absent" is only an older server
+  // or a stub; the S0a code round asked whether the legacy AEC-on reading should survive here: no,
+  // the media path IS the ruled default, recorded).
   const route = liveCall?.route;
   const inputDevice = liveCall?.input_device;
   const streamWanted = !!liveEar && !!liveCall?.dictation && frameMs > 0 && tailWaitMs > 0;
