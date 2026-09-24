@@ -483,8 +483,9 @@ function CallCaptions() {
   );
 }
 
-/** A number the eye can compare against a floor: three decimals, never exponent notation. */
-const lvl = (n: number): string => n.toFixed(3);
+/** A level the eye can compare against a floor: dBFS to one decimal (D76 §C.1 — every level the call
+ *  reasons about is dB now), and a dash for "nothing measured yet". */
+const db = (n: number | null): string => (n === null ? "—" : n.toFixed(1));
 /** The echo readback, printed so `"all"` and `true` are visually DISTINGUISHABLE (R78 §6.2) — they
  *  mean opposite things here, and a coerced print is how that distinction gets lost. */
 const raw = (v: unknown): string => (v === undefined ? "—" : JSON.stringify(v));
@@ -506,11 +507,14 @@ arm   ${d.bargeArmed ? "yes" : "no"}   holdMode ${d.earHoldMode ? "yes" : "no"} 
         d.earHeld ? "yes" : "no"
       }   mouth ${d.mouthLive ? "yes" : "no"}
 dev   ${d.deviceLabel || "—"} ${d.deviceId ? `[${d.deviceId.slice(0, 8)}]` : ""}
-rms   ${lvl(d.rms)}   peak2s ${lvl(d.rmsPeak2s)}   floor ${lvl(d.floor)}
+dBFS  ${db(d.level)}   peak2s ${db(d.levelPeak2s)}   floor ${db(d.floor)} ${
+        d.floorPinned ? "(pinned)" : "(auto)"
+      }
+noise ${db(d.noise)} ${d.noiseSettled ? "(settled)" : "(provisional)"}   voice ${db(d.voiceLevel)}
 final ${
         d.lastFinal === null
           ? "—"
-          : `${d.lastFinal.accruedMs}ms   peak ${lvl(d.lastFinal.peak)}   chars ${d.lastFinal.chars}`
+          : `${d.lastFinal.accruedMs}ms   peak ${db(d.lastFinal.peakDb)}   chars ${d.lastFinal.chars}`
       }`}
     </pre>
   );

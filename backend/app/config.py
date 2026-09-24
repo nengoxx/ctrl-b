@@ -658,7 +658,7 @@ class LiveCfg(VoiceServiceCfg):
     * SERVER knobs — `vad_threshold`/`silence_ms` ride `session.update` to Speaches; `frame_ms`,
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `allowed_origins` are the relay's own caps.
-    * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`, `barge_threshold`,
+    * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`,
       `barge_in`, `ring`, `captions`, `mic_hold`, the D76 GATE six (`floor_dbfs`, the three
       margins, `min_dbfs`/`max_dbfs`), the D73 CAPTURE pair (`route`, `input_device`), the D73 S6
       BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`), the D74 pair
@@ -708,10 +708,6 @@ class LiveCfg(VoiceServiceCfg):
     #: here. A client-side drop presents the same "strained" note the relay's drop does — one loss
     #: chain, one signal.
     call_backlog_ms: int = Field(default=1000, ge=200, le=20000)
-    #: Normalized RMS floor for the barge-in energy gate. **0 = reuse `stt.auto_stop_threshold`** (plan
-    #: §5.1), so the owner calibrates ONE number on the phone unless the call wants its own. Capped at
-    #: 0.5 like its sibling — above that it is a mute, not a floor.
-    barge_threshold: float = Field(default=0.0, ge=0.0, le=0.5)
     #: Hands-free interruption master (client). False ⇒ tap-to-interrupt only, which is also the honest
     #: degrade on a browser whose AEC does not remove the phone's own playback (§7-S0 ③, Fennec).
     #: Ships OFF since the owner re-ruling 2026-09-22 (post-calibration: voice interrupt verified at
@@ -722,9 +718,9 @@ class LiveCfg(VoiceServiceCfg):
     #: 0.954 (R76 §④) — so a next-room conversation or a TV produces real finals, and the server has no
     #: knob left to stop them (§②: `TurnDetection` is five fields and 0.9 is already out of headroom).
     #: The field's answer is pipecat's: AND the model's probability with MEASURED LOUDNESS (R76 §4.1).
-    #: This is that AND's duration — how much of the utterance must have been above
-    #: `barge_threshold`'s floor (which falls back to `stt.auto_stop_threshold`, the one calibrated
-    #: number) before its final may become a user turn. **0 = off**, i.e. exactly the pre-D74 commit.
+    #: This is that AND's duration — how much of the utterance's UPLINKED audio must have been at or
+    #: above the RELATIVE effective floor (D76 §C — the gate six below) before its final may become a
+    #: user turn; a drop is also heard as a short cue. **0 = off**, i.e. exactly the pre-D74 commit.
     #: A CLIENT knob for the reason every one of its neighbours is: nothing below the browser measures
     #: the microphone. Ceiling is `min_speech_ms`'s — past a few seconds it would eat whole sentences.
     min_final_ms: int = Field(default=200, ge=0, le=5000)
@@ -756,8 +752,9 @@ class LiveCfg(VoiceServiceCfg):
     # `playback_margin_db` on top while the reply plays. `floor_dbfs` is the BOOTSTRAP CEILING — the
     # floor before any noise estimate exists, and the most the provisional estimate may ask for until
     # the first full window. Three MARGINS (dB, relative) · two CLAMP BOUNDS (dBFS, absolute) · one
-    # bootstrap ceiling (dBFS). Delivered by `GET /voice/status` like every client knob — and UNUSED by
-    # the client until D76 S0b wires the estimator (additive now so the shape lands once).
+    # bootstrap ceiling (dBFS). Delivered by `GET /voice/status` like every client knob; the estimators
+    # that read them are the client's (`frontend/src/lib/levelGate.ts`). They replace the old absolute
+    # linear RMS interruption floor, whose key migration step 4 drops (config version 4).
     floor_dbfs: float = Field(default=-45.0, ge=-90.0, le=0.0)
     noise_margin_db: float = Field(default=10.0, ge=0.0, le=40.0)
     voice_margin_db: float = Field(default=10.0, ge=0.0, le=40.0)
@@ -835,8 +832,8 @@ class LiveCfg(VoiceServiceCfg):
     #: HANDS-FREE idle stop: a run of below-floor mic energy this long ends a LOCKED streaming session
     #: through the ordinary release choreography (the trailing phrase is kept). R70 §9.3 — Claude Code's
     #: own number. It is what makes leaving the lock on safe; a `hold` needs none (the finger is the
-    #: timeout). The floor it measures against is `stt.auto_stop_threshold` — the `barge_threshold` 0
-    #: reuse precedent: one calibrated silence floor per device, not three.
+    #: timeout). The floor it measures against is `stt.auto_stop_threshold` — dictation's own calibrated
+    #: silence floor (the call's relative gate is a call-only mechanism).
     dictation_idle_s: int = Field(default=15, ge=3, le=300)
     #: The HARD cap on any one streaming dictation session, s (R70 §9.3, Claude Code's 120). Unlike the
     #: idle stop this applies to `hold` too: it bounds the open socket, not the user's patience.

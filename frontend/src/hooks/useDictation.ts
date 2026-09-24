@@ -1103,8 +1103,8 @@ export function useDictation({
           }
           //    The IDLE stop is HANDS-FREE ONLY. While the finger is down the finger IS the timeout,
           //    and a pause is the entire point of phrase dictation. The floor is `stt_auto_stop`'s —
-          //    the `barge_threshold: 0` reuse precedent, one calibrated silence floor per device — so
-          //    an uncalibrated 0 leaves the idle stop DISARMED rather than firing on every reading.
+          //    dictation's one calibrated silence floor per device — so an uncalibrated 0 leaves the
+          //    idle stop DISARMED rather than firing on every reading.
           if (handsFreeRef.current && silenceFloor > 0 && rms < silenceFloor) {
             live.idleMs += SILENCE_POLL_MS;
             if (live.idleMs >= idleMs) {

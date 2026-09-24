@@ -654,10 +654,14 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     deviceLabel: "Headset earpiece",
     deviceId: "ear-1234567890",
     fellBack: false,
-    rms: 0.031,
-    rmsPeak2s: 0.184,
-    floor: 0.01,
-    lastFinal: { accruedMs: 320, peak: 0.21, chars: 14 },
+    level: -30.2,
+    levelPeak2s: -14.7,
+    floor: -45,
+    floorPinned: false,
+    noise: null,
+    noiseSettled: false,
+    voiceLevel: -22.46,
+    lastFinal: { accruedMs: 320, peakDb: -13.6, chars: 14 },
   };
 
   it("renders NOTHING extra with the knob off", () => {
@@ -674,9 +678,21 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     const text = document.querySelector(".kit-call-debug")!.textContent;
     expect(text).toContain("ec    true");
     expect(text).toContain('caps [true,"all"]');
-    expect(text).toContain("floor 0.010"); // …and the levels line up against each other
-    expect(text).toContain("peak2s 0.184");
-    expect(text).toContain("320ms");
+    // …and the levels line up against each other, in dBFS (D76 §C.1), with what the floor is made of.
+    expect(text).toContain("dBFS  -30.2   peak2s -14.7   floor -45.0 (auto)");
+    expect(text).toContain("noise — (provisional)   voice -22.5");
+    expect(text).toContain("320ms   peak -13.6");
+  });
+
+  it("names a PINNED floor and a SETTLED noise estimate (D76 §C.2/§C.7)", () => {
+    h.call = {
+      ...h.call,
+      debug: { ...snapshot, floor: -52, floorPinned: true, noise: -61.04, noiseSettled: true },
+    };
+    render(<Host open={true} />);
+    const text = document.querySelector(".kit-call-debug")!.textContent;
+    expect(text).toContain("floor -52.0 (pinned)");
+    expect(text).toContain("noise -61.0 (settled)");
   });
 
   it("is never also a tap-to-interrupt — it rides the cluster's pointer-down stop", () => {

@@ -145,7 +145,6 @@ const KNOBS = {
   frame_ms: 40,
   buffered_ceiling_ms: 1000, //     = 25 frames of backlog before the ceiling abort
   min_speech_ms: 300,
-  barge_threshold: 0,
   barge_in: true,
   ring: true,
   mic_hold: "auto",

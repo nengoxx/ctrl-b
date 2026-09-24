@@ -63,9 +63,6 @@ export interface LiveCallWire {
   /** The barge-in ACTION floor (§4.3): sustained energy for this long before a kill, so a cough costs
    *  nothing. Client-side because Speaches has no minimum-speech knob (council F2). */
   min_speech_ms: number;
-  /** The RMS floor the §4.3 energy gate measures against. **0 ⇒ reuse `stt_auto_stop.threshold`** (the
-   *  §4.1 table: same detector family as Tier 0, calibrated in the same S4 sitting). */
-  barge_threshold: number;
   /** Automatic (voice) interruption. OFF ⇒ walkie-talkie: speech over the reply still transcribes and
    *  queues; the tap stays every browser's interrupt. Ships OFF (owner re-ruling 2026-09-22). */
   barge_in: boolean;
@@ -85,8 +82,9 @@ export interface LiveCallWire {
   mic_hold: string;
   /** D76 §C (evidence R83) — the RELATIVE near-speech gate, all in dB. `floor_dbfs` is the bootstrap
    *  ceiling (the floor before a noise estimate, and its cap meanwhile); the three MARGINS are relative
-   *  dB (noise +, own voice −, playback +); `min_dbfs`/`max_dbfs` clamp the effective floor. Delivered
-   *  now, READ by nothing until D76 S0b wires the estimator. */
+   *  dB (noise +, own voice −, playback +); `min_dbfs`/`max_dbfs` clamp the effective floor. Read by
+   *  the call's estimators (`lib/levelGate`): the transcript gate and trigger A both measure against
+   *  the effective floor, trigger A raised by `playback_margin_db`. */
   floor_dbfs: number;
   noise_margin_db: number;
   voice_margin_db: number;
@@ -130,21 +128,21 @@ export interface LiveCallWire {
   dictation_idle_s: number;
   /** The hard cap on any one streaming dictation session, s (R70 §9.3) — `hold` included. */
   dictation_max_s: number;
-  /** D74 S5 — THE TRANSCRIPT GATE: how many milliseconds of above-SILENCE-floor microphone energy a
-   *  call utterance must have carried before its final is taken, ms. **0 = off.** It exists because a
-   *  Whisper-family endpoint answers a stretch of noise with a plausible sentence rather than with
-   *  nothing (R76), and the client is the only end that knows what the microphone actually heard.
-   *  Measured against `stt_auto_stop.threshold` and deliberately NOT `barge_threshold` — "louder than
-   *  silence" is a different question from "loud enough to interrupt a reply".
+  /** D74 S5 — THE TRANSCRIPT GATE: how many milliseconds of UPLINKED microphone audio at or above the
+   *  effective floor (D76 §C — relative, in dBFS) a call utterance must have carried before its final
+   *  is taken, ms. **0 = off.** It exists because a Whisper-family endpoint answers a stretch of noise
+   *  with a plausible sentence rather than with nothing (R76), and the client is the only end that
+   *  knows what the microphone actually heard. The same floor trigger A reads, WITHOUT the playback
+   *  margin — "louder than the room" is a lower bar than "loud enough to interrupt a reply".
    *
    *  OPTIONAL, and absent reads as OFF: a pre-D74 backend has no such knob, and a client that
    *  invented one would be discarding the owner's words on a number nobody chose. The backend ships
    *  200 as its default. */
   min_final_ms?: number;
   /** D74 S7 — the call overlay's READBACK block: the track's resolved echo-cancellation mode beside
-   *  its open-time capability, the live RMS against the floor, and the flags the arming decision was
-   *  taken from (R78 §6.2). Diagnostic only; off renders nothing extra. Optional for the same reason
-   *  as the knob above — absent is off. */
+   *  its open-time capability, the live level (dBFS) against the floor, and the flags the arming
+   *  decision was taken from (R78 §6.2). Diagnostic only; off renders nothing extra. Optional for the
+   *  same reason as the knob above — absent is off. */
   debug?: boolean;
 }
 

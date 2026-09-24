@@ -11,7 +11,20 @@ import {
   subscribePlayback,
   useMouthFailures,
 } from "../lib/audioController";
+import { playDropCue } from "../lib/callCue";
 import { sendCallTranscript } from "../lib/composer";
+import {
+  DBFS_SILENCE,
+  effectiveFloor,
+  type GateCfg,
+  learnVoice,
+  newNoiseTracker,
+  type NoiseTracker,
+  resetNoise,
+  rmsToDbfs,
+  trackNoise,
+  type UtteranceLevels,
+} from "../lib/levelGate";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
 import {
   ecEngaged,
@@ -26,6 +39,7 @@ import { cancelTurn, confirmOutstanding, getLiveTurn, useChatSlice } from "../st
 import { appendDraft } from "../store/composer";
 import { endCall } from "../store/liveCall";
 import { releaseMic } from "../store/micRelease";
+import { getVoiceLevel, setVoiceLevel, voiceDeviceKey } from "../store/voiceLevels";
 import { useVoiceStatus } from "./useVoiceStatus";
 
 // THE CALL MACHINE (Phase 24 / D71 §4.2 · §4.3 · §4.5) — one owner for the ear, the brain and the mouth.
@@ -57,9 +71,15 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // THE EAR-HOLD (S3 · `mic_hold`, D76 §B; the S0 device ruling). Where the track's AEC is the
 // subtractive `"all"` mode the ear stays open under the reply and voice barge-in is real. Where it is
 // not — Fennec, measured at near-full leak — an open ear would transcribe the character's own words
-// into the owner's next message, so while the mouth is audible the ear CLOSES (`earHeld`) and every
-// event from that stretch is dropped. Nothing is lost by it: interruption there is the tap, which is
-// every browser's interrupt anyway (§4.3's trigger B).
+// into the owner's next message, so while the mouth is audible the ear is HELD (`earHeld`): the uplink
+// carries silence in place of those frames (D76 §B.1 — the client still hears them) and every event
+// from that stretch is dropped. Nothing is lost by it: interruption there is the tap, which is every
+// browser's interrupt anyway (§4.3's trigger B).
+//
+// THE RELATIVE GATE (D76 §C). What counts as the owner speaking is measured in dBFS against a floor
+// that FOLLOWS the room — a minimum-tracking noise estimate, the owner's own learned voice level, a
+// clamp (`lib/levelGate`). One effective floor, computed in one place (`gateFloor`), read by the
+// transcript gate's accrual, trigger A (raised by `playback_margin_db`) and the readouts alike.
 //
 // THE CALL SURVIVES BACKGROUNDING (D73 S6, evidence docs/research/R75). Nothing in the web platform
 // ends a call because the page went hidden — our old `hidden`-ends-it arm was a policy, and it is now
@@ -78,8 +98,10 @@ import { useVoiceStatus } from "./useVoiceStatus";
 
 // ── the named constants (all of them, in this one file — the R69 precedent) ──────────────────────
 // What is NOT here: every §4.1 tunable (`frame_ms`, `buffered_ceiling_ms`, `min_speech_ms`,
-// `barge_threshold`, `barge_in`, `max_session_s`). Those are the owner's, delivered by
-// `/voice/status.live_call`, and this hook reads them — it never defaults them.
+// `barge_in`, `max_session_s`, the D76 §C gate six). Those are the owner's, delivered by
+// `/voice/status.live_call`, and this hook reads them — it never defaults them. The level gate's own
+// estimator constants live beside the estimators (`lib/levelGate`), the drop cue's beside the cue
+// (`lib/callCue`).
 
 /** Reconnect attempts before the call gives up (§4.5's "bounded attempts with backoff"). One per entry
  *  in the backoff schedule below, which is what keeps the two from drifting apart.
@@ -157,8 +179,9 @@ const IDLE_EDGES: ReadonlySet<CallSignal["type"]> = new Set([
  *  of it.
  *
  *  3/4 rather than a knob, deliberately: it is the shape of the detector, not a preference of the
- *  owner's. The two things the S4 gate calibrates are the floor (`barge_threshold`) and the window
- *  (`min_speech_ms`), and a third dial on the same decision makes both of those harder to read. */
+ *  owner's. The two things the S4 gate calibrates are the floor (the effective floor plus
+ *  `playback_margin_db`, D76 §C.6) and the window (`min_speech_ms`), and a third dial on the same
+ *  decision makes both of those harder to read. */
 const BARGE_HIT_RATIO = 0.75;
 
 /** How often the debug block re-reads, ms (D74 S7). The measurements it shows arrive on the audio
@@ -167,6 +190,17 @@ const BARGE_HIT_RATIO = 0.75;
  *  the peak and slow enough to be invisible in a profile; the block only exists while the owner has
  *  the `debug` knob on. Not a knob of its own: it is a property of reading, not of the call. */
 const DEBUG_TICK_MS = 250;
+
+/** THE UPLINK'S SILENCE (D76 §B.1): the ONE zeroed buffer a held frame is sent as, reallocated only when
+ *  the frame size changes (a capture's size is fixed by its rate and `frame_ms`, so in practice once per
+ *  capture). Sharing it across queued entries is safe because nothing writes to it and the wire COPIES:
+ *  `enqueueBounded`/`pump` only move references through the pacer's FIFO, and `WebSocket.send()` of an
+ *  `ArrayBuffer` queues a copy of its bytes rather than transferring (detaching) it. */
+let silentFrame: ArrayBuffer | null = null;
+function silenceLike(buf: ArrayBuffer): ArrayBuffer {
+  if (silentFrame?.byteLength !== buf.byteLength) silentFrame = new ArrayBuffer(buf.byteLength);
+  return silentFrame;
+}
 
 /** How long the debug readout's PEAK holds, ms (D74 S7 / R78 §6.2). The whole C1 diagnosis is "is the
  *  line above the hill", and without a hold the owner cannot see a floor their voice never reaches —
@@ -436,6 +470,9 @@ export type CallEffect =
   | { type: "reconnect"; delayMs: number }
   /** (Re)arm the strained note's hold — the relay never says "recovered", so the client times it out. */
   | { type: "degradeHold" }
+  /** THE DROP CUE (D76 §C.5): the transcript gate just discarded a final as too quiet — say so out
+   *  loud, because the owner in the car cannot read the note (`lib/callCue`). */
+  | { type: "dropCue" }
   /** Close THIS leg and nothing else (D73 S6 ②). Deliberately not a reconnect: the close is what the
    *  ONE existing `socketLost` arm reconnects from, so the ladder keeps its own accounting — the
    *  outage spends a rung from wherever the ladder stands instead of minting a second counter beside
@@ -703,7 +740,11 @@ function reduce(s: CallState, sig: CallSignal): Step {
         sig.minFinalMs > 0 &&
         sig.energyMs < sig.minFinalMs
       ) {
-        return { state: { ...s, waitingFinal: false, note: CALL_COPY.tooQuiet }, out: [] };
+        // …and HEARD, not only shown (D76 §C.5): the note line is useless to an owner who is driving.
+        return {
+          state: { ...s, waitingFinal: false, note: CALL_COPY.tooQuiet },
+          out: [{ type: "dropCue" }],
+        };
       }
       return drain({ ...s, waitingFinal: false, heard: text, pending: [...s.pending, text] });
     }
@@ -994,21 +1035,25 @@ function reduce(s: CallState, sig: CallSignal): Step {
   return { state: s, out: [] };
 }
 
-// ── THE EAR METER (D74 S4 ⑥) ─────────────────────────────────────────────────────────────────────
+// ── THE EAR METER (D74 S4 ⑥ → D76 §C) ────────────────────────────────────────────────────────────
 //
-// ONE accumulator over the worklet's own per-frame RMS, and every consumer in this call reads what it
-// wrote: trigger A's windowed floor, the transcript gate's per-utterance evidence (S5), and the debug
-// readback (S7). They started as three readings of the same number in three places, which is how two
-// of them end up disagreeing about what the microphone actually heard.
+// ONE accumulator over the worklet's own per-frame level, and every consumer in this call reads what it
+// wrote: trigger A's windowed floor, the transcript gate's per-utterance evidence (S5), the voice
+// learner's samples (D76 §C.3) and the readouts (S7). They started as three readings of the same number
+// in three places, which is how two of them end up disagreeing about what the microphone heard.
+//
+// IN dBFS SINCE D76 §C.1: the frame's linear RMS is converted ONCE, where the frame arrives
+// (`rmsToDbfs`), and nothing below compares a linear number against anything.
 //
 // It lives in the WIRING, not the reducer: it is a measurement, arriving on the audio callback at
 // 25–50 Hz, and re-rendering React for it is exactly the trade the dictation meter's ref already
 // refused. What the reducer gets is the DECISION — `barge`, or a final's accrual on its own signal.
 
 interface EarMeter {
-  /** The last frame's RMS, and the loudest one still inside `PEAK_HOLD_MS` (S7). */
-  rms: number;
-  peak: number;
+  /** The last frame's level, and the loudest one still inside `PEAK_HOLD_MS` (S7), dBFS — `null` until
+   *  the first frame. Every frame, held or not: what the microphone hears is true either way. */
+  db: number | null;
+  peakDb: number | null;
   peakAt: number;
   /** TRIGGER A's rolling window: one slot per frame of `min_speech_ms`, oldest overwritten, with the
    *  count kept incrementally so a frame costs no scan. */
@@ -1020,18 +1065,22 @@ interface EarMeter {
    *  gate's whole fail-open rule: a final with no matching epoch is not quiet, it is unmeasured. */
   epoch: { leg: number; seq: number } | null;
   seq: number;
-  /** …and the accrual: ms of frames at or above the SILENCE floor since this utterance's speech-start. */
+  /** …and the accrual: ms of UPLINKED frames at or above the effective floor since this utterance's
+   *  speech-start (D76 §C.5), and the loudest of them, dBFS. */
   accruedMs: number;
   accruedPeak: number;
+  /** …and the VOICE LEARNER's evidence for the same utterance (D76 §C.3): every uplinked frame's level,
+   *  and whether any of them arrived while the reply was audible. */
+  utterance: UtteranceLevels;
   /** What the LAST final was judged on, kept for the debug block. An `accruedMs` of 0 beside a
    *  non-zero `chars` is the fail-open signature — a final that arrived with no epoch behind it. */
-  last: { accruedMs: number; peak: number; chars: number } | null;
+  last: { accruedMs: number; peakDb: number; chars: number } | null;
 }
 
 function newEarMeter(): EarMeter {
   return {
-    rms: 0,
-    peak: 0,
+    db: null,
+    peakDb: null,
     peakAt: 0,
     window: [],
     at: 0,
@@ -1039,24 +1088,41 @@ function newEarMeter(): EarMeter {
     epoch: null,
     seq: 0,
     accruedMs: 0,
-    accruedPeak: 0,
+    accruedPeak: DBFS_SILENCE,
+    utterance: { samples: [], duringPlayback: false },
     last: null,
   };
 }
 
-/** One frame, consumed ONCE. Everything below reads what this wrote. */
-function meterFrame(m: EarMeter, rms: number, frameMs: number, silenceFloor: number): void {
+/**
+ * One frame, consumed ONCE. Everything below reads what this wrote.
+ *
+ * THE PARTITION (D76 §B.2): the level and its peak are every frame's; the utterance's accrual and the
+ * learner's samples take only UPLINKED frames — a held frame is the reply leaking back in, and a
+ * muted one is silence the owner chose; neither is evidence that the owner spoke.
+ */
+function meterFrame(
+  m: EarMeter,
+  db: number,
+  uplinked: boolean,
+  frameMs: number,
+  floor: number,
+  mouthLive: boolean,
+): void {
   const now = performance.now();
-  m.rms = rms;
+  m.db = db;
   // A decaying peak hold rather than a ring of samples: the reading it feeds is an eyeball one, and a
   // 2 s ring at 50 Hz would be 100 numbers kept so a human can read the largest of them.
-  if (rms >= m.peak || now - m.peakAt > PEAK_HOLD_MS) {
-    m.peak = rms;
+  if (m.peakDb === null || db >= m.peakDb || now - m.peakAt > PEAK_HOLD_MS) {
+    m.peakDb = db;
     m.peakAt = now;
   }
-  if (m.epoch !== null && rms >= silenceFloor) {
+  if (m.epoch === null || !uplinked) return;
+  m.utterance.samples.push(db);
+  if (mouthLive) m.utterance.duringPlayback = true;
+  if (db >= floor) {
     m.accruedMs += frameMs;
-    if (rms > m.accruedPeak) m.accruedPeak = rms;
+    if (db > m.accruedPeak) m.accruedPeak = db;
   }
 }
 
@@ -1086,13 +1152,15 @@ function openUtterance(m: EarMeter, leg: number): void {
   m.seq += 1;
   m.epoch = { leg, seq: m.seq };
   m.accruedMs = 0;
-  m.accruedPeak = 0;
+  m.accruedPeak = DBFS_SILENCE;
+  m.utterance = { samples: [], duringPlayback: false };
 }
 
 function closeUtterance(m: EarMeter): void {
   m.epoch = null;
   m.accruedMs = 0;
-  m.accruedPeak = 0;
+  m.accruedPeak = DBFS_SILENCE;
+  m.utterance = { samples: [], duringPlayback: false };
 }
 
 /**
@@ -1107,6 +1175,11 @@ function closeUtterance(m: EarMeter): void {
  *    unknowable — a new speech-start (which opens the next one), the final it was collected for, a
  *    mute, a leg that died, a leg that came up, and the route cycle;
  *  · and MUTE clears both, because "the ear is closed" has to mean it.
+ *
+ * RETURNS the closing utterance's level evidence when the signal was a final the reducer TOOK (it
+ * joined the queue or went out) — the voice learner's one input (D76 §C.3), keyed, like the epoch
+ * edges, on the ACCEPTED transition and never on a re-derivation of the arm's rules. `null` otherwise:
+ * a final that was dropped (too quiet, muted, held, empty) teaches nothing.
  */
 function meterEdge(
   m: EarMeter,
@@ -1114,7 +1187,8 @@ function meterEdge(
   leg: number,
   prev: CallState,
   next: CallState,
-): void {
+  out: readonly CallEffect[],
+): UtteranceLevels | null {
   switch (sig.type) {
     case "speechStart":
       // ONLY when the reducer TOOK it (code round F2): a muted/held speech-start is ignored by the
@@ -1123,10 +1197,14 @@ function meterEdge(
       // never a re-derivation of the arm's own eligibility rules.
       if (next.userSpeechActive && !prev.userSpeechActive) openUtterance(m, leg);
       break;
-    case "final":
-      m.last = { accruedMs: m.accruedMs, peak: m.accruedPeak, chars: sig.text.trim().length };
+    case "final": {
+      m.last = { accruedMs: m.accruedMs, peakDb: m.accruedPeak, chars: sig.text.trim().length };
+      const taken =
+        next.pending.length > prev.pending.length || out.some((e) => e.type === "submit");
+      const evidence = taken ? m.utterance : null;
       closeUtterance(m);
-      break;
+      return evidence;
+    }
     case "playbackStarted":
       clearBarge(m);
       break;
@@ -1145,6 +1223,49 @@ function meterEdge(
       if (next.phase !== prev.phase) closeUtterance(m);
       break;
   }
+  return null;
+}
+
+// ── THE RELATIVE GATE'S STATE (D76 §C) ───────────────────────────────────────────────────────────
+//
+// The estimators the effective floor is computed from, and the owner's per-call pin. Measurements, so
+// they ride a ref beside the meter (the D74 S7 rule) — nothing renders off them; the readouts sample.
+
+interface GateState {
+  /** The gate's knobs, taken from the acquisition that opened the current capture (§4.5 — read at
+   *  call start). `null` before any acquisition: there is no floor to compute without them. */
+  cfg: (GateCfg & { playback_margin_db: number }) | null;
+  noise: NoiseTracker;
+  /** The owner's learned voice level on THIS capture's device, dBFS — seeded from `store/voiceLevels`
+   *  when the capture opens, learned from accepted finals, written back when it is released. */
+  voiceLevel: number | null;
+  /** …and the device key it is stored under (`voiceDeviceKey`), `null` when the capture names none. */
+  voiceKey: string | null;
+  /** The owner's MANUAL floor for this call, dBFS (S1's control sets it; `setFloorPin`), or `null` =
+   *  Auto. Per call, never written anywhere — Discord's shape (D76 §C.7). */
+  pin: number | null;
+}
+
+function newGateState(): GateState {
+  return { cfg: null, noise: newNoiseTracker(), voiceLevel: null, voiceKey: null, pin: null };
+}
+
+/** THE effective floor right now under `cfg` (D76 §C.4 — `effectiveFloor` holds the truth table). The
+ *  ONE place the hook asks; every consumer reads its answer. */
+function gateFloor(g: GateState, cfg: GateCfg): number {
+  return effectiveFloor({
+    noise: g.noise.floor,
+    settled: g.noise.settled,
+    voiceLevel: g.voiceLevel,
+    pin: g.pin,
+    cfg,
+  });
+}
+
+/** Write the learned level back under its device (D76 §C.3) — on every release of a capture: the
+ *  hang-up's teardown, and a route cycle's, before the next capture seeds from its own key. */
+function persistVoice(g: GateState): void {
+  if (g.voiceKey !== null && g.voiceLevel !== null) setVoiceLevel(g.voiceKey, g.voiceLevel);
 }
 
 // ── the wiring ───────────────────────────────────────────────────────────────────────────────────
@@ -1174,14 +1295,22 @@ export interface CallDebug {
   deviceLabel: string;
   deviceId: string;
   fellBack: boolean;
-  /** The whole C1 arithmetic: the live level, the 2 s peak hold, and the line they are measured
-   *  against. Without the hold the owner cannot see a floor their voice never reaches. */
-  rms: number;
-  rmsPeak2s: number;
-  floor: number;
-  /** …and what the last final was judged on (S5). `accruedMs: 0` beside a non-zero `chars` is the
-   *  fail-open signature — a final that arrived with no epoch behind it. */
-  lastFinal: { accruedMs: number; peak: number; chars: number } | null;
+  /** The whole C1 arithmetic, in dBFS since D76 §C: the live level, the 2 s peak hold, and the line
+   *  they are measured against. Without the hold the owner cannot see a floor their voice never
+   *  reaches. `null` = no frame yet (or, for the floor, no knobs yet). */
+  level: number | null;
+  levelPeak2s: number | null;
+  floor: number | null;
+  /** …whether that floor is the owner's manual pin rather than Auto (D76 §C.7). */
+  floorPinned: boolean;
+  /** …and what it is computed from (D76 §C.2–§C.4): the noise estimate — PROVISIONAL until its first
+   *  full window — and the learned voice level on this device. */
+  noise: number | null;
+  noiseSettled: boolean;
+  voiceLevel: number | null;
+  /** …and what the last final was judged on (S5), its peak in dBFS. `accruedMs: 0` beside a non-zero
+   *  `chars` is the fail-open signature — a final that arrived with no epoch behind it. */
+  lastFinal: { accruedMs: number; peakDb: number; chars: number } | null;
 }
 
 /** What the overlay renders + the things it can do. */
@@ -1209,6 +1338,16 @@ export interface CallView {
   setInputDevice: (deviceId: string) => void;
   /** D74 S7 — the readback block, or `null` with the knob off (which is every ordinary call). */
   debug: CallDebug | null;
+  /** D76 §C.7 (S1's Sensitivity meter) — SAMPLE the ear: the current level and the effective floor,
+   *  dBFS (`null` before the first frame / before the knobs). A READER, not a field: the numbers move at
+   *  25–50 Hz and ride refs (the D74 S7 rule), so a value on this view would be as stale as the last
+   *  render. The meter polls it at its own tick. */
+  readLevel: () => { level: number | null; floor: number | null };
+  /** …whether the floor is Auto (no manual pin standing). */
+  floorAuto: boolean;
+  /** …and the pin itself: a dBFS floor for THIS call, or `null` to hand the floor back to Auto. Writes
+   *  nothing — per call, applied from the next frame, no leg redial. */
+  setFloorPin: (dbfs: number | null) => void;
 }
 
 export function useLiveCall(): CallView {
@@ -1220,14 +1359,6 @@ export function useLiveCall(): CallView {
 
   const voice = useVoiceStatus().data;
   const knobs = voice?.live_call;
-  /** Trigger A's RMS floor (§4.1's table: `barge_threshold` 0 ⇒ reuse Tier 0's, same detector family).
-   *  Hoisted out of the start effect by D74 S1 so the acquisition can be re-run without it. */
-  const floor = knobs?.barge_threshold || (voice?.stt_auto_stop?.threshold ?? 0);
-  /** …and Tier 0's floor ON ITS OWN, which is what the transcript gate measures against (D74 S5). The
-   *  two are deliberately different questions: `barge_threshold` is "loud enough to interrupt a reply
-   *  through whatever the AEC left", this one is "louder than silence". Reusing the barge floor here
-   *  would throw away every quiet-but-real utterance on a call calibrated for interruption. */
-  const silenceFloor = voice?.stt_auto_stop?.threshold ?? 0;
   const capture = useRef<PcmCapture | null>(null);
   const socket = useRef<LiveSocket | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -1244,8 +1375,13 @@ export function useLiveCall(): CallView {
    *  has one: there is nothing to keep in the background yet, so the old clean end applies. */
   const bg = useRef<{ background: boolean; keepalive: boolean; idleMs: number } | null>(null);
   /** THE ONE EAR METER (D74 S4 ⑥) — trigger A's window, the transcript gate's accrual and the debug
-   *  readback, all off the worklet's per-frame RMS, measured once. */
+   *  readback, all off the worklet's per-frame level, measured once. */
   const meter = useRef<EarMeter>(newEarMeter());
+  /** THE RELATIVE GATE (D76 §C) — the noise tracker, the learned voice level and the manual pin that
+   *  the effective floor is computed from (`gateFloor`). */
+  const gate = useRef<GateState>(newGateState());
+  /** …and the ONE bit of it the screen renders: is a manual pin standing (S1's Auto caption). */
+  const [pinned, setPinned] = useState(false);
   /** Trigger A is armed only on a track whose AEC is the subtractive `all` mode (the S0 ruling). */
   const bargeArmed = useRef(false);
   /** The held-upload retry is ONE PER HOLD (§4.5); this latch is what makes it one. A fresh `held`
@@ -1277,6 +1413,8 @@ export function useLiveCall(): CallView {
     // The pacer dies with the leg it metered: whatever it still held is audio for a session that is over.
     pacer.current = null;
     overflowed.current = false;
+    // What this call learned about the owner's voice outlives it, on this device (D76 §C.3).
+    persistVoice(gate.current);
     capture.current?.stop();
     capture.current = null;
     dismiss(); // an ended call does not keep talking
@@ -1382,6 +1520,9 @@ export function useLiveCall(): CallView {
             // The pre-play tap closes over the capture it is about to release (S3 confirm F2), so it
             // goes with it; the fresh capture registers its own if its track needs one.
             setCallPrePlay(null);
+            // The OLD ear's learned level goes back under the OLD device's key (D76 §C.3) before the
+            // fresh capture seeds from whatever its own key holds.
+            persistVoice(gate.current);
             capture.current?.stop();
             capture.current = null;
             // NOT `markLeg(false)`: this tab is still in a call. And the fence is the generation this
@@ -1391,6 +1532,12 @@ export function useLiveCall(): CallView {
               { route: eff.route, deviceId: eff.deviceId },
               () => ref.current.gen === gen,
             );
+            break;
+          }
+          case "dropCue": {
+            // On the capture's own context (`lib/callCue`); an ear already released plays nothing.
+            const ctx = capture.current?.context;
+            if (ctx) playDropCue(ctx);
             break;
           }
           case "teardown":
@@ -1406,7 +1553,11 @@ export function useLiveCall(): CallView {
       if (IDLE_EDGES.has(sig.type)) armIdleRef.current();
       // …and the EAR METER's, the same way and for the same reason (D74 S4/S5). After the reduce,
       // because the `final` arm has already been handed the accrual this may now clear.
-      meterEdge(meter.current, sig, legSeq.current, prev, next);
+      const taken = meterEdge(meter.current, sig, legSeq.current, prev, next, out);
+      // THE VOICE LEARNER (D76 §C.3) — fed only a final the machine took, and guarded inside
+      // `learnVoice` (a settled noise term, a clear margin above it, no playback during it).
+      const g = gate.current;
+      if (taken && g.cfg) g.voiceLevel = learnVoice(g.voiceLevel, taken, g.noise, g.cfg);
     },
     [teardown],
   );
@@ -1568,6 +1719,13 @@ export function useLiveCall(): CallView {
       // Trigger A's window, in FRAMES — the same `min_speech_ms` the consecutive run spent, read once
       // here rather than divided on every frame (D74 S4 ⑥).
       const bargeFrames = Math.max(1, Math.ceil(knobs.min_speech_ms / knobs.frame_ms));
+      // THE GATE STARTS OVER WITH THE EAR (D76 §C.2): a fresh capture is a different microphone, or the
+      // same one somewhere else, so the noise estimate is re-learned from its 1 s bootstrap. The knobs
+      // are this acquisition's (§4.5). The voice level is NOT touched here — it is the DEVICE's, seeded
+      // from the store once the capture says which device it opened (below).
+      const g = gate.current;
+      g.cfg = knobs;
+      resetNoise(g.noise);
       // THE EAR IS TAKEN BEFORE IT IS OPENED (D74 S6 ⑧, evidence docs/research/R78 §2.3): a live
       // dictation capture PINS the echo-cancellation mode of the next one on the same device, so a
       // call opening beside one silently inherits whatever dictation asked for — with a readback that
@@ -1591,13 +1749,17 @@ export function useLiveCall(): CallView {
               // `call_backlog_ms`, because a call has a clock on both sides and a second of stale speech
               // endpoints a turn the owner has moved past (R71 §5.3).
               //
-              // WHAT IT DOES NOT CONSULT: `muted`/`held`. Both are `track.enabled` — the frames keep flowing,
-              // as SILENCE, which is exactly what the server VAD must observe to endpoint (`pcmCapture`'s one
-              // rule). So there is no stranded tail here and no flush-on-mute question: the queue is pumped by
-              // a callback that never stops arriving while the capture is alive.
+              // THE SUBSTITUTION (D76 §B.1) happens HERE, at the pacer boundary, and nowhere else: a frame
+              // that is not `uplinked` (muted, or held under the reply) goes up as the ONE zeroed buffer of
+              // its length. The server receives exactly the digital silence a disabled track used to give
+              // it — which is what its VAD must observe to endpoint (`pcmCapture`'s one rule) — and the
+              // frames keep arriving whatever the classification, so there is no stranded tail here and no
+              // flush-on-mute question: the queue is pumped by a callback that never stops while the
+              // capture is alive.
               const p = pacer.current;
               if (p) {
-                if (enqueueBounded(p, frame.buf, knobs.frame_ms, knobs.call_backlog_ms)) {
+                const up = frame.uplinked ? frame.buf : silenceLike(frame.buf);
+                if (enqueueBounded(p, up, knobs.frame_ms, knobs.call_backlog_ms)) {
                   // The client's own drop presents the RELAY'S signal, locally raised: one loss chain, one
                   // note, one hold that times out the same way (`degraded` → `degradeHold`). Once per burst —
                   // see the `overflowed` latch.
@@ -1612,31 +1774,43 @@ export function useLiveCall(): CallView {
                 // socket is not OPEN (the reconnect gap, exactly as before the pacer).
                 pump(p, knobs.frame_ms, (buf) => socket.current?.sendAudio(buf));
               }
-              // THE EAR METER, FED ONCE (D74 S4 ⑥): trigger A below, the transcript gate's accrual (S5)
-              // and the debug readback (S7) all read what this line wrote. It sits OUTSIDE every guard
-              // below on purpose — what the microphone heard does not stop being true because the
-              // interrupt happens to be disarmed.
+              // dBFS AT THE CHOKEPOINT (D76 §C.1): the ONE conversion, on every frame, before anything
+              // below compares a level against anything.
+              const db = rmsToDbfs(frame.rms);
+              // THE PARTITION (D76 §B.2). The noise tracker takes UPLINKED frames only; a HELD frame is
+              // the leak probe's alone (D76 §B.3 — S2 builds it), and nothing here reads one.
+              if (frame.uplinked) trackNoise(g.noise, db, knobs.frame_ms);
+              // THE effective floor for this frame — the one normalize (`gateFloor`); every reader below
+              // takes this number.
+              const floor = gateFloor(g, knobs);
+              // THE EAR METER, FED ONCE (D74 S4 ⑥): trigger A below, the transcript gate's accrual (S5),
+              // the voice learner's samples and the readouts all read what this line wrote. It sits
+              // OUTSIDE every guard below on purpose — what the microphone heard does not stop being
+              // true because the interrupt happens to be disarmed.
               const m = meter.current;
-              meterFrame(m, frame.rms, knobs.frame_ms, silenceFloor);
+              meterFrame(m, db, frame.uplinked, knobs.frame_ms, floor, ref.current.mouthLive);
               // TRIGGER A (§4.3): the worklet already owns the samples, so the sustained-energy floor is
               // measured on the frames we CAPTURE — never a second AnalyserNode over the same audio, and
               // deliberately never inside the pump: what the owner said is a fact about the microphone, not
               // about what the uplink found room for. A dropped frame is one the ear will not transcribe; it
               // is still speech over an audible reply, and it must still count toward the interrupt.
-              // A floor of 0 means neither knob was calibrated, and "every frame is speech" would make a
-              // cough kill the reply — so the automatic trigger simply stays disarmed until S4 sets one.
               // Gated on the MOUTH, not the phase (S3, the same audit as the `barge` arm): what trigger A
               // measures is speech over an audible reply, and the reducer's own gate reads `mouthLive` — a
               // clock that stopped at the rendered phase would spend the reconnect window unable to accrue
               // toward a kill the tap could still fire.
-              if (!bargeArmed.current || floor <= 0 || !ref.current.mouthLive) {
+              if (!bargeArmed.current || !ref.current.mouthLive) {
                 clearBarge(m);
                 return;
               }
               // …and the RUN is now an m-of-n WINDOW (D74 S4 ⑥, see `BARGE_HIT_RATIO`): a frame under the
               // floor costs ONE slot instead of the whole clock, because the holes inside a spoken word
               // are exactly what a consecutive run could never survive.
-              if (bargeWindow(m, frame.rms >= floor, bargeFrames)) {
+              // THE BARGE FLOOR (D76 §C.6) is the effective floor RAISED by `playback_margin_db` — the
+              // reply is audible whenever this line runs, and what the AEC left of it must not interrupt
+              // itself. Only an UPLINKED frame can count (the §B.2 partition): a held one is the reply's
+              // own leak by definition, exactly the silence it used to arrive as.
+              const above = frame.uplinked && db >= floor + knobs.playback_margin_db;
+              if (bargeWindow(m, above, bargeFrames)) {
                 clearBarge(m);
                 send({ type: "barge", gen: ref.current.gen });
               }
@@ -1656,6 +1830,11 @@ export function useLiveCall(): CallView {
             return;
           }
           capture.current = cap;
+          // THE OWNER'S VOICE ON THIS DEVICE (D76 §C.3 / Maya F8): seeded from the store under the
+          // device the capture ACTUALLY opened — a different device starts unseeded — so the own-voice
+          // term applies from the first frame (C.4). Written back on release (`persistVoice`).
+          g.voiceKey = voiceDeviceKey(cap.readback);
+          g.voiceLevel = g.voiceKey === null ? null : getVoiceLevel(g.voiceKey);
           // MUTE ACROSS THE ACQUISITION GAP (S2b confirm F1): a Mute tapped while `getUserMedia` was
           // still pending changed the RULE but had no track to change — so the track takes the
           // machine's answer the moment it exists, or audio flows to the relay while the screen says
@@ -1730,7 +1909,7 @@ export function useLiveCall(): CallView {
           if (alive()) send({ type: "failed", note: micFailure(e) });
         });
     },
-    [knobs, floor, silenceFloor, openLeg, send],
+    [knobs, openLeg, send],
   );
 
   acquireRef.current = acquire;
@@ -1781,7 +1960,7 @@ export function useLiveCall(): CallView {
   // A SYNCHRONOUS store subscription, not a render-time effect (S3 review F2). The controller's `emit`
   // runs listeners inside the very `set()` the media `play` event handler made, so everything below —
   // the signal AND the hardware hold on its heels — lands in the SAME task as the audible start. The
-  // effect this replaced paid a render + a paint before the hold could reach `track.enabled`, and on a
+  // effect this replaced paid a render + a paint before the hold could reach the capture, and on a
   // leaking track (Fennec) that window put the reply's own first words into the relay: a short reply
   // could drain before their transcript came back, and the leaked final walked in through an open ear.
   // Two knock-ons the timing closes at the root: no leak ⇒ no leak-window `speech_started` whose
@@ -1811,7 +1990,7 @@ export function useLiveCall(): CallView {
       else if (status !== "loading" && (was === "playing" || was === "loading"))
         send({ type: "playbackDrained", gen });
       // THE ENGAGE-PATH HOLD (F2's fix): `send` is synchronous, so by this line the reducer AND the
-      // normalize have already answered — the hold reaches the track before this task yields, ahead of
+      // normalize have already answered — the hold reaches the capture before this task yields, ahead of
       // the first frame that could carry the reply back into the mic. The state effect below stays as
       // the applier for every rule change that does not ride a playback edge (the kill, the terminal).
       capture.current?.setHeld(ref.current.earHeld);
@@ -1823,11 +2002,11 @@ export function useLiveCall(): CallView {
     return unsub;
   }, [send]);
 
-  // ── the ear-hold, applied to the track (S3) ───────────────────────────────────────────────────
-  // The rule lives in the reducer; this is the general path to the hardware (the playback subscription
+  // ── the ear-hold, applied to the capture (S3 → D76 §B.1) ──────────────────────────────────────
+  // The rule lives in the reducer; this is the general path to the capture (the playback subscription
   // above applies it synchronously on the edges where a render's delay would leak). Cheap and idempotent
-  // (`track.enabled` against the stored pair — see `PcmCapture.setHeld`), so an effect that re-runs on a
-  // state the hold did not move costs nothing.
+  // (a flag the capture classifies the next frame by — see `PcmCapture.setHeld`), so an effect that
+  // re-runs on a state the hold did not move costs nothing.
   useEffect(() => {
     capture.current?.setHeld(state.earHeld);
   }, [state.earHeld]);
@@ -1963,6 +2142,7 @@ export function useLiveCall(): CallView {
       const cap = capture.current;
       const m = meter.current;
       const s = ref.current;
+      const g = gate.current;
       setDebug({
         ecSettings: cap?.readback.echoCancellation,
         ecCapabilities: cap?.readback.echoCapabilities,
@@ -1975,16 +2155,34 @@ export function useLiveCall(): CallView {
         deviceLabel: cap?.readback.label ?? "",
         deviceId: cap?.readback.deviceId ?? "",
         fellBack: cap?.fellBack ?? false,
-        rms: m.rms,
-        rmsPeak2s: m.peak,
-        floor,
+        level: m.db,
+        levelPeak2s: m.peakDb,
+        floor: g.cfg && gateFloor(g, g.cfg),
+        floorPinned: g.pin !== null,
+        noise: g.noise.floor,
+        noiseSettled: g.noise.settled,
+        voiceLevel: g.voiceLevel,
         lastFinal: m.last,
       });
     };
     read();
     const id = setInterval(read, DEBUG_TICK_MS);
     return () => clearInterval(id);
-  }, [debugOn, knobs, floor]);
+  }, [debugOn, knobs]);
+
+  // ── the Sensitivity seam (D76 §C.7 — S1 renders it) ──────────────────────────────────────────────
+  // A SAMPLER over the same refs the debug block reads, never a per-frame state write (the D74 S7
+  // rule): the meter that consumes it polls at its own tick.
+  const readLevel = useCallback((): { level: number | null; floor: number | null } => {
+    const g = gate.current;
+    return { level: meter.current.db, floor: g.cfg && gateFloor(g, g.cfg) };
+  }, []);
+  /** The manual floor for THIS call (D76 §C.7): the frame path reads the ref from its next frame, and
+   *  only the Auto bit reaches React. Writes nothing — the pin dies with the call. */
+  const setFloorPin = useCallback((dbfs: number | null): void => {
+    gate.current.pin = dbfs;
+    setPinned(dbfs !== null);
+  }, []);
 
   return {
     phase: state.phase,
@@ -2001,6 +2199,9 @@ export function useLiveCall(): CallView {
     setRoute,
     setInputDevice,
     debug,
+    readLevel,
+    floorAuto: !pinned,
+    setFloorPin,
   };
 }
 

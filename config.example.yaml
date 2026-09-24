@@ -435,19 +435,20 @@ voice:
     call_backlog_ms: 1000  # CLIENT pacer backlog for a call leg, in ms of audio; past it the OLDEST
                            # frames are dropped (the mirror of relay_queue_ms below, one hop upstream).
                            # Dictation's pacer is lossless instead and ignores this.
-    barge_threshold: 0     # CLIENT RMS floor for the barge-in gate; 0 = reuse stt.auto_stop_threshold
-    min_final_ms: 200      # D74/R76: ms of mic energy ABOVE that floor an utterance must carry before
-                           # its transcript becomes a turn — the near-speech gate that keeps a TV or
-                           # the next room out of the conversation (0 = off, the pre-D74 commit)
+    min_final_ms: 200      # D74/R76: ms of mic energy at or above the RELATIVE floor (the gate six below)
+                           # an utterance must carry before its transcript becomes a turn — the
+                           # near-speech gate that keeps a TV or the next room out of the conversation;
+                           # a drop plays a short cue (0 = off, the pre-D74 commit)
     debug: false           # CLIENT: show the live gate numbers on the call overlay (calibration aid)
     max_sessions: 1        # process-wide concurrent live sessions (a second connect gets `busy`)
     mic_hold: auto         # CLIENT: mic off while the reply speaks — auto | on | off. auto = the per-reply
                            # leak probe (D76 S2; until it lands: held unless the track's AEC reads "all")
-    barge_in: false        # CLIENT: hands-free interruption (default off = tap-to-interrupt only); when on, the owner-verified floor was barge_threshold 0.06 on the call route (NOT route-portable — R78); needs an open ear — inert while the mic is held
+    barge_in: false        # CLIENT: hands-free interruption (default off = tap-to-interrupt only); when on, speech must clear the relative floor + playback_margin_db below; needs an open ear — inert while the mic is held
     route: media           # CLIENT: media (DEFAULT: EC off → clean media-path audio, follows Bluetooth
                            # like music, phone speaker otherwise) | call (platform AEC → phone-call mode,
                            # echo-cancelled, the hands-free device's own mic)
-    # D76 / R83 — the RELATIVE near-speech gate, in dB (CLIENT; unused until the client estimator lands):
+    # D76 / R83 — the RELATIVE near-speech gate, in dB (CLIENT): the floor follows the measured room noise
+    # and your learned voice level, clamped into [min_dbfs, max_dbfs]; it gates finals AND barge-in.
     floor_dbfs: -45        # bootstrap ceiling: the floor before a noise estimate, and its cap meanwhile
     noise_margin_db: 10    # floor ≥ measured room noise + this
     voice_margin_db: 10    # floor ≥ learned own-voice level − this

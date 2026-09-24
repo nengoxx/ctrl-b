@@ -114,17 +114,17 @@ export interface VoiceLive extends VoiceServiceCommon {
   vad_threshold: number; //   Silero speech-probability floor, 0.5..0.8 (D76/R84) — rides `session.update`
   silence_ms: number; //      the silence run that ends an utterance, 500..1200
   min_speech_ms: number; //   client interruption floor, 0..5000
-  barge_threshold: number; // client RMS floor, 0..0.5; 0 = reuse `stt.auto_stop_threshold`
   barge_in: boolean; //       hands-free interruption; off = tap-to-interrupt only
   // D74 — the near-speech gate on a COMMITTED turn (evidence docs/research/R76: Silero is nearly
   // level-invariant, so a distant TV still produces confident finals and the server VAD is out of
   // headroom). Client knobs: the energy is measured in the browser, and so is the readout.
-  min_final_ms: number; //    ms above the barge/silence floor before a final may become a turn; 0 = off
+  min_final_ms: number; //    ms at/above the relative floor before a final may become a turn; 0 = off
   debug: boolean; //          show the call's live gate numbers on the overlay (calibration aid)
   ring: boolean; //           §6 overlay mode: the focal-anchored face ring, or art-only
   captions: boolean; //       the reply as fading text on the call screen (owner ask 2026-09-22)
   mic_hold: string; //        auto | on | off — is the ear held while the reply plays (D76 §B)
-  // D76 §C (evidence R83) — the RELATIVE gate, in dB; client knobs, no Conf rows until D76 S1.
+  // D76 §C (evidence R83) — the RELATIVE gate, in dB; client knobs (read by `lib/levelGate`), no Conf
+  // rows until D76 S1.
   floor_dbfs: number; //      bootstrap ceiling, dBFS
   noise_margin_db: number; // floor ≥ noise + this
   voice_margin_db: number; // floor ≥ own voice − this

@@ -1026,7 +1026,6 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "buffered_ceiling_ms": 1500,
             "call_backlog_ms": 1200,
             "min_speech_ms": 250,
-            "barge_threshold": 0.02,
             "barge_in": False,
             "vad_threshold": 0.7,
             "min_final_ms": 350,
@@ -1060,7 +1059,6 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         # the browser, so nothing below it reads this and it has to arrive here or be defaulted twice.
         "call_backlog_ms": 1200,
         "min_speech_ms": 250,
-        "barge_threshold": 0.02,
         "barge_in": False,
         # The Silero threshold, delivered like its neighbours; Conf is its only door (D76 §D — the
         # in-call override and its `start` field are gone).
@@ -1227,7 +1225,7 @@ def test_live_config_defaults() -> None:
     assert (cfg.vad_threshold, cfg.silence_ms) == (0.6, 700)
     assert (cfg.frame_ms, cfg.max_frame_bytes, cfg.max_sessions) == (40, 32768, 1)
     assert cfg.max_session_s == 1800  # aligned with Speaches' own 30-min hard expiry
-    assert (cfg.min_speech_ms, cfg.buffered_ceiling_ms, cfg.barge_threshold) == (300, 1000, 0.0)
+    assert (cfg.min_speech_ms, cfg.buffered_ceiling_ms) == (300, 1000)
     # `barge_in` ships OFF since the 2026-09-22 owner re-ruling (voice interrupt verified at the
     # calibration, then ruled an opt-in rather than the resting state).
     assert (cfg.barge_in, cfg.ring, cfg.mic_hold) == (False, True, "auto")
@@ -1265,7 +1263,6 @@ def test_live_config_defaults() -> None:
         {"max_frame_bytes": 0},
         {"max_sessions": 0},
         {"max_sessions": 99},
-        {"barge_threshold": 0.9},
         {"relay_queue_ms": 10},
         {"start_timeout_s": 0},
         {"mic_hold": "sometimes"},
@@ -1307,6 +1304,17 @@ def test_live_config_defaults() -> None:
 def test_live_config_bounds_reject_wedging_values(bad: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         LiveCfg(**bad)
+
+
+def test_barge_threshold_is_no_longer_a_knob_d76() -> None:
+    """D76 S0b deleted the absolute linear interruption floor (migration step 4 drops the key). The
+    section keeps its house `extra="allow"` posture, so a stale key that somehow survived is an inert
+    extra — never validated, never a field, and never delivered to the client as a call knob."""
+    assert "barge_threshold" not in LiveCfg.model_fields
+    cfg = LiveCfg.model_validate({"barge_threshold": 0.9})  # out of the old 0–0.5 bounds: still inert
+    assert cfg.model_extra == {"barge_threshold": 0.9}
+    app = _app(live_cfg={"barge_threshold": 0.06})
+    assert "barge_threshold" not in app.get("/api/voice/status").json()["live_call"]
 
 
 @pytest.mark.parametrize("route", ["media", "call"])

@@ -20,7 +20,6 @@ const h = vi.hoisted(() => ({
         buffered_ceiling_ms: 1000,
         call_backlog_ms: 1000, //     = 50 frames at 20 ms before the pacer drops its oldest
         min_speech_ms: 300,
-        barge_threshold: 0,
         barge_in: true,
         ring: "none",
         mic_hold: "auto",
@@ -35,6 +34,13 @@ const h = vi.hoisted(() => ({
         min_final_ms: 0,
         // The Silero threshold, delivered like its neighbours (Conf is its only door — D76 §D).
         vad_threshold: 0.6,
+        // D76 §C — the relative gate's six, as the backend ships them; the gate cases move them.
+        floor_dbfs: -45,
+        noise_margin_db: 10,
+        voice_margin_db: 10,
+        playback_margin_db: 10,
+        min_dbfs: -60,
+        max_dbfs: -20,
       },
       stt_auto_stop: { threshold: 0 },
     },
@@ -57,11 +63,19 @@ const h = vi.hoisted(() => ({
    *  browser that close IS what calls `onClose`; here the case drives that half itself, so the two
    *  halves of the reconnect stay separately visible. */
   closes: 0,
-  /** …and the CAPTURE's own door: the case IS the microphone (A-F2's pacer cases). */
-  mic: null as ((f: { buf: ArrayBuffer; rms: number }) => void) | null,
+  /** …and the CAPTURE's own door: the case IS the microphone (A-F2's pacer cases). A frame is
+   *  UPLINKED unless the case says otherwise (D76 §B.1 — the real capture classifies; here the case
+   *  plays the capture, so it plays the classification too). */
+  mic: null as ((f: { buf: ArrayBuffer; rms: number; uplinked?: boolean }) => void) | null,
+  /** The capture's own AudioContext, as the drop cue sees it (D76 §C.5) — an identity token. */
+  ctx: { tag: "capture-context" },
+  /** Every `playDropCue` the wiring asked for, by the context it was handed. */
+  cue: vi.fn(),
   /** Every frame that actually reached the WIRE, by its identifying first byte and in order — the
    *  pacer's whole assertion is what the uplink shipped and what it dropped. */
   audio: [] as number[],
+  /** …and each of those frames' BYTE LENGTH, so a substituted frame is pinned to its original size. */
+  audioBytes: [] as number[],
   /** The acquisition TIMELINE, in order: what reached the track, and when the leg opened. The ear-hold's
    *  whole assertion is an ORDERING — a rule that reaches the track one render late is a rule that was
    *  not applied while the first frames went out. */
@@ -123,6 +137,7 @@ vi.mock("../../src/lib/audioController", () => ({
   },
 }));
 vi.mock("../../src/lib/composer", () => ({ sendCallTranscript: h.sendCall }));
+vi.mock("../../src/lib/callCue", () => ({ playDropCue: h.cue }));
 vi.mock("../../src/lib/liveSocket", () => ({
   liveSocketUrl: () => "ws://x/api/voice/live",
   openLiveSocket: (opts: {
@@ -135,7 +150,10 @@ vi.mock("../../src/lib/liveSocket", () => ({
     h.close = () => opts.onClose(1006, "");
     h.order.push("socket");
     return {
-      sendAudio: (buf: ArrayBuffer) => h.audio.push(new Uint8Array(buf)[0]),
+      sendAudio: (buf: ArrayBuffer) => {
+        h.audio.push(new Uint8Array(buf)[0]);
+        h.audioBytes.push(buf.byteLength);
+      },
       flush: () => {},
       stop: () => {},
       close: () => {
@@ -152,14 +170,15 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
   wantsAec: (await importActual<typeof import("../../src/lib/pcmCapture")>()).wantsAec,
   ecEngaged: (await importActual<typeof import("../../src/lib/pcmCapture")>()).ecEngaged,
   startPcmCapture: async (opts: {
-    onFrame: (f: { buf: ArrayBuffer; rms: number }) => void;
+    onFrame: (f: { buf: ArrayBuffer; rms: number; uplinked: boolean }) => void;
     route?: string;
     deviceId?: string;
   }) => {
     await h.capGate; // resolved by default; an arm swaps in a deferred to hold acquisition open
-    h.mic = opts.onFrame;
+    h.mic = (f) => opts.onFrame({ uplinked: true, ...f });
     h.capOpts = { route: opts.route, deviceId: opts.deviceId };
     return {
+      context: h.ctx,
       sampleRate: 48000,
       readback: {
         echoCancellation: h.fennec ? true : "all",
@@ -218,6 +237,15 @@ vi.stubGlobal("sessionStorage", {
   setItem: (k: string, v: string) => void sessionStore.set(k, v),
   removeItem: (k: string) => void sessionStore.delete(k),
 });
+/** …and `localStorage`, for the learned voice level (D76 §C.3, `store/voiceLevels`) — the same two
+ *  reasons: a case seeds what a previous call on this device left, and jsdom's own Storage would drop
+ *  a timer into every fake-timer case. */
+const localStore = new Map<string, string>();
+vi.stubGlobal("localStorage", {
+  getItem: (k: string) => localStore.get(k) ?? null,
+  setItem: (k: string, v: string) => void localStore.set(k, v),
+  removeItem: (k: string) => void localStore.delete(k),
+});
 
 beforeEach(() => {
   h.play = { status: "idle" };
@@ -240,6 +268,7 @@ beforeEach(() => {
   h.voice.data.live_call.background_keepalive = true;
   h.voice.data.live_call.background_idle_s = 600;
   h.audio = [];
+  h.audioBytes = [];
   h.order = [];
   h.fennec = false;
   h.fellBack = false;
@@ -248,8 +277,11 @@ beforeEach(() => {
   h.voice.data.live_call.route = "call";
   h.voice.data.live_call.input_device = "";
   h.voice.data.live_call.mic_hold = "auto";
-  h.voice.data.live_call.barge_threshold = 0; // trigger A DISARMED unless a case calibrates a floor
-  h.voice.data.live_call.min_final_ms = 0; // …and the transcript gate OFF unless a case arms it
+  h.voice.data.live_call.min_final_ms = 0; // the transcript gate OFF unless a case arms it
+  h.voice.data.live_call.playback_margin_db = 10;
+  h.voice.data.live_call.floor_dbfs = -45;
+  localStore.clear();
+  h.cue.mockClear();
   setMicRelease(null); // nobody holds the ear unless a case says so
   h.voice.data.stt_auto_stop.threshold = 0;
   h.capGate = Promise.resolve();
@@ -701,7 +733,6 @@ describe("useLiveCall — THE UPLINK PACER (A-F2, evidence docs/research/R71)", 
     // the interrupt, or a stalled phone would be exactly when tap-to-interrupt stops being optional.
     vi.useFakeTimers();
     try {
-      h.voice.data.live_call.barge_threshold = 0.01;
       const { step } = await call(); // the default track reads `echoCancellation: "all"` ⇒ armed
       await step(() => setPlay("playing")); // there is now something to interrupt
       h.dismiss.mockClear();
@@ -752,7 +783,6 @@ describe("useLiveCall — THE ROUTE-RESOLVED CAPTURE POLICY (D73 S5 / Maya F1)",
   /** Drive trigger A to the edge of a kill on `route`, with the track reading back `"all"` or not. */
   const bargeOn = async (route: string, leaking: boolean): Promise<void> => {
     h.voice.data.live_call.route = route;
-    h.voice.data.live_call.barge_threshold = 0.01;
     h.fennec = leaking;
     const { step } = await call();
     await step(() => setPlay("playing"));
@@ -871,7 +901,6 @@ describe("useLiveCall — TRIGGER A's m-of-n window (D74 S4 ⑥)", () => {
 
   /** A call with the floor calibrated and a reply audible — the only state trigger A measures in. */
   const overAReply = async () => {
-    h.voice.data.live_call.barge_threshold = 0.01;
     const c = await call();
     await c.step(() => setPlay("playing"));
     h.dismiss.mockClear();
@@ -929,7 +958,9 @@ describe("useLiveCall — THE TRANSCRIPT GATE's epochs (D74 S5, evidence docs/re
   /** A gated call: 200 ms of above-floor energy owed per utterance, with a real silence floor. */
   const gated = async () => {
     h.voice.data.live_call.min_final_ms = 200;
-    h.voice.data.stt_auto_stop.threshold = 0.01; // the SILENCE floor — never the barge one
+    // Tier 0's dictation threshold, set LOUD on purpose: since D76 §C the call's gate never reads it
+    // (the relative floor does the job), so a quiet-but-real utterance must still pass under it.
+    h.voice.data.stt_auto_stop.threshold = 0.5;
     return call();
   };
 
@@ -1016,6 +1047,198 @@ describe("useLiveCall — THE TRANSCRIPT GATE's epochs (D74 S5, evidence docs/re
     });
     expect(texts()).toEqual([]); // the gate kept its evidence, and the evidence says no
     expect(view.result.current.note).toBe(CALL_COPY.tooQuiet);
+  });
+});
+
+describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidence docs/research/R83)", () => {
+  /** `n` frames of `rms` (20 ms each at the harness's `frame_ms`), uplinked unless said otherwise. */
+  const frames = (rms: number, n: number, uplinked = true): void => {
+    for (let i = 0; i < n; i++) h.mic?.({ buf: new ArrayBuffer(8), rms, uplinked });
+  };
+  /** One utterance between the ear's own start and stop, with `n` frames of `rms` inside it. */
+  const utterance = async (text: string, rms: number, n: number, uplinked = true) => {
+    await act(async () => {
+      h.frame?.({ type: "speech_started" });
+      frames(rms, n, uplinked);
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text, final: true });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  const STORE = "ctrlb.voiceLevels";
+
+  it("a HELD frame goes up as silence of the same length — an uplinked one as heard (§B.1)", async () => {
+    vi.useFakeTimers();
+    try {
+      await call();
+      await act(async () => {
+        vi.advanceTimersByTime(5000); // bank a full bucket so the three ship at once
+      });
+      const tagged = (n: number): ArrayBuffer => {
+        const buf = new ArrayBuffer(8);
+        new Uint8Array(buf).fill(n);
+        return buf;
+      };
+      await act(async () => {
+        h.mic?.({ buf: tagged(7), rms: 0.3, uplinked: true });
+        h.mic?.({ buf: tagged(9), rms: 0.3, uplinked: false }); // the reply leaking back in
+        h.mic?.({ buf: tagged(11), rms: 0.3, uplinked: true });
+      });
+      // The server sees exactly the digital silence a disabled track used to send (its endpointing is
+      // untouched), in ORDER, at the frame's own size.
+      expect(h.audio).toEqual([7, 0, 11]);
+      expect(h.audioBytes).toEqual([8, 8, 8]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the gate accrues UPLINKED frames only — a loud held stretch is no evidence (§B.2)", async () => {
+    h.voice.data.live_call.min_final_ms = 200;
+    const { view } = await call();
+    await utterance("the reply's own words", 0.3, 30, false); // 600 ms, loud, and all held
+    expect(texts()).toEqual([]);
+    expect(view.result.current.note).toBe(CALL_COPY.tooQuiet);
+  });
+
+  it("a drop is HEARD: the cue plays on the capture's own context (§C.5) — a taken final is silent", async () => {
+    h.voice.data.live_call.min_final_ms = 200;
+    await call();
+    await utterance("what time is it", 0.2, 30);
+    expect(h.cue).not.toHaveBeenCalled();
+    await utterance("Thank you for watching.", 0.001, 30); // −60 dBFS, under the −45 bootstrap floor
+    expect(h.cue).toHaveBeenCalledTimes(1);
+    expect(h.cue).toHaveBeenCalledWith(h.ctx);
+  });
+
+  it("the BARGE floor is the effective floor raised by `playback_margin_db` (§C.6)", async () => {
+    // No estimate yet ⇒ the effective floor is the −45 bootstrap ceiling, so the barge floor is −35.
+    const c = await call();
+    await c.step(() => setPlay("playing"));
+    h.dismiss.mockClear();
+    await act(async () => {
+      frames(0.01, 15); // −40 dBFS: over the gate's floor, under the barge floor
+    });
+    expect(h.dismiss).not.toHaveBeenCalled();
+    await act(async () => {
+      frames(0.05, 15); // −26 dBFS: over both
+    });
+    expect(h.dismiss).toHaveBeenCalled();
+  });
+
+  it("…and the margin is the owner's: at 0 the same −40 dBFS interrupts", async () => {
+    h.voice.data.live_call.playback_margin_db = 0;
+    const c = await call();
+    await c.step(() => setPlay("playing"));
+    h.dismiss.mockClear();
+    await act(async () => {
+      frames(0.01, 15);
+    });
+    expect(h.dismiss).toHaveBeenCalled();
+  });
+
+  it("a held frame never counts toward trigger A, however loud (§B.2)", async () => {
+    const c = await call();
+    await c.step(() => setPlay("playing"));
+    h.dismiss.mockClear();
+    await act(async () => {
+      frames(0.5, 30, false);
+    });
+    expect(h.dismiss).not.toHaveBeenCalled();
+  });
+
+  it("`setFloorPin` overrides the Auto floor for this call, and `null` hands it back (§C.7)", async () => {
+    h.voice.data.live_call.min_final_ms = 200;
+    const { view } = await call();
+    expect(view.result.current.floorAuto).toBe(true);
+    expect(view.result.current.readLevel().floor).toBe(-45);
+    await act(async () => {
+      view.result.current.setFloorPin(-70);
+    });
+    expect(view.result.current.floorAuto).toBe(false);
+    expect(view.result.current.readLevel().floor).toBe(-70);
+    await utterance("a whisper", 0.001, 30); // −60 dBFS clears a −70 pin
+    expect(texts()).toEqual(["a whisper"]);
+    await act(async () => {
+      view.result.current.setFloorPin(null);
+    });
+    expect(view.result.current.floorAuto).toBe(true);
+    expect(view.result.current.readLevel().floor).toBe(-45);
+    expect(localStore.has(STORE)).toBe(false); // the pin writes nothing, anywhere
+  });
+
+  it("readLevel samples the ear in dBFS — null before the first frame", async () => {
+    const { view } = await call();
+    expect(view.result.current.readLevel().level).toBeNull();
+    await act(async () => {
+      frames(0.1, 1);
+    });
+    expect(view.result.current.readLevel().level).toBeCloseTo(-20, 6);
+  });
+
+  it("SEEDS the own-voice term from this device's stored level — it applies from the first frame", async () => {
+    // The mock capture opens "Speakerphone" with no deviceId, so the label is the key (Maya F8).
+    localStore.set(STORE, JSON.stringify({ Speakerphone: -10 }));
+    h.voice.data.live_call.min_final_ms = 200;
+    const { view } = await call();
+    // max(−45 ceiling, −10 − 10) = −20, inside the clamp.
+    expect(view.result.current.readLevel().floor).toBe(-20);
+    await utterance("the tv in the next room", 0.05, 30); // −26 dBFS: a real room level, not the owner
+    expect(texts()).toEqual([]);
+    expect(view.result.current.note).toBe(CALL_COPY.tooQuiet);
+  });
+
+  it("…and a DIFFERENT device starts unseeded", async () => {
+    localStore.set(STORE, JSON.stringify({ Speakerphone: -10 }));
+    h.voice.data.live_call.input_device = "usb-mic-1"; // the mock reads it back as the deviceId
+    const { view } = await call();
+    expect(view.result.current.readLevel().floor).toBe(-45);
+  });
+
+  it("LEARNS from a taken final once the room is settled, and writes it back on hang-up (§C.3)", async () => {
+    const { view } = await call();
+    await act(async () => {
+      frames(0.001, 300); // 6 s of room at −60 dBFS: the 1 s bootstrap + one full 5 s window
+    });
+    expect(view.result.current.readLevel().floor).toBeCloseTo(-50, 6); // settled: −60 + 10
+    await utterance("turn on the lights", 0.1, 20); // −20 dBFS, well clear of −60 + 10 + 10
+    expect(texts()).toEqual(["turn on the lights"]);
+    expect(view.result.current.readLevel().floor).toBeCloseTo(-30, 6); // max(−50, −20 − 10)
+    expect(localStore.has(STORE)).toBe(false); // nothing written while the call is up…
+    view.unmount();
+    const stored = JSON.parse(localStore.get(STORE) ?? "{}") as Record<string, number>;
+    expect(stored.Speakerphone).toBeCloseTo(-20, 6); // …and the level outlives it, on this device
+  });
+
+  it("learns NOTHING before the room is settled, or from a final said over the reply", async () => {
+    const { view, step } = await call();
+    await utterance("too early", 0.1, 20); // no full noise window yet
+    await act(async () => {
+      frames(0.001, 300);
+    });
+    await step(() => setPlay("playing"));
+    await utterance("over the reply", 0.1, 20); // the mouth is live: this may be its own leak
+    view.unmount();
+    expect(localStore.has(STORE)).toBe(false);
+  });
+
+  it("a route cycle writes the OLD ear's level under the OLD device, and the new ear re-learns", async () => {
+    const { view, step } = await call();
+    await act(async () => {
+      frames(0.001, 300);
+    });
+    await utterance("hello there", 0.1, 20);
+    h.voice.data.live_call.input_device = "usb-mic-1"; // what the next capture will read back
+    await step(() => view.result.current.setInputDevice("usb-mic-1"));
+    const stored = JSON.parse(localStore.get(STORE) ?? "{}") as Record<string, number>;
+    expect(stored.Speakerphone).toBeCloseTo(-20, 6);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // A fresh ear: the noise estimate starts over and this device has no voice level.
+    expect(view.result.current.readLevel().floor).toBe(-45);
   });
 });
 

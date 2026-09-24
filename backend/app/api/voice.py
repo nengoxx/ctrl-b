@@ -110,7 +110,6 @@ async def voice_status(request: Request) -> dict[str, object]:
         "buffered_ceiling_ms": live.buffered_ceiling_ms,
         "call_backlog_ms": live.call_backlog_ms,
         "min_speech_ms": live.min_speech_ms,
-        "barge_threshold": live.barge_threshold,
         # D74 (evidence docs/research/R76) — the near-speech gate on a COMMITTED turn, and the
         # calibration readout beside it. Client knobs like their neighbours, and necessarily so: the
         # energy they gate on is measured in the browser, and the server-side VAD has no field left

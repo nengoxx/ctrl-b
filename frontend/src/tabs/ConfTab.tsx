@@ -851,7 +851,6 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   vad_threshold: 0.6,
   silence_ms: 700,
   min_speech_ms: 300,
-  barge_threshold: 0,
   barge_in: false,
   min_final_ms: 200,
   debug: false,
@@ -1862,11 +1861,11 @@ export function ConfTab({ active }: Props) {
           chunk_max_chars: Number(draft.voice.tts.chunk_max_chars),
           chunk_lookahead: Number(draft.voice.tts.chunk_lookahead),
         },
-        // D71 §5.1. `silence_ms` and `vad_threshold` take the bare `Number` their neighbours take — the
-        // backend floors them at 500 / 0.5 (D76), so a cleared field earns the same visible 422. The
-        // other two take `numOrNull`, for the documented reason the wake timings do: their floor is
-        // ZERO and zero is a MEANINGFUL value (`barge_threshold: 0` = reuse the STT threshold;
-        // `min_speech_ms: 0` = no floor), so a blank coercing to 0 would silently change the call's
+        // D71 §5.1. `silence_ms` takes the bare `Number` its neighbours take — the backend floors it at
+        // 500 (D76), so a cleared field earns the same visible 422; `vad_threshold` saves through
+        // `numOrNull`, where a blank reaches the backend as null and earns the same 422. `min_speech_ms`
+        // takes `numOrNull` for the documented reason the wake timings do: its floor is ZERO and zero is
+        // a MEANINGFUL value (no floor), so a blank coercing to 0 would silently change the call's
         // behaviour instead of surfacing the mistake.
         // S2.5's three dictation numbers take the bare `Number` `silence_ms` takes, for its reason:
         // every one of them is floored well above 0 server-side (500 / 3 / 10), so zero is not a
@@ -1876,7 +1875,6 @@ export function ConfTab({ active }: Props) {
           vad_threshold: numOrNull(draft.voice.live.vad_threshold),
           silence_ms: Number(draft.voice.live.silence_ms),
           min_speech_ms: numOrNull(draft.voice.live.min_speech_ms),
-          barge_threshold: numOrNull(draft.voice.live.barge_threshold),
           tail_wait_ms: Number(draft.voice.live.tail_wait_ms),
           dictation_idle_s: Number(draft.voice.live.dictation_idle_s),
           dictation_max_s: Number(draft.voice.live.dictation_max_s),
@@ -2994,12 +2992,6 @@ export function ConfTab({ active }: Props) {
             value={String(vlive?.min_speech_ms ?? "")}
             onChange={(v) => setLive("min_speech_ms", v as unknown as number)}
           />
-          <Field
-            label="Interruption threshold"
-            desc="mic level counted as talking over the reply (0–0.5) — 0 reuses the STT silence threshold; only with hands-free interruption on"
-            value={String(vlive?.barge_threshold ?? "")}
-            onChange={(v) => setLive("barge_threshold", v as unknown as number)}
-          />
           {/* D74 (evidence docs/research/R76) — the ear is nearly level-blind: speech from the next
               room scores as confidently as speech into the phone, and the server has no knob left
               that tells them apart. This one does it by LOUDNESS: a transcript only becomes your turn
@@ -3012,7 +3004,7 @@ export function ConfTab({ active }: Props) {
           />
           <SettingRow
             label="Call debug readout"
-            desc="show the live microphone and gate numbers on the call screen — for calibrating the two thresholds above"
+            desc="show the live microphone and gate numbers on the call screen — for calibrating the gate above"
           >
             <Switch
               on={!!vlive?.debug}

@@ -8,6 +8,7 @@ Over `voice.live` when present:
 * `vad_threshold`: exactly `0.9` (the shipped default R84 condemned) → `0.6`; any other value clamped
   into [0.5, 0.8]; absent stays absent.
 * `silence_ms`: clamped into [500, 1200]; absent stays absent.
+* `barge_threshold`: dropped in any shape (consumed — the relative dB gate replaces it, D76 S0b).
 
 The pure arms drive `applies`/`apply` over a hand-built `Context`; the runner arms go through
 `cm.apply` on a temp `$CTRLB_HOME` (never the real config) and prove the write-back deletes the old
@@ -140,18 +141,41 @@ def test_absent_keys_stay_absent() -> None:
     assert set(live) == {"route"}
 
 
-def test_the_barge_threshold_and_every_other_knob_ride_through_untouched() -> None:
-    """S0a folds only the four named keys; `barge_threshold` stays (D76 S0b deletes it with the
-    linear floor), and every neighbour is carried byte-for-byte."""
+def test_every_other_knob_rides_through_untouched() -> None:
+    """The step folds only its named keys; every neighbour is carried byte-for-byte."""
     others = {
-        "barge_threshold": 0.06,
         "min_final_ms": 200,
         "debug": True,
         "frame_ms": 40,
         "input_device": "x",
+        "floor_dbfs": -45.0,
     }
     live, _ = _fold({"route": "headphones", **others})
     assert live == {"route": "media", **others}
+
+
+@pytest.mark.parametrize("stored", [0.06, 0, 0.5, "high", None])
+def test_barge_threshold_is_dropped_in_any_shape(stored: Any) -> None:
+    """D76 S0b: the absolute linear floor is gone — not converted (no honest mapping from one number
+    measured on one mic to a margin over a measured room), CONSUMED so the write-back deletes it."""
+    assert live_voice_applies(_ctx({"barge_threshold": stored})) is True
+    live, consumed = _fold({"barge_threshold": stored, "barge_in": True, "min_speech_ms": 300})
+    assert live == {"barge_in": True, "min_speech_ms": 300}
+    assert consumed == [("voice", "live", "barge_threshold")]
+
+
+def test_without_barge_threshold_nothing_is_consumed_for_it() -> None:
+    live, consumed = _fold({"route": "speaker", "barge_in": False})
+    assert live == {"route": "call", "barge_in": False}
+    assert consumed == []
+
+
+def test_the_barge_threshold_drop_is_idempotent() -> None:
+    ctx = _ctx({"barge_threshold": 0.06, "min_final_ms": 200})
+    once = live_voice_apply(ctx).config
+    assert once["voice"]["live"] == {"min_final_ms": 200}
+    again = Context(config_path=ctx.config_path, agents_dir=ctx.agents_dir, config=once)
+    assert live_voice_applies(again) is False
 
 
 @pytest.mark.parametrize(
@@ -219,7 +243,8 @@ def _workspace(tmp_path: Path, monkeypatch, text: str) -> Path:
 def test_the_runner_folds_writes_back_and_the_app_loads_it(tmp_path, monkeypatch) -> None:
     home = _workspace(tmp_path, monkeypatch, V3_YAML)
     status = cm.detect(cm.context_from_env())
-    assert status.pending == (4,) and status.legacy_keys == ("voice.live.echo_workaround",)
+    assert status.pending == (4,)
+    assert status.legacy_keys == ("voice.live.echo_workaround", "voice.live.barge_threshold")
     assert cm.apply(cm.context_from_env()).wrote is True
 
     text = (home / "config.yaml").read_text(encoding="utf-8")
@@ -230,9 +255,9 @@ def test_the_runner_folds_writes_back_and_the_app_loads_it(tmp_path, monkeypatch
         "mic_hold": "on",
         "vad_threshold": 0.6,
         "silence_ms": 500,
-        "barge_threshold": 0.06,
     }
-    assert "echo_workaround" not in text  # the write-back DELETES the old key (no legacy seams)
+    # The write-back DELETES both old keys (no legacy seams).
+    assert "echo_workaround" not in text and "barge_threshold" not in text
     assert "# the owner's own note" in text
     assert doc[CONFIG_VERSION_KEY] == 4
     live = load_settings(home / "config.yaml").voice.live

@@ -25,7 +25,9 @@ import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "./pcmWorklet";
 // AEC measurably does nothing against the phone's own output. So the capability is READ BACK per track
 // (never UA-sniffed) and handed up; the machine arms the automatic interrupt only on `"all"` — and
 // everywhere else it arms the EAR-HOLD instead (`setHeld`, S3), which is the same readback read for its
-// other consequence: an ear that cannot be left open under the reply is closed while the reply speaks.
+// other consequence: an ear that cannot be left open under the reply is held while the reply speaks.
+// Since D76 §B.1 a hold is a CLASSIFICATION, not a closed track: every frame still arrives with its real
+// level and a `uplinked` bit, and the call machine substitutes silence on the way up (see `setHeld`).
 
 // ── THE ROUTE (D73 S5 → D76 §A; evidence docs/research/R74, R80) ─────────────────────────────────
 // Chrome Android puts the whole device into `MODE_IN_COMMUNICATION` — and re-tags the page's OWN
@@ -290,11 +292,23 @@ export async function listAudioInputs(probe = false): Promise<MicDevice[]> {
  *  Not a config knob: it is the platform's threshold, not the owner's preference. */
 const KEEPALIVE_GAIN = 1e-4;
 
-/** One uplink frame: pcm16 LE mono bytes, plus the RMS of the same samples (§4.3's energy gate reuses
- *  the worklet's own pass — there is deliberately no second AnalyserNode measuring the same audio). */
-export interface PcmFrame {
+/** What the worklet posts up: pcm16 LE mono bytes, plus the RMS of the same samples (§4.3's energy gate
+ *  reuses the worklet's own pass — there is deliberately no second AnalyserNode measuring the same
+ *  audio). This is the whole contract of `attachPcmUplink`, i.e. dictation's frames, which are never
+ *  held and never muted by this module. */
+export interface WorkletFrame {
   buf: ArrayBuffer;
   rms: number;
+}
+
+/** One CALL capture frame (D76 §B.1): the worklet's frame, CLASSIFIED at the capture callback.
+ *  `uplinked = !(muted || held)` — whether this frame's audio may go to the relay as heard. A frame that
+ *  is not uplinked still carries its REAL `rms` (a held track is live; only a muted one is silence), so
+ *  what the microphone hears stays measurable while the uplink carries silence. The consumers upstairs
+ *  are partitioned on this bit (§B.2): the noise tracker, the voice learner and the gate's accrual take
+ *  only uplinked frames; the leak probe (S2) only held ones. */
+export interface PcmFrame extends WorkletFrame {
+  uplinked: boolean;
 }
 
 /**
@@ -325,6 +339,10 @@ export interface MicReadback {
 }
 
 export interface PcmCapture {
+  /** This capture's own `AudioContext` — running, gesture-unlocked, and released by `stop()`. Exposed
+   *  for the call's sound cue (`lib/callCue`, D76 §C.5), which plays on the one context a call already
+   *  owns rather than minting a second. Nothing may keep it past `stop()`. */
+  context: AudioContext;
   /** The context's REAL rate — what `start.sample_rate` must declare (§3.1: the browser gives 44.1k or
    *  48k by device and there is no reliable way to ask for 24k, so the relay resamples from this). */
   sampleRate: number;
@@ -353,12 +371,16 @@ export interface PcmCapture {
    *  AEC readback is not the subtractive `"all"` mode. There the phone's own playback rides back into the
    *  capture at near-full level (Fennec, measured — §7-S0 ③), so an ear left open under the reply would
    *  transcribe the character's own words into the owner's next message. While the mouth is audible the
-   *  ear closes; interruption there is the tap (§4.3's trigger B), which is why nothing else is owed.
+   *  ear is held; interruption there is the tap (§4.3's trigger B), which is why nothing else is owed.
    *
-   *  Mechanically it IS mute — `track.enabled`, frames still flowing as digital silence, for exactly the
-   *  endpointing reason above — and the two share ONE effective rule (`enabled = !(muted || held)`) so
-   *  neither setter can answer over the other: a hold released while the owner is muted must not reopen
-   *  the ear, and an unmute under a live hold must not either. */
+   *  SINCE D76 §B.1 IT IS UPLINK SILENCE SUBSTITUTION, NOT MUTE. The hold only flips the frames'
+   *  classification (`PcmFrame.uplinked`); the TRACK stays enabled — `track.enabled` is `muted`'s alone,
+   *  the owner's privacy switch and the OS mic indicator. The call machine sends a held frame up as a
+   *  zeroed buffer of the same length, so the SERVER still receives exactly the digital silence it used
+   *  to (its endpointing and silence timers are untouched), while the CLIENT keeps hearing — which is
+   *  what the leak probe (D76 S2) measures. `uplinked = !(muted || held)`: the two still share one
+   *  effective rule for what goes up, so a hold released while the owner is muted sends nothing, and an
+   *  unmute under a live hold sends nothing either. */
   setHeld: (held: boolean) => void;
   /** THE EAR'S OWN LIVENESS (D73 S6 ② / R75 §12.2 A2): milliseconds since the last frame this capture
    *  actually HEARD. The number exists because the failure it measures is SILENT — Chrome Android
@@ -416,7 +438,7 @@ export interface PcmUplink {
 export async function attachPcmUplink(
   ctx: AudioContext,
   stream: MediaStream,
-  opts: { frameMs: number; onFrame: (frame: PcmFrame) => void },
+  opts: { frameMs: number; onFrame: (frame: WorkletFrame) => void },
 ): Promise<PcmUplink> {
   let url: string | null = null;
   let detached = false;
@@ -434,7 +456,7 @@ export async function attachPcmUplink(
       numberOfOutputs: 1,
       processorOptions: { frameSamples },
     });
-    node.port.onmessage = (e: MessageEvent<PcmFrame>) => {
+    node.port.onmessage = (e: MessageEvent<WorkletFrame>) => {
       if (!detached) opts.onFrame(e.data);
     };
     ctx.createMediaStreamSource(stream).connect(node);
@@ -519,10 +541,11 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
   let ctx: AudioContext | null = null;
   let uplink: PcmUplink | null = null;
   let stopped = false;
-  // THE TWO REASONS THE EAR CAN BE CLOSED, and the ONE rule that applies them (S3). They are independent
-  // — the owner's mute and the call machine's echo hold — so each setter stores its own answer and both
-  // route through `applyEnabled`; a setter that wrote `track.enabled` directly would silently revoke the
-  // other's decision the moment the two overlapped.
+  // THE TWO REASONS A FRAME DOES NOT GO UP AS HEARD (S3 → D76 §B.1). They are independent — the owner's
+  // mute and the call machine's echo hold — so each setter stores its own answer, and the frame callback
+  // classifies every frame against BOTH (`uplinked = !(muted || held)`). Only `muted` reaches the track
+  // (`applyEnabled`): mute is privacy and must silence the samples at the source; the hold is not, and a
+  // held track has to keep hearing for the leak probe.
   let muted = false;
   let held = false;
   // THE EAR'S LIVENESS + THE KEEPALIVE (D73 S6 ②/③) — both are facts about the graph this function
@@ -534,8 +557,8 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
   let keepalive: { src: ConstantSourceNode; gain: GainNode } | null = null;
   const applyEnabled = (): void => {
     // Guarded on `stopped` for the same reason every other exit here is: a released track is not a muted
-    // (or held) one, and re-enabling one the call has already torn down would be a lie about the ear.
-    if (!stopped) track.enabled = !(muted || held);
+    // one, and re-enabling one the call has already torn down would be a lie about the ear.
+    if (!stopped) track.enabled = !muted;
   };
   /** The keepalive's one switch (S6 ③). A `ConstantSourceNode` cannot be restarted once stopped, so
    *  each ON mints a fresh pair and each OFF retires it — which also keeps "is it running?" a single
@@ -592,7 +615,9 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
         // the frames are silence, and counting them would tell the outage detector the ear was awake
         // through exactly the stretch it slept.
         if (!deaf) lastHeard = performance.now();
-        opts.onFrame(frame);
+        // THE CLASSIFICATION (D76 §B.1), taken HERE because this is where both answers live: the frame
+        // is delivered either way with its real level, and the caller substitutes silence upstairs.
+        opts.onFrame({ buf: frame.buf, rms: frame.rms, uplinked: !(muted || held) });
       },
     });
     track.addEventListener("ended", () => {
@@ -609,6 +634,7 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
     });
     const settings = track.getSettings();
     return {
+      context: ctx,
       sampleRate: ctx.sampleRate,
       readback: {
         echoCancellation: settings.echoCancellation,
@@ -627,9 +653,9 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
         muted = m;
         applyEnabled();
       },
+      // The hold never touches the track (D76 §B.1) — it only changes how the NEXT frame is classified.
       setHeld: (h: boolean) => {
         held = h;
-        applyEnabled();
       },
       earGapMs: () => performance.now() - lastHeard,
       setKeepalive,

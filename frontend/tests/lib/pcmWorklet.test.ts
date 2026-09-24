@@ -132,7 +132,7 @@ describe("the pcm worklet — the RMS the barge-in gate reads", () => {
     expect(posted[0].rms).toBeCloseTo(0.5, 10);
   });
 
-  it("is 0 for silence and 1 for full scale — the floor a `barge_threshold` is compared against", () => {
+  it("is 0 for silence and 1 for full scale — the linear RMS `rmsToDbfs` converts (D76 §C.1)", () => {
     const { feed, posted } = processor(2);
     feed(Float32Array.from([0, 0]));
     feed(Float32Array.from([1, -1]));

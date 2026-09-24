@@ -191,10 +191,10 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     expect(track.enabled).toBe(true);
   });
 
-  it("the EAR-HOLD is the same mechanism, and the two never answer for each other (S3)", async () => {
-    // Mute is the owner's and the hold is the machine's (`mic_hold`, D76 §B), so they overlap
-    // freely: whichever is standing keeps the track disabled, and only BOTH being clear reopens it. A
-    // setter writing `track.enabled` on its own would silently revoke the other's decision.
+  it("the EAR-HOLD never touches the track — `track.enabled` is MUTE's alone (D76 §B.1)", async () => {
+    // Since D76 the hold is uplink SILENCE SUBSTITUTION, not a closed track: the client has to keep
+    // hearing (the leak probe measures held frames), and the OS mic indicator stays the owner's
+    // privacy switch — which only mute drives.
     const cap = await startPcmCapture({
       frameMs: 20,
       route: ROUTE_CALL,
@@ -202,23 +202,69 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       onEnded: () => {},
     });
     cap.setHeld(true);
-    expect(track.enabled).toBe(false);
+    expect(track.enabled).toBe(true);
     cap.setMuted(true);
+    expect(track.enabled).toBe(false);
     cap.setHeld(false); // the reply ended — but the owner is still muted
     expect(track.enabled).toBe(false);
     cap.setMuted(false);
     expect(track.enabled).toBe(true);
-
-    // …and the other way round: an unmute under a live hold does not reopen the ear either.
     cap.setHeld(true);
-    cap.setMuted(true);
-    cap.setMuted(false);
-    expect(track.enabled).toBe(false);
-    expect(track.stopped).toBe(0); // closed, never released
+    cap.setMuted(false); // an unmute under a live hold opens the TRACK; the frames stay held
+    expect(track.enabled).toBe(true);
+    expect(track.stopped).toBe(0); // held, never released
+  });
 
-    cap.stop();
+  it("CLASSIFIES every frame `uplinked = !(muted || held)`, with its real level (D76 §B.1)", async () => {
+    const got: { rms: number; uplinked: boolean; bytes: number }[] = [];
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: (f) => got.push({ rms: f.rms, uplinked: f.uplinked, bytes: f.buf.byteLength }),
+      onEnded: () => {},
+    });
+    const post = (rms: number): void =>
+      workletPort?.onmessage?.({ data: { buf: new ArrayBuffer(8), rms } });
+    post(0.2);
+    cap.setHeld(true);
+    post(0.3); // the reply leaking back in: HEARD, at its real level, but not uplinked
+    cap.setMuted(true);
+    post(0.4);
     cap.setHeld(false);
-    expect(track.enabled).toBe(false); // a released capture is not an open one
+    post(0.5); // muted alone still keeps it off the uplink
+    cap.setMuted(false);
+    post(0.6);
+    expect(got).toEqual([
+      { rms: 0.2, uplinked: true, bytes: 8 },
+      { rms: 0.3, uplinked: false, bytes: 8 },
+      { rms: 0.4, uplinked: false, bytes: 8 },
+      { rms: 0.5, uplinked: false, bytes: 8 },
+      { rms: 0.6, uplinked: true, bytes: 8 },
+    ]);
+  });
+
+  it("exposes its OWN running context — the drop cue plays there (D76 §C.5)", async () => {
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+    });
+    expect(cap.context).toBe(FakeContext.last);
+  });
+
+  it("a released capture is not an open one — neither setter re-enables it", async () => {
+    const cap = await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+    });
+    cap.setMuted(true);
+    cap.stop();
+    cap.setMuted(false);
+    cap.setHeld(false);
+    expect(track.enabled).toBe(false);
   });
 
   it("resumes a suspended context — the ordinary autoplay-policy case", async () => {

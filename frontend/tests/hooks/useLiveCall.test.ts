@@ -1149,7 +1149,9 @@ describe("callReduce — the transcript gate (D74 S5)", () => {
     // Whisper does not answer noise with nothing — it answers with a plausible sentence, which on a
     // call is submitted to the agent as if the owner had said it.
     const { state, out } = run(listening, [heard("Thank you for watching.", 40)]);
-    expect(out).toEqual([]);
+    // …and says so OUT LOUD (D76 §C.5): the one effect is the drop cue — the note line is useless to
+    // an owner who is driving.
+    expect(out).toEqual([{ type: "dropCue" }]);
     expect(state.pending).toEqual([]);
     expect(state.heard).toBe(""); // …and the transcript line does not show words nobody said
     expect(state.waitingFinal).toBe(false);
@@ -1179,6 +1181,23 @@ describe("callReduce — the transcript gate (D74 S5)", () => {
     const { state, out } = run(listening, [heard("   ", 0)]);
     expect(out).toEqual([]);
     expect(state.note).toBeNull();
+  });
+
+  it("the cue is the GATE's alone — a muted or held drop is silent, and a taken final too", () => {
+    // Muted and held are the owner's and the machine's own closes — nothing was "too quiet" there, so
+    // a beep would be the call contradicting the owner's own tap (or the reply's own leak).
+    const muted = run(listening, [{ type: "setMuted", on: true }]).state;
+    expect(run(muted, [heard("the doorbell", 0)]).out).toEqual([]);
+    const held = run(listening, [
+      { type: "captureReady", earHoldMode: true, route: "media", deviceId: "" },
+      { type: "final", text: "hello" },
+      { type: "playbackStarted" },
+    ]).state;
+    expect(held.earHeld).toBe(true);
+    expect(run(held, [heard("the reply's own words", 0)]).out).toEqual([]);
+    expect(run(listening, [heard("what time is it", 900)]).out.map((e) => e.type)).toEqual([
+      "submit",
+    ]);
   });
 
   it("the MUTED drop still outranks it — one rule, no window where the words go out", () => {

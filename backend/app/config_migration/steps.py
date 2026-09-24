@@ -801,8 +801,8 @@ PRESENCE_DEVICES = Step(
 
 # ── step 4: D76's live-call fold (`config_version` 3 → 4) ────────────────────────────────────────
 #
-# Three knobs of `voice.live` change meaning or name in one ruling (LIVE_VOICE_PLAN §7, the D76 block,
-# §E), and `voice.live` stays the ONE flat object it was:
+# Four changes to `voice.live` in one ruling (LIVE_VOICE_PLAN §7, the D76 block, §E), and `voice.live`
+# stays the ONE flat object it was:
 #
 #   1. `route: speaker | speaker-hifi | headphones` → `route: media | call`. The axis was always the
 #      mic's echo-cancellation ask, i.e. media path vs call path: `speaker` asked for AEC (→ `call`),
@@ -813,6 +813,10 @@ PRESENCE_DEVICES = Step(
 #      known bad SHIPPED default (Speaches' own, and the END threshold at the cliff), so it maps to the
 #      new default 0.6 rather than clamping to the new ceiling; any other stored value is clamped. An
 #      absent key stays absent — the new default reaches it through the model, not the file.
+#   4. `barge_threshold` is DROPPED, not converted (D76 S0b). It was an absolute linear RMS floor
+#      calibrated for a job the relative dB gate (`floor_dbfs` + the margins) now does; there is no
+#      honest mapping from one number measured on one mic to a margin over a measured room. Consumed in
+#      ANY shape, so the write-back deletes it (no legacy seams).
 #
 # A value this step does not recognise (a route spelled some fourth way, a threshold that is not a
 # number) is left exactly as written, so validation reports it as it would have yesterday. Retires no
@@ -856,6 +860,9 @@ def _live_fold(live: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
         legacy = out.pop("echo_workaround")
         out.setdefault("mic_hold", legacy)
         consumed.append("echo_workaround")
+    if "barge_threshold" in out:
+        del out["barge_threshold"]
+        consumed.append("barge_threshold")
     if out.get("vad_threshold") == _LIVE_VAD_SHIPPED and _is_number(out["vad_threshold"]):
         out["vad_threshold"] = _LIVE_VAD_NEW
     for key, lo, hi in _LIVE_CLAMPS:
@@ -867,13 +874,14 @@ def _live_fold(live: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
 
 def live_voice_applies(ctx: Context) -> bool:
     """True while `voice.live` holds any key in a shape the fold would change — an old route value,
-    the legacy `echo_workaround` (present in ANY shape), the shipped 0.9, or an out-of-bounds number."""
+    the legacy `echo_workaround` or `barge_threshold` (present in ANY shape), the shipped 0.9, or an
+    out-of-bounds number."""
     live = _live_block(ctx.config)
     return bool(live) and _live_fold(live)[0] != live
 
 
 def live_voice_apply(ctx: Context) -> Plan:
-    """Fold `voice.live` into the D76 shape and consume `echo_workaround`."""
+    """Fold `voice.live` into the D76 shape and consume `echo_workaround` + `barge_threshold`."""
     raw: dict[str, Any] = copy.deepcopy(dict(ctx.config))
     live = _live_block(raw)
     folded, consumed = _live_fold(live)

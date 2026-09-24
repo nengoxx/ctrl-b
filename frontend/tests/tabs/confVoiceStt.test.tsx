@@ -93,7 +93,6 @@ const makeSettings = () => ({
       vad_threshold: 0.6,
       silence_ms: 700,
       min_speech_ms: 300,
-      barge_threshold: 0,
       barge_in: true,
       ring: true,
       captions: true,
@@ -341,7 +340,7 @@ describe("ConfTab · streaming dictation rows (S3.5 — rendered in the STT grou
   });
 
   it("a CLEARED dictation numeric rides as 0 — every one is floored well above it", () => {
-    // The `silence_ms` rule, not the `barge_threshold` one: 0 is not a meaning any of these three can
+    // The `silence_ms` rule, not the `min_speech_ms` one: 0 is not a meaning any of these three can
     // carry (the backend floors them at 500 / 3 / 10), so a blank earns the same visible 422 rather
     // than a null the reader has to interpret.
     render(<ConfTab active />);
@@ -371,7 +370,8 @@ describe("ConfTab · the Live call section (D71 §5.1)", () => {
     expect(liveField("Speech threshold").value).toBe("0.6");
     expect(liveField("Silence window").value).toBe("700");
     expect(liveField("Minimum speech").value).toBe("300");
-    expect(liveField("Interruption threshold").value).toBe("0");
+    // D76 S0b — the absolute linear interruption floor is GONE: trigger A reads the relative dB gate.
+    expect(liveGroup().queryByText("Interruption threshold")).toBeNull();
   });
 
   it("saves the whole section coerced — and `voice.stt` rides along untouched", () => {
@@ -380,7 +380,7 @@ describe("ConfTab · the Live call section (D71 §5.1)", () => {
     fireEvent.click(liveGroup().getByLabelText("Live call ring"));
     fireEvent.click(liveGroup().getByRole("button", { name: "off" }));
     fireEvent.change(liveField("Silence window"), { target: { value: "900" } });
-    fireEvent.change(liveField("Interruption threshold"), { target: { value: "0.02" } });
+    fireEvent.change(liveField("Minimum speech"), { target: { value: "250" } });
     fireEvent.click(saveButton());
 
     expect(liveOf()).toMatchObject({
@@ -388,21 +388,20 @@ describe("ConfTab · the Live call section (D71 §5.1)", () => {
       ring: false,
       mic_hold: "off",
       silence_ms: 900, // coerced, not the typed "900"
-      barge_threshold: 0.02,
+      min_speech_ms: 250,
     });
+    expect(liveOf()).not.toHaveProperty("barge_threshold"); // D76 S0b — no such knob any more
     // The section is edited on the ONE voice object, so its neighbours ride the same patch unharmed.
     expect(voiceOf()).toMatchObject({ auto_stop_threshold: 0.01 });
   });
 
   it("a CLEARED zero-floored numeric rides as NULL — a visible 422, never a silent meaning", () => {
-    // `barge_threshold: 0` MEANS "reuse the STT threshold" and `min_speech_ms: 0` means "no floor", so
-    // a blank coercing to 0 (what bare `Number("")` does) would silently reconfigure the call instead
-    // of surfacing the mistake — the wake timings' documented rule, for the same reason.
+    // `min_speech_ms: 0` means "no floor", so a blank coercing to 0 (what bare `Number("")` does)
+    // would silently reconfigure the call instead of surfacing the mistake — the wake timings'
+    // documented rule, for the same reason.
     render(<ConfTab active />);
-    fireEvent.change(liveField("Interruption threshold"), { target: { value: "" } });
     fireEvent.change(liveField("Minimum speech"), { target: { value: "" } });
     fireEvent.click(saveButton());
-    expect(liveOf()?.barge_threshold).toBeNull();
     expect(liveOf()?.min_speech_ms).toBeNull();
   });
 });
@@ -542,7 +541,7 @@ describe("ConfTab · the near-speech gate + debug readout (D74)", () => {
   });
 
   it("a CLEARED gate rides as NULL — 0 MEANS 'commit every final', so a blank must 422", () => {
-    // The `barge_threshold` rule, not the `silence_ms` one: this knob's floor IS zero and zero is a
+    // The `min_speech_ms` rule, not the `silence_ms` one: this knob's floor IS zero and zero is a
     // real setting (the pre-D74 commit), so a blank coercing to 0 would silently switch the gate off.
     render(<ConfTab active />);
     fireEvent.change(liveField("Min speech energy hold (ms)"), { target: { value: "" } });
