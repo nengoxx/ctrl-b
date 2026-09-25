@@ -10,7 +10,10 @@ counter.
 
 * **Uplink (phone → relay):** one JSON `start` (`{"type":"start","sample_rate":<Hz>}` — unknown
   keys are ignored), then raw binary pcm16 LE mono frames at the declared rate, plus the JSON
-  controls `flush` and `stop`. The server-VAD knobs come from config alone (D76 §D).
+  controls `flush` and `stop`. The server-VAD knobs come from config alone (D76 §D). A debug call
+  (D77) adds `call_id` (a canonical UUID) + `leg` (its reconnect ordinal) to `start` — both or
+  neither, validated like `sample_rate` — and only then does the relay write its half of the CALL
+  TRAIL (`services/call_trail.py`, gated by `voice.live.debug`).
 * **Uplink (relay → Speaches):** `input_audio_buffer.append` with base64 pcm16 @ **24 kHz**, as TEXT
   frames — one binary frame kills the session (§7-S0 ②), which is why the plan's binary uplink stops
   at the relay and pays ~33 % base64 overhead on the loopback leg.
@@ -65,6 +68,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 import anyio
 
 from app.core.audio import SPEACHES_WIRE_RATE, Pcm16Resampler, silence
+from app.services.call_trail import valid_call_id
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -73,6 +77,7 @@ if TYPE_CHECKING:
 
     from app.config import LiveCfg
     from app.domain.provider import LivePolicy, ResolvedTarget
+    from app.services.call_trail import CallTrail
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +108,14 @@ RATE_MULTIPLIER = 2
 #: frame, so without it a "2000 ms" relay queue could hold ~100 s and a fully compliant client could
 #: ship ~100× realtime.
 FRAME_MS_TOLERANCE = 2.0
+
+#: `start.leg`'s accepted range — the client's per-call reconnect ordinal (D77). Bounded like every
+#: other number this relay takes off the wire; a million legs is far past any real call.
+MAX_LEG = 1_000_000
+
+#: How many relay trail lines are buffered before one batch goes to disk (D77). Batched so the relay
+#: never pays a thread hop per downlink frame; `run()`'s `finally` flushes whatever is left.
+TRAIL_BATCH_LINES = 20
 
 #: WebSocket close codes used by this route. 1008 = policy violation (protocol errors + the pre-accept
 #: refusals), 1011 = internal/upstream failure, 1013 = try again later (busy), 1000 = clean end.
@@ -236,12 +249,25 @@ class LiveRelaySession:
         target: ResolvedTarget,
         policy: LivePolicy,
         connect: LiveConnector = connect_speaches,
+        trail: CallTrail | None = None,
     ) -> None:
         self._ws = websocket
         self._cfg = cfg
         self._target = target
         self._policy = policy
         self._connect = connect
+        #: THE CALL TRAIL (D77) — the store, and this leg's identity from `start`. The relay writes
+        #: only when all three line up: the store exists, `cfg.debug` is on (snapshotted with the rest
+        #: of `cfg` at session start), and the client named the call. Lines batch in `_trail_lines`
+        #: and go to disk off the loop (`_flush_trail`); `_trail_write` keeps batches in order, and
+        #: `_trail_tasks` holds the batch flushes in flight so the teardown can wait them out.
+        self._trail = trail
+        self._call_id: str | None = None
+        self._leg: int | None = None
+        self._trail_lines: list[dict[str, Any]] = []
+        self._trail_write = asyncio.Lock()
+        self._trail_tasks: set[asyncio.Task[None]] = set()
+        self._trail_ended = False
 
         self._up: LiveUpstream | None = None
         self._resampler: Pcm16Resampler | None = None
@@ -307,6 +333,14 @@ class LiveRelaySession:
             pass  # the phone hung up: nothing to tell it, nothing to close
         finally:
             await self._close_upstream()
+            # The trail's last word (D77). A session that never reached `_close` — the phone hung up,
+            # or the task was cancelled — still says how it ended; then the tail goes to disk, shielded
+            # so a cancellation cannot eat the lines that explain it.
+            if not self._trail_ended:
+                self._note("leg_end", code=None, reason="client gone" if self._client_gone else "aborted")
+            with anyio.CancelScope(shield=True):
+                await self._flush_trail()
+                await asyncio.gather(*self._trail_tasks, return_exceptions=True)
 
     # ── phase 1: the client handshake ─────────────────────────────────────────────────────────────
 
@@ -322,11 +356,12 @@ class LiveRelaySession:
                 msg = await self._recv_client()
         except TimeoutError:
             raise _ProtocolError(f"no start message within {self._cfg.start_timeout_s}s") from None
-        rate = self._parse_start(msg)
+        rate, self._call_id, self._leg = self._parse_start(msg)
         self._client_rate = rate
         self._resampler = Pcm16Resampler(rate, SPEACHES_WIRE_RATE)
 
-    def _parse_start(self, msg: dict[str, Any]) -> int:
+    def _parse_start(self, msg: dict[str, Any]) -> tuple[int, str | None, int | None]:
+        """`(sample_rate, call_id, leg)` — the last two `None` on a call that writes no trail."""
         text = msg.get("text")
         if text is None:
             raise _ProtocolError("the first frame must be a text `start` message, not binary audio")
@@ -341,7 +376,20 @@ class LiveRelaySession:
             raise _ProtocolError(
                 f"start.sample_rate {rate} outside the accepted {MIN_SAMPLE_RATE}–{MAX_SAMPLE_RATE} Hz"
             )
-        return rate
+        # THE TRAIL'S IDENTITY (D77) — optional, but with `sample_rate`'s strictness once present: the
+        # id becomes a FILENAME, so a malformed one is a protocol error here rather than a path later.
+        # The pair travels together (a leg with no call, or a call with no leg, is a client bug).
+        if ("call_id" in data) != ("leg" in data):
+            raise _ProtocolError("start.call_id and start.leg must be sent together")
+        if "call_id" not in data:
+            return rate, None, None
+        call_id = data["call_id"]
+        if not valid_call_id(call_id):
+            raise _ProtocolError("start.call_id must be a canonical lowercase UUID")
+        leg = data["leg"]
+        if not isinstance(leg, int) or isinstance(leg, bool) or not 0 <= leg <= MAX_LEG:
+            raise _ProtocolError(f"start.leg must be an integer 0–{MAX_LEG}")
+        return rate, call_id, leg
 
     @staticmethod
     def _parse_json(text: str) -> dict[str, Any]:
@@ -441,6 +489,8 @@ class LiveRelaySession:
         if language:  # blank → omit the whole block (never null — see the docstring)
             session["input_audio_transcription"] = {"language": language}
         self._swallow_pad_error = True
+        # The trail's header line: the exact knobs this leg runs (D77) — the update itself, verbatim.
+        self._note("leg_start", rate=self._client_rate, session=session)
         await self._send_up({"type": "session.update", "session": session})
 
     # ── phase 3: the pumps ────────────────────────────────────────────────────────────────────────
@@ -490,6 +540,7 @@ class LiveRelaySession:
             control = self._parse_json(text)
             kind = control.get("type")
             if kind == "stop":
+                self._note("stop")
                 return
             if kind == "flush":
                 await self._flush()
@@ -669,6 +720,7 @@ class LiveRelaySession:
         # arithmetic on — rounding it down by up to a frame would leave a short phrase one frame shy.
         remainder = int(needed - frames * chunk)
         log.info("live voice: flushing with %d ms of silence", frames * chunk + remainder)
+        self._note("flush", pad_ms=frames * chunk + remainder)
         quiet = silence(chunk, SPEACHES_WIRE_RATE)
         for _ in range(frames):
             await self._enqueue(quiet, drop_oldest=False)
@@ -727,7 +779,9 @@ class LiveRelaySession:
         if self._swallow_pad_error and "prefix_padding_ms" in f"{message} {param}":
             self._swallow_pad_error = False
             log.debug("live voice: swallowed the expected prefix_padding_ms session.update error")
+            self._note("up_error", error=error, swallowed=True)
             return
+        self._note("up_error", error=error)
         log.info("live voice: upstream error — %s", message or error.get("type") or "unspecified")
         await self._send_down(
             {
@@ -794,6 +848,11 @@ class LiveRelaySession:
         if self._client_gone or self._closed:
             return
         async with self._send_lock:
+            # THE ONE DOWNLINK HOOK (D77): every frame the phone is sent is a trail line — `state`,
+            # `speech_*`, `transcript` (the owner's words appear in the trail HERE, once), `error`.
+            # UNDER the lock (the S3 code round, F4), so the trail's order is the wire's order when the
+            # two pumps send at once.
+            self._note("down", frame=frame)
             try:
                 await self._ws.send_json(frame)
             except Exception:  # noqa: BLE001 — the socket is gone; the finally path still runs
@@ -808,6 +867,8 @@ class LiveRelaySession:
     async def _close(self, code: int, reason: str) -> None:
         """Close the phone's socket once. `reason` stays short — a WS close reason is capped at 123
         bytes on the wire, so the detail lives in the `error` frame that precedes it."""
+        if not self._trail_ended:
+            self._note("leg_end", code=code, reason=reason)
         if self._closed or self._client_gone:
             self._closed = True
             return
@@ -816,6 +877,38 @@ class LiveRelaySession:
             await self._ws.close(code=code, reason=reason)
         except Exception:  # noqa: BLE001 — already gone
             pass
+
+    # ── the call trail (D77) ──────────────────────────────────────────────────────────────────────
+
+    def _note(self, ev: str, **fields: Any) -> None:
+        """Buffer one relay trail line — a no-op unless this leg writes a trail (see `__init__`).
+
+        Synchronous, so it can sit on any path, the audio pump's included: a full batch is handed to
+        a background task and NOTHING here waits on the disk. `leg_end` latches: whichever of `_close`
+        or `run()`'s `finally` says it first is the one that stands."""
+        if self._trail is None or not self._cfg.debug or self._call_id is None:
+            return
+        if ev == "leg_end":
+            self._trail_ended = True
+        self._trail_lines.append(
+            {"t": int(time.time() * 1000), "src": "relay", "leg": self._leg, "ev": ev, **fields}
+        )
+        # `==`, not `>=`: one flush per batch. Lines that land while it waits for the lock ride it (the
+        # swap takes the whole list); the count restarts at zero behind the swap.
+        if len(self._trail_lines) == TRAIL_BATCH_LINES:
+            task = asyncio.create_task(self._flush_trail(), name="voice-live-trail")
+            self._trail_tasks.add(task)
+            task.add_done_callback(self._trail_tasks.discard)
+
+    async def _flush_trail(self) -> None:
+        """Hand the buffered lines to the store, OFF the event loop (`asyncio.to_thread`). The swap
+        happens under `_trail_write` (asyncio's lock is FIFO), so batches reach the file in order."""
+        if self._trail is None or self._call_id is None:
+            return
+        async with self._trail_write:
+            lines, self._trail_lines = self._trail_lines, []
+            if lines:
+                await asyncio.to_thread(self._trail.append, self._call_id, lines, keep=self._cfg.trail_keep)
 
     async def _close_upstream(self) -> None:
         """Close the realtime leg — WITHOUT a commit (the invariant). A failure here must not escape:

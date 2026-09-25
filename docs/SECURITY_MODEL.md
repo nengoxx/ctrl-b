@@ -534,6 +534,23 @@ here exactly as it stands everywhere else.
 socket route reachable at all until one is flipped), and `allowed_origins` defaults **empty** (the
 same-host rule alone). §6 carries the row.
 
+### 2.11 The call trail — a debug-gated write endpoint (D77)
+
+`POST /api/voice/live/trail` (`api/voice.py`; store `services/call_trail.py`) appends the browser's
+half of a live call's diagnostic record; the relay writes its half in-process. Four rails:
+
+- **Off means absent.** With `voice.live.debug` off (the default) the route is a **404**, the relay
+  writes nothing, and the client sends no `call_id` in `start`.
+- **JSON only — the preflight is the CSRF control** (§2.7's rule). The handler parses its own body
+  and **415s anything but `application/json`** (a form, `text/plain`, a typeless body — every shape a
+  cross-origin page can send unpreflighted). The `keepalive` flush keeps that type; no `sendBeacon`.
+- **The id is the filename guard:** one canonical-UUID pattern (`CALL_ID_PATTERN`), shared with the
+  relay's `start` parse. **Bounded:** body ≤ 64 KB counted as it streams (413), ≤ 200 entries of
+  ≤ 2 KB each (422), `voice.live.trail_keep` files kept. **No read endpoint.**
+
+Files: `$CTRLB_HOME/calls/<call_id>.jsonl` (dir 0700, files 0600) — the owner's transcripts (once, in
+the relay's `transcript` frames) and gate numbers; **no secrets** (the bearer canary is test-pinned).
+
 ---
 
 ## 3. Residual & accepted risks + known gaps

@@ -10,6 +10,10 @@ relay, which bridges the phone to a Speaches realtime session. Its session objec
 `services/voice_live.py`; what is here is the route's rails — the `Origin` check, the feature gate, and
 the process-wide admission slot.
 
+`POST /api/voice/live/trail` (D77) is the browser's half of the CALL TRAIL — a debug-gated, bounded
+JSON append into `$CTRLB_HOME/calls/<call_id>.jsonl` (`services/call_trail.py`); 404 while
+`voice.live.debug` is off, 204 on success, and no read path anywhere.
+
 HTTP contract: a success always returns 200 with `X-Voice-Served-By: <provider>` — the NAME of the
 registry provider that actually served (A11/D48; a fallback serve carries that fallback's provider name,
 a single-user diagnostic surface); TTS additionally carries `X-Voice-Target: <provider>/<model>`, the
@@ -21,15 +25,26 @@ error); voice/service unconfigured → 503; STT with no file → 422.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from email.message import Message
+from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, WebSocket
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.adapters.voice import AUDIO_FORMATS, VoiceClient, VoiceError
+from app.config import validation_detail
+from app.services.call_trail import (
+    CALL_ID_PATTERN,
+    TRAIL_MAX_BODY_BYTES,
+    TRAIL_MAX_ENTRIES,
+    TRAIL_MAX_ENTRY_BYTES,
+    CallTrail,
+)
 from app.services.voice_live import (
     CLOSE_BUSY,
     CLOSE_PROTOCOL,
@@ -247,12 +262,94 @@ async def voice_live(websocket: WebSocket) -> None:
             target=target,
             policy=policy,
             connect=getattr(app.state, "voice_live_connect", None) or connect_speaches,
+            # D77 — the relay's half of the call trail. Optional on `app.state` for the same reason the
+            # connector seam is: a hand-built test app that never mounts the store writes no trail.
+            trail=getattr(app.state, "call_trail", None),
         ).run()
     finally:
         # The ONE release. Latched by being the single `finally` on the single acquire — a failing
         # upstream close inside the session can never leak the slot, because the session swallows its
         # own teardown failures and this block runs regardless.
         slots.release()
+
+
+class TrailEntry(BaseModel):
+    """One CLIENT trail line (D77): a millisecond timestamp, an event name, and whatever the browser
+    measured beside it, kept VERBATIM (`extra="allow"`) — the trail is a diagnostic record, so this
+    end does not second-guess the fields. Bounded instead: `ev` by length, the whole entry by its
+    serialized size (`TRAIL_MAX_ENTRY_BYTES`, checked in the handler, which knows the index)."""
+
+    model_config = ConfigDict(extra="allow")
+    t: int
+    ev: str = Field(min_length=1, max_length=48)
+
+
+class TrailBatch(BaseModel):
+    call_id: str = Field(pattern=CALL_ID_PATTERN)
+    entries: list[TrailEntry] = Field(min_length=1, max_length=TRAIL_MAX_ENTRIES)
+
+
+def _is_json(content_type: str | None) -> bool:
+    """`application/json` (or a `+json` suffix), parameters ignored — FastAPI's own strict-content-type
+    reading, which this handler has to restate because it parses the body itself (to bound it first)."""
+    if not content_type:
+        return False
+    msg = Message()
+    msg["content-type"] = content_type
+    subtype = msg.get_content_subtype()
+    return msg.get_content_maintype() == "application" and (subtype == "json" or subtype.endswith("+json"))
+
+
+@router.post("/live/trail", status_code=204)
+async def live_trail(request: Request) -> Response:
+    """Append a batch of the BROWSER's call-trail lines (D77) — `204`, or: `404` while
+    `voice.live.debug` is off (the feature does not exist then), `415` for a body that is not JSON,
+    `413` past `TRAIL_MAX_BODY_BYTES`, `422` for a bad shape, a malformed `call_id`, more than
+    `TRAIL_MAX_ENTRIES` entries or one entry past `TRAIL_MAX_ENTRY_BYTES` (the detail names its index).
+
+    **The CONTENT TYPE is the CSRF control here** (SECURITY_MODEL §2.7's rule, §2.11): the app has no
+    application-layer auth, so the attacker worth designing against is the owner's own browser on
+    another origin — and a cross-origin `POST` escapes the CORS preflight only with a SAFELISTED body
+    (a form, `text/plain`, or no type at all). `application/json` is not safelisted, so a hostile page's
+    write dies at the preflight this app never answers. That rail is only real if this route REFUSES
+    everything else, which is why the body is parsed here — FastAPI's own no-content-type guard applies
+    to declared body params, and this handler reads the stream itself so the cap is a bound, not a
+    claim: counted as it arrives and refused the moment it passes (the `_import_body` posture), never
+    `await request.body()` and never the `Content-Length` header alone.
+
+    Stored lines are `{"src": "client", **entry}` — the client's `t`/`ev` and extras verbatim, minus
+    any `src` of its own, so a client line can never pass itself off as the relay's. No read endpoint
+    exists: the trail is read on the host, from the file."""
+    live = request.app.state.settings.voice.live
+    if not live.debug:
+        raise HTTPException(status_code=404, detail="call trail is off")
+    if not _is_json(request.headers.get("content-type")):
+        raise HTTPException(status_code=415, detail="the call trail takes application/json")
+    body = bytearray()
+    async for chunk in request.stream():
+        # Refused BEFORE the concatenation (the S3 code round, F2): one oversized ASGI chunk must not
+        # be allocated into the body only to be thrown away.
+        if len(body) + len(chunk) > TRAIL_MAX_BODY_BYTES:
+            raise HTTPException(
+                status_code=413, detail=f"the trail batch is larger than {TRAIL_MAX_BODY_BYTES} bytes"
+            )
+        body += chunk
+    try:
+        batch = TrailBatch.model_validate_json(bytes(body))
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=validation_detail(exc)) from None
+    lines: list[dict[str, Any]] = []
+    for i, entry in enumerate(batch.entries):
+        data = entry.model_dump()
+        if len(json.dumps(data, separators=(",", ":"), ensure_ascii=False)) > TRAIL_MAX_ENTRY_BYTES:
+            raise HTTPException(
+                status_code=422, detail=f"trail entry {i} is larger than {TRAIL_MAX_ENTRY_BYTES} bytes"
+            )
+        data.pop("src", None)
+        lines.append({"src": "client", **data})
+    trail: CallTrail = request.app.state.call_trail
+    await asyncio.to_thread(trail.append, batch.call_id, lines, keep=live.trail_keep)
+    return Response(status_code=204)
 
 
 @router.post("/stt")

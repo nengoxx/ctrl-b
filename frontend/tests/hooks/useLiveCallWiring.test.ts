@@ -125,6 +125,14 @@ const h = vi.hoisted(() => ({
   retagAtStops: -1,
   /** Holds `startPcmCapture` open when an arm needs the acquisition GAP itself. */
   capGate: Promise.resolve(),
+  /** D77 — every leg's `start` trail identity as the hook passed it (`undefined` = none sent). */
+  starts: [] as ({ callId: string; leg: number } | undefined)[],
+  /** …and every trail POST, as the api client was asked for it. */
+  posts: [] as {
+    path: string;
+    body: { call_id: string; entries: Record<string, unknown>[] };
+    keepalive: boolean;
+  }[],
 }));
 
 vi.mock("../../src/lib/audioController", () => ({
@@ -150,6 +158,17 @@ vi.mock("../../src/lib/audioController", () => ({
   },
 }));
 vi.mock("../../src/lib/composer", () => ({ sendCallTranscript: h.sendCall }));
+vi.mock("../../src/api/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client")>()),
+  postJSON: (path: string, body: unknown, opts?: { keepalive?: boolean }) => {
+    h.posts.push({
+      path,
+      body: body as (typeof h.posts)[number]["body"],
+      keepalive: !!opts?.keepalive,
+    });
+    return Promise.resolve(undefined);
+  },
+}));
 vi.mock("../../src/lib/callCue", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/lib/callCue")>()),
   playDropCue: h.cue,
@@ -159,7 +178,9 @@ vi.mock("../../src/lib/liveSocket", () => ({
   openLiveSocket: (opts: {
     onFrame: (f: LiveDown) => void;
     onClose: (code: number, reason: string) => void;
+    trail?: { callId: string; leg: number };
   }) => {
+    h.starts.push(opts.trail);
     h.frame = opts.onFrame;
     // The leg's own unannounced close — a dropped tailnet link, the one close the machine reconnects
     // through. Bound per leg, so a case can drop THIS leg and watch the ladder open the next one.
@@ -304,6 +325,8 @@ beforeEach(() => {
   setMicRelease(null); // nobody holds the ear unless a case says so
   h.voice.data.stt_auto_stop.threshold = 0;
   h.capGate = Promise.resolve();
+  h.starts = [];
+  h.posts = [];
   h.sendCall.mockReset();
   h.sendCall.mockResolvedValue("accepted");
   h.setCallVoice.mockClear();
@@ -848,6 +871,26 @@ describe("useLiveCall — THE LEAK PROBE, wired (D76 S2 · §B.3/§B.4)", () => 
     expect(h.chunkStart).toBeNull();
     await c.step(() => setPlay("playing"));
     expect(h.heldNow).toBe(false);
+  });
+
+  it("D77 — with the trail on, a verdict is a `probe` line and the chunk-start keeps its idx", async () => {
+    leaky();
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await room();
+    await c.step(() => setPlay("playing"));
+    await chunk(0);
+    await act(async () => frames(-60, PROBE_FRAMES));
+    await act(async () => {
+      vi.advanceTimersByTime(2000); // the trail's own interval flush
+    });
+    const lines = h.posts.flatMap((p) => p.body.entries);
+    const probeLine = lines.find((l) => l.ev === "probe");
+    expect(probeLine).toMatchObject({ idx: 0, floor: -45, released: true });
+    expect(probeLine?.maxDb).toBeCloseTo(-60, 0);
+    expect(lines.find((l) => l.ev === "sig" && l.type === "chunkStarted")).toMatchObject({
+      idx: 0,
+    });
   });
 
   it("a RECAPTURE mid-reply holds the fresh ear at once and re-probes at the next chunk", async () => {
@@ -1459,8 +1502,9 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
   });
 
   it("SEEDS the own-voice term from this device's stored level — it applies from the first frame", async () => {
-    // The mock capture opens "Speakerphone" with no deviceId, so the label is the key (Maya F8).
-    localStore.set(STORE, JSON.stringify({ Speakerphone: -10 }));
+    // The mock capture opens "Speakerphone" with no deviceId, so the label is the key (Maya F8) — in
+    // the mode the track was granted (`"all"` by default), S3b.
+    localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 }));
     h.voice.data.live_call.min_final_ms = 200;
     const { view } = await call();
     // max(−45 ceiling, −10 − 10) = −20, inside the clamp.
@@ -1471,8 +1515,17 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
   });
 
   it("…and a DIFFERENT device starts unseeded", async () => {
-    localStore.set(STORE, JSON.stringify({ Speakerphone: -10 }));
+    localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 }));
     h.voice.data.live_call.input_device = "usb-mic-1"; // the mock reads it back as the deviceId
+    const { view } = await call();
+    expect(view.result.current.readLevel().floor).toBe(-45);
+  });
+
+  it("…and the SAME device under a different GRANTED mode starts unseeded too (S3b)", async () => {
+    // The owner's Call/default deafness: a level learned under one echo mode is not the voice the other
+    // mode hears, so a boolean-`true` grant does not read the `"all"` grant's level.
+    localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 }));
+    h.fennec = true; // the track reads back `echoCancellation: true`
     const { view } = await call();
     expect(view.result.current.readLevel().floor).toBe(-45);
   });
@@ -1489,7 +1542,7 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
     expect(localStore.has(STORE)).toBe(false); // nothing written while the call is up…
     view.unmount();
     const stored = JSON.parse(localStore.get(STORE) ?? "{}") as Record<string, number>;
-    expect(stored.Speakerphone).toBeCloseTo(-20, 6); // …and the level outlives it, on this device
+    expect(stored["Speakerphone|ec=all"]).toBeCloseTo(-20, 6); // …and outlives it, on this device × mode
   });
 
   it("learns NOTHING before the room is settled, or from a final said over the reply", async () => {
@@ -1513,7 +1566,7 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
     h.voice.data.live_call.input_device = "usb-mic-1"; // what the next capture will read back
     await step(() => view.result.current.setInputDevice("usb-mic-1"));
     const stored = JSON.parse(localStore.get(STORE) ?? "{}") as Record<string, number>;
-    expect(stored.Speakerphone).toBeCloseTo(-20, 6);
+    expect(stored["Speakerphone|ec=all"]).toBeCloseTo(-20, 6);
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -2006,5 +2059,158 @@ describe("useLiveCall — the unmount fence (S2b audit)", () => {
       await Promise.resolve();
     });
     expect(texts()).toEqual([]);
+  });
+});
+
+describe("useLiveCall — THE CALL TRAIL (D77)", () => {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const lines = () => h.posts.flatMap((p) => p.body.entries);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("OFF (the shipped default): `start` names no call and not one POST is ever made", async () => {
+    const c = await call();
+    await c.say("hello");
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    visibility("hidden");
+    c.view.unmount();
+    expect(h.starts).toEqual([undefined]);
+    expect(h.posts).toEqual([]);
+  });
+
+  it("ON: `start` carries the call's UUID + leg, and every POST names the same call", async () => {
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await c.step(() => h.close?.()); // the link drops — the ladder redials a SECOND leg
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(h.starts).toHaveLength(2);
+    const [first, second] = h.starts;
+    expect(first?.callId).toMatch(UUID);
+    expect(second?.callId).toBe(first?.callId); // one call, many legs (council F4)
+    expect([first?.leg, second?.leg]).toEqual([1, 2]);
+    c.view.unmount();
+    expect(h.posts.length).toBeGreaterThan(0);
+    expect(new Set(h.posts.map((p) => p.body.call_id))).toEqual(new Set([first?.callId]));
+    expect(h.posts.every((p) => p.path === "/api/voice/live/trail")).toBe(true);
+  });
+
+  it("ON: a `sig` line per signal (with its phase move), a `capture` line, `sample`s at 1 Hz", async () => {
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await c.say("wake up corsair");
+    await act(async () => {
+      vi.advanceTimersByTime(3000); // three samples (and the 2 s interval flush)…
+    });
+    c.view.unmount(); // …and the end flushes the rest
+    const all = lines();
+    const sigs = all.filter((l) => l.ev === "sig");
+    expect(sigs.find((l) => l.type === "ready")).toMatchObject({
+      phase: "connecting→listening",
+      leg: 1,
+    });
+    expect(sigs.map((l) => l.type)).toEqual(
+      expect.arrayContaining(["captureReady", "ready", "speechStart", "speechStop", "final"]),
+    );
+    // the owner's words are NOT here — the relay's transcript line carries them once (council F5)
+    const final = sigs.find((l) => l.type === "final");
+    expect(final).toMatchObject({ textLen: 15, pre: { earHeld: false, mouthLive: false } });
+    expect(final).not.toHaveProperty("text");
+    expect(JSON.stringify(all)).not.toContain("corsair");
+    // the capture: what opened, and the gate knobs its floor is computed from
+    expect(all.find((l) => l.ev === "capture")).toMatchObject({
+      route: "call",
+      label: "Speakerphone",
+      ec: "all",
+      ecCaps: [true, "all"],
+      fellBack: false,
+      cfg: { floor_dbfs: -45, playback_margin_db: 10, min_final_ms: 0, mic_hold: "auto" },
+    });
+    // the 1 Hz sampler: ONLY the debug record's moving fields, and the phase they were read in — the
+    // per-capture constants are the capture line's, the probe and the last final are lines of their own
+    const samples = all.filter((l) => l.ev === "sample");
+    expect(samples).toHaveLength(3);
+    expect(samples[0]).toMatchObject({ floor: -45, floorPinned: false, phase: "thinking" });
+    expect(Object.keys(samples[0]).sort()).toEqual(
+      [
+        "t",
+        "leg",
+        "gen",
+        "ev",
+        "level",
+        "levelPeak2s",
+        "floor",
+        "floorPinned",
+        "noise",
+        "noiseSettled",
+        "voiceLevel",
+        "earHeld",
+        "mouthLive",
+        "bargeArmed",
+        "phase",
+      ].sort(),
+    );
+    // the S3b key (device × granted echo mode) is on the capture line, once
+    expect(typeof all.find((l) => l.ev === "capture")?.voiceKey).toBe("string");
+    // every line is stamped — with the CURRENT leg: 0 until the first socket opens (the capture comes
+    // first), 1 from then on
+    expect(all.every((l) => typeof l.t === "number" && typeof l.gen === "number")).toBe(true);
+    expect(all.find((l) => l.ev === "capture")?.leg).toBe(0);
+    expect(new Set(all.slice(all.findIndex((l) => l.type === "ready")).map((l) => l.leg))).toEqual(
+      new Set([1]),
+    );
+  });
+
+  it("ON: a `final` line carries the utterance's PEAK (the meter's record) and the floor it met", async () => {
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    const rmsAt = (dbfs: number): number => 10 ** (dbfs / 20);
+    await act(async () => {
+      // a quiet second first — the noise window closes, the floor is min(−50 + 10, −45) = −45 — then
+      // one utterance whose loudest frame is −18 dBFS
+      for (let i = 0; i < 50; i++)
+        h.mic?.({ buf: new ArrayBuffer(8), rms: rmsAt(-50), uplinked: true });
+      h.frame?.({ type: "speech_started" });
+      for (const db of [-30, -18, -25])
+        h.mic?.({ buf: new ArrayBuffer(8), rms: rmsAt(db), uplinked: true });
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text: "wake up", final: true });
+      await Promise.resolve();
+    });
+    c.view.unmount();
+    const all = lines();
+    const final = all.find((l) => l.ev === "final");
+    expect(final).toMatchObject({ chars: 7, floor: -45 });
+    expect(final?.peakDb).toBeCloseTo(-18, 1);
+    expect(final?.accruedMs).toEqual(expect.any(Number));
+    // …right after the signal's own line, which keeps the energy and the knob
+    const at = all.indexOf(final!);
+    expect(all[at - 1]).toMatchObject({ ev: "sig", type: "final", textLen: 7 });
+  });
+
+  it("ON: the page hiding flushes with keepalive; the end flushes the rest and stops the clock", async () => {
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    visibility("hidden"); // background ON: the call stays up, the trail ships what it holds now
+    expect(h.posts.at(-1)?.keepalive).toBe(true);
+    const before = h.posts.length;
+    await c.step(() => c.view.result.current.toggleMute());
+    c.view.unmount(); // the terminal — `end` rides keepalive too
+    expect(h.posts.length).toBeGreaterThan(before);
+    expect(h.posts.at(-1)?.keepalive).toBe(true);
+    expect(h.posts.at(-1)?.body.entries.at(-1)).toMatchObject({ ev: "sig", type: "unmounted" });
+    const after = h.posts.length;
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(h.posts.length).toBe(after); // no sampler, no interval, after the end
   });
 });

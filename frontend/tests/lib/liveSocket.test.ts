@@ -50,13 +50,18 @@ class FakeSocket {
   }
 }
 
-function leg(opts?: { ceilingMs?: number; sampleRate?: number }) {
+function leg(opts?: {
+  ceilingMs?: number;
+  sampleRate?: number;
+  trail?: { callId: string; leg: number };
+}) {
   const frames: LiveDown[] = [];
   const closes: { code: number; reason: string }[] = [];
   const socket = openLiveSocket({
     url: "ws://x/api/voice/live",
     sampleRate: opts?.sampleRate ?? 48000,
     ceilingMs: opts?.ceilingMs ?? 1000,
+    trail: opts?.trail,
     onFrame: (f) => frames.push(f),
     onClose: (code, reason) => closes.push({ code, reason }),
     make: (url) => new FakeSocket(url) as unknown as WebSocket,
@@ -71,6 +76,14 @@ describe("liveSocket — the uplink", () => {
     ws.open();
     expect(ws.sent).toEqual([JSON.stringify({ type: "start", sample_rate: 44100 })]);
     expect(ws.binaryType).toBe("arraybuffer");
+  });
+
+  it("a DEBUG call's `start` names the call and its leg (D77) — both, beside the rate", () => {
+    const { ws } = leg({ sampleRate: 48000, trail: { callId: "c-1", leg: 4 } });
+    ws.open();
+    expect(ws.sent).toEqual([
+      JSON.stringify({ type: "start", sample_rate: 48000, call_id: "c-1", leg: 4 }),
+    ]);
   });
 
   it("ships audio only while OPEN — the reconnect gap drops frames, it does not throw", () => {

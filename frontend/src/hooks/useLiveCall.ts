@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { postJSON } from "../api/client";
 import {
   dismiss,
   getPlayStatus,
@@ -13,6 +14,7 @@ import {
   useMouthFailures,
 } from "../lib/audioController";
 import { CUE_HOLD_MS, playDropCue } from "../lib/callCue";
+import { type CallTrail, createCallTrail } from "../lib/callTrail";
 import { sendCallTranscript } from "../lib/composer";
 import {
   DBFS_SILENCE,
@@ -207,6 +209,33 @@ const PROBE_MS = 600;
  *  the peak and slow enough to be invisible in a profile; the block only exists while the owner has
  *  the `debug` knob on. Not a knob of its own: it is a property of reading, not of the call. */
 const DEBUG_TICK_MS = 250;
+
+/** How often THE CALL TRAIL samples the same record, ms (D77) — the debug block's numbers, written to
+ *  the per-call file instead of the screen. 1 Hz because the trail is read AFTER the call, beside the
+ *  relay's own stamps: once a second is enough to see the floor, the noise estimate and the hold move
+ *  across a phrase, and few enough lines that a half-hour call stays a file one can read. Not a knob,
+ *  for `DEBUG_TICK_MS`'s reason: it is a property of reading, not of the call. */
+const TRAIL_SAMPLE_MS = 1000;
+
+/** WHAT that sample carries (D77) — the readback record's MOVING fields, named here and nowhere else.
+ *  The per-capture constants (the route, the hold lever, the echo pair, the device, the voice key)
+ *  are written once, on the `capture` line; the probe's verdict and the last final have lines of their
+ *  own (`probe`, `final`). A second of a half-hour call should not repeat what cannot have changed. */
+const TRAIL_SAMPLE_FIELDS = [
+  "level",
+  "levelPeak2s",
+  "floor",
+  "floorPinned",
+  "noise",
+  "noiseSettled",
+  "voiceLevel",
+  "earHeld",
+  "mouthLive",
+  "bargeArmed",
+] as const satisfies readonly (keyof CallDebug)[];
+
+/** The trail route (D77, `api/voice.py::live_trail`). */
+const TRAIL_URL = "/api/voice/live/trail";
 
 /** THE UPLINK'S SILENCE (D76 §B.1): the ONE zeroed buffer a held frame is sent as, reallocated only when
  *  the frame size changes (a capture's size is fixed by its rate and `frame_ms`, so in practice once per
@@ -628,6 +657,43 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
     },
     out,
   };
+}
+
+/** ONE SIGNAL, as a call-trail line (D77) — built around the reduce, never inside it (the reducer stays
+ *  pure; the wiring logs what went in and what changed). The payload rides verbatim — every signal
+ *  carries primitives only — with three deliberate exceptions (council F5/F1):
+ *  · a `text` becomes `textLen`: the owner's words are in the trail ONCE, in the relay's `transcript`
+ *    line (which is how a self-transcribed reply is recognised), never copied here;
+ *  · a `final` snapshots the PRE-reduce state the ear decision turns on (`pre`), so a final released
+ *    by a probe that judged silence — a residual the design records rather than fixes — is VISIBLE;
+ *  · a signal armed under another generation says so (`staleGen`) — the fence dropped it.
+ *  `phase`/`note` appear only when the reduce moved them, and so does `genMove`: the line is STAMPED
+ *  after the reduce, so a signal that moved the generation (a terminal, an accepted route cycle) would
+ *  otherwise read as belonging to the generation it created rather than the one it ran under. */
+export function trailSig(
+  sig: CallSignal,
+  prev: CallState,
+  next: CallState,
+): Record<string, unknown> {
+  const { type, gen, ...payload } = sig;
+  const line: Record<string, unknown> = { type };
+  for (const [k, v] of Object.entries(payload)) {
+    if (k === "text" && typeof v === "string") line.textLen = v.length;
+    else line[k] = v;
+  }
+  if (gen !== undefined && gen !== prev.gen) line.staleGen = gen;
+  if (type === "final")
+    line.pre = {
+      earHeld: prev.earHeld,
+      mouthLive: prev.mouthLive,
+      probeOpen: prev.probeOpen,
+      probeIdx: prev.probeIdx,
+      muted: prev.muted,
+    };
+  if (prev.phase !== next.phase) line.phase = `${prev.phase}→${next.phase}`;
+  if (prev.gen !== next.gen) line.genMove = `${prev.gen}→${next.gen}`;
+  if (prev.note !== next.note) line.note = next.note;
+  return line;
 }
 
 /**
@@ -1312,7 +1378,8 @@ interface GateState {
   /** The owner's learned voice level on THIS capture's device, dBFS — seeded from `store/voiceLevels`
    *  when the capture opens, learned from accepted finals, written back when it is released. */
   voiceLevel: number | null;
-  /** …and the device key it is stored under (`voiceDeviceKey`), `null` when the capture names none. */
+  /** …and the key it is stored under (`voiceDeviceKey`: the device × the granted echo mode), `null`
+   *  when the capture names no device. */
   voiceKey: string | null;
   /** The owner's MANUAL floor for this call, dBFS (S1's control sets it; `setFloorPin`), or `null` =
    *  Auto. Per call, never written anywhere — Discord's shape (D76 §C.7). */
@@ -1384,6 +1451,8 @@ export interface CallDebug {
   noise: number | null;
   noiseSettled: boolean;
   voiceLevel: number | null;
+  /** …and the key that level is stored under (S3b: device × granted echo mode), `null` = unnamed. */
+  voiceKey: string | null;
   /** …and what the last final was judged on (S5), its peak in dBFS. `accruedMs: 0` beside a non-zero
    *  `chars` is the fail-open signature — a final that arrived with no epoch behind it. */
   lastFinal: { accruedMs: number; peakDb: number; chars: number } | null;
@@ -1488,6 +1557,56 @@ export function useLiveCall(): CallView {
   /** …and the last verdict, kept for the debug block (S3's evidence line): what was heard, what it was
    *  judged against, and which way it went. */
   const lastProbe = useRef<CallDebug["probe"]>(null);
+  /** THE CALL TRAIL (D77) — `null` unless `voice.live.debug` is on, so every site below is a
+   *  `trail.current?.push(…)` that costs nothing in the shipped default. The id is minted ONCE per
+   *  instance (lazily, and only for a debug call): a reconnect, a route cycle or StrictMode's re-run
+   *  keeps it — `gen` and `leg` move, the call does not — while a redial mounts a fresh instance, which
+   *  IS a new call. The sampler is the 1 Hz `sample` clock, capture-ready to terminal. */
+  const callId = useRef<string | null>(null);
+  const trail = useRef<CallTrail | null>(null);
+  const trailSampler = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+
+  /** The trail's end — its last flush rides `keepalive`, then it stops. Idempotent: the terminal edge
+   *  and the unmount both call it, and whichever comes second finds nothing. */
+  const endTrail = useCallback((): void => {
+    clearInterval(trailSampler.current);
+    trailSampler.current = undefined;
+    trail.current?.flush("end");
+    trail.current?.dispose();
+    trail.current = null;
+  }, []);
+
+  /** THE READBACK RECORD (D74 S7), built in ONE place: the debug block renders it every
+   *  `DEBUG_TICK_MS` and the call trail samples its moving fields every `TRAIL_SAMPLE_MS` (D77) — one
+   *  field list, two readers. A READER over refs, never state: the numbers move at 25–50 Hz. */
+  const readDebug = useCallback((): CallDebug => {
+    const cap = capture.current;
+    const m = meter.current;
+    const s = ref.current;
+    const g = gate.current;
+    return {
+      ecSettings: cap?.readback.echoCancellation,
+      ecCapabilities: cap?.readback.echoCapabilities,
+      route: s.route,
+      micHold: knobs?.mic_hold ?? "",
+      bargeArmed: bargeArmed.current,
+      earHeld: s.earHeld,
+      mouthLive: s.mouthLive,
+      deviceLabel: cap?.readback.label ?? "",
+      deviceId: cap?.readback.deviceId ?? "",
+      fellBack: cap?.fellBack ?? false,
+      level: m.db,
+      levelPeak2s: m.peakDb,
+      floor: g.cfg && gateFloor(g, g.cfg),
+      floorPinned: g.pin !== null,
+      noise: g.noise.floor,
+      noiseSettled: g.noise.settled,
+      voiceLevel: g.voiceLevel,
+      voiceKey: g.voiceKey,
+      lastFinal: m.last,
+      probe: lastProbe.current,
+    };
+  }, [knobs]);
 
   /** Release EVERYTHING, on every exit path (§6's "hang up = immediate full teardown"). Idempotent. */
   const teardown = useCallback((): void => {
@@ -1537,6 +1656,11 @@ export function useLiveCall(): CallView {
         ref.current = next;
         setState(next);
       }
+      // THE TRAIL'S ONE HOOK (D77): every signal passes here, so every signal is a line — BEFORE the
+      // effects run, so a re-entrant signal an effect sends lands after the one that caused it. A
+      // terminal ends the trail on the same edge (the redial is a fresh instance, a fresh call).
+      trail.current?.push("sig", trailSig(sig, prev, next));
+      if (!isTerminal(prev.phase) && isTerminal(next.phase)) endTrail();
       for (const eff of out) {
         switch (eff.type) {
           case "submit": {
@@ -1654,12 +1778,20 @@ export function useLiveCall(): CallView {
       // …and the EAR METER's, the same way and for the same reason (D74 S4/S5). After the reduce,
       // because the `final` arm has already been handed the accrual this may now clear.
       const taken = meterEdge(meter.current, sig, legSeq.current, prev, next, out);
+      const g = gate.current;
+      // THE FINAL'S JUDGEMENT NUMBERS (D77), beside its `sig` line (which carries the energy and the
+      // knob): the utterance's peak is the meter's record, just written by `meterEdge` — its one source
+      // — and the effective floor is read NOW, before the learner below can move it.
+      if (sig.type === "final")
+        trail.current?.push("final", {
+          ...meter.current.last,
+          floor: g.cfg && gateFloor(g, g.cfg),
+        });
       // THE VOICE LEARNER (D76 §C.3) — fed only a final the machine took, and guarded inside
       // `learnVoice` (a settled noise term, a clear margin above it, no playback during it).
-      const g = gate.current;
       if (taken && g.cfg) g.voiceLevel = learnVoice(g.voiceLevel, taken, g.noise, g.cfg);
     },
-    [teardown],
+    [teardown, endTrail],
   );
 
   /** Open ONE socket leg against the live capture. Reconnect is a FRESH session (no resume protocol,
@@ -1690,6 +1822,8 @@ export function useLiveCall(): CallView {
       url: liveSocketUrl(),
       sampleRate: cap.sampleRate,
       ceilingMs: knobs.buffered_ceiling_ms,
+      // D77 — only a debug call names itself to the relay; otherwise `start` is byte-identical.
+      trail: trail.current && callId.current ? { callId: callId.current, leg } : undefined,
       onFrame: (frame) => {
         if (!mine()) return;
         switch (frame.type) {
@@ -1912,6 +2046,7 @@ export function useLiveCall(): CallView {
                     // noise estimate at all there is nothing to be quieter than (§B.4): held.
                     const leak = g.noise.floor === null || pr.max >= floor;
                     lastProbe.current = { idx: pr.idx, maxDb: pr.max, floor, released: !leak };
+                    trail.current?.push("probe", lastProbe.current);
                     send({ type: "probeResult", idx: pr.idx, leak, gen: pr.gen });
                     // The verdict reaches the capture before the NEXT frame is classified — the
                     // playback subscription's same-task rule, applied to the release.
@@ -1967,7 +2102,8 @@ export function useLiveCall(): CallView {
           }
           capture.current = cap;
           // THE OWNER'S VOICE ON THIS DEVICE (D76 §C.3 / Maya F8): seeded from the store under the
-          // device the capture ACTUALLY opened — a different device starts unseeded — so the own-voice
+          // device the capture ACTUALLY opened, in the echo mode it was actually GRANTED (S3b) — a
+          // different device, or the same one under a different mode, starts unseeded — so the own-voice
           // term applies from the first frame (C.4). Written back on release (`persistVoice`).
           g.voiceKey = voiceDeviceKey(cap.readback);
           g.voiceLevel = g.voiceKey === null ? null : getVoiceLevel(g.voiceKey);
@@ -2036,6 +2172,42 @@ export function useLiveCall(): CallView {
           // was audible while `getUserMedia` was pending), and a hold that only ever reaches the track on
           // its next CHANGE would leave the ear open for exactly that stretch.
           cap.setHeld(ref.current.earHeld);
+          // THE TRAIL'S CAPTURE LINE (D77) — what this acquisition opened and what it runs on: the
+          // readback, the seeded voice level and its key, and the gate knobs the floor is computed
+          // from. Then the 1 Hz sampler, once per call (a route cycle's recapture keeps it running).
+          const t = trail.current;
+          if (t) {
+            t.push("capture", {
+              route: req.route ?? "",
+              deviceId: cap.readback.deviceId,
+              label: cap.readback.label,
+              ec: cap.readback.echoCancellation,
+              ecCaps: cap.readback.echoCapabilities,
+              fellBack: cap.fellBack,
+              voiceKey: g.voiceKey,
+              voiceLevel: g.voiceLevel,
+              cfg: {
+                floor_dbfs: knobs.floor_dbfs,
+                noise_margin_db: knobs.noise_margin_db,
+                voice_margin_db: knobs.voice_margin_db,
+                min_dbfs: knobs.min_dbfs,
+                max_dbfs: knobs.max_dbfs,
+                playback_margin_db: knobs.playback_margin_db,
+                min_final_ms: knobs.min_final_ms,
+                mic_hold: knobs.mic_hold,
+              },
+            });
+            if (trailSampler.current === undefined)
+              trailSampler.current = setInterval(() => {
+                // The debug block's record, only its moving fields (`TRAIL_SAMPLE_FIELDS`) — and the
+                // phase they were read in.
+                const d = readDebug();
+                const line: Record<string, unknown> = {};
+                for (const k of TRAIL_SAMPLE_FIELDS) line[k] = d[k];
+                line.phase = ref.current.phase;
+                trail.current?.push("sample", line);
+              }, TRAIL_SAMPLE_MS);
+          }
           // THE PRE-PLAY TAP (confirm round F2): on a leaking track the mouth closes the ear BEFORE it
           // asks the element to play — observation, however synchronous, races the audio thread. The tap
           // is a bare "close now": stable until the play event's own reduce confirms it (nothing can
@@ -2071,13 +2243,29 @@ export function useLiveCall(): CallView {
           if (alive()) send({ type: "failed", note: micFailure(e) });
         });
     },
-    [knobs, openLeg, send],
+    [knobs, openLeg, send, readDebug],
   );
 
   acquireRef.current = acquire;
 
   // ── the one start effect: capture, then the first leg ──────────────────────────────────────────
   useEffect(() => {
+    // THE CALL TRAIL (D77), gated on the knob read HERE with every other call-start knob (§4.5) — and
+    // before the re-arm below, so a StrictMode re-run's trail starts at its `remount`.
+    // `randomUUID` is secure-context only — a plain-HTTP page (where the mic cannot open either) gets
+    // no trail rather than a crashed call screen.
+    if (
+      knobs?.debug === true &&
+      trail.current === null &&
+      typeof crypto.randomUUID === "function"
+    ) {
+      callId.current ??= crypto.randomUUID();
+      trail.current = createCallTrail({
+        callId: callId.current,
+        post: (body, keepalive) => postJSON<void>(TRAIL_URL, body, { keepalive }),
+        stamp: () => ({ leg: legSeq.current, gen: ref.current.gen }),
+      });
+    }
     // SETUP MUST BE CLEANUP'S SYMMETRIC PARTNER (the React effect contract StrictMode enforces by
     // running setup → cleanup → setup on one instance, state surviving). The cleanup below lands the
     // machine terminal through `unmounted`; this re-arm is what lets the second setup — and only a
@@ -2112,6 +2300,7 @@ export function useLiveCall(): CallView {
       // and a `killSettled`/`sent` settlement answers whenever it answers — is a ghost by the same
       // fence every other stale callback hits. The arm's own effect runs the teardown.
       send({ type: "unmounted" });
+      endTrail(); // the terminal edge above already ended it, unless the machine was terminal before
     };
     // Armed ONCE per mount: the overlay's lifetime IS the call's, and a mid-call `/voice/status`
     // refetch must not re-open the ear (§4.5 — settings edited mid-call apply to the NEXT call).
@@ -2240,6 +2429,8 @@ export function useLiveCall(): CallView {
     };
     const onVisibility = (): void => {
       if (document.visibilityState === "hidden") {
+        // D77 — the page may not come back: what the trail holds goes now, on `keepalive`.
+        trail.current?.flush("hidden");
         // THE POLICY (S6 ①). With `background` off — or before the knobs have arrived, where there is
         // no call to keep yet — a hidden page ends it CLEANLY, exactly as it always did: no half-alive
         // background session, and no error face for something the owner did on purpose.
@@ -2258,7 +2449,10 @@ export function useLiveCall(): CallView {
       takeWakeLock();
       checkEar();
     };
-    const onPagehide = (): void => send({ type: "hidden" });
+    const onPagehide = (): void => {
+      trail.current?.flush("hidden"); // D77 — before the `hidden` below ends the call (and the trail)
+      send({ type: "hidden" });
+    };
     document.addEventListener("visibilitychange", onVisibility);
     // The Page Lifecycle unfreeze, which is the event the outage check is really about: a page can be
     // resumed while still HIDDEN, and no visibility edge reports that. Both may fire for one wake —
@@ -2304,37 +2498,11 @@ export function useLiveCall(): CallView {
   const [debug, setDebug] = useState<CallDebug | null>(null);
   useEffect(() => {
     if (!debugOn) return;
-    const read = (): void => {
-      const cap = capture.current;
-      const m = meter.current;
-      const s = ref.current;
-      const g = gate.current;
-      setDebug({
-        ecSettings: cap?.readback.echoCancellation,
-        ecCapabilities: cap?.readback.echoCapabilities,
-        route: s.route,
-        micHold: knobs?.mic_hold ?? "",
-        bargeArmed: bargeArmed.current,
-        earHeld: s.earHeld,
-        mouthLive: s.mouthLive,
-        deviceLabel: cap?.readback.label ?? "",
-        deviceId: cap?.readback.deviceId ?? "",
-        fellBack: cap?.fellBack ?? false,
-        level: m.db,
-        levelPeak2s: m.peakDb,
-        floor: g.cfg && gateFloor(g, g.cfg),
-        floorPinned: g.pin !== null,
-        noise: g.noise.floor,
-        noiseSettled: g.noise.settled,
-        voiceLevel: g.voiceLevel,
-        lastFinal: m.last,
-        probe: lastProbe.current,
-      });
-    };
+    const read = (): void => setDebug(readDebug());
     read();
     const id = setInterval(read, DEBUG_TICK_MS);
     return () => clearInterval(id);
-  }, [debugOn, knobs]);
+  }, [debugOn, readDebug]);
 
   // ── the Sensitivity seam (D76 §C.7 — S1 renders it) ──────────────────────────────────────────────
   // A SAMPLER over the same refs the debug block reads, never a per-frame state write (the D74 S7

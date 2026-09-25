@@ -854,6 +854,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   barge_in: false,
   min_final_ms: 200,
   debug: false,
+  trail_keep: 20,
   ring: true,
   captions: true,
   mic_hold: "auto",
@@ -1881,6 +1882,9 @@ export function ConfTab({ active }: Props) {
           // W2/D72's pacer bound takes the bare `Number` too: it is floored at 200 server-side,
           // so zero is not a value it can mean.
           call_backlog_ms: Number(draft.voice.live.call_backlog_ms),
+          // D77's trail retention takes the bare `Number` too: it is floored at 1 server-side, so a
+          // blank's 0 earns the same visible 422 as any other out-of-bounds count.
+          trail_keep: Number(draft.voice.live.trail_keep),
           // D73 S6's idle window takes `numOrNull`, with the three above it: its floor IS zero and
           // zero MEANS something (no idle bound at all), so a blank coercing to 0 would silently
           // switch the bound off instead of earning the visible 422.
@@ -3055,7 +3059,7 @@ export function ConfTab({ active }: Props) {
           />
           <SettingRow
             label="Call debug readout"
-            desc="show the live microphone and gate numbers on the call screen — for calibrating the gate above"
+            desc="show the live microphone and gate numbers on the call screen — for calibrating the gate above · also writes a per-call trail to <home>/calls/ for diagnosis"
           >
             <Switch
               on={!!vlive?.debug}
@@ -3063,6 +3067,14 @@ export function ConfTab({ active }: Props) {
               onToggle={() => setLive("debug", !vlive?.debug)}
             />
           </SettingRow>
+          {/* D77 — the trail's retention. A SERVER knob (the relay and the trail route read it at each
+              write), which is why it is a settings field and not a `/voice/status` one. */}
+          <Field
+            label="Trails kept"
+            desc="how many call trails to keep (1–500) — the oldest are deleted when a new call starts"
+            value={String(vlive?.trail_keep ?? "")}
+            onChange={(v) => setLive("trail_keep", v as unknown as number)}
+          />
           {/* W2/D72 — the call's own uplink bound. Its sibling knobs shape what the ear HEARS; this one
               bounds what a stalled link may hold back before the pacer drops the oldest audio, so a
               recovering connection replays a second of your voice rather than a minute of it. */}

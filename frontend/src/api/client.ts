@@ -90,20 +90,37 @@ async function refuse(res: Response): Promise<never> {
   throw new ApiError(detail, res.status);
 }
 
-/** Send JSON with `method`, surfacing FastAPI's `detail` (string or validation list) on error. */
-async function sendJSON<T>(method: string, path: string, body: unknown): Promise<T> {
+/** The one per-request option a JSON write may carry (D77): `keepalive`, so a request fired as the page
+ *  goes away (`pagehide`, a hidden tab) outlives it. Deliberately NOT a general `RequestInit` — the
+ *  method, the headers and the body shape are this module's to decide, because the `application/json`
+ *  content type is the CSRF control (the `putBytes` comment below, SECURITY_MODEL §2.7): a caller that
+ *  could swap it for a safelisted one would re-open the preflight-free cross-origin write. */
+export interface SendOpts {
+  keepalive?: boolean;
+}
+
+/** Send JSON with `method`, surfacing FastAPI's `detail` (string or validation list) on error. A `204`
+ *  resolves `undefined` — there is no body to parse (the `del` precedent). */
+async function sendJSON<T>(
+  method: string,
+  path: string,
+  body: unknown,
+  opts?: SendOpts,
+): Promise<T> {
   const res = await fetch(path, {
     method,
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body),
+    ...(opts?.keepalive ? { keepalive: true } : {}),
   });
   if (!res.ok) await refuse(res);
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
 /** POST JSON. On error, surfaces FastAPI's `detail` (string or validation list) as the message. */
-export function postJSON<T>(path: string, body: unknown): Promise<T> {
-  return sendJSON<T>("POST", path, body);
+export function postJSON<T>(path: string, body: unknown, opts?: SendOpts): Promise<T> {
+  return sendJSON<T>("POST", path, body, opts);
 }
 
 /** PUT JSON (settings + CRUD updates). Same error-surfacing as `postJSON`. */

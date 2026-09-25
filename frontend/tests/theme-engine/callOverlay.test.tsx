@@ -878,6 +878,7 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     noise: null,
     noiseSettled: false,
     voiceLevel: -22.46,
+    voiceKey: "ear-1234567890|ec=on",
     lastFinal: { accruedMs: 320, peakDb: -13.6, chars: 14 },
     probe: null,
   };
@@ -898,8 +899,35 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     expect(text).toContain('caps [true,"all"]');
     // …and the levels line up against each other, in dBFS (D76 §C.1), with what the floor is made of.
     expect(text).toContain("dBFS  -30.2   peak2s -14.7   floor -45.0 (auto)");
-    expect(text).toContain("noise — (provisional)   voice -22.5");
+    expect(text).toContain("noise — (provisional)   voice -22.5\n");
     expect(text).toContain("320ms   peak -13.6");
+  });
+
+  it("prints the voice key on its OWN line — an id-based device cut to 8, a label-based key whole (S3b)", () => {
+    h.call = { ...h.call, debug: snapshot };
+    const { unmount } = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
+      "\nkey   ear-1234…|ec=on\n",
+    );
+    unmount();
+    // no usable id ⇒ the key is the label's, and a label is already short enough to read
+    h.call = {
+      ...h.call,
+      debug: {
+        ...snapshot,
+        deviceId: "default",
+        deviceLabel: "Speakerphone",
+        voiceKey: "Speakerphone|ec=all",
+      },
+    };
+    const again = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
+      "\nkey   Speakerphone|ec=all\n",
+    );
+    again.unmount();
+    h.call = { ...h.call, debug: { ...snapshot, voiceKey: null } };
+    render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain("\nkey   —\n");
   });
 
   it("names a PINNED floor and a SETTLED noise estimate (D76 §C.2/§C.7)", () => {

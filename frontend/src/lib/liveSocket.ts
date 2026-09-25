@@ -114,6 +114,13 @@ export interface LiveSocketOpts {
   ceilingMs: number;
   onFrame: (frame: LiveDown) => void;
   onClose: (code: number, reason: string) => void;
+  /** THE CALL TRAIL's identity (D77) — sent in `start` as `call_id` + `leg` ONLY when present, which is
+   *  only on a call with `voice.live.debug` on: the shipped default's `start` stays byte-identical, and
+   *  dictation never passes one. ONE optional object rather than two optional fields because the relay
+   *  takes them together or not at all (a protocol close otherwise) — the type makes half a pair
+   *  unwritable. `callId` is the call's (the file the relay appends to); `leg` is this socket's
+   *  ordinal within it, so the relay's lines say which leg of a reconnecting call they belong to. */
+  trail?: { callId: string; leg: number };
   /** Test seam: the constructor to use. Production passes nothing and gets the global `WebSocket`. */
   make?: (url: string) => WebSocket;
 }
@@ -146,6 +153,7 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
       JSON.stringify({
         type: "start",
         sample_rate: Math.round(opts.sampleRate),
+        ...(opts.trail ? { call_id: opts.trail.callId, leg: opts.trail.leg } : {}),
       }),
     );
   };

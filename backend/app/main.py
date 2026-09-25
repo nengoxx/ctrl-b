@@ -122,6 +122,7 @@ from app.services.agent.turns import (
     reconcile_stale_calls,
 )
 from app.services.automations import AutomationRepo, AutomationRunner, AutomationService
+from app.services.call_trail import CallTrail
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.deps import Deps
 from app.services.events import EventService
@@ -211,6 +212,12 @@ async def lifespan(app: FastAPI):
     # it; the session's own one `finally` closes both legs and the route's releases the slot. No
     # session registry beyond this counter, deliberately.
     app.state.voice_live_slots = LiveSessionSlots()
+    # …and THE CALL TRAIL's store (D77), created ONCE beside it and for the same reasons: it holds no
+    # settings (`voice.live.debug` gates every write and `trail_keep` rides each append, both read
+    # live), so it needs no rebuild on a Conf edit, and it holds no handle — each append opens,
+    # writes and closes — so there is nothing to close at shutdown. Nothing is written, and the
+    # directory is not even created, until a debug call's first line lands.
+    app.state.call_trail = CallTrail(home_path() / "calls")
     deps = Deps(
         settings=app.state.settings,
         fleet=app.state.fleet,

@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getVoiceLevel, setVoiceLevel, voiceDeviceKey } from "../../src/store/voiceLevels";
 
-// store/voiceLevels — the owner's learned voice level, per microphone (D76 §C.3 / Maya F8).
-// Device-local by definition (never the synced UIState), keyed by the capture's effective device,
-// and storage that fails reads as UNSEEDED rather than breaking a call.
+// store/voiceLevels — the owner's learned voice level, per microphone × capture mode (D76 §C.3 / Maya
+// F8 / S3b). Device-local by definition (never the synced UIState), keyed by the capture's effective
+// device and the echo mode it was GRANTED, and storage that fails reads as UNSEEDED rather than
+// breaking a call.
 
 const KEY = "ctrlb.voiceLevels";
 
@@ -13,31 +14,68 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-describe("voiceDeviceKey — the effective device (Maya F8)", () => {
+describe("voiceDeviceKey — the effective device (Maya F8) × the granted mode (S3b)", () => {
   it("is the readback deviceId when it names a real device", () => {
-    expect(voiceDeviceKey({ deviceId: "abc123", label: "USB mic" })).toBe("abc123");
+    expect(voiceDeviceKey({ deviceId: "abc123", label: "USB mic", echoCancellation: "all" })).toBe(
+      "abc123|ec=all",
+    );
   });
 
-  it("falls to the track LABEL for the empty or `default` id — not an identity", () => {
-    expect(voiceDeviceKey({ deviceId: "default", label: "Speakerphone" })).toBe("Speakerphone");
-    expect(voiceDeviceKey({ deviceId: "", label: "Speakerphone" })).toBe("Speakerphone");
+  it("falls to the track LABEL for the empty or `default` id — not an identity — mode kept", () => {
+    expect(
+      voiceDeviceKey({ deviceId: "default", label: "Speakerphone", echoCancellation: "all" }),
+    ).toBe("Speakerphone|ec=all");
+    expect(voiceDeviceKey({ deviceId: "", label: "Speakerphone", echoCancellation: true })).toBe(
+      "Speakerphone|ec=on",
+    );
   });
 
-  it("is null when the capture names nothing at all", () => {
-    expect(voiceDeviceKey({ deviceId: "", label: "" })).toBeNull();
+  it("normalizes the GRANT: `all` → all, `true` → on, anything else → off", () => {
+    const key = (echoCancellation?: string | boolean) =>
+      voiceDeviceKey({ deviceId: "mic-1", label: "Mic", echoCancellation });
+    expect(key("all")).toBe("mic-1|ec=all");
+    expect(key(true)).toBe("mic-1|ec=on");
+    expect(key(false)).toBe("mic-1|ec=off");
+    expect(key(undefined)).toBe("mic-1|ec=off"); // the browser reported nothing
+    expect(key("remote-only")).toBe("mic-1|ec=off"); // a mode string we do not know
+  });
+
+  it("is null when the capture names no device, whatever the mode", () => {
+    for (const echoCancellation of ["all", true, false, undefined]) {
+      expect(voiceDeviceKey({ deviceId: "", label: "", echoCancellation })).toBeNull();
+      expect(voiceDeviceKey({ deviceId: "default", label: "", echoCancellation })).toBeNull();
+    }
   });
 });
 
 describe("getVoiceLevel / setVoiceLevel", () => {
   it("round-trips a level per device, in one blob", () => {
-    setVoiceLevel("Speakerphone", -22.5);
-    setVoiceLevel("usb-1", -30);
-    expect(getVoiceLevel("Speakerphone")).toBe(-22.5);
-    expect(getVoiceLevel("usb-1")).toBe(-30);
+    setVoiceLevel("Speakerphone|ec=all", -22.5);
+    setVoiceLevel("usb-1|ec=off", -30);
+    expect(getVoiceLevel("Speakerphone|ec=all")).toBe(-22.5);
+    expect(getVoiceLevel("usb-1|ec=off")).toBe(-30);
     expect(JSON.parse(localStorage.getItem(KEY) ?? "{}")).toEqual({
-      Speakerphone: -22.5,
-      "usb-1": -30,
+      "Speakerphone|ec=all": -22.5,
+      "usb-1|ec=off": -30,
     });
+  });
+
+  it("a MODE FLIP on the same device reads unseeded — the Call capture never inherits Media's level", () => {
+    const media = voiceDeviceKey({ deviceId: "", label: "Speakerphone", echoCancellation: "all" });
+    const call = voiceDeviceKey({ deviceId: "", label: "Speakerphone", echoCancellation: true });
+    setVoiceLevel(media!, -12);
+    expect(getVoiceLevel(media!)).toBe(-12);
+    expect(getVoiceLevel(call!)).toBeNull();
+  });
+
+  it("a write PURGES legacy flat keys (no mode suffix) and keeps every keyed entry", () => {
+    localStorage.setItem(KEY, JSON.stringify({ Speakerphone: -10, "usb-1|ec=on": -25 }));
+    setVoiceLevel("Speakerphone|ec=all", -18);
+    expect(JSON.parse(localStorage.getItem(KEY) ?? "{}")).toEqual({
+      "usb-1|ec=on": -25,
+      "Speakerphone|ec=all": -18,
+    });
+    expect(getVoiceLevel("Speakerphone")).toBeNull();
   });
 
   it("an unknown device is unseeded", () => {

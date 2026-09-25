@@ -728,6 +728,17 @@ const db = (n: number | null): string => (n === null ? "—" : n.toFixed(1));
 /** The echo readback, printed so `"all"` and `true` are visually DISTINGUISHABLE (R78 §6.2) — they
  *  mean opposite things here, and a coerced print is how that distinction gets lost. */
 const raw = (v: unknown): string => (v === undefined ? "—" : JSON.stringify(v));
+/** The voice key (S3b: `<device>|ec=<mode>`), its device part cut the way the `dev` line cuts the id
+ *  when that part IS the id — a 64-hex id runs the line off the screen; a label-based key prints whole.
+ *  The mode suffix is everything from the last `|` (the mode itself never holds one). */
+const vkey = (key: string | null, deviceId: string): string => {
+  if (key === null) return "—";
+  const cut = key.lastIndexOf("|");
+  const device = cut < 0 ? key : key.slice(0, cut);
+  return device === deviceId && device.length > 8
+    ? `${device.slice(0, 8)}…${key.slice(device.length)}`
+    : key;
+};
 
 /**
  * THE READBACK BLOCK (D74 S7) — the S4 calibration sitting's whole instrument panel, on the screen
@@ -750,6 +761,7 @@ dBFS  ${db(d.level)}   peak2s ${db(d.levelPeak2s)}   floor ${db(d.floor)} ${
         d.floorPinned ? "(pinned)" : "(auto)"
       }
 noise ${db(d.noise)} ${d.noiseSettled ? "(settled)" : "(provisional)"}   voice ${db(d.voiceLevel)}
+key   ${vkey(d.voiceKey, d.deviceId)}
 final ${
         d.lastFinal === null
           ? "—"

@@ -119,7 +119,9 @@ export interface VoiceLive extends VoiceServiceCommon {
   // level-invariant, so a distant TV still produces confident finals and the server VAD is out of
   // headroom). Client knobs: the energy is measured in the browser, and so is the readout.
   min_final_ms: number; //    ms at/above the relative floor before a final may become a turn; 0 = off
-  debug: boolean; //          show the call's live gate numbers on the overlay (calibration aid)
+  debug: boolean; //          show the call's live gate numbers on the overlay (calibration aid) — and
+  //                          write the per-call trail to `<home>/calls/` (D77)
+  trail_keep: number; //      D77: how many call trails the server keeps, 1..500 (a SERVER knob)
   ring: boolean; //           §6 overlay mode: the focal-anchored face ring, or art-only
   captions: boolean; //       the reply as fading text on the call screen (owner ask 2026-09-22)
   mic_hold: string; //        auto | on | off — is the ear held while the reply plays (D76 §B)

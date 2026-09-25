@@ -26,6 +26,9 @@ The arms, by what they defend:
   burst-when-uncertain.
 * **backpressure / taxonomy / secrets** — oldest-dropped + one `degraded`; the three upstream failure
   classes; and the bearer appearing in NO log record and NO downlink frame.
+* **the call trail (D77)** — `start.call_id`/`start.leg` validated with `sample_rate`'s strictness
+  (both or neither); a debug leg with an id writes `leg_start` (the exact `session.update`), every
+  `down` frame and `leg_end`, each carrying its `leg`; debug off, or no id, writes nothing.
 """
 
 from __future__ import annotations
@@ -57,6 +60,7 @@ from app.config import LiveCfg, Settings
 from app.core.audio import SPEACHES_WIRE_RATE, Pcm16Resampler
 from app.core.provider_registry import resolve_lenient
 from app.domain.provider import LivePolicy, SttPolicy, TtsPolicy
+from app.services.call_trail import CallTrail
 from app.services.voice_live import LiveSessionSlots, realtime_url
 
 ORIGIN = {"Origin": "http://testserver"}
@@ -211,11 +215,14 @@ def _app(
     live_cfg: dict[str, Any] | None = None,
     connector: Any = None,
     slots: LiveSessionSlots | None = None,
+    trail: CallTrail | None = None,
 ) -> TestClient:
     app = FastAPI()
     app.state.voice = client if client is not None else _voice_client()
     app.state.settings = Settings.model_validate({"voice": {"live": {"enabled": True, **(live_cfg or {})}}})
     app.state.voice_live_slots = slots if slots is not None else LiveSessionSlots()
+    if trail is not None:  # D77 — absent, like the connector seam: the relay then writes no trail
+        app.state.call_trail = trail
     if connector is not None:
         app.state.voice_live_connect = connector
     app.include_router(voice_api.router, prefix="/api")
@@ -1334,3 +1341,184 @@ def test_voice_cfg_mounts_live() -> None:
     s = Settings.model_validate({"voice": {"live": {"enabled": True, "silence_ms": 850}}})
     assert (s.voice.live.enabled, s.voice.live.silence_ms) == (True, 850)
     assert Settings().voice.live.enabled is False
+
+
+# ── 13. the call trail (D77) ──────────────────────────────────────────────────────────────────────
+
+CALL = "0f8e2c4a-1b3d-4e5f-8a9b-0c1d2e3f4a5b"
+
+
+def _trail_lines(root: Any, call: str = CALL) -> list[dict[str, Any]]:
+    path = root / f"{call}.jsonl"
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def _traced(ws: Any, *, leg: int = 3, rate: int = 48000) -> None:
+    """`_ready`, for a debug call: `start` names the call and its leg (D77)."""
+    ws.send_json({"type": "start", "sample_rate": rate, "call_id": CALL, "leg": leg})
+    assert _json(ws) == {"type": "state", "state": "ready"}
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"call_id": "../../etc/passwd", "leg": 0},  # the filename guard
+        {"call_id": CALL.upper(), "leg": 0},  # canonical LOWERCASE only — one spelling, one file
+        {"call_id": CALL + "\n", "leg": 0},  # `$` would admit a trailing newline; fullmatch does not
+        {"call_id": 42, "leg": 0},
+        {"call_id": None, "leg": 0},
+        {"call_id": CALL, "leg": -1},
+        {"call_id": CALL, "leg": 1_000_001},
+        {"call_id": CALL, "leg": "3"},
+        {"call_id": CALL, "leg": True},  # a bool is not leg 1
+        {"call_id": CALL},  # an id without its leg…
+        {"leg": 0},  # …and a leg without its id
+    ],
+)
+def test_a_malformed_trail_identity_is_a_protocol_close(extra: dict[str, Any], tmp_path: Any) -> None:
+    trail = CallTrail(tmp_path / "calls")
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"debug": True}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": 48000, **extra})
+        assert _json(ws)["code"] == "protocol"
+        assert _closed(ws)[0] == 1008
+    assert not (tmp_path / "calls").exists()  # a refused identity never becomes a path
+
+
+def test_a_debug_leg_writes_its_trail_every_line_carrying_the_leg(tmp_path: Any) -> None:
+    fake = FakeSpeaches(
+        [
+            created(),
+            Say(PAD_ERROR),
+            Say({"type": "input_audio_buffer.speech_started"}, after_appends=1),
+            Say({"type": "input_audio_buffer.speech_stopped"}, after_appends=1),
+            transcribed("Wake up corsair.", after_appends=1),
+        ]
+    )
+    trail = CallTrail(tmp_path / "calls")
+    app = _fake_app(fake, live_cfg={"debug": True, "silence_ms": 900}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _traced(ws, leg=3)
+        ws.send_bytes(_pcm(960))
+        assert _json(ws) == {"type": "speech_started"}
+        assert _json(ws) == {"type": "speech_stopped"}
+        assert _json(ws)["type"] == "transcript"
+        ws.send_json({"type": "flush"})
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+        assert _closed(ws)[0] == 1000
+    lines = _trail_lines(tmp_path / "calls")
+    assert {line["src"] for line in lines} == {"relay"}
+    assert {line["leg"] for line in lines} == {3}  # Maya F4 — one call, many legs; each line says which
+    assert all(isinstance(line["t"], int) for line in lines)
+    evs = [line["ev"] for line in lines]
+    assert evs[0] == "leg_start" and evs[-1] == "leg_end"
+    # the header line IS the one `session.update` — the exact knobs this leg ran
+    assert lines[0]["rate"] == 48000
+    assert lines[0]["session"] == fake.one("session.update")["session"]
+    assert lines[0]["session"]["turn_detection"]["silence_duration_ms"] == 900
+    # every downlink frame, verbatim and in order — the owner's words appear here, once
+    downs = [line["frame"] for line in lines if line["ev"] == "down"]
+    assert downs == [
+        {"type": "state", "state": "ready"},
+        {"type": "speech_started"},
+        {"type": "speech_stopped"},
+        {"type": "transcript", "text": "Wake up corsair.", "final": True},
+        {"type": "state", "state": "ended"},
+    ]
+    # the swallowed spurious error is still RECORDED, flagged — the trail sees what the phone does not
+    swallowed = [line for line in lines if line["ev"] == "up_error"]
+    assert len(swallowed) == 1 and swallowed[0]["swallowed"] is True
+    assert "prefix_padding_ms" in swallowed[0]["error"]["message"]
+    assert [line["pad_ms"] for line in lines if line["ev"] == "flush"] == [3200]
+    assert "stop" in evs
+    assert lines[-1] == {**lines[-1], "code": 1000, "reason": "ended"}
+
+
+def test_a_failed_leg_and_a_vanished_phone_still_say_how_they_ended(tmp_path: Any) -> None:
+    trail = CallTrail(tmp_path / "calls")
+    # (a) a protocol failure after a good `start`: the typed error goes down, then `leg_end` 1008
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"debug": True}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _traced(ws, leg=0)
+        ws.send_json({"type": "hello"})
+        assert _json(ws)["code"] == "protocol"
+        _closed(ws)
+    lines = _trail_lines(tmp_path / "calls")
+    assert lines[-2]["ev"] == "down" and lines[-2]["frame"]["code"] == "protocol"
+    assert (lines[-1]["ev"], lines[-1]["code"], lines[-1]["reason"]) == ("leg_end", 1008, "protocol error")
+    # (b) the phone simply goes away: no `_close` ever runs, and the teardown still writes the end
+    other = "1f8e2c4a-1b3d-4e5f-8a9b-0c1d2e3f4a5b"
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"debug": True}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": 48000, "call_id": other, "leg": 1})
+        assert _json(ws) == {"type": "state", "state": "ready"}
+    tail = _trail_lines(tmp_path / "calls", other)[-1]
+    assert (tail["ev"], tail["code"], tail["reason"], tail["leg"]) == ("leg_end", None, "client gone", 1)
+
+
+def test_a_long_leg_batches_its_lines_and_loses_none(tmp_path: Any) -> None:
+    """The relay batches (20 lines) rather than writing per line — and the batches land in ORDER, with
+    the teardown's flush taking the tail."""
+    script = [created()]
+    for i in range(1, 26):
+        script.append(Say({"type": "input_audio_buffer.speech_started"}, after_appends=i))
+        script.append(Say({"type": "input_audio_buffer.speech_stopped"}, after_appends=i))
+    trail = CallTrail(tmp_path / "calls")
+    app = _fake_app(FakeSpeaches(script), live_cfg={"debug": True}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _traced(ws)
+        for _ in range(25):
+            ws.send_bytes(_pcm(960))
+            assert _json(ws) == {"type": "speech_started"}
+            assert _json(ws) == {"type": "speech_stopped"}
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+    frames = [line["frame"]["type"] for line in _trail_lines(tmp_path / "calls") if line["ev"] == "down"]
+    assert frames == ["state"] + ["speech_started", "speech_stopped"] * 25 + ["state"]
+
+
+def test_debug_off_writes_nothing_even_with_a_call_id(tmp_path: Any) -> None:
+    trail = CallTrail(tmp_path / "calls")
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"debug": False}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _traced(ws)  # the identity is still VALIDATED and accepted…
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+    assert not (tmp_path / "calls").exists()  # …and nothing is written
+
+
+def test_a_leg_without_a_call_id_writes_nothing(tmp_path: Any) -> None:
+    """Dictation's legs (and every call with the knob off client-side) send no id: no trail."""
+    trail = CallTrail(tmp_path / "calls")
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"debug": True}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws)
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+    assert not (tmp_path / "calls").exists()
+
+
+def test_the_bearer_never_reaches_the_trail(tmp_path: Any) -> None:
+    """The A11 rule, extended to the new sink: the trail records the session the relay SENT and every
+    frame it sent DOWN — never the connect call's headers."""
+    trail = CallTrail(tmp_path / "calls")
+    fake = FakeSpeaches(
+        [created(), Say({"type": "error", "error": {"message": "nope"}}), Say(abrupt_close())]
+    )
+    app = _fake_app(fake, client=_voice_client(key=SECRET), live_cfg={"debug": True}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _traced(ws)
+        _drain_until(ws, "error")
+        _closed(ws)
+    assert fake.headers == {"Authorization": f"Bearer {SECRET}"}  # type: ignore[attr-defined]
+    assert SECRET not in (tmp_path / "calls" / f"{CALL}.jsonl").read_text(encoding="utf-8")
+
+
+def test_trail_keep_is_a_bounded_server_knob() -> None:
+    assert LiveCfg().trail_keep == 20
+    for bad in (0, 501):
+        with pytest.raises(ValidationError):
+            LiveCfg(trail_keep=bad)
+    # a SERVER knob — never delivered to the client
+    assert "trail_keep" not in _app().get("/api/voice/status").json()["live_call"]

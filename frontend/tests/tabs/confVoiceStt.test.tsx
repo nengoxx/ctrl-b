@@ -107,6 +107,7 @@ const makeSettings = () => ({
       // D74 — the near-speech gate + its calibration readout (evidence docs/research/R76).
       min_final_ms: 200,
       debug: false,
+      trail_keep: 20, // D77 — the trail's retention (a server knob, Conf-edited)
       // D73 S5 — the capture pair, on the SAME object for the same reason.
       route: "media",
       input_device: "",
@@ -553,6 +554,26 @@ describe("ConfTab · the near-speech gate + debug readout (D74)", () => {
     fireEvent.change(liveField("Min speech energy hold (ms)"), { target: { value: "" } });
     fireEvent.click(saveButton());
     expect(liveOf()?.min_final_ms).toBeNull();
+  });
+});
+
+describe("ConfTab · the call trail (D77)", () => {
+  it("the debug row says it also writes the trail, and `Trails kept` sits right below it", () => {
+    render(<ConfTab active />);
+    const debugRow = liveGroup().getByLabelText("Call debug readout").closest(".confrow")!;
+    expect(debugRow.textContent).toContain("per-call trail");
+    expect(liveField("Trails kept").value).toBe("20");
+    const labels = Array.from(
+      document.getElementById("voice-live")!.querySelectorAll(".confrow .label"),
+    ).map((e) => e.textContent);
+    expect(labels[labels.indexOf("Call debug readout") + 1]).toBe("Trails kept");
+  });
+
+  it("saves the retention as a NUMBER on `voice.live`", () => {
+    render(<ConfTab active />);
+    fireEvent.change(liveField("Trails kept"), { target: { value: "50" } });
+    fireEvent.click(saveButton());
+    expect(liveOf()).toMatchObject({ trail_keep: 50 });
   });
 });
 
