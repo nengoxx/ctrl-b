@@ -762,6 +762,29 @@ describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
     }
   });
 
+  it("a close mid-DRAG discards what the finger had not lifted on (S1 code round MED 1)", () => {
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45 }));
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    fireEvent.pointerDown(range());
+    fireEvent.change(range(), { target: { value: "-52" } }); // pending, no tick yet
+    fireEvent.pointerDown(document.body); // an outside pointer-down closes the card under the finger
+    vi.advanceTimersByTime(300);
+    // Only a LIFT pins: nothing was committed for a gesture that never ended on the column.
+    expect(h.call.setFloorPin).not.toHaveBeenCalled();
+  });
+
+  it("before a floor exists the range announces AUTO, never the browser's midpoint (S1 code round LOW)", () => {
+    h.call.readLevel.mockImplementation(() => ({ level: null, floor: null }));
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    vi.advanceTimersByTime(100);
+    expect(range().getAttribute("aria-valuetext")).toBe("Auto");
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45 }));
+    vi.advanceTimersByTime(100);
+    expect(range().getAttribute("aria-valuetext")).not.toBe("Auto");
+  });
+
   it("a KEYBOARD step pins at once — there is no drag to batch", () => {
     render(<Host open={true} />);
     fireEvent.click(pill());

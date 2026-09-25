@@ -488,9 +488,15 @@ function SensitivityControl({ call, min, max }: { call: CallView; min: number; m
         fillRef.current.style.transform = `scaleY(${level === null ? 0 : meterFrac(level, min, max)})`;
       placeMark(floor);
       const range = rangeRef.current;
-      if (range && floor !== null && !dragging.current) {
-        range.value = String(Math.round(floor));
-        range.setAttribute("aria-valuetext", dbLabel(floor));
+      if (range && !dragging.current) {
+        // No floor yet (the first second of a call) ⇒ the range still has a browser-default value, and
+        // assistive tech would announce an arbitrary midpoint as the floor; it is "Auto" until there is
+        // a number (the S1 code round, LOW).
+        if (floor === null) range.setAttribute("aria-valuetext", "Auto");
+        else {
+          range.value = String(Math.round(floor));
+          range.setAttribute("aria-valuetext", dbLabel(floor));
+        }
       }
     };
     tick();
@@ -499,8 +505,11 @@ function SensitivityControl({ call, min, max }: { call: CallView; min: number; m
       clearInterval(id);
       document.removeEventListener("pointerup", release, true);
       document.removeEventListener("pointercancel", release, true);
-      // A close never drops the drag's last value (the finger lifted as the card went).
-      release();
+      // A close DISCARDS a drag still in flight (the S1 code round, MED 1): the card can go under an
+      // outside pointer-down while the finger is still on the column, and only a LIFT may pin. What
+      // is lost is at most the last tick's worth of movement — the tick already commits while dragging.
+      dragging.current = false;
+      pending.current = null;
     };
   }, [open, readLevel, commit, release, placeMark, min, max]);
 
@@ -571,6 +580,7 @@ function SensitivityControl({ call, min, max }: { call: CallView; min: number; m
               type="range"
               className="kit-call-meterrange"
               aria-label="Sensitivity floor"
+              aria-valuetext="Auto"
               min={min}
               max={max}
               step={1}
