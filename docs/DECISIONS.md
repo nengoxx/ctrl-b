@@ -5639,3 +5639,64 @@ additive.
 **Recorded, not built:** the text self-echo backstop (a final during playback matching the reply's
 words is dropped) — the fallback if the phone round shows probe misses. **The gate stays the only
 turn boundary**; the server transcribes whatever it is sent.
+
+**S3 addendum (2026-09-25, the owner's first phone verdicts — see the D76 block's S3 as-built in
+the plan):** two fixes, both measured/traced to root cause and council-reviewed (blind Maya design
+round, BUILD WITH CHANGES): **(a)** synthesized WAV clips are TRIMMED of their digital pad at the one
+TTS chokepoint (`voice.tts.trim_silence`, default on) — PocketTTS opens every clip with a 10 ms
+−58 dBFS click and 320–760 ms of −81 dBFS silence, which is why ②'s probe window heard nothing and
+released the loudspeaker; **(b)** ③'s learned own-voice level is keyed by device × the GRANTED echo
+mode (`"<device>|ec=all|on|off"`) — the same mic opens quieter under the Call route, and a level
+learned under Media made the floor deaf to the owner. ②'s `PROBE_MS` stays 600. Recorded, not built:
+a chunk that fires `playing` and then stalls > 600 ms would still release (chunks are complete blobs;
+theoretical), and the within-mode deadlock (own voice − margin above a changed posture; the pin is the
+escape and relearns V) — D77's trail is the instrument for both.
+
+## D77 — The call trail: a debug-gated per-call record both ends of a live call write ✏️ RULED 2026-09-25 (main seat, from the owner's ask in conversation — "I'm testing things and I have to tell you what I tested … we could do some logging so you actually can see exactly what happened in a call"; design of record = the S3 block in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7; council = blind Maya design round BUILD WITH CHANGES [4 MED · 1 LOW — 4 folded, 1 recorded])
+
+**The occasion.** Every decision that matters in a live call is made in the browser — the relative
+gate's floor and its two estimators, the leak probe's verdicts, the ear hold, the transcript gate's
+drops, the route/device readback, the phase machine — and the relay sees only the wire. There was no
+record of a call anywhere; the owner tested on the phone and narrated from memory, and the main seat
+diagnosed from the narration. The on-screen debug readout (`voice.live.debug`) exists, but it is a
+live overlay for a driver.
+
+**What was ruled.**
+
+① **One file per call, both halves write it.** `$CTRLB_HOME/calls/<call_id>.jsonl` (a sibling of
+`backups/`), append-only JSON lines `{"t": <epoch ms>, "src": "client"|"relay", "leg": n, "ev":
+"…", …}` — epoch ms on both sides so the halves interleave by sort, `leg` so a reconnect's late
+`leg_end` cannot be mistaken for the new leg's. The client MINTS the id (`crypto.randomUUID()`, once
+per call machine — a route cycle/recapture/reconnect keeps it, a redial after a terminal is a new
+call) and hands it to the relay in the `start` control (`call_id` + `leg`, both optional, validated
+with `sample_rate`'s strictness; absent ⇒ that leg writes nothing — dictation legs send none).
+
+② **The transport is HTTP, because D71 says so.** `POST /api/voice/live/trail` carries the
+browser's batches (≤ 200 entries, ≤ 64 KB, ≤ 2 KB per entry; JSON body only — the preflight IS the
+cross-origin write control, SECURITY_MODEL §2.7). The WebSocket stays media-ingress-only. Batches
+flush every 2 s, at 50 entries, or at 32 KiB serialized — the last because the hidden-page/end
+flush rides `fetch(…, {keepalive: true})` under the browser's ~64 KiB keepalive quota.
+
+③ **The gate is the existing knob.** `voice.live.debug` (off by default) turns the readout AND the
+trail on; the endpoint answers 404 while it is off (the feature does not exist), the client buffers
+nothing, the wire's `start` stays byte-identical. Retention is `voice.live.trail_keep` (20): the
+oldest files past it go when a NEW call's first line lands. No read endpoint, no UI: the reader is
+the main seat at the shell.
+
+④ **What is written.** Relay: `leg_start` (the rate + the exact `session.update` it sends),
+every downlink frame (`down` — state/speech_started/speech_stopped/transcript/error/degraded),
+`flush`, `stop`, upstream errors, `leg_end`. Client: every reducer signal at the ONE `send()`
+chokepoint (`sig`, with the phase transition and the note when they changed; text fields as
+`textLen`; the `final` sig snapshots the pre-reduce hold state; a generation move is shown as
+`genMove`; an entry past the server's 2 KB bound becomes an `oversize` marker that keeps its type, so
+one long upstream error cannot sink its batch), `final` per judged final (the meter's record — the
+utterance's peak and accrued ms — plus the floor it was judged against), `capture` at capture-ready
+(route, device, the EC grant + capabilities, the voice key + seed, the gate knobs), `probe` per
+verdict (max dBFS vs floor, released/held), `sample` at 1 Hz (the MOVING fields of the debug block's
+record — level, peak, floor, noise, voice, the hold flags, phase — picked from the one builder both
+readers call; the per-capture constants live on the `capture` line). The owner's spoken words appear
+ONCE, on the relay's transcript line — that copy is how a self-transcribed reply is recognised; the
+section in SECURITY_MODEL says so.
+
+**Recorded:** the trail is diagnosis, not an archive — anything that wants to render it, search it,
+or keep it is a new decision.

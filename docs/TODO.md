@@ -1692,7 +1692,7 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       pagehide/visibilitychange split). *(✅ 2026-09-21 — `7b8cd80` + review wave `4857d20`;
       blind Maya code round SHIP WITH FIXES 1H·2M·1L, confirm CONFIRMED; liveCall e2e 20/20
       local; plan D73 block = the as-built record.)*
-- [ ] **S4-D76 — the call's few controls** (RULED 2026-09-25, [`D76`](./DECISIONS.md); **S0a · S0b · S1 · S2 ✅ BUILT + code-round-closed 2026-09-25 — S3 (the owner's phone round) is what remains**; spec = the D76 block in
+- [ ] **S4-D76 — the call's few controls** (RULED 2026-09-25, [`D76`](./DECISIONS.md); **S0a · S0b · S1 · S2 ✅ BUILT + code-round-closed 2026-09-25 · S3 round №1 decoded + its fix wave BUILT 2026-09-25 (the TTS pad trim `voice.tts.trim_silence` · the voice level keyed device×echo-mode · D77 the call trail) — S3 round №2 (the owner re-runs the card with the trail ON) is what remains**; spec = the D76 block in
       LIVE_VOICE_PLAN §7, §H = the ladder S0a → S0b → S1 → S2 → S3): Media/Call · `mic_hold` auto/on/off
       (the leak probe) · the relative dB Sensitivity control replacing the Speech slider · Silero 0.6 ·
       config migration 3→4. Build against the plan block, not this line. The owner's phone round (S3) is
