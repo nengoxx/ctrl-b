@@ -657,7 +657,7 @@ class LiveCfg(VoiceServiceCfg):
     Split by WHO reads the knob, because the split is load-bearing for `GET /voice/status`:
     * SERVER knobs — `vad_threshold`/`silence_ms` ride `session.update` to Speaches; `frame_ms`,
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
-      `allowed_origins` are the relay's own caps.
+      `allowed_origins` are the relay's own caps; `trail_keep` is the D77 call trail's retention.
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`,
       `barge_in`, `ring`, `captions`, `mic_hold`, the D76 GATE six (`floor_dbfs`, the three
       margins, `min_dbfs`/`max_dbfs`), the D73 CAPTURE pair (`route`, `input_device`), the D73 S6
@@ -727,7 +727,15 @@ class LiveCfg(VoiceServiceCfg):
     #: Call DEBUG readout (client): the overlay renders the live gate numbers — energy, the hold the
     #: gate has accumulated, what each final was judged on — instead of hiding them. Off ships; it is a
     #: calibration aid for the S4 sitting, not a feature, and the phone is where it has to be read.
+    #: Since D77 it ALSO turns the CALL TRAIL on (read server-side too): the relay and the browser
+    #: each append a per-call JSONL under `$CTRLB_HOME/calls/` (`services/call_trail.py`), and
+    #: `POST /api/voice/live/trail` answers 404 while it is off.
     debug: bool = False
+    #: D77 — how many call trails `$CTRLB_HOME/calls/` keeps: when a NEW call's first line lands, the
+    #: oldest past this count are deleted (by mtime). A SERVER knob (read at each write, never
+    #: delivered to the client). 20 is a few sittings of calls; bounded 1–500 so the directory stays
+    #: bounded whatever is typed — a trail is diagnosis, not an archive.
+    trail_keep: int = Field(default=20, ge=1, le=500)
     #: §6 overlay mode: true = the focal-anchored face ring, false = art-only + transcript accent.
     ring: bool = True
     #: THE REPLY, AS CAPTIONS on the call screen (client; owner ask 2026-09-22): the agent's answer as
@@ -925,6 +933,14 @@ class TtsServiceCfg(VoiceServiceCfg):
     # on purpose: absence means a pre-D74 backend, and a pre-D74 backend SPOKE actions. It rides
     # `tts_chunking` because that is the object the playback queue already reads its text policy from.
     speak_actions: bool = False
+    # D76 S3a — TRIM THE PAD. Some TTS servers (PocketTTS: 320–760 ms of −81 dBFS before the first
+    # sound) pad every clip with digital silence; with this True the server cuts it at the one TTS
+    # chokepoint (`core.audio.trim_wav_silence`, keeping 40 ms lead / 120 ms tail), so every sentence
+    # starts sooner AND the live call's leak probe hears the reply's head instead of pad. WAV only —
+    # decided by sniffing the bytes, not the asked format (PocketTTS answers WAV to an `opus` ask);
+    # mp3/opus/aac/flac clips pass through untouched (no decoder in the stdlib). Server-side only: it
+    # changes the bytes, never the client's policy, so it is NOT delivered in `/voice/status`.
+    trim_silence: bool = True
 
     @model_validator(mode="after")
     def _chunk_bounds(self) -> "TtsServiceCfg":

@@ -144,6 +144,7 @@ def set_voice(app: "FastAPI", registry: "Registry") -> VoiceClient | None:
         registry.tts_policy,
         app.state.endpoint_gates,
         enabled=app.state.settings.voice.enabled,
+        trim_silence=app.state.settings.voice.tts.trim_silence,
         # D71: the live-voice ear rides this same rebuild, so a `voice.*` Conf edit re-resolves the
         # realtime chain for free — the NEXT call picks it up (an in-flight relay session keeps the
         # generation it captured, exactly like an in-flight STT clip).

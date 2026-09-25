@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING
 import httpx
 from openai import AsyncOpenAI
 
+from app.core.audio import is_wav, trim_wav_silence
 from app.core.failover import FailoverError, FailoverResult, failover_collect
 from app.core.provider_registry import EndpointGates
 
@@ -120,6 +121,7 @@ class VoiceClient:
         enabled: bool = True,
         live: "tuple[ResolvedTarget, ...]" = (),
         live_policy: "LivePolicy | None" = None,
+        trim_silence: bool = True,
     ) -> None:
         self._stt = stt
         self._stt_policy = stt_policy
@@ -133,6 +135,8 @@ class VoiceClient:
         self._live = live
         self._live_policy = live_policy
         self._enabled = enabled
+        #: `voice.tts.trim_silence` (D76 S3a), frozen per generation like `enabled`.
+        self._trim_silence = trim_silence
         self._gates = gates if gates is not None else EndpointGates()
         #: SDK clients cached by (provider, connect_timeout_s, timeout_s) so STT and TTS sharing a host
         #: but wanting different windows don't collide; they die with this generation (drain).
@@ -311,6 +315,13 @@ class VoiceClient:
             except FailoverError as exc:
                 raise VoiceError(str(exc)) from exc
             audio, fmt = result.value
+            # The BYTES decide, not `fmt`: PocketTTS answers WAV to an `opus` ask, and a non-WAV clip
+            # passes through `trim_wav_silence` untouched. The media type follows the same sniff (the
+            # S3 code round, F1): a WAV labelled `audio/ogg` is a clip the browser may refuse to play.
+            if is_wav(audio):
+                fmt = "wav"
+            if self._trim_silence:
+                audio = trim_wav_silence(audio)
             return audio, _MEDIA_TYPES.get(fmt, "application/octet-stream"), _reply(chain, result)
         finally:
             await self._release_inflight()
