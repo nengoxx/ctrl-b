@@ -36,7 +36,7 @@
 - **Owed: the PUSH + v1.7.9 release** (`3d27b09` = one commit over origin; tree clean). Prod (v1.7.8) now holds Lynette + her book + art via the §15.9 migration; the export routes reach prod WITH v1.7.9. The full session history is in
   [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the HANDOFF block of ⟨date⟩ / the Nth session" resolves there).
 
-## ▶▶ NEXT SESSION — PUSH + RELEASE v1.7.9 (the S9 wave is BUILT, council-closed, COMMITTED `3d27b09`; dev repaired; Lynette migrated to prod)
+## ▶▶ NEXT SESSION — RELEASE v1.7.9 (the S9 wave is BUILT, council-closed, COMMITTED `3d27b09` + PUSHED; dev repaired; Lynette + the karpathy skill migrated to prod; owner: *"update in the clean session"*)
 
 **The 46th session (2026-09-26 evening) — what happened:** Phase 23 **S9 (D79)** built by two pinned-Opus
 lanes from the briefs → the owner's NEW two-reviewer rule applied for the first time (*"for critical
@@ -54,11 +54,15 @@ and **§15.9 the Lynette migration APPLIED through the APIs** (prod: agent `lyne
 matches; `agent.default_agent` NOT set — the owner's one tap). The **`karpathy-guidelines` skill** went
 to prod the same way (owner ask; `GET /api/skills/<name>` dev → `PUT` prod, byte-equal). Scripts kept at `~/.cache/tmp/ctrlb-s9/`.
 
-**Steps, in order (on the owner's word — the push and the release are held for it):**
-1. `git push` (one commit over origin: `3d27b09`; the pre-push full gate runs, ~5 min, SERIALLY).
-2. CI green on the tip → **v1.7.9 per `deploy/linux/README.md` §Release** (no config migration —
-   `lorebooks.include_names` is an additive default; rollback = v1.7.8, no config restore needed).
-   Pre-tag: the local `--e2e` already ran green in-session (391/391 + the new `card-export.spec.ts`).
+**Steps, in order (the owner's word is GIVEN — *"push & update"*, the update in the clean session):**
+1. `tmux display-message -p '#S'` → match the model; effort HIGH. `gh run list --branch main --limit 1` must
+   be green on the tip (the release tip = the handoff commit; `3d27b09` is the code).
+2. **v1.7.9 per `deploy/linux/README.md` §Release**: annotated tag on the verified tip → tag push (the
+   pre-push gate runs again, SERIALLY) → `gh run watch … --exit-status` on the tag's release gate →
+   `bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.9` → `describe --exact-match` + health 1.7.9 + the PNG
+   content-type check. **No config migration** (`config_migration/VERSION` = 5 on both sides, verified;
+   `lorebooks.include_names` is an additive default) → rollback = v1.7.8, no config restore. Pre-tag: the
+   local `--e2e` already ran green in-session (391/391 + the new `card-export.spec.ts`).
 3. **Owner test card (phone, prod after the release):** ① Conf › Agents › Lynette → footer `export` →
    **PNG card** → import that PNG into SillyTavern (expect name Lynette, description + personality split,
    the `personality-traits` book embedded — unlink first to export without) · **JSON card** downloads
