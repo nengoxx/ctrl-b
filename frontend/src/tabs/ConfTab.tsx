@@ -841,7 +841,7 @@ const MONITOR_FALLBACK: SettingsDoc["monitor"] = {
  *  and `undefined` propagating into `Number()` is a far worse failure than one explicit default. Values
  *  mirror `LiveCfg`'s own field defaults. */
 const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
-  enabled: false,
+  enabled: true,
   provider: null,
   model: null,
   fallbacks: [],

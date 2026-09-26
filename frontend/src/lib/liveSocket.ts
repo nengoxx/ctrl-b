@@ -85,8 +85,8 @@ export function parseLiveFrame(raw: string): LiveDown | null {
 }
 
 export interface LiveSocket {
-  /** Ship one pcm16 frame. Silently drops while the socket is not OPEN (the machine feeds only between
-   *  `ready` and teardown, so this is the reconnect gap, not an error). */
+  /** Ship one pcm16 frame. Silently drops until THIS leg's relay has said `ready`, and while the socket
+   *  is not OPEN — the handshake and the reconnect gap, not errors (see the latch in `openLiveSocket`). */
   sendAudio: (buf: ArrayBuffer) => void;
   /** "End the phrase now" — a relay-side silence burst, NO ack (§7-S1). S2.5's door; unused by S2a.
    *
@@ -127,8 +127,8 @@ export interface LiveSocketOpts {
 
 /**
  * Open one leg and send its `start`. The socket is returned immediately — `onFrame`/`onClose` carry
- * everything that happens afterwards, including the relay's own `state: "ready"`, which is what the
- * machine waits for before feeding audio.
+ * everything that happens afterwards, including the relay's own `state: "ready"`, before which this
+ * leg ships NO audio (the latch below — the promise is kept here, at the one door, not by each caller).
  */
 export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
   const ws = opts.make ? opts.make(opts.url) : new WebSocket(opts.url);
@@ -136,6 +136,13 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
   const ceiling = bufferedCeilingBytes(opts.ceilingMs, opts.sampleRate);
   let unknown = 0;
   let done = false;
+  // THE READY LATCH (R86 LC-5). The relay reads nothing from the client between `start` and its
+  // `_pump` — it is dialling and configuring the upstream — so frames sent in that window reach
+  // `_note_frame` in ONE burst when the pump starts, and a handshake past ~2 s bursts through the
+  // rolling 2×-realtime budget into a protocol TERMINAL. Audio before `ready` is also audio no session
+  // is listening to yet. So the door drops it, per leg (a fresh leg latches afresh), exactly like the
+  // reconnect gap it already dropped; the callers' pacers keep their own clocks either way.
+  let ready = false;
 
   // …and it REPORTS the readyState it checked (see `LiveSocket.flush`): "the socket was not OPEN" is a
   // fact only this line has, and a caller that has to choreograph around an unsent control cannot
@@ -164,6 +171,8 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
       unknown += 1;
       return;
     }
+    // Latched BEFORE the caller hears it, so anything it ships from inside its own handler goes out.
+    if (frame.type === "state" && frame.state === "ready") ready = true;
     opts.onFrame(frame);
   };
   ws.onclose = (e: CloseEvent) => {
@@ -177,7 +186,7 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
 
   return {
     sendAudio: (buf) => {
-      if (ws.readyState !== WebSocket.OPEN) return;
+      if (!ready || ws.readyState !== WebSocket.OPEN) return;
       // §3.1: `WebSocket.send()` has no awaitable backpressure, so the ONLY honest reading of a
       // backed-up uplink is to throw the leg away. Draining seconds of stale speech into the ear would
       // transcribe it into a turn the owner has long since moved past; a fresh session loses the

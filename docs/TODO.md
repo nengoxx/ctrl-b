@@ -1706,6 +1706,11 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       and its S3 round №2 PASSED all three arms from the D77 trail; endpointing GOOD → v1 stands;
       `enabled` default → true. Owed non-gating: the car on the clean route · TV/other room ·
       ISS-19 — they ride the owner's regular use, not a slice.)*
+- [x] **R86 pre-release fix wave (2026-09-26)** — LC-1 evidence-gated iron rule · LC-2 upstream_error
+      clears the wait · LC-3 in-call all-failed synthesis ticks the failure · LC-4 route-change busy is a
+      retry · LC-5 socket `ready` latch · LC-6 idle clock spares a talking reply · LC-7 "ships OFF" sweep ·
+      LC-8 `uplink_idle_s` relay reaper. As-built: LIVE_VOICE_PLAN §7 (under the S4 record); D71 amended.
+- [ ] Owner: `barge_in: false` vs the iron rule on REAL speech at reply start (R86 LC-1 interplay).
 
 ## Cross-cutting / don't-forget
 

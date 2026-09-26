@@ -48,6 +48,11 @@ class FakeSocket {
   say(frame: unknown): void {
     this.onmessage?.({ data: JSON.stringify(frame) } as MessageEvent);
   }
+  /** …and the relay's own `ready`, after which (and only after which) audio may flow (R86 LC-5). */
+  ready(): void {
+    this.open();
+    this.say({ type: "state", state: "ready" });
+  }
 }
 
 function leg(opts?: {
@@ -90,9 +95,45 @@ describe("liveSocket — the uplink", () => {
     const { socket, ws } = leg();
     socket.sendAudio(new ArrayBuffer(8)); // still CONNECTING
     expect(ws.sent).toHaveLength(0);
-    ws.open();
+    ws.ready();
     socket.sendAudio(new ArrayBuffer(8));
     expect(ws.sent).toHaveLength(2); // start + the frame
+  });
+
+  it("…and only once the relay said `ready` — the handshake window is not a burst (R86 LC-5)", () => {
+    // The relay reads nothing between `start` and its pump (it is dialling the upstream), so anything
+    // sent here lands on `_note_frame` in one burst — past ~2 s, a protocol terminal.
+    const { socket, ws, frames } = leg();
+    ws.open();
+    for (let i = 0; i < 5; i++) socket.sendAudio(new ArrayBuffer(8));
+    ws.say({ type: "state", state: "degraded" }); // not `ready`: still nothing
+    socket.sendAudio(new ArrayBuffer(8));
+    expect(ws.sent).toEqual([JSON.stringify({ type: "start", sample_rate: 48000 })]);
+    ws.say({ type: "state", state: "ready" });
+    expect(frames.at(-1)).toEqual({ type: "state", state: "ready" }); // the caller still hears it
+    socket.sendAudio(new ArrayBuffer(8));
+    expect(ws.sent).toHaveLength(2);
+    // …and the latch is PER LEG: a fresh socket starts closed again.
+    const next = leg();
+    next.ws.open();
+    next.socket.sendAudio(new ArrayBuffer(8));
+    expect(next.ws.sent).toHaveLength(1);
+  });
+
+  it("the latch lands BEFORE the caller's handler — a frame shipped from inside it goes out", () => {
+    const socket = openLiveSocket({
+      url: "ws://x/api/voice/live",
+      sampleRate: 48000,
+      ceilingMs: 1000,
+      onFrame: (f) => {
+        if (f.type === "state" && f.state === "ready") socket.sendAudio(new ArrayBuffer(8));
+      },
+      onClose: () => {},
+      make: (url) => new FakeSocket(url) as unknown as WebSocket,
+    });
+    const ws = FakeSocket.last!;
+    ws.ready();
+    expect(ws.sent).toHaveLength(2); // start + the frame the handler shipped
   });
 
   it("`flush` and `stop` are the only other things it will ever say", () => {
@@ -132,7 +173,7 @@ describe("liveSocket — the uplink", () => {
     // SURFACE carries no commit door, and its whole vocabulary — every method, called — emits none.
     const { socket, ws } = leg();
     expect(Object.keys(socket).sort()).toEqual(["close", "flush", "sendAudio", "stop", "unknown"]);
-    ws.open();
+    ws.ready();
     socket.sendAudio(new ArrayBuffer(8));
     socket.flush();
     socket.stop();
@@ -150,7 +191,7 @@ describe("liveSocket — client backpressure (§3.1/F6)", () => {
 
   it("closes the leg rather than queueing past the ceiling, and reports it as OUR close code", () => {
     const { socket, ws, closes } = leg({ ceilingMs: 1000, sampleRate: 48000 });
-    ws.open();
+    ws.ready();
     ws.bufferedAmount = 96001;
     socket.sendAudio(new ArrayBuffer(1920));
     expect(ws.sent).toHaveLength(1); // start only — the frame was NOT queued behind the backlog
@@ -160,7 +201,7 @@ describe("liveSocket — client backpressure (§3.1/F6)", () => {
 
   it("a backlog the frame still FITS under is ordinary jitter and ships", () => {
     const { socket, ws, closes } = leg({ ceilingMs: 1000, sampleRate: 48000 });
-    ws.open();
+    ws.ready();
     ws.bufferedAmount = 94000; // 94000 + 1920 = 95920, still inside the ceiling
     socket.sendAudio(new ArrayBuffer(1920));
     expect(ws.sent).toHaveLength(2);
@@ -169,7 +210,7 @@ describe("liveSocket — client backpressure (§3.1/F6)", () => {
 
   it("the frame that would CROSS the ceiling is the one refused — the backlog alone admits one past", () => {
     const { socket, ws, closes } = leg({ ceilingMs: 1000, sampleRate: 48000 });
-    ws.open();
+    ws.ready();
     ws.bufferedAmount = 95999; // under the ceiling on its own…
     socket.sendAudio(new ArrayBuffer(1920)); // …and 97919 once this frame is queued behind it
     expect(ws.sent).toHaveLength(1); // start only

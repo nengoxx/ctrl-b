@@ -86,6 +86,8 @@ class Say:
     event: dict[str, Any] | BaseException
     after_appends: int = 0
     after_silence_ms: float = 0.0
+    #: Seconds the ear takes to say it, once due — a SLOW upstream (R86: a late `session.created`).
+    delay_s: float = 0.0
 
 
 def created(**session: Any) -> Say:
@@ -155,6 +157,8 @@ class FakeSpeaches:
             entry = self.script[self._i]
             if len(self.appends) >= entry.after_appends and self.silence_ms >= entry.after_silence_ms:
                 self._i += 1
+                if entry.delay_s:
+                    await asyncio.sleep(entry.delay_s)
                 if isinstance(entry.event, BaseException):
                     raise entry.event
                 return json.dumps(entry.event)
@@ -940,6 +944,59 @@ def test_the_session_deadline_ends_the_call_with_session_limit() -> None:
         frame = _drain_until(ws, "error")
         assert (frame["code"], frame["message"]) == ("session_limit", "call time limit reached")
         assert _closed(ws)[0] == 1000
+
+
+def test_a_leg_whose_uplink_goes_silent_is_reaped_not_held_to_the_session_limit() -> None:
+    """R86 LC-8 — the client ships a frame every `frame_ms` (held and muted frames go up as silence),
+    so a leg with NO binary frame for `uplink_idle_s` is a frozen page or a dead ear. It used to hold
+    the single slot to `max_session_s`. Assigned past the `ge=5` floor, as the deadline arm above does:
+    the floor guards Conf, the mechanism is what is under test."""
+    fake = FakeSpeaches([created()])
+    app = _fake_app(fake)
+    app.app.state.settings.voice.live.uplink_idle_s = 0.3  # past the ge=5 floor — see the docstring
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        for _ in range(3):
+            ws.send_bytes(_pcm(960))  # a live page for a moment…
+        frame = _drain_until(ws, "error")  # …then nothing: the page froze
+        assert frame == {
+            "type": "error",
+            "code": "session_limit",
+            "message": "no audio from the phone for 0.3s — the call was ended",
+        }
+        assert _closed(ws) == (1000, "uplink idle")
+    assert len(fake.appends) >= 1  # the audio it DID send went up; this is a reaper, not a refusal
+
+
+def test_a_leg_that_keeps_sending_is_never_reaped_and_the_clock_starts_at_the_pump() -> None:
+    """…and the other side of the same bound, with the auditor's slow-upstream case folded in (R86
+    test 5): `session.created` 2.5 s late — the handshake window the client now sits out (LC-5's
+    latch, pinned FE-side) — neither counts against the phone nor bursts anything: the clock starts
+    when the relay starts READING, and a client that streams from `ready` stays inside every budget."""
+    fake = FakeSpeaches([Say({"type": "session.created", "session": {}}, delay_s=2.5)])
+    app = _fake_app(fake)
+    app.app.state.settings.voice.live.uplink_idle_s = 1  # far under the 2.5 s handshake
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)  # 2.5 s — no audio sent before it, as the latch rules
+        for _ in range(50):
+            ws.send_bytes(_pcm(960))  # 2000 ms of audio at once: inside the 4000 ms/2 s budget
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+        assert _closed(ws)[0] == 1000
+
+
+def test_uplink_idle_s_is_a_bounded_server_knob_that_outlasts_the_tail_wait() -> None:
+    assert LiveCfg().uplink_idle_s == 15
+    for bad in (4, 121):
+        with pytest.raises(ValidationError):
+            LiveCfg(uplink_idle_s=bad)
+    # A dictation release sends `flush` and then no audio until its tail — a reaper inside that wait
+    # would end the leg the last phrase is due on, so the pair is refused at load (a Conf 422).
+    with pytest.raises(ValidationError, match="must outlast tail_wait_ms"):
+        LiveCfg(uplink_idle_s=5, tail_wait_ms=5000)
+    assert LiveCfg(uplink_idle_s=5, tail_wait_ms=4999).uplink_idle_s == 5
+    # a SERVER knob — never delivered to the client
+    assert "uplink_idle_s" not in _app().get("/api/voice/status").json()["live_call"]
 
 
 def test_no_start_within_the_timeout_is_a_protocol_close() -> None:

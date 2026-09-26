@@ -202,6 +202,7 @@ relative-dB gate, and D73/D74/D77 added the route, background, deck and trail kn
 | `ring` · `captions` | true · true | client | The overlay: the face ring; the reply as captions |
 | `debug` | false | both | The in-call readout AND the D77 call trail (`$CTRLB_HOME/calls/`) |
 | `trail_keep` | 20 | server | D77 retention (bounded 1–500) |
+| `uplink_idle_s` | 15 | server | R86 LC-8: a leg with NO uplink audio this long (a frozen page, a dead ear — the client ships a frame every `frame_ms`, held/muted ones as silence) ends as a `session_limit`-class terminal instead of holding the slot to `max_session_s`; bounded 5–120, load-validated to outlast `tail_wait_ms` |
 | `dictation` · `tail_wait_ms` · `dictation_idle_s` · `dictation_max_s` | false · 2000 · 15 · 120 | client | S2.5 streaming dictation on the same ear |
 | `buffered_ceiling_ms` · `call_backlog_ms` | 1000 · 1000 | client | Uplink backpressure: reconnect ceiling; the lossy call pacer's backlog |
 | `frame_ms` · `max_frame_bytes` · `max_session_s` · `max_sessions` · `relay_queue_ms` · `start_timeout_s` · `allowed_origins` | 40 · 32768 · 1800 · 1 · 2000 · 5.0 · [] | server | The relay's own caps + the Origin escape hatch |
@@ -231,7 +232,9 @@ consumed or discarded). One machine, one owner (a `useLiveCall` hook), the overl
 phase. "Hang up" from every state. Rules the flags force: **playback may not start while
 `userSpeechActive || waitingFinal`** (confirm-round MED 2 — the gap between speech-stop and the
 final's arrival must not let an old reply start talking) — if the mouth would begin while
-either holds, that IS a barge-in (kill before first audio, §4.3); a final arriving
+either holds, that IS a barge-in (kill before first audio, §4.3) — **on the transcript gate's
+evidence (R86 LC-1):** an open utterance whose epoch-matched accrual is below `min_final_ms` is
+noise, not a barge-in, and the reply plays; unmeasured still kills (fail-open, like the gate); a final arriving
 during `thinking` submits as a **steer** through the existing 202 path (D41) without touching the
 phase. The machine composes existing pieces:
 
@@ -1472,6 +1475,19 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > commit); the Tier 0 threshold untouched. **Owed, non-gating (ride the owner's regular use):** the
   > car on the CLEAN route (then `min_final_ms` 200 → 300 if home-side noise words persist), the
   > TV/other-room arm, ISS-19 (the Honor battery setting first). ISS-13/14 parked won't-fix.
+
+  > **R86 FIX WAVE (2026-09-26, pre-v1.7.8; audit `docs/research/R86-live-call-e2e-audit.md`,
+  > rulings of record in the main seat's R86 block).** LC-1: `playbackStarted` carries the open epoch's
+  > accrual + `min_final_ms` (one reader, `epochAccrual`, shared with the `final`; one predicate,
+  > `tooQuiet`) and the iron rule stands down below the knob — knock-on: a HELD `speechStop`/`final`
+  > now lowers its flag (never raises it), so a spared segment cannot strand an unmeasured kill.
+  > LC-2: `upstream_error` clears `waitingFinal`. LC-3: the in-call all-failed `finish()` ticks
+  > `mouthFailed()` before its `paused`. LC-4: `routeChange` sets `priorLeg` (own-leg `busy` = retry).
+  > LC-5: `openLiveSocket` latches `ready`; `sendAudio` drops until it lands. LC-6: `idleExpired` is
+  > a no-op while `mouthLive` and re-arms (`IDLE_EDGES`). LC-8: `uplink_idle_s` (server, 15, 5–120)
+  > reaps a silent uplink as `session_limit` with its own sentence (the client now shows the relay's
+  > message for that code). LC-7: the "ships OFF" sweep. Owed to the owner: whether `barge_in: false`
+  > should also spare REAL speech at reply start (LC-1's interplay).
 
   > **S4 ROUND №1 (owner, 2026-09-24, car + BT headphones + lock screen; the card = the 36th
   > session's handoff).** *The car, default route (their config's `speaker`, EC on ⇒ comm mode):*

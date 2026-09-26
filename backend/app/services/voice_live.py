@@ -234,6 +234,10 @@ class _ClientGone(Exception):
     """The phone's socket closed. Nothing left to send and nothing to close — teardown only."""
 
 
+class _UplinkIdle(Exception):
+    """The phone's socket is open but no audio has crossed it for `uplink_idle_s` (R86 LC-8)."""
+
+
 class LiveRelaySession:
     """One live call: the phone's WebSocket on one side, a Speaches realtime session on the other.
 
@@ -329,6 +333,10 @@ class LiveRelaySession:
             await self._fail("upstream_lost", str(exc), CLOSE_UPSTREAM, "upstream lost")
         except TimeoutError:
             await self._fail("session_limit", "call time limit reached", CLOSE_OK, "session limit")
+        except _UplinkIdle as exc:
+            # The session_limit CLASS — a clean end the relay chose, not an upstream or wire fault —
+            # with its own sentence, so the owner (and the trail) can tell the two apart.
+            await self._fail("session_limit", str(exc), CLOSE_OK, "uplink idle")
         except _ClientGone:
             pass  # the phone hung up: nothing to tell it, nothing to close
         finally:
@@ -527,12 +535,31 @@ class LiveRelaySession:
             task.result()  # re-raise the leg's typed failure, if it had one
 
     async def _pump_client(self) -> None:
-        """Phone → (validate, resample, enqueue) → the relay queue. Returns on a clean `stop`."""
+        """Phone → (validate, resample, enqueue) → the relay queue. Returns on a clean `stop`.
+
+        THE UPLINK-IDLE DEADLINE (R86 LC-8). The client ships a frame every `frame_ms` for the whole
+        leg — a held or muted ear goes up as silence of the same length — so `uplink_idle_s` with NO
+        binary frame is a page that froze or an ear that died. Nothing else reaps that leg: the
+        browser answers the WS ping from its network stack even with the renderer frozen, and the
+        client's own clocks cannot run inside it. Left alone it would hold `max_sessions` until
+        `max_session_s` and refuse every other device `busy`. The clock is the PHONE's: it restarts on
+        every accepted frame, and after a `flush`, whose burst delivery is the relay's own time.
+        Converted to `_UplinkIdle` here for the reason `_configure_upstream` converts its bound:
+        `run()` reserves `TimeoutError` for the session deadline (the nested scope re-raises that one
+        as a cancellation, never as its own expiry).
+        """
+        idle_s = self._cfg.uplink_idle_s
+        heard = time.monotonic()
         while True:
-            msg = await self._recv_client()
+            try:
+                async with asyncio.timeout(max(0.0, heard + idle_s - time.monotonic())):
+                    msg = await self._recv_client()
+            except TimeoutError:
+                raise _UplinkIdle(f"no audio from the phone for {idle_s:g}s — the call was ended") from None
             data = msg.get("bytes")
             if data is not None:
                 await self._accept_audio(data)
+                heard = time.monotonic()
                 continue
             text = msg.get("text")
             if text is None:  # pragma: no cover — starlette always fills one of the two
@@ -544,6 +571,7 @@ class LiveRelaySession:
                 return
             if kind == "flush":
                 await self._flush()
+                heard = time.monotonic()
             elif kind == "start":
                 raise _ProtocolError("a live session accepts exactly one `start`")
             else:

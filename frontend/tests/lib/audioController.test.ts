@@ -1823,6 +1823,68 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     expect(since()).toBe(1);
   });
 
+  it("IN A CALL, a read-along reply whose EVERY synth failed is COUNTED, beside its `paused` (R86 LC-3)", async () => {
+    // The in-call finish publishes `paused` (ISS-18's D1: the wiring drains on it) — so without the
+    // tick a total TTS outage reads as a drain from a phase that was never `speaking`, and the call
+    // returns to Listening in silence. The wiring half of the seam is pinned in useLiveCallWiring.
+    setChunkPolicy(chunked());
+    const edges: string[] = [];
+    let was = getPlayStatus();
+    const unsub = subscribePlayback(() => {
+      const now = getPlayStatus();
+      if (now !== was) edges.push(`${was}->${now}`);
+      was = now;
+    });
+    try {
+      setCallVoice(true, false);
+      const since = failureDelta();
+      globalThis.fetch = vi.fn(async () => errRes(502));
+      act(() => feedReadAlong("m1", "One. Two."));
+      await flush();
+      await act(async () => void (await endTurnSpeak("m1", "One. Two. Three.")));
+      await flush();
+      await flush();
+      expect(edges).toEqual(["idle->loading", "loading->paused", "paused->idle"]);
+      expect(since()).toBe(1); // ONE tick for the reply, however many chunks failed
+      // …and a reply that DID play finishes as the drain it always was — no tick.
+      globalThis.fetch = vi.fn(async () => okRes());
+      act(() => feedReadAlong("m2", "One. Two."));
+      await flush();
+      await act(async () => void (await endTurnSpeak("m2", "One. Two.")));
+      for (let i = 0; i < 4; i++) {
+        await act(async () => lastAudio.emit("ended"));
+        await flush();
+      }
+      expect(edges.slice(3)).toContain("playing->paused");
+      expect(since()).toBe(1);
+    } finally {
+      unsub();
+      setCallVoice(false, false);
+    }
+  });
+
+  it("…and OUTSIDE a call the all-failed finish is the plain `loading -> idle` it always was", async () => {
+    setChunkPolicy(chunked());
+    const edges: string[] = [];
+    let was = getPlayStatus();
+    const unsub = subscribePlayback(() => {
+      const now = getPlayStatus();
+      if (now !== was) edges.push(`${was}->${now}`);
+      was = now;
+    });
+    try {
+      globalThis.fetch = vi.fn(async () => errRes(502));
+      act(() => feedReadAlong("m1", "One. Two."));
+      await flush();
+      await act(async () => void (await endTurnSpeak("m1", "One. Two. Three.")));
+      await flush();
+      await flush();
+      expect(edges).toEqual(["idle->loading", "loading->idle"]);
+    } finally {
+      unsub();
+    }
+  });
+
   it("counts a rejected play() at a CHUNK seam too", async () => {
     setChunkPolicy(chunked());
     const since = failureDelta();

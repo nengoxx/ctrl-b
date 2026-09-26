@@ -27,10 +27,10 @@ import { getUI, setUI, useUISlice } from "../../../store/ui";
 // drives it through `start`/`stop`/`cancel` — the upload, the draft append, the `stt_auto_send` policy
 // and the silence auto-stop are untouched (the gesture changes CAPTURE ergonomics, not send policy).
 //
-// THE CALL HALF SHIPS DARK. `live` is `voice.data?.live`, which no backend sends until S1, so today the
-// tap arm always lands on the "hold to record" hint and `startCall` is never reached. The machine, the
-// chrome and the CSS for call mode are built and tested (a mocked `live: true` reaches them) so S1/S2a
-// wire a bit rather than build a mode.
+// THE CALL HALF RIDES ONE BIT. `live` is `voice.data?.live` — true when `voice.live.enabled` (ON since
+// v1.7.8, S4 closed 2026-09-26) meets a configured realtime chain. Where it is false (the feature off,
+// or no ear) the tap arm lands on the "hold to record" hint and `startCall` is never reached; the
+// gesture itself never decides whether calls exist.
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // THE PARAMETERS. Every one traces to R69 §9's table, and this is the ONLY place any of them appears —

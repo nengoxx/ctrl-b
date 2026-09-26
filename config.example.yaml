@@ -420,9 +420,10 @@ voice:
                            # (bold still reads — emphasis is speech, a stage direction is not)
   # Live voice / call mode (Phase 24, D71) — the realtime EAR behind `WS /api/voice/live`. Same
   # pointer shape as stt/tts; leave `provider` blank and it resolves exactly like `voice.stt` (one
-  # Speaches box serves both doors). Shipped OFF: flip `enabled` when the call loop is calibrated.
+  # Speaches box serves both doors). ON since v1.7.8 (S4 closed 2026-09-26): the call rides the
+  # realtime chain once one is configured; `enabled: false` turns the whole feature off.
   live:
-    enabled: false         # whole-feature toggle; `voice.enabled` above outranks it
+    enabled: true          # whole-feature toggle; `voice.enabled` above outranks it
     # provider: voice      # blank → resolve like voice.stt (the common case)
     # model: parakeet      # the realtime `model` query param; blank inherits stt's
     vad_threshold: 0.6     # Silero speech-probability floor (0.5–0.8; D76/R84 — its END threshold is this − 0.15); rides session.update
@@ -468,6 +469,8 @@ voice:
     dictation_max_s: 120   # hard cap on ONE streaming session — applies to hold as well as lock
     relay_queue_ms: 2000   # bounded relay queue, in ms of audio; overflow drops the OLDEST frames
     start_timeout_s: 5     # how long an accepted socket may sit before its `start` message arrives
+    uplink_idle_s: 15      # R86: a leg with NO uplink audio this long (s, 5–120) is a frozen page or a dead
+                           # ear — ended rather than held to max_session_s; must outlast tail_wait_ms
     allowed_origins: []    # EXTRA exact `scheme://host[:port]` strings the WS Origin check admits
                            # (empty = same-host only; browser CORS does not protect WebSockets)
     connect_timeout_s: 3   # realtime handshake budget (no next hop — there is no live failover)

@@ -34,7 +34,7 @@ Current capabilities (the v1.0 app):
   **lorebook** subsystem (D70).
 - **Voice** — STT in / TTS out via OpenAI-compatible endpoints; push-to-talk mic (needs HTTPS);
   chunked read-along TTS (D63); and **live voice / call mode** — a Speaches-realtime ear behind the
-  app's one WebSocket relay, with phrase-streaming dictation (D71; `voice.live.enabled` ships OFF).
+  app's one WebSocket relay, with phrase-streaming dictation (D71; `voice.live.enabled` ON since v1.7.8).
 - **Unattended** — scheduled **automations** (cron defs in SQLite + attributed headless runs, D49),
   the **fleet monitor** loop and the presence/LAN **wake triggers** (D50/D69).
 - **Media** — the owner's art library per namespace: upload, crop, focal point, reorder, through the

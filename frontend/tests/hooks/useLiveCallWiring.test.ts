@@ -436,6 +436,26 @@ describe("useLiveCall — the mouth, watched", () => {
     expect(view.result.current.phase).toBe("listening");
     expect(view.result.current.note).toBe("voice failed — the reply is text only");
   });
+
+  it("a reply that NEVER synthesized says so too — the in-call finish's tick (R86 LC-3)", async () => {
+    // The controller's all-failed in-call finish: `idle → loading`, then the failure tick and the
+    // `paused` it publishes for the drain. From `thinking`, a drain alone changes nothing — the tick is
+    // what reaches the owner. PINNED FROM TWO SIDES, deliberately: this file mocks `audioController`
+    // module-wide, so the tick is injected here and this arm fails only if the WIRING drops it. The
+    // controller half — that the real `finish()` emits the tick — is `audioController.test.ts`'s "IN A
+    // CALL, a read-along reply whose EVERY synth failed is COUNTED" (red with `mouthFailed()` removed).
+    // One real-controller seam test would need both files' harnesses in a third.
+    const { view, step, say } = await call();
+    await say("what's the weather");
+    expect(view.result.current.phase).toBe("thinking");
+    await step(() => setPlay("loading"));
+    await step(() => {
+      h.failures += 1;
+      setPlay("paused");
+    });
+    expect(view.result.current.phase).toBe("listening");
+    expect(view.result.current.note).toBe(CALL_COPY.voiceFailed);
+  });
 });
 
 describe("useLiveCall — the held-upload retry latch (§4.5)", () => {
@@ -1260,6 +1280,31 @@ describe("useLiveCall — THE TRANSCRIPT GATE's epochs (D74 S5, evidence docs/re
     expect(view.result.current.note).toBeNull();
   });
 
+  it("the IRON RULE reads the same evidence: a quiet open segment does not kill the reply (R86 LC-1)", async () => {
+    const { view, step } = await gated();
+    await utterance("what's the weather", 0.2, 30);
+    expect(texts()).toEqual(["what's the weather"]);
+    await act(async () => {
+      h.frame?.({ type: "speech_started" }); // the TV, under the thinking pause
+      mic(0.001, 10);
+    });
+    await step(() => setPlay("playing"));
+    expect(h.dismiss).not.toHaveBeenCalled();
+    expect(view.result.current.phase).toBe("speaking");
+  });
+
+  it("…and an open segment the ear DID hear still kills it — the owner, mid-word", async () => {
+    const { view, step } = await gated();
+    await utterance("what's the weather", 0.2, 30);
+    await act(async () => {
+      h.frame?.({ type: "speech_started" });
+      mic(0.2, 20);
+    });
+    await step(() => setPlay("playing"));
+    expect(h.dismiss).toHaveBeenCalled();
+    expect(view.result.current.phase).not.toBe("speaking");
+  });
+
   it("the epoch OPENS at speech-start: energy before it is not this utterance's", async () => {
     // Room noise while the reply was playing, a throat clear before the ear armed — none of it is
     // evidence that the sentence the relay just produced was said.
@@ -1965,6 +2010,47 @@ describe("useLiveCall — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R7
         await Promise.resolve();
       });
       expect(view.result.current.phase).toBe("thinking");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("④ a reply still TALKING when the window runs out is not idle — the clock starts over (R86 LC-6)", async () => {
+    vi.useFakeTimers();
+    try {
+      h.voice.data.live_call.background_idle_s = 120; // the owner's short window
+      const { view, step } = await call();
+      await act(async () => {
+        visibility("hidden");
+        await Promise.resolve();
+      });
+      await step(() => setPlay("playing")); // a long, seamless chunked answer — no edge until it ends
+      await act(async () => {
+        vi.advanceTimersByTime(121_000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("speaking"); // the expiry was declined…
+      // …and RE-ARMED on the declined signal itself: the idle clock is the one timer this call holds.
+      // (Leaning on the drain alone would leave a reply that ends through a non-edge — a mouth failure —
+      // with no clock at all, and a hot mic in a pocket until the session limit.)
+      expect(vi.getTimerCount()).toBe(1);
+      await act(async () => {
+        vi.advanceTimersByTime(121_000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("speaking"); // …so it is declined again
+      await step(() => setPlay("paused")); // the answer ends: the window starts from here
+      await act(async () => {
+        vi.advanceTimersByTime(119_000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("listening");
+      await act(async () => {
+        vi.advanceTimersByTime(2000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("ended");
+      expect(view.result.current.note).toBe(CALL_COPY.idleBackground);
     } finally {
       vi.useRealTimers();
     }

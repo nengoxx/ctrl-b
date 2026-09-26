@@ -304,6 +304,16 @@ describe("callReduce — terminals (§4.3/§4.5)", () => {
     ]);
     expect(limit.state.phase).toBe("ended");
     expect(limit.state.note).toBe(CALL_COPY.limit);
+    // …and the same CLASS from the relay's uplink-idle reaper (R86 LC-8) carries its own sentence.
+    const reaped = run(listening, [
+      {
+        type: "serverError",
+        code: "session_limit",
+        message: "no audio from the phone for 15s — the call was ended",
+      },
+    ]);
+    expect(reaped.state.phase).toBe("ended");
+    expect(reaped.state.note).toBe("no audio from the phone for 15s — the call was ended");
   });
 
   it("a `protocol` terminal says so plainly — never the relay's internal sentence (A-F2)", () => {
@@ -330,6 +340,27 @@ describe("callReduce — terminals (§4.3/§4.5)", () => {
     expect(state.phase).toBe("listening");
     expect(state.note).toBe("the ear hiccuped");
     expect(out).toEqual([]);
+  });
+
+  it("`upstream_error` is what arrives INSTEAD of the final — the wait clears (R86 LC-2)", () => {
+    // Speaches answers a transcription that raised with `error` and never `…completed`. A
+    // `waitingFinal` left standing was an iron-rule kill of every reply for the rest of the call.
+    const thinking = run(listening, [{ type: "final", text: "what's the weather" }]).state;
+    const errored = run(thinking, [
+      { type: "speechStart" },
+      { type: "speechStop" },
+      { type: "serverError", code: "upstream_error", message: "the ear hiccuped" },
+    ]).state;
+    expect(errored.waitingFinal).toBe(false);
+    const { state, out } = run(errored, [{ type: "playbackStarted" }]);
+    expect(out).toEqual([]); // no `kill`
+    expect(state.phase).toBe("speaking");
+    // …and only THAT flag: a segment still live when the error lands is the owner, mid-word.
+    const live = run(listening, [
+      { type: "speechStart" },
+      { type: "serverError", code: "upstream_error", message: "x" },
+    ]).state;
+    expect(live.userSpeechActive).toBe(true);
   });
 
   it("`degraded` is a line, not a state change — and it arms its own hold", () => {
@@ -1191,6 +1222,17 @@ describe("callReduce — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R75
     expect(out).toEqual([{ type: "teardown", close: false }]);
   });
 
+  it('④ …but NOT over a reply still talking — the window is "no speech AND no reply" (R86 LC-6)', () => {
+    // A seamless chunked reply publishes no edge between chunks, so a long answer can outlast a short
+    // window. The arm declines; the wiring re-arms on the same signal.
+    const { state, out } = run(speaking, [{ type: "idleExpired" }]);
+    expect(out).toEqual([]);
+    expect(state).toBe(speaking);
+    // …and once the mouth has drained, the next expiry ends it as ever.
+    const drained = run(speaking, [{ type: "playbackDrained" }, { type: "idleExpired" }]);
+    expect(drained.state.phase).toBe("ended");
+  });
+
   it("④ …and it is a terminal like the others: anything queued is HARVESTED, not lost", () => {
     const queued = run(listening, [
       { type: "confirmHold", on: true },
@@ -1381,6 +1423,83 @@ describe("callReduce — the transcript gate (D74 S5)", () => {
   });
 });
 
+describe("callReduce — the iron rule on EVIDENCE (R86 LC-1)", () => {
+  /** The reply's first chunk, carrying the ear's accrual for the utterance still open. */
+  const mouthOpens = (energyMs?: number): CallSignal => ({
+    type: "playbackStarted",
+    energyMs,
+    minFinalMs: 200,
+  });
+  /** Thinking on a question, with a NOISE speech-start raised under it (a TV, a next-room voice). */
+  const noisy = run(listening, [
+    { type: "final", text: "what's the weather" },
+    { type: "sent", outcome: "accepted", text: "what's the weather" },
+    { type: "speechStart" },
+  ]).state;
+
+  it("a noise segment the ear measured below the knob does NOT kill the reply (the auditor's run)", () => {
+    expect(noisy.phase).toBe("thinking");
+    const started = run(noisy, [mouthOpens(0)]);
+    expect(started.out).toEqual([]); // no `kill` ⇒ no `cancelTurn` — the reply plays
+    expect(started.state.phase).toBe("speaking");
+    expect(started.state.mouthLive).toBe(true);
+    // …and that segment's final meets the gate on its own arm, exactly as before.
+    const dropped = run(started.state, [
+      { type: "speechStop" },
+      { type: "final", text: "yeah", energyMs: 0, minFinalMs: 200 },
+    ]);
+    expect(dropped.out).toEqual([{ type: "dropCue" }]);
+    expect(dropped.state.note).toBe(CALL_COPY.tooQuiet);
+    expect(dropped.state.pending).toEqual([]);
+    const done = run(dropped.state, [{ type: "playbackDrained" }]);
+    expect(done.state.phase).toBe("listening");
+    expect(submits(done.out)).toEqual([]);
+  });
+
+  it("…and the same for words already in flight (`waitingFinal`) the ear measured as quiet", () => {
+    const inFlight = run(noisy, [{ type: "speechStop" }]).state;
+    expect(inFlight.waitingFinal).toBe(true);
+    expect(run(inFlight, [mouthOpens(40)]).out).toEqual([]);
+  });
+
+  it("FAILS OPEN: unmeasured still kills — and so does an utterance the ear DID hear", () => {
+    // No epoch-matched accrual (a reconnect, a wiring that measured nothing) is not evidence of
+    // quiet, so the rule stands exactly as it always did.
+    for (const sig of [
+      { type: "playbackStarted" } as CallSignal,
+      mouthOpens(undefined),
+      mouthOpens(900), // the owner, genuinely mid-word
+      { type: "playbackStarted", energyMs: 0, minFinalMs: 0 } as CallSignal, // the gate is off
+    ]) {
+      const { state, out } = run(noisy, [sig]);
+      expect(out).toEqual([{ type: "kill" }]);
+      expect(state.killing).toBe(true);
+    }
+  });
+
+  it("a HELD ear lowers the flags a spared segment left up — no unmeasured kill of the next reply", () => {
+    // The knock-on: sparing the reply lets the hold engage over an open segment, and its stop and final
+    // are then dropped as leak. Left standing, the flags would kill the NEXT chunk's `playbackStarted`
+    // on no evidence at all — the epoch having closed with the final.
+    const spared = run(holding, [
+      { type: "final", text: "tell me a story" },
+      { type: "speechStart" },
+      mouthOpens(0),
+    ]).state;
+    expect(spared.earHeld).toBe(true);
+    expect(spared.userSpeechActive).toBe(true);
+    const heard = run(spared, [{ type: "speechStop" }, { type: "final", text: "mm" }]).state;
+    expect(heard.userSpeechActive).toBe(false);
+    expect(heard.waitingFinal).toBe(false);
+    expect(heard.pending).toEqual([]); // still dropped as leak — nothing about the hold changed
+    // A mid-reply synthesis gap resuming is a fresh `playbackStarted`, unmeasured.
+    const resumed = run(heard, [{ type: "playbackDrained" }, { type: "playbackStarted" }]);
+    expect(resumed.out).toEqual([]);
+    // …and a held stop never RAISES the wait it would otherwise set.
+    expect(run(holdingSpeaking, [{ type: "speechStop" }]).state.waitingFinal).toBe(false);
+  });
+});
+
 // ── D74 S2: THE ROUTE LEG CYCLE (evidence docs/research/R77 · R78 §8) ────────────────────────────
 
 /** A connected call that has said which ear it opened — the seed every route case starts from. */
@@ -1502,6 +1621,21 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     const killing = run(routed, [{ type: "playbackStarted" }, { type: "barge" }]).state;
     expect(killing.killing).toBe(true);
     expect(run(killing, [{ type: "routeChange", route: "media" }]).state.killing).toBe(false);
+  });
+
+  it("a redial refused `busy` by OUR OWN old leg is a retry, not the other-call terminal (R86 LC-4)", () => {
+    // The old leg's slot is released only after its close crosses Serve and the relay's upstream
+    // teardown runs — so the recapture's dial can lose that race, on a congested uplink especially.
+    expect(routed.priorLeg).toBe(false); // a settled call, attempts 0, no marker at mount
+    const { state, out } = run(routed, [
+      { type: "routeChange", route: "media" },
+      { type: "serverError", code: "busy", message: "a live call is already running" },
+    ]);
+    expect(state.phase).toBe("connecting");
+    expect(state.note).toBe(CALL_COPY.busyRetrying);
+    expect(out).toEqual([{ type: "recapture", route: "media", deviceId: "", leavesComm: true }]);
+    // …and the 1013 close that follows drives the ladder, as for every note-only refusal.
+    expect(run(state, [{ type: "socketLost" }]).out).toEqual([{ type: "reconnect", delayMs: 400 }]);
   });
 
   it("is INERT outside the settled phases, and when nothing actually moved", () => {

@@ -1044,6 +1044,12 @@ function finish(s: Session, a: HTMLAudioElement): void {
     // (drained closed with nothing left to plan), and the call wiring reads `loading → idle` as the
     // mouth failing — "voice failed" after a reply the owner heard. The finish is published as the
     // `paused` the wiring has always drained on; the unload's `idle` then means nothing to it.
+    // …which is also why a reply NO chunk of which was ever playable has to say so here (R86 LC-3):
+    // routed through the same `paused`, a total synthesis failure reads as a drain from a phase that
+    // was never `speaking`, and the call goes back to Listening in silence (the error toast paints
+    // UNDER the call screen). The tick is the explicit failure the transport cannot express — the
+    // wiring turns it into §4.5's "voice failed" note — and it lands BEFORE the `paused` it explains.
+    if (s.states.indexOf("ok") < 0) mouthFailed();
     set({ status: "paused" });
     dropSession(s);
     return;

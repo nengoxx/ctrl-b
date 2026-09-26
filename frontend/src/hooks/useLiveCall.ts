@@ -172,13 +172,16 @@ const EAR_OUTAGE_MS = 4000;
  *  a conversation. `confirmHold` rides the same set as the PAUSE edge: it is not activity, but it is
  *  the one other thing that changes whether the clock may run at all, and routing it through the same
  *  "look again" call keeps one decision in one place. `speechStop` is deliberately out — its `final`
- *  follows within the same breath and re-arms for it. */
+ *  follows within the same breath and re-arms for it. `idleExpired` itself is in (R86 LC-6): an expiry
+ *  the reducer declined because the reply is still audible must start the window over — and one it
+ *  took is terminal, which `armIdle` already refuses to re-arm. */
 const IDLE_EDGES: ReadonlySet<CallSignal["type"]> = new Set([
   "speechStart",
   "final",
   "playbackStarted",
   "playbackDrained",
   "confirmHold",
+  "idleExpired",
 ]);
 
 /** How much of trigger A's window has to be above the floor before the kill fires (D74 S4 ⑥).
@@ -495,7 +498,9 @@ export type CallSignal = { gen?: number } & (
   | { type: "serverEnded" } //                 the relay said `state: ended`
   | { type: "barge" } //                       trigger A (voice) or B (tap) — the same edge
   | { type: "killSettled" }
-  | { type: "playbackStarted" }
+  /** …carrying the SAME two gate numbers a `final` does (R86 LC-1), for the utterance still open when
+   *  the mouth starts: §4.2's iron rule reads them before it kills. Absent ⇒ unmeasured ⇒ it kills. */
+  | { type: "playbackStarted"; energyMs?: number; minFinalMs?: number }
   /** THE CHUNK-START (D76 §B.3): chunk `idx` of the reply just became audible — the controller's
    *  `setCallChunkStart`, once per chunk (a stall's re-fired `playing` is deduped at the source). The
    *  chunk starts HELD; the probe that judges it arms on this edge, never on the status edge. */
@@ -610,6 +615,18 @@ function drain(s: CallState): Step {
  *  regardless of what their phase logic does with them — see `mouthLive`. */
 function mouth(s: CallState, live: boolean): CallState {
   return s.mouthLive === live ? s : { ...s, mouthLive: live };
+}
+
+/** THE TRANSCRIPT GATE'S VERDICT (D74 S5), ONE predicate for the two arms that consult it — the
+ *  `final` it was built for, and since R86 LC-1 §4.2's iron rule. True only on epoch-matched evidence
+ *  below a knob that is on: absent evidence is unmeasured, not quiet, and absent/0 is the gate off. */
+function tooQuiet(sig: { energyMs?: number; minFinalMs?: number }): boolean {
+  return (
+    sig.energyMs !== undefined &&
+    sig.minFinalMs !== undefined &&
+    sig.minFinalMs > 0 &&
+    sig.energyMs < sig.minFinalMs
+  );
 }
 
 /** Start the §4.3 ORDERED kill. Both triggers land here, and so does §4.2's iron rule, so the state the
@@ -816,7 +833,13 @@ function reduce(s: CallState, sig: CallSignal): Step {
       return { state: { ...s, userSpeechActive: true }, out: [] };
 
     case "speechStop":
-      if (s.muted || s.earHeld) return { state: s, out: [] };
+      if (s.muted) return { state: s, out: [] };
+      // HELD, a stop still LOWERS the flag it pairs with — it never raises `waitingFinal`, whose final
+      // the held arm below drops anyway (R86 LC-1's knock-on). Since the iron rule stands down on quiet
+      // evidence, a noise segment can be open when the hold engages; a flag left up behind it would be
+      // an UNMEASURED iron-rule kill of the next reply, the epoch having closed with its final.
+      if (s.earHeld)
+        return { state: s.userSpeechActive ? { ...s, userSpeechActive: false } : s, out: [] };
       return { state: { ...s, userSpeechActive: false, waitingFinal: true }, out: [] };
 
     case "setMuted":
@@ -839,7 +862,10 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // …and the same flat drop while the ear is HELD (S3), where the words are the reply's own leaking
       // back in: transcribing the character into the owner's next message is the exact failure the hold
       // exists to prevent, and it must not depend on whether the VAD pair that framed it was seen.
-      if (s.muted || s.earHeld) return { state: s, out: [] };
+      // Either drop still CLEARS the wait (R86 LC-1's knock-on, as at `speechStop`): the final has
+      // arrived, so nothing is in flight — a `waitingFinal` stranded here is a phantom iron-rule kill.
+      if (s.muted || s.earHeld)
+        return { state: s.waitingFinal ? { ...s, waitingFinal: false } : s, out: [] };
       const text = sig.text.trim();
       // Empty finals are discarded (§4.5's no-speech path): nothing submits, the flag clears.
       if (!text) return { state: { ...s, waitingFinal: false }, out: [] };
@@ -854,12 +880,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // arrives after a reconnect, or a second final for one speech segment, carries no accrual — and
       // absence of evidence is not evidence of silence. AFTER the empty check on purpose: a no-speech
       // final is already handled, and it deserves no note.
-      if (
-        sig.energyMs !== undefined &&
-        sig.minFinalMs !== undefined &&
-        sig.minFinalMs > 0 &&
-        sig.energyMs < sig.minFinalMs
-      ) {
+      if (tooQuiet(sig)) {
         // …and HEARD, not only shown (D76 §C.5): the note line is useless to an owner who is driving.
         return {
           state: { ...s, waitingFinal: false, note: CALL_COPY.tooQuiet },
@@ -886,7 +907,14 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // §4.2's iron rule (confirm-round MED 2). The mouth is about to open while the owner is mid-word,
       // or while their words are still in flight: that IS a barge-in, and it is killed BEFORE the first
       // audible sample rather than after it.
-      if (s.userSpeechActive || s.waitingFinal) {
+      // …ON THE TRANSCRIPT GATE'S EVIDENCE (R86 LC-1). The two flags are the server VAD's, and Silero is
+      // level-invariant — a TV or a next-room voice raises them as readily as the owner does, which is
+      // why the gate exists at all. So an utterance the EAR measured below `min_final_ms` is not a
+      // barge-in: the reply plays, and that segment's final meets the gate on its own arm. FAIL-OPEN
+      // exactly like the gate — no epoch-matched accrual (a reconnect, an unmeasured wiring) kills, as
+      // it always did. (Whether `barge_in: false` should also spare the owner's REAL speech here is an
+      // owner question, not this rule's.)
+      if ((s.userSpeechActive || s.waitingFinal) && !tooQuiet(sig)) {
         if (s.killing) return { state: open, out: [] };
         return killNow(open);
       }
@@ -986,6 +1014,11 @@ function reduce(s: CallState, sig: CallSignal): Step {
           // ladder starts clean because it is a deliberate redial, not a failure to recover from.
           phase: "connecting",
           attempts: 0,
+          // …and THIS TAB DEMONSTRABLY OWNED A LEG a moment ago (R86 LC-4): the old one's slot is
+          // released only after its close has crossed Serve and the relay's upstream teardown has run,
+          // so the redial can be refused `busy` by our own leg. That is exactly the S6 ⑦ case — the
+          // note-only path, where the 1013 close drives the ladder that outlasts the slot.
+          priorLeg: true,
           // The utterance in flight dies with the track, exactly as it does on a `socketLost`: the
           // audio is gone and no session will endpoint it.
           userSpeechActive: false,
@@ -1120,10 +1153,21 @@ function reduce(s: CallState, sig: CallSignal): Step {
           // to notice.
           return { state: { ...s, note: CALL_COPY.busyRetrying }, out: [] };
         case "session_limit":
-          return terminal(s, "ended", CALL_COPY.limit);
+          // The relay's sentence IS the note here (unlike `protocol`'s diagnostics): the class now has
+          // two causes — the hard session cap, and the uplink-idle reaper (R86 LC-8) — and both
+          // messages are written for the owner. The copy is the fallback for a relay that sent none.
+          return terminal(s, "ended", sig.message || CALL_COPY.limit);
         case "upstream_error":
           // The ONE code the relay keeps the session alive through — so the client must too.
-          return { state: { ...s, note: sig.message || CALL_COPY.lost }, out: [] };
+          // …and it is what the ear sends INSTEAD of the final (R86 LC-2: Speaches publishes `error` and
+          // never the `…completed` for a transcription that raised), so nothing is in flight any more.
+          // A `waitingFinal` left standing would make §4.2's iron rule kill every reply from here on.
+          // Only this flag: `userSpeechActive` may be a NEW segment, genuinely live. A final that does
+          // turn up later is taken by its own arm regardless of the flag, so the clear loses nothing.
+          return {
+            state: { ...s, waitingFinal: false, note: sig.message || CALL_COPY.lost },
+            out: [],
+          };
         case "protocol":
           // The client and the relay disagreed about the wire (A-F2: an uplink burst past the rolling
           // budget is the one way this happens in practice, which the pacer is there to prevent). The
@@ -1166,6 +1210,10 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // A BACKGROUNDED CALL NOBODY IS IN (S6 ④). A clean `ended`, like the session limit and unlike a
       // failure — the mic being hot for ten minutes in a pocket is not an error, it is the thing this
       // ends. The wiring only ever arms the clock while hidden, so reaching here means exactly that.
+      // …UNLESS THE REPLY IS STILL TALKING (R86 LC-6): a seamless chunked reply publishes no status
+      // edge between chunks, so a long answer can outlast a short window — and the knob's contract is
+      // "no speech AND no reply". A no-op here; the wiring re-arms on this very signal (`IDLE_EDGES`).
+      if (s.mouthLive) return { state: s, out: [] };
       return terminal(s, "ended", CALL_COPY.idleBackground);
 
     case "failed":
@@ -1295,6 +1343,13 @@ function openUtterance(m: EarMeter, leg: number): void {
   m.utterance = { samples: [], duringPlayback: false };
 }
 
+/** THE UTTERANCE'S EVIDENCE for leg `leg` — the ONE reader for both signals that carry it (a `final`,
+ *  and since R86 LC-1 the iron rule's `playbackStarted`): the accrual only when the open epoch is that
+ *  leg's, else `undefined` — unmeasured, which is the fail-open case at both arms. */
+function epochAccrual(m: EarMeter, leg: number): number | undefined {
+  return m.epoch?.leg === leg ? m.accruedMs : undefined;
+}
+
 function closeUtterance(m: EarMeter): void {
   m.epoch = null;
   m.accruedMs = 0;
@@ -1373,7 +1428,7 @@ function meterEdge(
 interface GateState {
   /** The gate's knobs, taken from the acquisition that opened the current capture (§4.5 — read at
    *  call start). `null` before any acquisition: there is no floor to compute without them. */
-  cfg: (GateCfg & { playback_margin_db: number }) | null;
+  cfg: (GateCfg & { playback_margin_db: number; min_final_ms?: number }) | null;
   noise: NoiseTracker;
   /** The owner's learned voice level on THIS capture's device, dBFS — seeded from `store/voiceLevels`
    *  when the capture opens, learned from accepted finals, written back when it is released. */
@@ -1721,9 +1776,10 @@ export function useLiveCall(): CallView {
           case "recapture": {
             // THE ROUTE CYCLE (D74 S2) — the hang-up path's RELEASE without its terminal, then S1's
             // acquisition again. The order is the teardown's, for the teardown's reasons: the socket
-            // first (a clean close releases the relay's slot synchronously, so the redial below is
-            // never refused `busy` by our own leg — and the S6 ⑦ marker covers the window if it is),
-            // then the leg's pacer, then the ear.
+            // first (its close STARTS the relay's slot release — which lands only once the close has
+            // crossed Serve and the upstream teardown has run, so the redial below CAN be refused
+            // `busy` by our own leg; the reducer's `priorLeg: true` is what makes that refusal a
+            // retry, not a terminal — R86 LC-4), then the leg's pacer, then the ear.
             const gen = ref.current.gen;
             // ISS-18 (R81): the mouth's next reply must open a FRESH output stream once comm mode is
             // left — told BEFORE the ear is released, so a silent mouth is unloaded and its 5 s starts
@@ -1846,7 +1902,7 @@ export function useLiveCall(): CallView {
               send({
                 type: "final",
                 text: frame.text,
-                energyMs: meter.current.epoch?.leg === leg ? meter.current.accruedMs : undefined,
+                energyMs: epochAccrual(meter.current, leg),
                 minFinalMs: knobs.min_final_ms,
                 gen,
               });
@@ -2009,8 +2065,8 @@ export function useLiveCall(): CallView {
                 } else overflowed.current = false;
                 accrue(p);
                 // The pump reads the LIVE socket rather than closing over one: a frame paced out across the
-                // handshake of a fresh leg belongs to that leg, and `sendAudio` drops it anyway while the
-                // socket is not OPEN (the reconnect gap, exactly as before the pacer).
+                // handshake of a fresh leg belongs to that leg, and `sendAudio` drops it anyway until that
+                // leg's relay has said `ready` (the reconnect gap and the handshake alike — R86 LC-5).
                 pump(p, knobs.frame_ms, (buf) => socket.current?.sendAudio(buf));
               }
               // dBFS AT THE CHOKEPOINT (D76 §C.1): the ONE conversion, on every frame, before anything
@@ -2334,7 +2390,15 @@ export function useLiveCall(): CallView {
       // rather than at whichever frame next notices. A starting chunk re-arms on its own `playing`.
       probe.current = null;
       const gen = ref.current.gen;
-      if (status === "playing") send({ type: "playbackStarted", gen });
+      // The iron rule's evidence (R86 LC-1) — the open utterance's accrual on the CURRENT leg (the one
+      // `meterEdge` opened it under), and the knob latched with the capture's other gate knobs.
+      if (status === "playing")
+        send({
+          type: "playbackStarted",
+          energyMs: epochAccrual(meter.current, legSeq.current),
+          minFinalMs: gate.current.cfg?.min_final_ms,
+          gen,
+        });
       // Synthesis that never produced a sample is the mouth FAILING; audio that played and stopped is
       // the reply finishing (or our own kill, which the machine's `killing` flag tells apart). Kept as
       // BELT beside the explicit tick below — the reducer dedupes (a nonfatal note, back to listening).

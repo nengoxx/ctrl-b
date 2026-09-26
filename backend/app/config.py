@@ -661,7 +661,8 @@ class LiveCfg(VoiceServiceCfg):
     Split by WHO reads the knob, because the split is load-bearing for `GET /voice/status`:
     * SERVER knobs — `vad_threshold`/`silence_ms` ride `session.update` to Speaches; `frame_ms`,
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
-      `allowed_origins` are the relay's own caps; `trail_keep` is the D77 call trail's retention.
+      `uplink_idle_s`, `allowed_origins` are the relay's own caps; `trail_keep` is the D77 call trail's
+      retention.
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`,
       `barge_in`, `ring`, `captions`, `mic_hold`, the D76 GATE six (`floor_dbfs`, the three
       margins, `min_dbfs`/`max_dbfs`), the D73 CAPTURE pair (`route`, `input_device`), the D73 S6
@@ -785,6 +786,18 @@ class LiveCfg(VoiceServiceCfg):
             raise ValueError(f"min_dbfs ({self.min_dbfs}) must be < max_dbfs ({self.max_dbfs})")
         return self
 
+    @model_validator(mode="after")
+    def _reaper_outlasts_tail(self) -> "LiveCfg":
+        """R86 LC-8 — the uplink reaper must outlast a dictation release's tail wait, the one stretch a
+        live client goes quiet ON PURPOSE (a `flush`, then no audio until the final or `stop`). A reaper
+        inside it would end the very leg the owner's last phrase is still due on. At LOAD, like the
+        floor bounds, so the bad pair is a Conf 422 rather than a lost phrase."""
+        if self.uplink_idle_s * 1000 <= self.tail_wait_ms:
+            raise ValueError(
+                f"uplink_idle_s ({self.uplink_idle_s}s) must outlast tail_wait_ms ({self.tail_wait_ms} ms)"
+            )
+        return self
+
     # ── D73 S5 · THE CAPTURE ROUTE (client; evidence R74) ──
     # Both knobs govern EVERY capture this app opens — the call's and streaming/whole-clip dictation's
     # alike (R74 §0.3: an unconstrained `audio: true` is in the same trap), so they sit with the other
@@ -891,6 +904,16 @@ class LiveCfg(VoiceServiceCfg):
     #: How long an accepted socket may sit before its `start` control message arrives. 5 s is generous
     #: for a phone that just got the mic; past it the connection is a protocol error, not a held slot.
     start_timeout_s: float = Field(default=5.0, gt=0, le=60, allow_inf_nan=False)
+    #: The UPLINK-IDLE reaper, s (R86 LC-8): a live leg with no binary frame for this long is ended as a
+    #: `session_limit`-class terminal. The client sends a frame every `frame_ms` for the whole leg — a
+    #: held or muted ear goes up as silence — so silence on the uplink itself is a frozen page or a dead
+    #: ear, and before this the only reaper was `max_session_s` (30 min holding the single slot). 15 s
+    #: is ~375 missed frames at the default `frame_ms`: far past any stall a live page recovers from,
+    #: well inside the owner's patience with a phantom `busy`. Floor 5 s so jitter can never end a live
+    #: call; ceiling 120 s, past which it stops being a reaper. It must also outlast a dictation
+    #: release's `tail_wait_ms` (the one stretch where a live client sends a `flush` and then no audio
+    #: by design) — checked below. A SERVER knob: never delivered to the client.
+    uplink_idle_s: int = Field(default=15, ge=5, le=120)
     #: EXTRA exact origin strings admitted by the WS `Origin` check, on top of the same-host rule
     #: (plan §5.2's "the configured ctrl-b origin(s)"). Empty = same-host only. Browser CORS does not
     #: protect WebSockets and this app mounts no CORS middleware (SECURITY_MODEL §2.7), so the check
@@ -1924,8 +1947,8 @@ class CardImportCfg(BaseModel):
     - `max_bytes`: the request-body cap (a raw-body PUT since R73). 15 MB = the media write path's own ceiling
       (`media.write.max_bytes`), because a PNG card IS an image upload with metadata glued on.
     - `max_card_json_bytes`: the DECODED card JSON — the base64 out of a PNG chunk, the `card.json`
-      member of a CHARX, or a bare `.json` body. It is what ends up serialised into `agent.yaml`
-      (the `card` stash), so it is bounded separately from the container that carried it.
+      member of a CHARX, or a bare `.json` body. It is what ends up serialised into the agent's
+      `card.json` sidecar (R87/RP-8), so it is bounded separately from the container that carried it.
     - `charx_max_entries` / `charx_max_entry_bytes` / `charx_max_total_bytes`: the zip's own bounds —
       how many members it may declare, how big any one may be, and how much it may claim to expand
       to. Checked against the DECLARED sizes before anything is decompressed (the zip-bomb guard),
@@ -2757,7 +2780,8 @@ def _yaml11_safe(v: Any) -> Any:
     prompt-override blocks. Recurses into dicts/lists so sequence entries (e.g. a presence-device
     map inside a list) get the same guard — KEYS included: a map written as `{"no": {"on": …}}`
     reloads as `{False: {True: …}}` otherwise, which is not a mangled value but a mangled TREE (the
-    S2 review's MED-6; a character card's stash is arbitrary author-chosen keys)."""
+    S2 review's MED-6, found on the old card stash; a lorebook entry's stashed extras are arbitrary
+    author-chosen keys today)."""
     if isinstance(v, dict):
         return {_yaml11_key(k): _yaml11_safe(x) for k, x in v.items()}
     if isinstance(v, list):

@@ -107,7 +107,8 @@ export interface VoiceTts extends VoiceServiceCommon {
  *  base stt/tts do: a blank `provider` with no fallbacks resolves like `voice.stt`, which is the common
  *  case of one Speaches box serving both doors). Only the fields Conf EDITS are modelled — the relay's
  *  own server-side caps (`frame_ms`, `max_frame_bytes`, `max_sessions`, `relay_queue_ms`,
- *  `start_timeout_s`, `allowed_origins`) stay YAML-only and round-trip untouched through the draft,
+ *  `start_timeout_s`, `uplink_idle_s`, `allowed_origins`) stay YAML-only and round-trip untouched
+ *  through the draft,
  *  exactly as every other unmodelled key in this doc does. */
 export interface VoiceLive extends VoiceServiceCommon {
   enabled: boolean; //        whole-feature toggle (the master `voice.enabled` still outranks it)
