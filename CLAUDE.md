@@ -63,7 +63,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/FRONTIER_PLAN.md`](./docs/FRONTIER_PLAN.md) | The frontier theme (T5) plan + build record (**✅**); incl. the SECTION LAYOUT SYSTEM v1. |
 
   *Historical records (provenance, not live guidance): `HANDOFF_ARCHIVE.md` (**frozen session
-  history 2026-05 → 2026-08** — "the HANDOFF block of ⟨date⟩" resolves there), `COSMOS_HANDOFF.md`
+  history 2026-05 → 2026-09-26**, every session block verbatim — "the HANDOFF block of ⟨date⟩" / "the Nth session" resolves there), `COSMOS_HANDOFF.md`
   (cosmos build record — live learnings lifted into THEME_ENGINE §14.11/§14.13),
   `SLICE6/7/8_PLAN.md` (frozen D42/D43/D44 design drafts — the locked records are the D-entries),
   `VAPOR_BANNER_LEDGER.md` (closed, the Phase 16 deletion inventory),
