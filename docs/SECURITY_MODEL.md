@@ -436,13 +436,22 @@ design of record [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §5/§6):
   writes no owner file). Adding a row there is a security decision, not a refactor.
 - **Card content is accepted as UNTRUSTED PROSE, deliberately.** A character card is prompt text by
   definition, so importing one is consenting to model-facing text the owner did not write; what is
-  refused is text with *side effects*. `strip_executable` is a recursive key denylist (scripts, hooks,
-  Risu/ST extension modules) reporting every removal by exact RFC-6901 path, and the import REPORT
+  refused is text with *side effects*. `strip_executable` is a recursive key denylist (Risu's
+  `customScripts`/`triggerscript`/`virtualscript`/`lowLevelAccess` and ST's own prompt-rewriting
+  `regex_scripts`, at any depth) reporting every removal by exact RFC-6901 path, and the import REPORT
   surfaces `post_history` verbatim on purpose — it lands closest to generation, so it is the one field
   that must never be invisible. Readers are capped end to end (body 15 MB at cap+1, decoded JSON 2 MB,
   CHARX entry count/entry bytes/total checked against DECLARED sizes before any decompress, traversal
   refused, `RecursionError` caught at the route); an embedded avatar goes through the D65 media probe
   and closed extension allowlist and is named from the slug grammar.
+- **One kept copy of a card, and it is the stripped one (R87/RP-4 + RP-8, 2026-09-26).** The whole
+  normalized card, post-strip, lands in `agents/<slug>/card.json` at **0600** (`atomic_write_text` —
+  a card can carry credentials, R67) and nowhere else: `agent.yaml` no longer holds a `card` stash.
+  A PNG card IS its avatar, and its `chara`/`ccv3` text chunks (`tEXt`/`zTXt`/`iTXt`, keyword
+  casefolded) are the entire UNSTRIPPED card — so they are removed whole before the image enters the
+  served `agents/avatars` library, and the kept image ENDS at its IEND chunk (a card chunk or a
+  glued zip parked after IEND never rides along). Before this, the stripped scripts sat in an
+  ordinary served media file and travelled with it when the avatar was saved or shared.
 - **Lorebook writes** land one YAML per book under `$CTRLB_HOME/lorebooks/`, through the same
   `edit_config_yaml` atomic write the agent editor uses; slugs are validated on the shared READ seam
   too (`load_book`), because `lorebooks.books` and an agent's own `lorebooks:` list are hand-edited
@@ -504,7 +513,11 @@ of CORS middleware, which is the entire defence for the §2.7/§2.8/§2.9 write 
   post-`accept()` so the client gets a **typed** `{"type":"error","code":"busy"}` plus close **1013**
   ("try again later") it can render, rather than an opaque handshake failure indistinguishable from
   a misconfiguration. The slot has exactly ONE release, latched as the single `finally` on the
-  single acquire, so a failing upstream close cannot leak it.
+  single acquire, so a failing upstream close cannot leak it. **Nor can a frozen client hold it:**
+  the client ships a frame every `frame_ms` for the whole leg (held/muted ones as silence), so a leg
+  with no binary frame for `voice.live.uplink_idle_s` (15 s, bounded 5–120, a server knob) is ended
+  as a `session_limit`-class terminal (R86 LC-8) — before this only `max_session_s` (30 min) reaped
+  it, and the browser answers WS pings even with its renderer frozen.
 - **The relay bounds what it will relay.** Malformed/unknown control frames, binary before `start`,
   a second `start`, or an oversized frame close 1008. The client supplies NO session parameter
   beyond `start.sample_rate` (bounds-validated at the same boundary): the server-VAD knobs in the
@@ -530,9 +543,11 @@ up too — `TrustedHostMiddleware` runs on **`websocket` scopes as well as `http
 mismatch answers 400 at the handshake, before routing. It ships EMPTY, so today this residual stands
 here exactly as it stands everywhere else.
 
-**Safe-defaults fit:** `voice.live.enabled` and `voice.live.dictation` both default **OFF** (no
-socket route reachable at all until one is flipped), and `allowed_origins` defaults **empty** (the
-same-host rule alone). §6 carries the row.
+**Safe-defaults fit:** `voice.live.enabled` (the CALL) defaults **ON since v1.7.8** (the S4 gate
+closed 2026-09-26), so on any install with a configured realtime chain **the socket route IS
+reachable by default** — the feature gate above still refuses it without a chain, and
+`voice.enabled` still outranks it. `voice.live.dictation` defaults **OFF**. `allowed_origins`
+defaults **empty** (the same-host rule alone). §6 carries the row.
 
 ### 2.11 The call trail — a debug-gated write endpoint (D77)
 
@@ -574,7 +589,7 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | **Approvals never expire in v1 (D44)** | **accepted** | No TTL / decay-on-disuse (that needs a queryable fire-log = an events-schema migration; reserved). A grant stands until revoked in Conf → Tools or `config.yaml`; revocation is live from the next invoke. |
 | **The media write API will have no kill switch (D65)** | **accepted, owner waiver 2026-08-24** | The whole-feature-toggle rule is knowingly waived: `PUT`/`DELETE /api/media/…` is specified unconditional. A toggle over one typed, allowlisted, registry-confined path buys nothing a rollback does not, and stays trivially additive (§2.7). *Ruled at S0; the routes land at S1.* |
 | **DNS rebinding reaches the whole API** (an attacker-controlled name re-resolving to the LAN/tailnet address is same-origin, so CORS never applies — and it removes the premise of the §2.10 WS `Origin` rail the same way) | **open BY OWNER CHOICE — the rail is BUILT** | Pre-existing, whole-API. **`server.trusted_hosts` closes it (§2.9, R73/D72 ⑥) and is shipped** — but it ships **EMPTY = not mounted**, and the owner ruled 2026-09-16 that it stays empty until they opt in (the rail costs every name and address they browse by; a missing name answers 400 everywhere with a hand-edit of `config.yaml` as the only recovery). So the residual stands on this deploy, by decision rather than by omission. Scoped to the cleartext bind either way — TLS makes the Serve front door unrebindable. *(No longer a Phase 19 item: D72 closed the design question.)* |
-| **The one WebSocket is an ingress CORS cannot reach** (`WS /api/voice/live`, D71) | **accepted, gated + off by default** | §2.10. No preflight exists on an upgrade, so the absence of CORS middleware protects nothing here and the pre-`accept()` `Origin` rail is the boundary instead. Bounded by: both feature toggles defaulting OFF, a `max_sessions` slot, the relay's count+ms burst budgets, and the bearer never reaching a log or the downlink. Media ingress ONLY — a spoken turn still rides `POST /api/agent/chat` + SSE. |
+| **The one WebSocket is an ingress CORS cannot reach** (`WS /api/voice/live`, D71) | **accepted, gated (the call ON by default since v1.7.8)** | §2.10. No preflight exists on an upgrade, so the absence of CORS middleware protects nothing here and the pre-`accept()` `Origin` rail is the boundary instead. Bounded by: the feature gate (a configured realtime chain; `voice.enabled` outranks; the call toggle ON by default since v1.7.8, dictation OFF), a `max_sessions` slot reaped by the uplink-idle bound (`uplink_idle_s`, R86), the relay's count+ms burst budgets, and the bearer never reaching a log or the downlink. Media ingress ONLY — a spoken turn still rides `POST /api/agent/chat` + SSE. |
 | **Safelisted-reachable POST mutations are a CLASS** — multipart (`POST /api/voice/stt`) plus the bodyless / path-param routes that run whatever content type a cross-origin form sends | **pre-existing, open → Phase 19** | CORS withholds a cross-origin read-back, never the send. Not introduced by D65 — surfaced by it, which is why §1's correction scopes the "first surface" claim to owner FILES. Enumeration + disposition = Packet ③ (HARDENING §8.2); §2.7 names three examples. |
 | **The steer queue is in-memory (D41)** | **accepted** | A backend restart loses queued-but-undrained steers — no durability is promised (mirrors the in-memory confirm-token stance). Single-user, the queue is seconds-lived; accepted. |
 
@@ -654,9 +669,10 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
       path's whole defence is that a cross-origin write is forced into a preflight nobody answers.
       This is a negative to preserve, not a setting to choose; the app-wide walk in
       `test_media_write_d65.py` is what enforces it, and its allowlist is the only place to change.
-- [ ] **`voice.live` is what you intend** (§2.10) — `enabled` (the call) and `dictation` (the
-      streaming mic) both default **off**, and **either one alone** makes `WS /api/voice/live`
-      reachable; `voice.live.allowed_origins` should stay **empty** unless a measurement proved the
+- [ ] **`voice.live` is what you intend** (§2.10) — `enabled` (the call) defaults **ON since
+      v1.7.8** and `dictation` (the streaming mic) defaults **off**; **either one alone** makes
+      `WS /api/voice/live` reachable wherever a realtime chain is configured (set `enabled: false`
+      to keep the socket shut); `voice.live.allowed_origins` should stay **empty** unless a measurement proved the
       same-host rule insufficient for your ingress (each entry is an exact origin string that
       bypasses the rail — never a pattern).
 - [ ] **`server.trusted_hosts` reviewed** (§2.9) — empty means the DNS-rebinding residual stands;

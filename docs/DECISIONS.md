@@ -5123,6 +5123,47 @@ when the message goes — the reversion is the routing truth, not a flicker. **T
 *(Superseded 2026-09-24 (D75 ruling): the menu's agent pick is no longer a one-shot — it IS the
 sticky session pin, so the backdrop simply follows the ladder; see D75 "RULED 2026-09-24".)*
 
+**AMENDED 2026-09-26 (main-seat R87 rulings, pre-release — the roleplay shape audit
+[R87](./research/R87-roleplay-shape-audit-vs-sillytavern.md) vs SillyTavern; plan of record
+ROLEPLAY_PLAN §4.1/§4.3/§5.3/§5.4/§6.5/§7):**
+- **`{{original}}` (RP-1, §4.1).** In the SOUL surface it is now the owner's configured
+  `inference.system_prompt` (rendered), else `""` — and only when the agent has its OWN persona
+  text (without one the Voice IS the configured prompt, which is never substituted into itself);
+  the Duties section is ALWAYS emitted as its own section. It used to be the whole no-card head (the baked "You are ctrl-b…" Voice + Duties)
+  and CONSUMED the Duties emission. **Reason:** V2's `{{original}}` is "the prompt the frontend
+  would have used" — the operator's own framing, never an assistant identity — and a card's
+  `system_prompt` opens with the token by convention (14 of the owner's 36 system-prompt cards,
+  every one at offset 0), so every such character was filed under `## Duties` behind a
+  homelab-assistant Voice. `consumes_original` and `_no_card_head` are deleted (no dead seams).
+- **Macros (RP-2/RP-3, §4.3).** `Macros.render` only: a vocabulary name in any ASCII case folds
+  to its canonical spelling (the registry grammar stays `NOFLAG`, so no Unicode look-alike can
+  bind); `{{// …}}` comments render as nothing (ST's rule). The card AND book importers add ONE
+  report line naming the macros this build will render literally. Feature macros
+  (`random`/`pick`/`time`/`date`) NOT built → ISSUES.
+- **Provenance (RP-8/RP-13, §5.3).** `AgentDef.card` is REMOVED. The import writes
+  `agents/<slug>/card.json` — the field's own envelope `{"spec": "chara_card_v2"|"chara_card_v3",
+  "spec_version": <as declared, else the rung's>, "data": <the whole normalized card, mapped +
+  unmapped + extensions + character_book, post-strip>}` (a V1 card is written as V2, ST's upgrade),
+  ASCII-escaped JSON, 0600 via `atomic_write_text`; `NaN`/`Infinity` are refused at parse so the
+  file is always strict JSON, in the
+  same hop as the SOUL and the book, after the agent validates. The embedded book is sourced
+  from that normalized data. `report.stashed_keys` = the unmapped keys only `card.json` keeps.
+  An older `agent.yaml` carrying `card:` loads it as an inert extra (`extra="allow"`); not
+  migrated (pre-release, two dev agents).
+- **Warehouse none, for real (RP-4, §5.4/§7).** A PNG card's `tEXt`/`zTXt`/`iTXt` chunks keyed
+  `chara`/`ccv3` (casefolded) are removed WHOLE before the avatar lands (`strip_card_chunks`,
+  sharing the reader's one chunk walk); ST's own scoped-regex field `regex_scripts` joins the
+  strip denylist.
+- **Card-embedded books (RP-5, §6.5).** `extensions.{position, selectiveLogic, case_sensitive,
+  match_whole_words}` are read FIRST (ST's own reader's precedence) — ST writes the real values
+  there; the V2 top level holds only a before/after squash. `extensions` stays stash verbatim.
+- **Character's Note (RP-6).** One report warning when `extensions.depth_prompt.prompt` is
+  non-empty (v1 has no slot for it).
+- **Re-import of our own books (review O-3, §6.5).** An entry whose top-level `position` is
+  `head`/`tail` is already ours (exported/edited here); for it the TOP LEVEL wins for all four
+  keys over the stale ST `extensions` mirror it still carries as stash — `extensions`-first
+  applies to ST-shaped entries only.
+
 ## D71 — Live voice mode ("call mode"): the Speaches-realtime ear · client-submitted turns · the WebSocket admission ✏️ RATIFIED 2026-09-11 (owner, in conversation — "okay then" after the brief + the reference-projects discussion; spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md); evidence = [R51](./research/R51-realtime-voice-chat.md) + [R68](./research/R68-live-voice-deltas.md); council = blind Emma design round RETHINK [2 HIGH · 7 MED, sweep "none", architecture ① affirmed; all nine ACCEPTED, both HIGHs code-verified] → confirm SHIP WITH CHANGES [all four folded] — plan §9 verbatim)
 
 **The architecture (R51 §9.3 ①, twice re-affirmed):** Speaches `/v1/realtime?intent=transcription`
@@ -5156,6 +5197,22 @@ the plan. Build = **S0–S4 per plan §7**, one slice per session under the stan
 S4 = the owner calibration round gates the phase (and calibrates the Tier-0 auto-stop
 threshold in the same sitting).
 
+
+**Amendment 2026-09-26 (R86 LC-1, the pre-release audit):** §4.2's iron rule ("the reply may not start
+while `userSpeechActive || waitingFinal`") is EVIDENCE-GATED by the D74 transcript gate — the kill is
+skipped when the open utterance's epoch-matched accrual is below `min_final_ms`; unmeasured epochs fail
+OPEN (kill), exactly like the gate itself. Reason: the two flags are the server VAD's, and Silero is
+level-invariant (R76), so a TV or a next-room voice raised them as readily as the owner — and the kill
+CANCELLED the turn mid-stream, persisting nothing: a lost answer with "too quiet" on the screen.
+Knock-on: under the ear-hold a `speechStop`/`final` LOWERS its flag instead of being ignored whole, so a
+spared noise segment cannot strand an unmeasured kill of the next reply. The `barge_in: false`
+interplay (should the owner's REAL speech at reply start also let the reply play and queue the words?)
+is an OPEN OWNER QUESTION (HANDOFF). The same wave: LC-2 `upstream_error` clears `waitingFinal` ·
+LC-3 an all-failed chunked synthesis in a call ticks `mouthFailed()` · LC-4 `routeChange` sets
+`priorLeg` · LC-5 the socket latches `ready` before shipping audio · LC-6 the background idle clock
+spares a talking reply · LC-8 the relay's uplink-idle reaper (`voice.live.uplink_idle_s`, 15 s,
+server knob) ends a frozen phone's leg instead of holding the single slot for `max_session_s`.
+As-built: LIVE_VOICE_PLAN §7 (under the S4 record); evidence: R86.
 
 ## D72 — The intermission fix wave: cross-cutting correctness, security and doc truth between S3.5 and S4 ✏️ RULED 2026-09-15 (main seat, on a three-lane audit of everything built since v1.7.7 + the plan-review round; evidence = [R71](./research/R71-uplink-stall-pacing.md) · [R72](./research/R72-session-slot-reconnect.md) · [R73](./research/R73-cross-origin-write-defense.md); design of record = the wave plan v3, whose rulings are recorded IN the owning plans — [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7 intermission addendum · [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §13 addendum · [`SECURITY_MODEL.md`](./SECURITY_MODEL.md)'s D70 section; the plan-review round H1–H3 · M4–M7 · L8–L14 was ACCEPTED in full)
 
