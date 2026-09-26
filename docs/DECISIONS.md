@@ -5147,7 +5147,7 @@ ROLEPLAY_PLAN §4.1/§4.3/§5.3/§5.4/§6.5/§7):**
   ASCII-escaped JSON, 0600 via `atomic_write_text`; `NaN`/`Infinity` are refused at parse so the
   file is always strict JSON, in the
   same hop as the SOUL and the book, after the agent validates. The embedded book is sourced
-  from that normalized data. `report.stashed_keys` = the unmapped keys only `card.json` keeps.
+  from that normalized data. `report.stashed_keys` = what the card carried but the import did not act on (see the R89 bullets).
   An older `agent.yaml` carrying `card:` loads it as an inert extra (`extra="allow"`); not
   migrated (pre-release, two dev agents).
 - **Warehouse none, for real (RP-4, §5.4/§7).** A PNG card's `tEXt`/`zTXt`/`iTXt` chunks keyed
@@ -5163,6 +5163,31 @@ ROLEPLAY_PLAN §4.1/§4.3/§5.3/§5.4/§6.5/§7):**
   `head`/`tail` is already ours (exported/edited here); for it the TOP LEVEL wins for all four
   keys over the stale ST `extensions` mirror it still carries as stash — `extensions`-first
   applies to ST-shaped entries only.
+
+**AMENDED again 2026-09-26 (main-seat rulings on [R89](./research/R89-emma-roleplay-second-audit.md),
+the Emma/Sol second audit; plan of record ROLEPLAY_PLAN §5.3/§5.5):**
+- **A persona-less card is still a character (E-1).** A valid card whose composed SOUL is empty (no
+  `system_prompt`/`description`/`personality` — e.g. only a first message) gets the registry prompt
+  `card_blank_soul` (`You are {{char}}.`, group "voice & duties") as its SOUL.md, written through
+  `_write_soul` with the token literal (the macro pass renders it at assembly), so the new-agent
+  scaffold never lays the baked assistant identity over it.
+- **Imports are serialized (E-2).** One route-level `asyncio.Lock` per collection an import mints
+  into — `_agent_import_lock`, `_book_import_lock` (the `settings_write_lock` precedent) — held until the worker
+  THREAD ends — even when the request is cancelled (a client disconnect): `_import_locked` runs
+  acquire → thread → release as its own shielded task (`CoreMemory._guarded`'s shape) and waits for
+  it before letting the cancellation propagate — so read-names → mint → write is one critical section. A card import holds
+  both (agents first); a book import holds the book lock only.
+- **Book keys feed the macro line (E-3).** The book importer's unrendered-macros line sniffs every
+  entry's `keys` + `secondary_keys` + `content`, worded "…reach the model as literal text, or never
+  match as a key".
+- **Envelope unknowns stay at the envelope level (E-4).** `card.json` for V2/V3 is `{"spec",
+  "spec_version", <envelope unknowns, post-strip>, "data": {…}}`; card-level unknowns stay under
+  `data`; V1 (flat) is written as V2 with everything under `data`. Strip pointers address the
+  uploaded file exactly (`/data/…` for a V2/V3 card field).
+- **The report says what was acted on (E-5).** `fields_mapped` = mapped fields that landed something
+  (present-but-blank is not mapped) + V3 `nickname` (→ title) + a CHARX `assets` icon that became the
+  avatar + a `character_book` that became an attached book; `stashed_keys` = everything else, card-
+  and envelope-level. Key names unchanged (the FE reads them).
 
 ## D71 — Live voice mode ("call mode"): the Speaches-realtime ear · client-submitted turns · the WebSocket admission ✏️ RATIFIED 2026-09-11 (owner, in conversation — "okay then" after the brief + the reference-projects discussion; spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md); evidence = [R51](./research/R51-realtime-voice-chat.md) + [R68](./research/R68-live-voice-deltas.md); council = blind Emma design round RETHINK [2 HIGH · 7 MED, sweep "none", architecture ① affirmed; all nine ACCEPTED, both HIGHs code-verified] → confirm SHIP WITH CHANGES [all four folded] — plan §9 verbatim)
 
@@ -5183,8 +5208,8 @@ channel stay SSE/HTTP; a future feature wanting a WS re-argues against this entr
 validates `Origin`, enforces typed-frames-only, per-frame/rate/session caps, and a
 process-wide session cap.
 
-**Scope + posture:** screen-on / app-foreground / Wake Lock (R14); `voice.live` extends
-`VoiceCfg` with a whole-feature `enabled` (ships OFF until the S4 owner round closes) and every
+**Scope + posture:** screen-on / app-foreground / Wake Lock (R14) — background survival added by D73 S6 (`voice.live.background`, default on); `voice.live` extends
+`VoiceCfg` with a whole-feature `enabled` (shipped OFF until S4 closed on 2026-09-26; ON since v1.7.8 — see the amendment) and every
 tunable as a real Conf Settings row (owner ruling — no YAML-only knobs). **⚠ Amended at S3.5
 (2026-09-14, LIVE_VOICE_PLAN §7-S3.5): `enabled` is the CALL's switch, not the socket's.** The WS
 route and the `live_ear` status bit admit on **`enabled OR dictation`** (`api/voice.py`), because
@@ -5198,21 +5223,29 @@ S4 = the owner calibration round gates the phase (and calibrates the Tier-0 auto
 threshold in the same sitting).
 
 
-**Amendment 2026-09-26 (R86 LC-1, the pre-release audit):** §4.2's iron rule ("the reply may not start
-while `userSpeechActive || waitingFinal`") is EVIDENCE-GATED by the D74 transcript gate — the kill is
-skipped when the open utterance's epoch-matched accrual is below `min_final_ms`; unmeasured epochs fail
-OPEN (kill), exactly like the gate itself. Reason: the two flags are the server VAD's, and Silero is
+**Amendment 2026-09-26 (R86 LC-1, the pre-release audit; narrowed by R88 E-1 the same day):** §4.2's
+iron rule ("the reply may not start while `userSpeechActive || waitingFinal`") is EVIDENCE-GATED by the
+D74 transcript gate FOR A CLOSED UTTERANCE ONLY — the kill is skipped when the segment has stopped
+(`waitingFinal`, no speech live) and its epoch-matched accrual is below `min_final_ms`. An OPEN segment
+(`userSpeechActive`) is killed exactly as before, whatever it has accrued so far: a partial accrual is
+not a verdict, and on the default media/auto-hold path sparing it let the hold close the ear on the rest
+of the owner's sentence (R88 E-1). So continuous noise during `thinking` still kills; deferring the
+mouth until the segment is classifiable is part of the open owner question below. Unmeasured epochs
+fail OPEN (kill), exactly like the gate itself. Reason: the two flags are the server VAD's, and Silero is
 level-invariant (R76), so a TV or a next-room voice raised them as readily as the owner — and the kill
 CANCELLED the turn mid-stream, persisting nothing: a lost answer with "too quiet" on the screen.
 Knock-on: under the ear-hold a `speechStop`/`final` LOWERS its flag instead of being ignored whole, so a
-spared noise segment cannot strand an unmeasured kill of the next reply. The `barge_in: false`
+spared (closed) segment's pending final — or a segment left open under a kill that settled over a
+restarted mouth — cannot strand an unmeasured kill of the next reply. The `barge_in: false`
 interplay (should the owner's REAL speech at reply start also let the reply play and queue the words?)
 is an OPEN OWNER QUESTION (HANDOFF). The same wave: LC-2 `upstream_error` clears `waitingFinal` ·
 LC-3 an all-failed chunked synthesis in a call ticks `mouthFailed()` · LC-4 `routeChange` sets
 `priorLeg` · LC-5 the socket latches `ready` before shipping audio · LC-6 the background idle clock
-spares a talking reply · LC-8 the relay's uplink-idle reaper (`voice.live.uplink_idle_s`, 15 s,
+spares a talking reply — and (R88 E-2) the owner still talking or a final still in flight · LC-8 the relay's uplink-idle reaper (`voice.live.uplink_idle_s`, 15 s,
 server knob) ends a frozen phone's leg instead of holding the single slot for `max_session_s`.
-As-built: LIVE_VOICE_PLAN §7 (under the S4 record); evidence: R86.
+As-built: LIVE_VOICE_PLAN §7 (under the S4 record); evidence: R86. R88 (the second audit, Emma):
+`/voice/status.live_call` delivers only fields the browser reads — `max_session_s` and `vad_threshold`
+removed (server knobs, never read), pinned by a reader-parity test.
 
 ## D72 — The intermission fix wave: cross-cutting correctness, security and doc truth between S3.5 and S4 ✏️ RULED 2026-09-15 (main seat, on a three-lane audit of everything built since v1.7.7 + the plan-review round; evidence = [R71](./research/R71-uplink-stall-pacing.md) · [R72](./research/R72-session-slot-reconnect.md) · [R73](./research/R73-cross-origin-write-defense.md); design of record = the wave plan v3, whose rulings are recorded IN the owning plans — [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7 intermission addendum · [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §13 addendum · [`SECURITY_MODEL.md`](./SECURITY_MODEL.md)'s D70 section; the plan-review round H1–H3 · M4–M7 · L8–L14 was ACCEPTED in full)
 

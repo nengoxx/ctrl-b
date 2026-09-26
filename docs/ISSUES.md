@@ -69,7 +69,7 @@
 
 **ISS-22** · **DEFERRED — R87/RP-9** — the book-import report floods on no-op lines (216 of *Fantasy RPG V026*'s 218 warnings are the position-0 "before char" line, which is an exact head landing) while probability, inclusion groups, recursion, per-entry `scanDepth` and regex keys change behaviour silently. Fix: drop/aggregate the position-0 line; one per-book count line per active inert feature class. [R87 §E RP-9]
 
-**ISS-23** · **DEFERRED — R87/RP-10** — hand-created characters start with ALL tools: ROLEPLAY_PLAN §5.5's "editor create flow writes `roleplay.default_tools`" was never built nor recorded as a deviation (`AgentsEditor` creates with `tools: "*"`). Build it on the duties flip, or strike the §5.5 parenthetical as superseded by ruling 16. [R87 §E RP-10]
+**ISS-23** · **DEFERRED — R87/RP-10** — hand-created characters start with ALL tools: ROLEPLAY_PLAN §5.5's "editor create flow writes `roleplay.default_tools`" was never built nor recorded as a deviation (`AgentsEditor` creates with `tools: "*"`). Build it on the duties flip, or strike the §5.5 parenthetical as superseded by ruling 16. [R87 §E RP-10] ROLEPLAY_PLAN §5.5 now says plainly that the editor's create flow does NOT write `default_tools` (R89 consistency note 4).
 
 **ISS-24** · **DEFERRED — R87/RP-11** — deleting a character orphans its memories (`<memory_dir>/agents/<slug>`), book and avatar; a re-import of the same card re-mints the slug and silently inherits the dead character's MEMORY.md and old threads. `delete_agent`'s docstring ("+ its memories") is false since D26. Fix: remove the memory subdir (or report what remains) + correct the docstring. [R87 §E RP-11]
 

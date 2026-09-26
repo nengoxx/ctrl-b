@@ -445,8 +445,13 @@ design of record [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §5/§6):
   refused, `RecursionError` caught at the route); an embedded avatar goes through the D65 media probe
   and closed extension allowlist and is named from the slug grammar.
 - **One kept copy of a card, and it is the stripped one (R87/RP-4 + RP-8, 2026-09-26).** The whole
-  normalized card, post-strip, lands in `agents/<slug>/card.json` at **0600** (`atomic_write_text` —
-  a card can carry credentials, R67) and nowhere else: `agent.yaml` no longer holds a `card` stash.
+  normalized card, post-strip, lands in `agents/<slug>/card.json` at **0600**
+  (`atomic_write_text` — a card can carry credentials, R67) and nowhere else: `agent.yaml` no longer
+  holds a `card` stash. It is the spec's own envelope — `{spec, spec_version, <envelope unknowns>,
+  data}` — with every field kept where it arrived (an unknown key beside `data` stays beside it,
+  R89/E-4), and both halves pass the same strip, each removal reported by its exact pointer in the
+  uploaded file. Concurrent imports are serialized per collection (R89/E-2), and a cancelled request keeps its lock until its worker thread finishes, so two same-name imports
+  can never write into one agent folder or one book file.
   A PNG card IS its avatar, and its `chara`/`ccv3` text chunks (`tEXt`/`zTXt`/`iTXt`, keyword
   casefolded) are the entire UNSTRIPPED card — so they are removed whole before the image enters the
   served `agents/avatars` library, and the kept image ENDS at its IEND chunk (a card chunk or a
