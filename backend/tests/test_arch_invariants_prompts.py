@@ -117,6 +117,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         # tell the OWNER what the import could not honour; neither is ever sent to a model.
         ("app/services/agent/macros.py", "unrendered_note"),
         ("app/services/agent/card_import.py", "_depth_prompt_note"),
+        ("app/services/agent/card_import.py", "compose_soul"),  # the lone-surrogate 422 detail
         ("app/services/agent/compaction.py", "_warn_degenerate_trigger"),
         ("app/services/agent/session.py", "AgentSession._log_context_cost"),
         ("app/services/agent/session.py", "AgentSession._run_calls._complete"),
