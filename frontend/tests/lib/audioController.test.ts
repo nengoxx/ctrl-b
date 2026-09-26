@@ -1305,6 +1305,111 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     expect(result.current.status).toBe("playing");
   });
 
+  it("the owner's resume RELEASES a held start, past the gate — hold → pause → resume (Emma F1)", async () => {
+    setChunkPolicy(chunked());
+    const { result } = renderHook(() => usePlayback((p) => p));
+    open = false;
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush(); // chunk 0 landed behind the closed gate
+    expect(result.current.status).toBe("loading");
+    act(() => togglePlay()); // the owner pauses the honest latch…
+    expect(result.current.status).toBe("paused");
+    expect(lastAudio.src).toBe("");
+    act(() => togglePlay()); // …and taps resume over an ear that has NOT settled: theirs to make
+    expect(lastAudio.src).toBe("blob:1");
+    expect(result.current.status).toBe("playing");
+    const plays = lastAudio.plays;
+    open = true;
+    act(() => pokeCallMouth()); // nothing is held any more — the release consumed it
+    expect(lastAudio.plays).toBe(plays);
+    expect(lastAudio.src).toBe("blob:1");
+  });
+
+  it("the owner's SEEK takes the queue from a held start — hold → pause → seek → gate-open (Emma F1)", async () => {
+    setChunkPolicy(chunked({ lookahead: 3 }));
+    const calls = deferredFetch();
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes())); // chunk 0 plays; the pin opens the window
+    await flush();
+    expect(lastAudio.src).toBe("blob:1");
+    await act(async () => calls[2].resolve(okRes())); // chunk 2 is ready (blob:2); chunk 1 is not
+    await flush();
+    await act(async () => lastAudio.finish()); // …so chunk 0's end is an honest gap
+    await flush();
+    expect(result.current.status).toBe("loading");
+    open = false; // the owner starts talking during the gap…
+    await act(async () => calls[1].resolve(okRes())); // …and chunk 1 (blob:3) lands: held at the door
+    await flush();
+    expect(result.current.status).toBe("loading");
+    expect(lastAudio.src).toBe("blob:1");
+    act(() => togglePlay()); // pause the latch, then pick chunk 2 on the scrubber
+    expect(result.current.status).toBe("paused");
+    act(() => seekFraction(0.8)); // 11.2 of 14 chars → chunk 2
+    expect(lastAudio.src).toBe("blob:2");
+    expect(result.current.status).toBe("paused");
+    open = true;
+    act(() => pokeCallMouth()); // the stale continuation is GONE: nothing plays over the owner's pick
+    expect(lastAudio.src).toBe("blob:2");
+    expect(result.current.status).toBe("paused");
+    act(() => togglePlay());
+    expect(lastAudio.src).toBe("blob:2");
+    expect(result.current.status).toBe("playing");
+  });
+
+  it("the gate opening WHILE PAUSED loads-and-holds; the resume then plays (Emma's confirm note)", async () => {
+    setChunkPolicy(chunked());
+    const { result } = renderHook(() => usePlayback((p) => p));
+    open = false;
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    act(() => togglePlay()); // paused under the hold
+    expect(result.current.status).toBe("paused");
+    open = true;
+    act(() => pokeCallMouth()); // the ear settles first: the held start runs under `wantPlay: false`
+    expect(lastAudio.src).toBe("blob:1"); // …loads chunk 0 and HOLDS it — the pause is honoured
+    expect(result.current.status).toBe("paused");
+    act(() => togglePlay()); // an ordinary resume from here
+    expect(result.current.status).toBe("playing");
+    expect(lastAudio.src).toBe("blob:1");
+  });
+
+  it("a seek to a PENDING chunk from a held start lands as the owner's own (Emma's confirm note)", async () => {
+    setChunkPolicy(chunked({ lookahead: 3 }));
+    const calls = deferredFetch();
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish()); // chunk 0 ends into an honest gap
+    await flush();
+    open = false;
+    await act(async () => calls[1].resolve(okRes())); // chunk 1 (blob:2) lands: held at the door
+    await flush();
+    expect(result.current.status).toBe("loading");
+    act(() => togglePlay()); // pause, then pick chunk 2 — still synthesizing
+    act(() => seekFraction(0.8));
+    expect(result.current.status).toBe("paused");
+    await act(async () => calls[2].resolve(okRes())); // chunk 2 (blob:3) lands on the SEEK latch…
+    await flush();
+    expect(lastAudio.src).toBe("blob:3"); // …the owner's landing, not the gate's: loaded and held
+    expect(result.current.status).toBe("paused");
+    open = true;
+    act(() => pokeCallMouth()); // nothing held: the seek took the queue
+    expect(lastAudio.src).toBe("blob:3");
+    act(() => togglePlay());
+    expect(result.current.status).toBe("playing");
+    expect(lastAudio.src).toBe("blob:3");
+  });
+
   it("composes with the ISS-18 retag wait: the platform wait first, then the mouth gate", async () => {
     let clock = 0;
     const spy = vi.spyOn(performance, "now").mockImplementation(() => clock);

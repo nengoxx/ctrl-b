@@ -1492,6 +1492,25 @@ describe("callReduce — the mouth WAITS (the owner's 2026-09-26 ruling on R86 L
     expect(mouthMayOpen(next)).toBe(false);
   });
 
+  it("the verdict ends with its segment's FINAL, even one that lands without a stop (Emma F2)", () => {
+    // A final before/without `speech_stopped` leaves the segment open; the verdict must not ride on.
+    const judged = run(noisy, [{ type: "segmentNoise" }]).state;
+    expect(mouthMayOpen(judged)).toBe(true);
+    for (const sig of [
+      { type: "final", text: "" },
+      { type: "final", text: "yeah", energyMs: 40, minFinalMs: 200 },
+      { type: "final", text: "turn it off" },
+    ] as CallSignal[]) {
+      const after = run(judged, [sig]).state;
+      expect(after.noiseOpen).toBe(false);
+      expect(after.userSpeechActive).toBe(true); // the segment is still open: unjudged again
+      expect(mouthMayOpen(after)).toBe(false);
+    }
+    // …and under the held ear's flat drop too, where the segment stays open as well.
+    const heldJudged = { ...judged, earHeld: true };
+    expect(run(heldJudged, [{ type: "final", text: "leak" }]).state.noiseOpen).toBe(false);
+  });
+
   it("the verdict clears wherever its segment closes or is condemned — stop, mute, a lost or fresh leg", () => {
     const judged = run(noisy, [{ type: "segmentNoise" }]).state;
     for (const sig of [

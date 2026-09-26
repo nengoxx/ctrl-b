@@ -32,8 +32,9 @@ let seq = 0;
  * THE ORDER IS THE CONTRACT (micro-confirm №2's blocker): ① `dismiss()` — answering a call SILENCES
  * pre-call playback, and not only for the ear's sake: a session carried into the call can hold a status
  * the element isn't honoring (a pending forward SEEK parks an intent-only "playing" through a silent
- * synthesis gap), and the chunk landing mid-call would republish that same value — no edge, and §4.2's
- * iron-rule kill never fires. No session survives the door, so no phantom status can. ② `primeAudio()`
+ * synthesis gap), and its chunk landing mid-call would open the mouth from a queue the call never
+ * gated — pre-call playback state crossing the call boundary. No session survives the door, so no
+ * phantom status and no ungated queue can. ② `primeAudio()`
  * — the shared `<audio>` element is created lazily by whatever first wants to speak, which on mobile is
  * a timer and not a tap; priming must be here, inside the gesture, and must come AFTER the dismiss (on
  * a src-loaded element the prime's already-playing guard would skip the unlock). ③ open the overlay.

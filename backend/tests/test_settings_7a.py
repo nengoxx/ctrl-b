@@ -326,7 +326,9 @@ def test_d74_text_and_gate_knobs_round_trip_to_the_status_probe() -> None:
             assert c.app.state.settings.voice.tts.speak_actions is True
             live = c.app.state.settings.voice.live
             assert (live.min_final_ms, live.noise_verdict_ms, live.debug) == (350, 1500, True)
-            assert "min_final_ms: 350" in cfg.read_text(encoding="utf-8")
+            on_disk = cfg.read_text(encoding="utf-8")
+            assert "min_final_ms: 350" in on_disk
+            assert "noise_verdict_ms: 1500" in on_disk  # restart-durable, not only in memory (F3)
 
             body = c.get("/api/voice/status").json()
             assert body["tts_chunking"]["speak_actions"] is True

@@ -1552,7 +1552,10 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > `playNext`'s opening edge (after the ISS-18 retag wait) and its resume out of an honest-`loading`
   > gap, and `playWhole` — which hold ONE continuation (`holdMouth`) under `loading`; `pokeCallMouth`
   > runs it once the gate says yes, and `reset`/`beginMessage`/the gate's teardown drop it unrun. The
-  > owner's gestures (`transport`'s resume, `seekChunked`) are not gated; the seam between two audible
+  > owner's gestures (`transport`'s resume, `seekChunked`) are not gated — and they WIN over a held
+  > start (Emma's code round F1): the resume tap releases the held continuation and runs it past the
+  > gate (`releaseHeldPastGate`/`pastGate`, one-shot and synchronous; a parked replay's `playNext`
+  > runs the same way), a seek drops it (the seek owns the queue); the seam between two audible
   > chunks is not a door. `useLiveCall`: the pure `mouthMayOpen(s)` = `!waitingFinal &&
   > (!userSpeechActive || noiseOpen)` is the gate, registered for the call's life (it reads the
   > machine, so a route cycle leaves it standing) and cleared at teardown; `send` pokes after every
@@ -1560,7 +1563,9 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > `LiveCfg` knob, 1000, 0–5000, delivered on `/voice/status`, latched with the gate knobs, Conf row
   > "Noise verdict (ms)"), fenced on the leg AND the meter epoch it was armed under; at expiry, the
   > transcript gate's own predicate (`tooQuiet` over `epochAccrual`) sends `segmentNoise` →
-  > `noiseOpen`, normalized to live only while `userSpeechActive`. No verdict without evidence (either
+  > `noiseOpen`, normalized to live only while `userSpeechActive` and cleared by the segment's
+  > `final` on every exit (Emma F2 — a final without a stop leaves the segment open, unjudged again;
+  > a later segment is a new epoch with its own timer). No verdict without evidence (either
   > knob 0, or no matching epoch ⇒ wait for the stop). A `speechStop` raises `waitingFinal` only after
   > an accepted start (the design round's A2). `barge_in` is untouched and plays no part — a barge-in
   > interrupts an AUDIBLE reply (§4.3).

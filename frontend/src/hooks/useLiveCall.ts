@@ -892,6 +892,11 @@ function reduce(s: CallState, sig: CallSignal): Step {
       return { state: { ...s, muted: false }, out: [] };
 
     case "final": {
+      // THE VERDICT ENDS WITH ITS SEGMENT'S FINAL (Emma's code round F2): a final that lands before or
+      // without `speech_stopped` leaves the segment open, and the normalization in `callReduce` would
+      // keep the verdict with it — the mouth permitted over a segment whose judgement has expired. So
+      // EVERY exit below runs with it cleared, once; a later segment is a new epoch with its own timer.
+      if (s.noiseOpen) return reduce({ ...s, noiseOpen: false }, sig);
       // "Mute means don't send that" (owner-ratified), applied FLAT: a final that arrives while muted is
       // dropped whether it is the condemned half-utterance or one the server endpointed a moment before
       // the tap. One rule, no window where the words go out anyway.

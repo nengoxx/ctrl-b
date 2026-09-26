@@ -319,11 +319,33 @@ export function setCallMouthGate(cb: (() => boolean) | null): void {
   // and a held reply that started after it would be the call talking past its own hang-up.
   if (!cb) mouthHeld = null;
 }
+/** THE OWNER'S GESTURE WINS (A1; Emma's code round F1). `transport`'s resume never asks the gate — but
+ *  the start it triggers re-enters `playNext`, whose doors do. So the resume runs that start PAST the
+ *  gate, one-shot and synchronous: the bypass is up only inside `run`, and `playNext`'s re-ask is the
+ *  only thing that ever sees it. */
+let mouthPast = false;
+function pastGate(run: () => void): void {
+  mouthPast = true;
+  try {
+    run();
+  } finally {
+    mouthPast = false;
+  }
+}
 function mouthMayOpen(): boolean {
-  return callMouthGate ? callMouthGate() : true;
+  return mouthPast || !callMouthGate || callMouthGate();
 }
 function holdMouth(resume: () => void): void {
   mouthHeld = resume;
+}
+/** The held start, released by the OWNER rather than the ear: consumed here, run past the gate. False
+ *  when nothing is held — the caller's "loading" is then an honest synthesis gap. */
+function releaseHeldPastGate(): boolean {
+  const resume = mouthHeld;
+  if (!resume) return false;
+  mouthHeld = null;
+  pastGate(resume);
+  return true;
 }
 /** "The ear may have settled — look again." The ONE answer to "what happens when the hold lifts" (the
  *  reducer's `drain()` discipline): the call pokes after every signal it reduces, and this runs the held
@@ -1313,12 +1335,16 @@ function transport(): void {
       s.waiting = false;
       s.seek = null;
       s.metaSeek?.(); // a replay must not inherit a stale armed payout
-      playNext(s);
+      pastGate(() => playNext(s)); // the replay is the owner's tap: its opening door does not ask
       if (s.waiting) set({ status: "loading" }); // latched on a chunk being re-requested
       return;
     }
   }
   if (s?.waiting) {
+    // A start HELD on the mouth gate is the owner's to release (A1; Emma's code round F1): their tap
+    // runs it now, past the gate — left waiting, the explicit resume would look dead until the ear
+    // settled, and that is the very failure A1 names.
+    if (releaseHeldPastGate()) return;
     // Resume INTENT rides `wantPlay` alone — the status stays the honest "loading" until the chunk
     // actually arrives, and the media `play` event is the ONLY door to "playing" (the confirm round's
     // blocker: an intent-only "playing" into a silent gap makes the eventual real start republish the
@@ -1413,6 +1439,9 @@ function seekChunked(s: Session, f: number): void {
   // same-chunk fast path below would otherwise let the stale fraction snap back over it (confirm-round
   // catch). Only past the early returns: a no-op seek must not cancel anything.
   s.metaSeek?.();
+  // …and the seek TAKES OWNERSHIP of the queue (Emma's code round F1): a start held on the mouth gate
+  // would otherwise run when the ear settles and `playNext()` right over the chunk the owner picked.
+  mouthHeld = null;
   s.parked = false; // a navigation makes the parked queue live again
   // The user's LIVE intent, not the status (S2b confirm F2): a play() rejection publishes `paused`
   // and a synthesis gap publishes `loading`, both with `wantPlay` still true — reading the status

@@ -550,11 +550,11 @@ describe("call mode is UNREACHABLE until the `live` bit exists (ruling 5)", () =
 
   it("the call commit SILENCES pre-call playback FIRST — dismiss, then prime (micro-confirm №2)", async () => {
     // A pre-call playback session carried into the call can hold a status the element is not honoring
-    // — a pending forward SEEK parks an intent-only "playing" through a silent synthesis gap — and the
-    // chunk landing mid-call republishes that same value: no edge for §4.2's iron rule. The kill at
-    // the DOOR is what makes "no phantom status survives into the call" true by construction; and it
-    // must come BEFORE the prime, whose already-playing guard would otherwise skip the unlock on a
-    // src-loaded element.
+    // — a pending forward SEEK parks an intent-only "playing" through a silent synthesis gap — and its
+    // chunk landing mid-call would open the mouth from a queue the call never gated. The dismiss at
+    // the DOOR is what makes "no pre-call playback state crosses into the call" true by construction;
+    // and it must come BEFORE the prime, whose already-playing guard would otherwise skip the unlock
+    // on a src-loaded element.
     voice.live = true;
     const { dismiss, primeAudio } = await import("../../src/lib/audioController");
     render(<KitComposer />);
