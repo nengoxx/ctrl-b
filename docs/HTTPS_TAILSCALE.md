@@ -67,14 +67,19 @@ may take a few seconds while Tailscale provisions the certificate.
 
 ### Optional — HTTPS for the DEV stack too
 
-The dev Vite server (`:5173`) is plain HTTP by design, so the mic does not work there. To give dev its
-own secure context, put it on a **different** port so prod's :443 is untouched:
+The dev backend (`:5434`) and the Vite server (`:5173`) are plain HTTP by design, so the mic does not
+work there. To give dev its own secure context, put it on a **different** port so prod's :443 is
+untouched. **Since 2026-09-25 the dev door fronts the DEV BACKEND serving its built `dist/`** (a
+prod-shaped page: no HMR socket, no reload-on-return — run `npm run build` after any FE change):
 
 ```sh
-tailscale serve --bg --https=8443 5173    # https://emma.<tailnet>.ts.net:8443 → Vite dev
+tailscale serve --bg --https=8443 5434    # https://emma.<tailnet>.ts.net:8443 → dev backend (built dist)
 ```
 
-> ⚠ **Never `tailscale serve --bg 5173` on emma.** With no `--https` flag Serve targets **:443**, so
+Pointing it at Vite instead (`… --https=8443 5173`) works for HMR iteration, but Vite's client reloads
+the page whenever its HMR socket drops in the background — on a phone that is every app switch.
+
+> ⚠ **Never `tailscale serve --bg 5434` (or `5173`) on emma.** With no `--https` flag Serve targets **:443**, so
 > that command silently re-points prod's HTTPS front door at the dev server — the phone then gets a dev
 > UI on the prod URL and prod loses its mic ingress until someone notices. This is a real burn: prod had
 > to be restored to :5433 after exactly that detour.
@@ -115,9 +120,9 @@ tailscale serve reset                     # clear everything Serve is doing
   same-host by default and Serve preserves the Host header, so `voice.live.allowed_origins` stays
   **empty** on this setup; it is an escape hatch for a *second* Serve name, not a requirement
   (`backend/app/config.py` `allowed_origins`).
-- **Vite HMR through the proxy** may not connect cleanly, so the optional dev :8443 door can log HMR
-  warnings on the phone — the app itself works (HMR is live-reload only). For a totally clean phone
-  test, serve a production build: `npm run build && npm run preview -- --host 0.0.0.0 --port 5173`.
+- **If the dev :8443 door fronts Vite** its HMR socket may not connect cleanly through the proxy and
+  the client reloads the page whenever that socket drops in the background — which is why the door
+  fronts the dev backend's built `dist/` instead (above). Phone rounds want the built page.
 - **Laggy first transcription after idle** is the whisper model cold-loading, not HTTPS — keep the
   Speaches model warm server-side (model TTL).
 - **Scan-to-open:** `qrencode -t ANSIUTF8 "$(tailscale serve status | grep -o 'https://[^ ]*' | head -1)"`

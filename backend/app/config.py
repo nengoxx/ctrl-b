@@ -675,11 +675,12 @@ class LiveCfg(VoiceServiceCfg):
     the call uses — one realtime target, one set of client knobs (D71 §7-S2.5 / R70 §9.2). `voice.stt`
     keeps governing the whole-clip POST path, which is exactly what streaming dictation degrades to.
 
-    `enabled: false` ships until S4 passes (the whole-feature-toggle rule); the `voice.enabled` MASTER
-    switch outranks it, as it does for stt/tts."""
+    `enabled` ships ON since v1.7.8 (S4 CLOSED 2026-09-26 on the owner's S3 round №2 — the
+    whole-feature toggle stays, the standing pluggability requirement); the `voice.enabled` MASTER
+    switch outranks it, as it does for stt/tts, and the ear needs a configured realtime chain."""
 
-    # ── whole-feature toggle (the standing pluggability requirement; OFF until S4) ──
-    enabled: bool = False
+    # ── whole-feature toggle (the standing pluggability requirement; ON since v1.7.8, S4 closed) ──
+    enabled: bool = True
 
     # ── the two knobs that ride `session.update` verbatim (§4.1; the ONLY server-side VAD knobs) ──
     #: Silero speech probability floor (D76 §D, evidence R84). Silero's END threshold is
@@ -975,7 +976,7 @@ class VoiceCfg(BaseModel):
     stt: SttServiceCfg = Field(default_factory=SttServiceCfg)
     tts: TtsServiceCfg = Field(default_factory=TtsServiceCfg)
     #: Live voice / call mode (Phase 24 / D71) — the realtime ear behind `WS /api/voice/live`. A third
-    #: voice service beside stt/tts, same pointer shape; `enabled: false` until S4 (§5.1).
+    #: voice service beside stt/tts, same pointer shape; `enabled` ON since v1.7.8 (S4 closed, §5.1).
     live: LiveCfg = Field(default_factory=LiveCfg)
 
 

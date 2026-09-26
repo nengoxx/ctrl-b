@@ -5,8 +5,11 @@
 > under the standing cadence: S0 · S0.5 · S1 · S2a · S2b · S2.5 · S3 · S3.5 are ALL BUILT +
 > council-closed (per-slice as-built records live in §7), plus the D72 INTERMISSION wave (§7,
 > between S3.5 and S4); the owner's phone round CLOSED 2026-09-14 with both verdicts PASS.
-> ▶ S4 — the owner calibration + device round — is the PHASE GATE and the one open slice: it
-> needs the owner and their phone, and `voice.live.enabled` flips ON as its close.** Council
+> ▶ S4 — the owner calibration + device round, the PHASE GATE — **CLOSED 2026-09-26**: the D76
+> wave (the call's few controls, S0a–S3) ran inside it, and the owner's S3 round №2, read from the
+> D77 trail, PASSED all three arms; `voice.live.enabled` ships **ON** since v1.7.8. Three device
+> arms stay owed but non-gating (§7 S4 record: the car on the clean route · TV/other room ·
+> ISS-19 lock screen). PHASE 24 IS BUILT.** Council
 > trail = §9 (blind Emma RETHINK → all folded → confirm SHIP WITH CHANGES). This file owns the
 > live-voice design; ROADMAP §C4 is a pointer; D71 records the WebSocket admission.
 
@@ -174,22 +177,40 @@ new call leg; the call overlay reconnects automatically while open).
 All tunables live in `voice.live` (no hardcoding; defaults = the field's numbers). The first two
 pass through to the Speaches session verbatim — **and only those two: Speaches' `TurnDetection`
 accepts exactly `threshold`/`prefix_padding_ms`/`silence_duration_ms`/`create_response`/`type`
-(council F2, source-verified), so `min_speech_ms` is a CLIENT-side gate (§4.3), not a server
-knob:**
+(council F2, source-verified), so every other gate is a CLIENT-side knob (§4.3), not a server
+knob.** The table below is the AS-BUILT list at the S4 close (2026-09-26) — `LiveCfg` in
+`backend/app/config.py` is the source of truth (every field carries its provenance comment and
+bounds); the D76 wave (§7) replaced the draft's `barge_threshold` + Speech slider with the
+relative-dB gate, and D73/D74/D77 added the route, background, deck and trail knobs:
 
 | Knob | Default | Where | What it tunes |
 |---|---|---|---|
-| `vad_threshold` | 0.9 (Speaches') | server | Speech probability floor — **noise robustness** (higher = fewer false triggers) |
-| `silence_ms` | 700 | server | End-of-utterance silence — **quiet-moment tolerance** (550 feels clipped for thinking speech; RVC's dynamic floor averaged ~0.4–2.3 s; we start mid-field and calibrate in S4) |
+| `enabled` | **true** (since v1.7.8) | server | The whole-feature toggle; `voice.enabled` outranks it |
+| `vad_threshold` | 0.6 (D76 §D, R84) | server | Silero speech-probability START floor (bounded 0.5–0.8 — the END threshold is `−0.15`, and 0.9 put it at the cliff) |
+| `silence_ms` | 700 | server | End-of-utterance silence — **quiet-moment tolerance** (bounded 500–1200) |
 | `min_speech_ms` | 300 | client | The barge-in ACTION floor (§4.3) — a cough/door-slam must not kill playback |
-| `barge_threshold` | 0 (= reuse Tier-0's `auto_stop_threshold`) | client | The RMS amplitude floor the §4.3 sustained-energy gate measures against (confirm-round MED 1) — same detector family as Tier 0, calibrated in the same S4 sitting |
-| `frame_ms` | 40 | client | Uplink frame duration |
+| `barge_in` | false | client | Hands-free interruption master (owner re-ruling 2026-09-22: an opt-in, tap-to-interrupt is the resting state) |
+| `min_final_ms` | 200 | client | D74 near-speech gate: how much of a final's audio must sit above the effective floor (0 = off) |
+| `mic_hold` | auto | client | D76 §B: hold the ear while the reply plays — `on` / `off` / `auto` (= the per-chunk leak probe, S2) |
+| `floor_dbfs` | −45 | client | D76 §C the relative gate's BOOTSTRAP CEILING — the floor before any noise estimate exists |
+| `noise_margin_db` · `voice_margin_db` | 10 · 10 | client | Effective floor = `max(noise + noise_margin, ownVoice − voice_margin)` (the learned room, the learned voice; the latter is the "too quiet" line) |
+| `playback_margin_db` | 10 | client | Added on top of the effective floor for the BARGE floor while the reply plays |
+| `min_dbfs` / `max_dbfs` | −60 / −20 | client | The effective floor's clamp (load-validated `min < max`) — the Sensitivity control's range |
+| `route` | media | client | D73 the sink: `media` (A2DP/loudspeaker, clean) vs `call` (comm mode, HFP, echo-cancelled) |
+| `input_device` | "" | client | D73 pinned mic (`""` = the browser default), fallback-and-say-so |
+| `background` · `background_keepalive` · `background_idle_s` | true · true · 600 | client | D73 S6: survive the screen-off/app-switch freeze; the idle hang-up |
+| `ring` · `captions` | true · true | client | The overlay: the face ring; the reply as captions |
+| `debug` | false | both | The in-call readout AND the D77 call trail (`$CTRLB_HOME/calls/`) |
+| `trail_keep` | 20 | server | D77 retention (bounded 1–500) |
+| `dictation` · `tail_wait_ms` · `dictation_idle_s` · `dictation_max_s` | false · 2000 · 15 · 120 | client | S2.5 streaming dictation on the same ear |
+| `buffered_ceiling_ms` · `call_backlog_ms` | 1000 · 1000 | client | Uplink backpressure: reconnect ceiling; the lossy call pacer's backlog |
+| `frame_ms` · `max_frame_bytes` · `max_session_s` · `max_sessions` · `relay_queue_ms` · `start_timeout_s` · `allowed_origins` | 40 · 32768 · 1800 · 1 · 2000 · 5.0 · [] | server | The relay's own caps + the Origin escape hatch |
 
-Client-side, the capture asks for `echoCancellation: true, noiseSuppression: true, channelCount: 1`
-(today's dictation passes no constraints at all — R51 §6.1 flagged it; dictation inherits the fix).
-**S4 is a dedicated owner calibration round** on the real phone in real rooms — the knobs exist so
-that round turns dials instead of filing bugs. (The Tier 0 auto-stop threshold that "pends owner
-calibration" since v1.7.6 gets calibrated in the same round — same detector family, one sitting.)
+Client-side, the capture asks for `echoCancellation` per the route (D73), `noiseSuppression: true,
+channelCount: 1` (dictation inherits the constraints — R51 §6.1). **S4 was the owner calibration
+round** on the real phone in real rooms; the knobs let it turn dials instead of filing bugs, and the
+D76 wave is what the dials became (a relative floor the meter learns, not a fixed RMS number). The
+Tier 0 `auto_stop_threshold` stays at its 0.01 default — the S3.5 rounds never needed it moved.
 
 **What we deliberately do NOT get in v1:** partial transcripts — Speaches' realtime path
 transcribes whole utterances (R51 §6.4 gap 1; **re-verified unchanged, R68 §1.1** — upstream is
@@ -382,9 +403,9 @@ marker for text Stop rides the same seam. This closes R35 divergence ④ for bot
 ```yaml
 voice:
   live:
-    enabled: false          # whole-feature toggle (the standing pluggability requirement); OFF until S4 passes
+    enabled: true           # whole-feature toggle (the standing pluggability requirement); ON since v1.7.8 (S4 closed)
     target: ""              # provider-registry reference for the realtime endpoint (empty → resolve like stt)
-    vad_threshold: 0.9
+    vad_threshold: 0.6      # D76 §D (the draft said 0.9 — Speaches' outlier; see §4.1)
     silence_ms: 700
     min_speech_ms: 300
     frame_ms: 40
@@ -1437,6 +1458,20 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
 - **S4 — the owner calibration + device round (the phase gate):** real phone, real rooms — noisy
   and quiet; the §4.1 knobs tuned by feel; the Tier 0 auto-stop threshold calibrated in the same
   sitting; `enabled` flips ON as the round's close.
+
+  > **S4 CLOSED 2026-09-26 — the gate record.** The round became a WAVE: round №1 (below, 09-24)
+  > surfaced ISS-18/ISS-19 and the "had to shout" car arm; the owner's two 09-25 rounds became the
+  > D76 wave (the call's few controls: Media/Call · `mic_hold` · the relative-dB Sensitivity · Silero
+  > 0.6 · the TTS pad trim · the voice level keyed device×echo-mode · D77 the call trail); the D76 S3
+  > round №1 (09-25) was decoded to two root causes and fixed the same day; **the D76 S3 round №2
+  > (09-26, read from the D77 trail, no owner narration): ALL THREE ARMS PASS** — loudspeaker/Media
+  > every chunk held, no self-transcription (leak −24 dBFS vs floor −31.5); Call route/default mic
+  > the first turn accepted unseeded at −8 dBFS peak; headphones/Media every chunk released, the
+  > over-talk queued and sent at drain. Decision point: fixed endpointing is GOOD → v1 STANDS,
+  > architecture ② stays the recorded fallback. `voice.live.enabled` default → **true** (this
+  > commit); the Tier 0 threshold untouched. **Owed, non-gating (ride the owner's regular use):** the
+  > car on the CLEAN route (then `min_final_ms` 200 → 300 if home-side noise words persist), the
+  > TV/other-room arm, ISS-19 (the Honor battery setting first). ISS-13/14 parked won't-fix.
 
   > **S4 ROUND №1 (owner, 2026-09-24, car + BT headphones + lock screen; the card = the 36th
   > session's handoff).** *The car, default route (their config's `speaker`, EC on ⇒ comm mode):*

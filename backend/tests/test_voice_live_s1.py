@@ -1227,7 +1227,7 @@ def test_reg_helper_registries_stay_valid() -> None:
 
 def test_live_config_defaults() -> None:
     cfg = LiveCfg()
-    assert cfg.enabled is False  # ships OFF until S4 (the whole-feature-toggle rule)
+    assert cfg.enabled is True  # ON since v1.7.8 (S4 closed 2026-09-26); the toggle itself stays
     # the two session.update knobs — D76 §D: 0.6 (R84; the old 0.9 put Silero's END threshold at the cliff)
     assert (cfg.vad_threshold, cfg.silence_ms) == (0.6, 700)
     assert (cfg.frame_ms, cfg.max_frame_bytes, cfg.max_sessions) == (40, 32768, 1)
@@ -1338,9 +1338,9 @@ def test_the_route_admits_media_and_call_d76(route: str) -> None:
 
 
 def test_voice_cfg_mounts_live() -> None:
-    s = Settings.model_validate({"voice": {"live": {"enabled": True, "silence_ms": 850}}})
-    assert (s.voice.live.enabled, s.voice.live.silence_ms) == (True, 850)
-    assert Settings().voice.live.enabled is False
+    s = Settings.model_validate({"voice": {"live": {"enabled": False, "silence_ms": 850}}})
+    assert (s.voice.live.enabled, s.voice.live.silence_ms) == (False, 850)  # an explicit off still wins
+    assert Settings().voice.live.enabled is True  # ON since v1.7.8 (S4 closed)
 
 
 # ── 13. the call trail (D77) ──────────────────────────────────────────────────────────────────────

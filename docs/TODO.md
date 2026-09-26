@@ -1604,7 +1604,7 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       picker feel ✓ · read-along on a character reply ✓ — **the remainder rides the owner's
       regular use (their ruling 2026-09-11); their word closes the phase.**
 
-## Phase 24 — Live voice mode ("call mode"): the continuous ear · the call loop · barge-in — **S0–S3.5 ✅ BUILT (+ the D72 intermission wave); S4 (the phase gate) PENDING — needs the owner + phone** · design ratified 2026-09-11 ([`D71`](./DECISIONS.md)) · spec = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) (council-closed §9; §7 = the slice ladder; build against the plan, NOT this list)
+## Phase 24 — Live voice mode ("call mode"): the continuous ear · the call loop · barge-in — **S0–S4 ✅ BUILT + the phase gate CLOSED 2026-09-26 (+ the D72 intermission + D73/D74/D76/D77 waves); `voice.live.enabled` ON since v1.7.8** · design ratified 2026-09-11 ([`D71`](./DECISIONS.md)) · spec = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) (council-closed §9; §7 = the slice ladder; build against the plan, NOT this list)
 
 A hands-free voice conversation: Speaches-realtime as the ear behind a ctrl-b relay (the first
 WebSocket, D71's narrow admission), client-submitted turns through the untouched agent loop, C3
@@ -1692,16 +1692,20 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       pagehide/visibilitychange split). *(✅ 2026-09-21 — `7b8cd80` + review wave `4857d20`;
       blind Maya code round SHIP WITH FIXES 1H·2M·1L, confirm CONFIRMED; liveCall e2e 20/20
       local; plan D73 block = the as-built record.)*
-- [ ] **S4-D76 — the call's few controls** (RULED 2026-09-25, [`D76`](./DECISIONS.md); **S0a · S0b · S1 · S2 ✅ BUILT + code-round-closed 2026-09-25 · S3 round №1 decoded + its fix wave BUILT 2026-09-25 (the TTS pad trim `voice.tts.trim_silence` · the voice level keyed device×echo-mode · D77 the call trail) — S3 round №2 (the owner re-runs the card with the trail ON) is what remains**; spec = the D76 block in
+- [x] **S4-D76 — the call's few controls** (RULED 2026-09-25, [`D76`](./DECISIONS.md); **S0a · S0b · S1 · S2 ✅ BUILT + code-round-closed 2026-09-25 · S3 round №1 decoded + its fix wave BUILT 2026-09-25 (the TTS pad trim `voice.tts.trim_silence` · the voice level keyed device×echo-mode · D77 the call trail) · S3 round №2 ✅ PASSED 2026-09-26, all three arms read from the trail — CLOSED**; spec = the D76 block in
       LIVE_VOICE_PLAN §7, §H = the ladder S0a → S0b → S1 → S2 → S3): Media/Call · `mic_hold` auto/on/off
       (the leak probe) · the relative dB Sensitivity control replacing the Speech slider · Silero 0.6 ·
       config migration 3→4. Build against the plan block, not this line. The owner's phone round (S3) is
       the gate and folds into the S4 close-out below.
-- [ ] S4 — The owner calibration + device round (the phase gate): noise/quiet knob tuning on
+- [x] S4 — The owner calibration + device round (the phase gate): noise/quiet knob tuning on
       the real phone (+ the Tier-0 auto-stop threshold, same sitting); `voice.live.enabled`
       flips ON at its close. Decision point: fixed endpointing good → v1 stands; sluggish →
       architecture ② gets designed (plan §2.1). **Now also carries (D73): R74's four-row
       routing probe + R75's §12.4 lock-screen freeze probe** (+ the D72 wave's standing probes).
+      *(✅ CLOSED 2026-09-26 — the gate record = plan §7's S4 block: the round became the D76 wave,
+      and its S3 round №2 PASSED all three arms from the D77 trail; endpointing GOOD → v1 stands;
+      `enabled` default → true. Owed non-gating: the car on the clean route · TV/other room ·
+      ISS-19 — they ride the owner's regular use, not a slice.)*
 
 ## Cross-cutting / don't-forget
 

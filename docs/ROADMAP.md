@@ -556,7 +556,7 @@ one — only the browser binary can). That splits C2 into two features that must
 
 ---
 
-### C4. Live voice mode (continuous conversation) — **✅ DESIGN RATIFIED 2026-09-11 ([`D71`](./DECISIONS.md)) · S0–S3.5 BUILT, S4 (the phase gate) PENDING · spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) · build = TODO Phase 24 (build against the plan, NOT this entry — it is now the pre-design evidence record)**
+### C4. Live voice mode (continuous conversation) — **✅ DESIGN RATIFIED 2026-09-11 ([`D71`](./DECISIONS.md)) · **S0–S4 BUILT, the phase gate CLOSED 2026-09-26, `voice.live.enabled` ON since v1.7.8** · spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) · build = TODO Phase 24 (build against the plan, NOT this entry — it is now the pre-design evidence record)**
 
 - **What:** always-listening mic → VAD/endpointing → streaming or per-utterance STT → the existing
   agent turn → C3 chunked TTS, with barge-in (speaking over the bot kills playback + cancels the
