@@ -5,8 +5,8 @@ amendments Emma-checked.** v2.2 = the ratified council close (§11; transport B 
 §0b-2 overrule: bubble image display IS v1). v2.3 adds the owner's composer-UX rulings (quiet
 clip · in-composer thumbnails · the S5 expand slice) + the Emma amendment round's fixes (§11
 tail). **✅ BUILT — the whole §9 ladder: S0–S5 + the S6 owner device round and its fix wave +
-re-rounds №1–№4, every slice council-closed (per-slice as-built records in §11's tail). Pushed,
-UNRELEASED: the phase rides the v1.7.8 release.** Evidence bought along the way:
+re-rounds №1–№4, every slice council-closed (per-slice as-built records in §11's tail).
+**SHIPPED in v1.7.8 (2026-09-26).** Evidence bought along the way:
 [R62](./research/R62-attach-composer-grammar.md) (composer grammar — it pinned the §7 layout +
 S5 behavior before the S3/S5 briefs).
 

@@ -5,7 +5,7 @@
 > findings folded → confirm → micro-confirm CONFIRMED). BUILD = S0–S7 per §10: S0–S6 (incl. the
 > S6b backdrop round and its three waves) are ALL BUILT + council-closed, per-slice records in
 > §13; S7 — the owner device round — ran in part on 2026-09-11 and its remainder now rides the
-> owner's REGULAR USE by their ruling (§10-S7). Pushed, UNRELEASED: the phase rides v1.7.8.**
+> owner's REGULAR USE by their ruling (§10-S7). S8 (D78) built 2026-09-26. SHIPPED in v1.7.8 (2026-09-26).**
 > Eight owner design rounds are folded (§1 rulings 1–21); evidence = R64–R67 (§0/§12).
 >
 > **Authority:** this doc owns the agent-feature expansion (the new AgentDef
@@ -2405,8 +2405,8 @@ wave updated to the app-wide pin and the STT allowlist. The D-entry is
 > [`D78`](./DECISIONS.md) + the D70 amendment. ~~**Not one line of code is written.**~~ **BUILT 2026-09-26 (S8 — the §10 as-built block is the record; the blind Emma code round + its fix wave are in §14.5).** The build was
 > one pinned-Opus lane from THIS section (Part A then Part B, or two lanes on disjoint files), then
 > the main-seat audit → a blind Emma CODE round → fix wave → full gate → `npm run build` → dev
-> migration (`CTRLB_HOME=~/.ctrl-b-dev … config_migration --apply`) → commit. It rides v1.7.8
-> (the release then carries config migrations 2→5). The as-built record goes into §10 as S8 when
+> migration (`CTRLB_HOME=~/.ctrl-b-dev … config_migration --apply`) → commit. It SHIPPED in v1.7.8
+> (2026-09-26; the release carried config migrations 2→5). The as-built record goes into §10 as S8 when
 > it lands, and the §3.2/§4.2/§6.4 body text + ruling 7 move with the code (the lane owns them).
 
 Evidence: R90 (`docs/research/R90-injected-context-framing-and-persona-management.md`) on top of
@@ -2430,8 +2430,8 @@ regardless of the agent, the persona doesn't necessarily have to be for roleplay
 - Config-map conventions: user-named entries are `{slug: object}` maps (`computers`, `providers`,
   `tool_overrides`); `PUT /api/settings` deep-merges sections and REPLACES the `providers` map whole
   when the patch carries it (`api/settings.py::put_settings`); hosts have their own CRUD router.
-- Migrations: `config_migration/steps.py`, `VERSION` = 4 (steps 2→3 and 3→4 are UNRELEASED — they
-  ride v1.7.8). Steps see `config.yaml` AND every `agents/*/agent.yaml` (`Context.agents`).
+- Migrations: `config_migration/steps.py`, `VERSION` = 5 (steps 2→3, 3→4 and 4→5 all shipped in
+  v1.7.8). Steps see `config.yaml` AND every `agents/*/agent.yaml` (`Context.agents`).
 - Field convention (R90 §2): ST = library · one global default · the character link stored ON THE
   PERSONA as `connections[]` keyed by the character's avatar filename (orphaned by a rename, R90
   §3.1) · a chat lock; precedence chat > character > default > last-selected. Non-RP peers put the

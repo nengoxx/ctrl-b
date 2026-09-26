@@ -1498,7 +1498,7 @@ owner eyeball; each passes `tools/check.py`.
       source ruling; autoscroll·413·cast-walk = live-use deferrals). Phase 21 **RELEASED v1.7.7**.
       *(Box ticked 2026-09-01 — doc-truth; the HANDOFF 2026-08-27 block is the record.)*
 
-## Phase 22 — Composer attachments: staged uploads · durable per-thread files · the re-readable injection — **✅ BUILT 2026-09-03, UNRELEASED (rides v1.7.8)** · design ratified 2026-09-01 ([`D68`](./DECISIONS.md)) · spec = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) v2.2 (council-closed §11 + owner-ratified §0b; §9 = the slice ladder; build against the plan, NOT this list)
+## Phase 22 — Composer attachments: staged uploads · durable per-thread files · the re-readable injection — **✅ BUILT 2026-09-03, SHIPPED v1.7.8 (2026-09-26)** · design ratified 2026-09-01 ([`D68`](./DECISIONS.md)) · spec = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) v2.2 (council-closed §11 + owner-ratified §0b; §9 = the slice ladder; build against the plan, NOT this list)
 
 Attach images/text/PDFs from the composer (ROADMAP A8): id-addressed staging `PUT` + claim-by-
 rename into `$CTRLB_HOME/attachments/{thread_id}/` · `AttachmentPart` joins the part union ·
@@ -1544,8 +1544,8 @@ build from a pinned brief → main-seat audit → Emma-lane review; each passes 
       the 112px ceiling) all ran the cadence to council-close the same day; records = plan §11's
       S6-fix-wave + S6-re-rounds blocks.
 
-**⇒ THE PHASE 22 LADDER IS COMPLETE (2026-09-03).** Built and council-closed, **UNRELEASED** — it
-rides **v1.7.8** with Phase 23's features (owner sequencing 2026-09-12).
+**⇒ THE PHASE 22 LADDER IS COMPLETE (2026-09-03).** Built and council-closed, **SHIPPED in v1.7.8** (2026-09-26)
+with Phase 23's features (owner sequencing 2026-09-12).
 
 ## Phase 23 — Characters are agents: the conversational-agent expansion · lorebooks · the visual agents surface — **S0–S6b ✅ CLOSED; S7 rides the owner's regular use (their ruling 2026-09-11)** · design ratified 2026-09-06 ([`D70`](./DECISIONS.md)) · spec = [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) (council-closed §13; §10 = the slice ladder; build against the plan, NOT this list)
 
@@ -1609,7 +1609,7 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       map · `default_persona` · `AgentDef.persona` · one resolver · the `personas` router · the Conf
       per-row editor · the agent-form select · migration step 5 (`VERSION` → 5) · the tests + docs in
       §14.4 A-5; Part B: the two registry labels + the `test_prompts_registry_p18.py` re-aim + the
-      SECURITY_MODEL §2.9 sentence). Rides v1.7.8 — the release then carries migrations 2→5.
+      SECURITY_MODEL §2.9 sentence). SHIPPED in v1.7.8 (2026-09-26) — the release carried migrations 2→5.
 
 ## Phase 24 — Live voice mode ("call mode"): the continuous ear · the call loop · barge-in — **S0–S4 ✅ BUILT + the phase gate CLOSED 2026-09-26 (+ the D72 intermission + D73/D74/D76/D77 waves); `voice.live.enabled` ON since v1.7.8** · design ratified 2026-09-11 ([`D71`](./DECISIONS.md)) · spec = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) (council-closed §9; §7 = the slice ladder; build against the plan, NOT this list)
 

@@ -525,15 +525,16 @@ matters** — `backend/app/config_migration/`:
 |---|---|---|---|
 | 1 | `A11` (`retires=A11_RETIRED_ENV_PATHS`) | the provider-registry fold (D48) | v1.3.0 |
 | 2 | `MEDIA_V2` | `media.<ns>` → `media.namespaces.<ns>` + `roles.<role>.order` → `files` (D65; MEDIA_MANAGER_PLAN §2.2) | v1.7.7 |
-| 3 | `PRESENCE_DEVICES` (`retires=(("wake","presence_device_ips"),)`) | `wake.presence_device_ips` → `wake.presence_devices` (D69) | **owed — rides v1.7.8** |
-| 4 | `LIVE_VOICE_D76` | `voice.live`: `route` speaker→call · speaker-hifi/headphones→media; `echo_workaround` → `mic_hold`; `vad_threshold` 0.9→0.6, else clamped to 0.5–0.8; `silence_ms` clamped to 500–1200; `barge_threshold` dropped (consumed — the relative dB gate replaces it) (D76; LIVE_VOICE_PLAN §7 the D76 block §E) | **owed — unreleased** |
-| 5 | `PERSONAS_D78` (`retires=(("roleplay","persona"),)`) | `roleplay.persona` → a `roleplay.personas` entry + `default_persona`; `user_name` → `persona` (a library slug) in place in `agent.defaults` + every `agents/*/agent.yaml` — exact-name reuse, else minted by `card_import.mint_slug`; a blank stays blank (D78; ROLEPLAY_PLAN §14.1 A5 + §14.4 A-1/A-2) | **owed — unreleased** |
+| 3 | `PRESENCE_DEVICES` (`retires=(("wake","presence_device_ips"),)`) | `wake.presence_device_ips` → `wake.presence_devices` (D69) | v1.7.8 |
+| 4 | `LIVE_VOICE_D76` | `voice.live`: `route` speaker→call · speaker-hifi/headphones→media; `echo_workaround` → `mic_hold`; `vad_threshold` 0.9→0.6, else clamped to 0.5–0.8; `silence_ms` clamped to 500–1200; `barge_threshold` dropped (consumed — the relative dB gate replaces it) (D76; LIVE_VOICE_PLAN §7 the D76 block §E) | v1.7.8 |
+| 5 | `PERSONAS_D78` (`retires=(("roleplay","persona"),)`) | `roleplay.persona` → a `roleplay.personas` entry + `default_persona`; `user_name` → `persona` (a library slug) in place in `agent.defaults` + every `agents/*/agent.yaml` — exact-name reuse, else minted by `card_import.mint_slug`; a blank stays blank (D78; ROLEPLAY_PLAN §14.1 A5 + §14.4 A-1/A-2) | v1.7.8 |
 
 The number lives in the file `app/config_migration/VERSION` (**5** today), read by `update.sh`
 before checkout and exposed to code as `CONFIG_VERSION`; `STEPS` is assembled in
 `__init__.py::_load_steps()`, and a test asserts `CONFIG_VERSION == STEPS[-1].version`.
 **Consequence for the runbook:** rolling back *across* either cutover is a CONFIG rollback first
-(§Rollback → CONFIG), which is why the v1.7.7 and the coming v1.7.8 releases both carry that note.
+(§Rollback → CONFIG), which is why the v1.7.7 and v1.7.8 releases both carry that note (v1.7.8 moved
+prod 2 → 5 on 2026-09-26: only step 3 applied to prod's file; steps 4/5 were no-ops there).
 
 ---
 
