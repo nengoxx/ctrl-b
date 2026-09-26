@@ -28,7 +28,6 @@ function defWith(routing: unknown): AgentDef {
     background: "",
     voice: "",
     lorebooks: [],
-    card: {},
     model: { provider: null, model: null },
     tools: "*",
     skills: "*",

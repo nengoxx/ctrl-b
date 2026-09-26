@@ -220,9 +220,6 @@ function AgentFieldsForm(props: {
   // has exactly one other consumer of it.
   const rpEnabled = pickRoleplay(settings?.roleplay).enabled;
   const rpShow = (v: unknown) => roleplayFieldVisible(rpEnabled, v);
-  // The stash (§5.3): provenance the import keeps, NEVER prompt-facing. It gets a read-only line
-  // rather than an editor — ST's "(not sent to the AI)" scope-subtitle pattern.
-  const stashed = Object.keys(a.card ?? {}).length;
 
   return (
     <>
@@ -455,16 +452,6 @@ function AgentFieldsForm(props: {
         <label>Lorebooks</label>
         <LorebookPicker value={a.lorebooks ?? []} onChange={(lorebooks) => set({ lorebooks })} />
         <FieldHelp text={FIELD_HELP.lorebooks} />
-
-        {stashed > 0 && (
-          <>
-            <label>Imported card</label>
-            <div className="mrow-hint">
-              {stashed} imported field{stashed === 1 ? "" : "s"} stashed — kept as provenance, not
-              sent to the AI.
-            </div>
-          </>
-        )}
 
         <label>Tools</label>
         <div className="agent-allow">

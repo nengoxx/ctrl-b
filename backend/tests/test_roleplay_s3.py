@@ -784,6 +784,26 @@ def test_the_position_downgrade_is_reported_per_entry(home: Path) -> None:
     assert entries[4]["depth"] == 4 and entries[4]["probability"] == 100
 
 
+def test_the_book_report_names_the_macros_that_will_render_literally(home: Path) -> None:
+    """R87/RP-3, the book half: one line over every entry's content — `{{random:…}}` is the owner's
+    most common unrendered macro (24 book entries) — and none for a book that only uses the
+    vocabulary (in any case) or comments."""
+    book = {
+        "name": "Flavour",
+        "entries": [
+            {"keys": ["a"], "content": "Today: {{random:orgo, elem, tech}}."},
+            {"keys": ["b"], "content": "{{// hidden}}{{Char}} checks the {{time}}."},
+        ],
+    }
+    with make_client() as c:
+        warnings = import_book_ok(c, book)["report"]["warnings"]
+        (line,) = [w for w in warnings if "does not render" in w]
+        assert "the lorebook's entries" in line and line.endswith("{{random}}, {{time}}")
+
+        quiet = import_book_ok(c, [{"keys": ["a"], "content": "{{User}} and {{char}} {{// x}}"}])
+        assert not any("does not render" in w for w in quiet["report"]["warnings"])
+
+
 def test_the_ruled_logic_mapping_reports_its_approximation(home: Path) -> None:
     """`selectiveLogic: 3` is AND-ALL, which v1 has no equivalent for: it lands on AND-ANY WITH a
     line, because the entry now activates more readily than its author wrote."""
@@ -934,8 +954,8 @@ def test_hostile_and_unusable_json_is_refused(home: Path) -> None:
 
 def test_a_cards_embedded_book_lands_as_a_real_attached_book(home: Path) -> None:
     """End to end: the V3 `character_book` becomes `<agent-slug>-book.yaml`, is attached to the
-    agent BEFORE validation, is reported (downgrade lines included), and STAYS in the `card` stash —
-    the stash is its permanent provenance home (the S2 ruling), so landing it is additive."""
+    agent BEFORE validation, is reported (downgrade lines included), and STAYS in `card.json` — its
+    permanent provenance home (the S2 ruling, R87/RP-8), so landing it is additive."""
     card = v3(
         name="Nyx",
         description="d",
@@ -953,10 +973,131 @@ def test_a_cards_embedded_book_lands_as_a_real_attached_book(home: Path) -> None
     assert body["agent"]["lorebooks"] == ["nyx-book"]
     assert agent_yaml(home, "nyx")["lorebooks"] == ["nyx-book"]
     assert listed == [{"slug": "nyx-book", "name": "Nyx's own", "enabled": True, "entries": 2}]
-    assert body["agent"]["card"]["character_book"]["entries"][0]["keys"] == ["archive"]  # provenance
+    provenance = json.loads((home / "agents" / "nyx" / "card.json").read_text(encoding="utf-8"))
+    assert provenance["data"]["character_book"]["entries"][0]["keys"] == ["archive"]
     warnings = body["report"]["warnings"]
     assert any("imported as 'nyx-book'" in w and "2 entries" in w for w in warnings)
     assert any(w.startswith("entry 1:") and "landed at the head" in w for w in warnings)
+
+
+def st_card_book_entry(**overrides: Any) -> dict[str, Any]:
+    """One entry in EXACTLY the shape ST's `convertWorldInfoToCharacterBook` writes into a card
+    (`src/endpoints/characters.js`, ST 1.18.0): the V2 top level carries only the before/after
+    squash of the position, and the real values live under `extensions`."""
+    return {
+        "id": 0,
+        "keys": ["tide"],
+        "secondary_keys": ["daylight"],
+        "comment": "Deep tide",
+        "content": "The tide turns at dusk.",
+        "constant": False,
+        "selective": True,
+        "insertion_order": 100,
+        "enabled": True,
+        "position": "after_char",
+        "use_regex": True,
+        "extensions": {
+            "position": 4,
+            "selectiveLogic": 2,
+            "case_sensitive": True,
+            "match_whole_words": False,
+            "depth": 4,
+            "role": 0,
+            "probability": 100,
+        },
+        **overrides,
+    }
+
+
+def test_an_st_written_card_book_is_read_from_its_extensions_first(home: Path) -> None:
+    """R87/RP-5: ST's own reader gives `extensions` precedence for position, key logic and the two
+    matching flags, so ours does too. Read off the V2 mirror, this entry landed `head`/`and_any`/
+    case-insensitive/whole-word with ZERO report lines — an at-depth reminder silently promoted to
+    the head, and a NOT gate inverted into an AND gate. The collapse report still fires for the
+    value that was actually read, and the `extensions` tree stays stash, verbatim."""
+    card = v3(
+        name="Nyx", description="d", character_book={"name": "Nyx's own", "entries": [st_card_book_entry()]}
+    )
+    with make_client() as c:
+        body = imported(c, json.dumps(card).encode("utf-8"))
+    book = load_book(home / "lorebooks", "nyx-book")
+    assert book is not None
+    (entry,) = book.entries
+    assert entry.position == "tail"
+    assert entry.logic == "not_any"
+    assert entry.case_sensitive is True and entry.whole_words is False
+    assert (entry.model_extra or {})["extensions"] == st_card_book_entry()["extensions"]
+    warnings = body["report"]["warnings"]
+    assert any(
+        w.startswith("Deep tide:") and "fixed depth" in w and "landed at the tail" in w for w in warnings
+    )
+
+
+def test_a_null_extension_falls_back_to_the_top_level_value(home: Path) -> None:
+    """ST writes `case_sensitive`/`match_whole_words` as NULL when the entry uses the book default;
+    null is "not set", so the top-level alias (or its shipped default) still decides."""
+    entry = st_card_book_entry(
+        position="before_char",
+        caseSensitive=True,
+        extensions={"selectiveLogic": 0, "case_sensitive": None, "match_whole_words": None},
+    )
+    with make_client() as c:
+        imported(c, json.dumps(v3(name="Nyx", description="d", character_book={"entries": [entry]})).encode())
+    book = load_book(home / "lorebooks", "nyx-book")
+    assert book is not None
+    (got,) = book.entries
+    assert got.case_sensitive is True and got.whole_words is True
+    assert got.position == "head" and got.logic == "and_any"
+
+
+def test_an_entry_already_in_our_shape_keeps_its_top_level_over_a_stale_mirror(home: Path) -> None:
+    """The R87 review's O-3: an entry that is already OURS (exported or edited here — a top-level
+    `head`/`tail` position, which no ST or V3 writer emits) still carries the ST `extensions` mirror
+    it was first imported with, as stash. Extensions-first would silently revert the owner's edits on
+    a re-import, so for such an entry the top level wins for ALL FOUR keys — while the ST shape
+    (`test_an_st_written_card_book_is_read_from_its_extensions_first`) still reads `extensions`."""
+    entry = {
+        "keys": ["tide"],
+        "secondary_keys": ["daylight"],
+        "content": "The tide turns at dusk.",
+        "comment": "Edited tide",
+        "position": "head",
+        "logic": "and_any",
+        "case_sensitive": False,
+        "whole_words": True,
+        "extensions": {
+            "position": 4,
+            "selectiveLogic": 2,
+            "case_sensitive": True,
+            "match_whole_words": False,
+        },
+    }
+    with make_client() as c:
+        body = import_book_ok(c, {"name": "Ours", "entries": [entry]})
+    (got,) = body["book"]["entries"]
+    assert (got["position"], got["logic"], got["case_sensitive"], got["whole_words"]) == (
+        "head",
+        "and_any",
+        False,
+        True,
+    )
+    assert not any("fixed depth" in w for w in body["report"]["warnings"])
+    assert got["extensions"] == entry["extensions"]  # still stash, verbatim
+
+
+def test_an_embedded_books_macro_line_reaches_the_card_report(home: Path) -> None:
+    """RP-3 end to end through the CARD route: the embedded book's own unrendered-macros line rides
+    into the card import's report beside the card's (each importer adds its one line)."""
+    card = v3(
+        name="Nyx",
+        description="It is {{time}}.",
+        character_book={"entries": [{"keys": ["a"], "content": "Pick: {{random:x,y}}"}]},
+    )
+    with make_client() as c:
+        warnings = imported(c, json.dumps(card).encode("utf-8"))["report"]["warnings"]
+    lines = [w for w in warnings if "does not render" in w]
+    assert any("the card's text" in w and w.endswith("{{time}}") for w in lines)
+    assert any("the lorebook's entries" in w and w.endswith("{{random}}") for w in lines)
 
 
 def test_an_embedded_book_that_will_not_map_is_a_warning_not_a_refusal(home: Path) -> None:

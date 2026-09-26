@@ -67,7 +67,6 @@ export interface AgentDef {
   background: string; // an entry name in `agents/backgrounds`; "" → the theme default
   voice: string; // TTS voice id (ruling 21); "" → the global `voice.tts` chain
   lorebooks: string[]; // attached book slugs (§6.5)
-  card: Record<string, unknown>; // the import stash — provenance, NEVER prompt-facing (§5.3)
   model: ModelRef;
   tools: string[] | "*";
   skills: string[] | "*";

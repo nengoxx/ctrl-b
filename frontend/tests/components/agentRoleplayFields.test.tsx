@@ -80,7 +80,6 @@ function agentDef(over: Record<string, unknown> = {}) {
     background: "",
     voice: "",
     lorebooks: [] as string[],
-    card: {},
     model: { provider: null, model: null },
     tools: "*",
     skills: "*",
@@ -223,11 +222,6 @@ describe("AgentRow · the roleplay fields on the form", () => {
     renderRow();
     expect(screen.getByText("Duties")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Talk" })).toBeTruthy();
-  });
-
-  it("the import STASH gets a read-only line, never an editor", () => {
-    renderRow({ card: { spec: "chara_card_v2", data: { name: "Lyra" } } });
-    expect(screen.getByText(/2 imported fields stashed/)).toBeTruthy();
   });
 
   it("alt_greetings has NO editor and survives a save untouched", () => {

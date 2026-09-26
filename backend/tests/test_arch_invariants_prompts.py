@@ -112,6 +112,11 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/api/agent.py", "_import_agent_card"),
         ("app/services/agent/lorebook_import.py", "<module>"),
         ("app/services/agent/lorebook_import.py", "_entry"),
+        # R87 (RP-3/RP-6): two more lines of those same reports — the macros a card or book uses
+        # that this build will render literally, and a Character's Note v1 has no slot for. Both
+        # tell the OWNER what the import could not honour; neither is ever sent to a model.
+        ("app/services/agent/macros.py", "unrendered_note"),
+        ("app/services/agent/card_import.py", "_depth_prompt_note"),
         ("app/services/agent/compaction.py", "_warn_degenerate_trigger"),
         ("app/services/agent/session.py", "AgentSession._log_context_cost"),
         ("app/services/agent/session.py", "AgentSession._run_calls._complete"),

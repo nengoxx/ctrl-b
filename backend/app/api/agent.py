@@ -39,7 +39,7 @@ from app.config import (
     providers_rev,
     sync_mapping,
 )
-from app.core.fsutil import write_text_eol
+from app.core.fsutil import atomic_write_text, write_text_eol
 from app.core.media import StoreWriteError, role_dir
 from app.core.memory import StoreScope, StoreSpec, store_by_key
 from app.domain.agent import AgentDef
@@ -377,9 +377,9 @@ def _auto_route_agent(state, thread: Thread, explicit_agent: str | None, text: s
     fresh POST that enqueued it would have — D41 §9 captured-params fidelity).
 
     **BLOCKING — both callers hop it onto a thread** (SYS-16; audit B-3). The selector's arm reads
-    every specialist's `agent.yaml` fresh off disk, and D70 made those files both more numerous (the
-    gallery + card import) and much larger (each one now carries the card stash, bounded only by
-    `roleplay.card_import.max_bytes`). Run on the loop that is N full YAML parses ahead of the first
+    every specialist's `agent.yaml` fresh off disk, and D70 made those files more numerous (the
+    gallery + card import; an imported card's provenance is its `card.json` sidecar, not this file,
+    since R87/RP-8). Run on the loop that is N full YAML parses ahead of the first
     token, stalling every other request — SSE streams and monitor polls included — behind a routing
     decision. `agent.auto_rotate` is off by default, which is why this was latent rather than live."""
     agent_name = explicit_agent
@@ -1500,8 +1500,9 @@ async def get_default_prompt() -> dict[str, str]:
 
 #: The per-agent facts `GET /agents` publishes beside the names (D70 §10-S4, Emma F12) — the SHOWCASE
 #: fields, and only those: what a card, a picker row, a who-line avatar and the TTS voice binding need.
-#: Everything else (prompt, tools, limits, the card stash) stays behind `GET /agents/{name}`, which is
-#: what keeps this a cheap always-on read rather than N full agent+SOUL fetches per mount.
+#: Everything else (prompt, tools, limits, the greeting/example texts) stays behind
+#: `GET /agents/{name}`, which is what keeps this a cheap always-on read rather than N full
+#: agent+SOUL fetches per mount.
 #: Media stays UNRESOLVED here — `avatar`/`background` are library entry names, and turning one into a
 #: URL + focal point is the media index's job (`GET /api/media/agents`), never a second resolver.
 _SUMMARY_FIELDS = ("title", "description", "avatar", "background", "voice")
@@ -1706,9 +1707,10 @@ def _scaffold_agent(
     **The agent.yaml write goes through `edit_config_yaml`, the ONE YAML chokepoint** (D70 §7, Emma
     F9). It used to be `yaml.safe_dump` + `write_text_eol`, which writes at whatever the umask
     allows, quotes nothing for the YAML-1.1 reader `load_settings` uses, and destroys the operator's
-    comments on every save. A card's stash can carry credentials (R67 found character objects
-    holding provider API keys), so this file answers to the same rules `config.yaml` does: atomic,
-    0600, `_yaml11_safe`, comment-preserving — once, for imports and manual edits alike.
+    comments on every save. The card stash that motivated 0600 (R67 found character objects holding
+    provider API keys) has since moved to the `card.json` sidecar (R87/RP-8), which is 0600 too; this
+    file keeps the same rules `config.yaml` does: atomic, 0600, `_yaml11_safe`, comment-preserving —
+    once, for imports and manual edits alike.
 
     `sync_mapping` rather than `deep_set` because PUT semantics are a FULL REPLACE of the fields
     dict: a key the submission dropped really disappears, while every key that did not change keeps
@@ -1815,9 +1817,10 @@ async def import_agent(request: Request) -> dict[str, Any]:
     the bytes and the slug is minted from the card's own name.
 
     `RecursionError` is caught HERE because depth is the one hostile property no single reader owns:
-    a card the JSON parser accepted can still exhaust the stack in the strip walk or in the YAML
-    dump. Nothing is torn by it — `edit_config_yaml` serialises into a buffer before it writes, so a
-    dump that raises never starts the atomic replace."""
+    a card the JSON parser accepted can still exhaust the stack in the strip walk, the `card.json`
+    dump or the `agent.yaml` YAML dump. Nothing is torn by it: the `card.json` text is serialized
+    before any agent file is written, and `edit_config_yaml` serialises into a buffer before it
+    writes, so a dump that raises never starts an atomic replace."""
     s: Settings = request.app.state.settings
     body = await _import_body(
         request,
@@ -1889,7 +1892,7 @@ def _import_report(card: ImportedCard, warnings: list[str]) -> dict[str, Any]:
     return {
         "container": card.container,
         "fields_mapped": card.mapped,
-        "stashed_keys": card.stashed,
+        "stashed_keys": card.stashed,  # the unmapped keys only `card.json` keeps (R87/RP-8)
         "stripped_paths": card.stripped,
         "warnings": warnings,
         "post_history": card.post_history,
@@ -1898,12 +1901,15 @@ def _import_report(card: ImportedCard, warnings: list[str]) -> dict[str, Any]:
 
 def _import_agent_card(s: Settings, body: bytes, *, avatars_ok: bool) -> dict[str, Any]:
     """The whole blocking side of `PUT /agents/import` in one `to_thread` hop (SYS-16): read the
-    card → strip → map → land the avatar → scaffold the agent → write SOUL.md → build the payload.
+    card → strip → map → land the avatar → scaffold the agent → write SOUL.md + card.json → build
+    the payload.
 
-    It COMPOSES the existing writes and adds none (§5.1): `land_avatar` is the media ladder,
-    `_write_soul` and `_scaffold_agent` are the same two the editor's PUT uses. The SOUL is written
-    FIRST so the scaffold finds a persona already there and does not lay the baked default over it —
-    a card with no persona text at all still gets the default, exactly like any new agent.
+    It COMPOSES the existing writes (§5.1): `land_avatar` is the media ladder, `_write_soul` and
+    `_scaffold_agent` are the same two the editor's PUT uses. The SOUL is written FIRST so the
+    scaffold finds a persona already there and does not lay the baked default over it — a card with
+    no persona text at all still gets the default, exactly like any new agent. The one write of its
+    own is `card.json` (R87/RP-8): the whole normalized card, post-strip, 0600 through the house
+    atomic writer — the as-imported restore point and export source, which no editor ever touches.
 
     An avatar failure is a WARNING, never a refusal (§5.4): the character is the text, the picture is
     an ornament, and refusing a whole import over a broken thumbnail would be the wrong trade."""
@@ -1948,8 +1954,14 @@ def _import_agent_card(s: Settings, body: bytes, *, avatars_ok: bool) -> dict[st
     except ValidationError as e:
         raise CardImportError(422, f"invalid agent: {e.errors()[0]['msg']}") from e
 
+    # Serialized before the SOUL write so card.json can never be the hop that fails: ASCII-escaped
+    # (the default), so the text is pure ASCII and the writer's UTF-8 encode cannot raise — a lone
+    # UTF-16 surrogate (`"\ud83d"`, which JS tools emit and `json.loads` accepts) round-trips as its
+    # `\uXXXX` escape exactly, where `ensure_ascii=False` raised mid-hop and left a half-agent.
+    card_json = json.dumps(card.card_json, indent=2) + "\n"
     folder = s.agents_dir_path() / card.slug
     _write_soul(folder, card.soul, require_folder=False)
+    atomic_write_text(folder / "card.json", card_json)
     if book is not None:
         slug, imported = book
         try:
@@ -1972,9 +1984,9 @@ def _character_book(s: Settings, card: ImportedCard, warnings: list[str]) -> tup
     carried none (§6.5). Nothing is written here; the caller writes once the agent validates, and
     reports what landed only once it actually has.
 
-    The book comes off the STASH rather than off a second field, because the stash is where it lives
-    permanently (the S2 ruling: provenance stays, so a re-export is still the card the owner
-    imported). Landing it is additive, not a move.
+    The book comes off the normalized card (`card.json`'s `data`, post-strip) — where it lives
+    permanently as provenance (the S2 ruling, R87/RP-8), so a re-export is still the card the owner
+    imported. Landing it is additive, not a move: the landed file is the one the owner edits.
 
     It goes through the SAME importer a standalone book does: a V3 embedded book uses the spec entry
     shape — position strings, sometimes `extensions.position` — so a second mapping here would be a
@@ -1983,7 +1995,7 @@ def _character_book(s: Settings, card: ImportedCard, warnings: list[str]) -> tup
 
     A book that will not map is a WARNING, never a refusal — the same trade the avatar gets (§5.4):
     the character is the text, and refusing a whole import over a malformed extra would be wrong."""
-    raw = (card.fields.get("card") or {}).get("character_book")
+    raw = card.card_json["data"].get("character_book")
     if not raw:
         return None
     try:

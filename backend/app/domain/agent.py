@@ -206,7 +206,7 @@ class AgentDef(BaseModel):
     # ── Phase 23 / D70 (ROLEPLAY_PLAN §3.1) — flat, optional, defaulted: what kind of agent
     # something IS emerges from which of these it uses (P1), never from a type flag or a nested
     # "character" object. S0 lands the schema + persistence; the behaviour behind greeting /
-    # example_dialogue / voice / avatar / background / lorebooks / card arrives in S1–S4.
+    # example_dialogue / voice / avatar / background / lorebooks arrives in S1–S4.
     #: Which duties prompt rides along in the head's second section (§4.1, ruling 5). `agent` is
     #: today's tool discipline (`duties_agent`); `conversational` is the talking-shaped text
     #: (`duties_conversational`). NEVER a capability lever (ruling 16): both texts assume whatever
@@ -235,9 +235,9 @@ class AgentDef(BaseModel):
     #: required an allowlist nothing can provide; absent→default is the whole fallback contract).
     voice: str = ""
     lorebooks: list[str] = Field(default_factory=list)  # attached book slugs (§6.5)
-    #: Import stash: the card's unmapped spec fields + extensions, post-strip (§7) — export-ready
-    #: provenance, and the as-imported restore point. NEVER prompt-facing.
-    card: dict[str, Any] = Field(default_factory=dict)
+    # No `card` field (R87/RP-8): an imported card's provenance — the WHOLE normalized card, post-
+    # strip — lives in the `agents/<slug>/card.json` sidecar, never in this file. An older
+    # `agent.yaml` that still carries a `card:` key loads it as an inert extra (`extra="allow"`).
     model: ModelRef = Field(default_factory=ModelRef)  # backend+model; inherits chat default when unset
     #: This agent's memory subdirectory (D26), resolved **relative to** `MemoryCfg.memory_dir` (the
     #: memory-directory git repo root). `None` → the default `agents/<slug>`. Absolute paths and `..`

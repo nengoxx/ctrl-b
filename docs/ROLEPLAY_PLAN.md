@@ -140,16 +140,18 @@ voice: str = ""                     # TTS voice id for this agent (ruling 21); "
                                     # an allowlist nothing can provide; absent→default is the
                                     # whole fallback contract)
 lorebooks: list[str] = []           # attached book slugs (§6.5)
-card: dict[str, Any] = {}           # import stash: unmapped spec fields + extensions, post-strip
-                                    # (§7) — export-ready provenance, never prompt-facing
+# (no `card` field — REMOVED 2026-09-26 by R87/RP-8: an imported card's provenance is the
+#  `agents/<slug>/card.json` sidecar, §5.3; a stale `card:` key in an older file loads as an
+#  inert extra)
 ```
 
 The UI never groups these into a "Character" pane (ruling 1) — they are ordinary agent fields
 with the §9 marking. Card fields that do NOT land here: `name`→slug/`title` ·
 `description`+`personality` (+card `system_prompt`)→**SOUL.md** (the Voice; R64 §4.1: the
 field's own default card puts everything in `description`) · `creator_notes`/`tags`/`creator`/
-`character_version`→`card` stash (spec: MUST NOT reach the prompt) · `character_book`→a
-lorebook file, auto-attached · avatar→the media library + the `avatar` binding.
+`character_version`→`card.json` only (spec: MUST NOT reach the prompt) · `character_book`→a
+lorebook file, auto-attached · avatar→the media library + the `avatar` binding. **Every** card
+field — mapped ones included — is also kept whole in the `card.json` sidecar (§5.3).
 
 ### 3.2 Config
 
@@ -246,15 +248,21 @@ package, not act-first alone — the Emma round's citation check; the rails are 
 package, which is exactly why they survive here.)
 
 Head shape: ONE leading system message, two `## `-labelled sections (labels are registry-owned
-framings). **`{{original}}` semantics — field-specific, per the V2 contract (Emma F3):** the
-spec defines it as "the prompt that would have been used WITHOUT the card". So in the
-persona/SOUL text it substitutes **the complete no-card head**: the Voice the CHAIN would have
-resolved without this persona — `inference.system_prompt` when configured, else the baked
-default persona (confirm-round F3 correction: a configured fallback override IS the no-card
-Voice; the baked text is only the last rung) — plus the selected duties text; and it CONSUMES
-the separate Duties-section emission — substituted once at
-its FIRST occurrence, later occurrences render empty (`safe_substitute` replaces all, so the
-once-rule must be explicit). In `post_history` it substitutes ctrl-b's default post-history
+framings). **`{{original}}` semantics — field-specific, per the V2 contract (Emma F3; AMENDED
+2026-09-26 by R87/RP-1):** the spec defines it as "the prompt the frontend would have used in
+the absence of a character `system_prompt`" — in the field that is the OPERATOR's own framing
+(ST's "Write {{char}}'s next reply…"), never an assistant identity. So in the persona/SOUL text
+it substitutes **the owner's configured `inference.system_prompt`** (rendered, with its own
+`{{original}}` blank), **else nothing**; the **Duties section is ALWAYS emitted as its own
+section** (it already IS the operator text under P3) — substituted once at its FIRST
+occurrence, later occurrences render empty (`safe_substitute` replaces all, so the once-rule
+must be explicit). *Superseded:* the original design substituted the complete no-card head
+(the baked "You are ctrl-b…" Voice + the Duties section) and let the token CONSUME the separate
+Duties emission. R87 found that a card's `system_prompt` opens with `{{original}}` by
+convention — 14 of the owner's 36 system-prompt cards, every one at offset 0 — so every such
+character was filed under `## Duties` behind a homelab-assistant Voice. `consumes_original` and
+`_no_card_head` were deleted with it (no dead seams). In `post_history` it substitutes ctrl-b's
+default post-history
 text — which is empty — so it renders as nothing there; it never injects Duties at the tail.
 **`inference.system_prompt`'s meaning SHIFTS (Emma F13, recorded):** today it replaces the
 whole fused prompt; under this design it is the fallback VOICE only, with Duties appended
@@ -314,7 +322,7 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   global), and opens a fresh thread (greeting re-seeds). Destructive ⇒ when built it rides the
   destructive-op conventions (typed confirm, the R53/D64 guard class). The owner explicitly
   ruled OUT folding memories deeper into the roleplay system ("too complicated"). v1 ships
-  nothing here; the as-imported restore is what the `card` stash (§3.1) already makes possible.
+  nothing here; the as-imported restore is what the `card.json` sidecar (§5.3) makes possible.
 
 ### 4.3 Macros
 
@@ -326,6 +334,18 @@ evidence — the owner's real ST persona opens with `{{user}}`, which ST renders
 own description it reads as the persona name). It runs for every agent (the universal assembly)
 — safe because unknown/unmatched
 tokens pass through literally, so existing SOUL.md text without macros is untouched.
+
+**Amended 2026-09-26 (R87/RP-2 + RP-3), two pre-passes in `Macros.render` only:** (1) a
+vocabulary name in ANY ASCII case (`{{Char}}`, `{{USER}}`) folds to its canonical spelling —
+the field resolves names case-insensitively (ST lower-cases before the lookup; CCv3 SHOULD) and
+10 of the owner's 168 cards write `{{Char}}`/`{{User}}`. The registry grammar stays `NOFLAG`
+(ASCII-only identifiers), so the fold cannot bind a Unicode look-alike (`{{uſer}}` stays
+literal). No `<USER>`/`<BOT>` aliases (0 in the corpus). (2) `{{// …}}` author comments render
+as nothing, ST's own rule (non-greedy, multi-line, first `}}` closes); an unclosed `{{//` stays
+visible. Everything else outside the vocabulary still renders literally — but the card AND book
+importers now add ONE report line naming those macros (`{{random}}`, `{{time}}`, …), so a card
+built on them says so at the door. The feature macros themselves (`random`/`pick`/`time`/`date`)
+are NOT built (a feature, not a fix → ISSUES).
 
 ## 5. Card import
 
@@ -353,10 +373,19 @@ normative (Emma F4 — two builders must not produce two different SOULs):** SOU
 bare concatenation in that order, empty fields skipped, NO labels or headers added (the field's
 cards carry finished prose; framing the author didn't write is editorializing). `{{original}}`
 inside any of them behaves per §4.1's field-specific rule. Two golden imports pin it:
-description+personality only, and all three fields with `{{original}}`. Unknown fields +
-`extensions` land in `card` verbatim **after the strip pass** (§7) — the spec's
-preserve-unknowns MUST, structural here via `extra="allow"` (R66: ST fakes it with a hidden
-form input). **Size caps (Emma F8):** one upload byte cap on the request body and one
+description+personality only, and all three fields with `{{original}}`. **The WHOLE normalized
+card lands in `agents/<slug>/card.json`** — the field's own envelope, `{"spec":
+"chara_card_v2"|"chara_card_v3", "spec_version": <as declared, else the rung's>, "data": …}` (a
+V1 card is written as V2, ST's own upgrade; the R87 review's O-8), mapped fields,
+unknown fields, `extensions` and `character_book` alike, verbatim **after the strip pass** (§7) —
+the spec's preserve-unknowns MUST, and the as-imported restore point + export source. Written
+0600 through the house atomic writer, in the same hop as the SOUL and the book, after the agent
+validates; nothing ever edits it. *(Amended 2026-09-26, R87/RP-8 + RP-13: it used to be a
+`card` stash inside `agent.yaml` holding only the UNMAPPED remainder — so once the owner edited
+a SOUL or a greeting the card's own values existed nowhere, SOUL's three fused fields could not
+be separated back out, and every embedded book was stored twice and re-parsed on every agents
+listing and turn. The report's `stashed_keys` now names the unmapped keys only `card.json`
+keeps.)* **Size caps (Emma F8):** one upload byte cap on the request body and one
 decoded-card JSON cap, enforced for EVERY container (the existing cap+1/413 posture); CHARX
 additionally keeps its per-entry / asset-count / total-uncompressed limits. Name→slug: the agent-name
 grammar, collision-suffixed. Imported agents default `duties: conversational` (ruling 2 — cards
@@ -364,7 +393,7 @@ are companions; the toggle flips any of them to full duty). **`AgentDef.descript
 auto-router's "when to pick me" text) stays EMPTY on import** (coverage audit): the card's
 description is persona prose, not routing copy — an imported character is reached by explicit
 pick, never auto-routed to, until the owner writes a routing line themselves. Export is NOT
-v1: the stash + Agnai's stale-stash comparison (R66 §9) are the recorded seam, so v1 loses
+v1: `card.json` + Agnai's stale-stash comparison (R66 §9) are the recorded seam, so v1 loses
 nothing. Note what imports FREE: `AgentDef.model` already exists per agent, so a character can
 pin its own backend/model (e.g. an RP-tuned model) with zero new machinery — the editor simply
 shows the existing picker beside the new fields.
@@ -373,7 +402,9 @@ shows the existing picker beside the new fields.
 
 Decoded, probed by the existing `core/media.py` stack (closed type allowlist, magic-byte
 verified), written into the `agents/avatars` library via the media write path, and bound via
-`AgentDef.avatar` (§8). Import succeeds without an avatar; an invalid image degrades to a
+`AgentDef.avatar` (§8). A PNG card's `chara`/`ccv3` text chunks (`tEXt`/`zTXt`/`iTXt`,
+keyword casefolded) are removed WHOLE before it lands (R87/RP-4, 2026-09-26): they are the
+entire unstripped card, and the avatar is an ordinary served file. Import succeeds without an avatar; an invalid image degrades to a
 report line, never a whole-card refusal. V3 multi-asset routing (sprites/emotions/user icons —
 R66 §2.4) is a non-goal: extras stashed/ignored with a report line.
 
@@ -455,7 +486,13 @@ bare entries list — the three circulating shapes (R65 §5). **Position downgra
 explicit import rule (2026-09-06 scout finding):** the owner's real ST books use positions
 0–4 (before/after char defs, the two AN slots, at-depth), and v1 stores only `head | tail`
 (§6.4) — the S3 brief pins the mapping (which numbers land `head`, which `tail`) with a
-report line for every downgraded entry, never a silent coercion.
+report line for every downgraded entry, never a silent coercion. **A card-embedded book ST
+wrote carries its real values under `extensions`** (`convertWorldInfoToCharacterBook`: the top
+level holds only the before/after squash of `position`), so `extensions.{position,
+selectiveLogic, case_sensitive, match_whole_words}` are read FIRST — ST's own reader's
+precedence (R87/RP-5, 2026-09-26; it used to land every at-depth entry `head` silently and
+invert NOT gates). The card's embedded book is sourced from the normalized card (`card.json`'s
+`data`), not from a stash.
 
 ### 6.6 UI
 
@@ -500,11 +537,14 @@ loader. Shared ground they DO get: the fallible-data framing convention + regist
 - **Cards are untrusted input that can carry code** (R66 §3: Risu scripts — one mode rewrites
   outbound requests — trigger scripts, CHARX modules; imported promptless in the field). We
   execute none and warehouse none. **The strip is a concrete normalized-key DENYLIST applied
-  RECURSIVELY before stashing (Emma F7 — prose categories can't drive a sanitizer, and the
-  live Risu key is `customScripts`, not the older `regex_scripts` name):** at minimum
-  the keys `customScripts` · `triggerscript` · `virtualscript` · `lowLevelAccess`, matched at
-  ANY depth of the `extensions` tree (V3 permits nesting; the canonical home is
-  `extensions.risuai.*`). **CHARX's code carrier is handled structurally, not by key
+  RECURSIVELY before anything is kept (Emma F7 — prose categories can't drive a sanitizer):**
+  the keys `customScripts` (Risu's live field) · `triggerscript` · `virtualscript` ·
+  `lowLevelAccess` · `regex_scripts` — ST's OWN scoped-regex field (`extensions.regex_scripts`,
+  which rewrites the outgoing prompt; added by R87/RP-4 — the earlier text wrongly called it an
+  older Risu name) — matched at ANY depth of the `extensions` tree (V3 permits nesting).
+  **"Warehouse none" holds for the avatar too (R87/RP-4, 2026-09-26):** a PNG card IS its
+  avatar and its `chara`/`ccv3` chunks are the whole unstripped card, so they are dropped
+  before the image lands (§5.4) — the one kept copy of a card is the post-strip `card.json`. **CHARX's code carrier is handled structurally, not by key
   (confirm-round F7 correction): our CHARX reader ingests `card.json` and asset entries
   ONLY — the Risu MODULE zip member (the thing whose scripts Risu's own importer folds into
   `triggerscript`/`customScripts`, R66 §3.1) is never read or stashed at all.** One function,
@@ -525,7 +565,8 @@ loader. Shared ground they DO get: the fallible-data framing convention + regist
   quoting, destructive of comments. A card's stash can carry credentials (R67 verified
   character objects holding provider API keys), so the agent write path routes through the
   already path-agnostic `edit_config_yaml(..., path=agent.yaml)` (atomic 0600 + `_yaml11_safe`
-  + comment-preserving) — once, for imports AND manual edits alike.
+  + comment-preserving) — once, for imports AND manual edits alike. *(R87/RP-8 moved the stash
+  out to `card.json`, written 0600 by `atomic_write_text`; `agent.yaml` keeps the chokepoint.)*
 
 ## 8. Agent art: libraries, upload reuse, and the three-state backdrop
 
@@ -894,7 +935,12 @@ are in §13, which is where the detail lives.
   pseudo-message emission, normalize-seam behavior on strict templates (the §4.2 named-system
   probe), the per-agent voice resolution (§8.5).
 - **S2 ✅ — card import (BE):** containers + sniffing + normalization + mapping + strip pass +
-  avatar into the library + explicit minimal tools + the import report.
+  avatar into the library + explicit minimal tools + the import report. *(Pre-release R87 wave,
+  2026-09-26: the `card` stash became the whole-card `card.json` sidecar + `AgentDef.card`
+  removed (RP-8/RP-13); card chunks stripped from the avatar PNG + `regex_scripts` denylisted
+  (RP-4); ST's `extensions.*` read first for card books (RP-5); a Character's Note report line
+  (RP-6); `{{original}}` = the configured system prompt, Duties always emitted (RP-1); case-
+  insensitive vocabulary + `{{// }}` comments + the unrendered-macros report line (RP-2/RP-3).)*
 - **S3 ✅ — lorebooks (BE):** storage/CRUD + scan + render/budget + bindings + book import.
 - **S4 ✅ — the agents surface (FE + the summary API):** **the BE half first (Emma F12): extend
   `GET /agents` with a compact per-agent summary map — title · avatar · background · voice —

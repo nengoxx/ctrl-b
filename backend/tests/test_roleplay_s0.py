@@ -15,8 +15,9 @@ What's exercised:
                     append axes still ride in their own messages.
   5. Emissions    — scenario (before the roster), the owner persona (after it), post_history (after
                     the history); each empty ⇒ absent (ruling 10).
-  6. Macros       — `{{char}}`, the three `{{user}}` rungs, `{{original}}`'s once-rule + duties
-                    consumption + its empty post-history meaning; unmatched tokens pass through.
+  6. Macros       — `{{char}}`, the three `{{user}}` rungs, `{{original}}`'s once-rule + its
+                    configured-prompt-else-empty meaning (R87/RP-1) + its empty post-history meaning;
+                    the case fold and comment strip (RP-2/RP-3); unmatched tokens pass through.
   7. Data model   — the new `AgentDef` fields persist + round-trip; the ones S2+ owns stay inert.
   8. Config       — `roleplay:` defaults, round-trip, and validation.
 
@@ -377,65 +378,159 @@ def test_text_without_macros_is_untouched() -> None:
         assert _systems(_assemble(c, _make_thread(c), "nyx"))[0] == head(text)
 
 
-def test_original_substitutes_the_no_card_head_and_consumes_the_duties_section() -> None:
-    """§4.1: `{{original}}` is "the prompt that would have been used without the card" — the no-card
-    Voice plus the Duties section — so emitting that section again beside it would be a duplicate.
-    The substitution lands inside the already-labelled Voice section, so the head still ends up with
-    exactly the two `## ` headings §4.1 specifies, never three."""
+def test_original_is_the_configured_system_prompt_else_nothing_and_duties_always_ride() -> None:
+    """§4.1 as amended by R87/RP-1: `{{original}}` is V2's "the prompt the frontend would have
+    used" — the owner's configured `inference.system_prompt`, else nothing. Never the baked
+    assistant identity, and never a consumer of the Duties section, which always rides as its own
+    section. The card field's convention puts the token at offset 0, so that is the shape pinned."""
     with _workspace(), _client() as c:
-        from app.services.agent.prompts import REGISTRY
         from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
 
-        _agent(c, "nyx")
-        _soul(c, "nyx", "You are Nyx.\n\n{{original}}")
+        _agent(c, "nyx", title="Nyx")
+        _soul(c, "nyx", "{{original}}\n\nWrite {{char}}'s replies in third person.\n\nNyx is a witch.")
         block = _systems(_assemble(c, _make_thread(c), "nyx"))[0]
-        assert block == head(f"You are Nyx.\n\n{DEFAULT_SYSTEM_PROMPT}")
-        assert block.count("## ") == 2
-        assert block.count(REGISTRY["duties_agent"].default) == 1
+        assert block == head("Write Nyx's replies in third person.\n\nNyx is a witch.")
+        assert DEFAULT_SYSTEM_PROMPT not in block
+
+        assert (
+            c.put("/api/settings", json={"inference": {"system_prompt": "FALLBACK VOICE"}}).status_code == 200
+        )
+        block = _systems(_assemble(c, _make_thread(c), "nyx"))[0]
+        assert block == head("FALLBACK VOICE\n\nWrite Nyx's replies in third person.\n\nNyx is a witch.")
 
 
 def test_original_is_substituted_once() -> None:
     """`safe_substitute` replaces every occurrence, so the once-rule is explicit: the FIRST token
-    takes the head, later ones render empty."""
+    takes the configured prompt, later ones render empty — whatever case each is written in."""
     with _workspace(), _client() as c:
-        from app.services.agent.prompts import REGISTRY
-
+        assert c.put("/api/settings", json={"inference": {"system_prompt": "FALLBACK"}}).status_code == 200
         _agent(c, "nyx")
-        _soul(c, "nyx", "{{original}}\n\nAnd again: {{original}}")
+        _soul(c, "nyx", "{{Original}}\n\nAnd again: {{original}}")
         block = _systems(_assemble(c, _make_thread(c), "nyx"))[0]
-        assert block.count(REGISTRY["duties_agent"].default) == 1
-        assert block.endswith("And again: ")
+        assert block == head("FALLBACK\n\nAnd again:")
 
 
 def test_a_malformed_brace_run_is_not_a_token() -> None:
-    """The S0 Emma round's MED, both halves. A `{{original}}` inside a longer brace run must not
-    trigger head consumption (the run is a literal, not a token) — and it must not count as the
+    """The S0 Emma round's MED. A `{{original}}` inside a longer brace run must not count as the
     once-rule's "first", which would blank a REAL token later in the text and silently delete the
-    head the owner asked for there."""
-    from app.services.agent.macros import Macros, consumes_original
+    value the owner asked for there."""
+    from app.services.agent.macros import Macros
 
-    assert not consumes_original("{{{{original}}")
     m = Macros(char="Nyx", user="User")
     assert m.render("{{{{original}}", original="HEAD") == "{{{{original}}"
     assert m.render("{{{{char}}") == "{{{{char}}"
+    assert m.render("{{{{Char}}") == "{{{{Char}}"  # the case fold walks TOKENS too
     # The run does not steal "first": the real token still substitutes, a second real one blanks.
     assert m.render("{{{{original}} {{original}}", original="HEAD") == "{{{{original}} HEAD"
     assert m.render("{{original}} {{original}}", original="HEAD") == "HEAD "
 
 
-def test_original_is_the_configured_fallback_voice_when_one_is_set() -> None:
-    """The confirm-round F3 correction: a configured `inference.system_prompt` IS the no-card
-    Voice; the baked persona is only the last rung."""
+def test_a_configured_system_prompt_carrying_the_token_leaves_no_literal() -> None:
+    """The configured prompt is rendered with `original=""` before it is substituted, so one that
+    itself says `{{original}}` cannot leave the literal sitting in a character's head."""
     with _workspace(), _client() as c:
-        from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
-
         assert (
-            c.put("/api/settings", json={"inference": {"system_prompt": "FALLBACK VOICE"}}).status_code == 200
+            c.put(
+                "/api/settings", json={"inference": {"system_prompt": "{{original}}FALLBACK VOICE"}}
+            ).status_code
+            == 200
         )
         _agent(c, "nyx")
         _soul(c, "nyx", "You are Nyx.\n\n{{original}}")
-        block = _systems(_assemble(c, _make_thread(c), "nyx"))[0]
-        assert "FALLBACK VOICE" in block and DEFAULT_SYSTEM_PROMPT not in block
+        assert _systems(_assemble(c, _make_thread(c), "nyx"))[0] == head("You are Nyx.\n\nFALLBACK VOICE")
+
+
+def test_an_agent_without_its_own_persona_never_substitutes_the_prompt_into_itself() -> None:
+    """The R87 review's O-5: with no SOUL of its own (the root agent here), the Voice IS the configured
+    prompt, so `{{original}}` inside it must render empty — substituting a text into itself printed
+    it twice ("Be terse. Be terse.")."""
+    with _workspace(), _client() as c:
+        prompt = "{{original}}Be terse."
+        assert c.put("/api/settings", json={"inference": {"system_prompt": prompt}}).status_code == 200
+        assert _systems(_assemble(c, _make_thread(c)))[0] == head("Be terse.")
+
+
+def test_the_configured_prompt_renders_its_own_macros_for_the_character() -> None:
+    """`{{original}}`'s value is the configured prompt RENDERED — so a `{{char}}` in the owner's
+    operator framing names the character whose SOUL pulled it in."""
+    with _workspace(), _client() as c:
+        prompt = "Write {{char}}'s next reply."
+        assert c.put("/api/settings", json={"inference": {"system_prompt": prompt}}).status_code == 200
+        _agent(c, "nyx", title="Nyx")
+        _soul(c, "nyx", "{{original}}\n\nNyx is a witch.")
+        assert _systems(_assemble(c, _make_thread(c), "nyx"))[0] == head(
+            "Write Nyx's next reply.\n\nNyx is a witch."
+        )
+
+
+def test_a_soul_of_only_the_token_with_nothing_configured_keeps_both_sections() -> None:
+    """The O-4 ruling, recorded: `{{original}}` alone with no configured prompt renders an EMPTY Voice
+    body under its heading — the two-section shape stands (P3/R64 §5.4); nothing falls back."""
+    with _workspace(), _client() as c:
+        _agent(c, "nyx")
+        _soul(c, "nyx", "{{original}}")
+        assert _systems(_assemble(c, _make_thread(c), "nyx"))[0] == head("")
+
+
+def test_vocabulary_names_fold_in_any_ascii_case() -> None:
+    """R87/RP-2: the field resolves macro names case-insensitively (ST lower-cases before the lookup)
+    and real cards write `{{Char}}`/`{{User}}` — including example dialogue, whose speaker parse runs
+    on the RENDERED names, so an unfolded `{{User}}:` collapsed a whole block into one frame."""
+    from app.services.agent.macros import Macros
+
+    m = Macros(char="Nyx", user="Emma")
+    assert m.render("{{Char}} greets {{USER}}; {{uSeR}} nods.") == "Nyx greets Emma; Emma nods."
+    assert m.render("{{ORIGINAL}}!", original="HEAD") == "HEAD!"
+    # Outside the vocabulary a name keeps the case it was typed in — it renders literally anyway.
+    assert m.render("{{Random}} {{Time}}") == "{{Random}} {{Time}}"
+
+
+def test_the_case_fold_cannot_bind_a_unicode_look_alike() -> None:
+    """The registry grammar stays NOFLAG (ASCII identifiers), and the fold only lowers names that
+    grammar already matched — so a name spelled with a character that CASE-FOLDS onto ASCII (the
+    long s, the Kelvin sign) is not a token and survives exactly as typed."""
+    from app.services.agent.macros import Macros
+
+    m = Macros(char="Nyx", user="Emma")
+    for text in ("{{uſer}}", "{{ſections}}", "{{\u212achar}}", "{{cHar\u0130}}"):
+        assert m.render(text) == text, text
+
+
+def test_an_author_comment_renders_as_nothing_and_an_unclosed_one_stays_visible() -> None:
+    """R87/RP-3: `{{// …}}` is the note the author hid from the model — ST renders it empty (first
+    `}}` closes it, across lines). A `{{//` that never closes is not a comment; it stays visible,
+    the typo-is-visible rule."""
+    from app.services.agent.macros import Macros
+
+    m = Macros(char="Nyx", user="Emma")
+    assert m.render("Hi {{// keep it short\n and warm}}{{char}}.") == "Hi Nyx."
+    assert m.render("A {{//one}}B{{// two}}C") == "A BC"
+    assert m.render("Oops {{// never closed {{char") == "Oops {{// never closed {{char"
+    assert m.render("Oops {{// never closed") == "Oops {{// never closed"
+
+
+def test_the_comment_strip_and_case_fold_reach_the_assembled_head() -> None:
+    """Every surface renders through `Macros.render`, so both pre-passes reach the head for free."""
+    with _workspace(), _client() as c:
+        _agent(c, "nyx", title="Nyx")
+        _soul(c, "nyx", "{{// author note}}You are {{Char}}.")
+        assert _systems(_assemble(c, _make_thread(c), "nyx"))[0] == head("You are Nyx.")
+
+
+def test_unrendered_names_every_macro_this_build_leaves_literal() -> None:
+    """The importers' report source: case-insensitive, deduped, sorted; the vocabulary and the
+    stripped comment are never listed, and ST's arg forms (`{{random:…}}`) are named by their name."""
+    from app.services.agent.macros import unrendered, unrendered_note
+
+    texts = ["{{Char}} at {{time}}", "{{random:a,b}} {{RANDOM::c::d}} {{// hidden}} {{ date }}", "{{user}}"]
+    assert unrendered(texts) == ["date", "random", "time"]
+    # A vocabulary name renders ONLY as a bare token — padded with whitespace it is literal, so it is
+    # named (the R87 review's O-6).
+    assert unrendered(["{{ char }}", "{{user }}", "{{original}}"]) == ["char", "user"]
+    assert unrendered(["{{char}} {{Original}} {{// x}}", "plain"]) == []
+    assert unrendered_note(["{{char}}"], "the card's text") == []
+    (line,) = unrendered_note(texts, "the card's text")
+    assert "the card's text" in line and line.endswith("{{date}}, {{random}}, {{time}}")
 
 
 def test_original_in_the_post_history_renders_as_nothing() -> None:
@@ -469,7 +564,6 @@ def test_the_new_agent_fields_persist_and_round_trip() -> None:
         "background": "nyx-stacks",
         "voice": "af_nova",
         "lorebooks": ["the-archive"],
-        "card": {"creator": "someone", "tags": ["archivist"]},
     }
     with _workspace() as (tmp, _cfg), _client() as c:
         _agent(c, "nyx", **fields)
@@ -480,7 +574,25 @@ def test_the_new_agent_fields_persist_and_round_trip() -> None:
         on_disk = yaml.safe_load((tmp / "agents" / "nyx" / "agent.yaml").read_text(encoding="utf-8"))
         assert on_disk["duties"] == "conversational" and on_disk["lorebooks"] == ["the-archive"]
         resolved = c.app.state.settings.resolve_agent("nyx")
-        assert resolved.voice == "af_nova" and resolved.card["creator"] == "someone"
+        assert resolved.voice == "af_nova"
+
+
+def test_an_old_agent_yaml_carrying_a_card_stash_still_loads() -> None:
+    """R87/RP-8 removed `AgentDef.card` — the provenance moved to the `card.json` sidecar. Files
+    written before that (two dev agents, pre-release) keep their `card:` key, and `extra="allow"`
+    loads it as an inert extra: the agent resolves, the API serves it, and no prompt changes."""
+    with _workspace() as (tmp, _cfg), _client() as c:
+        _agent(c, "nyx", title="Nyx")
+        _soul(c, "nyx", "You are Nyx.")
+        thread = _make_thread(c)
+        before = _assemble(c, thread, "nyx")
+        (tmp / "agents" / "nyx" / "agent.yaml").write_text(
+            "title: Nyx\ncard:\n  creator: someone\n", encoding="utf-8"
+        )
+        resolved = c.app.state.settings.resolve_agent("nyx")
+        assert resolved.title == "Nyx" and (resolved.model_extra or {})["card"] == {"creator": "someone"}
+        assert c.get("/api/agents/nyx").status_code == 200
+        assert _assemble(c, thread, "nyx") == before
 
 
 def test_a_bare_agent_defaults_every_new_field() -> None:
@@ -490,11 +602,11 @@ def test_a_bare_agent_defaults_every_new_field() -> None:
         assert a["duties"] == "agent"
         assert a["greeting"] == a["example_dialogue"] == a["scenario"] == a["post_history"] == ""
         assert a["user_name"] == a["avatar"] == a["background"] == a["voice"] == ""
-        assert a["alt_greetings"] == [] and a["lorebooks"] == [] and a["card"] == {}
+        assert a["alt_greetings"] == [] and a["lorebooks"] == [] and "card" not in a
 
 
 def test_the_fields_later_slices_own_stay_out_of_the_prompt() -> None:
-    """`alt_greetings`/avatar/background/voice/lorebooks/card are STORED and fed to NO prompt — the
+    """`alt_greetings`/avatar/background/voice/lorebooks are STORED and fed to NO prompt — the
     assembled payload is identical with and without them.
 
     S1 narrowed this: `greeting` and `example_dialogue` were on the list until S1 gave them their
@@ -514,7 +626,6 @@ def test_the_fields_later_slices_own_stay_out_of_the_prompt() -> None:
             background="nyx-stacks",
             voice="af_nova",
             lorebooks=["the-archive"],
-            card={"creator": "someone"},
         )
         assert _assemble(c, thread, "nyx") == before
 

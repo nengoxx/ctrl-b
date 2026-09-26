@@ -107,7 +107,7 @@ from app.services.agent.core_memory_tool import RECALL_RECEIPT, is_recall_call
 from app.services.agent.examples import example_messages
 from app.services.agent.exec import run_user_exec
 from app.services.agent.lorebooks import Haystack, active_slugs, block, load_books, scan
-from app.services.agent.macros import Macros, consumes_original, macros_for
+from app.services.agent.macros import Macros, macros_for
 from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
@@ -612,23 +612,6 @@ class AgentSession:
         whatever toolset the agent was granted."""
         return resolve(_DUTIES_PROMPTS[self._agent.duties], self._settings, stamps=self._stamps)
 
-    def _no_card_head(self) -> str:
-        """What `{{original}}` stands for in a persona text (§4.1): the head this chain would have
-        produced WITHOUT this agent's own persona — the no-card Voice (`inference.system_prompt`
-        when the owner configured one, else the baked default: a configured fallback override IS
-        the no-card Voice, the baked text is only the last rung) plus the whole Duties section it
-        consumes.
-
-        It carries the Duties HEADING but not a second Voice heading: the substitution lands INSIDE
-        the head's Voice section, which is already labelled, so re-labelling there would print
-        `## Voice` twice and leave the head with three headings instead of §4.1's two.
-
-        Rendered with `original=""` so a fallback override that itself contains the token cannot
-        leave a literal `{{original}}` sitting in the head (`safe_substitute` makes one pass and
-        never re-scans what it substituted)."""
-        voice = self._macros().render(self._settings.inference.system_prompt.strip() or DEFAULT_SYSTEM_PROMPT)
-        return voice + "\n\n" + self._section("duties_heading", self._duties())
-
     def _system_prompt(self) -> str:
         """The ONE leading system message: the Voice section, then the Duties section (D70 §4.1).
 
@@ -636,17 +619,29 @@ class AgentSession:
         R64 §5.4's measured shape (+0.052 on a roleplay-plus-tools benchmark, where naive persona
         prompting bought +0.004); the labels themselves are registry framings, never literals here.
 
-        `{{original}}` in the persona CONSUMES the separate Duties emission: the substituted no-card
-        head already carries a Duties section, and stating it twice is what an author asking for
-        "the original prompt, plus this" never meant. The head still ends up with exactly the two
-        labelled sections either way."""
-        source = self._voice()
-        embeds_head = consumes_original(source)
-        voice = self._macros().render(source, original=self._no_card_head() if embeds_head else "")
-        sections = [self._section("voice_heading", voice)]
-        if not embeds_head:
-            sections.append(self._section("duties_heading", self._duties()))
-        return "\n\n".join(sections)
+        `{{original}}` in the persona stands for the OWNER's configured `inference.system_prompt`
+        (rendered), else nothing — V2's "the prompt the frontend would have used", which in the
+        field is the operator's own framing, never an assistant identity (the R87/RP-1 amendment).
+        It used to be the whole no-card head (baked "You are ctrl-b…" + Duties) and consumed the
+        Duties emission; a card's `system_prompt` opens with the token by convention (14 of the
+        owner's 36 system-prompt cards, every one at offset 0), so that filed the character under
+        `## Duties` behind a homelab-assistant Voice. The Duties section now always rides as its own
+        section — it already IS the operator text under P3.
+
+        The configured text is itself rendered with `original=""`, so one that carries the token
+        cannot leave a literal `{{original}}` in the head (`safe_substitute` never re-scans what it
+        substituted). And it is the value ONLY when the agent has its own persona text — `_voice()`'s
+        first rung. Without one the Voice IS the configured prompt, and substituting a text into
+        itself would print it twice (the R87 review's O-5), so the token renders empty there."""
+        macros = self._macros()
+        own = bool(self._agent.prompt.strip())
+        original = macros.render(self._settings.inference.system_prompt.strip()) if own else ""
+        # Stripped like every other rendered field: the token sits at offset 0 by the field's
+        # convention, so an empty value would otherwise open the section with a blank run.
+        voice = macros.render(self._voice(), original=original).strip()
+        return "\n\n".join(
+            (self._section("voice_heading", voice), self._section("duties_heading", self._duties()))
+        )
 
     def _scenario(self) -> str | None:
         """The agent's scenario as its own head block (§4.2) — as static as the prompt, so it sits

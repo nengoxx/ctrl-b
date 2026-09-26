@@ -18,7 +18,10 @@ book object as the envelope's `data`, so it comes through this same function (§
   * **The alias table** — V3/spec names win when both are present, ST's raw names are the fallback,
     and `matchWholeWords` ABSENT means TRUE (ST's shipped default, R65 §1.2 — its code default
     differs, and reading the code instead of the shipped config is how an importer silently changes
-    every entry's matching).
+    every entry's matching). Above both sits `extensions.{position, selectiveLogic, case_sensitive,
+    match_whole_words}`: where ST puts the real values when it writes a card's book, and what its
+    own reader consults first (R87/RP-5) — unless the entry is already OURS (a top-level `head`/
+    `tail` position), whose `extensions` is only the stale mirror it was first imported with.
   * **The position downgrade is never silent.** The field's books use positions 0–7 and v1 stores
     `head | tail` (§6.4), so every collapse gets a report line NAMING the entry and what was lost.
     The one exception is ST position 1 (after the character definitions), which is EXACTLY where our
@@ -40,6 +43,7 @@ from typing import Any
 
 from app.services.agent.card_import import CardImportError, _string_list, _text
 from app.services.agent.lorebooks import Lorebook, LorebookEntry
+from app.services.agent.macros import unrendered_note
 
 #: The V3 standalone-book discriminator, exactly (the `spec` field says what these bytes ARE — a
 #: value we do not know names a format we cannot claim to have read, `card_import.normalize`'s rule).
@@ -73,6 +77,10 @@ _POSITIONS: dict[Any, tuple[str, str | None]] = {
     3: ("tail", "it was an author's note below the note text"),
     4: ("tail", "it was injected at a fixed depth and role in the history, both of which collapse"),
 }
+
+#: Our own two positions (§6.4). A source entry whose top-level `position` is one of them was written
+#: by US, which is what makes it the provenance discriminator in `_entry`.
+_OUR_POSITIONS = ("head", "tail")
 
 #: `{ST selectiveLogic: (our logic, what was approximated)}`. AND-ANY and NOT-ANY are ours exactly;
 #: the two ALL variants have no v1 equivalent, so each lands on its ANY sibling WITH a report line —
@@ -134,6 +142,7 @@ def import_book(raw: Any, *, default_name: str = "") -> ImportedBook:
     }
     extras = {k: v for k, v in body.items() if k not in book_read}
     book = Lorebook.model_validate({**extras, **fields})
+    warnings += unrendered_note((e.content for e in entries), "the lorebook's entries")
     return ImportedBook(
         book=book,
         mapped=sorted({k for k in book_read if k in body} | {k for k in entry_read if _seen(items, k)}),
@@ -176,6 +185,27 @@ def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list
                     value = raw[n]
         return value
 
+    # ST's writer (`convertWorldInfoToCharacterBook`) mirrors a card-embedded entry's REAL placement,
+    # logic and matching flags under `extensions` — `position` at the top is only its
+    # `before_char`/`after_char` squash — and ST's own reader gives `extensions` precedence
+    # (`world-info.js` `entry.extensions?.position ?? …`). So those four are read there FIRST (R87/
+    # RP-5). Read, never consumed: the whole `extensions` tree stays stash verbatim.
+    #
+    # The ONE exception, decided here once per entry: a top-level `position` in OUR vocabulary
+    # (`head`/`tail`) means the entry is already ours — exported or edited here — and its
+    # `extensions` is the stale ST mirror it was imported with, riding along as stash. For such an
+    # entry the TOP LEVEL wins for all four keys, or a re-import would silently revert the owner's
+    # edits to what ST once said (the R87 review's O-3). No ST or V3 writer emits `head`/`tail`.
+    ext = raw.get("extensions")
+    ext = ext if isinstance(ext, dict) and raw.get("position") not in _OUR_POSITIONS else {}
+
+    def take_ext(ext_key: str, *names: str) -> Any:
+        """`extensions[ext_key]` when it carries a value, else `take(*names)` — whose names are
+        consumed either way (the top level is the same fact written twice)."""
+        top = take(*names)
+        value = ext.get(ext_key)
+        return top if value is None else value
+
     label = _text(raw.get("comment") or raw.get("name")).strip() or f"entry {index}"
 
     # `enabled` and its inverse are read TOGETHER so a source carrying both stashes neither: the
@@ -200,7 +230,9 @@ def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list
             )
     else:
         secondary = _string_list(take(*_ALIASES["secondary_keys"]))
-        logic = _logic(take("logic"), take("selectiveLogic"), secondary, label, warnings)
+        logic = _logic(
+            take("logic"), take_ext("selectiveLogic", "selectiveLogic"), secondary, label, warnings
+        )
 
     fields: dict[str, Any] = {
         "keys": _string_list(take(*_ALIASES["keys"])),
@@ -209,10 +241,10 @@ def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list
         "constant": _flag(take("constant"), False),
         "secondary_keys": secondary,
         "logic": logic,
-        "case_sensitive": _flag(take(*_ALIASES["case_sensitive"]), False),
+        "case_sensitive": _flag(take_ext("case_sensitive", *_ALIASES["case_sensitive"]), False),
         # ABSENT ⇒ TRUE — ST's SHIPPED default (R65 §1.2), which its own code default contradicts.
-        "whole_words": _flag(take(*_ALIASES["whole_words"]), True),
-        "position": _position(raw, take("position"), label, warnings),
+        "whole_words": _flag(take_ext("match_whole_words", *_ALIASES["whole_words"]), True),
+        "position": _position(take_ext("position", "position"), label, warnings),
         "order": _int(take(*_ALIASES["order"]), 100),
         # Absent stays NULL rather than becoming a number: null MEANS "rank me by `order`" (§6.2),
         # and inventing a priority here would silently split the two ranks the author kept fused.
@@ -223,20 +255,15 @@ def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list
     return LorebookEntry.model_validate({**extras, **fields})
 
 
-def _position(raw: dict[str, Any], value: Any, label: str, warnings: list[str]) -> str:
-    """The entry's position under the §6.5 downgrade rules.
-
-    The source is the top-level `position` (ST's numeric enum or V3's strings), else
-    `extensions.position` — the older placement, which is READ but not consumed, because the whole
-    `extensions` tree is stash.
+def _position(value: Any, label: str, warnings: list[str]) -> str:
+    """The entry's position under the §6.5 downgrade rules. The source is `extensions.position`
+    (ST's numeric enum — the real placement of a card-embedded entry ST wrote), else the top-level
+    `position` (ST's enum or V3's strings); the caller resolves that precedence.
 
     Every collapse is reported, per entry, naming what was lost. `head` is the default and the
     fallback for a value this build does not know: a book must import, and the head is where an
     entry we cannot place is least surprising (it is the placement §6.4 calls the default)."""
-    if value is None:
-        extensions = raw.get("extensions")
-        value = extensions.get("position") if isinstance(extensions, dict) else None
-    if value is None or value in ("head", "tail"):  # absent, or already ours (a re-import)
+    if value is None or value in _OUR_POSITIONS:  # absent, or already ours (a re-import)
         return value or "head"
     # The table is consulted only for the two shapes a position can BE (`bool` is an `int` and is not
     # one of them). Anything else — a hand-edited `{}` or `[]` — is unhashable, so asking the dict

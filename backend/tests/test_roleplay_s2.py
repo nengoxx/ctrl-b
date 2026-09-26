@@ -112,6 +112,11 @@ def soul(home: Path, slug: str) -> str:
     return (home / "agents" / slug / "SOUL.md").read_text(encoding="utf-8")
 
 
+def card_json(home: Path, slug: str) -> dict:
+    """The imported card's provenance sidecar (R87/RP-8): `{"spec", "data"}`, the whole card."""
+    return json.loads((home / "agents" / slug / "card.json").read_text(encoding="utf-8"))
+
+
 # ── 1. the SOUL recipe (§5.3, Emma F4 — the golden pair) ──────────────────────────────────────────
 
 
@@ -404,23 +409,126 @@ def test_a_stripped_path_is_a_pointer_so_a_dot_in_a_key_cannot_collide() -> None
     assert len(set(removed)) == 3
 
 
-def test_an_imported_card_is_stashed_post_strip(home: Path) -> None:
-    """End to end: nothing executable reaches `agent.yaml`, and the report NAMES what was removed —
-    a strip the owner cannot see is indistinguishable from a card that never carried anything."""
+def test_an_imported_card_is_kept_post_strip(home: Path) -> None:
+    """End to end: nothing executable reaches `card.json` (or `agent.yaml`, which carries no card at
+    all now — R87/RP-8), and the report NAMES what was removed — a strip the owner cannot see is
+    indistinguishable from a card that never carried anything. ST's own scoped-regex field
+    `extensions.regex_scripts` is on the denylist beside Risu's (R87/RP-4)."""
     card = v3(
         name="Nyx",
         description="d",
         creator="someone",
         tags=["archivist"],
-        extensions={"risuai": {"customScripts": ["evil"], "additionalAssets": [["a", "b", "c"]]}},
+        extensions={
+            "risuai": {"customScripts": ["evil"], "additionalAssets": [["a", "b", "c"]]},
+            "regex_scripts": [{"findRegex": "/x/", "replaceString": "y"}],
+        },
     )
     with make_client() as c:
         body = imported(c, json.dumps(card).encode("utf-8"))
-    stash = agent_yaml(home, "nyx")["card"]
-    assert stash["creator"] == "someone" and stash["tags"] == ["archivist"]
-    assert stash["extensions"]["risuai"] == {"additionalAssets": [["a", "b", "c"]]}
-    assert body["report"]["stripped_paths"] == ["/extensions/risuai/customScripts"]
-    assert body["report"]["stashed_keys"] == ["creator", "extensions", "spec", "spec_version", "tags"]
+    kept = card_json(home, "nyx")["data"]
+    assert kept["creator"] == "someone" and kept["tags"] == ["archivist"]
+    assert kept["extensions"] == {"risuai": {"additionalAssets": [["a", "b", "c"]]}}
+    assert body["report"]["stripped_paths"] == [
+        "/extensions/risuai/customScripts",
+        "/extensions/regex_scripts",
+    ]
+    # `stashed_keys` = the unmapped keys only `card.json` keeps; the envelope is not card data.
+    assert body["report"]["stashed_keys"] == ["creator", "extensions", "tags"]
+    assert "card" not in agent_yaml(home, "nyx") and "card" not in body["agent"]
+
+
+def test_card_json_is_the_whole_normalized_card_at_0600(home: Path) -> None:
+    """R87/RP-8: the sidecar is the as-imported restore point and export source, so it holds the
+    MAPPED fields too — once the owner edits the SOUL or the greeting, the card's own values still
+    exist, and the three fields SOUL fuses stay separable. Written 0600 (a card can carry
+    credentials, R67), beside the SOUL, through the house atomic writer."""
+    card = v3(
+        name="Nyx",
+        system_prompt="{{original}} Stay terse.",
+        description="Nyx keeps the archive.",
+        personality="Dry.",
+        first_mes="You found the archive.",
+        post_history_instructions="Stay in character.",
+        creator="someone",
+    )
+    with make_client() as c:
+        imported(c, json.dumps(card).encode("utf-8"))
+        assert c.put("/api/agents/nyx/soul", json={"content": "Edited."}).status_code == 200
+        assert c.put("/api/agents/nyx", json={"agent": {"greeting": "Edited."}}).status_code == 200
+    path = home / "agents" / "nyx" / "card.json"
+    assert path.stat().st_mode & 0o777 == 0o600
+    kept = card_json(home, "nyx")
+    assert (kept["spec"], kept["spec_version"]) == ("chara_card_v3", "3.0")  # the field's own envelope
+    assert kept["data"] == card["data"]  # nothing to strip here, so it is the card, whole
+    assert kept["data"]["system_prompt"] == "{{original}} Stay terse."
+    assert kept["data"]["first_mes"] == "You found the archive."  # the owner's edit did not reach it
+
+
+def test_card_json_keeps_the_declared_version_and_upgrades_v1_to_the_v2_envelope(home: Path) -> None:
+    """The R87 review's O-8: `card.json` is the spec's own `{spec, spec_version, data}` envelope, so the
+    declared version survives (a `3.1` card says `3.1`) and a V1 card — which has no envelope — is
+    written as V2, ST's own upgrade of it."""
+    declared = {"spec": "chara_card_v3", "spec_version": "3.1", "data": {"name": "Nyx", "description": "d"}}
+    with make_client() as c:
+        imported(c, json.dumps(declared).encode("utf-8"))
+        imported(c, json.dumps({"name": "Old", "description": "d"}).encode("utf-8"))
+    kept = card_json(home, "nyx")
+    assert (kept["spec"], kept["spec_version"]) == ("chara_card_v3", "3.1")
+    old = card_json(home, "old")
+    assert (old["spec"], old["spec_version"]) == ("chara_card_v2", "2.0")
+    assert old["data"] == {"name": "Old", "description": "d"}
+
+
+def test_a_lone_surrogate_imports_and_round_trips_through_card_json(home: Path) -> None:
+    """The R87 review's O-1: JS tools emit lone UTF-16 surrogates (`\\ud83d`), `json.loads` accepts
+    them, and a UTF-8 encode cannot — written with `ensure_ascii=False` the sidecar raised AFTER the
+    SOUL landed (a 500 and a half-agent resolving to the defaults). ASCII-escaped, the file is pure
+    ASCII and the escape round-trips exactly."""
+    body = json.dumps(v2(name="Nyx", description="d", creator_notes="\ud83d")).encode("ascii")
+    with make_client() as c:
+        r = put_card(c, body)
+    assert r.status_code == 201, r.text
+    text = (home / "agents" / "nyx" / "card.json").read_text(encoding="utf-8")
+    assert "\\ud83d" in text  # the escaped form, on disk
+    assert json.loads(text)["data"]["creator_notes"] == "\ud83d"
+    assert (home / "agents" / "nyx" / "agent.yaml").is_file()  # the whole agent, not half of one
+
+
+def test_a_lone_surrogate_in_the_persona_text_is_refused_before_anything_lands(home: Path) -> None:
+    """The O-1 sibling the confirm round named: SOUL.md is the one raw-text write, so a lone
+    surrogate in `description`/`personality`/`system_prompt` failed its UTF-8 encode mid-hop (a 500
+    and an empty, unlisted folder). Refused at compose time with the ordinary 422."""
+    body = json.dumps(v2(name="Nyx", description="d\ud83d")).encode("ascii")
+    with make_client() as c:
+        r = put_card(c, body)
+    assert r.status_code == 422, r.text
+    assert "lone surrogate" in r.json()["detail"]
+    assert not (home / "agents" / "nyx").exists()
+
+
+@pytest.mark.parametrize("container", ["json", "png"])
+def test_nan_and_infinity_are_refused_so_card_json_stays_strict(home: Path, container: str) -> None:
+    """The R87 review's O-7: `NaN`/`Infinity` are Python's JSON extension, not JSON — accepted, they
+    would be written straight back into `card.json` as non-JSON tokens. Refused at parse, every arm."""
+    raw = b'{"spec": "chara_card_v2", "data": {"name": "Nyx", "description": "d", "talkativeness": NaN}}'
+    body = (
+        raw if container == "json" else png_bytes() + png_chunk(b"tEXt", b"chara\x00" + base64.b64encode(raw))
+    )
+    with make_client() as c:
+        r = put_card(c, body)
+    assert r.status_code == 422 and "NaN" in r.json()["detail"], r.text
+    assert not (home / "agents" / "nyx").exists()
+
+
+def test_a_refused_card_writes_no_card_json(home: Path) -> None:
+    """The sidecar lands in the same hop as the SOUL, AFTER the agent validates: a card the loader
+    would refuse leaves no half-agent folder behind."""
+    configure(home, "agent:\n  defaults:\n    max_repeat_calls: 0\n")
+    with make_client() as c:
+        r = put_card(c, json.dumps(v2(name="Nyx", description="d")).encode("utf-8"))
+    assert r.status_code == 422, r.text
+    assert not (home / "agents" / "nyx").exists()
 
 
 # ── 4. the CHARX container's own bounds (§7) ──────────────────────────────────────────────────────
@@ -546,9 +654,9 @@ def test_the_full_mapping_lands_on_the_agent(home: Path) -> None:
     # "when to pick me", so an imported character is reached by an explicit pick until the owner
     # writes a routing line themselves.
     assert agent["description"] == ""
-    # The embedded lorebook is STASHED verbatim — the stash is its permanent provenance home — AND
+    # The embedded lorebook is kept in `card.json` verbatim — its permanent provenance home — AND
     # landed as a real attached book (S3 §6.5; the end-to-end hook is pinned in test_roleplay_s3).
-    assert agent["card"]["character_book"]["entries"][0]["keys"] == ["archive"]
+    assert card_json(home, "nyx-the-archivist")["data"]["character_book"]["entries"][0]["keys"] == ["archive"]
     assert agent["lorebooks"] == ["nyx-the-archivist-book"]
     assert any("lorebook was imported as" in w for w in body["report"]["warnings"])
     assert body["report"]["post_history"] == "Stay in character."  # verbatim in the report (§7)
@@ -564,26 +672,65 @@ def test_the_full_mapping_lands_on_the_agent(home: Path) -> None:
     ]
 
 
+def test_the_report_names_the_macros_that_will_render_literally(home: Path) -> None:
+    """R87/RP-3: ONE line, naming every macro in the card's prompt-facing text that this build does
+    not render — sniffed over every mapped field (the alternate greetings included) — so a card
+    built on `{{time}}` says so at the door instead of in its opening message. The vocabulary in any
+    case and the stripped `{{// …}}` comment are never named, and a card that uses neither kind gets
+    no line at all."""
+    card = v2(
+        name="Meiko",
+        system_prompt="{{original}} {{// a note to myself}}",
+        description="{{Char}} works nights.",
+        first_mes="It is {{time}} on {{date}}.",
+        alternate_greetings=["Pick one: {{random:tea,coffee}}"],
+        post_history_instructions="{{idle_duration}} have passed.",
+    )
+    with make_client() as c:
+        warnings = imported(c, json.dumps(card).encode("utf-8"))["report"]["warnings"]
+        (line,) = [w for w in warnings if "does not render" in w]
+        assert "the card's text" in line
+        assert line.endswith("{{date}}, {{idle_duration}}, {{random}}, {{time}}")
+
+        clean = imported(c, json.dumps(v2(name="Plain", description="{{User}} meets {{char}}.")).encode())
+        assert not any("does not render" in w for w in clean["report"]["warnings"])
+
+
+def test_a_character_note_is_reported_not_silently_dropped(home: Path) -> None:
+    """R87/RP-6: ST's Character's Note (`extensions.depth_prompt`) is a real per-turn prompt field
+    v1 has no slot for — one report line says so, and an empty note says nothing."""
+    note = {"prompt": "Always answer in two sentences.", "depth": 0, "role": "system"}
+    with make_client() as c:
+        body = imported(
+            c, json.dumps(v2(name="Keqing", description="d", extensions={"depth_prompt": note})).encode()
+        )
+        assert any("Character's Note" in w and "depth 0" in w for w in body["report"]["warnings"])
+
+        empty = {"depth_prompt": {"prompt": "  ", "depth": 4}}
+        body = imported(c, json.dumps(v2(name="Plain", description="d", extensions=empty)).encode())
+        assert not any("Character's Note" in w for w in body["report"]["warnings"])
+
+
 def test_a_v3_nickname_becomes_the_char_name(home: Path) -> None:
     """V3: a non-empty `nickname` "replaces the name in {{char}}" — and `title` IS `{{char}}` here
     (`macros_for`), so that is where it lands (the S2 review's MED-5). The slug still mints from
-    `name` (a folder is an identifier, not a display) and the nickname stays in the stash verbatim."""
+    `name` (a folder is an identifier, not a display) and the nickname stays in `card.json` verbatim."""
     card = v3(name="Nyx the Archivist", nickname="Nyx", description="d")
     with make_client() as c:
         body = imported(c, json.dumps(card).encode("utf-8"))
     assert body["name"] == "nyx-the-archivist"
     assert body["agent"]["title"] == "Nyx"
-    assert agent_yaml(home, "nyx-the-archivist")["card"]["nickname"] == "Nyx"
+    assert card_json(home, "nyx-the-archivist")["data"]["nickname"] == "Nyx"
 
 
-def test_a_v2_nickname_is_stash_only(home: Path) -> None:
+def test_a_v2_nickname_is_provenance_only(home: Path) -> None:
     """The rule is V3's, so a V2 card carrying the same key keeps the name↔title rule it has today —
-    the field is still stashed, because everything unmapped is."""
+    the field is still kept in `card.json`, because the whole card is."""
     card = v2(name="Nyx the Archivist", nickname="Nyx", description="d")
     with make_client() as c:
         body = imported(c, json.dumps(card).encode("utf-8"))
     assert body["agent"]["title"] == "Nyx the Archivist"
-    assert agent_yaml(home, "nyx-the-archivist")["card"]["nickname"] == "Nyx"
+    assert card_json(home, "nyx-the-archivist")["data"]["nickname"] == "Nyx"
 
 
 def test_the_tools_allowlist_is_written_explicitly(home: Path) -> None:
@@ -656,6 +803,61 @@ def test_the_png_card_lands_in_the_avatars_library_and_is_bound(home: Path) -> N
         # row's `name` is the display STEM, and binding to that would be the ambiguity "W9" removed.
         assert [f["file"] for f in index["roles"]["avatars"]] == ["nyx.png"]
         assert c.get("/api/media/agents/files/avatars/nyx.png").status_code == 200
+
+
+def test_the_served_avatar_carries_no_card(home: Path) -> None:
+    """R87/RP-4: the card PNG IS the avatar, and its `chara`/`ccv3` chunks are the WHOLE card as
+    uploaded — unstripped. They are removed (whole chunks, any text-chunk type, keyword casefolded)
+    before the image lands, so the scripts the strip pass removed are not sitting in a served media
+    file. Every other chunk survives byte-for-byte, and the file is still a PNG: signature, IHDR
+    first, IEND last."""
+    note = png_chunk(b"tEXt", b"Comment\x00made by hand")
+    risu = {"customScripts": ["evil"], "lowLevelAccess": True}
+    body = png_card(keys={"ccv3": v3(name="Nyx", description="d", extensions={"risuai": risu})})
+    body = body[: -len(png_chunk(b"IEND", b""))]  # re-open the file to add the other text types
+    body += png_chunk(b"zTXt", b"CHARA\x00\x00compressed-card") + png_chunk(
+        b"iTXt", b"chara\x00\x00\x00\x00\x00card"
+    )
+    body += note + png_chunk(b"IEND", b"")
+    with make_client() as c:
+        result = imported(c, body)
+        assert result["report"]["stripped_paths"] == [
+            "/extensions/risuai/customScripts",
+            "/extensions/risuai/lowLevelAccess",
+        ]
+        served = c.get("/api/media/agents/files/avatars/nyx.png")
+    assert served.status_code == 200
+    avatar = served.content
+    assert avatar == (home / "media" / "agents" / "avatars" / "nyx.png").read_bytes()
+    assert avatar.startswith(png_bytes()) and avatar.endswith(png_chunk(b"IEND", b""))
+    assert b"customScripts" not in avatar and b"ccv3" not in avatar and b"compressed-card" not in avatar
+    assert b"\x00\x00card" not in avatar
+    assert note in avatar  # a text chunk that is not a card survives untouched
+
+
+def test_nothing_after_iend_reaches_the_avatar(home: Path) -> None:
+    """The R87 review's O-2: the chunk walk stops at IEND, so a card chunk (or a glued zip) parked
+    AFTER it used to be copied into the served avatar verbatim. Nothing past IEND belongs to the
+    image: the output ends at IEND's chunk."""
+    body = (
+        png_card(v2(name="Nyx", description="d")) + png_chunk(b"tEXt", b"ccv3\x00SECRET") + b"PK\x03\x04zip"
+    )
+    with make_client() as c:
+        imported(c, body)
+        avatar = c.get("/api/media/agents/files/avatars/nyx.png").content
+    assert avatar.endswith(png_chunk(b"IEND", b""))
+    assert b"SECRET" not in avatar and b"PK\x03\x04" not in avatar
+
+
+def test_strip_card_chunks_leaves_a_non_png_and_a_cardless_png_alone() -> None:
+    from app.services.agent.card_import import strip_card_chunks
+
+    plain = png_bytes() + png_chunk(b"tEXt", b"Title\x00x") + png_chunk(b"IEND", b"")
+    assert strip_card_chunks(plain) == plain
+    assert strip_card_chunks(jpeg_bytes()) == jpeg_bytes()
+    # A truncated tail ends the walk and is copied as-is — nothing past it is guessed at.
+    torn = png_bytes() + png_chunk(b"tEXt", b"chara\x00e30=") + b"\x00\x00\x01\x00tEXt"
+    assert strip_card_chunks(torn) == png_bytes() + b"\x00\x00\x01\x00tEXt"
 
 
 def test_a_second_card_of_the_same_name_walks_the_avatar_suffix(home: Path) -> None:
@@ -767,16 +969,14 @@ def test_yaml_11_ambiguous_values_round_trip_as_strings(home: Path) -> None:
     assert agent_yaml(home, "nyx")["greeting"] == "23:00"
 
 
-def test_yaml_11_ambiguous_stash_KEYS_round_trip_as_strings(home: Path) -> None:
-    """The same resolver split one level up (the S2 review's MED-6): a stash key of `no`/`on` reloads
-    as `False`/`True` unless the writer quotes KEYS too — which is not a mangled value but a mangled
-    TREE, and a card's extensions are arbitrary author-chosen keys."""
+def test_yaml_11_ambiguous_card_KEYS_survive_as_strings(home: Path) -> None:
+    """The S2 review's MED-6, re-pinned where the card now lives: a card's extensions are arbitrary
+    author-chosen keys, and `no`/`on` must come back as the strings they were. `card.json` is JSON,
+    so no YAML-1.1 resolver ever sees them — which is part of why the provenance left `agent.yaml`."""
     card = v2(name="Nyx", description="d", extensions={"no": {"on": "23:00"}})
     with make_client() as c:
         imported(c, json.dumps(card).encode("utf-8"))
-        agent = c.get("/api/agents/nyx").json()["agent"]
-    assert agent["card"]["extensions"] == {"no": {"on": "23:00"}}
-    assert agent_yaml(home, "nyx")["card"]["extensions"] == {"no": {"on": "23:00"}}
+    assert card_json(home, "nyx")["data"]["extensions"] == {"no": {"on": "23:00"}}
 
 
 def test_an_anchor_in_agent_yaml_does_not_smear_one_edit_across_two_keys(home: Path) -> None:

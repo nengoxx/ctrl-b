@@ -2,8 +2,9 @@
 locked containers, turned into the agent fields the rest of the app already persists.
 
 Everything here is pure service logic over BYTES: it reads, refuses or maps, and hands back what the
-API layer writes through the writes that already exist (agent scaffold + SOUL.md + the media ladder).
-Nothing in this module creates a file except the avatar, and that goes through `UploadPart`.
+API layer writes through the writes that already exist (agent scaffold + SOUL.md + the media ladder)
+plus the `card.json` provenance sidecar. Nothing in this module creates a file except the avatar,
+and that goes through `UploadPart`.
 
 **Sniffing is by MAGIC BYTES, never by extension or content-type** (§5.2, R66 §1): the field's
 "JPEG cards" are zips glued behind a JPEG, and a card's filename is whatever a phone's downloads
@@ -11,7 +12,7 @@ folder made of it. Three containers, and the third is the fallback:
 
   * **PNG/APNG** — the card is a base64 `tEXt` chunk. `ccv3` (V3) beats `chara` (V1/V2) when both
     are present, which is spec-normative; both shipping readers agree and compare the keyword
-    case-insensitively. The PNG itself is the avatar.
+    case-insensitively. The PNG itself, minus those chunks, is the avatar.
   * **CHARX** — a zip whose `card.json` sits at the root, with assets addressed `embeded://…`
     (the spec's OWN misspelling — resolved as spelled, plus the two spellings ST also tolerates).
     **We read `card.json` and the icon asset, and NOTHING else.** That is §7's structural handling
@@ -22,17 +23,21 @@ folder made of it. Three containers, and the third is the fallback:
     glued shape the field actually ships is the JPEG one.
   * **JSON** — the plain card object, discriminated by `spec`; no `spec` key ⇒ the V1 heuristic.
 
-**The strip pass is a normalized-key DENYLIST applied recursively before stashing** (§7, Emma F7):
+**The strip pass is a normalized-key DENYLIST applied recursively before anything is kept** (§7, Emma F7):
 prose categories cannot drive a sanitizer, so `strip_executable` names the keys and reports the
 exact paths it removed. It is written to be reused verbatim by a future export — strip-on-import
 AND on export is the field's own precedent.
+
+**The card PNG is not kept as-is either** (R87/RP-4): it becomes the avatar, and its `chara`/`ccv3`
+chunks are the WHOLE unstripped card — `strip_card_chunks` drops them before the avatar lands, so
+the one kept copy of a card is the post-strip `card.json`.
 
 **Every cap is config** (§5.3, Emma F8 → `roleplay.card_import`): no magic numbers here.
 
 Non-goals, recorded so they are not mistaken for gaps: WEBP-EXIF cards (one importer in the field),
 `.byaf`, and V3 multi-asset routing (sprites/emotions/user icons — the extras are stashed with a
-report line). The embedded `character_book` is NOT one of them: it rides the `card` stash as
-permanent provenance AND is landed as a real lorebook by the route, through `lorebook_import` (§6.5).
+report line). The embedded `character_book` is NOT one of them: it rides `card.json` as permanent
+provenance AND is landed as a real lorebook by the route, through `lorebook_import` (§6.5).
 """
 
 from __future__ import annotations
@@ -55,10 +60,11 @@ from app.core.media import (
     signature_format,
     suffix_for_format,
 )
+from app.services.agent.macros import unrendered_note
 from app.services.agent.skills import valid_skill_slug
 
 if TYPE_CHECKING:
-    from collections.abc import Collection
+    from collections.abc import Collection, Iterator
     from pathlib import Path
 
     from app.config import CardImportCfg
@@ -146,15 +152,65 @@ def _read_png(body: bytes, cfg: CardImportCfg) -> Container:
 
 
 def _png_text_chunks(body: bytes) -> dict[str, bytes]:
-    """Every `tEXt` chunk as `{keyword casefolded: value}` — hand-parsed with `struct`, the house
-    precedent (`probe_image` reads PNG the same way, and a decoder dependency for four bytes of
-    keyword would be a strange thing to add).
-
-    A chunk is `length(4) type(4) data crc(4)`; `tEXt` data is `keyword\\0value` in Latin-1 (PNG
-    §11.3.4.3). The FIRST occurrence of a keyword wins (ST takes the first index) and a truncated or
-    over-long chunk simply ends the walk: what we found up to there is what the file actually holds.
-    """
+    """Every `tEXt` chunk as `{keyword casefolded: value}`. `tEXt` data is `keyword\\0value` in
+    Latin-1 (PNG §11.3.4.3), and the FIRST occurrence of a keyword wins (ST takes the first index)."""
     chunks: dict[str, bytes] = {}
+    for ctype, _at, start, end in _png_chunks(body):
+        if ctype == b"tEXt":
+            keyword, sep, value = body[start:end].partition(b"\x00")
+            if sep:
+                chunks.setdefault(_keyword(keyword), value)
+    return chunks
+
+
+def strip_card_chunks(image: bytes) -> bytes:
+    """`image` without the card it carries — every `tEXt`/`zTXt`/`iTXt` chunk whose keyword is a
+    card keyword removed WHOLE (R87/RP-4). Anything that is not a PNG comes back untouched.
+
+    A card PNG IS its avatar, and those chunks are the entire card as uploaded — unstripped, so the
+    scripts `strip_executable` removed would otherwise sit in an ordinary served media file (and
+    travel with it when the owner saves or shares the picture). All three text-chunk types, because
+    a keyword means the same thing in each. Whole-chunk removal needs no CRC work: every surviving
+    chunk is copied byte-for-byte.
+
+    The output ENDS at IEND: nothing after it belongs to the image, and a card chunk (or a glued zip)
+    parked past IEND would otherwise ride into the served avatar untouched, since the walk stops
+    there. A file whose walk ends WITHOUT an IEND (a truncated tail) keeps that tail as-is — it is
+    not a chunk we can read, and the media probe decides whether the image is usable at all."""
+    if not image.startswith(PNG_SIGNATURE):
+        return image
+    kept: list[bytes] = []
+    last = 0
+    stop = len(image)
+    for ctype, at, start, end in _png_chunks(image):
+        if ctype == b"IEND":
+            stop = end + 4
+        elif ctype in _TEXT_CHUNK_TYPES:
+            keyword, sep, _ = image[start:end].partition(b"\x00")
+            if sep and _keyword(keyword) in CARD_KEYWORDS:
+                kept.append(image[last:at])
+                last = end + 4
+    kept.append(image[last:stop])
+    return b"".join(kept)
+
+
+#: The three PNG chunk types that carry a keyword-addressed text payload (PNG §11.3.4).
+_TEXT_CHUNK_TYPES = frozenset({b"tEXt", b"zTXt", b"iTXt"})
+
+
+def _keyword(raw: bytes) -> str:
+    """A text chunk's keyword as the readers compare it: Latin-1, trimmed, casefolded."""
+    return raw.decode("latin-1").strip().casefold()
+
+
+def _png_chunks(body: bytes) -> Iterator[tuple[bytes, int, int, int]]:
+    """Walk a PNG's chunks: `(type, chunk offset, data start, data end)` each — hand-parsed with
+    `struct`, the house precedent (`probe_image` reads PNG the same way, and a decoder dependency
+    for four bytes of keyword would be a strange thing to add). ONE walk for the reader and the
+    strip, so the chunk the strip removes is exactly the chunk the reader would have read.
+
+    A chunk is `length(4) type(4) data crc(4)`. A truncated or over-long chunk simply ends the walk:
+    what we found up to there is what the file actually holds. `IEND` ends it too."""
     i = len(PNG_SIGNATURE)
     while i + 8 <= len(body):
         (length,) = struct.unpack(">I", body[i : i + 4])
@@ -162,15 +218,11 @@ def _png_text_chunks(body: bytes) -> dict[str, bytes]:
         start = i + 8
         end = start + length
         if end + 4 > len(body):
-            break
-        if ctype == b"tEXt":
-            keyword, sep, value = body[start:end].partition(b"\x00")
-            if sep:
-                chunks.setdefault(keyword.decode("latin-1").strip().casefold(), value)
+            return
+        yield ctype, i, start, end
         if ctype == b"IEND":
-            break
+            return
         i = end + 4
-    return chunks
 
 
 def _read_charx(body: bytes, cfg: CardImportCfg) -> Container:
@@ -303,7 +355,7 @@ def _read_json(body: bytes, cfg: CardImportCfg) -> Container:
             f"({cfg.max_card_json_bytes} bytes)",
         )
     try:
-        parsed = json.loads(body.decode("utf-8"))
+        parsed = json.loads(body.decode("utf-8"), parse_constant=_refuse_constant)
     except _JSON_REFUSALS as exc:
         raise CardImportError(415, _UNRECOGNIZED) from exc
     if not isinstance(parsed, dict):
@@ -315,6 +367,16 @@ def _read_json(body: bytes, cfg: CardImportCfg) -> Container:
 #: three different answers to the same question.
 _UNRECOGNIZED = "not a recognized character card container (PNG/APNG with a card chunk, CHARX, or card JSON)"
 
+
+def _refuse_constant(token: str) -> Any:
+    """`json.loads`' `parse_constant` hook: `NaN`/`Infinity`/`-Infinity` are Python's extension, not
+    JSON (RFC 8259), and a card carrying one would be written back into `card.json` as the same
+    non-JSON token — so the card is refused at parse, keeping `card.json` strict JSON always."""
+    raise CardImportError(
+        422, f"the card metadata is not valid JSON: {token} is not a JSON value (NaN/Infinity)"
+    )
+
+
 #: What a hostile-but-LEGAL JSON document costs the parser, and therefore what both arms catch.
 #: `JSONDecodeError` is a `ValueError`, so this is the old behaviour plus the two the stdlib raises
 #: for input that is syntactically fine and still unreadable: a 5,000-digit number (the interpreter's
@@ -325,7 +387,7 @@ _JSON_REFUSALS = (UnicodeDecodeError, ValueError, RecursionError)
 def _decode_card_json(raw: bytes, cfg: CardImportCfg, *, base64_encoded: bool = False) -> dict[str, Any]:
     """The card object out of one container's payload, capped and validated.
 
-    The cap is on the DECODED bytes: that is what ends up in `agent.yaml` and on the wire, so it is
+    The cap is on the DECODED bytes: that is what ends up in `card.json` and on the wire, so it is
     what has to be bounded — a base64 chunk is a third larger than what it carries."""
     if base64_encoded:
         try:
@@ -339,7 +401,7 @@ def _decode_card_json(raw: bytes, cfg: CardImportCfg, *, base64_encoded: bool = 
             f"({cfg.max_card_json_bytes} bytes)",
         )
     try:
-        parsed = json.loads(raw.decode("utf-8"))
+        parsed = json.loads(raw.decode("utf-8"), parse_constant=_refuse_constant)
     except _JSON_REFUSALS as exc:
         raise CardImportError(422, "the card metadata is not valid JSON") from exc
     if not isinstance(parsed, dict):
@@ -351,7 +413,8 @@ def _decode_card_json(raw: bytes, cfg: CardImportCfg, *, base64_encoded: bool = 
 
 #: The card fields this importer MAPS (§3.1/§5.3). Everything else the card carries — known metadata
 #: (`creator_notes`/`tags`/`creator`/`character_version`), `extensions`, `character_book`, `assets`
-#: and anything a future spec adds — is stash, verbatim and post-strip. Order is report order.
+#: and anything a future spec adds — is kept in `card.json` only, verbatim and post-strip (the mapped
+#: fields are kept there too: it is the WHOLE card, R87/RP-8). Order is report order.
 MAPPED_FIELDS = (
     "name",
     "system_prompt",
@@ -370,6 +433,9 @@ MAPPED_FIELDS = (
 #: not "not a card" because its author wrote the setting instead of the personality.
 _V1_BODY = ("description", "personality", "first_mes", "scenario", "mes_example")
 
+#: The V2/V3 envelope's own keys — the wrapper around the card, never card data (`normalize`).
+_ENVELOPE = frozenset({"spec", "spec_version", "data"})
+
 #: The `spec` discriminator, EXACTLY — `{value: (rung, the spec_version it declares)}`. An exact
 #: match rather than a prefix/truthiness test because `spec` is the one field that says which format
 #: the bytes are in: a value we do not know names a format we cannot claim to have read.
@@ -386,6 +452,8 @@ class Normalized:
     fields: dict[str, Any]
     extras: dict[str, Any]
     notes: list[str] = field(default_factory=list)
+    #: The `spec_version` the card DECLARED, verbatim ("" when it declared none — always, for V1).
+    version: str = ""
 
 
 def normalize(raw: dict[str, Any]) -> Normalized:
@@ -393,8 +461,9 @@ def normalize(raw: dict[str, Any]) -> Normalized:
 
     A `spec`-carrying card keeps its fields under `data` (V2 and V3 alike); no `spec` key is the V1
     heuristic, where the object IS the field map. The flat V1 MIRROR that ST writes beside `data` is
-    dropped rather than stashed: it is redundant by construction (V2 wins on conflict, and a
-    divergence only ever warned), so keeping it would duplicate the persona prose into `agent.yaml`.
+    dropped rather than kept: it is redundant by construction (V2 wins on conflict, and a
+    divergence only ever warned), so keeping it would store the persona prose twice. The envelope
+    keys (`spec`/`spec_version`/`data`) are not card data either — the rung IS what they said.
 
     An unknown `spec` is a REFUSAL and an unexpected `spec_version` is a WARNING — the asymmetry is
     the V3 spec's own: the spec name says what these bytes are (guessing at one we do not know is how
@@ -416,8 +485,8 @@ def normalize(raw: dict[str, Any]) -> Normalized:
             if not version or version == expected
             else [f"the card declares {spec} version {version!r}; it was read as {expected}"]
         )
-        extras = {k: v for k, v in raw.items() if k != "data" and k not in MAPPED_FIELDS}
-        return Normalized(kind, data, extras, notes)
+        extras = {k: v for k, v in raw.items() if k not in _ENVELOPE and k not in MAPPED_FIELDS}
+        return Normalized(kind, data, extras, notes, version)
     if not any(_text(raw.get(k)).strip() for k in _V1_BODY):
         raise CardImportError(
             422,
@@ -439,14 +508,19 @@ def _require_name(fields: dict[str, Any]) -> None:
 # ── the strip pass (§7, Emma F7) ──────────────────────────────────────────────────────────────────
 
 #: The executable-content key DENYLIST, casefolded. Concrete keys rather than a prose category,
-#: because a category cannot drive a sanitizer: `customScripts` is Risu's LIVE field (the older
-#: `regex_scripts` name is gone), `triggerscript`/`virtualscript` are the other two script carriers,
-#: and `lowLevelAccess` is the flag that widens what they may do. Matched at ANY depth — V3 permits
-#: nesting and the canonical home is `extensions.risuai.*`, but nothing guarantees it stays there.
+#: because a category cannot drive a sanitizer: `customScripts` is Risu's live regex field,
+#: `triggerscript`/`virtualscript` are its other two script carriers, and `lowLevelAccess` is the
+#: flag that widens what they may do. `regex_scripts` is SillyTavern's OWN scoped-regex field
+#: (`extensions.regex_scripts`, read by ST's `regex/engine.js`; it rewrites the outgoing prompt) —
+#: a live field of a different app, not an older Risu name (R87/RP-4 corrected that). Matched at
+#: ANY depth — V3 permits nesting and the canonical homes are `extensions.risuai.*` /
+#: `extensions.*`, but nothing guarantees they stay there.
 #:
 #: CHARX's own code carrier is handled STRUCTURALLY instead (the confirm-round F7 correction): the
 #: reader above opens `card.json` and the icon asset only, so a module member is never read at all.
-SCRIPT_KEYS = frozenset({"customscripts", "triggerscript", "virtualscript", "lowlevelaccess"})
+SCRIPT_KEYS = frozenset(
+    {"customscripts", "triggerscript", "virtualscript", "lowlevelaccess", "regex_scripts"}
+)
 
 
 def strip_executable(tree: Any) -> tuple[Any, list[str]]:
@@ -541,6 +615,11 @@ class ImportedCard:
     name: str
     soul: str
     fields: dict[str, Any]
+    #: `agents/<slug>/card.json` — the field's own envelope, `{"spec": "chara_card_v2"|"chara_card_v3",
+    #: "spec_version", "data": the whole normalized card}`, post-strip: the as-imported restore point
+    #: and export source (R87/RP-8). A V1 card is written as the V2 envelope (ST's own upgrade), and
+    #: `spec_version` is what the card declared, else its rung's version.
+    card_json: dict[str, Any]
     image: bytes | None
     post_history: str
     mapped: list[str]
@@ -556,12 +635,16 @@ def import_card(
     files (§5.1: the importer COMPOSES the existing writes, it does not grow a second write path)."""
     container = read_container(body, cfg)
     card = normalize(container.card)
-    fields_map = card.fields
-    name = _text(fields_map.get("name")).strip()
+    name = _text(card.fields.get("name")).strip()
     slug = mint_slug(name, taken)
 
-    stash_raw = {**card.extras, **{k: v for k, v in fields_map.items() if k not in MAPPED_FIELDS}}
-    stash, stripped = strip_executable(stash_raw)
+    # The WHOLE normalized card, post-strip — mapped fields included (R87/RP-8): the stash used to
+    # hold only the unmapped remainder, so once the owner edited a SOUL or a greeting the card's own
+    # values existed nowhere, and SOUL fuses three fields that cannot be separated back out. The
+    # top-level extras (ST's non-mirror keys beside `data`) ride in the same object the old stash
+    # merged them into, `data` winning a collision. Everything below maps from THIS object, so what
+    # lands in the agent and what `card.json` keeps are one post-strip reading.
+    fields_map, stripped = strip_executable({**card.extras, **card.fields})
 
     greeting = _text(fields_map.get("first_mes"))
     example_dialogue = _text(fields_map.get("mes_example"))
@@ -575,8 +658,8 @@ def import_card(
     fields: dict[str, Any] = {"duties": "conversational", "tools": list(default_tools)}
     # `title` IS `{{char}}` (`macros_for`), so V3's `nickname` — "replaces the name in {{char}}",
     # SPEC_V3 — lands here rather than as a second name field nothing reads. The slug still mints
-    # from `name` (the folder is an identifier, not a display), and the nickname stays in the stash
-    # verbatim beside it: what the card said is provenance the export seam needs.
+    # from `name` (the folder is an identifier, not a display), and the nickname stays in `card.json`
+    # verbatim: what the card said is provenance the export seam needs.
     nickname = _text(fields_map.get("nickname")).strip() if card.spec == "v3" else ""
     if nickname:
         fields["title"] = nickname
@@ -593,28 +676,63 @@ def import_card(
         ("example_dialogue", example_dialogue),
         ("scenario", scenario),
         ("post_history", post_history),
-        ("card", stash),
     ):
         if value:
             fields[key] = value
 
-    # The embedded `character_book` needs nothing here: it is already in the stash (which stays its
-    # permanent provenance home), and the CALLER lands it as a real book through the book importer —
-    # the same division every other write keeps (§5.1: this function composes nothing).
-    warnings = [*container.notes, *card.notes]
+    # The embedded `character_book` needs nothing here: it is already in `card.json` (its permanent
+    # provenance home), and the CALLER lands it as a real book through the book importer — the same
+    # division every other write keeps (§5.1: this function composes nothing). Its entries get their
+    # own macro line there, from the book importer.
+    #
+    # Every mapped field but the name reaches a prompt; `_string_list` reads the one list field and
+    # the text fields alike, so the set is derived from `MAPPED_FIELDS` rather than re-listed here.
+    prompt_facing = [t for k in MAPPED_FIELDS if k != "name" for t in _string_list(fields_map.get(k))]
+    warnings = [
+        *container.notes,
+        *card.notes,
+        *_depth_prompt_note(fields_map),
+        *unrendered_note(prompt_facing, "the card's text"),
+    ]
     return ImportedCard(
         container=container.kind,
         slug=slug,
         name=name,
         soul=compose_soul(fields_map),
         fields=fields,
-        image=container.image,
+        card_json=_envelope(card, fields_map),
+        # The ONLY image the caller gets is the card-free one (R87/RP-4): `card.json` is now the one
+        # kept copy of the card, and it is the post-strip one.
+        image=None if container.image is None else strip_card_chunks(container.image),
         post_history=post_history,
         mapped=[k for k in MAPPED_FIELDS if fields_map.get(k)],
-        stashed=sorted(stash),
+        stashed=sorted(k for k in fields_map if k not in MAPPED_FIELDS),
         stripped=stripped,
         warnings=warnings,
     )
+
+
+def _envelope(card: Normalized, data: dict[str, Any]) -> dict[str, Any]:
+    """`card.json`'s shape: the spec's own `{spec, spec_version, data}` envelope around the
+    normalized card, so the file is a card any reader in the field could open. V1 has no envelope
+    of its own and is written as V2 — ST's own upgrade of it."""
+    spec = {kind: name for name, (kind, _) in CARD_SPECS.items()}.get(card.spec, "chara_card_v2")
+    return {"spec": spec, "spec_version": card.version or CARD_SPECS[spec][1], "data": data}
+
+
+def _depth_prompt_note(fields: dict[str, Any]) -> list[str]:
+    """The report line for ST's Character's Note (`extensions.depth_prompt`, R87/RP-6) — a real
+    prompt field in ST, injected at a depth every turn, that v1 has no slot for. It is kept with the
+    card like any extension; the line is what stops a character losing a standing rule silently."""
+    extensions = fields.get("extensions")
+    note = extensions.get("depth_prompt") if isinstance(extensions, dict) else None
+    if not isinstance(note, dict) or not _text(note.get("prompt")).strip():
+        return []
+    return [
+        f"the card's Character's Note (ST `depth_prompt`, depth {_text(note.get('depth')) or '?'}) is "
+        f"not used by this build — it is kept in the agent's card.json; paste it into Post-history "
+        f"if the character needs it"
+    ]
 
 
 def compose_soul(fields: dict[str, Any]) -> str:
@@ -626,7 +744,19 @@ def compose_soul(fields: dict[str, Any]) -> str:
     write is editorializing. `{{original}}` and the other macros stay verbatim: the macro pass runs
     at ASSEMBLY, not at import."""
     parts = [_text(fields.get(k)).strip() for k in ("system_prompt", "description", "personality")]
-    return "\n\n".join(p for p in parts if p)
+    soul = "\n\n".join(p for p in parts if p)
+    # SOUL.md is the ONE raw-text write an import makes (agent.yaml and the book are YAML-escaped,
+    # card.json is ASCII-escaped), so it is the one place a lone UTF-16 surrogate — `"\\ud83d"`, which
+    # JS tools emit and `json.loads` accepts — can still fail an encode mid-hop (the R87 review's
+    # O-1 sibling). Refused HERE, before anything lands, with the same 422 shape every other unreadable
+    # card gets; the fix is the author's (re-save the card in its editor), not a silent rewrite.
+    try:
+        soul.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise CardImportError(
+            422, "the card's persona text is not valid Unicode (a lone surrogate) — re-save it in its editor"
+        ) from exc
+    return soul
 
 
 def _text(value: Any) -> str:
