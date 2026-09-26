@@ -30,6 +30,7 @@ judge the result rather than adopting it.**
 | Well-specified implementation from a pinned brief | **`general-purpose`** subagent (Opus 5.5 high) | the workforce — use freely |
 | Mechanical / operational work, runbook procedures, releases | **`general-purpose`** subagent (Opus 5.5 high) | the workforce — use freely |
 | An independent CLAUDE lens on the main seat's own design | **ONE Opus 5.5 subagent** briefed adversarially | occasional — the mirror of the old Fable tier |
+| **A CODE ROUND on a critical part** (security-relevant routes/parsers, chokepoints, migrations, wide refactors) — **owner rule 2026-09-26** | **BOTH, in parallel, on the SAME diff: a blind Opus 5.5 subagent (the independent reviewer) AND the Maya/Emma hermes lane (the non-Claude fresh lens)** — distinct emphasis, never partitioned; confirm with the reviewer that raised each finding (Opus by `SendMessage`, Maya by a fresh self-contained `-z`) | the default for anything that ships to prod |
 | **Design, architecture, supervision, audits, a judgement call, a ruling** | **the MAIN SEAT (Fable 5) — never delegate** | — |
 
 **Standing owner directive (2026-07-22, reaffirmed 2026-07-26):** launch a Codex review **whenever
