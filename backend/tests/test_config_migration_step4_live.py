@@ -46,9 +46,10 @@ def _fold(live: dict[str, Any]) -> tuple[dict[str, Any], list[tuple[str, ...]]]:
 # ── the pure step ────────────────────────────────────────────────────────────────────────────────
 
 
-def test_the_step_is_version_4_and_the_last_in_the_chain() -> None:
-    assert LIVE_VOICE_D76.version == 4 and cm.STEPS[-1] is LIVE_VOICE_D76
-    assert cm.CONFIG_VERSION == 4
+def test_the_step_is_version_4_in_the_chain() -> None:
+    # No longer the LAST step (D78's step 5 follows) — the chain's last step stamps, so the runner
+    # arms below read `cm.CONFIG_VERSION` rather than a literal (the step 3 precedent).
+    assert LIVE_VOICE_D76.version == 4 and cm.STEPS[3] is LIVE_VOICE_D76
     # `voice.live.*` is two levels deep — beyond the one-level env grammar — so nothing is retired.
     assert LIVE_VOICE_D76.retires == ()
 
@@ -259,7 +260,7 @@ def test_the_runner_folds_writes_back_and_the_app_loads_it(tmp_path, monkeypatch
     # The write-back DELETES both old keys (no legacy seams).
     assert "echo_workaround" not in text and "barge_threshold" not in text
     assert "# the owner's own note" in text
-    assert doc[CONFIG_VERSION_KEY] == 4
+    assert doc[CONFIG_VERSION_KEY] == cm.CONFIG_VERSION
     live = load_settings(home / "config.yaml").voice.live
     assert (live.route, live.mic_hold, live.vad_threshold, live.silence_ms) == ("media", "on", 0.6, 500)
 
@@ -270,7 +271,7 @@ def test_the_runner_is_idempotent_and_stamps_the_marker(tmp_path, monkeypatch) -
     before = (home / "config.yaml").read_bytes()
     fresh = cm.context_from_env()
     assert cm.needs_migration(fresh) is False
-    assert cm.read_marker(fresh.config) == cm.CONFIG_VERSION == 4
+    assert cm.read_marker(fresh.config) == cm.CONFIG_VERSION
     assert cm.apply(cm.context_from_env()).wrote is False
     assert (home / "config.yaml").read_bytes() == before
 
@@ -280,4 +281,4 @@ def test_a_v3_config_without_voice_live_only_gets_the_stamp(tmp_path, monkeypatc
     assert cm.detect(cm.context_from_env()).pending == ()
     cm.apply(cm.context_from_env())
     doc = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
-    assert doc == {CONFIG_VERSION_KEY: 4, "server": {"port": 5433}}
+    assert doc == {CONFIG_VERSION_KEY: cm.CONFIG_VERSION, "server": {"port": 5433}}

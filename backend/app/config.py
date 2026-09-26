@@ -117,6 +117,19 @@ def is_secret_sentinel_name(name: object) -> bool:
     return isinstance(name, str) and name.strip().lower() in _SECRET_SENTINEL_NAMES
 
 
+#: A persona library key (D78). Admits everything `card_import.mint_slug` emits — the mint's grammar
+#: is `SKILL_SLUG`, which allows `_`, so the key rule does too; a narrower rule here would let the
+#: server mint a key its own schema then refuses.
+_PERSONA_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def is_persona_slug(v: object) -> bool:
+    """True if `v` is a persona slug — the ONE shape check shared by the `roleplay.personas` key
+    validator and the agent editor's PUT (`AgentDef.persona`, which is shape-checked only: an
+    unknown slug is legal and resolves to the default, Emma A-4)."""
+    return isinstance(v, str) and bool(_PERSONA_SLUG_RE.match(v))
+
+
 def is_provider_slug(v: object) -> bool:
     """True if `v` is a string matching the provider slug (`^[a-z0-9][a-z0-9_+.-]{0,31}$`). The ONE
     syntax check shared by the schema (provider map keys) and the SYNTAX-ONLY request-mode coercion
@@ -1931,15 +1944,19 @@ class AttachmentsCfg(BaseModel):
         return self.staging_orphan_hours * 3600.0
 
 
-class RoleplayPersonaCfg(BaseModel):
-    """`roleplay.persona` — the OWNER's persona (ROLEPLAY_PLAN §3.2), global across agents; the
-    per-agent override of the NAME half is `AgentDef.user_name`.
+class PersonaCfg(BaseModel):
+    """One entry of `roleplay.personas` — an OWNER persona (D78 / ROLEPLAY_PLAN §14.1). A library
+    rather than the one global it replaced: the owner's words (2026-09-26) — *"the ability to have
+    different personas and link one to a character specifically … regardless of the agent"*. Which
+    one an agent talks to is `AgentDef.persona` → `roleplay.default_persona`, resolved in ONE place
+    (`services/agent/persona.py::resolve_persona`).
 
-    - `name`: what `{{user}}` renders as. "" → the literal `"User"` (ruling 7's last rung).
+    - `name`: what `{{user}}` renders as. "" → the literal `"User"`.
     - `description`: who the owner is, injected as its own head block after the roster when
-      non-empty (§4.2) — the same block for every agent, because the persona is a fact about the
-      owner rather than about any one character.
-    """
+      non-empty (§4.2).
+
+    `extra="allow"` so an avatar (the CCv3 `user_icon` seam, recorded not built) is one additive
+    field later rather than a migration."""
 
     model_config = {"extra": "allow"}
 
@@ -1985,16 +2002,38 @@ class RoleplayCfg(BaseModel):
       consumed by S2): a minimal starting set the owner freely widens, never a capability ceiling.
     - `card_import` holds what the importer will ACCEPT (S2) — a nested object rather than five
       `card_import_*` siblings, per the extend-don't-migrate directive.
+    - `personas` + `default_persona` are the owner-persona library (D78) — usable by ANY agent, so
+      like the lorebooks they are not gated by `enabled`. They replaced the one global
+      `roleplay.persona` through config migration step 5, which is the only thing that still knows
+      that key existed.
 
-    Additive with defaults throughout ⇒ no config migration (the D68 precedent); `extra="allow"` so
-    a config written by a later slice round-trips through this build instead of being dropped."""
+    Otherwise additive with defaults (the D68 precedent); `extra="allow"` so a config written by a
+    later slice round-trips through this build instead of being dropped."""
 
     model_config = {"extra": "allow"}
 
     enabled: bool = False
     default_tools: list[str] = Field(default_factory=lambda: ["web_search"])
-    persona: RoleplayPersonaCfg = Field(default_factory=RoleplayPersonaCfg)
+    #: The persona LIBRARY (D78), `{slug: PersonaCfg}` — the house map-of-objects shape. The slug is
+    #: minted ONCE by `POST /api/personas` and never changes on rename: the name is display, the slug
+    #: identity, so a link can never be orphaned by a rename (R90 §3.1 — ST keys it by a filename).
+    personas: dict[str, PersonaCfg] = Field(default_factory=dict)
+    #: The persona every agent without its own link talks to; "" → none. A slug that is not in the
+    #: library is LEGAL and simply does not resolve (the D75 `default_set` rule, Emma A-4) — so a
+    #: library edit can never brick a config.
+    default_persona: str = ""
     card_import: CardImportCfg = Field(default_factory=CardImportCfg)
+
+    @field_validator("personas")
+    @classmethod
+    def _persona_keys_are_slugs(cls, v: dict[str, PersonaCfg]) -> dict[str, PersonaCfg]:
+        """Every library key is a slug (D78): it rides a URL path (`/api/personas/{slug}`) and an
+        `agent.yaml` value, and a hand-edited key that is neither must fail at the boundary rather
+        than be unaddressable later."""
+        for key in v:
+            if not is_persona_slug(key):
+                raise ValueError(f"persona key {key!r} is not a valid slug ({_PERSONA_SLUG_RE.pattern})")
+        return v
 
 
 class LorebooksCfg(BaseModel):

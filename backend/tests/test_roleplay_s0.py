@@ -15,7 +15,7 @@ What's exercised:
                     append axes still ride in their own messages.
   5. Emissions    — scenario (before the roster), the owner persona (after it), post_history (after
                     the history); each empty ⇒ absent (ruling 10).
-  6. Macros       — `{{char}}`, the three `{{user}}` rungs, `{{original}}`'s once-rule + its
+  6. Macros       — `{{char}}`, the two `{{user}}` rungs (D78), `{{original}}`'s once-rule + its
                     configured-prompt-else-empty meaning (R87/RP-1) + its empty post-history meaning;
                     the case fold and comment strip (RP-2/RP-3); unmatched tokens pass through.
   7. Data model   — the new `AgentDef` fields persist + round-trip; the ones S2+ owns stay inert.
@@ -88,6 +88,17 @@ def _agent(c, name: str, **fields) -> None:
 
 def _soul(c, name: str, content: str) -> None:
     assert c.put(f"/api/agents/{name}/soul", json={"content": content}).status_code == 200
+
+
+def _persona(c, name: str, description: str = "", *, default: bool = False) -> str:
+    """Add a library persona through its router (D78) and return the minted slug; `default` also
+    points `roleplay.default_persona` at it through the ordinary settings PUT."""
+    r = c.post("/api/personas", json={"name": name, "description": description})
+    assert r.status_code == 201, r.text
+    slug = r.json()["slug"]
+    if default:
+        assert c.put("/api/settings", json={"roleplay": {"default_persona": slug}}).status_code == 200
+    return slug
 
 
 def _session(c, agent_name: str | None = None):
@@ -280,10 +291,7 @@ def test_the_owner_persona_follows_the_roster_and_carries_its_framing() -> None:
     with _workspace(_ROSTER_CONFIG), _client() as c:
         from app.services.agent.prompts import REGISTRY
 
-        assert (
-            c.put("/api/settings", json={"roleplay": {"persona": {"description": "I am Emma."}}}).status_code
-            == 200
-        )
+        _persona(c, "Emma", "I am Emma.", default=True)
         systems = _systems(_assemble(c, _make_thread(c)))
         assert "testbox" in systems[1]
         assert systems[2] == REGISTRY["persona_intro"].default + "\n\nI am Emma."
@@ -296,8 +304,7 @@ def test_the_owner_persona_renders_its_macros() -> None:
     with _workspace(_ROSTER_CONFIG), _client() as c:
         from app.services.agent.prompts import REGISTRY
 
-        persona = {"name": "Ari", "description": "{{user}} is tall. {{unknown}} stays."}
-        assert c.put("/api/settings", json={"roleplay": {"persona": persona}}).status_code == 200
+        _persona(c, "Ari", "{{user}} is tall. {{unknown}} stays.", default=True)
         systems = _systems(_assemble(c, _make_thread(c)))
         assert systems[2] == REGISTRY["persona_intro"].default + "\n\nAri is tall. {{unknown}} stays."
 
@@ -338,23 +345,25 @@ def test_char_is_the_title_then_the_slug() -> None:
         assert _systems(_assemble(c, _make_thread(c), "nyx"))[0] == head("You are Nyx the Archivist.")
 
 
-def test_user_walks_its_three_rungs() -> None:
-    """`AgentDef.user_name` → `roleplay.persona.name` → the literal "User" (ruling 7)."""
+def test_user_walks_its_two_rungs() -> None:
+    """The resolved persona's name → the literal "User" (ruling 7 as D78 left it): the persona is
+    the agent's own link, else `roleplay.default_persona` — both walked by `resolve_persona`."""
     with _workspace(), _client() as c:
         _agent(c, "nyx")
         _soul(c, "nyx", "You serve {{user}}.")
         assert _systems(_assemble(c, _make_thread(c), "nyx"))[0] == head("You serve User.")
 
-        assert c.put("/api/settings", json={"roleplay": {"persona": {"name": "Emma"}}}).status_code == 200
+        _persona(c, "Emma", default=True)
         assert _systems(_assemble(c, _make_thread(c), "nyx"))[0] == head("You serve Emma.")
 
-        _agent(c, "nyx", user_name="the Archivist's patron")
+        patron = _persona(c, "the Archivist's patron")
+        _agent(c, "nyx", persona=patron)
         assert _systems(_assemble(c, _make_thread(c), "nyx"))[0] == head("You serve the Archivist's patron.")
 
 
 def test_macros_run_over_the_scenario_and_the_post_history_too() -> None:
     with _workspace(), _client() as c:
-        assert c.put("/api/settings", json={"roleplay": {"persona": {"name": "Emma"}}}).status_code == 200
+        _persona(c, "Emma", default=True)
         _agent(
             c,
             "nyx",
@@ -559,7 +568,7 @@ def test_the_new_agent_fields_persist_and_round_trip() -> None:
         "example_dialogue": "<START>\n{{user}}: hi\n{{char}}: mm.",
         "scenario": "The archive at night.",
         "post_history": "Stay in character.",
-        "user_name": "patron",
+        "persona": "patron",
         "avatar": "nyx-portrait",
         "background": "nyx-stacks",
         "voice": "af_nova",
@@ -601,7 +610,7 @@ def test_a_bare_agent_defaults_every_new_field() -> None:
         a = c.get("/api/agents/plain").json()["agent"]
         assert a["duties"] == "agent"
         assert a["greeting"] == a["example_dialogue"] == a["scenario"] == a["post_history"] == ""
-        assert a["user_name"] == a["avatar"] == a["background"] == a["voice"] == ""
+        assert a["persona"] == a["avatar"] == a["background"] == a["voice"] == ""
         assert a["alt_greetings"] == [] and a["lorebooks"] == [] and "card" not in a
 
 
@@ -639,7 +648,8 @@ def test_roleplay_config_defaults() -> None:
         assert body == {
             "enabled": False,
             "default_tools": ["web_search"],
-            "persona": {"name": "", "description": ""},
+            "personas": {},
+            "default_persona": "",
             # S2's additive nested object (§5.3, Emma F8) — the importer's caps. Re-pinned rather
             # than loosened: this arm's whole value is that it enumerates the section, so a field a
             # later slice adds has to be declared here on purpose.
@@ -661,26 +671,35 @@ def test_roleplay_config_round_trips_through_disk() -> None:
         "roleplay:\n"
         "  enabled: true\n"
         "  default_tools: [web_search, ping_host]\n"
-        "  persona:\n"
-        "    name: Emma\n"
-        "    description: I run a small homelab.\n"
+        "  personas:\n"
+        "    emma:\n"
+        "      name: Emma\n"
+        "      description: I run a small homelab.\n"
+        "  default_persona: emma\n"
     )
     with _workspace(yaml_text) as (_tmp, cfg), _client() as c:
         s = load_settings(cfg)
         assert s.roleplay.enabled is True
         assert s.roleplay.default_tools == ["web_search", "ping_host"]
-        assert s.roleplay.persona.name == "Emma"
-        assert s.roleplay.persona.description == "I run a small homelab."
-        # a PUT survives the ruamel round-trip too
-        assert c.put("/api/settings", json={"roleplay": {"persona": {"name": "E"}}}).status_code == 200
-        assert load_settings(cfg).roleplay.persona.name == "E"
+        assert s.roleplay.personas["emma"].name == "Emma"
+        assert s.roleplay.personas["emma"].description == "I run a small homelab."
+        assert s.roleplay.default_persona == "emma"
+        # the scalar default rides the ordinary settings PUT through the ruamel round-trip; a
+        # dangling slug is legal there (the D75 rule, Emma A-4) — nothing checks it exists
+        assert c.put("/api/settings", json={"roleplay": {"default_persona": "nobody"}}).status_code == 200
+        assert load_settings(cfg).roleplay.default_persona == "nobody"
+        assert load_settings(cfg).roleplay.personas["emma"].name == "Emma"  # the library is untouched
         assert load_settings(cfg).roleplay.enabled is True  # untouched siblings survive
 
 
 def test_a_bad_roleplay_value_is_refused() -> None:
     with _workspace(), _client() as c:
         assert c.put("/api/settings", json={"roleplay": {"default_tools": 5}}).status_code == 422
-        assert c.put("/api/settings", json={"roleplay": {"persona": {"name": []}}}).status_code == 422
+        assert (
+            c.put("/api/settings", json={"roleplay": {"personas": {"emma": {"name": []}}}}).status_code == 422
+        )
+        # a library key is a slug (D78) — it rides a URL path and an agent.yaml value
+        assert c.put("/api/settings", json={"roleplay": {"personas": {"Not A Slug": {}}}}).status_code == 422
 
 
 if __name__ == "__main__":

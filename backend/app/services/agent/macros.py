@@ -35,6 +35,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from app.services.agent.persona import resolve_persona
 from app.services.agent.prompts import TOKENS, render
 
 if TYPE_CHECKING:
@@ -43,8 +44,8 @@ if TYPE_CHECKING:
     from app.config import Settings
     from app.domain.agent import AgentDef
 
-#: The last rung of the `{{user}}` chain (ruling 7) — what the owner is called when neither the
-#: agent's `user_name` nor `roleplay.persona.name` is set.
+#: The last rung of the `{{user}}` chain (ruling 7, D78) — what the owner is called when no persona
+#: resolves for the agent, or the one that does has no name.
 DEFAULT_USER = "User"
 
 #: The token whose substitution is field-specific and once-only (§4.1).
@@ -89,11 +90,12 @@ class Macros:
 
 def macros_for(agent: AgentDef, settings: Settings) -> Macros:
     """The vocabulary for one agent: `{{char}}` = its display title (else the slug), `{{user}}` =
-    the agent's own `user_name` → the global `roleplay.persona.name` → `"User"` (ruling 7's three
-    rungs, in that order)."""
+    the name of the persona it resolves to (`agent.persona` → `roleplay.default_persona`, D78) →
+    `"User"` — two rungs, because the persona chain lives in `resolve_persona`, not here."""
+    resolved = resolve_persona(agent, settings)
     return Macros(
         char=agent.title.strip() or agent.name,
-        user=agent.user_name.strip() or settings.roleplay.persona.name.strip() or DEFAULT_USER,
+        user=(resolved[1].name.strip() if resolved else "") or DEFAULT_USER,
     )
 
 

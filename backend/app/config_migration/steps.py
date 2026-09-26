@@ -1,5 +1,6 @@
 """The config-shape migration steps (`docs/UPDATE_PLAN.md` §3) — today: the A11 fold (step 1),
-D65's media fold (step 2), D2-C's presence-device fold (step 3) and D76's live-call fold (step 4).
+D65's media fold (step 2), D2-C's presence-device fold (step 3), D76's live-call fold (step 4) and
+D78's persona library (step 5).
 
 **This file is the deletable part.** It holds every piece of knowledge about the legacy config shapes:
 the `inference.local`/`cloud`/`fallbacks` slots, the `voice.stt`/`voice.tts` `primary`/`fallback` pairs,
@@ -29,7 +30,7 @@ from __future__ import annotations
 
 import copy
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, TypeGuard
 from urllib.parse import urlsplit
@@ -37,6 +38,7 @@ from urllib.parse import urlsplit
 from app.config import MODEL_REF_HOMES, model_ref_at
 from app.config_migration import Context, MigrationRefused, Plan, Step
 from app.core.media import MEDIA_NAMESPACES
+from app.services.agent.card_import import mint_slug
 
 #: The `ModelRef` homes INSIDE an `agents/<name>/agent.yaml`. That file is an `agent.defaults`-shaped
 #: document, so its homes are exactly `MODEL_REF_HOMES`' `agent.defaults.*` entries with the prefix
@@ -892,3 +894,146 @@ def live_voice_apply(ctx: Context) -> Plan:
 
 #: Step 4 — the D76 live-call fold.
 LIVE_VOICE_D76 = Step(version=4, applies=live_voice_applies, apply=live_voice_apply)
+
+
+# ── step 5: D78's persona library (`config_version` 4 → 5) ───────────────────────────────────────
+#
+# `roleplay.persona` (ONE global `{name, description}`) and `user_name` (a per-agent override of the
+# NAME half) become a library + a link (ROLEPLAY_PLAN §14.1 A5, amended by Emma A-1/A-2):
+#
+#   1. `roleplay.persona` with a non-empty field → a library entry minted from its name (or "me"),
+#      and `default_persona` pointing at it — the one global WAS every agent's default, so values and
+#      semantics both carry. The key is consumed in any shape; an empty one mints nothing.
+#   2. `user_name` is renamed IN PLACE to `persona` wherever it appears — `agent.defaults` (an
+#      `AgentDef`-shaped inheritance base, A-1) and every `agents/*/agent.yaml`. A name → the persona
+#      whose `name` matches it exactly (case-sensitive, the migrated global included), else a minted
+#      `{name, description: ""}`. An explicit blank stays an explicit blank: in an agent file it
+#      overrides an inherited default, and must go on doing so.
+#
+# The mint is `card_import.mint_slug` — THE mint for author-chosen text (A-2) — walked past every slug
+# already taken, so two names that collapse to one slug can never overwrite each other. New-wins where
+# both shapes are present (the house rule every fold above follows): an existing `personas` entry,
+# `default_persona` or `persona` key is kept, and the legacy key is still consumed so the file
+# converges. A legacy value that could never have loaded (not a mapping / not a string) is REFUSED
+# rather than deleted — the step 3 precedent. `roleplay.persona` IS addressable by the one-level env
+# grammar (`CTRLB_ROLEPLAY__PERSONA`) and the schema no longer declares it, so it is retired.
+
+#: What a global persona with a description but no name is minted as (D78: `slug(name or "me")`).
+_PERSONA_NAMELESS = "me"
+
+
+def _roleplay_block(config: Mapping[str, Any]) -> dict[str, Any]:
+    rp = config.get("roleplay")
+    return rp if isinstance(rp, dict) else {}
+
+
+def _agent_defaults(config: Mapping[str, Any]) -> dict[str, Any]:
+    agent = config.get("agent")
+    defaults = agent.get("defaults") if isinstance(agent, dict) else None
+    return defaults if isinstance(defaults, dict) else {}
+
+
+def personas_applies(ctx: Context) -> bool:
+    """True while any legacy key is on disk — `roleplay.persona`, `agent.defaults.user_name` or an
+    agent file's `user_name` — present in ANY shape (the postcondition IS `applies`)."""
+    return (
+        "persona" in _roleplay_block(ctx.config)
+        or "user_name" in _agent_defaults(ctx.config)
+        or any("user_name" in doc for doc in ctx.agents.values())
+    )
+
+
+class _Library:
+    """The persona map being built, with the two lookups the fold needs: exact-name reuse and the
+    set of taken slugs the mint walks past."""
+
+    def __init__(self, existing: Any) -> None:
+        self.entries: dict[str, Any] = dict(existing) if isinstance(existing, dict) else {}
+        self.minted = False
+
+    def add(self, name: str, description: str) -> str:
+        slug = mint_slug(name, self.entries, fallback="persona", collection="personas")
+        self.entries[slug] = {"name": name, "description": description}
+        self.minted = True
+        return slug
+
+    def link(self, value: Any, where: str) -> str:
+        """The `persona` value a legacy `user_name` becomes."""
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise MigrationRefused(
+                f"`{where}` must be a string — this build cannot turn {type(value).__name__} into a "
+                "persona link",
+                remedy="make it the name you want to be called (or delete the key), then re-run",
+            )
+        name = value.strip()
+        if not name:
+            return ""
+        for slug, entry in self.entries.items():
+            if isinstance(entry, dict) and entry.get("name") == name:
+                return slug
+        return self.add(name, "")
+
+
+def personas_apply(ctx: Context) -> Plan:
+    """Fold the global persona and every `user_name` into the library + links (see the block above)."""
+    raw: dict[str, Any] = copy.deepcopy(dict(ctx.config))
+    rp = _roleplay_block(raw)
+    lib = _Library(rp.get("personas"))
+    consumes: list[str | Sequence[str]] = []
+    default = ""
+
+    if "persona" in rp:
+        legacy = rp.pop("persona")
+        consumes.append(("roleplay", "persona"))
+        if isinstance(legacy, str) and not legacy.strip():
+            legacy = None  # a blank string is one more EMPTY shape (Emma S8 F4), consumed like `null`/`{}`
+        if legacy is not None and not isinstance(legacy, dict):
+            raise MigrationRefused(
+                "`roleplay.persona` must be a mapping of `name`/`description` — this build cannot fold "
+                f"{type(legacy).__name__} into the new `roleplay.personas` library",
+                remedy="make it a mapping (or delete the key and add the persona in Conf), then re-run",
+            )
+        name = str((legacy or {}).get("name") or "").strip()
+        description = str((legacy or {}).get("description") or "")
+        if name or description.strip():
+            default = lib.add(name or _PERSONA_NAMELESS, description)
+
+    defaults = _agent_defaults(raw)
+    if "user_name" in defaults:
+        value = defaults.pop("user_name")
+        consumes.append(("agent", "defaults", "user_name"))
+        # New-wins BEFORE the mint: a legacy name behind an existing link is dropped, not minted —
+        # a bare name with no description is not data worth an unlinked library entry.
+        if "persona" not in defaults:
+            defaults["persona"] = lib.link(value, "agent.defaults.user_name")
+
+    agent_files: dict[Path, dict[str, Any]] = {}
+    for path in sorted(ctx.agents):
+        if "user_name" not in ctx.agents[path]:
+            continue
+        doc = copy.deepcopy(ctx.agents[path])
+        value = doc.pop("user_name")
+        if "persona" not in doc:
+            doc["persona"] = lib.link(value, f"agents/{path.parent.name}/agent.yaml: user_name")
+        agent_files[path] = doc
+
+    if lib.minted:  # never introduce an empty `personas:` (or a whole `roleplay:` block) for nothing
+        if not isinstance(raw.get("roleplay"), dict):
+            raw["roleplay"] = {}
+        raw["roleplay"]["personas"] = lib.entries
+        # Key PRESENCE, not truthiness (Emma S8 F2): an explicit `default_persona: ""` is the owner's
+        # "none", and new-wins keeps it.
+        if default and "default_persona" not in raw["roleplay"]:
+            raw["roleplay"]["default_persona"] = default
+    return Plan(config=raw, consumes=consumes, agent_files=agent_files)
+
+
+#: Step 5 — the D78 persona library.
+PERSONAS_D78 = Step(
+    version=5,
+    applies=personas_applies,
+    apply=personas_apply,
+    retires=(("roleplay", "persona"),),
+)

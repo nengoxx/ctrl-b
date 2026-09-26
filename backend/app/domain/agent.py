@@ -225,8 +225,12 @@ class AgentDef(BaseModel):
     #: `post_history_instructions` — the operational last word, emitted AFTER the history (§4.2).
     #: Recency is the point; empty ⇒ nothing is emitted.
     post_history: str = ""
-    #: Per-agent `{{user}}` override; "" → `roleplay.persona.name` → the literal "User" (ruling 7).
-    user_name: str = ""
+    #: The OWNER's persona this agent talks to — a slug in `roleplay.personas` (D78), NOT the agent's
+    #: own SOUL (which this file calls its persona everywhere else). "" → `roleplay.default_persona`.
+    #: Not gated by `roleplay.enabled` (the owner, 2026-09-26: "regardless of the agent"). A slug the
+    #: library does not hold is legal and falls through to the default (Emma A-4); one resolver reads
+    #: it — `services/agent/persona.py::resolve_persona`.
+    persona: str = ""
     avatar: str = ""  # media id in the agents/avatars library (§8); "" → none
     background: str = ""  # media id in agents/backgrounds (§8); "" → the theme default
     #: TTS voice id for this agent (ruling 21); "" → the global `voice.tts` chain. A NON-empty id is

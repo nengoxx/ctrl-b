@@ -47,6 +47,7 @@ from app.api import (
     health,
     hosts,
     integrations,
+    personas,
     services,
 )
 from app.api import (
@@ -649,6 +650,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health.router, prefix="/api")
     app.include_router(hosts.router, prefix="/api")
+    app.include_router(personas.router, prefix="/api")
     app.include_router(services.router, prefix="/api")
     app.include_router(actions.router, prefix="/api")
     app.include_router(tools_api.router, prefix="/api")

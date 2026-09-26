@@ -483,9 +483,12 @@ class ModelRef(BaseModel):              # "pointer + call config" (D42/A10; A11/
 > of agent something IS emerges from which of them it uses — `duties` (`agent` | `conversational`:
 > which duties prompt rides the head's second section, and **never a capability lever** —
 > `tools`/`skills`/`privilege` stay the only gates) · `greeting`/`alt_greetings`/`example_dialogue` ·
-> `scenario` · `post_history` (the operational last word, emitted AFTER the history) · `user_name` ·
-> `avatar`/`background`/`voice` · `lorebooks: [slug]` · `card` (the import stash — a V2/V3 card's
-> unmapped fields post-strip: export-ready provenance, **never prompt-facing**). The LOREBOOK subsystem
+> `scenario` · `post_history` (the operational last word, emitted AFTER the history) · `persona` (D78:
+> the slug of the OWNER's persona this agent talks to, in the `roleplay.personas` library — not the
+> agent's own SOUL; `""` → `roleplay.default_persona`; resolved by the one
+> `services/agent/persona.py::resolve_persona`) · `avatar`/`background`/`voice` · `lorebooks: [slug]`.
+> (No `card` field since R87/RP-8: an imported card's whole normalized envelope lives in the
+> `agents/<slug>/card.json` sidecar — export-ready provenance, **never prompt-facing**.) The LOREBOOK subsystem
 > is its own corpus (`$CTRLB_HOME/lorebooks/<slug>.yaml`, one book per file, scanned the way `agents/`
 > and `skills/` are), injected by keyed trigger at assembly time. Authority:
 > [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §3.1 (the schema) · §4.1–§4.2 (the universal Voice/Duties

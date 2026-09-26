@@ -50,7 +50,8 @@ YAML-1.1-safe after the 2026-09-05 quoting fix).
    always visible.
 7. **User persona**: yes, optional. **`{{user}}` = the persona's name when one is set, the
    generic "User" otherwise** (third round: "if there is a persona, you should address the user
-   by the name — that's pretty much it").
+   by the name — that's pretty much it"). *(D78, 2026-09-26: personas became a LIBRARY — the chain
+   is `agent.persona` → `roleplay.default_persona` → `"User"`, one resolver, §14.1.)*
 8. **Tools on imported/new characters default MINIMAL** (configurable; "only web search maybe"),
    widenable to everything.
 9. **Lorebooks are their own first-class feature, useful beyond roleplay**, specified deeply
@@ -129,7 +130,8 @@ alt_greetings: list[str] = []       # alternate_greetings (stored v1; picker = r
 example_dialogue: str = ""          # mes_example, <START>-delimited (ST format kept verbatim)
 scenario: str = ""                  # its own head block (field convention, R64 §2.2)
 post_history: str = ""              # post_history_instructions → the tail slot (§4.4)
-user_name: str = ""                 # per-agent {{user}} override; "" → roleplay.persona.name
+persona: str = ""                   # D78: the OWNER's persona this agent talks to — a slug in
+                                    # roleplay.personas (NOT the agent's SOUL); "" → the default
 avatar: str = ""                    # media id in the agents/avatars library (§8); "" → none
 background: str = ""                # media id in agents/backgrounds; "" → theme default
 voice: str = ""                     # TTS voice id for this agent (ruling 21); "" → the global
@@ -159,9 +161,9 @@ field — mapped ones included — is also kept whole in the `card.json` sidecar
 roleplay:
   enabled: false                # Conf toggle — UI visibility only (P2)
   default_tools: [web_search]   # the explicit allowlist written to new/imported characters (§5.5)
-  persona:                      # the USER's persona (global; per-agent override = user_name)
-    name: ""                    # {{user}}; "" → the literal "User"
-    description: ""             # injected as its own head block when non-empty (§4.5)
+  personas:                     # D78: the OWNER's persona LIBRARY, {slug: {name, description}}
+    ari: {name: "Ari", description: "…"}   # name → {{user}}; description → its own head block
+  default_persona: "ari"        # slug; "" → none. An agent's own `persona:` link wins over it
 
 lorebooks:                      # the subsystem's globals (§6) — roleplay-independent
   books: []                     # globally-attached book slugs (any agent, every turn)
@@ -169,7 +171,9 @@ lorebooks:                      # the subsystem's globals (§6) — roleplay-ind
   budget_chars: 4000            # activated-entry budget; eviction per §6.4
 ```
 
-All additive with defaults ⇒ **no config migration** (the D68 precedent).
+All additive with defaults ⇒ **no config migration** (the D68 precedent) — *except the D78
+persona library, which replaced the one global `roleplay.persona` + `AgentDef.user_name` through
+config migration step 5 (§14.1 A5).*
 
 ## 4. Prompt assembly — Voice + Duties, universal
 
@@ -278,8 +282,10 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
 
 - **`scenario`** — its own head block after the Voice/Duties message (it is as static as the
   prompt; before the roster).
-- **User persona** (§3.2) — one head block after the roster when `description` non-empty,
-  framing = registry id `persona_intro`. For every agent: the persona is who the OWNER is.
+- **User persona** (§3.2) — one head block after the roster when the RESOLVED persona's
+  `description` is non-empty (`resolve_persona`: the agent's own link → `default_persona`, D78),
+  introduced by the registry label `persona_intro` — a noun label with no authority claim either
+  way (the D70 framing amendment). For every agent: the persona is who the OWNER is.
 - **`example_dialogue`** — parsed on `<START>` boundaries, emitted between the static head and
   live history as `{role:"system", name:"example_user"|"example_assistant"}` pseudo-messages
   (ST's verified wire shape, R64 §7 — Lite flattens instead; the earlier "4/4-peer" claim was
@@ -327,9 +333,9 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
 ### 4.3 Macros
 
 Reuse `_Placeholders` (R32; leave-literal-on-miss). v1 vocabulary: `{{char}}` (title or name) ·
-`{{user}}` (`user_name` → `roleplay.persona.name` → `"User"`) · `{{original}}` (§4.1). The pass
+`{{user}}` (the resolved persona's name → `"User"`, D78) · `{{original}}` (§4.1). The pass
 runs over: SOUL.md, greeting(s), example dialogue, scenario, post_history, lorebook keys +
-content, and `roleplay.persona.description` (the S0 hold-out, reversed 2026-09-06 on field
+content, and the persona's `description` (the S0 hold-out, reversed 2026-09-06 on field
 evidence — the owner's real ST persona opens with `{{user}}`, which ST renders there; in one's
 own description it reads as the persona name). It runs for every agent (the universal assembly)
 — safe because unknown/unmatched
@@ -488,8 +494,9 @@ other): ① activate; ② apply ONE global budget/eviction pass over ALL activat
 over `budget_chars`, evict lowest `priority` (then lowest `order`) until it fits (the V3
 eviction model, not ST's refusal — R65 §1.10: ST is the outlier); ③ PARTITION the survivors
 by `position`, preserving `order` within each; ④ emit **at most one framed head block AND at
-most one framed tail block** (framing = registry id `lorebook_intro`, phrased as *reference
-data, not instructions* — the Core-Memory convention, R65 §9's security note; framing chars
+most one framed tail block** (framing = the registry label `lorebook_intro`, a noun label that
+claims no authority either way — the D70 framing amendment, R90: a book may hold facts or
+instructions, and the gate in code is the boundary, not the text; framing chars
 do NOT count against `budget_chars` — the budget bounds entry content, the framing is a
 constant). Placement: `head` → appended LAST in the static head (most volatile block, R65
 §9's cache analysis; scan-miss ⇒ nothing); `tail` → the §4.2 tail slot before `post_history`.
@@ -901,7 +908,7 @@ Risu/Agnai precedent is absent-binding⇒no-speech, not unknown⇒default — th
 - **The duties toggle** (ruling 5): a two-option selector on the agent form (agent /
   conversational), always visible — it is an agent fact, not a roleplay extra. The two texts
   are edited in the Phase 18 prompt editor like any registry prompt.
-- **Conf**: the `roleplay` group (toggle · default-tools list · persona name/description) + the
+- **Conf**: the `roleplay` group (toggle · default-tools list · the persona library, one card per persona + the default-persona control, D78 §14.4 A-3) + the
   `lorebooks` globals. Import lives on the agents surface under the visibility predicate.
 - All new forms testable at narrow widths (the standing mobile bar).
 
@@ -940,7 +947,7 @@ Phase 18 doc stays truthful.
 
 ## 10. Slice ladder (each: pinned Opus build → main-seat audit → blind Emma round → fix wave → close)
 
-**S0–S6 are ✅ BUILT + council-closed** (S4/S5/S6 also owner-closed; the S6b backdrop round's
+**S0–S6 are ✅ BUILT + council-closed; S8 ✅ BUILT (its review round rides the main seat)** (S4/S5/S6 also owner-closed; the S6b backdrop round's
 three waves ride S6). The per-slice as-built records — deviations, review rounds, owner rounds —
 are in §13, which is where the detail lives.
 
@@ -990,6 +997,29 @@ are in §13, which is where the detail lives.
   > **Their ruling: no formal sitting for the rest — the remainder rides their REGULAR USE**: a
   > field-authored lorebook triggering live (§6.7) and tools-in-character on BOTH duties
   > settings. Their word on those two closes S7 and the phase; nothing is scheduled for it.
+
+- **S8 ✅ BUILT 2026-09-26 — the persona library + the neutral framing (D78 + the D70 framing
+  amendment; design of record §14 + its §14.4 amendments).** *BE:* `config.PersonaCfg` +
+  `RoleplayCfg.personas`/`default_persona` (keys pinned by `is_persona_slug`, the one shape rule
+  the agent PUT shares) · `AgentDef.persona` replaces `user_name` · ONE resolver
+  `services/agent/persona.py::resolve_persona` (link → default → none; a dangling slug falls
+  through and WARNs once per (agent, slug), the `lorebooks._MISSING_WARNED` pattern) feeding both
+  `macros_for` (two rungs) and `_persona_block` · `api/personas.py` — POST (server mint via
+  `card_import.mint_slug`, 409 on a taken slug) · PUT `/{slug}` (rename, slug fixed, unmanaged
+  fields kept) · DELETE `/{slug}` (no cascade) — `api/hosts.py`'s write path; `default_persona`
+  rides the ordinary settings PUT · config migration **step 5** (`VERSION` 4 → 5): the global →
+  the default, `user_name` renamed in place in `agent.defaults` + every agent file (exact-name
+  reuse, else the mint's suffix walk; a blank stays blank), `roleplay.persona` retired from the
+  env grammar · Part B: `lorebook_intro`/`persona_intro` became noun labels (both stamps change).
+  *Deviation:* the key rule admits `_` (`^[a-z0-9][a-z0-9_-]*$`) — the mint's own grammar does,
+  and a narrower rule would refuse a slug the server just minted. *Tests:* `test_personas_s8.py`
+  (router · shape · resolver + warn-once) · `test_config_migration_step5_personas.py` (the A-5
+  matrix + the runner) · re-aimed `test_roleplay_s0/s1/s3`, `test_prompts_registry_p18` (+ the
+  "no authority claim" invariant), step 4's runner arms read `cm.CONFIG_VERSION`. *FE:* the
+  sibling lane (the RoleplayEditor personas block + the agent form's persona select, §14.1 A6 as
+  amended by A-3/A-4). *The code round (§14.5):* blind Emma DO NOT SHIP [2 HIGH · 3 MED · 1 LOW] →
+  the fix wave (the settings PUT refuses `roleplay.personas` with 422 · step 5 keeps an explicit
+  blank default and consumes a blank-string global · new-wins before the mint) → Emma's confirm.
 
 ## 11. Open questions for the owner (the court)
 
@@ -2368,11 +2398,11 @@ card-prompt-injection posture, the script-key strip, lorebook writes) + its §2.
 wave updated to the app-wide pin and the STT allowlist. The D-entry is
 [DECISIONS D72](./DECISIONS.md#d72).
 
-## 14. The pre-release persona + framing wave — D78 + the D70 framing amendment (designed + council-closed 2026-09-26; **UNBUILT — the next session's build brief IS this section**)
+## 14. The pre-release persona + framing wave — D78 + the D70 framing amendment (designed + council-closed 2026-09-26; **BUILT 2026-09-26 — the as-built record is §10's S8**)
 
 > **Status:** designed by the main seat from R90 (+ R64 §6 · R65 §9 · R87 RP-7/RP-12), blind Emma
 > design round SHIP WITH CHANGES [6 MED · 1 LOW — all folded, §14.4], rulings recorded as
-> [`D78`](./DECISIONS.md) + the D70 amendment. **Not one line of code is written.** The build is
+> [`D78`](./DECISIONS.md) + the D70 amendment. ~~**Not one line of code is written.**~~ **BUILT 2026-09-26 (S8 — the §10 as-built block is the record; the blind Emma code round + its fix wave are in §14.5).** The build was
 > one pinned-Opus lane from THIS section (Part A then Part B, or two lanes on disjoint files), then
 > the main-seat audit → a blind Emma CODE round → fix wave → full gate → `npm run build` → dev
 > migration (`CTRLB_HOME=~/.ctrl-b-dev … config_migration --apply`) → commit. It rides v1.7.8
@@ -2420,7 +2450,11 @@ roleplay:
   (an `avatar` later is one additive field — the CCv3 `user_icon` seam stays recorded, not built).
 - The KEY is minted ONCE from the name at creation (`config._slug` — the hosts rule — exposed as
   `persona_slug`; the FE mints with the same rule as `lib/agentSlug` does for agents, the server
-  validates `^[a-z0-9][a-z0-9-]*$` on `RoleplayCfg`) and NEVER changes on rename: the name is
+  validates `^[a-z0-9][a-z0-9-]*$` on `RoleplayCfg`) — *as built (A-2 moved the mint server-side):
+  the server mints with `mint_slug` and validates `^[a-z0-9][a-z0-9_-]*$`, the mint's own `SKILL_SLUG`
+  grammar, because a schema narrower than the one mint would refuse a key the server itself just
+  minted (the S8 code round's F5, overruled on that ground; ISS-29 holds the wider agent-list split)*
+  — and NEVER changes on rename: the name is
   display, the slug is identity → no orphaned links (the R90 §3.1 lesson, by construction).
 - `roleplay.persona` (singular) is GONE — no legacy seam. `AgentDef.user_name` is GONE.
 - **`AgentDef.persona: str = ""`** — the link, ON THE AGENT (the non-RP convention, and where
@@ -2600,4 +2634,37 @@ amending step 4: stamped schema-4 configs exist), the step's fit with `Plan.agen
 `consumes`, the slug never displayed (name is), `test_prompts_registry_p18.py` = the old-string pin
 to re-aim, `lorebook_intro` carries no `{{…}}` variables, Core Memory untouched. Open sweep: none.
 
+### 14.5 The code round (blind Emma, 2026-09-26 — DO NOT SHIP [2 HIGH · 3 MED · 1 LOW]; ruled by the main seat; the fix wave built the same session)
 
+**F1 HIGH — ACCEPTED.** The generic settings PUT could resurrect a persona deleted through the
+router: a lagging client echoing its cached `roleplay.personas` map is deep-merged back in (a merge
+can only ADD). `api/settings.py::put_settings` now refuses a patch carrying `roleplay.personas` with
+422 ("edited through /api/personas"), placed with the other raw-patch checks before the lock. Scoped
+to the persona map: `computers` is the same class behind the hosts router, but three backend tests
+seed hosts through the settings PUT — widening the guard is **ISS-30**, not done blind. Test:
+`test_the_settings_put_refuses_the_library_so_a_stale_map_cannot_resurrect_a_delete` (red-proven).
+**F2 HIGH — ACCEPTED.** Step 5 tested `default_persona` by truthiness, so an explicit `""` (the
+owner's "none") was overwritten by the migrated global's slug — now key PRESENCE decides
+(`test_an_explicit_blank_default_is_kept_over_the_migrated_global`, red-proven).
+**F3 MED — REJECTED (the engine's standing rule, not S8's).** A marker below `CONFIG_VERSION` with
+no applying step is not refused at boot: UPDATE_PLAN §3 refuses iff a step applies or the marker is
+newer than the build, `--apply` stamps even a no-op, and `install.sh` runs it on every release — so
+the marker converges on the next install. Changing that is an engine change that would refuse every
+no-op upgrade until the CLI runs; outside this wave.
+**F4 MED — ACCEPTED.** `roleplay.persona: ""` was refused instead of consumed: a blank string is
+normalized to `null` before the refusal (a non-blank scalar is still refused); the empty-shapes
+parametrize pins `null · {} · "" · "  " · {name:"",…} · {name:"  "}` (red-proven).
+**F5 MED — OVERRULED.** The key rule "should be" §14.1's `^[a-z0-9][a-z0-9-]*$` — but A-2 moved
+the mint server-side onto `mint_slug`, whose grammar (`SKILL_SLUG`) admits `_`; a schema narrower
+than the one mint would refuse a key the server itself just minted. The as-built rule stands and
+§14.1 A2 is amended in place; the wider agent-folder/hosts-rule split is **ISS-29** (pre-existing).
+**F6 LOW — ACCEPTED.** §14's status paragraph said "not one line of code is written" after the
+build — rewritten; the handoff is the main seat's and is rewritten at session end.
+**Also in the wave (main-seat audit, before the round):** step 5 decides new-wins BEFORE the mint —
+a legacy `user_name` behind an existing `persona` key (in `agent.defaults` or an agent file) is
+dropped, never minted as an unlinked entry; `test_new_wins_where_both_shapes_exist` gained the `kai`
+agent. Emma's sound list: the resolver + both consumers, warn-once, the hosts-style persistence and
+reload, the fixed-slug PUT, the no-cascade DELETE, the FE per-row requests + default-only settings
+body + `missing:` options, the legacy-reader removal, the neutral defaults with owner overrides still
+winning, Core Memory untouched. **Confirm round (self-contained, the same day): SHIP — F1/F2/F4/F6
+CONFIRMED, the F3/F5 rulings SOUND, no new findings, wave sweep none.**

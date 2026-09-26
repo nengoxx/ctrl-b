@@ -359,9 +359,13 @@ agent:
 # `agents/<slug>/agent.yaml` as ordinary flat fields (duties, greeting, scenario, post_history, …).
 # `enabled` is presentation only — it shows/hides the character fields in the UI; nothing on the
 # server branches on it, so a character keeps working with the switch off. `default_tools` is the
-# minimal allowlist written to a newly imported character (widen it freely per agent). `persona` is
-# who YOU are: `name` is what `{{user}}` renders as, and a non-empty `description` is injected as
-# its own block after the fleet roster, for every agent.
+# minimal allowlist written to a newly imported character (widen it freely per agent).
+# `personas` is a LIBRARY of who YOU are (D78) — for any agent, roleplay or not: `name` is what
+# `{{user}}` renders as, and a non-empty `description` is injected as its own block after the fleet
+# roster. Add/rename/remove them in Conf › Roleplay (the key is minted once from the name and never
+# changes). `default_persona` is the one every agent talks to unless its own `agent.yaml` links
+# another with `persona: <key>`; "" → none (`{{user}}` is then "User"). A key that is not in the
+# library simply does not resolve — the next rung takes over.
 # `card_import` is what the V1/V2/V3 card importer will ACCEPT: the multipart body cap, the decoded
 # card JSON cap (that JSON is what ends up stashed in the agent's own file), and the CHARX zip's
 # bounds — member count, per-member size, and total uncompressed size, all checked against the
@@ -369,9 +373,10 @@ agent:
 # roleplay:
 #   enabled: false
 #   default_tools: [web_search]
-#   persona:
-#     name: ""
-#     description: ""
+#   personas:
+#     ari: { name: "Ari", description: "{{user}} runs a small homelab." }
+#     the-dm: { name: "The DM", description: "" }
+#   default_persona: ari   # an agent.yaml overrides it with e.g. `persona: the-dm`
 #   card_import:
 #     max_bytes: 15000000
 #     max_card_json_bytes: 2000000

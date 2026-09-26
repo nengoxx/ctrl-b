@@ -5207,7 +5207,7 @@ goes with it. No per-book `framing` switch (a neutral label needs none). Core Me
 tool-copied text is the author class the field DOES defang, D57 records the clause as load-bearing,
 and the feature ships OFF; revisiting them is an owner call for Phase 19. Both prompt stamps change
 (each hashes its default). Design of record: [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §14.2.
-**Build pending (2026-09-26): rides the same lane as D78.**
+**Built 2026-09-26 with D78 (ROLEPLAY_PLAN §10 S8).**
 
 ## D71 — Live voice mode ("call mode"): the Speaches-realtime ear · client-submitted turns · the WebSocket admission ✏️ RATIFIED 2026-09-11 (owner, in conversation — "okay then" after the brief + the reference-projects discussion; spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md); evidence = [R51](./research/R51-realtime-voice-chat.md) + [R68](./research/R68-live-voice-deltas.md); council = blind Emma design round RETHINK [2 HIGH · 7 MED, sweep "none", architecture ① affirmed; all nine ACCEPTED, both HIGHs code-verified] → confirm SHIP WITH CHANGES [all four folded] — plan §9 verbatim)
 
@@ -5894,7 +5894,7 @@ section in SECURITY_MODEL says so.
 **Recorded:** the trail is diagnosis, not an archive — anything that wants to render it, search it,
 or keep it is a new decision.
 
-## D78 — Personas are a LIBRARY: one default, the link ON THE AGENT, one resolver, a rename-stable slug ✏️ RULED 2026-09-26 (main seat, from the owner in conversation — *"the ability to have different personas and link one to a character specifically … regardless of the agent, the persona doesn't necessarily have to be for roleplay"*; evidence = [R90](./research/R90-injected-context-framing-and-persona-management.md) §2 (+ R64 §6, R87 RP-12); design of record = [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §14.1 + §14.4; council = blind Emma design round SHIP WITH CHANGES [6 MED · 1 LOW — all folded]; **BUILD PENDING — the next session opens on it, before v1.7.8**)
+## D78 — Personas are a LIBRARY: one default, the link ON THE AGENT, one resolver, a rename-stable slug ✏️ RULED 2026-09-26 (main seat, from the owner in conversation — *"the ability to have different personas and link one to a character specifically … regardless of the agent, the persona doesn't necessarily have to be for roleplay"*; evidence = [R90](./research/R90-injected-context-framing-and-persona-management.md) §2 (+ R64 §6, R87 RP-12); design of record = [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §14.1 + §14.4; council = blind Emma design round SHIP WITH CHANGES [6 MED · 1 LOW — all folded]; **BUILT 2026-09-26 — as-built = ROLEPLAY_PLAN §10 S8**)
 
 **Decision.** `roleplay.persona` (one global `{name, description}`) and `AgentDef.user_name` (a
 per-agent NAME override) are replaced by **`roleplay.personas: {<slug>: PersonaCfg}`** (the house

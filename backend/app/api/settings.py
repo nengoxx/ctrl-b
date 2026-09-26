@@ -188,6 +188,18 @@ async def put_settings(patch: dict[str, Any], request: Request) -> dict[str, Any
     if "tool_overrides" in patch and request.app.state.turns:
         raise HTTPException(status_code=409, detail="agent is busy — try again in a moment")
 
+    # D78 / the S8 code round's F1: the persona LIBRARY is a map a deep-merge can only ADD to, so a
+    # client echoing a stale `roleplay.personas` through here would resurrect a persona deleted through
+    # its own router (`api/personas.py` — the `deep_merge` house rule: a map section rides a dedicated
+    # endpoint, never this merge). Refused loudly rather than dropped: a client that sends it has a bug
+    # worth seeing. `computers` is the same class behind `api/hosts.py`, but the generic PUT still
+    # admits it — the test corpus seeds hosts through it (ISS-30).
+    if isinstance(patch.get("roleplay"), dict) and "personas" in patch["roleplay"]:
+        raise HTTPException(
+            status_code=422,
+            detail="roleplay.personas is edited through /api/personas, not the settings patch",
+        )
+
     # Appearance writes are server-stamped LWW (§9.11): stamp `updated_at` on the server's own clock so
     # cross-device order is unambiguous (no client clocks). Stamp the PATCH (not just the live object) so
     # the timestamp flows through the merge AND the YAML persistence — it survives a restart.

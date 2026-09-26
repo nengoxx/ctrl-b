@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useProviders, useSaveSettings, useSettings } from "../hooks/useSettings";
-import { pickRoleplay } from "../hooks/useRoleplay";
+import { personaChoices, personaLabel, personaOf, pickRoleplay } from "../hooks/useRoleplay";
 import {
   DEFAULT_AGENT,
   pickFields,
@@ -82,7 +82,8 @@ const FIELD_HELP: Record<string, string> = {
   scenario: "The situation this conversation happens in.",
   post_history:
     "Instructions emitted AFTER the whole history — the last thing the model reads before it replies.",
-  user_name: 'What {{user}} renders as for this agent. Blank → your persona name, then "User".',
+  persona:
+    "Which of YOUR personas this agent is talking to — its name is what {{user}} renders as, its About rides in as a block. Not the agent's own persona (that is SOUL.md). Default → Conf › Roleplay's default persona.",
   voice:
     "The TTS voice id this agent speaks in. Blank → the global voice. A bad id reports on the first read-aloud.",
   avatar: "The picture on this agent's card, in the chat picker, and beside its replies.",
@@ -216,10 +217,22 @@ function AgentFieldsForm(props: {
     : `agents/${a.name}/ · agent.yaml + SOUL.md`;
 
   // D70 §9 — the roleplay MODE, and the per-field predicate it is half of (`roleplayFieldVisible`).
-  // Read off the settings doc rather than threaded as a prop: it is one global boolean and this form
-  // has exactly one other consumer of it.
-  const rpEnabled = pickRoleplay(settings?.roleplay).enabled;
-  const rpShow = (v: unknown) => roleplayFieldVisible(rpEnabled, v);
+  // Read off the settings doc rather than threaded as a prop: it is one global section, and this form
+  // is its only per-agent consumer (the mode here, the persona library below).
+  const rp = pickRoleplay(settings?.roleplay);
+  const rpShow = (v: unknown) => roleplayFieldVisible(rp.enabled, v);
+
+  // D78 — the persona LINK, on the agent. NOT behind `rpShow`: a persona is who the owner is to ANY
+  // agent (the owner, 2026-09-26: "regardless of the agent, the persona doesn't necessarily have to be
+  // for roleplay"), so the picker shows whenever there is something to pick — a non-empty library — OR
+  // something to see: a link whose persona was since removed (Emma A-4), which `personaChoices` draws
+  // as `missing: <slug>` so it can be cleared rather than silently read as the first option.
+  const personaLink = a.persona ?? "";
+  const showPersona = Object.keys(rp.personas).length > 0 || personaLink !== "";
+  const defaultPersona = personaOf(rp.personas, rp.default_persona);
+  const defaultPersonaLabel = defaultPersona
+    ? personaLabel(rp.default_persona, defaultPersona)
+    : "none"; // unset OR dangling — either way no persona resolves at that rung
 
   return (
     <>
@@ -352,6 +365,26 @@ function AgentFieldsForm(props: {
           ]}
         />
 
+        {showPersona && (
+          <>
+            <label>Your persona</label>
+            <select
+              aria-label="Your persona"
+              value={personaLink}
+              onChange={(e) => set({ persona: e.target.value })}
+            >
+              {/* "" = no link of its own → the default rung; the parenthesis says what that is today. */}
+              <option value="">{`default persona (${defaultPersonaLabel})`}</option>
+              {personaChoices(rp.personas, personaLink).map((o) => (
+                <option key={o.val} value={o.val}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <FieldHelp text={FIELD_HELP.persona} />
+          </>
+        )}
+
         {/* ── D70 §9 — the CHARACTER half of an agent. No separate pane (ruling 1): the fields sit here
           among the prompt fields, each visible iff the roleplay mode is on OR the field is populated,
           so an imported card lights up exactly what it uses and a plain agent keeps today's form. ── */}
@@ -394,18 +427,6 @@ function AgentFieldsForm(props: {
             help={FIELD_HELP.post_history}
             onCommit={(next) => set({ post_history: next })}
           />
-        )}
-        {rpShow(a.user_name) && (
-          <>
-            <label>Your name</label>
-            <input
-              aria-label="Your name"
-              value={a.user_name ?? ""}
-              placeholder="(blank → the persona name)"
-              onChange={(e) => set({ user_name: e.target.value })}
-            />
-            <FieldHelp text={FIELD_HELP.user_name} />
-          </>
         )}
         {rpShow(a.voice) && (
           <>

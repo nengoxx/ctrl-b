@@ -112,8 +112,15 @@ def test_the_greeting_is_macro_substituted_at_seed_time() -> None:
     """§4.3's vocabulary, resolved when the conversation opens — the stored row carries the values
     that were true then, like every other persisted turn."""
     with _workspace(), _client() as c:
-        assert c.put("/api/settings", json={"roleplay": {"persona": {"name": "Emma"}}}).status_code == 200
-        _agent(c, "nyx", title="Nyx the Archivist", greeting="I am {{char}}. Welcome, {{user}}.")
+        r = c.post("/api/personas", json={"name": "Emma"})  # D78: the persona is a library entry
+        assert r.status_code == 201, r.text
+        _agent(
+            c,
+            "nyx",
+            title="Nyx the Archivist",
+            persona=r.json()["slug"],
+            greeting="I am {{char}}. Welcome, {{user}}.",
+        )
         thread = _new_thread(c, "nyx")
         assert _messages(c, thread["id"])[0]["parts"][0]["text"] == "I am Nyx the Archivist. Welcome, Emma."
 

@@ -108,6 +108,7 @@ from app.services.agent.examples import example_messages
 from app.services.agent.exec import run_user_exec
 from app.services.agent.lorebooks import Haystack, active_slugs, block, load_books, scan
 from app.services.agent.macros import Macros, macros_for
+from app.services.agent.persona import resolve_persona
 from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
@@ -651,14 +652,17 @@ class AgentSession:
         return text or None
 
     def _persona_block(self) -> str | None:
-        """The OWNER's persona block (§3.2/§4.2), injected after the roster when
-        `roleplay.persona.description` is non-empty — the same block for every agent, because it
-        describes the owner rather than any one character. The registry framing, then the owner's
-        text (L-8). Macro-substituted like every other card-convention field (the S0 hold-out was
-        reversed on field evidence — the owner's real ST persona opens with `{{user}}`, and ST
-        renders macros there); `{{user}}` in one's own description reads as the persona NAME.
-        Empty ⇒ absent — including a description that empties only once its macros render."""
-        description = self._macros().render(self._settings.roleplay.persona.description.strip()).strip()
+        """The OWNER's persona block (§3.2/§4.2), injected after the roster when the persona this
+        agent resolves to (`resolve_persona`, D78 — the same one `{{user}}` names) has a non-empty
+        description. The registry label, then the owner's text (L-8). Macro-substituted like every
+        other card-convention field (the S0 hold-out was reversed on field evidence — the owner's
+        real ST persona opens with `{{user}}`, and ST renders macros there); `{{user}}` in one's own
+        description reads as the persona NAME. Empty ⇒ absent — including no persona at all, and a
+        description that empties only once its macros render."""
+        resolved = resolve_persona(self._agent, self._settings)
+        if resolved is None:
+            return None
+        description = self._macros().render(resolved[1].description.strip()).strip()
         if not description:
             return None
         return resolve("persona_intro", self._settings, stamps=self._stamps) + "\n\n" + description

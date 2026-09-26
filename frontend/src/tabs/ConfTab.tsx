@@ -3240,9 +3240,9 @@ export function ConfTab({ active }: Props) {
         <AgentGlobals cfg={agentCfg} />
       </ConfGroup>
 
-      {/* D70 §9 — the roleplay GLOBALS (the mode switch · the character tools · the owner's persona)
-          and the lorebook scan budgets. Both sit right after Agents because that is what they are
-          about; both own their reads and their partial PUTs (see `RoleplayEditor`). */}
+      {/* D70 §9 — the roleplay GLOBALS (the mode switch · the character tools · the owner's persona
+          library, D78) and the lorebook scan budgets. Both sit right after Agents because that is what
+          they are about; both own their reads and their writes (see `RoleplayEditor`). */}
       <ConfGroup id="roleplay" num="16" title="Roleplay" right={roleplayRight}>
         <RoleplayEditor />
       </ConfGroup>

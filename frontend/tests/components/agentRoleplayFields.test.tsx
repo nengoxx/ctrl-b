@@ -9,11 +9,15 @@ const h = vi.hoisted(
   (): {
     saveAgent: ReturnType<typeof vi.fn>;
     roleplayEnabled: boolean;
+    personas: Record<string, { name: string; description: string }>;
+    defaultPersona: string;
     agent: Record<string, unknown>;
     books: { slug: string; name: string; enabled: boolean; entries: number }[];
   } => ({
     saveAgent: vi.fn(),
     roleplayEnabled: false,
+    personas: {},
+    defaultPersona: "",
     agent: {},
     books: [],
   }),
@@ -27,7 +31,15 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("../../src/hooks/useSettings", () => ({
   useSaveSettings: () => ({ mutate: vi.fn(), isPending: false }),
   useProviders: () => ({ data: { providers: {}, verbs: [], warnings: [] } }),
-  useSettings: () => ({ data: { roleplay: { enabled: h.roleplayEnabled } } }),
+  useSettings: () => ({
+    data: {
+      roleplay: {
+        enabled: h.roleplayEnabled,
+        personas: h.personas,
+        default_persona: h.defaultPersona,
+      },
+    },
+  }),
 }));
 vi.mock("../../src/hooks/useMediaLibrary", () => ({
   useMediaLibrary: () => ({ sections: [], write: { append: vi.fn() }, ready: false }),
@@ -75,7 +87,7 @@ function agentDef(over: Record<string, unknown> = {}) {
     example_dialogue: "",
     scenario: "",
     post_history: "",
-    user_name: "",
+    persona: "",
     avatar: "",
     background: "",
     voice: "",
@@ -121,6 +133,8 @@ function renderRow(
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  h.personas = {};
+  h.defaultPersona = "";
 });
 
 describe("roleplayFieldVisible (the Risu predicate, §9)", () => {
@@ -168,7 +182,6 @@ describe("AgentRow · the roleplay fields on the form", () => {
       "Backdrop",
     ])
       expect(screen.getByText(label), label).toBeTruthy();
-    expect(screen.getByLabelText("Your name")).toBeTruthy();
     expect(screen.getByLabelText("Voice")).toBeTruthy();
   });
 
@@ -209,7 +222,7 @@ describe("AgentRow · the roleplay fields on the form", () => {
     expect(screen.getByRole("button", { name: "Edit Persona · SOUL.md" })).toBeTruthy();
     // …and every one-line field is untouched: a bare <label> in the grid's own left column, its input
     // beside it.
-    for (const label of ["Display name", "Your name", "Voice"]) {
+    for (const label of ["Display name", "Voice"]) {
       const l = [...(form?.querySelectorAll(":scope > label") ?? [])].find(
         (n) => n.textContent === label,
       );
@@ -279,6 +292,65 @@ describe("AgentRow · the roleplay fields on the form", () => {
     fireEvent.click(screen.getByRole("button", { name: "save" }));
     const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
     expect(sent.agent.duties).toBe("conversational");
+  });
+});
+
+describe("AgentRow · the persona LINK (D78)", () => {
+  const LIB = {
+    ari: { name: "Ari", description: "the owner" },
+    dm: { name: "The DM", description: "" },
+  };
+  const optionTexts = (sel: HTMLSelectElement) => [...sel.options].map((o) => o.textContent);
+
+  it("a non-empty library shows the picker with roleplay OFF — a persona is not a roleplay extra", () => {
+    h.personas = LIB;
+    h.defaultPersona = "ari";
+    renderRow({}, false);
+    const sel = screen.getByLabelText<HTMLSelectElement>("Your persona");
+    expect(sel.tagName).toBe("SELECT");
+    // "" first (the default rung, named for what it resolves to today), then the library BY NAME
+    expect(optionTexts(sel)).toEqual(["default persona (Ari)", "Ari", "The DM"]);
+    expect([...sel.options].map((o) => o.value)).toEqual(["", "ari", "dm"]);
+    expect(sel.value).toBe("");
+    // a one-line control — the label-left grid face, like Display name / Voice
+    const form = document.querySelector(".mform");
+    const l = [...(form?.querySelectorAll(":scope > label") ?? [])].find(
+      (n) => n.textContent === "Your persona",
+    );
+    expect(l?.nextElementSibling?.tagName).toBe("SELECT");
+  });
+
+  it("an empty library and no link → no picker, even with roleplay ON (nothing to pick or see)", () => {
+    renderRow({}, true);
+    expect(screen.queryByLabelText("Your persona")).toBeNull();
+  });
+
+  it("picking a persona writes its SLUG into the save payload", () => {
+    h.personas = LIB;
+    renderRow();
+    fireEvent.change(screen.getByLabelText("Your persona"), { target: { value: "dm" } });
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
+    expect(sent.agent.persona).toBe("dm");
+  });
+
+  it("a DANGLING link is visible as `missing: <slug>` — even with an empty library — and clearable (A-4)", () => {
+    renderRow({ persona: "ghost" }, false);
+    const sel = screen.getByLabelText<HTMLSelectElement>("Your persona");
+    expect(sel.value).toBe("ghost"); // the select shows the truth, not its first option
+    expect(optionTexts(sel)).toEqual(["default persona (none)", "missing: ghost"]);
+    fireEvent.change(sel, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
+    expect(sent.agent.persona).toBe("");
+  });
+
+  it("a dangling DEFAULT reads as none on the default rung (it resolves to nothing)", () => {
+    h.personas = LIB;
+    h.defaultPersona = "gone";
+    renderRow();
+    const sel = screen.getByLabelText<HTMLSelectElement>("Your persona");
+    expect(sel.options[0].textContent).toBe("default persona (none)");
   });
 });
 

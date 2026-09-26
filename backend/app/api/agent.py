@@ -36,6 +36,7 @@ from app.config import (
     dealias_mapping,
     deep_merge,
     edit_config_yaml,
+    is_persona_slug,
     is_provider_slug,
     providers_rev,
     sync_mapping,
@@ -1921,9 +1922,13 @@ async def put_agent(name: str, body: AgentBody, request: Request) -> dict[str, A
     merged = deep_merge(dict(s.agent.defaults), fields)
     merged["name"] = name
     try:
-        AgentDef.model_validate(merged)
+        agent = AgentDef.model_validate(merged)
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=f"invalid agent: {e.errors()[0]['msg']}") from e
+    # The persona link is checked for SHAPE only (D78): a slug the library does not hold yet is legal
+    # and resolves to the default (Emma A-4), but a value that could never be a key is a typo.
+    if agent.persona and not is_persona_slug(agent.persona):
+        raise HTTPException(status_code=422, detail=f"invalid agent: persona {agent.persona!r} is not a slug")
     payload = await asyncio.to_thread(_scaffold_agent, s, name, folder, fields, DEFAULT_SYSTEM_PROMPT)
     # D46/F6: an agent-file edit can change reasoning_effort/reasoning_tokens, but (unlike an
     # inference-section edit) it never rebuilds the inference client — so clear the learned reasoning

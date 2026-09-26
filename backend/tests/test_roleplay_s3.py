@@ -248,7 +248,8 @@ def test_macros_render_in_both_the_keys_and_the_content() -> None:
     owner-authored surface."""
     with _workspace(), _client() as c:
         _book(c, "hollow-sea", TEST_BOOK)
-        _agent(c, "nyx", title="Nyx", user_name="Ari", lorebooks=["hollow-sea"])
+        assert c.post("/api/personas", json={"name": "Ari"}).status_code == 201  # D78: minted `ari`
+        _agent(c, "nyx", title="Nyx", persona="ari", lorebooks=["hollow-sea"])
         block = _blocks(_turn(c, _thread(c), "nyx", "are you there, Nyx?"))[0]
         assert "Nyx answers to Ari alone." in block
         assert "{{char}}" not in block

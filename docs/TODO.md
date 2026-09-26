@@ -1603,8 +1603,9 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       all three backdrop states ✓ · a field-authored lorebook triggering live · showcase +
       picker feel ✓ · read-along on a character reply ✓ — **the remainder rides the owner's
       regular use (their ruling 2026-09-11); their word closes the phase.**
-- [ ] **S8 — the persona LIBRARY (D78) + the neutral framings (the D70 amendment, ISS-21/25) —
-      DESIGNED + council-closed 2026-09-26, UNBUILT.** The build brief = plan §14 (Part A: `personas`
+- [x] **S8 — the persona LIBRARY (D78) + the neutral framings (the D70 amendment, ISS-21/25) —
+      DESIGNED + council-closed 2026-09-26, BUILT 2026-09-26** (as-built = plan §10's S8 block; the
+      review round is the main seat's). The build brief was plan §14 (Part A: `personas`
       map · `default_persona` · `AgentDef.persona` · one resolver · the `personas` router · the Conf
       per-row editor · the agent-form select · migration step 5 (`VERSION` → 5) · the tests + docs in
       §14.4 A-5; Part B: the two registry labels + the `test_prompts_registry_p18.py` re-aim + the

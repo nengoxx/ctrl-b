@@ -62,7 +62,7 @@ export interface AgentDef {
   example_dialogue: string; // `mes_example` — `<START>`-delimited turns, kept in the ST format verbatim
   scenario: string;
   post_history: string; // `post_history_instructions` — emitted AFTER the history (§4.2)
-  user_name: string; // per-agent `{{user}}` override; "" → the persona name → "User"
+  persona: string; // D78 — the OWNER's persona it talks to (a library slug); "" → the default
   avatar: string; // an entry name in the `agents/avatars` library (§8.1); "" → none
   background: string; // an entry name in `agents/backgrounds`; "" → the theme default
   voice: string; // TTS voice id (ruling 21); "" → the global `voice.tts` chain

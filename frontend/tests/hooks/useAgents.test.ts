@@ -23,7 +23,7 @@ function defWith(routing: unknown): AgentDef {
     example_dialogue: "",
     scenario: "",
     post_history: "",
-    user_name: "",
+    persona: "",
     avatar: "",
     background: "",
     voice: "",

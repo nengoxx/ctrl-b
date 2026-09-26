@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { del, getJSON, putBytes, putJSON } from "../api/client";
+import { ApiError, del, getJSON, postJSON, putBytes, putJSON } from "../api/client";
 import { pushToast } from "../store/toast";
 import { CONF_SECTIONS, useScopedQuery } from "./useScopedQuery";
 
@@ -12,20 +12,137 @@ import { CONF_SECTIONS, useScopedQuery } from "./useScopedQuery";
 // gated on `enabled`) and the gallery header (whose Import entry point is). S5's lorebook queries land
 // here beside them.
 
+/** One entry of the persona LIBRARY (D78) — who the OWNER is to an agent: `name` is what `{{user}}`
+ *  renders as, `description` the "About" block injected when it is set. The map KEY (the slug) is the
+ *  identity and is never a field: the server mints it once from the name and it never changes on a
+ *  rename (R90 §3.1 — a link keyed by something renameable is a link that orphans). */
+export interface PersonaCfg {
+  name: string;
+  description: string;
+}
+
 /** The `roleplay` section as the UI reads it — defaults mirroring the backend's `RoleplayCfg`. */
 export interface RoleplayCfg {
   enabled: boolean;
   default_tools: string[];
-  persona: { name: string; description: string };
+  personas: Record<string, PersonaCfg>; // {slug: persona} — the house map-of-objects shape (D78)
+  default_persona: string; // a slug, or "" = none. MAY dangle (Emma A-4) — see `personaChoices`
 }
 
 export function pickRoleplay(section: unknown): RoleplayCfg {
-  const s = (section ?? {}) as Partial<RoleplayCfg> & { persona?: Partial<RoleplayCfg["persona"]> };
+  const s = (section ?? {}) as Partial<Omit<RoleplayCfg, "personas">> & {
+    personas?: Record<string, Partial<PersonaCfg> | null>;
+  };
   return {
     enabled: s.enabled ?? false,
     default_tools: s.default_tools ?? ["web_search"],
-    persona: { name: s.persona?.name ?? "", description: s.persona?.description ?? "" },
+    personas: Object.fromEntries(
+      Object.entries(s.personas ?? {}).map(([slug, p]) => [
+        slug,
+        { name: p?.name ?? "", description: p?.description ?? "" },
+      ]),
+    ),
+    default_persona: s.default_persona ?? "",
   };
+}
+
+/** The library entry a slug names, or `undefined` — OWN keys only: the map is a plain object, and a
+ *  slug is free text the rule admits as `constructor` or `valueof`, which `in`/indexing would "find" on
+ *  the prototype. */
+export function personaOf(
+  personas: Record<string, PersonaCfg>,
+  slug: string,
+): PersonaCfg | undefined {
+  return Object.hasOwn(personas, slug) ? personas[slug] : undefined;
+}
+
+/** How a persona is drawn wherever it is picked: by its NAME (the slug is identity, never display —
+ *  D78), the slug standing in only for a blank name so an option is never an empty string. */
+export function personaLabel(slug: string, p: PersonaCfg): string {
+  return p.name.trim() || slug;
+}
+
+/** THE persona selectors' options, once — the agent form's link and Conf's default both render these
+ *  after their own "no pick" option. A link to a slug the library no longer holds is LEGAL (D78: a
+ *  dangling link resolves to the next rung, so a library edit can never brick an agent or the config),
+ *  and Emma's A-4 is that legal must also mean VISIBLE: it gets a synthetic `missing: <slug>` option,
+ *  so the select shows the truth and the owner can clear it — a select with no option for its value
+ *  would silently display the first option instead. */
+export function personaChoices(
+  personas: Record<string, PersonaCfg>,
+  current: string,
+): { val: string; label: string }[] {
+  const opts = Object.entries(personas).map(([slug, p]) => ({
+    val: slug,
+    label: personaLabel(slug, p),
+  }));
+  if (current && !personaOf(personas, current))
+    opts.push({ val: current, label: `missing: ${current}` });
+  return opts;
+}
+
+// ── The persona WRITES (D78 · Emma A-3) — a `personas` router mirroring `api/hosts.py`, and hooks
+// mirroring `useHostMutations`: a list/map section is edited through a dedicated endpoint that handles
+// add/remove explicitly, never the generic settings deep-merge (which cannot delete a key). There is no
+// read endpoint: the library rides the settings doc, so every write invalidates THAT query — the same
+// line the hosts hooks carry for `computers`. `default_persona` is not here: it is a scalar in
+// `roleplay` and rides the ordinary settings PUT.
+
+/** A persona as the router answers — the library entry plus the slug the server minted for it. */
+export interface Persona extends PersonaCfg {
+  slug: string;
+}
+
+function useInvalidatePersonas() {
+  const qc = useQueryClient();
+  return () => void qc.invalidateQueries({ queryKey: ["settings"] }); // `roleplay.personas` changed
+}
+
+/** Create — the server mints the slug from the name (Emma A-2: the FE never mints, so two names that
+ *  collapse to one slug are refused by the one mint rather than overwritten by a second copy of it).
+ *  A 409 (that slug is taken) is NOT toasted: the add row renders it inline beside the name the owner
+ *  is about to change, the way a validation error sits under its field. */
+export function useCreatePersona() {
+  const invalidate = useInvalidatePersonas();
+  return useMutation({
+    mutationFn: (p: PersonaCfg) => postJSON<Persona>("/api/personas", p),
+    onSuccess: (p) => {
+      invalidate();
+      pushToast(`Added ${p.name}`, "ok");
+    },
+    onError: (e: Error) => {
+      if (e instanceof ApiError && e.status === 409) return;
+      pushToast(e.message || "Add failed", "err");
+    },
+  });
+}
+
+/** Edit a persona's name/description. The slug in the URL never changes — a rename is display only. */
+export function useUpdatePersona() {
+  const invalidate = useInvalidatePersonas();
+  return useMutation({
+    mutationFn: ({ slug, persona }: { slug: string; persona: PersonaCfg }) =>
+      putJSON<Persona>(`/api/personas/${encodeURIComponent(slug)}`, persona),
+    onSuccess: (p) => {
+      invalidate();
+      pushToast(`Saved ${p.name}`, "ok");
+    },
+    onError: (e: Error) => pushToast(e.message || "Save failed", "err"),
+  });
+}
+
+/** Remove — NO cascade (D78): agents linked to it, and a `default_persona` naming it, dangle by design
+ *  and resolve to the next rung until the owner re-points them (the selectors show them as missing). */
+export function useDeletePersona() {
+  const invalidate = useInvalidatePersonas();
+  return useMutation({
+    mutationFn: (slug: string) => del(`/api/personas/${encodeURIComponent(slug)}`),
+    onSuccess: () => {
+      invalidate();
+      pushToast("Persona removed", "ok");
+    },
+    onError: (e: Error) => pushToast(e.message || "Remove failed", "err"),
+  });
 }
 
 /** The `lorebooks` section as the UI reads it — the scan/budget numerics plus `books`, the GLOBAL

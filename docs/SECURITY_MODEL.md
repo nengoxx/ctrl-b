@@ -444,6 +444,11 @@ design of record [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §5/§6):
   CHARX entry count/entry bytes/total checked against DECLARED sizes before any decompress, traversal
   refused, `RecursionError` caught at the route); an embedded avatar goes through the D65 media probe
   and closed extension allowlist and is named from the slug grammar.
+- **Lorebook and persona text carry NO authority claim in the prompt (the D70 framing amendment,
+  2026-09-26, R90):** both are owner-directed context — attaching a book or linking a persona IS the
+  owner's direction — introduced by neutral noun labels (`lorebook_intro` · `persona_intro`) that say
+  neither "follow this" nor "not instructions"; the boundary is the privilege gate + confirm tokens in
+  code (D8), never that wording.
 - **One kept copy of a card, and it is the stripped one (R87/RP-4 + RP-8, 2026-09-26).** The whole
   normalized card, post-strip, lands in `agents/<slug>/card.json` at **0600**
   (`atomic_write_text` — a card can carry credentials, R67) and nowhere else: `agent.yaml` no longer
