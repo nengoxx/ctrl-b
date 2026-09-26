@@ -117,7 +117,11 @@ describe("useSaveSettings · agent roster invalidation (S4)", () => {
 
     const keys = invalidate.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
     expect(keys).toContain(JSON.stringify(["agents"]));
-    expect(keys).toContain(JSON.stringify(["agentlist"]));
+    // ISS-20 (D79 §15.7) — the Conf-scoped `["agentlist"]` twin is retired: ONE roster query remains.
+    expect(keys).not.toContain(JSON.stringify(["agentlist"]));
+    // D79 / §15.5 — the shelf's `used_by` line is an agent fact (the root's `agent.defaults.lorebooks`
+    // and the global `lorebooks.books` both save through here), so the shelf refreshes too.
+    expect(keys).toContain(JSON.stringify(["lorebooks"]));
   });
 });
 

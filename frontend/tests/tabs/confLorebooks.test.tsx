@@ -17,12 +17,22 @@ type FetchBook = (slug: string) => Promise<unknown>;
 
 const h = vi.hoisted(
   (): {
-    books: { slug: string; name: string; enabled: boolean; entries: number }[];
+    books: {
+      slug: string;
+      name: string;
+      enabled: boolean;
+      entries: number;
+      used_by?: { agents: string[]; global: boolean };
+    }[];
     book: { slug: string; book: Record<string, unknown> } | null;
     fetchBook: ReturnType<typeof vi.fn<FetchBook>>;
     save: ReturnType<typeof vi.fn>;
     importMutate: ReturnType<typeof vi.fn>;
     toast: ReturnType<typeof vi.fn>;
+    exportMutate: ReturnType<typeof vi.fn>;
+    remove: ReturnType<typeof vi.fn>;
+    confirm: ReturnType<typeof vi.fn<(req: unknown) => Promise<boolean>>>;
+    roster: { agents: string[]; default: string; summaries?: Record<string, { title: string }> };
   } => ({
     books: [],
     book: null,
@@ -30,6 +40,10 @@ const h = vi.hoisted(
     save: vi.fn(),
     importMutate: vi.fn(),
     toast: vi.fn(),
+    exportMutate: vi.fn(),
+    remove: vi.fn(),
+    confirm: vi.fn<(req: unknown) => Promise<boolean>>(),
+    roster: { agents: [], default: "default" },
   }),
 );
 
@@ -43,11 +57,20 @@ vi.mock("../../src/hooks/useRoleplay", async (importActual) => {
     // collision the 30s-stale shelf list may not know about yet.
     fetchLorebook: (slug: string) => h.fetchBook(slug),
     useSaveLorebook: () => ({ mutate: h.save, isPending: false }),
-    useDeleteLorebook: () => ({ mutate: vi.fn(), isPending: false }),
+    useDeleteLorebook: () => ({ mutate: h.remove, isPending: false }),
     useImportLorebook: () => ({ mutate: h.importMutate, isPending: false }),
+    useExportLorebook: () => ({ mutate: h.exportMutate, isPending: false }),
   };
 });
+// D79 / §15.5 — the referenced-by line draws agents by TITLE, off the always-on roster.
+vi.mock("../../src/hooks/useAgents", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/useAgents")>()),
+  useAgentRoster: () => ({ data: h.roster }),
+}));
 vi.mock("../../src/store/toast", () => ({ pushToast: h.toast }));
+vi.mock("../../src/store/confirm", () => ({
+  requestConfirm: (req: unknown) => h.confirm(req),
+}));
 
 import { ApiError } from "../../src/api/client";
 import { LorebooksEditor } from "../../src/components/LorebooksEditor";
@@ -72,6 +95,10 @@ beforeEach(() => {
   h.save.mockReset();
   h.importMutate.mockReset();
   h.toast.mockReset();
+  h.exportMutate.mockReset();
+  h.remove.mockReset();
+  h.confirm.mockReset();
+  h.roster = { agents: [], default: "default" };
   // The FILE API's own answer, faithfully: the book exists iff `h.book` is the one being asked for,
   // and a miss is `getJSON`'s real `ApiError` 404 — the discriminator the add row branches on.
   h.fetchBook.mockReset();
@@ -422,7 +449,8 @@ describe("LorebooksEditor · the confirm-round micro-wave", () => {
     render(<LorebooksEditor />);
     fireEvent.click(chev(/expand Traits/));
   };
-  const saveBtn = () => screen.getByRole<HTMLButtonElement>("button", { name: /^sav/ });
+  const saveBtn = () =>
+    screen.getByRole<HTMLButtonElement>("button", { name: /^(save|saved|saving…)$/ });
 
   it("Save has no door while the toggle's read is in flight (F3 — the await outlives isPending)", async () => {
     openTraits([entry({ keys: ["brave"], content: "old" })]);
@@ -554,5 +582,127 @@ describe("LorebooksEditor · live draft classification at the echo", () => {
       "typed mid-flight",
     );
     expect(isAnyDirty()).toBe(true); // the edit is still unsaved — and still there
+  });
+});
+
+// D79 / ROLEPLAY_PLAN §15.4–§15.5 — the shelf says who links each book, the delete confirm names them
+// (a delete never cascades, owner), and a book exports as ST's standalone JSON from the saved file.
+describe("LorebooksEditor · referenced-by + export (D79)", () => {
+  const ROSTER = {
+    agents: ["lynette", "seraphina"],
+    default: "default",
+    summaries: { lynette: { title: "Lynette" }, seraphina: { title: "" } },
+  };
+
+  it("the row line names the linking agents by TITLE (slug fallback), and `global` beside them", () => {
+    h.roster = ROSTER;
+    h.books = [
+      {
+        slug: "traits",
+        name: "Traits",
+        enabled: true,
+        entries: 40,
+        used_by: { agents: ["lynette", "seraphina"], global: true },
+      },
+    ];
+    render(<LorebooksEditor />);
+    expect(screen.getByText("40 entries · used by Lynette, seraphina · global")).toBeTruthy();
+  });
+
+  it("`global` alone, and `unused` when nothing links it", () => {
+    h.books = [
+      { slug: "a", name: "A", enabled: true, entries: 1, used_by: { agents: [], global: true } },
+      { slug: "b", name: "B", enabled: true, entries: 2, used_by: { agents: [], global: false } },
+    ];
+    render(<LorebooksEditor />);
+    expect(screen.getByText("1 entry · global")).toBeTruthy();
+    expect(screen.getByText("2 entries · unused")).toBeTruthy();
+  });
+
+  it("a DANGLING agent slug is shown as-is — the link is real even if the agent is gone", () => {
+    h.roster = ROSTER;
+    h.books = [
+      {
+        slug: "a",
+        name: "A",
+        enabled: true,
+        entries: 1,
+        used_by: { agents: ["ghost"], global: false },
+      },
+    ];
+    render(<LorebooksEditor />);
+    expect(screen.getByText("1 entry · used by ghost")).toBeTruthy();
+  });
+
+  it("an older server (no `used_by`) — the row claims nothing", () => {
+    h.books = [{ slug: "a", name: "A", enabled: true, entries: 3 }];
+    render(<LorebooksEditor />);
+    expect(screen.getByText("3 entries")).toBeTruthy();
+    expect(screen.queryByText(/unused|used by|global/)).toBeNull();
+  });
+
+  it("the delete confirm NAMES the users — and the delete still only removes the book", async () => {
+    h.roster = ROSTER;
+    h.books = [
+      {
+        slug: "traits",
+        name: "Traits",
+        enabled: true,
+        entries: 0,
+        used_by: { agents: ["lynette"], global: true },
+      },
+    ];
+    h.book = {
+      slug: "traits",
+      book: { name: "Traits", description: "", enabled: true, entries: [] },
+    };
+    h.confirm.mockResolvedValue(true);
+    render(<LorebooksEditor />);
+    fireEvent.click(chev(/expand Traits/));
+    fireEvent.click(screen.getByRole("button", { name: "remove" }));
+    await waitFor(() => expect(h.remove).toHaveBeenCalled());
+    const req = h.confirm.mock.calls[0][0] as { body: string };
+    expect(req.body).toBe(
+      "Deletes its file. Still linked by Lynette, the global attachment — they keep the link and simply stop getting its entries.",
+    );
+    expect(h.remove.mock.calls[0][0]).toBe("traits");
+  });
+
+  it("an unused book's confirm says so", async () => {
+    h.books = [
+      {
+        slug: "b",
+        name: "B",
+        enabled: true,
+        entries: 0,
+        used_by: { agents: [], global: false },
+      },
+    ];
+    h.book = { slug: "b", book: { name: "B", description: "", enabled: true, entries: [] } };
+    h.confirm.mockResolvedValue(false);
+    render(<LorebooksEditor />);
+    fireEvent.click(chev(/expand B/));
+    fireEvent.click(screen.getByRole("button", { name: "remove" }));
+    await waitFor(() => expect(h.confirm).toHaveBeenCalled());
+    expect((h.confirm.mock.calls[0][0] as { body: string }).body).toBe(
+      "Deletes its file. No agent uses it.",
+    );
+    expect(h.remove).not.toHaveBeenCalled();
+  });
+
+  it("`export` downloads the SAVED book under its name; a dirty draft says `save first`", () => {
+    h.books = [{ slug: "hollow-sea", name: "Hollow Sea", enabled: true, entries: 0 }];
+    h.book = {
+      slug: "hollow-sea",
+      book: { name: "Hollow Sea", description: "fog", enabled: true, entries: [] },
+    };
+    render(<LorebooksEditor />);
+    fireEvent.click(chev(/expand Hollow Sea/));
+    fireEvent.click(screen.getByRole("button", { name: "export" }));
+    expect(h.exportMutate).toHaveBeenCalledWith({ slug: "hollow-sea", name: "Hollow Sea" });
+
+    fireEvent.change(screen.getByLabelText("Lorebook description"), { target: { value: "x" } });
+    expect(screen.queryByRole("button", { name: "export" })).toBeNull();
+    expect(screen.getByRole("button", { name: "save first" })).toHaveProperty("disabled", true);
   });
 });

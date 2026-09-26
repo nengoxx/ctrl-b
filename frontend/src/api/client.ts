@@ -151,7 +151,10 @@ export function putJSON<T>(path: string, body: unknown): Promise<T> {
  *
  *  `headers` carries the PRECONDITION an edit states (`X-Expected-Revision`, "W10") — the one header
  *  a caller adds, and the reason it is a parameter rather than an option object: a custom header keeps
- *  the request non-safelisted, which is the very property the paragraph above rests on. */
+ *  the request non-safelisted, which is the very property the paragraph above rests on.
+ *
+ *  The one POST that does exist beside this (`postBlob`, below) is a derivation that stores nothing —
+ *  its doc comment says why that is not an exception to this rule. */
 export async function putBytes<T>(
   path: string,
   body: Blob,
@@ -170,8 +173,44 @@ export async function putBytes<T>(
   return (await res.json()) as T;
 }
 
-/** DELETE a resource. Surfaces FastAPI `detail` on error; tolerates an empty 204 body. */
-export async function del(path: string): Promise<void> {
+/** POST RAW BYTES, answered with RAW BYTES — the ONE non-JSON POST in this app, and why it may exist
+ *  beside `putBytes`' "never POST" rule (D79 / ROLEPLAY_PLAN §15.3, SECURITY_MODEL §2.9).
+ *
+ *  Its one caller is the character-card export (`POST /api/agents/{name}/card.png`): the client sends
+ *  the CARRIER picture (the bound avatar, re-encoded to PNG by the canvas chokepoint — the backend has
+ *  no image codec by policy) and the server answers with that PNG plus the card's `tEXt` chunks. That
+ *  route is a SIDE-EFFECT-FREE DERIVATION: it stores nothing, so the property `putBytes`' verb protects
+ *  — a cross-origin page must not be able to make this app WRITE — is not in play. A hostile page could
+ *  send this request (as `text/plain`, preflight-free), but it writes nothing, and the response is
+ *  unreadable cross-origin. The house rule for WRITES stays raw-body PUT; nothing that stores anything
+ *  may use this function.
+ *
+ *  The body's own `type` rides as the advisory Content-Type (`application/octet-stream` for a typeless
+ *  body or a bare `ArrayBuffer`); the server validates the bytes structurally. Errors keep their status
+ *  as an `ApiError` carrying the server's `detail` (the card route's 413/415/422/404 are read verbatim). */
+export async function postBlob(path: string, body: Blob | ArrayBuffer): Promise<Blob> {
+  const type = body instanceof Blob && body.type ? body.type : "application/octet-stream";
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": type },
+    body,
+  });
+  if (!res.ok) await refuse(res);
+  return res.blob();
+}
+
+/** DELETE a resource. Surfaces FastAPI `detail` on error; tolerates an empty 204 body. A route that
+ *  REPORTS what the delete did (D79 / ISS-24: the agent delete's `{removed, kept, broken}`) is read
+ *  back as `T`; an empty body resolves `undefined`, so every caller that ignores the answer is unchanged. */
+export async function del<T = void>(path: string): Promise<T> {
   const res = await fetch(path, { method: "DELETE", headers: { Accept: "application/json" } });
   if (!res.ok) await refuse(res);
+  const text = res.status === 204 ? "" : await res.text();
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // The delete SUCCEEDED; a body that is not JSON (a proxy's page) must not turn that into an error.
+    return undefined as T;
+  }
 }

@@ -428,6 +428,7 @@ design of record [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §5/§6):
   parsed value. The body streams into a counted buffer and is refused the moment it crosses its cap
   (`roleplay.card_import.max_bytes` · `lorebooks.max_import_bytes`) — the §2.7 cap+1 posture, never a
   bare `await request.body()`.
+- **The one POST beside them is the card EXPORT, `POST /api/agents/{name}/card.png` (D79, ROLEPLAY_PLAN §15.3)** — a side-effect-free derivation: the body is a carrier PNG, the answer is that image with the character's card written into it, and nothing is stored (pinned: `test_roleplay_s9.py::test_the_png_route_writes_the_card_into_the_carrier_and_nothing_to_disk`). A cross-origin page CAN send it without a preflight (as `text/plain`), and gains nothing: it writes no file, and the response is unreadable cross-origin (no CORS). It declares no form body, streams under `roleplay.card_import.max_bytes` at cap+1 like the imports, and validates the PNG structurally before any disk read.
 - **The pin is now APP-WIDE** (`test_media_write_d65.py::test_no_route_in_the_whole_app_declares_a_form_body_outside_the_allowlist`).
   D65's and D68's form-body walks are path-scoped (`/api/media`, `/api/attachments`), so both were
   blind to a new router by construction — which is exactly how D70 landed two multipart POSTs with

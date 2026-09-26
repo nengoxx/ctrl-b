@@ -3,10 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Switch } from "./Switch";
 import { TickGrid } from "./TickGrid";
 import { ApiError } from "../api/client";
+import { useAgentRoster, type AgentListing } from "../hooks/useAgents";
 import {
   fetchLorebook,
   newLorebookEntry,
   useDeleteLorebook,
+  useExportLorebook,
   useImportLorebook,
   useLorebook,
   useLorebooks,
@@ -16,6 +18,7 @@ import {
   type LorebookFile,
   type LorebookImportReport,
   type LorebookInfo,
+  type LorebookRefs,
 } from "../hooks/useRoleplay";
 import { disclosureToggle } from "../lib/disclosure";
 import { numOrKeep, numOrKeepNullable } from "../lib/num";
@@ -77,6 +80,35 @@ const PREVIEW_CHARS = 160;
 function previewLine(content: string): string {
   const first = content.split("\n").find((l) => l.trim() !== "");
   return (first?.trim() ?? "").slice(0, PREVIEW_CHARS);
+}
+
+/** An agent slug as the owner reads it: its display title off the roster's summary map, the slug
+ *  standing in when the roster has no title for it (not loaded yet, or a link naming an agent that no
+ *  longer exists — which the line must still show, since the link is real). */
+function agentTitle(roster: AgentListing | undefined, slug: string): string {
+  return roster?.summaries?.[slug]?.title || slug;
+}
+
+/** THE REFERENCED-BY LINE (D79 / §15.5, the ISS-24 ruling) — which agents link this book, and whether
+ *  the install attaches it globally: `used by Lynette, Seraphina` · `global` · `unused`, joined with a
+ *  dot when both apply. `null` when the server sent no `used_by` (an older server, an e2e fixture): the
+ *  row then says nothing rather than claiming a book nobody reads. */
+function usedByLine(refs: LorebookRefs | undefined, title: (slug: string) => string) {
+  if (refs === undefined) return null;
+  const parts: string[] = [];
+  if (refs.agents.length > 0) parts.push(`used by ${refs.agents.map(title).join(", ")}`);
+  if (refs.global) parts.push("global");
+  return parts.length > 0 ? parts.join(" · ") : "unused";
+}
+
+/** The delete confirm's body — it NAMES the book's users, because a delete never cascades and never
+ *  unlinks (owner): an agent still listing the slug simply stops getting its entries. */
+function removeBody(refs: LorebookRefs | undefined, title: (slug: string) => string): string {
+  const base = "Deletes its file.";
+  if (refs === undefined) return `${base} Agents still listing it simply stop getting its entries.`;
+  const users = [...refs.agents.map(title), ...(refs.global ? ["the global attachment"] : [])];
+  if (users.length === 0) return `${base} No agent uses it.`;
+  return `${base} Still linked by ${users.join(", ")} — they keep the link and simply stop getting its entries.`;
 }
 
 /** WHAT THE IMPORTED FILE CONTAINED (§6.5). The agents gallery's `ImportReportCard` is the same idea
@@ -371,6 +403,10 @@ function LorebookRow({
   const { data, isLoading } = useLorebook(open ? info.slug : null);
   const save = useSaveLorebook();
   const remove = useDeleteLorebook();
+  const exportBook = useExportLorebook();
+  const { data: roster } = useAgentRoster();
+  const title = (slug: string) => agentTitle(roster, slug);
+  const usedBy = usedByLine(info.used_by, title);
   const [draft, setDraft] = useState<Lorebook | null>(null);
   const seeded = useRef<string | null>(null);
   // The draft's LIVE mirror, written in the same synchronous moment as every state write (the one
@@ -460,7 +496,7 @@ function LorebookRow({
   const onRemove = async () => {
     const ok = await requestConfirm({
       title: `Remove lorebook ${label}?`,
-      body: "Deletes its file. Agents still listing it simply stop getting its entries.",
+      body: removeBody(info.used_by, title),
       confirmLabel: "remove",
       danger: true,
     });
@@ -478,6 +514,7 @@ function LorebookRow({
           </div>
           <div className="desc">
             {info.entries} entr{info.entries === 1 ? "y" : "ies"}
+            {usedBy !== null && ` · ${usedBy}`}
           </div>
         </div>
         <span className="row-acts">
@@ -539,6 +576,15 @@ function LorebookRow({
                   onClick={onRemove}
                 >
                   remove
+                </button>
+                {/* D79 / §15.4 — ST's standalone world-info JSON. The server serializes the FILE, so
+                    an unsaved draft would not be in it: "save first", the agent export's rule. */}
+                <button
+                  type="button"
+                  disabled={dirty || exportBook.isPending}
+                  onClick={() => exportBook.mutate({ slug: info.slug, name: label })}
+                >
+                  {exportBook.isPending ? "exporting…" : dirty ? "save first" : "export"}
                 </button>
                 <button
                   type="button"

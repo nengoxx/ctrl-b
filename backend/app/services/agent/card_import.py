@@ -49,6 +49,7 @@ import json
 import re
 import struct
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -223,6 +224,77 @@ def _png_chunks(body: bytes) -> Iterator[tuple[bytes, int, int, int]]:
         if ctype == b"IEND":
             return
         i = end + 4
+
+
+#: A PNG chunk type: four ASCII letters (PNG §5.4) — anything else is not a chunk this walk found.
+_CHUNK_TYPE = re.compile(rb"[A-Za-z]{4}")
+
+#: `IHDR`'s fixed data length (PNG §11.2.2): width, height, depth, colour type, three method bytes.
+_IHDR_LENGTH = 13
+
+
+def validate_png_carrier(body: bytes) -> None:
+    """Refuse a card CARRIER that is not a structurally whole PNG — `415` when it is not a PNG at all,
+    `422` naming the first broken rule otherwise (§15.3, Maya F4/F6: the media path's admission
+    posture, not a signature sniff). Decodes no pixel: the rules are the container's own.
+
+    The export route writes chunks back INTO these bytes, which the import walk never did — so the
+    walk's "a truncated chunk simply ends it" tolerance is not enough here. The rules, in order: the
+    signature; `IHDR` first and exactly 13 bytes; every declared length inside the body (a short walk
+    is how that shows up — `_png_chunks` stops at the first chunk that does not fit); every type four
+    ASCII letters; every CRC equal to `zlib.crc32(type + data)`; `IEND` zero-length, present, and the
+    last byte of the file. ONE walk, the importer's own."""
+    if not body.startswith(PNG_SIGNATURE):
+        raise CardImportError(415, "the card image is not a PNG")
+    chunks = list(_png_chunks(body))
+    if not chunks or chunks[0][0] != b"IHDR":
+        raise CardImportError(422, "the card image is not a valid PNG: IHDR is not the first chunk")
+    _, _, start, end = chunks[0]
+    if end - start != _IHDR_LENGTH:
+        raise CardImportError(422, "the card image is not a valid PNG: IHDR is not 13 bytes")
+    for ctype, at, _start, end in chunks:
+        if not _CHUNK_TYPE.fullmatch(ctype):
+            raise CardImportError(
+                422, f"the card image is not a valid PNG: a chunk type is not four letters ({ctype!r})"
+            )
+        (crc,) = struct.unpack(">I", body[end : end + 4])
+        if crc != zlib.crc32(body[at + 4 : end]):
+            raise CardImportError(
+                422, f"the card image is not a valid PNG: the {ctype.decode('ascii')} chunk's CRC is wrong"
+            )
+    ctype, _, start, end = chunks[-1]
+    if ctype != b"IEND":
+        raise CardImportError(422, "the card image is not a valid PNG: it is truncated or has no IEND chunk")
+    if end != start:
+        raise CardImportError(422, "the card image is not a valid PNG: IEND carries data")
+    if end + 4 != len(body):
+        raise CardImportError(422, "the card image is not a valid PNG: bytes follow the IEND chunk")
+
+
+def png_chunk(ctype: bytes, data: bytes) -> bytes:
+    """One PNG chunk — `length | type | data | crc32(type + data)` (PNG §5.3)."""
+    return struct.pack(">I", len(data)) + ctype + data + struct.pack(">I", zlib.crc32(ctype + data))
+
+
+def write_card_chunks(png: bytes, v2: dict[str, Any], v3: dict[str, Any]) -> bytes:
+    """`png` carrying `v2` as `chara` and `v3` as `ccv3` — what ST's own writer does (R66 §2.5): any
+    card chunk already in the image is stripped first (a re-exported avatar may still carry one),
+    then the two `tEXt` chunks go in just before `IEND`. Keyword Latin-1, text ASCII base64 (PNG
+    §11.3.4.3); the JSON is ASCII-escaped, so a lone surrogate the card legitimately carries encodes
+    as its `\\uXXXX` escape instead of failing the UTF-8 encode.
+
+    The caller validated `png` (`validate_png_carrier`), so its last chunk is a terminal `IEND` — and
+    `strip_card_chunks` keeps it so."""
+    clean = strip_card_chunks(png)
+    *_, (_, iend_at, _, _) = _png_chunks(clean)
+    text = [
+        png_chunk(
+            b"tEXt",
+            keyword + b"\x00" + base64.b64encode(json.dumps(card, separators=(",", ":")).encode("ascii")),
+        )
+        for keyword, card in ((b"chara", v2), (b"ccv3", v3))
+    ]
+    return clean[:iend_at] + b"".join(text) + clean[iend_at:]
 
 
 def _read_charx(body: bytes, cfg: CardImportCfg) -> Container:
@@ -571,7 +643,7 @@ def _pointer(path: str, token: Any) -> str:
 #: What the agent-name grammar (`valid_skill_slug`) does not admit, collapsed to one separator.
 _NON_SLUG = re.compile(r"[^a-z0-9_-]+")
 _DASH_RUN = re.compile(r"-{2,}")
-#: `SKILL_SLUG`'s own budget: a leading `[a-z0-9]` plus 63 more.
+#: `SKILL_SLUG`'s own budget (`app.core.skills`): a leading `[a-z0-9]` plus 63 more.
 _MAX_SLUG = 64
 #: What a card whose name survives as nothing is called. A card with an emoji for a name is a real
 #: thing; refusing the import over it would be the wrong answer to a cosmetic problem.
@@ -663,9 +735,11 @@ def import_card(
     alt_greetings = _string_list(fields_map.get("alternate_greetings"))
 
     # Written EXPLICITLY, never left to the `"*"` default (§5.5): our default is the WIDEST value, so
-    # relying on it would invert ruling 8's minimal-tools posture. `privilege` is the opposite case —
-    # its own default IS the answer (CONFIRM), so nothing is written for it.
-    fields: dict[str, Any] = {"duties": "conversational", "tools": list(default_tools)}
+    # relying on it would invert ruling 8's minimal-tools posture. `skills: []` for the same reason
+    # (ISS-26 (i)): under `"*"` the keyword selector could inject a tool-agent skill body into a
+    # character's head and narrow its tools. `privilege` is the opposite case — its own default IS
+    # the answer (CONFIRM), so nothing is written for it.
+    fields: dict[str, Any] = {"duties": "conversational", "tools": list(default_tools), "skills": []}
     # `title` IS `{{char}}` (`macros_for`), so V3's `nickname` — "replaces the name in {{char}}",
     # SPEC_V3 — lands here rather than as a second name field nothing reads. The slug still mints
     # from `name` (the folder is an identifier, not a display), and the nickname stays in `card.json`

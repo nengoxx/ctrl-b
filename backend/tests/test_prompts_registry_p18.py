@@ -420,6 +420,10 @@ def test_fleet_roster_assembly_is_byte_identical() -> None:
     session = AgentSession.__new__(AgentSession)
     session._settings = settings
     session._stamps = {}  # the per-turn stamp accumulator `resolve()` records into (Slice 2)
+    # S9 / ISS-26 (ii) gates the roster on the turn's toolset taking a fleet id; that gate reads the
+    # registry (pinned in `test_roleplay_s9.py`), which this bare probe has none of — open it here so
+    # the assertion stays the byte-identity of the projection.
+    session._takes_a_fleet_id = lambda: True  # type: ignore[method-assign]
     assert session._roster() == (
         _GOLDEN["fleet_roster"][1]
         + "\nHosts:\n- Corsair (windows, desktop) -> host_id: corsair"

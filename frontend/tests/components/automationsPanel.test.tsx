@@ -53,7 +53,7 @@ vi.mock("../../src/hooks/useAutomations", async (importActual) => {
   };
 });
 vi.mock("../../src/hooks/useAgents", () => ({
-  useAgentList: () => ({ data: { agents: ["ops"], default: "default" } }),
+  useAgentRoster: () => ({ data: { agents: ["ops"], default: "default" } }),
 }));
 
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";

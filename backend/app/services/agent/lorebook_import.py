@@ -22,10 +22,14 @@ book object as the envelope's `data`, so it comes through this same function (§
     match_whole_words}`: where ST puts the real values when it writes a card's book, and what its
     own reader consults first (R87/RP-5) — unless the entry is already OURS (a top-level `head`/
     `tail` position), whose `extensions` is only the stale mirror it was first imported with.
-  * **The position downgrade is never silent.** The field's books use positions 0–7 and v1 stores
-    `head | tail` (§6.4), so every collapse gets a report line NAMING the entry and what was lost.
-    The one exception is ST position 1 (after the character definitions), which is EXACTLY where our
-    head block sits — that is a landing, not a downgrade.
+  * **The position downgrade is never silent — and never a flood (ISS-22).** The field's books use
+    positions 0–7 and v1 stores `head | tail` (§6.4), so every collapse is reported: ONE count line per
+    downgrade class per book ("12 entries sat at a fixed depth … — landed at the tail"), because a
+    per-entry line buried the report (216 of one real book's 218 lines were the same position-0 note).
+    ST position 1 (after the character definitions) is EXACTLY where our head block sits — a landing,
+    not a downgrade, so no line. The features v1 stores but does not run (probability, inclusion
+    groups, recursion flags, per-entry scan depth, regex-looking keys) get one count line each too:
+    they change behaviour, so they must not be silent either.
 
 Everything the table does not consume is stashed on the entry/book verbatim (`extra="allow"`), which
 is why `name`/`comment`/`depth`/`role`/`probability`/`extensions` need no per-field handling: they
@@ -38,6 +42,7 @@ rather than refuses" is one rule, not two implementations of one rule.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -68,14 +73,14 @@ _ALIASES: dict[str, tuple[str, ...]] = {
 _POSITIONS: dict[Any, tuple[str, str | None]] = {
     1: ("head", None),
     "after_char": ("head", None),
-    0: ("head", "it sat BEFORE the character definitions, and our head block sits after them"),
-    "before_char": ("head", "it sat BEFORE the character definitions, and our head block sits after them"),
-    5: ("head", "it sat at the top of the example messages"),
-    6: ("head", "it sat at the bottom of the example messages"),
-    7: ("head", "it targeted a named injection outlet, which v1 has none of"),
-    2: ("tail", "it was an author's note above the note text"),
-    3: ("tail", "it was an author's note below the note text"),
-    4: ("tail", "it was injected at a fixed depth and role in the history, both of which collapse"),
+    0: ("head", "sat BEFORE the character definitions, and our head block sits after them"),
+    "before_char": ("head", "sat BEFORE the character definitions, and our head block sits after them"),
+    5: ("head", "sat at the top of the example messages"),
+    6: ("head", "sat at the bottom of the example messages"),
+    7: ("head", "targeted a named injection outlet, which v1 has none of"),
+    2: ("tail", "sat in the author's note, above its text"),
+    3: ("tail", "sat in the author's note, below its text"),
+    4: ("tail", "sat at a fixed depth and role in the history, both of which collapse"),
 }
 
 #: Our own two positions (§6.4). A source entry whose top-level `position` is one of them was written
@@ -88,9 +93,60 @@ _OUR_POSITIONS = ("head", "tail")
 _LOGIC: dict[int, tuple[str, str | None]] = {
     0: ("and_any", None),
     2: ("not_any", None),
-    3: ("and_any", "AND-ALL (every secondary key had to hit) was approximated as AND-ANY"),
-    1: ("not_any", "NOT-ALL (only all-of-them blocked) was approximated as NOT-ANY"),
+    3: ("and_any", "used AND-ALL (every secondary key had to hit), approximated as AND-ANY"),
+    1: ("not_any", "used NOT-ALL (only all-of-them blocked), approximated as NOT-ANY"),
 }
+
+#: ST's native entry fields → their `extensions.*` names in a card book: ST's `originalWIDataKeyMap`
+#: crosswalk as R65 §5.2 lists it. Named here, in the module that speaks ST's vocabulary: the import
+#: reads the inert-feature fields through it (a card book keeps them under `extensions`), and
+#: `lorebook_export` writes a spec book's app data under the same names.
+ST_EXTENSION_NAMES: dict[str, str] = {
+    "position": "position",
+    "depth": "depth",
+    "role": "role",
+    "scanDepth": "scan_depth",
+    "caseSensitive": "case_sensitive",
+    "matchWholeWords": "match_whole_words",
+    "group": "group",
+    "groupWeight": "group_weight",
+    "groupOverride": "group_override",
+    "useGroupScoring": "use_group_scoring",
+    "probability": "probability",
+    "sticky": "sticky",
+    "cooldown": "cooldown",
+    "delay": "delay",
+    "automationId": "automation_id",
+    "vectorized": "vectorized",
+    "excludeRecursion": "exclude_recursion",
+    "preventRecursion": "prevent_recursion",
+    "delayUntilRecursion": "delay_until_recursion",
+    "outletName": "outlet_name",
+    "triggers": "triggers",
+    "ignoreBudget": "ignore_budget",
+    "matchPersonaDescription": "match_persona_description",
+    "matchCharacterDescription": "match_character_description",
+    "matchCharacterPersonality": "match_character_personality",
+    "matchCharacterDepthPrompt": "match_character_depth_prompt",
+    "matchScenario": "match_scenario",
+    "matchCreatorNotes": "match_creator_notes",
+    "displayIndex": "display_index",
+    "selectiveLogic": "selectiveLogic",
+}
+
+#: The report's count-line phrases for what an entry carries that v1 stores but does not RUN (ISS-22)
+#: — each changes how the entry behaves in the source app, so its absence here must be said. Each
+#: phrase follows "N entries" and is in the PAST tense (what the entry did in its source), which is
+#: what lets one phrase serve "1 entry" and "12 entries" alike.
+_NON_SELECTIVE = "carried secondary keys the source marks non-selective — kept as provenance only, they do not gate activation"
+_INERT_PROBABILITY = "rolled a probability below 100 — v1 does not roll, so a key hit always activates them"
+_INERT_GROUP = "belonged to an inclusion group — v1 has no groups, so every member can activate together"
+_INERT_RECURSION = "carried a recursion flag — v1 does not scan recursively, so the flag does nothing"
+_INERT_SCAN_DEPTH = "set their own scan depth — v1 scans `lorebooks.scan_depth` for every entry"
+_INERT_REGEX = "had a regex-looking key — v1 matches keys as literal text"
+
+#: ST's regex-key syntax (`parseRegexFromString`): a whole key written `/pattern/flags`.
+_REGEX_KEY = re.compile(r"^/[\s\S]+?/[gimsuy]*$")
 
 
 @dataclass(frozen=True)
@@ -104,6 +160,26 @@ class ImportedBook:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class _Report:
+    """What one book import says (ISS-22): a line per ENTRY only where it names a value the owner has
+    to go and find (a position or key logic this build does not know), and otherwise ONE count line
+    per class per book — first-seen order, so the report reads in the book's own order."""
+
+    lines: list[str] = field(default_factory=list)
+    counts: dict[str, int] = field(default_factory=dict)
+
+    def count(self, phrase: str) -> None:
+        self.counts[phrase] = self.counts.get(phrase, 0) + 1
+
+    def render(self) -> list[str]:
+        return [*self.lines, *(f"{_entries(n)} {phrase}" for phrase, n in self.counts.items())]
+
+
+def _entries(n: int) -> str:
+    return f"{n} entry" if n == 1 else f"{n} entries"
+
+
 def import_book(raw: Any, *, default_name: str = "") -> ImportedBook:
     """Map one parsed book value onto `Lorebook`. Writes nothing.
 
@@ -113,7 +189,7 @@ def import_book(raw: Any, *, default_name: str = "") -> ImportedBook:
     # shared set would silently swallow every entry's own name out of the provenance stash.
     book_read: set[str] = {"name", "description", "enabled", "entries"}
     entry_read: set[str] = set()
-    warnings: list[str] = []
+    report = _Report()
     body = _book_object(raw)
 
     raw_entries = body.get("entries")
@@ -130,9 +206,9 @@ def import_book(raw: Any, *, default_name: str = "") -> ImportedBook:
     entries: list[LorebookEntry] = []
     for index, item in enumerate(items, start=1):
         if not isinstance(item, dict):
-            warnings.append(f"entry {index} was not an object and was skipped")
+            report.lines.append(f"entry {index} was not an object and was skipped")
             continue
-        entries.append(_entry(item, index, entry_read, warnings))
+        entries.append(_entry(item, index, entry_read, report))
 
     fields: dict[str, Any] = {
         "name": _text(body.get("name")).strip() or default_name,
@@ -145,7 +221,7 @@ def import_book(raw: Any, *, default_name: str = "") -> ImportedBook:
     # Keys too (R89/E-3): both key lists pass through the same macro renderer before the scan,
     # so a literal `{{time}}` key is an entry that silently never activates.
     texts = (t for e in entries for t in (*e.keys, *e.secondary_keys, e.content))
-    warnings += unrendered_note(texts, "the lorebook's entries", LITERAL_TEXT_OR_KEY)
+    warnings = report.render() + unrendered_note(texts, "the lorebook's entries", LITERAL_TEXT_OR_KEY)
     return ImportedBook(
         book=book,
         mapped=sorted({k for k in book_read if k in body} | {k for k in entry_read if _seen(items, k)}),
@@ -174,8 +250,8 @@ def _book_object(raw: Any) -> dict[str, Any]:
     return data
 
 
-def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list[str]) -> LorebookEntry:
-    """One source entry under the alias table, with every approximation reported (§6.5)."""
+def _entry(raw: dict[str, Any], index: int, entry_read: set[str], report: _Report) -> LorebookEntry:
+    """One source entry under the alias table, with every approximation reported (§6.5, ISS-22)."""
     used: set[str] = set()
 
     def take(*names: str) -> Any:
@@ -211,6 +287,10 @@ def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list
 
     label = _text(raw.get("comment") or raw.get("name")).strip() or f"entry {index}"
 
+    # The ST integers a downgrade collapsed, recorded where ST itself keeps them (`extensions.*`) so
+    # our own export can return the original while it is still true (§15.4's importer amendment).
+    collapsed: dict[str, int] = {}
+
     # `enabled` and its inverse are read TOGETHER so a source carrying both stashes neither: the
     # spec's positive flag wins, ST's `disable` is the fallback, and absent means enabled.
     on, off = take("enabled"), take("disable")
@@ -227,16 +307,17 @@ def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list
         secondary: list[str] = []
         logic = "and_any"  # the no-gate default — nothing was read, so nothing was approximated
         if _string_list(raw.get("keysecondary")) or _string_list(raw.get("secondary_keys")):
-            warnings.append(
-                f"{label}: the source marks it non-selective, so its secondary keys were kept as "
-                f"provenance only and do not gate activation"
-            )
+            report.count(_NON_SELECTIVE)
     else:
         secondary = _string_list(take(*_ALIASES["secondary_keys"]))
-        logic = _logic(
-            take("logic"), take_ext("selectiveLogic", "selectiveLogic"), secondary, label, warnings
-        )
+        explicit_logic = take("logic")
+        selective_logic = take_ext("selectiveLogic", "selectiveLogic")
+        logic = _logic(explicit_logic, selective_logic, secondary, label, report)
+        if secondary and explicit_logic not in ("and_any", "not_any"):
+            number = None if isinstance(selective_logic, bool) else _int(selective_logic, -1)
+            _record_collapse(collapsed, "selectiveLogic", number, _LOGIC)
 
+    position = take_ext("position", "position")
     fields: dict[str, Any] = {
         "keys": _string_list(take(*_ALIASES["keys"])),
         "content": _text(take("content")),
@@ -247,23 +328,47 @@ def _entry(raw: dict[str, Any], index: int, entry_read: set[str], warnings: list
         "case_sensitive": _flag(take_ext("case_sensitive", *_ALIASES["case_sensitive"]), False),
         # ABSENT ⇒ TRUE — ST's SHIPPED default (R65 §1.2), which its own code default contradicts.
         "whole_words": _flag(take_ext("match_whole_words", *_ALIASES["whole_words"]), True),
-        "position": _position(take_ext("position", "position"), label, warnings),
+        "position": _position(position, label, report),
         "order": _int(take(*_ALIASES["order"]), 100),
         # Absent stays NULL rather than becoming a number: null MEANS "rank me by `order`" (§6.2),
         # and inventing a priority here would silently split the two ranks the author kept fused.
         "priority": _optional_int(take("priority")),
     }
+    real_int = isinstance(position, int) and not isinstance(position, bool)
+    _record_collapse(collapsed, "position", position if real_int else None, _POSITIONS)
+    for phrase in _inert_features(raw, [*fields["keys"], *fields["secondary_keys"]]):
+        report.count(phrase)
     entry_read.update(used)
     extras = {k: v for k, v in raw.items() if k not in used}
+    source_ext = raw.get("extensions")
+    if collapsed and (source_ext is None or isinstance(source_ext, dict)):
+        mirror = dict(source_ext or {})
+        for key, value in collapsed.items():
+            # The source carried none there — never overwrite its own; an explicit null is no provenance either.
+            if mirror.get(key) is None:
+                mirror[key] = value
+        extras["extensions"] = mirror
     return LorebookEntry.model_validate({**extras, **fields})
 
 
-def _position(value: Any, label: str, warnings: list[str]) -> str:
+def _record_collapse(
+    out: dict[str, int], key: str, number: int | None, table: dict[Any, tuple[str, str | None]]
+) -> None:
+    """Note `number` under `key` when it is an ST integer the downgrade `table` COLLAPSED (a row with a
+    note — an exact landing loses nothing, so there is nothing to restore). The caller passes the
+    integer exactly as its reader interpreted the source value, so only what was really collapsed is
+    ever recorded."""
+    row = table.get(number) if number is not None else None
+    if number is not None and row is not None and row[1] is not None:
+        out[key] = number
+
+
+def _position(value: Any, label: str, report: _Report) -> str:
     """The entry's position under the §6.5 downgrade rules. The source is `extensions.position`
     (ST's numeric enum — the real placement of a card-embedded entry ST wrote), else the top-level
     `position` (ST's enum or V3's strings); the caller resolves that precedence.
 
-    Every collapse is reported, per entry, naming what was lost. `head` is the default and the
+    Every collapse is counted into its class's report line (ISS-22). `head` is the default and the
     fallback for a value this build does not know: a book must import, and the head is where an
     entry we cannot place is least surprising (it is the placement §6.4 calls the default)."""
     if value is None or value in _OUR_POSITIONS:  # absent, or already ours (a re-import)
@@ -274,17 +379,17 @@ def _position(value: Any, label: str, warnings: list[str]) -> str:
     # downgrades rather than fails an import.
     known = _POSITIONS.get(value) if isinstance(value, int | str) and not isinstance(value, bool) else None
     if known is None:
-        warnings.append(
+        report.lines.append(
             f"{label}: the position {value!r} is not one this build knows — it landed at the head"
         )
         return "head"
     position, collapsed = known
     if collapsed:
-        warnings.append(f"{label}: {collapsed} — it landed at the {position}")
+        report.count(f"{collapsed} — landed at the {position}")
     return position
 
 
-def _logic(explicit: Any, selective_logic: Any, secondary: list[str], label: str, warnings: list[str]) -> str:
+def _logic(explicit: Any, selective_logic: Any, secondary: list[str], label: str, report: _Report) -> str:
     """The secondary gate's logic. Our own two values pass through (a re-import of our export);
     otherwise ST's numeric `selectiveLogic` maps per `_LOGIC`.
 
@@ -298,14 +403,45 @@ def _logic(explicit: Any, selective_logic: Any, secondary: list[str], label: str
         return "and_any"
     known = None if isinstance(selective_logic, bool) else _LOGIC.get(_int(selective_logic, -1))
     if known is None:
-        warnings.append(
+        report.lines.append(
             f"{label}: the key logic {selective_logic!r} is not one this build knows — it uses AND-ANY"
         )
         return "and_any"
     logic, approximated = known
     if approximated:
-        warnings.append(f"{label}: {approximated}")
+        report.count(approximated)
     return logic
+
+
+def _inert_features(raw: dict[str, Any], keys: list[str]) -> list[str]:
+    """The ISS-22 inert classes this source entry carries — read wherever the source keeps them: ST's
+    standalone export at the top level, a card book ST wrote under `extensions` (its crosswalk names).
+    Each class counts once per entry."""
+    ext = raw.get("extensions")
+    ext = ext if isinstance(ext, dict) else {}
+
+    def read(st_name: str) -> Any:
+        top = raw.get(st_name)
+        return top if top is not None else ext.get(ST_EXTENSION_NAMES.get(st_name, st_name))
+
+    out: list[str] = []
+    probability, rolls = read("probability"), read("useProbability")
+    if _number(probability) and probability < 100 and rolls is not False:
+        out.append(_INERT_PROBABILITY)
+    if isinstance(read("group"), str) and read("group").strip():
+        out.append(_INERT_GROUP)
+    if any(read(f) for f in ("excludeRecursion", "preventRecursion", "delayUntilRecursion")):
+        out.append(_INERT_RECURSION)
+    if _number(read("scanDepth")):
+        out.append(_INERT_SCAN_DEPTH)
+    if any(_REGEX_KEY.match(k) for k in keys):
+        out.append(_INERT_REGEX)
+    return out
+
+
+def _number(value: Any) -> bool:
+    """A JSON number (never a bool, which Python calls an int)."""
+    return isinstance(value, int | float) and not isinstance(value, bool)
 
 
 def _flag(value: Any, default: bool) -> bool:

@@ -123,28 +123,9 @@ class FileMemoryProvider:
         return True
 
     def _agent_memory_dir(self, agent: AgentDef) -> Path:
-        """A specialist's memory directory, resolved **relative to** the memory-dir root. An absolute or
-        `..`-escaping `AgentDef.memory_dir` is rejected → the safe default `agents/<slug>`, so every
-        memory file stays inside the one repo (D26 #2). Same fallback when it overlaps an active Core
-        Memory corpus root (D57): `memory_dir` makes the reserved tier-1 set dynamic, so the corpus's
-        static root validation can't see it — this side yields instead, else one agent's `MEMORY.md`
-        could double as the tier-2 index."""
-        root = self._settings.memories_dir_path()
-        rel = getattr(agent, "memory_dir", None) or f"agents/{agent.name}"
-        sub = root / rel
-        try:
-            resolved = sub.resolve()
-            if not resolved.is_relative_to(root.resolve()):
-                return root / "agents" / agent.name
-        except OSError:
-            return root / "agents" / agent.name
-        if self._settings.memory.longterm.backend == "core":
-            core_root, _why = core_memory.validated_root(self._settings)
-            if core_root is not None and (
-                resolved.is_relative_to(core_root) or core_root.is_relative_to(resolved)
-            ):
-                return root / "agents" / agent.name
-        return sub
+        """A specialist's memory directory — `agent_memory_dir` (the module-level resolver), so the
+        provider and every other reader (the agent delete, S9 / ISS-24) resolve it the same way."""
+        return agent_memory_dir(self._settings, agent)
 
     def load_context(
         self,
@@ -350,6 +331,34 @@ class FileMemoryProvider:
             stored = await asyncio.to_thread(_overwrite_file, path, content)
             await self._backup.commit([path], _commit_msg(agent, spec.filename, "overwrite"))
         return stored
+
+
+def agent_memory_dir(settings: Settings, agent: AgentDef) -> Path:
+    """A specialist's memory directory, resolved **relative to** the memory-dir root. An absolute or
+    `..`-escaping `AgentDef.memory_dir` is rejected → the safe default `agents/<slug>`, so every
+    memory file stays inside the one repo (D26 #2). Same fallback when it overlaps an active Core
+    Memory corpus root (D57): `memory_dir` makes the reserved tier-1 set dynamic, so the corpus's
+    static root validation can't see it — this side yields instead, else one agent's `MEMORY.md`
+    could double as the tier-2 index.
+
+    Module-level (S9 review F7) because it is a pure function of settings + the agent: the provider
+    delegates to it, and the agent delete removes exactly the directory it names."""
+    root = settings.memories_dir_path()
+    rel = getattr(agent, "memory_dir", None) or f"agents/{agent.name}"
+    sub = root / rel
+    try:
+        resolved = sub.resolve()
+        if not resolved.is_relative_to(root.resolve()):
+            return root / "agents" / agent.name
+    except OSError:
+        return root / "agents" / agent.name
+    if settings.memory.longterm.backend == "core":
+        core_root, _why = core_memory.validated_root(settings)
+        if core_root is not None and (
+            resolved.is_relative_to(core_root) or core_root.is_relative_to(resolved)
+        ):
+            return root / "agents" / agent.name
+    return sub
 
 
 def migrate_legacy_specialist_memory(settings: Settings) -> int:

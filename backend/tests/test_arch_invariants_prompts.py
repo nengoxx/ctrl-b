@@ -111,8 +111,12 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         # adds to its report when it lands an embedded book. Every one is a sentence about what THIS
         # import did, written for the owner reading the report; no model sees any of them.
         ("app/api/agent.py", "_import_agent_card"),
-        ("app/services/agent/lorebook_import.py", "<module>"),
-        ("app/services/agent/lorebook_import.py", "_entry"),
+        # S9 / ISS-22 turned the per-entry lines into per-book COUNT lines: the count phrases are
+        # module constants now (the position table's own phrases shrank under the threshold).
+        ("app/services/agent/lorebook_import.py", "_NON_SELECTIVE"),
+        ("app/services/agent/lorebook_import.py", "_INERT_PROBABILITY"),
+        ("app/services/agent/lorebook_import.py", "_INERT_GROUP"),
+        ("app/services/agent/lorebook_import.py", "_INERT_RECURSION"),
         # R87 (RP-6): one more line of those same reports — a Character's Note v1 has no slot for.
         # It tells the OWNER what the import could not honour; it is never sent to a model.
         ("app/services/agent/card_import.py", "_depth_prompt_note"),

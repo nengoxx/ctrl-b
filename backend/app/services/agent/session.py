@@ -106,7 +106,7 @@ from app.services.agent.core_memory import CORE_MEMORY_TOOL, CoreMemoryCorpus, R
 from app.services.agent.core_memory_tool import RECALL_RECEIPT, is_recall_call
 from app.services.agent.examples import example_messages
 from app.services.agent.exec import run_user_exec
-from app.services.agent.lorebooks import Haystack, active_slugs, block, load_books, scan
+from app.services.agent.lorebooks import Haystack, active_slugs, block, load_books, scan, spoken
 from app.services.agent.macros import Macros, macros_for
 from app.services.agent.persona import resolve_persona
 from app.services.agent.prompts import resolve
@@ -149,6 +149,11 @@ DEFAULT_SYSTEM_PROMPT = (
 #: ruling 5). A map rather than an f-string: the ids are registry keys, so the set of legal duties
 #: values and the prompts that back them are stated in one place.
 _DUTIES_PROMPTS = {"agent": "duties_agent", "conversational": "duties_conversational"}
+
+#: The tool inputs that name a fleet target — `HostTargetInput.host_id` / `ServiceTargetInput.service_id`
+#: (`services/actions/_common.py`). The fleet roster exists to resolve these, so it rides a turn only
+#: when a tool in that turn's toolset takes one (ISS-26 (ii), `_takes_a_fleet_id`).
+_FLEET_ID_INPUTS = frozenset({"host_id", "service_id"})
 
 #: Every agent invocation is audited as `Actor.AGENT`; the privilege (which decides gating) is now
 #: per-`AgentDef` (4.5) — `CONFIRM` (the default agent's) auto-runs low-risk tools while med/high
@@ -767,6 +772,10 @@ class AgentSession:
         services = self._settings.services()
         if not hosts and not services:
             return None
+        # ISS-26 (ii): only an agent that can ACT on an id needs the id map. A character on
+        # `roleplay.default_tools` holds none, and the roster was tool-agent text in its head.
+        if not self._takes_a_fleet_id():
+            return None
         # The heading is the `fleet_roster` registry prompt; the rows below are this feature's data,
         # concatenated after it (L-8) — an override reframes the map, it cannot drop hosts.
         lines = [resolve("fleet_roster", self._settings, stamps=self._stamps)]
@@ -780,6 +789,26 @@ class AgentSession:
             lines.append("Services:")
             lines += [f"- {s.name} on {s.host_id} -> service_id: {s.id}" for s in services]
         return "\n".join(lines)
+
+    def _takes_a_fleet_id(self) -> bool:
+        """Whether THIS turn's effective toolset holds a tool that takes a `host_id`/`service_id` —
+        the inputs the roster exists to resolve (`services/actions/_common.py`'s target models).
+
+        The predicate maintains itself (Opus F8): it reads each tool's own input schema — the
+        pydantic model's fields, or an MCP tool's native `raw_schema.properties` — through the same
+        `for_agent(self._tool_allow, self._hidden_tools)` every other turn-level gate uses
+        (`_longterm_available`'s pattern), so a new id-taking tool, a skill's narrowing and a
+        disabled feature are all accounted for with no name list to keep in step."""
+        for tool in self._actions.registry.for_agent(self._tool_allow, self._hidden_tools):
+            spec = tool.spec
+            if spec.raw_schema is not None:
+                props = spec.raw_schema.get("properties")
+                names = set(props) if isinstance(props, dict) else set()
+            else:
+                names = set(spec.input_model.model_fields)
+            if names & _FLEET_ID_INPUTS:
+                return True
+        return False
 
     def _tools(self) -> list[dict]:
         """The OpenAI toolset for this turn — `agent_tools()` narrowed to the effective allowlist
@@ -876,12 +905,17 @@ class AgentSession:
         books = await asyncio.to_thread(load_books, self._settings.lorebooks_dir_path(), slugs)
         if not books:
             return
-        texts = [user_text]
+        macros = self._macros()
+
+        def row(role: str, text: str) -> str:
+            return spoken(role, text, macros, include_names=cfg.include_names)
+
+        texts = [row("user", user_text)]
         if cfg.scan_depth or resume:
             history = await self._messages.list(thread.id, include_compacted=False)
             rows = [(m.role, m.text()) for m in history if m.role in ("user", "assistant")]
             if not resume:
-                prior = [t for _, t in rows if t]
+                prior = [row(role, t) for role, t in rows if t]
                 texts += prior[-cfg.scan_depth :]
             else:
                 # The resume path's anchor rule (see the docstring). The anchor is the last
@@ -894,10 +928,10 @@ class AgentSession:
                 # BYTE-FOR-BYTE across the suspend, newline-adjacent matching included. With no
                 # user row at all, `len(rows)` degrades to an empty incoming over the plain tail.
                 anchor = next((i for i in reversed(range(len(rows))) if rows[i][0] == "user"), len(rows))
-                before = [t for _, t in rows[:anchor] if t]
-                incoming = rows[anchor][1] if anchor < len(rows) else ""
+                before = [row(role, t) for role, t in rows[:anchor] if t]
+                incoming = row("user", rows[anchor][1]) if anchor < len(rows) else ""
                 texts = [incoming, *(before[-cfg.scan_depth :] if cfg.scan_depth else [])]
-        head, tail = scan(books, Haystack.of(texts), self._macros(), budget_chars=cfg.budget_chars)
+        head, tail = scan(books, Haystack.of(texts), macros, budget_chars=cfg.budget_chars)
         if not (head or tail):
             return  # a scan miss costs nothing — not even the framing's stamp (the `_core_index_block` rule)
         intro = resolve("lorebook_intro", self._settings, stamps=self._stamps)

@@ -41,6 +41,7 @@ from ruamel.yaml.tokens import CommentToken
 
 from app.core.media import MEDIA_NAMESPACES, MediaItem, MediaPin, is_addressable_name
 from app.core.pwa import PWA_ICON_VARIANTS
+from app.core.skills import valid_skill_slug
 from app.domain.agent import AgentDef, CompactionCfg, ModelRef
 from app.domain.enums import OSType, Risk
 from app.domain.host import Host
@@ -2053,6 +2054,9 @@ class LorebooksCfg(BaseModel):
       upload here uses (`CardImportCfg`). A book is JSON the owner exported from another app, so it
       is bounded by the same reasoning a card is: read one byte past the limit, never materialise
       the excess.
+    - `include_names`: scan each chat row as `"<speaker>: <text>"` (ST's `world_info_include_names`,
+      default on — ISS-27 (b)), so a key naming a speaker fires on that speaker's lines. Off scans
+      the bare text, as before S9.
 
     Additive with defaults ⇒ no config migration (the D68 precedent); `extra="allow"` so a config
     written by a later slice round-trips through this build."""
@@ -2063,6 +2067,7 @@ class LorebooksCfg(BaseModel):
     scan_depth: int = Field(default=2, ge=0)
     budget_chars: int = Field(default=4000, gt=0)
     max_import_bytes: int = Field(default=15_000_000, gt=0)
+    include_names: bool = True
 
 
 class Settings(BaseModel):
@@ -2455,7 +2460,11 @@ class Settings(BaseModel):
 
     def list_agent_names(self) -> list[str]:
         """Specialist agent names — each subdir of `agents/` carrying an `agent.yaml` or `SOUL.md`
-        (a valid slug). Sorted for stable ordering. The default/root agent is not listed here."""
+        (a valid slug). Sorted for stable ordering. The default/root agent is not listed here.
+
+        "Valid" is the grammar agent folders are MINTED and addressed under (`valid_skill_slug`, which
+        `_agent_folder` and the card import's mint both use — it admits `_`), never the hosts rule
+        `_slug`, which rewrites `_` to `-` and so hid an imported `a_b` character (ISS-29)."""
         d = self.agents_dir_path()
         if not d.is_dir():
             return []
@@ -2463,7 +2472,7 @@ class Settings(BaseModel):
             p.name
             for p in d.iterdir()
             if p.is_dir()
-            and _slug(p.name) == p.name
+            and valid_skill_slug(p.name)
             and ((p / "agent.yaml").is_file() or (p / "SOUL.md").is_file())
         ]
         return sorted(out)

@@ -22,10 +22,16 @@ vi.mock("../../src/api/client", async (importActual) => {
   return { ...actual, getJSON: h.get, putJSON: h.put, putBytes: h.putBytes, del: h.del };
 });
 vi.mock("../../src/store/toast", () => ({ pushToast: h.toast }));
+const downloads = vi.hoisted(() => [] as { name: string; value: unknown }[]);
+vi.mock("../../src/lib/download", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/lib/download")>()),
+  downloadJson: (name: string, value: unknown) => downloads.push({ name, value }),
+}));
 
 import {
   newLorebookEntry,
   useDeleteLorebook,
+  useExportLorebook,
   useImportLorebook,
   useSaveLorebook,
 } from "../../src/hooks/useRoleplay";
@@ -136,5 +142,31 @@ describe("newLorebookEntry", () => {
     const b = newLorebookEntry();
     a.keys.push("ghostship");
     expect(b.keys).toEqual([]);
+  });
+});
+
+// D79 / §15.4 — the export is a READ of the server's ST-dialect object, downloaded verbatim under the
+// book's display name through the shared sanitizer (the extension passed in, so a dotted name survives).
+describe("useExportLorebook", () => {
+  it("GETs the export route and downloads the object as <book name>.json", async () => {
+    downloads.length = 0;
+    const st = { entries: { "0": { key: ["ghostship"], content: "fog" } }, name: "Hollow Sea" };
+    h.get.mockResolvedValue(st);
+    const { result } = renderHook(() => useExportLorebook(), { wrapper });
+    result.current.mutate({ slug: "hollow-sea", name: "St. Elmo's Sea" });
+    await waitFor(() => expect(downloads).toHaveLength(1));
+    expect(h.get).toHaveBeenCalledWith("/api/lorebooks/hollow-sea/export");
+    expect(downloads[0]).toEqual({ name: "St. Elmo's Sea.json", value: st });
+    expect(h.toast).not.toHaveBeenCalled();
+  });
+
+  it("a failed read toasts and downloads nothing", async () => {
+    downloads.length = 0;
+    h.get.mockRejectedValue(new Error("/api/lorebooks/x/export → 404 Not Found"));
+    const { result } = renderHook(() => useExportLorebook(), { wrapper });
+    result.current.mutate({ slug: "x", name: "X" });
+    await waitFor(() => expect(h.toast).toHaveBeenCalled());
+    expect(h.toast.mock.calls[0]).toEqual(["/api/lorebooks/x/export → 404 Not Found", "err"]);
+    expect(downloads).toEqual([]);
   });
 });

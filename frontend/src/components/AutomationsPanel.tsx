@@ -4,7 +4,7 @@ import { NumField } from "./NumField";
 import { XIcon } from "./icons";
 import { Seg } from "./Seg";
 import { Switch } from "./Switch";
-import { useAgentList } from "../hooks/useAgents";
+import { useAgentRoster } from "../hooks/useAgents";
 import {
   draftOf,
   fmtWhen,
@@ -365,7 +365,7 @@ function AutomationSheet({ doc, automation, onClose }: SheetProps) {
   const triggerRef = useRef<HTMLElement | null>(null);
   const [draft, setDraft] = useState<AutomationDraft>(() => draftOf(automation));
   const [invalid, setInvalid] = useState<Set<string>>(new Set());
-  const { data: agentList } = useAgentList();
+  const { data: agentList } = useAgentRoster();
   const create = useCreateAutomation();
   const update = useUpdateAutomation();
   const remove = useDeleteAutomation();

@@ -412,7 +412,7 @@ export function useUI(): UIState {
  */
 export function useTabActive(tab: Tab | readonly Tab[]): boolean {
   // ONE surface, two arities (D70 §10-S4): the agents gallery reads the same Conf-scoped data the Conf
-  // tab does — the settings doc, the agent list, the skills, the media index — so those queries are
+  // tab does — the settings doc, the skills, the media index — so those queries are
   // scoped to a SET of sections rather than to one. An array is compared by membership; the selector
   // still yields a boolean, so subscribers re-render exactly as before.
   return useUISlice((s) => (typeof tab === "string" ? s.tab === tab : tab.includes(s.tab)));

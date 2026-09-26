@@ -1,8 +1,15 @@
+import { useMutation } from "@tanstack/react-query";
 import { useMemo } from "react";
 
+import { getJSON, postBlob } from "../api/client";
+import { downloadBlob, downloadJson, downloadName } from "../lib/download";
+import { paintFallbackTile, readTilePaint, tileInitial } from "../lib/fallbackTile";
 import type { FocalArt } from "../lib/focalPosition";
+import { exportImage, type ExportBounds } from "../lib/imageExport";
 import { orderedUsable, revUrl } from "../lib/media";
 import { artFocal, entryId, rowId, shown } from "../lib/mediaLibrary";
+import { pushToast } from "../store/toast";
+import { MEDIA_NS } from "../theme-engine/mediaRegistry";
 import { DEFAULT_AGENT, useAgentRoster, type AgentSummary } from "./useAgents";
 import { useMediaIndex, type MediaFile, type MediaIndex } from "./useMedia";
 
@@ -95,4 +102,77 @@ export function useAgentArt(): (name: string | null) => AgentArt {
       return resolveAgentArt(target, roster?.summaries?.[target], index);
     };
   }, [roster, index]);
+}
+
+// ── THE CARD EXPORT (D79 / ROLEPLAY_PLAN §15.3) ──────────────────────────────────────────────────────
+//
+// The two halves are split by what each end owns: the SERVER composes the card (the fields, the
+// executable strip, the `chara`/`ccv3` chunk write — everything security-relevant), the CLIENT owns the
+// PIXELS. The backend has no image codec by policy (D65), and a bound avatar is WebP/JPEG as often as
+// PNG, so the app re-encodes the picture it already displays through its one canvas chokepoint
+// (`lib/imageExport`) and POSTs it as the carrier. It lives HERE because the carrier IS this module's
+// question — "what does this agent look like" — and the resolver above is what answers it.
+
+/** The avatars role's own export bound (FULL_ART, 4 MP) — read off the registry rather than restated,
+ *  so the card carrier and an avatar upload can never be capped differently. PNG takes no quality
+ *  step-down, so its byte half is advisory only (`overBudget`). */
+function avatarBounds(): ExportBounds {
+  return MEDIA_NS[AGENTS_NS].roles[AVATARS_ROLE].bounds;
+}
+
+/** The picture a card is carried in, as PNG bytes (§15.3, "the carrier call, pinned").
+ *
+ *  With an avatar: the bound file off its same-origin mount URL (so the canvas is never tainted), drawn
+ *  WHOLE — the focal point and zoom are display settings, not card pixels — through `exportImage` with
+ *  the type FORCED to PNG (the export policy never picks PNG on its own, and the server answers a
+ *  non-PNG carrier with a 415). The rect is unbounded and clamped to the DECODED size inside the
+ *  export, so EXIF orientation is already applied when it is measured.
+ *
+ *  Without one (never bound, or bound to an entry the owner switched off / the server cannot read): the
+ *  gallery's own letter tile, painted on the main thread (`lib/fallbackTile`) — ST needs an image, and a
+ *  1×1 would be a broken card. */
+export async function cardCarrier(art: Pick<AgentArt, "title" | "avatar">): Promise<Blob> {
+  if (art.avatar === undefined) return paintFallbackTile(tileInitial(art.title), readTilePaint());
+  const res = await fetch(art.avatar.url);
+  if (!res.ok) throw new Error(`the avatar could not be read (${res.status} ${res.statusText})`);
+  const file = await res.blob();
+  const out = await exportImage({
+    file,
+    // The type is FORCED below, so the source's own format decides nothing here.
+    sourceFormat: null,
+    // The WHOLE picture, in the DECODED (already EXIF-oriented) space the export's rect lives in: an
+    // unbounded rect that `clampRect` cuts to the decoded size — the attachments precedent
+    // (`lib/attachments.ts`). A size read off the file HEADER would be the pre-rotation one, and a
+    // rotated JPEG would come out cropped.
+    rect: { x: 0, y: 0, width: Number.MAX_SAFE_INTEGER, height: Number.MAX_SAFE_INTEGER },
+    bounds: avatarBounds(),
+    override: { type: "image/png" },
+  });
+  return out.blob;
+}
+
+/** Which file an export produces. */
+export type CardFormat = "png" | "json";
+
+/** Export one agent as a SillyTavern-compatible card — the PNG (the carrier + the server's two `tEXt`
+ *  chunks) or the bare V3 JSON. `name` may be the root (`default`): the root agent is a character too.
+ *
+ *  The server composes from DISK, so this exports the SAVED character — the editor disables the control
+ *  while its form is dirty. The filename is the agent's display name (its title, else its slug); the
+ *  server returns bytes only and the client names the blob, so no `Content-Disposition` exists. */
+export function useExportCard(name: string) {
+  const art = useAgentArt()(name);
+  const mutation = useMutation({
+    mutationFn: async (format: CardFormat) => {
+      const path = `/api/agents/${encodeURIComponent(name)}/card`;
+      if (format === "json") {
+        downloadJson(downloadName(art.title, ".json"), await getJSON<unknown>(path));
+        return;
+      }
+      const carrier = await cardCarrier(art);
+      downloadBlob(downloadName(art.title, ".png"), await postBlob(`${path}.png`, carrier));
+    },
+    onError: (e: Error) => pushToast(e.message || "Export failed", "err"),
+  });
+  return { exportCard: mutation.mutate, pending: mutation.isPending };
 }

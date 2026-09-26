@@ -31,7 +31,7 @@ import { listAudioInputs, type MicDevice } from "../lib/pcmCapture";
 import {
   DEFAULT_AGENT,
   pickAgentSection,
-  useAgentList,
+  useAgentRoster,
   type AgentSectionCfg,
 } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
@@ -1232,7 +1232,7 @@ export function ConfTab({ active }: Props) {
   // The hosted gallery's header count — the SAME `["agents"]` query the gallery itself reads (TanStack
   // dedupes it), so the collapsed group can't disagree with the grid inside it. The default agent always
   // exists and is not in the list route's array, hence the +1 (the gallery's own rule).
-  const { data: agentList } = useAgentList();
+  const { data: agentList } = useAgentRoster();
   const agentCount = 1 + (agentList?.agents ?? []).filter((n) => n !== DEFAULT_AGENT).length;
   const skillNames = skillList.map((s) => s.name);
 

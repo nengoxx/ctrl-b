@@ -84,7 +84,10 @@ def _scripted_ping(build):
 
 
 def _sh(script: str):
-    return lambda ip, count, timeout_s: ["sh", "-c", script]
+    """A scripted command with the REAL deadline `_ping_cmd` computes for these arguments (ISS-15: the
+    deadline lives beside the syntax), so the deadline arithmetic stays under test."""
+    real = fleet._ping_cmd
+    return lambda ip, count, timeout_s: (["sh", "-c", script], real(ip, count, timeout_s)[1])
 
 
 def test_a_three_echo_probe_that_gets_no_reply_is_offline_not_an_error() -> None:
@@ -134,9 +137,9 @@ def test_the_fleet_sweep_is_unchanged_by_the_extraction() -> None:
     not have quietly shared the tuning: three echoes per host would triple the fleet's ICMP."""
     asked: list[tuple[str, int, float]] = []
 
-    def build(ip: str, count: int, timeout_s: float) -> list[str]:
+    def build(ip: str, count: int, timeout_s: float) -> tuple[list[str], float]:
         asked.append((ip, count, timeout_s))
-        return ["sh", "-c", "exit 1"]
+        return ["sh", "-c", "exit 1"], 2.0
 
     host = Host(id="alpha", name="alpha", ip="10.0.0.1", os_type=OSType.LINUX)
     with _scripted_ping(build):

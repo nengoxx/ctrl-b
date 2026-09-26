@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Seg } from "./Seg";
 import { SettingRow } from "./SettingRow";
 import { Switch } from "./Switch";
-import { useAgentList, pickAgentSection, type AgentSectionCfg } from "../hooks/useAgents";
+import { useAgentRoster, pickAgentSection, type AgentSectionCfg } from "../hooks/useAgents";
 import { useSaveSettings } from "../hooks/useSettings";
 import { numOrKeep } from "../lib/num";
 import { useRegisterDirty } from "../store/dirty";
@@ -37,7 +37,7 @@ function pickGlobals(c: AgentSectionCfg) {
 }
 
 export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
-  const { data: list } = useAgentList();
+  const { data: list } = useAgentRoster();
   const saveSettings = useSaveSettings();
   // v1.3.1 Codex verify round — the globals save gets its OWN mutation instance: a second `mutate()`
   // on a shared instance DETACHES the first call's observer (TanStack mutationObserver semantics — the

@@ -152,6 +152,22 @@ def _resolve_prompt_entries(patch: dict[str, Any], current: Settings) -> None:
     patch["prompts"] = out
 
 
+#: Every settings map a dedicated router OWNS, as `(path, that router)` — the one list the generic PUT
+#: refuses (ISS-30). `roleplay.personas` (D78, `api/personas.py`) and `computers` (`api/hosts.py`).
+ROUTER_OWNED: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("roleplay", "personas"), "/api/personas"),
+    (("computers",), "/api/hosts"),
+)
+
+
+def _patch_names(patch: dict[str, Any], path: tuple[str, ...]) -> bool:
+    """Whether `patch` carries the key at `path` (every step but the last a nested mapping)."""
+    node: Any = patch
+    for key in path[:-1]:
+        node = node.get(key) if isinstance(node, dict) else None
+    return isinstance(node, dict) and path[-1] in node
+
+
 @router.put("/settings")
 async def put_settings(patch: dict[str, Any], request: Request) -> dict[str, Any]:
     """Apply a partial settings patch. Deep-merges onto the current config, preserves unchanged
@@ -188,17 +204,16 @@ async def put_settings(patch: dict[str, Any], request: Request) -> dict[str, Any
     if "tool_overrides" in patch and request.app.state.turns:
         raise HTTPException(status_code=409, detail="agent is busy — try again in a moment")
 
-    # D78 / the S8 code round's F1: the persona LIBRARY is a map a deep-merge can only ADD to, so a
-    # client echoing a stale `roleplay.personas` through here would resurrect a persona deleted through
-    # its own router (`api/personas.py` — the `deep_merge` house rule: a map section rides a dedicated
-    # endpoint, never this merge). Refused loudly rather than dropped: a client that sends it has a bug
-    # worth seeing. `computers` is the same class behind `api/hosts.py`, but the generic PUT still
-    # admits it — the test corpus seeds hosts through it (ISS-30).
-    if isinstance(patch.get("roleplay"), dict) and "personas" in patch["roleplay"]:
-        raise HTTPException(
-            status_code=422,
-            detail="roleplay.personas is edited through /api/personas, not the settings patch",
-        )
+    # D78 / the S8 code round's F1, widened by ISS-30: a ROUTER-OWNED map is one a deep-merge can only
+    # ADD to, so a client echoing a stale copy through here would resurrect an item deleted through its
+    # own router (the `deep_merge` house rule: a map section rides a dedicated endpoint, never this
+    # merge). Refused loudly rather than dropped: a client that sends one has a bug worth seeing.
+    for path, router_path in ROUTER_OWNED:
+        if _patch_names(patch, path):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{'.'.join(path)} is edited through {router_path}, not the settings patch",
+            )
 
     # Appearance writes are server-stamped LWW (§9.11): stamp `updated_at` on the server's own clock so
     # cross-device order is unambiguous (no client clocks). Stamp the PATCH (not just the live object) so

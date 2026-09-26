@@ -79,6 +79,12 @@ vi.mock("../../src/hooks/useSettings", () => ({
 }));
 // The art rows' library + job machine (D70 §8.2). Empty: no `agents` index in this harness, which is
 // the fresh-install state, and no roleplay field renders under the predicate above anyway.
+// D79 — the footer's card EXPORT reads the agent-art resolver (roster × media index) through real
+// queries this suite blanket-mocks away; the export itself is pinned in agentsEditorS9.test.tsx.
+vi.mock("../../src/hooks/useAgentArt", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/useAgentArt")>()),
+  useExportCard: () => ({ exportCard: vi.fn(), pending: false }),
+}));
 vi.mock("../../src/hooks/useMediaLibrary", () => ({
   useMediaLibrary: () => ({ sections: [], write: { append: vi.fn() }, ready: false }),
 }));
@@ -95,7 +101,7 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => {
   const actual = await importActual<typeof import("../../src/hooks/useAgents")>();
   return {
     ...actual,
-    useAgentList: () => ({ data: { agents: [], default: "default" } }),
+    useAgentRoster: () => ({ data: { agents: [], default: "default" } }),
     useAgent: () => ({
       data: h.cloneDetail ? structuredClone(agentDetail) : agentDetail,
       isLoading: false,

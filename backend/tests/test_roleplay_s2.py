@@ -912,7 +912,7 @@ def test_an_empty_card_field_is_absent_from_the_file(home: Path) -> None:
     provenance the export seam needs and therefore not "nothing"."""
     with make_client() as c:
         imported(c, json.dumps({"name": "nyx", "description": "d"}).encode("utf-8"))
-    assert set(agent_yaml(home, "nyx")) == {"duties", "tools"}
+    assert set(agent_yaml(home, "nyx")) == {"duties", "tools", "skills"}  # skills: [] — ISS-26 (i)
     assert "title" not in agent_yaml(home, "nyx")  # the name IS the slug here
 
 

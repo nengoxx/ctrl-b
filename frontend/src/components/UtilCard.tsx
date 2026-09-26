@@ -14,6 +14,7 @@ import { ModeSeg } from "./ModeSeg";
 import { agentModeOf } from "../hooks/useActions";
 import { runTool } from "../hooks/useTools";
 import { useSaveToolOverrides } from "../hooks/useToolOverrides";
+import { downloadJson } from "../lib/download";
 import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
 import type { AgentMode, ToolResult, UtilTool } from "../types";
@@ -23,16 +24,6 @@ interface SchemaProp {
   title?: string;
   description?: string;
   default?: unknown;
-}
-
-function downloadJson(filename: string, content: unknown): void {
-  const blob = new Blob([JSON.stringify(content, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 /** Render a tool's `data` (minus the download payload) as kv rows; skips null/empty. */

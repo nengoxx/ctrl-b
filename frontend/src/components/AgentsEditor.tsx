@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { useExportCard, type CardFormat } from "../hooks/useAgentArt";
 import { useProviders, useSaveSettings, useSettings } from "../hooks/useSettings";
 import { personaChoices, personaLabel, personaOf, pickRoleplay } from "../hooks/useRoleplay";
 import {
@@ -222,6 +223,24 @@ function AgentFieldsForm(props: {
   const rp = pickRoleplay(settings?.roleplay);
   const rpShow = (v: unknown) => roleplayFieldVisible(rp.enabled, v);
 
+  // ISS-23 (D79 / ROLEPLAY_PLAN §15.6) — THE DUTIES FLIP seeds a character's tools. Flipping an agent
+  // to `conversational` while its tools are still the wildcard sets the DRAFT's tools to
+  // `roleplay.default_tools` (the knob the card import writes) — visible in the grid below and
+  // editable before save. Three guards, each load-bearing:
+  //  · TRANSITION-ONLY — the act of making a character, never the state of being one: a character
+  //    already sitting at "*" is not rewritten behind the owner's back (and re-tapping Talk is no flip);
+  //  · never over an EXPLICIT list — the owner already chose;
+  //  · never on the DEFAULT agent's form — its save lands in `agent.defaults`, which every specialist
+  //    inherits, so one tap would narrow the whole install's tools.
+  const pickDuties = (v: "agent" | "conversational") => {
+    const seed =
+      v === "conversational" &&
+      a.duties !== "conversational" &&
+      a.tools === "*" &&
+      !props.isDefault;
+    set(seed ? { duties: v, tools: [...rp.default_tools] } : { duties: v });
+  };
+
   // D78 — the persona LINK, on the agent. NOT behind `rpShow`: a persona is who the owner is to ANY
   // agent (the owner, 2026-09-26: "regardless of the agent, the persona doesn't necessarily have to be
   // for roleplay"), so the picker shows whenever there is something to pick — a non-empty library — OR
@@ -266,7 +285,7 @@ function AgentFieldsForm(props: {
         <Seg<"agent" | "conversational">
           label="Duties"
           current={a.duties === "conversational" ? "conversational" : "agent"}
-          onPick={(v) => set({ duties: v })}
+          onPick={pickDuties}
           options={[
             { val: "agent", label: "Agent" },
             { val: "conversational", label: "Talk" },
@@ -609,7 +628,6 @@ export function AgentRow(props: {
         {
           onSuccess: () => {
             void qc.invalidateQueries({ queryKey: ["agent", name] });
-            void qc.invalidateQueries({ queryKey: ["agentlist"] });
           },
         },
       );
@@ -621,7 +639,11 @@ export function AgentRow(props: {
   const onRemove = async () => {
     const ok = await requestConfirm({
       title: `Remove agent ${draft?.title || name}?`,
-      body: "Deletes its folder (agent.yaml, SOUL.md, memories).",
+      // ISS-24 (D79 / §15.6) — the truth, stated before: the folder and its DEFAULT memory folder go
+      // (a custom `memory_dir` is left, and the report names it); the lorebooks and art it uses are
+      // LIBRARY content and stay (a delete never cascades, owner); an automation pinned to it breaks,
+      // and the delete's report names those in its toast.
+      body: "Deletes its folder (agent.yaml, SOUL.md) and its memory folder. The lorebooks and art it uses are kept. An automation pinned to it stops working — the report names any.",
       confirmLabel: "remove",
       danger: true,
     });
@@ -630,6 +652,25 @@ export function AgentRow(props: {
 
   const saving = saveAgent.isPending || saveSettings.isPending;
   const titleLabel = (draft?.title || detail?.agent.title || "").trim() || name;
+
+  // D79 — the card EXPORT (ROLEPLAY_PLAN §15.3). The server composes the card from DISK, so it exports
+  // the SAVED character: while the form is dirty the control says "save first" and does nothing. It
+  // opens IN PLACE — the footer's own buttons swap to the two formats — rather than as a popover over
+  // the form: no new overlay primitive, and a phone-width row of three is what this footer already is.
+  // The chooser is rendered only while the draft is clean, so an edit made with it open falls back to
+  // "save first" instead of exporting the stale file.
+  const { exportCard, pending: exporting } = useExportCard(name);
+  const [choosing, setChoosing] = useState(false);
+  const showChoice = choosing && !dirty;
+  const firstChoice = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // The button that opened the chooser has just unmounted — hand focus to the first format.
+    if (showChoice) firstChoice.current?.focus();
+  }, [showChoice]);
+  const pickFormat = (format: CardFormat) => {
+    setChoosing(false);
+    exportCard(format);
+  };
 
   return (
     <div className={"mwrap" + (props.open ? " open" : "")}>
@@ -664,21 +705,54 @@ export function AgentRow(props: {
                 onChange={setDraft}
                 onSaveSoul={(content) => saveSoul.mutate({ name, content })}
               />
-              <div className="mfoot">
-                {!isDefault && (
+              {showChoice ? (
+                <div
+                  className="mfoot"
+                  role="group"
+                  aria-label="Export as"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setChoosing(false);
+                  }}
+                >
+                  <button type="button" onClick={() => setChoosing(false)}>
+                    cancel
+                  </button>
+                  <button type="button" ref={firstChoice} onClick={() => pickFormat("png")}>
+                    PNG card
+                  </button>
+                  <button type="button" onClick={() => pickFormat("json")}>
+                    JSON card
+                  </button>
+                </div>
+              ) : (
+                <div className="mfoot">
+                  {!isDefault && (
+                    <button
+                      type="button"
+                      className="danger"
+                      disabled={delAgent.isPending}
+                      onClick={onRemove}
+                    >
+                      remove
+                    </button>
+                  )}
                   <button
                     type="button"
-                    className="danger"
-                    disabled={delAgent.isPending}
-                    onClick={onRemove}
+                    disabled={dirty || exporting}
+                    onClick={() => setChoosing(true)}
                   >
-                    remove
+                    {exporting ? "exporting…" : dirty ? "save first" : "export"}
                   </button>
-                )}
-                <button type="button" className="save" disabled={!dirty || saving} onClick={onSave}>
-                  {saving ? "saving…" : dirty ? "save" : "saved"}
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    className="save"
+                    disabled={!dirty || saving}
+                    onClick={onSave}
+                  >
+                    {saving ? "saving…" : dirty ? "save" : "saved"}
+                  </button>
+                </div>
+              )}
             </>
           ))}
       </div>

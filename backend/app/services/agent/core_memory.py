@@ -1091,7 +1091,7 @@ class CoreMemoryCorpus:
 
 def validated_root(settings: Settings) -> tuple[Path | None, str | None]:
     """The resolved corpus root, or (None, why-refused) (§3). Never raises. Module-level so tier 1
-    can hold the same invariant from its side: `FileMemoryProvider._agent_memory_dir` yields to an
+    can hold the same invariant from its side: `memory.agent_memory_dir` (the provider's resolver) yields to an
     active corpus root, because `AgentDef.memory_dir` makes the reserved tier-1 set dynamic and a
     static refusal here cannot see agents configured *after* the root validated (S1 review)."""
     raw = settings.memory.longterm.core.root.strip()

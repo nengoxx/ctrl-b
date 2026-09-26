@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { SettingRow } from "./SettingRow";
 import { Switch } from "./Switch";
-import { useAgentList } from "../hooks/useAgents";
+import { useAgentRoster } from "../hooks/useAgents";
 import { disclosureToggle } from "../lib/disclosure";
 import {
   agentSlot,
@@ -271,7 +271,7 @@ function CoreMemoryPanel({ cfg }: { cfg: LongTermCfg }) {
 export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
   const saveSettings = useSaveSettings();
   const qc = useQueryClient();
-  const { data: agentList } = useAgentList();
+  const { data: agentList } = useAgentRoster();
   const [openKey, setOpenKey] = useState<string | null>(null);
 
   // Numeric settings ride a small local draft (numeric text → coerced on save), reseeded from the cfg.

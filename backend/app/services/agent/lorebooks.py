@@ -35,7 +35,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
     from pathlib import Path
 
+    from app.config import Settings
     from app.services.agent.macros import Macros
 
 log = logging.getLogger(__name__)
@@ -234,6 +235,41 @@ def active_slugs(*sources: Iterable[str]) -> list[str]:
     return out
 
 
+#: Who links one book (ROLEPLAY_PLAN §15.5, the ISS-24 ruling): the agents whose EFFECTIVE list names
+#: it (the root as `default`) and whether the install attaches it globally. Functional form because
+#: `global` is a keyword.
+BookRefs = TypedDict("BookRefs", {"agents": list[str], "global": bool})
+
+
+def book_references(settings: Settings) -> dict[str, BookRefs]:
+    """`{slug: BookRefs}` for every slug anything links — books are never deleted by a cascade
+    (owner), so the manager SAYS who uses one instead.
+
+    Each agent is read through `load_agent`, so its list is the EFFECTIVE one (`agent.yaml` over
+    `agent.defaults`) — what the character actually runs with, and what its card export embeds; the
+    root agent is `default`, carrying `agent.defaults.lorebooks`. `global` is `lorebooks.books`. A
+    slug an agent names but no book holds IS returned here, but `GET /lorebooks` has no row for it (no
+    ghost rows — review F2): a dangling link is visible where the owner fixes it, the agent form's
+    lorebook picker, which shows it ticked and marked missing. An agent that will not load is skipped with a warning — `GET /agents`' posture: one
+    broken `agent.yaml` must not take the book list down. N small YAML reads per call; a homelab list."""
+    refs: dict[str, BookRefs] = {}
+
+    def entry(slug: str) -> BookRefs:
+        return refs.setdefault(slug, {"agents": [], "global": False})
+
+    for slug in active_slugs(settings.lorebooks.books):
+        entry(slug)["global"] = True
+    for name in (settings.DEFAULT_AGENT_NAME, *settings.list_agent_names()):
+        try:
+            agent = settings.load_agent(name)
+        except Exception:
+            log.warning("agent %r failed to load; its lorebook links are not listed", name, exc_info=True)
+            continue
+        for slug in active_slugs(agent.lorebooks if agent is not None else ()):
+            entry(slug)["agents"].append(name)
+    return refs
+
+
 # ── the scan (§6.3) ───────────────────────────────────────────────────────────────────────────────
 
 
@@ -252,20 +288,36 @@ class Haystack:
         return cls(joined, joined.casefold())
 
     def hit(self, key: str, *, case_sensitive: bool, whole_words: bool) -> bool:
-        """Whether `key` — a LITERAL, never a pattern — appears in the scanned text.
+        """Whether `key` — a LITERAL, never a pattern — appears in the scanned text, by ST's own rule
+        (R65 §1.6, verified; ISS-27 (a)+(d)).
 
-        `whole_words` uses `(?<!\\w)…(?!\\w)` rather than `\\b`: a key may legitimately start or end
-        with punctuation (`"!!"`, `"<START>"`), and `\\b` next to a non-word character asserts the
-        opposite of what the author meant, so such a key could never match at all."""
+        Whole-word is `(?:^|\\W)key(?:$|\\W)` with **ASCII** `\\W` (`re.ASCII`): JS's `\\W` is
+        ASCII-only, which is exactly why a CJK key matches inside CJK text in ST — under Python's
+        Unicode `\\w` every neighbouring ideograph is a word character and such a key could never
+        match. Non-word boundaries rather than `\\b`, so a key that starts or ends with punctuation
+        (`"!!"`, `"<START>"`) still matches. A key with whitespace in it is plain substring, as in ST
+        (it splits the key on whitespace and uses `includes()` for more than one word)."""
         needle = key.strip()
         if not needle:  # an empty key would match everything — it activates nothing instead
             return False
         hay = self.raw if case_sensitive else self.folded
         if not case_sensitive:
             needle = needle.casefold()
-        if not whole_words:
+        if not whole_words or len(needle.split()) > 1:
             return needle in hay
-        return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", hay) is not None
+        return re.search(rf"(?:^|\W){re.escape(needle)}(?:$|\W)", hay, re.ASCII) is not None
+
+
+def spoken(role: str, text: str, macros: Macros, *, include_names: bool) -> str:
+    """One chat row as the haystack scans it — `"<name>: <text>"`, ST's `world_info_include_names`
+    (default on; `lorebooks.include_names`; ISS-27 (b)), so a book keyed on a speaker's name fires on
+    that speaker's lines. The owner is `{{user}}` (the persona's name, else "User"); an assistant row
+    takes the CURRENT agent's name — a multi-agent thread's older rows are approximated, recorded.
+    Empty text stays empty (an attachment-only message said nothing to prefix). The ONE place the
+    prefix is decided: the turn-start and the resume haystacks both build their rows through it."""
+    if not include_names or not text:
+        return text
+    return f"{macros.user if role == 'user' else macros.char}: {text}"
 
 
 @dataclass(frozen=True)
@@ -287,8 +339,9 @@ class Activated:
 
 
 def _gate_passes(entry: LorebookEntry, hay: Haystack, macros: Macros) -> bool:
-    """The optional SECOND gate (§6.3). No secondary keys ⇒ no gate, and `logic` is then irrelevant
-    — which is also why the importer normalizes it away in that case."""
+    """The optional SECOND gate (§6.3) of a KEYED entry — a `constant` one never reaches it (see
+    `activate`). No secondary keys ⇒ no gate, and `logic` is then irrelevant — which is also why the
+    importer normalizes it away in that case."""
     if not entry.secondary_keys:
         return True
     hits = any(
@@ -301,7 +354,9 @@ def _gate_passes(entry: LorebookEntry, hay: Haystack, macros: Macros) -> bool:
 def activate(books: Iterable[Lorebook], hay: Haystack, macros: Macros) -> list[Activated]:
     """The entries this turn summons, in book-then-file order.
 
-    An entry activates iff `enabled` ∧ (`constant` ∨ a key hits) ∧ its secondary gate passes (§6.3).
+    An entry activates iff `enabled` ∧ (`constant` ∨ (a key hits ∧ its secondary gate passes)).
+    `constant` bypasses the secondary gate too (ISS-27 (c)): ST's precedence list is terminal per step
+    and `constant → activate` sits above every key check (R65 §1.5; the main seat's ruling).
     The macro pass (§4.3) runs over BOTH the keys and the content BEFORE either is used: `{{char}}`
     in a key is what the author wrote, so it must be the character's name that is scanned for, and
     an entry whose content renders to nothing is dropped (the V3 MUST that each entry render once —
@@ -311,12 +366,15 @@ def activate(books: Iterable[Lorebook], hay: Haystack, macros: Macros) -> list[A
         for entry in book.entries:
             if not entry.enabled:
                 continue
-            if not entry.constant and not any(
-                hay.hit(macros.render(k), case_sensitive=entry.case_sensitive, whole_words=entry.whole_words)
-                for k in entry.keys
+            if not entry.constant and not (
+                any(
+                    hay.hit(
+                        macros.render(k), case_sensitive=entry.case_sensitive, whole_words=entry.whole_words
+                    )
+                    for k in entry.keys
+                )
+                and _gate_passes(entry, hay, macros)
             ):
-                continue
-            if not _gate_passes(entry, hay, macros):
                 continue
             content = macros.render(entry.content).strip()
             if content:

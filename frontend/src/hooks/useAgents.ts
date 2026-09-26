@@ -4,7 +4,6 @@ import { del, getJSON, putBytes, putJSON } from "../api/client";
 import { beginAgentsLoad, installAgents, loadAgents } from "../lib/composer";
 import type { Privilege } from "../lib/privilege";
 import { pushToast } from "../store/toast";
-import { CONF_SECTIONS, useScopedQuery } from "./useScopedQuery";
 
 export type { Privilege }; // re-export so existing `import { Privilege } from "../hooks/useAgents"` keeps working
 
@@ -178,18 +177,17 @@ export interface AgentListing {
   summaries?: Record<string, AgentSummary>;
 }
 
-/** Discovered specialist names + the resolved default slug (tab-scoped — Conf-only data). */
-export function useAgentList() {
-  return useScopedQuery<AgentListing>(CONF_SECTIONS, {
-    queryKey: ["agentlist"],
-    queryFn: () => getJSON("/api/agents"),
-    staleTime: 30_000,
-  });
-}
-
-/** The resolved default agent slug + specialist names, always-on (not Conf-scoped). The Agent tab
- *  uses `default` to attribute per-turn agents on assistant bubbles (7e-c) — a turn is labelled only
- *  when its `agent` differs from this. Reuses the `["agents"]` key the agent mutations invalidate.
+/** THE agent roster — the resolved default slug, the specialist names, the showcase summaries —
+ *  always-on (not Conf-scoped), and the ONE query every surface reads it through (ISS-20, D79 §15.7):
+ *  the gallery, the Conf globals/memory/automations editors, the chat's who-line, the tools menu and
+ *  the backdrop. There used to be a second, Conf-scoped `["agentlist"]` query over the same
+ *  `GET /api/agents`; two queries refetched separately, so after a default-agent change the gallery's
+ *  pill and the menu's "default" row could disagree for the length of one refetch.
+ *
+ *  The price, accepted: this query keeps its 30 s stale window where the scoped one refetched on every
+ *  tab entry — harmless, because every agent write (and every settings save) invalidates it, so no edit
+ *  made here is ever shown stale. The Agent tab uses `default` to attribute per-turn agents on assistant
+ *  bubbles (7e-c) — a turn is labelled only when its `agent` differs from this.
  *
  *  Every read is also INSTALLED into routing's module copy (`lib/composer#installAgents`, the
  *  `loadProviders` → `setAttachmentInfo` precedent): this query retries and refetches on focus, so it is
@@ -222,10 +220,12 @@ export function useAgent(name: string | null) {
  *  lives in `agent.defaults` and `agent.default_agent` picks the resolved default, both through
  *  `PUT /api/settings` (`useSaveSettings` calls this). */
 export function invalidateAgents(qc: ReturnType<typeof useQueryClient>, name?: string) {
-  void qc.invalidateQueries({ queryKey: ["agentlist"] });
   if (name) void qc.invalidateQueries({ queryKey: ["agent", name] });
   void qc.invalidateQueries({ queryKey: ["actions"] }); // a toolset/agent change
   void qc.invalidateQueries({ queryKey: ["agents"] }); // the composer's /agent reference list
+  // D79 / §15.5 — the lorebook shelf's `used_by` line is a fact about AGENTS (who links a book), so an
+  // agent write — a link, an unlink, a delete, the root's `agent.defaults` — must refresh it too.
+  void qc.invalidateQueries({ queryKey: ["lorebooks"] });
   // SYS-9.2: also refresh the composer's MODULE-LEVEL `/agent` set (loaded once at import), the way a
   // settings save refreshes `loadProviders` and a skill CRUD refreshes `loadSkills`. Without this an
   // agent added/renamed/removed here isn't seen by the verb router (the `/agent <name>` "configured?"
@@ -289,14 +289,48 @@ export function useImportAgent() {
   });
 }
 
-/** Delete a specialist agent's folder. */
+/** What `DELETE /api/agents/{name}` DID (D79 / ISS-24, ROLEPLAY_PLAN §15.6): what it removed (the
+ *  folder, the default memory directory), what it deliberately KEPT (a delete never cascades to a book
+ *  or a picture — owner), and what it BROKE — an automation pinned to the slug fails at its next fire,
+ *  so it is named now rather than discovered then. Every field optional: an older server answers with
+ *  no body at all, and the toast then says only what it always said. */
+export interface AgentDeleteReport {
+  removed?: string[];
+  /** `memory` = a CUSTOM `memory_dir` the delete deliberately LEFT in place (only the default
+   *  `memories/agents/<slug>` is removed) — usually empty. */
+  kept?: { books?: string[]; art?: string[]; memory?: string[] };
+  broken?: { automations?: string[] };
+}
+
+/** The delete's toast, from its report. Two clauses ask the owner to act — a broken automation (repoint
+ *  it) and memories left on disk (the confirm promised the memory folder goes; a custom one did not) —
+ *  so a report carrying either makes the toast STICKY: a 3 s toast is not how either should be learned. */
+export function deleteToast(report: AgentDeleteReport | undefined): {
+  text: string;
+  sticky: boolean;
+} {
+  const parts = ["Agent removed"];
+  const books = report?.kept?.books ?? [];
+  const art = report?.kept?.art ?? [];
+  const memory = report?.kept?.memory ?? [];
+  const automations = report?.broken?.automations ?? [];
+  if (books.length > 0) parts.push(`kept lorebooks: ${books.join(", ")}`);
+  if (art.length > 0) parts.push(`kept art: ${art.join(", ")}`);
+  if (memory.length > 0) parts.push(`kept memories: ${memory.join(", ")}`);
+  if (automations.length > 0)
+    parts.push(`automations left without an agent (repoint them): ${automations.join(", ")}`);
+  return { text: parts.join(" · "), sticky: automations.length > 0 || memory.length > 0 };
+}
+
+/** Delete a specialist agent's folder (and its default memory directory — ISS-24). */
 export function useDeleteAgent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => del(`/api/agents/${name}`),
-    onSuccess: (_d, name) => {
+    mutationFn: (name: string) => del<AgentDeleteReport | undefined>(`/api/agents/${name}`),
+    onSuccess: (report, name) => {
       invalidateAgents(qc, name);
-      pushToast("Agent removed", "ok");
+      const { text, sticky } = deleteToast(report);
+      pushToast(text, "ok", { sticky });
     },
     onError: (e: Error) => pushToast(e.message || "Remove failed", "err"),
   });

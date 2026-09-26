@@ -53,6 +53,7 @@ from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import clear_reasoning_demotions, rediscover_integrations
 from app.services.agent.attachments import claim_attachments
+from app.services.agent.card_export import ComposedCard, compose_card
 from app.services.agent.card_import import (
     _JSON_REFUSALS,
     CardImportError,
@@ -60,19 +61,25 @@ from app.services.agent.card_import import (
     import_card,
     land_avatar,
     mint_slug,
+    validate_png_carrier,
+    write_card_chunks,
 )
 from app.services.agent.compaction import compaction_state_for, prune_compaction_state
 from app.services.agent.exec import run_user_exec
 from app.services.agent.greeting import seed_greeting
+from app.services.agent.lorebook_export import book_out
 from app.services.agent.lorebook_import import ImportedBook, import_book
 from app.services.agent.lorebooks import (
     Lorebook,
+    active_slugs,
+    book_references,
     book_slugs,
     delete_book,
     list_books,
     load_book,
     save_book,
 )
+from app.services.agent.memory import agent_memory_dir
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.prompts import resolve
 from app.services.agent.proposals import apply_proposal
@@ -1733,12 +1740,54 @@ def _scaffold_agent(
     return _agent_payload(name, agent, folder, False)
 
 
-def _delete_agent_folder(folder: Path) -> bool:
-    """Blocking is_dir + rmtree in one hop (SYS-16). False → nothing there (the caller 404s)."""
+def _shown_path(p: Path, home: Path) -> str:
+    """`p` as the delete report shows it — relative to `$CTRLB_HOME` when it sits inside it (a memory
+    dir configured absolute may not)."""
+    return str(p.relative_to(home)) if p.is_relative_to(home) else str(p)
+
+
+def _delete_agent_folder(s: Settings, name: str, folder: Path) -> dict[str, Any] | None:
+    """The whole blocking side of `DELETE /agents/{name}` in one hop (SYS-16). `None` → nothing there
+    (the caller 404s); else the report of what was removed and what was deliberately KEPT (ISS-24).
+
+    The agent is loaded BEFORE the folder goes, because its own settings say where its memory lives:
+    the memory directory is resolved through the memory service's OWN resolver
+    (`memory.agent_memory_dir`, which the provider delegates to — never a re-derived path), and only the DEFAULT
+    `memories/agents/<slug>` is removed — a re-import of the same card re-mints the same slug and
+    would otherwise silently inherit the dead character's MEMORY.md. A custom `memory_dir` may be
+    shared or hand-placed, so it is left and reported. Books and art are never deleted by a cascade
+    (owner): they are library items other agents may link, and the report names them instead. An
+    agent whose `agent.yaml` will not load still deletes; its memory resolves as the default's."""
     if not folder.is_dir():
-        return False
+        return None
+    try:
+        agent = s.load_agent(name)
+    except Exception:
+        log.warning(
+            "agent %r failed to load; deleting it with default memory resolution", name, exc_info=True
+        )
+        agent = None
+    agent = agent or AgentDef(name=name)
+    home = s.home_dir()
+    memory_dir = agent_memory_dir(s, agent)
+    default_memory = s.memories_dir_path() / "agents" / name
     shutil.rmtree(folder)
-    return True
+    removed = [_shown_path(folder, home)]
+    kept_memory: list[str] = []
+    if memory_dir.resolve() == default_memory.resolve():
+        if default_memory.is_dir():
+            shutil.rmtree(default_memory)
+            removed.append(_shown_path(default_memory, home))
+    elif memory_dir.exists():
+        kept_memory.append(_shown_path(memory_dir, home))
+    return {
+        "removed": removed,
+        "kept": {
+            "books": list(agent.lorebooks),
+            "art": [media for media in (agent.avatar, agent.background) if media],
+            "memory": kept_memory,
+        },
+    }
 
 
 def _read_soul(folder: Path, *, require_folder: bool) -> str | None:
@@ -2089,15 +2138,30 @@ def _character_book(s: Settings, card: ImportedCard, warnings: list[str]) -> tup
 
 @router.delete("/agents/{name}")
 async def delete_agent(name: str, request: Request) -> dict[str, Any]:
-    """Delete a specialist agent's whole folder (agent.yaml + SOUL.md + its memories). The default
-    agent can't be deleted. Idempotent: 404 if absent."""
+    """Delete a specialist: its whole folder (`agent.yaml`, `SOUL.md`, `card.json`) and its DEFAULT
+    memory directory (`memories/agents/<slug>`; a custom `memory_dir` is left and reported). Nothing
+    else cascades — its lorebooks and art stay in their libraries, and the report names them. The
+    default agent can't be deleted. Idempotent: 404 if absent.
+
+    The answer says exactly that (ISS-24): `removed` (paths relative to `$CTRLB_HOME`), `kept`
+    (`books` · `art` · `memory`), and `broken.automations` — every automation pinned to this slug by
+    name, which will fail at its next fire with `AutomationAgentMissing` (named now rather than
+    discovered then).
+
+    Accepted, unfixed edge (the S9 review's F7, recorded): ANOTHER agent whose custom `memory_dir`
+    points INTO `memories/agents/<this-slug>` loses those files with this delete — a hand-configured
+    overlap the resolver has no reason to forbid, rare enough to state rather than guard."""
+    s: Settings = request.app.state.settings
     folder, _ = _agent_folder(request, name)
-    if not await asyncio.to_thread(_delete_agent_folder, folder):
+    report = await asyncio.to_thread(_delete_agent_folder, s, name, folder)
+    if report is None:
         raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    repo = getattr(request.app.state, "automations", None)
+    pinned = [a.name for a in await repo.list() if a.agent == name] if repo is not None else []
     # D46/F6: deleting a specialist drops its reasoning settings — clear demotions so a later agent that
     # reuses the same (endpoint, model) starts fresh (blanket-on-mutation; see `put_agent`).
     clear_reasoning_demotions(request.app)
-    return {"name": name, "deleted": True}
+    return {"name": name, "deleted": True, **report, "broken": {"automations": pinned}}
 
 
 @router.get("/agents/{name}/soul")
@@ -2121,6 +2185,97 @@ async def put_agent_soul(name: str, body: SoulContent, request: Request) -> dict
     if not ok:
         raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
     return {"name": name, "content": body.content}
+
+
+# ── Card export (Phase 23 S9 / D79, ROLEPLAY_PLAN §15.2–§15.3) ─────────────────────────────────
+# The import read backwards: the SERVER owns the card (composition, strip, chunk write), the CLIENT
+# owns the pixels (the backend has no image codec by policy, D65 — the app re-encodes the bound avatar
+# to PNG through its one canvas chokepoint and sends it as the carrier). Both routes compose from DISK:
+# export exports the SAVED character.
+
+
+def _read_sidecar(folder: Path) -> dict[str, Any] | None:
+    """`card.json`, or `None` when the agent has none or it will not parse as an object. A broken
+    sidecar degrades the export to a no-sidecar card (the live fields still export) rather than failing
+    it — the file is provenance, and the character is what the owner is exporting."""
+    p = folder / "card.json"
+    if not p.is_file():
+        return None
+    try:
+        parsed = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, *_JSON_REFUSALS):
+        log.warning("agent card sidecar %s could not be read; exporting without it", p, exc_info=True)
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _compose_agent_card(s: Settings, name: str) -> ComposedCard | None:
+    """The whole blocking side of a card export in one `to_thread` hop (SYS-16): load the agent (the
+    root included — it is a character too), its sidecar, and its EFFECTIVE linked books — the list
+    `load_agent` resolves (`agent.yaml` over `agent.defaults`, what the character runs with; never
+    `lorebooks.books`, the install's global set), readable and enabled, in link order. `None` → no
+    such agent (the caller 404s)."""
+    agent = s.load_agent(name)
+    if agent is None:
+        return None
+    sidecar = None if name == s.DEFAULT_AGENT_NAME else _read_sidecar(s.agents_dir_path() / name)
+    directory = s.lorebooks_dir_path()
+    books = [
+        (slug, book)
+        for slug in active_slugs(agent.lorebooks)
+        if (book := load_book(directory, slug)) is not None and book.enabled
+    ]
+    return compose_card(slug=name, agent=agent, soul=agent.prompt, sidecar=sidecar, books=books)
+
+
+def _card_png(s: Settings, name: str, carrier: bytes) -> bytes | None:
+    """The blocking side of the PNG export in one hop: the carrier is VALIDATED before anything is
+    read from disk (`validate_png_carrier` raises the 415/422), then the card is composed and written
+    into it. `None` → no such agent."""
+    validate_png_carrier(carrier)
+    card = _compose_agent_card(s, name)
+    return None if card is None else write_card_chunks(carrier, card.v2, card.v3)
+
+
+@router.get("/agents/{name}/card")
+async def get_agent_card(name: str, request: Request) -> dict[str, Any]:
+    """The agent as a V3 character card (D79, §15.2) — the JSON download's payload and the testable
+    seam of the composition. `default` is the root agent. `404` an unknown agent. Read-only."""
+    _agent_folder(request, name, allow_default=True)  # slug validation (422)
+    card = await asyncio.to_thread(_compose_agent_card, request.app.state.settings, name)
+    if card is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    return card.v3
+
+
+@router.post("/agents/{name}/card.png")
+async def export_agent_card_png(name: str, request: Request) -> Response:
+    """The agent as a SillyTavern-compatible PNG card (D79, §15.3): the body is the CARRIER image (raw
+    PNG bytes, `Content-Type` ignored), the answer is that image with any old card chunks stripped and
+    `chara` (V2) + `ccv3` (V3) `tEXt` chunks written before IEND.
+
+    **POST, not the house raw-body PUT, and why that is safe here** (SECURITY_MODEL §2.9): this is a
+    side-effect-free DERIVATION — it stores nothing (pinned by a test), so a cross-origin page that can
+    send it as `text/plain` without a preflight gains nothing, and the response is unreadable
+    cross-origin (no CORS). The body is still streamed and capped by `_import_body`
+    (`roleplay.card_import.max_bytes`) and validated structurally before any disk read.
+
+    `413` over the cap · `415` not a PNG · `422` a malformed PNG, or an empty body · `404` unknown agent."""
+    s: Settings = request.app.state.settings
+    body = await _import_body(
+        request,
+        cap=s.roleplay.card_import.max_bytes,
+        what="card image",
+        setting="roleplay.card_import.max_bytes",
+    )
+    _agent_folder(request, name, allow_default=True)  # slug validation (422) — a string check, no I/O
+    try:
+        png = await asyncio.to_thread(_card_png, s, name, body)
+    except CardImportError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+    if png is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    return Response(content=png, media_type="image/png", headers={"x-content-type-options": "nosniff"})
 
 
 # ── Lorebooks file API (Phase 23 / D70 §6.1) ──────────────────────────────────────────────────
@@ -2176,14 +2331,26 @@ def _save_and_load(directory: Path, slug: str, book: Lorebook) -> dict[str, Any]
 
 @router.get("/lorebooks")
 async def list_lorebooks(request: Request) -> dict[str, Any]:
-    """Every readable book, for the manager list (§6.6). A file that will not parse is omitted, not
-    raised — one broken book must not take the whole surface down (the same tolerance the turn path
-    has, and for the same reason)."""
-    directory = request.app.state.settings.lorebooks_dir_path()
-    books = await asyncio.to_thread(list_books, directory)
+    """Every readable book, for the manager list (§6.6), each row with its `used_by` line (D79,
+    §15.5). A file that will not parse is omitted, not raised — one broken book must not take the whole
+    surface down (the same tolerance the turn path has, and for the same reason)."""
+    return await asyncio.to_thread(_list_lorebooks_payload, request.app.state.settings)
+
+
+def _list_lorebooks_payload(s: Settings) -> dict[str, Any]:
+    """The whole blocking side of `GET /lorebooks` in one `to_thread` hop (SYS-16): the book scan plus
+    `used_by` (§15.5 — every row says which agents link it and whether it is global)."""
+    books = list_books(s.lorebooks_dir_path())
+    refs = book_references(s)
     return {
         "lorebooks": [
-            {"slug": slug, "name": b.name, "enabled": b.enabled, "entries": len(b.entries)}
+            {
+                "slug": slug,
+                "name": b.name,
+                "enabled": b.enabled,
+                "entries": len(b.entries),
+                "used_by": refs.get(slug, {"agents": [], "global": False}),
+            }
             for slug, b in books
         ]
     }
@@ -2232,6 +2399,18 @@ async def get_lorebook(slug: str, request: Request) -> dict[str, Any]:
     if book is None:
         raise HTTPException(status_code=404, detail=f"unknown or unreadable lorebook '{slug}'")
     return _book_payload(slug, book)
+
+
+@router.get("/lorebooks/{slug}/export")
+async def export_lorebook(slug: str, request: Request) -> dict[str, Any]:
+    """One book as SillyTavern's standalone world-info object (D79, §15.4) — `{"entries": {"<uid>":
+    …}, "name", "description"}`, what ST's own export writes and its import passes through whole. The
+    client downloads it as `<book name>.json` (ST names an imported book after the file). `404` when
+    the file is absent or unreadable. Read-only."""
+    book = await asyncio.to_thread(load_book, _lorebooks_dir(request, slug), slug)
+    if book is None:
+        raise HTTPException(status_code=404, detail=f"unknown or unreadable lorebook '{slug}'")
+    return book_out(book, dialect="st")
 
 
 @router.put("/lorebooks/{slug}")

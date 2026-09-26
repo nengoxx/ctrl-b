@@ -434,10 +434,13 @@ R66 §2.4) is a non-goal: extras stashed/ignored with a report line.
 
 The importer writes `tools: roleplay.default_tools` **explicitly** — never the `"*"` default
 (R66 §4: no card format has a tools field; our default is the widest value, so relying on it
-would invert ruling 8). `privilege` stays CONFIRM. **The editor's create flow does NOT** — a
-hand-created agent starts on `tools: "*"` whatever duties it is given, and flipping duties later
-never touches tools. The original plan said it would; it was never built and is recorded as
-ISS-23 (R87/RP-10), not done.
+would invert ruling 8), and `skills: []` beside it (S9, ISS-26 (i) — under `"*"` the keyword
+selector could inject a tool-agent skill body into a character's head). `privilege` stays CONFIRM.
+**The editor writes it on the duties flip (S9, ISS-23, §15.6):** flipping a specialist's duties to
+`conversational` while its `tools` is still the wildcard `"*"` sets the draft's `tools` to
+`roleplay.default_tools` — visible and editable before save, never over an explicit list, never on
+the default agent's form, and transition-only (a character already sitting at `"*"` is not
+rewritten behind the owner's back).
 
 ## 6. The lorebook subsystem (roleplay-independent)
 
@@ -2669,7 +2672,7 @@ body + `missing:` options, the legacy-reader removal, the neutral defaults with 
 winning, Core Memory untouched. **Confirm round (self-contained, the same day): SHIP — F1/F2/F4/F6
 CONFIRMED, the F3/F5 rulings SOUND, no new findings, wave sweep none.**
 
-## 15. S9 — Export (cards + books) · the referenced-by line · the post-release polish wave (designed 2026-09-26; **blind Maya design round = BUILD WITH CHANGES, 9 findings — F1–F9 folded below (F8 answered by the duties-flip rule, F9 already the plan); confirm round 2026-09-26: ALL NINE RESOLVED + three implementation guards folded ((b) IHDR/IEND lengths + type bytes · (c) the provenance predicate's int guard · (d) ISS-23 transition-only) — then a BLIND OPUS 5.5 round (owner-requested, nuances only) = BUILD WITH CHANGES, 18 findings — 17 folded inline, F2 CLOSED the ISS-26 (iii) arm on evidence; the main seat closes the council on that record; **owner: build in a CLEAN session**; NOT BUILT**)
+## 15. S9 — Export (cards + books) · the referenced-by line · the post-release polish wave (designed 2026-09-26; **blind Maya design round = BUILD WITH CHANGES, 9 findings — F1–F9 folded below (F8 answered by the duties-flip rule, F9 already the plan); confirm round 2026-09-26: ALL NINE RESOLVED + three implementation guards folded ((b) IHDR/IEND lengths + type bytes · (c) the provenance predicate's int guard · (d) ISS-23 transition-only) — then a BLIND OPUS 5.5 round (owner-requested, nuances only) = BUILD WITH CHANGES, 18 findings — 17 folded inline, F2 CLOSED the ISS-26 (iii) arm on evidence; the main seat closes the council on that record; **✅ BUILT 2026-09-26 in the clean session (two pinned-Opus lanes) + the TWO-REVIEWER code round CLOSED — blind Opus 5.5 SHIP WITH FIXES [1 MED · 7 LOW] ∥ blind Maya SHIP WITH FIXES [1 MED]; 8 rulings folded, 2 overruled/docs-only; both confirms CONFIRMED SHIP — §15.12 = the as-built record**)
 
 > Owner rulings in conversation (2026-09-26): *"we totally forgot to create an export button to export
 > the card in PNG format as silly tavern and other project do … same for the lore books, we need to be
@@ -2840,7 +2843,9 @@ gains `export` → `downloadJson("<book name>.json")` (ST names an imported book
 rest. `LorebookRow` shows `used by Lynette, Seraphina` / `global` / `unused` in its header line, and
 the delete confirm names the users; `invalidateAgents` also invalidates `["lorebooks"]` so the line
 never goes stale after a link/unlink (Opus F16); the FE treats `used_by` as optional (the e2e fixture
-rows carry none). A slug an agent names but no book holds is reported as-is (dangling, visible).
+rows carry none). A slug an agent names but no book holds is returned by the helper but has no book row (no ghost
+rows — the S9 code round's F2); it is visible where the owner fixes it, on the agent form's lorebook
+picker, which shows it ticked and marked missing.
 **No delete ever cascades to a book** (owner).
 
 ### 15.6 The roleplay-side fixes (each = a rule + a test; ISSUES.md entries close with the commit)
@@ -2963,3 +2968,62 @@ Two pinned-Opus lanes on DISJOINT files: **BE lane** = §15.2–§15.6 backend +
 API contract written into both briefs (the three routes' shapes above). Then the blind Maya code
 round → fix waves to the same lanes → confirm → §15.8 → §15.9 → v1.7.9 (no config migration:
 `include_names` is an additive default).
+
+### 15.12 As-built record (2026-09-26 — the build session; the design above stands, these are the deltas)
+
+**Lanes.** BE (`card_export.py` · `lorebook_export.py` · the PNG validator/writer beside `_png_chunks` · the
+three routes · `book_references` · ISS-15/22/24/26/27/29/30 · 56 tests in `test_roleplay_s9.py`) and FE
+(`lib/download.ts` · `lib/fallbackTile.ts` · `postBlob` · `cardCarrier`/`useExportCard` · the footer
+"Export as" row · the lorebook `used by` line + export · ISS-20/23/24 FE · 8 new unit files + `e2e/card-export.spec.ts`)
+ran in parallel on disjoint files against the route contract in both briefs. Suite: BE 2,792 · FE 4,013 · Playwright 391/391.
+
+**Builder deviations, accepted by the main seat (each with its reason):**
+- `selective` is ALWAYS `true` in both dialects, not `bool(secondary_keys)` — the importer reads
+  `selective: false` as an inert gate and STASHES `keysecondary`/`selectiveLogic` instead of consuming
+  them, which broke this section's own golden round trip; ST writes `true` by default and an entry with
+  no secondary keys gates nothing (`_SELECTIVE`).
+- A per-dialect OUTPUT-name table `_NAMES` in `lorebook_export.py` (`_ALIASES`' tuple order is not per-dialect),
+  pinned by a test that every emitted name is one the importer reads; `ST_EXTENSION_NAMES` lives in
+  `lorebook_import.py`, shared by ISS-22's inert-feature reader and the exporter.
+- The delete report carries `kept.memory` (a custom `memory_dir` left in place); `broken.automations` = names.
+- `ROUTER_OWNED` rows are `(path, router_path)` so the 422 names the router; §15.7's three re-seeded
+  tests were NOT needed (nothing broke).
+- Only linked books that are readable AND enabled embed (what the runtime scans). ST-dialect depth at
+  position 4: top-level stash → `extensions.depth` → 0. Spec-dialect id = top-level `id` from `uid`/`id`;
+  `displayIndex` → `extensions.display_index`. ST book level = exactly `entries`/`name`/`description`.
+  The importer records ONLY lossy collapses. An agent whose `agent.yaml` will not load still deletes.
+- FE: `useExportCard`/`cardCarrier` live in `hooks/useAgentArt.ts` (the art resolver + namespace
+  constants are there; the other placement is an import cycle); one mutation with a `format` argument
+  instead of a separate `exportCardJson`; `downloadName(title, ext)` shared by cards and books; the
+  lorebook `export` also reads "save first" while its row is dirty; the fallback tile is `--accent` +
+  `--accent-ink` (an export artefact, not a clone of the gallery's grey CSS tile), `tileInitial` takes
+  the first code point (the gallery card uses it too); `del<T>` returns the parsed body for every caller
+  (empty/204/non-JSON success → `undefined`); the footer `export` swaps in place to a `role="group"`
+  "Export as" row (cancel / PNG card / JSON card), focus on PNG, Escape closes — no popover.
+
+**The code round (the owner's two-reviewer rule, 2026-09-26: a blind Opus 5.5 independent reviewer AND
+Maya, in parallel on the same diff).** Opus: 1 MED + 7 LOW; Maya: 1 MED. Rulings:
+- **Opus F1 (MED) — a real DESIGN gap, accepted:** §15.4's "the stashed `extensions` is DROPPED in the
+  ST dialect (the stale import mirror)" held only for ST-origin books; for a CARD-origin book
+  `extensions` is the ONLY home of `role`/`probability`/`useProbability`/`group`/`exclude_recursion`/
+  `scan_depth`/`sticky`… As built: `_st_entry` LIFTS every stashed extension key back to ST's top-level
+  name via the reverse of `ST_EXTENSION_NAMES` (unknown keys keep their name) unless the top level already
+  holds it or it is `_OWNED` — what ST's own `convertCharacterBook` does. Golden test added.
+- **Opus F2 — docs-only:** a dangling `used_by` slug has no book row; it is visible on the agent form's
+  lorebook picker (ticked, "missing"), which is where the owner fixes it (§15.5 corrected).
+- **Opus F3–F8 accepted:** `kept.memory` shown in the toast (persists) + the confirm says "its memory
+  folder" · `SKILL_SLUG`/`valid_skill_slug` moved to `core/skills.py` (config must not import services;
+  re-exported from `services/agent/skills.py`) · the carrier `rect` follows the attachments precedent
+  (`MAX_SAFE_INTEGER` square, decoded-space clamp; the header read + bitmap fallback deleted — a rotated
+  JPEG is no longer square-cropped) · `use_regex` in `_OWNED` and every owned key dropped from a source's
+  stashed `extensions` before the overlay · the memory-dir resolver is the public `agent_memory_dir`
+  (the cross-agent custom-`memory_dir`-inside-`agents/<slug>` edge recorded, unfixed) · the test helper
+  calls the route's `_compose_agent_card`, plus a pin that a global-only book and a disabled linked book
+  are NOT embedded.
+- **Maya's MED overruled:** the importer's `mirror.get(key) is None` treats an explicit
+  `extensions.position: null` as absent and records the collapsed integer. Ruling: a null is no
+  provenance (ST's writer never emits it; ST's reader `extensions?.position ?? …` and our `take_ext`
+  both read null as absent), so the integer is the truer answer. Comment extended. Both reviewers
+  accepted the overrule in their confirms.
+- **Confirms:** Opus (context intact) CONFIRMED SHIP, F1–F8 RESOLVED; Maya (fresh `-z`, self-contained)
+  CONFIRMED SHIP, all resolved, no new problems.

@@ -26,7 +26,9 @@ from typing import TYPE_CHECKING
 import yaml
 
 from app.core.fsutil import write_text_eol
+from app.core.skills import SKILL_SLUG as SKILL_SLUG  # re-export (see below)
 from app.core.skills import Skill, SkillProvider, SkillSelector
+from app.core.skills import valid_skill_slug as valid_skill_slug  # re-export
 from app.core.textmatch import rank_by_overlap
 from app.services.agent.prompts import resolve
 
@@ -36,15 +38,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-#: A skill folder name: lowercase slug, no path separators — guards the file write below (and the
-#: `/api/skills` + `/api/agents` endpoints, which import it) against traversal: the name becomes
-#: `<root>/<name>/SKILL.md`. Agent names reuse the same shape.
-SKILL_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-
-
-def valid_skill_slug(name: str) -> bool:
-    """Whether `name` is a safe skill/agent folder slug (one source of truth for the API + tool)."""
-    return bool(SKILL_SLUG.match(name))
+# `SKILL_SLUG` / `valid_skill_slug` live in `app.core.skills` (S9 review F4 — `config.py` needs them and
+# sits below services); re-exported above so every existing `services.agent.skills` import keeps working.
 
 
 #: `---`-fenced YAML frontmatter then the markdown body. Public (D57): the Core Memory corpus reads

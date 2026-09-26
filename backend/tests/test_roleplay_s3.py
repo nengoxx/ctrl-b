@@ -606,7 +606,15 @@ def test_crud_round_trips_a_book(home: Path) -> None:
         assert c.get("/api/lorebooks").json() == {"lorebooks": []}
         _book(c, "hollow-sea", TEST_BOOK)
         listed = c.get("/api/lorebooks").json()["lorebooks"]
-        assert listed == [{"slug": "hollow-sea", "name": "The Hollow Sea", "enabled": True, "entries": 10}]
+        assert listed == [
+            {
+                "slug": "hollow-sea",
+                "name": "The Hollow Sea",
+                "enabled": True,
+                "entries": 10,
+                "used_by": {"agents": [], "global": False},  # S9 / §15.5 — linked by nobody
+            }
+        ]
 
         got = c.get("/api/lorebooks/hollow-sea").json()["book"]
         assert got["entries"][1]["keys"] == ["ghostship", "the captain"]
@@ -769,18 +777,20 @@ def test_the_st_raw_export_imports_whole(home: Path) -> None:
     assert "key" in body["report"]["mapped"]
 
 
-def test_the_position_downgrade_is_reported_per_entry(home: Path) -> None:
-    """§6.5's ruling: v1 stores `head | tail`, so every collapse is named. Position 1 is the ONE
-    exact landing — our head block sits after the character definitions, which is what it means."""
+def test_the_position_downgrade_is_reported_per_class(home: Path) -> None:
+    """§6.5's ruling: v1 stores `head | tail`, so every collapse is reported — as ONE count line per
+    downgrade class per book since ISS-22 (S9). Position 1 is the ONE exact landing — our head block
+    sits after the character definitions, which is what it means — so it gets no line."""
     with make_client() as c:
         body = import_book_ok(c, ST_BOOK)
     entries = body["book"]["entries"]
     warnings = body["report"]["warnings"]
     assert [e["position"] for e in entries] == ["head", "head", "head", "tail", "tail", "head"]
-    assert not any(w.startswith("Ghostship:") for w in warnings)  # position 1 = an exact landing
-    assert any(w.startswith("Before:") and "landed at the head" in w for w in warnings)
-    assert any(w.startswith("Note:") and "landed at the tail" in w for w in warnings)
-    assert any(w.startswith("Deep:") and "fixed depth" in w for w in warnings)
+    assert [w for w in warnings if "landed at the" in w] == [
+        "1 entry sat BEFORE the character definitions, and our head block sits after them — landed at the head",
+        "1 entry sat in the author's note, above its text — landed at the tail",
+        "1 entry sat at a fixed depth and role in the history, both of which collapse — landed at the tail",
+    ]  # …and nothing for Ghostship's position 1, an exact landing
     # …and the fields the collapse dropped are STASHED, not reported one by one.
     assert entries[4]["depth"] == 4 and entries[4]["probability"] == 100
 
@@ -825,7 +835,10 @@ def test_the_ruled_logic_mapping_reports_its_approximation(home: Path) -> None:
     with make_client() as c:
         body = import_book_ok(c, ST_BOOK)
     assert body["book"]["entries"][1]["logic"] == "and_any"
-    assert any("AND-ALL" in w and w.startswith("Harbour:") for w in body["report"]["warnings"])
+    assert (
+        "1 entry used AND-ALL (every secondary key had to hit), approximated as AND-ANY"
+        in body["report"]["warnings"]
+    )
 
 
 def test_logic_is_normalized_away_when_there_are_no_secondary_keys(home: Path) -> None:
@@ -987,12 +1000,20 @@ def test_a_cards_embedded_book_lands_as_a_real_attached_book(home: Path) -> None
         listed = c.get("/api/lorebooks").json()["lorebooks"]
     assert body["agent"]["lorebooks"] == ["nyx-book"]
     assert agent_yaml(home, "nyx")["lorebooks"] == ["nyx-book"]
-    assert listed == [{"slug": "nyx-book", "name": "Nyx's own", "enabled": True, "entries": 2}]
+    assert listed == [
+        {
+            "slug": "nyx-book",
+            "name": "Nyx's own",
+            "enabled": True,
+            "entries": 2,
+            "used_by": {"agents": ["nyx"], "global": False},  # S9 / §15.5
+        }
+    ]
     provenance = json.loads((home / "agents" / "nyx" / "card.json").read_text(encoding="utf-8"))
     assert provenance["data"]["character_book"]["entries"][0]["keys"] == ["archive"]
     warnings = body["report"]["warnings"]
     assert any("imported as 'nyx-book'" in w and "2 entries" in w for w in warnings)
-    assert any(w.startswith("entry 1:") and "landed at the head" in w for w in warnings)
+    assert any(w.startswith("1 entry sat BEFORE") and "landed at the head" in w for w in warnings)
 
 
 def st_card_book_entry(**overrides: Any) -> dict[str, Any]:
@@ -1043,9 +1064,7 @@ def test_an_st_written_card_book_is_read_from_its_extensions_first(home: Path) -
     assert entry.case_sensitive is True and entry.whole_words is False
     assert (entry.model_extra or {})["extensions"] == st_card_book_entry()["extensions"]
     warnings = body["report"]["warnings"]
-    assert any(
-        w.startswith("Deep tide:") and "fixed depth" in w and "landed at the tail" in w for w in warnings
-    )
+    assert any(w.startswith("1 entry") and "fixed depth" in w and "landed at the tail" in w for w in warnings)
 
 
 def test_a_null_extension_falls_back_to_the_top_level_value(home: Path) -> None:

@@ -39,8 +39,8 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => {
   const actual = await importActual<typeof import("../../src/hooks/useAgents")>();
   return {
     ...actual,
-    useAgentList: () => ({ data: list }),
-    useAgentRoster: () => ({ data: list }), // what `useAgentArt` joins against
+    // ISS-20 — the ONE roster query: the gallery and `useAgentArt`'s join read the same answer.
+    useAgentRoster: () => ({ data: list }),
 
     useAgent: () => ({
       data: {

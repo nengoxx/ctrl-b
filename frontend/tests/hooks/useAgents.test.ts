@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pickFields, type AgentDef } from "../../src/hooks/useAgents";
+import { deleteToast, pickFields, type AgentDef } from "../../src/hooks/useAgents";
 
 // useAgents — the managed-fields projection. `pickFields` is exactly what the AgentsEditor sends as the
 // PUT payload (`agent: pickFields(draft)`) and what its dirty-check compares, so anything it DROPS is
@@ -66,5 +66,44 @@ describe("pickFields — routing preserved on round-trip (D43)", () => {
     // Only routing differs between the two defs; since pickFields drops it, the projections match →
     // editing routing (via YAML) never registers as an unsaved UI change.
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+});
+
+// D79 / ISS-24 (§15.6) — the agent delete REPORTS what it did, and the toast says it: what was kept
+// (books and art are library content — a delete never cascades) and which automations it broke.
+describe("deleteToast — the ISS-24 report, as the owner reads it", () => {
+  it("an older server (no body) → the plain toast", () => {
+    expect(deleteToast(undefined)).toEqual({ text: "Agent removed", sticky: false });
+  });
+
+  it("names what was kept, and stays a normal toast when nothing broke", () => {
+    expect(
+      deleteToast({
+        removed: ["agents/lynette", "memories/agents/lynette"],
+        kept: { books: ["personality-traits"], art: ["lynette.png", "hall.webp"] },
+        broken: { automations: [] },
+      }),
+    ).toEqual({
+      text: "Agent removed · kept lorebooks: personality-traits · kept art: lynette.png, hall.webp",
+      sticky: false,
+    });
+  });
+
+  it("names a custom memory folder the delete LEFT in place — and sticks, the owner must see it", () => {
+    expect(
+      deleteToast({
+        kept: { books: [], art: [], memory: ["/srv/mem/lynette"] },
+        broken: { automations: [] },
+      }),
+    ).toEqual({ text: "Agent removed · kept memories: /srv/mem/lynette", sticky: true });
+  });
+
+  it("names a BROKEN automation — and sticks, because it asks the owner to act", () => {
+    expect(
+      deleteToast({ kept: { books: [], art: [] }, broken: { automations: ["morning"] } }),
+    ).toEqual({
+      text: "Agent removed · automations left without an agent (repoint them): morning",
+      sticky: true,
+    });
   });
 });

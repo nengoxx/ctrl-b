@@ -3,7 +3,12 @@ import { useRef, useState } from "react";
 import { AgentRow, NewAgentRow } from "../components/AgentsEditor";
 import { FocalImg } from "../components/FocalImg";
 import { useAgentArt, type AgentArt } from "../hooks/useAgentArt";
-import { DEFAULT_AGENT, useAgentList, useImportAgent, type ImportReport } from "../hooks/useAgents";
+import {
+  DEFAULT_AGENT,
+  useAgentRoster,
+  useImportAgent,
+  type ImportReport,
+} from "../hooks/useAgents";
 import { useAgentToolGrid } from "../hooks/useActions";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useSections } from "../hooks/useSections";
@@ -11,6 +16,7 @@ import { pickRoleplay } from "../hooks/useRoleplay";
 import { useSaveSettings, useSettings } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
 import { agentPin, pinStickyAgent } from "../lib/composer";
+import { tileInitial } from "../lib/fallbackTile";
 import { useThreadAgent } from "../store/chat";
 
 // THE AGENTS GALLERY (D70 / ROLEPLAY_PLAN §8.4) — one home for every agent regardless of kind, and
@@ -83,7 +89,7 @@ function AgentCard(props: {
             // character art at all, so a fresh install is ALL of these, and a grid of identical
             // person-glyphs would say less than the initials do. Tokens only, no picture to load.
             <span className="agal-mono" aria-hidden>
-              {(art.title[0] ?? "?").toUpperCase()}
+              {tileInitial(art.title)}
             </span>
           )}
         </span>
@@ -177,7 +183,7 @@ function ImportReportCard({
 // header, which stays with the standalone tab below, so the content boundary is again "everything below
 // the `.sec`". Standalone rendering is visually unchanged.
 export function AgentsContent() {
-  const { data: list } = useAgentList();
+  const { data: list } = useAgentRoster();
   const art = useAgentArt();
   const { navigate } = useSections();
   const { toolNames, toolModes } = useAgentToolGrid();
@@ -309,7 +315,7 @@ export function AgentsContent() {
 export function AgentsTab({ active }: { active: boolean }) {
   // The `.sec` header's count — the standalone shell's own line, so `AgentsContent` stays exactly the
   // hostable body (the hosted group's header carries the same count from ConfTab's own read).
-  const { data: list } = useAgentList();
+  const { data: list } = useAgentRoster();
   const count = 1 + (list?.agents ?? []).filter((n) => n !== DEFAULT_AGENT).length;
   // D70 §8.4a MED-3 (a latent S4 defect): `aria-labelledby="tabbtn-agents"` named an element that has
   // NEVER existed — the gallery was off-bar in every layout, and it still is under `conf`/`button`. The

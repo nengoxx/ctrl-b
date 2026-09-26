@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, del, getJSON, postJSON, putBytes, putJSON } from "../api/client";
+import { downloadJson, downloadName } from "../lib/download";
 import { pushToast } from "../store/toast";
 import { CONF_SECTIONS, useScopedQuery } from "./useScopedQuery";
 
@@ -229,6 +230,18 @@ export interface LorebookInfo {
   name: string;
   enabled: boolean;
   entries: number;
+  /** WHO LINKS THIS BOOK (D79 / §15.5, the ISS-24 ruling): the agent SLUGS whose effective `lorebooks`
+   *  list names it (`default` = the root, via `agent.defaults`), and whether the install attaches it
+   *  globally (`lorebooks.books`). OPTIONAL: an older server — or an e2e fixture — sends none, and the
+   *  row then simply says nothing about its users rather than claiming "unused". */
+  used_by?: LorebookRefs;
+}
+
+/** The `used_by` shape. A slug an agent names that no book holds is reported as-is server-side (a
+ *  dangling link is visible), so `agents` is never filtered against the roster here either. */
+export interface LorebookRefs {
+  agents: string[];
+  global: boolean;
 }
 
 /** `GET`/`PUT /api/lorebooks/{slug}` — the whole book under its slug. */
@@ -311,6 +324,20 @@ export function useDeleteLorebook() {
       pushToast("Lorebook removed", "ok");
     },
     onError: (e: Error) => pushToast(e.message || "Remove failed", "err"),
+  });
+}
+
+/** Export a book as SillyTavern's STANDALONE world-info JSON (D79 / §15.4) — the server's
+ *  `GET /lorebooks/{slug}/export` object verbatim, downloaded as `<book name>.json` (ST names an imported
+ *  book after its file). The server serializes from DISK, so the row disables this while its draft is
+ *  dirty. No success toast: the download itself is the outcome. */
+export function useExportLorebook() {
+  return useMutation({
+    mutationFn: async ({ slug, name }: { slug: string; name: string }) => {
+      const book = await getJSON<unknown>(`/api/lorebooks/${encodeURIComponent(slug)}/export`);
+      downloadJson(downloadName(name, ".json"), book);
+    },
+    onError: (e: Error) => pushToast(e.message || "Export failed", "err"),
   });
 }
 

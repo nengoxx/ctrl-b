@@ -47,17 +47,28 @@ class PingResult:
     error: str | None = None
 
 
-def _ping_cmd(ip: str, count: int, timeout_s: float) -> list[str]:
-    n = str(max(1, count))
+def _ping_cmd(ip: str, count: int, timeout_s: float) -> tuple[list[str], float]:
+    """`(argv, subprocess deadline in seconds)` for `count` echoes on THIS server's OS — the deadline
+    lives beside the syntax because only the syntax knows how long the command may legitimately run
+    (ISS-15; the OS-branch allowlist's own home, ARCHITECTURE §6).
+
+    Every platform waits up to `timeout_s` per echo, plus a second of process slack. Windows ALSO
+    paces ~1 s between echoes (`ping -n`), so its deadline adds `n - 1` seconds — without them a
+    silent address could cross the deadline, read as a `ping timeout` ERROR instead of offline, and a
+    LAN device would never arm (the D2-C failure mode). Unmeasured on Windows, from its documented
+    behaviour; Linux/macOS are unchanged (Linux measured: `-c 3 -W 1` ≈ 3.1 s)."""
+    n = max(1, count)
+    deadline = n * timeout_s + 1.0
     sysname = platform.system().lower()
     secs = str(max(1, int(timeout_s)))
     if sysname == "windows":
-        return ["ping", ip, "-n", n, "-w", str(max(1, int(timeout_s * 1000)))]
+        return ["ping", ip, "-n", str(n), "-w", str(max(1, int(timeout_s * 1000)))], deadline + (n - 1)
     if sysname == "darwin":
         # BSD ping: -t is the TOTAL timeout in seconds (-W would be ms here), so unlike Linux's
         # per-reply -W it has to cover every echo — or a multi-echo probe would be cut short.
-        return ["ping", "-c", n, "-t", str(max(1, int(timeout_s * max(1, count)))), ip]
-    return ["ping", "-c", n, "-W", secs, ip]  # Linux/other iputils: -W is per-reply wait in seconds
+        return ["ping", "-c", str(n), "-t", str(max(1, int(timeout_s * n))), ip], deadline
+    # Linux/other iputils: -W is per-reply wait in seconds.
+    return ["ping", "-c", str(n), "-W", secs, ip], deadline
 
 
 async def ping_addr(ip: str, *, count: int = 1, timeout_s: float = _DEFAULT_TIMEOUT_S) -> PingResult:
@@ -71,16 +82,17 @@ async def ping_addr(ip: str, *, count: int = 1, timeout_s: float = _DEFAULT_TIME
 
     Two riders, both load-bearing and neither obvious:
 
-    * **The subprocess deadline is COUNT-AWARE.** `timeout_s + 1` is right for one echo and would kill
-      a 3-echo probe at ~2 s (measured: `-c 3 -W 1` against a silent address takes ~3.1 s). Every
-      absent LAN device would then come back as a `ping timeout` ERROR rather than `offline`, and a
-      device that never reports offline never arms — the feature would silently never fire.
+    * **The subprocess deadline is COUNT-AWARE, and `_ping_cmd` owns it** (ISS-15). `timeout_s + 1` is
+      right for one echo and would kill a 3-echo probe at ~2 s (measured: `-c 3 -W 1` against a silent
+      address takes ~3.1 s). Every absent LAN device would then come back as a `ping timeout` ERROR
+      rather than `offline`, and a device that never reports offline never arms — the feature would
+      silently never fire. The per-OS arithmetic (Windows paces between echoes) sits beside the syntax.
     * **`stderr` and the exit code are read.** `ping` distinguishes "asked and got nothing" (exit 1)
       from "could not ask" (exit ≥ 2: no route, unresolvable name), and only the first is evidence of
       absence. Exit 0 without a TTL stays a MISS, not an error: Windows answers 0 for "Destination
       host unreachable", which the TTL test already covers.
     """
-    cmd = _ping_cmd(ip, count, timeout_s)
+    cmd, deadline = _ping_cmd(ip, count, timeout_s)
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -91,7 +103,7 @@ async def ping_addr(ip: str, *, count: int = 1, timeout_s: float = _DEFAULT_TIME
         return PingResult(online=False, error=str(exc))
 
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=max(1, count) * timeout_s + 1.0)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=deadline)
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()

@@ -227,7 +227,7 @@ vi.mock("../../src/hooks/useActions", () => ({
 }));
 vi.mock("../../src/hooks/useAgents", async (importActual) => {
   const actual = await importActual<typeof import("../../src/hooks/useAgents")>();
-  return { ...actual, useAgentList: () => ({ data: { agents: [], default: "default" } }) };
+  return { ...actual, useAgentRoster: () => ({ data: { agents: [], default: "default" } }) };
 });
 vi.mock("../../src/hooks/useDefaultPrompt", () => ({ useDefaultPrompt: () => ({ data: "" }) }));
 vi.mock("../../src/hooks/useIntegrations", () => ({

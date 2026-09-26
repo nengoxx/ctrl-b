@@ -15,10 +15,23 @@ toolset to `allowed_tools` (intersected with the agent's allowlist — never wid
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel
+
+#: A skill folder name: lowercase slug, no path separators — guards the skill file write (and the
+#: `/api/skills` + `/api/agents` endpoints) against traversal: the name becomes `<root>/<name>/SKILL.md`.
+#: Agent folders are minted and addressed under the same grammar (the card import's mint, `_agent_folder`,
+#: `Settings.list_agent_names`), which is why it lives HERE, in core: `config.py` needs it and must not
+#: import from `app.services` (ISS-29's layering, S9 review F4).
+SKILL_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def valid_skill_slug(name: str) -> bool:
+    """Whether `name` is a safe skill/agent folder slug (one source of truth for the API + tool)."""
+    return bool(SKILL_SLUG.match(name))
 
 
 class Skill(BaseModel):

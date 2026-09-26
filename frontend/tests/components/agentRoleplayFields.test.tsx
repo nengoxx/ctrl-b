@@ -41,6 +41,12 @@ vi.mock("../../src/hooks/useSettings", () => ({
     },
   }),
 }));
+// D79 — the footer's card EXPORT reads the agent-art resolver (roster × media index) through real
+// queries this suite blanket-mocks away; the export itself is pinned in agentsEditorS9.test.tsx.
+vi.mock("../../src/hooks/useAgentArt", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/useAgentArt")>()),
+  useExportCard: () => ({ exportCard: vi.fn(), pending: false }),
+}));
 vi.mock("../../src/hooks/useMediaLibrary", () => ({
   useMediaLibrary: () => ({ sections: [], write: { append: vi.fn() }, ready: false }),
 }));
