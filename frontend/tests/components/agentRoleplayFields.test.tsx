@@ -108,7 +108,7 @@ function renderRow(
     <AgentRow
       name="lyra"
       isDefault={false}
-      isResolvedDefault={false}
+      isSetDefault={false}
       open
       onToggle={() => undefined}
       toolNames={[]}
@@ -293,7 +293,7 @@ describe("AgentRow · dirty survives a collapse (the S5 F1 twin — fix rider)",
     <AgentRow
       name="lyra"
       isDefault={false}
-      isResolvedDefault={false}
+      isSetDefault={false}
       open={open}
       onToggle={() => undefined}
       toolNames={[]}

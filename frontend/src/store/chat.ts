@@ -26,6 +26,7 @@ import { consumeStaged, releaseStaged, stagedPreviews } from "./attachments";
 import { appendDraft, setDraft } from "./composer";
 import { createStore } from "./createStore";
 import { setConnection } from "./connection";
+import { loadPersisted, savePersisted } from "./persist";
 
 export type ChatStatus = "idle" | "streaming" | "error";
 
@@ -38,23 +39,44 @@ interface ChatState {
   // (unlike sessionMode) so the chip reflects it; session-scoped, so `/new` keeps it.
   sessionPrivilege: Privilege | null;
   // The sticky agent pick (7d) — `/agent <name>`, the agents gallery's Talk, the composer tools menu's
-  // agent rows, all through `lib/composer#pinSessionAgent` — null → the thread's / configured default
+  // agent rows, all through `lib/composer#pinStickyAgent` — null → the thread's / configured default
   // AgentDef. REACTIVE for exactly the reason `sessionPrivilege` is — surfaces render it: the agent
   // backdrop paints the ACTIVE agent's art, and "active" is this pin (§8.3a item 2); the tools menu
   // checks its row. It lives in ChatState rather than beside `sessionMode`/`turnMode` as a second
-  // module-level store because that is the shape this file already has for "a session pick a surface
-  // reflects".
+  // module-level store because that is the shape this file already has for "a pick a surface reflects".
+  // LIFETIME (D75 amendment, 2026-09-26 — the owner reversed the "session-scoped" S1 ruling): the pick
+  // is PERSISTED PER DEVICE (`ctrlb.chat`, see `KEY`), so a PWA relaunch comes back talking to
+  // the same agent; `writeSticky` is its one persist seam (`setStickyAgent` and `/new`'s single `set` both
+  // go through it), so every door persists by construction. `/new` keeps or clears it by the TANDEM RULE
+  // (`startNewThread`): no default configured → keep "the agent I was talking to"; a default configured
+  // → clear, so the fresh thread starts on that default.
   // Per-message only (not persisted on the thread): a resume/answer payload carries no `agent` at all,
   // so a continuation finishes on the SUSPENDED TURN's own agent (the server resolves it), not on
   // whatever is sticky now.
-  sessionAgent: string | null;
+  stickyAgent: string | null;
   // The OPEN THREAD's own pinned agent (D11's `Thread.agent`), null → the thread pins nobody. It is the
   // server's SECOND routing rung (`agent_name or thread.agent`, api/agent.py `_build_session`), and the
   // FE had no notion of it at all: booting into a thread pinned to a character replied AS that character
   // while every "which agent is active" surface still showed the default (owner glance 2026-09-08). It
-  // rides beside `sessionAgent` for the same reason that one is reactive — a surface renders it — and it
+  // rides beside `stickyAgent` for the same reason that one is reactive — a surface renders it — and it
   // is written wherever `threadId` is: the two describe ONE conversation and must never disagree.
   threadAgent: string | null;
+}
+
+//: The chat store's persisted slice (D23 chokepoint, `store/persist`) — ONE object so a later persisted
+//: chat preference is an added field, not a second key. Only `stickyAgent` rides it today; once a second
+//: field lands, `writeSticky` must SPREAD the stored blob rather than write `{agent}` alone.
+const KEY = "ctrlb.chat";
+interface PersistedChat {
+  agent: string | null;
+}
+
+/** The persisted sticky pick, or `null`. The TYPE guard is on the field, not the blob: `loadPersisted`
+ *  already folds a non-object blob to the defaults, but a hand-edited or foreign `{agent: 42}` still
+ *  merges through — a corrupt value is a clear, never a crash or a bogus `body.agent`. */
+function readStickyAgent(): string | null {
+  const { agent } = loadPersisted<PersistedChat>(KEY, { agent: null });
+  return typeof agent === "string" && agent.length ? agent : null;
 }
 
 let state: ChatState = {
@@ -63,7 +85,7 @@ let state: ChatState = {
   status: "idle",
   streamingId: null,
   sessionPrivilege: null,
-  sessionAgent: null,
+  stickyAgent: readStickyAgent(),
   threadAgent: null,
 };
 let loaded = false;
@@ -473,20 +495,29 @@ let turnMode: ChatMode | null = null;
 let turnSkills: string[] = [];
 
 // The sticky agent pick lives in ChatState (see its field note). These two are its whole API.
-export function setSessionAgent(name: string | null): void {
-  set({ sessionAgent: name });
+/** The ONE writer of the sticky pick — every door (`/agent`, Talk, the menu's rows) comes through here;
+ *  `/new` writes it inside its own single `set` and persists through the same `writeSticky`, so the
+ *  persisted copy can never disagree with the live one. */
+export function setStickyAgent(name: string | null): void {
+  set({ stickyAgent: name });
+  writeSticky(name);
+}
+/** The ONE persist seam for the sticky pick — PRIVATE and non-emitting, so a caller that already emitted
+ *  the new state (`setStickyAgent`, `startNewThread`) persists without a second emit. */
+function writeSticky(name: string | null): void {
+  savePersisted<PersistedChat>(KEY, { agent: name });
 }
 /** The sticky pick, REACTIVELY (D70 §8.3a item 2) — for a surface that must repaint when the owner
  *  switches agent (`/agent`, the gallery's Talk button, the tools menu's agent rows): the agent backdrop
  *  and the tools menu's checked row. A slice, not `useChat()`: the store emits on every streamed token,
  *  and this value changes a handful of times a session. */
-export function useSessionAgent(): string | null {
-  return useChatSlice((s) => s.sessionAgent);
+export function useStickyAgent(): string | null {
+  return useChatSlice((s) => s.stickyAgent);
 }
 
 // The OPEN THREAD's pinned agent (see its field note). Read-only to the app: it is not a pick anyone
 // makes here, it is what the loaded thread already carries, so the writes live at the load seams.
-/** The thread pin, REACTIVELY — the twin of `useSessionAgent` for every surface that must follow it: the
+/** The thread pin, REACTIVELY — the twin of `useStickyAgent` for every surface that must follow it: the
  *  agent backdrop, and the composer menu's checked row. There is deliberately NO non-reactive getter
  *  beside it: this value arrives on its own from `openThread`'s late pin read, so a snapshot taken at
  *  render time can be stale while the surface is still up. Same slice reasoning as its twin: it changes once per thread switch, while the store emits
@@ -929,8 +960,17 @@ export function pushUserEcho(text: string): void {
 }
 
 /** `/new`: drop back to a fresh, thread-less view. History stays in SQLite; the next send mints a
- *  new thread (the server creates one when `thread_id` is null). */
-export function startNewThread(): void {
+ *  new thread (the server creates one when `thread_id` is null).
+ *
+ *  `keepAgent` is the TANDEM RULE (D75 amendment, 2026-09-26), decided by the caller from whether a
+ *  default agent is CONFIGURED (`lib/composer`'s `defaultSet`, from the roster's `default_set`):
+ *    · none set → `keepAgent: true` — the fresh thread keeps the agent the owner was talking to: the
+ *      sticky pick if there is one, else PROMOTED from the thread's own pin (the agent actually talking
+ *      in a character thread, where nothing was sticky);
+ *    · a default set (the root or a specialist) → `keepAgent: false` — the pick is cleared, so the
+ *      fresh thread runs as that default.
+ *  Required, no default: which of the two a `/new` means is a decision, never an accident of arity. */
+export function startNewThread(opts: { keepAgent: boolean }): void {
   // ACA-10 / S2-C: don't clear out from under a live turn — the reset would strand the streaming
   // reply (and the server would 409 the next send onto the abandoned thread). Ask the owner to wait.
   if (state.status === "streaming") {
@@ -948,9 +988,20 @@ export function startNewThread(): void {
   lastSeq = 0;
   dropAllRaw(); // FIX C — prune every thread's harvested raw lines (no queued steer survives a /new)
   lastHarvestSig = null; // FIX E — a fresh view forgets the last harvest receipt (mirrors the backend clear)
-  // …and the fresh view pins nobody: a `/new` thread is minted unpinned (the sticky `/agent` pick is
-  // session-scoped and deliberately SURVIVES, which is why only this one resets).
-  set({ threadId: null, messages: [], status: "idle", streamingId: null, threadAgent: null });
+  // …and the fresh view's THREAD pins nobody: a `/new` thread is minted unpinned. The sticky pick is kept
+  // (promoted from the thread pin when nothing was sticky) or cleared per the tandem rule above — in the
+  // SAME `set` as the view reset, so no subscriber ever sees the new pick beside the old thread, then
+  // persisted through the one `writeSticky` seam `setStickyAgent` uses.
+  const stickyAgent = opts.keepAgent ? (state.stickyAgent ?? state.threadAgent) : null;
+  set({
+    threadId: null,
+    messages: [],
+    status: "idle",
+    streamingId: null,
+    threadAgent: null,
+    stickyAgent,
+  });
+  writeSticky(stickyAgent);
 }
 
 function emptyAssistant(id: string, agent: string | null = null): ChatMessage {
@@ -2426,11 +2477,11 @@ export async function sendMessage(
   const steering = state.status === "streaming";
   const mode = opts?.mode ?? sessionMode ?? null;
   const skills = opts?.skills ?? []; // explicit /skill-name invocations (4.5)
-  // The agent is the sticky session pick (`/agent`, Talk, the tools menu's agent rows), else the
+  // The agent is the sticky pick (`/agent`, Talk, the tools menu's agent rows), else the
   // server's ladder (null → the thread's pin, else the configured default). NOT stashed per-turn like
   // turnMode/turnSkills: the resume/answer payloads carry no `agent` (the server resolves the suspended
   // turn's own), so there is no pin a steer could re-point — a steer's agent rides its own POST.
-  const agent = state.sessionAgent;
+  const agent = state.stickyAgent;
   if (!steering) {
     turnMode = mode;
     turnSkills = skills;

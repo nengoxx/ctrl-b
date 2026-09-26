@@ -9,8 +9,8 @@
 //     a plain NL send takes them; an explicit `/verb` send CLEARS them without applying (the user routed
 //     by hand, so the hand-routing wins).
 //
-// The menu's OTHER section — which agent — is not here: it is a STICKY switch, and it writes the session
-// pin (`store/chat` `sessionAgent`, through `lib/composer#pinSessionAgent`, the seam `/agent <name>` and
+// The menu's OTHER section — which agent — is not here: it is a STICKY switch, and it writes the sticky
+// pin (`store/chat` `stickyAgent`, through `lib/composer#pinStickyAgent`, the seam `/agent <name>` and
 // the agents gallery's Talk button already drive). Only the skills are one-shot (D75 ruling, 2026-09-24).
 //
 // Dep-free `createStore` (D23).

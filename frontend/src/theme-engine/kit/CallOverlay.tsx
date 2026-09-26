@@ -36,7 +36,7 @@ import { startCall } from "../../store/liveCall";
 //
 // THE BACKDROP NEVER GOES AWAY (owner ruling): `useActiveBackdrop` ALONE — the active agent's bound
 // background, its avatar standing in, else the plain theme surface. A call with Lynette looks like HER.
-// It is the same routing ladder every send follows (the session pin the composer menu writes, else the
+// It is the same routing ladder every send follows (the sticky pin the composer menu writes, else the
 // thread's pin, else the default), so the face on the call screen is the agent the call's turns run as.
 // Gacha's oracle art deliberately does NOT participate: the call wears agent identity, not fleet
 // flavour. The paint is the shipped recipe (`FocalImg` + `.kit-backdrop-art`'s cover + a separate veil),

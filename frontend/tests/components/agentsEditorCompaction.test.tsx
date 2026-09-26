@@ -138,7 +138,7 @@ const defaultRow = (
   <AgentRow
     name="default"
     isDefault
-    isResolvedDefault
+    isSetDefault
     open
     onToggle={() => undefined}
     toolNames={[]}
@@ -179,6 +179,22 @@ type SavedAgent = {
 };
 const lastAgentPayload = () => h.saveSettings.mock.calls[0][0] as SavedAgent;
 const value = (label: string) => screen.getByLabelText<HTMLInputElement>(label).value;
+
+// D75 amendment (2026-09-26) — the "Default agent" pick left the draft: it saves IMMEDIATELY, the same way
+// its other door (the gallery card's "default" pill) does, and the three states are all offered.
+describe("AgentGlobals · the default-agent pick saves immediately", () => {
+  it("a pick PUTs at once and never dirties the globals draft", () => {
+    renderGlobals();
+    const group = screen.getByRole("group", { name: "Default agent" });
+    expect([...group.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+      "none",
+      "default (root)",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "default (root)" }));
+    expect(h.saveSettings).toHaveBeenCalledWith({ agent: { default_agent: "default" } });
+    expect(screen.getByRole("button", { name: "Saved" })).toBeTruthy(); // the bar stays clean
+  });
+});
 
 describe("AgentGlobals · global compaction block (D42)", () => {
   it("renders the threshold as a whole percent (frac ×100)", () => {

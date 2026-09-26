@@ -272,6 +272,8 @@
     .kit-composer .kit-send,
     .kit-composer .kit-cbtn.mic.line-btn,
     .kit .seg button.active,
+    /* the agent card's pressed "default" pill — the seg-active fill pair on a ~50px pill (D75 amendment) */
+    .kit .agal-default[aria-pressed="true"],
     .kit .mini-player .mp-play,
     /* the app-bar brand mark (G6.3 owner ruling): a 21px masked silhouette is the smallest filled control
        in the app — the full ramp across it read as "too much range of colors", so it takes the same calm

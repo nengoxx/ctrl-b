@@ -64,7 +64,7 @@ async function openThread() {
   return result;
 }
 
-beforeEach(() => startNewThread()); // reset the module-level store between cases
+beforeEach(() => startNewThread({ keepAgent: false })); // reset the module-level store between cases
 afterEach(() => vi.clearAllMocks());
 
 describe("compactThread (D42 manual /compact)", () => {
@@ -135,7 +135,7 @@ describe("compactThread (D42 manual /compact)", () => {
     });
     await act(async () => {
       const done = compactThread();
-      startNewThread(); // switch away (threadId → null) before the fetch resolves
+      startNewThread({ keepAgent: false }); // switch away (threadId → null) before the fetch resolves
       release();
       await done;
     });

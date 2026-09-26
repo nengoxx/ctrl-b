@@ -12,11 +12,11 @@ import {
   retryLastTurn,
   runShell,
   sendMessage,
-  setSessionAgent,
+  setStickyAgent,
   startNewThread,
   stopTurn,
   useChat,
-  useSessionAgent,
+  useStickyAgent,
   type SendOutcome,
 } from "../../src/store/chat";
 import type { Part } from "../../src/types";
@@ -96,7 +96,12 @@ function textOf(parts: Part[]): string {
 }
 
 beforeEach(() => {
-  startNewThread(); // reset the module-level store between cases
+  // Reset the module-level store between cases. The sticky pick is PERSISTED now (D75 amendment), so the
+  // storage goes first and the pick is cleared EXPLICITLY before the `/new`: a case that ends mid-stream
+  // leaves `startNewThread` refusing (a turn is live), and the pick must not leak into the next case.
+  localStorage.clear();
+  setStickyAgent(null);
+  startNewThread({ keepAgent: false });
 });
 
 describe("chat streaming reducer", () => {
@@ -611,7 +616,7 @@ describe("turn integrity — client (Slice 2)", () => {
     expect(result.current.status).toBe("streaming");
 
     act(() => {
-      startNewThread(); // must be refused: a turn is live
+      startNewThread({ keepAgent: false }); // must be refused: a turn is live
     });
     expect(result.current.status).toBe("streaming"); // NOT reset to idle
     expect(
@@ -2773,7 +2778,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
       p = reattachTurn("t1"); // enteredOn = "t1"; parks on the deferred json()
     });
     act(() => {
-      startNewThread(); // switch away → threadId null, messages cleared
+      startNewThread({ keepAgent: false }); // switch away → threadId null, messages cleared
     });
     expect(result.current.threadId).toBeNull();
 
@@ -2812,7 +2817,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
     }
     // 2) /new prunes rawByEntry (dropAllRaw).
     act(() => {
-      startNewThread();
+      startNewThread({ keepAgent: false });
     });
     // 3) a fresh streaming turn; Stop harvests the SAME entry — the raw line was pruned, so the harvest
     //    reconstructs the PLAIN server text ("do X"), NOT the "/cloud do X" raw that would survive a leak.
@@ -3069,7 +3074,7 @@ describe("the sticky agent on the wire", () => {
     });
     expect(body.agent).toBe(null); // nothing sticky → the server's ladder
 
-    setSessionAgent("ops"); // `/agent ops`, or the menu's `ops` row
+    setStickyAgent("ops"); // `/agent ops`, or the menu's `ops` row
     await act(async () => {
       await sendMessage("hi");
     });
@@ -3079,7 +3084,7 @@ describe("the sticky agent on the wire", () => {
     });
     expect(body.agent).toBe("ops");
 
-    setSessionAgent(null); // the menu's default row / bare `/agent`
+    setStickyAgent(null); // the menu's default row / bare `/agent`
     await act(async () => {
       await sendMessage("hi");
     });
@@ -3091,25 +3096,66 @@ describe("the sticky agent on the wire", () => {
   // row. Driven through the real hook (not the store internals) — a `useSyncExternalStore` binding that
   // never emits is exactly the failure this catches.
   it("the sticky pick NOTIFIES subscribers", () => {
-    setSessionAgent(null);
+    setStickyAgent(null);
     let renders = 0;
     const { result } = renderHook(() => {
       renders++;
-      return useSessionAgent();
+      return useStickyAgent();
     });
     expect(result.current).toBe(null);
     const before = renders;
 
     act(() => {
-      setSessionAgent("lynette");
+      setStickyAgent("lynette");
     });
     expect(result.current).toBe("lynette"); // the subscriber saw it
     expect(renders).toBeGreaterThan(before); // it really re-rendered, rather than reading stale state
 
     act(() => {
-      setSessionAgent(null); // back to the default — the clear notifies too
+      setStickyAgent(null); // back to the default — the clear notifies too
     });
     expect(result.current).toBe(null);
+  });
+
+  // D75 amendment (2026-09-26) — the pick is PERSISTED PER DEVICE (`ctrlb.chat` = `{agent}`) through its
+  // one writer, and `/new` keeps or clears it by the tandem rule the caller decides (`keepAgent`). The
+  // thread-pin PROMOTION half needs a loaded thread, so it lives beside the other pin cases in
+  // `chatOpenThread.test.ts`.
+  it("setStickyAgent persists `{agent}` — and `null` on the clear", () => {
+    setStickyAgent("ops");
+    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: "ops" });
+    setStickyAgent(null);
+    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: null });
+  });
+
+  it("/new with keepAgent keeps the sticky pick (no default set) — persisted too", () => {
+    const { result } = renderHook(() => useStickyAgent());
+    act(() => setStickyAgent("lynette"));
+    act(() => startNewThread({ keepAgent: true }));
+    expect(result.current).toBe("lynette");
+    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: "lynette" });
+  });
+
+  it("/new without keepAgent CLEARS the pick (a default set) — persisted too", () => {
+    const { result } = renderHook(() => useStickyAgent());
+    act(() => setStickyAgent("lynette"));
+    act(() => startNewThread({ keepAgent: false }));
+    expect(result.current).toBe(null);
+    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: null });
+  });
+
+  it("a fresh module HYDRATES the persisted pick — and a corrupt value is a clear, never a crash", async () => {
+    const hydrate = async (raw: string) => {
+      localStorage.setItem("ctrlb.chat", raw);
+      vi.resetModules(); // a PWA relaunch: the store's initial state is read again
+      const fresh = await import("../../src/store/chat");
+      return renderHook(() => fresh.useStickyAgent()).result.current;
+    };
+    expect(await hydrate(JSON.stringify({ agent: "lynette" }))).toBe("lynette");
+    expect(await hydrate(JSON.stringify({ agent: 42 }))).toBe(null); // a non-string field
+    expect(await hydrate(JSON.stringify({ agent: "" }))).toBe(null); // an empty one
+    expect(await hydrate(JSON.stringify("lynette"))).toBe(null); // a non-object blob
+    expect(await hydrate("{not json")).toBe(null); // unparseable
   });
 
   it("resume and answer payloads carry NO `agent` key — the server resolves the suspended turn's own", async () => {
@@ -3127,7 +3173,7 @@ describe("the sticky agent on the wire", () => {
       { event: "done", data: { state: "suspended" } },
     ]);
     renderHook(() => useChat());
-    setSessionAgent("ops"); // the turn's agent — which must NOT be re-sent on a continuation
+    setStickyAgent("ops"); // the turn's agent — which must NOT be re-sent on a continuation
     await act(async () => {
       await sendMessage("wake");
     });
@@ -3145,7 +3191,7 @@ describe("the sticky agent on the wire", () => {
     });
     expect(bodies.length).toBe(2);
     for (const b of bodies) expect("agent" in b).toBe(false);
-    setSessionAgent(null);
+    setStickyAgent(null);
   });
 
   it("a STEER's agent rides its own POST and does NOT re-point the live turn's mode/skills pins (D41)", async () => {
@@ -3187,11 +3233,11 @@ describe("the sticky agent on the wire", () => {
     });
     expect(hook.result.current.status).toBe("streaming");
 
-    setSessionAgent("ops"); // switched mid-turn — the steer is the first send to carry it
+    setStickyAgent("ops"); // switched mid-turn — the steer is the first send to carry it
     await act(async () => {
       await sendMessage("steer", { mode: "local", skills: ["backups"] });
     });
-    setSessionAgent(null);
+    setStickyAgent(null);
     expect(steerBody.agent).toBe("ops"); // the steer's own agent rode its own POST
 
     // The live turn suspends on a confirm — the pins taken at part.added must be the FRESH send's.

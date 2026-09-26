@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadAgents, loadSkills } from "../../src/lib/composer";
 import {
   openThread,
-  setSessionAgent,
+  setStickyAgent,
   startNewThread,
   useChat,
-  useSessionAgent,
+  useStickyAgent,
 } from "../../src/store/chat";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
 import { clearComposerSkills, useComposerSkills } from "../../src/store/composerSkills";
@@ -20,7 +20,7 @@ import { kitToolsMenuSlots } from "../../src/theme-engine/kit/composer/toolsMenu
 
 // A6 — the composer tools/skills MENU, driven through a REAL Kit composer with the addon composed in the
 // way DefaultRoot composes it (mergeComposerSlots → the variant's slots). Covers the trigger↔panel aria
-// contract, the two lifetimes the rows write (the agent = the STICKY session pin, the D75 ruling of
+// contract, the two lifetimes the rows write (the agent = the STICKY pin, the D75 ruling of
 // 2026-09-24; the skills = a one-shot for the next message), and the shared overlay slot (opening the menu
 // closes the plan sheet). The store mechanics live in tests/store/composerSkills|composerOverlay.test.ts.
 
@@ -62,7 +62,7 @@ const SKILLS = [{ name: "deploy" }, { name: "backups" }];
 beforeEach(async () => {
   clearDraft();
   clearComposerSkills();
-  setSessionAgent(null);
+  setStickyAgent(null);
   setComposerOverlay(null);
   localStorage.clear();
   globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
@@ -120,7 +120,7 @@ async function openMenu(c: HTMLElement, n = 3): Promise<void> {
 /** Read-only probes on the REAL stores the rows write: the sticky pin, the chat's last line (the
  *  `// agent → …` note the seam pushes), and the ticked skills. */
 function probes() {
-  const pin = renderHook(() => useSessionAgent());
+  const pin = renderHook(() => useStickyAgent());
   const chat = renderHook(() => useChat());
   const skills = renderHook(() => useComposerSkills());
   return {
@@ -187,10 +187,10 @@ describe("tools menu — trigger/panel wiring", () => {
 });
 
 // THE AGENT SECTION IS A STICKY SWITCH (D75 ruling, 2026-09-24): a row is `/agent <name>` by another hand
-// — it writes the session pin through the one seam (`pinSessionAgent`), pushes the same note, and holds
+// — it writes the sticky pin through the one seam (`pinStickyAgent`), pushes the same note, and holds
 // until switched again. Nothing about it is pending, so it never lights the trigger's dot.
 describe("tools menu — the agent switch (sticky)", () => {
-  it("picking a row PINS the session agent and pushes the `/agent` note — no dot, nothing pending", async () => {
+  it("picking a row PINS the sticky agent and pushes the `/agent` note — no dot, nothing pending", async () => {
     const p = probes();
     const { container } = renderComposer();
     await openMenu(container);
@@ -203,7 +203,7 @@ describe("tools menu — the agent switch (sticky)", () => {
   });
 
   it("the DEFAULT row CLEARS the pin in an unpinned thread, and reads checked", async () => {
-    setSessionAgent("ops");
+    setStickyAgent("ops");
     const p = probes();
     const { container } = renderComposer();
     await openMenu(container);
@@ -215,7 +215,7 @@ describe("tools menu — the agent switch (sticky)", () => {
   });
 
   it("the default's NAME as the pin reads as the default row too (the thread-pinned representation)", async () => {
-    setSessionAgent("default");
+    setStickyAgent("default");
     const { container } = renderComposer();
     await openMenu(container);
     expect(checkedRows(container)).toEqual(["default"]);
@@ -225,9 +225,9 @@ describe("tools menu — the agent switch (sticky)", () => {
     const { container } = renderComposer();
     await openMenu(container);
     expect(checkedRows(container)).toEqual(["default"]);
-    act(() => setSessionAgent("research")); // `/agent research`, the gallery's Talk — any other hand
+    act(() => setStickyAgent("research")); // `/agent research`, the gallery's Talk — any other hand
     expect(checkedRows(container)).toEqual(["research"]);
-    act(() => setSessionAgent(null));
+    act(() => setStickyAgent(null));
     expect(checkedRows(container)).toEqual(["default"]);
   });
 
@@ -235,7 +235,7 @@ describe("tools menu — the agent switch (sticky)", () => {
   // routeSlash already warned), but "typo" matches no row: reflecting it verbatim left EVERY radio
   // unchecked, i.e. the panel claiming the next message goes nowhere. The default row is where it goes.
   it("a sticky agent that isn't configured reads as the DEFAULT row, not an empty group", async () => {
-    setSessionAgent("typo");
+    setStickyAgent("typo");
     const p = probes();
     const { container } = renderComposer();
     await openMenu(container);
@@ -256,15 +256,46 @@ describe("tools menu — the agent switch (sticky)", () => {
       if (String(url).includes("/api/agents") && !String(url).includes("/api/media/"))
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ agents: ["lynette"], default: "ari", summaries: {} }),
+          json: () =>
+            Promise.resolve({ agents: ["ari", "lynette"], default: "ari", summaries: {} }),
         } as Response);
       return base(url, init);
     });
-    setSessionAgent("lynette"); // unknown to the module set — the query knows her
+    setStickyAgent("lynette"); // unknown to the module set — the query knows her
     const { container } = renderComposer();
-    await openMenu(container, 2); // "ari" + "lynette" — the query's roster, not the set's three
-    expect(radios(container).map(rowName)).toEqual(["ari", "lynette"]);
-    expect(checkedRows(container)).toEqual(["lynette"]); // …so the fold checks HER row, not "default"
+    await openMenu(container, 3); // the root + "ari" + "lynette" — the query's roster, not the set's
+    expect(radios(container).map(rowName)).toEqual(["default", "ari", "lynette"]);
+    expect(checkedRows(container)).toEqual(["lynette"]); // …so the fold checks HER row, not the default's
+  });
+
+  // D75 amendment code round (Opus MED): the ROOT is never in the roster's `agents`, so when a specialist
+  // is the RESOLVED default the old rows drew that specialist twice (as the "default" row and in the list)
+  // and the root not at all. Now: the root row first, each specialist once, the resolved default's row
+  // tagged — and the root is pinnable BY NAME (the same expression the gallery's Talk takes), which the
+  // fold keeps (`validStickyAgent`: the root's slug is always valid) so its row reads checked.
+  it("a specialist as the resolved default: the root has its own row, the specialist is tagged, no duplicate", async () => {
+    const base = globalThis.fetch;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).includes("/api/agents") && !String(url).includes("/api/media/"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ agents: ["lynette", "ops"], default: "lynette", summaries: {} }),
+        } as Response);
+      return base(url, init);
+    });
+    const p = probes();
+    const { container } = renderComposer();
+    await openMenu(container, 3);
+    expect(radios(container).map(rowName)).toEqual(["default", "lynette", "ops"]);
+    const tagOf = (r: HTMLInputElement) =>
+      r.closest("label")?.querySelector(".tools-tag")?.textContent ?? null;
+    // the root row reads "root" when it is not the default — never a second "default" (confirm round)
+    expect(radios(container).map(tagOf)).toEqual(["root", "default", null]);
+    expect(checkedRows(container)).toEqual(["lynette"]); // nothing pinned → the resolved default
+    fireEvent.click(radios(container)[0]); // the ROOT row
+    expect(p.pin()).toBe("default"); // pinned by name…
+    expect(checkedRows(container)).toEqual(["default"]); // …and NOT folded back to lynette
   });
 });
 
@@ -286,7 +317,7 @@ describe("tools menu — the skills one-shot", () => {
   });
 
   it("the clear row appears only with a skill ticked, and drops the skills — never the agent", () => {
-    setSessionAgent("ops");
+    setStickyAgent("ops");
     const p = probes();
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
@@ -401,7 +432,7 @@ describe("tools menu — the open thread's pinned agent", () => {
     return release;
   }
 
-  afterEach(() => startNewThread()); // the pin is store state — every arm starts with none
+  afterEach(() => startNewThread({ keepAgent: false })); // the pin is store state — every arm starts with none
 
   it("checks the THREAD's agent, and follows a pin that lands while the panel is OPEN", async () => {
     const release = serveThread("ops");

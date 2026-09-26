@@ -170,7 +170,7 @@ const captured: NotifySignal[] = [];
 const unsub = onNotify((s) => captured.push(s));
 
 beforeEach(() => {
-  startNewThread();
+  startNewThread({ keepAgent: false });
   captured.length = 0;
 });
 afterEach(() => {
@@ -590,7 +590,7 @@ describe("the non-live transports publish the same signals", () => {
             permission: { callId: "c1", token: "t", tool: "shutdown_host", prompt: "confirm?" },
           }),
         } as unknown as Response);
-      startNewThread(); // the owner taps /new exactly while the reload's re-read is in flight
+      startNewThread({ keepAgent: false }); // the owner taps /new exactly while the reload's re-read is in flight
       cleared = true;
       return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
     });

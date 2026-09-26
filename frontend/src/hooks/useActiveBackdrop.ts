@@ -6,8 +6,8 @@ import { useAgentArt, type BoundArt } from "./useAgentArt";
 //
 // THE RULE, and what it deliberately excludes:
 //   · the ACTIVE agent is the SERVER's routing ladder, mirrored (`lib/composer#effectiveAgent`): the
-//     sticky session pin when it is set (`/agent`, the gallery's Talk, the composer tools menu's agent
-//     rows — one seam, `pinSessionAgent`), else the OPEN THREAD's own D11 pin, else the resolved default
+//     sticky pin when it is set (`/agent`, the gallery's Talk, the composer tools menu's agent
+//     rows — one seam, `pinStickyAgent`), else the OPEN THREAD's own D11 pin, else the resolved default
 //     (whose own art may paint — a fresh install with art on the default agent shows it). The thread rung
 //     is what wave 1c added: booting into a thread pinned to a character replied as that character while
 //     this surface still painted the default (owner glance 2026-09-08), and §8.3a's rule is that the
@@ -23,8 +23,8 @@ import { useAgentArt, type BoundArt } from "./useAgentArt";
 // `null` is handed to `useAgentArt`'s resolver on purpose rather than resolved here: `art(null)` already
 // means "whichever agent a bare turn runs as", so the default's slug is looked up in exactly one place.
 //
-// THE LADDER ITSELF LIVES IN `lib/composer` (`effectiveAgent`, over `validSessionAgent`), and the ONE
-// subscription that feeds it — the session pin, the thread pin, the roster QUERY — is `useActiveAgent`,
+// THE LADDER ITSELF LIVES IN `lib/composer` (`effectiveAgent`, over `validStickyAgent`), and the ONE
+// subscription that feeds it — the sticky pin, the thread pin, the roster QUERY — is `useActiveAgent`,
 // taken by this hook AND by the tools menu's checked row, which is the only way those two can keep
 // answering the same question the same way.
 

@@ -614,7 +614,7 @@ this narrows it.*
    install = today's look exactly.
    (The rejected alternative — `operator` paints nothing on kit themes — would make the default
    state invisible on the default theme, contradicting ruling 13's default-ON.)
-2. **The active agent = the sticky session pin when valid in the roster, else the resolved
+2. **The active agent = the sticky pin when valid in the roster, else the resolved
    default** (whose own art may paint — its `background`, else its `avatar`). ONE image per
    surface: per-bubble `m.agent` never drives the backdrop, and the composer's one-shot armed pick does NOT flip it — a
    single-message target is not a change of operator; only switching characters (Talk /
@@ -623,7 +623,10 @@ this narrows it.*
    signatures — every existing caller untouched — plus a new `useSessionAgent()`; the
    valid-in-roster derivation already inline in `ToolsMenuSheet.tsx:83-90` is EXTRACTED and
    shared, not duplicated. *(Superseded 2026-09-24 (DECISIONS D75 ruling): the menu's agent pick
-   is now the STICKY session pin itself — no one-shot exists to include or exclude.)*
+   is now the STICKY session pin itself — no one-shot exists to include or exclude. Amended
+   2026-09-26 (D75 amendment): the pin is no longer session-scoped — renamed `stickyAgent`
+   (`setStickyAgent`/`useStickyAgent`), persisted per device, and kept or cleared at `/new` by the
+   default-agent tandem rule.)*
 3. **The setting**: `agentBackdrop: "operator" | "full" | "off"`, default `"operator"` — a
    **synced** appearance field (the `chatAvatarsVisible` class: `UIState` + the appearance doc
    + backend `AppearanceCfg.agent_backdrop`, additive, no migration), healed at read against a

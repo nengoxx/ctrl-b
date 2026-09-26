@@ -5,9 +5,9 @@ import { useActiveAgent } from "../../../../hooks/useActiveAgent";
 import { useAgentArt, type AgentArt } from "../../../../hooks/useAgentArt";
 import { DEFAULT_AGENT, useAgentRoster } from "../../../../hooks/useAgents";
 import {
-  defaultAgentPin,
+  agentPin,
   getKnownSkills,
-  pinSessionAgent,
+  pinStickyAgent,
   useVerbsVersion,
 } from "../../../../lib/composer";
 import { useThreadAgent } from "../../../../store/chat";
@@ -34,7 +34,7 @@ import {
 //
 // Two sections, two lifetimes (D75 ruling, 2026-09-24):
 //   • AGENT  — radio: the ACTIVE agent, STICKY. A row is the same switch `/agent <name>` and the agents
-//     gallery's Talk button flip (`lib/composer#pinSessionAgent` → `store/chat` `sessionAgent`), so it
+//     gallery's Talk button flip (`lib/composer#pinStickyAgent` → `store/chat` `stickyAgent`), so it
 //     holds until switched again. The "default" row clears the pin — or, inside a thread that carries its
 //     own D70 §4.2 pin, pins the default BY NAME, because a clear would let the thread's agent resurface.
 //   • SKILLS — checkboxes: the discovered skills, ticked for the NEXT message only (`store/composerSkills`,
@@ -81,15 +81,22 @@ export function ToolsMenuSheet() {
   const armed = ticked.length > 0;
   // The radio group checks the ACTIVE agent: the server's routing ladder (`useActiveAgent`, the one
   // subscription the agent backdrop paints by) — the sticky pin, else the OPEN THREAD's own pin, else the
-  // configured default. A pin that isn't a configured agent folds to the default row (the server's own
-  // answer for an unknown name), and a pin AT the default's name — what the default row writes inside a
-  // pinned thread — folds there too, so the default row reads checked in both of its representations.
+  // resolved default. A pin that isn't a configured agent folds to the resolved default's row (the
+  // server's own answer for an unknown name), and a pin AT the default's name — what that row writes
+  // inside a pinned thread — lands there too, so it reads checked in both of its representations.
   // Both pins are subscribed inside the hook: the sticky one because this panel WRITES it (a pick must
   // repaint the open group) and `/agent` or the gallery's Talk can move it from elsewhere; the thread pin
   // because it arrives on its own, from `openThread`'s LATE list read, and can land while the panel is up.
   const active = useActiveAgent() ?? defaultAgent;
-  // …read here too, for what the default row WRITES (`defaultAgentPin`): a clear, or the default by name.
+  // …read here too, for what the default's row WRITES (`agentPin`): a clear, or the name.
   const threadAgent = useThreadAgent();
+  // THE ROWS (D75 amendment code round): the ROOT first — it is never in the roster's `agents`, so it
+  // needs its own row — then each specialist, ONCE. The resolved default's row (the root, or a specialist
+  // promoted to the default) carries the "default" tag, meaning "what a bare thread resolves to"; the
+  // root row, when it is NOT that, reads "root" (its slug is "default", and two rows reading "default"
+  // was the code round's catch). What a row pins is `agentPin` — the gallery Talk's own expression, so
+  // the two doors cannot disagree.
+  const rows = [DEFAULT_AGENT, ...agents.filter((n) => n !== DEFAULT_AGENT)];
 
   return (
     <div
@@ -104,15 +111,15 @@ export function ToolsMenuSheet() {
           active agent
         </div>
         <div className="tools-list" role="radiogroup" aria-labelledby={AGENTS_LABEL_ID}>
-          <AgentRow
-            name={defaultAgent}
-            tag="default"
-            on={active === defaultAgent}
-            pin={defaultAgentPin(threadAgent, defaultAgent)}
-            avatar={art(null).avatar}
-          />
-          {agents.map((n) => (
-            <AgentRow key={n} name={n} on={active === n} pin={n} avatar={art(n).avatar} />
+          {rows.map((n) => (
+            <AgentRow
+              key={n}
+              name={n}
+              tag={n === defaultAgent ? "default" : n === DEFAULT_AGENT ? "root" : undefined}
+              on={active === n}
+              pin={agentPin(n, threadAgent, defaultAgent)}
+              avatar={art(n).avatar}
+            />
           ))}
         </div>
       </div>
@@ -158,8 +165,8 @@ export function ToolsMenuSheet() {
   );
 }
 
-/** One agent radio row. `pin` is what choosing it hands `pinSessionAgent` — the agent's name, or `""`
- *  (the session-pin CLEAR) for the default row outside a thread-pinned conversation.
+/** One agent radio row. `pin` is what choosing it hands `pinStickyAgent` — the agent's name, or `""`
+ *  (the sticky-pin CLEAR) for the resolved default's row outside a thread-pinned conversation.
  *
  *  D70 §8.4 — the name is LED by the agent's avatar as a small circle when it has one; an agent with no
  *  art (every agent before this phase) renders exactly the row it always did.
@@ -190,7 +197,7 @@ function AgentRow({
         className="tools-radio"
         name={AGENT_RADIO_NAME}
         checked={on}
-        onChange={() => pinSessionAgent(pin)}
+        onChange={() => pinStickyAgent(pin)}
       />
       <span className="tools-tick" aria-hidden>
         {on ? "•" : ""}

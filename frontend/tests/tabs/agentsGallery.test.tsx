@@ -20,11 +20,15 @@ const h = vi.hoisted(() => ({
   roleplayOn: false,
   /** The OPEN thread's own D70 §4.2 pin, as `useThreadAgent` reports it — `null` = an unpinned thread. */
   threadAgent: null as string | null,
+  /** The gallery's ONE settings mutation (the "default" pills) — its `mutate` + its `isPending`. */
+  saveMutate: vi.fn(),
+  savePending: false,
 }));
 
 const list = {
   agents: [] as string[],
   default: "default",
+  default_set: false,
   summaries: {} as Record<
     string,
     { title: string; description: string; avatar: string; background: string; voice: string }
@@ -82,7 +86,7 @@ vi.mock("../../src/hooks/useSkills", () => ({ useSkills: () => ({ data: [] }) })
 vi.mock("../../src/hooks/useDefaultPrompt", () => ({ useDefaultPrompt: () => ({ data: "" }) }));
 vi.mock("../../src/hooks/useSettings", () => ({
   useProviders: () => ({ data: { providers: {}, verbs: [], warnings: [] } }),
-  useSaveSettings: () => ({ mutate: vi.fn(), isPending: false }),
+  useSaveSettings: () => ({ mutate: h.saveMutate, isPending: h.savePending }),
   // The form reads the roleplay MODE off the settings doc (§9's visibility predicate) — and so does
   // the IMPORT entry point (§9's ruling: the fields are per-field, the button follows the mode).
   useSettings: () => ({ data: { roleplay: { enabled: h.roleplayOn } } }),
@@ -106,7 +110,7 @@ vi.mock("../../src/store/chat", async (importActual) => ({
 }));
 
 import { AgentsTab } from "../../src/tabs/AgentsTab";
-import { setSessionAgent, useSessionAgent } from "../../src/store/chat";
+import { setStickyAgent, useStickyAgent } from "../../src/store/chat";
 import { getUI, setUI } from "../../src/store/ui";
 
 const cards = () => screen.getAllByRole("button", { name: /Talk to/ });
@@ -117,8 +121,11 @@ const render = (ui: ReactElement) =>
 beforeEach(() => {
   list.agents = [];
   list.default = "default";
+  list.default_set = false;
   list.summaries = {};
-  setSessionAgent(null);
+  setStickyAgent(null);
+  h.saveMutate.mockReset();
+  h.savePending = false;
   h.importMutate.mockReset();
   h.importPending = false;
   h.roleplayOn = false;
@@ -132,12 +139,13 @@ describe("AgentsTab · the card grid", () => {
     render(<AgentsTab active />);
     expect(cards()).toHaveLength(1);
     expect(document.querySelector(".agal-name")?.textContent).toBe("default");
-    expect(screen.getByText("default agent · workspace root")).toBeTruthy();
+    expect(screen.getByText("workspace root")).toBeTruthy();
   });
 
-  it("lists the default FIRST, then the list route's order, and badges the resolved default", () => {
+  it("lists the default FIRST, then the list route's order", () => {
     list.agents = ["scout", "coder"];
     list.default = "scout";
+    list.default_set = true;
     list.summaries = {
       scout: { title: "Scout", description: "finds things", avatar: "", background: "", voice: "" },
     };
@@ -149,9 +157,6 @@ describe("AgentsTab · the card grid", () => {
     ]);
     // The summary's title and description are what the plate shows (the ONE summary+media join).
     expect(screen.getByText("finds things")).toBeTruthy();
-    // …and the DEFAULT badge follows the resolved default, not the root slug.
-    const badge = document.querySelector(".agal-badge");
-    expect(badge?.closest(".agal-cell")?.textContent).toContain("Scout");
   });
 
   it("no avatar → the quiet initial tile (the app ships no character art)", () => {
@@ -168,10 +173,77 @@ describe("AgentsTab · the card grid", () => {
   });
 });
 
+// D75 amendment (2026-09-26) — the card's "default" pill IS the default-agent control: a toggle on
+// every card, pressed only for the default the owner SET (`default_set`), deselectable, saving at once.
+describe("AgentsTab · the default pill", () => {
+  // The accessible name is STABLE across states (WAI-ARIA APG: a toggle's label never changes with its
+  // state — `aria-pressed` carries it), so one exact name finds the pill pressed or not.
+  const pill = (title: string) => screen.getByRole("button", { name: `${title}: default agent` });
+
+  it("the SET default's pill is pressed and ENABLED — tapping it deselects (back to none set)", () => {
+    list.agents = ["lynette"];
+    list.default = "lynette";
+    list.default_set = true;
+    render(<AgentsTab active />);
+    const on = pill("lynette");
+    expect(on.getAttribute("aria-pressed")).toBe("true");
+    expect(on.getAttribute("aria-label")).toBe("lynette: default agent"); // the same name as unpressed
+    expect((on as HTMLButtonElement).disabled).toBe(false);
+    expect(pill("default").getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(on);
+    expect(h.saveMutate).toHaveBeenLastCalledWith({ agent: { default_agent: "" } });
+  });
+
+  it("a specialist's pill makes it the default; the ROOT card's pill writes the root's own slug", () => {
+    list.agents = ["lynette"];
+    render(<AgentsTab active />);
+    fireEvent.click(pill("lynette"));
+    expect(h.saveMutate).toHaveBeenLastCalledWith({ agent: { default_agent: "lynette" } });
+    fireEvent.click(pill("default"));
+    expect(h.saveMutate).toHaveBeenLastCalledWith({ agent: { default_agent: "default" } });
+  });
+
+  it("with NOTHING set no pill is pressed — even though the root is what a bare thread resolves to", () => {
+    list.agents = ["lynette"];
+    render(<AgentsTab active />);
+    expect(
+      [...document.querySelectorAll(".agal-default")].map((b) => b.getAttribute("aria-pressed")),
+    ).toEqual(["false", "false"]);
+    expect(pill("default").getAttribute("aria-label")).toBe("default: default agent");
+    expect(screen.getByText("workspace root")).toBeTruthy(); // the root's subtitle claims nothing either
+  });
+
+  it("the OPEN card's header badge reads the same predicate — no badge on the root when nothing is set", () => {
+    render(<AgentsTab active />);
+    fireEvent.click(screen.getByText("workspace root"));
+    expect(document.querySelector(".agal-detail .badge")).toBeNull();
+    cleanup();
+    list.default_set = true; // the root, set explicitly
+    render(<AgentsTab active />);
+    fireEvent.click(screen.getByText("workspace root"));
+    expect(document.querySelector(".agal-detail .badge")?.textContent).toBe("default");
+  });
+
+  it("every pill is disabled while a save is in flight — one write at a time", () => {
+    list.agents = ["lynette"];
+    h.savePending = true;
+    render(<AgentsTab active />);
+    const pills = [...document.querySelectorAll<HTMLButtonElement>(".agal-default")];
+    expect(pills).toHaveLength(2);
+    expect(pills.every((b) => b.disabled)).toBe(true);
+  });
+
+  it("the pill is a SIBLING of the card, never inside it (a button in a button is invalid HTML)", () => {
+    render(<AgentsTab active />);
+    expect(document.querySelector(".agal-card .agal-default")).toBeNull();
+    expect(document.querySelector(".agal-cell > .agal-default")).toBeTruthy();
+  });
+});
+
 describe("AgentsTab · the two verbs", () => {
-  it("TALK pins the session agent and lands on the chat section", () => {
+  it("TALK pins the sticky agent and lands on the chat section", () => {
     list.agents = ["scout"];
-    const pin = renderHook(() => useSessionAgent());
+    const pin = renderHook(() => useStickyAgent());
     render(<AgentsTab active />);
     fireEvent.click(screen.getByRole("button", { name: "Talk to scout" }));
     expect(pin.result.current).toBe("scout"); // the `/agent <name>` seam, not a second pinning path
@@ -181,8 +253,8 @@ describe("AgentsTab · the two verbs", () => {
   it("TALK on the RESOLVED DEFAULT clears the pin (bare `/agent`), rather than pinning its name", () => {
     list.agents = ["scout"];
     list.default = "scout";
-    setSessionAgent("coder");
-    const pin = renderHook(() => useSessionAgent());
+    setStickyAgent("coder");
+    const pin = renderHook(() => useStickyAgent());
     render(<AgentsTab active />);
     fireEvent.click(screen.getByRole("button", { name: "Talk to scout" }));
     expect(pin.result.current).toBeNull();
@@ -190,13 +262,13 @@ describe("AgentsTab · the two verbs", () => {
 
   it("TALK on the resolved default inside a thread PINNED to a character pins the default BY NAME (D75 ruling)", () => {
     // A clear here would let the thread's character resurface (the ladder: sticky, else the thread's
-    // pin). The same `defaultAgentPin` expression the tools menu's default row takes decides it — fed
+    // pin). The same `agentPin` expression the tools menu's rows take decides it — fed
     // the LIST's resolved default (a specialist promoted to the default here, to prove the name is the
     // list's own and not the composer's module-set copy, which this harness never loads).
     list.agents = ["lynette", "ari"];
     list.default = "ari";
     h.threadAgent = "lynette";
-    const pin = renderHook(() => useSessionAgent());
+    const pin = renderHook(() => useStickyAgent());
     render(<AgentsTab active />);
     fireEvent.click(screen.getByRole("button", { name: "Talk to ari" }));
     expect(pin.result.current).toBe("ari"); // by NAME — not the clear the unpinned arm above gets
@@ -205,7 +277,7 @@ describe("AgentsTab · the two verbs", () => {
   it("a card TAP opens that agent's editor — the very row the list has always opened", () => {
     render(<AgentsTab active />);
     expect(screen.queryByLabelText("Max output tokens")).toBeNull();
-    fireEvent.click(screen.getByText("default agent · workspace root"));
+    fireEvent.click(screen.getByText("workspace root"));
     expect(screen.getByLabelText("Max output tokens")).toBeTruthy(); // AgentFieldsForm is up
     fireEvent.click(screen.getByRole("button", { name: "‹ all agents" }));
     expect(screen.queryByLabelText("Max output tokens")).toBeNull(); // back to the grid

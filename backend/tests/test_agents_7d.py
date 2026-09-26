@@ -48,17 +48,17 @@ def _client():
 
 
 def _names(c) -> dict:
-    """`GET /api/agents` without its D70 `summaries` map — the 7d contract (names + resolved default),
-    asserted whole so a field can never quietly leave it."""
+    """`GET /api/agents` without its D70 `summaries` map — the 7d contract (names + resolved default +
+    the D75-amendment `default_set`), asserted whole so a field can never quietly leave it."""
     body = c.get("/api/agents").json()
-    return {"agents": body["agents"], "default": body["default"]}
+    return {"agents": body["agents"], "default": body["default"], "default_set": body["default_set"]}
 
 
 def test_agent_folder_crud_and_default() -> None:
     with _workspace() as (tmp, cfg):
         with _client() as c:
-            # empty workspace → no folder agents; the default resolves to the root "default"
-            assert _names(c) == {"agents": [], "default": "default"}
+            # empty workspace → no folder agents; the default resolves to the root "default", none SET
+            assert _names(c) == {"agents": [], "default": "default", "default_set": False}
 
             # create a specialist via the file API; a new folder scaffolds agent.yaml + SOUL.md
             r = c.put(
@@ -99,7 +99,7 @@ def test_agent_folder_crud_and_default() -> None:
             assert c.put("/api/settings", json={"agent": {"default_agent": "ops"}}).status_code == 200
 
             # GET /api/agents reflects the discovered name + resolved default
-            assert _names(c) == {"agents": ["ops"], "default": "ops"}
+            assert _names(c) == {"agents": ["ops"], "default": "ops", "default_set": True}
 
             # hot-applied: the running app resolves it live (no restart), SOUL.md → prompt
             resolved = c.app.state.settings.resolve_agent(None)
@@ -121,10 +121,32 @@ def test_agent_folder_crud_and_default() -> None:
             # finds no folder and falls back gracefully to the root "default" (no 500, no stale agent).
             assert c.delete("/api/agents/ops").status_code == 200
             assert not folder.exists()
-            assert _names(c) == {"agents": [], "default": "default"}
+            # `default_set` is FALSE: the configured name dangles, resolves to the root, and must not press
+            # the root's gallery pill for a choice the owner never made (D75 amendment code round)
+            assert _names(c) == {"agents": [], "default": "default", "default_set": False}
             assert c.app.state.settings.resolve_agent(None).name == "default"
             # delete again → 404 (idempotent surface)
             assert c.delete("/api/agents/ops").status_code == 404
+
+
+def test_default_agent_three_states() -> None:
+    """`agent.default_agent` has three states (D75 amendment): `""` = none set, `"default"` = the root
+    SET explicitly, `"<name>"` = a specialist. The first two both resolve to the root; only
+    `default_set` tells them apart — which is what the client's `/new` and the gallery pill read."""
+    with _workspace() as (_tmp, _cfg):
+        with _client() as c:
+            assert _names(c) == {"agents": [], "default": "default", "default_set": False}
+            # the root's own slug, set explicitly → the root def (the short-circuit, not a folder lookup)
+            assert c.put("/api/settings", json={"agent": {"default_agent": "default"}}).status_code == 200
+            assert c.app.state.settings.resolve_agent(None).name == "default"
+            assert _names(c) == {"agents": [], "default": "default", "default_set": True}
+            # deselect → back to none set
+            assert c.put("/api/settings", json={"agent": {"default_agent": ""}}).status_code == 200
+            assert _names(c) == {"agents": [], "default": "default", "default_set": False}
+            # a configured name with NO folder dangles → resolves to the root, and reads as nothing SET
+            # (the root's pill must not press for a choice the owner never made)
+            assert c.put("/api/settings", json={"agent": {"default_agent": "ghost"}}).status_code == 200
+            assert _names(c) == {"agents": [], "default": "default", "default_set": False}
 
 
 def test_agent_defaults_inheritance() -> None:

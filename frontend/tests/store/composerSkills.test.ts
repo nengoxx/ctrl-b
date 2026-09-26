@@ -11,7 +11,7 @@ import {
 // A6 — the composer menu's ONE-SHOT skills store. Two invariants beyond plain get/set: it is SPENT on
 // dispatch (`take` = read + clear, so no send can leave stale ticks showing), and it is NOT PERSISTED
 // (a ticked skill must never survive a reload — see the store header). The menu's agent section is not
-// here at all: it is sticky, and writes the session pin (D75 ruling, 2026-09-24).
+// here at all: it is sticky, and writes the sticky pin (D75 ruling, 2026-09-24).
 
 beforeEach(() => {
   clearComposerSkills();

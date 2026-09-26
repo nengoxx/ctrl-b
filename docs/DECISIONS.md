@@ -363,7 +363,8 @@ process journal (systemd/Task Scheduler) replace file logs. Hermes' `cron/` maps
 `USER.md` hold personal data → **gitignored** (extends the no-secrets rule); `SOUL.md`/`skills/` are
 persona/capability → trackable if the owner wants them in the repo.
 
-**Invocation — explicit first, optional auto-rotate.** `/agent <name>` (sticky per session) and the
+**Invocation — explicit first, optional auto-rotate.** `/agent <name>` (sticky, persisted per device —
+D75 amendment 2026-09-26) and the
 generalist's `spawn_subagents` are the primary paths. An optional **`AgentSelector`** (mirrors the
 existing `SkillSelector` strategy) can auto-route a turn to a specialist **only when enabled** in
 settings — default off, predictable.
@@ -5561,6 +5562,70 @@ re-points only later sends. **RULED (owner, 2026-09-24, Opus S1):** `sessionAgen
 `/agent` writes, so both drop to the default on a PWA relaunch, truthfully shown by every surface.
 "Keep it that way for now; maybe we'll change it to persist for both in the future" — if that day
 comes, persist the ONE field and all three doors (`/agent`, Talk, the menu) follow.
+**AMENDMENT 2026-09-26 (owner ruling — the pick persists; the default and the pick work in TANDEM).**
+The owner asked for two things: `/new` should "keep the last used agent regardless", surviving a PWA
+relaunch; and the agents gallery should let them pick the default agent on the card itself ("the same
+space that is the default label could be used as the button itself"). They then ruled how the two meet:
+"if there's a default set up, the new session would have to fall back to the default … we could also
+deselect the default, in which case `/new` would work as intended". **The S1 "session-scoped" answer
+above is REVERSED:** the sticky pick (`ChatState.sessionAgent` → renamed **`stickyAgent`**, with
+`setStickyAgent`/`useStickyAgent`/`pinStickyAgent`/`validStickyAgent` — `sessionPrivilege` stays
+session-scoped, so one word no longer means two lifetimes) is **persisted per device** through the D23
+chokepoint (`store/persist`, key `ctrlb.chat`, blob `{agent}`; a non-string field hydrates as a clear),
+and `writeSticky` is its one persist seam (`setStickyAgent` and `/new`'s single `set` both go through it),
+so every door persists by construction. **The tandem rule** —
+`agent.default_agent` now has three states, and `GET /api/agents` publishes `default_set` beside the
+resolved `default` (the two differ exactly when nothing is set):
+
+| `agent.default_agent` | meaning | `/new` does |
+|---|---|---|
+| `""` — none set (deselected) | a bare thread falls to the root | KEEPS the sticky pick — promoting the open thread's own pin when nothing is sticky ("the agent I was talking to") |
+| `"default"` — the root's slug | the root IS the configured default | CLEARS the pick → the fresh thread runs as the root |
+| `"<specialist>"` | that agent is the default | CLEARS the pick → the fresh thread runs as that agent |
+
+The client decides it from one module value (`lib/composer`'s `defaultSet`, installed by ONE installer,
+`installAgents`, which both the import-time `loadAgents` and the always-on roster query feed — the query
+retries and refetches on focus, so a failed first load heals); `startNewThread(opts: {keepAgent})` takes
+it as a REQUIRED parameter. The persisted pick stays in both modes (it is "who I am talking to now").
+**The gallery pill** — the card's old read-only "default" badge became the control: a toggle
+(`aria-pressed`) on every card, pressed only for the default the owner SET (`default_set && default ===
+name`, so nothing is pressed on a fresh install); tapping an unpressed pill sets it (the root card writes
+`"default"`), tapping the pressed one DESELECTS (`""`); no toast, no pin, no navigation — the pill moving
+is the confirmation. The open card's header badge reads the same predicate; the root's subtitle is now
+"workspace root". **Two doors, one field, one save style:** the pill and Conf → Agent globals' "Default
+agent" Seg (now `none` · `default (root)` · each specialist) both save IMMEDIATELY. **Auto-route (7e-g):**
+with a default set, `/new` starts unpinned, so auto-route may pick a specialist for the fresh thread (that
+IS the feature: route by content unless pinned); with none set, the kept pick means auto-route fires only
+after a bare `/agent`. **Two words, two things:** the RESOLVED default's row carries the "default" tag (the root
+row reads "root" when it is not it) — it means "what a bare thread resolves to" (the root when nothing is
+set), while the gallery's pill means "configured". `effectiveAgent` no longer folds an unknown name against
+an UNLOADED (`undefined`) roster (a cold launch
+hydrates the pick before the roster lands; folding there would claim "default" while `sendMessage` sends
+the pick). **Residuals, recorded:** ① (Maya 2) a `/new` inside the RTT of an explicitly opened
+CHARACTER thread's late pin read loses the promotion (normal chat never pins a thread; boot's reopen
+passes the pin with the list read) ② (Maya 3) the gallery reads `["agentlist"]` while the menu/backdrop
+read `["agents"]` — two queries over one GET, refetched separately, so they can disagree for one refetch
+— a polish follow-up, ISSUES **ISS-20** ③ (D75's Opus F2, now PERMANENT rather than per-session) a
+default pinned BY NAME outlives the thread it was set for and, while it stands, disables 7e-g
+auto-routing (an explicit `body.agent`); relatedly, a sticky pick outranks an OPENED thread's own
+character pin until the owner taps that character ④ a gallery-pill tap followed by `/new` inside one
+round-trip reads the PREVIOUS `default_set` (recorded, not reachable on the phone: the pill lives in the
+gallery, `/new` is typed in the composer on another section) ⑤ a deleted or renamed agent's name stays
+persisted as the sticky pick until the owner picks again (every surface folds it to the default once the
+roster lands, and `pinStickyAgent`'s note already says "not configured — will fall back to default") ⑥
+(Maya, code round) two open tabs of the PWA do not observe each other's persisted pick — there is no
+`storage` listener; **RULED not built**: the same class as every persisted store here, and the deployment
+is single-user, one PWA. **The dangling default (code round):** a configured `default_agent` whose folder
+is gone resolves to the root, and `default_set` then reports FALSE (`default_set = bool(configured) and
+default == configured`) — so the root's pill is not pressed for a choice the owner never made, and `/new`
+keeps the pick; both doors agree on "nothing set", which is what the dangling name acts as. **The code
+round's other rulings:** the root's own slug is always a valid sticky pin (`validStickyAgent` — the roster
+never lists the root, so a by-name root pin used to fold to the RESOLVED default); the tools menu lists
+the ROOT first, then each specialist once, tags the resolved default's row "default" (the root row "root" when it is not it), and pins with the
+gallery Talk's own expression — ONE function now, `agentPin(name, threadAgent, defaultName)`, which
+replaced `defaultAgentPin`; the pill's accessible name is STABLE (`<title>: default agent` +
+`aria-pressed`, per the WAI-ARIA APG toggle rule — this reverses v3.1's state-dependent label); both
+readers of `GET /api/agents` claim a load generation BEFORE their fetch and only the newest installs.
 
 **ADDENDUM ⑥ — the coupling round (owner, 2026-09-23, in conversation).** The owner proposed
 COUPLING the clean bargain to the interruption toggle — `barge_in` off ⇒ EC off + the ear-hold on

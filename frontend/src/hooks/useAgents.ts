@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { del, getJSON, putBytes, putJSON } from "../api/client";
-import { loadAgents } from "../lib/composer";
+import { beginAgentsLoad, installAgents, loadAgents } from "../lib/composer";
 import type { Privilege } from "../lib/privilege";
 import { pushToast } from "../store/toast";
 import { CONF_SECTIONS, useScopedQuery } from "./useScopedQuery";
@@ -126,8 +126,7 @@ export function pickAgentSection(section: Partial<AgentSectionCfg> | undefined):
   };
 }
 
-/** The `default` slug — the workspace-root / generalist agent (no agent.yaml). */
-export const DEFAULT_AGENT = "default";
+export { DEFAULT_AGENT } from "../lib/agentSlug"; // the root's slug lives in a leaf module (cycle-free)
 
 export interface AgentFull {
   name: string;
@@ -162,8 +161,13 @@ export interface AgentSummary {
   voice: string;
 }
 
-/** `GET /api/agents` — the names, the resolved default, and one summary per agent (the default
- *  included, so `default` can be looked up in the map).
+/** `GET /api/agents` — the names, the resolved default, whether a default is CONFIGURED, and one
+ *  summary per agent (the default included, so `default` can be looked up in the map).
+ *
+ *  `default` is what a bare thread RESOLVES to — the root when nothing is set; `default_set` says whether
+ *  the owner SET one (`agent.default_agent` non-empty, D75 amendment). The two differ exactly when
+ *  nothing is set: `default: "default", default_set: false`. The gallery's pill and `/new`'s tandem rule
+ *  read `default_set`; the tools menu's default row and the backdrop's fallback read `default`.
  *
  *  `summaries` is declared OPTIONAL for the reason the media wire fields are: a client can be handed a
  *  pre-D70 response (a service-worker cache from before an update, an e2e mock) and every consumer
@@ -171,6 +175,7 @@ export interface AgentSummary {
 export interface AgentListing {
   agents: string[];
   default: string;
+  default_set?: boolean; // optional for the `summaries` reason above: absent reads as "none set"
   summaries?: Record<string, AgentSummary>;
 }
 
@@ -185,11 +190,20 @@ export function useAgentList() {
 
 /** The resolved default agent slug + specialist names, always-on (not Conf-scoped). The Agent tab
  *  uses `default` to attribute per-turn agents on assistant bubbles (7e-c) — a turn is labelled only
- *  when its `agent` differs from this. Reuses the `["agents"]` key the agent mutations invalidate. */
+ *  when its `agent` differs from this. Reuses the `["agents"]` key the agent mutations invalidate.
+ *
+ *  Every read is also INSTALLED into routing's module copy (`lib/composer#installAgents`, the
+ *  `loadProviders` → `setAttachmentInfo` precedent): this query retries and refetches on focus, so it is
+ *  what heals `/new`'s tandem rule on the phone after a failed import-time `loadAgents`. */
 export function useAgentRoster() {
   return useQuery<AgentListing>({
     queryKey: ["agents"],
-    queryFn: () => getJSON("/api/agents"),
+    queryFn: async () => {
+      const gen = beginAgentsLoad(); // claimed BEFORE the fetch — see `installAgents`' generation guard
+      const data = await getJSON<AgentListing>("/api/agents");
+      installAgents(data, gen);
+      return data;
+    },
     staleTime: 30_000,
   });
 }

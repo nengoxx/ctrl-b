@@ -1535,6 +1535,7 @@ def _list_agents_payload(s: Settings) -> dict[str, Any]:
             log.warning("agent %r failed to load; listing it without a summary", name, exc_info=True)
             agent = None
         summaries[name] = _agent_summary(agent) if agent is not None else dict.fromkeys(_SUMMARY_FIELDS, "")
+    configured = s.agent.default_agent or ""
     try:
         resolved = s.resolve_agent(None)
     except Exception:
@@ -1542,20 +1543,32 @@ def _list_agents_payload(s: Settings) -> dict[str, Any]:
         # malformed agent there would take the whole route down even though the loop already listed it
         # as a degraded row. Point `default` at that row when it exists, else at the root default —
         # which is seeded first, so `default` is a key of `summaries` either way.
-        configured = s.agent.default_agent or ""
         log.warning("default agent %r failed to load; listing the degraded row", configured, exc_info=True)
         default = configured if configured in summaries else s.DEFAULT_AGENT_NAME
     else:
         summaries.setdefault(resolved.name, _agent_summary(resolved))
         default = resolved.name
-    return {"agents": names, "default": default, "summaries": summaries}
+    # `default_set` beside the resolved `default` (D75 amendment): `""` and `"default"` both resolve to
+    # the root, but only the second is a default the owner SET — which is what flips the client's `/new`
+    # from "keep the sticky pick" to "start on the default", and what presses the gallery's pill. SET means
+    # the configured name is the one that RESOLVED: a configured specialist whose folder is gone resolves to
+    # the root, and reporting it as set would press the ROOT's pill for a choice the owner never made — so
+    # a dangling name reads as "nothing set" at both doors (the pill and `/new`), which is what it acts as.
+    return {
+        "agents": names,
+        "default": default,
+        "default_set": bool(configured) and default == configured,
+        "summaries": summaries,
+    }
 
 
 @router.get("/agents")
 async def list_agents(request: Request) -> dict[str, Any]:
     """Discovered specialist agent names + the resolved default (7d/D14) — for the composer
     `/agent <name>` switch and a quick reference. Names come from `agents/<name>/` folders; the
-    default/root agent isn't listed (`default` is what a bare thread resolves to).
+    default/root agent isn't listed (`default` is what a bare thread resolves to). `default_set` says
+    whether `agent.default_agent` is set at all (D75 amendment) — `default` alone cannot tell "none set,
+    the root is the floor" from "the root, set explicitly", since both resolve to `"default"`.
 
     `summaries` (D70 §10-S4) maps EVERY agent — the root default included — to its `_SUMMARY_FIELDS`,
     so the gallery, the composer's agent picker, the who-line avatar and the backdrop all read one

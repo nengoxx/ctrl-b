@@ -373,8 +373,9 @@ class TurnsCfg(BaseModel):
 
 
 class AgentCfg(BaseModel):
-    """Agent-runtime settings (D10/D11/D14). `default_agent` names which `agents/<name>/` folder a
-    new thread uses (blank → the default/root agent). `global_subagent_limit` caps concurrent
+    """Agent-runtime settings (D10/D11/D14). `default_agent` has three states (D75 amendment):
+    `""` = none set (a bare thread falls to the root/default agent), `"default"` = the root, set
+    explicitly, `"<name>"` = that `agents/<name>/` specialist. `global_subagent_limit` caps concurrent
     subagents across the *whole* tree (§5.5), independent of any one agent's fan-out cap.
     `extra="allow"` so later per-knob additions round-trip."""
 
@@ -384,7 +385,10 @@ class AgentCfg(BaseModel):
     #: Server-owned durable-turn knobs (ACA Slice 3, D39) — `agent.turns.*`. Nested sub-model like
     #: `compaction`; all turn-registry/drain/SSE tunables live here (no magic numbers in the loop).
     turns: TurnsCfg = Field(default_factory=TurnsCfg)
-    default_agent: str = ""  # name of the default agent folder; "" → built-in default
+    #: The configured default agent: `""` = none set (a bare thread falls to the root; the client's
+    #: `/new` then keeps the sticky pick) · `"default"` = the root, set explicitly · `"<name>"` = that
+    #: specialist folder. Set (either of the last two) → the client's `/new` clears the sticky pick.
+    default_agent: str = ""
     default_title: str = ""  # optional display name for the default/root agent (slug stays "default")
     #: Inheritance base for folder-discovered agents (D14/D15 #1). An `AgentDef`-shaped mapping
     #: (no `name`/`prompt`) whose fields a specialist's `agent.yaml` overrides via
@@ -2392,9 +2396,12 @@ class Settings(BaseModel):
 
     def resolve_agent(self, name: str | None = None) -> AgentDef:
         """Resolve an `AgentDef` by name (folder-only, D15 #3). `name=None` → the configured
-        `agent.default_agent` folder, else the root default agent. An unknown/since-deleted name
-        falls back to the default rather than 500ing — a thread that references it keeps working."""
+        `agent.default_agent`: `""` (none set) → the root, `"default"` → the root (set explicitly),
+        `"<name>"` → that folder. An unknown/since-deleted name falls back to the root rather than
+        500ing — a thread that references it keeps working."""
         target = name or self.agent.default_agent or None
+        if target == self.DEFAULT_AGENT_NAME:
+            return self.default_agent_def()  # the root's own slug — never a folder lookup
         if target:
             loaded = self._load_agent_folder(target)
             if loaded is not None:

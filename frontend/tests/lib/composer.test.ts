@@ -14,22 +14,24 @@ vi.mock("../../src/store/chat", () => ({
   compactThread: vi.fn(),
   startNewThread: vi.fn(),
   setSessionMode: vi.fn(),
-  setSessionAgent: vi.fn(),
+  setStickyAgent: vi.fn(),
   setSessionPrivilege: vi.fn(),
   pushSystemNote: vi.fn(),
 }));
 vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
 
 import {
-  defaultAgentPin,
+  agentPin,
   effectiveAgent,
   fillComposer,
   getCompletions,
+  beginAgentsLoad,
   getKnownSkills,
+  installAgents,
   loadAgents,
   loadProviders,
   loadSkills,
-  pinSessionAgent,
+  pinStickyAgent,
   runComposer,
 } from "../../src/lib/composer";
 import { PRIVILEGE_LEVELS } from "../../src/lib/privilege";
@@ -308,7 +310,7 @@ describe("runComposer × staged attachments (D68 §7)", () => {
 // A6 — the composer tools/skills MENU ticks ONE-SHOT skills for the NEXT message; `runComposer` is where
 // they are applied or overridden. The pinned precedence rule: a plain NL send CARRIES the ticks (and spends
 // them); an EXPLICIT `/verb` send WINS over the menu — it spends the ticks WITHOUT applying them. The
-// menu's AGENT section is not part of this: it writes the sticky session pin (D75 ruling, 2026-09-24),
+// menu's AGENT section is not part of this: it writes the sticky pin (D75 ruling, 2026-09-24),
 // which `sendMessage` reads like every send does — so no branch here ever passes an `agent`.
 describe("runComposer × the one-shot menu skills (A6)", () => {
   beforeEach(() => clearComposerSkills());
@@ -405,7 +407,7 @@ describe("runComposer × the one-shot menu skills (A6)", () => {
 // rows all end here. A pin AT the default's name is a real pin (the menu's default row writes it inside a
 // thread-pinned conversation, where a clear would let the thread's agent resurface) — and its note must
 // say "default", not the typo's "not configured" (the default is never among the SPECIALIST names).
-describe("pinSessionAgent — the sticky switch", () => {
+describe("pinStickyAgent — the sticky switch", () => {
   beforeEach(async () => {
     globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
       String(url).includes("/api/agents")
@@ -420,23 +422,23 @@ describe("pinSessionAgent — the sticky switch", () => {
   const lastNote = () => vi.mocked(chat.pushSystemNote).mock.calls.at(-1)?.[0];
 
   it('`""` CLEARS the pin — back to the thread\'s pin, else the default', () => {
-    pinSessionAgent("");
-    expect(chat.setSessionAgent).toHaveBeenLastCalledWith(null);
+    pinStickyAgent("");
+    expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
     expect(lastNote()).toBe("// agent → maya (default)");
   });
 
   it("the default's own NAME pins it — with the default's note, not the typo's", () => {
-    pinSessionAgent("maya");
-    expect(chat.setSessionAgent).toHaveBeenLastCalledWith("maya");
+    pinStickyAgent("maya");
+    expect(chat.setStickyAgent).toHaveBeenLastCalledWith("maya");
     expect(lastNote()).toBe("// agent → maya (default)");
   });
 
   it("a specialist pins; an unknown name still pins, and the note says it will fall back", () => {
-    pinSessionAgent("ops");
-    expect(chat.setSessionAgent).toHaveBeenLastCalledWith("ops");
+    pinStickyAgent("ops");
+    expect(chat.setStickyAgent).toHaveBeenLastCalledWith("ops");
     expect(lastNote()).toBe("// agent → ops");
-    pinSessionAgent("typo");
-    expect(chat.setSessionAgent).toHaveBeenLastCalledWith("typo");
+    pinStickyAgent("typo");
+    expect(chat.setStickyAgent).toHaveBeenLastCalledWith("typo");
     expect(lastNote()).toBe("// agent → typo (not configured — will fall back to default)");
   });
 });
@@ -618,7 +620,7 @@ describe("effectiveAgent — the server's routing ladder, mirrored", () => {
   });
 
   it('an EMPTY sticky pick yields to the thread — the server treats "" as unset too', () => {
-    // `pinSessionAgent("")` is what Talk on the default agent stores (AgentsTab). On the server that is a
+    // `pinStickyAgent("")` is what Talk on the default agent stores (AgentsTab). On the server that is a
     // falsy `body.agent`, so `thread.agent` answers; mirroring it is the point, not a bug to plug.
     expect(effectiveAgent("", "lynette", agents)).toBe("lynette");
   });
@@ -633,25 +635,88 @@ describe("effectiveAgent — the server's routing ladder, mirrored", () => {
   it("an unknown thread pin folds to the default — a deleted or renamed character", () => {
     expect(effectiveAgent(null, "ghost", agents)).toBeNull();
     expect(effectiveAgent(null, null, agents)).toBeNull();
-    expect(effectiveAgent(null, "lynette", [])).toBeNull(); // roster not loaded yet
+  });
+
+  it("NO fold before the roster LANDS — the persisted pick is shown, not claimed as the default", () => {
+    // D75 amendment (Maya 1): a cold PWA launch hydrates the persisted pick before the roster lands, and
+    // `sendMessage` sends that pick regardless — so a surface folding it to "default" here would lie.
+    expect(effectiveAgent("typo", "lynette", undefined)).toBe("typo");
+    expect(effectiveAgent(null, "lynette", undefined)).toBe("lynette");
+    expect(effectiveAgent("", null, undefined)).toBeNull();
+    // …and once the roster HAS landed, the unknown name folds as before — an EMPTY loaded roster too (a
+    // workspace with no specialists: the root is never listed, and a stale name is still stale).
+    expect(effectiveAgent("typo", null, agents)).toBeNull();
+    expect(effectiveAgent("typo", null, [])).toBeNull();
+  });
+
+  it("the ROOT's own slug is always valid — the roster lists specialists only", () => {
+    // A by-name root pin (Talk / the menu's root row inside a character thread while a specialist is
+    // the default) used to fold to `null` = the RESOLVED default, while the server ran the root.
+    expect(effectiveAgent("default", "lynette", agents)).toBe("default");
+    expect(effectiveAgent(null, "default", [])).toBe("default");
   });
 });
 
-// D75 ruling (2026-09-24) — "back to the default" is ONE expression for both doors (the tools menu's
-// default row, the gallery's Talk on the default): a clear, unless the open thread carries its own pin,
-// where a clear would let the thread's character resurface and the default must be pinned by name.
+// D75 amendment (2026-09-26) — `/new`'s TANDEM RULE: a CONFIGURED default (`default_set`) → the fresh
+// thread starts on it (the sticky pick clears); none set → it keeps the agent the owner was talking to.
+// `installAgents` is the ONE installer both the import-time load and the roster query feed.
+describe("`/new` × the configured default (the tandem rule)", () => {
+  /** One whole load — claim, then install — the way both readers do it. */
+  const install = (data: Parameters<typeof installAgents>[0]) =>
+    installAgents(data, beginAgentsLoad());
+
+  it("none set → keepAgent: true; a default set → keepAgent: false", () => {
+    install({ agents: ["ops"], default: "default", default_set: false });
+    runComposer("/new");
+    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: true });
+    install({ agents: ["ops"], default: "default", default_set: true }); // the root, set explicitly
+    runComposer("/new");
+    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: false });
+    install({ agents: ["ops"], default: "ops", default_set: true }); // a specialist
+    runComposer("/new");
+    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: false });
+  });
+
+  it("a listing WITHOUT `default_set` (a pre-amendment cache, a mock) reads as none set — keep", () => {
+    install({ agents: [], default: "default" });
+    runComposer("/new");
+    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: true });
+  });
+
+  it("the GENERATION guard: an OLDER read landing after a newer one is ignored (Maya, code round)", () => {
+    // Two readers (`loadAgents` + the roster query) race over the same module values now — the one that
+    // STARTED last owns them, whichever lands last.
+    const older = beginAgentsLoad();
+    const newer = beginAgentsLoad();
+    installAgents({ agents: ["ops"], default: "ops", default_set: true }, newer);
+    installAgents({ agents: [], default: "default", default_set: false }, older); // stale — dropped
+    runComposer("/new");
+    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: false });
+  });
+});
+
+// D75 ruling (2026-09-24) — what a pick hands the sticky pin is ONE expression for both doors (the tools
+// menu's rows, the gallery's Talk): any other agent by name; "back to the default" a clear, unless the
+// open thread carries its own pin, where a clear would let the thread's character resurface and the
+// default must be pinned by name.
 // PURE over both inputs: the default's NAME is the caller's (the roster query's `default`), not the module
 // `/agent` set's copy — the sticky slice's review round (2026-09-24) found the menu and the backdrop reading
 // different lists, and the fix made every surface-facing fold take the list it subscribes to.
-describe("defaultAgentPin — what 'back to the default' hands the session pin", () => {
-  it("is the CLEAR in an unpinned thread — nothing pinned is the honest resting state", () => {
-    expect(defaultAgentPin(null, "default")).toBe("");
-    expect(defaultAgentPin(null, "ari")).toBe(""); // whatever the default is called
+describe("agentPin — what a pick hands the sticky pin", () => {
+  it("the default is the CLEAR in an unpinned thread — nothing pinned is the honest resting state", () => {
+    expect(agentPin("default", null, "default")).toBe("");
+    expect(agentPin("ari", null, "ari")).toBe(""); // whatever the default is called
   });
 
-  it("is the default BY NAME inside a thread pinned to a character — the caller's name, verbatim", () => {
-    expect(defaultAgentPin("lynette", "default")).toBe("default");
-    expect(defaultAgentPin("lynette", "ari")).toBe("ari"); // a specialist promoted to the default
+  it("the default is pinned BY NAME inside a thread pinned to a character — the caller's name, verbatim", () => {
+    expect(agentPin("default", "lynette", "default")).toBe("default");
+    expect(agentPin("ari", "lynette", "ari")).toBe("ari"); // a specialist promoted to the default
+  });
+
+  it("any OTHER agent pins by name — the root included, when a specialist is the default", () => {
+    expect(agentPin("ops", null, "default")).toBe("ops");
+    expect(agentPin("default", null, "ari")).toBe("default");
+    expect(agentPin("default", "lynette", "ari")).toBe("default");
   });
 });
 
@@ -745,7 +810,7 @@ describe("getCompletions (A2)", () => {
     expect(values("/agent\t")).toEqual(["default", "ops", "research"]);
     expect(getCompletions("/agent\tops\tx")).toEqual([]); // a third token still ends the grammar
     runComposer("/agent\tops");
-    expect(chat.setSessionAgent).toHaveBeenCalledWith("ops");
+    expect(chat.setStickyAgent).toHaveBeenCalledWith("ops");
   });
 
   // Skill names are free-form server-side (SKILL.md frontmatter — no slug check), so the composer must

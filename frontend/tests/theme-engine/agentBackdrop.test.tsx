@@ -58,8 +58,8 @@ vi.mock("../../src/hooks/useAgentChat", () => ({ useAgentChat: () => chat.view }
 
 import { useActiveBackdrop } from "../../src/hooks/useActiveBackdrop";
 import type { MediaFile } from "../../src/hooks/useMedia";
-import { pinSessionAgent, runComposer } from "../../src/lib/composer";
-import { getChatStatus, openThread, setSessionAgent, startNewThread } from "../../src/store/chat";
+import { pinStickyAgent, runComposer } from "../../src/lib/composer";
+import { getChatStatus, openThread, setStickyAgent, startNewThread } from "../../src/store/chat";
 import { setUI } from "../../src/store/ui";
 import { AgentTab } from "../../src/tabs/AgentTab";
 import { DefaultRoot } from "../../src/theme-engine/kit/DefaultRoot";
@@ -139,12 +139,12 @@ beforeEach(() => {
   media.by = {
     agents: { ns: "agents", collation: "library-v1", roles: { backgrounds: [file("hall")] } },
   };
-  setSessionAgent(null);
+  setStickyAgent(null);
   setUI({ theme: "cosmos", tab: "agent", agentBackdrop: "operator", motion: "full" });
 });
 afterEach(() => {
-  setSessionAgent(null);
-  startNewThread(); // …and the THREAD pin with it: both rungs of the ladder start each arm empty
+  setStickyAgent(null);
+  startNewThread({ keepAgent: false }); // …and the THREAD pin with it: both rungs of the ladder start each arm empty
   setUI({ agentBackdrop: "operator" });
   cleanup();
 });
@@ -256,8 +256,8 @@ describe("which agent the backdrop belongs to (§8.3a item 2)", () => {
     };
   });
 
-  it("the sticky session pin WINS while it names a configured agent", () => {
-    setSessionAgent("lynette");
+  it("the sticky pin WINS while it names a configured agent", () => {
+    setStickyAgent("lynette");
     const { container } = draw(<AgentTab active />);
     expect(
       container.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src"),
@@ -266,8 +266,8 @@ describe("which agent the backdrop belongs to (§8.3a item 2)", () => {
 
   it("a sticky name that is NOT configured falls back to the default's art, not to nothing", () => {
     // `/agent typo` stays sticky on purpose (the backend resolves it to the default) — the surface has to
-    // agree with where the message actually goes. The shared `validSessionAgent` fold is what makes it.
-    setSessionAgent("typo");
+    // agree with where the message actually goes. The shared `validStickyAgent` fold is what makes it.
+    setStickyAgent("typo");
     const { container } = draw(<AgentTab active />);
     expect(
       container.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src"),
@@ -280,7 +280,7 @@ describe("which agent the backdrop belongs to (§8.3a item 2)", () => {
       view.container.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src");
     expect(src()).toBe(painted("hall"));
     act(() => {
-      setSessionAgent("lynette"); // what the `/agent` verb and the gallery's Talk button both call
+      setStickyAgent("lynette"); // what the `/agent` verb and the gallery's Talk button both call
     });
     expect(src()).toBe(painted("lynette"));
   });
@@ -289,7 +289,7 @@ describe("which agent the backdrop belongs to (§8.3a item 2)", () => {
 describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-24)", () => {
   // The menu's agent rows used to arm a ONE-SHOT that this surface previewed and then HELD through the
   // armed turn. The owner ruled it sticky instead: a row is `/agent <name>` by another hand
-  // (`pinSessionAgent`, the seam the rows call), so the backdrop is just the ladder — and it STAYS on the
+  // (`pinStickyAgent`, the seam the rows call), so the backdrop is just the ladder — and it STAYS on the
   // picked agent after the send, because nothing about the pick is spent any more.
   beforeEach(() => {
     media.by = {
@@ -334,7 +334,7 @@ describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-
     const view = draw(<AgentTab active />);
     expect(src(view.container)).toBe(painted("hall"));
     act(() => {
-      pinSessionAgent("lynette"); // the menu's row
+      pinStickyAgent("lynette"); // the menu's row
     });
     expect(src(view.container)).toBe(painted("lynette"));
     serveCompletedTurn();
@@ -351,7 +351,7 @@ describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-
     // A call's turns route by the same ladder (`sendMessage` reads the sticky pin), so the call surface
     // wears the menu's pick — the call-side wiring is pinned in callOverlay's own suite.
     act(() => {
-      pinSessionAgent("lynette");
+      pinStickyAgent("lynette");
     });
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
@@ -362,11 +362,11 @@ describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-
   });
 
   it("the default row (a clear) hands the surface back to the ladder", () => {
-    setSessionAgent("lynette");
+    setStickyAgent("lynette");
     const view = draw(<AgentTab active />);
     expect(src(view.container)).toBe(painted("lynette"));
     act(() => {
-      pinSessionAgent("");
+      pinStickyAgent("");
     });
     expect(src(view.container)).toBe(painted("hall"));
   });
@@ -521,15 +521,15 @@ describe("the OPEN THREAD's pin is the ladder's second rung (wave 1c)", () => {
 
   it("the sticky pick still wins — a `/agent` switch is the owner speaking last", async () => {
     await openPinned("lynette");
-    setSessionAgent("default"); // …not a specialist name: the default agent, explicitly picked
+    setStickyAgent("default"); // …not a specialist name: the default agent, explicitly picked
     expect(src(draw(<AgentTab active />).container)).toBe(painted("hall"));
   });
 
   it('an EMPTY sticky pick yields to the thread — the server reads "" as unset too', async () => {
-    // `pinSessionAgent("")` is what Talk on the DEFAULT agent stores; the server sees a falsy
+    // `pinStickyAgent("")` is what Talk on the DEFAULT agent stores; the server sees a falsy
     // `body.agent` and routes by `thread.agent`. Mirroring that is the rule, not a gap.
     await openPinned("lynette");
-    setSessionAgent("");
+    setStickyAgent("");
     expect(src(draw(<AgentTab active />).container)).toBe(painted("lynette"));
   });
 
@@ -562,7 +562,7 @@ describe("the OPEN THREAD's pin is the ladder's second rung (wave 1c)", () => {
     const view = draw(<AgentTab active />);
     expect(src(view.container)).toBe(painted("lynette"));
     act(() => {
-      pinSessionAgent("default");
+      pinStickyAgent("default");
     });
     expect(src(view.container)).toBe(painted("hall"));
   });

@@ -99,6 +99,7 @@ async function freshChat() {
 }
 
 beforeEach(() => {
+  localStorage.clear(); // the sticky pick is persisted (D75 amendment) and every `freshChat` hydrates it
   threadList = [{ id: "recent-thread", agent: null }];
   net = deferrableFetch();
   vi.stubGlobal("fetch", net.impl);
@@ -157,7 +158,7 @@ describe("openThread vs the reconciling loaders", () => {
     // `loaded` is not observable directly, so read it through the behaviour it gates: clear the view
     // (which leaves `threadId` null) and mount again. A stale reset would make this load the
     // most-recent thread, i.e. undo a `/new` the owner just performed.
-    startNewThread();
+    startNewThread({ keepAgent: false });
     await initChat();
     expect(result.current.threadId).toBeNull();
   });
@@ -214,7 +215,7 @@ describe("two explicit opens — intent order, not completion order (R2 verify, 
     net.hold("/api/threads/late/messages");
     const openLate = openThread("late"); // …parked
 
-    startNewThread(); // the owner clears while the open is in flight
+    startNewThread({ keepAgent: false }); // the owner clears while the open is in flight
     net.release("/api/threads/late/messages");
     expect(await openLate).toBe(false);
     expect(result.current.threadId).toBeNull(); // the cleared view stands
@@ -320,7 +321,7 @@ describe("the open thread's pinned agent", () => {
     const { result } = renderHook(() => useChat());
     await openThread("pinned");
     await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
-    startNewThread();
+    startNewThread({ keepAgent: false });
     await waitFor(() => expect(result.current.threadId).toBeNull());
     expect(result.current.threadAgent).toBeNull();
   });
@@ -332,13 +333,29 @@ describe("the open thread's pinned agent", () => {
 // `initChat` (or a `reloadChat`) sat parked mid-fetch, and that load then landed the OLD thread's history
 // AND its pin on the conversation the owner had just started.
 describe("a changed view identity invalidates the loads parked against the old one", () => {
+  // D75 amendment — `/new` with `keepAgent` (no default configured) keeps "the agent I was talking to":
+  // in a character thread nothing was sticky, so the THREAD's pin is promoted to the sticky pick.
+  it("a /new with keepAgent PROMOTES the thread's pin when nothing is sticky", async () => {
+    threadList = [{ id: "pinned", agent: "lynette" }];
+    const { openThread, startNewThread, useChat } = await freshChat();
+    const { result } = renderHook(() => useChat());
+    await openThread("pinned");
+    await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
+    expect(result.current.stickyAgent).toBeNull();
+    startNewThread({ keepAgent: true });
+    await waitFor(() => expect(result.current.threadId).toBeNull());
+    expect(result.current.threadAgent).toBeNull(); // the fresh thread is still minted unpinned…
+    expect(result.current.stickyAgent).toBe("lynette"); // …but the pick carries the agent over
+    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: "lynette" });
+  });
+
   it("a /new kills a parked cold load — history and pin alike", async () => {
     threadList = [{ id: "recent-thread", agent: "lynette" }];
     const { initChat, startNewThread, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());
     net.hold("/api/threads/recent-thread/messages"); // the cold load's HISTORY fetch, parked
     const init = initChat();
-    startNewThread(); // the owner clears while it is in flight
+    startNewThread({ keepAgent: false }); // the owner clears while it is in flight
     net.release("/api/threads/recent-thread/messages");
     await init;
     await waitFor(() => expect(result.current.threadId).toBeNull());

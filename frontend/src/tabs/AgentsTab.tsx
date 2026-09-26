@@ -8,9 +8,9 @@ import { useAgentToolGrid } from "../hooks/useActions";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useSections } from "../hooks/useSections";
 import { pickRoleplay } from "../hooks/useRoleplay";
-import { useSettings } from "../hooks/useSettings";
+import { useSaveSettings, useSettings } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
-import { defaultAgentPin, pinSessionAgent } from "../lib/composer";
+import { agentPin, pinStickyAgent } from "../lib/composer";
 import { useThreadAgent } from "../store/chat";
 
 // THE AGENTS GALLERY (D70 / ROLEPLAY_PLAN §8.4) — one home for every agent regardless of kind, and
@@ -27,9 +27,18 @@ import { useThreadAgent } from "../store/chat";
 // **Two verbs, two homes** (§8.4, deliberately inverting the field's 3/3 primary-tap-talks
 // convention): a card TAP opens that agent's editor, because this is a settings surface; TALK is its
 // own visible button and drives exactly the seam the `/agent` composer verb drives
-// (`lib/composer#pinSessionAgent`) before landing on the chat section through the one nav chokepoint.
+// (`lib/composer#pinStickyAgent`) before landing on the chat section through the one nav chokepoint.
 // The Talk button is a SIBLING of the card, never its child — a button inside a button is invalid
 // HTML (the media grid's own lesson).
+//
+// **The "default" pill IS the default-agent control** (D75 amendment, 2026-09-26 — the owner's framing:
+// the space the old read-only badge held becomes the button, restyled when selected). A toggle
+// (`aria-pressed`) on EVERY card, a sibling of the card for the Talk reason: pressing an unpressed pill
+// makes that agent the configured default (`agent.default_agent` — the root card writes its own slug,
+// `"default"`); pressing the PRESSED one deselects it (`""` = none set, and `/new` goes back to keeping
+// the agent the owner was talking to). Pressed = the owner SET this default (`default_set`), never merely
+// "what a bare thread resolves to" — so on a fresh install no pill is pressed. The same one config field
+// Conf → Agent globals edits; both doors save immediately.
 //
 // Structurally this is gacha's `.gc-track` PRECEDENT rebuilt kit-level on the semantic tokens; not one
 // line of theme CSS is copied (the D31 rule). Everything it renders about an agent comes from the ONE
@@ -40,7 +49,8 @@ import { useThreadAgent } from "../store/chat";
  *  the agent's own sentence and wins; without one, the row says which agent it is. */
 function subtitle(name: string, description: string, isDefault: boolean): string {
   if (description.trim()) return description;
-  return isDefault ? "default agent · workspace root" : `/agent ${name}`;
+  // "workspace root", not "default agent": whether the root IS the default is the pill's to say now.
+  return isDefault ? "workspace root" : `/agent ${name}`;
 }
 
 /** One agent's card: the portrait (or the quiet initial tile that stands in for one) + the plate. */
@@ -48,9 +58,11 @@ function AgentCard(props: {
   art: AgentArt;
   description: string;
   isDefault: boolean;
-  isResolvedDefault: boolean;
+  isSetDefault: boolean;
+  pending: boolean;
   onOpen: () => void;
   onTalk: () => void;
+  onToggleDefault: () => void;
 }) {
   const { art } = props;
   return (
@@ -81,7 +93,18 @@ function AgentCard(props: {
             {subtitle(art.name, props.description, props.isDefault)}
           </small>
         </span>
-        {props.isResolvedDefault && <span className="badge agal-badge">default</span>}
+      </button>
+      <button
+        type="button"
+        className="agal-default"
+        // A STABLE name + `aria-pressed` (WAI-ARIA APG: a toggle's label must not change with its
+        // state, or the announcement double-negates — "pressed, Unset…").
+        aria-pressed={props.isSetDefault}
+        aria-label={`${art.title}: default agent`}
+        disabled={props.pending}
+        onClick={props.onToggleDefault}
+      >
+        default
       </button>
       <button
         type="button"
@@ -171,6 +194,15 @@ export function AgentsContent() {
 
   const specialists = (list?.agents ?? []).filter((n) => n !== DEFAULT_AGENT);
   const resolvedDefault = list?.default ?? DEFAULT_AGENT;
+  // The CONFIGURED default (the pill's pressed state + the open card's badge) — `default_set` gates it,
+  // because with nothing set the resolved `default` is still the root, and the pill must not claim a
+  // choice the owner never made.
+  const isSetDefault = (name: string) => list?.default_set === true && resolvedDefault === name;
+  // ONE mutation for the whole grid: `pending` disables every pill, so two taps cannot race two writes.
+  // Quiet — the pill moving IS the confirmation; the hook's error toast + restart note still stand.
+  const saveSettings = useSaveSettings({ quiet: true });
+  const toggleDefault = (name: string) =>
+    saveSettings.mutate({ agent: { default_agent: isSetDefault(name) ? "" : name } });
   // The OPEN thread's own pin — what "Talk to the default" has to mean depends on it (see `talk`).
   const threadAgent = useThreadAgent();
   // The root/default agent first, then the list route's own order. The default ALWAYS exists (it is
@@ -179,13 +211,11 @@ export function AgentsContent() {
   const skillNames = skillList.map((s) => s.name);
 
   const talk = (name: string) => {
-    // The `/agent` seam verbatim: a specialist is a pin; the resolved default is whatever "back to the
-    // default" means for the OPEN thread (`defaultAgentPin` — a clear, or the default by name inside a
-    // thread pinned to a character), the same expression the tools menu's default row takes. Then the
-    // ONE nav chokepoint, which is where the chat log lives.
-    pinSessionAgent(
-      name === resolvedDefault ? defaultAgentPin(threadAgent, resolvedDefault) : name,
-    );
+    // The `/agent` seam verbatim, through `agentPin` — the tools menu's rows take the same expression: any
+    // other agent is a pin by name; the resolved default is whatever "back to the default" means for the
+    // OPEN thread (a clear, or the default by name inside a thread pinned to a character). Then the ONE
+    // nav chokepoint, which is where the chat log lives.
+    pinStickyAgent(agentPin(name, threadAgent, resolvedDefault));
     navigate("agent");
   };
 
@@ -200,7 +230,7 @@ export function AgentsContent() {
           <AgentRow
             name={open}
             isDefault={open === DEFAULT_AGENT}
-            isResolvedDefault={resolvedDefault === open}
+            isSetDefault={isSetDefault(open)}
             open
             onToggle={() => setOpen(null)}
             toolNames={toolNames}
@@ -260,9 +290,11 @@ export function AgentsContent() {
                 art={art(name)}
                 description={list?.summaries?.[name]?.description ?? ""}
                 isDefault={name === DEFAULT_AGENT}
-                isResolvedDefault={resolvedDefault === name}
+                isSetDefault={isSetDefault(name)}
+                pending={saveSettings.isPending}
                 onOpen={() => setOpen(name)}
                 onTalk={() => talk(name)}
+                onToggleDefault={() => toggleDefault(name)}
               />
             ))}
           </ul>

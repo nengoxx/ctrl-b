@@ -38,7 +38,7 @@ const AGENT_MEDIA = {
 };
 
 /** The roster with that binding on the RESOLVED DEFAULT — the agent a bare boot runs as, so the backdrop
- *  paints with no session pin and no interaction at all. */
+ *  paints with no sticky pin and no interaction at all. */
 const AGENT_ROSTER = {
   agents: [],
   default: "default",
@@ -345,7 +345,7 @@ test.describe("gacha integrates through its own body", () => {
   });
 });
 
-// THE COMPOSER MENU'S AGENT ROWS ARE A STICKY SWITCH (D75 ruling, 2026-09-24): a row pins the session agent
+// THE COMPOSER MENU'S AGENT ROWS ARE A STICKY SWITCH (D75 ruling, 2026-09-24): a row pins the sticky agent
 // through the same seam `/agent <name>` drives, so the backdrop switches the moment it is picked and STAYS
 // — through the send, the reply and after it — until another row is picked. The unit suite proves the
 // ladder; this arm proves it through the real built menu, the real send path and the real cascade.

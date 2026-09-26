@@ -100,7 +100,7 @@ function bodyOf(index = 0): Record<string, unknown> {
 }
 
 beforeEach(() => {
-  startNewThread();
+  startNewThread({ keepAgent: false });
   clearStaged();
 });
 afterEach(() => clearStaged());

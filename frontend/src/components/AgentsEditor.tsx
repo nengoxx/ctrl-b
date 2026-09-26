@@ -546,7 +546,9 @@ function AgentFieldsForm(props: {
 export function AgentRow(props: {
   name: string;
   isDefault: boolean;
-  isResolvedDefault: boolean;
+  /** The owner SET this agent as the default (`default_set && default === name`) — the gallery pill's
+   *  predicate, so the header badge and the pill can never disagree (D75 amendment). */
+  isSetDefault: boolean;
   open: boolean;
   onToggle: () => void;
   toolNames: string[];
@@ -630,11 +632,9 @@ export function AgentRow(props: {
             {titleLabel}
             {titleLabel !== name ? <span className="agent-slug"> · {name}</span> : ""}
           </div>
-          <div className="desc">
-            {isDefault ? "default agent · workspace root" : `specialist · /agent ${name}`}
-          </div>
+          <div className="desc">{isDefault ? "workspace root" : `specialist · /agent ${name}`}</div>
         </div>
-        {props.isResolvedDefault && <span className="badge">default</span>}
+        {props.isSetDefault && <span className="badge">default</span>}
         <span className="chev" aria-hidden>
           ›
         </span>

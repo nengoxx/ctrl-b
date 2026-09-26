@@ -67,7 +67,7 @@ async function streamTurn(end: Record<string, unknown>) {
 }
 
 beforeEach(() => {
-  startNewThread();
+  startNewThread({ keepAgent: false });
 });
 
 describe("D62 · the message.end fold", () => {

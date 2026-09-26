@@ -88,7 +88,7 @@ function routes(map: Record<string, (url: string) => Response | Promise<Response
 }
 
 beforeEach(() => {
-  startNewThread();
+  startNewThread({ keepAgent: false });
   clearDraft();
 });
 

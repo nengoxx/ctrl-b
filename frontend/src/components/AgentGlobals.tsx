@@ -14,19 +14,21 @@ import { useRegisterDirty } from "../store/dirty";
 // rows moved with them, so this file is the old `AgentsEditor`'s globals half lifted verbatim —
 // including its draft-epoch bookkeeping, which is load-bearing (see `pickGlobals`).
 //
-// Two save postures live here, as they always did: the auto-router controls save IMMEDIATELY (the
-// SkillsEditor master-switch idiom) and everything else rides one draft behind the group's save bar.
+// Two save postures live here, as they always did: the auto-router controls and the default-agent pick
+// save IMMEDIATELY (the SkillsEditor master-switch idiom — the default-agent pick since the D75
+// amendment, so it saves the same way as its other door, the gallery card's "default" pill) and
+// everything else rides one draft behind the group's save bar.
 
 /** The DRAFT-MANAGED slice of the agent section — the fields the globals save bar owns. The rest of
  *  `AgentSectionCfg` belongs to IMMEDIATE-SAVE controls that read and write the server doc directly
- *  (`auto_rotate` + `auto_rotate_min_overlap` here, `default_title` inside the default agent's form),
+ *  (`auto_rotate` + `auto_rotate_min_overlap` + `default_agent` here, `default_title` inside the
+ *  default agent's form),
  *  so their echoes are not evidence that "the server moved" for this draft. v1.3.1: without that
  *  split, flipping auto-route echoed a changed `cfg` and the reseed below threw away unsaved
  *  globals/compaction edits. One projection feeds BOTH the reseed guard and `globalsDirty`, so the
  *  two can't drift apart — and it is exactly the field set `saveGlobals` submits. */
 function pickGlobals(c: AgentSectionCfg) {
   return {
-    default_agent: c.default_agent,
     global_subagent_limit: c.global_subagent_limit,
     subagent_clamp_privilege: c.subagent_clamp_privilege,
     streaming: c.streaming,
@@ -88,8 +90,9 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
     else setMinOverlap(String(props.cfg.auto_rotate_min_overlap)); // normalize a junk entry back
   };
 
-  // Globals (default-agent picker + subagent limits) — config.yaml, saved via PUT /api/settings.
-  // `default_title` is edited inside the default agent's form, so it's excluded from this draft.
+  // Globals (subagent limits, delivery, compaction) — config.yaml, saved via PUT /api/settings.
+  // `default_title` is edited inside the default agent's form and `default_agent` saves immediately,
+  // so both are excluded from this draft.
   const globalsDirty = JSON.stringify(pickGlobals(cfg)) !== JSON.stringify(pickGlobals(props.cfg));
   useRegisterDirty("agents-globals", globalsDirty);
 
@@ -121,7 +124,6 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
     saveGlobalsMut.mutate(
       {
         agent: {
-          default_agent: cfg.default_agent,
           global_subagent_limit: cfg.global_subagent_limit,
           subagent_clamp_privilege: cfg.subagent_clamp_privilege,
           streaming: cfg.streaming,
@@ -162,8 +164,11 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
     );
   };
 
+  // The three states of `agent.default_agent` (D75 amendment): `""` = none set (`/new` keeps the agent
+  // the owner was talking to), `"default"` = the root, set explicitly, else a specialist.
   const defaultOpts = [
-    { val: "", label: "default (root)" },
+    { val: "", label: "none" },
+    { val: "default", label: "default (root)" },
     ...specialists.map((s) => ({ val: s, label: s })),
   ];
 
@@ -171,7 +176,7 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
     <div className="conf-card">
       <SettingRow
         label="Auto-route to specialists"
-        desc="when no /agent is pinned, pick the best-matching specialist per turn"
+        desc="routes each turn to the best-matching specialist when no agent is pinned — after /new with a default set, or after a bare /agent"
       >
         <Switch
           on={props.cfg.auto_rotate}
@@ -204,12 +209,17 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
       <div className="confrow" style={{ marginTop: 6 }}>
         <div className="k">
           <div className="label">Default agent</div>
-          <div className="desc">which agent new threads use · /agent switches per session</div>
+          <div className="desc">
+            which agent /new starts with · none = keep the agent you were talking to
+          </div>
         </div>
         <Seg<string>
           label="Default agent"
-          current={cfg.default_agent}
-          onPick={(v) => setCfg({ ...cfg, default_agent: v })}
+          current={props.cfg.default_agent}
+          onPick={(v) => {
+            // Re-picking the current value is not a save (the `commitMinOverlap` guard).
+            if (v !== props.cfg.default_agent) saveSettings.mutate({ agent: { default_agent: v } });
+          }}
           options={defaultOpts}
         />
       </div>

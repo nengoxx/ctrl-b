@@ -21,7 +21,7 @@ vi.mock("../../src/store/chat", () => ({
   compactThread: vi.fn(),
   startNewThread: vi.fn(),
   setSessionMode: vi.fn(),
-  setSessionAgent: vi.fn(),
+  setStickyAgent: vi.fn(),
   setSessionPrivilege: vi.fn(),
   pushSystemNote: vi.fn(),
   getChatStatus: vi.fn(() => "idle"),
