@@ -13,19 +13,25 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-09-26 — **v1.7.8 IS LIVE IN PRODUCTION**)
+## Where we are (2026-09-26 — **v1.7.9 IS LIVE IN PRODUCTION**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): tag
-  `v1.7.8` on `4ce70c3`, health 1.7.8, config shape **5** (migrated 2 → 5 at the cutover; only step 3
-  touched prod's file), DB schema 6. **The ear is ON in prod for the first time** (`voice.live`
+  `v1.7.9` on `9096ea4` (released 2026-09-26 22:24Z by the runbook; code = `3d27b09`, the S9 export
+  wave + the polish wave), health 1.7.9, config shape **5** (unchanged — v1.7.9 carries NO migration),
+  DB schema 6 (snapshot `~/.ctrl-b/backups/ctrlb-20260926-222352.db.gz`). Lynette + `personality-traits`
+  + her art are on prod (§15.9); `GET /api/agents/lynette/card` and `GET /api/lorebooks/personality-traits/export`
+  answer 200. **The ear is ON in prod for the first time** (`voice.live`
   absent ⇒ defaults: `route: media` · `mic_hold: auto` · `barge_in: false` · `noise_verdict_ms: 1000`
   · `debug: false`). TTS = PocketTTS `ganyu` (fallbacks Kokoro → vault-alltalk). Prod has NO
   personas and no agents dir.
-- **⚠ Rollback off v1.7.8 = restore the config backup FIRST, then v1.7.7** (v1.7.7 cannot read shape 5):
-  `~/.ctrl-b/config.yaml.20260926T151736Z.pre-v1.7.8` (or the migrator's
-  `~/.ctrl-b/backups/config.yaml.20260926T154424Z`); DB snapshot
+- **Rollback off v1.7.9 = plain `bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.8`** (no config
+  restore — both tags read shape 5). **Rolling back FURTHER, off v1.7.8, = restore the config backup
+  FIRST, then v1.7.7** (v1.7.7 cannot read shape 5): `~/.ctrl-b/config.yaml.20260926T151736Z.pre-v1.7.8`
+  (or the migrator's `~/.ctrl-b/backups/config.yaml.20260926T154424Z`); DB snapshot
   `~/.ctrl-b/backups/ctrlb-20260926-174423.db.gz`. Procedure: `deploy/linux/README.md` §Rollback.
-- **What v1.7.8 carries** (320 commits over v1.7.7, all council-closed): Phase 24 live voice / call
+- **What v1.7.9 carries** (over v1.7.8): Phase 23 **S9 export (D79)** — the SillyTavern card PNG/JSON,
+  the standalone lorebook JSON, `used_by` on books — plus the polish wave (ISS-15/20/22/23/24/26/27/29/30).
+- **What v1.7.8 carried** (320 commits over v1.7.7, all council-closed): Phase 24 live voice / call
   mode (D71 + the D72–D77 waves, the D71 "mouth waits" amendment), Phase 23 characters + lorebooks
   incl. S8 the persona library (D70/D78), Phase 22 composer attachments (D68), the D75 sticky
   agent + default pill, D69 LAN wake trigger, the C3 read-along, the R86–R89 audit fixes.
@@ -33,46 +39,33 @@
   readout + the call trail in `~/.ctrl-b-dev/calls/`), Lynette = the configured default agent, Ari =
   the default persona; both imported agents carry a `card.json` sidecar (§15.8 repaired 2026-09-26). Serve `:8443`
   fronts the DEV BACKEND (built dist — `npm run build` after any FE change).
-- **Owed: the PUSH + v1.7.9 release** (`3d27b09` = one commit over origin; tree clean). Prod (v1.7.8) now holds Lynette + her book + art via the §15.9 migration; the export routes reach prod WITH v1.7.9. The full session history is in
+- **Nothing owed on the release path.** Workspace `main` == `origin/main` (this handoff commit aside). The full session history is in
   [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the HANDOFF block of ⟨date⟩ / the Nth session" resolves there).
 
-## ▶▶ NEXT SESSION — RELEASE v1.7.9 (the S9 wave is BUILT, council-closed, COMMITTED `3d27b09` + PUSHED; dev repaired; Lynette + the karpathy skill migrated to prod; owner: *"update in the clean session"*)
+## ▶▶ NEXT SESSION — the owner's v1.7.9 PROD ROUND (nothing for the main seat until a verdict comes back)
 
-**The 46th session (2026-09-26 evening) — what happened:** Phase 23 **S9 (D79)** built by two pinned-Opus
-lanes from the briefs → the owner's NEW two-reviewer rule applied for the first time (*"for critical
-parts I would like both reviewers, opus as the intelligent independent reviewer, and Maia/Emma … as the
-fresh lens"* — the `dual-reviewers-for-critical-code` memory): a blind **Opus 5.5** code round
-(SHIP WITH FIXES, 1 MED · 7 LOW) ∥ a blind **Maya** round (SHIP WITH FIXES, 1 MED) on the SAME diff.
-Opus's MED was a real design gap Maya's three earlier rounds never saw (card-origin lorebooks keep
-their ST fields ONLY under `extensions` — the ST export now LIFTS them instead of dropping the map).
-8 rulings folded, Opus F2 docs-only, Maya's MED overruled (an explicit `extensions.position: null` is
-no provenance — both reviewers accepted); both confirms **CONFIRMED SHIP**. Gate 6/6 → **`3d27b09`**.
-As-built = ROLEPLAY_PLAN **§15.12**. Then **§15.8 the dev repair APPLIED** (both sidecars 0600, `card:`
-keys gone, PNGs stripped, Lynette's focal re-keyed; backups in `~/.cache/tmp/ctrlb-s9/repair-backup/`)
-and **§15.9 the Lynette migration APPLIED through the APIs** (prod: agent `lynette` + `personality-traits`
-+ the Mi'yu avatar/background + `Banner_Patreon_Agir.webp` as `agent.defaults.avatar`; focal rev
-matches; `agent.default_agent` NOT set — the owner's one tap). The **`karpathy-guidelines` skill** went
-to prod the same way (owner ask; `GET /api/skills/<name>` dev → `PUT` prod, byte-equal). Scripts kept at `~/.cache/tmp/ctrlb-s9/`.
+**The 47th session (2026-09-26 night) — what happened:** the clean-session release, exactly per the
+runbook, by a pinned-Opus release lane: annotated `v1.7.9` on `9096ea4` → tag push (local gate 6/6,
+pytest 231 s) → CI release gate run **36268764559** green → `update.sh v1.7.9` (migration: not needed,
+DB snapshot taken, health gate OK) → `describe` v1.7.9 · health 1.7.9 · `icon-192.png` = image/png ·
+unit active. Main-seat re-verified, plus both export routes 200 on prod. Deviations: none of substance
+(the `gh run watch` hit the 10-min tool timeout once while the run was still going — re-checked and
+re-watched green before re-pinning; `update.sh` prints npm/Vite chunk warnings, non-fatal).
+Rollback = `update.sh v1.7.8`, no config restore.
 
-**Steps, in order (the owner's word is GIVEN — *"push & update"*, the update in the clean session):**
-1. `tmux display-message -p '#S'` → match the model; effort HIGH. `gh run list --branch main --limit 1` must
-   be green on the tip (the release tip = the handoff commit; `3d27b09` is the code).
-2. **v1.7.9 per `deploy/linux/README.md` §Release**: annotated tag on the verified tip → tag push (the
-   pre-push gate runs again, SERIALLY) → `gh run watch … --exit-status` on the tag's release gate →
-   `bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.9` → `describe --exact-match` + health 1.7.9 + the PNG
-   content-type check. **No config migration** (`config_migration/VERSION` = 5 on both sides, verified;
-   `lorebooks.include_names` is an additive default) → rollback = v1.7.8, no config restore. Pre-tag: the
-   local `--e2e` already ran green in-session (391/391 + the new `card-export.spec.ts`).
-3. **Owner test card (phone, prod after the release):** ① Conf › Agents › Lynette → footer `export` →
-   **PNG card** → import that PNG into SillyTavern (expect name Lynette, description + personality split,
-   the `personality-traits` book embedded — unlink first to export without) · **JSON card** downloads
-   `Lynette.json` · a dirty form shows "save first". ② Conf › Roleplay › Lorebooks → `personality-traits`
-   → `export` → import that JSON into ST as a world-info file (expect 40 entries, keys/positions intact).
-   ③ the book row reads `used by Lynette`. ④ Deleting a test character: the confirm says the memory
-   folder goes and books/art stay; the toast names what was kept. ⑤ New character → flip duties to
-   Talk → the tools list seeds from `roleplay.default_tools`.
-4. Dev: `voice.live.debug` still ON; the two imported agents now have `card.json` sidecars and no
-   `card:` key. Dev units RUNNING at close (stop them when done poking).
+**Owner test card (phone, prod; reload the PWA and accept its update prompt first):**
+① Conf › Agents › Lynette → footer `export` → **PNG card** → import that PNG into SillyTavern (expect
+name Lynette, description + personality split, the `personality-traits` book embedded — unlink first
+to export without) · **JSON card** downloads `Lynette.json` · a dirty form shows "save first".
+② Conf › Roleplay › Lorebooks → `personality-traits` → `export` → import that JSON into ST as a
+world-info file (expect 40 entries, keys/positions intact). ③ the book row reads `used by Lynette`.
+④ Deleting a test character: the confirm says the memory folder goes and books/art stay; the toast
+names what was kept. ⑤ New character → flip duties to Talk → the tools list seeds from
+`roleplay.default_tools`. Then the standing prod rounds below (§1).
+
+**Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units were left RUNNING through the release (the gate
+passed under that contention); `voice.live.debug` ON; stop them when done poking
+(`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`).
 
 ## ▶▶ NEXT SESSIONS — the roadmap
 
@@ -104,7 +97,7 @@ Nothing here needs the main seat until a verdict comes back; the trail is the di
   (owner-parked) · ISS-19 (above).
 - **Dormant, reopen on recurrence:** ISS-16 (call-mode TTS crackle — not reproduced since PocketTTS;
   the record has the reopen ladder).
-- **✓ FIXED in the S9 wave (`3d27b09`, ships v1.7.9):** ISS-15 · ISS-20 · ISS-22 · ISS-23 · ISS-24 · ISS-26 · ISS-27 · ISS-29 · ISS-30.
+- **✓ FIXED in the S9 wave (`3d27b09`, LIVE in v1.7.9):** ISS-15 · ISS-20 · ISS-22 · ISS-23 · ISS-24 · ISS-26 · ISS-27 · ISS-29 · ISS-30.
 - **Feature, not fix:** ISS-28 (ST's `{{random}}`/`{{time}}`… macros).
 - Won't-fix by owner ruling (recorded, never re-propose): ISS-13 · ISS-14.
 

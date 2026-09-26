@@ -1,12 +1,83 @@
 # HANDOFF ARCHIVE — frozen session history (split out 2026-08-12)
 
-> Verbatim history moved out of [`HANDOFF.md`](./HANDOFF.md) by two archive sweeps: 2026-09-26
+> Verbatim history moved out of [`HANDOFF.md`](./HANDOFF.md) by three archive sweeps: 2026-09-26 late
+> (the v1.7.9-release close — the 45th/46th blocks), 2026-09-26
 > (the v1.7.8-release close — sessions 44 ← the 2026-08-20 blocks, quoted below first) and
 > 2026-08-12 (path 5 of the v1.6.0-close block). Contents: every session block in
 > reverse-chronological order, 2026-09-26 ← 2026-05-28, plus the stale mid-build "Current state" section and the
 > original pre-build baseline. **Nothing here is live guidance** — the live handoff is
 > [`HANDOFF.md`](./HANDOFF.md). Cross-references elsewhere of the form "the HANDOFF block of
 > ⟨date⟩" resolve here.
+
+> *(Swept 2026-09-26 at the v1.7.9-release close — the 46th + 45th session blocks, verbatim; their 'Where we are' state was v1.7.8-live, identical to the 44th block below.)*
+
+> ## The 46th session (2026-09-26 evening) — from HANDOFF.md as of `9096ea4`
+> ## ▶▶ NEXT SESSION — RELEASE v1.7.9 (the S9 wave is BUILT, council-closed, COMMITTED `3d27b09` + PUSHED; dev repaired; Lynette + the karpathy skill migrated to prod; owner: *"update in the clean session"*)
+>
+> **The 46th session (2026-09-26 evening) — what happened:** Phase 23 **S9 (D79)** built by two pinned-Opus
+> lanes from the briefs → the owner's NEW two-reviewer rule applied for the first time (*"for critical
+> parts I would like both reviewers, opus as the intelligent independent reviewer, and Maia/Emma … as the
+> fresh lens"* — the `dual-reviewers-for-critical-code` memory): a blind **Opus 5.5** code round
+> (SHIP WITH FIXES, 1 MED · 7 LOW) ∥ a blind **Maya** round (SHIP WITH FIXES, 1 MED) on the SAME diff.
+> Opus's MED was a real design gap Maya's three earlier rounds never saw (card-origin lorebooks keep
+> their ST fields ONLY under `extensions` — the ST export now LIFTS them instead of dropping the map).
+> 8 rulings folded, Opus F2 docs-only, Maya's MED overruled (an explicit `extensions.position: null` is
+> no provenance — both reviewers accepted); both confirms **CONFIRMED SHIP**. Gate 6/6 → **`3d27b09`**.
+> As-built = ROLEPLAY_PLAN **§15.12**. Then **§15.8 the dev repair APPLIED** (both sidecars 0600, `card:`
+> keys gone, PNGs stripped, Lynette's focal re-keyed; backups in `~/.cache/tmp/ctrlb-s9/repair-backup/`)
+> and **§15.9 the Lynette migration APPLIED through the APIs** (prod: agent `lynette` + `personality-traits`
+> + the Mi'yu avatar/background + `Banner_Patreon_Agir.webp` as `agent.defaults.avatar`; focal rev
+> matches; `agent.default_agent` NOT set — the owner's one tap). The **`karpathy-guidelines` skill** went
+> to prod the same way (owner ask; `GET /api/skills/<name>` dev → `PUT` prod, byte-equal). Scripts kept at `~/.cache/tmp/ctrlb-s9/`.
+>
+> **Steps, in order (the owner's word is GIVEN — *"push & update"*, the update in the clean session):**
+> 1. `tmux display-message -p '#S'` → match the model; effort HIGH. `gh run list --branch main --limit 1` must
+>    be green on the tip (the release tip = the handoff commit; `3d27b09` is the code).
+> 2. **v1.7.9 per `deploy/linux/README.md` §Release**: annotated tag on the verified tip → tag push (the
+>    pre-push gate runs again, SERIALLY) → `gh run watch … --exit-status` on the tag's release gate →
+>    `bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.9` → `describe --exact-match` + health 1.7.9 + the PNG
+>    content-type check. **No config migration** (`config_migration/VERSION` = 5 on both sides, verified;
+>    `lorebooks.include_names` is an additive default) → rollback = v1.7.8, no config restore. Pre-tag: the
+>    local `--e2e` already ran green in-session (391/391 + the new `card-export.spec.ts`).
+> 3. **Owner test card (phone, prod after the release):** ① Conf › Agents › Lynette → footer `export` →
+>    **PNG card** → import that PNG into SillyTavern (expect name Lynette, description + personality split,
+>    the `personality-traits` book embedded — unlink first to export without) · **JSON card** downloads
+>    `Lynette.json` · a dirty form shows "save first". ② Conf › Roleplay › Lorebooks → `personality-traits`
+>    → `export` → import that JSON into ST as a world-info file (expect 40 entries, keys/positions intact).
+>    ③ the book row reads `used by Lynette`. ④ Deleting a test character: the confirm says the memory
+>    folder goes and books/art stay; the toast names what was kept. ⑤ New character → flip duties to
+>    Talk → the tools list seeds from `roleplay.default_tools`.
+> 4. Dev: `voice.live.debug` still ON; the two imported agents now have `card.json` sidecars and no
+>    `card:` key. Dev units RUNNING at close (stop them when done poking).
+
+> ## The 45th session (2026-09-26 afternoon) — from HANDOFF.md as of `d4fd795`
+> ## ▶▶ NEXT SESSION — THE S9 BUILD (designed + council-closed 2026-09-26; owner: "let's go in a clean session")
+>
+> **What:** Phase 23 **S9 — export (D79)** + the post-release polish wave. **The design of record is
+> [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §15** (three blind rounds: Maya design → Maya confirm → an
+> Opus 5.5 nuance round; every finding folded inline, F2 of the Opus round CLOSED ISS-26's memory-nudge
+> arm on evidence). **The two lane briefs are written: `~/.cache/tmp/ctrlb-s9/BRIEF-BE.md` +
+> `BRIEF-FE.md`** (disjoint files, the route contract in both). Owner rulings in the 45th session (all
+> in §15): ISS-23 rides the duties flip · books are never cascade-deleted, `used_by` instead · the card
+> embeds the LINKED books (unlink to export without) · the persona is already on prod · migrate Lynette +
+> `personality-traits` + the three uploaded art files (already cropped — bytes travel as-is).
+>
+> **Steps, in order:**
+> 1. `tmux display-message -p '#S'` → match the model; check effort HIGH. Start the dev units.
+> 2. Launch the two pinned-Opus lanes from the briefs (Agent tool, `model: "opus"`), in parallel.
+> 3. Main-seat audit of each lane's report → blind **Maya** code round (the `second-opinion` skill's
+>    `-z` lane; self-contained prompts, monitor the OLDEST anchored PID — a `pgrep -f` wait loop must
+>    anchor on the python path or it matches ITSELF, burned this session) → fix waves by `SendMessage` to
+>    the SAME lane → confirm → commit (one commit per council-closed wave; footer = the model).
+> 4. **§15.8 the dev repair** (one-off, scratchpad script; the dry-run already passed this session: both
+>    SOULs equal the composition under the CRLF fold; Lynette = `ccv3`, Seraphina = `chara` + an Eldoria
+>    book in her sidecar). Then **§15.9 the Lynette migration** through prod's APIs (read the returned slug;
+>    GET-merge-PUT; whole `files` lists on the settings PUT). Owner test card afterwards: export Lynette
+>    from prod, import that PNG into SillyTavern; export `personality-traits`, import into ST.
+> 5. Release **v1.7.9** per `deploy/linux/README.md` §Release (no config migration: `include_names` is
+>    additive; rollback = v1.7.8, no config restore needed).
+>
+> `~/.cache/tmp` had 33,676 entries at close — fine (the pytest failure starts past a few hundred k).
 
 > ## Current state (2026-09-26, FORTY-FOURTH session — **v1.7.8 IS LIVE IN PRODUCTION. The release ran the runbook §Release end-to-end on the owner's word ("yes to all push and let's update production"): the three owed commits PUSHED (`4ce70c3`, the pre-push gate 6/6) → CI green on the tip (run 36251674270) → tag `v1.7.8` on `4ce70c3` → the CI RELEASE GATE green (run 36252375691) → `update.sh v1.7.8` on prod (DB snapshot · config MIGRATED 2 → 5 · sub-second cutover · its own health gate) → verified: `git describe --exact-match` = v1.7.8, `/api/health` version 1.7.8, `icon-192.png` served as `image/png`, the journal clean. THE EAR IS ON IN PROD for the first time (`/api/voice/status`: `live: true`, every `live_call` knob at its default — `route: media`, `mic_hold: auto`, `barge_in: false`, `noise_verdict_ms: 1000`, `debug: false`), TTS = PocketTTS (unchanged from the 41st session's flip). ▶▶ NEXT = THE OWNER'S PROD ROUNDS (below) — nothing is owed on the code side.**)
 >

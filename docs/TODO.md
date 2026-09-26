@@ -1618,7 +1618,7 @@ WebSocket, D71's narrow admission), client-submitted turns through the untouched
 read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each passes
 `tools/check.py`.
 
-- [x] **S9 — EXPORT (D79): the SillyTavern card PNG + JSON · the standalone lorebook JSON · `used_by` on books · the post-release polish wave (ISS-15/20/22/23/24/26/27/29/30) — ✅ BUILT 2026-09-26** (spec = plan §15, as-built §15.12; two pinned-Opus lanes → the two-reviewer code round (blind Opus 5.5 ∥ blind Maya) → fix wave → both confirms CONFIRMED SHIP). Owed after the commit: the dev sidecar repair §15.8 → the Lynette migration §15.9 → v1.7.9.
+- [x] **S9 — EXPORT (D79): the SillyTavern card PNG + JSON · the standalone lorebook JSON · `used_by` on books · the post-release polish wave (ISS-15/20/22/23/24/26/27/29/30) — ✅ BUILT 2026-09-26** (spec = plan §15, as-built §15.12; two pinned-Opus lanes → the two-reviewer code round (blind Opus 5.5 ∥ blind Maya) → fix wave → both confirms CONFIRMED SHIP). §15.8 dev repair + §15.9 Lynette migration APPLIED; **🏁 LIVE in prod as v1.7.9 (released 2026-09-26, no config migration, rollback v1.7.8)**.
 - [x] S0 — Probes + the ear smoke *(CLOSED 2026-09-12, build `da4343f` — plan §7-S0 as-built
       record. Headlines: the realtime ear was DEAD without `LOOPBACK_HOST_URL` — owner-ruled
       server-env fix (a drop-in OUTSIDE the repo, see the record) — then proven end to end
