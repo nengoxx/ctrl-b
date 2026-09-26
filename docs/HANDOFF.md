@@ -36,6 +36,34 @@
 - **Nothing is owed on the code side.** `main` = origin, tree clean. The full session history is in
   [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the HANDOFF block of ⟨date⟩ / the Nth session" resolves there).
 
+## ▶▶ NEXT SESSION — THE S9 BUILD (designed + council-closed 2026-09-26; owner: "let's go in a clean session")
+
+**What:** Phase 23 **S9 — export (D79)** + the post-release polish wave. **The design of record is
+[`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §15** (three blind rounds: Maya design → Maya confirm → an
+Opus 5.5 nuance round; every finding folded inline, F2 of the Opus round CLOSED ISS-26's memory-nudge
+arm on evidence). **The two lane briefs are written: `~/.cache/tmp/ctrlb-s9/BRIEF-BE.md` +
+`BRIEF-FE.md`** (disjoint files, the route contract in both). Owner rulings in the 45th session (all
+in §15): ISS-23 rides the duties flip · books are never cascade-deleted, `used_by` instead · the card
+embeds the LINKED books (unlink to export without) · the persona is already on prod · migrate Lynette +
+`personality-traits` + the three uploaded art files (already cropped — bytes travel as-is).
+
+**Steps, in order:**
+1. `tmux display-message -p '#S'` → match the model; check effort HIGH. Start the dev units.
+2. Launch the two pinned-Opus lanes from the briefs (Agent tool, `model: "opus"`), in parallel.
+3. Main-seat audit of each lane's report → blind **Maya** code round (the `second-opinion` skill's
+   `-z` lane; self-contained prompts, monitor the OLDEST anchored PID — a `pgrep -f` wait loop must
+   anchor on the python path or it matches ITSELF, burned this session) → fix waves by `SendMessage` to
+   the SAME lane → confirm → commit (one commit per council-closed wave; footer = the model).
+4. **§15.8 the dev repair** (one-off, scratchpad script; the dry-run already passed this session: both
+   SOULs equal the composition under the CRLF fold; Lynette = `ccv3`, Seraphina = `chara` + an Eldoria
+   book in her sidecar). Then **§15.9 the Lynette migration** through prod's APIs (read the returned slug;
+   GET-merge-PUT; whole `files` lists on the settings PUT). Owner test card afterwards: export Lynette
+   from prod, import that PNG into SillyTavern; export `personality-traits`, import into ST.
+5. Release **v1.7.9** per `deploy/linux/README.md` §Release (no config migration: `include_names` is
+   additive; rollback = v1.7.8, no config restore needed).
+
+`~/.cache/tmp` had 33,676 entries at close — fine (the pytest failure starts past a few hundred k).
+
 ## ▶▶ NEXT SESSIONS — the roadmap
 
 ### 1. The owner's PROD rounds (phone; reload the PWA and accept its update prompt first)
@@ -66,7 +94,7 @@ Nothing here needs the main seat until a verdict comes back; the trail is the di
   (owner-parked) · ISS-19 (above).
 - **Dormant, reopen on recurrence:** ISS-16 (call-mode TTS crackle — not reproduced since PocketTTS;
   the record has the reopen ladder).
-- **Deferred small fixes (pick as a polish wave):** ISS-15 (Windows `ping -n 3` deadline) · ISS-20
+- **Deferred small fixes — NOW THE S9 WAVE (ROLEPLAY_PLAN §15.6–§15.7):** ISS-15 (Windows `ping -n 3` deadline) · ISS-20
   (the two agent-roster queries) · ISS-22 (book-import report no-op flood) · ISS-23 (hand-created
   characters start with ALL tools) · ISS-24 (deleting a character orphans memories/book/avatar) ·
   ISS-26 (tool-agent text through side doors) · ISS-27 (lorebook matching vs ST: CJK keys, speaker

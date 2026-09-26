@@ -2668,3 +2668,298 @@ reload, the fixed-slug PUT, the no-cascade DELETE, the FE per-row requests + def
 body + `missing:` options, the legacy-reader removal, the neutral defaults with owner overrides still
 winning, Core Memory untouched. **Confirm round (self-contained, the same day): SHIP — F1/F2/F4/F6
 CONFIRMED, the F3/F5 rulings SOUND, no new findings, wave sweep none.**
+
+## 15. S9 — Export (cards + books) · the referenced-by line · the post-release polish wave (designed 2026-09-26; **blind Maya design round = BUILD WITH CHANGES, 9 findings — F1–F9 folded below (F8 answered by the duties-flip rule, F9 already the plan); confirm round 2026-09-26: ALL NINE RESOLVED + three implementation guards folded ((b) IHDR/IEND lengths + type bytes · (c) the provenance predicate's int guard · (d) ISS-23 transition-only) — then a BLIND OPUS 5.5 round (owner-requested, nuances only) = BUILD WITH CHANGES, 18 findings — 17 folded inline, F2 CLOSED the ISS-26 (iii) arm on evidence; the main seat closes the council on that record; **owner: build in a CLEAN session**; NOT BUILT**)
+
+> Owner rulings in conversation (2026-09-26): *"we totally forgot to create an export button to export
+> the card in PNG format as silly tavern and other project do … same for the lore books, we need to be
+> able to export them, not just import them"* · the embedded-book rule: *"if the standard is to embed
+> it in the card, we can do that, but the character and the lore book are different things … the
+> character could be exported with the lore book, or without (just unlink the lore book before
+> exporting)"* · ISS-24: *"don't delete lore books automatically at all, maybe say inside the lore book
+> which characters reference it"* · ISS-23: build the default-tools rule. Evidence = R65 §1.6/§5,
+> R66 §1/§2.5, R87 RP-4/RP-8/RP-9/RP-10/RP-11/RP-14/RP-15 (all bought; nothing re-researched).
+> **Method:** everything below REUSES the import's functions — the export is the importer read
+> backwards, one module beside each importer, no second PNG walker, no second alias table.
+
+### 15.1 Scope
+
+1. **Card export** — `agents/<slug>` (the default agent included) → a SillyTavern-compatible PNG card,
+   plus the card JSON. §15.2–§15.3.
+2. **Lorebook export** — `lorebooks/<slug>` → SillyTavern's standalone world-info JSON. §15.4.
+3. **Referenced-by** — every book row says which agents link it (the ISS-24 ruling). §15.5.
+4. **The polish wave** — ISS-22 · ISS-23 · ISS-24 · ISS-26 · ISS-27 · ISS-29 here (§15.6); ISS-15 ·
+   ISS-20 · ISS-30 ride the same wave as the TODO polish slice (§15.7).
+5. **The dev repair** (one-off, not product) + **the Lynette migration runbook** (API-driven). §15.8–§15.9.
+
+Out of scope, recorded: CHARX export · the `chara-ext-asset_` sidecar (Risu-only, R66 §1.3) · the
+V3 `lorebook_v3` envelope as a download (ST's own export is the raw world-info object, R65 §5.2 —
+the dominant convention wins at the boundary) · persona export (D78's `user_icon` seam is unbuilt).
+
+### 15.2 The card composer — `services/agent/card_export.py`
+
+`compose_card(*, slug, agent: AgentDef, soul: str, sidecar: dict | None, books: list[tuple[str, Lorebook]]) -> ComposedCard(v3: dict, v2: dict, stem: str)`.
+Pure, writes nothing, raises nothing owner-shaped. **The CURRENT character wins** (ST exports the live
+character, `characters.js:1657-1666`); `card.json` supplies what we never mapped. **Every row below is
+an explicit SET or DELETE over the base, never a conditional overlay (Opus F1):** the importer writes
+empty fields as ABSENT, so "absent on the live side" is not "keep the sidecar's" — live text and list
+fields are always written (`""`/`[]` included), `character_book` is DELETED at 0 linked books
+(Seraphina's sidecar still holds her original Eldoria book — unlink must mean unlink), `nickname` is
+DELETED when the title equals the name, `extensions.world` is SET to the embedded book's name and
+DELETED at 0 books, and a card with NO sidecar (the default agent, hand-made characters) fills the
+spec's required keys with empty values (`creator_notes`, `tags`, `creator`, `character_version`,
+`extensions`, `group_only_greetings`).
+
+| Card field | Source | Rule |
+|---|---|---|
+| everything | `sidecar["data"]` when present | the base: the whole normalized post-strip card (creator, creator_notes, tags, character_version, extensions incl. `depth_prompt`, assets, group_only_greetings, creation_date, …) + the envelope's own unknown keys beside `data` (R89/E-4) |
+| `name` / `nickname` | **identity (Maya F3):** `name` = the sidecar's `name` (the character as authored) else the live `title` else the slug; `nickname` (V3) = the live `title` whenever it differs from `name` — the importer's `nickname → title` read backwards (`card_import.py:669-677`), so a retitled character exports its new title and keeps its authored name. The V2 projection has no `nickname`, so a V2-only reader sees the authored name (recorded, ST reads `ccv3` first) |
+| `description` · `personality` · `system_prompt` | SOUL.md | **the SOUL rule:** if a sidecar exists AND `compose_soul(sidecar fields)` equals the SOUL **under the SOUL writer's own normalisation** (`write_text_eol` folds CRLF → LF, and the comparison ALSO folds a lone `\r` because a text-mode read's universal newlines do — Opus F13; compared against the stripped read `_read_soul` performs) → the original three values; else `description = soul`, the other two `""` (the RP-8 loss, honest: an edited SOUL is one text). *Measured 2026-09-26 on dev: both imported cards carried CRLF, both SOULs are byte-equal to the composition after that fold and NOT before — a raw byte compare would have silently taken the lossy branch.* |
+| `first_mes` · `alternate_greetings` · `mes_example` · `scenario` · `post_history_instructions` | `agent.greeting` · `alt_greetings` · `example_dialogue` · `scenario` · `post_history` | verbatim (the import's mapping, inverted) |
+| `character_book` | the agent's EFFECTIVE `lorebooks` list as `load_agent` resolves it (`agent.yaml` merged over `agent.defaults`, `config.py:2396-2403` — what the character actually runs with; `used_by` reads the same; never `lorebooks.books`, the install's global set) | 0 → no key · 1 → that book in the spec dialect (§15.4) · N → ONE merged book named `"<name> lorebook"`, entries concatenated in list order (our runtime already scans the linked set as one pool, §6.4) — the owner unlinks to export without |
+| `creation_date` · `modification_date` (V3) | sidecar else now · now | unix seconds |
+| `assets` (V3) | — | always `[{type: "icon", uri: "ccdefault:", name: "main", ext: "png"}]` — the carrier IS the icon; a CHARX import's other assets were never read and a dangling `embeded://` URI makes Risu throw (R66 §2.4; Opus F4). Recorded non-goal, not a loss |
+| `spec` / `spec_version` | — | `v3` = `chara_card_v3`/`3.0`; `v2` = the V3 object minus the V3-only keys (`nickname`, `creator_notes_multilingual`, `source`, `group_only_greetings`, `creation_date`, `modification_date`, `assets`), stamped `chara_card_v2`/`2.0` — the spec's backfill (ccv3 SPEC_V3 §"backfill", pinned SHA in R66 §0) |
+| the inert `card:` extra some pre-sidecar `agent.yaml`s carry | — | **never read** (it is the unmapped remainder only; §15.8 removes it on dev) |
+
+Then `strip_executable` on BOTH parts the way the import does it (`api/agent.py:655-657` — the
+envelope and `data` stripped APART, `/data`-rooted pointers for the card; Maya F1): the sidecar was
+stripped at import, but the live fields are owner-typed text and the contract is one function both
+ways (`card_import.py:531`, "reused verbatim on export"). `stem` = the filename stem the FE names
+the download with: `title or slug`, passed through the upload-name sanitizer the media path already
+owns (`lib/uploadName.ts` on the FE side — the server returns bytes only, the FE names the blob;
+`Content-Disposition` is therefore NOT needed and no RFC 6266 code is written).
+
+### 15.3 Routes + the PNG carrier
+
+- **`GET /api/agents/{name}/card`** → the V3 JSON (`application/json`). The testable seam: every
+  composition test asserts here; it is also the JSON download's payload. `allow_default=True` — the
+  root agent is a character too (`default_agent_def()` + the root SOUL).
+- **`POST /api/agents/{name}/card.png`** — body = the CARRIER PNG (raw bytes: the import's own
+  `_import_body` reader for the cap + empty-body posture, `roleplay.card_import.max_bytes`, R73), then
+  **one bounded validator `validate_png_carrier(body)`** beside `_png_chunks` in `card_import.py`
+  (Maya F4/F6 — the media path's admission posture, not a signature sniff): the PNG signature, `IHDR`
+  as the first chunk, every declared length inside the body, every chunk's CRC equal to
+  `zlib.crc32(type + data)`, chunk-type bytes in `[A-Za-z]{4}`, `IHDR` exactly 13 bytes, `IEND`
+  zero-length, present and terminal (Maya confirm (b)) — 415 on a non-PNG, 422 on a malformed one.
+  The import's own walk stays as it is (it never wrote a PNG back; this route does). Server:
+  `strip_card_chunks(body)` (drops any `chara`/`ccv3`
+  a re-exported avatar might still carry) → append two `tEXt` chunks before IEND — `chara` = base64
+  of `v2`, `ccv3` = base64 of `v3` (what ST's writer does, R66 §2.5:427-443; ccv3 first is a reader
+  rule, not a writer one) → `Response(media_type="image/png")` + `nosniff`. The chunk writer is
+  ~15 lines beside `_png_chunks` in `card_import.py`: `len | type | data | crc32(type+data)` via
+  `zlib.crc32`; keyword bytes Latin-1 (`chara`/`ccv3` are ASCII), text = ASCII base64 — PNG 1.2 §11.3.4.3.
+  POST, not PUT: a pure derivation returning an artefact, nothing is stored — and because the house
+  rule is "raw-body PUT, never POST" (SECURITY_MODEL §2.7/§2.9, `putBytes`' own doc comment), the
+  route earns a §2.9 sentence ("side-effect-free derivation: send-able cross-origin as text/plain,
+  writes nothing, response unreadable cross-origin"), a test pinning that it writes nothing, and
+  `postBlob`/`putBytes` doc comments that say why one POST exists (Opus F15).
+- **Why the client supplies the carrier (the design choice):** the backend has no image codec by
+  policy (`core/media.py:32-37`; MEDIA_MANAGER_PLAN §1) and a bound avatar is WebP/JPEG as often as
+  PNG (Lynette's is WebP). The FE already owns the one canvas re-encode chokepoint
+  (`lib/imageExport.ts`, `image/png` is an `OutputType`) — the export draws the avatar it already
+  displays through it. Alternative rejected: a server-only export that works only for PNG avatars
+  (two behaviours for one button). The two halves are cleanly split: the SERVER owns the card (the
+  composition, the strip, the chunk write — everything security-relevant); the CLIENT owns pixels.
+- **The carrier call, pinned (Opus F6):** `imageExport` with `override: {type: "image/png"}` (its policy
+  never picks PNG on its own — WebP/JPEG otherwise, and the server would 415), `rect` = the WHOLE file
+  (the focal point and zoom are display settings, not card pixels), `bounds` = the avatars role's
+  own `FULL_ART` (4 MP; PNG takes no quality step-down, so `overBudget` is advisory); the Blob →
+  `createImageBitmap` path is same-origin, no tainting; `probe()`/`checkEncoded` already catch the
+  silent-canvas case.
+- **No avatar:** the FE paints the same fallback the gallery shows (the initial on the accent) onto a
+  512×512 canvas ON THE MAIN THREAD (a worker's OffscreenCanvas has no document fonts) — one small
+  `lib/` function; ST needs an image, and a 1×1 would be a broken card.
+- **Export exports the SAVED character** (the server composes from disk): the control is disabled
+  while the form is dirty, labelled "save first" (Opus F7).
+- **FE:** `hooks/useAgents.ts` gains `useExportCard(name)` → (avatar blob via the art hook's URL →
+  `imageExport` → `postBlob("/api/agents/{name}/card.png", png)` → `downloadBlob("<stem>.png")`) and
+  `exportCardJson` (`getJSON` → `downloadJson("<stem>.json")`). `api/client.ts` gains `postBlob` beside
+  `putBytes`; `downloadJson` moves from `UtilCard.tsx` to `lib/download.ts` with `downloadBlob`
+  (UtilCard imports it — no second blob-anchor implementation); the object URL is revoked on a
+  delay (the shipped precedent revokes right after `click()`, fine for a small JSON, not for a
+  multi-MB PNG — FileSaver.js waits 40 s), and the stem is passed to the sanitizer WITH its
+  extension (`sanitizeStem` cuts at the last dot: "Dr. Watson" → "Dr"; Opus F14). **Button:** the agent form's
+  `.mfoot` (`AgentsEditor.tsx`, the ONE footer both the default and specialists render) gains an
+  `export` control offering **PNG card** and **JSON card** (kit styling; the same footer holds
+  remove/save). The blob-anchor download is the shipped Android-PWA precedent (UtilCard).
+
+### 15.4 The lorebook serializer — `services/agent/lorebook_export.py`
+
+The inverse of `lorebook_import.py`'s `_ALIASES` / `_POSITIONS` / `_LOGIC`, two dialects from one
+per-entry function `entry_out(entry, index, *, dialect)`:
+
+| Ours | ST standalone (`dialect="st"`) | Spec `character_book` (`dialect="spec"`) |
+|---|---|---|
+| `keys` / `secondary_keys` | `key` / `keysecondary` | `keys` / `secondary_keys` |
+| `content`, `constant` | same | same |
+| `enabled` | `disable = not enabled` | `enabled` |
+| `logic` | `selectiveLogic` 0 (`and_any`) / 2 (`not_any`) · `selective = bool(secondary_keys)` unless stashed | `selective` + `extensions.selectiveLogic` |
+| `order` | `order` | `insertion_order` |
+| `priority` | (no ST home — stashed `priority` only if it came from V3) | `priority` |
+| `case_sensitive` / `whole_words` | `caseSensitive` / `matchWholeWords` (explicit booleans, never `null`) | `case_sensitive` + `extensions.match_whole_words` (+ `extensions.case_sensitive`) |
+| `position` | **the provenance integer only while it is still CONSISTENT (Maya F5):** emit the stashed `extensions.position` integer iff `_POSITIONS[int][0] == entry.position` (the owner never moved the entry, so the original is the truer answer — position 0 stays 0, not 1); otherwise derive from the canonical: `head → 1` (after char — the exact landing the importer names) · `tail → 4` with `depth` = the stashed `depth` else `0` (our tail = the §4.2 slot before `post_history`; at-depth-0 is ST's nearest). One predicate, used by both dialects; it accepts only a real `int` (not `bool`) that IS a `_POSITIONS` key — anything else derives (Maya confirm (c)) | `position = "after_char"` for both (the spec's two values straddle the definitions) + `extensions.position`/`extensions.depth` carrying the ST integer as above — the lossless path ST itself reads first (R65 §5.2) |
+| stash (`uid`, `comment`, `depth`, `probability`, `useProbability`, `group`, `displayIndex`, …) | re-emitted verbatim; `uid`/`displayIndex` default to the index; `comment` defaults to `name`; **the stashed `extensions` dict is DROPPED** (ST standalone files carry none; it is the stale import mirror) | `extensions` = the stashed `extensions` **overlaid** with our truth (`position`, `depth`, `selectiveLogic`, `case_sensitive`, `match_whole_words`) so a reader that trusts `extensions` first (ST, and our own importer — `lorebook_import.py:197-203`) reads what the owner has now, never the stale mirror |
+
+**Ids never collide (Opus F3):** a stashed `uid`/`id` is kept only when it is a real int not already
+used in the output; otherwise the next free int (max+1) — dev `personality-traits` runs 1..40 and a
+new editor entry would otherwise overwrite a dict key silently; a MERGED book is renumbered
+sequentially, `displayIndex` included (ST keys the embedded entries by `id`).
+**`selectiveLogic` gets the position treatment (Opus F11):** the importer records a collapsed ST
+integer (1 NOT-ALL / 3 AND-ALL) at `extensions.selectiveLogic`, and the exporter emits the stashed
+int iff `_LOGIC[int][0] == entry.logic`, else 0/2 from ours; `selective = bool(secondary_keys)`
+(the "unless stashed" clause was dead — `take("selective")` always consumes it).
+**Spec-dialect field policy (Opus F10):** every entry emits `use_regex: false` (CCv3 requires it);
+ST-native stash fields (`uid`, `displayIndex`, `probability`, `useProbability`, `depth`,
+`excludeRecursion`, `addMemo`, `weight`, `group`, …) go UNDER `extensions` with ST's snake_case
+crosswalk names (R65 §5.2's `originalWIDataKeyMap` list; unknown keys pass through verbatim under
+`extensions`) — the spec says app data lives only there, and it is the only place ST's reader
+looks; the book's own stashed extras (`scan_depth`, `token_budget`, `recursive_scanning`, a stashed
+`extensions`) are carried through at the book level.
+Book level: ST dialect = `{"entries": {"<uid>": …}, "name": …, "description": …}` — ST's export is
+the raw internal object (R65 §5.2) and ST's import passes a native book through whole, so the two
+extra keys are inert there and lossless for us. Spec dialect = `{name, description, entries: [...],
+extensions: {}}` (V2 `character_book`). We emit only what we hold + the stash — no invented ST
+template defaults (ST backfills missing fields itself, `addMissingWorldInfoFields`, R65 §1.1).
+
+**Importer amendment (lossless round trip):** when `_POSITIONS` collapses an ST integer position,
+the importer ALSO records that integer at `extensions.position` on the stored entry when the source
+carried none there (ST's own home for it). A re-import of our ST-dialect export then restores the
+exact position through the existing extensions-first read. One line at the `_entry` mapping site +
+a golden test; the report line for it is folded by ISS-22's aggregation.
+
+Routes: **`GET /api/lorebooks/{slug}/export`** → the ST-dialect object. FE: `LorebookRow`'s footer
+gains `export` → `downloadJson("<book name>.json")` (ST names an imported book after the file).
+
+### 15.5 Referenced-by (the ISS-24 ruling)
+
+`GET /api/lorebooks` rows gain `used_by: {"agents": [slug, …], "global": bool}` from one helper
+`book_references(settings) -> dict[slug, Refs]` (agents: `list_agent_names()` + each `load_agent`'s
+`lorebooks`, plus the root agent's `agent.defaults.lorebooks` under `"default"`; global =
+`lorebooks.books`). N small YAML reads per list call — a homelab list, cached by TanStack like the
+rest. `LorebookRow` shows `used by Lynette, Seraphina` / `global` / `unused` in its header line, and
+the delete confirm names the users; `invalidateAgents` also invalidates `["lorebooks"]` so the line
+never goes stale after a link/unlink (Opus F16); the FE treats `used_by` as optional (the e2e fixture
+rows carry none). A slug an agent names but no book holds is reported as-is (dangling, visible).
+**No delete ever cascades to a book** (owner).
+
+### 15.6 The roleplay-side fixes (each = a rule + a test; ISSUES.md entries close with the commit)
+
+- **ISS-22** — the import report aggregates: no line for an exact landing (`_POSITIONS[...][1] is None`
+  already), the downgrade classes become ONE count line per class per book (`"12 entries sat at depth
+  and landed tail"`), and the silently-inert features (probability < 100, inclusion groups,
+  recursion flags, per-entry `scanDepth`, regex-looking keys) each get one per-book count line.
+- **ISS-23** — built **on the duties flip** (the issue's own first option; Maya F8 showed the create
+  disclosure has no character control and one should not be invented): in the agent form, flipping
+  duties to `conversational` while `tools` is still the wildcard `"*"` sets the draft's `tools` to
+  `roleplay.default_tools` (read from settings, the same knob the import writes, `card_import.py:668`)
+  — visible in the tools list, editable before save, never applied over an explicit list, and
+  **never on the default agent's form** (`!isDefault` — its save lands in `agent.defaults`, which
+  every specialist inherits; Opus F5). The create disclosure is unchanged. **Transition-only by design** (Maya confirm (d)): a character that
+  already sits at `"*"` today is not rewritten behind the owner's back — the issue is hand-CREATED
+  characters, and the rule fires on the act of making one. ROLEPLAY_PLAN §5.5's "does NOT write"
+  sentence flips to this rule.
+- **ISS-24** — `_delete_agent_folder` also removes the agent's memory directory, resolved through the
+  SAME resolver the memory service uses (`memory.py:_agent_memory_dir` semantics — only the default
+  `memories/agents/<slug>` is removed; a custom `memory_dir` is left and reported); the response
+  reports `{removed: [...], kept: {books: [...], art: [...]}, broken: {automations: [...]}}` — an
+  automation pinned to the slug fails at its next fire with `AutomationAgentMissing`
+  (`services/automations/service.py:157-167`), so it is named, not discovered later (Opus F16); `delete_agent`'s docstring + the FE
+  confirm text (`AgentsEditor.tsx:624`) say exactly that.
+- **ISS-26** — (i) the import writes `skills: []`; (ii) `_roster` is emitted only when the effective
+  allowlist carries a tool that TAKES an id — the predicate maintains itself (Opus F8: "fleet tool"
+  is not a category here; `action` holds `run_shell` too): any tool in `for_agent(self._tool_allow,
+  self._hidden_tools)` whose `input_model.model_fields` (or `raw_schema.properties` for MCP) has
+  `host_id` or `service_id` (`services/actions/_common.py:90-99`'s target inputs); the
+  `_longterm_available` pattern, `session.py:703`. **(iii) is CLOSED without code (Opus F2):** `memory`
+  is a CORE tool (`memory_tool.py:116`, kept through every allowlist by `for_agent`, `core/tool.py:298`),
+  so every character holds it and the nudges are truthful — RP-14's premise was wrong on this arm;
+  the test for (ii) runs against the real registry, never a stubbed `_tool_allowed`. No template
+  conditionals — the gate is in code (§2.3).
+- **ISS-27** — `Haystack.hit` matches ST (`R65 §1.6`, verified): (a)+(d) whole-word = ST's
+  `(?:^|\W)key(?:$|\W)` with **ASCII** word semantics (`re.ASCII` on the boundary class — JS `\W` is
+  ASCII-only, which is exactly why CJK keys match in ST and not under Python's Unicode `\w`); a key
+  containing whitespace falls back to substring; (b) the haystack rows become `"<name>: <text>"`
+  behind `lorebooks.include_names: bool = True` (ST's `world_info_include_names` default). Pinned
+  (Opus F12): both names come from `macros_for` (`macros.py:91-99` — the persona's name, fallback
+  `"User"`; the agent's title), the prefix is applied by ONE helper after the `if t` filters in BOTH
+  the turn-start and the resume branch (the turn-start branch must keep the role it drops today at
+  `session.py:~884`), an empty attachment-only incoming stays `""`, and assistant rows take the
+  CURRENT agent's name (a multi-agent thread's older rows are approximated — recorded); (c) `constant`
+  entries skip the secondary gate — R65 §1.5's precedence list is terminal per step and `constant →
+  activate` sits above the key checks (the main seat's ruling over Maya's reading, 2026-09-26).
+- **ISS-29** — `list_agent_names` filters with `valid_skill_slug` (the grammar the folders are minted
+  under and `_agent_folder` already validates with); `_slug` stays the hosts rule.
+
+### 15.7 The TODO polish slice (non-roleplay, same wave)
+
+- **ISS-15** — `_ping_cmd` returns `(cmd, deadline_s)`; Windows deadline = `n*timeout + (n-1) + 1`
+  with `n = max(1, count)` (the command's own normalisation); Linux/macOS unchanged; `ping_addr`
+  consumes the deadline instead of computing one. Unmeasured on Windows (recorded).
+- **ISS-20** — `useAgentList` retires; its FIVE consumers (`AgentsTab` ×2, `AgentGlobals`,
+  `MemoryEditor`, `AutomationsPanel`, `ConfTab`) take `useAgentRoster`; the `["agentlist"]`
+  invalidations go. Behaviour deltas (Opus F17): the roster is always-on (already true — the who-line reads it on every
+  tab), and `useScopedQuery`'s `refetchOnMount: "always"` is given up for the roster's 30 s stale
+  window (mutations invalidate, so no edit is ever stale); ten test files mock `useAgentList` and
+  `tests/hooks/useSaveSettings.test.ts:120` asserts the `["agentlist"]` invalidation — all updated.
+- **ISS-30** — `api/settings.py`'s personas guard becomes `ROUTER_OWNED = (("roleplay","personas"),
+  ("computers",))` → 422 naming the router; the three tests that seed hosts through the settings PUT
+  seed through `POST /api/hosts`.
+
+### 15.8 The dev repair (one-off script in the session scratchpad — NOT shipped, recorded here)
+
+Lynette + Seraphina predate the sidecar; their extracted avatars (`media/agents/avatars/lynette.png`,
+`seraphina.png`) still carry the original `chara` chunk (grep-verified 2026-09-26). Per agent:
+① read the chunk with `_png_text_chunks` → `_decode_card_json` → `normalize` → `strip_executable` →
+`_envelope` (the import's own functions, imported from `card_import`) → `atomic_write_text
+(agents/<slug>/card.json)` 0600; ② drop the inert `card:` key from `agent.yaml` through
+`edit_config_yaml`/`sync_mapping` (the house writer); ③ `strip_card_chunks` the two PNGs and write
+them back **through `PUT /api/media/agents/files/avatars/<name>`** with `X-Expected-Revision`, so the
+library index sees the new revision; ④ re-set `lynette.png`'s focal (`x .47 · y .3 · z 2.75`): `GET /api/settings` → edit that ONE item
+→ PUT the WHOLE `media.namespaces.agents.roles.avatars.files` list (the settings deep-merge
+replaces lists wholesale — a one-item PUT would wipe the other three entries' order and flags; Opus
+F9), quoting the index row's `revision` (`GET /api/media/agents`) as the focal's `rev`. Dev units running
+(:5434). Verified by: `GET /api/agents/lynette/card` returns the original split (the SOUL rule's
+first branch) and `grep -c tEXtchara` = 0 on both PNGs.
+
+### 15.9 The Lynette migration runbook (prod v1.7.8 already has every IMPORT door; only the export is new)
+
+Prerequisite: §15.8 done, the export built on dev. Then, all through the app's own APIs (nothing
+hand-edited under `~/.ctrl-b`, the 0600/atomic writers and the focal `rev` semantics intact — Maya
+concurred): ① on dev, UNLINK `personality-traits` from Lynette → SAVE → export the PNG card (no embedded
+book) → relink → SAVE (the export reads disk; Opus F7); ② prod `PUT /api/agents/import` ← that PNG — **read the slug the response returns**
+(the importer suffixes a taken slug, `card_import.py:581-602`; prod holds no agents today, so it is
+expected to be `lynette`, but every later step uses the RETURNED slug — Maya F2) — it mints the
+folder + `card.json` + the avatar `lynette.png`; ③ the book travels in OUR shape, lossless: dev `GET /api/lorebooks/
+personality-traits` → prod `PUT /api/lorebooks/personality-traits` (the create-or-overwrite route);
+④ the three art files byte-for-byte (the owner's crops are baked into the bytes): dev
+`GET /api/media/agents/files/<role>/<name>` → prod `PUT /api/media/agents/files/<role>/<name>`;
+⑤ prod `PUT /api/settings` — GET first, then the WHOLE `media.namespaces.agents` role lists with the
+focal entries (each `rev` = the prod index row's `revision`) + `agent.defaults.avatar:
+Banner_Patreon_Agir.webp` (Opus F9); the import-landed `lynette.png` STAYS in prod's pool with the
+same focal it has on dev — dev keeps it beside the bound WebP, prod mirrors dev (Opus F18 ruled
+keep, not delete); ⑥ `PUT /api/agents/<slug>` is a FULL replace (`_scaffold_agent`'s `sync_mapping`, Maya F7), so:
+prod `GET /api/agents/<slug>` → merge ONLY the intended dev fields over it (`avatar`, `background`,
+`lorebooks`, `tools`, `persona`, `voice`, the limits) → PUT the merged def;
+⑦ verify: `GET /api/agents` shows her, the gallery renders both arts, one prod turn answers as
+Lynette with the book scanning. **`agent.default_agent` is NOT set** — one tap on the gallery pill
+if the owner wants her as prod's default (their call, D75). The persona is already on prod (owner).
+
+### 15.10 Tests (the minimum that pins each rule)
+
+Backend: `test_roleplay_s9.py` — golden round trip (import fixture → compose → byte-equal to the
+fixture's `data` for an unedited SOUL; the edited-SOUL branch; the V2 projection's key set; the
+chunk writer's CRC validated by re-walking with `_png_chunks` + `zlib.crc32`; the carrier's
+old-chunk strip; merged-book naming; `used_by`; the lorebook two-dialect round trip incl. the
+`extensions.position` restore; ISS-22 aggregation counts; ISS-24 delete report; ISS-26 gates; ISS-27
+the four matching cases (a CJK key, a multi-word key, a constant+secondary entry, the name prefix);
+ISS-29 an `a_b` folder listed; ISS-30 `computers` → 422). Frontend: unit tests for `download.ts` and
+the fallback tile; the e2e sweep keeps its labels (the footer gains a button — no rename).
+
+### 15.11 Lanes + council
+
+Two pinned-Opus lanes on DISJOINT files: **BE lane** = §15.2–§15.6 backend + §15.7's ISS-15/ISS-30 +
+§15.10 backend tests; **FE lane** = §15.3/§15.4/§15.5 FE + ISS-20/ISS-23 FE + FE tests, against the
+API contract written into both briefs (the three routes' shapes above). Then the blind Maya code
+round → fix waves to the same lanes → confirm → §15.8 → §15.9 → v1.7.9 (no config migration:
+`include_names` is an additive default).
