@@ -27,5 +27,11 @@ export default defineConfig({
     // Reliability: reset spies/mocks between every test so state never leaks across cases.
     clearMocks: true,
     restoreMocks: true,
+    // The per-test limit is a HANG guard, not a performance budget: the first test of every
+    // `tests/tabs/conf*.test.tsx` file renders the whole ConfTab and pays that worker's transform of
+    // it, which on ubuntu-latest under the six-way `check.py` gate has crossed vitest's 5 s default
+    // (the same `confNotifications` test: CI reds on 2026-09-23 ×2 and 2026-09-26, and 5.6 s locally under load).
+    // 15 s still catches a genuinely stuck test long before the job's own timeout.
+    testTimeout: 15_000,
   },
 });
