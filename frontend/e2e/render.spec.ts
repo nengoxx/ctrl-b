@@ -11,7 +11,10 @@ const TABS = [
   { id: "fleet", label: "Fleet", content: null, marker: ".cosmos-planet.on" }, // a fixture host coin
   { id: "agent", label: "Agent", content: null, marker: null }, // empty thread → just assert the panel
   { id: "utils", label: "Tools", content: "Yt Captions", marker: null }, // a util run card
-  { id: "conf", label: "Conf", content: "Inference", marker: null }, // a ConfGroup title (lazy chunk)
+  // a ConfGroup TITLE (lazy chunk) — scoped to `.conftitle`, not a bare text match: the Providers
+  // group precedes it and a provider card's "referenced by inference defaults" line is an earlier,
+  // sometimes-hidden substring match (a real pre-tag sweep failure on 2026-09-26).
+  { id: "conf", label: "Conf", content: null, marker: '.conftitle:has-text("Inference")' },
 ] as const;
 
 for (const t of TABS) {
