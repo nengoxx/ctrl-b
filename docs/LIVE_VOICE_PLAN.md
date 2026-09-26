@@ -193,7 +193,8 @@ exactly as for stt/tts (§5.1):
 | `silence_ms` | 700 | server | End-of-utterance silence — **quiet-moment tolerance** (bounded 500–1200) |
 | `min_speech_ms` | 300 | client | The barge-in ACTION floor (§4.3) — a cough/door-slam must not kill playback |
 | `barge_in` | false | client | Hands-free interruption master (owner re-ruling 2026-09-22: an opt-in, tap-to-interrupt is the resting state) |
-| `min_final_ms` | 200 | client | D74 near-speech gate: how much of a final's audio must sit above the effective floor (0 = off) |
+| `min_final_ms` | 200 | client | D74 near-speech gate: how much of a final's audio must sit above the effective floor (0 = off). Also the measure the noise verdict judges by — it no longer feeds any kill (the R86 LC-1 iron-rule kill is gone, 2026-09-26) |
+| `noise_verdict_ms` | 1000 | client | The owner's 2026-09-26 ruling: how long an OPEN speech segment runs before it may be judged noise (accrual still `< min_final_ms` ⇒ the reply stops waiting on it; bounded 0–5000; 0 = never judge — the reply always waits for the stop). Real speech is never timed out |
 | `mic_hold` | auto | client | D76 §B: hold the ear while the reply plays — `on` / `off` / `auto` (= the per-chunk leak probe, S2) |
 | `floor_dbfs` | −45 | client | D76 §C the relative gate's BOOTSTRAP CEILING — the floor before any noise estimate exists |
 | `noise_margin_db` · `voice_margin_db` | 10 · 10 | client | Effective floor = `max(noise + noise_margin, ownVoice − voice_margin)` (the learned room, the learned voice; the latter is the "too quiet" line) |
@@ -234,12 +235,21 @@ and `waitingFinal` (speech stopped, transcript not yet arrived; cleared when the
 consumed or discarded). One machine, one owner (a `useLiveCall` hook), the overlay renders the
 phase. "Hang up" from every state. Rules the flags force: **playback may not start while
 `userSpeechActive || waitingFinal`** (confirm-round MED 2 — the gap between speech-stop and the
-final's arrival must not let an old reply start talking) — if the mouth would begin while
-either holds, that IS a barge-in (kill before first audio, §4.3) — **on the transcript gate's
-evidence, for a CLOSED utterance only (R86 LC-1, narrowed by R88 E-1):** a segment that has stopped
-(`waitingFinal`, no speech live) whose epoch-matched accrual is below `min_final_ms` is noise, not a
-barge-in, and the reply plays; an OPEN segment kills whatever it has accrued so far, and unmeasured
-still kills (fail-open, like the gate); a final arriving
+final's arrival must not let an old reply start talking). **The mouth WAITS; it is never killed for
+this (the owner's ruling 2026-09-26 on R86 LC-1 / R88 E-1, D71's second amendment):** the rule is
+enforced at the controller's silent→audible doors — the opening chunk, the resume out of a synthesis
+gap, the whole clip — which ask the machine's pure `mouthMayOpen` (`!waitingFinal && (!userSpeechActive
+|| noiseOpen)`) through a registered gate and HOLD an automatic start under the honest `loading` until
+the ear settles (every reduce pokes it). Nothing is cancelled: the owner's words land, go out as a
+steer (D41) or the next turn, and the reply follows. **The noise verdict** is the one thing that
+settles a segment still sounding: `noise_verdict_ms` in, an epoch-matched accrual still below
+`min_final_ms` means the transcript gate would drop its final as "too quiet" — noise (a TV, the next
+room) — so `noiseOpen` rises and the reply starts over it; its final still meets the gate on its own
+arm. Real speech is never timed out, and no verdict is ever taken without evidence (0 on either knob,
+or no matching epoch, ⇒ wait for the stop — the fail-safe is now "wait", never "kill"). `barge_in`
+plays no part in any of it, in either mode. The owner's own gestures (a resume tap, the scrubber) are
+never gated. A stop raises `waitingFinal` only when it pairs with an ACCEPTED start (the design round's
+A2). A final arriving
 during `thinking` submits as a **steer** through the existing 202 path (D41) without touching the
 phase. The machine composes existing pieces:
 
@@ -266,7 +276,9 @@ tap** (the ChatGPT voice-mode pattern) — always exists: during `speaking`, a t
 the overlay outside the control cluster interrupts; in ring mode the circumference is the
 visual invitation, and it works identically in no-ring mode. **Outside `speaking`, overlay
 taps are inert** — during `thinking` you steer by just talking; nothing cancels by accident;
-mute and hang up stay the only always-live controls. With `barge_in` off, speech over the bot
+mute and hang up stay the only always-live controls. **A barge-in is the interruption of an AUDIBLE
+reply** — speech while a ready reply is still waiting to start holds it (§4.2) and interrupts nothing,
+in either mode (2026-09-26). With `barge_in` off, speech over the bot
 is still transcribed (the mic never closes) and completed utterances join the machine's
 **pending queue** (below), submitting when playback drains — walkie-talkie semantics; a tap
 mid-speech fires the ordered sequence and the queue rides it.
@@ -418,7 +430,9 @@ voice:
     vad_threshold: 0.6      # server, rides session.update — D76 §D (the draft's 0.9 was Speaches' outlier; see §4.1)
     silence_ms: 700         # server, rides session.update
     min_speech_ms: 300      # client: the barge-in action floor
-    min_final_ms: 200       # client: the transcript gate (D74) — and, on a CLOSED utterance, the iron rule's (R86/R88)
+    min_final_ms: 200       # client: the transcript gate (D74) — and the measure the noise verdict judges by
+    noise_verdict_ms: 1000  # client: an open segment this old with accrual < min_final_ms is noise and stops holding
+                            # the reply (the owner's 2026-09-26 ruling — the mouth WAITS, never kills); 0 = never judge
     barge_in: false         # ships OFF since the 2026-09-22 re-ruling (D74 addendum ⑨) — voice interrupt is an opt-in
     mic_hold: auto          # auto | on | off (D76 §B; was the draft's `echo_workaround`) — auto = never held on a
                             # track whose getSettings().echoCancellation reads "all" (measured SUBTRACTIVE on
@@ -1519,15 +1533,37 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > a no-op while `mouthLive` and re-arms (`IDLE_EDGES`). LC-8: `uplink_idle_s` (server, 15, 5–120)
   > reaps a silent uplink as `session_limit` with its own sentence (the client now shows the relay's
   > message for that code). LC-7: the "ships OFF" sweep. Owed to the owner: whether `barge_in: false`
-  > should also spare REAL speech at reply start (LC-1's interplay).
+  > should also spare REAL speech at reply start (LC-1's interplay) — ruled: THE MOUTH WAITS, below.
   > **Wave 2 (R88, Emma's second audit, same day).** E-1: LC-1's exemption narrowed to a CLOSED
   > utterance (`waitingFinal` and no speech live) — an OPEN segment kills as before LC-1 whatever it has
   > accrued (a partial accrual is no verdict; sparing it let the hold close the ear on the owner's
   > sentence), so **continuous noise during `thinking` still kills the reply** — the deferred-start
-  > design is the owner's open question (HANDOFF). E-2: `idleExpired` also waits out
+  > design is the owner's open question (HANDOFF — RULED the same day: THE MOUTH WAITS, below). E-2: `idleExpired` also waits out
   > `userSpeechActive`/`waitingFinal`. `/voice/status.live_call` stopped delivering the two unread
   > server knobs (`max_session_s`, `vad_threshold`), pinned by a reader-parity test; the example
   > config's live keys are pinned to `LiveCfg`; §4.1/§5.1/§5.3 reconciled with the code.
+
+  > **THE MOUTH WAITS (2026-09-26, the owner's ruling on the LC-1/E-1 question — D71's second
+  > amendment).** *"If the mic is open … let the reply play over my real speech and queue my words —
+  > that's the default behaviour."* §4.2's iron rule is now enforced by WAITING at the mouth, not by
+  > killing at `playbackStarted`: the kill arm is DELETED (and with it `playbackStarted`'s
+  > `energyMs`/`minFinalMs`). `lib/audioController` gained the call's third hook, `setCallMouthGate`
+  > (the `setCallPrePlay`/`setCallChunkStart` shape), consulted at the automatic silent→audible doors —
+  > `playNext`'s opening edge (after the ISS-18 retag wait) and its resume out of an honest-`loading`
+  > gap, and `playWhole` — which hold ONE continuation (`holdMouth`) under `loading`; `pokeCallMouth`
+  > runs it once the gate says yes, and `reset`/`beginMessage`/the gate's teardown drop it unrun. The
+  > owner's gestures (`transport`'s resume, `seekChunked`) are not gated; the seam between two audible
+  > chunks is not a door. `useLiveCall`: the pure `mouthMayOpen(s)` = `!waitingFinal &&
+  > (!userSpeechActive || noiseOpen)` is the gate, registered for the call's life (it reads the
+  > machine, so a route cycle leaves it standing) and cleared at teardown; `send` pokes after every
+  > reduce. **The noise verdict**: an ACCEPTED speech-start arms one `noise_verdict_ms` timer (new
+  > `LiveCfg` knob, 1000, 0–5000, delivered on `/voice/status`, latched with the gate knobs, Conf row
+  > "Noise verdict (ms)"), fenced on the leg AND the meter epoch it was armed under; at expiry, the
+  > transcript gate's own predicate (`tooQuiet` over `epochAccrual`) sends `segmentNoise` →
+  > `noiseOpen`, normalized to live only while `userSpeechActive`. No verdict without evidence (either
+  > knob 0, or no matching epoch ⇒ wait for the stop). A `speechStop` raises `waitingFinal` only after
+  > an accepted start (the design round's A2). `barge_in` is untouched and plays no part — a barge-in
+  > interrupts an AUDIBLE reply (§4.3).
 
   > **S4 ROUND №1 (owner, 2026-09-24, car + BT headphones + lock screen; the card = the 36th
   > session's handoff).** *The car, default route (their config's `speaker`, EC on ⇒ comm mode):*

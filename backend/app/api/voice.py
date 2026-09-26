@@ -134,6 +134,9 @@ async def voice_status(request: Request) -> dict[str, object]:
         # energy they gate on is measured in the browser, and the server-side VAD has no field left
         # that would express either of them.
         "min_final_ms": live.min_final_ms,
+        # …and the NOISE VERDICT beside it (the owner's 2026-09-26 ruling): how long an open segment
+        # runs before the browser may judge it by that same gate and stop holding the reply for it.
+        "noise_verdict_ms": live.noise_verdict_ms,
         "debug": live.debug,
         "barge_in": live.barge_in,
         "ring": live.ring,

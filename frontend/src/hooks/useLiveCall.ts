@@ -7,7 +7,9 @@ import {
   markStreamRetag,
   openCallVoiceGate,
   type PlayStatus,
+  pokeCallMouth,
   setCallChunkStart,
+  setCallMouthGate,
   setCallPrePlay,
   setCallVoice,
   subscribePlayback,
@@ -56,8 +58,11 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // PHASE plus two ORTHOGONAL FLAGS (`userSpeechActive` between the server VAD's start/stop,
 // `waitingFinal` from a speech-stop until its transcript is consumed or discarded). The rule those flags
 // exist for is §4.2's: **playback may not start while either holds** — the gap between "you stopped
-// talking" and "your words arrived" must not let an older reply begin. A mouth that would open there IS
-// a barge-in, killed before its first audible sample.
+// talking" and "your words arrived" must not let an older reply begin. Enforced by WAITING, not killing
+// (the owner's ruling 2026-09-26 on R86 LC-1 / R88 E-1): the mouth's automatic starts ask the pure
+// `mouthMayOpen` through the controller's gate and are held until the ear settles — the reply is never
+// cancelled because the owner (or a TV) was making sound when it became ready. A segment open long
+// enough to be judged NOISE by the transcript gate's own measure (`noiseOpen`) settles it early.
 //
 // ONE QUEUE FOR EVERY HOLD (§4.3). The cancel-settle window, the `barge_in`-off walkie-talkie hold, a
 // suspended confirm gate and a staged upload in flight are four reasons not to submit and ONE mechanism:
@@ -366,6 +371,11 @@ export interface CallState {
   userSpeechActive: boolean;
   /** Speech stopped, its transcript not yet consumed or discarded. */
   waitingFinal: boolean;
+  /** THE NOISE VERDICT (the owner's 2026-09-26 ruling): the segment open right now has run
+   *  `noise_verdict_ms` with less epoch-matched accrual than `min_final_ms` — the transcript gate would
+   *  drop its final as "too quiet", so it does not hold the mouth. Only ever true WITH
+   *  `userSpeechActive` (normalized — see `callReduce`): a verdict is about one open segment. */
+  noiseOpen: boolean;
   /** The §4.3 pending-utterance queue: ordered, drained as one message. */
   pending: string[];
   /** The last final the ear heard — the overlay's transcript line (what YOU said, §6). */
@@ -429,6 +439,7 @@ export const CALL_INITIAL: CallState = {
   phase: "connecting",
   userSpeechActive: false,
   waitingFinal: false,
+  noiseOpen: false,
   pending: [],
   heard: "",
   note: null,
@@ -457,6 +468,10 @@ export type CallSignal = { gen?: number } & (
   | { type: "socketLost" } //                  the leg closed while the call was still wanted
   | { type: "speechStart" }
   | { type: "speechStop" }
+  /** THE NOISE VERDICT on the segment still open: it has run `noise_verdict_ms` and its accrual is below
+   *  `min_final_ms` (measured in the wiring, on the epoch it was armed under). Ignored with no segment
+   *  open. */
+  | { type: "segmentNoise" }
   /** …with THE TRANSCRIPT GATE's two numbers (D74 S5), carried on the signal because the rule is the
    *  reducer's and the measurement is the wiring's. `energyMs` is the ear's own accrual for the
    *  utterance this final is about — ABSENT when no epoch matched, which is the fail-open case: a
@@ -498,9 +513,7 @@ export type CallSignal = { gen?: number } & (
   | { type: "serverEnded" } //                 the relay said `state: ended`
   | { type: "barge" } //                       trigger A (voice) or B (tap) — the same edge
   | { type: "killSettled" }
-  /** …carrying the SAME two gate numbers a `final` does (R86 LC-1), for the utterance still open when
-   *  the mouth starts: §4.2's iron rule reads them before it kills. Absent ⇒ unmeasured ⇒ it kills. */
-  | { type: "playbackStarted"; energyMs?: number; minFinalMs?: number }
+  | { type: "playbackStarted" }
   /** THE CHUNK-START (D76 §B.3): chunk `idx` of the reply just became audible — the controller's
    *  `setCallChunkStart`, once per chunk (a stall's re-fired `playing` is deduped at the source). The
    *  chunk starts HELD; the probe that judges it arms on this edge, never on the status edge. */
@@ -617,9 +630,11 @@ function mouth(s: CallState, live: boolean): CallState {
   return s.mouthLive === live ? s : { ...s, mouthLive: live };
 }
 
-/** THE TRANSCRIPT GATE'S VERDICT (D74 S5), ONE predicate for the two arms that consult it — the
- *  `final` it was built for, and since R86 LC-1 §4.2's iron rule. True only on epoch-matched evidence
- *  below a knob that is on: absent evidence is unmeasured, not quiet, and absent/0 is the gate off. */
+/** THE TRANSCRIPT GATE'S VERDICT (D74 S5), ONE predicate for the two places that judge by it — the
+ *  `final` arm it was built for, and the wiring's noise verdict on a segment still open (the owner's
+ *  2026-09-26 ruling: "noise" means exactly what this gate would drop). True only on epoch-matched
+ *  evidence below a knob that is on: absent evidence is unmeasured, not quiet, and absent/0 is the gate
+ *  off. */
 function tooQuiet(sig: { energyMs?: number; minFinalMs?: number }): boolean {
   return (
     sig.energyMs !== undefined &&
@@ -629,8 +644,8 @@ function tooQuiet(sig: { energyMs?: number; minFinalMs?: number }): boolean {
   );
 }
 
-/** Start the §4.3 ORDERED kill. Both triggers land here, and so does §4.2's iron rule, so the state the
- *  kill leaves behind is written once.
+/** Start the §4.3 ORDERED kill. Both triggers land here, so the state the kill leaves behind is written
+ *  once.
  *
  *  `mouthLive` goes down with it, and that is not an inference about the element: step ① of the effect is
  *  a SYNCHRONOUS `dismiss()`, so by the time anything else reads this state the audible part is already
@@ -726,14 +741,27 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
   // A probe's release is about ONE chunk of ONE reply: a mouth that went silent (drained, failed,
   // killed, a terminal) takes it with it, so the next reply starts held without any arm remembering to.
   const probeOpen = st.probeOpen && st.mouthLive;
+  // …and a NOISE VERDICT is about ONE open segment: every arm that closes or condemns it (the stop, a
+  // mute, a lost or fresh leg, a route cycle, a terminal) takes the verdict with it, and the next segment
+  // starts unjudged, without any arm remembering to.
+  const noiseOpen = st.noiseOpen && st.userSpeechActive;
   // The POLICY is the capture's (`holdMode` × `ecAll` × the probe's verdict, D76 §B), `mouthLive` the
   // transport's (is the reply audible?), and `!killing` the machine's own: an interrupt in flight has
   // ALREADY silenced the mouth synchronously, and holding the ear until the cancel settles would eat
   // the first word of exactly the sentence the owner interrupted with.
   const earHeld =
     st.mouthLive && !st.killing && (st.holdMode === "on" || (probes(st) && !probeOpen));
-  if (earHeld === st.earHeld && probeOpen === st.probeOpen) return step;
-  return { state: { ...st, earHeld, probeOpen }, out: step.out };
+  if (earHeld === st.earHeld && probeOpen === st.probeOpen && noiseOpen === st.noiseOpen)
+    return step;
+  return { state: { ...st, earHeld, probeOpen, noiseOpen }, out: step.out };
+}
+
+/** MAY THE MOUTH BECOME AUDIBLE NOW (§4.2's iron rule, enforced by waiting — the owner's 2026-09-26
+ *  ruling)? No transcript in flight, and no segment open unless it has been judged noise. The whole of
+ *  the controller's gate (`setCallMouthGate`); `barge_in` plays no part in it — a barge-in interrupts
+ *  something AUDIBLE, and a mouth still waiting is not. */
+export function mouthMayOpen(s: CallState): boolean {
+  return !s.waitingFinal && (!s.userSpeechActive || s.noiseOpen);
 }
 
 function reduce(s: CallState, sig: CallSignal): Step {
@@ -828,24 +856,32 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // HELD: ignored for a DIFFERENT reason, and it is the whole point of the hold (S3). On a track
       // whose AEC does not subtract the page's own playback, what the ear hears under the reply is the
       // CHARACTER — so a VAD event from that stretch is the phone listening to itself, and taking it
-      // would light "speaking" for nobody and arm §4.2's iron rule against a phantom.
+      // would light "speaking" for nobody and hold the mouth for a phantom.
       if (s.muted || s.earHeld) return { state: s, out: [] };
       return { state: { ...s, userSpeechActive: true }, out: [] };
 
     case "speechStop":
-      if (s.muted) return { state: s, out: [] };
+      // A stop PAIRS WITH AN ACCEPTED START, or it is nothing (the design round's A2). A start the
+      // machine ignored (muted, held) or one a mute already condemned opened no segment, and a stop that
+      // raised `waitingFinal` for it would hold the mouth for a final that is never coming.
+      if (!s.userSpeechActive) return { state: s, out: [] };
       // HELD, a stop still LOWERS the flag it pairs with — it never raises `waitingFinal`, whose final
       // the held arm below drops anyway (R86 LC-1's knock-on). A segment can be open when the hold
       // engages (a kill that settles under a mouth that restarted during it); a flag left up behind it
-      // would be an UNMEASURED iron-rule kill of the next reply, the epoch having closed with its final.
-      if (s.earHeld)
-        return { state: s.userSpeechActive ? { ...s, userSpeechActive: false } : s, out: [] };
+      // would hold the next reply at the mouth's door, the epoch having closed with its final.
+      if (s.earHeld) return { state: { ...s, userSpeechActive: false }, out: [] };
       return { state: { ...s, userSpeechActive: false, waitingFinal: true }, out: [] };
+
+    case "segmentNoise":
+      // The verdict on the segment STILL OPEN: it lifts the mouth's hold for it, and nothing else — its
+      // final, if one comes, still meets the transcript gate on its own arm.
+      if (!s.userSpeechActive || s.noiseOpen) return { state: s, out: [] };
+      return { state: { ...s, noiseOpen: true }, out: [] };
 
     case "setMuted":
       // MUTE CONDEMNS THE HALF-UTTERANCE (§6, owner-ratified). Both flags clear with the same edge: the
       // words in flight are not going to be sent, so nothing waits on them — and §4.2's iron rule (no
-      // playback while `userSpeechActive || waitingFinal`) must not go on killing replies over a final
+      // playback while `userSpeechActive || waitingFinal`) must not go on holding the mouth for a final
       // that is never coming. Unmuting is simply the ear opening again; the next utterance is fresh.
       if (sig.on) {
         return {
@@ -863,7 +899,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // back in: transcribing the character into the owner's next message is the exact failure the hold
       // exists to prevent, and it must not depend on whether the VAD pair that framed it was seen.
       // Either drop still CLEARS the wait (R86 LC-1's knock-on, as at `speechStop`): the final has
-      // arrived, so nothing is in flight — a `waitingFinal` stranded here is a phantom iron-rule kill.
+      // arrived, so nothing is in flight — a `waitingFinal` stranded here holds the mouth for nothing.
       if (s.muted || s.earHeld)
         return { state: s.waitingFinal ? { ...s, waitingFinal: false } : s, out: [] };
       const text = sig.text.trim();
@@ -903,26 +939,11 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // The transport spoke, so the flag lands FIRST and unconditionally — what the phase logic below
       // decides to do about it is a separate question (see `mouthLive`). The mouth (re)starting is a
       // chunk nobody has probed yet, so it starts HELD (D76 §B.3); its `chunkStarted` re-arms the probe.
+      // NO KILL (the owner's 2026-09-26 ruling on R86 LC-1 / R88 E-1): §4.2's iron rule is enforced
+      // BEFORE this edge, at the controller's gate (`mouthMayOpen`), by waiting — so an automatic start
+      // reaches here only over a settled ear, and one over an unsettled ear is the owner's own gesture
+      // (a resume tap, a seek), which is theirs to make.
       const open = { ...mouth(s, true), probeOpen: false };
-      // §4.2's iron rule (confirm-round MED 2). The mouth is about to open while the owner is mid-word,
-      // or while their words are still in flight: that IS a barge-in, and it is killed BEFORE the first
-      // audible sample rather than after it.
-      // …ON THE TRANSCRIPT GATE'S EVIDENCE, FOR A CLOSED UTTERANCE ONLY (R86 LC-1, narrowed by R88 E-1).
-      // The two flags are the server VAD's, and Silero is level-invariant — a TV or a next-room voice
-      // raises them as readily as the owner does. So a segment that has STOPPED (`waitingFinal`, no
-      // speech live) and whose whole accrual sits below `min_final_ms` is noise, not a barge-in: the
-      // reply plays, and its final meets the gate on its own arm. An OPEN segment is killed exactly as
-      // before, whatever it has accrued so far: a partial accrual is not a verdict — 40 ms in may be the
-      // start of the owner's sentence — and sparing it on the default media/auto-hold path lets the hold
-      // close the ear on the rest of what they are saying. So continuous noise during `thinking` still
-      // kills (deferring the mouth until the segment is classifiable is the owner's open question, as is
-      // whether `barge_in: false` should spare REAL speech). FAIL-OPEN like the gate: no epoch-matched
-      // accrual (a reconnect, an unmeasured wiring) kills, as it always did.
-      const quietAndDone = !s.userSpeechActive && s.waitingFinal && tooQuiet(sig);
-      if ((s.userSpeechActive || s.waitingFinal) && !quietAndDone) {
-        if (s.killing) return { state: open, out: [] };
-        return killNow(open);
-      }
       // THE RECONNECT OWNS THE PHASE while the leg is down (confirm round F1's survivor). `socketLost`
       // deliberately paints `connecting` over a live mouth and `playbackDrained` preserves it — an arm
       // that repainted `speaking` here would be the one voice disagreeing about who owns the screen
@@ -1166,7 +1187,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
           // The ONE code the relay keeps the session alive through — so the client must too.
           // …and it is what the ear sends INSTEAD of the final (R86 LC-2: Speaches publishes `error` and
           // never the `…completed` for a transcription that raised), so nothing is in flight any more.
-          // A `waitingFinal` left standing would make §4.2's iron rule kill every reply from here on.
+          // A `waitingFinal` left standing would hold every reply at the mouth's door from here on.
           // Only this flag: `userSpeechActive` may be a NEW segment, genuinely live. A final that does
           // turn up later is taken by its own arm regardless of the flag, so the clear loses nothing.
           return {
@@ -1350,9 +1371,9 @@ function openUtterance(m: EarMeter, leg: number): void {
   m.utterance = { samples: [], duringPlayback: false };
 }
 
-/** THE UTTERANCE'S EVIDENCE for leg `leg` — the ONE reader for both signals that carry it (a `final`,
- *  and since R86 LC-1 the iron rule's `playbackStarted`): the accrual only when the open epoch is that
- *  leg's, else `undefined` — unmeasured, which is the fail-open case at both arms. */
+/** THE UTTERANCE'S EVIDENCE for leg `leg` — the ONE reader for both judgements made on it (a `final`'s
+ *  transcript gate, and the noise verdict on a segment still open): the accrual only when the open
+ *  epoch is that leg's, else `undefined` — unmeasured, which no verdict is ever taken on. */
 function epochAccrual(m: EarMeter, leg: number): number | undefined {
   return m.epoch?.leg === leg ? m.accruedMs : undefined;
 }
@@ -1435,7 +1456,9 @@ function meterEdge(
 interface GateState {
   /** The gate's knobs, taken from the acquisition that opened the current capture (§4.5 — read at
    *  call start). `null` before any acquisition: there is no floor to compute without them. */
-  cfg: (GateCfg & { playback_margin_db: number; min_final_ms?: number }) | null;
+  cfg:
+    | (GateCfg & { playback_margin_db: number; min_final_ms?: number; noise_verdict_ms?: number })
+    | null;
   noise: NoiseTracker;
   /** The owner's learned voice level on THIS capture's device, dBFS — seeded from `store/voiceLevels`
    *  when the capture opens, learned from accepted finals, written back when it is released. */
@@ -1627,6 +1650,10 @@ export function useLiveCall(): CallView {
   const callId = useRef<string | null>(null);
   const trail = useRef<CallTrail | null>(null);
   const trailSampler = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  /** THE NOISE VERDICT's clock (the owner's 2026-09-26 ruling) — ONE timer, armed on an ACCEPTED
+   *  speech-start and living exactly as long as the segment it judges: `send` clears it the moment the
+   *  machine says no segment is open (a stop, a mute, a lost or fresh leg, a route cycle, a terminal). */
+  const noiseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   /** The trail's end — its last flush rides `keepalive`, then it stops. Idempotent: the terminal edge
    *  and the unmount both call it, and whichever comes second finds nothing. */
@@ -1675,6 +1702,7 @@ export function useLiveCall(): CallView {
     clearTimeout(retryTimer.current);
     clearTimeout(degradeTimer.current);
     clearTimeout(idleTimer.current);
+    clearTimeout(noiseTimer.current);
     // THE CLEAN END CLEARS THE MARKER (S6 ⑦). This is the one release path every exit funnels through
     // — a terminal, a hang-up, the unmount — so it is the one place that can honestly say "this tab is
     // not in a call any more". What does NOT reach here (a killed tab, a crash) is exactly the case
@@ -1693,6 +1721,7 @@ export function useLiveCall(): CallView {
     setCallVoice(false, false);
     setCallPrePlay(null); // the pre-play tap dies with the capture it closes over
     setCallChunkStart(null); // …and so does the probe's clock
+    setCallMouthGate(null); // …and the mouth's gate, with whatever start it was holding (nothing runs)
     probe.current = null;
     const lock = wakeLock.current;
     wakeLock.current = null;
@@ -1804,6 +1833,7 @@ export function useLiveCall(): CallView {
             setCallPrePlay(null);
             setCallChunkStart(null);
             probe.current = null;
+            clearTimeout(noiseTimer.current); // a verdict about a segment on the ear being released
             // The OLD ear's learned level goes back under the OLD device's key (D76 §C.3) before the
             // fresh capture seeds from whatever its own key holds.
             persistVoice(gate.current);
@@ -1853,6 +1883,13 @@ export function useLiveCall(): CallView {
       // THE VOICE LEARNER (D76 §C.3) — fed only a final the machine took, and guarded inside
       // `learnVoice` (a settled noise term, a clear margin above it, no playback during it).
       if (taken && g.cfg) g.voiceLevel = learnVoice(g.voiceLevel, taken, g.noise, g.cfg);
+      // The noise verdict is about the segment that is open; with none open there is nothing to judge.
+      if (!ref.current.userSpeechActive) clearTimeout(noiseTimer.current);
+      // THE MOUTH'S HOLD LIFTS HERE (the owner's 2026-09-26 ruling): the one answer to "the ear may have
+      // settled" — every signal is a chance, and the poke is a no-op unless a start is waiting AND the
+      // gate now says yes. Last, so it reads the state every effect above has already moved (a kill's
+      // `dismiss()` has dropped the held start; a terminal's teardown has taken the gate).
+      pokeCallMouth();
     },
     [teardown, endTrail],
   );
@@ -1895,9 +1932,37 @@ export function useLiveCall(): CallView {
             else if (frame.state === "degraded") send({ type: "degraded", gen });
             else send({ type: "serverEnded", gen });
             break;
-          case "speech_started":
+          case "speech_started": {
+            const was = ref.current.userSpeechActive;
             send({ type: "speechStart", gen });
+            // THE NOISE VERDICT (the owner's 2026-09-26 ruling): a segment the machine ACCEPTED is judged
+            // once, `noise_verdict_ms` in, by the transcript gate's own measure — a final it would drop
+            // as "too quiet" is noise, and noise does not hold the mouth. Fenced on the LEG and the meter
+            // EPOCH it was armed under (the design round's A3): a leg death closes the epoch, and a
+            // callback surviving it must read nothing. 0 on either knob = no verdict, ever: the mouth
+            // waits for the stop.
+            const cfg = gate.current.cfg;
+            const verdictMs = cfg?.noise_verdict_ms ?? 0;
+            const minFinalMs = cfg?.min_final_ms ?? 0;
+            const epoch = meter.current.epoch;
+            if (
+              !was &&
+              ref.current.userSpeechActive &&
+              verdictMs > 0 &&
+              minFinalMs > 0 &&
+              epoch?.leg === leg
+            ) {
+              const seq = epoch.seq;
+              clearTimeout(noiseTimer.current);
+              noiseTimer.current = setTimeout(() => {
+                const m = meter.current;
+                if (!mine() || m.epoch?.seq !== seq || !ref.current.userSpeechActive) return;
+                if (tooQuiet({ energyMs: epochAccrual(m, leg), minFinalMs }))
+                  send({ type: "segmentNoise", gen });
+              }, verdictMs);
+            }
             break;
+          }
           case "speech_stopped":
             send({ type: "speechStop", gen });
             break;
@@ -2257,6 +2322,7 @@ export function useLiveCall(): CallView {
                 max_dbfs: knobs.max_dbfs,
                 playback_margin_db: knobs.playback_margin_db,
                 min_final_ms: knobs.min_final_ms,
+                noise_verdict_ms: knobs.noise_verdict_ms,
                 mic_hold: knobs.mic_hold,
               },
             });
@@ -2355,6 +2421,10 @@ export function useLiveCall(): CallView {
     // exclusion is a GATE on the status timeline, not an id: the streaming message is renamed to the
     // server's id mid-flight, and a captured id stops matching the message it was meant to exclude.
     setCallVoice(true, getLiveTurn() !== null);
+    // THE MOUTH'S GATE (the owner's 2026-09-26 ruling), registered for the call's whole life rather than
+    // per capture: it reads the MACHINE, not the track, so a route cycle leaves it standing — and a start
+    // it is holding across the cycle is released by the poke that follows the cycle's own reduce.
+    setCallMouthGate(() => mouthMayOpen(ref.current));
     acquire({ route: knobs.route, deviceId: knobs.input_device }, () => !disposed);
     return () => {
       disposed = true;
@@ -2378,8 +2448,8 @@ export function useLiveCall(): CallView {
   // leaking track (Fennec) that window put the reply's own first words into the relay: a short reply
   // could drain before their transcript came back, and the leaked final walked in through an open ear.
   // Two knock-ons the timing closes at the root: no leak ⇒ no leak-window `speech_started` whose
-  // `speech_stopped` the engaged hold would then drop (a stranded `userSpeechActive` is a phantom
-  // iron-rule kill of the NEXT reply), and no re-open race between a pre-play hold and a stale effect.
+  // `speech_stopped` the engaged hold would then drop (a stranded `userSpeechActive` would hold the NEXT
+  // reply at the mouth's door), and no re-open race between a pre-play hold and a stale effect.
   //
   // RE-ENTRANCY, now real and deliberately safe: a kill effect's own `dismiss()` moves the status and
   // this listener fires INSIDE that `send`'s effect loop. It is sound for the same reason every other
@@ -2397,15 +2467,7 @@ export function useLiveCall(): CallView {
       // rather than at whichever frame next notices. A starting chunk re-arms on its own `playing`.
       probe.current = null;
       const gen = ref.current.gen;
-      // The iron rule's evidence (R86 LC-1) — the open utterance's accrual on the CURRENT leg (the one
-      // `meterEdge` opened it under), and the knob latched with the capture's other gate knobs.
-      if (status === "playing")
-        send({
-          type: "playbackStarted",
-          energyMs: epochAccrual(meter.current, legSeq.current),
-          minFinalMs: gate.current.cfg?.min_final_ms,
-          gen,
-        });
+      if (status === "playing") send({ type: "playbackStarted", gen });
       // Synthesis that never produced a sample is the mouth FAILING; audio that played and stopped is
       // the reply finishing (or our own kill, which the machine's `killing` flag tells apart). Kept as
       // BELT beside the explicit tick below — the reducer dedupes (a nonfatal note, back to listening).

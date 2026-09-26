@@ -440,6 +440,10 @@ voice:
                            # an utterance must carry before its transcript becomes a turn — the
                            # near-speech gate that keeps a TV or the next room out of the conversation;
                            # a drop plays a short cue (0 = off, the pre-D74 commit)
+    noise_verdict_ms: 1000 # CLIENT: a reply ready while a sound is still going WAITS for it (never cancelled);
+                           # after this long a sound with less than min_final_ms of energy is judged noise
+                           # (a TV) and the reply starts over it. Real speech is never timed out (0 = never
+                           # judge — the reply always waits for the sound to stop)
     debug: false           # CLIENT: show the live gate numbers on the call overlay (calibration aid);
                            # D77: ALSO writes a per-call trail to <CTRLB_HOME>/calls/<call>.jsonl
     trail_keep: 20         # D77: how many call trails to keep (1–500) — the oldest go when a new call starts

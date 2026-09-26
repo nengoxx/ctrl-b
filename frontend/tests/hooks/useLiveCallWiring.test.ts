@@ -32,6 +32,8 @@ const h = vi.hoisted(() => ({
         background_idle_s: 600,
         // D74 — the transcript gate's floor, OFF unless a case arms it.
         min_final_ms: 0,
+        // The owner's 2026-09-26 ruling — the noise verdict's clock, OFF unless a case arms it.
+        noise_verdict_ms: 0,
         // D76 §C — the relative gate's six, as the backend ships them; the gate cases move them.
         floor_dbfs: -45,
         noise_margin_db: 10,
@@ -98,6 +100,11 @@ const h = vi.hoisted(() => ({
   /** …and its CHUNK-START signal (D76 §B.3), the leak probe's clock: the case plays the element's
    *  `playing` by calling it with the chunk's index. */
   chunkStart: null as ((idx: number) => void) | null,
+  /** …and THE MOUTH'S GATE (the owner's 2026-09-26 ruling): what the controller would ask before an
+   *  automatic start — null when nothing is registered. */
+  mouthGate: null as (() => boolean) | null,
+  /** How many times the wiring poked the held mouth ("the ear may have settled — look again"). */
+  pokes: 0,
   /** The capture's hold as the machine last set it — what a case playing the capture classifies its
    *  frames by (`uplinked = !held`, the real capture's rule for an unmuted ear). */
   heldNow: false,
@@ -147,6 +154,12 @@ vi.mock("../../src/lib/audioController", () => ({
   },
   setCallChunkStart: (cb: ((idx: number) => void) | null) => {
     h.chunkStart = cb;
+  },
+  setCallMouthGate: (cb: (() => boolean) | null) => {
+    h.mouthGate = cb;
+  },
+  pokeCallMouth: () => {
+    h.pokes += 1;
   },
   getPlayStatus: () => h.play.status,
   subscribePlayback: (cb: () => void) => {
@@ -286,6 +299,8 @@ beforeEach(() => {
   h.playbackSubs.clear();
   h.prePlay = null;
   h.chunkStart = null;
+  h.mouthGate = null;
+  h.pokes = 0;
   h.heldNow = false;
   h.chat = { status: "idle" };
   h.confirm = false;
@@ -314,6 +329,7 @@ beforeEach(() => {
   h.voice.data.live_call.input_device = "";
   h.voice.data.live_call.mic_hold = "auto";
   h.voice.data.live_call.min_final_ms = 0; // the transcript gate OFF unless a case arms it
+  h.voice.data.live_call.noise_verdict_ms = 0; // …and the noise verdict with it
   h.voice.data.live_call.playback_margin_db = 10;
   h.voice.data.live_call.floor_dbfs = -45;
   h.voice.data.live_call.debug = false;
@@ -452,6 +468,37 @@ describe("useLiveCall — the mouth, watched", () => {
     });
     expect(view.result.current.phase).toBe("listening");
     expect(view.result.current.note).toBe(CALL_COPY.voiceFailed);
+  });
+});
+
+describe("useLiveCall — THE MOUTH'S GATE, wired (the owner's 2026-09-26 ruling)", () => {
+  it("is registered for the call's life, reads the machine, and is cleared at its teardown", async () => {
+    const { view } = await call();
+    expect(h.mouthGate?.()).toBe(true); // listening, nothing open
+    await act(async () => {
+      h.frame?.({ type: "speech_started" });
+    });
+    expect(h.mouthGate?.()).toBe(false);
+    view.unmount();
+    expect(h.mouthGate).toBeNull(); // the teardown takes it, with whatever start it was holding
+  });
+
+  it("survives a route cycle — it reads the machine, not the track", async () => {
+    const { view } = await call();
+    const gate = h.mouthGate;
+    await act(async () => {
+      view.result.current.setRoute("media");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.mouthGate).toBe(gate);
+  });
+
+  it('every reduce pokes the held mouth — the one answer to "the hold lifted"', async () => {
+    const { say } = await call();
+    const pokes = h.pokes;
+    await say("hello");
+    expect(h.pokes).toBeGreaterThanOrEqual(pokes + 3); // start, stop, final — each a chance
   });
 });
 
@@ -1277,43 +1324,84 @@ describe("useLiveCall — THE TRANSCRIPT GATE's epochs (D74 S5, evidence docs/re
     expect(view.result.current.note).toBeNull();
   });
 
-  it("the IRON RULE reads the same evidence: a quiet CLOSED segment does not kill the reply (R86 LC-1)", async () => {
-    const { view, step } = await gated();
-    await utterance("what's the weather", 0.2, 30);
-    expect(texts()).toEqual(["what's the weather"]);
-    await act(async () => {
-      h.frame?.({ type: "speech_started" }); // the TV, under the thinking pause…
-      mic(0.001, 10);
-      h.frame?.({ type: "speech_stopped" }); // …and it stopped: its final is pending
-    });
-    await step(() => setPlay("playing"));
-    expect(h.dismiss).not.toHaveBeenCalled();
-    expect(view.result.current.phase).toBe("speaking");
+  // THE MOUTH WAITS (the owner's 2026-09-26 ruling on R86 LC-1 / R88 E-1): the reply is never killed
+  // over an unsettled ear — the controller's gate holds it, and the NOISE VERDICT, taken on the same
+  // evidence the transcript gate reads, is the one thing that settles a segment still sounding.
+  it("a quiet segment still sounding is judged NOISE at `noise_verdict_ms` — the gate opens, nothing is killed", async () => {
+    vi.useFakeTimers();
+    try {
+      h.voice.data.live_call.noise_verdict_ms = 1000;
+      const { view, step } = await gated();
+      await utterance("what's the weather", 0.2, 30);
+      expect(texts()).toEqual(["what's the weather"]);
+      await act(async () => {
+        h.frame?.({ type: "speech_started" }); // the TV, under the thinking pause, and it goes on…
+        mic(0.001, 10);
+      });
+      expect(h.mouthGate?.()).toBe(false); // …an open segment holds the mouth
+      await step(() => vi.advanceTimersByTime(999));
+      expect(h.mouthGate?.()).toBe(false); // not before the verdict is due
+      const pokes = h.pokes;
+      await step(() => vi.advanceTimersByTime(1));
+      expect(h.mouthGate?.()).toBe(true); // 200 ms owed, ~0 accrued: noise
+      expect(h.pokes).toBeGreaterThan(pokes); // …and the held reply is told to look again
+      await step(() => setPlay("playing"));
+      expect(h.dismiss).not.toHaveBeenCalled();
+      expect(view.result.current.phase).toBe("speaking");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("…and a closed segment the ear DID hear still kills it — the owner's words in flight", async () => {
-    const { view, step } = await gated();
-    await utterance("what's the weather", 0.2, 30);
-    await act(async () => {
-      h.frame?.({ type: "speech_started" });
-      mic(0.2, 20);
-      h.frame?.({ type: "speech_stopped" });
-    });
-    await step(() => setPlay("playing"));
-    expect(h.dismiss).toHaveBeenCalled();
-    expect(view.result.current.phase).not.toBe("speaking");
+  it("…a segment the ear DID hear is never judged — the mouth waits for its stop and its words", async () => {
+    vi.useFakeTimers();
+    try {
+      h.voice.data.live_call.noise_verdict_ms = 1000;
+      const { step } = await gated();
+      await utterance("what's the weather", 0.2, 30);
+      await act(async () => {
+        h.frame?.({ type: "speech_started" }); // the owner, adding to it
+        mic(0.2, 20); // 400 ms above the floor — past `min_final_ms`
+      });
+      await step(() => vi.advanceTimersByTime(5000)); // real speech is never timed out
+      expect(h.mouthGate?.()).toBe(false);
+      await act(async () => {
+        h.frame?.({ type: "speech_stopped" });
+      });
+      expect(h.mouthGate?.()).toBe(false); // …nor released while their transcript is in flight
+      await act(async () => {
+        h.frame?.({ type: "transcript", text: "and tomorrow", final: true });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(texts()).toEqual(["what's the weather", "and tomorrow"]); // their words go FIRST
+      expect(h.mouthGate?.()).toBe(true);
+      expect(h.dismiss).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("…and an OPEN segment kills on a partial accrual — 40 ms is no verdict (R88 E-1)", async () => {
-    const { view, step } = await gated();
-    await utterance("what's the weather", 0.2, 30);
-    await act(async () => {
-      h.frame?.({ type: "speech_started" }); // the owner, two frames into a sentence
-      mic(0.2, 2);
-    });
-    await step(() => setPlay("playing"));
-    expect(h.dismiss).toHaveBeenCalled();
-    expect(view.result.current.phase).not.toBe("speaking");
+  it("…and with the verdict OFF (0) nothing is judged: the mouth waits for the stop", async () => {
+    vi.useFakeTimers();
+    try {
+      const { step } = await gated(); // `noise_verdict_ms` stays 0
+      await act(async () => {
+        h.frame?.({ type: "speech_started" });
+        mic(0.001, 10);
+      });
+      await step(() => vi.advanceTimersByTime(10_000));
+      expect(h.mouthGate?.()).toBe(false);
+      await act(async () => {
+        h.frame?.({ type: "speech_stopped" });
+        h.frame?.({ type: "transcript", text: "Thank you.", final: true });
+        await Promise.resolve();
+      });
+      expect(h.mouthGate?.()).toBe(true); // its final met the gate (dropped) — nothing in flight now
+      expect(texts()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("the epoch OPENS at speech-start: energy before it is not this utterance's", async () => {

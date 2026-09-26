@@ -120,6 +120,8 @@ export interface VoiceLive extends VoiceServiceCommon {
   // level-invariant, so a distant TV still produces confident finals and the server VAD is out of
   // headroom). Client knobs: the energy is measured in the browser, and so is the readout.
   min_final_ms: number; //    ms at/above the relative floor before a final may become a turn; 0 = off
+  noise_verdict_ms: number; // ms an open segment runs before it may be judged noise (stops holding
+  //                          the reply); 0 = never judge — the reply waits for the stop (2026-09-26)
   debug: boolean; //          show the call's live gate numbers on the overlay (calibration aid) — and
   //                          write the per-call trail to `<home>/calls/` (D77)
   trail_keep: number; //      D77: how many call trails the server keeps, 1..500 (a SERVER knob)

@@ -1603,6 +1603,12 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       all three backdrop states ✓ · a field-authored lorebook triggering live · showcase +
       picker feel ✓ · read-along on a character reply ✓ — **the remainder rides the owner's
       regular use (their ruling 2026-09-11); their word closes the phase.**
+- [ ] **S8 — the persona LIBRARY (D78) + the neutral framings (the D70 amendment, ISS-21/25) —
+      DESIGNED + council-closed 2026-09-26, UNBUILT.** The build brief = plan §14 (Part A: `personas`
+      map · `default_persona` · `AgentDef.persona` · one resolver · the `personas` router · the Conf
+      per-row editor · the agent-form select · migration step 5 (`VERSION` → 5) · the tests + docs in
+      §14.4 A-5; Part B: the two registry labels + the `test_prompts_registry_p18.py` re-aim + the
+      SECURITY_MODEL §2.9 sentence). Rides v1.7.8 — the release then carries migrations 2→5.
 
 ## Phase 24 — Live voice mode ("call mode"): the continuous ear · the call loop · barge-in — **S0–S4 ✅ BUILT + the phase gate CLOSED 2026-09-26 (+ the D72 intermission + D73/D74/D76/D77 waves); `voice.live.enabled` ON since v1.7.8** · design ratified 2026-09-11 ([`D71`](./DECISIONS.md)) · spec = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) (council-closed §9; §7 = the slice ladder; build against the plan, NOT this list)
 
@@ -1710,7 +1716,11 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       clears the wait · LC-3 in-call all-failed synthesis ticks the failure · LC-4 route-change busy is a
       retry · LC-5 socket `ready` latch · LC-6 idle clock spares a talking reply · LC-7 "ships OFF" sweep ·
       LC-8 `uplink_idle_s` relay reaper. As-built: LIVE_VOICE_PLAN §7 (under the S4 record); D71 amended.
-- [ ] Owner: `barge_in: false` vs the iron rule on REAL speech at reply start (R86 LC-1 interplay).
+- [x] **THE MOUTH WAITS (2026-09-26 — the owner's ruling on R86 LC-1 / R88 E-1, D71's second
+      amendment)** — the `playbackStarted` iron-rule kill deleted; the controller's call gate
+      (`setCallMouthGate`/`pokeCallMouth`) holds automatic reply starts until `mouthMayOpen`; the
+      noise verdict (`voice.live.noise_verdict_ms`, 1000) settles a quiet segment still sounding;
+      `speechStop` raises the wait only after an accepted start. As-built: LIVE_VOICE_PLAN §7.
 
 ## Cross-cutting / don't-forget
 

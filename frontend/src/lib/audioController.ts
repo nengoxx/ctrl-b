@@ -298,6 +298,42 @@ let callChunkStart: ((idx: number) => void) | null = null;
 export function setCallChunkStart(cb: ((idx: number) => void) | null): void {
   callChunkStart = cb;
 }
+/** THE MOUTH WAITS (D71 §4.2, the owner's ruling 2026-09-26 on R86 LC-1 / R88 E-1) — the call's THIRD
+ *  hook, the same shape as the two above: "may the mouth become audible NOW?". §4.2's iron rule used to
+ *  be enforced by KILLING a reply whose first chunk landed over an unsettled ear (the owner mid-word, a
+ *  TV during `thinking`, a transcript still in flight) — a cancelled turn, nothing persisted, whatever
+ *  `barge_in` said. It is now enforced HERE, at the silent→audible doors, by WAITING: an automatic
+ *  start the gate refuses is held under the honest "loading" and resumed by `pokeCallMouth` once the
+ *  ear settles. Only AUTOMATIC starts ask (`playNext`'s opening + post-gap edges, `playWhole`); the
+ *  owner's own gestures (`transport`'s resume, the scrubber) never do — a tap that looks dead is worse
+ *  than talking over a reply they chose to resume (the design round's A1). Null when no call is up ⇒
+ *  always yes; the call's teardown clears it. */
+let callMouthGate: (() => boolean) | null = null;
+/** The ONE held continuation (A1): at most one automatic start is ever waiting on the gate — a later
+ *  ask for the same queue replaces it with an equivalent one. Cleared WITHOUT running by everything that
+ *  supersedes the reply it would start (`reset`, `beginMessage`) and by the gate going away. */
+let mouthHeld: (() => void) | null = null;
+export function setCallMouthGate(cb: (() => boolean) | null): void {
+  callMouthGate = cb;
+  // The call is over: the gate is gone, so NOTHING held runs — the teardown dismisses the mouth anyway,
+  // and a held reply that started after it would be the call talking past its own hang-up.
+  if (!cb) mouthHeld = null;
+}
+function mouthMayOpen(): boolean {
+  return callMouthGate ? callMouthGate() : true;
+}
+function holdMouth(resume: () => void): void {
+  mouthHeld = resume;
+}
+/** "The ear may have settled — look again." The ONE answer to "what happens when the hold lifts" (the
+ *  reducer's `drain()` discipline): the call pokes after every signal it reduces, and this runs the held
+ *  start iff the gate now says yes. Idempotent and cheap — a no-op unless something is waiting. */
+export function pokeCallMouth(): void {
+  if (!mouthHeld || !mouthMayOpen()) return;
+  const resume = mouthHeld;
+  mouthHeld = null;
+  resume();
+}
 /** The last chunk the signal above reported, keyed by the GENERATION that owned it. `reqSeq` moves on
  *  every new message, replay and reset, so a key from an older generation never suppresses anything —
  *  the slot resets itself when the session changes or ends, with no write site to remember. */
@@ -584,6 +620,7 @@ function liveSession(): Session | null {
 function reset(): void {
   reqSeq++; // invalidate any in-flight synth so a dismissed clip never starts playing
   retagArmed = false; // a hold armed for the queue this reset ends is moot (its callback bails on `seq`)
+  mouthHeld = null; // …and so is a start held on the mouth gate: a dismissed reply must never begin later
   if (session) {
     session.abort.abort(); // ≤ `lookahead` wasted synths per cancel, by construction
     session.waiting = false;
@@ -705,6 +742,13 @@ async function playWhole(
     await new Promise<void>((r) => setTimeout(r, hold));
     if (seq !== reqSeq) return;
   }
+  // THE MOUTH WAITS — this clip is an automatic reply start like `playNext`'s opening edge (A1), after
+  // the retag's platform wait for the same reason as there. `beginMessage` already published "loading".
+  if (!mouthMayOpen()) {
+    set({ status: "loading" });
+    await new Promise<void>((r) => holdMouth(r));
+    if (seq !== reqSeq) return;
+  }
   retagDone();
   a.src = url;
   a.currentTime = 0;
@@ -766,6 +810,7 @@ function newSession(
 function beginMessage(id: string, a: HTMLAudioElement): number {
   a.pause(); // stop whatever's playing now so it doesn't keep going during the new clip's synth
   const seq = ++reqSeq;
+  mouthHeld = null; // a superseded reply held on the mouth gate must not start after this one
   set({ id, status: "loading", current: 0, duration: 0, estimated: false, chunks: null });
   if (session && session.id !== id) {
     session.abort.abort();
@@ -917,9 +962,10 @@ function playNext(s: Session): void {
       // mid-turn; the flush is the only thing allowed to end an open session.
       s.waiting = true;
       // …and the queue IS waiting on synthesis, so say so. Holding "playing" through a silent gap both
-      // lies and hides the next chunk's `play` (same value republished ⇒ no edge), which is the one
-      // signal §4.2's iron rule watches for: a reply resuming over an owner who started talking during
-      // the gap. "loading" is the same honest state the first chunk's synth publishes.
+      // lies and hides the next chunk's `play` (same value republished ⇒ no edge), and the resume out of
+      // it is the one edge §4.2's iron rule holds the mouth at: a reply resuming over an owner who
+      // started talking during the gap (`resuming` below reads this very status). "loading" is the same
+      // honest state the first chunk's synth publishes.
       set({ status: "loading" });
       pump(s);
       return;
@@ -931,7 +977,7 @@ function playNext(s: Session): void {
     s.waiting = true; // caught up — `synthChunk` calls back here the moment this chunk lands
     // The SAME honest "loading" as the open-session branch above, for the same reason: a silent gap
     // held as "playing" hides the next chunk's `play` behind a republished value, and §4.2's iron rule
-    // watches exactly that edge. (The SEEK latch is the deliberate exception — `seekChunked` parks the
+    // holds the mouth at exactly that edge. (The SEEK latch is the deliberate exception — `seekChunked` parks the
     // user's own intent in the published status and its arm pins that; a seek is unreachable while this
     // branch's "loading" holds, since the scrubber is inert on `loading`.)
     set({ status: "loading" });
@@ -939,6 +985,12 @@ function playNext(s: Session): void {
     return;
   }
   const opening = s.playIdx < 0; // this chunk OPENS the element (ISS-18's gate reads it below)
+  // …or ENDS A SILENT GAP: the latch was holding under the honest "loading" (a synthesis catch-up, or a
+  // mouth-gate hold). The seek latch is deliberately not this edge — it publishes the owner's own intent
+  // and its landing is their gesture (A1). Read before the lines below move the state.
+  const resuming = s.waiting && pb.status === "loading";
+  const from = s.playIdx;
+  const seekHeld = s.seek;
   s.waiting = false;
   s.playIdx = i;
   // A forward seek that latched on a not-yet-synthesized chunk pays out HERE, exactly once: it belongs
@@ -974,6 +1026,25 @@ function playNext(s: Session): void {
       return;
     }
     retagDone();
+  }
+  // THE MOUTH WAITS (D71 §4.2, the owner's 2026-09-26 ruling) — the call's gate, at the two edges where
+  // a SILENT mouth would become audible, AFTER the retag (a fresh stream is a platform wait whose clock
+  // should already be running). The retag hold's own lines: nothing loaded, the index where it was, and
+  // the same honest "loading"; the poke re-enters here once the ear has settled, and a chunk landing
+  // meanwhile re-asks through the latch. Chunks between two audible chunks are never asked — a reply
+  // mid-play keeps talking, and over-talk there is the barge/queue rules' business. A paused intent
+  // loads-and-holds below and makes nothing audible, so it has nothing to ask.
+  if ((opening || resuming) && s.wantPlay && !mouthMayOpen()) {
+    s.playIdx = from;
+    s.seek = seekHeld;
+    s.waiting = true;
+    set({ status: "loading" });
+    holdMouth(() => {
+      if (s.seq !== reqSeq || session !== s) return;
+      s.waiting = false;
+      playNext(s);
+    });
+    return;
   }
   a.src = s.urls[i]!;
   a.currentTime = 0;
@@ -1251,7 +1322,7 @@ function transport(): void {
     // Resume INTENT rides `wantPlay` alone — the status stays the honest "loading" until the chunk
     // actually arrives, and the media `play` event is the ONLY door to "playing" (the confirm round's
     // blocker: an intent-only "playing" into a silent gap makes the eventual real start republish the
-    // same value, and D71 §4.2's iron rule loses the one edge it watches).
+    // same value, and D71 §4.2's iron rule loses the one edge it holds the mouth at).
     set({ status: "loading" });
     return;
   }

@@ -853,6 +853,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   min_speech_ms: 300,
   barge_in: false,
   min_final_ms: 200,
+  noise_verdict_ms: 1000,
   debug: false,
   trail_keep: 20,
   ring: true,
@@ -1893,6 +1894,9 @@ export function ConfTab({ active }: Props) {
           // zero and zero MEANS something (commit every final, the pre-D74 behaviour), so a blank
           // coercing to 0 would silently switch the gate off instead of earning the visible 422.
           min_final_ms: numOrNull(draft.voice.live.min_final_ms),
+          // …and the noise verdict beside it, for the same reason: 0 MEANS something (never judge a
+          // segment noise — the reply always waits for the stop).
+          noise_verdict_ms: numOrNull(draft.voice.live.noise_verdict_ms),
           // D76 §C's gate six take `numOrNull` for the same reason: zero is a MEANINGFUL value for
           // every one of them (a 0 dB margin is "no margin"; 0 dBFS is a floor nothing reaches), so a
           // blank coercing to 0 would silently reconfigure the gate instead of earning the visible 422.
@@ -3004,6 +3008,15 @@ export function ConfTab({ active }: Props) {
             desc="ms of talking before it counts as interrupting (0–5000) — a cough should cost nothing; only with hands-free interruption on"
             value={String(vlive?.min_speech_ms ?? "")}
             onChange={(v) => setLive("min_speech_ms", v as unknown as number)}
+          />
+          {/* The owner's 2026-09-26 ruling: a reply that becomes ready while you (or a TV) are making
+              sound WAITS for you rather than being cancelled. This is how long a sound must go on before
+              the call may judge it — by the energy hold below — as noise, and stop waiting on it. */}
+          <Field
+            label="Noise verdict (ms)"
+            desc="how long a sound must go on before the call may judge it noise and start the reply over it — noise = less than the energy hold below by then (0–5000); 0 = the reply always waits for the sound to stop"
+            value={String(vlive?.noise_verdict_ms ?? "")}
+            onChange={(v) => setLive("noise_verdict_ms", v as unknown as number)}
           />
           {/* D74 (evidence docs/research/R76) — the ear is nearly level-blind: speech from the next
               room scores as confidently as speech into the phone, and the server has no knob left

@@ -311,25 +311,27 @@ def test_d74_text_and_gate_knobs_round_trip_to_the_status_probe() -> None:
             body = c.get("/api/voice/status").json()
             assert body["tts_chunking"]["speak_actions"] is False
             assert (body["live_call"]["min_final_ms"], body["live_call"]["debug"]) == (200, False)
+            assert body["live_call"]["noise_verdict_ms"] == 1000
 
             r = c.put(
                 "/api/settings",
                 json={
                     "voice": {
                         "tts": {"speak_actions": True},
-                        "live": {"min_final_ms": 350, "debug": True},
+                        "live": {"min_final_ms": 350, "noise_verdict_ms": 1500, "debug": True},
                     }
                 },
             )
             assert r.status_code == 200, r.text
             assert c.app.state.settings.voice.tts.speak_actions is True
             live = c.app.state.settings.voice.live
-            assert (live.min_final_ms, live.debug) == (350, True)
+            assert (live.min_final_ms, live.noise_verdict_ms, live.debug) == (350, 1500, True)
             assert "min_final_ms: 350" in cfg.read_text(encoding="utf-8")
 
             body = c.get("/api/voice/status").json()
             assert body["tts_chunking"]["speak_actions"] is True
             assert (body["live_call"]["min_final_ms"], body["live_call"]["debug"]) == (350, True)
+            assert body["live_call"]["noise_verdict_ms"] == 1500
 
             # …and an out-of-bounds gate earns the same visible 422 its neighbours do (nothing saved).
             bad = c.put("/api/settings", json={"voice": {"live": {"min_final_ms": -1}}})

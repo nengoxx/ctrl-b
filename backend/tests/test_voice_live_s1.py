@@ -1169,6 +1169,7 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "barge_in": False,
             "vad_threshold": 0.7,
             "min_final_ms": 350,
+            "noise_verdict_ms": 1500,
             "debug": True,
             "ring": False,
             "captions": False,
@@ -1204,6 +1205,9 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         # calibration readout beside it. CLIENT knobs like every neighbour: the energy they judge is
         # measured in the browser, and the server VAD has no field that could express either.
         "min_final_ms": 350,
+        # …and the NOISE VERDICT beside it (the owner's 2026-09-26 ruling): how long an open segment
+        # runs before the browser judges it by that same gate — a CLIENT knob for the same reason.
+        "noise_verdict_ms": 1500,
         "debug": True,
         "ring": False,
         # The call screen's two PRESENTATION knobs travel together (owner ask 2026-09-22): what the
@@ -1371,6 +1375,9 @@ def test_live_config_defaults() -> None:
     # D74 — the gate ships ON at 200 ms (a real default, not 0: R76 measured speech-like interference
     # passing the server VAD outright), and the debug readout ships OFF like every diagnostic here.
     assert (cfg.min_final_ms, cfg.debug) == (200, False)
+    # The noise verdict ships at 1 s: a segment still sounding a second in, with less than
+    # `min_final_ms` of accrual, is noise and stops holding the reply (the owner's 2026-09-26 ruling).
+    assert cfg.noise_verdict_ms == 1000
     # D76 §A — the capture pair ships as `media` on the system default device: EC off ⇒ media-path
     # audio following the system's own routing (the 2026-09-23 device probe's verdict). `call`
     # (platform AEC, comm mode) is the owner's pick.
@@ -1435,6 +1442,9 @@ def test_live_config_defaults() -> None:
         # multi-second hold would swallow whole sentences instead of gating them.
         {"min_final_ms": -1},
         {"min_final_ms": 5001},
+        # …and the noise verdict beside it: 0 is REAL (never judge — always wait for the stop).
+        {"noise_verdict_ms": -1},
+        {"noise_verdict_ms": 5001},
         # D76 §C.4 — the relative floor's clamp: its two bounds are each bounded to dBFS, and ORDERED
         # by the model validator (inverted or equal bounds pin every automatic floor to one number).
         {"min_dbfs": -95.0},

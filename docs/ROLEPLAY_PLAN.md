@@ -2367,3 +2367,237 @@ pre-deploy checklist row; with it empty, the rebinding residual stands and is re
 card-prompt-injection posture, the script-key strip, lorebook writes) + its §2.7 checklist, which the
 wave updated to the app-wide pin and the STT allowlist. The D-entry is
 [DECISIONS D72](./DECISIONS.md#d72).
+
+## 14. The pre-release persona + framing wave — D78 + the D70 framing amendment (designed + council-closed 2026-09-26; **UNBUILT — the next session's build brief IS this section**)
+
+> **Status:** designed by the main seat from R90 (+ R64 §6 · R65 §9 · R87 RP-7/RP-12), blind Emma
+> design round SHIP WITH CHANGES [6 MED · 1 LOW — all folded, §14.4], rulings recorded as
+> [`D78`](./DECISIONS.md) + the D70 amendment. **Not one line of code is written.** The build is
+> one pinned-Opus lane from THIS section (Part A then Part B, or two lanes on disjoint files), then
+> the main-seat audit → a blind Emma CODE round → fix wave → full gate → `npm run build` → dev
+> migration (`CTRLB_HOME=~/.ctrl-b-dev … config_migration --apply`) → commit. It rides v1.7.8
+> (the release then carries config migrations 2→5). The as-built record goes into §10 as S8 when
+> it lands, and the §3.2/§4.2/§6.4 body text + ruling 7 move with the code (the lane owns them).
+
+Evidence: R90 (`docs/research/R90-injected-context-framing-and-persona-management.md`) on top of
+R64 §6 · R65 §9 · R87 RP-7/RP-12. Owner's words (2026-09-26): *"lorebooks are part of the context
+and may or may not have instructions … I don't want to bias one way or another, let the subsystem
+work as is"* · *"the ability to have different personas and link one to a character specifically —
+regardless of the agent, the persona doesn't necessarily have to be for roleplay"*.
+
+### 14.1 Part A — THE PERSONA LIBRARY (new D-entry: personas are a library; the link lives on the agent)
+
+#### A1. What exists (source-read)
+- `config.py` `RoleplayPersonaCfg {name, description}` at `roleplay.persona` — ONE global persona.
+- `domain/agent.py` `AgentDef.user_name: str` — a per-agent override of the NAME half only.
+- `macros.py::macros_for` — `{{user}}` = `agent.user_name` → `roleplay.persona.name` → `"User"`.
+- `session.py::_persona_block` — the description block after the roster, from the ONE global.
+- `greeting.py::seed_greeting` — macros rendered at seed time (R90 §3.2: a persona resolved later
+  would leave the old name in the opening line — with the link per-AGENT and resolved at seed, the
+  greeting is right by construction).
+- FE: `RoleplayEditor.tsx` (Conf › Roleplay: "Your name" + "About you" rows) · `AgentsEditor.tsx`
+  `user_name` text field · `useAgents.ts` type.
+- Config-map conventions: user-named entries are `{slug: object}` maps (`computers`, `providers`,
+  `tool_overrides`); `PUT /api/settings` deep-merges sections and REPLACES the `providers` map whole
+  when the patch carries it (`api/settings.py::put_settings`); hosts have their own CRUD router.
+- Migrations: `config_migration/steps.py`, `VERSION` = 4 (steps 2→3 and 3→4 are UNRELEASED — they
+  ride v1.7.8). Steps see `config.yaml` AND every `agents/*/agent.yaml` (`Context.agents`).
+- Field convention (R90 §2): ST = library · one global default · the character link stored ON THE
+  PERSONA as `connections[]` keyed by the character's avatar filename (orphaned by a rename, R90
+  §3.1) · a chat lock; precedence chat > character > default > last-selected. Non-RP peers put the
+  per-agent switch ON THE AGENT (LibreChat `memory_scope`, Claude Code `memory`/`omitClaudeMd`) —
+  the side ctrl-b's `user_name` already sits on.
+
+#### A2. The shape
+```yaml
+roleplay:
+  personas:                      # {slug: PersonaCfg} — the library (the house map-of-objects shape)
+    ari: {name: "Ari", description: "…"}
+    dm:  {name: "The DM", description: "…"}
+  default_persona: "ari"         # slug; "" → none (then {{user}} = "User", no persona block)
+```
+- `PersonaCfg` = today's `RoleplayPersonaCfg`, renamed; fields `name`, `description`; `extra=allow`
+  (an `avatar` later is one additive field — the CCv3 `user_icon` seam stays recorded, not built).
+- The KEY is minted ONCE from the name at creation (`config._slug` — the hosts rule — exposed as
+  `persona_slug`; the FE mints with the same rule as `lib/agentSlug` does for agents, the server
+  validates `^[a-z0-9][a-z0-9-]*$` on `RoleplayCfg`) and NEVER changes on rename: the name is
+  display, the slug is identity → no orphaned links (the R90 §3.1 lesson, by construction).
+- `roleplay.persona` (singular) is GONE — no legacy seam. `AgentDef.user_name` is GONE.
+- **`AgentDef.persona: str = ""`** — the link, ON THE AGENT (the non-RP convention, and where
+  `user_name` already lived): a persona slug; `""` → the default. Usable by any agent, roleplay or
+  not — the field is not gated by `roleplay.enabled` (the presentation switch only hides the
+  character fields; the persona picker shows whenever the library is non-empty).
+- No per-chat lock in v1 (nobody asked; a later `Thread.persona` is additive and would slot ABOVE the
+  agent link in the one resolver below).
+
+#### A3. ONE resolver, two consumers
+`services/agent/persona.py::resolve_persona(agent, settings) -> tuple[str, PersonaCfg] | None`:
+`agent.persona` if set AND present in the library → else `default_persona` if set AND present →
+else `None`. A dangling slug falls through (the `default_set` rule of D75: configured AND resolves)
+and logs once per (agent, slug) at WARNING through the existing agent-load warning path.
+- `macros_for`: `user = persona.name.strip() or DEFAULT_USER` (the three rungs become two).
+- `_persona_block`: `persona.description` (macro-rendered as today; empty ⇒ absent).
+- Docstrings/plan text: the chain is now `agent.persona → roleplay.default_persona → "User"`.
+
+#### A4. API
+- `GET /api/settings` carries `roleplay.personas` + `default_persona` through the model (no change).
+- `PUT /api/settings`: a patch carrying `roleplay.personas` REPLACES that map whole — extend the
+  one existing rule (`providers`) rather than a second null-sentinel hook (the prompts pattern) or a
+  CRUD router (the hosts pattern): personas are tiny, single-user, secret-free; the providers 409
+  rev exists for secrets + rename transactions and is not copied. The Conf editor always sends the
+  complete map + `default_persona` (the RoleplayEditor's whole-draft save, already its posture).
+- `GET /api/agents` / the agent DTO: `persona` rides `AgentDef.model_dump` (no change); the agent
+  editor's PUT validates the slug shape (an unknown slug is allowed — the library may be edited
+  after — and resolves to the default until it exists; the picker only offers known ones).
+- Validation on `RoleplayCfg` (`model_validator`): every key matches the slug rule. A DANGLING
+  `default_persona` (or `AgentDef.persona`) is NOT a write error — it simply does not resolve (the
+  D75 rule for `agent.default_agent`: "configured AND resolves — a dangling name presses nothing"),
+  so a library edit can never brick a config or an agent file.
+
+#### A5. Migration — step 5 (`config_version` 4 → 5)
+Pure, over `config.yaml` + every `agents/*/agent.yaml`, the D48/D76 step shape:
+1. `roleplay.persona` present: if `name` or `description` non-empty → `personas[slug(name or
+   "me")] = {name, description}` and `default_persona = that slug` (the one global WAS the default
+   for every agent — values preserved, semantics preserved); delete `roleplay.persona` in ANY
+   shape (consumed).
+2. every `agent.yaml` with `user_name`: non-empty X → the persona whose `name == X` if one exists
+   (case-sensitive, the migrated global included), else mint `personas[slug(X)] = {name: X,
+   description: ""}`; write `persona: <slug>`; delete `user_name` in ANY shape (empty included —
+   `lynette` on dev carries `user_name: ''`).
+3. `applies` = `roleplay.persona` present OR any agent has `user_name`.
+`VERSION` → 5. Prod (v1.7.7 → v1.7.8): NO roleplay block, NO agents dir ⇒ step 5 is a no-op there;
+the release now carries 2→5 (HANDOFF's release steps say 2→4 — update). Dev: the app refuses to
+start on a stale schema (exit 78) → `CTRLB_HOME=~/.ctrl-b-dev backend/.venv/bin/python -m
+app.config_migration --apply` from `backend/` after the build (dev's `roleplay.persona` is the
+owner's real ST persona — it becomes the default persona, named from its name).
+
+#### A6. FE
+- `RoleplayEditor.tsx`: the two persona rows → a PERSONAS block: one card per persona (name input ·
+  "About" fullscreen editor via `requestPrompt` · a remove button), an "Add persona" row (name →
+  slug minted client-side; a duplicate slug is refused inline), and the default = a `Seg`/select
+  row "Default persona: none · Ari · The DM" (the same control shape as Conf › Agent globals'
+  "Default agent"). Same draft/save-bar posture as today (`useRegisterDirty("roleplay")`, one Save
+  sending the whole `roleplay: {default_tools, personas, default_persona}`).
+- `AgentsEditor.tsx`: the `user_name` input → a `persona` select: "default persona" + every library
+  persona by name; `FIELD_HELP.persona` reworded. Shown whenever the library is non-empty (not only
+  under `rpShow`) — the owner's "regardless of the agent".
+- `useAgents.ts`: `user_name` → `persona: string`. `pickRoleplay` in `useRoleplay.ts`: the new shape
+  with defaults.
+- Tests: `agentRoleplayFields.test.tsx`, `useAgents.test.ts`, a RoleplayEditor test (add · remove ·
+  default · the whole-map save body).
+
+#### A7. Docs
+DECISIONS: the new D-entry (the ruling + the R90 evidence + the migration). ROLEPLAY_PLAN: ruling 7
+(the chain), §3.2 yaml, §4.2 persona bullet, the §7 ladder gains this as-built block when built,
+the seam note "the persona has no image" stays. DESIGN.md `AgentDef` field list. UPDATE_PLAN's
+step table (if it lists steps). ISSUES ISS-25 → resolved. HANDOFF: release step 2 says 2→5.
+
+### 14.2 Part B — THE NEUTRAL FRAMING (ISS-21; a D70 amendment)
+
+#### B1. The finding
+R90 §1.10-1.11: across nine peers the "not instructions" sentence appears 3 times, every one on
+text neither the owner wrote nor the model produced for the task (external channel messages, fork
+history, a reviewer's transcript). ZERO peers put it on a lorebook, a persona, an author's note or
+an owner-configured instruction file; the RP class splices them raw or behind a NOUN LABEL
+(`[Supplementary Information]`, `[{{user}} Character Profile]`, `{{user}}'s personality:`); Risu
+separates information from instruction by REGION, not by disclaimer. The one written trust line
+(Codex Guardian) runs by AUTHOR: owner-placed text is trusted, and "explicit owner direction extends
+authorization to untrusted content" — attaching a book to an agent IS that direction. ctrl-b's
+framing also says "the owner wrote", which is false for imported books.
+
+#### B2. The ruling
+Both framings become NOUN LABELS with no authority claim either way — the field's shape, and the
+owner's "don't bias". The privilege gate (D8) + the confirm tokens stay the boundary in CODE (the
+LibreChat "bounded" idea is what ctrl-b already enforces mechanically), so the prompt text carries
+no security load. Owner-overridable through Conf › Prompts as before.
+- `lorebook_intro` default → `"Lorebook — the entries that match what is being talked about:"`
+  (both placements keep the one label; the head/tail split is placement, not authority).
+- `persona_intro` default → `"The owner's persona — who you are talking to:"`.
+- Their `description` fields rewritten: what the label frames, that it deliberately claims no
+  authority either way (R90; the owner's ruling), and that the boundary is the gate in code — the
+  old "the wording is the security boundary this subsystem has" sentence goes (it is no longer
+  true, and it was never the field's posture).
+- Core Memory's two framings (`core_memory_policy`'s "fallible data rather than instructions" +
+  `core_memory_recall`) are NOT touched in this wave: their text is model-written and possibly
+  tool-copied (a different author class — the one the field DOES defang), D57 records the clause as
+  load-bearing (SECURITY_MODEL §2.8), and the feature ships OFF. Recorded here as the owner's call
+  for Phase 19, not a default.
+- No per-book `framing` field (R87's candidate): a neutral label needs no switch.
+
+#### B3. Touch points
+`prompts.py` (the two `PromptDef`s) · `ROLEPLAY_PLAN` §3.2/§4.2 persona bullet + §6.4 ("phrased as
+reference…" → the label) · `SECURITY_MODEL` §2.9 one sentence (lorebook/persona text is
+owner-directed context with no authority claim in the prompt; the gate is the boundary) · the
+`lorebook_intro` stamp changes (a new default sha — expected) · `PROMPTS_PLAN` §list unchanged ·
+ISSUES ISS-21 → resolved · DECISIONS: a D70 amendment · a test pinning that neither default contains
+"not as instructions"/"not instructions" (the invariant the ruling sets), and the existing framing
+tests re-aimed to the new strings.
+
+### 14.3 Least-future-debt check
+A: (a) `user_name` → `persona: {name, description}` object per agent (R87's proposal): a second copy
+of the persona text per agent, no sharing, no default — a library is what the owner asked for and
+what the field ships; (b) ST's shape (link on the persona, two sibling maps): the parallel-maps
+trap + the rename-orphan class; (c) THIS: one map of objects, a rename-stable key, the link on the
+agent beside every other per-agent switch, one resolver. B: (a) per-book framing switch: a knob to
+express "no bias" that the label expresses with zero knobs; (b) THIS.
+
+### 14.4 Amendments (Emma's blind design round, 2026-09-26 — SHIP WITH CHANGES, 6 MED · 1 LOW; ruled by the main seat)
+
+**A-1 (Emma F1, MED 0.99 — ACCEPTED).** `agent.defaults` is an `AgentDef`-shaped inheritance base
+(`config.py:393-395`, `agent_from` deep-merges it under every `agent.yaml`), so `user_name` can live
+THERE too (dev's config does: `agent.defaults.user_name: ''`). Step 5 renames the key IN PLACE
+wherever it appears — `agent.defaults.user_name` → `agent.defaults.persona`, every
+`agents/*/agent.yaml` `user_name` → `persona` — value → the persona slug (non-empty name) or `""`
+(empty): an explicit blank in an agent file stays an explicit blank (it overrides an inherited
+default, and must go on doing so). `applies` = `roleplay.persona` present OR `agent.defaults.user_name`
+present OR any agent file has `user_name`.
+
+**A-2 (Emma F2, MED 0.99 — ACCEPTED; the mint moves SERVER-SIDE).** Two names that collapse to one
+slug must not overwrite each other. The codebase already owns the ONE slug mint for author-chosen
+text — `card_import.py::mint_slug(name, taken, *, fallback, collection)` (casefold · collapse ·
+trim · suffix-walk; parameterised for agents and lorebooks "because a second copy of the rules is
+how the two would drift"). Personas are its third caller (`fallback="persona"`,
+`collection="personas"`); it moves out of `card_import` to a neutral home (`core/slug.py` or beside
+`config._slug`) if the import boundary makes that cleaner — ONE function either way. Step 5:
+exact-name reuse first (case-sensitive), else `mint_slug` against every slug already taken. The FE
+never mints (`lib/agentSlug.ts` has no rule and gets none).
+
+**A-3 (Emma F3 + F4, MED 1.0 / 0.94 — ACCEPTED, the MECHANISM CHANGES).** The nested whole-map
+replacement would need a new runtime hook (`runtime.py:485-518` extracts only top-level
+`providers`/`prompts`; a missed hook resurrects a deleted persona from the deep-merge), and a
+whole-map Conf draft inherits the reseed trap. Both dissolve under the house rule `deep_merge`'s own
+docstring states — *"editing a list/map section goes through a dedicated endpoint that handles
+add/remove explicitly, never this generic merge"* (`computers` → `api/hosts.py`). So: **a
+`personas` router mirroring `hosts.py`'s WRITE endpoints** — `POST /api/personas` (201; body
+`{name, description}`; the server mints the slug with `mint_slug`; 409 on a slug already taken),
+`PUT /api/personas/{slug}` (name/description edit; the slug never changes), `DELETE
+/api/personas/{slug}` (204; NO cascade — links dangle by design and resolve to the default). Reads
+stay on the settings doc (`GET /api/settings` already carries the map; every write invalidates the
+settings query). `default_persona` is a scalar in `roleplay` and rides the ordinary settings PUT
+(the master-switch idiom: saved immediately, no draft). The Conf editor becomes per-ROW requests —
+the Automations panel's posture ("every row edit is its own request", no group draft) with
+`AgentRow`'s seeded-snapshot dirty rule per card (`AgentsEditor.tsx:559-577`). No nested-replace
+hook, no FE mint, no whole-map draft.
+
+**A-4 (Emma F5, MED 0.97 — ACCEPTED).** Dangling links are LEGAL (A4) so the selectors must show
+them: the agent form's persona picker renders when the library is non-empty OR the draft link is
+non-empty, and a link with no matching persona gets a synthetic `missing: <slug>` option beside the
+ordinary "default persona" option so it can be seen and cleared; the Conf "Default persona" control
+does the same for a dangling `default_persona`.
+
+**A-5 (Emma F6, MED 0.99 — ACCEPTED).** The touch list gains `backend/tests/test_roleplay_s0.py`
+(the singular-object + three-rung + PUT-shape pins), `test_roleplay_s1.py`, `test_roleplay_s3.py`,
+`config.example.yaml:362-374` (teaches the removed `roleplay.persona`), and migration tests for:
+`agent.defaults.user_name` · an explicit blank override · a slug collision · no `roleplay` block
+with an agent `user_name` · both fields empty (consumed, nothing minted) · a fresh config (no-op).
+
+**A-6 (Emma F7, LOW 1.0 — ACCEPTED).** BOTH `lorebook_intro` and `persona_intro` stamps change
+(each hashes its effective default template); no migration.
+
+Emma confirmed sound: the reader inventory (only `macros_for` + `_persona_block` at runtime, both
+callers hold `Settings`; the importer never touches `user_name`), one resolver, VERSION → 5 (not
+amending step 4: stamped schema-4 configs exist), the step's fit with `Plan.agent_files` +
+`consumes`, the slug never displayed (name is), `test_prompts_registry_p18.py` = the old-string pin
+to re-aim, `lorebook_intro` carries no `{{…}}` variables, Core Memory untouched. Open sweep: none.
+
+

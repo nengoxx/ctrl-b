@@ -134,6 +134,14 @@ export interface LiveCallWire {
    *  invented one would be discarding the owner's words on a number nobody chose. The backend ships
    *  200 as its default. */
   min_final_ms?: number;
+  /** THE NOISE VERDICT (the owner's 2026-09-26 ruling on R86 LC-1 / R88 E-1), ms: how long a call's
+   *  speech segment must have been open before the client judges it — with less than `min_final_ms` of
+   *  accrual by then it is noise (the transcript gate would drop its final), and it stops holding the
+   *  reply at the mouth's door. Real speech is never timed out: it holds the mouth until it stops.
+   *  **0 = never classify** (always wait for the stop). OPTIONAL, and absent reads as 0 for
+   *  `min_final_ms`'s reason: a client that invented a number would be deciding what counts as noise on
+   *  a value nobody chose. The backend ships 1000. */
+  noise_verdict_ms?: number;
   /** D74 S7 — the call overlay's READBACK block: the track's resolved echo-cancellation mode beside
    *  its open-time capability, the live level (dBFS) against the floor, and the flags the arming
    *  decision was taken from (R78 §6.2). Diagnostic only; off renders nothing extra. Optional for the

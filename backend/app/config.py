@@ -667,7 +667,8 @@ class LiveCfg(VoiceServiceCfg):
       `barge_in`, `ring`, `captions`, `mic_hold`, the D76 GATE six (`floor_dbfs`, the three
       margins, `min_dbfs`/`max_dbfs`), the D73 CAPTURE pair (`route`, `input_device`), the D73 S6
       BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`), the D74 pair
-      (`min_final_ms`, `debug`) and the four S2.5 DICTATION knobs are PWA behavior
+      (`min_final_ms`, `debug`), the 2026-09-26 `noise_verdict_ms` and the four S2.5 DICTATION knobs
+      are PWA behavior
       (Speaches' `TurnDetection` accepts exactly five fields, §4.1, so an interruption floor cannot be
       a server knob). They are delivered verbatim by `GET /voice/status` (`live_call`) and nothing
       below the browser reads them.
@@ -730,6 +731,16 @@ class LiveCfg(VoiceServiceCfg):
     #: A CLIENT knob for the reason every one of its neighbours is: nothing below the browser measures
     #: the microphone. Ceiling is `min_speech_ms`'s — past a few seconds it would eat whole sentences.
     min_final_ms: int = Field(default=200, ge=0, le=5000)
+    #: THE NOISE VERDICT (the owner's ruling 2026-09-26 on R86 LC-1 / R88 E-1: "if the mic is open … let
+    #: the reply play over my real speech and queue my words"). A reply that becomes ready while a
+    #: speech segment is still open WAITS at the mouth — it is never cancelled — and this is how long
+    #: that segment must have run before the client may judge it: with less than `min_final_ms` of
+    #: accrual by then, the transcript gate above would drop its final as "too quiet", so it is noise (a
+    #: TV, the next room) and stops holding the reply. Real speech is never timed out; it holds the
+    #: mouth until it stops. A CLIENT knob for `min_final_ms`'s reason — the accrual it reads is
+    #: measured in the browser. **0 = never classify**: the reply always waits for the stop. Same
+    #: ceiling as its neighbour: past a few seconds a TV would hold every reply for no one.
+    noise_verdict_ms: int = Field(default=1000, ge=0, le=5000)
     #: Call DEBUG readout (client): the overlay renders the live gate numbers — energy, the hold the
     #: gate has accumulated, what each final was judged on — instead of hiding them. Off ships; it is a
     #: calibration aid for the S4 sitting, not a feature, and the phone is where it has to be read.
