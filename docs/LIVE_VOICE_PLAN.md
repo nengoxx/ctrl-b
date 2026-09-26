@@ -181,7 +181,10 @@ accepts exactly `threshold`/`prefix_padding_ms`/`silence_duration_ms`/`create_re
 knob.** The table below is the AS-BUILT list at the S4 close (2026-09-26) — `LiveCfg` in
 `backend/app/config.py` is the source of truth (every field carries its provenance comment and
 bounds); the D76 wave (§7) replaced the draft's `barge_threshold` + Speech slider with the
-relative-dB gate, and D73/D74/D77 added the route, background, deck and trail knobs:
+relative-dB gate, and D73/D74/D77 added the route, background, deck and trail knobs. It inventories
+`LiveCfg`'s OWN fields only: the realtime pointer (`provider`/`model`/`fallbacks`) and its transport
+knobs (`connect_timeout_s`/`timeout_s`/`extra_body`) are INHERITED from `VoiceServiceCfg` and configured
+exactly as for stt/tts (§5.1):
 
 | Knob | Default | Where | What it tunes |
 |---|---|---|---|
@@ -233,8 +236,10 @@ phase. "Hang up" from every state. Rules the flags force: **playback may not sta
 `userSpeechActive || waitingFinal`** (confirm-round MED 2 — the gap between speech-stop and the
 final's arrival must not let an old reply start talking) — if the mouth would begin while
 either holds, that IS a barge-in (kill before first audio, §4.3) — **on the transcript gate's
-evidence (R86 LC-1):** an open utterance whose epoch-matched accrual is below `min_final_ms` is
-noise, not a barge-in, and the reply plays; unmeasured still kills (fail-open, like the gate); a final arriving
+evidence, for a CLOSED utterance only (R86 LC-1, narrowed by R88 E-1):** a segment that has stopped
+(`waitingFinal`, no speech live) whose epoch-matched accrual is below `min_final_ms` is noise, not a
+barge-in, and the reply plays; an OPEN segment kills whatever it has accrued so far, and unmeasured
+still kills (fail-open, like the gate); a final arriving
 during `thinking` submits as a **steer** through the existing 202 path (D41) without touching the
 phase. The machine composes existing pieces:
 
@@ -366,8 +371,8 @@ marker for text Stop rides the same seam. This closes R35 divergence ④ for bot
   privilege gate stays tap-bound; SECURITY_MODEL unchanged; the ruled-out alternative was
   "pause and peek at chat").
 - **Capture loss** (permission revoked, a real phone call steals the mic, headset events) →
-  the track's `ended` → the call ends in `error` with a plain reason. Page-hidden already ends
-  cleanly (§5.3).
+  the track's `ended` → the call ends in `error` with a plain reason. Page-hidden is §5.3's (it
+  survives since D73 S6; `pagehide` ends cleanly).
 - **Busy/limits UX copy:** a second concurrent call → "another call is active"; `max_session_s`
   reached → "call time limit reached" + one-tap redial. Settings edited mid-call apply to the
   NEXT call — sessions read config at start.
@@ -407,33 +412,55 @@ marker for text Stop rides the same seam. This closes R35 divergence ④ for bot
 voice:
   live:
     enabled: true           # whole-feature toggle (the standing pluggability requirement); ON since v1.7.8 (S4 closed)
-    target: ""              # provider-registry reference for the realtime endpoint (empty → resolve like stt)
-    vad_threshold: 0.6      # D76 §D (the draft said 0.9 — Speaches' outlier; see §4.1)
-    silence_ms: 700
-    min_speech_ms: 300
-    frame_ms: 40
-    max_session_s: 1800
-    max_frame_bytes: 32768
-    buffered_ceiling_ms: 1000   # client outbound-buffer ceiling before close+reconnect (F6)
-    barge_threshold: 0          # RMS floor for the barge-in energy gate; 0 = reuse stt.auto_stop_threshold
-    max_sessions: 1             # process-wide live-session cap (F9; N=1 service)
-    echo_workaround: auto   # auto | on | off — auto's meaning RULED by S0 (owner, 2026-09-12, measured
-                            # on the Honor 20, §7-S0 record): OFF where the live track's
-                            # getSettings().echoCancellation reads "all" (Chrome ≥141 — measured genuinely
-                            # SUBTRACTIVE: playback cancelled, the user's voice survives, voice barge-in
-                            # viable); the protective EAR-HOLD elsewhere (Fennec — its AEC measurably does
-                            # NOT remove the phone's own playback, so an open ear during `speaking` would
-                            # hear the character: the ear pauses, interruption is tap-only there).
-                            # Capability-detected per track at call start, NEVER UA-sniffed.
+    # provider: voice       # the INHERITED pointer (`VoiceServiceCfg`): provider / model / fallbacks, plus
+    # model: parakeet       #   connect_timeout_s / timeout_s / extra_body — blank provider + no fallbacks
+    #                       #   resolves exactly like voice.stt (one Speaches box serves both doors)
+    vad_threshold: 0.6      # server, rides session.update — D76 §D (the draft's 0.9 was Speaches' outlier; see §4.1)
+    silence_ms: 700         # server, rides session.update
+    min_speech_ms: 300      # client: the barge-in action floor
+    min_final_ms: 200       # client: the transcript gate (D74) — and, on a CLOSED utterance, the iron rule's (R86/R88)
     barge_in: false         # ships OFF since the 2026-09-22 re-ruling (D74 addendum ⑨) — voice interrupt is an opt-in
+    mic_hold: auto          # auto | on | off (D76 §B; was the draft's `echo_workaround`) — auto = never held on a
+                            # track whose getSettings().echoCancellation reads "all" (measured SUBTRACTIVE on
+                            # Chrome, §7-S0 — voice barge-in viable); anywhere else each CHUNK starts held and
+                            # the per-chunk leak probe releases it when its held audio stays under the floor.
+                            # Capability-detected per track at call start, NEVER UA-sniffed.
+    route: media            # client: media (EC off, the media path) | call (platform AEC, comm mode) — D73/D76 §A
+    input_device: ""        # client: the capture deviceId, "" = the system default (D73 S5)
+    floor_dbfs: -45         # client: the D76 §C relative gate — bootstrap ceiling…
+    noise_margin_db: 10     #   …the three margins…
+    voice_margin_db: 10
+    playback_margin_db: 10
+    min_dbfs: -60           #   …and the clamp
+    max_dbfs: -20
+    background: true        # client: a hidden page KEEPS the call (D73 S6 — §5.3)
+    background_keepalive: true
+    background_idle_s: 600
     ring: true              # §6 overlay mode: true = the focal-anchored face ring; false = art-only + transcript accent
+    captions: true          # the reply as fading captions on the call screen
+    debug: false            # the in-call readout AND the D77 call trail
+    trail_keep: 20          # server: D77 retention
+    dictation: false        # S2.5 streaming dictation on the same ear, and its three knobs
+    tail_wait_ms: 2000
+    dictation_idle_s: 15
+    dictation_max_s: 120
+    buffered_ceiling_ms: 1000   # client outbound-buffer ceiling before close+reconnect (F6)
+    call_backlog_ms: 1000       # client: the lossy call pacer's backlog (A-F2)
+    frame_ms: 40            # server cap (the client paces by it too)
+    max_frame_bytes: 32768
+    max_session_s: 1800
+    max_sessions: 1         # process-wide live-session cap (F9; N=1 service)
+    relay_queue_ms: 2000
+    start_timeout_s: 5
+    uplink_idle_s: 15       # server: the frozen-page reaper (R86 LC-8)
+    allowed_origins: []
 ```
 
 Delivered to the client via `GET /voice/status` (the established non-Conf-scoped voice-policy
 door). **Owner ruling 2026-09-11: these are real Settings, not YAML-only — and the visual-design
 round the same day sharpened the placement: live call gets its OWN Conf section ("Live call"),
 not rows tucked into the existing voice group or Appearance.** The section carries the behavior
-toggles (`enabled`, `barge_in`, `echo_workaround`, the §6 `ring` mode) and the tuning numerics
+toggles (`enabled`, `barge_in`, `mic_hold` — the draft's `echo_workaround` — the §6 `ring` mode) and the tuning numerics
 (thresholds, `silence_ms`, `min_speech_ms`), same SettingRow presentation as the rest of Conf,
 so interruption-and-friends are tweakable from the phone in one clearly-named place. *(The YAML
 stays `voice.live` — the extend-don't-migrate shape above is untouched; only the Conf grouping
@@ -469,8 +496,13 @@ context, reactive `unavailable` after a server error.
 
 - Speaches down / relay error / WS drop → overlay shows the error state; **push-to-talk and
   read-along are untouched** (they share no runtime with the call).
-- Page hidden / phone locked → the call **ends cleanly** (R14 scope: foreground-only; no
-  half-alive background sessions). Wake Lock held while the overlay is up.
+- Page hidden / phone locked → **the call SURVIVES by default** (D73 S6, amending this section's
+  original foreground-only scope — the S6 background wave in §7 is the record): `background`
+  (default true) keeps the leg; `background_keepalive` (true) holds an inaudible-but-nonzero source
+  so Chrome Android does not freeze the page and deafen the ear; `background_idle_s` (600, 0 = off)
+  ends a backgrounded call with no speech, no final in flight and no reply; the ear-outage check
+  redials on return; `pagehide` still ends it cleanly. `background: false` restores the old clean
+  end on hide. Wake Lock held (and re-taken on return) while the overlay is up.
 - The Tier 0 auto-stop path stays as-is — the call mode neither replaces nor requires it.
 
 ## 6. The UI (VAPOR_PATTERNS governs; kit overlay contract) — **visual design RATIFIED (owner, 2026-09-11 visual round)**
@@ -1488,6 +1520,14 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > reaps a silent uplink as `session_limit` with its own sentence (the client now shows the relay's
   > message for that code). LC-7: the "ships OFF" sweep. Owed to the owner: whether `barge_in: false`
   > should also spare REAL speech at reply start (LC-1's interplay).
+  > **Wave 2 (R88, Emma's second audit, same day).** E-1: LC-1's exemption narrowed to a CLOSED
+  > utterance (`waitingFinal` and no speech live) — an OPEN segment kills as before LC-1 whatever it has
+  > accrued (a partial accrual is no verdict; sparing it let the hold close the ear on the owner's
+  > sentence), so **continuous noise during `thinking` still kills the reply** — the deferred-start
+  > design is the owner's open question (HANDOFF). E-2: `idleExpired` also waits out
+  > `userSpeechActive`/`waitingFinal`. `/voice/status.live_call` stopped delivering the two unread
+  > server knobs (`max_session_s`, `vad_threshold`), pinned by a reader-parity test; the example
+  > config's live keys are pinned to `LiveCfg`; §4.1/§5.1/§5.3 reconciled with the code.
 
   > **S4 ROUND №1 (owner, 2026-09-24, car + BT headphones + lock screen; the card = the 36th
   > session's handoff).** *The car, default route (their config's `speaker`, EC on ⇒ comm mode):*

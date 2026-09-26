@@ -1233,6 +1233,27 @@ describe("callReduce — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R75
     expect(drained.state.phase).toBe("ended");
   });
 
+  it("④ …nor over the OWNER still talking, or their final still in flight (R88 E-2)", () => {
+    // A sentence can outlast a short window (`speechStart` re-armed it once), and a final can still be
+    // in the air after the stop — ending there loses the utterance.
+    for (const from of [
+      run(listening, [{ type: "speechStart" }]).state,
+      run(listening, [{ type: "speechStart" }, { type: "speechStop" }]).state,
+    ]) {
+      const { state, out } = run(from, [{ type: "idleExpired" }]);
+      expect(out).toEqual([]);
+      expect(state).toBe(from);
+    }
+    // …and once the final has landed and nothing is talking, the next expiry ends it.
+    const settled = run(listening, [
+      { type: "speechStart" },
+      { type: "speechStop" },
+      { type: "final", text: "   " }, // an empty final: consumed, nothing submitted
+      { type: "idleExpired" },
+    ]);
+    expect(settled.state.phase).toBe("ended");
+  });
+
   it("④ …and it is a terminal like the others: anything queued is HARVESTED, not lost", () => {
     const queued = run(listening, [
       { type: "confirmHold", on: true },
@@ -1423,30 +1444,33 @@ describe("callReduce — the transcript gate (D74 S5)", () => {
   });
 });
 
-describe("callReduce — the iron rule on EVIDENCE (R86 LC-1)", () => {
+describe("callReduce — the iron rule on EVIDENCE (R86 LC-1 · R88 E-1)", () => {
   /** The reply's first chunk, carrying the ear's accrual for the utterance still open. */
   const mouthOpens = (energyMs?: number): CallSignal => ({
     type: "playbackStarted",
     energyMs,
     minFinalMs: 200,
   });
-  /** Thinking on a question, with a NOISE speech-start raised under it (a TV, a next-room voice). */
+  /** Thinking on a question, with a NOISE speech-start raised under it (a TV, a next-room voice)… */
   const noisy = run(listening, [
     { type: "final", text: "what's the weather" },
     { type: "sent", outcome: "accepted", text: "what's the weather" },
     { type: "speechStart" },
   ]).state;
+  /** …and the same segment STOPPED: its final is pending and the accrual is its whole evidence. */
+  const noiseDone = run(noisy, [{ type: "speechStop" }]).state;
 
-  it("a noise segment the ear measured below the knob does NOT kill the reply (the auditor's run)", () => {
-    expect(noisy.phase).toBe("thinking");
-    const started = run(noisy, [mouthOpens(0)]);
+  it("a CLOSED noise segment the ear measured below the knob does NOT kill the reply", () => {
+    expect(noiseDone.phase).toBe("thinking");
+    expect(noiseDone.userSpeechActive).toBe(false);
+    expect(noiseDone.waitingFinal).toBe(true);
+    const started = run(noiseDone, [mouthOpens(40)]);
     expect(started.out).toEqual([]); // no `kill` ⇒ no `cancelTurn` — the reply plays
     expect(started.state.phase).toBe("speaking");
     expect(started.state.mouthLive).toBe(true);
     // …and that segment's final meets the gate on its own arm, exactly as before.
     const dropped = run(started.state, [
-      { type: "speechStop" },
-      { type: "final", text: "yeah", energyMs: 0, minFinalMs: 200 },
+      { type: "final", text: "yeah", energyMs: 40, minFinalMs: 200 },
     ]);
     expect(dropped.out).toEqual([{ type: "dropCue" }]);
     expect(dropped.state.note).toBe(CALL_COPY.tooQuiet);
@@ -1456,47 +1480,64 @@ describe("callReduce — the iron rule on EVIDENCE (R86 LC-1)", () => {
     expect(submits(done.out)).toEqual([]);
   });
 
-  it("…and the same for words already in flight (`waitingFinal`) the ear measured as quiet", () => {
-    const inFlight = run(noisy, [{ type: "speechStop" }]).state;
-    expect(inFlight.waitingFinal).toBe(true);
-    expect(run(inFlight, [mouthOpens(40)]).out).toEqual([]);
+  it("an OPEN segment is killed whatever it has accrued so far — a partial accrual is no verdict (E-1)", () => {
+    // 40 ms in may be the first syllable of the owner's sentence; sparing the reply there would let
+    // the default media/auto hold close the ear on the rest of it.
+    expect(noisy.userSpeechActive).toBe(true);
+    const { state, out } = run(noisy, [mouthOpens(40)]);
+    expect(out).toEqual([{ type: "kill" }]);
+    expect(state.killing).toBe(true);
+    // …and a NEW segment live over a pending final is open too.
+    const both = run(noiseDone, [{ type: "speechStart" }]).state;
+    expect(run(both, [mouthOpens(0)]).out).toEqual([{ type: "kill" }]);
   });
 
-  it("FAILS OPEN: unmeasured still kills — and so does an utterance the ear DID hear", () => {
+  it("FAILS OPEN: unmeasured still kills — and so does a closed utterance the ear DID hear", () => {
     // No epoch-matched accrual (a reconnect, a wiring that measured nothing) is not evidence of
     // quiet, so the rule stands exactly as it always did.
     for (const sig of [
       { type: "playbackStarted" } as CallSignal,
       mouthOpens(undefined),
-      mouthOpens(900), // the owner, genuinely mid-word
+      mouthOpens(900), // the owner's real words, still in flight
       { type: "playbackStarted", energyMs: 0, minFinalMs: 0 } as CallSignal, // the gate is off
     ]) {
-      const { state, out } = run(noisy, [sig]);
+      const { state, out } = run(noiseDone, [sig]);
       expect(out).toEqual([{ type: "kill" }]);
       expect(state.killing).toBe(true);
     }
   });
 
-  it("a HELD ear lowers the flags a spared segment left up — no unmeasured kill of the next reply", () => {
-    // The knock-on: sparing the reply lets the hold engage over an open segment, and its stop and final
-    // are then dropped as leak. Left standing, the flags would kill the NEXT chunk's `playbackStarted`
-    // on no evidence at all — the epoch having closed with the final.
+  it("a HELD ear lowers the flags left up under it — no unmeasured kill of the next reply", () => {
+    // A spared closed segment: the hold engages with its final still pending, and that final is then
+    // dropped as leak. Left standing, `waitingFinal` would kill the NEXT chunk's `playbackStarted` on no
+    // evidence at all — the epoch having closed with the final.
     const spared = run(holding, [
       { type: "final", text: "tell me a story" },
       { type: "speechStart" },
+      { type: "speechStop" },
       mouthOpens(0),
     ]).state;
     expect(spared.earHeld).toBe(true);
-    expect(spared.userSpeechActive).toBe(true);
-    const heard = run(spared, [{ type: "speechStop" }, { type: "final", text: "mm" }]).state;
-    expect(heard.userSpeechActive).toBe(false);
+    expect(spared.waitingFinal).toBe(true);
+    const heard = run(spared, [{ type: "final", text: "mm" }]).state;
     expect(heard.waitingFinal).toBe(false);
     expect(heard.pending).toEqual([]); // still dropped as leak — nothing about the hold changed
     // A mid-reply synthesis gap resuming is a fresh `playbackStarted`, unmeasured.
     const resumed = run(heard, [{ type: "playbackDrained" }, { type: "playbackStarted" }]);
     expect(resumed.out).toEqual([]);
-    // …and a held stop never RAISES the wait it would otherwise set.
-    expect(run(holdingSpeaking, [{ type: "speechStop" }]).state.waitingFinal).toBe(false);
+    // An OPEN segment under a hold: a kill that settles under a mouth that restarted during it.
+    const reopened = run(holding, [
+      { type: "final", text: "tell me a story" },
+      { type: "speechStart" },
+      { type: "playbackStarted" }, //    killed (unmeasured)…
+      { type: "playbackStarted" }, //    …a chunk starts during the kill…
+      { type: "killSettled" }, //        …and the settlement lands on it: held, segment still up
+    ]).state;
+    expect(reopened.earHeld).toBe(true);
+    expect(reopened.userSpeechActive).toBe(true);
+    const stopped = run(reopened, [{ type: "speechStop" }]).state;
+    expect(stopped.userSpeechActive).toBe(false);
+    expect(stopped.waitingFinal).toBe(false); // …and a held stop never RAISES the wait
   });
 });
 

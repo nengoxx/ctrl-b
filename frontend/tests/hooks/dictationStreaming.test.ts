@@ -150,7 +150,6 @@ const KNOBS = {
   mic_hold: "auto",
   route: "call" as const, //        D73 S5 — the capture pair the mic now opens with
   input_device: "",
-  max_session_s: 1800,
   dictation: true,
   tail_wait_ms: 2000,
   dictation_idle_s: 15, //          = 150 readings of the 100 ms poll

@@ -33,11 +33,10 @@ const LIVE_CALL = {
   call_backlog_ms: 1000,
   barge_in: true,
   ring: true,
-  // D75 — captions on, and the Silero threshold, for the same reason the pairs below are here: the
-  // fixture is supposed to be what `/voice/status` sends, and a field missing here is a field the
-  // client silently meets as `undefined` where production never does.
+  // D75 — captions on, for the same reason the pairs below are here: the fixture is supposed to be
+  // what `/voice/status` sends, and a field missing here is a field the client silently meets as
+  // `undefined` where production never does.
   captions: true,
-  vad_threshold: 0.6,
   // D76 §B/§C — the mic hold and the relative gate's six, as the backend ships them.
   mic_hold: "auto",
   floor_dbfs: -45,
@@ -56,7 +55,6 @@ const LIVE_CALL = {
   background: true,
   background_keepalive: true,
   background_idle_s: 600,
-  max_session_s: 1800,
 };
 
 interface Relay {

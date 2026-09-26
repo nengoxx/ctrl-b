@@ -444,12 +444,21 @@ voice:
                            # D77: ALSO writes a per-call trail to <CTRLB_HOME>/calls/<call>.jsonl
     trail_keep: 20         # D77: how many call trails to keep (1–500) — the oldest go when a new call starts
     max_sessions: 1        # process-wide concurrent live sessions (a second connect gets `busy`)
-    mic_hold: auto         # CLIENT: mic off while the reply speaks — auto | on | off. auto = the per-reply
-                           # leak probe (D76 S2; until it lands: held unless the track's AEC reads "all")
+    mic_hold: auto         # CLIENT: mic off while the reply speaks — auto | on | off. auto = never held when the
+                           # track's AEC reads "all"; otherwise each CHUNK starts held and the per-chunk leak
+                           # probe (D76 S2, built) releases it if its held audio stays under the floor
     barge_in: false        # CLIENT: hands-free interruption (default off = tap-to-interrupt only); when on, speech must clear the relative floor + playback_margin_db below; needs an open ear — inert while the mic is held
     route: media           # CLIENT: media (DEFAULT: EC off → clean media-path audio, follows Bluetooth
                            # like music, phone speaker otherwise) | call (platform AEC → phone-call mode,
                            # echo-cancelled, the hands-free device's own mic)
+    input_device: ""       # CLIENT: the capture deviceId ("" = the system default); on Android the mic list IS
+                           # the route picker. Asked as `ideal`, so a vanished device falls back to the default
+    # D73 S6 / R75 — the BACKGROUND wave (CLIENT): a hidden page keeps the call; `pagehide` still ends it.
+    background: true       # false = the old behaviour: the page going away ends the call cleanly
+    background_keepalive: true  # an inaudible-but-nonzero source while hidden, so Chrome Android does not
+                           # freeze the page and deafen the ear (a deliberate battery-protection defeat)
+    background_idle_s: 600 # a BACKGROUNDED call with no speech, no final in flight and no reply ends after
+                           # this many seconds (0 = off; ceiling 4 × 1800)
     # D76 / R83 — the RELATIVE near-speech gate, in dB (CLIENT): the floor follows the measured room noise
     # and your learned voice level, clamped into [min_dbfs, max_dbfs]; it gates finals AND barge-in.
     floor_dbfs: -45        # bootstrap ceiling: the floor before a noise estimate, and its cap meanwhile
@@ -459,6 +468,7 @@ voice:
     min_dbfs: -60          # clamp bounds on the effective floor
     max_dbfs: -20
     ring: true             # CLIENT: overlay mode — true = focal-anchored face ring
+    captions: true         # CLIENT: the reply as small fading captions on the call screen
     # Streaming DICTATION (S2.5) — the mic's hold/lock rides the SAME realtime ear as the call, and
     # each utterance final appends to the composer draft live. Independent of `enabled` in both
     # directions: this switch alone opens the ear, no call feature required. OFF = today's whole-clip

@@ -119,7 +119,11 @@ async def voice_status(request: Request) -> dict[str, object]:
     # endpoint, no key, no model id, nothing that says whether a secret exists. Speaches' own
     # `TurnDetection` accepts exactly five fields (§4.1), so every interruption/pacing knob a call
     # needs is necessarily browser-side and has to arrive here. Since S2.5 the same object carries the
-    # four dictation knobs — one ear, one set of client knobs (`LiveCfg`'s own split).
+    # four dictation knobs — one ear, one set of client knobs (`LiveCfg`'s own split). ONLY knobs the
+    # browser READS (R88): `vad_threshold` and `max_session_s` rode here once and nothing read them
+    # (the in-call slider went with D76 §D; no overlay ever showed the cap) — they are SERVER knobs,
+    # and a delivered-but-unread field is one a later reader trusts without anyone having tested it.
+    # Pinned both ways by `test_every_delivered_live_call_field_has_a_browser_reader`.
     status["live_call"] = {
         "frame_ms": live.frame_ms,
         "buffered_ceiling_ms": live.buffered_ceiling_ms,
@@ -132,10 +136,6 @@ async def voice_status(request: Request) -> dict[str, object]:
         "min_final_ms": live.min_final_ms,
         "debug": live.debug,
         "barge_in": live.barge_in,
-        # The Silero threshold, delivered like its neighbours so the client can show what the relay
-        # runs. Conf is its only door (D76 §D): the in-call override and its `start` field are gone,
-        # and the relay reads the config value for its one `session.update`.
-        "vad_threshold": live.vad_threshold,
         "ring": live.ring,
         # The reply as CAPTIONS on the call screen (owner ask 2026-09-22). A presentation knob like
         # `ring` beside it: the words it draws are already in the browser's own chat store, so this
@@ -163,7 +163,6 @@ async def voice_status(request: Request) -> dict[str, object]:
         "background": live.background,
         "background_keepalive": live.background_keepalive,
         "background_idle_s": live.background_idle_s,
-        "max_session_s": live.max_session_s,
         "dictation": live.dictation,
         "tail_wait_ms": live.tail_wait_ms,
         "dictation_idle_s": live.dictation_idle_s,

@@ -66,10 +66,6 @@ export interface LiveCallWire {
   /** Automatic (voice) interruption. OFF ⇒ walkie-talkie: speech over the reply still transcribes and
    *  queues; the tap stays every browser's interrupt. Ships OFF (owner re-ruling 2026-09-22). */
   barge_in: boolean;
-  /** The SERVER-side Silero threshold (0.5–0.8, D76 §D), delivered like its neighbours so the client
-   *  can show what the relay runs. Conf is its only door; the relay reads it from config. Optional: a
-   *  pre-field backend's status carries none. */
-  vad_threshold?: number;
   /** §6 overlay mode — the focal-anchored face ring. S2b renders it; S2a's minimal overlay does not. */
   ring: boolean;
   /** The agent's reply as fading CAPTIONS on the call screen (owner ask 2026-09-22). Optional for the
@@ -115,8 +111,6 @@ export interface LiveCallWire {
   /** How long a BACKGROUNDED call may sit with no speech and no reply before it ends itself, in
    *  seconds. **0 = off.** The alternative is a pocketed phone riding a hot mic to `max_session_s`. */
   background_idle_s: number;
-  /** The relay's own session cap, in seconds — surfaced so the overlay can be honest about the limit. */
-  max_session_s: number;
   /** S2.5 — phrase-by-phrase streaming dictation: the mic's hold/lock rides the SAME ear, and each
    *  utterance final appends to the composer draft live. Its own whole-feature toggle beside the
    *  call's `enabled`, so the two are switched independently. Off ⇒ today's whole-clip POST. */

@@ -37,12 +37,15 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import struct
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import anyio
 import pytest
+import yaml
 from _reg import registry as inference_registry
 from _reg import target
 from fastapi import FastAPI
@@ -56,7 +59,7 @@ from websockets.http11 import Response
 
 from app.adapters.voice import VoiceClient
 from app.api import voice as voice_api
-from app.config import LiveCfg, Settings
+from app.config import LiveCfg, Settings, VoiceServiceCfg
 from app.core.audio import SPEACHES_WIRE_RATE, Pcm16Resampler
 from app.core.provider_registry import resolve_lenient
 from app.domain.provider import LivePolicy, SttPolicy, TtsPolicy
@@ -999,6 +1002,79 @@ def test_uplink_idle_s_is_a_bounded_server_knob_that_outlasts_the_tail_wait() ->
     assert "uplink_idle_s" not in _app().get("/api/voice/status").json()["live_call"]
 
 
+#: The frontend tree the parity arm below reads. The status payload is delivered TO it, so it is the
+#: only place a reader can be.
+_FRONTEND_SRC = Path(__file__).resolve().parents[2] / "frontend" / "src"
+#: THE LIVE-CALL CONSUMERS — the only files a `.<key>` hit counts in (R88 confirm round: a scan of the
+#: whole tree let any same-named property anywhere, e.g. an art `.background`, stand in for a reader).
+#: Each is here because `live_call` (or a value lifted off it) flows into it:
+_LIVE_CALL_READERS = (
+    "hooks/useLiveCall.ts",  # the call machine — reads the knobs object itself
+    "hooks/useDictation.ts",  # streaming dictation — `useComposer` hands it `live_call`
+    "lib/audioController.ts",  # the mouth the call drives (setCallVoice & co.)
+    "lib/levelGate.ts",  # the D76 §C gate — handed the gate knobs as a cfg object
+    "lib/liveSocket.ts",  # the socket leg — handed the uplink knobs
+    "lib/callTrail.ts",  # the D77 trail — gated on `debug`
+    "lib/callCue.ts",  # the drop cue the transcript gate plays
+    "lib/pcmCapture.ts",  # the capture — handed `frame_ms` and the route pair
+    "theme-engine/kit/CallOverlay.tsx",  # the call screen — `ring`, `captions`, the deck's readouts
+    "theme-engine/kit/composer/useMicGesture.ts",  # the mic gesture — the call's entry
+    "theme-engine/kit/composer/MicGestureChrome.tsx",  # …and its chrome
+)
+# NOT readers, deliberately absent from the list: `hooks/useVoiceStatus.ts` (the wire TYPE declaring
+# every key), and `hooks/useSettings.ts` + `tabs/ConfTab.tsx` (they read `voice.live` from the whole
+# config document, `GET /settings`, never from `/voice/status`).
+#: `LiveCfg`'s SERVER-only knobs (its docstring's split): the relay's caps and the two that ride
+#: `session.update`. `frame_ms` is a server cap the client ALSO paces by, so it is not listed.
+_SERVER_ONLY = {
+    "vad_threshold",
+    "silence_ms",
+    "max_frame_bytes",
+    "max_session_s",
+    "max_sessions",
+    "relay_queue_ms",
+    "start_timeout_s",
+    "uplink_idle_s",
+    "allowed_origins",
+    "trail_keep",
+}
+
+
+def test_every_delivered_live_call_field_has_a_browser_reader() -> None:
+    """R88 — `/voice/status.live_call` is a CONTRACT with the browser: every field it delivers is one
+    something in `frontend/src` reads as a property (`.<key>`), and no server-only knob rides it. A
+    delivered-but-unread field is one a later reader trusts without anyone having tested it (the
+    route once carried `max_session_s` and `vad_threshold`, which nothing read). Textual on purpose —
+    the cheapest honest check that runs in the backend gate — and SCOPED to the live-call consumers,
+    so a same-named property elsewhere in the app cannot stand in for a reader."""
+    delivered = set(_app().get("/api/voice/status").json()["live_call"])
+    assert not delivered & _SERVER_ONLY, f"server-only knobs delivered: {sorted(delivered & _SERVER_ONLY)}"
+    readers = "\n".join((_FRONTEND_SRC / rel).read_text(encoding="utf-8") for rel in _LIVE_CALL_READERS)
+    unread = sorted(k for k in delivered if not re.search(rf"\.{re.escape(k)}\b", readers))
+    assert not unread, f"delivered in live_call with no reader among the live-call consumers: {unread}"
+
+
+def test_the_example_configs_live_block_is_an_inventory_of_livecfg() -> None:
+    """R88 — `config.example.yaml` is the owner's bootstrap, and a config SAMPLE is an inventory (the
+    plan's §5.1 rule): its `voice.live` block carries EXACTLY `LiveCfg`'s own fields. Both directions:
+    `LiveCfg` ALLOWS extra keys (the house `extra="allow"`), so a stale or misspelt key would load
+    silently and do nothing; and a knob missing from the sample is one the owner never learns exists.
+    The inherited pointer + transport fields (`VoiceServiceCfg`'s — computed, not hand-listed) are
+    shown commented or optional like stt/tts, so they are neither required nor refused. The whole
+    file's validation is QH-8's (`test_config_example_qh8.py`)."""
+    example = Path(__file__).resolve().parents[2] / "config.example.yaml"
+    raw = yaml.safe_load(example.read_text(encoding="utf-8"))
+    live = raw["voice"]["live"]
+    Settings.model_validate({"voice": {"live": live}})  # raises on a bad value
+    inherited = set(VoiceServiceCfg.model_fields)
+    own = set(LiveCfg.model_fields) - inherited
+    keys = set(live) - inherited
+    assert not keys - own, (
+        f"config.example.yaml voice.live carries keys LiveCfg does not declare: {sorted(keys - own)}"
+    )
+    assert not own - keys, f"config.example.yaml voice.live is missing LiveCfg fields: {sorted(own - keys)}"
+
+
 def test_no_start_within_the_timeout_is_a_protocol_close() -> None:
     app = _fake_app(FakeSpeaches([created()]), live_cfg={"start_timeout_s": 0.05})
     with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
@@ -1124,9 +1200,6 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "call_backlog_ms": 1200,
         "min_speech_ms": 250,
         "barge_in": False,
-        # The Silero threshold, delivered like its neighbours; Conf is its only door (D76 §D — the
-        # in-call override and its `start` field are gone).
-        "vad_threshold": 0.7,
         # D74 (evidence docs/research/R76) — the near-speech gate on a committed turn and the
         # calibration readout beside it. CLIENT knobs like every neighbour: the energy they judge is
         # measured in the browser, and the server VAD has no field that could express either.
@@ -1156,7 +1229,6 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "background": False,
         "background_keepalive": False,
         "background_idle_s": 0,
-        "max_session_s": 900,
         # S2.5 — the dictation four ride the SAME object (one ear, one set of client knobs). Nothing
         # in `useDictation`'s streaming branch may default one of these; they all arrive here.
         "dictation": True,

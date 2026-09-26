@@ -109,7 +109,7 @@ import { useVoiceStatus } from "./useVoiceStatus";
 
 // ── the named constants (all of them, in this one file — the R69 precedent) ──────────────────────
 // What is NOT here: every §4.1 tunable (`frame_ms`, `buffered_ceiling_ms`, `min_speech_ms`,
-// `barge_in`, `max_session_s`, the D76 §C gate six). Those are the owner's, delivered by
+// `barge_in`, the D76 §C gate six). Those are the owner's, delivered by
 // `/voice/status.live_call`, and this hook reads them — it never defaults them. The level gate's own
 // estimator constants live beside the estimators (`lib/levelGate`), the drop cue's beside the cue
 // (`lib/callCue`).
@@ -835,9 +835,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
     case "speechStop":
       if (s.muted) return { state: s, out: [] };
       // HELD, a stop still LOWERS the flag it pairs with — it never raises `waitingFinal`, whose final
-      // the held arm below drops anyway (R86 LC-1's knock-on). Since the iron rule stands down on quiet
-      // evidence, a noise segment can be open when the hold engages; a flag left up behind it would be
-      // an UNMEASURED iron-rule kill of the next reply, the epoch having closed with its final.
+      // the held arm below drops anyway (R86 LC-1's knock-on). A segment can be open when the hold
+      // engages (a kill that settles under a mouth that restarted during it); a flag left up behind it
+      // would be an UNMEASURED iron-rule kill of the next reply, the epoch having closed with its final.
       if (s.earHeld)
         return { state: s.userSpeechActive ? { ...s, userSpeechActive: false } : s, out: [] };
       return { state: { ...s, userSpeechActive: false, waitingFinal: true }, out: [] };
@@ -907,14 +907,19 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // §4.2's iron rule (confirm-round MED 2). The mouth is about to open while the owner is mid-word,
       // or while their words are still in flight: that IS a barge-in, and it is killed BEFORE the first
       // audible sample rather than after it.
-      // …ON THE TRANSCRIPT GATE'S EVIDENCE (R86 LC-1). The two flags are the server VAD's, and Silero is
-      // level-invariant — a TV or a next-room voice raises them as readily as the owner does, which is
-      // why the gate exists at all. So an utterance the EAR measured below `min_final_ms` is not a
-      // barge-in: the reply plays, and that segment's final meets the gate on its own arm. FAIL-OPEN
-      // exactly like the gate — no epoch-matched accrual (a reconnect, an unmeasured wiring) kills, as
-      // it always did. (Whether `barge_in: false` should also spare the owner's REAL speech here is an
-      // owner question, not this rule's.)
-      if ((s.userSpeechActive || s.waitingFinal) && !tooQuiet(sig)) {
+      // …ON THE TRANSCRIPT GATE'S EVIDENCE, FOR A CLOSED UTTERANCE ONLY (R86 LC-1, narrowed by R88 E-1).
+      // The two flags are the server VAD's, and Silero is level-invariant — a TV or a next-room voice
+      // raises them as readily as the owner does. So a segment that has STOPPED (`waitingFinal`, no
+      // speech live) and whose whole accrual sits below `min_final_ms` is noise, not a barge-in: the
+      // reply plays, and its final meets the gate on its own arm. An OPEN segment is killed exactly as
+      // before, whatever it has accrued so far: a partial accrual is not a verdict — 40 ms in may be the
+      // start of the owner's sentence — and sparing it on the default media/auto-hold path lets the hold
+      // close the ear on the rest of what they are saying. So continuous noise during `thinking` still
+      // kills (deferring the mouth until the segment is classifiable is the owner's open question, as is
+      // whether `barge_in: false` should spare REAL speech). FAIL-OPEN like the gate: no epoch-matched
+      // accrual (a reconnect, an unmeasured wiring) kills, as it always did.
+      const quietAndDone = !s.userSpeechActive && s.waitingFinal && tooQuiet(sig);
+      if ((s.userSpeechActive || s.waitingFinal) && !quietAndDone) {
         if (s.killing) return { state: open, out: [] };
         return killNow(open);
       }
@@ -1210,10 +1215,12 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // A BACKGROUNDED CALL NOBODY IS IN (S6 ④). A clean `ended`, like the session limit and unlike a
       // failure — the mic being hot for ten minutes in a pocket is not an error, it is the thing this
       // ends. The wiring only ever arms the clock while hidden, so reaching here means exactly that.
-      // …UNLESS THE REPLY IS STILL TALKING (R86 LC-6): a seamless chunked reply publishes no status
-      // edge between chunks, so a long answer can outlast a short window — and the knob's contract is
-      // "no speech AND no reply". A no-op here; the wiring re-arms on this very signal (`IDLE_EDGES`).
-      if (s.mouthLive) return { state: s, out: [] };
+      // …UNLESS SOMEONE IS STILL TALKING. The reply (R86 LC-6): a seamless chunked reply publishes no
+      // status edge between chunks, so a long answer can outlast a short window. The owner (R88 E-2):
+      // `speechStart` re-arms the clock once, but a sentence can outlast a short window, and a final can
+      // still be in flight — ending there loses the utterance. The knob's contract is "no speech AND no
+      // reply". A no-op here; the wiring re-arms on this very signal (`IDLE_EDGES`).
+      if (s.mouthLive || s.userSpeechActive || s.waitingFinal) return { state: s, out: [] };
       return terminal(s, "ended", CALL_COPY.idleBackground);
 
     case "failed":

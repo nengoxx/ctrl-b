@@ -30,11 +30,8 @@ const h = vi.hoisted(() => ({
         background: true,
         background_keepalive: true,
         background_idle_s: 600,
-        max_session_s: 600,
         // D74 — the transcript gate's floor, OFF unless a case arms it.
         min_final_ms: 0,
-        // The Silero threshold, delivered like its neighbours (Conf is its only door — D76 §D).
-        vad_threshold: 0.6,
         // D76 §C — the relative gate's six, as the backend ships them; the gate cases move them.
         floor_dbfs: -45,
         noise_margin_db: 10,
@@ -1280,25 +1277,39 @@ describe("useLiveCall — THE TRANSCRIPT GATE's epochs (D74 S5, evidence docs/re
     expect(view.result.current.note).toBeNull();
   });
 
-  it("the IRON RULE reads the same evidence: a quiet open segment does not kill the reply (R86 LC-1)", async () => {
+  it("the IRON RULE reads the same evidence: a quiet CLOSED segment does not kill the reply (R86 LC-1)", async () => {
     const { view, step } = await gated();
     await utterance("what's the weather", 0.2, 30);
     expect(texts()).toEqual(["what's the weather"]);
     await act(async () => {
-      h.frame?.({ type: "speech_started" }); // the TV, under the thinking pause
+      h.frame?.({ type: "speech_started" }); // the TV, under the thinking pause…
       mic(0.001, 10);
+      h.frame?.({ type: "speech_stopped" }); // …and it stopped: its final is pending
     });
     await step(() => setPlay("playing"));
     expect(h.dismiss).not.toHaveBeenCalled();
     expect(view.result.current.phase).toBe("speaking");
   });
 
-  it("…and an open segment the ear DID hear still kills it — the owner, mid-word", async () => {
+  it("…and a closed segment the ear DID hear still kills it — the owner's words in flight", async () => {
     const { view, step } = await gated();
     await utterance("what's the weather", 0.2, 30);
     await act(async () => {
       h.frame?.({ type: "speech_started" });
       mic(0.2, 20);
+      h.frame?.({ type: "speech_stopped" });
+    });
+    await step(() => setPlay("playing"));
+    expect(h.dismiss).toHaveBeenCalled();
+    expect(view.result.current.phase).not.toBe("speaking");
+  });
+
+  it("…and an OPEN segment kills on a partial accrual — 40 ms is no verdict (R88 E-1)", async () => {
+    const { view, step } = await gated();
+    await utterance("what's the weather", 0.2, 30);
+    await act(async () => {
+      h.frame?.({ type: "speech_started" }); // the owner, two frames into a sentence
+      mic(0.2, 2);
     });
     await step(() => setPlay("playing"));
     expect(h.dismiss).toHaveBeenCalled();
@@ -2051,6 +2062,33 @@ describe("useLiveCall — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R7
       });
       expect(view.result.current.phase).toBe("ended");
       expect(view.result.current.note).toBe(CALL_COPY.idleBackground);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("④ …nor while the OWNER is still talking into a short window (R88 E-2)", async () => {
+    vi.useFakeTimers();
+    try {
+      h.voice.data.live_call.background_idle_s = 10;
+      const { view } = await call();
+      await act(async () => {
+        visibility("hidden");
+        h.frame?.({ type: "speech_started" }); // one long sentence into the pocket
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(25_000);
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("listening"); // declined twice, still live
+      expect(vi.getTimerCount()).toBe(1); // …and re-armed each time
+      await act(async () => {
+        h.frame?.({ type: "speech_stopped" });
+        vi.advanceTimersByTime(25_000); // the final is still in the air
+        await Promise.resolve();
+      });
+      expect(view.result.current.phase).toBe("listening");
     } finally {
       vi.useRealTimers();
     }
