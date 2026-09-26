@@ -804,6 +804,20 @@ def test_the_book_report_names_the_macros_that_will_render_literally(home: Path)
         assert not any("does not render" in w for w in quiet["report"]["warnings"])
 
 
+def test_the_book_report_names_a_macro_used_as_a_key(home: Path) -> None:
+    """R89/E-3: keys go through the same limited renderer before the scan, so a primary `{{time}}`
+    (or a secondary `{{random:…}}`) key is scanned for as literal braces and the entry silently
+    never activates. The one report line covers keys too, and says what that costs there."""
+    book = {
+        "name": "Keyed",
+        "entries": [{"keys": ["{{time}}"], "secondary_keys": ["{{random:a,b}}"], "content": "c"}],
+    }
+    with make_client() as c:
+        warnings = import_book_ok(c, book)["report"]["warnings"]
+    (line,) = [w for w in warnings if "does not render" in w]
+    assert "never match as a key" in line and line.endswith("{{random}}, {{time}}")
+
+
 def test_the_ruled_logic_mapping_reports_its_approximation(home: Path) -> None:
     """`selectiveLogic: 3` is AND-ALL, which v1 has no equivalent for: it lands on AND-ANY WITH a
     line, because the entry now activates more readily than its author wrote."""

@@ -114,14 +114,21 @@ def unrendered(texts: Iterable[str]) -> list[str]:
     return sorted(names)
 
 
-def unrendered_note(texts: Iterable[str], where: str) -> list[str]:
+#: What an unrendered macro DOES, per surface: in prompt text the model reads it verbatim; in a
+#: lorebook KEY the scan looks for the literal braces, so the entry never activates on it.
+LITERAL_TEXT = "reach the model as literal text"
+LITERAL_TEXT_OR_KEY = "reach the model as literal text, or never match as a key"
+
+
+def unrendered_note(texts: Iterable[str], where: str, effect: str = LITERAL_TEXT) -> list[str]:
     """The ONE report line naming `unrendered(texts)` (nothing when there are none), worded once for
-    both importers. `where` says whose text it was ("the card's text", "the lorebook's entries")."""
+    both importers. `where` says whose text it was ("the card's text", "the lorebook's entries");
+    `effect` says what that costs there (a book's keys fail differently from its content)."""
     names = unrendered(texts)
     if not names:
         return []
     listed = ", ".join(f"{{{{{n}}}}}" for n in names)
-    return [f"macros in {where} that this build does not render reach the model as literal text: {listed}"]
+    return [f"macros in {where} that this build does not render {effect}: {listed}"]
 
 
 def _fold_case(text: str) -> str:

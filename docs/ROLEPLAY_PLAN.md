@@ -375,17 +375,33 @@ cards carry finished prose; framing the author didn't write is editorializing). 
 inside any of them behaves per §4.1's field-specific rule. Two golden imports pin it:
 description+personality only, and all three fields with `{{original}}`. **The WHOLE normalized
 card lands in `agents/<slug>/card.json`** — the field's own envelope, `{"spec":
-"chara_card_v2"|"chara_card_v3", "spec_version": <as declared, else the rung's>, "data": …}` (a
-V1 card is written as V2, ST's own upgrade; the R87 review's O-8), mapped fields,
-unknown fields, `extensions` and `character_book` alike, verbatim **after the strip pass** (§7) —
-the spec's preserve-unknowns MUST, and the as-imported restore point + export source. Written
+"chara_card_v2"|"chara_card_v3", "spec_version": <as declared, else the rung's>, <the envelope's
+own unknown keys>, "data": …}` (a V1 card is written as V2, ST's own upgrade; the R87 review's
+O-8), mapped fields, unknown fields, `extensions` and `character_book` alike, verbatim **after the
+strip pass** (§7) — the spec's preserve-unknowns MUST, and the as-imported restore point + export
+source. **Unknown ENVELOPE fields stay at the envelope level** (R89/E-4): a key that sat beside
+`data` (a vendor signature, ST's V1-mirror metadata) is kept beside `data`, never folded into it,
+so an export can return every field to the namespace it arrived in; a flat V1 card has no
+envelope, so all of it sits under `data`. Strip pointers address the uploaded file exactly
+(`/data/extensions/…` for a V2/V3 card field). Written
 0600 through the house atomic writer, in the same hop as the SOUL and the book, after the agent
 validates; nothing ever edits it. *(Amended 2026-09-26, R87/RP-8 + RP-13: it used to be a
 `card` stash inside `agent.yaml` holding only the UNMAPPED remainder — so once the owner edited
 a SOUL or a greeting the card's own values existed nowhere, SOUL's three fused fields could not
 be separated back out, and every embedded book was stored twice and re-parsed on every agents
-listing and turn. The report's `stashed_keys` now names the unmapped keys only `card.json`
-keeps.)* **Size caps (Emma F8):** one upload byte cap on the request body and one
+listing and turn.)* **The report says what was ACTED ON (R89/E-5):** `fields_mapped` lists a
+field only when it landed something (a present-but-blank field is not mapped), plus V3's
+`nickname` (→ the title), a CHARX `assets` icon that became the avatar and a `character_book`
+that became an attached book; `stashed_keys` lists everything else the card carried, card- and
+envelope-level alike — kept only in `card.json`. **A card that defines no persona at all**
+(no `system_prompt`/`description`/`personality` — e.g. only a first message) gets the registry's
+`card_blank_soul` (`You are {{char}}.`, token kept literal on disk, rendered at assembly) as its
+SOUL.md, never the baked assistant identity the ordinary new-agent scaffold lays down (R89/E-1).
+**Concurrent imports are serialized** (R89/E-2): one route-level lock per collection an import
+mints into (agents · lorebooks; a card import holds both, agents first), held across the whole
+read-names → mint → write hop — the `settings_write_lock` precedent — and held until the worker
+THREAD ends even when the request is cancelled (`_import_locked`: the section runs as its own
+shielded task, `CoreMemory._guarded`'s shape; the R89 confirm round's cancellation hole). **Size caps (Emma F8):** one upload byte cap on the request body and one
 decoded-card JSON cap, enforced for EVERY container (the existing cap+1/413 posture); CHARX
 additionally keeps its per-entry / asset-count / total-uncompressed limits. Name→slug: the agent-name
 grammar, collision-suffixed. Imported agents default `duties: conversational` (ruling 2 — cards
@@ -410,10 +426,12 @@ R66 §2.4) is a non-goal: extras stashed/ignored with a report line.
 
 ### 5.5 Tools
 
-The importer (and the editor's create flow when the owner picks conversational duties) writes
-`tools: roleplay.default_tools` **explicitly** — never the `"*"` default (R66 §4: no card
-format has a tools field; our default is the widest value, so relying on it would invert
-ruling 8). `privilege` stays CONFIRM.
+The importer writes `tools: roleplay.default_tools` **explicitly** — never the `"*"` default
+(R66 §4: no card format has a tools field; our default is the widest value, so relying on it
+would invert ruling 8). `privilege` stays CONFIRM. **The editor's create flow does NOT** — a
+hand-created agent starts on `tools: "*"` whatever duties it is given, and flipping duties later
+never touches tools. The original plan said it would; it was never built and is recorded as
+ISS-23 (R87/RP-10), not done.
 
 ## 6. The lorebook subsystem (roleplay-independent)
 
@@ -940,7 +958,10 @@ are in §13, which is where the detail lives.
   removed (RP-8/RP-13); card chunks stripped from the avatar PNG + `regex_scripts` denylisted
   (RP-4); ST's `extensions.*` read first for card books (RP-5); a Character's Note report line
   (RP-6); `{{original}}` = the configured system prompt, Duties always emitted (RP-1); case-
-  insensitive vocabulary + `{{// }}` comments + the unrendered-macros report line (RP-2/RP-3).)*
+  insensitive vocabulary + `{{// }}` comments + the unrendered-macros report line (RP-2/RP-3).
+  Then the R89 wave: a persona-less card gets `card_blank_soul` (E-1); route-level import locks
+  (E-2); book KEYS feed the macro line (E-3); envelope unknowns kept at the envelope level (E-4);
+  the report maps what was acted on (E-5).)*
 - **S3 ✅ — lorebooks (BE):** storage/CRUD + scan + render/budget + bindings + book import.
 - **S4 ✅ — the agents surface (FE + the summary API):** **the BE half first (Emma F12): extend
   `GET /agents` with a compact per-agent summary map — title · avatar · background · voice —

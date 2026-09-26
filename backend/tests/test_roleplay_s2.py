@@ -26,6 +26,7 @@ operator's real config.yaml.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import json
@@ -429,11 +430,12 @@ def test_an_imported_card_is_kept_post_strip(home: Path) -> None:
     kept = card_json(home, "nyx")["data"]
     assert kept["creator"] == "someone" and kept["tags"] == ["archivist"]
     assert kept["extensions"] == {"risuai": {"additionalAssets": [["a", "b", "c"]]}}
+    # Pointers address the spot in the UPLOADED file — a V3 card's fields sit under `/data` (R89/E-4).
     assert body["report"]["stripped_paths"] == [
-        "/extensions/risuai/customScripts",
-        "/extensions/regex_scripts",
+        "/data/extensions/risuai/customScripts",
+        "/data/extensions/regex_scripts",
     ]
-    # `stashed_keys` = the unmapped keys only `card.json` keeps; the envelope is not card data.
+    # `stashed_keys` = what was kept but not acted on; the spec envelope itself is not card data.
     assert body["report"]["stashed_keys"] == ["creator", "extensions", "tags"]
     assert "card" not in agent_yaml(home, "nyx") and "card" not in body["agent"]
 
@@ -519,6 +521,163 @@ def test_nan_and_infinity_are_refused_so_card_json_stays_strict(home: Path, cont
         r = put_card(c, body)
     assert r.status_code == 422 and "NaN" in r.json()["detail"], r.text
     assert not (home / "agents" / "nyx").exists()
+
+
+def test_a_cancelled_import_keeps_its_lock_until_the_worker_thread_ends() -> None:
+    """R89/E-2 confirm round: a request cancelled mid-import (a client disconnect) must not release the
+    import lock while its worker thread is still minting and writing — a thread cannot be stopped, so
+    `async with lock: await to_thread(…)` handed the lock to the next import mid-write. Asserted at the
+    helper both routes share: after the cancel the lock is STILL held, a second entrant WAITS, and only
+    when the worker ends does the lock free, the second run, and the cancellation surface."""
+    import threading
+
+    import app.api.agent as api
+
+    async def scenario() -> None:
+        lock = asyncio.Lock()
+        release, finished, ran = threading.Event(), threading.Event(), []
+
+        def slow_worker() -> str:
+            release.wait(5)
+            finished.set()
+            return "first"
+
+        first = asyncio.create_task(api._import_locked((lock,), slow_worker))
+        await asyncio.sleep(0.05)
+        assert lock.locked()
+        first.cancel()
+        await asyncio.sleep(0.05)
+        assert lock.locked() and not finished.is_set()  # the lock outlived the cancel
+
+        second = asyncio.create_task(api._import_locked((lock,), lambda: ran.append("second") or "second"))
+        await asyncio.sleep(0.05)
+        assert ran == []  # …so the second entrant is waiting, not writing beside the first
+
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        assert finished.is_set()
+        assert await second == "second" and ran == ["second"]
+        assert not lock.locked()
+
+    asyncio.run(scenario())
+
+
+def test_envelope_level_unknowns_stay_at_the_envelope_level(home: Path) -> None:
+    """R89/E-4: a key that sat BESIDE `data` (a vendor signature, a provenance id) is kept beside
+    `data` in `card.json`, never folded into it — a future export must be able to put it back where
+    it arrived. Card-level unknowns stay under `data`; both are reported as stashed."""
+    card = {
+        "spec": "chara_card_v3",
+        "spec_version": "3.0",
+        "vendor_signature": "sig",
+        "data": {"name": "Nyx", "description": "d", "source": ["hub"]},
+    }
+    with make_client() as c:
+        body = imported(c, json.dumps(card).encode("utf-8"))
+    kept = card_json(home, "nyx")
+    assert kept["vendor_signature"] == "sig" and "vendor_signature" not in kept["data"]
+    assert kept["data"]["source"] == ["hub"] and "source" not in kept
+    assert list(kept) == ["spec", "spec_version", "vendor_signature", "data"]
+    assert {"vendor_signature", "source"} <= set(body["report"]["stashed_keys"])
+
+
+def test_the_report_maps_what_was_acted_on(home: Path) -> None:
+    """R89/E-5: `fields_mapped` follows what the import DID. V3's `nickname` became the title, so it is
+    mapped, not stashed; a mapped field that is present but lands nothing (a blank description) is
+    not listed as mapped."""
+    card = v3(name="Nyx the Archivist", nickname="Nyx", description="   ", personality="Dry.")
+    with make_client() as c:
+        report = imported(c, json.dumps(card).encode("utf-8"))["report"]
+    assert "nickname" in report["fields_mapped"] and "nickname" not in report["stashed_keys"]
+    assert "description" not in report["fields_mapped"]
+    assert report["fields_mapped"][:2] == ["name", "personality"]
+
+
+def test_a_card_with_no_persona_gets_its_own_character_soul_not_the_assistant(home: Path) -> None:
+    """R89/E-1: a valid card that defines no persona (only a first message) used to get no SOUL at
+    all, so the scaffold laid the baked ctrl-b identity over it — the greeting opened as Echo and
+    every later turn said the speaker was the homelab assistant. It now gets the registry's
+    `card_blank_soul`, `{{char}}` kept literal on disk and rendered at assembly."""
+    from test_roleplay_s0 import _assemble, _make_thread, _systems, head
+
+    from app.services.agent.prompts import REGISTRY
+    from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
+
+    card = v2(name="Echo", description="", personality="", system_prompt="", first_mes="Hello.")
+    with make_client() as c:
+        imported(c, json.dumps(card).encode("utf-8"))
+        block = _systems(_assemble(c, _make_thread(c), "echo"))[0]
+    assert soul(home, "echo") == REGISTRY["card_blank_soul"].default == "You are {{char}}."
+    assert block == head("You are Echo.", "duties_conversational")
+    assert DEFAULT_SYSTEM_PROMPT not in block
+
+
+def _slow(real, delay: float = 0.3):
+    """`real`, then a pause — widens the read-names → mint → write window so two unserialized
+    imports would BOTH mint before either writes. With the route lock the second waits instead."""
+    import time
+
+    def wrapped(*args, **kwargs):
+        out = real(*args, **kwargs)
+        time.sleep(delay)
+        return out
+
+    return wrapped
+
+
+def _fresh_import_locks(monkeypatch, api) -> None:
+    """Per-test lock objects: a contended `asyncio.Lock` binds to the loop it first waited on, and
+    each TestClient runs its own loop — so the module's locks must not carry one test's binding into
+    the next. The route reads the module globals at call time, so this swaps what it holds."""
+    import asyncio
+
+    monkeypatch.setattr(api, "_agent_import_lock", asyncio.Lock())
+    monkeypatch.setattr(api, "_book_import_lock", asyncio.Lock())
+
+
+def test_two_concurrent_same_name_card_imports_mint_two_slugs(home: Path, monkeypatch) -> None:
+    """R89/E-2: minting is "read the taken names → pick a slug → write", run in a worker thread, so
+    two same-name imports at once (two tabs, a double tap) could both mint `nyx` and interleave their
+    files into one folder, both answering 201. Run TRULY concurrently here — two threads over one
+    TestClient, whose portal loop serves both requests at once — with the mint→write window widened
+    so the unserialized race is deterministic, not lucky."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    import app.api.agent as api
+
+    monkeypatch.setattr(api, "import_card", _slow(api.import_card))
+    _fresh_import_locks(monkeypatch, api)
+    bodies = [json.dumps(v2(name="Nyx", description=d)).encode("utf-8") for d in ("first", "second")]
+    with make_client() as c, ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda b: put_card(c, b), bodies))
+    assert [r.status_code for r in responses] == [201, 201], [r.text for r in responses]
+    assert sorted(r.json()["name"] for r in responses) == ["nyx", "nyx-2"]
+    for r in responses:
+        slug = r.json()["name"]
+        folder = home / "agents" / slug
+        assert {"agent.yaml", "SOUL.md", "card.json"} <= {f.name for f in folder.iterdir()}
+        # …and each folder is ONE card, not an interleaving of two.
+        assert soul(home, slug) == card_json(home, slug)["data"]["description"]
+
+
+def test_two_concurrent_same_name_book_imports_mint_two_slugs(home: Path, monkeypatch) -> None:
+    """The book half of R89/E-2 — the same check-then-write, the same lock pattern. The pause sits
+    right AFTER the route mints the book's slug (and before it writes the file): that is the window
+    two unserialized imports would both land in with the same slug."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    import app.api.agent as api
+
+    monkeypatch.setattr(api, "mint_slug", _slow(api.mint_slug))
+    _fresh_import_locks(monkeypatch, api)
+    books = [{"name": "Tides", "entries": [{"keys": ["k"], "content": c}]} for c in ("first", "second")]
+    with make_client() as c, ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(
+            pool.map(lambda b: c.put("/api/lorebooks/import", content=json.dumps(b).encode()), books)
+        )
+    assert [r.status_code for r in responses] == [201, 201], [r.text for r in responses]
+    assert sorted(r.json()["slug"] for r in responses) == ["tides", "tides-2"]
 
 
 def test_a_refused_card_writes_no_card_json(home: Path) -> None:
@@ -669,6 +828,7 @@ def test_the_full_mapping_lands_on_the_agent(home: Path) -> None:
         "mes_example",
         "scenario",
         "post_history_instructions",
+        "character_book",  # acted on: it became an attached book (R89/E-5)
     ]
 
 
@@ -822,8 +982,8 @@ def test_the_served_avatar_carries_no_card(home: Path) -> None:
     with make_client() as c:
         result = imported(c, body)
         assert result["report"]["stripped_paths"] == [
-            "/extensions/risuai/customScripts",
-            "/extensions/risuai/lowLevelAccess",
+            "/data/extensions/risuai/customScripts",
+            "/data/extensions/risuai/lowLevelAccess",
         ]
         served = c.get("/api/media/agents/files/avatars/nyx.png")
     assert served.status_code == 200
@@ -892,6 +1052,9 @@ def test_a_charx_icon_asset_becomes_the_avatar_under_its_own_extension(home: Pat
     assert payload["agent"]["avatar"] == "nyx.jpg"
     assert avatars(home) == ["nyx.jpg"]
     assert any("further card asset" in w for w in payload["report"]["warnings"])
+    # The icon was ACTED ON — it is the avatar — so `assets` is reported mapped (R89/E-5).
+    assert "assets" in payload["report"]["fields_mapped"]
+    assert "assets" not in payload["report"]["stashed_keys"]
 
 
 def test_a_broken_image_degrades_to_a_warning_and_the_import_still_succeeds(home: Path) -> None:

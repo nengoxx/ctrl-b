@@ -14,12 +14,13 @@ response is a subscriber, with re-attach/status/cancel at `/api/agent/turns/*` (
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import shutil
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
@@ -72,6 +73,7 @@ from app.services.agent.lorebooks import (
     save_book,
 )
 from app.services.agent.planning import TaskPlanInput
+from app.services.agent.prompts import resolve
 from app.services.agent.proposals import apply_proposal
 from app.services.agent.routing import prune_routing_state, routing_state_for
 from app.services.agent.selector import select_agent
@@ -1785,6 +1787,53 @@ async def _import_body(request: Request, *, cap: int, what: str, setting: str) -
     return bytes(body)
 
 
+#: The import CRITICAL SECTIONS (R89/E-2), one lock per collection an import mints into — the
+#: `settings_write_lock` precedent. Minting is "read the taken names → pick a free slug → write", and
+#: the writes run in a worker thread, so two imports of the same name (two tabs, a double tap) could
+#: both mint `nyx` and interleave SOUL.md / card.json / agent.yaml into one folder, both answering
+#: 201. Each route runs its whole worker under its lock(s) through `_import_locked`, which makes the
+#: sequence one section. A card import mints into BOTH collections (the agent and its embedded book),
+#: so it takes both, always agents-then-books; a book import takes only the book lock — one order, no
+#: deadlock. Imports are rare owner actions, so serializing them costs nothing anyone can feel.
+_agent_import_lock = asyncio.Lock()
+_book_import_lock = asyncio.Lock()
+
+
+async def _import_locked(
+    locks: tuple[asyncio.Lock, ...], worker: Callable[..., Any], /, *args: Any, **kwargs: Any
+) -> Any:
+    """`worker(*args, **kwargs)` in a thread with every lock in `locks` held until the THREAD ends —
+    even when the request awaiting it is cancelled (a client disconnect).
+
+    `async with lock: await asyncio.to_thread(...)` is not that: cancelling the awaiting coroutine
+    unwinds the `async with` and RELEASES the lock while the worker keeps minting and writing (a
+    Python thread cannot be interrupted), so a second import walks in mid-write — the exact race the
+    locks exist to close (R89/E-2 confirm round). So the WHOLE section — acquire, thread, release — is
+    its own task that the caller only ever `shield`s; nothing outside can cancel it, so the lock is
+    released only when the worker is done. This is `CoreMemory._guarded`'s shape (the same class of
+    cancel, one subsystem over). On a cancel the caller then WAITS for that task before letting the
+    cancellation propagate: the honest answer, since the work cannot be stopped, and it keeps a strong
+    reference so the task is never left detached. `asyncio.wait` rather than a second `await task`,
+    because awaiting a task directly forwards a further cancel INTO it; a second cancel during this
+    wait is accepted — it propagates at once, and the task still holds the locks until its thread
+    ends."""
+
+    async def _section() -> Any:
+        async with contextlib.AsyncExitStack() as held:
+            for lock in locks:
+                await held.enter_async_context(lock)
+            return await asyncio.to_thread(worker, *args, **kwargs)
+
+    task = asyncio.ensure_future(_section())
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await asyncio.wait({task})
+        if not task.cancelled():
+            task.exception()  # retrieved: the cancellation wins, and a failure never logs as unretrieved
+        raise
+
+
 # THE DECLARATION ORDER BELOW IS LOAD-BEARING (R73, reproduced): `/agents/import` must be registered
 # BEFORE `PUT /agents/{name}`, or the parametrized sibling matches first and an import is answered as
 # an agent write named "import" — a 422 about a missing body, never this handler. FastAPI matches in
@@ -1830,7 +1879,13 @@ async def import_agent(request: Request) -> dict[str, Any]:
     )
     health = getattr(request.app.state, "media_health", {}).get(AVATAR_NS)
     try:
-        payload = await asyncio.to_thread(_import_agent_card, s, body, avatars_ok=health is None or health.ok)
+        payload = await _import_locked(
+            (_agent_import_lock, _book_import_lock),
+            _import_agent_card,
+            s,
+            body,
+            avatars_ok=health is None or health.ok,
+        )
     except CardImportError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
     except RecursionError:
@@ -1883,16 +1938,21 @@ async def put_agent(name: str, body: AgentBody, request: Request) -> dict[str, A
 AVATAR_NS, AVATAR_ROLE = "agents", "avatars"
 
 
-def _import_report(card: ImportedCard, warnings: list[str]) -> dict[str, Any]:
+def _import_report(card: ImportedCard, warnings: list[str], landed: list[str]) -> dict[str, Any]:
     """What the import DID, for the owner to read (§5.1/§7).
+
+    `fields_mapped` is what was ACTED ON (R89/E-5): the importer's own list (a field that landed,
+    V3's `nickname` as the title) plus `landed` — the card keys only this route can vouch for, a
+    CHARX `assets` icon that became the avatar and a `character_book` that became an attached book.
+    `stashed_keys` is everything else the card carried, kept only in `card.json`.
 
     `post_history` rides verbatim on purpose: it is the highest-leverage text a card can inject —
     it lands closest to generation, after the whole history — so the one place it must not be
     invisible is the report of the import that accepted it."""
     return {
         "container": card.container,
-        "fields_mapped": card.mapped,
-        "stashed_keys": card.stashed,  # the unmapped keys only `card.json` keeps (R87/RP-8)
+        "fields_mapped": [*card.mapped, *landed],
+        "stashed_keys": [k for k in card.stashed if k not in landed],  # kept only in `card.json`
         "stripped_paths": card.stripped,
         "warnings": warnings,
         "post_history": card.post_history,
@@ -1960,7 +2020,10 @@ def _import_agent_card(s: Settings, body: bytes, *, avatars_ok: bool) -> dict[st
     # `\uXXXX` escape exactly, where `ensure_ascii=False` raised mid-hop and left a half-agent.
     card_json = json.dumps(card.card_json, indent=2) + "\n"
     folder = s.agents_dir_path() / card.slug
-    _write_soul(folder, card.soul, require_folder=False)
+    # A card that defines no persona at all (only a greeting, say) still gets a SOUL of its own —
+    # the registry's `card_blank_soul`, `{{char}}` kept literal for the assembly-time macro pass —
+    # so the scaffold below never lays the baked assistant identity over a character (R89/E-1).
+    _write_soul(folder, card.soul or resolve("card_blank_soul", s), require_folder=False)
     atomic_write_text(folder / "card.json", card_json)
     if book is not None:
         slug, imported = book
@@ -1976,7 +2039,17 @@ def _import_agent_card(s: Settings, body: bytes, *, avatars_ok: bool) -> dict[st
             )
             warnings += imported.warnings
     payload = _scaffold_agent(s, card.slug, folder, fields, DEFAULT_SYSTEM_PROMPT)
-    return {**payload, "report": _import_report(card, warnings)}
+    # A CHARX avatar can only have come from the card's `assets` icon (a PNG card's avatar is the
+    # PNG itself); a book counts once its file is written and attached.
+    landed = [
+        k
+        for k, done in (
+            ("assets", card.container == "charx" and "avatar" in fields),
+            ("character_book", "lorebooks" in fields),
+        )
+        if done
+    ]
+    return {**payload, "report": _import_report(card, warnings, landed)}
 
 
 def _character_book(s: Settings, card: ImportedCard, warnings: list[str]) -> tuple[str, ImportedBook] | None:
@@ -2139,7 +2212,7 @@ async def import_lorebook(request: Request) -> dict[str, Any]:
         setting="lorebooks.max_import_bytes",
     )
     try:
-        return await asyncio.to_thread(_import_lorebook, s, body)
+        return await _import_locked((_book_import_lock,), _import_lorebook, s, body)
     except CardImportError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
     except RecursionError:

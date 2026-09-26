@@ -445,12 +445,17 @@ CARD_SPECS = {"chara_card_v2": ("v2", "2.0"), "chara_card_v3": ("v3", "3.0")}
 @dataclass(frozen=True)
 class Normalized:
     """One card after the ladder: WHICH rung matched (`v1`/`v2`/`v3` — V3 alone changes how the name
-    is read, §5.3), the field map, the top-level keys that are not part of it, and the notes the
-    ladder wants the import report to show."""
+    is read, §5.3), the field map, the ENVELOPE's own unknown keys, and the notes the ladder wants the
+    import report to show.
+
+    The two maps stay apart because they live in different places (R89/E-4): `fields` is the card
+    (a V2/V3 `data` object, or the whole flat V1 object) and `envelope` is what sat BESIDE `data` —
+    a vendor signature, ST's V1-mirror metadata. `card.json` puts each back where it arrived, so a
+    future export can return a field to the namespace it came from. Always empty for V1."""
 
     spec: str
     fields: dict[str, Any]
-    extras: dict[str, Any]
+    envelope: dict[str, Any]
     notes: list[str] = field(default_factory=list)
     #: The `spec_version` the card DECLARED, verbatim ("" when it declared none — always, for V1).
     version: str = ""
@@ -485,8 +490,8 @@ def normalize(raw: dict[str, Any]) -> Normalized:
             if not version or version == expected
             else [f"the card declares {spec} version {version!r}; it was read as {expected}"]
         )
-        extras = {k: v for k, v in raw.items() if k not in _ENVELOPE and k not in MAPPED_FIELDS}
-        return Normalized(kind, data, extras, notes, version)
+        envelope = {k: v for k, v in raw.items() if k not in _ENVELOPE and k not in MAPPED_FIELDS}
+        return Normalized(kind, data, envelope, notes, version)
     if not any(_text(raw.get(k)).strip() for k in _V1_BODY):
         raise CardImportError(
             422,
@@ -523,9 +528,11 @@ SCRIPT_KEYS = frozenset(
 )
 
 
-def strip_executable(tree: Any) -> tuple[Any, list[str]]:
+def strip_executable(tree: Any, root: str = "") -> tuple[Any, list[str]]:
     """`(cleaned, removed_paths)` — `tree` with every denylisted key removed at any depth, and the
-    exact paths that were removed, as JSON POINTERs (RFC 6901), for the import report.
+    exact paths that were removed, as JSON POINTERs (RFC 6901), for the import report. `root` is the
+    pointer of `tree` itself inside the document the owner uploaded (`/data` for a V2/V3 card's
+    fields), so every reported path addresses the exact spot in that file.
 
     A pointer rather than a dotted path because a card's keys are arbitrary strings: `a.b` is two
     different removals depending on where the dot came from, and inventing an escape grammar for
@@ -536,7 +543,7 @@ def strip_executable(tree: Any) -> tuple[Any, list[str]]:
     implementation for the other direction is how the two drift. Inert unknown extension data
     survives untouched (P4): this removes code, not foreignness."""
     removed: list[str] = []
-    return _strip(tree, "", removed), removed
+    return _strip(tree, root, removed), removed
 
 
 def _strip(node: Any, path: str, removed: list[str]) -> Any:
@@ -616,9 +623,10 @@ class ImportedCard:
     soul: str
     fields: dict[str, Any]
     #: `agents/<slug>/card.json` — the field's own envelope, `{"spec": "chara_card_v2"|"chara_card_v3",
-    #: "spec_version", "data": the whole normalized card}`, post-strip: the as-imported restore point
-    #: and export source (R87/RP-8). A V1 card is written as the V2 envelope (ST's own upgrade), and
-    #: `spec_version` is what the card declared, else its rung's version.
+    #: "spec_version", <envelope unknowns>, "data": the whole normalized card}`, post-strip: the
+    #: as-imported restore point and export source (R87/RP-8). A V1 card is written as the V2 envelope
+    #: (ST's own upgrade), `spec_version` is what the card declared, else its rung's version, and a
+    #: key that sat beside `data` stays beside it (R89/E-4).
     card_json: dict[str, Any]
     image: bytes | None
     post_history: str
@@ -641,10 +649,12 @@ def import_card(
     # The WHOLE normalized card, post-strip — mapped fields included (R87/RP-8): the stash used to
     # hold only the unmapped remainder, so once the owner edited a SOUL or a greeting the card's own
     # values existed nowhere, and SOUL fuses three fields that cannot be separated back out. The
-    # top-level extras (ST's non-mirror keys beside `data`) ride in the same object the old stash
-    # merged them into, `data` winning a collision. Everything below maps from THIS object, so what
-    # lands in the agent and what `card.json` keeps are one post-strip reading.
-    fields_map, stripped = strip_executable({**card.extras, **card.fields})
+    # card and its envelope are stripped APART and kept apart (R89/E-4), each pointer rooted where
+    # its key sits in the upload (`/data/…` for a V2/V3 card field). Everything below maps from the
+    # card, so what lands in the agent and what `card.json` keeps are one post-strip reading.
+    envelope, stripped = strip_executable(card.envelope)
+    fields_map, stripped_fields = strip_executable(card.fields, root="" if card.spec == "v1" else "/data")
+    stripped += stripped_fields
 
     greeting = _text(fields_map.get("first_mes"))
     example_dialogue = _text(fields_map.get("mes_example"))
@@ -661,6 +671,7 @@ def import_card(
     # from `name` (the folder is an identifier, not a display), and the nickname stays in `card.json`
     # verbatim: what the card said is provenance the export seam needs.
     nickname = _text(fields_map.get("nickname")).strip() if card.spec == "v3" else ""
+    acted = [k for k in MAPPED_FIELDS if _landed(k, fields_map.get(k))] + (["nickname"] if nickname else [])
     if nickname:
         fields["title"] = nickname
     elif name and name != slug:
@@ -700,24 +711,40 @@ def import_card(
         name=name,
         soul=compose_soul(fields_map),
         fields=fields,
-        card_json=_envelope(card, fields_map),
+        card_json=_envelope(card, envelope, fields_map),
         # The ONLY image the caller gets is the card-free one (R87/RP-4): `card.json` is now the one
         # kept copy of the card, and it is the post-strip one.
         image=None if container.image is None else strip_card_chunks(container.image),
         post_history=post_history,
-        mapped=[k for k in MAPPED_FIELDS if fields_map.get(k)],
-        stashed=sorted(k for k in fields_map if k not in MAPPED_FIELDS),
+        mapped=acted,
+        # Everything present that was not acted on: the card's own keys and the envelope's alike (the
+        # route moves a key it DID act on — a chosen `assets` icon, a landed `character_book` — over
+        # to `mapped` when it builds the report, since only it knows whether they landed).
+        stashed=sorted({*(k for k in fields_map if k not in acted), *envelope}),
         stripped=stripped,
         warnings=warnings,
     )
 
 
-def _envelope(card: Normalized, data: dict[str, Any]) -> dict[str, Any]:
+def _envelope(card: Normalized, extras: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
     """`card.json`'s shape: the spec's own `{spec, spec_version, data}` envelope around the
-    normalized card, so the file is a card any reader in the field could open. V1 has no envelope
-    of its own and is written as V2 — ST's own upgrade of it."""
+    normalized card, so the file is a card any reader in the field could open — with the envelope's
+    own unknown keys back at the ENVELOPE level where they arrived (R89/E-4), never folded into
+    `data`. V1 has no envelope of its own and is written as V2 — ST's own upgrade of it."""
     spec = {kind: name for name, (kind, _) in CARD_SPECS.items()}.get(card.spec, "chara_card_v2")
-    return {"spec": spec, "spec_version": card.version or CARD_SPECS[spec][1], "data": data}
+    return {"spec": spec, "spec_version": card.version or CARD_SPECS[spec][1], **extras, "data": data}
+
+
+def _landed(key: str, value: Any) -> bool:
+    """Did this mapped field actually PUT something into the agent? The report's `mapped` list
+    follows what was acted on (R89/E-5), not the raw value's truthiness: a `"  "` description lands
+    nothing, while a numeric `0` greeting is coerced into live text by `_text` and does land. The
+    name always lands — it is what the agent is minted from."""
+    if key == "name":
+        return True
+    if key == "alternate_greetings":
+        return bool(_string_list(value))
+    return bool(_text(value).strip())
 
 
 def _depth_prompt_note(fields: dict[str, Any]) -> list[str]:

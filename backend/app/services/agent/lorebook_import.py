@@ -43,7 +43,7 @@ from typing import Any
 
 from app.services.agent.card_import import CardImportError, _string_list, _text
 from app.services.agent.lorebooks import Lorebook, LorebookEntry
-from app.services.agent.macros import unrendered_note
+from app.services.agent.macros import LITERAL_TEXT_OR_KEY, unrendered_note
 
 #: The V3 standalone-book discriminator, exactly (the `spec` field says what these bytes ARE — a
 #: value we do not know names a format we cannot claim to have read, `card_import.normalize`'s rule).
@@ -142,7 +142,10 @@ def import_book(raw: Any, *, default_name: str = "") -> ImportedBook:
     }
     extras = {k: v for k, v in body.items() if k not in book_read}
     book = Lorebook.model_validate({**extras, **fields})
-    warnings += unrendered_note((e.content for e in entries), "the lorebook's entries")
+    # Keys too (R89/E-3): both key lists pass through the same macro renderer before the scan,
+    # so a literal `{{time}}` key is an entry that silently never activates.
+    texts = (t for e in entries for t in (*e.keys, *e.secondary_keys, e.content))
+    warnings += unrendered_note(texts, "the lorebook's entries", LITERAL_TEXT_OR_KEY)
     return ImportedBook(
         book=book,
         mapped=sorted({k for k in book_read if k in body} | {k for k in entry_read if _seen(items, k)}),

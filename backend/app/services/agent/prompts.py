@@ -672,6 +672,19 @@ REGISTRY: dict[str, PromptDef] = {
             "convention, R65 §9)."
         ),
     ),
+    # R89/E-1 — APPENDED (a later addition never jumps the registry queue).
+    "card_blank_soul": PromptDef(
+        group="voice & duties",
+        default="You are {{char}}.",
+        description=(
+            "The SOUL.md a character-card import writes when the card defines no persona at all "
+            "(no system prompt, description or personality — e.g. a card that sets only a first "
+            "message). Written ONCE, at import, with `{{char}}` kept as the literal token: the "
+            "macro pass renders it at every turn, so it follows the agent's display name. Without "
+            "it such a character would fall through to the baked assistant identity. Editing this "
+            "changes future imports only — an imported SOUL.md is the owner's file from then on."
+        ),
+    ),
 }
 
 
