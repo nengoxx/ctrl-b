@@ -13,12 +13,14 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-09-27 night — **PROD = v1.7.9 UNTIL THE SESSION-50 RELEASE LANE LANDS v1.7.10 (verify below). The owner's vault backlog (8 items) is BUILT on top of Phase 24 S10 (the car round, `75e0014` · `c59157a`); BUG-001 · LIVE-001 · RP-001 · STYLE-001 · COMPOSER-001 + D81's backend two-reviewer-closed, D81's frontend (CHAT-001/002/003) two-reviewer round CLOSED too; all five lanes committed. The owner's prod card is next**)
+## Where we are (2026-09-27 night — **PROD = v1.7.10 LIVE @ `9c5a6c6` (released 2026-09-27 evening by the runbook; session 50 CLOSED). The owner's vault backlog (8 items) is BUILT on top of Phase 24 S10 (the car round, `75e0014` · `c59157a`); BUG-001 · LIVE-001 · RP-001 · STYLE-001 · COMPOSER-001 + D81's backend two-reviewer-closed, D81's frontend (CHAT-001/002/003) two-reviewer round CLOSED too; all five lanes committed + released. The owner's prod card is next; the S10 car card is deferred**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): at writing time
-  tag `v1.7.9` on `9096ea4` (released 2026-09-26 22:24Z; code = `3d27b09`), config shape **5**, DB schema 6.
-  **The release lane is running/next** (the owner authorized push + v1.7.10 in this session, ≈ 21:30):
-  push `main` → CI green → `deploy/linux/README.md` §Release → `v1.7.10`. **Verify, don't assume:**
+  tag **`v1.7.10` on `9c5a6c6` — LIVE** (released 2026-09-27 evening ≈ 18:14Z per `deploy/linux/README.md`
+  §Release; main CI run `36338504068` green, release-gate run `36339122301` green; `update.sh v1.7.10` exit 0).
+  Health **1.7.10**, DB schema **7** (install snapshot `~/.ctrl-b/backups/ctrlb-20260927-201410.db.gz`; manual
+  pre-release snapshot `ctrlb-manual-pre-v1.7.10-20260927T181348Z.db.gz`), config shape **5** unchanged (no
+  migration). Speaches fork `fd4b956` live. **Verify, don't assume:**
   `git -C ~/apps/ctrl-b describe --tags --exact-match` + `curl -s localhost:5433/api/health` (version).
   Prod's `voice.live` block (secret-free keys) = `{dictation: true, mic_hold: on, debug: true}` — the
   owner's own flips; every other knob defaults. So **Live dictation is ON** and every call AND every
@@ -49,8 +51,7 @@
 - **Workspace `main`:** at session start 8 commits ahead of `origin/main` (`a517da9` · `d231f00` ·
   `e914329` · `75e0014` · `c59157a` · `cdf7262` · `69b8cc7` · `18dd75f`), plus session 50's commits from
   the commit lane (V1 `b4eb035` · V2 `f739c3a` · C `a2f8cc5` · D81 `a0d8e8c` · the QUALITY counts + this
-  handoff — `git log`). The release lane
-  pushes them all. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
+  handoff — `git log`). **All pushed** — `main` = `origin/main` (0 ahead) at `9c5a6c6`, tag `v1.7.10`. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
 
 ## ▶▶ NEXT SESSION — THE OWNER'S PROD CARD on v1.7.10 (the vault backlog), then the deferred S10 car card
@@ -69,7 +70,7 @@ continue verbatim. Status: **V1 · V2 · C · B-BE CONFIRMED SHIP; B-FE built, t
 (both lenses converged on two store-only findings — a ghost copy of the owner's bubble after an accepted
 send whose end-of-turn read was missed, and a stale client error bubble kept past a good retry; two fix
 waves + confirms closed it before the D81 commit). Then the commit lane (four scoped feature commits +
-QUALITY counts + this handoff) → the release lane (push → v1.7.10). **The car card is DEFERRED to the
+QUALITY counts + this handoff) → the release lane (push → v1.7.10 — **LANDED: v1.7.10 LIVE on prod**). **The car card is DEFERRED to the
 next session** (owner, ≈ 21:30: usage reset; test on PROD, the daily surface).
 
 **What was built:**
@@ -185,7 +186,7 @@ prod's `mic_hold` is `on` (your flip), not `auto` — item 1's "`auto`" means wh
 10. Optional readouts: Conf › Voice · Live › "Call debug readout" is ON on dev — the overlay's `tail`
     and `chirp` lines show the live numbers.
 
-**The release facts (v1.7.10):** carries S10 + wave 1.5 + ISS-31/32 + session 50's six builds · **DB
+**The release facts (v1.7.10 — RELEASED, LIVE on prod @ `9c5a6c6`):** carries S10 + wave 1.5 + ISS-31/32 + session 50's six builds · **DB
 schema 6 → 7** (migration 7 = the `message_alternates` table + two indexes, additive) — **rollback by tag
 is safe: `update.sh v1.7.9`** · **NO config migration** (shape stays 5; the new knobs `release_tail_ms` /
 `prefix_padding_ms` default in) · the Speaches fork `fd4b956` is ALREADY live (nothing to deploy for it)
@@ -218,7 +219,7 @@ follows the reply · an in-flight synth cannot re-cache pre-edit audio · a gap 
 wording · an accessible name on `n/N` · the new 11 px buttons join the e2e contrast matrix.
 
 **Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units RUNNING (the owner: keep them up). **Prod**: v1.7.10
-once the release lane is green — verify with `git -C ~/apps/ctrl-b describe --tags --exact-match`.
+LIVE @ `9c5a6c6` (released 2026-09-27 evening; rollback = plain `update.sh v1.7.9`) — verify with `git -C ~/apps/ctrl-b describe --tags --exact-match`.
 
 ## ▶▶ NEXT SESSIONS — the roadmap
 
