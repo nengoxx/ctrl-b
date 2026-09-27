@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-09-26 — **v1.7.9 IS LIVE IN PRODUCTION**)
+## Where we are (2026-09-27 — **v1.7.9 IS LIVE IN PRODUCTION; the CAR ROUND is in the owner's court**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): tag
   `v1.7.9` on `9096ea4` (released 2026-09-26 22:24Z by the runbook; code = `3d27b09`, the S9 export
@@ -42,30 +42,60 @@
 - **Nothing owed on the release path.** Workspace `main` == `origin/main` (this handoff commit aside). The full session history is in
   [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the HANDOFF block of ⟨date⟩ / the Nth session" resolves there).
 
-## ▶▶ NEXT SESSION — the owner's v1.7.9 PROD ROUND (nothing for the main seat until a verdict comes back)
+## ▶▶ NEXT SESSION — THE OWNER'S COURT on the CAR ROUND (D80 PROPOSED), then the build
 
-**The 47th session (2026-09-26 night) — what happened:** the clean-session release, exactly per the
-runbook, by a pinned-Opus release lane: annotated `v1.7.9` on `9096ea4` → tag push (local gate 6/6,
-pytest 231 s) → CI release gate run **36268764559** green → `update.sh v1.7.9` (migration: not needed,
-DB snapshot taken, health gate OK) → `describe` v1.7.9 · health 1.7.9 · `icon-192.png` = image/png ·
-unit active. Main-seat re-verified, plus both export routes 200 on prod. Deviations: none of substance
-(the `gh run watch` hit the 10-min tool timeout once while the run was still going — re-checked and
-re-watched green before re-pinning; `update.sh` prints npm/Vite chunk warnings, non-fatal).
-Rollback = `update.sh v1.7.8`, no config restore.
+**The 48th session (2026-09-27 morning) — what happened:** the owner's first PROD calls (v1.7.9,
+Lynette, the car over an old Bluetooth link) came back with six findings; all six were ROOT-CAUSED at
+source from the D77 trail + the chat log, and the live-call three were designed as **D80 PROPOSED**
+(design of record = the **CAR ROUND** block in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7 — read
+it whole; `DECISIONS.md` D80 = the proposed rulings; TODO Phase 24 S10). Council = a blind Opus 5.5
+audit ∥ a blind Maya audit on the same trail → research [R91](./research/R91-ear-reopen-latency-and-text-echo.md)
+(Opus) · [R92](./research/R92-live-call-noise-robustness.md) · [R93](./research/R93-echo-envelope-delay-estimation.md)
+(Maya, each with an **Opus 5.5 verification §V** — the owner's directive; both needed load-bearing
+corrections). Every brief, review and the session ledger (`DEBUG_PLAN.md` §A–§M) are durable in
+`~/.cache/tmp/ctrlb-session48/`. **NOTHING BUILT; docs committed, not pushed.** The nitpicks:
+[ISS-31](./ISSUES.md) (`/new` + the missing greeting = one root, seam ① unused) · ISS-32 (the ring).
 
-**Owner test card (phone, prod; reload the PWA and accept its update prompt first):**
-① Conf › Agents › Lynette → footer `export` → **PNG card** → import that PNG into SillyTavern (expect
-name Lynette, description + personality split, the `personality-traits` book embedded — unlink first
-to export without) · **JSON card** downloads `Lynette.json` · a dirty form shows "save first".
-② Conf › Roleplay › Lorebooks → `personality-traits` → `export` → import that JSON into ST as a
-world-info file (expect 40 entries, keys/positions intact). ③ the book row reads `used by Lynette`.
-④ Deleting a test character: the confirm says the memory folder goes and books/art stay; the toast
-names what was kept. ⑤ New character → flip duties to Talk → the tools list seeds from
-`roleplay.default_tools`. Then the standing prod rounds below (§1).
+**The one-paragraph diagnosis:** the hold works, but it is released on the ELEMENT's timeline while
+the car is still playing — the car's Bluetooth lags ≈ 2.3 s (measured from the drop cue's own echo;
+the owner: "a given I can't change") and the web CANNOT learn that number (Android's BT drivers
+discard delay reports ≥ 1 s). So the last sentence of every reply comes back as the owner's next turn,
+verbatim (×5 in the log). The echo is as loud as the owner, so no Sensitivity position can gate it
+(the "slider all the way up" was the LEAST-sensitive end and dropped the owner's own words). Two
+more doors: the transcript gate fails open on overlapping segments (the relay strips Speaches'
+`item_id`), and `auto`'s probe judged each chunk before the sound existed. The car noise: Silero
+flaps into ≤ 201 ms segments (every real one ≥ 2361 ms) and the drop cue's echo fed itself.
 
-**Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units were left RUNNING through the release (the gate
-passed under that contention); `voice.live.debug` ON; stop them when done poking
-(`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`).
+**⚖ THE COURT — answer these and the next session stamps D80 RULED and builds:**
+1. **The deaf-time trade.** The ear reopens on OBSERVED QUIET (noise floor + 10 dB for 700 ms, min
+   300 ms, cap 5 s) — ~0.7 s of deafness after each reply on headphones/loudspeaker, ~3–4 s in the
+   car until the chirp calibrates it (~2.6 s). An answer you start within 700 ms of the reply's TRUE
+   end loses those words (never happened in this call). Accept?
+2. **The text backstop.** A post-drain final that matches her spoken words (≥ 0.75, ≥ 10 chars) is
+   dropped VISIBLY — a genuine parrot inside ~4 s is lost. Accept?
+3. **The connect chirp.** A 150 ms 1→3 kHz sweep at every call start (measures the sink's lag;
+   logged in wave 1, drives the hold in wave 1.5). Audible — acceptable as the call's "connected"
+   sound?
+4. **`auto`.** Keep it as the D73 rule (held unless echo cancellation is on; the probe deleted; no
+   migration) — or delete it outright as you first suggested (a migration, and the call route loses
+   voice barge-in)? Main seat recommends KEEP-AS-D73.
+5. **The pin.** Clamp the Sensitivity pin to ≤ your learned voice − margin (it sat at −20 over your
+   −21 and dropped "See you later, baby"), or leave the range and accept the foot-gun?
+6. **Your car:** Android Auto or plain Bluetooth A2DP? Does it keep playing after the phone pauses
+   (a tap-interrupt)? (Both UNVERIFIED; they size the kill-tail.)
+7. **ISS-31 (`/new`):** mint the thread at `/new` through the existing `POST /api/threads {agent}`
+   (the greeting shows at once; a reload keeps it; a greeting-only thread makes `/new` a no-op)?
+8. **ISS-32 (the ring):** fixed at the CSS defaults (50% / 33%) regardless of focus — confirm.
+
+**Then (the next clean session):** stamp D80 · ONE pinned-Opus lane builds W1–W7 ∥ ONE lane for
+ISS-31/32 (disjoint files; briefs from the CAR ROUND block + DEBUG_PLAN §G–§M) → main-seat audit →
+the two-reviewer code round (blind Opus 5.5 ∥ Maya) → fix waves → gate → `npm run build` → dev units
+→ **your car card with Conf › Voice · Live › "Call debug readout" ON from the first second** (the trail
+decides: no echo turn · no real turn lost · `tail:` reasons · chirp lag ≈ measured) → v1.7.10.
+
+**Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units RUNNING (left from the release); stop when done
+(`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`). **Prod** untouched at v1.7.9;
+`voice.live.debug` is ON there (the owner flipped it) — leave it ON for the next car round.
 
 ## ▶▶ NEXT SESSIONS — the roadmap
 

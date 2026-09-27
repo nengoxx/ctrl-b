@@ -1724,6 +1724,7 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       noise verdict (`voice.live.noise_verdict_ms`, 1000) settles a quiet segment still sounding;
       `speechStop` raises the wait only after an accepted start. As-built: LIVE_VOICE_PLAN §7.
 
+- [ ] **S10 — THE CAR ROUND (D80 PROPOSED 2026-09-27, ⚖ OWNER-COURT; design = the CAR ROUND block in LIVE_VOICE_PLAN §7; evidence R91–R93 + the prod trail):** W1 the tail hold on observed quiet (every fall of the mouth, incl. tap-kill) · W2 the text self-echo backstop · W3 the `item_id` ledger (relay forwards it; per-segment frozen energy; per-id noise verdict; empty finals dropped) · W4 the relay gap cut (`< silence_ms/2`, silent) · W5 `auto` = the D73 rule, the probe deleted · W6 cue/note/learner/pin smalls + `outputLatency` logged · W7 the call-start chirp logged (wave 1.5 = it sets the hold). Then ISS-31 (`/new` mints via seam ①) + ISS-32 (the ring fixed) as a disjoint lane. Build ONLY after the owner's court in HANDOFF; then the two-reviewer code round → the owner's car card with `debug` ON → v1.7.10.
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.

@@ -11,6 +11,35 @@
 
 > *(Swept 2026-09-26 at the v1.7.9-release close — the 46th + 45th session blocks, verbatim; their 'Where we are' state was v1.7.8-live, identical to the 44th block below.)*
 
+> *(Swept 2026-09-27 at the CAR ROUND handoff — the 47th session block, verbatim; its state was v1.7.9-just-released.)*
+
+> ## The 47th session (2026-09-26 night) — from HANDOFF.md as of `a517da9`
+>
+> ## ▶▶ NEXT SESSION — the owner's v1.7.9 PROD ROUND (nothing for the main seat until a verdict comes back)
+>
+> **The 47th session (2026-09-26 night) — what happened:** the clean-session release, exactly per the
+> runbook, by a pinned-Opus release lane: annotated `v1.7.9` on `9096ea4` → tag push (local gate 6/6,
+> pytest 231 s) → CI release gate run **36268764559** green → `update.sh v1.7.9` (migration: not needed,
+> DB snapshot taken, health gate OK) → `describe` v1.7.9 · health 1.7.9 · `icon-192.png` = image/png ·
+> unit active. Main-seat re-verified, plus both export routes 200 on prod. Deviations: none of substance
+> (the `gh run watch` hit the 10-min tool timeout once while the run was still going — re-checked and
+> re-watched green before re-pinning; `update.sh` prints npm/Vite chunk warnings, non-fatal).
+> Rollback = `update.sh v1.7.8`, no config restore.
+>
+> **Owner test card (phone, prod; reload the PWA and accept its update prompt first):**
+> ① Conf › Agents › Lynette → footer `export` → **PNG card** → import that PNG into SillyTavern (expect
+> name Lynette, description + personality split, the `personality-traits` book embedded — unlink first
+> to export without) · **JSON card** downloads `Lynette.json` · a dirty form shows "save first".
+> ② Conf › Roleplay › Lorebooks → `personality-traits` → `export` → import that JSON into ST as a
+> world-info file (expect 40 entries, keys/positions intact). ③ the book row reads `used by Lynette`.
+> ④ Deleting a test character: the confirm says the memory folder goes and books/art stay; the toast
+> names what was kept. ⑤ New character → flip duties to Talk → the tools list seeds from
+> `roleplay.default_tools`. Then the standing prod rounds below (§1).
+>
+> **Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units were left RUNNING through the release (the gate
+> passed under that contention); `voice.live.debug` ON; stop them when done poking
+> (`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`).
+
 > ## The 46th session (2026-09-26 evening) — from HANDOFF.md as of `9096ea4`
 > ## ▶▶ NEXT SESSION — RELEASE v1.7.9 (the S9 wave is BUILT, council-closed, COMMITTED `3d27b09` + PUSHED; dev repaired; Lynette + the karpathy skill migrated to prod; owner: *"update in the clean session"*)
 >
