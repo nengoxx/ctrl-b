@@ -13,7 +13,9 @@ counter.
   controls `flush` and `stop`. The server-VAD knobs come from config alone (D76 §D). A debug call
   (D77) adds `call_id` (a canonical UUID) + `leg` (its reconnect ordinal) to `start` — both or
   neither, validated like `sample_rate` — and only then does the relay write its half of the CALL
-  TRAIL (`services/call_trail.py`, gated by `voice.live.debug`).
+  TRAIL (`services/call_trail.py`, gated by `voice.live.debug`). A streaming-dictation leg (S11) adds
+  `mode: "dictation"` (`"call"` is the absent default; anything else is a protocol close) — the one
+  thing the relay does differently for it is skip the gap cut below.
 * **Uplink (relay → Speaches):** `input_audio_buffer.append` with base64 pcm16 @ **24 kHz**, as TEXT
   frames — one binary frame kills the session (§7-S0 ②), which is why the plan's binary uplink stops
   at the relay and pays ~33 % base64 overhead on the loopback leg.
@@ -32,6 +34,10 @@ counter.
   transcript goes down EMPTY with a reason —
   `{"type":"transcript","text":"","final":true,"item_id":…,"reason":"short","gap_ms":…}` — which the
   phone disposes of like any empty final (no cue, no note, no hold). `short` is the only `reason` today.
+  The audio-clock veto judges the span NET of the pre-roll the ear ECHOED in `session.updated`
+  (`prefix_padding_ms`, S11 — the fork back-dates `audio_start_ms` by it; an unpatched ear echoes 0 and
+  the relay warns once; the relay's arrival clock is untouched). A DICTATION leg is never
+  cut (S11): a flap there carries real words into the composer, and there is no conversation to guard.
 
 **The four invariants worth naming**
 
@@ -127,6 +133,10 @@ FRAME_MS_TOLERANCE = 2.0
 #: other number this relay takes off the wire; a million legs is far past any real call.
 MAX_LEG = 1_000_000
 
+#: `start.mode`'s vocabulary (S11). Absent = `call`, the pre-S11 wire; `dictation` is the streaming mic,
+#: whose legs skip the D80 ④ gap cut.
+LIVE_MODES = ("call", "dictation")
+
 #: How many relay trail lines are buffered before one batch goes to disk (D77). Batched so the relay
 #: never pays a thread hop per downlink frame; `run()`'s `finally` flushes whatever is left.
 TRAIL_BATCH_LINES = 20
@@ -160,10 +170,16 @@ class _SegmentClock:
     started_at: float | None = None
     stopped_at: float | None = None
 
-    def audio_gap_ms(self) -> int | None:
+    def audio_gap_ms(self, pre_roll_ms: int) -> int | None:
+        """Speaches' audio span NET of the slice-start pre-roll (S11): the fork back-dates
+        `audio_start_ms` by `prefix_padding_ms`, clamped at its buffer's start, so a start above 0
+        carries the whole pre-roll and is judged without it. A start AT 0 may carry any part of it
+        (the clamp hides how much), and there nothing is subtracted — the span then reads long, which
+        errs toward the veto: a flap passes uncut rather than a real stop losing its words."""
         if self.audio_start_ms is None or self.audio_end_ms is None:
             return None
-        return self.audio_end_ms - self.audio_start_ms
+        pre_roll = pre_roll_ms if self.audio_start_ms > 0 else 0
+        return max(0, self.audio_end_ms - self.audio_start_ms - pre_roll)
 
     def relay_gap_ms(self) -> int | None:
         if self.started_at is None or self.stopped_at is None:
@@ -348,6 +364,8 @@ class LiveRelaySession:
         self._trail = trail
         self._call_id: str | None = None
         self._leg: int | None = None
+        #: Which feature this leg serves (`start.mode`, S11) — `call` unless the client said otherwise.
+        self._mode = "call"
         self._trail_lines: list[dict[str, Any]] = []
         self._trail_write = asyncio.Lock()
         self._trail_tasks: set[asyncio.Task[None]] = set()
@@ -378,6 +396,15 @@ class LiveRelaySession:
         #: such a count lose words, so the flush bursts a CONSTANT worst-case pad instead (see
         #: `_flush`) and the only state kept is this one bit: has this session ever fed audio.
         self._audio_seen = False
+        #: THE EFFECTIVE PRE-ROLL (S11 fix wave 1): what the ear SAID it applies — Speaches echoes the
+        #: whole session in `session.updated`, `turn_detection.prefix_padding_ms` included — never what
+        #: config asked for. 0 until an echo carries it: an unpatched ear rejects the field and echoes its
+        #: own 0, and netting out a pre-roll nobody applied would under-read every span and cut real short
+        #: answers. The gap cut's audio veto nets out THIS (`_gap_cut`).
+        self._pre_roll_ms: int = 0
+        #: One WARNING per session when the ear's pre-roll is not the configured one (see
+        #: `_note_pre_roll_mismatch`) — the loud signal for a Speaches without the fork patch.
+        self._pre_roll_warned = False
         #: THE GAP CUT's clocks (D80 ④), one per VAD segment by its `item_id`, from its start until its
         #: transcript consumes it; insertion-ordered, bounded by `SEGMENT_LEDGER_CAP` (oldest evicted).
         self._segments: OrderedDict[str, _SegmentClock] = OrderedDict()
@@ -386,9 +413,6 @@ class LiveRelaySession:
         #: `(monotonic timestamp, ms of audio)` for the recent client binary frames — the rolling
         #: rate ceiling's two budgets read the same deque.
         self._recent_frames: deque[tuple[float, float]] = deque()
-        #: Latched after `session.update` so the ONE unavoidable spurious `prefix_padding_ms` error
-        #: event is swallowed and every other upstream error still forwards (§7-S0 ②).
-        self._swallow_pad_error = False
 
     # ── public entry ──────────────────────────────────────────────────────────────────────────────
 
@@ -447,12 +471,13 @@ class LiveRelaySession:
                 msg = await self._recv_client()
         except TimeoutError:
             raise _ProtocolError(f"no start message within {self._cfg.start_timeout_s}s") from None
-        rate, self._call_id, self._leg = self._parse_start(msg)
+        rate, self._call_id, self._leg, self._mode = self._parse_start(msg)
         self._client_rate = rate
         self._resampler = Pcm16Resampler(rate, SPEACHES_WIRE_RATE)
 
-    def _parse_start(self, msg: dict[str, Any]) -> tuple[int, str | None, int | None]:
-        """`(sample_rate, call_id, leg)` — the last two `None` on a call that writes no trail."""
+    def _parse_start(self, msg: dict[str, Any]) -> tuple[int, str | None, int | None, str]:
+        """`(sample_rate, call_id, leg, mode)` — `call_id`/`leg` `None` on a leg that writes no trail,
+        `mode` `"call"` when the client sent none."""
         text = msg.get("text")
         if text is None:
             raise _ProtocolError("the first frame must be a text `start` message, not binary audio")
@@ -467,20 +492,24 @@ class LiveRelaySession:
             raise _ProtocolError(
                 f"start.sample_rate {rate} outside the accepted {MIN_SAMPLE_RATE}–{MAX_SAMPLE_RATE} Hz"
             )
+        # THE LEG'S FEATURE (S11) — optional, strict once present like every other `start` field.
+        mode = data.get("mode", "call")
+        if mode not in LIVE_MODES:
+            raise _ProtocolError(f"start.mode must be one of {', '.join(LIVE_MODES)}")
         # THE TRAIL'S IDENTITY (D77) — optional, but with `sample_rate`'s strictness once present: the
         # id becomes a FILENAME, so a malformed one is a protocol error here rather than a path later.
         # The pair travels together (a leg with no call, or a call with no leg, is a client bug).
         if ("call_id" in data) != ("leg" in data):
             raise _ProtocolError("start.call_id and start.leg must be sent together")
         if "call_id" not in data:
-            return rate, None, None
+            return rate, None, None, mode
         call_id = data["call_id"]
         if not valid_call_id(call_id):
             raise _ProtocolError("start.call_id must be a canonical lowercase UUID")
         leg = data["leg"]
         if not isinstance(leg, int) or isinstance(leg, bool) or not 0 <= leg <= MAX_LEG:
             raise _ProtocolError(f"start.leg must be an integer 0–{MAX_LEG}")
-        return rate, call_id, leg
+        return rate, call_id, leg, mode
 
     @staticmethod
     def _parse_json(text: str) -> dict[str, Any]:
@@ -540,7 +569,11 @@ class LiveRelaySession:
         Two §7-S0 pins are load-bearing here and both look like over-specification until they bite:
 
         * the `turn_detection` object must carry **all five fields** — a partial one validates as
-          `NotGiven` and is SILENTLY DROPPED, so a threshold sent alone simply never applies;
+          `NotGiven` and is SILENTLY DROPPED, so a threshold sent alone simply never applies.
+          `prefix_padding_ms` is honoured since the owned fork's S11 patch (`fd4b956`: a slice-START
+          pre-roll); an unpatched ear answers it with one `error` event that forwards like any other
+          (the update still applies, the pre-roll simply does not — the relay then nets out the ECHOED
+          0 and logs ONE warning naming the fork requirement, `_adopt_pre_roll`);
         * `input_audio_transcription.language` is **omitted when blank, never sent as null** — Speaches
           dumps the session with `exclude_defaults`, so a null can never reset a language, and sending
           one only risks a validation error for no gain.
@@ -571,7 +604,7 @@ class LiveRelaySession:
                 # Config alone (D76 §D — the in-call override is gone), sent once, HERE, in the one
                 # update this relay ever sends.
                 "threshold": self._cfg.vad_threshold,
-                "prefix_padding_ms": 0,
+                "prefix_padding_ms": self._cfg.prefix_padding_ms,
                 "silence_duration_ms": self._cfg.silence_ms,
                 "create_response": False,
             }
@@ -579,9 +612,9 @@ class LiveRelaySession:
         language = (self._target.language or self._policy.language or "").strip()
         if language:  # blank → omit the whole block (never null — see the docstring)
             session["input_audio_transcription"] = {"language": language}
-        self._swallow_pad_error = True
-        # The trail's header line: the exact knobs this leg runs (D77) — the update itself, verbatim.
-        self._note("leg_start", rate=self._client_rate, session=session)
+        # The trail's header line: the exact knobs this leg runs (D77) — the update itself, verbatim —
+        # and which feature it serves (S11).
+        self._note("leg_start", rate=self._client_rate, mode=self._mode, session=session)
         await self._send_up({"type": "session.update", "session": session})
 
     # ── phase 3: the pumps ────────────────────────────────────────────────────────────────────────
@@ -892,9 +925,11 @@ class LiveRelaySession:
                 )
             else:
                 await self._send_down({"type": "transcript", "text": text, "final": True, **fields})
+        elif kind == "session.updated":
+            self._adopt_pre_roll(event)
         elif kind == "error":
             await self._handle_upstream_error(event)
-        # Everything else (`session.updated`, `input_audio_buffer.committed`, `conversation.item.*`,
+        # Everything else (`input_audio_buffer.committed`, `conversation.item.*`,
         # `rate_limits.*`) is upstream bookkeeping the phone has no use for — absorbed, not forwarded.
         # `committed` in particular DELIBERATELY updates nothing (F3, two rounds): it cannot be
         # correlated with what the relay fed, so no per-buffer accounting hangs off it — see `_flush`.
@@ -925,36 +960,67 @@ class LiveRelaySession:
 
         The CLOCK (`gap_cut_ms`): the relay's own arrival clock judges — the evidence's clock — and
         Speaches' audio clock only VETOES (a span ≥ `silence_ms` is a real stop). A transcript whose
-        segment the relay never timed (no id, an evicted id, a missing stop) is never cut."""
+        segment the relay never timed (no id, an evicted id, a missing stop) is never cut.
+
+        The audio span is judged NET of the pre-roll the ear ECHOED (S11 — see `_SegmentClock.audio_gap_ms`
+        and `_adopt_pre_roll`), or the fork's back-dated start would lift every flap toward the veto; the
+        CONFIGURED value is never trusted here — an ear that did not apply it would under-read every span. A DICTATION leg is never cut
+        (S11, the owner's ruling): a flap mid-dictation can carry real words, and an empty final there
+        costs the composer those words (with other phrases landed, the clip that also has them is
+        discarded) — the cut exists to keep a call's conversation clean, which a dictation has none of."""
+        # The clock is POPPED before any early return — a dictation leg's finals consume their segment's
+        # clock too (only the verdict is skipped), or the ledger would sit full of them for the session.
         clock = self._segments.pop(item_id, None) if item_id is not None else None
-        if clock is None:
+        if clock is None or self._mode == "dictation":
             return None
-        audio, relay = clock.audio_gap_ms(), clock.relay_gap_ms()
+        audio, relay = clock.audio_gap_ms(self._pre_roll_ms), clock.relay_gap_ms()
         gap = gap_cut_ms(relay, audio, self._cfg.silence_ms)
         if gap is None:
             return None
         self._note("gap_cut", item_id=item_id, text=text, gap_ms=gap, audio_gap_ms=audio, relay_gap_ms=relay)
         return gap
 
-    async def _handle_upstream_error(self, event: dict[str, Any]) -> None:
-        """Forward upstream errors, minus the ONE known-spurious one.
+    def _adopt_pre_roll(self, event: dict[str, Any]) -> None:
+        """Take the EFFECTIVE pre-roll from Speaches' `session.updated` echo (S11 fix wave 1). A missing
+        or malformed field reads as 0 — the ear's own default, and the value an unpatched fork echoes
+        after rejecting the one we sent."""
+        session = event.get("session")
+        td = session.get("turn_detection") if isinstance(session, dict) else None
+        echoed = td.get("prefix_padding_ms") if isinstance(td, dict) else None
+        if isinstance(echoed, int) and not isinstance(echoed, bool) and echoed >= 0:
+            self._pre_roll_ms = echoed
+        else:
+            self._pre_roll_ms = 0
+        self._note("pre_roll", configured=self._cfg.prefix_padding_ms, effective=self._pre_roll_ms)
+        if self._pre_roll_ms != self._cfg.prefix_padding_ms:
+            self._note_pre_roll_mismatch()
 
-        §7-S0 ②: sending the complete `turn_detection` ALWAYS draws
-        `Specifying \\`session.turn_detection.prefix_padding_ms\\` is not supported…` while
-        `session.updated` still lands and the update still applies (`session_event_router.py:36/51`).
-        Swallowing it is not optimism — it is the documented cost of the only spelling that works.
-        Exactly one is absorbed, and only after `session.update`; every other error rides down as
-        `upstream_error` and the session CONTINUES (the socket dying is a separate class).
-        """
+    def _note_pre_roll_mismatch(self) -> None:
+        """ONE warning per session: the ear is not applying the configured pre-roll, so phrase onsets
+        stay clipped (BUG-001 H3) and the gap cut nets out only what the ear echoed."""
+        if self._pre_roll_warned:
+            return
+        self._pre_roll_warned = True
+        log.warning(
+            "live voice: the realtime ear applies prefix_padding_ms=%d, not the configured %d — the "
+            "speech pre-roll needs the owned Speaches fork (fd4b956 or later: `turn_detection."
+            "prefix_padding_ms` honoured); phrase onsets stay clipped until it is deployed",
+            self._pre_roll_ms,
+            self._cfg.prefix_padding_ms,
+        )
+
+    async def _handle_upstream_error(self, event: dict[str, Any]) -> None:
+        """Forward an upstream error as `upstream_error`; the session CONTINUES (the socket dying is a
+        separate class). Every one forwards since S11: the one the relay used to swallow — the fork
+        refusing `prefix_padding_ms` — is gone with the fork patch that honours it (`fd4b956`)."""
         raw = event.get("error")
         error: dict[str, Any] = raw if isinstance(raw, dict) else {}
         message = str(error.get("message") or "")
-        param = str(error.get("param") or "")
-        if self._swallow_pad_error and "prefix_padding_ms" in f"{message} {param}":
-            self._swallow_pad_error = False
-            log.debug("live voice: swallowed the expected prefix_padding_ms session.update error")
-            self._note("up_error", error=error, swallowed=True)
-            return
+        # An ear that REJECTS the pre-roll (an unpatched fork) says so here, before (or instead of) the
+        # echo — the effective pre-roll is already 0 unless an echo said otherwise; name it loudly once.
+        if "prefix_padding_ms" in f"{message} {error.get('param') or ''}" and self._cfg.prefix_padding_ms:
+            self._pre_roll_ms = 0
+            self._note_pre_roll_mismatch()
         self._note("up_error", error=error)
         log.info("live voice: upstream error — %s", message or error.get("type") or "unspecified")
         await self._send_down(

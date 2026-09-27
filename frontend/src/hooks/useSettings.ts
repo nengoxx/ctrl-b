@@ -114,6 +114,7 @@ export interface VoiceLive extends VoiceServiceCommon {
   enabled: boolean; //        whole-feature toggle (the master `voice.enabled` still outranks it)
   vad_threshold: number; //   Silero speech-probability floor, 0.5..0.8 (D76/R84) — rides `session.update`
   silence_ms: number; //      the silence run that ends an utterance, 500..1200
+  prefix_padding_ms: number; // S11: pre-roll on every segment's START, 0..1000 — rides `session.update`
   min_speech_ms: number; //   client interruption floor, 0..5000
   barge_in: boolean; //       hands-free interruption; off = tap-to-interrupt only
   // D74 — the near-speech gate on a COMMITTED turn (evidence docs/research/R76: Silero is nearly
@@ -163,6 +164,7 @@ export interface VoiceLive extends VoiceServiceCommon {
   tail_wait_ms: number; //    how long the release waits for the flush's tail final, 500..10000
   dictation_idle_s: number; //hands-free idle stop, 3..300 (a `hold` needs none — the finger is it)
   dictation_max_s: number; // the hard cap on one streaming session, 10..1800
+  release_tail_ms: number; // S11: a USER stop keeps recording this long first, 0..1500 (0 = off)
   // W2/D72 — the CALL's uplink bound: how much audio the client-side pacer may hold for a leg
   // before it drops the OLDEST frames. A client knob like the four above (the pacer runs in the
   // PWA), which is why it is modelled here and not left to the relay's YAML-only caps.

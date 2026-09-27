@@ -8,7 +8,8 @@
 // machine is what knows whether the call is still wanted.
 //
 // THE WIRE IS LAW (`services/voice_live.py`, the §7-S1 as-built record). Uplink: one TEXT
-// `{"type":"start","sample_rate":<Hz>}` FIRST, then binary pcm16 LE mono frames at that declared rate,
+// `{"type":"start","sample_rate":<Hz>}` FIRST (plus `mode: "dictation"` on a dictation leg, S11, and the
+// D77 trail pair on a debug leg), then binary pcm16 LE mono frames at that declared rate,
 // plus the TEXT controls `{"type":"flush"}` and `{"type":"stop"}`. Anything else is a protocol close
 // (1008). Two properties of those controls bind every caller:
 //   · **`flush` has NO ack** — the endpoint's own `speech_stopped` + `transcript` are the only response;
@@ -124,9 +125,14 @@ export interface LiveSocketOpts {
   ceilingMs: number;
   onFrame: (frame: LiveDown) => void;
   onClose: (code: number, reason: string) => void;
+  /** THE LEG'S FEATURE (S11) — sent in `start` as `mode` ONLY when present. Dictation passes
+   *  `"dictation"`, and the relay skips the D80 ④ gap cut on that leg; a call passes nothing (the relay's
+   *  absent default is `call`), so the call's `start` stays byte-identical. */
+  mode?: "dictation";
   /** THE CALL TRAIL's identity (D77) — sent in `start` as `call_id` + `leg` ONLY when present, which is
-   *  only on a call with `voice.live.debug` on: the shipped default's `start` stays byte-identical, and
-   *  dictation never passes one. ONE optional object rather than two optional fields because the relay
+   *  only with `voice.live.debug` on: the shipped default's `start` stays byte-identical. A call names
+   *  itself; a dictation recording names its own trail (S11, `leg: 1`). ONE optional object rather than
+   *  two optional fields because the relay
    *  takes them together or not at all (a protocol close otherwise) — the type makes half a pair
    *  unwritable. `callId` is the call's (the file the relay appends to); `leg` is this socket's
    *  ordinal within it, so the relay's lines say which leg of a reconnecting call they belong to. */
@@ -170,6 +176,7 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
       JSON.stringify({
         type: "start",
         sample_rate: Math.round(opts.sampleRate),
+        ...(opts.mode ? { mode: opts.mode } : {}),
         ...(opts.trail ? { call_id: opts.trail.callId, leg: opts.trail.leg } : {}),
       }),
     );

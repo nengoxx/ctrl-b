@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 
 import type { LiveCallWire, SttAutoStopWire } from "./useVoiceStatus";
+import { type CallTrail, createCallTrail, postTrail } from "../lib/callTrail";
 import { runComposer } from "../lib/composer";
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
 import { attachPcmUplink, openMicStream, type PcmUplink } from "../lib/pcmCapture";
@@ -95,6 +96,24 @@ import { pushToast } from "../store/toast";
 //   ⑤ NOTHING IS EVER RETRACTED FROM THE DRAFT. A cancel, a dropped socket, a timed-out tail: what
 //     already landed stays. The draft is the app's never-lose-speech surface, and the owner may have
 //     been editing beside it.
+//
+// Phase 24 / S11 — THE HEAD AND THE TAIL (BUG-001, the owner's car dictation clipping; LIVE_VOICE_PLAN
+// §7 "S11 as-built"). Two losses were this hook's:
+//   · T1 — a USER stop cut the recorder at the release instant, so a release timed with the last
+//     syllable clipped it. `stop(true)` (the gesture's release, the lock's tap, the keyboard's stop)
+//     now keeps the recorder AND the uplink running `live_call.release_tail_ms` first, painting
+//     `sending` at the release; every other stop (cancel, `yieldMic`, the hidden page, the cap, the
+//     silence auto-stop / idle stop, unmount, a death) stays immediate and cuts a running tail short.
+//     The 1000 ms floor measures to the RELEASE (`releasedAtRef`), never through the tail.
+//   · H1/H2 — the gesture buzzed "go" at activation, before `getUserMedia` had even resolved, and on
+//     the streaming path the words before the worklet's first frame lived only in the clip that rule ③
+//     discards. The honest go-signal is the `onLive` seam: fired ONCE per recording at the moment the
+//     words-carrying path is live (the uplink's first frame · the first meter poll when the clip is the
+//     carrier · at once with no Web Audio). `start()`'s own resolve timing is deliberately unchanged
+//     (widening it would widen the F5 abort window).
+// …and two things it carries for the relay: `start.mode: "dictation"` (the relay skips the D80 ④ gap cut
+// on these legs), and, with `live_call.debug` on, a per-recording TRAIL through the call trail's own
+// machinery (D77's `createCallTrail` + the relay's half, `trail: {callId, leg: 1}`).
 
 // Auto-stop (R51 Tier 0) — how often the energy detector reads the stream while recording. NOT a
 // tunable (the two tunables are the silence window + the RMS floor, both config): 100 ms resolves the
@@ -233,6 +252,21 @@ interface StreamSession extends PacerState {
   /** The two §9.3 clocks, both ticked by the ONE 100 ms detector poll — no timers of their own. */
   elapsedMs: number;
   idleMs: number;
+  /** S11 — THIS recording's trail (D77's machinery), or null: minted only with `live_call.debug` on
+   *  (and a secure context's `randomUUID`), ended with the leg (`endTrail`). */
+  trail: CallTrail | null;
+  /** …and whether the uplink has delivered its first frame yet (the trail's `uplink` line, once). */
+  sawFrame: boolean;
+}
+
+/** End a session's trail, once: its last line, the `keepalive` flush, then nothing more. */
+function endTrail(s: StreamSession, data: Record<string, unknown>): void {
+  const t = s.trail;
+  if (!t) return;
+  s.trail = null;
+  t.push("end", data);
+  t.flush("end");
+  t.dispose();
 }
 
 /** How long the release's pre-flush drain (N1) parks between pumps. NOT a tunable: the drain's RATE is
@@ -327,6 +361,14 @@ export function useDictation({
    *  has it. 0 when nothing is recording. Consumed by `onstop`, which turns it into the clip's
    *  `heldMs` in the same synchronous step that clears it. */
   const startedAtRef = useRef(0);
+  /** S11 — `Date.now()` at the FIRST stop of this recording (the user's release, or an immediate stop),
+   *  0 while it runs. The floor measures to HERE rather than to `onstop`, so the release post-roll can
+   *  never carry a 700 ms blip past `MIN_CLIP_MS`. Consumed (and cleared) in `onstop`. */
+  const releasedAtRef = useRef(0);
+  /** S11 — the release post-roll's pending timer while a user stop is SETTLING, else undefined. */
+  const tailTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** S11 — `Date.now()` at `start()`'s entry (the gesture's activation), for the trail's `rec` line. */
+  const activateAtRef = useRef(0);
 
   /** THE METER SEAM (OF-3) — assigned by whoever paints the recording (the mic gesture), called with a
    *  0…1 level every `SILENCE_POLL_MS` while recording. Null-safe: with nobody registered the poll still
@@ -345,6 +387,16 @@ export function useDictation({
    *  idle stop must not run during a `hold`, where the finger IS the timeout. A consumer that registers
    *  nothing leaves it false, i.e. no idle stop, which is the safe half of the rule. */
   const handsFreeRef = useRef(false);
+  /** THE GO SEAM (S11, BUG-001 H1/H2) — assigned by whoever tells the owner "speak now" (the gesture's
+   *  start buzz), called ONCE per recording at the moment the words-carrying path is live: the streaming
+   *  uplink's first frame (or the leg degrading, when the clip carries everything again), the first
+   *  meter poll on the whole-clip path, or at once where there is no Web Audio at all. Never after the
+   *  owner has let go. The same assignable-ref shape as the four above. */
+  const onLiveRef = useRef<(() => void) | null>(null);
+  /** …and whether this recording still owes it (armed at `rec.start()`, spent by `goLive`, withdrawn by
+   *  any stop). One flag, not a per-recording token: every caller is fenced to its own recording (the
+   *  poll dies with it; the uplink frame rides `mine()`). */
+  const liveOwedRef = useRef(false);
 
   // Detector state. Every one of these stays null unless an AudioContext actually ran.
   const audioRef = useRef<AudioContext | null>(null);
@@ -383,6 +435,17 @@ export function useDictation({
   // the media path IS the ruled default, recorded).
   const route = liveCall?.route;
   const inputDevice = liveCall?.input_device;
+  // S11 — the release post-roll and the trail's gate, flattened like their neighbours. Absent ⇒ 0 / off
+  // (an older backend): nothing here invents a tail the owner did not configure.
+  const releaseTailMs = liveCall?.release_tail_ms ?? 0;
+  const trailOn = liveCall?.debug === true;
+  /** …read by `stop` through a ref, so `stop` keeps its identity across a `/voice/status` refetch: the
+   *  unmount sweep below is keyed on `stop`, and a re-identified `stop` would run that sweep — ending a
+   *  live recording — the moment a Conf save changed the tail. */
+  const releaseTailRef = useRef(releaseTailMs);
+  useEffect(() => {
+    releaseTailRef.current = releaseTailMs;
+  }, [releaseTailMs]);
   const streamWanted = !!liveEar && !!liveCall?.dictation && frameMs > 0 && tailWaitMs > 0;
 
   // Whether the browser will even hand us a mic. `navigator.mediaDevices` is undefined in an insecure
@@ -409,6 +472,14 @@ export function useDictation({
     onPendingRef.current?.(on);
   }, []);
 
+  /** Say "go" to whoever registered for it, once per recording (see `onLiveRef`). */
+  const goLive = useCallback((): void => {
+    if (!liveOwedRef.current) return;
+    liveOwedRef.current = false;
+    streamRef.current?.trail?.push("go");
+    onLiveRef.current?.();
+  }, []);
+
   /** Close ONE streaming leg. NEVER flushes — every caller has either flushed already or decided there
    *  is nothing to wait for. The uplink goes first so no frame can reach a socket that is closing, and
    *  a release still parked on the tail is woken rather than left to its timeout. */
@@ -423,6 +494,7 @@ export function useDictation({
       s.tail = null;
       tail?.();
       s.socket.close();
+      endTrail(s, { finals: s.finals, closed: "dropped" });
       setPending(false);
     },
     [setPending],
@@ -544,17 +616,50 @@ export function useDictation({
     return true;
   }, []);
 
-  const stop = useCallback(() => {
-    if (abortArming()) return; // released inside the acquisition window — nothing started (F5)
+  /** The recorder's actual stop — every path ends here, a settled user stop included (after its tail). */
+  const stopNow = useCallback(() => {
     const rec = recRef.current;
     if (!rec || rec.state === "inactive") return;
+    clearTimeout(tailTimerRef.current); // an immediate stop cuts a settling tail short
+    tailTimerRef.current = undefined;
     // THE CHOREOGRAPHY IS OWED FROM HERE (S2.5, rule ②) — marked SYNCHRONOUSLY, before the recorder is
     // asked to stop: `rec.stop()` only QUEUES the terminal events, and anything running in that window
     // (the unmount sweep, a socket close) must see a leg with a flush coming rather than a leaked one.
     const s = streamRef.current;
     if (s) s.finishing = true;
     rec.stop(); // fires onstop → cleanup → the release choreography, or the upload
-  }, [abortArming]);
+  }, []);
+
+  /** @param settle a USER stop (S11 T1): the recorder and the uplink run `release_tail_ms` more before
+   *  the ordinary stop, so a release timed with the last syllable keeps it. Every other caller passes
+   *  nothing and stops at once — and cuts a settling tail short, since its reason (a call waiting, a
+   *  hidden page, the cap, silence) outranks the post-roll. */
+  const stop = useCallback(
+    (settle = false) => {
+      if (abortArming()) return; // released inside the acquisition window — nothing started (F5)
+      const rec = recRef.current;
+      if (!rec || rec.state === "inactive") return;
+      liveOwedRef.current = false; // no "go" once the owner has let go
+      const tailMs = settle ? releaseTailRef.current : 0;
+      if (releasedAtRef.current === 0) {
+        releasedAtRef.current = Date.now(); // the floor measures to the FIRST stop, never through a tail
+        streamRef.current?.trail?.push("release", { settle, tail_ms: tailMs });
+      }
+      if (tailMs > 0) {
+        if (tailTimerRef.current !== undefined) return; // already settling — one tail per recording
+        // The existing `sending` look from the release instant: the owner let go, and the button is
+        // inert while the tail and whatever follows it run (a re-press gets `false` from `start()`).
+        setPhase("sending");
+        tailTimerRef.current = setTimeout(() => {
+          tailTimerRef.current = undefined;
+          stopNow();
+        }, tailMs);
+        return;
+      }
+      stopNow();
+    },
+    [abortArming, stopNow],
+  );
 
   /** Discard the recording: no transcript, no POST, no draft. The flag is consulted in the `onstop`
    *  path (the ONE place that decides whether a stopped recorder uploads), so cancelling reuses the
@@ -565,6 +670,9 @@ export function useDictation({
     const rec = recRef.current;
     if (!rec || rec.state === "inactive") return;
     discardRef.current = true;
+    liveOwedRef.current = false;
+    clearTimeout(tailTimerRef.current); // a cancel inside a settling tail discards; it does not wait
+    tailTimerRef.current = undefined;
     // S2.5 — the leg goes NOW, with NO flush: the utterance in flight is dropped and nothing more can
     // append. What already landed STAYS in the draft (rule ⑤) — retracting it could destroy an edit the
     // owner made beside it, and a cancel is about the CLIP, which is what `discardRef` throws away.
@@ -779,6 +887,11 @@ export function useDictation({
       }
       s.socket.close();
       s.closed = true; // …and from here its own late callbacks are ghosts
+      endTrail(s, {
+        finals: s.finals,
+        clip: s.finals > 0 ? "discarded" : "uploaded",
+        dead: s.dead,
+      });
       setPending(false);
       // THE EITHER/OR (rule ③), evaluated exactly once, here.
       if (s.finals > 0) {
@@ -813,12 +926,30 @@ export function useDictation({
       let session: StreamSession | null = null;
       const mine = (): StreamSession | null =>
         legRef.current === leg && session && !session.closed ? session : null;
+      // S11 — THE DICTATION TRAIL (debug only): one file per recording, the call trail's own machinery
+      // and route, so the relay's half (its `speech_started{audio_start_ms}`, every final) lands beside
+      // the browser's stamps. `randomUUID` is secure-context only; without it there is simply no trail.
+      const callId =
+        trailOn && typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : null;
+      const trail = callId
+        ? createCallTrail({
+            callId,
+            post: postTrail, // the call trail's own poster — one route, one spelling
+            stamp: () => ({ leg: 1, gen: 0 }),
+          })
+        : null;
       const socket = openLiveSocket({
         url: liveSocketUrl(),
         // The context's REAL rate — the relay builds its resampler from what we declare here, so it
         // must be what the worklet actually produces (44.1k or 48k by device; there is no asking).
         sampleRate: ctx.sampleRate,
         ceilingMs,
+        // The leg's FEATURE (S11): the relay skips the D80 ④ gap cut on dictation legs — a flap here
+        // can carry real words, and there is no conversation to keep clean.
+        mode: "dictation",
+        ...(callId ? { trail: { callId, leg: 1 } } : {}),
         onFrame: (frame) => {
           const s = mine();
           if (!s) return;
@@ -931,13 +1062,38 @@ export function useDictation({
         tail: null,
         elapsedMs: 0,
         idleMs: 0,
+        trail,
+        sawFrame: false,
       };
       streamRef.current = session;
+      if (trail) {
+        // The head's stamps (BUG-001 H1/H2): activation → recorder → (the `uplink` line) first frame.
+        // Optional-chained throughout: debug data, and a trail must never throw into a recording.
+        const track = stream.getAudioTracks?.()[0];
+        const cfg: MediaTrackSettings = track?.getSettings?.() ?? {};
+        trail.push("rec", {
+          t_activate: activateAtRef.current,
+          t_rec: startedAtRef.current,
+          rate: ctx.sampleRate,
+          route: route ?? null,
+          label: track?.label ?? null,
+          ec: cfg.echoCancellation ?? null,
+          ns: cfg.noiseSuppression ?? null,
+          agc: cfg.autoGainControl ?? null,
+        });
+      }
       void attachPcmUplink(ctx, stream, {
         frameMs,
         onFrame: (f) => {
           const s = mine();
           if (!s || s.dead) return;
+          if (!s.sawFrame) {
+            // THE WORDS-CARRYING PATH IS LIVE (S11 H2): from this frame on the phrases carry what the
+            // owner says — before it, only the clip had it, and rule ③ discards that clip.
+            s.sawFrame = true;
+            s.trail?.push("uplink");
+            goLive();
+          }
           // ONE QUEUE, BOTH PHASES (S2.5 review F5): every frame joins the tail of the SAME FIFO and
           // leaves it through the same pacer. Audio ORDER is the contract, and a second path for "the
           // live frame" is how a dispatched burst gets to overtake the backlog. The LOSSLESS enqueue —
@@ -983,7 +1139,7 @@ export function useDictation({
           if (s) degradeStream(s);
         });
     },
-    [ceilingMs, degradeStream, dropStream, frameMs, setPending, stop],
+    [ceilingMs, degradeStream, dropStream, frameMs, goLive, route, setPending, stop, trailOn],
   );
 
   /** Arm the energy detector on the SAME stream the recorder holds (never a second getUserMedia). Silent
@@ -1027,8 +1183,11 @@ export function useDictation({
         document.addEventListener("visibilitychange", onHidden);
         hiddenRef.current = onHidden;
       }
+      // S11 — every early return below that leaves the recording running on the CLIP alone says "go"
+      // at once: the recorder has been capturing since `rec.start()`, and nothing later will.
       if (typeof AudioContext === "undefined") {
         if (streamWanted) noteLiveDegrade(); // no Web Audio ⇒ no uplink either (rule ⑧'s ctx arm)
+        goLive();
         return;
       }
       let ctx: AudioContext;
@@ -1036,6 +1195,7 @@ export function useDictation({
         ctx = new AudioContext(); // constructed inside the start gesture, so it may autoplay-unlock
       } catch {
         if (streamWanted) noteLiveDegrade();
+        goLive();
         return;
       }
       audioRef.current = ctx; // parked BEFORE the await, so a stop during it closes this context
@@ -1053,6 +1213,7 @@ export function useDictation({
       if (ctx.state !== "running") {
         teardownAudio();
         if (streamWanted) noteLiveDegrade();
+        goLive();
         return;
       }
       let analyser: AnalyserNode;
@@ -1065,6 +1226,7 @@ export function useDictation({
       } catch {
         teardownAudio();
         if (streamWanted) noteLiveDegrade();
+        goLive();
         return;
       }
       // THE STREAMING LEG (S2.5) — a THIRD consumer of the one stream, on THIS context, only now that
@@ -1075,7 +1237,11 @@ export function useDictation({
       // would be torn down by the install's rejection, racing its own `start` (measured on dev: the
       // relay logged accept→close in the same second, `start` never processed). Capability-checked on
       // the context itself, never UA-sniffed (the house rule); the degrade names the real reason.
-      if (streamWanted) {
+      // …AND NOT PAST THE RELEASE (S11 fix wave 1): the post-roll keeps this recording alive, so a
+      // `resume()` slower than the whole hold would otherwise open a leg for the tail ALONE — whose one
+      // final would then discard (rule ③) the clip that carries the entire utterance. Once the owner
+      // has let go, the clip is the carrier.
+      if (streamWanted && releasedAtRef.current === 0) {
         if (ctx.audioWorklet) armStream(ctx, stream);
         else noteLiveDegrade();
       }
@@ -1088,11 +1254,17 @@ export function useDictation({
         const rms = Math.sqrt(sum / samples.length);
         // ① THE METER — every reading, whatever the policy (OF-3). Straight to a registered consumer,
         //    never through state: at 10 Hz a `setState` would re-render the whole composer subtree.
-        meterRef.current?.(Math.min(1, rms / METER_FULL_RMS));
+        //    Not past the release (S11): the post-roll is still recording, but the gesture has closed
+        //    and a level painted into it would be a ghost.
+        if (releasedAtRef.current === 0) meterRef.current?.(Math.min(1, rms / METER_FULL_RMS));
+        const live = streamRef.current;
+        //    S11 — THE GO SIGNAL when the CLIP is the carrier: no leg, or a dead one (a streaming leg
+        //    says it from its own first frame instead — before that, its words live only in a clip rule
+        //    ③ may discard). The first poll proves the analyser reads a running stream.
+        if (!live || live.dead) goLive();
         // ② THE STREAMING SESSION'S TWO CLOCKS (S2.5 / §9.3-c), both on this ONE poll — no timers of
         //    their own, for the reason the meter has none: this interval already runs at the right
         //    cadence for every decision the mic makes.
-        const live = streamRef.current;
         if (live && !live.finishing) {
           //    The HARD cap applies to every streaming session, `hold` included: it bounds the open
           //    socket, not the owner's patience.
@@ -1137,6 +1309,7 @@ export function useDictation({
     [
       armStream,
       autoStopOn,
+      goLive,
       idleMs,
       maxMs,
       silenceFloor,
@@ -1178,6 +1351,7 @@ export function useDictation({
     // every other reason a recorder does not arm.
     if (armRef.current || recRef.current) return false;
     if (!preflight()) return false;
+    activateAtRef.current = Date.now(); // the trail's `t_activate` (S11)
     // A fresh recording starts HAND-ON by default: `start()` is what the gesture calls from a press,
     // and whoever knows better (the gesture's `locked` stage, the keyboard's tap-to-start) says so
     // after. ⚠ IT MUST PRECEDE THE FIRST AWAIT (S2.5 review F3) — the ordering rule this codebase
@@ -1260,12 +1434,21 @@ export function useDictation({
         // belongs to the release choreography, not to the owner's hold. Measured BEFORE the ref is
         // cleared, one line below — with `startedAtRef` already zeroed the clip would read `Infinity`
         // and the floor would never fire for anyone.
+        // …TO THE RELEASE (S11): a settled user stop kept recording its `release_tail_ms` after the
+        // owner let go, and that post-roll is not part of the hold the floor judges.
         const clip: Clip = {
           chunks: chunksRef.current,
-          heldMs: startedAtRef.current > 0 ? Date.now() - startedAtRef.current : Infinity,
+          heldMs:
+            startedAtRef.current > 0
+              ? (releasedAtRef.current || Date.now()) - startedAtRef.current
+              : Infinity,
         };
         chunksRef.current = [];
         startedAtRef.current = 0;
+        releasedAtRef.current = 0;
+        liveOwedRef.current = false;
+        clearTimeout(tailTimerRef.current);
+        tailTimerRef.current = undefined;
         // CANCELLED (S0.5): the same teardown, and then nothing — no blob, no POST, no draft.
         if (discardRef.current) {
           discardRef.current = false;
@@ -1292,6 +1475,9 @@ export function useDictation({
         // releasing terminal; what the error arms is the discard flag (F4), which makes that `onstop`
         // a clean no-upload close-out.
         discardRef.current = true;
+        liveOwedRef.current = false;
+        clearTimeout(tailTimerRef.current); // a failed recorder has no tail to settle
+        tailTimerRef.current = undefined;
         teardownDetector();
         // …and the streaming leg goes with it, unflushed: a recorder that failed has no release to
         // choreograph. Phrases already appended stay in the draft (rule ⑤) — they are the owner's.
@@ -1300,11 +1486,14 @@ export function useDictation({
         stream.getTracks().forEach((t) => t.stop());
         earFreed(); // D74 S6 ⑧ — the tracks are gone, so a waiting call may open its own
         startedAtRef.current = 0;
+        releasedAtRef.current = 0;
         pushToast("Recording failed", "err");
         setPhase("idle");
       };
+      releasedAtRef.current = 0;
+      liveOwedRef.current = true; // S11 — "go" is owed from here, said once the words-carrying path runs
       rec.start();
-      startedAtRef.current = Date.now(); // the 1000 ms floor's only input, read once in `onstop`
+      startedAtRef.current = Date.now(); // the 1000 ms floor's start, read once in `onstop`
       setPhase("recording");
       // ALWAYS armed (OF-3): the analyser is the METER first and the auto-stop's input second. The
       // policy toggle now lives inside the poll, so a recording with auto-stop off still behaves
@@ -1333,7 +1522,7 @@ export function useDictation({
    *  `preflight`, which `start` re-runs for the gesture. */
   const toggle = useCallback(() => {
     if (phase === "recording") {
-      stop();
+      stop(true); // a USER stop — it settles through the release post-roll (S11 T1)
       return;
     }
     // `start` runs the pre-flight itself; running it HERE too would double the plain-HTTP nudge. The
@@ -1367,7 +1556,8 @@ export function useDictation({
       // path that ends a recording either marks the session `finishing` (`stop()`) or drops it outright
       // (`cancel`, `onerror`, a death, `onstop`'s hand-off to the release), and a leg can only be armed
       // by `armDetector` on a context whose own staleness check already refuses to arm one for a
-      // recording that has ended. It stays because the RULE is "every exit", not "every exit we can
+      // recording that has ended — or that is only running out its release post-roll (S11: the
+      // `releasedAtRef` gate). It stays because the RULE is "every exit", not "every exit we can
       // currently enumerate" — the next exit added here gets the teardown for free instead of being
       // the leak. (Red-proofed at the reachable half: removing `stop()` above is what goes red.)
       //
@@ -1385,7 +1575,7 @@ export function useDictation({
   // so the 502-driven `unavailable` flag never gets set — surface the actionable reason instead.
   const status: MicStatus = !micCapable ? "insecure" : unavailable ? "unavailable" : phase;
   // `toggle` is the keyboard/AT path; `start`/`stop`/`cancel` are the gesture's three verbs (S0.5).
-  // There is one recorder behind all four. `meter`/`onTooShort`/`onPending`/`handsFree` are the
+  // There is one recorder behind all four. `meter`/`onTooShort`/`onPending`/`handsFree`/`onLive` are the
   // ASSIGNABLE seams — all null-safe, all owned by whoever mounts (assign on mount, null on cleanup),
   // so a second composer can never inherit a dead handler. The two S2.5 additions follow the shape
   // exactly rather than inventing a second one: chrome the gesture paints (`onPending`) and one fact
@@ -1400,6 +1590,7 @@ export function useDictation({
     onTooShort: tooShortRef,
     onPending: onPendingRef,
     handsFree: handsFreeRef,
+    onLive: onLiveRef,
   };
 }
 
@@ -1407,3 +1598,4 @@ export function useDictation({
 export type MicMeterRef = MutableRefObject<((level: number) => void) | null>;
 export type MicTooShortRef = MutableRefObject<(() => void) | null>;
 export type MicPendingRef = MutableRefObject<((pending: boolean) => void) | null>;
+export type MicLiveRef = MutableRefObject<(() => void) | null>;

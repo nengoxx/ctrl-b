@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { postJSON } from "../api/client";
 import {
   dismiss,
   getChunkPolicy,
@@ -16,7 +15,7 @@ import {
   useMouthFailures,
 } from "../lib/audioController";
 import { CUE_HOLD_MS, playDropCue } from "../lib/callCue";
-import { type CallTrail, createCallTrail } from "../lib/callTrail";
+import { type CallTrail, createCallTrail, postTrail } from "../lib/callTrail";
 import {
   CHIRP_HOLD_MS,
   CHIRP_LEAD_MS,
@@ -286,9 +285,6 @@ const TRAIL_SAMPLE_FIELDS = [
   "mouthLive",
   "bargeArmed",
 ] as const satisfies readonly (keyof CallDebug)[];
-
-/** The trail route (D77, `api/voice.py::live_trail`). */
-const TRAIL_URL = "/api/voice/live/trail";
 
 /** THE UPLINK'S SILENCE (D76 §B.1): the ONE zeroed buffer a held frame is sent as, reallocated only when
  *  the frame size changes (a capture's size is fixed by its rate and `frame_ms`, so in practice once per
@@ -2903,7 +2899,7 @@ export function useLiveCall(): CallView {
       callId.current ??= crypto.randomUUID();
       trail.current = createCallTrail({
         callId: callId.current,
-        post: (body, keepalive) => postJSON<void>(TRAIL_URL, body, { keepalive }),
+        post: postTrail,
         stamp: () => ({ leg: legSeq.current, gen: ref.current.gen }),
       });
     }

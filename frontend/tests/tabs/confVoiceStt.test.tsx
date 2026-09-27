@@ -92,6 +92,7 @@ const makeSettings = () => ({
       extra_body: {},
       vad_threshold: 0.6,
       silence_ms: 700,
+      prefix_padding_ms: 300, // S11 — the ear's slice-start pre-roll (rides session.update)
       min_speech_ms: 300,
       barge_in: true,
       ring: true,
@@ -126,6 +127,7 @@ const makeSettings = () => ({
       tail_wait_ms: 2000,
       dictation_idle_s: 15,
       dictation_max_s: 120,
+      release_tail_ms: 400, // S11 — the release post-roll
     },
   },
   notifications: {
@@ -357,6 +359,35 @@ describe("ConfTab · streaming dictation rows (S3.5 — rendered in the STT grou
     fireEvent.change(field("Phrase tail wait"), { target: { value: "" } });
     fireEvent.click(saveButton());
     expect(liveOf()?.tail_wait_ms).toBe(0);
+  });
+});
+
+describe("ConfTab · S11 — the release post-roll (STT group) + the speech pre-roll (Live call)", () => {
+  it("renders each in ONE home: the tail beside the dictation rows, the pre-roll beside the silence window", () => {
+    render(<ConfTab active />);
+    expect(field("Release tail (ms)").value).toBe("400");
+    expect(liveField("Speech pre-roll (ms)").value).toBe("300");
+    expect(liveGroup().queryByLabelText("Release tail (ms)")).toBeNull();
+    expect(sttGroup().queryByLabelText("Speech pre-roll (ms)")).toBeNull();
+    const labels = Array.from(
+      document.getElementById("voice-live")!.querySelectorAll(".confrow .label"),
+    ).map((e) => e.textContent);
+    expect(labels[labels.indexOf("Silence window") + 1]).toBe("Speech pre-roll (ms)");
+  });
+
+  it("saves both coerced to NUMBERS onto `voice.live`, and a CLEARED one as NULL (0 means off for both)", () => {
+    const { unmount } = render(<ConfTab active />);
+    fireEvent.change(field("Release tail (ms)"), { target: { value: "600" } });
+    fireEvent.change(liveField("Speech pre-roll (ms)"), { target: { value: "250" } });
+    fireEvent.click(saveButton());
+    expect(liveOf()).toMatchObject({ release_tail_ms: 600, prefix_padding_ms: 250 });
+    unmount();
+    render(<ConfTab active />);
+    fireEvent.change(field("Release tail (ms)"), { target: { value: "" } });
+    fireEvent.change(liveField("Speech pre-roll (ms)"), { target: { value: "" } });
+    fireEvent.click(saveButton());
+    expect(liveOf(1)?.release_tail_ms).toBeNull();
+    expect(liveOf(1)?.prefix_padding_ms).toBeNull();
   });
 });
 

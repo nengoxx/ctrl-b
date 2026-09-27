@@ -433,6 +433,8 @@ voice:
     # model: parakeet      # the realtime `model` query param; blank inherits stt's
     vad_threshold: 0.6     # Silero speech-probability floor (0.5–0.8; D76/R84 — its END threshold is this − 0.15); rides session.update
     silence_ms: 700        # silence run that ends an utterance (500–1200); rides session.update
+    prefix_padding_ms: 300 # S11: pre-roll on the START of every speech segment (0–1000), so a phrase keeps
+                           # its onset; rides session.update (the owned Speaches fork honours it)
     min_speech_ms: 300     # CLIENT interruption floor — speech shorter than this is not a barge-in
     frame_ms: 40           # uplink frame duration (10–200); also the flush burst's granularity
     max_session_s: 1800    # hard session lifetime; 1800 aligns with Speaches' own 30-min expiry
@@ -502,6 +504,9 @@ voice:
     tail_wait_ms: 2000     # how long the client waits for the TAIL final after its release flush
     dictation_idle_s: 15   # hands-free idle stop for a LOCKED session (the trailing phrase is kept)
     dictation_max_s: 120   # hard cap on ONE streaming session — applies to hold as well as lock
+    release_tail_ms: 400   # S11: after YOU stop (release / tap), keep recording this long so the last word
+                           # is not clipped (0–1500; 0 = off). Whole-clip dictation too. Cancel, a call,
+                           # a hidden page, the cap and the silence auto-stop stay immediate
     relay_queue_ms: 2000   # bounded relay queue, in ms of audio; overflow drops the OLDEST frames
     start_timeout_s: 5     # how long an accepted socket may sit before its `start` message arrives
     uplink_idle_s: 15      # R86: a leg with NO uplink audio this long (s, 5–120) is a frozen page or a dead

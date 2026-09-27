@@ -122,6 +122,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/agent/card_import.py", "_depth_prompt_note"),
         ("app/services/agent/card_import.py", "compose_soul"),  # the lone-surrogate 422 detail
         ("app/services/agent/compaction.py", "_warn_degenerate_trigger"),
+        ("app/services/voice_live.py", "LiveRelaySession._note_pre_roll_mismatch"),  # BUG-001 ③ log line
         ("app/services/agent/persona.py", "_warn_once_dangling"),  # D78: a dangling persona link
         ("app/services/agent/session.py", "AgentSession._log_context_cost"),
         ("app/services/agent/session.py", "AgentSession._run_calls._complete"),

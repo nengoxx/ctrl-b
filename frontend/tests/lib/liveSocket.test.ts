@@ -59,6 +59,7 @@ function leg(opts?: {
   ceilingMs?: number;
   sampleRate?: number;
   trail?: { callId: string; leg: number };
+  mode?: "dictation";
 }) {
   const frames: LiveDown[] = [];
   const closes: { code: number; reason: string }[] = [];
@@ -67,6 +68,7 @@ function leg(opts?: {
     sampleRate: opts?.sampleRate ?? 48000,
     ceilingMs: opts?.ceilingMs ?? 1000,
     trail: opts?.trail,
+    mode: opts?.mode,
     onFrame: (f) => frames.push(f),
     onClose: (code, reason) => closes.push({ code, reason }),
     make: (url) => new FakeSocket(url) as unknown as WebSocket,
@@ -88,6 +90,25 @@ describe("liveSocket — the uplink", () => {
     ws.open();
     expect(ws.sent).toEqual([
       JSON.stringify({ type: "start", sample_rate: 48000, call_id: "c-1", leg: 4 }),
+    ]);
+  });
+
+  it("a DICTATION leg's `start` says so (S11) — and a debug one carries its trail beside it", () => {
+    const { ws } = leg({ sampleRate: 48000, mode: "dictation" });
+    ws.open();
+    expect(ws.sent).toEqual([
+      JSON.stringify({ type: "start", sample_rate: 48000, mode: "dictation" }),
+    ]);
+    const traced = leg({ sampleRate: 48000, mode: "dictation", trail: { callId: "c-2", leg: 1 } });
+    traced.ws.open();
+    expect(traced.ws.sent).toEqual([
+      JSON.stringify({
+        type: "start",
+        sample_rate: 48000,
+        mode: "dictation",
+        call_id: "c-2",
+        leg: 1,
+      }),
     ]);
   });
 

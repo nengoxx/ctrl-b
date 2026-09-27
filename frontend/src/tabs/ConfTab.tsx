@@ -850,6 +850,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   extra_body: {},
   vad_threshold: 0.6,
   silence_ms: 700,
+  prefix_padding_ms: 300,
   min_speech_ms: 300,
   barge_in: false,
   min_final_ms: 200,
@@ -882,6 +883,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   tail_wait_ms: 2000,
   dictation_idle_s: 15,
   dictation_max_s: 120,
+  release_tail_ms: 400,
   call_backlog_ms: 1000,
 };
 
@@ -1927,6 +1929,11 @@ export function ConfTab({ active }: Props) {
           // similarity is floored at 0.5 — both earn the visible 422 for a blank, never a silent 0.
           echo_similarity: numOrNull(draft.voice.live.echo_similarity),
           echo_window_ms: numOrNull(draft.voice.live.echo_window_ms),
+          // S11's pair take `numOrNull` for the gate six's reason: 0 MEANS something for both (no
+          // release post-roll; the pre-S11 slice with no pre-roll), so a blank must earn the visible
+          // 422, never a silent 0.
+          release_tail_ms: numOrNull(draft.voice.live.release_tail_ms),
+          prefix_padding_ms: numOrNull(draft.voice.live.prefix_padding_ms),
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
@@ -2721,6 +2728,15 @@ export function ConfTab({ active }: Props) {
             value={String(vlive?.dictation_max_s ?? "")}
             onChange={(v) => setLive("dictation_max_s", v as unknown as number)}
           />
+          {/* S11 (BUG-001 T1) — the release post-roll. A `voice.live` key like the four above, but it
+              governs EVERY recording the mic makes (live or whole-clip), which is why it sits with
+              them rather than behind the Live dictation switch. */}
+          <Field
+            label="Release tail (ms)"
+            desc="ms the mic keeps recording after you let go or tap stop, so your last word isn't clipped (0–1500; 0 = off) · cancel stays instant"
+            value={String(vlive?.release_tail_ms ?? "")}
+            onChange={(v) => setLive("release_tail_ms", v as unknown as number)}
+          />
           {/* A11/D48 Slice 2 — the STT primary + ordered fallbacks point at the registry (provider + model
               scoped to its catalog); the whisper endpoint/key/model now live on the provider card. */}
           <SectionRefEditor
@@ -3036,6 +3052,15 @@ export function ConfTab({ active }: Props) {
             desc="ms of silence that ends what you were saying (500–1200) — lower it for a snappier reply, raise it if it cuts you off mid-sentence"
             value={String(vlive?.silence_ms ?? "")}
             onChange={(v) => setLive("silence_ms", v as unknown as number)}
+          />
+          {/* S11 (BUG-001 H3) — the ear's pre-roll: it cuts each phrase out of the audio where it
+              first heard speech, and this keeps that much from just BEFORE, so the first sound of a
+              sentence survives. Calls and live dictation alike (one ear). */}
+          <Field
+            label="Speech pre-roll (ms)"
+            desc="ms kept from just before the ear heard you start, so a sentence keeps its first sound (0–1000; 0 = off) · calls and live dictation alike"
+            value={String(vlive?.prefix_padding_ms ?? "")}
+            onChange={(v) => setLive("prefix_padding_ms", v as unknown as number)}
           />
           <Field
             label="Minimum speech"

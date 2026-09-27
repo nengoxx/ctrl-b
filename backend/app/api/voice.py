@@ -187,6 +187,10 @@ async def voice_status(request: Request) -> dict[str, object]:
         "tail_wait_ms": live.tail_wait_ms,
         "dictation_idle_s": live.dictation_idle_s,
         "dictation_max_s": live.dictation_max_s,
+        # S11 (BUG-001 T1) — the release post-roll: how long a USER stop keeps the recorder + uplink
+        # running before it stops. It rides beside the capture pair for their reason: it governs the
+        # whole-clip path too, so it is read whether or not the streaming leg is on.
+        "release_tail_ms": live.release_tail_ms,
     }
     return status
 

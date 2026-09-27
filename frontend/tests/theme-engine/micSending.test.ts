@@ -37,6 +37,7 @@ vi.mock("../../src/hooks/useDictation", async (importActual) => {
       onTooShort: { current: null },
       onPending: { current: null },
       handsFree: { current: false },
+      onLive: { current: null }, // S11 — the go seam
     }),
   };
 });

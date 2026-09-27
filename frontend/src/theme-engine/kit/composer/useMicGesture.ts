@@ -10,6 +10,7 @@ import {
 
 import { micLabel } from "./useComposerChrome";
 import { TOO_SHORT_MSG, type useDictation } from "../../../hooks/useDictation";
+import { buzz } from "../../../lib/haptics";
 import { startCall } from "../../../store/liveCall";
 import { setMicCancel } from "../../../store/micCancel";
 import { getUI, setUI, useUISlice } from "../../../store/ui";
@@ -87,21 +88,10 @@ export const CHIP_MS = 2000;
 export const CLICK_GUARD_MS = 50;
 
 /** Haptic durations, ms. R69 §2 [V] (Signal's 20/20/50) merged with §1.2/§1.4's toggle+lock buzzes.
- *  ALL DECORATIVE — see `buzz`. */
-const VIB_START_MS = 20;
+ *  ALL DECORATIVE — see `lib/haptics` `buzz`. */
+export const VIB_START_MS = 20;
 const VIB_CATCH_MS = 20;
 const VIB_CANCEL_MS = 50;
-
-/** Decorative haptics only (R69 §7 [V] / risk 3): on Firefox for Android `navigator.vibrate()` RETURNS
- *  TRUE and does nothing, and there is no feature detection that can tell — so every buzz here strictly
- *  accompanies a state change the UI has already painted, and the return value is never consulted. */
-function buzz(ms: number): void {
-  try {
-    navigator.vibrate?.(ms);
-  } catch {
-    /* no Vibration API — the visible state change is the real signal */
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // THE PURE MACHINE
@@ -485,7 +475,9 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
       for (const o of out) {
         switch (o) {
           case "start": {
-            buzz(VIB_START_MS);
+            // NO BUZZ HERE (S11, BUG-001 H1): the circle paints at activation, but "speak now" waits
+            // for the recorder's own `onLive` (registered below) — buzzing here told the owner to talk
+            // while `getUserMedia` was still opening, and those words were never recorded.
             // The affordance is already painted; if the mic never actually opens (permission declined,
             // no usable container, or the F5 abort), close it rather than leave a circle over a mic
             // that is not recording — but ONLY while this is still the gesture that asked (F1).
@@ -496,7 +488,9 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
             break;
           }
           case "stop":
-            micRef.current.stop();
+            // Every gesture stop is the OWNER's (a hold released, the lock's tap, the keyboard's stop),
+            // so it settles through the release post-roll (S11 T1) — the last word is not clipped.
+            micRef.current.stop(true);
             break;
           case "cancel":
             buzz(VIB_CANCEL_MS);
@@ -754,13 +748,14 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
     if (micStatus !== "recording") hostRef.current?.style.setProperty("--mg-level", "0");
   }, [micStatus, send]);
 
-  // THE TWO RECORDER SEAMS (feel round OF-3/OF-4), registered and withdrawn together in ONE effect: a
-  // composer that unmounts must not leave a live handler pointing into its dead tree, and the next one
-  // to mount must not inherit it. `mic.meter`/`mic.onTooShort` are refs, so their identities are stable
-  // for the recorder's life and this runs exactly once per mount.
+  // THE RECORDER SEAMS (feel round OF-3/OF-4; S2.5's pending; S11's go), registered and withdrawn
+  // together in ONE effect: a composer that unmounts must not leave a live handler pointing into its
+  // dead tree, and the next one to mount must not inherit it. The seams are refs, so their identities
+  // are stable for the recorder's life and this runs exactly once per mount.
   const meterRef = mic.meter;
   const tooShortRef = mic.onTooShort;
   const pendingRef = mic.onPending;
+  const liveRef = mic.onLive;
   useEffect(() => {
     // THE LEVEL IS WRITTEN STRAIGHT TO THE DOM. It arrives at 10 Hz; routing it through state would
     // re-render the composer, the gesture chrome and every control beside them ten times a second for
@@ -783,12 +778,16 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
       if (pending) host.dataset.pending = "1";
       else delete host.dataset.pending;
     };
+    // S11 (BUG-001 H1/H2) — THE START BUZZ, honest: fired by the recorder once the words-carrying path
+    // is live (the uplink's first frame, or the clip's first meter reading), never at activation.
+    liveRef.current = () => buzz(VIB_START_MS);
     return () => {
       meterRef.current = null;
       tooShortRef.current = null;
       pendingRef.current = null;
+      liveRef.current = null;
     };
-  }, [meterRef, tooShortRef, pendingRef, flashHint]);
+  }, [meterRef, tooShortRef, pendingRef, liveRef, flashHint]);
 
   // THE LOCKED CANCEL, PUBLISHED (OF-5). While the gesture is `locked` — by a swipe or by the keyboard
   // path, which is locked from its first keystroke — the tools/skills trigger at the composer's other

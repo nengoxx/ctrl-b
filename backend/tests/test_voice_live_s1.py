@@ -15,7 +15,8 @@ The arms, by what they defend:
 * **origin** — the ONLY defence a WebSocket has in a CORS-less app (SECURITY_MODEL §2.7).
 * **gates** — `enabled` / no chain / no TTS / busy, and the `live` capability bit's truth table.
 * **wire** — the five-field `turn_detection`, the language rule, TEXT-framed base64 appends whose
-  bytes are the resampled 24 kHz audio, and the one spurious error that must be swallowed.
+  bytes are the resampled 24 kHz audio, and every upstream error forwards (S11 retired the one
+  spurious error the relay used to swallow — the owned fork now honours `prefix_padding_ms`).
 * **COMMIT-SAFETY** — a full session never sends `input_audio_buffer.commit` (R70 §1.2 arm A: a
   commit with speech open kills the session and loses the words).
 * **flush** — the CONSTANT worst-case pad `max(3000, silence_ms) + 200` (F3, two confirm rounds: a
@@ -64,7 +65,13 @@ from app.core.audio import SPEACHES_WIRE_RATE, Pcm16Resampler
 from app.core.provider_registry import resolve_lenient
 from app.domain.provider import LivePolicy, SttPolicy, TtsPolicy
 from app.services.call_trail import CallTrail
-from app.services.voice_live import LiveSessionSlots, gap_cut_ms, realtime_url
+from app.services.voice_live import (
+    LiveRelaySession,
+    LiveSessionSlots,
+    _SegmentClock,
+    gap_cut_ms,
+    realtime_url,
+)
 
 ORIGIN = {"Origin": "http://testserver"}
 SECRET = "sk-LIVE-VOICE-CANARY"
@@ -97,6 +104,15 @@ def created(**session: Any) -> Say:
     return Say({"type": "session.created", "session": session})
 
 
+def echoed(pre_roll: int | None) -> Say:
+    """Speaches' `session.updated` echo (S11 fix wave 1) — the relay's EFFECTIVE pre-roll is read off
+    it. `None` echoes a turn_detection WITHOUT the field (an ear that never heard of it)."""
+    td: dict[str, Any] = {"type": "server_vad", "threshold": 0.6, "silence_duration_ms": 700}
+    if pre_roll is not None:
+        td["prefix_padding_ms"] = pre_roll
+    return Say({"type": "session.updated", "session": {"turn_detection": td}})
+
+
 def transcribed(text: str, **gate: Any) -> Say:
     """One completed transcription — the event the relay turns into a `transcript` downlink. Spelled
     once because the event type is long enough that a fourth hand-written copy would be a typo risk."""
@@ -107,7 +123,7 @@ PAD_ERROR = {
     "type": "error",
     "error": {
         "type": "invalid_request_error",
-        # `session_event_router.py:36` verbatim — the ONE error the relay must swallow.
+        # an UNPATCHED Speaches' refusal, verbatim — swallowed before S11, forwarded like any other since.
         "message": (
             "Specifying `session.turn_detection.prefix_padding_ms` is not supported. "
             "The server either does not support this field or it is not configurable."
@@ -518,17 +534,29 @@ def test_session_update_carries_the_full_turn_detection_and_the_language() -> No
         _ready(ws)
     update = fake.one("session.update")
     # ALL FIVE fields — a partial `turn_detection` validates as NotGiven and is silently dropped
-    # (§7-S0 ②), so the threshold would simply never apply.
+    # (§7-S0 ②), so the threshold would simply never apply. The pre-roll is config's (S11; default 300).
     assert update["session"]["turn_detection"] == {
         "type": "server_vad",
         "threshold": 0.55,
-        "prefix_padding_ms": 0,
+        "prefix_padding_ms": 300,
         "silence_duration_ms": 900,
         "create_response": False,
     }
     assert update["session"]["input_audio_transcription"] == {"language": "en"}
     assert fake.url.endswith("/v1/realtime?model=parakeet&intent=transcription")
     assert fake.url.startswith("ws://ear:9000/")
+
+
+def test_session_update_sends_the_configured_pre_roll() -> None:
+    """S11 (BUG-001 H3) — `prefix_padding_ms` is a SERVER knob riding the one `session.update`: the
+    owned fork pre-rolls each segment's slice start by it. 0 is a real value (the pre-S11 slice)."""
+    for pre_roll in (0, 150, 1000):
+        fake = FakeSpeaches([created()])
+        with _fake_app(fake, live_cfg={"prefix_padding_ms": pre_roll}).websocket_connect(
+            "/api/voice/live", headers=ORIGIN
+        ) as ws:
+            _ready(ws)
+        assert fake.one("session.update")["session"]["turn_detection"]["prefix_padding_ms"] == pre_roll
 
 
 @pytest.mark.parametrize("vad", [0.35, "0.5", True, None, 1.5])
@@ -578,7 +606,9 @@ def test_appends_are_text_frames_of_base64_resampled_24k_audio() -> None:
     assert fake.types.count("input_audio_buffer.append") == 3
 
 
-def test_the_spurious_prefix_padding_error_is_swallowed_and_others_are_not() -> None:
+def test_every_upstream_error_forwards_the_old_prefix_padding_one_included() -> None:
+    """S11 — the swallow is GONE (no legacy seams): an unpatched ear's `prefix_padding_ms` refusal is
+    an ordinary upstream error now, forwarded like the next one, and neither ends the session."""
     fake = FakeSpeaches(
         [
             created(),
@@ -590,7 +620,8 @@ def test_the_spurious_prefix_padding_error_is_swallowed_and_others_are_not() -> 
     with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
         _ready(ws)
         frame = _json(ws)
-        # the FIRST error down is the real one — the prefix_padding_ms one never arrives
+        assert frame["code"] == "upstream_error" and "prefix_padding_ms" in frame["message"]
+        frame = _json(ws)
         assert (frame["code"], frame["message"]) == ("upstream_error", "the ear fell over")
         # …and the session CONTINUES: an upstream error event is not a dead socket
         ws.send_json({"type": "stop"})
@@ -760,6 +791,176 @@ def test_the_gap_cut_falls_back_to_the_relays_own_clock() -> None:
         assert _json(ws) == {"type": "transcript", "text": "No.", "final": True, "item_id": "item_B"}
 
 
+@pytest.mark.parametrize(
+    ("pre_roll", "start_ms", "end_ms", "net"),
+    [
+        (300, 1000, 1900, 600),  # the whole pre-roll comes off a start above 0
+        (300, 100, 1000, 600),  # …even a start inside the first pre-roll (it was not clamped)
+        (300, 0, 900, 900),  # a start AT 0 may be clamped — nothing comes off (errs toward the veto)
+        (0, 1000, 1900, 900),  # no pre-roll configured, nothing to take off
+        (300, 1000, 1100, 0),  # never negative
+    ],
+)
+def test_the_audio_span_is_judged_net_of_the_pre_roll(
+    pre_roll: int, start_ms: int, end_ms: int, net: int
+) -> None:
+    """S11 — the fork back-dates `audio_start_ms` by `prefix_padding_ms` (clamped at its buffer start),
+    so the veto judges the span WITHOUT it; otherwise every flap would read 300 ms longer and slip
+    under the `≥ silence_ms` veto."""
+    clock = _SegmentClock(audio_start_ms=start_ms, audio_end_ms=end_ms)
+    assert clock.audio_gap_ms(pre_roll) == net
+
+
+def test_the_gap_cut_veto_reads_the_net_span_on_the_wire() -> None:
+    """End to end at the default 300 ms pre-roll: a flap whose RAW audio span (900) would veto the cut
+    is judged on its net 600 and cut; a clamped start (0) keeps its whole span and the veto stands."""
+    fake = FakeSpeaches(
+        [
+            created(),
+            echoed(300),  # a patched ear confirms the pre-roll it applies
+            *_segment("item_A", 1000, 1900, "Mm."),
+            *_segment("item_B", 0, 900, "Turn it off."),
+        ]
+    )
+    with _fake_app(fake, live_cfg={"silence_ms": 700}).websocket_connect(
+        "/api/voice/live", headers=ORIGIN
+    ) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        _json(ws), _json(ws)
+        assert _json(ws)["reason"] == "short"
+        _json(ws), _json(ws)
+        assert _json(ws) == {"type": "transcript", "text": "Turn it off.", "final": True, "item_id": "item_B"}
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        pytest.param([Say(PAD_ERROR), echoed(0)], id="rejected-then-echoed-0"),
+        pytest.param([echoed(None)], id="echo-without-the-field"),
+        pytest.param([], id="no-echo-at-all"),
+    ],
+)
+def test_the_net_uses_the_ECHOED_pre_roll_and_an_unapplied_one_warns_once(
+    script: list[Say], caplog: pytest.LogCaptureFixture
+) -> None:
+    """S11 fix wave 1 — the veto nets out what the ear SAID it applies, never the configured value: on
+    an unpatched ear (rejects the field, echoes its own 0) a genuine short answer whose raw audio span is
+    ≥ `silence_ms` keeps its veto instead of being under-read by 300 and cut. Rejected or echoed short ⇒
+    ONE warning naming the fork requirement (never one per event)."""
+    caplog.set_level(logging.WARNING, logger="app.services.voice_live")
+    fake = FakeSpeaches(
+        [
+            created(),
+            *script,
+            *_segment("item_A", 1000, 1800, "No."),  # raw 800 ≥ 700: vetoed unless 300 is netted out
+            echoed(0),  # a second echo must not warn again
+            *_segment("item_B", 1000, 1800, "Yes."),
+        ]
+    )
+    with _fake_app(fake, live_cfg={"silence_ms": 700}).websocket_connect(
+        "/api/voice/live", headers=ORIGIN
+    ) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        finals: list[dict[str, Any]] = []
+        while len(finals) < 2:
+            frame = _json(ws)
+            if frame["type"] == "transcript":
+                finals.append(frame)
+    assert [f["text"] for f in finals] == ["No.", "Yes."]  # net 800 — the veto stands, twice
+    assert not any("reason" in f for f in finals)
+    warnings = [r for r in caplog.records if "prefix_padding_ms" in r.getMessage()]
+    assert len(warnings) == 1  # exactly one per session, however many echoes/errors say so
+    assert "fork" in warnings[0].getMessage()
+
+
+def test_a_patched_echo_is_the_pre_roll_netted_out_and_raises_no_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="app.services.voice_live")
+    fake = FakeSpeaches([created(), echoed(300), *_segment("item_A", 1000, 1800, "Mm.")])
+    with _fake_app(fake, live_cfg={"silence_ms": 700}).websocket_connect(
+        "/api/voice/live", headers=ORIGIN
+    ) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        _json(ws), _json(ws)
+        assert _json(ws)["reason"] == "short"  # net 500 < 700 — no veto, the flap is cut
+    assert not [r for r in caplog.records if "prefix_padding_ms" in r.getMessage()]
+
+
+def test_a_dictation_final_still_consumes_its_segment_clock() -> None:
+    """S11 fix wave 1 — the dictation early return skips only the VERDICT: the clock is popped, so a
+    long dictation never fills the relay's segment ledger with clocks nobody will read."""
+    fake = FakeSpeaches(
+        [created(), *_segment("item_A", 1000, 1150, "one"), *_segment("item_B", 2000, 2150, "two")]
+    )
+    sessions: list[Any] = []
+    original = LiveRelaySession.__init__
+
+    def spy(self: Any, *a: Any, **kw: Any) -> None:
+        original(self, *a, **kw)
+        sessions.append(self)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(LiveRelaySession, "__init__", spy)
+        with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+            ws.send_json({"type": "start", "sample_rate": SPEACHES_WIRE_RATE, "mode": "dictation"})
+            assert _json(ws) == {"type": "state", "state": "ready"}
+            texts = [f["text"] for f in (_json(ws) for _ in range(6)) if f["type"] == "transcript"]
+            assert texts == ["one", "two"]
+            assert len(sessions[0]._segments) == 0
+
+
+def test_a_dictation_leg_is_never_gap_cut(tmp_path: Any) -> None:
+    """S11, the owner's ruling — `start.mode: "dictation"` legs skip the D80 ④ cut: a flap there can
+    carry real words into the composer, and the cut exists to keep a CALL's conversation clean. The
+    same flap on a call leg (the arm above) goes down empty."""
+    fake = FakeSpeaches([created(), *_segment("item_A", 1000, 1150, "and then the rest")])
+    trail = CallTrail(tmp_path / "calls")
+    app = _fake_app(fake, live_cfg={"debug": True}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json(
+            {
+                "type": "start",
+                "sample_rate": SPEACHES_WIRE_RATE,
+                "mode": "dictation",
+                "call_id": CALL,
+                "leg": 1,
+            }
+        )
+        assert _json(ws) == {"type": "state", "state": "ready"}
+        _json(ws), _json(ws)
+        assert _json(ws) == {
+            "type": "transcript",
+            "text": "and then the rest",
+            "final": True,
+            "item_id": "item_A",
+        }
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+    lines = _trail_lines(tmp_path / "calls")
+    assert lines[0]["ev"] == "leg_start" and lines[0]["mode"] == "dictation"
+    assert not [line for line in lines if line["ev"] == "gap_cut"]
+
+
+@pytest.mark.parametrize("mode", ["", "Dictation", "chat", 1, None, True])
+def test_a_malformed_start_mode_is_a_protocol_close(mode: Any) -> None:
+    app = _fake_app(FakeSpeaches([created()]))
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": 48000, "mode": mode})
+        frame = _json(ws)
+        assert frame["code"] == "protocol" and "start.mode" in frame["message"]
+        assert _closed(ws)[0] == 1008
+
+
+def test_an_explicit_call_mode_is_the_default_leg() -> None:
+    fake = FakeSpeaches([created(), *_segment("item_A", 1000, 1150, "Mm.")])
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": SPEACHES_WIRE_RATE, "mode": "call"})
+        assert _json(ws) == {"type": "state", "state": "ready"}
+        _json(ws), _json(ws)
+        assert _json(ws)["reason"] == "short"
+
+
 def test_the_gap_cut_never_judges_a_segment_it_did_not_time() -> None:
     """No id, or an id whose start/stop the relay never saw: the transcript passes verbatim — the cut
     only ever acts on evidence, like the phone's own gate."""
@@ -789,7 +990,9 @@ def test_a_cut_is_trailed_with_its_reason_and_the_words_it_dropped(tmp_path: Any
     """The down frame IS the trail line (the one downlink hook), so the reason rides it; the words the
     flap would have carried are on a relay-only `gap_cut` note beside both clocks (R92 §V: trail the
     flap text) — the only place they are written, since the wire carries none."""
-    fake = FakeSpeaches([created(), *_segment("item_A", 1000, 1080, "Mm.")])
+    # 1000 → 1380 on the audio clock is an 80 ms span once the default 300 ms pre-roll is taken off it
+    # (S11): the trail records the NET span the veto judged.
+    fake = FakeSpeaches([created(), echoed(300), *_segment("item_A", 1000, 1380, "Mm.")])
     trail = CallTrail(tmp_path / "calls")
     app = _fake_app(fake, live_cfg={"debug": True}, trail=trail)
     with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
@@ -1264,11 +1467,12 @@ _LIVE_CALL_READERS = (
 # NOT readers, deliberately absent from the list: `hooks/useVoiceStatus.ts` (the wire TYPE declaring
 # every key), and `hooks/useSettings.ts` + `tabs/ConfTab.tsx` (they read `voice.live` from the whole
 # config document, `GET /settings`, never from `/voice/status`).
-#: `LiveCfg`'s SERVER-only knobs (its docstring's split): the relay's caps and the two that ride
+#: `LiveCfg`'s SERVER-only knobs (its docstring's split): the relay's caps and the three that ride
 #: `session.update`. `frame_ms` is a server cap the client ALSO paces by, so it is not listed.
 _SERVER_ONLY = {
     "vad_threshold",
     "silence_ms",
+    "prefix_padding_ms",
     "max_frame_bytes",
     "max_session_s",
     "max_sessions",
@@ -1438,6 +1642,8 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "tail_wait_ms": 2500,
             "dictation_idle_s": 20,
             "dictation_max_s": 300,
+            "release_tail_ms": 600,
+            "prefix_padding_ms": 200,  # a SERVER knob: configured, never delivered (below)
         }
     )
     body = app.get("/api/voice/status").json()
@@ -1502,6 +1708,9 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "tail_wait_ms": 2500,
         "dictation_idle_s": 20,
         "dictation_max_s": 300,
+        # S11 (BUG-001 T1) — the release post-roll: a CLIENT knob (the recorder is the browser's), and
+        # it governs the whole-clip path too, like the capture pair.
+        "release_tail_ms": 600,
     }
     # shape only: nothing here names an endpoint, a model or a key (the `stt_auto_stop` precedent)
     assert not {"provider", "model", "base_url", "api_key"} & set(body["live_call"])
@@ -1665,6 +1874,9 @@ def test_live_config_defaults() -> None:
     # and the three numbers are R70 §4/§9.3's measured defaults.
     assert cfg.dictation is False
     assert (cfg.tail_wait_ms, cfg.dictation_idle_s, cfg.dictation_max_s) == (2000, 15, 120)
+    # S11 (BUG-001) — the release post-roll (T1) and the ear's slice-start pre-roll (H3, the OpenAI
+    # server_vad default).
+    assert (cfg.release_tail_ms, cfg.prefix_padding_ms) == (400, 300)
 
 
 @pytest.mark.parametrize(
@@ -1744,6 +1956,13 @@ def test_live_config_defaults() -> None:
         {"echo_similarity": 1.01},
         {"echo_window_ms": -1},
         {"echo_window_ms": 15001},
+        # S11 — the release post-roll (0 = off; past 1.5 s a stop becomes a pause) and the pre-roll
+        # (0 = the pre-S11 slice; the 1000 cap is a SANITY bound — Speaches starts a fresh buffer per
+        # segment, so the pre-roll can never reach the previous phrase, only leading noise).
+        {"release_tail_ms": -1},
+        {"release_tail_ms": 1501},
+        {"prefix_padding_ms": -1},
+        {"prefix_padding_ms": 1001},
     ],
 )
 def test_live_config_bounds_reject_wedging_values(bad: dict[str, Any]) -> None:
@@ -1835,7 +2054,6 @@ def test_a_debug_leg_writes_its_trail_every_line_carrying_the_leg(tmp_path: Any)
     fake = FakeSpeaches(
         [
             created(),
-            Say(PAD_ERROR),
             Say({"type": "input_audio_buffer.speech_started"}, after_appends=1),
             Say({"type": "input_audio_buffer.speech_stopped"}, after_appends=1),
             transcribed("Wake up corsair.", after_appends=1),
@@ -1859,8 +2077,9 @@ def test_a_debug_leg_writes_its_trail_every_line_carrying_the_leg(tmp_path: Any)
     assert all(isinstance(line["t"], int) for line in lines)
     evs = [line["ev"] for line in lines]
     assert evs[0] == "leg_start" and evs[-1] == "leg_end"
-    # the header line IS the one `session.update` — the exact knobs this leg ran
+    # the header line IS the one `session.update` — the exact knobs this leg ran — and its feature (S11)
     assert lines[0]["rate"] == 48000
+    assert lines[0]["mode"] == "call"
     assert lines[0]["session"] == fake.one("session.update")["session"]
     assert lines[0]["session"]["turn_detection"]["silence_duration_ms"] == 900
     # every downlink frame, verbatim and in order — the owner's words appear here, once
@@ -1872,10 +2091,6 @@ def test_a_debug_leg_writes_its_trail_every_line_carrying_the_leg(tmp_path: Any)
         {"type": "transcript", "text": "Wake up corsair.", "final": True},
         {"type": "state", "state": "ended"},
     ]
-    # the swallowed spurious error is still RECORDED, flagged — the trail sees what the phone does not
-    swallowed = [line for line in lines if line["ev"] == "up_error"]
-    assert len(swallowed) == 1 and swallowed[0]["swallowed"] is True
-    assert "prefix_padding_ms" in swallowed[0]["error"]["message"]
     assert [line["pad_ms"] for line in lines if line["ev"] == "flush"] == [3200]
     assert "stop" in evs
     assert lines[-1] == {**lines[-1], "code": 1000, "reason": "ended"}

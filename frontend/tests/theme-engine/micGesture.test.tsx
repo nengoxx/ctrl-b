@@ -52,6 +52,7 @@ import {
   LOCK_HINT_COUNT_MS,
   LOCK_HINT_MAX,
   LOCK_PX,
+  VIB_START_MS,
   useMicGesture,
 } from "../../src/theme-engine/kit/composer/useMicGesture";
 import { TOO_SHORT_MSG, type useDictation } from "../../src/hooks/useDictation";
@@ -204,6 +205,39 @@ describe("the hold → release leg, against today's dictation pipeline", () => {
     await tick(10);
     expect(posts()).toBe(0);
     expect(getDraft()).toBe("");
+  });
+});
+
+describe("S11 · the honest go-signal (BUG-001 H1), end to end through the real recorder", () => {
+  it("the start buzz waits for the MIC: nothing while getUserMedia is still opening, one buzz once it runs", async () => {
+    const vibrate = vi.fn(() => true);
+    Object.defineProperty(navigator, "vibrate", { configurable: true, value: vibrate });
+    const gate = gateMediaDevices();
+    render(<KitComposer />);
+    await hold(); // activated: the circle is painted, the recorder is still being opened
+    expect(document.querySelector(".mg-circle")).not.toBeNull();
+    expect(vibrate).not.toHaveBeenCalled(); // the old buzz fired HERE — before a single sample existed
+    await act(async () => {
+      gate.open();
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    // jsdom has no Web Audio, so the clip is the carrier from `rec.start()` — "go" at once, and once.
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    expect(vibrate).toHaveBeenCalledWith(VIB_START_MS);
+  });
+
+  it("a hold released before the mic opened never buzzes at all", async () => {
+    const vibrate = vi.fn(() => true);
+    Object.defineProperty(navigator, "vibrate", { configurable: true, value: vibrate });
+    const gate = gateMediaDevices();
+    render(<KitComposer />);
+    await hold();
+    up(); // released inside the acquisition window — the attempt is aborted (F5)
+    await act(async () => {
+      gate.open();
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(vibrate).not.toHaveBeenCalled();
   });
 });
 
@@ -779,6 +813,7 @@ describe("OF-3/OF-4 (+S2.5) · the recorder seams the gesture registers", () => 
     onTooShort: { current: null },
     onPending: { current: null },
     handsFree: { current: false },
+    onLive: { current: null },
   });
 
   /** The hook PLUS its chrome, which is what gives the level somewhere to land. */
@@ -795,11 +830,48 @@ describe("OF-3/OF-4 (+S2.5) · the recorder seams the gesture registers", () => 
     expect(mic.meter.current).toBeTypeOf("function");
     expect(mic.onTooShort.current).toBeTypeOf("function");
     expect(mic.onPending.current).toBeTypeOf("function"); // S2.5
+    expect(mic.onLive.current).toBeTypeOf("function"); // S11
     unmount();
     // a second composer must not inherit handlers pointing into a tree that is gone
     expect(mic.meter.current).toBeNull();
     expect(mic.onTooShort.current).toBeNull();
     expect(mic.onPending.current).toBeNull();
+    expect(mic.onLive.current).toBeNull();
+  });
+
+  it("S11 · the START BUZZ is the recorder's `onLive`, not the activation", async () => {
+    const vibrate = vi.fn(() => true);
+    Object.defineProperty(navigator, "vibrate", { configurable: true, value: vibrate });
+    const mic = stubMic("idle");
+    function Button() {
+      const gesture = useMicGesture(mic, false);
+      return (
+        <>
+          <button type="button" aria-label="start dictation" {...gesture.handlers} />
+          <MicGestureChrome chrome={gesture.chrome} />
+        </>
+      );
+    }
+    render(<Button />);
+    await hold();
+    expect(mic.start).toHaveBeenCalledTimes(1); // the recorder was asked at activation…
+    expect(vibrate).not.toHaveBeenCalled(); // …but "speak now" waits for it to say it is live
+    act(() => mic.onLive.current!());
+    expect(vibrate).toHaveBeenCalledWith(VIB_START_MS);
+  });
+
+  it("S11 · a gesture stop is the OWNER's — it asks the recorder to SETTLE (the release post-roll)", async () => {
+    const mic = stubMic("idle");
+    function Button() {
+      const gesture = useMicGesture(mic, false);
+      return <button type="button" aria-label="start dictation" {...gesture.handlers} />;
+    }
+    render(<Button />);
+    await hold();
+    await tick(HELD_MS);
+    up();
+    expect(mic.stop).toHaveBeenCalledWith(true);
+    expect(mic.cancel).not.toHaveBeenCalled();
   });
 
   it("the level lands on the host IMPERATIVELY, and is cleared when the recording ends", async () => {
@@ -846,6 +918,7 @@ describe("S2.5 · the gesture publishes WHOSE TIMEOUT THE FINGER IS (§9.3-c)", 
     onTooShort: { current: null },
     onPending: { current: null },
     handsFree: { current: false },
+    onLive: { current: null },
   });
 
   function Button({ mic: m }: { mic: ReturnType<typeof useDictation> }) {

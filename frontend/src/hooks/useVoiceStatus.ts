@@ -145,6 +145,12 @@ export interface LiveCallWire {
   dictation_idle_s: number;
   /** The hard cap on any one streaming dictation session, s (R70 §9.3) — `hold` included. */
   dictation_max_s: number;
+  /** S11 (BUG-001 T1) — THE RELEASE POST-ROLL, ms: after a USER stop (a hold released, the lock's tap,
+   *  the keyboard's stop) the recorder and the uplink keep running this long before the ordinary stop,
+   *  so a release timed with the last syllable does not clip it. Every other stop stays immediate.
+   *  Governs the WHOLE-CLIP path too (the capture pair's reason), so it is read whether or not
+   *  `dictation` is on. **0 = off**; optional, and absent reads as off (an older backend). */
+  release_tail_ms?: number;
   /** D74 S5 — THE TRANSCRIPT GATE: how many milliseconds of UPLINKED microphone audio at or above the
    *  effective floor (D76 §C — relative, in dBFS) a call utterance must have carried before its final
    *  is taken, ms. **0 = off.** It exists because a Whisper-family endpoint answers a stretch of noise

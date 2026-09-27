@@ -8,10 +8,23 @@
 // seat reads the file after the owner's phone round instead of reconstructing the call from memory.
 //
 // PURE-ISH ON PURPOSE: no React, no store, no fetch of its own — the POST is injected (`post`), the
-// clock is injectable (`now`), and the ONE timer is the flush interval. Nothing renders off it.
+// clock is injectable (`now`), and the ONE timer is the flush interval. Nothing renders off it. The
+// production poster (`postTrail`, the route's ONE spelling) lives here too, so its two callers — the
+// call (`useLiveCall`) and, since S11, each debug dictation (`useDictation`) — inject the same one.
 //
 // DEBUG DATA, SHAPED LIKE IT. A rejected POST drops its batch (one `console.debug`, never a retry, never
 // a throw into the call); a disposed trail ignores every push. The call must never notice the trail.
+
+import { postJSON } from "../api/client";
+
+/** The trail route (D77, `api/voice.py::live_trail`) — the one spelling of it. */
+export const TRAIL_URL = "/api/voice/live/trail";
+
+/** The production `post` every trail injects: the JSON write, riding `keepalive` when asked (the
+ *  `hidden`/`end` flushes, which must outlive a page going away). */
+export function postTrail(body: unknown, keepalive: boolean): Promise<void> {
+  return postJSON<void>(TRAIL_URL, body, { keepalive });
+}
 
 /** How often the buffer flushes on its own, ms. A property of READING the trail afterwards, not of the
  *  call: two seconds of lines is fine-grained enough to line up with the relay's own stamps and coarse

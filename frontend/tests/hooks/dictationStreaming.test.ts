@@ -29,6 +29,8 @@ const h = vi.hoisted(() => ({
   onFrame: null as ((f: { buf: ArrayBuffer; rms: number }) => void) | null,
   /** How many sockets were opened, and with what — "did it stream at all" is a count. */
   opens: [] as { sampleRate: number; ceilingMs: number }[],
+  /** S11 — what each open declared beyond the rate: its feature, and its trail identity (or none). */
+  starts: [] as { mode?: string; trail?: { callId: string; leg: number } }[],
   uplinkStops: 0,
   /** Whether the wire is OPEN, i.e. what the real module's `control()` gate reads before it sends: a
    *  `false` here models a leg already CLOSING whose `onclose` has not been delivered yet, and the two
@@ -40,6 +42,12 @@ const h = vi.hoisted(() => ({
 
 vi.mock("../../src/store/toast", () => ({ pushToast: vi.fn() }));
 vi.mock("../../src/lib/composer", () => ({ runComposer: vi.fn(() => true) }));
+// S11 — the dictation trail's POST (debug only). Faked at the client seam so a case can read the lines
+// the browser shipped without routing them through the `/api/voice/stt` fetch fake.
+vi.mock("../../src/api/client", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/api/client")>()),
+  postJSON: vi.fn(async () => undefined),
+}));
 vi.mock("../../src/lib/liveSocket", () => ({
   liveSocketUrl: () => "ws://x/api/voice/live",
   openLiveSocket: (opts: {
@@ -47,8 +55,11 @@ vi.mock("../../src/lib/liveSocket", () => ({
     ceilingMs: number;
     onFrame: (f: LiveDown) => void;
     onClose: (code: number, reason: string) => void;
+    mode?: string;
+    trail?: { callId: string; leg: number };
   }) => {
     h.opens.push({ sampleRate: opts.sampleRate, ceilingMs: opts.ceilingMs });
+    h.starts.push({ mode: opts.mode, trail: opts.trail });
     h.frame = opts.onFrame;
     h.close = () => opts.onClose(1006, "");
     return {
@@ -92,6 +103,7 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
   },
 }));
 
+import { postJSON } from "../../src/api/client";
 import { useDictation } from "../../src/hooks/useDictation";
 import { FakeMediaRecorder, gateMediaDevices, mockStt, setMediaDevices } from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
@@ -117,19 +129,26 @@ class FakeAudioContext {
   /** Emulates a context WITHOUT `audioWorklet` — an insecure (plain-HTTP) page, where the property
    *  simply does not exist (secure-context-only, MDN). The worklet gate's whole subject. */
   static noWorklet = false;
+  /** When set, the NEXT context starts `suspended` and its `resume()` parks on this gate — a resume
+   *  slower than the whole hold (S11 fix wave 1). Consumed by that one context. */
+  static resumeGate: Promise<void> | null = null;
+  gate: Promise<void> | null = null;
   state: string;
   sampleRate = 48000;
   audioWorklet: object | undefined = FakeAudioContext.noWorklet ? undefined : {};
   analyser = new FakeAnalyser();
   source = { connect: vi.fn(), disconnect: vi.fn() };
   resume = vi.fn(async () => {
+    if (this.gate) await this.gate;
     if (!FakeAudioContext.stuckSuspended && this.state !== "closed") this.state = "running";
   });
   close = vi.fn(async () => {
     this.state = "closed";
   });
   constructor() {
-    this.state = FakeAudioContext.stuckSuspended ? "suspended" : "running";
+    this.gate = FakeAudioContext.resumeGate;
+    FakeAudioContext.resumeGate = null;
+    this.state = FakeAudioContext.stuckSuspended || this.gate ? "suspended" : "running";
     contexts.push(this);
   }
   createAnalyser() {
@@ -272,6 +291,7 @@ beforeEach(() => {
   FakeMediaRecorder.last = null;
   FakeAudioContext.stuckSuspended = false;
   FakeAudioContext.noWorklet = false;
+  FakeAudioContext.resumeGate = null;
   setMediaDevices(true);
   clearDraft();
   mockStt(200, { text: "the whole clip" });
@@ -281,6 +301,8 @@ beforeEach(() => {
   h.audio = [];
   h.audioAt = [];
   h.opens = [];
+  h.starts = [];
+  vi.mocked(postJSON).mockClear();
   h.frame = null;
   h.close = null;
   h.onFrame = null;
@@ -1435,5 +1457,191 @@ describe("useDictation · streaming ⑧b an insecure page names HTTPS as the rea
     );
     act(() => result.current.cancel());
     vi.unstubAllGlobals();
+  });
+});
+
+// ── S11 (BUG-001) — the head and the tail ──────────────────────────────────────────────────────────
+
+describe('useDictation · S11 the leg says what it is — `start.mode: "dictation"`', () => {
+  it("every dictation leg declares its feature, so the relay skips the D80 ④ gap cut on it", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    expect(h.starts).toEqual([{ mode: "dictation", trail: undefined }]); // no trail with debug off
+  });
+});
+
+describe("useDictation · S11 H2 the go-signal is the uplink's FIRST FRAME on a streaming leg", () => {
+  it("not the recorder's start, not the meter's poll — the first frame the phrases will carry", async () => {
+    const onLive = vi.fn();
+    const { result } = renderHook(() => useDictation(opts()));
+    result.current.onLive.current = onLive;
+    await hold(result);
+    await tick(300); // three meter polls: the clip is recording, but a live leg owns the signal
+    expect(onLive).not.toHaveBeenCalled();
+    mic(1); // the worklet's first frame (buffered until `ready` — still the words-carrying path)
+    expect(onLive).toHaveBeenCalledTimes(1);
+    ready();
+    mic(2);
+    mic(3);
+    await tick(300);
+    expect(onLive).toHaveBeenCalledTimes(1); // once per recording
+  });
+
+  it("a leg that dies before any frame hands the signal to the clip — the next poll says go", async () => {
+    const onLive = vi.fn();
+    const { result } = renderHook(() => useDictation(opts()));
+    result.current.onLive.current = onLive;
+    await hold(result);
+    await act(async () => {
+      h.close?.(); // refused at the handshake: the clip carries every word from here
+    });
+    expect(onLive).not.toHaveBeenCalled();
+    await tick(100);
+    expect(onLive).toHaveBeenCalledTimes(1);
+  });
+
+  it("a release before the first frame never says go", async () => {
+    const onLive = vi.fn();
+    const { result } = renderHook(() => useDictation(opts()));
+    result.current.onLive.current = onLive;
+    await hold(result);
+    act(() => result.current.stop(true));
+    mic(1); // a late frame from a worklet that is still running out its callbacks
+    await tick(300);
+    expect(onLive).not.toHaveBeenCalled();
+  });
+});
+
+describe("useDictation · S11 T1 a USER release keeps the UPLINK running for `release_tail_ms`", () => {
+  const TAIL = { ...KNOBS, release_tail_ms: 400 };
+
+  it("frames spoken after the release still reach the ear, and the flush waits for the tail", async () => {
+    const { result } = renderHook(() => useDictation(opts({ liveCall: TAIL })));
+    await hold(result);
+    ready();
+    mic(1);
+    await tick(1200);
+    act(() => result.current.stop(true)); // the owner lets go on the last syllable
+    expect(result.current.status).toBe("sending"); // the release is painted at once
+    mic(2); // …the last syllable, captured INSIDE the post-roll
+    expect(shipped()).toContain(2);
+    expect(h.sent).toEqual([]); // no flush yet — the recorder is still running
+    await tick(400 - KNOBS.frame_ms);
+    expect(h.sent).toContain("flush"); // the ordinary release choreography, after the tail
+  });
+
+  it("an IMMEDIATE stop (the cap, a hidden page, a call) cuts a settling tail short", async () => {
+    const { result } = renderHook(() => useDictation(opts({ liveCall: TAIL })));
+    await hold(result);
+    ready();
+    await tick(1200);
+    act(() => result.current.stop(true));
+    expect(h.sent).toEqual([]);
+    act(() => result.current.stop()); // e.g. `yieldMic` — a call is waiting for the microphone
+    expect(h.sent).toContain("flush");
+  });
+});
+
+describe("useDictation · S11 the DICTATION TRAIL (debug only) rides the call trail's machinery", () => {
+  const DEBUG = { ...KNOBS, debug: true, release_tail_ms: 400 };
+  const lines = (): Record<string, unknown>[] =>
+    vi
+      .mocked(postJSON)
+      .mock.calls.flatMap((c) => (c[1] as { entries: Record<string, unknown>[] }).entries);
+
+  it("names its own trail on the leg (`leg: 1`) and ships the head's stamps + the release + the end", async () => {
+    const { result } = renderHook(() => useDictation(opts({ liveCall: DEBUG })));
+    await hold(result);
+    const trail = h.starts[0].trail!;
+    expect(trail.leg).toBe(1);
+    expect(trail.callId).toMatch(/^[0-9a-f-]{36}$/);
+    mic(1);
+    ready();
+    phrase("hello there");
+    await tick(1200);
+    act(() => result.current.stop(true));
+    await tick(400);
+    await runOutTail();
+    const calls = vi.mocked(postJSON).mock.calls;
+    expect(calls.every((c) => c[0] === "/api/voice/live/trail")).toBe(true);
+    expect(calls.every((c) => (c[1] as { call_id: string }).call_id === trail.callId)).toBe(true);
+    const evs = lines().map((l) => l.ev);
+    expect(evs).toEqual(["rec", "uplink", "go", "release", "end"]);
+    const rec = lines()[0];
+    expect(rec.t_activate).toBeTypeOf("number");
+    expect(rec.t_rec).toBeTypeOf("number");
+    expect(lines()[3]).toMatchObject({ settle: true, tail_ms: 400 });
+    expect(lines()[4]).toMatchObject({ finals: 1, clip: "discarded" });
+    expect(lines().every((l) => l.leg === 1)).toBe(true);
+  });
+
+  it("no trail — and no trail POST — with debug off", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    mic(1);
+    await release(result);
+    expect(postJSON).not.toHaveBeenCalled();
+  });
+});
+
+describe("useDictation · S11 fix wave 1 — the streaming tail's cuts, and no leg for the tail alone", () => {
+  const count = (word: string): number => h.sent.filter((w) => w === word).length;
+
+  it("the hard CAP landing inside the tail stops at once — one flush, one close", async () => {
+    const knobs = { ...KNOBS, dictation_max_s: 2, release_tail_ms: 400 }; // cap at 2000 ms of poll time
+    const { result } = renderHook(() => useDictation(opts({ liveCall: knobs })));
+    await hold(result);
+    ready();
+    await tick(1800);
+    act(() => result.current.stop(true)); // the owner lets go 200 ms before the cap
+    expect(FakeMediaRecorder.last!.state).toBe("recording");
+    await tick(200); // the cap fires INSIDE the tail
+    expect(FakeMediaRecorder.last!.state).toBe("inactive");
+    await runOutTail();
+    await tick(1000); // nothing is left for the tail's own timer to do
+    expect(count("flush")).toBe(1);
+    expect(count("close")).toBe(1);
+  });
+
+  it("the hands-free IDLE stop landing inside the tail stops at once — one flush, one close", async () => {
+    // A tap-started recording is hands-free; `stop(true)` is the keyboard's own stop (a user stop).
+    const knobs = { ...KNOBS, dictation_idle_s: 3, release_tail_ms: 1500 };
+    const auto = { enabled: false, silence_s: 3, threshold: 0.01 }; // the idle floor rides `threshold`
+    const { result } = renderHook(() => useDictation(opts({ liveCall: knobs, autoStop: auto })));
+    await tapStart(result);
+    ready();
+    micLevel = 0;
+    await tick(2500);
+    act(() => result.current.stop(true));
+    expect(FakeMediaRecorder.last!.state).toBe("recording");
+    await tick(600); // 3 s of silence reached INSIDE the 1.5 s tail
+    expect(FakeMediaRecorder.last!.state).toBe("inactive");
+    await runOutTail();
+    await tick(2000);
+    expect(count("flush")).toBe(1);
+    expect(count("close")).toBe(1);
+  });
+
+  it("a `resume()` slower than the whole hold opens NO leg for the post-roll — the clip carries it", async () => {
+    let open!: () => void;
+    FakeAudioContext.resumeGate = new Promise<void>((r) => (open = r));
+    const knobs = { ...KNOBS, release_tail_ms: 400 };
+    const { result } = renderHook(() => useDictation(opts({ liveCall: knobs })));
+    await act(async () => {
+      await result.current.start();
+    });
+    await tick(1200);
+    act(() => result.current.stop(true)); // released while the context is still resuming
+    await act(async () => {
+      open();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.opens).toEqual([]); // no socket for the tail alone
+    await tick(400);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1); // the whole-clip upload carried the utterance
   });
 });

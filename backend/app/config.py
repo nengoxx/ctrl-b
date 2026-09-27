@@ -673,7 +673,8 @@ class LiveCfg(VoiceServiceCfg):
     **R70** = the measured endpoint/flush law, **§3.1** = the plan's declared wire bounds.
 
     Split by WHO reads the knob, because the split is load-bearing for `GET /voice/status`:
-    * SERVER knobs — `vad_threshold`/`silence_ms` ride `session.update` to Speaches; `frame_ms`,
+    * SERVER knobs — `vad_threshold`/`silence_ms`/`prefix_padding_ms` ride `session.update` to
+      Speaches; `frame_ms`,
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `uplink_idle_s`, `allowed_origins` are the relay's own caps; `trail_keep` is the D77 call trail's
       retention.
@@ -683,8 +684,8 @@ class LiveCfg(VoiceServiceCfg):
       `tail_quiet_margin_db`, `hold_tail_max_ms`, `tail_lag_margin_ms`), the D80 BACKSTOP pair (`echo_similarity`,
       `echo_window_ms`), the D80 `chirp`, the D73 CAPTURE pair (`route`, `input_device`), the D73 S6
       BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`), the D74 pair
-      (`min_final_ms`, `debug`), the 2026-09-26 `noise_verdict_ms` and the four S2.5 DICTATION knobs
-      are PWA behavior
+      (`min_final_ms`, `debug`), the 2026-09-26 `noise_verdict_ms`, the four S2.5 DICTATION knobs and
+      the S11 `release_tail_ms` are PWA behavior
       (Speaches' `TurnDetection` accepts exactly five fields, §4.1, so an interruption floor cannot be
       a server knob). They are delivered verbatim by `GET /voice/status` (`live_call`) and nothing
       below the browser reads them.
@@ -700,7 +701,7 @@ class LiveCfg(VoiceServiceCfg):
     # ── whole-feature toggle (the standing pluggability requirement; ON since v1.7.8, S4 closed) ──
     enabled: bool = True
 
-    # ── the two knobs that ride `session.update` verbatim (§4.1; the ONLY server-side VAD knobs) ──
+    # ── the three knobs that ride `session.update` verbatim (§4.1; the ONLY server-side VAD knobs) ──
     #: Silero speech probability floor (D76 §D, evidence R84). Silero's END threshold is
     #: `threshold − 0.15`, and THAT is what cuts quiet or narrowband speech mid-phrase — the start
     #: threshold is not the noise lever (the relative floor, `floor_dbfs` and friends below, is). 0.6
@@ -714,6 +715,16 @@ class LiveCfg(VoiceServiceCfg):
     #: without touching the 3 s VAD-window floor). Bounded 500–1200 (D76 §D): below it a breath between
     #: clauses ends the turn, above it the reply waits on silence the owner can feel.
     silence_ms: int = Field(default=700, ge=500, le=1200)
+    #: `turn_detection.prefix_padding_ms` — the PRE-ROLL on the start of every VAD segment (Phase 24 S11,
+    #: BUG-001 H3). The ear slices each segment from Silero's threshold crossing, so without it every
+    #: phrase lost its onset before the transcriber ever saw it ("the beginning of many sentences"). The
+    #: owned Speaches fork honours it on the slice START only (`fd4b956`; the end and the endpoint
+    #: timing do not move). 300 ms is the OpenAI server_vad default (R92 §1). Bounded 0–1000 as a
+    #: SANITY bound: Speaches starts a fresh buffer for every segment, so the pre-roll clamps at that
+    #: buffer's start and can never reach the previous phrase — past a second it only adds leading
+    #: noise. The D80 ④ gap cut nets out the pre-roll the ear ECHOES in `session.updated`, never this
+    #: configured value (`services/voice_live.py::_adopt_pre_roll`).
+    prefix_padding_ms: int = Field(default=300, ge=0, le=1000)
 
     # ── client-side behavior, delivered by `GET /voice/status` and read only by the PWA ──
     #: Interruption floor: speech shorter than this never counts as a barge-in (livekit's
@@ -941,8 +952,9 @@ class LiveCfg(VoiceServiceCfg):
 
     # ── S2.5 · phrase-by-phrase streaming DICTATION (client; R70 §9.2/§9.3) ──
     # The mic's hold/lock rides the same ear as the call: each utterance final appends to the composer
-    # draft live, and the release is the relay's `flush` (never a commit — R70 §1.2 arm A). All four
-    # are read by `useDictation` alone; the relay neither sees nor enforces one of them.
+    # draft live, and the release is the relay's `flush` (never a commit — R70 §1.2 arm A). All four —
+    # and the S11 `release_tail_ms` below them — are read by `useDictation` alone; the relay neither
+    # sees nor enforces one of them.
     #: The whole-feature toggle (the standing pluggability requirement), independent of `enabled` so the
     #: owner can run calls without the mic streaming, or the reverse. The independence is REAL both ways
     #: (S3.5): the WS route + the `live_ear` bit admit on `enabled OR dictation`, so this switch alone
@@ -966,6 +978,15 @@ class LiveCfg(VoiceServiceCfg):
     #: The HARD cap on any one streaming dictation session, s (R70 §9.3, Claude Code's 120). Unlike the
     #: idle stop this applies to `hold` too: it bounds the open socket, not the user's patience.
     dictation_max_s: int = Field(default=120, ge=10, le=1800)
+    #: THE RELEASE POST-ROLL, ms (Phase 24 S11, BUG-001 T1): after a USER stop (a hold released, the
+    #: lock's tap, the keyboard's stop) the recorder and the uplink keep running this long before the
+    #: ordinary stop, so a release timed with the last syllable does not clip it. Every other stop —
+    #: cancel, a call taking the mic, a hidden page, the `dictation_max_s` cap, the silence auto-stop /
+    #: idle stop (their silence already IS the tail) — stays immediate. Governs the WHOLE-CLIP path too
+    #: (the capture pair's precedent), so it is read whether or not `dictation` is on. The 1000 ms floor
+    #: is measured to the release, never through this. 0 = off; capped at 1.5 s so a mistyped value
+    #: cannot turn a stop into a pause.
+    release_tail_ms: int = Field(default=400, ge=0, le=1500)
     # PINNED OMISSIONS (main-seat, S2.5 — recorded so the next reader does not re-derive them):
     # · `pause_flush_ms` (R70 §9.4's client-forced mid-hold flush) is NOT here. A knob whose value does
     #   nothing is dishonest in Conf, the §7-S1 residual list already omits it, and adding it later is

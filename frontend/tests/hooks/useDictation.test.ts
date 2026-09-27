@@ -13,7 +13,7 @@ vi.mock("../../src/store/toast", () => ({ pushToast: vi.fn() }));
 vi.mock("../../src/lib/composer", () => ({ runComposer: vi.fn(() => true) }));
 vi.mock("../../src/store/chat", () => ({ getChatStatus: vi.fn(() => "idle") }));
 
-import { useDictation } from "../../src/hooks/useDictation";
+import { TOO_SHORT_MSG, useDictation } from "../../src/hooks/useDictation";
 import { FakeMediaRecorder, mockStt, recordOnce, setMediaDevices } from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
 import { getChatStatus } from "../../src/store/chat";
@@ -767,5 +767,270 @@ describe("useDictation — handing the EAR to a call (D74 S6 ⑧, evidence docs/
     await act(async () => {
       await releaseMic(); // nobody is offering: this must neither hang nor throw
     });
+  });
+});
+
+// --- S11 (BUG-001) — the release post-roll (T1) and the honest go-signal (H1/H2) -------------------
+describe("useDictation · S11 the release post-roll + the go seam (whole-clip path)", () => {
+  /** `/voice/status.live_call` carrying ONLY the post-roll: no ear, so every recording is whole-clip —
+   *  which is exactly the point: the tail governs the whole-clip path too. */
+  const tailOpts = (release_tail_ms = 400) =>
+    ({
+      ...opts(false),
+      liveCall: { release_tail_ms },
+    }) as unknown as Parameters<typeof useDictation>[0];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    micLevel = 0;
+    contexts = [];
+    FakeAudioContext.stuckSuspended = false;
+    FakeAudioContext.resumeGate = null;
+    FakeMediaRecorder.last = null;
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.mocked(pushToast).mockClear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("a USER stop keeps RECORDING for `release_tail_ms`, painted as `sending`, then uploads", async () => {
+    const { result } = renderHook(() => useDictation(tailOpts()));
+    await startRecording(result);
+    await tick(1200);
+    await act(async () => {
+      result.current.toggle(); // the keyboard's stop — a user stop
+    });
+    expect(result.current.status).toBe("sending"); // the release is painted at once…
+    expect(FakeMediaRecorder.last!.state).toBe("recording"); // …while the recorder runs on
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    await tick(399);
+    expect(FakeMediaRecorder.last!.state).toBe("recording");
+    await tick(1);
+    expect(FakeMediaRecorder.last!.state).toBe("inactive");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    await tick(10);
+    expect(getDraft()).toBe("hello world");
+  });
+
+  it("the 1000 ms FLOOR is measured to the RELEASE — the post-roll cannot carry a blip past it", async () => {
+    const { result } = renderHook(() => useDictation(tailOpts()));
+    await startRecording(result);
+    await tick(700); // a 700 ms blip…
+    act(() => result.current.stop(true));
+    await tick(400); // …plus the 400 ms tail is 1100 ms of recording, but the HOLD was 700
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(pushToast).toHaveBeenCalledWith(TOO_SHORT_MSG, "info");
+  });
+
+  it("every NON-user stop is immediate — the recorder stops on the call", async () => {
+    const { result } = renderHook(() => useDictation(tailOpts()));
+    await startRecording(result);
+    await tick(1200);
+    act(() => result.current.stop()); // the cap / auto-stop / a death / unmount all call it bare
+    expect(FakeMediaRecorder.last!.state).toBe("inactive");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a CANCEL inside the tail discards at once — no POST, and the timer is gone", async () => {
+    const { result } = renderHook(() => useDictation(tailOpts()));
+    await startRecording(result);
+    await tick(1200);
+    act(() => result.current.stop(true));
+    act(() => result.current.cancel());
+    expect(FakeMediaRecorder.last!.state).toBe("inactive");
+    await tick(2000);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("a CALL taking the ear inside the tail does not wait for it (`yieldMic` is immediate)", async () => {
+    const { result } = renderHook(() => useDictation(tailOpts()));
+    await startRecording(result);
+    await tick(1200);
+    act(() => result.current.stop(true));
+    let freed = false;
+    await act(async () => {
+      await releaseMic().then(() => {
+        freed = true;
+      });
+    });
+    expect(freed).toBe(true);
+    expect(FakeMediaRecorder.last!.state).toBe("inactive");
+  });
+
+  it("a re-press during the tail gets `false` — one recording at a time", async () => {
+    const { result } = renderHook(() => useDictation(tailOpts()));
+    await startRecording(result);
+    await tick(1200);
+    act(() => result.current.stop(true));
+    let armed: boolean | undefined;
+    await act(async () => {
+      armed = await result.current.start();
+    });
+    expect(armed).toBe(false);
+  });
+
+  it("a Conf save that changes the tail MID-RECORDING neither ends the recording nor loses the new value", async () => {
+    // `stop` keeps its identity (the tail rides a ref): the unmount sweep is keyed on it, and a
+    // re-identified `stop` would run the sweep — i.e. stop a live recording on a status refetch.
+    const { result, rerender } = renderHook(
+      (o: Parameters<typeof useDictation>[0]) => useDictation(o),
+      {
+        initialProps: tailOpts(400),
+      },
+    );
+    await startRecording(result);
+    await tick(1200);
+    rerender(tailOpts(800));
+    expect(FakeMediaRecorder.last!.state).toBe("recording");
+    act(() => result.current.stop(true));
+    await tick(799);
+    expect(FakeMediaRecorder.last!.state).toBe("recording");
+    await tick(1);
+    expect(FakeMediaRecorder.last!.state).toBe("inactive");
+  });
+
+  it("`release_tail_ms: 0` (or absent) is the pre-S11 immediate stop", async () => {
+    const { result } = renderHook(() => useDictation(tailOpts(0)));
+    await startRecording(result);
+    await tick(1200);
+    act(() => result.current.stop(true));
+    expect(FakeMediaRecorder.last!.state).toBe("inactive");
+  });
+
+  it("the meter goes quiet at the release — the post-roll records, but the gesture has closed", async () => {
+    const meter = vi.fn();
+    const { result } = renderHook(() => useDictation(tailOpts()));
+    result.current.meter.current = meter;
+    await startRecording(result);
+    micLevel = 0.06;
+    await tick(1200);
+    expect(meter).toHaveBeenCalled();
+    act(() => result.current.stop(true));
+    meter.mockClear();
+    await tick(300);
+    expect(meter).not.toHaveBeenCalled();
+  });
+
+  it("GO fires once, on the first meter poll — the clip is the carrier and the stream is proven running", async () => {
+    const onLive = vi.fn();
+    const { result } = renderHook(() => useDictation(tailOpts()));
+    result.current.onLive.current = onLive;
+    await startRecording(result);
+    expect(onLive).not.toHaveBeenCalled();
+    await tick(100);
+    expect(onLive).toHaveBeenCalledTimes(1);
+    await tick(1000);
+    expect(onLive).toHaveBeenCalledTimes(1);
+  });
+
+  it("…at once where the context will not run — the recorder has been capturing since `rec.start()`", async () => {
+    FakeAudioContext.stuckSuspended = true;
+    const onLive = vi.fn();
+    const { result } = renderHook(() => useDictation(tailOpts()));
+    result.current.onLive.current = onLive;
+    await startRecording(result);
+    expect(onLive).toHaveBeenCalledTimes(1);
+  });
+
+  it("…and never once the owner has let go", async () => {
+    const onLive = vi.fn();
+    const { result } = renderHook(() => useDictation(tailOpts()));
+    result.current.onLive.current = onLive;
+    await startRecording(result);
+    act(() => result.current.stop(true)); // released before the first poll
+    await tick(500);
+    expect(onLive).not.toHaveBeenCalled();
+  });
+});
+
+// S11 fix wave 1 — every real NON-user trigger, fired from INSIDE a running tail: the recorder stops at
+// once, the tail's timer is gone (running the clock past it changes nothing), exactly one upload.
+describe("useDictation · S11 the non-user stops CUT a running tail (whole-clip path)", () => {
+  const TAIL_MS = 400;
+  const withTail = (autoStop?: typeof AUTO_STOP) =>
+    ({
+      ...opts(false),
+      ...(autoStop ? { autoStop } : {}),
+      liveCall: { release_tail_ms: TAIL_MS },
+    }) as unknown as Parameters<typeof useDictation>[0];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    micLevel = 0.5; // speaking until the case says otherwise
+    contexts = [];
+    FakeAudioContext.stuckSuspended = false;
+    FakeAudioContext.resumeGate = null;
+    FakeMediaRecorder.last = null;
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.mocked(pushToast).mockClear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Start, hold past the floor, release as the OWNER — the tail is now running. */
+  async function intoTail(result: { current: ReturnType<typeof useDictation> }) {
+    await startRecording(result);
+    await tick(1200);
+    act(() => result.current.stop(true));
+    expect(FakeMediaRecorder.last!.state).toBe("recording"); // settling
+  }
+
+  /** The cut's whole contract: stopped NOW, one upload, and nothing left for the timer to do. */
+  async function expectCutOnce(result: { current: ReturnType<typeof useDictation> }) {
+    expect(FakeMediaRecorder.last!.state).toBe("inactive");
+    await tick(TAIL_MS * 3);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("idle");
+  }
+
+  it("a HIDDEN page inside the tail stops at once", async () => {
+    const { result } = renderHook(() => useDictation(withTail(AUTO_STOP))); // the policy arms the listener
+    await intoTail(result);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    await expectCutOnce(result);
+  });
+
+  it("the silence AUTO-STOP landing inside the tail stops at once", async () => {
+    const quick = { enabled: true, silence_s: 0.2, threshold: 0.01 }; // 2 readings — inside the 400 ms tail
+    const { result } = renderHook(() => useDictation(withTail(quick)));
+    await intoTail(result);
+    micLevel = 0; // the owner fell silent after letting go
+    await tick(200);
+    await expectCutOnce(result);
+  });
+
+  it("a CALL taking the ear inside the tail stops at once", async () => {
+    const { result } = renderHook(() => useDictation(withTail()));
+    await intoTail(result);
+    await act(async () => {
+      await releaseMic();
+    });
+    await expectCutOnce(result);
+  });
+
+  it("an UNMOUNT inside the tail stops at once (the clip still uploads by value)", async () => {
+    const { result, unmount } = renderHook(() => useDictation(withTail()));
+    await intoTail(result);
+    const rec = FakeMediaRecorder.last!;
+    unmount();
+    expect(rec.state).toBe("inactive");
+    await tick(TAIL_MS * 3);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a DOUBLE `stop(true)` is one tail and one upload", async () => {
+    const { result } = renderHook(() => useDictation(withTail()));
+    await intoTail(result);
+    await tick(300);
+    act(() => result.current.stop(true)); // a second release (a stray tap) must not restart the tail
+    await tick(100); // the FIRST tail's deadline
+    await expectCutOnce(result);
   });
 });
