@@ -192,7 +192,7 @@ describe("callReduce — barge-in (§4.3)", () => {
     expect(settled.state.phase).toBe("thinking");
   });
 
-  it("taps OUTSIDE `speaking` are inert — nothing cancels by accident", () => {
+  it("VOICE outside `speaking` is inert — speech during `thinking` steers, it never cancels", () => {
     const thinking = run(listening, [{ type: "final", text: "hm" }]).state;
     for (const from of [listening, thinking]) {
       const { state, out } = run(from, [{ type: "barge" }]);
@@ -248,6 +248,75 @@ describe("callReduce — barge-in (§4.3)", () => {
     ]);
     expect(submits(out)).toEqual(["one"]);
     expect(state.phase).toBe("thinking");
+  });
+});
+
+describe("callReduce — tap = STOP (LIVE-001 · D71 amendment №3)", () => {
+  const thinking = run(listening, [{ type: "final", text: "wrong question" }]).state;
+
+  it("`stop` in `speaking` is the same ordered kill a barge fires", () => {
+    const stopped = run(speaking, [{ type: "stop" }]);
+    const barged = run(speaking, [{ type: "barge" }]);
+    expect(stopped.out).toEqual([{ type: "kill" }]);
+    expect(stopped.state).toEqual(barged.state);
+  });
+
+  it("`stop` in `thinking` cancels the turn: `killing` + `kill`, nothing audible to fall", () => {
+    expect(thinking.phase).toBe("thinking");
+    const { state, out } = run(thinking, [{ type: "stop" }]);
+    expect(out).toEqual([{ type: "kill" }]);
+    expect(state.killing).toBe(true);
+    expect(state.phase).toBe("thinking"); // the settlement owns the transition, as for every kill
+    expect(state.mouthLive).toBe(false);
+  });
+
+  it("a thinking stop never holds the ear — no tail arms, the ear stays open for the re-say", () => {
+    // Even under a HOLDING policy: the mouth never rose, so nothing reached the car to wait out.
+    const held = run(listening, [
+      { type: "captureReady", holdMode: "on", ecAll: false, route: "media", deviceId: "d" },
+      { type: "final", text: "wrong question" },
+    ]).state;
+    const { state } = run(held, [{ type: "stop" }]);
+    expect(state.killing).toBe(true);
+    expect(state.tail).toBe(false);
+    expect(state.earHeld).toBe(false);
+  });
+
+  it("`stop` in `listening` (and before the call connects) is inert", () => {
+    for (const from of [listening, CALL_INITIAL]) {
+      const { state, out } = run(from, [{ type: "stop" }]);
+      expect(out).toEqual([]);
+      expect(state).toBe(from);
+    }
+  });
+
+  it("`barge` in `thinking` is STILL inert — voice interrupts only an audible reply", () => {
+    const { state, out } = run(thinking, [{ type: "barge" }]);
+    expect(out).toEqual([]);
+    expect(state.killing).toBe(false);
+  });
+
+  it("`stop` during `killing` is inert — one kill per interruption", () => {
+    const killing = run(thinking, [{ type: "stop" }]).state;
+    const again = run(killing, [{ type: "stop" }, { type: "barge" }]);
+    expect(again.out).toEqual([]);
+    expect(again.state).toBe(killing);
+  });
+
+  it("`killSettled` from a thinking stop lands on `listening` and drains what was said meanwhile", () => {
+    const killing = run(thinking, [{ type: "stop" }]).state;
+    // The re-say arrives while the cancel is in flight: it waits (a steer into the dying turn would be
+    // harvested with it).
+    const queued = run(killing, [{ type: "final", text: "the right question" }]);
+    expect(submits(queued.out)).toEqual([]);
+    const settled = run(queued.state, [{ type: "killSettled" }]);
+    expect(submits(settled.out)).toEqual(["the right question"]);
+    expect(settled.state.phase).toBe("thinking"); // …which is the NEXT turn, thinking
+    expect(settled.state.killing).toBe(false);
+    // …and with nothing queued the settlement simply hands the floor back.
+    const bare = run(killing, [{ type: "killSettled" }]).state;
+    expect(bare.phase).toBe("listening");
+    expect(bare.killing).toBe(false);
   });
 });
 
@@ -760,13 +829,25 @@ describe("callReduce — the mouth is not the phase (S3 · mouthLive)", () => {
     expect(drained.mouthLive).toBe(false); // …but the element really did stop
   });
 
-  it("taps stay inert while the mouth is silent — thinking and listening both", () => {
+  it("voice barge stays inert while the mouth is silent — thinking and listening both", () => {
     const thinking = run(listening, [{ type: "final", text: "hm" }]).state;
     const connecting = run(listening, [{ type: "socketLost" }]).state;
     for (const from of [listening, thinking, connecting]) {
       expect(from.mouthLive).toBe(false);
       expect(run(from, [{ type: "barge" }]).out).toEqual([]);
     }
+  });
+
+  it("the owner's STOP follows the MOUTH across the reconnect window, like the barge", () => {
+    // Speaking, the leg drops: the screen says `connecting`, the reply is still audible — the tap kills.
+    const dropped = run(speaking, [{ type: "socketLost" }]).state;
+    expect(dropped.phase).toBe("connecting");
+    const tapped = run(dropped, [{ type: "stop" }]);
+    expect(tapped.out).toEqual([{ type: "kill" }]);
+    expect(tapped.state.mouthLive).toBe(false);
+    // …and a SILENT connecting (no mouth, no turn to stop) is inert.
+    const silent = run(listening, [{ type: "socketLost" }]).state;
+    expect(run(silent, [{ type: "stop" }]).out).toEqual([]);
   });
 
   it("a terminal takes the mouth with it — the teardown's own `dismiss()`", () => {

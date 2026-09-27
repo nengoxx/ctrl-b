@@ -69,7 +69,11 @@ const h = vi.hoisted(() => ({
   confirm: false,
   failures: 0,
   staged: [] as { status: string }[],
-  liveTurn: null as { threadId: string; turnId: string | null } | null,
+  liveTurn: null as {
+    threadId: string;
+    turnId: string | null;
+    assistantMessageId?: string | null;
+  } | null,
   /** The chat store's last assistant message, as the text backstop reads it (D80 ②). */
   reply: null as { id: string; text: string } | null,
   /** The socket the hook opened: the test drives the relay through its `onFrame`. */
@@ -111,7 +115,11 @@ const h = vi.hoisted(() => ({
   setCallVoice: vi.fn(),
   openGate: vi.fn(),
   dismiss: vi.fn(),
-  cancelTurn: vi.fn(async () => {}),
+  /** The call's STOP door (LIVE-001): `dismiss` + the rest of the turn silenced (keyed to the turn). */
+  dismissTurn: vi.fn(),
+  cancelTurn: vi.fn(async (_ref: unknown, _harvest: string) => {}),
+  /** Every decorative buzz the wiring asked for (LIVE-001's kill tick), by duration. */
+  buzz: vi.fn((_ms: number) => {}),
   appendDraft: vi.fn(),
   endCall: vi.fn(),
   setMuted: vi.fn(),
@@ -167,6 +175,12 @@ vi.mock("../../src/lib/audioController", () => ({
     h.retagAtStops = h.capStops; // how many ears had been released when the mouth was told
   },
   dismiss: h.dismiss,
+  // …and the real one IS a dismiss (plus the turn-stop bump), so the kill still reads as one here: the
+  // arms that pin "the kill fired" by `dismiss` stay true, and `dismissTurn` says it was the STOP door.
+  dismissTurn: () => {
+    h.dismissTurn();
+    h.dismiss();
+  },
   // The mouth's speech policy, as the text backstop reads it (D80 ②): actions DROPPED, the prod setting.
   getChunkPolicy: () => ({ speakActions: false }),
   openCallVoiceGate: h.openGate,
@@ -312,6 +326,7 @@ vi.mock("../../src/store/chat", () => ({
   useChatSlice: (sel: (s: { status: string }) => unknown) => sel(h.chat),
 }));
 vi.mock("../../src/store/composer", () => ({ appendDraft: h.appendDraft }));
+vi.mock("../../src/lib/haptics", () => ({ buzz: h.buzz }));
 vi.mock("../../src/store/liveCall", () => ({ endCall: h.endCall }));
 vi.mock("../../src/hooks/useVoiceStatus", () => ({ useVoiceStatus: () => h.voice }));
 
@@ -411,6 +426,9 @@ beforeEach(() => {
   h.setCallVoice.mockClear();
   h.openGate.mockClear();
   h.dismiss.mockClear();
+  h.dismissTurn.mockClear();
+  h.cancelTurn.mockClear();
+  h.buzz.mockClear();
   h.appendDraft.mockClear();
   h.setMuted.mockClear();
   h.setHeld.mockClear();
@@ -1131,7 +1149,7 @@ describe("useLiveCall — THE EAR-HOLD, measured (D80 ⑤: `auto` is the D73 rul
     const c = await measured(2300);
     await c.step(() => setPlay("playing"));
     await act(async () => frames(-20, 5));
-    await act(async () => c.view.result.current.interrupt());
+    await act(async () => c.view.result.current.stop());
     await act(async () => frames(-15, 129));
     expect(h.heldNow).toBe(true);
     await act(async () => frames(-15, 1));
@@ -1448,7 +1466,7 @@ describe("useLiveCall — THE EAR-HOLD, measured (D80 ⑤: `auto` is the D73 rul
     const c = await call();
     await room();
     await c.step(() => setPlay("playing"));
-    await act(async () => c.view.result.current.interrupt());
+    await act(async () => c.view.result.current.stop());
     expect(h.dismiss).toHaveBeenCalled();
     expect(h.heldNow).toBe(true); // the car's buffer: the minimum still covers the sink's lag
     await act(async () => frames(-15, 14)); // 280 ms of the owner talking from frame 0
@@ -3220,5 +3238,101 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
       vi.advanceTimersByTime(10_000);
     });
     expect(h.posts.length).toBe(after); // no sampler, no interval, after the end
+  });
+});
+
+describe("useLiveCall — the owner's STOP (LIVE-001 · D71 amendment №3)", () => {
+  /** A call in `thinking` on a live turn whose reply is streaming as `a1`. */
+  const thinkingCall = async () => {
+    const c = await call();
+    await c.say("the wrong question");
+    await c.step(() => {
+      h.chat = { status: "streaming" };
+      h.liveTurn = { threadId: "t1", turnId: "turn-1", assistantMessageId: "a1" };
+    });
+    expect(c.view.result.current.phase).toBe("thinking");
+    return c;
+  };
+
+  it("a THINKING stop: the stop door, the scoped cancel with `discard`, then `listening`", async () => {
+    let settle!: () => void;
+    h.cancelTurn.mockImplementationOnce(() => new Promise<void>((r) => (settle = r)));
+    const c = await thinkingCall();
+    await c.step(() => c.view.result.current.stop());
+    // The STOP door, once: the player silenced AND the rest of this turn (keyed to the turn — the
+    // silence itself is pinned across the real seam in useAutoTtsCallStop.test.ts).
+    expect(h.dismissTurn).toHaveBeenCalledTimes(1);
+    expect(h.cancelTurn).toHaveBeenCalledWith(h.liveTurn, "discard");
+    expect(h.buzz).toHaveBeenCalledWith(20);
+    // The settlement owns the transition: the owner's re-say waits for it rather than steering the
+    // dying turn (a 202 steer there would be harvested with it).
+    expect(c.view.result.current.phase).toBe("thinking");
+    await c.say("the right question");
+    expect(texts()).toEqual(["the wrong question"]);
+    await c.step(() => {
+      h.chat = { status: "idle" };
+      h.liveTurn = null;
+      settle();
+    });
+    expect(texts()).toEqual(["the wrong question", "the right question"]);
+  });
+
+  it("with nothing queued the thinking stop hands the floor straight back", async () => {
+    const c = await thinkingCall();
+    await c.step(() => c.view.result.current.stop());
+    await c.step(() => {
+      h.chat = { status: "idle" };
+      h.liveTurn = null;
+    });
+    expect(c.view.result.current.phase).toBe("listening");
+  });
+
+  it("a SPEAKING stop with the turn already over settles at once — the stop door, no cancel", async () => {
+    const c = await call();
+    await c.say("hello");
+    h.reply = { id: "r1", text: "hi there" };
+    await c.step(() => setPlay("playing"));
+    expect(c.view.result.current.phase).toBe("speaking");
+    await c.step(() => c.view.result.current.stop());
+    expect(h.dismissTurn).toHaveBeenCalledTimes(1);
+    expect(h.cancelTurn).not.toHaveBeenCalled(); // nothing live to cancel (council F1)
+    expect(c.view.result.current.phase).toBe("listening");
+  });
+
+  it("a stop while LISTENING does nothing at all — no dismiss, no cancel, no buzz", async () => {
+    const c = await call();
+    h.liveTurn = null;
+    await c.step(() => c.view.result.current.stop());
+    expect(h.dismiss).not.toHaveBeenCalled();
+    expect(h.dismissTurn).not.toHaveBeenCalled();
+    expect(h.cancelTurn).not.toHaveBeenCalled();
+    expect(h.buzz).not.toHaveBeenCalled();
+    expect(c.view.result.current.phase).toBe("listening");
+  });
+
+  it("the trail carries the kill's detail line beside the `stop` signal", async () => {
+    h.voice.data.live_call.debug = true;
+    const c = await thinkingCall();
+    await c.step(() => c.view.result.current.stop());
+    c.view.unmount(); // the end flushes everything
+    const lines = h.posts.flatMap((p) => p.body.entries);
+    expect(lines.find((l) => l.ev === "sig" && l.type === "stop")).toBeDefined();
+    expect(lines.find((l) => l.ev === "kill")).toMatchObject({
+      turn: "turn-1",
+      live: true,
+      phase: "thinking",
+    });
+  });
+
+  it("…and says `live: false` when there was no turn to cancel (residual ①'s case, told apart)", async () => {
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await c.say("hello");
+    h.reply = { id: "r1", text: "hi there" };
+    await c.step(() => setPlay("playing"));
+    await c.step(() => c.view.result.current.stop());
+    c.view.unmount();
+    const kill = h.posts.flatMap((p) => p.body.entries).find((l) => l.ev === "kill");
+    expect(kill).toMatchObject({ turn: null, live: false, phase: "speaking" });
   });
 });

@@ -34,6 +34,8 @@ const h = vi.hoisted(() => {
     feed: vi.fn(),
     endTurn: vi.fn(),
     dismiss: vi.fn(),
+    /** The controller's turn-stop count (LIVE-001 — a call's stop bumps it). */
+    stops: 0,
   };
 });
 
@@ -46,6 +48,7 @@ vi.mock("../../src/lib/audioController", () => ({
   feedReadAlong: h.feed,
   endTurnSpeak: h.endTurn,
   dismiss: h.dismiss,
+  getTurnStops: () => h.stops,
   usePlayback: (sel: (p: { id: string | null }) => unknown) => sel(h.player),
   useCallVoice: () => h.call.active && !h.call.waiting,
 }));
@@ -91,6 +94,7 @@ beforeEach(() => {
   h.feed.mockClear();
   h.endTurn.mockClear();
   h.dismiss.mockClear();
+  h.stops = 0;
 });
 
 describe("useAutoTts — the read-along feed (C3 S2)", () => {
@@ -235,6 +239,19 @@ describe("useAutoTts — the per-turn abandon latch", () => {
 
     step("idle", [user, said("a1", "One sentence. Two sentences. Three.")]);
     expect(h.endTurn).not.toHaveBeenCalled(); // and the turn end does not restart it
+  });
+
+  it("a call's STOP mid-turn arms the same latch — nothing docked, no message id needed (LIVE-001)", () => {
+    const step = mount();
+    step("streaming", [user, said("a1", "Sure")]); // nothing closed yet, nothing ever docked
+    h.stops += 1; // the call's `dismissTurn`
+    step("streaming", [user, said("a1", "Sure. Let me look.")]);
+    expect(h.feed).not.toHaveBeenCalled();
+    step("idle", [user, said("a1", "Sure. Let me look.")]);
+    expect(h.endTurn).not.toHaveBeenCalled();
+    // …and only for THAT turn: the next one reads along again.
+    step("streaming", [user, said("a2", "Here. Now.")]);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a2", "Here. Now.", null);
   });
 
   it("losing TTS mid-turn stops the open session instead of stranding it", () => {

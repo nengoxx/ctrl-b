@@ -4,6 +4,7 @@ import {
   dismiss,
   endTurnSpeak,
   feedReadAlong,
+  getTurnStops,
   useCallVoice,
   usePlayback,
 } from "../lib/audioController";
@@ -71,6 +72,11 @@ export function useAutoTts(): void {
     null,
   );
   const abandoned = useRef(false);
+  /** The controller's turn-stop count as this turn began (LIVE-001): a call's stop (`dismissTurn`) bumps
+   *  it, and a bump mid-turn is the SAME "the user stopped it" as an undock — but one that needs nothing
+   *  docked and no message id, so a stop that lands while the turn is still thinking (before any chunk,
+   *  before `message.start` renames the placeholder, between tool rounds) silences the whole turn. */
+  const turnStops = useRef(getTurnStops());
   const prevTtsOk = useRef(ttsOk);
   // D71 §4.5 — a live CALL forces this feeder on for its own turns: read-along is how a call sounds like
   // a call, and the owner's Conf rows are left exactly as they are. Its own gate (`audioController`)
@@ -84,7 +90,9 @@ export function useAutoTts(): void {
     if (was !== "streaming" && status === "streaming") {
       fed.current = null; // a new turn starts with clean read-along bookkeeping
       abandoned.current = false;
+      turnStops.current = getTurnStops();
     }
+    if (getTurnStops() !== turnStops.current) abandoned.current = true;
     if (fed.current) {
       if (dockedId === fed.current.id) fed.current.docked = true;
       else if (fed.current.docked) abandoned.current = true;

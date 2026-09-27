@@ -51,10 +51,12 @@ import { startCall } from "../../store/liveCall";
 // The phase line's dot is gone from BOTH: whichever indicator is live is the only one, because two
 // things saying the same thing is how one of them goes stale.
 //
-// TAP TO INTERRUPT (§4.3 trigger B): during `speaking`, a tap anywhere outside the control cluster fires
-// the same ordered kill voice barge-in does — and it is the only interrupt a browser without subtractive
-// echo cancellation has. Outside `speaking` overlay taps are INERT: during `thinking` you steer by just
-// talking, and nothing may cancel by accident.
+// TAP TO STOP (§4.3 trigger B, amended by LIVE-001 / D71 amendment №3): a tap anywhere outside the
+// control cluster — the halo included — is the owner's STOP. During `speaking` it fires the same ordered
+// kill voice barge-in does (the only interrupt a browser without subtractive echo cancellation has);
+// during `thinking` it cancels the turn before it speaks. `listening`/`connecting` stay inert. Voice
+// still only interrupts an AUDIBLE reply — speech during `thinking` steers — and mute and hang-up are
+// their own controls: stopping her never touches the ear or the leg.
 //
 // THE BACK GESTURE (§6) rides `useOverlayBackGuard`, the same guard every other overlay uses — mounted
 // one level up, in `DefaultRoot`, because the history entry belongs to the CALL and a redial remounts
@@ -76,7 +78,7 @@ function phaseLabel(phase: CallPhase, speaking: boolean, muted: boolean, tail: b
       if (muted) return "Muted";
       return speaking ? "Listening" : "Listening — go ahead";
     case "thinking":
-      return "Thinking…";
+      return "Thinking — tap to stop";
     case "speaking":
       return tail ? "Speaking" : "Speaking — tap to interrupt";
     case "error":
@@ -137,14 +139,20 @@ function LevelIcon({ size }: { size?: number } = {}) {
  *
  * Three rules, and every one of them was learned the hard way on this screen, so a second control
  * re-deriving them is a second chance to get one wrong:
- *   · the outside close listens on the CAPTURE phase, because the deck's own pointer-down stop (which
- *     keeps a control tap from being a tap-to-interrupt) makes bubble listeners deaf to taps on its
- *     sibling controls. It closes through `dismiss` like every other close (design round L3): one
- *     close, one focus rule, so a tap-away cannot leave focus on a node that has just unmounted;
+ *   · the outside close listens on the CAPTURE phase, because the deck's own propagation stop (which
+ *     keeps a control tap from being a tap-to-stop — a CLICK stop since LIVE-001's fix wave; it was a
+ *     pointer-down stop) makes bubble listeners deaf to taps on its sibling controls. It closes through
+ *     `dismiss` like every other close (design round L3): one close, one focus rule, so a tap-away
+ *     cannot leave focus on a node that has just unmounted;
  *   · ESCAPE IS SWALLOWED — this overlay's own Escape rule is `modalKeyDown`, i.e. HANG UP THE CALL
  *     (design round F3), so a popover that let it bubble would end the call instead of closing itself;
  *   · a keyboard close hands focus back to the pill it came from, which is the only element still on
- *     screen that the gesture can be continued from.
+ *     screen that the gesture can be continued from;
+ *   · A TAP-AWAY ONLY CLOSES (LIVE-001 wave 2, confirm-round NEW-1): the close rides the tap's
+ *     `pointerdown`, but its `click` would still reach the surface — which is the owner's STOP, so in
+ *     `thinking` "close this" cancelled the turn. The tap's own click is swallowed once
+ *     (`swallowTapAwayClick`) unless it landed on another CONTROL, which keeps working (the other pill,
+ *     Mute, Hang up — they never reach the surface anyway).
  * It is deliberately NOT modal: the NavMenu popover contract, which the rest of the app already wears.
  *
  * WHERE THE SWALLOW HANGS IS THE WHOLE OF RULE TWO (review round A1, found independently by the visual
@@ -158,6 +166,26 @@ function LevelIcon({ size }: { size?: number } = {}) {
  * The unit arm that was supposed to hold this fired on a ROW — a focus state the UI never reaches —
  * which is exactly why it passed over a live bug; E1's arm now fires on the pill.)
  */
+/** Swallow the click of the tap that just closed a popover from outside — ONCE, and only if it landed on
+ *  the bare surface (see the popover mechanics above). Capture phase on `document`, so it runs before
+ *  React's root listener; armed during that tap's `pointerdown`, so the disarm-on-next-down added here is
+ *  not invoked for the arming event itself (the DOM snapshots a target's listeners per dispatch). No
+ *  timer: the tap's own click consumes it, and a tap the system claimed (no click after a
+ *  `pointercancel`) is disarmed by the next `pointerdown`, so it can never eat a later, real stop. */
+function swallowTapAwayClick(): void {
+  const drop = (e: MouseEvent): void => {
+    disarm();
+    const hit = e.target instanceof Element ? e.target : null;
+    if (!hit?.closest("button, input, select, textarea, a")) e.stopPropagation();
+  };
+  const disarm = (): void => {
+    document.removeEventListener("click", drop, true);
+    document.removeEventListener("pointerdown", disarm, true);
+  };
+  document.addEventListener("click", drop, true);
+  document.addEventListener("pointerdown", disarm, true);
+}
+
 function useDeckPopover() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -171,7 +199,9 @@ function useDeckPopover() {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent): void => {
-      if (!rootRef.current?.contains(e.target as Node)) dismiss();
+      if (rootRef.current?.contains(e.target as Node)) return;
+      dismiss();
+      swallowTapAwayClick(); // the tap closes the popover and does nothing else
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
@@ -722,8 +752,9 @@ function CallCaptions() {
         "kit-call-said" + (edges.above ? " more-above" : "") + (edges.below ? " more-below" : "")
       }
       ref={boxRef}
-      // Its own pointer-down stop (the cluster's rule): this block SCROLLS, and a drag to read the
-      // start of a reply must never also be a tap-to-interrupt.
+      // Its own click stop (the cluster's rule): this block SCROLLS, and reading the start of a reply
+      // must never also be a tap-to-stop. (A touch scroll never clicks — the browser takes the gesture
+      // and cancels the pointer — so what this guards is a TAP on a box that is a reading surface.)
       //
       // …ONLY WHILE IT ACTUALLY SCROLLS, though (review round B1): stopping unconditionally put a dead
       // zone directly above the line that says "tap to interrupt", over the text the owner is most
@@ -731,7 +762,7 @@ function CallCaptions() {
       // live interrupt target like the rest of the surface, a LONG one is a reading surface a drag can
       // be started on, and everywhere else on the overlay always interrupts. The same two edge reads
       // the fade and the follow rule take answer it, so the three can never disagree about the box.
-      onPointerDown={(e) => {
+      onClick={(e) => {
         if (edges.above || edges.below) e.stopPropagation();
       }}
       onScroll={(e) => measure(e.currentTarget)}
@@ -866,11 +897,18 @@ export function CallOverlay({ close }: { close: () => boolean }) {
   }, []);
 
   // The whole surface is trigger B; the cluster below stops the event so a hang-up — or an Allow — is
-  // never also an interrupt. `pointerdown` rather than `click`: an interrupt should land on the touch,
-  // not on the release, and there is no drag on this surface to disambiguate from. The "only during
-  // `speaking`" rule is NOT re-stated here — `interrupt` is inert in every other phase by the machine's
-  // own rule, and two copies of that rule is how one of them stops being true.
-  const onSurface = (): void => call.interrupt();
+  // never also a stop. A CLICK, not `pointerdown` (LIVE-001 fix wave 1, review MED-1): once a tap can
+  // CANCEL a thinking turn, the event must be a finished tap — a `pointerdown` arrives before the gesture
+  // is classified, so an edge back-swipe (the hang-up, §6) would cancel the turn on its way out, and the
+  // browser never dispatches `click` after the system claims the pointer. The old reason for the down
+  // ("no drag on this surface to disambiguate from") is exactly what the back-swipe refutes; the cost is
+  // the speaking kill landing on release, one tap-length later. (Keeping the down for the kill beside a
+  // click for thinking was weighed and rejected: one tap would then be TWO stops, and a down-kill whose
+  // settle drains the walkie-talkie queue into a fresh `thinking` turn would have that turn cancelled
+  // by the same tap's click.) WHICH phases a tap stops is NOT re-stated here — `stop` is inert where
+  // there is nothing to stop by the machine's own rule, and two copies of that rule is how one of them
+  // stops being true.
+  const onSurface = (): void => call.stop();
 
   // THE FACE PAINTED (D80 ①): the machine moves to `listening` the moment the element finishes — its
   // queue and its drain key on that — but the reply may still be playing out of a car for seconds (the
@@ -896,7 +934,7 @@ export function CallOverlay({ close }: { close: () => boolean }) {
       role="dialog"
       aria-modal="true"
       aria-labelledby={labelId}
-      onPointerDown={onSurface}
+      onClick={onSurface}
       onKeyDown={(e) => modalKeyDown(e, panelRef.current, close)}
     >
       {art !== undefined && (
@@ -922,11 +960,11 @@ export function CallOverlay({ close }: { close: () => boolean }) {
       )}
       {/* THE TOP DECK (owner move, 2026-09-22) — the route row lives ABOVE the ring, not in the
           bottom cluster with Mute: they are settings about the call, not actions in it, and the
-          furniture row was cramped. Its own pointer-down stop, because it sits outside the
-          cluster's — moving the route is never also a tap-to-interrupt. Gone on a terminal, like
+          furniture row was cramped. Its own click stop, because it sits outside the cluster's —
+          moving the route is never also a tap-to-stop. Gone on a terminal, like
           Mute — there is no ear to move. */}
       {!terminal && (
-        <div className="kit-call-top" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="kit-call-top" onClick={(e) => e.stopPropagation()}>
           <RouteControls call={call} />
           {meterRange !== null && (
             <SensitivityControl call={call} min={meterRange.min} max={meterRange.max} />
@@ -952,7 +990,7 @@ export function CallOverlay({ close }: { close: () => boolean }) {
           {call.userSpeechActive || call.waitingFinal ? "…" : call.heard}
         </p>
         {call.note !== null && call.note !== "" && <p className="kit-call-note">{call.note}</p>}
-        <div className="kit-call-cluster" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="kit-call-cluster" onClick={(e) => e.stopPropagation()}>
           {/* D74 S7 — inside the cluster, so reading it is never also a tap-to-interrupt. Absent
               entirely with the knob off: no wrapper, no spacing, nothing. */}
           {call.debug !== null && <DebugBlock d={call.debug} />}

@@ -8,8 +8,10 @@ import {
   type ChunkPolicy,
   clearAudioCache,
   dismiss,
+  dismissTurn,
   endTurnSpeak,
   feedReadAlong,
+  getTurnStops,
   markStreamRetag,
   pokeCallMouth,
   seekFraction,
@@ -2018,6 +2020,40 @@ describe("audioController — read-along (C3 S2)", () => {
 
     await act(async () => void endTurnSpeak("m1", WHOLE));
     expect(result.current.status).toBe("playing"); // `toggle` here would have paused it mid-sentence
+  });
+});
+
+describe("audioController — the call's STOP door (LIVE-001 · `dismissTurn`)", () => {
+  // The controller carries the stop; the feeder (`useAutoTts`) owns the per-turn latch it arms. What is
+  // pinned here is the controller's half — the silence end to end is `useAutoTtsCallStop.test.ts`.
+  const WHOLE = "One. Two. Three.";
+  beforeEach(() => setChunkPolicy(chunked()));
+
+  it("silences the player exactly like `dismiss`, and counts one turn stop", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await act(async () => void endTurnSpeak("m-stop", WHOLE));
+    await flush();
+    expect(result.current.status).toBe("playing");
+    const before = getTurnStops();
+    act(() => dismissTurn());
+    expect(getTurnStops()).toBe(before + 1);
+    expect(result.current.id).toBeNull();
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("a plain `dismiss` counts NOTHING — the ✕ (a click handler), a muted auto-TTS, a teardown", () => {
+    const before = getTurnStops();
+    act(() => dismiss());
+    expect(getTurnStops()).toBe(before);
+  });
+
+  it("the controller itself refuses nothing afterwards — the next message plays (the latch is the feeder's)", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    act(() => dismissTurn());
+    await act(async () => void endTurnSpeak("m-next", WHOLE));
+    await flush();
+    expect(result.current.id).toBe("m-next");
+    expect(result.current.status).toBe("playing");
   });
 });
 

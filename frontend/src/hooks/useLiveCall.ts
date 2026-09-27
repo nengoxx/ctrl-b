@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   dismiss,
+  dismissTurn,
   getChunkPolicy,
   getPlayStatus,
   markStreamRetag,
@@ -25,6 +26,7 @@ import {
 } from "../lib/chirp";
 import { sendCallTranscript } from "../lib/composer";
 import { ECHO_MIN_CHARS, echoSimilarity, normalizeForEcho } from "../lib/echoText";
+import { buzz } from "../lib/haptics";
 import {
   DBFS_SILENCE,
   effectiveFloor,
@@ -195,6 +197,12 @@ const DEGRADED_NOTE_MS = 6000;
  *  they are lines the owner will edit.) */
 const PENDING_JOIN = " ";
 const HARVEST_JOIN = "\n";
+
+/** The kill's haptic tick, ms (LIVE-001) — DECORATIVE, like every buzz (`lib/haptics`): it rides a state
+ *  change the screen is already making, and Firefox for Android swallows it silently. 20 ms is the house
+ *  "tap acknowledged" length (`useMicGesture`'s start/catch buzz, R69 §2). Not a config knob: it is the
+ *  platform's texture, not a preference the owner tunes. */
+const KILL_BUZZ_MS = 20;
 
 /** How long a gap in the EAR's own frames means the ear stopped hearing (D73 S6 ② / A2, evidence
  *  docs/research/R75 §3).
@@ -583,7 +591,15 @@ export type CallSignal = { gen?: number } & (
   | { type: "idleExpired" }
   | { type: "serverError"; code: string; message: string }
   | { type: "serverEnded" } //                 the relay said `state: ended`
-  | { type: "barge" } //                       trigger A (voice) or B (tap) — the same edge
+  /** Trigger A — VOICE over an AUDIBLE reply (the wiring's sustained-energy window). Interrupts the
+   *  mouth and nothing else: inert while it is silent, so speech during `thinking` steers (D41). */
+  | { type: "barge" }
+  /** THE OWNER'S STOP — the overlay's whole-surface tap (§4.3 trigger B, amended by LIVE-001 / D71
+   *  amendment №3): "stop her, whatever she is doing". Speaking ⇒ the same ordered kill a barge fires;
+   *  thinking ⇒ the same kill with nothing audible to silence, cancelling the turn; anywhere else inert.
+   *  A separate signal from `barge` ON PURPOSE: the intent is named once, here, rather than the voice
+   *  path leaning on the wiring's `mouthLive` guard to stay out of turns it must only steer. */
+  | { type: "stop" }
   | { type: "killSettled" }
   | { type: "playbackStarted" }
   | { type: "playbackDrained" }
@@ -720,7 +736,8 @@ function sameSegment(itemId: string | undefined, open: string | null): boolean {
   return itemId === undefined || open === null || itemId === open;
 }
 
-/** Start the §4.3 ORDERED kill. Both triggers land here, so the state the kill leaves behind is written
+/** Start the §4.3 ORDERED kill. Both triggers land here — the voice barge and the owner's stop (which
+ *  also takes it from `thinking`, with no mouth to fall) — so the state the kill leaves behind is written
  *  once.
  *
  *  `mouthLive` goes down with it, and that is not an inference about the element: step ① of the effect is
@@ -1041,13 +1058,26 @@ function reduce(s: CallState, sig: CallSignal): Step {
     }
 
     case "barge":
-      // THE GATE IS THE MOUTH, NOT THE PHASE (S3). §4.3's ratified intent — "outside `speaking`, overlay
-      // taps are inert; nothing cancels by accident" — is a statement about whether there is anything to
-      // interrupt, and `thinking`/`listening` still answer no (their `mouthLive` is false). What changes
-      // is the honest case the phase enum cannot express: a reply still audible across a reconnect, where
-      // the screen says `connecting` and the tap must STILL interrupt. Both triggers, one sequence.
+      // THE GATE IS THE MOUTH, NOT THE PHASE (S3). A voice barge-in is the interruption of an AUDIBLE
+      // reply (§4.3), so `thinking`/`listening` answer no (their `mouthLive` is false) — speech there
+      // steers the live turn instead. The honest case the phase enum cannot express rides the same gate:
+      // a reply still audible across a reconnect, where the screen says `connecting`.
       if (!s.mouthLive || s.killing) return { state: s, out: [] };
       return killNow(s);
+
+    case "stop":
+      // THE OWNER'S STOP (LIVE-001, D71 amendment №3). One kill per interruption, as ever. An audible
+      // mouth is killed exactly as a barge kills it — whatever the phase says, the reconnect window
+      // included. With no mouth, only `thinking` has something to stop: the turn itself while it still
+      // streams (the POST, the reasoning, a tool call, text ahead of its first chunk). A ready reply the
+      // mouth gate holds AFTER the turn settled is not reachable here — `turnSettled` has already moved
+      // the phase to `listening` — and the tap stays inert until it becomes audible. It takes the SAME
+      // ordered kill — `mouthLive` is already down, so no tail arms (nothing reached the car) and the ear
+      // is never held by it; `killSettled` walks `thinking` → `listening` and drains what the owner said
+      // meanwhile. `listening`/`connecting` stay inert: nothing to stop.
+      if (s.killing) return { state: s, out: [] };
+      if (s.mouthLive || s.phase === "thinking") return killNow(s);
+      return { state: s, out: [] };
 
     case "playbackStarted": {
       // The transport spoke, so the flag lands FIRST and unconditionally — what the phase logic below
@@ -1916,8 +1946,9 @@ export interface CallView {
   /** THE TAIL (D80 ①): the element has finished but the reply may still be playing out of the car —
    *  the overlay keeps showing the speaking face over `listening` while it holds. */
   tail: boolean;
-  /** Trigger B — a tap outside the control cluster during `speaking` (§4.3). Inert elsewhere. */
-  interrupt: () => void;
+  /** THE OWNER'S STOP — the tap outside the control cluster (§4.3 trigger B, LIVE-001): speaking kills
+   *  the reply, thinking cancels the turn, anywhere else it is inert. The machine owns that rule. */
+  stop: () => void;
   /** Mute/unmute the ear. The track goes silent; the frames keep flowing (see `PcmCapture.setMuted`). */
   toggleMute: () => void;
   /** D74 S2 — THIS CALL's route pair, and the two ways to move it. Per call: neither writes config. */
@@ -2198,11 +2229,26 @@ export function useLiveCall(): CallView {
           }
           case "kill": {
             const gen = ref.current.gen;
-            // ① the audible part stops NOW — synchronous, before anything is awaited.
-            dismiss();
-            // ② the scoped cancel, AND its settlement. `discard` because the steer this cancel harvests
-            //    is the owner's own call-origin speech, which they are in the middle of replacing.
             const turn = getLiveTurn();
+            // ① the audible part stops NOW — synchronous, before anything is awaited — and the rest of
+            //    THIS TURN stays silent (LIVE-001): a thinking stop lands before anything docked, so the
+            //    feeder's undock latch never arms and the cancelled turn's idle edge would read its
+            //    partial aloud "like a Stop". `dismissTurn` bumps the controller's turn-stop count, which
+            //    the feeder reads as the same latch — keyed to the TURN, so neither the placeholder's
+            //    rename on `message.start` nor a second round's message id escapes it.
+            dismissTurn();
+            buzz(KILL_BUZZ_MS);
+            // The trail's `sig` line already carries `stop`/`barge` with its phase; this is the detail.
+            // `live` separates "no live turn, nothing to cancel" from "live but not yet scoped" (a null
+            // `turnId`) — the two cases residual ① turns on.
+            trail.current?.push("kill", {
+              turn: turn?.turnId ?? null,
+              live: turn !== null,
+              phase: next.phase,
+            });
+            // ② the scoped cancel, AND its settlement. `discard` because the steer this cancel harvests
+            //    is the owner's own call-origin speech, which they are in the middle of replacing — and
+            //    a stopped THINKING turn is one they re-say, not one they edit.
             if (turn === null) {
               // The turn commonly ends before the mouth does (council F1): nothing to cancel, and the
               // interrupting utterance simply becomes the next turn. Same edge, same order.
@@ -3131,7 +3177,7 @@ export function useLiveCall(): CallView {
     };
   }, [send, takeWakeLock]);
 
-  const interrupt = useCallback(() => send({ type: "barge", gen: ref.current.gen }), [send]);
+  const stop = useCallback(() => send({ type: "stop", gen: ref.current.gen }), [send]);
 
   /** The mute control: the TRACK first (the samples go silent immediately, before any render), then
    *  the rule change. The ear meter's own reset rides the `setMuted` EDGE since D74 S4 — silent frames
@@ -3199,7 +3245,7 @@ export function useLiveCall(): CallView {
     waitingFinal: state.waitingFinal,
     muted: state.muted,
     tail: state.tail,
-    interrupt,
+    stop,
     toggleMute,
     route: state.route,
     inputDevice: state.inputDevice,

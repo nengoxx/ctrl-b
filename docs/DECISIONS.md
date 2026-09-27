@@ -5209,7 +5209,7 @@ and the feature ships OFF; revisiting them is an owner call for Phase 19. Both p
 (each hashes its default). Design of record: [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §14.2.
 **Built 2026-09-26 with D78 (ROLEPLAY_PLAN §10 S8).**
 
-## D71 — Live voice mode ("call mode"): the Speaches-realtime ear · client-submitted turns · the WebSocket admission ✏️ RATIFIED 2026-09-11 · §6 VISUAL AMENDED 2026-09-27 (owner, ISS-32 — the ring stays at the CSS defaults regardless of the art's focal point; `useFocalAnchor`/`focalLanding` deleted @ `75e0014`; recorded under D80) (owner, in conversation — "okay then" after the brief + the reference-projects discussion; spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md); evidence = [R51](./research/R51-realtime-voice-chat.md) + [R68](./research/R68-live-voice-deltas.md); council = blind Emma design round RETHINK [2 HIGH · 7 MED, sweep "none", architecture ① affirmed; all nine ACCEPTED, both HIGHs code-verified] → confirm SHIP WITH CHANGES [all four folded] — plan §9 verbatim)
+## D71 — Live voice mode ("call mode"): the Speaches-realtime ear · client-submitted turns · the WebSocket admission ✏️ RATIFIED 2026-09-11 · §4.3 AMENDED 2026-09-27 (amendment №3, LIVE-001 — the overlay tap is a STOP; below) · §6 VISUAL AMENDED 2026-09-27 (owner, ISS-32 — the ring stays at the CSS defaults regardless of the art's focal point; `useFocalAnchor`/`focalLanding` deleted @ `75e0014`; recorded under D80) (owner, in conversation — "okay then" after the brief + the reference-projects discussion; spec of record = [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md); evidence = [R51](./research/R51-realtime-voice-chat.md) + [R68](./research/R68-live-voice-deltas.md); council = blind Emma design round RETHINK [2 HIGH · 7 MED, sweep "none", architecture ① affirmed; all nine ACCEPTED, both HIGHs code-verified] → confirm SHIP WITH CHANGES [all four folded] — plan §9 verbatim)
 
 **The architecture (R51 §9.3 ①, twice re-affirmed):** Speaches `/v1/realtime?intent=transcription`
 as the ear behind a ctrl-b relay (`WS /api/voice/live`; the bearer never reaches the browser;
@@ -5284,6 +5284,23 @@ timed out; no evidence ⇒ no verdict ⇒ wait (the fail-safe is now "wait", nev
 plays no part in either mode — a barge-in interrupts an AUDIBLE reply; the owner's own gestures (a
 resume tap, the scrubber) are never gated. A `speechStop` raises `waitingFinal` only after an accepted
 start (design round A2). As-built: LIVE_VOICE_PLAN §4.2 + §7 ("THE MOUTH WAITS").
+
+**Amendment №3 2026-09-27 (LIVE-001, session 50 — the owner's backlog hint "stop the generation in a
+call, thinking or answering, without hanging up", ruled by the main seat): the overlay tap is a STOP.**
+§4.3's "outside `speaking`, overlay taps are inert" is RETIRED for `thinking`. The whole-surface tap (the
+ring included) sends its own `stop` signal: speaking ⇒ the ordered kill (unchanged); thinking ⇒ the same
+kill with nothing audible to silence, cancelling the turn (`cancelTurn(…, "discard")` — the owner
+re-says); listening/connecting ⇒ inert. ONE control, no new chrome; a distinct signal rather than a
+widened `barge`, so voice still interrupts only an AUDIBLE reply (speech during `thinking` steers, D41)
+without the reducer leaning on the wiring's `mouthLive` guard; mute and hang-up untouched; a stop never
+holds the ear (no mouth rose, no tail arms). The stop silences the rest of its TURN (`dismissTurn`: a
+turn-stop count the feeder's per-turn latch reads — keyed to the turn, not a message id, so the
+placeholder's rename on `message.start` and a tool call's second-round reply cannot escape it), closing
+the verified hazard where a stopped, never-docked turn's idle edge read its partial aloud through
+`toggle`; the composer Stop takes no such door (owner ruling 1 stands). The surface fires on `click` — a
+finished tap — so a gesture the system claims (the edge back-swipe = hang up) cancels nothing. Copy
+"Thinking — tap to stop"; a decorative 20 ms buzz on every kill. Residual (recorded): a tap between submit
+and the server registering the turn cancels nothing. As-built: LIVE_VOICE_PLAN §4.3 + §7 ("LIVE-001").
 
 ## D72 — The intermission fix wave: cross-cutting correctness, security and doc truth between S3.5 and S4 ✏️ RULED 2026-09-15 (main seat, on a three-lane audit of everything built since v1.7.7 + the plan-review round; evidence = [R71](./research/R71-uplink-stall-pacing.md) · [R72](./research/R72-session-slot-reconnect.md) · [R73](./research/R73-cross-origin-write-defense.md); design of record = the wave plan v3, whose rulings are recorded IN the owning plans — [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7 intermission addendum · [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §13 addendum · [`SECURITY_MODEL.md`](./SECURITY_MODEL.md)'s D70 section; the plan-review round H1–H3 · M4–M7 · L8–L14 was ACCEPTED in full)
 

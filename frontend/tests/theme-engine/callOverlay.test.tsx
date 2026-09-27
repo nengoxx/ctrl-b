@@ -14,7 +14,7 @@ const h = vi.hoisted(() => {
     waitingFinal: boolean;
     muted: boolean;
     tail: boolean;
-    interrupt: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
     toggleMute: ReturnType<typeof vi.fn>;
     route: string;
     inputDevice: string;
@@ -33,7 +33,7 @@ const h = vi.hoisted(() => {
     waitingFinal: false,
     muted: false,
     tail: false,
-    interrupt: vi.fn(),
+    stop: vi.fn(),
     toggleMute: vi.fn(),
     route: "call",
     inputDevice: "",
@@ -143,7 +143,7 @@ beforeEach(() => {
   h.call.readLevel.mockReset();
   h.call.readLevel.mockImplementation(() => ({ level: null, floor: null, ceiling: null }));
   h.call.setFloorPin.mockClear();
-  h.call.interrupt.mockClear();
+  h.call.stop.mockClear();
   h.call.toggleMute.mockClear();
   h.call.setRoute.mockClear();
   h.call.setInputDevice.mockClear();
@@ -218,15 +218,34 @@ describe("CallOverlay — the focus contract", () => {
     }
   });
 
-  it("leaves the tap-to-interrupt surface alone (§4.3 trigger B)", () => {
+  it("THINKING offers the stop (LIVE-001): the label says so and the surface tap goes to `stop`", () => {
+    h.call = { ...h.call, phase: "thinking" };
+    render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-phase")!.textContent).toBe("Thinking — tap to stop");
+    fireEvent.click(overlay());
+    // Which phases a tap actually stops is the MACHINE's rule — the overlay forwards every surface tap.
+    expect(h.call.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the tap-to-stop surface alone (§4.3 trigger B) — on a CLICK, a finished tap", () => {
     h.call = { ...h.call, phase: "speaking" };
     render(<Host open={true} />);
-    fireEvent.pointerDown(overlay());
-    expect(h.call.interrupt).toHaveBeenCalledTimes(1);
+    fireEvent.click(overlay());
+    expect(h.call.stop).toHaveBeenCalledTimes(1);
     // …and the control cluster still is not one: hanging up must never also be an interrupt.
-    h.call.interrupt.mockClear();
-    fireEvent.pointerDown(hangUp());
-    expect(h.call.interrupt).not.toHaveBeenCalled();
+    h.call.stop.mockClear();
+    fireEvent.click(hangUp());
+    expect(h.call.stop).not.toHaveBeenCalled();
+  });
+
+  it("a gesture the system CLAIMS never stops her — an edge back-swipe is down → cancel, no click (review MED-1)", () => {
+    // The back-swipe is the hang-up (§6); on `pointerdown` it used to cancel a thinking turn on its way
+    // out. The browser dispatches no `click` after `pointercancel`, so the turn now survives the exit.
+    h.call = { ...h.call, phase: "thinking" };
+    render(<Host open={true} />);
+    fireEvent.pointerDown(overlay());
+    fireEvent.pointerCancel(overlay());
+    expect(h.call.stop).not.toHaveBeenCalled();
   });
 });
 
@@ -479,8 +498,8 @@ describe("CallOverlay — the captions (owner ask 2026-09-22)", () => {
     h.reply = { id: "m1", text: "on it" };
     view.rerender(<Host open={true} />);
     expect(said()!.className).toBe("kit-call-said"); // neither edge hiding anything
-    fireEvent.pointerDown(said()!);
-    expect(h.call.interrupt).toHaveBeenCalledTimes(1);
+    fireEvent.click(said()!);
+    expect(h.call.stop).toHaveBeenCalledTimes(1);
   });
 
   it("…and a SCROLLING one is a reading surface: the drag is never an interrupt", () => {
@@ -498,8 +517,8 @@ describe("CallOverlay — the captions (owner ask 2026-09-22)", () => {
       // The follow rule pins growth to the BOTTOM, so the hidden edge of a streaming overflow is
       // ABOVE — which is enough: the stop's gate is `above || below`, one hidden edge either side.
       expect(said()!.className).toContain("more-above");
-      fireEvent.pointerDown(said()!);
-      expect(h.call.interrupt).not.toHaveBeenCalled();
+      fireEvent.click(said()!);
+      expect(h.call.stop).not.toHaveBeenCalled();
     } finally {
       tall.mockRestore();
       short.mockRestore();
@@ -552,8 +571,8 @@ describe("CallOverlay — the in-overlay confirm row (§4.5)", () => {
     h.awaiting = { callId: "c1", tool: "run_shell" };
     h.call = { ...h.call, phase: "speaking" };
     render(<Host open={true} />);
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Allow" }));
-    expect(h.call.interrupt).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Allow" }));
+    expect(h.call.stop).not.toHaveBeenCalled();
   });
 
   it("no gate outstanding, no row", () => {
@@ -673,6 +692,45 @@ describe("CallOverlay — the in-call route controls (D74 S2 · the D75 picker)"
     // …and it closes through `dismiss` like every other close (L3), so focus lands back on the pill
     // rather than on a node that has just unmounted.
     expect(document.activeElement).toBe(outputPill());
+    fireEvent.click(overlay()); // the tap's own click — swallowed (below); it also ends the gesture
+  });
+
+  it("a tap-away during THINKING only closes — its click never stops her; the NEXT tap does (wave 2)", () => {
+    // Confirm-round NEW-1: the close rides the tap's `pointerdown`, and its `click` used to reach the
+    // surface — the owner's STOP — so "close this" cancelled the turn.
+    h.call = { ...h.call, phase: "thinking" };
+    render(<Host open={true} />);
+    fireEvent.click(outputPill());
+    expect(rowCount()).toBeGreaterThan(0);
+    fireEvent.pointerDown(overlay());
+    fireEvent.click(overlay());
+    expect(rowCount()).toBe(0);
+    expect(h.call.stop).not.toHaveBeenCalled();
+    fireEvent.pointerDown(overlay());
+    fireEvent.click(overlay());
+    expect(h.call.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("a tap-away that lands on another CONTROL still works that control (Hang up is not eaten)", () => {
+    h.call = { ...h.call, phase: "thinking" };
+    render(<Host open={true} />);
+    fireEvent.click(outputPill());
+    fireEvent.pointerDown(hangUp());
+    fireEvent.click(hangUp());
+    expect(rowCount()).toBe(0);
+    expect(h.close).toHaveBeenCalledTimes(1);
+    expect(h.call.stop).not.toHaveBeenCalled();
+  });
+
+  it("a tap-away the system CLAIMED (no click) never eats the next, real stop", () => {
+    h.call = { ...h.call, phase: "thinking" };
+    render(<Host open={true} />);
+    fireEvent.click(outputPill());
+    fireEvent.pointerDown(overlay());
+    fireEvent.pointerCancel(overlay()); // no click follows
+    fireEvent.pointerDown(overlay()); // the next tap's down disarms the swallow…
+    fireEvent.click(overlay());
+    expect(h.call.stop).toHaveBeenCalledTimes(1); // …so its click is the stop it means
   });
 
   it("is DISABLED while the route may not move, rather than swallowing the tap", () => {
@@ -687,12 +745,12 @@ describe("CallOverlay — the in-call route controls (D74 S2 · the D75 picker)"
   });
 
   it("a route tap on the top deck is never ALSO an interrupt", () => {
-    // The row moved out of the cluster (owner, 2026-09-22) and so out from under ITS pointer-down
-    // stop — the top deck carries its own, and this is the pin that keeps it there.
+    // The row moved out of the cluster (owner, 2026-09-22) and so out from under ITS propagation stop
+    // (a click stop since LIVE-001's fix wave) — the top deck carries its own, and this pins it there.
     h.call = { ...h.call, phase: "speaking" };
     render(<Host open={true} />);
-    fireEvent.pointerDown(outputPill());
-    expect(h.call.interrupt).not.toHaveBeenCalled();
+    fireEvent.click(outputPill());
+    expect(h.call.stop).not.toHaveBeenCalled();
   });
 
   it("keeps a stored device that the list does not contain — shown, disabled, never cleared", () => {
@@ -821,6 +879,7 @@ describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
     fireEvent.pointerDown(range());
     fireEvent.change(range(), { target: { value: "-52" } }); // pending, no tick yet
     fireEvent.pointerDown(document.body); // an outside pointer-down closes the card under the finger
+    fireEvent.click(document.body); // …and the tap's own click ends the gesture (swallowed once)
     vi.advanceTimersByTime(300);
     // Only a LIFT pins: nothing was committed for a gesture that never ended on the column.
     expect(h.call.setFloorPin).not.toHaveBeenCalled();
@@ -941,8 +1000,8 @@ describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
     h.call = { ...h.call, phase: "speaking" };
     render(<Host open={true} />);
     fireEvent.click(pill());
-    fireEvent.pointerDown(range());
-    expect(h.call.interrupt).not.toHaveBeenCalled();
+    fireEvent.click(range());
+    expect(h.call.stop).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog", { name: "Sensitivity" })).toBeTruthy(); // not an outside tap
   });
 
@@ -1105,11 +1164,11 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     expect(text).toContain("noise -61.0 (settled)");
   });
 
-  it("is never also a tap-to-interrupt — it rides the cluster's pointer-down stop", () => {
+  it("is never also a tap-to-stop — it rides the cluster's click stop", () => {
     h.call = { ...h.call, phase: "speaking", debug: snapshot };
     render(<Host open={true} />);
-    fireEvent.pointerDown(document.querySelector(".kit-call-debug")!);
-    expect(h.call.interrupt).not.toHaveBeenCalled();
+    fireEvent.click(document.querySelector(".kit-call-debug")!);
+    expect(h.call.stop).not.toHaveBeenCalled();
   });
 });
 

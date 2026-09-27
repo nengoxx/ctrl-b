@@ -439,6 +439,14 @@ interface Session {
 }
 let session: Session | null = null;
 
+/** THE TURN STOPS (LIVE-001, D71 amendment №3 — fix wave 1) — how many times the owner has stopped a
+ *  reply's TURN (`dismissTurn`, the call's stop). A counter, not an id: the stop is about the turn, and a
+ *  turn outlives any one message id — the placeholder is RENAMED when `message.start` adopts the server's
+ *  id, and a tool round starts a second message. The feeder (`useAutoTts`) owns the per-turn "the user
+ *  stopped it" latch; it snapshots this at its streaming edge and a change mid-turn arms that latch, so
+ *  neither the feed nor the idle-edge flush can speak the stopped turn. */
+let turnStops = 0;
+
 function revokeSession(s: Session): void {
   for (const url of s.urls) if (url) URL.revokeObjectURL(url);
 }
@@ -1471,6 +1479,22 @@ function seekChunked(s: Session, f: number): void {
 /** Dismiss the player (the ✕): stop + unload, but keep the blob cache so a replay is instant. */
 export function dismiss(): void {
   reset();
+}
+
+/** The call's STOP (LIVE-001): `dismiss`, AND the rest of this turn stays silent — the feeder reads the
+ *  bump (`getTurnStops`) and abandons the turn, whatever message id it speaks under next. A separate door
+ *  rather than a `dismiss` argument: `dismiss` is also a click handler (the MiniPlayer's ✕), and an
+ *  event object must never read as a stop. The composer's Stop takes neither — it never touches the
+ *  player, so its partial is still spoken (owner ruling 1). */
+export function dismissTurn(): void {
+  turnStops++;
+  reset();
+}
+
+/** The turn-stop counter (see `turnStops`) — read imperatively by the feeder, which only ever needs it
+ *  at its own feed / flush decisions. */
+export function getTurnStops(): number {
+  return turnStops;
 }
 
 /** Revoke cached object URLs (e.g. on `/new`). Cheap; keeps a long session from leaking blobs. */
