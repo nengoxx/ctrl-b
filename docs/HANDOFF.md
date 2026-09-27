@@ -13,81 +13,149 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-09-27 evening — **v1.7.9 IS LIVE IN PRODUCTION; Phase 24 S10 (the car round, D80) + wave 1.5 + ISS-31/32 are BUILT, council-closed and COMMITTED (`75e0014` · `c59157a`), NOT PUSHED — the owner's car card on dev, then push + v1.7.10**)
+## Where we are (2026-09-27 night — **PROD = v1.7.9 UNTIL THE SESSION-50 RELEASE LANE LANDS v1.7.10 (verify below). The owner's vault backlog (8 items) is BUILT on top of Phase 24 S10 (the car round, `75e0014` · `c59157a`); BUG-001 · LIVE-001 · RP-001 · STYLE-001 · COMPOSER-001 + D81's backend two-reviewer-closed, D81's frontend (CHAT-001/002/003) two-reviewer round CLOSED too; all five lanes committed. The owner's prod card is next**)
 
-- **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): tag
-  `v1.7.9` on `9096ea4` (released 2026-09-26 22:24Z by the runbook; code = `3d27b09`, the S9 export
-  wave + the polish wave), health 1.7.9, config shape **5** (unchanged — v1.7.9 carries NO migration),
-  DB schema 6 (snapshot `~/.ctrl-b/backups/ctrlb-20260926-222352.db.gz`). Lynette + `personality-traits`
-  + her art are on prod (§15.9); `GET /api/agents/lynette/card` and `GET /api/lorebooks/personality-traits/export`
-  answer 200. **The ear is ON in prod for the first time** (`voice.live`
-  absent ⇒ defaults: `route: media` · `mic_hold: auto` · `barge_in: false` · `noise_verdict_ms: 1000`
-  · `debug: false`). TTS = PocketTTS `ganyu` (fallbacks Kokoro → vault-alltalk). Prod has NO
-  personas and no agents dir.
-- **Rollback off v1.7.9 = plain `bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.8`** (no config
-  restore — both tags read shape 5). **Rolling back FURTHER, off v1.7.8, = restore the config backup
-  FIRST, then v1.7.7** (v1.7.7 cannot read shape 5): `~/.ctrl-b/config.yaml.20260926T151736Z.pre-v1.7.8`
-  (or the migrator's `~/.ctrl-b/backups/config.yaml.20260926T154424Z`); DB snapshot
-  `~/.ctrl-b/backups/ctrlb-20260926-174423.db.gz`. Procedure: `deploy/linux/README.md` §Rollback.
-- **What v1.7.9 carries** (over v1.7.8): Phase 23 **S9 export (D79)** — the SillyTavern card PNG/JSON,
-  the standalone lorebook JSON, `used_by` on books — plus the polish wave (ISS-15/20/22/23/24/26/27/29/30).
-- **What v1.7.8 carried** (320 commits over v1.7.7, all council-closed): Phase 24 live voice / call
-  mode (D71 + the D72–D77 waves, the D71 "mouth waits" amendment), Phase 23 characters + lorebooks
-  incl. S8 the persona library (D70/D78), Phase 22 composer attachments (D68), the D75 sticky
-  agent + default pill, D69 LAN wake trigger, the C3 read-along, the R86–R89 audit fixes.
-- **Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173, units RUNNING **on the S10 + wave 1.5 build, dist rebuilt 2026-09-27 evening**): schema 5, `voice.live.debug` ON (the
-  readout + the call trail in `~/.ctrl-b-dev/calls/`), Lynette = the configured default agent, Ari =
-  the default persona; both imported agents carry a `card.json` sidecar (§15.8 repaired 2026-09-26). Serve `:8443`
-  fronts the DEV BACKEND (built dist — `npm run build` after any FE change).
-- **OWED on the release path: THE PUSH + v1.7.10.** Workspace `main` is 7 commits AHEAD of `origin/main` (the 48th session's two doc commits `a517da9` · `d231f00`, then `e914329` D80 RULED · `75e0014` S10 · `c59157a` wave 1.5 · the handoff `cdf7262` + the count fix) — push in the clean session after the owner's dev car card, then §Release (no migration; rollback = `update.sh v1.7.9`). The full session history is in
-  [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the HANDOFF block of ⟨date⟩ / the Nth session" resolves there).
+- **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): at writing time
+  tag `v1.7.9` on `9096ea4` (released 2026-09-26 22:24Z; code = `3d27b09`), config shape **5**, DB schema 6.
+  **The release lane is running/next** (the owner authorized push + v1.7.10 in this session, ≈ 21:30):
+  push `main` → CI green → `deploy/linux/README.md` §Release → `v1.7.10`. **Verify, don't assume:**
+  `git -C ~/apps/ctrl-b describe --tags --exact-match` + `curl -s localhost:5433/api/health` (version).
+  Prod's `voice.live` block (secret-free keys) = `{dictation: true, mic_hold: on, debug: true}` — the
+  owner's own flips; every other knob defaults. So **Live dictation is ON** and every call AND every
+  dictation writes a trail to `~/.ctrl-b/calls/`. TTS = PocketTTS `ganyu` (fallbacks Kokoro →
+  vault-alltalk). Lynette + `personality-traits` + her art are on prod; no personas, no agents dir.
+- **What v1.7.10 carries** (over v1.7.9): the 49th session's **Phase 24 S10** (the car round, D80) + wave
+  1.5 + ISS-31/32, and session 50's vault backlog: **S11** dictation head/tail (BUG-001) · **LIVE-001**
+  tap-to-stop (D71 amendment №3) · **RP-001** greeting switch · **STYLE-001** italics tint ·
+  **COMPOSER-001** · **D81** chat message actions (Phase 25). **DB schema 6 → 7 (migration 7,
+  additive) · NO config migration.**
+- **Rollback off v1.7.10 = plain `bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.9`** (safe by tag: older
+  builds ignore the new `message_alternates` table; no config restore). Off v1.7.9 = `update.sh v1.7.8`
+  (same shape 5). **Further, off v1.7.8, = restore the config backup FIRST, then v1.7.7**
+  (`~/.ctrl-b/config.yaml.20260926T151736Z.pre-v1.7.8`; DB snapshot `~/.ctrl-b/backups/ctrlb-20260926-174423.db.gz`).
+  Procedure: `deploy/linux/README.md` §Rollback.
+- **The Speaches fork** (`~/github/speaches` @ **`fd4b956`** — honours `prefix_padding_ms` as a slice-start
+  pre-roll) is **DEPLOYED** (the `speaches.service` user unit restarted 2026-09-27; `systemctl --user status
+  speaches`). Harmless to v1.7.9 (its relay sends 0); v1.7.10's relay sends `prefix_padding_ms: 300`.
+  An ear that echoes a different value makes the relay log ONE WARNING per session naming the fork.
+- **Earlier releases:** v1.7.9 = Phase 23 S9 export (D79) + the ISS polish wave · v1.7.8 = Phase 24 live
+  voice, Phase 23 characters + lorebooks + personas, Phase 22 attachments, D69/D75 (details in
+  [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md), the 44th–47th blocks).
+- **Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173, units RUNNING — **the owner: keep them up**): schema 5
+  config; the dist is rebuilt + the units restarted by the session-50 commit lane. ⚠ Dev's
+  `voice.live.debug` currently reads **OFF** in `~/.ctrl-b-dev/config.yaml` (the 49th block said ON) —
+  flip "Call debug readout" in Conf › Live call if you test on dev. Lynette = the default agent, Ari =
+  the default persona. Serve `:8443` fronts the DEV BACKEND (built dist).
+- **Workspace `main`:** at session start 8 commits ahead of `origin/main` (`a517da9` · `d231f00` ·
+  `e914329` · `75e0014` · `c59157a` · `cdf7262` · `69b8cc7` · `18dd75f`), plus session 50's commits from
+  the commit lane (V1 `b4eb035` · V2 `f739c3a` · C `a2f8cc5` · D81 `a0d8e8c` · the QUALITY counts + this
+  handoff — `git log`). The release lane
+  pushes them all. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
+  resolves there).
 
-## ▶▶ NEXT SESSION — THE OWNER'S CAR CARD on S10 (built, council-closed, NOT pushed), then push + v1.7.10
+## ▶▶ NEXT SESSION — THE OWNER'S PROD CARD on v1.7.10 (the vault backlog), then the deferred S10 car card
 
-**The 49th session (2026-09-27 afternoon → evening) — what happened:** the owner answered all eight
-D80 court questions in conversation → **D80 RULED** (`e914329`) → two pinned-Opus 5.5 lanes built
-**Phase 24 S10** from written briefs (`~/.cache/tmp/ctrlb-session49/brief-W.md` · `brief-ISS31.md`):
-W1–W7 + ISS-32 in one lane, ISS-31 in the other (disjoint files) → the two-reviewer code round (blind
-Opus 5.5 ∥ Maya on the same frozen diff: 1 HIGH each · 3 MED · 4 LOW) → fix wave 1 by the building
-lanes → both confirms **SHIP** → committed **`75e0014`**. Then, on the owner's directive (*"I'm
-interested in fixing those issues forever"*), **wave 1.5 was built the same session** (the chirp's
-measured lag SETS the tail's deadline; D80 ⑦ AMENDED) + ISS-31's fix wave 2 → a second two-reviewer
-round (both SHIP WITH FIXES: `leakSeen` latched by one frame / reset by a mid-reply pause; a stale chirp
-lag when Bluetooth connects mid-call) → fix wave → confirms → committed **`c59157a`**. Every brief,
-review, ruling (`RULINGS.md`) and lane report is durable in `~/.cache/tmp/ctrlb-session49/`. **Gate 7/7
-incl. Playwright e2e on a real build. FE 4,112 (207 files) tests · BE 2,825. NOTHING PUSHED.** Dev units RUNNING the
-built dist (`npm run build` done) with `voice.live.debug` ON.
+**The 50th session (2026-09-27 evening → night) — what happened:** the owner pointed the main seat at
+the vault bug/idea inbox (`~/Documents/Maia/40 Projects/2026-08-04-ctrl-b-dashboard-backlog.md` — dictated
+by voice and captured by another agent, so read as HINTS of intent, not spec) and asked for the lot
+before the car card. **Eight items** (UI-001 was already solved in source): BUG-001 · LIVE-001 · RP-001
+· STYLE-001 · COMPOSER-001 · CHAT-001/002/003 (one design, D81). Three read-only Opus 5.5 audits
+(voice · chat · small) → the main seat's rulings (`RULINGS.md`) → **five pinned-Opus 5.5 lanes on
+disjoint files** (V1 dictation · V2 call stop · C the three smalls · B-BE / B-FE the D81 halves, wire
+contract `wire-D81.md`) → every lane through the **two-reviewer blind round** (Opus 5.5 ∥ Maya on the
+same frozen diff) → fix waves by the building lanes → confirms. Fable ran at 93–97 % usage, so the whole
+session was run from a written runbook (`SESSION_PLAN.md` + `RULINGS.md`) an Opus 5.5 main seat could
+continue verbatim. Status: **V1 · V2 · C · B-BE CONFIRMED SHIP; B-FE built, two-reviewer round CLOSED (Opus + Maya confirms; Maya's two nits folded into wave 2, Opus CONFIRMED SHIP)**
+(both lenses converged on two store-only findings — a ghost copy of the owner's bubble after an accepted
+send whose end-of-turn read was missed, and a stale client error bubble kept past a good retry; two fix
+waves + confirms closed it before the D81 commit). Then the commit lane (four scoped feature commits +
+QUALITY counts + this handoff) → the release lane (push → v1.7.10). **The car card is DEFERRED to the
+next session** (owner, ≈ 21:30: usage reset; test on PROD, the daily surface).
 
-**What S10 ships (the car round, D80):** the ear-hold now outlives the ELEMENT — a **tail** armed on
-every fall of the mouth (drain, failure, tap-kill) and released by a MEASURED DEADLINE: ① the connect
-chirp (a 150 ms 1→3 kHz sweep at every capture, the call's "connected" sound) measures the sink's lag →
-the mic reopens at `lag + tail_lag_margin_ms` (300) on every route (≈ 2.6 s in the car, ≈ 0.5 s on
-earbuds) — whatever you say into it; ② no chirp return + the reply never leaked into the mic (≥ 350 ms
-of loud frames = leaked) → the minimum (300 ms); ③ no return + it leaked → the wave-1 quiet rule
-(min → 700 ms of quiet below noise+10 → cap 5 s) as the fallback; a tap-kill without a lag → the
-minimum. The **text backstop** drops a post-reply final that repeats her spoken words (≥ 0.75, ≥ 10
-chars) VISIBLY as "(the reply's own words)". Finals are judged on THEIR OWN segment (`item_id`); the
-relay cuts sub-`silence_ms/2` flaps as empty finals (no cue, no turn); `auto` = held unless the
-browser's echo cancellation is on (the probe is gone, no migration); the drop cue only on sustained
-drops; the Sensitivity pin can never sit above your voice − margin nor below Auto. **ISS-31:** `/new`
-mints the thread on the server (Lynette's greeting shows at once; a reload returns to it; `/new` on a
-fresh thread does nothing). **ISS-32:** the ring stays put. Design of record: DECISIONS **D80** (incl.
-the RULED paragraph, the BUILT paragraph and **⑦ AMENDED**), the CAR ROUND bullet + the S10 as-built in
-LIVE_VOICE_PLAN §7, §4.1 (8 new knobs, all Conf rows under Voice · Live).
+**What was built:**
+- **BUG-001 → Phase 24 S11, the dictation head + tail.** The owner's "first words of many sentences and
+  the last word cut off in the car" was **NOT Bluetooth latency**: dictation never records through the
+  car's mic (the D74 steer opens the phone's own) and has no output leg, so no D80 number carries over.
+  Four independent losses, root-caused at source: **H1** the "go" buzz fired before the mic existed
+  (fix: a new `useDictation().onLive` seam — the buzz fires when the words-carrying path is live) ·
+  **H2** the streaming uplink started after the worklet installed and the clip holding the head was
+  discarded (same fix — GO waits for the uplink's first frame) · **H3** the ear sliced every VAD segment
+  from Silero's 0.6 crossing with ZERO pre-roll — the dominant "many sentences" loss, shared by calls
+  (fix: the owned Speaches fork `fd4b956` honours `prefix_padding_ms`, slice START only, end timing
+  unmoved; relay knob `LiveCfg.prefix_padding_ms` 300, Conf › Live call › "Speech pre-roll (ms)"; the
+  D80 ④ gap cut judges the span NET of the pre-roll the ear ECHOES) · **T1** no post-roll on a user
+  stop (fix: `LiveCfg.release_tail_ms` 400, Conf › Voice · STT › "Release tail (ms)"; user stops only).
+  Plus: the dictation leg gets the D77 trail (debug-gated) and `start` carries `mode: "dictation"`, so
+  the relay never gap-cuts a dictation leg. As-built: LIVE_VOICE_PLAN §7 "S11" + §4.1 rows; D80's S11
+  sentence.
+- **LIVE-001 → tap = STOP during `thinking` (D71 amendment №3).** One control, the existing whole-surface
+  tap: speaking → kill (as before); **thinking → cancels the turn** (discarded; label "Thinking — tap to
+  stop"; 20 ms buzz); listening/connecting → inert. Voice barge stays speaking-only; mute/hang-up
+  untouched; the mic is never held by a stop. The stop is TURN-scoped (`audioController.dismissTurn()` +
+  `useAutoTts`'s abandoned latch), fires on `click`, and a tap-away that closes a deck popover is
+  swallowed once. As-built: LIVE_VOICE_PLAN §4.3 + §7 "LIVE-001"; DECISIONS D71 amendment №3.
+- **RP-001 → `AgentDef.greeting_enabled`** (default on): the agent form's "Use greeting" switch under
+  Greeting (roleplay visibility). Off ⇒ new threads start EMPTY and the model never sees it; the text is
+  kept and still exported as `first_mes`; old threads keep their greeting row; per-agent, never inherited
+  from the root. As-built: ROLEPLAY_PLAN §3.1/§4.2.
+- **STYLE-001 → bot-bubble italics tinted** `color-mix(in oklch, var(--accent) var(--kit-em-tint, 40%),
+  currentColor)` — one kit rule, a per-theme dial (THEME_ENGINE §14.4.1); the e2e contrast matrix now
+  probes it (floor 4.5:1; worst = frontier light/amber 4.88:1).
+- **COMPOSER-001 →** the composer textarea's scrollbar hidden (scrolling unchanged).
+- **CHAT-001/002/003 → D81 chat message actions (Phase 25, migration 7).** `messages` stays the active
+  transcript; displaced replies MOVE to a new `message_alternates` stash. **Retry** any tail reply,
+  keeping old takes as `‹ n/N ›` on the who-line (`›` at N/N writes a new take); **delete** by unit (one
+  confirm, no undo); **edit** (pencil on your line, "edit" in the bot disclosure) — no regenerate.
+  Actions live in the bot who-line's tap disclosure (retry · edit · delete); your line's pencil opens the
+  edit sheet, which carries "Delete message". A regenerate speaks as the agent that gave the displaced
+  reply; retrying a reply that ran a non-retry-safe tool asks first (I4). Design of record: DECISIONS
+  D81 + DESIGN §4/§8/§12; greeting swipes = a recorded seam, not built.
 
-**⚖ Your veto window (main-seat design calls made under your directive — say so in the clean session
-if any is wrong):** (a) **wave 1.5 built now**, not after a logging round (R93 M3 ordered logging first;
-the fallback + the backstop + the trail bound the risk); (b) **`leakSeen`** — a per-reply, cumulative,
-reply-id-keyed "did anything of this reply reach the mic" bit that lets a chirp-silent sink (earbuds)
-reopen at the minimum — it is NOT the deleted probe (it never opens the ear during a reply); (c) a
-**re-chirp on `devicechange`** mid-call (a beep when a device connects) — whether an A2DP-only head
-unit raises that event on Android Chrome is UNVERIFIED; (d) the **D75 auto-route sentence amended**: a
-`/new` thread is PINNED to the agent it opens as, so `auto_rotate` (off by default) never routes it;
-(e) a genuine either/or answer that names her closing option verbatim ("save it for later") IS dropped
-as her own words — visibly, so you repeat it; no cure exists in timing or text.
+**Facts you must know:**
+- **Live dictation is ON in prod** (`voice.live.dictation: true`, set by you) — you believed it off. Every
+  hold/lock/tap recording streams through the ear. The switch: Conf › Voice · STT › "Live dictation".
+- **The edit cap** = 10,485,760 characters (the upload ceiling, `attachments.max_file_mb` × 1 MiB) — a
+  sanity bound, not a real limit; no send-path limit exists, so no new number was invented.
+- **The F20 duplicate-row defect is fixed:** retry on an error bubble now regenerates (no second copy of
+  your message after a reload). One corner remains: a stream cut before the server's first frame, whose
+  turn stored your message but no reply, puts your text back in the composer — re-sending it duplicates
+  (the old behavior, now only there).
+- **Deleting YOUR message deletes exactly that row** (SillyTavern parity): its reply stays and FOLDS into
+  the previous turn's current take — a later swap / tail delete / retry moves them together.
+- **The every-turn GET:** the chat re-reads the thread once at the end of every turn (to learn which
+  reply is retryable). One extra GET per turn; if chat feels slower on the Honor 20, say so (the remedy =
+  an identity-preserving merge in the reload).
+- A stop in `thinking` discards anything you said into that turn (you re-say it); a tap within ~100 ms of
+  sending cancels nothing (the server has not registered the turn yet) — recorded residuals.
 
-**Owner test card (phone; DEV first — Serve `:8443` fronts the dev backend with the built dist and
-`debug` ON; then prod after the release):**
+**OWNER TEST CARD (prod, phone — reload the PWA and accept its update prompt; health shows 1.7.10):**
+1. **Dictation in the car** (Media route, as you use it): dictate a few 3-sentence passages with pauses;
+   start talking AT the buzz (it now comes a beat later — when the mic is really live). PASS = the first
+   words of EVERY sentence and the last word land. **Only if it still clips**, run three recordings per
+   arm: **A** Live dictation ON, normal · **B** Live dictation OFF · **C** ON, wait a beat after the buzz
+   and hold a beat past the last word. B clean where A clips ⇒ the ear's slice (raise "Speech pre-roll")
+   · C fixes the last word ⇒ raise "Release tail" (400 → 700) · C fixes the first words ⇒ the go-signal.
+   Trail (debug is ON in prod): `ls -t ~/.ctrl-b/calls | head -1` — `rec` · `uplink` · `go` ·
+   `release {settle, tail_ms}` · `end` from the client, and the relay's `pre_roll {configured: 300,
+   effective: 300}` (effective 0 = the fork is not answering).
+2. **The call — tap while she THINKS:** ask something, tap the surface during "Thinking — tap to stop" →
+   the turn cancels, a short buzz, the call stays up and the mic stays open (say something new — it
+   lands). Tap while she SPEAKS → the speech stops (now on release of the tap). Open the route or
+   Sensitivity popover during thinking, tap AWAY to close it → the turn must NOT cancel; the next tap
+   does.
+3. **Retry + alternates:** open a reply's who-line → `retry` → a new take shows `2/2` → `‹` → `1/2` →
+   `›` back. **Delete a reply** (one confirm) — at `2/2` the other take comes back. **Edit yours** (the
+   pencil left of "You") and **edit hers** (who-line → edit): the text changes, " · edited" / "edited by
+   you" shows, nothing regenerates. The who-line disclosure opens on EVERY bot bubble.
+4. **Greeting switch:** a roleplay agent → agent form → "Use greeting" OFF → `/new` starts EMPTY; ON
+   again → the greeting returns on the next `/new`.
+5. **Italics tint** by eye on the 5 themes (light + dark): tinted, subtle, readable. The kit default is
+   40 %; say "stronger/weaker" per theme if wanted (`--kit-em-tint`).
+6. **Composer:** a multi-line draft past the ceiling scrolls with NO scrollbar (all three layouts).
+
+**Still owed — the DEFERRED S10 car card** (the 49th session's, verbatim; it was written for DEV — on
+prod read `~/.ctrl-b/calls` for the trail dir and Conf › Live call › "Call debug readout", already ON;
+prod's `mic_hold` is `on` (your flip), not `auto` — item 1's "`auto`" means whatever you run):
 1. **The car, as usual (Media route, `auto`):** you hear the connect chirp once; talk a few turns.
    PASS = no echoed sentence ever becomes your turn; her last sentence is not repeated back. Trail
    (`ls -t ~/.ctrl-b-dev/calls | head -1`): `chirp {lagMs ≈ 2300}`; `tail {reason:"lag",
@@ -117,21 +185,48 @@ as her own words — visibly, so you repeat it; no cure exists in timing or text
 10. Optional readouts: Conf › Voice · Live › "Call debug readout" is ON on dev — the overlay's `tail`
     and `chirp` lines show the live numbers.
 
-**Then (the clean session): PUSH `main` (3 commits: `75e0014`, `c59157a`, the handoff) → CI green →
-`deploy/linux/README.md` §Release → `v1.7.10` (NO config migration — rollback = plain `update.sh
-v1.7.9`; prod's `voice.live.debug` is already ON — leave it for the car round).** If the car card fails,
-the trail decides the fix; the wave-1.5 knobs are all Conf rows (Voice · Live).
+**The release facts (v1.7.10):** carries S10 + wave 1.5 + ISS-31/32 + session 50's six builds · **DB
+schema 6 → 7** (migration 7 = the `message_alternates` table + two indexes, additive) — **rollback by tag
+is safe: `update.sh v1.7.9`** · **NO config migration** (shape stays 5; the new knobs `release_tail_ms` /
+`prefix_padding_ms` default in) · the Speaches fork `fd4b956` is ALREADY live (nothing to deploy for it)
+· **prod `voice.live.debug` stays ON** (for the car card and the dictation trail). Pre-tag standing move:
+`check.py --e2e` locally (the contrast matrix and the new `chat-alternates.spec.ts` ride it).
 
-**Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units RUNNING with the built dist; stop when done
-(`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`). **Prod** untouched at v1.7.9.
+**⚖ Your veto window (main-seat calls made under your directive — say so in the clean session if any is
+wrong):** (a) **③ the ear pre-roll built NOW, ungated** — the audit wanted your A/B/C car experiment
+first; ruled: honouring `prefix_padding_ms` is the reference (OpenAI server_vad 300 ms) behavior, the
+fork ignoring it was a defect, you cannot cheaply run a three-arm experiment, and it is bounded (≤ 300 ms
+more audio per segment; 0 in Conf restores the old slice) · (b) **the edit cap** = the upload ceiling
+(see above) rather than a new number · (c) **the call's stop fires on `click`, not `pointerdown`** — a
+back-swipe's pointerdown would have cancelled a thinking turn; cost: the speaking kill lands on the
+tap's release, one tap-length later · (d) **the stop is TURN-scoped** (a counter + the read-along's
+abandoned latch), not keyed to a message id — a renamed placeholder or a second-round reply after a tool
+cannot speak the stopped partial; the composer Stop still speaks its partial · (e) **D81 = a stash table
+beside `messages`**, not a message tree nor variants-on-the-row — zero changes to the 20+ readers,
+rollback-safe; the trade is no branching conversation tree · (f) **the greeting
+switch is per-agent, never inherited** from the root's `agent.defaults` (a card import stays ON). A
+pre-existing class is recorded, not fixed: the root's greeting TEXT still reaches never-saved
+specialists — is a root greeting even meaningful? (owner court, no rush).
+
+**Durable session record:** every audit, brief, ruling, frozen diff, review, confirm and lane report is in
+**`~/.cache/tmp/ctrlb-session50/`** (`SESSION_PLAN.md` = the runbook + lane table; `RULINGS.md` = every
+ruling with its reason; `wire-D81.md` = the D81 wire as built). The B-FE round's findings were ALL
+ACCEPTED into its fix wave (`RULINGS.md` "Lane B-FE review round №1"): the two converging MEDs plus
+Opus's LOWs — non-409 regenerate refusals surface as errors · retry/`›` hidden while an unsent bubble
+follows the reply · an in-flight synth cannot re-cache pre-edit audio · a gap between `›` and ▶ at
+390 px · a failed edit keeps your typed text · re-attached turns also re-read the floor · the delete
+wording · an accessible name on `n/N` · the new 11 px buttons join the e2e contrast matrix.
+
+**Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units RUNNING (the owner: keep them up). **Prod**: v1.7.10
+once the release lane is green — verify with `git -C ~/apps/ctrl-b describe --tags --exact-match`.
 
 ## ▶▶ NEXT SESSIONS — the roadmap
 
 ### 1. The owner's PROD rounds (phone; reload the PWA and accept its update prompt first)
 Nothing here needs the main seat until a verdict comes back; the trail is the diagnostic.
-1. **A first prod CALL** — Media route, loudspeaker, a few turns. `debug` is OFF on prod, so no
-   readout/trail; if anything misbehaves, Conf › Voice · Live › "Call debug readout" ON, call again,
-   then `ls -t ~/.ctrl-b/calls | head -1` (D77).
+1. **A first prod CALL** — Media route, loudspeaker, a few turns. `debug` is ON on prod (the owner's
+   flip; Conf › Live call › "Call debug readout"), so the readout + the trail are live:
+   `ls -t ~/.ctrl-b/calls | head -1` (D77).
 2. **The mouth-wait card (D71 amendment №2):** ① ask something and KEEP TALKING while it thinks — the
    reply must not start over you and must not vanish; it starts once you stop, your addition lands
    as a steer/next turn. ② ask something with the TV / a next-room voice on during `thinking` — the
@@ -179,7 +274,7 @@ commands / console · **A5** agent runtime (compaction, task/plan tools) · **A1
 secrets at rest). **§P = owner-ruled-OUT ideas — never re-propose.** Anything new: HANDOFF → ROADMAP →
 DECISIONS → DESIGN/ARCHITECTURE → TODO (CLAUDE.md's flow), a D-entry before code.
 
-## Standing operating notes (durable gotchas — verified across sessions 30–44)
+## Standing operating notes (durable gotchas — verified across sessions 30–50)
 - **Method:** Fable main seat designs/rules/audits; pinned-Opus lanes build from written briefs (ONE
   lane, fix waves by `SendMessage` to the SAME lane, context intact; or two lanes on DISJOINT files
   with the API contract written into both briefs); lanes must NOT `git stash` on the shared tree.
@@ -190,7 +285,13 @@ DECISIONS → DESIGN/ARCHITECTURE → TODO (CLAUDE.md's flow), a D-entry before 
   is **Emma** (hermes `-p emma -m gpt-5.6-sol-900k --reasoning high --ignore-rules -t file,terminal
   -z …`, self-contained, ~10 min; `-z` keeps no session so `--resume` is dead); Maya (the default
   profile) is the alternate lens. When killing a hermes run, filter on `venv/bin/python` — a bare
-  `pkill -f hermes` hits your own wrapper shell; a `-z` monitor loop MUST have a timeout.
+  `pkill -f hermes` hits your own wrapper shell; a `-z` monitor loop MUST have a timeout. **Killing a
+  hermes python from the Bash tool has propagated exit 144 to the tool shell (twice, session 50)** — kill
+  in a separate command with nothing after it, or leave the run and discard its output.
+- **Freezing a diff for review: build the file list EXPLICITLY and `wc -l` it before launching the
+  reviewers** — an empty `$(cat list)` makes `git diff --` dump the WHOLE tree (burned on B-FE, session
+  50; a bad path map burned V1). Append new files with `git diff --no-index /dev/null <file>`; the
+  building lane's report lists EVERY changed file and the freeze is taken from that list.
 - **Gates:** `backend/.venv/bin/python tools/check.py` (`--fast` = pre-commit; full = pre-push, ~4–6
   min; `--e2e` adds Playwright, ~3 min). Run the local gate, a main push and a tag push SERIALLY —
   the 6-parallel legs flake under contention. `/tmp` is RAM: heavy runs with

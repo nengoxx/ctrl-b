@@ -1056,6 +1056,13 @@ never leaks into vapor — **follow it for every future theme:**
     contrast matrix gates the rule per theme × mode × accent (`contrast.spec.ts`, the bot-italics probe), so
     a theme raising the dial must pass it. Computed at the `em`, so it always sees the cascaded accent —
     never re-declare it as a derived token on `:root` (the var()-on-html trap below). Set by no theme today.
+    **`--kit-act-tint`** (default `40%`) and **`--kit-act-danger-tint`** (default `60%`) (session 50 / D81) —
+    the same `color-mix(in oklch, …, currentColor)` idiom for the who-line's message actions: `.kit .b
+    .who-act` mixes `--accent` at `var(--kit-act-tint, 40%)`, `.who-act.danger` mixes `--danger` at
+    `var(--kit-act-danger-tint, 60%)`. 11px caption text, and the raw accent failed 4.5:1 on a bubble in 13
+    shipped combos (frontier light × amber 1.21:1), the raw danger in 2; these shares clear every shipped
+    palette. The same e2e matrix gates both rules (`contrast.spec.ts`, the rule-ink probe). Set by no theme
+    today.
 - **Build the Kit lazily-by-need:** only build a Kit component a theme actually consumes. (`NowMonitoring` + its live
   waveform are deferred until a theme renders a featured-host card — minimal dropped the monitoring section, vapor has
   its own Hero — so K2 skips them; they land in the slice of the first theme that needs them.)

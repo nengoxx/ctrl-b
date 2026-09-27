@@ -5,6 +5,8 @@
 > `AGENT_CHAT_AUDIT.md` ACA-# · `PROMPTS_AUDIT.md` PR-# · `QH_AUDIT.md` QH-#). Items are numbered
 > **ISS-#** in original order (older external references like "ISSUES #1" = ISS-1).
 > States: ✓ FIXED · **DEFERRED (owner)** · **OPEN**.
+> *Separate from this ledger: the owner's bug/idea INBOX, the vault backlog `~/Documents/Maia/40 Projects/2026-08-04-ctrl-b-dashboard-backlog.md`
+> (voice-captured hints of intent, not spec; its own IDs like BUG-001 — not ISS-#; session 50 built its eight open items).*
 > *(`UI_AUDIT.md`'s F# is one of three live F# ledgers — see `research/README.md` §"Finding-ID
 > namespaces" before citing an F-number.)*
 
