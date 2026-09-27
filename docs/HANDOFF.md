@@ -55,7 +55,7 @@ measured lag SETS the tail's deadline; D80 ⑦ AMENDED) + ISS-31's fix wave 2 �
 round (both SHIP WITH FIXES: `leakSeen` latched by one frame / reset by a mid-reply pause; a stale chirp
 lag when Bluetooth connects mid-call) → fix wave → confirms → committed **`c59157a`**. Every brief,
 review, ruling (`RULINGS.md`) and lane report is durable in `~/.cache/tmp/ctrlb-session49/`. **Gate 7/7
-incl. Playwright e2e on a real build. FE 4111 (207 files) tests · BE 2825. NOTHING PUSHED.** Dev units RUNNING the
+incl. Playwright e2e on a real build. FE 4,112 (207 files) tests · BE 2,825. NOTHING PUSHED.** Dev units RUNNING the
 built dist (`npm run build` done) with `voice.live.debug` ON.
 
 **What S10 ships (the car round, D80):** the ear-hold now outlives the ELEMENT — a **tail** armed on
