@@ -39,7 +39,7 @@
   readout + the call trail in `~/.ctrl-b-dev/calls/`), Lynette = the configured default agent, Ari =
   the default persona; both imported agents carry a `card.json` sidecar (§15.8 repaired 2026-09-26). Serve `:8443`
   fronts the DEV BACKEND (built dist — `npm run build` after any FE change).
-- **OWED on the release path: THE PUSH + v1.7.10.** Workspace `main` is 4 commits AHEAD of `origin/main` (`e914329` D80 RULED · `75e0014` S10 · `c59157a` wave 1.5 · this handoff) — push in the clean session after the owner's dev car card, then §Release (no migration; rollback = `update.sh v1.7.9`). The full session history is in
+- **OWED on the release path: THE PUSH + v1.7.10.** Workspace `main` is 7 commits AHEAD of `origin/main` (the 48th session's two doc commits `a517da9` · `d231f00`, then `e914329` D80 RULED · `75e0014` S10 · `c59157a` wave 1.5 · the handoff `cdf7262` + the count fix) — push in the clean session after the owner's dev car card, then §Release (no migration; rollback = `update.sh v1.7.9`). The full session history is in
   [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the HANDOFF block of ⟨date⟩ / the Nth session" resolves there).
 
 ## ▶▶ NEXT SESSION — THE OWNER'S CAR CARD on S10 (built, council-closed, NOT pushed), then push + v1.7.10
