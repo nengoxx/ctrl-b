@@ -66,7 +66,10 @@ more doors: the transcript gate fails open on overlapping segments (the relay st
 `item_id`), and `auto`'s probe judged each chunk before the sound existed. The car noise: Silero
 flaps into ≤ 201 ms segments (every real one ≥ 2361 ms) and the drop cue's echo fed itself.
 
-**⚖ THE COURT — answer these and the next session stamps D80 RULED and builds:**
+**⚖ THE COURT — CLOSED (owner, 2026-09-27 afternoon, in conversation; every answer recorded in DECISIONS D80's RULED paragraph):** 1 deaf-time **ACCEPT** · 2 backstop **ACCEPT** · 3 chirp **YES** ("only once, no problem") · 4 `auto` **KEEP as D73** (a listening auto may return atop a proven chirp, wave 1.5+) · 5 pin **CLAMP** (the owner's "the top still caught noises" = echo + flaps, not level-separable at any position — W1/W2/W4/W6's job; the clamp only removes the position that silenced the owner) · 6 **plain A2DP, keeps playing ~2 s after pause; the phone's mic is the mic; the owner has only ever used Media output mode — Call mode untried in the car** · 7 `/new` **YES via seam ①** · 8 ring **FIXED**. The questions as asked:
+
+<details><summary>the eight questions, verbatim</summary>
+
 1. **The deaf-time trade.** The ear reopens on OBSERVED QUIET (noise floor + 10 dB for 700 ms, min
    300 ms, cap 5 s) — ~0.7 s of deafness after each reply on headphones/loudspeaker, ~3–4 s in the
    car until the chirp calibrates it (~2.6 s). An answer you start within 700 ms of the reply's TRUE
@@ -87,11 +90,13 @@ flaps into ≤ 201 ms segments (every real one ≥ 2361 ms) and the drop cue's e
    (the greeting shows at once; a reload keeps it; a greeting-only thread makes `/new` a no-op)?
 8. **ISS-32 (the ring):** fixed at the CSS defaults (50% / 33%) regardless of focus — confirm.
 
-**Then (the next clean session):** stamp D80 · ONE pinned-Opus lane builds W1–W7 ∥ ONE lane for
+</details>
+
+**Then (THIS session, 2026-09-27 afternoon — D80 stamped):** ONE pinned-Opus lane builds W1–W7 ∥ ONE lane for
 ISS-31/32 (disjoint files; briefs from the CAR ROUND block + DEBUG_PLAN §G–§M) → main-seat audit →
 the two-reviewer code round (blind Opus 5.5 ∥ Maya) → fix waves → gate → `npm run build` → dev units
 → **your car card with Conf › Voice · Live › "Call debug readout" ON from the first second** (the trail
-decides: no echo turn · no real turn lost · `tail:` reasons · chirp lag ≈ measured) → v1.7.10.
+decides: no echo turn · no real turn lost · `tail:` reasons · chirp lag ≈ measured; **optional probe: one call with Conf › Voice · Live › "Audio route" = call** (the route knob, D76 §A; the in-call deck exposes it too) — untried in the car, may route HFP through the head unit's own mic/AEC) → v1.7.10.
 
 **Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units RUNNING (left from the release); stop when done
 (`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`). **Prod** untouched at v1.7.9;
