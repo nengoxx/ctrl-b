@@ -373,6 +373,18 @@ back to the analysis.
   `oauth:` object on `ProviderCfg` per the shape-to-extend directive; R49 §5 = the recommended
   shape incl. refresh placement + a narrow token write-back that avoids a full `reconfigure()`).
 
+### A14. Chat message actions — retry + reply alternates · delete · edit — **✏️ RULED 2026-09-27 ([`D81`](./DECISIONS.md)) · build = TODO Phase 25 (BE ✅ built 2026-09-27; FE in progress; review round owed)**
+
+- **What:** the owner's vault backlog CHAT-001/002/003 — SillyTavern-parity actions on the chat: retry
+  any tail reply and swipe between its takes (`‹ n/N ›`, `›` at `N/N` regenerates), delete a message
+  (one confirm tap; the unit is resolved server-side), edit a message's text in place (no auto-regenerate).
+- **The shape (D81):** `messages` is always the active transcript; displaced replies move to
+  `message_alternates` (migration 7, additive — an older build ignores it). Rides along: the F20
+  retry-on-error duplicate-user-row defect is fixed by routing retry through regenerate.
+- **Seams recorded, not built:** greeting swipes (`alt_greetings` → `anchor_id NULL` variants, no model
+  call); an Undo toast for delete (the stash can hold a `deleted` variant — an added column, not a
+  sibling table).
+
 ## B. Memory (configurable, pluggable)
 
 ### B1. Selectable memory backends — ✏️ RESHAPED to the TIER MODEL (D57, 2026-08-17)

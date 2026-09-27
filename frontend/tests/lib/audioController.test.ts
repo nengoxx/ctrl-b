@@ -11,6 +11,7 @@ import {
   dismissTurn,
   endTurnSpeak,
   feedReadAlong,
+  forgetMessage,
   getTurnStops,
   markStreamRetag,
   pokeCallMouth,
@@ -2242,5 +2243,77 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     expect(since()).toBe(0);
+  });
+});
+
+describe("audioController — forgetting ONE message (D81 · `forgetMessage`)", () => {
+  // The cache contract is "the content under an id never changes"; the owner's message actions are the
+  // one place it breaks (an edit rewrites the text under the same id; a delete / a swapped-away variant
+  // takes the id off the log). The store calls this for exactly those ids.
+
+  it("drops the cached clip and dismisses the player docked on it — the next play re-synthesizes", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await act(async () => {
+      await toggle("m1", "old words");
+    });
+    expect(result.current.status).toBe("playing");
+    const clip = `blob:${urlSeq}`; // the clip just minted for m1
+    act(() => forgetMessage("m1"));
+    expect(result.current.id).toBeNull();
+    expect(result.current.status).toBe("idle");
+    expect(revoked).toContain(clip);
+    await act(async () => {
+      await toggle("m1", "new words");
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2); // not the stale cached clip
+    const init = vi.mocked(globalThis.fetch).mock.calls[1][1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({ text: "new words" });
+  });
+
+  it("a synth still IN FLIGHT when the id is forgotten does not cache the old words", async () => {
+    const calls = deferredFetch();
+    let first!: Promise<void>;
+    act(() => {
+      first = toggle("m1", "old words");
+    });
+    act(() => forgetMessage("m1")); // an edit saved while the whole-clip synth is out
+    await act(async () => {
+      calls[0].resolve(okRes());
+      await first;
+    });
+    let second!: Promise<void>;
+    act(() => {
+      second = toggle("m1", "new words");
+    });
+    expect(calls).toHaveLength(2); // re-synthesized: the late clip was not cached under the edited id
+    expect(calls[1].body.text).toBe("new words");
+    await act(async () => {
+      calls[1].resolve(okRes());
+      await second;
+    });
+  });
+
+  it("forgetting ANOTHER id leaves the docked message playing and its clip cached", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await act(async () => {
+      await toggle("m1", "hello");
+    });
+    const before = [...revoked]; // (the beforeEach cache reset revokes the previous case's blobs)
+    act(() => forgetMessage("m2"));
+    expect(result.current.id).toBe("m1");
+    expect(result.current.status).toBe("playing");
+    expect(revoked).toEqual(before);
+  });
+
+  it("reaps a retained CHUNK queue for the id too", async () => {
+    setChunkPolicy(chunked());
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await act(async () => void toggle("m1", "One. Two."));
+    await flush();
+    expect(result.current.id).toBe("m1");
+    const before = revoked.length;
+    act(() => forgetMessage("m1"));
+    expect(result.current.status).toBe("idle");
+    expect(revoked.length).toBeGreaterThan(before); // the queue's synthesized chunks were revoked
   });
 });

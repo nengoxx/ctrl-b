@@ -580,7 +580,9 @@ describe("D62 · the endpoint chip", () => {
   });
 
   it("renders the pre-D62 who-line for a message with no attribution, and no toggle", () => {
-    const { container } = render(<ChatThread active chat={botChat()} />);
+    // A CLIENT-ONLY row (D81 `local`): a durable one is tappable now even without metrics — it carries
+    // the owner's message actions (tests/components/chatMessageActions.test.tsx).
+    const { container } = render(<ChatThread active chat={botChat({ local: true })} />);
     const who = container.querySelector(".b.bot .who");
     expect(who?.querySelector(".who-ep")).toBeNull();
     expect(who?.querySelector("button")).toBeNull(); // not tappable

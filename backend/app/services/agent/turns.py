@@ -49,10 +49,14 @@ log = logging.getLogger(__name__)
 #: from under its drain task. Like the other sync kinds it spawns no task and is exempt from the cap — it
 #: is held for the length of one DELETE. It is deliberately not a chat/resume kind, so a steer aimed at a
 #: thread being deleted gets the busy 409 rather than being queued into a thread that is about to vanish.
-TurnKind = Literal["chat", "resume", "exec", "plan", "apply", "compact", "automation", "prune"]
+#: `edit` (D81) is the sync marker of the three message-action routes — swap an alternate, delete a
+#: message unit, edit a message's text: each rewrites transcript rows in place, so each must hold the
+#: thread against the live loop exactly like plan/apply do. (A REGENERATE is a `chat` turn — it streams,
+#: steers and cancels like any reply.)
+TurnKind = Literal["chat", "resume", "exec", "plan", "apply", "compact", "automation", "prune", "edit"]
 
 #: Kinds that spawn a server-owned drain task (D39) — the async turn loop runs detached and is
-#: cancellable. The sync kinds (exec/plan/apply/compact) run inline in their handler and hold the
+#: cancellable. The sync kinds (exec/plan/apply/compact/edit) run inline in their handler and hold the
 #: per-thread marker for their (short) duration; they never get a `task` and are exempt from the
 #: `max_active_turns` cap. `automation` IS task-bearing and deliberately counts against the cap
 #: (§D-2 "max_active_turns sees automation turns"): a scheduled run costs the same inference capacity

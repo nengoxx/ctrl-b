@@ -46,7 +46,11 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/automations/repo.py", "AutomationRepo.latest_runs"),
         ("app/services/automations/repo.py", "AutomationRepo.runs"),
         ("app/services/automations/repo.py", "AutomationRepo.unread_counts"),
+        ("app/services/conversation.py", "AlternatesRepo._insert"),  # D81 — the alternates stash
+        ("app/services/conversation.py", "AlternatesRepo._variants"),
         ("app/services/conversation.py", "MessageRepo.add"),
+        ("app/services/conversation.py", "MessageRepo.edit_text"),  # D81 — the text edit + meta stamp
+        ("app/services/conversation.py", "MessageRepo.raw_rows"),  # D81 — the raw carrier read
         ("app/services/conversation.py", "MessageRepo.attachment_part"),
         ("app/services/conversation.py", "MessageRepo.attachment_paths"),
         ("app/services/conversation.py", "MessageRepo.search"),
@@ -82,6 +86,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/adapters/inference.py", "InferenceClient._note_reasoning_demotion"),
         ("app/adapters/inference.py", "InferenceClient.stream_chat.attempt"),
         ("app/api/agent.py", "_AUTOMATION_THREAD_DETAIL"),
+        ("app/api/agent.py", "_FOLDED_DETAIL"),  # D81 — the owner-facing 409 on a compacted turn
         ("app/api/agent.py", "_agent_folder"),
         ("app/api/agent.py", "_resume_skills"),
         ("app/api/agent.py", "apply_proposal_endpoint"),

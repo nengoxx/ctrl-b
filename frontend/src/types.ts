@@ -340,6 +340,18 @@ export interface CallUsage {
   duration_ms?: number | null;
 }
 
+/** D81 — the tail reply's variant annotation. The server's history floor (`history_payload`) puts it on
+ *  the tail reply's HOST row and nowhere else — the one row the retry / `‹ n/N ›` controls hang off, so
+ *  the client never derives reply membership itself. `ids` = every agent row of that reply, transcript
+ *  order (exactly what a regenerate displaces); `n` = the 1-based variant shown now; `count` = how many
+ *  variants exist (`1` ⇒ no alternates yet, but a retry is offered). Transient: present only while the
+ *  row is the regenerable tail, gone from it on the next floor once a later turn lands. */
+export interface ReplyVariants {
+  ids: string[];
+  n: number;
+  count: number;
+}
+
 export interface ChatMessage {
   id: string;
   thread_id: string;
@@ -355,6 +367,11 @@ export interface ChatMessage {
   // row, and on any message no model call produced → the plain who-line, no chip, no disclosure.
   source?: MessageSource | null;
   usage?: CallUsage | null;
+  // D81 — when the owner last edited this message's text (ISO), null/absent = never. The disclosure
+  // says so, because the metrics describe the ORIGINAL generation, not the words now on screen.
+  edited?: string | null;
+  // D81 — the tail reply's variant annotation, on its host row only (see `ReplyVariants`).
+  reply?: ReplyVariants;
   // D41/Slice 5 — a client-only marker for a QUEUED steer bubble (a mid-turn message/`!exec` accepted
   // with a 202 while a turn is live): the server-assigned `entry_id`. Present → render muted + a "queued"
   // chip; cleared (or the bubble dropped) when the entry drains (`steer.applied`), is harvested (Stop),
@@ -369,6 +386,16 @@ export interface ChatMessage {
   // bubble-arrival animation reads it (ChatThread), so history never animates on open and a reconnect
   // reload never replays the whole log. Never set from the durable messages endpoint.
   fresh?: true;
+  // D81 — client-only (the `queued`/`fresh` class): this row exists only in THIS view — a local note, the
+  // optimistic user bubble or assistant placeholder, a client-side error bubble, a queued steer. It has
+  // no server row (or not yet), so the message actions (retry/edit/delete) never render on it. Cleared
+  // the moment a row adopts its server id (`message.start`, a drained steer); never on the durable floor.
+  local?: true;
+  // D81 fix wave 1 — client-only, on the optimistic user bubble: the server ACCEPTED the POST that sent
+  // it (a 200 — the turn ran), so the durable row exists and every floor supersedes this bubble. A
+  // bubble without it is a send the server never took (a refusal, a transport failure) or a steer still
+  // in flight, and a floor keeps it.
+  landed?: true;
 }
 
 export interface Thread {

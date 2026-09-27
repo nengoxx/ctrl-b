@@ -6,7 +6,7 @@
 // until `resumeCall(execute|dismiss)` reopens the stream (DESIGN §5.3, §12).
 
 import type { CoreMemoryStatus } from "../hooks/useMemory";
-import { clearAudioCache } from "../lib/audioController";
+import { clearAudioCache, forgetMessage } from "../lib/audioController";
 import { publishNotify } from "../lib/notifyBus";
 import { currentPlanOf } from "../lib/plan";
 import type { Privilege } from "../lib/privilege";
@@ -23,10 +23,12 @@ import type {
   ToolResult,
 } from "../types";
 import { consumeStaged, releaseStaged, stagedPreviews } from "./attachments";
-import { appendDraft, setDraft } from "./composer";
+import { appendDraft } from "./composer";
+import { requestConfirm } from "./confirm";
 import { createStore } from "./createStore";
 import { setConnection } from "./connection";
 import { loadPersisted, savePersisted } from "./persist";
+import { pushToast } from "./toast";
 
 export type ChatStatus = "idle" | "streaming" | "error";
 
@@ -186,6 +188,7 @@ function makeQueuedBubble(entryId: string, kind: "message" | "exec", text: strin
     compacted: false,
     queued: entryId,
     fresh: true,
+    local: true,
   };
 }
 
@@ -209,7 +212,13 @@ function resolveSteerBubble(
     if (i !== idx) return m;
     const parts =
       kind === "message" && text !== undefined ? [{ type: "text", text } as Part] : m.parts;
-    return { ...m, id: messageId ?? m.id, queued: undefined, parts };
+    // Adopting the durable id makes the row a real one (D81 `local` cleared). Without an id it stays the
+    // client's `steer-…` stand-in — but a DRAINED one: the server holds its durable form now, so it is
+    // `landed`, and the next floor supersedes it against that row (the N2 rule) instead of keeping it
+    // beside it forever (Maya's wave-2 addendum).
+    return messageId !== undefined
+      ? { ...m, id: messageId, queued: undefined, parts, local: undefined }
+      : { ...m, queued: undefined, parts, landed: true as const };
   });
 }
 
@@ -975,6 +984,113 @@ export async function reloadChat(force = false): Promise<void> {
   }
 }
 
+/** D81 — install a DURABLE FLOOR (the list every history route returns: the thread's messages, the tail
+ *  reply's host carrying `reply`) as the view's log, keeping what only this view holds.
+ *
+ *  ONE installer for the four places a floor lands after the owner acted: the end of every turn this view
+ *  started or attached to (`reloadFloor`), and the three sync routes (swap a variant, edit, delete — each
+ *  answers `{messages}` with the same floor). A floor can never carry a CLIENT-ONLY row (`local`), so the
+ *  ones it must not cost the owner are KEPT, each re-seated right after the durable row it followed (the
+ *  head of the log if none):
+ *    · the view's notes (`/help`, the step-limit line, a failover breadcrumb);
+ *    · the owner's bubbles the server does not hold yet — a queued steer, a steer whose POST is still in
+ *      flight, a send the server refused. NOT a `landed` bubble whose durable row the floor holds (its
+ *      POST was accepted — keeping it would show the message twice); one the floor does NOT hold was
+ *      accepted but never saved, and is kept as unsent (wave 2);
+ *    · a client-side ERROR bubble (an error the server never persisted — the F20 retry hangs off it), but
+ *      only while it is the log's LAST row (notes aside), and only until the floor shows the agent
+ *      answered past the point it stood at (its durable host appeared). It is then re-seated at the very
+ *      end, so it stays the last row; an older one is simply gone — errors never stack.
+ *  What is dropped is every other assistant STAND-IN (the "…" placeholder, a re-attach's `sync-` call
+ *  bubble): each one only ever stood in for a server row, which the floor now carries.
+ *
+ *  A durable row the floor no longer has (deleted, or a variant swapped out) is forgotten by the audio
+ *  controller: a clip docked for it is dismissed, its blob revoked (`forgetMessage`).
+ *
+ *  `reloadChat` (the reconnect reconcile) deliberately stays a plain replace — its documented contract is
+ *  that client-only rows are gone on reload, and the re-attach overlay relies on that wipe to de-dupe. */
+export function applyFloor(floor: ChatMessage[]): void {
+  const msgs = state.messages;
+  const onFloor = new Set(floor.map((m) => m.id));
+  let last = msgs.length - 1; // the last non-note row — the only place an error bubble may stand
+  while (last >= 0 && msgs[last].role === "system") last--;
+  const kept = new Map<string | null, ChatMessage[]>(); // anchor id (null = the head) → rows after it
+  const keep = (at: string | null, m: ChatMessage) => {
+    const after = kept.get(at);
+    if (after) after.push(m);
+    else kept.set(at, [m]);
+  };
+  let anchor: string | null = null;
+  let erred: { m: ChatMessage; anchor: string | null } | null = null;
+  // Wave 2 · N2 — `landed` means ACCEPTED, not persisted: a 200 turn can fail before it saves the user
+  // row. So a landed bubble is dropped only against a durable OWNER row the floor holds after its anchor
+  // (each such row answers one bubble); with none left it is kept and becomes UNSENT again (its `landed`
+  // cleared), so the F20 retry hands its words back instead of rewriting the reply before it.
+  // Matched by KIND: a plain message only against a durable user row; an EXEC bubble (a drained `!cmd`
+  // steer, rendered with its `!` sigil — `makeQueuedBubble`) only against the call row of an owner
+  // `!exec` pair, its durable form (Maya's wave-2 addendum). A message never matches an exec row.
+  type Kind = "message" | "exec";
+  const bubbleKind = (m: ChatMessage): Kind =>
+    textOf(m.parts).startsWith("!") ? "exec" : "message";
+  const rowKind = (f: ChatMessage): Kind | null =>
+    f.role === "user" ? "message" : f.role === "assistant" && f.actor === "user" ? "exec" : null;
+  const claimed = new Map<string, number>(); // `${kind}|${anchor}` → floor owner rows already matched
+  const ownerRowsAfter = (at: string | null, kind: Kind) => {
+    const from = at === null ? 0 : floor.findIndex((f) => f.id === at) + 1;
+    return floor.slice(from).filter((f) => rowKind(f) === kind).length;
+  };
+  msgs.forEach((m, i) => {
+    if (m.local) {
+      if (m.parts.some((p) => p.type === "error")) {
+        if (i === last) erred = { m, anchor };
+      } else if (m.landed) {
+        const kind = bubbleKind(m);
+        const key = `${kind}|${anchor}`;
+        const used = claimed.get(key) ?? 0;
+        if (used < ownerRowsAfter(anchor, kind)) claimed.set(key, used + 1);
+        else keep(anchor, { ...m, landed: undefined });
+      } else if (m.role !== "assistant") keep(anchor, m);
+    } else if (onFloor.has(m.id)) anchor = m.id;
+    else forgetMessage(m.id);
+  });
+  if (erred !== null) {
+    const { m, anchor: at } = erred as { m: ChatMessage; anchor: string | null };
+    const from = at === null ? 0 : floor.findIndex((f) => f.id === at) + 1;
+    const answered = floor
+      .slice(from)
+      .some((f) => (f.role === "assistant" || f.role === "tool") && f.actor !== "user");
+    if (!answered) keep(floor.length ? floor[floor.length - 1].id : null, m);
+  }
+  const next = [...(kept.get(null) ?? [])];
+  for (const m of floor) {
+    next.push(m);
+    const after = kept.get(m.id);
+    if (after) next.push(...after);
+  }
+  set({ messages: next });
+}
+
+/** D81 — re-read the open thread's durable floor and install it (`applyFloor`). Run at the END of every
+ *  turn this view started or attached to (the buffered path's and the attachment send's old reload, made
+ *  universal): the wire has no user-message frame, so this is what replaces the just-sent bubble with its
+ *  durable row (so it can be edited or deleted), and what delivers the tail's fresh `reply` annotation
+ *  (so the retry and the `‹ n/N ›` controls describe the take just produced). One GET per turn.
+ *
+ *  Never while a turn streams (a floor would yank the live bubble), and discarded if the view moved on
+ *  mid-fetch — the `reloadChat` guards. Best-effort: an unreachable backend leaves the view as it is. */
+async function reloadFloor(): Promise<void> {
+  const threadId = state.threadId;
+  if (!threadId || getChatStatus() === "streaming") return;
+  const gen = loadGen;
+  try {
+    const floor = await fetchMessages(threadId);
+    if (gen !== loadGen || state.threadId !== threadId || getChatStatus() === "streaming") return;
+    applyFloor(floor);
+  } catch {
+    /* unreachable — the next turn / reconnect reconciles */
+  }
+}
+
 /** Append a client-only message (system note or shell echo) — not persisted; gone on reload. Used
  *  by the composer router for `/help`, mode-switch notes, and unknown-verb replies (lib/composer), and
  *  by `runShell` for its non-fatal outcomes (shell disabled / thread busy / backend unreachable).
@@ -993,6 +1109,7 @@ function pushLocal(role: "system" | "user", text: string): void {
         tokens: null,
         compacted: false,
         fresh: true,
+        local: true,
       },
     ],
   });
@@ -1182,6 +1299,13 @@ function emptyAssistant(id: string, agent: string | null = null): ChatMessage {
   };
 }
 
+/** The OPTIMISTIC assistant stand-in a turn shows before its first `message.start` (the "…" bubble) —
+ *  `emptyAssistant` marked client-only (D81 `local`), so no message action renders on it. The first
+ *  `message.start` adopts it under the server's id and clears the mark. */
+function placeholder(id: string, agent: string | null = null): ChatMessage {
+  return { ...emptyAssistant(id, agent), local: true };
+}
+
 /** Append a text/reasoning delta onto the named message's matching part (creating it if absent). */
 function appendDelta(id: string, kind: "text" | "reasoning", delta: string) {
   set({
@@ -1271,7 +1395,7 @@ function failStream(message: string) {
       streamingId: null,
     });
   } else {
-    const m = emptyAssistant(`err-${Date.now()}`);
+    const m = placeholder(`err-${Date.now()}`); // a client-side error: no server row stands behind it
     m.parts = [errPart];
     set({ messages: [...state.messages, m], status: "error", streamingId: null });
   }
@@ -1409,15 +1533,30 @@ const TURN_BUSY_FALLBACK = "a turn is already running on this thread — wait fo
 
 /** Read the actionable detail off a 409 "turn busy" response (D38). A thread-mutating endpoint that
  *  409s returns `{"detail": "<why>"}`; surface that verbatim, falling back to the canonical text if
- *  the body isn't JSON / lacks a string detail. Used by every non-SSE endpoint + the stream open. */
-async function busyDetail(res: Response): Promise<string> {
+ *  the body isn't JSON / lacks a string detail. Used by every non-SSE endpoint + the stream open. The
+ *  D81 message routes refuse with other statuses too (422/404/403) and pass their own `fallback`. */
+async function busyDetail(res: Response, fallback = TURN_BUSY_FALLBACK): Promise<string> {
   try {
     const j = (await res.json()) as { detail?: unknown };
     if (typeof j.detail === "string" && j.detail) return j.detail;
   } catch {
     /* non-JSON body → canonical fallback */
   }
-  return TURN_BUSY_FALLBACK;
+  return fallback;
+}
+
+/** A DEFINITE non-OK answer to a turn POST (D81 fix wave 1) — the server answered and no turn started,
+ *  which the catch must tell apart from a dropped stream (that one re-attaches). The message keeps the
+ *  `<url> → <status>` shape `isLikelyUnreachable` reads; `detail` is the server's `{detail}` sentence,
+ *  or "" when it sent none. */
+class HttpRefusal extends Error {
+  readonly status: number;
+  readonly detail: string;
+  constructor(url: string, status: number, detail: string) {
+    super(`${url} → ${status}`);
+    this.status = status;
+    this.detail = detail;
+  }
 }
 
 /** Parse an SSE byte stream, invoking `onFrame(event, data, id)` per frame until the stream closes
@@ -1504,7 +1643,9 @@ function makeTurnReducer(ctx: TurnCtx) {
         if (!ctx.claimed && ctx.placeholderId) {
           const pid = ctx.placeholderId;
           set({
-            messages: state.messages.map((m) => (m.id === pid ? { ...m, id, agent } : m)),
+            messages: state.messages.map((m) =>
+              m.id === pid ? { ...m, id, agent, local: undefined } : m,
+            ),
             streamingId: id,
           });
           ctx.claimed = true;
@@ -1785,10 +1926,20 @@ async function streamTurn(
       // utterance harvests to the draft instead of vanishing (F8).
       return info.entry_id ? "accepted" : "refused";
     }
-    if (!res.ok || !res.body) throw new Error(`${url} → ${res.status}`);
+    // A non-OK answer is a DEFINITE refusal (D81 fix wave 1): the server answered, no turn started — so it
+    // must never reach the catch's re-attach ladder, which would attach to the PREVIOUS turn's cursor.
+    if (!res.ok) throw new HttpRefusal(url, res.status, await busyDetail(res, ""));
+    if (!res.body) throw new Error(`${url} → ${res.status}`);
     // Past the 409 and past `!res.ok`: the turn is RUNNING (or already ran, buffered), so whatever
     // this POST named is the server's now. Everything below is about rendering it.
     onAccepted?.();
+    // D81 fix wave 1 — the optimistic user bubble LANDED: its durable row exists, so every floor from
+    // here supersedes it (even one that runs long after this turn — a failed end-of-turn read must not
+    // leave a ghost that later floors keep beside the real row).
+    if (pendingUserId !== undefined)
+      set({
+        messages: state.messages.map((m) => (m.id === pendingUserId ? { ...m, landed: true } : m)),
+      });
 
     // D17 — buffered (non-streaming) turn: the server returned one JSON payload instead of an SSE
     // stream (agent.streaming=off, or a non-streaming client). The turn already persisted its
@@ -1828,9 +1979,9 @@ async function streamTurn(
       // the reload (the view is idle by then — `startNewThread` is allowed) re-namespaced this turn's
       // signals under the NEW thread (or the no-thread fallback), breaking the live↔replay collapse.
       const notifyThread = str(payload.threadId) ?? state.threadId;
-      // Clear the streaming placeholder so reloadChat (which skips while "streaming") runs.
+      // Clear the streaming placeholder so the floor reload (which skips while "streaming") runs.
       set({ status: "idle", streamingId: null });
-      await reloadChat();
+      await reloadFloor();
       if (payload.state === "capped")
         pushSystemNote("// reached the step limit — send a message to continue");
       if (payload.state === "error") set({ status: "error" });
@@ -1879,8 +2030,12 @@ async function streamTurn(
       const cursor = lastTurnId ? `${lastTurnId}:${lastSeq}` : undefined;
       const tid = state.threadId;
       const reattached = tid ? await reattachTurn(tid, cursor) : false;
+      // (A re-attach that drove the turn home reloads the floor itself — D81, `reattachTurn`.)
       if (!reattached) failStream("connection interrupted");
     } else {
+      // D81 — the turn settled: re-read the durable floor (the sent bubble's server id + the tail's
+      // `reply`). BEFORE the steer discovery, which reads the queued bubbles the floor carries over.
+      await reloadFloor();
       // D41 §3 — the turn settled cleanly; if queued steers remain, a drain-B turn may have spawned
       // for them (invisible until probed). Discover + re-attach (reuses the D39 probe path).
       discoverSpawnedSteerTurn();
@@ -1904,13 +2059,17 @@ async function streamTurn(
     // case — the clean-EOF branch above already re-attaches; this one must too (final-review
     // CONCERN-1: without it a transient blip that recovers in seconds still failStreams a
     // turn that is alive and well server-side). Same fallback ladder: re-attach, else fail.
-    if (!ctx.settled && state.status === "streaming") {
+    if (!ctx.settled && state.status === "streaming" && !(e instanceof HttpRefusal)) {
       const cursor = lastTurnId ? `${lastTurnId}:${lastSeq}` : undefined;
       const tid = state.threadId;
       const reattached = tid ? await reattachTurn(tid, cursor).catch(() => false) : false;
       if (reattached) return "accepted";
     }
-    failStream((e as Error).message);
+    // A 4xx refusal speaks the server's own sentence when it sent one (a 5xx keeps `<url> → <status>`,
+    // which is also what flags the connection badge above).
+    failStream(
+      e instanceof HttpRefusal && e.status < 500 && e.detail ? e.detail : (e as Error).message,
+    );
     // F8 — the ONE indeterminate case, and it must stay distinguishable: a native fetch failure
     // (TypeError) can mean the request never left, or that it landed and the ANSWER was lost. A caller
     // that re-sends on that would risk an invisible duplicate, so the call overlay labels it instead.
@@ -2033,7 +2192,7 @@ function overlaySyncCall(
     if (openId && msgs.some((m) => m.id === openId)) {
       msgs = msgs.map((m) => (m.id === openId ? { ...m, parts: [...m.parts, ...newParts] } : m));
     } else {
-      const bubble = emptyAssistant(`sync-${callId}`);
+      const bubble = placeholder(`sync-${callId}`); // a client-made id — the floor carries the real row
       bubble.parts = newParts;
       msgs = [...msgs, bubble];
     }
@@ -2277,6 +2436,9 @@ export async function reattachTurn(
       if (!res.ok || !res.body) return false;
       await parseSSE(res.body, onFrame);
       if (ctx.settled) {
+        // D81 — a turn this view ATTACHED to (a cut stream's recovery, a cold-load probe, a drain-B steer
+        // turn) ends on the floor like one it started: the reply's `reply` annotation arrives with it.
+        if (ctx.gen === streamGeneration && state.threadId === enteredOn) await reloadFloor();
         discoverSpawnedSteerTurn(); // D41 §3 — a re-attached (incl. drain-B) turn may chain another
         return true; // reached a terminal — fully handled
       }
@@ -2669,6 +2831,7 @@ export async function sendMessage(
     tokens: null,
     compacted: false,
     fresh: true,
+    local: true, // D81 — no server id until the end-of-turn floor hands it one
     ...(previews.length ? { pending_attachments: previews } : {}),
   };
   const reqBody = {
@@ -2684,13 +2847,13 @@ export async function sendMessage(
     ...(attachments.length ? { attachments } : {}),
   };
   // The RAW composer line (WITH any `/prefix`) for a Stop harvest — falls back to the body when the
-  // caller didn't thread it through (direct sends, retry). Captured before prefix-stripping upstream.
+  // caller didn't thread it through (direct sends). Captured before prefix-stripping upstream.
   const raw = opts?.raw ?? body;
 
   // D68 §7 — the staged chips are released the moment the POST is ACCEPTED (never on a 409: a
   // refused send keeps them so the owner can act on the server's own sentence, which names
-  // re-attaching as the fix). `claimed` also tells us to re-read the thread below. ONE owner for both
-  // halves of the reservation: what is not consumed here is handed back by `releaseUnspent` below.
+  // re-attaching as the fix). ONE owner for both halves of the reservation: what is not consumed here
+  // is handed back by `releaseUnspent` below.
   let claimed = false;
   const onAccepted = attachments.length
     ? () => {
@@ -2743,13 +2906,19 @@ export async function sendMessage(
 
   const placeholderId = `assist-${Date.now()}`;
   set({
-    messages: [...state.messages, tempUser, emptyAssistant(placeholderId)],
+    messages: [...state.messages, tempUser, placeholder(placeholderId)],
     status: "streaming",
     streamingId: placeholderId,
   });
-  let outcome: SendOutcome;
+  // Once the turn has settled, `streamTurn` re-reads the durable floor (D81 `reloadFloor`, every
+  // turn) — which is also what shows the user bubble what it actually sent. The optimistic bubble
+  // carries the text plus a PRESENTATIONAL snapshot (MED-6); the real `AttachmentPart`s are built by
+  // the SERVER at claim (E2 — it resolves the final collision-suffixed name), so the client cannot
+  // invent them, and the wire has no user-message frame to deliver them on. That read is therefore
+  // what turns the snapshot into the durable bubble — and what revokes the previews it was rendering.
+  // (A STEER returns above: its floor arrives with the next reconcile.)
   try {
-    outcome = await streamTurn(
+    return await streamTurn(
       "/api/agent/chat",
       reqBody,
       placeholderId,
@@ -2760,16 +2929,6 @@ export async function sendMessage(
   } finally {
     releaseUnspent();
   }
-  // …and once the turn has settled, re-read the durable floor so the user bubble shows what it
-  // actually sent. The optimistic bubble carries the text plus a PRESENTATIONAL snapshot (MED-6);
-  // the real `AttachmentPart`s are built by the SERVER at claim (E2 — it resolves the final
-  // collision-suffixed name), so the client cannot invent them, and the wire has no user-message
-  // frame to deliver them on. This read is therefore what turns the snapshot into the durable
-  // bubble — and what revokes the previews it was rendering. The same reload-the-floor idiom
-  // `probeAndReattach` uses for the drained-exec gap, and it costs one GET on attachment sends only.
-  // (A STEER returns above: its floor arrives with the next reconcile.)
-  if (claimed) await reloadChat();
-  return outcome;
 }
 
 /** One-line sys breadcrumb for a compaction event (auto or manual). `rejected` (D42, manual only)
@@ -2958,57 +3117,303 @@ export async function editPlan(steps: PlanStep[]): Promise<void> {
   }
 }
 
-/**
- * F20 — retry the most recent failed turn (e.g. when the chat SSE dropped mid-stream because
- * of a network flake or backend restart). Re-runs the user's last message from scratch.
- *
- * Not a byte-level resume: the partial assistant work (intermediate tool results, half-written
- * replies) from the failed turn is discarded. The matching backend "resume" endpoint
- * (/api/agent/resume) is specifically for confirm-gated suspension; there's no
- * resume-from-drop endpoint. Phase B (server-side Last-Event-Id) would close that gap but is
- * not in this slice.
- *
- * Walks back to the user message that started the failed turn, truncates the message log to
- * before it, and re-runs. **I4 — risk-aware retry:** if the failed turn ran any *non-retry-safe*
- * tool (mutating + non-idempotent — reboot/restart/run_shell/spawn/memory), we do NOT auto-resend
- * (a re-run could silently repeat it). Instead we copy the message to the composer draft for a
- * conscious re-send. A read-only/idempotent turn auto-resends as before. `isRetrySafe(tool)` is
- * supplied by the caller from the action catalog (an unknown tool → treated as unsafe).
- *
- * No-op while streaming (you'd be double-firing). The button is only rendered on the LAST
- * message when status === "error", so this should never see a non-error tail.
- */
-export function retryLastTurn(isRetrySafe: (tool: string) => boolean): void {
-  if (state.status === "streaming") return;
-  const lastIdx = state.messages.length - 1;
-  const last = state.messages[lastIdx];
-  if (!last || last.role !== "assistant") return;
-  const errPart = last.parts.find((p) => p.type === "error");
-  if (!errPart || errPart.type !== "error" || !errPart.retryable) return;
-  // Walk back to the user message that started this turn.
-  let userIdx = lastIdx - 1;
-  while (userIdx >= 0 && state.messages[userIdx].role !== "user") userIdx--;
-  if (userIdx < 0) return;
-  const userMsg = state.messages[userIdx];
-  const textPart = userMsg.parts.find((p) => p.type === "text");
-  if (!textPart || textPart.type !== "text") return;
+// ── D81 — the owner's message actions: retry (a new variant) · swap variants · edit · delete ────────
+// The server owns every rule here (which rows form the unit, which variant is live, what the model sees):
+// each action is one route, and the three sync ones answer with the whole durable floor, which
+// `applyFloor` installs — the client never derives reply membership, it reads `reply` off the host row.
+// All four refuse while a turn streams (the routes 409 then anyway — the controls are not even shown).
 
-  // Did the failed turn (the assistant message[s] after the user message) run a non-retry-safe tool?
-  const turn = state.messages.slice(userIdx + 1);
-  const ranUnsafe = turn.some((m) =>
-    m.parts.some((p) => p.type === "tool_call" && !isRetrySafe(p.tool)),
+/** Whether the view may take a message action right now: a thread, and no live turn. */
+function actionable(): boolean {
+  return state.threadId !== null && state.status !== "streaming";
+}
+
+/** One sync message route in flight at a time: a double-tap of `‹` would otherwise send the second swap
+ *  with the host id the first one just replaced (an honest 409, but a pointless one). */
+let syncInFlight = false;
+
+/** Run ONE of the three sync routes (swap/edit/delete) and install the floor it answers with. A refusal
+ *  (409 stale/busy/folded, 422, 404, 403) says the server's own sentence and re-reads the floor — the
+ *  usual cause is a view that no longer matches the thread (another device acted), and the fresh floor is
+ *  the fix. `before` runs just ahead of the install (the edit's audio forget). Resolves whether the route
+ *  TOOK the change — `false` for a refusal, a failure, or a local one (a turn streaming, a route already
+ *  in flight): the editor uses it to hand the owner's typed text back. */
+async function syncMessageRoute(
+  url: string,
+  init: RequestInit,
+  failure: string,
+  before?: () => void,
+): Promise<boolean> {
+  if (!actionable() || syncInFlight) return false;
+  const threadId = state.threadId;
+  syncInFlight = true;
+  try {
+    const res = await fetch(url, init);
+    if (state.threadId !== threadId) return false; // the view moved on — this floor is another thread's
+    if (!res.ok) {
+      pushSystemNote("// " + (await busyDetail(res, failure)));
+      await reloadFloor();
+      return false;
+    }
+    const data = (await res.json()) as { messages?: unknown };
+    if (!Array.isArray(data.messages)) throw new Error("no floor");
+    before?.();
+    // A turn that started meanwhile will land its own floor; the change itself was taken either way.
+    if (getChatStatus() !== "streaming") applyFloor(data.messages as ChatMessage[]);
+    return true;
+  } catch {
+    if (state.threadId === threadId) pushSystemNote(`// ${failure} — try again`);
+    return false;
+  } finally {
+    syncInFlight = false;
+  }
+}
+
+const threadPath = (threadId: string, messageId: string) =>
+  `/api/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}`;
+
+/** An UNSENT bubble (D81): the owner's client-only message the server never took — a refused POST, a
+ *  transport failure, or a steer still in flight. Not a queued steer (the server holds it) and not a
+ *  `landed` one (its POST was accepted). While one follows a reply, that reply is not the thread's tail
+ *  from the owner's point of view, so it is not retried (the view hides the controls too). */
+export function isUnsent(m: ChatMessage): boolean {
+  return m.role === "user" && m.local === true && !m.landed && !m.queued;
+}
+
+/** The floor's tail host (the row carrying `reply`) — but NOT when an unsent bubble follows it: retrying
+ *  the reply BEFORE a send the server never took would rewrite the wrong turn. */
+function landedHost(): ChatMessage | undefined {
+  const at = state.messages.findIndex((m) => m.reply);
+  if (at < 0) return undefined;
+  return state.messages.slice(at + 1).some(isUnsent) ? undefined : state.messages[at];
+}
+
+/** The owner's last message, when it is durable and nothing the agent said follows it on the floor — the
+ *  one case the regenerate wire takes a USER row's id (D81 wave 1: an answerless anchor writes take 1).
+ *  `undefined` when that message is client-only (it never reached the server) or already answered. */
+function answerless(): ChatMessage | undefined {
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const m = state.messages[i];
+    if (m.role === "user" && !m.queued) return m.local ? undefined : m;
+    // A durable AGENT row answers it (an owner `!exec` pair is `actor: "user"` and does not).
+    if (!m.local && m.role !== "system" && m.actor !== "user") return undefined;
+  }
+  return undefined;
+}
+
+/** F20 on sends that never reached the server (their bubbles are still client-only — a refused POST, a
+ *  transport failure, a turn accepted but never saved): there is no server turn to regenerate, and
+ *  re-sending blind could duplicate a message whose fate is unknown. So their words go back to the
+ *  composer for the owner to send again, and the stand-ins (the bubbles, their errors) leave the log.
+ *  EVERY unsent bubble in one pass (wave 2 · N3): after two refused sends the older one has no error
+ *  left (errors never stack), and recovering only the newest would leave it orphaned — no retry of its
+ *  own, and locking the retry above it. `false` when the last user message is durable. */
+function recoverUnsent(): boolean {
+  let lastUser = -1;
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const m = state.messages[i];
+    if (m.role === "user" && !m.queued) {
+      lastUser = i;
+      break;
+    }
+  }
+  if (lastUser < 0 || !isUnsent(state.messages[lastUser])) return false;
+  const unsent = state.messages.filter(isUnsent);
+  const first = state.messages.indexOf(unsent[0]);
+  set({
+    messages: state.messages.filter(
+      (m, i) => !isUnsent(m) && !(i > first && m.local && m.role !== "system" && !m.queued),
+    ),
+    status: "idle",
+    streamingId: null,
+  });
+  appendDraft(unsent.map((m) => textOf(m.parts)).join("\n"), "\n");
+  pushSystemNote(
+    unsent.length === 1
+      ? "// that message didn't reach the server — it's back in the composer"
+      : "// those messages didn't reach the server — they're back in the composer",
   );
+  return true;
+}
 
-  // Truncate to just before the user message — the retry starts fresh either way.
-  set({ messages: state.messages.slice(0, userIdx), status: "idle", streamingId: null });
-
-  if (ranUnsafe) {
-    // Don't auto-repeat a side effect: hand the message back to the composer for a conscious re-send.
-    setDraft(textPart.text);
-    pushSystemNote("// last turn ran an action — review the message and send again to retry");
+/**
+ * RETRY — regenerate the tail reply as a new variant (D81; ST's swipe-right-past-the-end). `hostId` names
+ * the tail's host row, the one carrying `reply`. The displaced take is kept by the server as a variant
+ * (an error-only one is discarded), and the new take streams in as an ordinary turn.
+ *
+ * Also the F20 inline retry on an error bubble — rerouted here, so a failed turn is re-run in place
+ * rather than re-SENT (the old FE resend duplicated the user row server-side). An error the view has no
+ * floor for (a cut stream) re-reads the floor first and retries the tail host it finds there — unless the
+ * failed send never reached the server at all, whose words go back to the composer (`recoverUnsent`).
+ *
+ * **I4 — risk-aware.** Alternates rewind the transcript, not the world: a displaced reply that ran a
+ * non-`retry_safe` tool (a reboot, a shell command, a memory write) has already done it, and a new take
+ * may do it again — so that case asks one confirm tap first. `isRetrySafe(tool)` comes from the action
+ * catalog (an unknown tool → unsafe).
+ *
+ * Optimistic: the reply's rows (exactly `reply.ids`) leave the log and the "…" placeholder takes their
+ * place at once. A refusal (409 stale/busy/folded) puts the log back and says why.
+ */
+export async function regenerate(
+  hostId: string,
+  isRetrySafe: (tool: string) => boolean,
+): Promise<void> {
+  if (!actionable()) return;
+  let host = state.messages.find((m) => m.id === hostId && m.reply);
+  let target = host?.id;
+  if (host && state.messages.slice(state.messages.indexOf(host) + 1).some(isUnsent)) {
+    // (The view hides retry/`›` here; this is the store's own guard.) The unsent message's error pill
+    // is the door: it hands those words back first.
+    pushSystemNote("// retry the unsent message below first");
     return;
   }
-  void sendMessage(textPart.text);
+  if (!host) {
+    // F20 on an error the view never got a floor for (a stream cut short, a send that failed): read the
+    // floor first — the turn may well have landed server-side.
+    await reloadFloor();
+    if (!actionable()) return;
+    host = state.messages.find((m) => m.id === hostId && m.reply) ?? landedHost();
+    // No reply to rewrite: the owner's last message may still be ANSWERLESS on the server (its error
+    // take dropped, its reply deleted, a turn stopped before its first row) — then the wire takes the
+    // message's own id and writes take 1 (D81 wave 1). A send that never got there goes back instead.
+    target = host?.id ?? answerless()?.id;
+    if (target === undefined) {
+      if (!recoverUnsent()) pushSystemNote("// there is no reply to retry here");
+      return;
+    }
+  }
+  if (target === undefined) return;
+  const ids = new Set(host?.reply?.ids ?? []);
+  const displaced = state.messages.filter((m) => ids.has(m.id));
+  const risky = displaced
+    .flatMap((m) => m.parts)
+    .find((p): p is ToolCallPart => p.type === "tool_call" && !isRetrySafe(p.tool));
+  if (risky) {
+    const ok = await requestConfirm({
+      title: "Retry this reply?",
+      body: `It ran ${risky.tool.replace(/_/g, " ")}. A new take doesn't undo that — and may run it again.`,
+      confirmLabel: "Retry",
+      danger: true,
+    });
+    if (!ok || !actionable()) return; // the confirm is an await: re-check the view it would act on
+  }
+  const threadId = state.threadId as string;
+  // A regenerate is a FRESH turn on this view: it pins the turn's context for any resume it suspends on
+  // (ACA-16/C5-M1), like a send. No explicit skills — the server re-activates the anchor's own.
+  const mode = sessionMode ?? null;
+  turnMode = mode;
+  turnSkills = [];
+  // Whatever is docked for the displaced take is stopped now: it is leaving the log.
+  for (const id of ids) forgetMessage(id);
+  // A client error bubble is RETRIED by this — it leaves with the take it failed (errors never stack) —
+  // but only from the OPTIMISTIC view: a refusal restores the unfiltered `before`, so a message with no
+  // reply keeps its one retry door (wave 2 · N1).
+  const before = state.messages;
+  const statusBefore = state.status; // "error" keeps the restored error bubble's retry pill (F20 gate)
+  const placeholderId = `assist-${Date.now()}`;
+  // The speaker is the server's (the agent that gave the displaced reply) — mirrored on the placeholder
+  // so the bubble is labelled right from its first frame.
+  const agent = displaced.find((m) => m.role === "assistant")?.agent ?? null;
+  set({
+    messages: [
+      ...before.filter(
+        (m) => !ids.has(m.id) && !(m.local && m.parts.some((p) => p.type === "error")),
+      ),
+      placeholder(placeholderId, agent),
+    ],
+    status: "streaming",
+    streamingId: placeholderId,
+  });
+  const outcome = await streamTurn(
+    "/api/agent/regenerate",
+    {
+      thread_id: threadId,
+      message_id: target,
+      mode,
+      privilege: state.sessionPrivilege,
+      stream: true,
+    },
+    placeholderId,
+  );
+  if (outcome === "accepted" || state.threadId !== threadId) return;
+  // Refused or lost: nothing was displaced server-side that the view should stop showing. A 409 (stale,
+  // busy, folded) has already said so as a note; any OTHER refusal (403 rolling thread, 404, 422, 5xx) or
+  // a transport loss left its words on the placeholder as an error — that becomes a toast (fix wave 1:
+  // a real error, never the re-attach ladder), and the placeholder goes. Then the log is put back as it
+  // was, plus the notes said since, and reconciled from the floor.
+  const failed = state.messages
+    .find((m) => m.id === placeholderId)
+    ?.parts.find((p) => p.type === "error");
+  if (failed?.type === "error") pushToast(`Retry failed — ${failed.message}`, "err");
+  const said = state.messages.filter(
+    (m) => m.local && !before.includes(m) && m.id !== placeholderId,
+  );
+  set({ messages: [...before, ...said], status: statusBefore, streamingId: null });
+  await reloadFloor();
+}
+
+/** Swap the tail reply to variant `n` (1-based; D81). `hostId` = the host the view shows. Swapped
+ *  variants keep their own row ids, so the audio cache stays true for them. */
+export async function selectAlternate(hostId: string, n: number): Promise<void> {
+  const threadId = state.threadId;
+  if (!threadId) return;
+  await syncMessageRoute(
+    `${threadPath(threadId, hostId)}/alternate`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ n }),
+    },
+    "could not switch replies",
+  );
+}
+
+/** Replace a message's text (D81 — ST parity: an edit in place, no regenerate; user or assistant rows).
+ *  Tool calls, reasoning and attachments stay as they were. The edited id's cached clip is dropped
+ *  (`forgetMessage`) — it spoke the old words. Resolves whether the edit was SAVED (the editor re-opens
+ *  on the typed text when it was not). */
+export function editMessage(messageId: string, text: string): Promise<boolean> {
+  const threadId = state.threadId;
+  if (!threadId) return Promise.resolve(false);
+  return syncMessageRoute(
+    threadPath(threadId, messageId),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    },
+    "could not save the edit",
+    () => forgetMessage(messageId),
+  );
+}
+
+/** Delete a message (D81), behind ONE confirm tap (no undo in v1 — owner ruling ②). The server resolves
+ *  the unit from the id: a user row alone; an agent row → its whole reply (on the tail with alternates,
+ *  only the variant shown — its neighbour comes back). */
+export async function deleteMessage(messageId: string): Promise<void> {
+  if (!actionable()) return;
+  const m = state.messages.find((x) => x.id === messageId);
+  if (!m) return;
+  const own = m.role === "user";
+  // The tail reply's variant count, read off its host (any row of the reply names it in `reply.ids`).
+  const variants = state.messages.find((x) => x.reply?.ids.includes(messageId))?.reply?.count ?? 1;
+  const ok = await requestConfirm({
+    title: own ? "Delete this message?" : "Delete this reply?",
+    body: own
+      ? "Your message leaves the conversation. The reply to it stays."
+      : variants > 1
+        ? "This version of the reply goes; another take comes back."
+        : "The whole reply leaves the conversation, its tool steps too.",
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  const threadId = state.threadId;
+  if (!ok || !threadId) return;
+  await syncMessageRoute(
+    threadPath(threadId, messageId),
+    { method: "DELETE" },
+    "could not delete the message",
+  );
 }
 
 // Proposals being applied/dismissed right now — guards a double-tap of Approve/Dismiss (the POST is

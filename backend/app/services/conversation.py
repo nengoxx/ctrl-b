@@ -6,6 +6,12 @@ lock-free because the one shared connection's worker thread serializes every op 
 db.py module docstring). `parts` round-trips as a JSON column via the
 Pydantic union in `domain/conversation.py`, so message shape can grow (tool/plan parts in 4b)
 without touching the schema.
+
+D81 (chat message actions) adds the reply ALTERNATES beside the transcript: `messages` stays exactly
+what the model sees, and a displaced reply is moved — as raw rows — into `message_alternates`
+(`AlternatesRepo`). `split_tail` is the ONE definition of "the tail reply" (the regenerate/swap unit);
+`resolve_unit` the ONE definition of what a delete removes; `history_payload` the one history floor
+every read route returns.
 """
 
 from __future__ import annotations
@@ -13,16 +19,27 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import TypeAdapter
 
 from app.core.attachments import remove_thread_attachments
 from app.db import Database
-from app.domain.conversation import AttachmentPart, CallUsage, Message, Part, SourceInfo, Thread
+from app.domain.conversation import (
+    AttachmentPart,
+    CallUsage,
+    ErrorPart,
+    Message,
+    Part,
+    SourceInfo,
+    TextPart,
+    Thread,
+)
 from app.domain.enums import Actor, RunState
 
 _PARTS = TypeAdapter(list[Part])
@@ -142,8 +159,17 @@ class MessageRepo:
 
         `steer` (D57) is the first such dimension, and it is emitted ONLY when set: an ordinary user
         row must keep writing `meta = NULL`, so the common case stays exactly as cheap as it was.
-        `source` (D62, the routing record) is the second and follows the same rule."""
-        if msg.prompt_stamps is None and msg.usage is None and not msg.steer and msg.source is None:
+        `source` (D62, the routing record) is the second and follows the same rule, as do D81's
+        `skills` (a user row's explicit `/skill` invocations) and `edited` (normally stamped in SQL by
+        `edit_text`; emitted here only so a model carrying it round-trips through `add`)."""
+        if (
+            msg.prompt_stamps is None
+            and msg.usage is None
+            and not msg.steer
+            and msg.source is None
+            and not msg.skills
+            and msg.edited is None
+        ):
             return None
         meta: dict[str, Any] = {
             "prompt_stamps": msg.prompt_stamps,
@@ -153,6 +179,10 @@ class MessageRepo:
             meta["steer"] = True
         if msg.source is not None:
             meta["source"] = msg.source.model_dump(mode="json")
+        if msg.skills:
+            meta["skills"] = list(msg.skills)
+        if msg.edited is not None:
+            meta["edited"] = _iso(msg.edited)
         return json.dumps(meta, separators=(",", ":"))
 
     async def add(self, msg: Message) -> Message:
@@ -181,7 +211,10 @@ class MessageRepo:
         `meta` is deliberately NOT rewritten: model-call metadata is final before the row is written,
         so `add` is its only writer. Updates touch what genuinely changes after the fact (parts,
         tokens, the compaction flag), which also means a key this code doesn't know — a future
-        dimension, or one written by a newer version after a rollback — survives every update."""
+        dimension, or one written by a newer version after a rollback — survives every update.
+
+        The ONE sanctioned post-write `meta` writer is `edit_text` (D81), and it writes a single key
+        with SQL `json_set`, so it keeps that guarantee: every other key rides through untouched."""
         await self._db.execute(
             "UPDATE messages SET parts = ?, tokens = ?, compacted = ? WHERE id = ?",
             (
@@ -192,6 +225,75 @@ class MessageRepo:
             ),
         )
         return msg
+
+    async def edit_text(self, message_id: str, parts: Sequence[Part], edited_at: datetime) -> None:
+        """The owner's edit of a message's text (D81 / CHAT-003): rewrite `parts` (the caller built them
+        with `replace_text`, so reasoning, tool calls and attachments are untouched) and stamp
+        `meta.edited` in the SAME statement. The stamp is a SQL `json_set` over whatever `meta` holds,
+        so every other key — including one this build does not know — survives; this is the one
+        sanctioned post-write `meta` writer (see `update`). The FTS UPDATE trigger reindexes the new
+        text."""
+        await self._db.execute(
+            "UPDATE messages SET parts = ?, "
+            "meta = json_set(COALESCE(meta, '{}'), '$.edited', ?) WHERE id = ?",
+            (_PARTS.dump_json(list(parts)).decode(), _iso(edited_at), message_id),
+        )
+
+    async def raw_rows(self, ids: Sequence[str]) -> list[dict[str, Any]]:
+        """The `messages` rows for `ids` as RAW column dicts, in transcript order (D81). Raw, not
+        `Message`: the alternates stash must round-trip a row byte-for-byte — a `meta` key this build
+        does not model, a column a newer build added — and a Pydantic round trip would normalize both
+        away. Empty `ids` → `[]`.
+
+        The SQLite `rowid` rides along (key `rowid`): transcript order is `ts, rowid`, so a row whose
+        `ts` ties an interleaved owner row is ordered by it, and a restore that minted a fresh rowid
+        could flip the pair (review №1, Maya MED-2)."""
+        if not ids:
+            return []
+        marks = ", ".join("?" for _ in ids)
+        rows = await self._db.query(
+            f"SELECT rowid AS rowid, * FROM messages WHERE id IN ({marks}) ORDER BY ts ASC, rowid ASC",
+            tuple(ids),
+        )
+        return [dict(r) for r in rows]
+
+    async def insert_raw(self, rows: Sequence[dict[str, Any]]) -> None:
+        """Re-insert rows captured by `raw_rows`, in list order (D81 — a variant swapped back in). Only
+        columns the table has TODAY are written (a key the table lacks is dropped, a column the dict
+        lacks takes its default), so a stash written by another build still lands. Rows keep their
+        `id` and `ts`, which is what puts them back exactly where they were generated — interleaved
+        owner rows included; the FTS insert trigger re-indexes them.
+
+        The original `rowid` is restored too, so a `ts` tie keeps its order. It is only ever TAKEN
+        when still free: SQLite reuses the top rowid once its row is deleted, so another row may hold
+        it — and then a fresh rowid is minted. Why that cannot reorder: a row can occupy a stashed
+        rowid only if it was INSERTED AFTER the stash, i.e. after the stashed row's `ts` had already
+        been written, so its `ts` is later in real time (the stamps resolve far below the gap between
+        two writes that each await a DB round trip); an EQUAL `ts` would need a same-tick write, which
+        this sequence cannot produce. So `ORDER BY ts, rowid` settles on `ts` against that row, and a
+        fresh rowid orders identically."""
+        if not rows:
+            return
+        known = {r["name"] for r in await self._db.query("PRAGMA table_info(messages)")} | {"rowid"}
+        for row in rows:
+            cols = [c for c in row if c in known]
+            if "rowid" in cols and await self._db.query(
+                "SELECT 1 FROM messages WHERE rowid = ?", (row["rowid"],)
+            ):
+                cols.remove("rowid")
+            await self._db.execute(
+                f"INSERT INTO messages ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
+                tuple(row[c] for c in cols),
+            )
+
+    async def delete_ids(self, ids: Sequence[str]) -> None:
+        """Delete these message rows (D81). The FTS delete trigger cleans the index, and an anchor's
+        alternates go with it (the `message_alternates.anchor_id` cascade). Deliberately dumb: WHICH
+        rows form a deletable unit is `resolve_unit`'s call, never a caller's guess."""
+        if not ids:
+            return
+        marks = ", ".join("?" for _ in ids)
+        await self._db.execute(f"DELETE FROM messages WHERE id IN ({marks})", tuple(ids))
 
     async def get(self, message_id: str) -> Message | None:
         rows = await self._db.query("SELECT * FROM messages WHERE id = ?", (message_id,))
@@ -329,4 +431,397 @@ class MessageRepo:
             usage=CallUsage.model_validate(usage) if usage else None,
             steer=bool(meta.get("steer")),  # absent (every historical row) → False
             source=SourceInfo.model_validate(source) if source else None,  # D62; absent → None
+            skills=meta.get("skills") or None,  # D81 rider; absent → None
+            edited=meta.get("edited"),  # D81; absent (never edited) → None
         )
+
+
+# ── D81: the reply unit, the delete unit, the alternates stash ──────────────────────────────────
+#
+# A logical "reply" is MANY rows — every model call persists an assistant row and every tool batch a
+# `tool` row — so nothing here ever moves or deletes a raw row on its own: the helpers below resolve the
+# UNIT first (`split_tail`, `resolve_unit`), and every write moves whole units. `_assemble` is already
+# tolerant of any unit removal (orphan results are dropped, result-less calls synthesized), which is
+# why deleting a unit mid-thread is safe where deleting a lone call row would not be.
+
+#: Tool-call states that are not a finished outcome. A call in one of these on a reply that leaves the
+#: transcript is flipped to CANCELLED (the A11/D39 state `_assemble` already renders) and its confirm
+#: token revoked: a displaced reply must never come back holding a live confirm bubble.
+_OPEN_CALL_STATES = frozenset(
+    s.value for s in (RunState.PENDING, RunState.RUNNING, RunState.AWAITING_CONFIRM, RunState.AWAITING_ANSWER)
+)
+
+#: `(tool, args)` of a call whose confirm token the caller must revoke (`ActionService.revoke_pending`).
+Revocable = tuple[str, dict[str, Any]]
+
+
+def is_anchor(m: Message) -> bool:
+    """A turn OPENER: a `role="user"` row that is not a mid-turn steer (D57's marker). The same boundary
+    `_seed_recall` walks back to and compaction's fold snaps to."""
+    return m.role == "user" and not m.steer
+
+
+def is_agent_row(m: Message) -> bool:
+    """A row the AGENT produced as part of a reply — its assistant rows and their `tool` result rows.
+    Owner rows (`!exec`/plan pairs, `actor=user`), user rows and system/summary rows are never part of
+    a reply, so a regenerate or a reply-delete never takes them."""
+    return m.role in ("assistant", "tool") and m.actor == Actor.AGENT
+
+
+def _has_text_or_error(m: Message) -> bool:
+    return bool(m.text().strip()) or any(isinstance(p, ErrorPart) for p in m.parts)
+
+
+@dataclass(frozen=True)
+class TailReply:
+    """The thread's TAIL reply — THE unit a regenerate displaces and the `‹ n/N ›` arrows swap (D81).
+
+    `anchor` = the last turn opener (`is_anchor`), `None` when the thread has none (a greeting-only
+    thread). `rows` = every agent row after it, in transcript order; interleaved owner rows (steers,
+    exec/plan pairs) are NOT in it and are never displaced."""
+
+    anchor: Message | None
+    rows: list[Message]
+
+    @property
+    def ids(self) -> list[str]:
+        return [m.id for m in self.rows]
+
+    @property
+    def host(self) -> Message | None:
+        """The row the reply is presented on (and the `reply` annotation rides): its last text- or
+        error-bearing assistant row, else its last assistant row (a reply parked on a confirm has no
+        text), else `None`."""
+        assistants = [m for m in self.rows if m.role == "assistant"]
+        with_body = [m for m in assistants if _has_text_or_error(m)]
+        return (with_body or assistants or [None])[-1]
+
+    @property
+    def speaker(self) -> str | None:
+        """Who gave this reply — its first agent row's `agent` (the resume `last_agent` rule applied to
+        the reply). A regenerate speaks as them, not as whoever is picked now (D81 ruling 4)."""
+        return next((m.agent for m in self.rows if m.agent), None)
+
+    @property
+    def regenerable(self) -> bool:
+        """An anchor that is still in the model's context (a compacted anchor means the model sees the
+        summary, not this turn) and a reply with something to present. Busy-ness is the turn marker's
+        call, not this one's."""
+        return self.anchor is not None and not self.anchor.compacted and self.host is not None
+
+
+def split_tail(msgs: Sequence[Message]) -> TailReply:
+    """Resolve the tail reply from a thread's transcript (in `MessageRepo.list` order) — the ONE
+    definition of the unit; the routes, the stash and the history annotation all call it."""
+    at = next((i for i in reversed(range(len(msgs))) if is_anchor(msgs[i])), None)
+    start = 0 if at is None else at + 1
+    return TailReply(
+        anchor=None if at is None else msgs[at],
+        rows=[m for m in msgs[start:] if is_agent_row(m)],
+    )
+
+
+@dataclass(frozen=True)
+class MessageUnit:
+    """What deleting one row removes (D81 / CHAT-001) — resolved server-side from ANY row id, so the
+    client never decides which raw rows form a unit.
+
+    - `user`   — the owner's message alone (a steer included). Its reply stays; its alternates go with
+                 it through the anchor FK.
+    - `reply`  — every agent row between the row's anchor and the next one. `tail` says whether it is
+                 the thread's tail reply (whose shown VARIANT is what goes when it has alternates).
+    - `pair`   — an owner `!exec`/plan call row with its result row(s).
+    - `system` — a summary/system row: never deletable (it carries the folded head's context)."""
+
+    kind: Literal["user", "reply", "pair", "system"]
+    rows: list[Message]
+    anchor: Message | None = None
+    tail: bool = False
+
+
+def resolve_unit(msgs: Sequence[Message], message_id: str) -> MessageUnit | None:
+    """The deletable unit `message_id` belongs to, or `None` when it is not in `msgs`."""
+    at = next((i for i, m in enumerate(msgs) if m.id == message_id), None)
+    if at is None:
+        return None
+    row = msgs[at]
+    if row.role == "system":
+        return MessageUnit(kind="system", rows=[row])
+    if row.role == "user":
+        return MessageUnit(kind="user", rows=[row])
+    if is_agent_row(row):
+        prev = next((i for i in reversed(range(at)) if is_anchor(msgs[i])), None)
+        nxt = next((i for i in range(at + 1, len(msgs)) if is_anchor(msgs[i])), len(msgs))
+        start = 0 if prev is None else prev + 1
+        return MessageUnit(
+            kind="reply",
+            rows=[m for m in msgs[start:nxt] if is_agent_row(m)],
+            anchor=None if prev is None else msgs[prev],
+            tail=nxt == len(msgs),
+        )
+    # An owner call pair: the assistant row holding the call(s) + the tool row(s) answering them.
+    owner = [m for m in msgs if m.role in ("assistant", "tool") and not is_agent_row(m)]
+    call_ids = {cp.call_id for cp in row.tool_calls()} | {rp.call_id for rp in row.tool_results()}
+    head = (
+        row
+        if row.role == "assistant"
+        else next(
+            (m for m in owner if m.role == "assistant" and {cp.call_id for cp in m.tool_calls()} & call_ids),
+            None,
+        )
+    )
+    if head is not None:
+        call_ids = {cp.call_id for cp in head.tool_calls()}
+    rows = [
+        m
+        for m in owner
+        if m is head or m is row or (m.role == "tool" and {rp.call_id for rp in m.tool_results()} & call_ids)
+    ]
+    return MessageUnit(kind="pair", rows=rows)
+
+
+def replace_text(parts: Sequence[Part], text: str) -> list[Part]:
+    """`parts` with every `TextPart` replaced by ONE carrying `text`, at the first text part's position
+    (D81 edit). A row with no text part gets it at index 0 — before attachments, the order `run_turn`
+    writes. Blank `text` drops the text entirely (legal only on a row that keeps an attachment — the
+    caller's rule). Reasoning, tool calls, errors and attachments are untouched."""
+    kept: list[Part] = [p for p in parts if not isinstance(p, TextPart)]
+    if not text.strip():
+        return kept
+    first = next((i for i, p in enumerate(parts) if isinstance(p, TextPart)), None)
+    pos = 0 if first is None else sum(1 for p in parts[:first] if not isinstance(p, TextPart))
+    return [*kept[:pos], TextPart(text=text), *kept[pos:]]
+
+
+def _substantive(raw: Sequence[dict[str, Any]]) -> bool:
+    """Whether displaced raw rows are a take worth keeping: any non-blank text or any tool call. An
+    error-only or empty reply is DISCARDED rather than stashed (so the F20 retry-on-error leaves no junk
+    variant behind)."""
+    for row in raw:
+        for part in json.loads(row["parts"]):
+            if part.get("type") == "tool_call":
+                return True
+            if part.get("type") == "text" and str(part.get("text") or "").strip():
+                return True
+    return False
+
+
+def _cancel_open_calls(raw: dict[str, Any]) -> list[Revocable]:
+    """Flip the row's open tool calls to CANCELLED in place (at the JSON level, so a field this build
+    does not model survives) and return them for token revocation."""
+    parts = json.loads(raw["parts"])
+    revoked: list[Revocable] = []
+    for part in parts:
+        if part.get("type") == "tool_call" and part.get("state") in _OPEN_CALL_STATES:
+            part["state"] = RunState.CANCELLED.value
+            revoked.append((str(part.get("tool") or ""), dict(part.get("args") or {})))
+    if revoked:
+        raw["parts"] = json.dumps(parts, separators=(",", ":"))
+    return revoked
+
+
+class AlternatesRepo:
+    """The reply alternates of D81 over `message_alternates` (db migration 7).
+
+    `messages` is ALWAYS the active transcript; this repo moves whole replies between it and the stash
+    in one `Database.transaction()` per operation. Built from the `MessageRepo` (stateless — construct
+    one where needed), because every move is a `messages` write too. Invariant per anchor: no rows (the
+    ordinary case) or N >= 2 rows, exactly one of them `rows IS NULL` = the variant live in `messages`.
+
+    Callers hold the thread's turn marker (D38) — the repo never re-checks busy-ness — and must NOT open
+    a transaction around these methods (each opens its own). Every method that removes rows from the
+    transcript returns the `Revocable`s the caller must hand to `ActionService.revoke_pending`."""
+
+    def __init__(self, messages: MessageRepo) -> None:
+        self._messages = messages
+        self._db = messages.db
+
+    async def tail_reply(self, thread_id: str) -> TailReply:
+        return split_tail(await self._messages.list(thread_id))
+
+    async def _variants(self, thread_id: str, anchor_id: str | None) -> list[dict[str, Any]]:
+        rows = await self._db.query(
+            "SELECT id, n, rows FROM message_alternates WHERE thread_id = ? AND anchor_id IS ? ORDER BY n",
+            (thread_id, anchor_id),
+        )
+        return [dict(r) for r in rows]
+
+    async def position(self, thread_id: str, anchor_id: str) -> tuple[int, int]:
+        """`(n, count)` of the anchor's live variant — `(1, 1)` when it has no alternates."""
+        variants = await self._variants(thread_id, anchor_id)
+        if not variants:
+            return 1, 1
+        live = next((v for v in variants if v["rows"] is None), None)
+        if live is None:  # never written that way; read defensively as "the live take is one more"
+            return len(variants) + 1, len(variants) + 1
+        return int(live["n"]), len(variants)
+
+    async def _take(self, ids: Sequence[str]) -> tuple[list[dict[str, Any]], list[Revocable]]:
+        """Remove rows from the transcript, returning them raw (open calls already CANCELLED)."""
+        raw = await self._messages.raw_rows(ids)
+        revoked = [r for row in raw for r in _cancel_open_calls(row)]
+        await self._messages.delete_ids(ids)
+        return raw, revoked
+
+    async def _insert(self, thread_id: str, anchor_id: str | None, n: int, rows: str | None) -> str:
+        variant_id = uuid.uuid4().hex
+        await self._db.execute(
+            "INSERT INTO message_alternates (id, thread_id, anchor_id, n, rows, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (variant_id, thread_id, anchor_id, n, rows, _iso(datetime.now(timezone.utc))),
+        )
+        return variant_id
+
+    async def _restore(self, variant: dict[str, Any]) -> None:
+        """Swap a stashed variant back into the transcript; it becomes the live (`rows IS NULL`) one."""
+        await self._messages.insert_raw(json.loads(variant["rows"] or "[]"))
+        await self._db.execute("UPDATE message_alternates SET rows = NULL WHERE id = ?", (variant["id"],))
+
+    async def _resequence(self, thread_id: str, anchor_id: str | None) -> int:
+        """Re-sequence the anchor's variants 1..k in their `n` order — the ONE numbering rule. Returns k."""
+        variants = await self._variants(thread_id, anchor_id)
+        for i, v in enumerate(variants, start=1):
+            if v["n"] != i:
+                await self._db.execute("UPDATE message_alternates SET n = ? WHERE id = ?", (i, v["id"]))
+        return len(variants)
+
+    async def _renumber(self, thread_id: str, anchor_id: str | None) -> None:
+        """`_resequence`, then the collapse: a lone survivor is no longer an alternate, so k <= 1
+        deletes them all (the 0-or-N>=2 invariant)."""
+        if await self._resequence(thread_id, anchor_id) <= 1:
+            await self._db.execute(
+                "DELETE FROM message_alternates WHERE thread_id = ? AND anchor_id IS ?",
+                (thread_id, anchor_id),
+            )
+
+    async def stash_tail(self, thread_id: str, tail: TailReply) -> tuple[str | None, list[Revocable]]:
+        """Displace the tail reply ahead of a REGENERATE. A substantive reply is stashed as a variant
+        (the first displacement also numbers it #1); an error-only/empty one is discarded. The upcoming
+        take then holds the live slot as the LAST variant (`N/N`) whenever any stashed take exists.
+
+        Returns `(displaced, revoked)`: `displaced` is the variant id the on-screen take was stashed
+        under (`None` when it was discarded or there was none) — what `settle` restores if the
+        regenerate ends with nothing, so a Stop returns the owner to the take they were looking at."""
+        if tail.anchor is None:
+            return None, []
+        anchor_id = tail.anchor.id
+        displaced: str | None = None
+        async with self._db.transaction():
+            variants = await self._variants(thread_id, anchor_id)
+            live = next((v for v in variants if v["rows"] is None), None)
+            raw, revoked = await self._take(tail.ids)
+            stored = json.dumps(raw, separators=(",", ":")) if _substantive(raw) else None
+            if live is not None and stored is not None:
+                await self._db.execute(
+                    "UPDATE message_alternates SET rows = ? WHERE id = ?", (stored, live["id"])
+                )
+                displaced = live["id"]
+            elif live is not None:
+                await self._db.execute("DELETE FROM message_alternates WHERE id = ?", (live["id"],))
+            elif stored is not None:
+                displaced = await self._insert(thread_id, anchor_id, 1, stored)
+            kept = await self._resequence(thread_id, anchor_id)  # every one of them stashed now
+            if kept:
+                await self._insert(thread_id, anchor_id, kept + 1, None)
+        return displaced, revoked
+
+    async def select(self, thread_id: str, tail: TailReply, n: int) -> list[Revocable]:
+        """Swap variant `n` of the tail in (the `‹ ›` arrows). The displaced live take is stashed — or
+        discarded when error-only/empty — and the numbering closes over any discard. A no-op for the
+        live `n` or an anchor without alternates; the caller validated the range."""
+        if tail.anchor is None:
+            return []
+        anchor_id = tail.anchor.id
+        async with self._db.transaction():
+            variants = await self._variants(thread_id, anchor_id)
+            live = next((v for v in variants if v["rows"] is None), None)
+            target = next((v for v in variants if v["n"] == n), None)
+            if live is None or target is None or target is live:
+                return []
+            raw, revoked = await self._take(tail.ids)
+            if _substantive(raw):
+                stored = json.dumps(raw, separators=(",", ":"))
+                await self._db.execute(
+                    "UPDATE message_alternates SET rows = ? WHERE id = ?", (stored, live["id"])
+                )
+            else:
+                await self._db.execute("DELETE FROM message_alternates WHERE id = ?", (live["id"],))
+            await self._restore(target)
+            await self._renumber(thread_id, anchor_id)
+        return revoked
+
+    async def drop_active(
+        self, thread_id: str, tail: TailReply, *, prefer: str | None = None
+    ) -> list[Revocable]:
+        """Delete the SHOWN variant of the tail and restore its neighbor — the previous take, else the
+        next (ST's "delete swipe"); renumbered, collapsing to no alternates at one survivor. `prefer`
+        (a variant id, `settle`'s) restores that variant instead when it is still stashed."""
+        if tail.anchor is None:
+            return []
+        anchor_id = tail.anchor.id
+        async with self._db.transaction():
+            variants = await self._variants(thread_id, anchor_id)
+            live = next((v for v in variants if v["rows"] is None), None)
+            _, revoked = await self._take(tail.ids)
+            if live is None:
+                return revoked
+            by_n = {v["n"]: v for v in variants}
+            chosen = next((v for v in variants if v["id"] == prefer and v["rows"] is not None), None)
+            neighbor = chosen or by_n.get(live["n"] - 1) or by_n.get(live["n"] + 1)
+            await self._db.execute("DELETE FROM message_alternates WHERE id = ?", (live["id"],))
+            if neighbor is not None:
+                await self._restore(neighbor)
+            await self._renumber(thread_id, anchor_id)
+        return revoked
+
+    async def settle(self, thread_id: str, anchor_id: str, *, displaced: str | None = None) -> None:
+        """After a regenerate ends: if it left NOTHING in the transcript (stopped before its first row
+        persisted) while stashed takes exist, restore one — otherwise every take would be invisible,
+        since the `reply` annotation needs a row to ride. The one restored is `displaced` (the take
+        that was on screen, `stash_tail`'s return) when known, else the latest. Idempotent; a no-op on
+        the normal path (one read)."""
+        tail = await self.tail_reply(thread_id)
+        if tail.anchor is None or tail.anchor.id != anchor_id or tail.rows:
+            return
+        if await self._variants(thread_id, anchor_id):
+            await self.drop_active(thread_id, tail, prefer=displaced)
+
+    async def delete_unit(self, thread_id: str, unit: MessageUnit) -> list[Revocable]:
+        """Delete a resolved unit (`resolve_unit`). The tail reply with alternates loses only its SHOWN
+        variant (`drop_active`); an older reply takes its frozen stash with it (ST: deleting a message
+        deletes its swipes); a user row's alternates go through the anchor FK cascade."""
+        if unit.kind == "system":
+            return []
+        anchor_id = unit.anchor.id if unit.anchor is not None else None
+        if unit.kind == "reply" and anchor_id is not None and await self._variants(thread_id, anchor_id):
+            if unit.tail:
+                return await self.drop_active(thread_id, TailReply(anchor=unit.anchor, rows=unit.rows))
+            async with self._db.transaction():
+                _, revoked = await self._take([m.id for m in unit.rows])
+                await self._db.execute(
+                    "DELETE FROM message_alternates WHERE thread_id = ? AND anchor_id = ?",
+                    (thread_id, anchor_id),
+                )
+            return revoked
+        async with self._db.transaction():
+            _, revoked = await self._take([m.id for m in unit.rows])
+        return revoked
+
+
+async def history_payload(messages: MessageRepo, thread_id: str) -> list[dict[str, Any]]:
+    """The thread's history as the wire carries it — the ONE floor every history route returns (the
+    list endpoint and D81's three sync routes), so the client never derives reply membership itself.
+
+    Each message is its `model_dump`; the tail reply's HOST row additionally carries the transient
+    `"reply": {"ids": [...], "n": int, "count": int}` — the rows a regenerate/delete-swipe removes, the
+    live variant's 1-based ordinal and the number of variants. Present iff the tail is regenerable
+    (`count >= 1` ⇒ retry offered; `> 1` ⇒ the arrows)."""
+    msgs = await messages.list(thread_id)
+    out = [m.model_dump(mode="json") for m in msgs]
+    tail = split_tail(msgs)
+    host = tail.host
+    if tail.regenerable and tail.anchor is not None and host is not None:
+        n, count = await AlternatesRepo(messages).position(thread_id, tail.anchor.id)
+        at = next(i for i, m in enumerate(msgs) if m.id == host.id)
+        out[at]["reply"] = {"ids": tail.ids, "n": n, "count": count}
+    return out

@@ -9,7 +9,6 @@ import {
   reattachTurn,
   removeSteer,
   resumeCall,
-  retryLastTurn,
   runShell,
   resetToThreadless,
   sendMessage,
@@ -94,6 +93,22 @@ function textOf(parts: Part[]): string {
     .filter((p) => p.type === "text")
     .map((p) => (p.type === "text" ? p.text : ""))
     .join("");
+}
+
+/** A persisted row as the durable floor serves it — for the D81 end-of-turn floor a re-attached turn
+ *  now reads once it settles (the mocks below serve the SETTLED floor once the stream was fetched). */
+function floorRow(id: string, role: "user" | "assistant", text: string, extra: object = {}) {
+  return {
+    id,
+    thread_id: "t1",
+    role,
+    parts: [{ type: "text", text }],
+    actor: role === "user" ? "user" : "agent",
+    ts: "",
+    tokens: null,
+    compacted: false,
+    ...extra,
+  };
 }
 
 beforeEach(() => {
@@ -469,77 +484,8 @@ describe("malformed frame resilience (J2)", () => {
   });
 });
 
-// ── I4: risk-aware retry. A failed turn that ran a NON-retry-safe tool must not one-click auto-resend
-// (it could silently repeat a reboot/restart/shell); it's copied to the composer for a conscious re-send.
-// A read-only/idempotent turn auto-resends as before. `retryLastTurn(isRetrySafe)` takes the predicate.
-describe("risk-aware retry (I4)", () => {
-  async function failedTurnWith(tool: string) {
-    // A turn that runs `tool`, then errors — leaving a retryable errored assistant bubble.
-    mockStream([
-      { event: "message.start", data: { messageId: "m1" } },
-      {
-        event: "part.added",
-        data: {
-          messageId: "m1",
-          part: { type: "tool_call", call_id: "c1", tool, args: {}, state: "ok" },
-        },
-      },
-      { event: "error", data: { message: "boom" } },
-    ]);
-    const hook = renderHook(() => useChat());
-    await act(async () => {
-      await sendMessage(`do ${tool}`);
-    });
-    expect(hook.result.current.status).toBe("error");
-    return hook;
-  }
-
-  it("copies to the composer (no auto-resend) when the failed turn ran a mutating tool", async () => {
-    clearDraft();
-    const { result } = await failedTurnWith("reboot_host");
-    const before = vi.mocked(globalThis.fetch).mock.calls.length;
-
-    act(() => {
-      retryLastTurn((tool) => tool !== "reboot_host"); // reboot_host is NOT retry-safe
-    });
-
-    expect(getDraft()).toBe("do reboot_host"); // handed to the composer for review
-    expect(vi.mocked(globalThis.fetch).mock.calls.length).toBe(before); // did NOT auto-resend
-    expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(
-      false,
-    );
-  });
-
-  it("auto-resends (no draft copy) when the failed turn only ran retry-safe tools", async () => {
-    clearDraft();
-    await failedTurnWith("ping_host");
-    const before = vi.mocked(globalThis.fetch).mock.calls.length;
-
-    await act(async () => {
-      retryLastTurn(() => true); // ping_host is retry-safe → auto-resend
-    });
-
-    expect(getDraft()).toBe(""); // NOT copied to the composer
-    expect(vi.mocked(globalThis.fetch).mock.calls.length).toBeGreaterThan(before); // a resend fired
-  });
-
-  it("treats an unknown tool as unsafe (conservative — catalog gaps copy to the composer)", async () => {
-    clearDraft();
-    const { result } = await failedTurnWith("some_future_tool");
-    const before = vi.mocked(globalThis.fetch).mock.calls.length;
-
-    act(() => {
-      retryLastTurn(() => false); // predicate: nothing known-safe (e.g. catalog not loaded)
-    });
-
-    expect(getDraft()).toBe("do some_future_tool");
-    expect(vi.mocked(globalThis.fetch).mock.calls.length).toBe(before);
-    // errored turn cleared; only the "review and send" system breadcrumb remains.
-    expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(
-      false,
-    );
-  });
-});
+// (I4 risk-aware retry moved with D81: `retryLastTurn` is gone — the F20 retry is a server-side
+// regenerate now, pinned in tests/store/chatMessageActions.test.ts.)
 
 // ── Slice 2 (D38 turn integrity) — the client half: 409 as a sys-note (not a retryable error bubble),
 // streaming guards, and the turn's inference `mode` carried across a resume (ACA-16). ──
@@ -989,7 +935,9 @@ describe("durable turns — client (Slice 3, D39)", () => {
     });
 
     // Re-attach: the forced reload returns m1 with a PARTIAL "Hel"; the snapshot carries the FULL
-    // "Hello" (must replace, not append) + a pending confirm call with a token + mode "cloud".
+    // "Hello" (must replace, not append) + a pending confirm call with a token + mode "cloud". The D81
+    // end-of-turn floor (the SECOND read) is the settled truth: m1 whole, its call persisted awaiting.
+    let floorReads = 0;
     globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
       const u = String(url);
       if (u.includes("/stream")) {
@@ -1019,6 +967,25 @@ describe("durable turns — client (Slice 3, D39)", () => {
         );
       }
       // reloadChat(true) → the durable floor: a persisted user msg + a PARTIAL m1.
+      if (++floorReads > 1)
+        return Promise.resolve(
+          json([
+            floorRow("u1", "user", "q"),
+            {
+              ...floorRow("m1", "assistant", "Hello"),
+              parts: [
+                { type: "text", text: "Hello" },
+                {
+                  type: "tool_call",
+                  call_id: "c1",
+                  tool: "wake_host",
+                  args: { host: "vault" },
+                  state: "awaiting_confirm",
+                },
+              ],
+            },
+          ]),
+        );
       return Promise.resolve({
         ok: true,
         json: async () => [
@@ -1068,6 +1035,7 @@ describe("durable turns — client (Slice 3, D39)", () => {
   });
 
   it("an interrupted stream re-attaches (turn.sync + done) BEFORE surfacing a failure — no error bubble", async () => {
+    let floorReads = 0;
     globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
       const u = String(url);
       if (u.includes("/agent/chat")) {
@@ -1098,7 +1066,9 @@ describe("durable turns — client (Slice 3, D39)", () => {
           ]),
         );
       }
-      // reloadChat(true) during the overlay → the persisted floor (m1 not yet persisted).
+      // reloadChat(true) during the overlay → the persisted floor (m1 not yet persisted); the D81
+      // end-of-turn floor read AFTER the re-attach drove the turn home → m1 persisted with its text.
+      floorReads++;
       return Promise.resolve({
         ok: true,
         json: async () => [
@@ -1112,6 +1082,20 @@ describe("durable turns — client (Slice 3, D39)", () => {
             tokens: null,
             compacted: false,
           },
+          ...(floorReads > 1
+            ? [
+                {
+                  id: "m1",
+                  thread_id: "t1",
+                  role: "assistant",
+                  parts: [{ type: "text", text: "Hello" }],
+                  actor: "agent",
+                  ts: "",
+                  tokens: null,
+                  compacted: false,
+                },
+              ]
+            : []),
         ],
       } as unknown as Response);
     });
@@ -1198,9 +1182,11 @@ describe("durable turns — client (Slice 3, D39)", () => {
   });
 
   it("cold-load probe re-attaches to a still-running detached turn (active:true)", async () => {
+    let streamed = false; // the settled floor (m9 persisted) once the re-attach stream was fetched
     globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
       const u = String(url);
       if (u.includes("/turns/t1/stream")) {
+        streamed = true;
         return Promise.resolve(
           sseResponse([
             {
@@ -1230,7 +1216,7 @@ describe("durable turns — client (Slice 3, D39)", () => {
           json: async () => ({ active: true, turn_id: "T1", seq: 3 }),
         } as unknown as Response);
       if (u.includes("/messages"))
-        return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+        return Promise.resolve(json(streamed ? [floorRow("m9", "assistant", "resumed")] : []));
       if (u.includes("/threads"))
         return Promise.resolve({
           ok: true,
@@ -2131,9 +2117,16 @@ describe("steering queue — client (Slice 5, D41)", () => {
       return undefined;
     });
     // steer while streaming
+    let streamed = false; // the settled floor (u1 + m9 persisted) once the drain-B stream was fetched
     const dispatch = (u: string): Response | undefined => {
       if (u.includes("/agent/chat")) return resp202("e1");
+      if (u.includes("/threads/t1/messages") && streamed)
+        return json([
+          floorRow("u1", "user", "later"),
+          floorRow("m9", "assistant", "spawned reply"),
+        ]);
       if (u.includes("/agent/turns/t1/stream")) {
+        streamed = true;
         return sseResponse([
           {
             event: "turn.sync",
@@ -2690,7 +2683,10 @@ describe("steering queue — client (Slice 5, D41)", () => {
         chat++;
         return chat === 1 ? Promise.resolve(streamResp(bodyA)) : steerP;
       }
-      if (u.includes("/agent/turns/t1/stream")) return Promise.resolve(drainB());
+      if (u.includes("/agent/turns/t1/stream")) {
+        floor.push(floorRow("m9", "assistant", "spawned")); // settled: the drain-B reply is persisted
+        return Promise.resolve(drainB());
+      }
       if (u.includes("/agent/turns/t1"))
         return Promise.resolve(
           json({
@@ -2898,6 +2894,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
     // re-attach to B (adopt the live turn).
     clearDraft();
     setDraft("keep me");
+    let streamedB = false;
     let ctrlA!: ReadableStreamDefaultController<Uint8Array>;
     const bodyA = new ReadableStream<Uint8Array>({
       start(c) {
@@ -2923,7 +2920,10 @@ describe("steering queue — client (Slice 5, D41)", () => {
             steer_queue: [{ entry_id: "peek1", kind: "message", text: "not mine" }],
           }),
         );
-      if (u.includes("/agent/turns/t1/stream"))
+      if (u.includes("/threads/t1/messages"))
+        return Promise.resolve(json(streamedB ? [floorRow("mB", "assistant", "B reply")] : []));
+      if (u.includes("/agent/turns/t1/stream")) {
+        streamedB = true; // the settled floor (mB persisted) from here
         return Promise.resolve(
           sseResponse([
             {
@@ -2946,6 +2946,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
             { event: "done", id: "B:3", data: { state: "completed" } },
           ]),
         );
+      }
       if (u.includes("/agent/chat")) return Promise.resolve(streamResp(bodyA));
       return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
     });

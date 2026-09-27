@@ -402,6 +402,10 @@ class Message(BaseModel):
                                        # failed_hops?, context_window?}; `usage.model` stays the
                                        # model-of-record, `source` never duplicates it
     steer: bool = False                # D57/D41: this user row is a MID-TURN steer, not a turn opener
+    skills: list[str] | None = None    # D81 rider: a user row's explicit `/skill` invocations (a
+                                       # regenerate re-activates them)
+    edited: datetime | None = None     # D81: when the owner edited the text (usage/stamps describe
+                                       # the ORIGINAL generation) — stamped in SQL by `edit_text`
 ```
 
 ```python
@@ -428,6 +432,20 @@ been a parallel path.
 > staging ids and nothing else, so no field is client-authored. Additive: the union is discriminated on
 > `type`, so old rows load untouched. Authority: [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) §2
 > (the part) · §3 (transport B: id-addressed staging + claim-by-rename) · §8 (serving).
+
+> **Added by D81 (2026-09-27) — chat message actions: reply alternates · delete · edit.** `messages` is
+> ALWAYS the active transcript the model sees. A *reply* is a multi-row unit (every agent
+> assistant/tool row between one turn opener — the last non-steer user row, the **anchor** — and the
+> next), so nothing moves or deletes a raw row alone: `split_tail` (the TAIL reply — what a regenerate
+> displaces and the `‹ n/N ›` arrows swap) and `resolve_unit` (what a delete removes: a user row alone ·
+> a whole reply · an owner call pair; system rows never) in `services/conversation.py` are the ONE
+> definitions. A displaced reply is MOVED, as raw column dicts, into `message_alternates` (migration 7,
+> §8) and moved back on a swap — so no history reader learns a flag, variants keep their row ids (the
+> audio cache's "content under an id never changes" contract), and a rollback by tag reads each thread's
+> active reply. Error-only/empty replies are discarded, never stashed; open calls on a displaced reply
+> flip to CANCELLED and their confirm tokens are revoked. Owner rows interleaved in a reply (steers,
+> `!exec`/plan pairs) are never displaced. Edit rewrites the text parts only (`replace_text`) and stamps
+> `meta.edited`. Authority: DECISIONS D81.
 
 ---
 
@@ -1053,7 +1071,10 @@ attribution quartet since migration v4: `origin` [immediate initiator, NOT NULL 
 `user_chat`] · `origin_id` · `run_id` [the transitive automation-ancestry key] · `decision` [why
 the gate allowed/denied]; reads coerce unknown values — `EventOriginKind`'s `unknown` sentinel is
 read-side only**), the A3/D49 pair `automations` + `automation_runs` (migration 5 — the definitions +
-their run ledger), `schema_version`. `push_subscriptions` and `pending_actions` (for suspended confirms /
+their run ledger), `message_alternates` (migration 7, D81 — one row per VARIANT of an anchor's reply:
+`{id, thread_id, anchor_id → messages ON DELETE CASCADE (NULL reserved for the greeting-swipe seam), n,
+rows (JSON raw rows; NULL = the variant live in messages), created_at}`; per anchor 0 rows or N ≥ 2 with
+exactly one NULL), `schema_version`. `push_subscriptions` and `pending_actions` (for suspended confirms /
 notify-park) are **not built** — they "arrive with the phases that need them" (`db.py` module docstring).
 Migration application is **atomic per migration** (script + version stamp in one explicit
 transaction composed inside the script text; migrations author DDL/DML only — the runner owns
@@ -1070,12 +1091,14 @@ class Database:                        # app/db.py — owns the connection + wri
 ```
 
 Repositories are **free-standing classes taking the `Database`**, not attributes of a unit-of-work:
-`ThreadRepo`/`MessageRepo` (`services/conversation.py`), `EventService` (`services/events.py`),
+`ThreadRepo`/`MessageRepo` + `AlternatesRepo` (D81 — built from the `MessageRepo`, stateless; every
+stash/swap/drop is one `transaction()`) (`services/conversation.py`), `EventService` (`services/events.py`),
 `AutomationRepo` (`services/automations/repo.py` — one class for both automation tables).
 
 Migrations are **inline in `db.py`**, not a `schema.sql` file: `MIGRATIONS: list[tuple[int, str]]`
-(versions **1–6** today — 1 the base tables, 2 `messages.agent`, 3 `messages_fts`, 4 the event
-attribution quartet, 5 the automations pair, 6 the per-model-call message metadata) applied in order and
+(versions **1–7** today — 1 the base tables, 2 `messages.agent`, 3 `messages_fts`, 4 the event
+attribution quartet, 5 the automations pair, 6 the per-model-call message metadata, 7 the D81 reply
+alternates) applied in order and
 tracked in `schema_version`. No ORM — hand-written SQL is enough at this scale and keeps the dep surface
 small (D2).
 
@@ -1294,6 +1317,17 @@ carries the thread's `steer_queue`), `GET /api/agent/turns/{id}/stream` (re-atta
 `{removed}`). Sending during a live chat/resume turn returns **202** `{queued, turn_id, entry_id,
 position, depth}` (both `POST /api/agent/chat` and `POST /api/exec`), not the old 409 (D41).
 `GET /api/events/stream` (fleet activity) is a separate feed off the EventBus.
+
+**Chat message actions (D81, 2026-09-27).** `POST /api/agent/regenerate` `{thread_id, message_id,
+mode?, privilege?, stream?}` is an ORDINARY turn on this wire (turn kind `chat` — steer, Stop,
+re-attach, the cap and the ring all apply): the route validates the tail under the marker, then
+`session.regenerate` stashes it (first statement of its `try`, so its `finally` always settles) and
+streams a fresh take (409 `"the conversation changed"` when `message_id` is not in the current tail
+reply — or is the anchor while a reply exists; the anchor's own id retries an answerless message). Three sync routes (turn kind `edit`) return the whole history floor
+`{messages: history_payload}`: `PUT /api/threads/{tid}/messages/{mid}/alternate` `{n}` ·
+`DELETE /api/threads/{tid}/messages/{mid}` · `PATCH /api/threads/{tid}/messages/{mid}` `{text}`.
+`GET /api/threads/{tid}/messages` stays a list, built by the same `history_payload`: the tail reply's
+HOST row (its last text-/error-bearing assistant row) carries a transient `reply: {ids, n, count}`.
 
 **The one WebSocket (D71, 2026-09-11).** "SSE down, HTTP up" was an implicit invariant of this codebase
 until live voice, and it is still the rule for everything the agent does. `WS /api/voice/live` is the

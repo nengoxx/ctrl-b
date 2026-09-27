@@ -286,6 +286,16 @@ class Message(BaseModel):
     #: the resumed session a fresh recall allowance. Rides the `meta` column as one more key (the
     #: documented extension path), emitted only when true; historical rows load as False.
     steer: bool = False
+    #: The explicit `/skill-name` invocations this `role="user"` row opened its turn with (D81 rider).
+    #: Persisted so a REGENERATE reproduces the turn's inputs: without it the redo would run on the
+    #: selector's picks alone and silently drop a skill the owner asked for by name. Rides the `meta`
+    #: column as one more key (the `steer` path), emitted only when non-empty; `None` everywhere else.
+    skills: list[str] | None = None
+    #: When the owner last EDITED this row's text (D81, `MessageRepo.edit_text`). Rides `meta` like
+    #: `steer`; `None` = never edited. It exists because `usage`/`prompt_stamps`/`source` describe the
+    #: model's ORIGINAL generation: an edited row must say so, for the disclosure and for the eval
+    #: harness, which must not score human-altered text as the model's.
+    edited: datetime | None = None
 
     def text(self) -> str:
         """The concatenated `text` parts (the durable answer, excluding reasoning)."""

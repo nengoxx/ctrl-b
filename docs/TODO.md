@@ -1725,6 +1725,32 @@ read-along as the mouth, energy-gated barge-in. Standing cadence per slice; each
       `speechStop` raises the wait only after an accepted start. As-built: LIVE_VOICE_PLAN §7.
 
 - [x] **S10 — THE CAR ROUND — ✅ BUILT 2026-09-27 (`75e0014` W1–W7 + ISS-31/32 → `c59157a` wave 1.5: the chirp SETS the tail deadline + `leakSeen` + re-chirp on devicechange; two two-reviewer rounds (blind Opus 5.5 ∥ Maya) + fix waves, all confirms SHIP; gate 7/7 incl. e2e; NOT PUSHED — the owner's dev car card, then push + v1.7.10, no migration, rollback v1.7.9)** (D80 RULED 2026-09-27 — all eight court answers in DECISIONS D80; design = the CAR ROUND block in LIVE_VOICE_PLAN §7; evidence R91–R93 + the prod trail):** W1 the tail hold on observed quiet (every fall of the mouth, incl. tap-kill) · W2 the text self-echo backstop · W3 the `item_id` ledger (relay forwards it; per-segment frozen energy; per-id noise verdict; empty finals dropped) · W4 the relay gap cut (`< silence_ms/2`, silent) · W5 `auto` = the D73 rule, the probe deleted · W6 cue/note/learner/pin smalls + `outputLatency` logged · W7 the call-start chirp logged (wave 1.5 = it sets the hold). Then ISS-31 (`/new` mints via seam ①) + ISS-32 (the ring fixed) as a disjoint lane. Court CLOSED 2026-09-27 (pin = CLAMP; `auto` = KEEP); then the two-reviewer code round → the owner's car card with `debug` ON → v1.7.10.
+
+## Phase 25 — Chat message actions: retry + reply alternates · delete · edit — **BE ✅ BUILT 2026-09-27 (lane B-BE, uncommitted, review round owed) · FE in progress** · design ruled 2026-09-27 ([`D81`](./DECISIONS.md)) · design of record = D81 (+ the session-50 audit `audit-B-chat.md`, whose §1(4)/§2(4)/§3(4)/§4 D81 transcribes)
+
+ST-parity message actions on the chat: retry any tail reply (keeping the old takes as `‹ n/N ›`
+alternates), delete a message unit, edit a message's text. `messages` stays the active transcript;
+displaced replies move to `message_alternates` (migration 7 — additive, rollback-by-tag safe).
+
+- [x] **BE — the D81 backend (2026-09-27, lane B-BE):** migration 7 · `Message.edited` + the
+      `meta.skills` rider · `services/conversation.py` (`split_tail`/`TailReply`, `resolve_unit`,
+      `replace_text`, `AlternatesRepo` stash/select/drop_active/settle/delete_unit, the raw-row helpers,
+      `edit_text`, `history_payload`) · `AgentSession.regenerate` · turn kind `edit` · the four routes
+      (`POST /api/agent/regenerate`, `PUT …/messages/{mid}/alternate`, `DELETE …/messages/{mid}`,
+      `PATCH …/messages/{mid}`) + the list endpoint through `history_payload` ·
+      `test_message_actions_d81.py` + the widened `test_turn_guard_invariant` pin. Wire as built =
+      the session-50 `wire-D81.md` (summarized in DESIGN §12).
+- [ ] **FE — the D81 frontend (lane B-FE):** `store/chat.ts` (`regenerate` with the I4 confirm,
+      `selectAlternate`, `editMessage`, `deleteMessage`, `applyFloor`, reload-the-floor at every
+      FE-started turn's end, the `local` marker, F20 rerouted to regenerate, `retryLastTurn` deleted) ·
+      the who-line disclosure `.who-acts` row (retry · edit · delete) + `‹ n/N ›` · the user-line pencil
+      → the edit sheet with its "Delete message" action (`PromptRequest.danger`) ·
+      `audioController.forgetMessage` · `PencilIcon` · kit tokens · unit tests + one e2e spec.
+- [ ] **Two-reviewer code round** (blind Opus 5.5 ∥ Maya) on the frozen BE+FE diff → fix wave(s) →
+      confirm → commit. Release note: **DB schema 6 → 7, additive; rollback by tag is safe.**
+- [ ] *Seam, not this phase:* greeting swipes — `AgentDef.alt_greetings` seeded as `anchor_id NULL`
+      variants with no model call (closes R87's "alt greetings inert").
+
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.

@@ -14,8 +14,9 @@ message pairs) commit atomically via `transaction()` (SYS-1) — otherwise `exec
 statement and a crash mid-sequence tears state.
 
 Phase 0 creates the v1 tables the rest of the app builds on — threads, messages, memory,
-events; migration 5 adds the automations pair (A3/D49). Repositories and later tables
-(push_subscriptions, pending_actions) arrive with the phases that need them.
+events; migration 5 adds the automations pair (A3/D49), migration 7 the reply alternates (D81).
+Repositories and later tables (push_subscriptions, pending_actions) arrive with the phases that need
+them.
 """
 
 from __future__ import annotations
@@ -248,6 +249,41 @@ MIGRATIONS: list[tuple[int, str]] = [
         #
         # NULL = every legacy row, every user/system turn, and any message no model call produced.
         "ALTER TABLE messages ADD COLUMN meta TEXT;",
+    ),
+    (
+        7,
+        # Reply alternates (D81 — chat message actions). `messages` stays EXACTLY the active
+        # transcript the model sees; a reply displaced by a regenerate (or swapped out by the `‹ n/N ›`
+        # arrows) is MOVED here as the raw `messages` rows it was, and moved back on a swap. So no
+        # history reader (the 20+ `MessageRepo.list` sites, the raw-SQL scans, the FTS triggers, the
+        # D68 sweep) learns a flag, and a build that predates this table — a rollback by tag — simply
+        # never sees it and reads each thread's active reply. Purely additive: one new table.
+        #
+        # One row per VARIANT of one anchor's reply (the unified per-item object: a later dimension —
+        # an `origin` for an undo trash, the greeting-swipe seam below — is an added column, never a
+        # sibling table). `anchor_id` is the user row the reply answers; NULL is RESERVED for the
+        # thread opening (the `alt_greetings` swipe seam, not built). The anchor FK cascades, so
+        # deleting the owner's message takes its alternates with it, and the thread FK cascades a
+        # thread delete. `n` = the 1-based ordinal in generation order. `rows` = the displaced rows as
+        # a JSON list of RAW column dicts (never `Message.model_dump`, so a `meta` key this build does
+        # not know survives the round trip); NULL = THIS variant is the one currently live in
+        # `messages`. Invariant: an anchor has 0 rows (every ordinary thread — costs nothing) or N >= 2
+        # rows with exactly one `rows IS NULL`.
+        """
+        CREATE TABLE message_alternates (
+            id          TEXT PRIMARY KEY,
+            thread_id   TEXT NOT NULL REFERENCES threads(id)  ON DELETE CASCADE,
+            anchor_id   TEXT          REFERENCES messages(id) ON DELETE CASCADE,
+            n           INTEGER NOT NULL,
+            rows        TEXT,
+            created_at  TEXT NOT NULL
+        );
+        -- `anchor_id` LEADS so the anchor-FK cascade (every `messages` delete — a thread delete, the
+        -- A3 retention prune, a message delete) probes it instead of scanning; the repo's reads
+        -- (`thread_id = ? AND anchor_id IS ?`) use it too. The thread-FK cascade gets its own.
+        CREATE INDEX idx_alternates_anchor ON message_alternates(anchor_id, thread_id);
+        CREATE INDEX idx_alternates_thread ON message_alternates(thread_id);
+        """,
     ),
 ]
 

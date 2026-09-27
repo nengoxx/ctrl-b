@@ -468,51 +468,97 @@ for (const c of COMBOS) {
     // is what is actually under the text: the nearest painted ancestor layers, innermost first (gacha's
     // opaque `--gc-bubble-bot`; frontier's transparent bubble over its body gradient — every stop gated,
     // worst wins), each translucent layer composited onto the next.
-    const em = await page.evaluate(() => {
-      const host =
-        document.querySelector(".b.bot")?.parentElement ?? document.querySelector("#app-scroll");
-      const bubble = document.createElement("div");
-      bubble.className = "b bot";
-      bubble.innerHTML = '<div class="body"><span class="md"><em>waves</em></span></div>';
-      (host ?? document.body).appendChild(bubble);
-      const ink = getComputedStyle(bubble.querySelector("em") as Element).color;
-      const layers: { bgImage: string; bgColor: string }[] = [];
-      for (let el: Element | null = bubble.querySelector(".body"); el; el = el.parentElement) {
-        const cs = getComputedStyle(el);
-        layers.push({ bgImage: cs.backgroundImage, bgColor: cs.backgroundColor });
-      }
-      bubble.remove();
-      return { ink, layers };
-    });
+    //
+    // D81 (review round №1, Opus 10) reuses the same machinery for the message ACTIONS — 11px caption-register
+    // text buttons that only render after a tap, so no page-level probe ever sees them: the who-line's
+    // `retry`/`edit` (accent) and `delete` (danger) on a bot bubble, and the editor's `Delete message`
+    // (`.pm-alt.danger`) in the PromptModal footer. Same skeleton rule: the real selectors, the theme's own
+    // scoped rules, the painted backdrop under the text. 11px is small text → the 4.5:1 floor.
+    /** Mount `html` where the chat lives, read the computed ink of each `targets` element and the painted
+     *  ancestor layers under it (innermost first), then unmount. */
+    const ruleInks = (html: string, targets: string[]) =>
+      page.evaluate(
+        ({ html, targets }) => {
+          const host =
+            document.querySelector(".b.bot")?.parentElement ??
+            document.querySelector("#app-scroll");
+          const box = document.createElement("div");
+          box.innerHTML = html;
+          const root = box.firstElementChild as Element;
+          (host ?? document.body).appendChild(root);
+          const out = targets.map((sel) => {
+            const el = root.querySelector(sel) as Element;
+            const layers: { bgImage: string; bgColor: string }[] = [];
+            for (let at: Element | null = el; at; at = at.parentElement) {
+              const cs = getComputedStyle(at);
+              layers.push({ bgImage: cs.backgroundImage, bgColor: cs.backgroundColor });
+            }
+            return { ink: getComputedStyle(el).color, layers };
+          });
+          root.remove();
+          return out;
+        },
+        { html, targets },
+      );
     const layerColors = (l: { bgImage: string; bgColor: string }): string[] =>
       l.bgImage !== "none"
         ? (l.bgImage.match(/(?:rgba?|oklch|color)\([^)]*\)/g) ?? [l.bgColor])
         : [l.bgColor];
     const opaque = (cs: string[]) => cs.every((cc) => (rgb(cc)?.alpha ?? 1) >= 1);
-    // Innermost-first → keep layers until the first opaque one, then flatten bottom-up (white canvas last).
-    const painted: string[][] = [];
-    for (const l of em.layers) {
-      const cs = layerColors(l).filter((cc) => (rgb(cc)?.alpha ?? 1) > 0);
-      if (cs.length === 0) continue;
-      painted.push(cs);
-      if (opaque(cs)) break;
-    }
-    let backdrop = ["rgb(255, 255, 255)"];
-    for (const layer of painted.reverse())
-      backdrop = layer.flatMap((cc) => backdrop.map((b) => composite(cc, b)));
-    let emWorst = { ratio: Infinity, bg: "" };
-    for (const bg of backdrop) {
-      const ratio = wcag(em.ink, bg);
-      if (ratio < emWorst.ratio) emWorst = { ratio, bg };
-    }
-    test.info().annotations.push({
-      type: "apca",
-      description: `${comboId(c)}  bot em(${em.ink}) vs backdrop(${emWorst.bg}) → WCAG ${emWorst.ratio.toFixed(2)}:1 · APCA Lc ${apcaLc(em.ink, emWorst.bg).toFixed(1)}`,
-    });
-    expect(
-      emWorst.ratio,
-      `${comboId(c)}: bot-bubble italics (${em.ink}) vs backdrop ${emWorst.bg} — WCAG ${emWorst.ratio.toFixed(2)}:1 < 4.5:1`,
-    ).toBeGreaterThanOrEqual(4.5);
+    /** Gate one rule-inked text at 4.5:1 against the WORST backdrop its painted layers can composite to. */
+    const gateRule = (
+      label: string,
+      probe: { ink: string; layers: { bgImage: string; bgColor: string }[] },
+    ) => {
+      // Innermost-first → keep layers until the first opaque one, then flatten bottom-up (white canvas last).
+      const painted: string[][] = [];
+      for (const l of probe.layers) {
+        const cs = layerColors(l).filter((cc) => (rgb(cc)?.alpha ?? 1) > 0);
+        if (cs.length === 0) continue;
+        painted.push(cs);
+        if (opaque(cs)) break;
+      }
+      let backdrop = ["rgb(255, 255, 255)"];
+      for (const layer of painted.reverse())
+        backdrop = layer.flatMap((cc) => backdrop.map((b) => composite(cc, b)));
+      let worst = { ratio: Infinity, bg: "" };
+      for (const bg of backdrop) {
+        const ratio = wcag(probe.ink, bg);
+        if (ratio < worst.ratio) worst = { ratio, bg };
+      }
+      test.info().annotations.push({
+        type: "apca",
+        description: `${comboId(c)}  ${label}(${probe.ink}) vs backdrop(${worst.bg}) → WCAG ${worst.ratio.toFixed(2)}:1 · APCA Lc ${apcaLc(probe.ink, worst.bg).toFixed(1)}`,
+      });
+      // SOFT, so one combo reports every failing rule rather than stopping at the first (still a fail).
+      expect
+        .soft(
+          worst.ratio,
+          `${comboId(c)}: ${label} (${probe.ink}) vs backdrop ${worst.bg} — WCAG ${worst.ratio.toFixed(2)}:1 < 4.5:1`,
+        )
+        .toBeGreaterThanOrEqual(4.5);
+    };
+
+    const [em] = await ruleInks(
+      '<div class="b bot"><div class="body"><span class="md"><em>waves</em></span></div></div>',
+      ["em"],
+    );
+    gateRule("bot em", em);
+
+    const [actAccent, actDanger] = await ruleInks(
+      '<div class="b bot"><div class="who-acts"><button class="who-act">retry</button>' +
+        '<button class="who-act danger">delete</button></div><div class="body">x</div></div>',
+      [".who-act:not(.danger)", ".who-act.danger"],
+    );
+    gateRule("bot .who-act", actAccent);
+    gateRule("bot .who-act.danger", actDanger);
+
+    const [pmDanger] = await ruleInks(
+      '<div class="pm"><div class="pm-foot"><div class="pm-defaults">' +
+        '<button class="pm-alt danger">Delete message</button></div></div></div>',
+      [".pm-alt.danger"],
+    );
+    gateRule("editor .pm-alt.danger", pmDanger);
 
     // The ADVISORY cross-axis probes — measured on the same resolved token set, attached to the report on
     // the SAME channel APCA uses, and never asserted (see `THEME_ADVISORIES` for why the strip has no

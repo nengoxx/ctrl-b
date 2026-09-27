@@ -98,6 +98,7 @@ export function PromptModal() {
       ? `${Math.round((count / cap) * 100)}% — ${count.toLocaleString()}/${cap.toLocaleString()}`
       : `${count.toLocaleString()} chars`;
   const overCap = cap != null && count > cap;
+  const danger = req.kind === "text" ? req.danger : undefined;
 
   // Escape closes, Tab cycles the panel's LIVE focusable set — both from `lib/focusTrap`, which the
   // automations editor sheet shares (A3 slice 3). The behaviour is the one this modal has always had;
@@ -154,14 +155,32 @@ export function PromptModal() {
               </button>
             </div>
           ) : (
-            req.defaultText != null && (
+            (req.defaultText != null || danger) && (
               <div className="pm-defaults">
-                <button className="pm-alt" onClick={() => setText(req.defaultText as string)}>
-                  Load default
-                </button>
-                <button className="pm-alt" onClick={() => setText("")}>
-                  Restore default
-                </button>
+                {req.defaultText != null && (
+                  <>
+                    <button className="pm-alt" onClick={() => setText(req.defaultText as string)}>
+                      Load default
+                    </button>
+                    <button className="pm-alt" onClick={() => setText("")}>
+                      Restore default
+                    </button>
+                  </>
+                )}
+                {/* D81 — the optional destructive action, in the same quiet LEFT slot as the defaults
+                    (secondary to Cancel/Save), danger-coloured. Cancels the edit first, then hands over
+                    to the caller, whose own confirm decides (store/prompt.ts `danger`). */}
+                {danger && (
+                  <button
+                    className="pm-alt danger"
+                    onClick={() => {
+                      resolvePrompt(null);
+                      danger.run();
+                    }}
+                  >
+                    {danger.label}
+                  </button>
+                )}
               </div>
             )
           )}

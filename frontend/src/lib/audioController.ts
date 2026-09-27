@@ -84,6 +84,9 @@ const IDLE: Playback = {
 };
 let pb: Playback = IDLE;
 const cache = new Map<string, string>(); // `off` path: messageId → object URL (synth once per message)
+// D81 — a per-id FORGET epoch (`forgetMessage` bumps it): a whole-clip synth captures it before its await
+// and does not cache what it got back if the id was forgotten meanwhile. Cleared with the cache.
+const forgets = new Map<string, number>();
 let el: HTMLAudioElement | null = null;
 let reqSeq = 0; // guards against an out-of-order synth resolving after a newer toggle
 // Generation of the last `play()` the QUEUE started. A `play()` interrupted by a newer `src` rejects
@@ -724,11 +727,15 @@ async function synthWhole(
   // all-action reply under `speakActions: false` is exactly this case, and it must not POST empty text.
   const text = toSpeech(markdown, policy);
   if (!text) return null;
+  const epoch = forgets.get(id) ?? 0;
   const out = await requestTts(text, { agent });
   if (!out.ok) {
     if (out.message) pushToast(out.message, "err");
     return null;
   }
+  // D81 — the message was forgotten while this synth was out (an edit saved mid-synth): these are the
+  // OLD words, and caching them under the id would replay them on the next ▶.
+  if ((forgets.get(id) ?? 0) !== epoch) return null;
   const url = URL.createObjectURL(out.blob);
   cache.set(id, url);
   return url;
@@ -1497,10 +1504,34 @@ export function getTurnStops(): number {
   return turnStops;
 }
 
+/** Forget everything held for ONE message (D81): its whole-clip cache entry, its retained chunk queue, and
+ *  — if it is the one docked — the player itself. The cache contract is "the content under an id never
+ *  changes" (`synthWhole`), and the owner's message actions are the one place that breaks it: an EDIT
+ *  rewrites the text under the same id, and a DELETE / a swapped-away variant takes the id off the log
+ *  while a clip may still be docked for it. `store/chat` calls this for the edited id and for every id a
+ *  new floor no longer carries. A no-op for an id nothing is held for (every user row, most replies). */
+export function forgetMessage(id: string): void {
+  forgets.set(id, (forgets.get(id) ?? 0) + 1); // …and a synth still in flight for it will not cache
+  const url = cache.get(id);
+  if (url) {
+    URL.revokeObjectURL(url);
+    cache.delete(id);
+  }
+  // Dismiss FIRST: `reset` bumps the generation, so a synth still in flight for this id resolves inert
+  // instead of starting the clip after the message has gone.
+  if (pb.id === id) reset();
+  if (session && session.id === id) {
+    session.abort.abort();
+    revokeSession(session);
+    session = null;
+  }
+}
+
 /** Revoke cached object URLs (e.g. on `/new`). Cheap; keeps a long session from leaking blobs. */
 export function clearAudioCache(): void {
   for (const url of cache.values()) URL.revokeObjectURL(url);
   cache.clear();
+  forgets.clear();
   if (session) {
     session.abort.abort();
     revokeSession(session);

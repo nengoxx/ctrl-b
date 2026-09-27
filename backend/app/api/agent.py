@@ -22,6 +22,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -32,6 +33,7 @@ from sse_starlette.sse import EventSourceResponse
 from starlette.responses import Response
 
 from app.config import (
+    AttachmentsCfg,
     Settings,
     dealias_mapping,
     deep_merge,
@@ -112,6 +114,14 @@ from app.services.agent.turns import (
     subscribe_events,
 )
 from app.services.agent.turns import _push_terminal as push_terminal
+from app.services.conversation import (
+    AlternatesRepo,
+    Revocable,
+    TailReply,
+    history_payload,
+    replace_text,
+    resolve_unit,
+)
 
 log = logging.getLogger(__name__)
 
@@ -1197,11 +1207,13 @@ async def create_thread(request: Request, body: NewThreadRequest | None = None) 
 
 @router.get("/threads/{thread_id}/messages")
 async def list_messages(thread_id: str, request: Request) -> list[dict[str, Any]]:
+    """The thread's history — still a plain list, built by `history_payload` (D81) so the tail reply's
+    host row carries its `reply: {ids, n, count}` annotation, the same floor the message-action routes
+    return."""
     threads = request.app.state.threads
     if await threads.get(thread_id) is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
-    msgs = await request.app.state.messages.list(thread_id)
-    return [m.model_dump(mode="json") for m in msgs]
+    return await history_payload(request.app.state.messages, thread_id)
 
 
 @router.post("/agent/chat")
@@ -2882,3 +2894,211 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
         }
     finally:
         release(request.app.state.turns, handle)
+
+
+# ── Chat message actions (D81): regenerate + alternates · delete · edit ──────────────────────────────
+# `messages` is always the active transcript; a displaced reply is MOVED into `message_alternates`
+# (`AlternatesRepo`), so no history reader changes. Every route holds the thread's turn marker and
+# revalidates under it (D38 + §D-3, pinned by `test_turn_guard_invariant`): the regenerate as a `chat`
+# turn (it streams, steers, cancels and re-attaches like any reply), the three sync routes as `edit`.
+# The sync routes answer with the whole history floor, `{messages: history_payload}`, so the client
+# never re-derives which rows form a reply.
+
+#: The 409 for a request aimed at a transcript that moved on under it (another device regenerated,
+#: swapped or deleted; the tail the client saw is gone). Frozen wire text (D81).
+_STALE_DETAIL = "the conversation changed"
+_NO_REPLY_DETAIL = "there is no reply to regenerate here"
+_FOLDED_DETAIL = "this turn has been folded into the conversation summary — it can no longer be changed"
+
+
+class RegenerateRequest(BaseModel):
+    """`POST /api/agent/regenerate` (D81). `message_id` is the tail reply's host row the client saw —
+    any of the reply's ids is accepted — OR, when the tail holds no agent row at all, the ANCHOR's own
+    id (an answerless message: the F20 error retry after its error-only take was dropped). Anything
+    else is the stale 409. `mode`/`privilege`/`stream` mean exactly what they mean on `ChatRequest`
+    (same coercions)."""
+
+    thread_id: str
+    message_id: str
+    mode: str | None = None
+    privilege: Privilege | None = None
+    stream: bool = False
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _known_mode(cls, v: object) -> object:
+        return _coerce_mode(v)
+
+    @field_validator("privilege", mode="before")
+    @classmethod
+    def _known_privilege(cls, v: object) -> object:
+        return _coerce_privilege(v)
+
+
+class AlternateRequest(BaseModel):
+    """`PUT /api/threads/{tid}/messages/{mid}/alternate` (D81): the 1-based variant to show."""
+
+    n: int = Field(ge=1)
+
+
+#: The ceiling on an edited message's text (review №1, Maya MED-1). The send path has NO text-length
+#: limit of its own; the one existing bound on what a single message element may carry is the upload
+#: cap (`attachments.max_file_mb` — a text attachment is at most that many bytes, i.e. at most that many
+#: characters), so the edit takes it, derived from the config field's DEFAULT (the `TurnsCfg().ring_size`
+#: precedent — one source of truth, no new literal). A request model cannot see live settings.
+#: It is the SAME request ceiling uploads get — a sanity bound on the body, not a text policy.
+_EDIT_MAX_CHARS = AttachmentsCfg().max_file_mb * 1024 * 1024
+
+
+class EditMessageRequest(BaseModel):
+    """`PATCH /api/threads/{tid}/messages/{mid}` (D81): the message's new text (replaces all of it)."""
+
+    text: str = Field(max_length=_EDIT_MAX_CHARS)
+
+
+def _revoke(state, revoked: list[Revocable]) -> None:
+    """Kill the confirm tokens of calls a displaced/deleted reply was parked on (the C1-H2 dismiss
+    precedent) — a bubble that left the transcript must not stay redeemable via `POST /api/actions`."""
+    for tool, args in revoked:
+        state.actions.revoke_pending(tool, args)
+
+
+def _require_tail(tail: TailReply, message_id: str) -> None:
+    """The tail-reply preconditions shared by regenerate and the alternate swap: the anchor is still in
+    the model's context, there is a reply to act on, and it is the one the client saw."""
+    if tail.anchor is not None and tail.anchor.compacted:
+        raise HTTPException(status_code=409, detail=_FOLDED_DETAIL)
+    if not tail.regenerable:
+        raise HTTPException(status_code=409, detail=_NO_REPLY_DETAIL)
+    if message_id not in tail.ids:
+        raise HTTPException(status_code=409, detail=_STALE_DETAIL)
+
+
+def _require_regenerable(tail: TailReply, message_id: str) -> None:
+    """`_require_tail`, widened for regenerate by ONE case (review №1, Opus LOW-5): an anchor with no
+    agent row after it (its only reply deleted, an error-only take dropped, a turn stopped before its
+    first row) is retried by naming the anchor itself — take 1. Naming the anchor while a reply exists
+    is stale (another device answered)."""
+    anchor = tail.anchor
+    if anchor is not None and message_id == anchor.id and not tail.rows:
+        if anchor.compacted:
+            raise HTTPException(status_code=409, detail=_FOLDED_DETAIL)
+        return
+    _require_tail(tail, message_id)
+
+
+@router.post("/agent/regenerate")
+async def regenerate(body: RegenerateRequest, request: Request) -> Response:
+    """Regenerate the thread's tail reply (D81 / CHAT-002). Validates the tail under the turn marker,
+    then streams `session.regenerate` — which stashes the displaced reply (an error-only one is
+    discarded; open calls are cancelled and their tokens revoked) and drives a fresh take — an ordinary
+    turn on the wire (SSE, or the D17 buffered JSON). Speaks as the agent that gave the displaced reply
+    (ruling 4)."""
+    state = request.app.state
+    thread = await state.threads.get(body.thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
+    # The same quiet-boundary rediscovery `chat` runs (7c-b / ACA-17): a regenerate is a turn start.
+    if getattr(state, "integrations_dirty", False) and not state.turns:
+        await rediscover_integrations(request.app)
+    # A `chat` turn: a steer during it enqueues (D41), Stop/re-attach/the cap/the ring all apply.
+    handle = _reserve_turn(request, thread.id, "chat")
+    state.steer_harvests.pop(thread.id, None)  # a genuinely new turn — the D41 FIX 4 rule `chat` follows
+    try:
+        await _revalidate_thread(state, thread.id)
+        tail = await AlternatesRepo(state.messages).tail_reply(thread.id)
+        _require_regenerable(tail, body.message_id)
+        # The STASH runs inside `session.regenerate` (first statement of its `try`), so every exit after
+        # it — a Stop, a raise, a take that persisted nothing — reaches its settle (review №1, MED-1).
+        session = _session(request, thread, agent_name=tail.speaker, privilege=body.privilege)
+        stream = _effective_stream(state.settings.agent.streaming, body.stream)
+        handle.mode = body.mode  # the snapshot carries it (D39) — same as chat
+        events = session.regenerate(thread, tail, mode=body.mode)
+        return await _turn_response(request, thread, events, stream=stream, handle=handle)
+    except Exception:
+        # Release only PRE-handoff (see `chat`): post-spawn the drain task's done-callback owns it.
+        if handle.task is None:
+            release(state.turns, handle)
+        raise
+
+
+@router.put("/threads/{thread_id}/messages/{message_id}/alternate")
+async def select_alternate(
+    thread_id: str, message_id: str, body: AlternateRequest, request: Request
+) -> dict[str, Any]:
+    """Show variant `n` of the tail reply (D81, the `‹ n/N ›` arrows). `message_id` is the tail's host
+    row as the client saw it (stale → 409). Returns `{messages: history_payload}`."""
+    state = request.app.state
+    if await state.threads.get(thread_id) is None:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+    handle = _reserve_turn(request, thread_id, "edit")
+    try:
+        await _revalidate_thread(state, thread_id)
+        alternates = AlternatesRepo(state.messages)
+        tail = await alternates.tail_reply(thread_id)
+        _require_tail(tail, message_id)
+        assert tail.anchor is not None
+        n, count = await alternates.position(thread_id, tail.anchor.id)
+        if body.n > count:
+            raise HTTPException(status_code=422, detail=f"this reply has {count} variant(s)")
+        if body.n != n:
+            _revoke(state, await alternates.select(thread_id, tail, body.n))
+        return {"messages": await history_payload(state.messages, thread_id)}
+    finally:
+        release(state.turns, handle)
+
+
+@router.delete("/threads/{thread_id}/messages/{message_id}")
+async def delete_message(thread_id: str, message_id: str, request: Request) -> dict[str, Any]:
+    """Delete the UNIT `message_id` belongs to (D81 / CHAT-001), resolved server-side: a user row alone,
+    an agent row's whole reply (the tail's SHOWN variant when it has alternates, its neighbor restored),
+    an owner call pair. System/summary rows are 422. Returns `{messages: history_payload}`."""
+    state = request.app.state
+    if await state.threads.get(thread_id) is None:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+    handle = _reserve_turn(request, thread_id, "edit")
+    try:
+        await _revalidate_thread(state, thread_id)
+        alternates = AlternatesRepo(state.messages)
+        unit = resolve_unit(await state.messages.list(thread_id), message_id)
+        if unit is None:
+            raise HTTPException(status_code=404, detail=f"no message '{message_id}' in this thread")
+        if unit.kind == "system":
+            raise HTTPException(status_code=422, detail="a summary/system message cannot be deleted")
+        _revoke(state, await alternates.delete_unit(thread_id, unit))
+        return {"messages": await history_payload(state.messages, thread_id)}
+    finally:
+        release(state.turns, handle)
+
+
+@router.patch("/threads/{thread_id}/messages/{message_id}")
+async def edit_message(
+    thread_id: str, message_id: str, body: EditMessageRequest, request: Request
+) -> dict[str, Any]:
+    """Edit a message's text in place (D81 / CHAT-003) — no regenerate (ST parity; retry is its own
+    action). User or assistant rows; reasoning, tool calls and attachments are untouched; `meta.edited`
+    is stamped. Compacted rows are 409 (the model sees the summary — an edit would be a silent lie).
+    Returns `{messages: history_payload}`."""
+    state = request.app.state
+    if await state.threads.get(thread_id) is None:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+    handle = _reserve_turn(request, thread_id, "edit")
+    try:
+        await _revalidate_thread(state, thread_id)
+        msg = await state.messages.get(message_id)
+        if msg is None or msg.thread_id != thread_id:
+            raise HTTPException(status_code=404, detail=f"no message '{message_id}' in this thread")
+        if msg.role not in ("user", "assistant"):
+            raise HTTPException(status_code=422, detail="only a user or assistant message can be edited")
+        if msg.compacted:
+            raise HTTPException(status_code=409, detail=_FOLDED_DETAIL)
+        if msg.role == "assistant" and not msg.text():
+            raise HTTPException(status_code=422, detail="this message has no text to edit")
+        if not body.text.strip() and not msg.attachments():
+            raise HTTPException(status_code=422, detail="a message needs text (or an attachment)")
+        if body.text != msg.text():
+            parts = replace_text(msg.parts, body.text)
+            await state.messages.edit_text(message_id, parts, datetime.now(timezone.utc))
+        return {"messages": await history_payload(state.messages, thread_id)}
+    finally:
+        release(state.turns, handle)

@@ -3394,6 +3394,11 @@ body[data-mode="light"] .kit .pm {
   background: transparent;
   color: var(--accent);
 }
+/* D81 — a destructive utility in the same quiet slot (the chat editor's "Delete message"): the text
+ * button, danger-inked. The store's confirm, not this button, is the gate. */
+.kit .pm-defaults .pm-alt.danger {
+  color: var(--danger);
+}
 .kit .pm-alt {
   all: unset;
   cursor: pointer;
@@ -4489,6 +4494,25 @@ body[data-motion="full"] .kit .b-wrap.arrive > .b {
 .kit .b.user .who {
   flex-direction: row-reverse;
 }
+/* D81 — the pencil on the owner's name line (edit; its sheet holds delete). The row is `row-reverse`, so
+ * as the last child it sits at the far end from the dot. A 32px target around a 12px glyph, pulled back
+ * into the caption's height by negative block margins, so the line keeps its size. */
+.kit .b.user .who .who-edit {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-block: -11px;
+  color: var(--text-3);
+  border-radius: var(--radius-sm);
+}
+.kit .b.user .who .who-edit:active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
 .kit .b.user .body {
   background: var(--accent-soft);
   padding: 9px 13px;
@@ -4771,6 +4795,42 @@ body[data-motion="full"] .kit .b-wrap.arrive > .b {
   flex-shrink: 0;
 }
 .kit .b.bot .chat-err-retry:active {
+  background: var(--accent-soft);
+}
+/* D81 — the owner's message actions under the who-line disclosure (`retry · edit · delete`): the retry
+ * pill's recipe as a row of caption-register text buttons, each a ≥32px target so the three fit one row
+ * at 390px. Its own block after the dimmed metrics, so it keeps full ink. The negative inline start lines
+ * the first label's text up with the metrics above it.
+ * THE INK (fix wave 1, measured by the e2e contrast matrix): 11px is small text, and the raw accent fails
+ * 4.5:1 on a bubble in 13 shipped combos (frontier light amber 1.21:1). So it is the STYLE-001 recipe —
+ * the accent (delete: the danger hue) mixed toward the SURROUNDING ink — at the shares every shipped
+ * palette clears: 40% accent, 60% danger. `--kit-act-tint` / `--kit-act-danger-tint` are the per-theme
+ * dials (set nowhere yet). */
+.kit .b .who-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: -6px 0 4px -10px;
+}
+.kit .b .who-act {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: color-mix(in oklch, var(--accent) var(--kit-act-tint, 40%), currentColor);
+  border-radius: var(--radius-sm);
+}
+.kit .b .who-act.danger {
+  color: color-mix(in oklch, var(--danger) var(--kit-act-danger-tint, 60%), currentColor);
+}
+.kit .b .who-act:active {
   background: var(--accent-soft);
 }
 /* motion gate — drop the ambient streaming anims under reduced motion (§14.11) */
@@ -5264,6 +5324,53 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
 .kit .b.bot .who .tts-play.loading {
   opacity: 0.4;
   cursor: progress;
+}
+/* D81 — the tail reply's variant counter `‹ n/N ›`, only once alternates exist. It takes the right-hand
+ * run (the read-aloud button then follows it); the chevrons are the read-aloud glyph's recipe — a masked
+ * accent shape — in a 24×32 target pulled back into the caption's height. */
+.kit .b.bot .who .who-alt {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+/* A real gap before the read-aloud glyph (fix wave 1): `›` at N/N regenerates in one tap, so a thumb
+ * aimed at ▶ must not land on it at 390px. */
+.kit .b.bot .who .who-alt ~ .tts-play {
+  margin-left: 16px;
+}
+.kit .b.bot .who .who-alt-btn {
+  all: unset;
+  cursor: pointer;
+  width: 24px;
+  height: 32px;
+  margin-block: -11px;
+  background: var(--accent);
+  opacity: 0.72;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='m15 18-6-6 6-6' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>") center/14px no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='m15 18-6-6 6-6' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>") center/14px no-repeat;
+  transition: opacity var(--dur-fast) var(--ease-std);
+}
+.kit .b.bot .who .who-alt-btn.next {
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='m9 18 6-6-6-6' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+          mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='m9 18 6-6-6-6' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+.kit .b.bot .who .who-alt-btn:hover {
+  opacity: 1;
+}
+.kit .b.bot .who .who-alt-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+/* The new controls are `all: unset`, which ties the global `.kit :focus-visible` ring and (being later)
+ * resets its outline — restore the keyboard ring explicitly (the P3 recipe, outline-based). */
+.kit .b .who-act:focus-visible,
+.kit .b.user .who .who-edit:focus-visible,
+.kit .b.bot .who .who-alt-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 /* motion gate — the running-result pulse (§14.11) */
 body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {

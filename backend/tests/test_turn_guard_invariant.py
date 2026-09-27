@@ -46,6 +46,12 @@ _MUTATION_MARKERS = (
     ".compact(",
     "session.run_turn(",
     "session.resume(",
+    # D81 — the chat message actions: a regenerate drives the loop; the alternates repo moves whole
+    # replies in and out of `messages`; the raw delete + the text edit rewrite rows directly.
+    "session.regenerate(",
+    "alternates.",
+    "messages.delete_ids(",
+    "messages.edit_text(",
 )
 
 
@@ -80,7 +86,8 @@ def _code_only(src: str) -> str:
 #: Handlers allowed to mutate WITHOUT a marker. Empty today — additions need a D38-level ruling.
 _EXEMPT: frozenset[str] = frozenset()
 
-#: The complete guarded set as of ACA Slice 2 (D38). A new guarded endpoint updates this pin.
+#: The complete guarded set as of ACA Slice 2 (D38), widened by D81's four message-action routes. A new
+#: guarded endpoint updates this pin.
 _EXPECTED = {
     "chat",
     "resume",
@@ -88,6 +95,10 @@ _EXPECTED = {
     "compact",
     "edit_plan",
     "apply_proposal_endpoint",
+    "regenerate",
+    "select_alternate",
+    "delete_message",
+    "edit_message",
 }
 
 

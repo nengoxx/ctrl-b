@@ -14,7 +14,7 @@
 // Every glyph is `aria-hidden`: each one sits inside a button that carries the words (`aria-label`, and a
 // visible caption where it fits). An icon is never the accessible name of anything here.
 
-import { Glyph } from "../icons";
+import { Glyph, PencilIcon } from "../icons";
 
 /** lucide `chevrons-up` — move to top. */
 export function ToTopIcon({ size }: { size?: number } = {}) {
@@ -71,12 +71,9 @@ export function FrameIcon({ size }: { size?: number } = {}) {
  *  on the same picture (framing chooses what a window keeps; editing changes the stored file), and a
  *  shared glyph would say they are one. */
 export function EditIcon({ size }: { size?: number } = {}) {
-  return (
-    <Glyph size={size}>
-      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
-      <path d="m15 5 4 4" />
-    </Glyph>
-  );
+  // The house pencil (D81 lifted the geometry into the shell set when the chat editor became its second
+  // user) — this name stays because the gallery's VERB is "edit", whatever the glyph.
+  return <PencilIcon size={size} />;
 }
 
 /** lucide `trash-2` — delete the file from the server. */

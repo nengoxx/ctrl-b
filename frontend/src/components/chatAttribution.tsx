@@ -14,7 +14,7 @@ import type { CallUsage, ChatMessage, MessageSource } from "../types";
 //   • EVERY segment omits itself when its datum is absent. The backend records what the endpoint
 //     reported and nothing else, so a partial report renders fewer segments — never a zero, never an
 //     "unknown". A message with no `source` and no `usage` (every pre-D62 row, every user turn) renders
-//     the plain old who-line and is not tappable at all.
+//     the plain old who-line — tappable only for the owner's message actions (D81), when it has any.
 //   • The model id lives in `usage.model` and the endpoint in `source.served`. Both are DISCLOSURE
 //     material now (owner, 2026-09-24: "the metrics already say which model it was" — the always-on
 //     `CORSAIR` beside the name was noise on every ordinary turn). The who-line keeps the chip for the
@@ -63,12 +63,16 @@ interface Row {
  *    `corsair · qwen3.6-max · ↑ 8.1k (6.9k cached) · ↓ 512`
  *    `31% of 262k · 12.3s · 41 tok/s`
  *    `↯ fallback from corsair · 2 failed hops`   (degraded only, warn)
+ *    `edited by you`                              (D81 — the owner rewrote the text since)
  *  The endpoint leads the call row (it left the who-line, see the header) — endpoint then model, the
- *  order the routing resolves them in. Empty rows are dropped, so `[]` means "nothing to disclose" —
- *  which is also what makes the who-line non-tappable. */
+ *  order the routing resolves them in. Empty rows are dropped, so `[]` means "no metrics to disclose" —
+ *  and, with no message actions either (D81), a who-line that is not tappable at all. */
 export function metricRows(
   source: MessageSource | null | undefined,
   usage: CallUsage | null | undefined,
+  /** D81 — the owner edited this message's text (`Message.edited`): the metrics above describe the
+   *  ORIGINAL generation, so the disclosure says the words on screen are not all the model's. */
+  edited?: string | null,
 ): Row[] {
   // llama.cpp-style endpoints report only the NEWLY-prefilled tokens as input, with cache hits in a
   // separate counter — so `cached > input` (impossible under OpenAI's subset semantics, where the
@@ -110,9 +114,30 @@ export function metricRows(
     }
   }
 
-  return [{ segs: call }, { segs: cost }, { segs: fallback, warn: true }].filter(
+  const touched: Seg[] = edited ? [{ text: "edited by you" }] : [];
+
+  return [{ segs: call }, { segs: cost }, { segs: fallback, warn: true }, { segs: touched }].filter(
     (r) => r.segs.length > 0,
   );
+}
+
+/** One of the owner's message actions under the metrics (D81 `.who-acts`): a caption-register text
+ *  button — `retry` · `edit` · `delete`. `aria` carries the full words the one-word label abbreviates. */
+export interface WhoAction {
+  label: string;
+  aria: string;
+  run: () => void;
+  danger?: boolean;
+}
+
+/** The tail reply's variant counter (D81 `‹ n/N ›`), shown on the who-line only once alternates exist.
+ *  `onPrev` absent ⇒ the first variant (the chevron is disabled); `onNext` at `N/N` regenerates — ST's
+ *  swipe-right-past-the-end — and is absent (disabled) only while an unsent message follows the reply. */
+export interface VariantNav {
+  n: number;
+  count: number;
+  onPrev?: () => void;
+  onNext?: () => void;
 }
 
 function MetricLine({ row }: { row: Row }) {
@@ -153,6 +178,8 @@ export function BotWhoLine({
   label,
   time,
   avatar,
+  actions,
+  variant,
   children,
 }: {
   m: ChatMessage;
@@ -170,16 +197,24 @@ export function BotWhoLine({
    *  and it costs nothing to — a circle is always aspect 1, so `FocalFace` computes the crop from the
    *  item alone and this line keeps the zero observers its 18 px predecessor was sized down to avoid. */
   avatar?: BoundArt;
+  /** D81 — the owner's actions for this message, rendered under the metrics when the disclosure is
+   *  open. Their presence alone makes the line tappable (a greeting or legacy row has no metrics but
+   *  can still be deleted). Empty/absent while a turn streams and on client-only rows (the caller's). */
+  actions?: WhoAction[];
+  /** D81 — the variant counter, on the tail reply's host once it has alternates (the caller decides). */
+  variant?: VariantNav;
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const source = m.source;
-  const rows = metricRows(source, m.usage);
+  const rows = metricRows(source, m.usage, m.edited);
+  const acts = actions ?? [];
+  const discloses = rows.length > 0 || acts.length > 0;
   const toggle = () => setOpen((o) => !o);
   return (
     <>
       <div className={"who" + (avatar ? " has-avatar" : "")}>
-        <span className="who-id" onClick={rows.length ? toggle : undefined}>
+        <span className="who-id" onClick={discloses ? toggle : undefined}>
           {/* Decoration: the speaker is already the label right beside it, so a name here would make
               AT announce the same turn twice — which is why the face can be a painted box rather than
               an `<img>` (see `FocalFace`). */}
@@ -198,10 +233,41 @@ export function BotWhoLine({
           )}
           {time}
         </span>
+        {/* D81 — `‹ n/N ›`: siblings of the identity run (the D25 breakout), so a chevron tap never
+            toggles the disclosure. Sits before the read-aloud button, which keeps the right edge. */}
+        {variant && (
+          <span className="who-alt">
+            <button
+              type="button"
+              className="who-alt-btn prev"
+              aria-label="previous version of this reply"
+              disabled={!variant.onPrev}
+              onClick={variant.onPrev}
+            />
+            <span
+              className="who-alt-n"
+              role="img"
+              aria-label={`version ${variant.n} of ${variant.count}`}
+            >
+              {variant.n}/{variant.count}
+            </span>
+            <button
+              type="button"
+              className="who-alt-btn next"
+              aria-label={
+                variant.n < variant.count
+                  ? "next version of this reply"
+                  : "write a new version of this reply"
+              }
+              disabled={!variant.onNext}
+              onClick={variant.onNext}
+            />
+          </span>
+        )}
         {children}
-        {rows.length > 0 && (
+        {discloses && (
           <button className="who-sr" aria-expanded={open} onClick={toggle}>
-            message details
+            {acts.length > 0 ? "message details and actions" : "message details"}
           </button>
         )}
       </div>
@@ -209,6 +275,23 @@ export function BotWhoLine({
         <div className="who-meta">
           {rows.map((r, i) => (
             <MetricLine key={i} row={r} />
+          ))}
+        </div>
+      )}
+      {/* D81 — the actions row: its own block rather than a metric row, so it keeps full ink (the
+          metrics are deliberately dimmed) and its ≥32px targets never inherit the caption's size. */}
+      {open && acts.length > 0 && (
+        <div className="who-acts">
+          {acts.map((a) => (
+            <button
+              key={a.label}
+              type="button"
+              className={"who-act" + (a.danger ? " danger" : "")}
+              aria-label={a.aria}
+              onClick={a.run}
+            >
+              {a.label}
+            </button>
           ))}
         </div>
       )}

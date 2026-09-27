@@ -14,14 +14,20 @@ import {
   alwaysEligibleFor,
   answerQuestion,
   applyProposal,
+  deleteMessage,
+  editMessage,
+  isUnsent,
+  regenerate,
   removeSteer,
   resumeCall,
-  retryLastTurn,
+  selectAlternate,
   // The text-part join moved to the store when the call screen became its second reader (owner ask
   // 2026-09-22) — one filter, so "what was said" cannot mean two things.
   textOf,
 } from "../store/chat";
 import { openConfGroup } from "../store/groupScroll";
+import { requestPrompt } from "../store/prompt";
+import { pushToast } from "../store/toast";
 import { useUISlice } from "../store/ui";
 import type {
   AttachmentPart,
@@ -32,8 +38,8 @@ import type {
   ToolResult,
   WebSearchHit,
 } from "../types";
-import { BotWhoLine } from "./chatAttribution";
-import { XIcon } from "./icons";
+import { BotWhoLine, type VariantNav, type WhoAction } from "./chatAttribution";
+import { PencilIcon, XIcon } from "./icons";
 
 // The agent-chat LOG (F4) — the reusable `.chat-log` transcript, split out of AgentTab so a bespoke theme
 // body can render the same thread without duplicating the bubble tree (D36: the chat class names are a
@@ -584,6 +590,42 @@ function QuestionBubble({
   );
 }
 
+// ── D81 — the owner's message actions (retry · swap · edit · delete) ─────────────────────────────
+// The store owns every route; these are the two view-side pieces with no state of their own, so they
+// are module-level (a stable identity for `Bubbles`' memo without a `useCallback`).
+
+/** EDIT — the house full-page editor (`requestPrompt`: back-guard, focus trap, phone-safe; no new
+ *  overlay). A user message's editor also carries its DELETE (owner ruling ③: one control on the user's
+ *  name line), which cancels the edit and hands over to the store's own confirm. An unchanged text saves
+ *  nothing. A save the server did NOT take (busy, folded, blank, a turn started) re-opens the editor on
+ *  the words the owner typed, with a toast — the store's note says why (D81 fix wave 1). */
+function openEditor(m: ChatMessage, draft?: string): void {
+  const before = textOf(m.parts);
+  const own = m.role === "user";
+  void requestPrompt({
+    title: own ? "Edit your message" : "Edit this reply",
+    value: draft ?? before,
+    mono: false,
+    saveLabel: "Save",
+    ...(own ? { danger: { label: "Delete message", run: () => void deleteMessage(m.id) } } : {}),
+  }).then(async (next) => {
+    if (next === null || next === before) return;
+    if (await editMessage(m.id, next)) return;
+    pushToast("The edit wasn't saved — your text is back in the editor", "err");
+    openEditor(m, next);
+  });
+}
+
+/** DELETE — the store asks the one confirm tap and resolves the unit server-side. */
+function deleteOne(m: ChatMessage): void {
+  void deleteMessage(m.id);
+}
+
+/** SWAP — show variant `n` of the tail reply. */
+function selectOne(hostId: string, n: number): void {
+  void selectAlternate(hostId, n);
+}
+
 // React.memo so a streamed token re-renders ONLY the streaming bubble, not the whole log: during text
 // streaming the store preserves the identity of every non-streaming message (appendDelta returns the same
 // `m` for them), and all the other props are referentially stable (resultFor is ref-backed below;
@@ -592,21 +634,30 @@ function QuestionBubble({
 const Bubbles = memo(function Bubbles({
   m,
   streaming,
+  idle,
+  locked,
   resultFor,
   canRetry,
-  onRetry,
+  onRegenerate,
   resolvedDefault,
   ttsOn,
   agentArt,
 }: {
   m: ChatMessage;
   streaming: boolean;
+  /** D81 — no turn is streaming, so the owner's message actions may show. One flag for the whole log
+   *  (it flips twice per turn, and every bubble re-renders then — never per token). */
+  idle: boolean;
+  /** D81 fix wave 1 — an UNSENT bubble follows this message (a send the server never took): the reply
+   *  above it is not the tail from the owner's side, so it offers no retry and no `›` past the end. */
+  locked: boolean;
   resultFor: (callId: string) => ToolResult | undefined;
   /** F20 — render the retry affordance on this assistant bubble. Only true on the latest
    * message when chat status === "error", so historical errors don't grow phantom buttons. */
   canRetry: boolean;
-  /** Risk-aware retry handler (I4) — stable; auto-resends a retry-safe turn, else copies to composer. */
-  onRetry: () => void;
+  /** D81 — RETRY as a new variant (I4 risk-aware: the store confirms before re-running a reply that
+   *  ran a non-retry-safe tool) — stable. The F20 pill and the disclosure's `retry` both call it. */
+  onRegenerate: (hostId: string) => void;
   /** The resolved default agent slug (7e-c). An assistant turn is labelled with its `agent` only
    * when it differs from this — so default turns stay clean and specialist turns are attributed. */
   resolvedDefault: string | undefined;
@@ -640,7 +691,23 @@ const Bubbles = memo(function Bubbles({
     const caption = said !== "" || attached === 0;
     return (
       <div className={"b user" + (entryId ? " queued" : "")}>
-        <div className="who">you · {hm(m.ts)}</div>
+        <div className="who">
+          you · {hm(m.ts)}
+          {m.edited ? " · edited" : ""}
+          {/* D81 — the ONE control on the owner's name line: edit (its sheet also holds delete). The
+              line is `row-reverse`, so the last child sits at the far end from the dot. Never on a
+              client-only row (no server id yet) or while a turn streams. */}
+          {idle && !m.local && (
+            <button
+              type="button"
+              className="who-edit"
+              aria-label="edit your message"
+              onClick={() => openEditor(m)}
+            >
+              <PencilIcon size={12} />
+            </button>
+          )}
+        </div>
         {/* D68 §7 — what this turn attached, ABOVE its text (the wire order: the files are the
             subject, the caption is about them). Renders nothing on a message with no attachment
             part, which is every message before this feature and most after it. */}
@@ -677,6 +744,37 @@ const Bubbles = memo(function Bubbles({
   )?.call_id;
   const reasoningInBot = !!reasoning && !reasoningHostId;
   const showBot = !!(text || err || working || reasoningInBot);
+  // D81 — the owner's actions on a DURABLE reply row, only while no turn streams. `retry` + the counter
+  // hang off the tail's host (`reply`, the server's annotation); `edit` needs text to edit (a folded row
+  // is refused by the server, so it is not offered); `delete` takes the whole reply (the server's unit).
+  const acting = idle && !m.local;
+  const reply = acting ? m.reply : undefined;
+  const actions: WhoAction[] = acting
+    ? [
+        ...(reply && !locked
+          ? [{ label: "retry", aria: "retry this reply", run: () => onRegenerate(m.id) }]
+          : []),
+        ...(text && !m.compacted
+          ? [{ label: "edit", aria: "edit this reply", run: () => openEditor(m) }]
+          : []),
+        { label: "delete", aria: "delete this reply", run: () => deleteOne(m), danger: true },
+      ]
+    : [];
+  const variant: VariantNav | undefined =
+    reply && reply.count > 1
+      ? {
+          n: reply.n,
+          count: reply.count,
+          onPrev: reply.n > 1 ? () => selectOne(m.id, reply.n - 1) : undefined,
+          // `›` on the last variant writes a new one (ST's swipe past the end) — not while locked.
+          onNext:
+            reply.n < reply.count
+              ? () => selectOne(m.id, reply.n + 1)
+              : locked
+                ? undefined
+                : () => onRegenerate(m.id),
+        }
+      : undefined;
 
   return (
     <>
@@ -692,6 +790,8 @@ const Bubbles = memo(function Bubbles({
             // A null `agent` is a turn the DEFAULT agent ran (7e-c), so that is whose avatar it wears —
             // the resolver's own `null` contract.
             avatar={agentArt?.(m.agent ?? null).avatar}
+            actions={actions}
+            variant={variant}
           >
             {working && <span className="status-tag">{reasoning ? "thinking" : "working"}</span>}
             {/* Read-aloud toggle (6b-2): only on a settled text reply, and only when TTS is configured. */}
@@ -708,7 +808,7 @@ const Bubbles = memo(function Bubbles({
                   <button
                     type="button"
                     className="chat-err-retry"
-                    onClick={onRetry}
+                    onClick={() => onRegenerate(m.id)}
                     aria-label="Retry the last message"
                   >
                     retry
@@ -792,6 +892,17 @@ export function ChatThread({ active, chat, emptyState }: Props) {
   const chatAvatars = useUISlice((s) => s.chatAvatarsVisible);
   const resolveArt = useAgentArt();
   const agentArt = chatAvatars ? resolveArt : undefined;
+  // D81 fix wave 1 — the last UNSENT bubble's index: every message before it is `locked` (no retry).
+  let lastUnsent = -1;
+  for (let i = messages.length - 1; i >= 0; i--)
+    if (isUnsent(messages[i])) {
+      lastUnsent = i;
+      break;
+    }
+  // …and the last ROW that is not a note (a client breadcrumb): the F20 pill's host. A refusal's own note
+  // (`// a turn is already running…`) lands after the error it refused, and must not hide its retry.
+  let lastRow = messages.length - 1;
+  while (lastRow >= 0 && messages[lastRow].role === "system") lastRow--;
   // A STABLE result lookup so it doesn't break `Bubbles`' memo each token (`resultByCall` is re-derived
   // per delta → new identity). A ref holds the latest map; the callback identity never changes, and a
   // bubble re-renders (reading the fresh map) exactly when its own message identity changes — which
@@ -800,13 +911,16 @@ export function ChatThread({ active, chat, emptyState }: Props) {
   resultByCallRef.current = resultByCall;
   const resultFor = useCallback((id: string) => resultByCallRef.current[id], []);
   // I4 — risk-aware retry. The catalog carries each tool's `retry_safe`; a stable handler feeds a
-  // name→retry_safe lookup into the store's retry (unknown tool → unsafe). `retryLastTurn` then
-  // auto-resends a read-only/idempotent turn but copies a mutating one to the composer for review.
+  // name→retry_safe lookup into the store's regenerate (unknown tool → unsafe), which asks one confirm
+  // tap before re-running a reply that ran a mutating tool (D81 — a new take may repeat the action).
   const { data: actionSpecs } = useActionSpecs();
-  const onRetry = useCallback(() => {
-    const safe = new Map((actionSpecs ?? []).map((s) => [s.name, s.retry_safe]));
-    retryLastTurn((tool) => safe.get(tool) ?? false);
-  }, [actionSpecs]);
+  const onRegenerate = useCallback(
+    (hostId: string) => {
+      const safe = new Map((actionSpecs ?? []).map((s) => [s.name, s.retry_safe]));
+      void regenerate(hostId, (tool) => safe.get(tool) ?? false);
+    },
+    [actionSpecs],
+  );
   // The scroller is the app-shell content pane (`#app-scroll`), not the window — the composer/tab
   // bar are in-flow at the bottom of the shell. "Stick to bottom" only while the user is already
   // near the bottom, so streaming follows the bot without yanking them down if they scrolled up.
@@ -881,11 +995,13 @@ export function ChatThread({ active, chat, emptyState }: Props) {
           <Bubbles
             m={m}
             streaming={status === "streaming" && m.id === streamingId}
+            idle={status !== "streaming"}
+            locked={i < lastUnsent}
             resultFor={resultFor}
-            // F20 — only the latest message is eligible for retry, and only when chat is in
-            // error state. Historical errors elsewhere in the log stay quiet.
-            canRetry={i === messages.length - 1 && status === "error"}
-            onRetry={onRetry}
+            // F20 — only the latest message (notes aside) is eligible for retry, and only when chat
+            // is in error state. Historical errors elsewhere in the log stay quiet.
+            canRetry={i === lastRow && status === "error"}
+            onRegenerate={onRegenerate}
             resolvedDefault={resolvedDefault}
             ttsOn={ttsOn}
             agentArt={agentArt}

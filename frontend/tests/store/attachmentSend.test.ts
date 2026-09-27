@@ -192,12 +192,14 @@ describe("sendMessage × staged attachments", () => {
     expect(calls.map(([url]) => url)).toContain("/api/threads/t1/messages");
   });
 
-  it("a send with no files does NOT pay for that read", async () => {
+  it("…and since D81 so does a send with no files — every settled turn ends on the durable floor", async () => {
+    // The read used to be attachment-only; D81 made it universal (the just-sent bubble needs its server
+    // id to be editable/deletable, and the tail its fresh `reply` annotation for the retry controls).
     mockChat(() => sseResponse(DONE));
     await act(async () => {
       await sendMessage("plain");
     });
-    expect(calls.map(([url]) => url)).not.toContain("/api/threads/t1/messages");
+    expect(calls.map(([url]) => url)).toContain("/api/threads/t1/messages");
   });
 });
 

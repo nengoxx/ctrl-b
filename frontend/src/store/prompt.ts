@@ -30,6 +30,11 @@ export interface PromptRequest {
   cap?: number;
   placeholder?: string;
   saveLabel?: string;
+  /** An optional DESTRUCTIVE footer action (D81): the chat's message editor passes "Delete message", so
+   *  the one pencil on a user bubble is also its delete door (owner ruling ③ — one control on the name
+   *  line). Pressing it CANCELS the edit (the request resolves `null`) and then calls `run` — so the
+   *  caller's own confirm gate, not this modal, owns whether anything is actually deleted. */
+  danger?: { label: string; run: () => void };
 }
 
 /** A registry prompt opened as ONE editor over both its fields (Phase 18). `defaultText` is shown

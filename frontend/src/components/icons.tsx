@@ -48,3 +48,15 @@ export function XIcon({ size = 14 }: { size?: number } = {}) {
     </Glyph>
   );
 }
+
+/** lucide `pencil` — EDIT. The chat's message editor (D81: the pencil on a user bubble's name line) and the
+ *  media gallery's edit action (`media/icons.tsx#EditIcon`, which draws THIS) — one geometry for the one
+ *  verb, so the two surfaces cannot drift into two pencils. */
+export function PencilIcon({ size }: { size?: number } = {}) {
+  return (
+    <Glyph size={size}>
+      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+      <path d="m15 5 4 4" />
+    </Glyph>
+  );
+}

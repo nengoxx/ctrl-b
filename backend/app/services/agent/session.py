@@ -112,7 +112,7 @@ from app.services.agent.persona import resolve_persona
 from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
-from app.services.conversation import MessageRepo, ThreadRepo
+from app.services.conversation import AlternatesRepo, MessageRepo, TailReply, ThreadRepo
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -853,7 +853,9 @@ class AgentSession:
         self._tool_allow = narrow_tools(active, self._agent.tools)
         self._active_skills = [s.name for s in active]  # M2/C-12 — captured right after selection
 
-    async def _activate_lorebooks(self, thread: Thread, user_text: str, *, resume: bool = False) -> None:
+    async def _activate_lorebooks(
+        self, thread: Thread, user_text: str, *, resume: bool = False, anchor_id: str | None = None
+    ) -> None:
         """Resolve the lorebook entries active for this turn (§6.3/§6.4) and stash the two framed
         blocks `_static_prefix`/`_assemble` emit. The `_activate_skills` precedent, one layer over:
         a turn-start pre-pass that decides once and leaves strings behind, so the loop reads state
@@ -892,6 +894,10 @@ class AgentSession:
         head unstable within a turn — this runs once per turn, before `_drive`, and no `_drive`
         iteration reaches it (pinned by `test_static_head_byte_stable_across_drain`).
 
+        `anchor_id` (D81 regenerate, resume only) NAMES the anchor instead of taking the last user row:
+        a regenerate redoes the turn its anchor OPENED, so a steer the displaced reply left behind must
+        not play the incoming slot — the haystack is then byte-identical to the original turn start.
+
         No books attached ⇒ nothing is read at all: no directory scan, no history query, no prompt
         bytes. That is what keeps a deployment that never opens the subsystem byte-identical."""
         self._lorebook_head = self._lorebook_tail = None
@@ -913,7 +919,8 @@ class AgentSession:
         texts = [row("user", user_text)]
         if cfg.scan_depth or resume:
             history = await self._messages.list(thread.id, include_compacted=False)
-            rows = [(m.role, m.text()) for m in history if m.role in ("user", "assistant")]
+            chat = [m for m in history if m.role in ("user", "assistant")]
+            rows = [(m.role, m.text()) for m in chat]
             if not resume:
                 prior = [row(role, t) for role, t in rows if t]
                 texts += prior[-cfg.scan_depth :]
@@ -927,7 +934,9 @@ class AgentSession:
                 # same [incoming, *prior] order the turn start built — so the two haystacks agree
                 # BYTE-FOR-BYTE across the suspend, newline-adjacent matching included. With no
                 # user row at all, `len(rows)` degrades to an empty incoming over the plain tail.
-                anchor = next((i for i in reversed(range(len(rows))) if rows[i][0] == "user"), len(rows))
+                anchor = next((i for i, m in enumerate(chat) if m.id == anchor_id), None)
+                if anchor is None:
+                    anchor = next((i for i in reversed(range(len(rows))) if rows[i][0] == "user"), len(rows))
                 before = [row(role, t) for role, t in rows[:anchor] if t]
                 incoming = row("user", rows[anchor][1]) if anchor < len(rows) else ""
                 texts = [incoming, *(before[-cfg.scan_depth :] if cfg.scan_depth else [])]
@@ -1390,11 +1399,52 @@ class AgentSession:
         # stays "user" — that is the model's turn-taking slot, not a claim about who wrote it.
         parts: list[Part] = [TextPart(text=user_text)] if user_text else []
         parts += attachments or []
-        user_msg = Message(thread_id=thread.id, role="user", actor=self._message_actor, parts=parts)
+        # D81 rider: the explicit `/skill` invocations ride the user row (`meta.skills`), so a later
+        # REGENERATE of this turn re-activates them rather than running on the selector's picks alone.
+        user_msg = Message(
+            thread_id=thread.id, role="user", actor=self._message_actor, parts=parts, skills=skills or None
+        )
         await self._messages.add(user_msg)
         await self._maybe_arm_reflection(thread)  # D27-C — periodic "save anything worth remembering"
         async for ev in self._drive(thread, mode=mode):
             yield ev
+
+    async def regenerate(
+        self, thread: Thread, tail: TailReply, *, mode: str | None = None
+    ) -> AsyncIterator[AgentEvent]:
+        """Drive a fresh take of the tail reply to `tail.anchor` (D81 / CHAT-002) — `run_turn` minus the
+        user-row persist. The endpoint validated `tail` under the turn marker (still held — this runs in
+        the turn's drain task), so nothing can have moved since.
+
+        Inputs are the turn's own: the anchor's text re-runs the skill selector on top of the explicit
+        invocations the anchor carries (`meta.skills`), and the lorebook scan takes the RESUME window
+        NAMED on the anchor (never a steer the displaced reply left behind). Deliberately NOT done:
+        `_maybe_arm_reflection` (no new user turn — a second nudge for the same one) and `_seed_recall`
+        (the displaced reply's recalls leave the context, so a fresh budget is the honest one).
+
+        **The stash is the first statement INSIDE the `try`** (review №1, Opus MED-1), after the two
+        activations: anything that fails or is stopped before it — including the lorebook load, which
+        awaits a thread — leaves the transcript untouched, and every exit after it runs the `finally`,
+        which SETTLES: a take stopped before its first row persisted leaves the anchor answerless, and
+        `AlternatesRepo.settle` then restores the take that was on screen — through `_persist_shielded`,
+        because that is exactly the write a Stop's cancel would otherwise interrupt. The displaced
+        reply's open calls were CANCELLED in the stash; their confirm tokens die here, through the same
+        door as the dismiss path."""
+        anchor = tail.anchor
+        if anchor is None:  # the endpoint refuses an anchorless tail; nothing to redo
+            return
+        self._activate_skills(anchor.text(), anchor.skills)
+        await self._activate_lorebooks(thread, anchor.text(), resume=True, anchor_id=anchor.id)
+        alternates = AlternatesRepo(self._messages)
+        displaced: str | None = None
+        try:
+            displaced, revoked = await alternates.stash_tail(thread.id, tail)
+            for tool, args in revoked:
+                self._actions.revoke_pending(tool, args)
+            async for ev in self._drive(thread, mode=mode):
+                yield ev
+        finally:
+            await self._persist_shielded(lambda: alternates.settle(thread.id, anchor.id, displaced=displaced))
 
     def _reflection_eligible(self) -> bool:
         """Whether this session may reflect into the owner's DURABLE memory at all (D27-C, re-expressed
