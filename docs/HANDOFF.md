@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-09-27 — **v1.7.9 IS LIVE IN PRODUCTION; the CAR ROUND is in the owner's court**)
+## Where we are (2026-09-27 evening — **v1.7.9 IS LIVE IN PRODUCTION; Phase 24 S10 (the car round, D80) + wave 1.5 + ISS-31/32 are BUILT, council-closed and COMMITTED (`75e0014` · `c59157a`), NOT PUSHED — the owner's car card on dev, then push + v1.7.10**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): tag
   `v1.7.9` on `9096ea4` (released 2026-09-26 22:24Z by the runbook; code = `3d27b09`, the S9 export
@@ -35,72 +35,95 @@
   mode (D71 + the D72–D77 waves, the D71 "mouth waits" amendment), Phase 23 characters + lorebooks
   incl. S8 the persona library (D70/D78), Phase 22 composer attachments (D68), the D75 sticky
   agent + default pill, D69 LAN wake trigger, the C3 read-along, the R86–R89 audit fixes.
-- **Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173, units RUNNING): schema 5, `voice.live.debug` ON (the
+- **Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173, units RUNNING **on the S10 + wave 1.5 build, dist rebuilt 2026-09-27 evening**): schema 5, `voice.live.debug` ON (the
   readout + the call trail in `~/.ctrl-b-dev/calls/`), Lynette = the configured default agent, Ari =
   the default persona; both imported agents carry a `card.json` sidecar (§15.8 repaired 2026-09-26). Serve `:8443`
   fronts the DEV BACKEND (built dist — `npm run build` after any FE change).
-- **Nothing owed on the release path.** Workspace `main` == `origin/main` (this handoff commit aside). The full session history is in
+- **OWED on the release path: THE PUSH + v1.7.10.** Workspace `main` is 4 commits AHEAD of `origin/main` (`e914329` D80 RULED · `75e0014` S10 · `c59157a` wave 1.5 · this handoff) — push in the clean session after the owner's dev car card, then §Release (no migration; rollback = `update.sh v1.7.9`). The full session history is in
   [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the HANDOFF block of ⟨date⟩ / the Nth session" resolves there).
 
-## ▶▶ NEXT SESSION — THE OWNER'S COURT on the CAR ROUND (D80 PROPOSED), then the build
+## ▶▶ NEXT SESSION — THE OWNER'S CAR CARD on S10 (built, council-closed, NOT pushed), then push + v1.7.10
 
-**The 48th session (2026-09-27 morning) — what happened:** the owner's first PROD calls (v1.7.9,
-Lynette, the car over an old Bluetooth link) came back with six findings; all six were ROOT-CAUSED at
-source from the D77 trail + the chat log, and the live-call three were designed as **D80 PROPOSED**
-(design of record = the **CAR ROUND** block in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7 — read
-it whole; `DECISIONS.md` D80 = the proposed rulings; TODO Phase 24 S10). Council = a blind Opus 5.5
-audit ∥ a blind Maya audit on the same trail → research [R91](./research/R91-ear-reopen-latency-and-text-echo.md)
-(Opus) · [R92](./research/R92-live-call-noise-robustness.md) · [R93](./research/R93-echo-envelope-delay-estimation.md)
-(Maya, each with an **Opus 5.5 verification §V** — the owner's directive; both needed load-bearing
-corrections). Every brief, review and the session ledger (`DEBUG_PLAN.md` §A–§M) are durable in
-`~/.cache/tmp/ctrlb-session48/`. **NOTHING BUILT; docs committed, not pushed.** The nitpicks:
-[ISS-31](./ISSUES.md) (`/new` + the missing greeting = one root, seam ① unused) · ISS-32 (the ring).
+**The 49th session (2026-09-27 afternoon → evening) — what happened:** the owner answered all eight
+D80 court questions in conversation → **D80 RULED** (`e914329`) → two pinned-Opus 5.5 lanes built
+**Phase 24 S10** from written briefs (`~/.cache/tmp/ctrlb-session49/brief-W.md` · `brief-ISS31.md`):
+W1–W7 + ISS-32 in one lane, ISS-31 in the other (disjoint files) → the two-reviewer code round (blind
+Opus 5.5 ∥ Maya on the same frozen diff: 1 HIGH each · 3 MED · 4 LOW) → fix wave 1 by the building
+lanes → both confirms **SHIP** → committed **`75e0014`**. Then, on the owner's directive (*"I'm
+interested in fixing those issues forever"*), **wave 1.5 was built the same session** (the chirp's
+measured lag SETS the tail's deadline; D80 ⑦ AMENDED) + ISS-31's fix wave 2 → a second two-reviewer
+round (both SHIP WITH FIXES: `leakSeen` latched by one frame / reset by a mid-reply pause; a stale chirp
+lag when Bluetooth connects mid-call) → fix wave → confirms → committed **`c59157a`**. Every brief,
+review, ruling (`RULINGS.md`) and lane report is durable in `~/.cache/tmp/ctrlb-session49/`. **Gate 7/7
+incl. Playwright e2e on a real build. FE 4111 (207 files) tests · BE 2825. NOTHING PUSHED.** Dev units RUNNING the
+built dist (`npm run build` done) with `voice.live.debug` ON.
 
-**The one-paragraph diagnosis:** the hold works, but it is released on the ELEMENT's timeline while
-the car is still playing — the car's Bluetooth lags ≈ 2.3 s (measured from the drop cue's own echo;
-the owner: "a given I can't change") and the web CANNOT learn that number (Android's BT drivers
-discard delay reports ≥ 1 s). So the last sentence of every reply comes back as the owner's next turn,
-verbatim (×5 in the log). The echo is as loud as the owner, so no Sensitivity position can gate it
-(the "slider all the way up" was the LEAST-sensitive end and dropped the owner's own words). Two
-more doors: the transcript gate fails open on overlapping segments (the relay strips Speaches'
-`item_id`), and `auto`'s probe judged each chunk before the sound existed. The car noise: Silero
-flaps into ≤ 201 ms segments (every real one ≥ 2361 ms) and the drop cue's echo fed itself.
+**What S10 ships (the car round, D80):** the ear-hold now outlives the ELEMENT — a **tail** armed on
+every fall of the mouth (drain, failure, tap-kill) and released by a MEASURED DEADLINE: ① the connect
+chirp (a 150 ms 1→3 kHz sweep at every capture, the call's "connected" sound) measures the sink's lag →
+the mic reopens at `lag + tail_lag_margin_ms` (300) on every route (≈ 2.6 s in the car, ≈ 0.5 s on
+earbuds) — whatever you say into it; ② no chirp return + the reply never leaked into the mic (≥ 350 ms
+of loud frames = leaked) → the minimum (300 ms); ③ no return + it leaked → the wave-1 quiet rule
+(min → 700 ms of quiet below noise+10 → cap 5 s) as the fallback; a tap-kill without a lag → the
+minimum. The **text backstop** drops a post-reply final that repeats her spoken words (≥ 0.75, ≥ 10
+chars) VISIBLY as "(the reply's own words)". Finals are judged on THEIR OWN segment (`item_id`); the
+relay cuts sub-`silence_ms/2` flaps as empty finals (no cue, no turn); `auto` = held unless the
+browser's echo cancellation is on (the probe is gone, no migration); the drop cue only on sustained
+drops; the Sensitivity pin can never sit above your voice − margin nor below Auto. **ISS-31:** `/new`
+mints the thread on the server (Lynette's greeting shows at once; a reload returns to it; `/new` on a
+fresh thread does nothing). **ISS-32:** the ring stays put. Design of record: DECISIONS **D80** (incl.
+the RULED paragraph, the BUILT paragraph and **⑦ AMENDED**), the CAR ROUND bullet + the S10 as-built in
+LIVE_VOICE_PLAN §7, §4.1 (8 new knobs, all Conf rows under Voice · Live).
 
-**⚖ THE COURT — CLOSED (owner, 2026-09-27 afternoon, in conversation; every answer recorded in DECISIONS D80's RULED paragraph):** 1 deaf-time **ACCEPT** · 2 backstop **ACCEPT** · 3 chirp **YES** ("only once, no problem") · 4 `auto` **KEEP as D73** (a listening auto may return atop a proven chirp, wave 1.5+) · 5 pin **CLAMP** (the owner's "the top still caught noises" = echo + flaps, not level-separable at any position — W1/W2/W4/W6's job; the clamp only removes the position that silenced the owner) · 6 **plain A2DP, keeps playing ~2 s after pause; the phone's mic is the mic; the owner has only ever used Media output mode — Call mode untried in the car** · 7 `/new` **YES via seam ①** · 8 ring **FIXED**. The questions as asked:
+**⚖ Your veto window (main-seat design calls made under your directive — say so in the clean session
+if any is wrong):** (a) **wave 1.5 built now**, not after a logging round (R93 M3 ordered logging first;
+the fallback + the backstop + the trail bound the risk); (b) **`leakSeen`** — a per-reply, cumulative,
+reply-id-keyed "did anything of this reply reach the mic" bit that lets a chirp-silent sink (earbuds)
+reopen at the minimum — it is NOT the deleted probe (it never opens the ear during a reply); (c) a
+**re-chirp on `devicechange`** mid-call (a beep when a device connects) — whether an A2DP-only head
+unit raises that event on Android Chrome is UNVERIFIED; (d) the **D75 auto-route sentence amended**: a
+`/new` thread is PINNED to the agent it opens as, so `auto_rotate` (off by default) never routes it;
+(e) a genuine either/or answer that names her closing option verbatim ("save it for later") IS dropped
+as her own words — visibly, so you repeat it; no cure exists in timing or text.
 
-<details><summary>the eight questions, verbatim</summary>
+**Owner test card (phone; DEV first — Serve `:8443` fronts the dev backend with the built dist and
+`debug` ON; then prod after the release):**
+1. **The car, as usual (Media route, `auto`):** you hear the connect chirp once; talk a few turns.
+   PASS = no echoed sentence ever becomes your turn; her last sentence is not repeated back. Trail
+   (`ls -t ~/.ctrl-b-dev/calls | head -1`): `chirp {lagMs ≈ 2300}`; `tail {reason:"lag",
+   deadlineMs ≈ 2600}` on every reply after the first (the first may read `quiet` — it drained inside
+   the chirp's window); no `echo` drop right after a `lag` release (one = the margin is short).
+2. **Quick answer:** answer the instant she stops — your whole answer must land (this was the
+   whole-utterance loss). **Tap then talk:** tap her mid-sentence and speak at once — your first
+   syllable may clip (~300 ms), the rest lands; trail `tail {reason:"lag"}` (or `kill` with no lag).
+3. **Either/or probe:** get her to ask "A or B?" and answer by naming B verbatim — EXPECT the heard
+   line "(the reply's own words)" and no turn; rephrase ("the second one") and it lands. That is the
+   recorded residual; tell me if it bites in real use.
+4. **A short reply in the car** (ask something that gets a ≤ 2 s answer): the residual case when the
+   chirp was missed — trail `tail {reason:"noleak"}` followed by an `echo` drop = the backstop caught it.
+5. **Earbuds/headphones:** `chirp {none:true}` is fine; quick answers must land (`tail
+   {reason:"noleak"}` or `lag` with a small lag); talk OVER her with interruption off, then answer
+   quickly — that one may still be held to a pause (the safe trade; report it).
+6. **Bluetooth connecting mid-call:** start on the loudspeaker, then connect the car — a second chirp
+   should sound; if her next reply's end echoes back as a turn, the head unit raised no
+   `devicechange` (tell me; the passive onset-lag check is the recorded next step).
+7. **Noise:** the cabin's short "Yeah."/"Mm." turns must be gone (`gap_cut` notes in the relay's trail
+   lines; no cue beeps for them); the Sensitivity line sits at the column's top once your voice is
+   learned — is the meter still readable to you as "the bar above the line"?
+8. **`/new` with Lynette default:** `/new` → her greeting appears at once; kill + reopen the PWA →
+   the same fresh thread; `/new` again → nothing happens; `/agent ops` then `/new` → a fresh ops thread.
+9. **The ring** stays put with a focal point set on her art. **The "Call" audio route** — optional,
+   one call, untried in the car (may route the head unit's own mic/AEC).
+10. Optional readouts: Conf › Voice · Live › "Call debug readout" is ON on dev — the overlay's `tail`
+    and `chirp` lines show the live numbers.
 
-1. **The deaf-time trade.** The ear reopens on OBSERVED QUIET (noise floor + 10 dB for 700 ms, min
-   300 ms, cap 5 s) — ~0.7 s of deafness after each reply on headphones/loudspeaker, ~3–4 s in the
-   car until the chirp calibrates it (~2.6 s). An answer you start within 700 ms of the reply's TRUE
-   end loses those words (never happened in this call). Accept?
-2. **The text backstop.** A post-drain final that matches her spoken words (≥ 0.75, ≥ 10 chars) is
-   dropped VISIBLY — a genuine parrot inside ~4 s is lost. Accept?
-3. **The connect chirp.** A 150 ms 1→3 kHz sweep at every call start (measures the sink's lag;
-   logged in wave 1, drives the hold in wave 1.5). Audible — acceptable as the call's "connected"
-   sound?
-4. **`auto`.** Keep it as the D73 rule (held unless echo cancellation is on; the probe deleted; no
-   migration) — or delete it outright as you first suggested (a migration, and the call route loses
-   voice barge-in)? Main seat recommends KEEP-AS-D73.
-5. **The pin.** Clamp the Sensitivity pin to ≤ your learned voice − margin (it sat at −20 over your
-   −21 and dropped "See you later, baby"), or leave the range and accept the foot-gun?
-6. **Your car:** Android Auto or plain Bluetooth A2DP? Does it keep playing after the phone pauses
-   (a tap-interrupt)? (Both UNVERIFIED; they size the kill-tail.)
-7. **ISS-31 (`/new`):** mint the thread at `/new` through the existing `POST /api/threads {agent}`
-   (the greeting shows at once; a reload keeps it; a greeting-only thread makes `/new` a no-op)?
-8. **ISS-32 (the ring):** fixed at the CSS defaults (50% / 33%) regardless of focus — confirm.
+**Then (the clean session): PUSH `main` (3 commits: `75e0014`, `c59157a`, the handoff) → CI green →
+`deploy/linux/README.md` §Release → `v1.7.10` (NO config migration — rollback = plain `update.sh
+v1.7.9`; prod's `voice.live.debug` is already ON — leave it for the car round).** If the car card fails,
+the trail decides the fix; the wave-1.5 knobs are all Conf rows (Voice · Live).
 
-</details>
-
-**Then (THIS session, 2026-09-27 afternoon — D80 stamped):** ONE pinned-Opus lane builds W1–W7 ∥ ONE lane for
-ISS-31/32 (disjoint files; briefs from the CAR ROUND block + DEBUG_PLAN §G–§M) → main-seat audit →
-the two-reviewer code round (blind Opus 5.5 ∥ Maya) → fix waves → gate → `npm run build` → dev units
-→ **your car card with Conf › Voice · Live › "Call debug readout" ON from the first second** (the trail
-decides: no echo turn · no real turn lost · `tail:` reasons · chirp lag ≈ measured; **optional probe: one call with Conf › Voice · Live › "Audio route" = call** (the route knob, D76 §A; the in-call deck exposes it too) — untried in the car, may route HFP through the head unit's own mic/AEC) → v1.7.10.
-
-**Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units RUNNING (left from the release); stop when done
-(`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`). **Prod** untouched at v1.7.9;
-`voice.live.debug` is ON there (the owner flipped it) — leave it ON for the next car round.
+**Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units RUNNING with the built dist; stop when done
+(`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`). **Prod** untouched at v1.7.9.
 
 ## ▶▶ NEXT SESSIONS — the roadmap
 

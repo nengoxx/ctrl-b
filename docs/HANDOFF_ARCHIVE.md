@@ -11,6 +11,70 @@
 
 > *(Swept 2026-09-26 at the v1.7.9-release close — the 46th + 45th session blocks, verbatim; their 'Where we are' state was v1.7.8-live, identical to the 44th block below.)*
 
+> *(Swept 2026-09-27 evening at the S10 handoff — the 48th session block (the owner's court, as answered), verbatim; its state was v1.7.9-live, S10 unbuilt.)*
+
+> ## The 48th session (2026-09-27 morning) — from HANDOFF.md as of `e914329`
+>
+> ## ▶▶ NEXT SESSION — THE OWNER'S COURT on the CAR ROUND (D80 PROPOSED), then the build
+>
+> **The 48th session (2026-09-27 morning) — what happened:** the owner's first PROD calls (v1.7.9,
+> Lynette, the car over an old Bluetooth link) came back with six findings; all six were ROOT-CAUSED at
+> source from the D77 trail + the chat log, and the live-call three were designed as **D80 PROPOSED**
+> (design of record = the **CAR ROUND** block in [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §7 — read
+> it whole; `DECISIONS.md` D80 = the proposed rulings; TODO Phase 24 S10). Council = a blind Opus 5.5
+> audit ∥ a blind Maya audit on the same trail → research [R91](./research/R91-ear-reopen-latency-and-text-echo.md)
+> (Opus) · [R92](./research/R92-live-call-noise-robustness.md) · [R93](./research/R93-echo-envelope-delay-estimation.md)
+> (Maya, each with an **Opus 5.5 verification §V** — the owner's directive; both needed load-bearing
+> corrections). Every brief, review and the session ledger (`DEBUG_PLAN.md` §A–§M) are durable in
+> `~/.cache/tmp/ctrlb-session48/`. **NOTHING BUILT; docs committed, not pushed.** The nitpicks:
+> [ISS-31](./ISSUES.md) (`/new` + the missing greeting = one root, seam ① unused) · ISS-32 (the ring).
+>
+> **The one-paragraph diagnosis:** the hold works, but it is released on the ELEMENT's timeline while
+> the car is still playing — the car's Bluetooth lags ≈ 2.3 s (measured from the drop cue's own echo;
+> the owner: "a given I can't change") and the web CANNOT learn that number (Android's BT drivers
+> discard delay reports ≥ 1 s). So the last sentence of every reply comes back as the owner's next turn,
+> verbatim (×5 in the log). The echo is as loud as the owner, so no Sensitivity position can gate it
+> (the "slider all the way up" was the LEAST-sensitive end and dropped the owner's own words). Two
+> more doors: the transcript gate fails open on overlapping segments (the relay strips Speaches'
+> `item_id`), and `auto`'s probe judged each chunk before the sound existed. The car noise: Silero
+> flaps into ≤ 201 ms segments (every real one ≥ 2361 ms) and the drop cue's echo fed itself.
+>
+> **⚖ THE COURT — CLOSED (owner, 2026-09-27 afternoon, in conversation; every answer recorded in DECISIONS D80's RULED paragraph):** 1 deaf-time **ACCEPT** · 2 backstop **ACCEPT** · 3 chirp **YES** ("only once, no problem") · 4 `auto` **KEEP as D73** (a listening auto may return atop a proven chirp, wave 1.5+) · 5 pin **CLAMP** (the owner's "the top still caught noises" = echo + flaps, not level-separable at any position — W1/W2/W4/W6's job; the clamp only removes the position that silenced the owner) · 6 **plain A2DP, keeps playing ~2 s after pause; the phone's mic is the mic; the owner has only ever used Media output mode — Call mode untried in the car** · 7 `/new` **YES via seam ①** · 8 ring **FIXED**. The questions as asked:
+>
+> <details><summary>the eight questions, verbatim</summary>
+>
+> 1. **The deaf-time trade.** The ear reopens on OBSERVED QUIET (noise floor + 10 dB for 700 ms, min
+>    300 ms, cap 5 s) — ~0.7 s of deafness after each reply on headphones/loudspeaker, ~3–4 s in the
+>    car until the chirp calibrates it (~2.6 s). An answer you start within 700 ms of the reply's TRUE
+>    end loses those words (never happened in this call). Accept?
+> 2. **The text backstop.** A post-drain final that matches her spoken words (≥ 0.75, ≥ 10 chars) is
+>    dropped VISIBLY — a genuine parrot inside ~4 s is lost. Accept?
+> 3. **The connect chirp.** A 150 ms 1→3 kHz sweep at every call start (measures the sink's lag;
+>    logged in wave 1, drives the hold in wave 1.5). Audible — acceptable as the call's "connected"
+>    sound?
+> 4. **`auto`.** Keep it as the D73 rule (held unless echo cancellation is on; the probe deleted; no
+>    migration) — or delete it outright as you first suggested (a migration, and the call route loses
+>    voice barge-in)? Main seat recommends KEEP-AS-D73.
+> 5. **The pin.** Clamp the Sensitivity pin to ≤ your learned voice − margin (it sat at −20 over your
+>    −21 and dropped "See you later, baby"), or leave the range and accept the foot-gun?
+> 6. **Your car:** Android Auto or plain Bluetooth A2DP? Does it keep playing after the phone pauses
+>    (a tap-interrupt)? (Both UNVERIFIED; they size the kill-tail.)
+> 7. **ISS-31 (`/new`):** mint the thread at `/new` through the existing `POST /api/threads {agent}`
+>    (the greeting shows at once; a reload keeps it; a greeting-only thread makes `/new` a no-op)?
+> 8. **ISS-32 (the ring):** fixed at the CSS defaults (50% / 33%) regardless of focus — confirm.
+>
+> </details>
+>
+> **Then (THIS session, 2026-09-27 afternoon — D80 stamped):** ONE pinned-Opus lane builds W1–W7 ∥ ONE lane for
+> ISS-31/32 (disjoint files; briefs from the CAR ROUND block + DEBUG_PLAN §G–§M) → main-seat audit →
+> the two-reviewer code round (blind Opus 5.5 ∥ Maya) → fix waves → gate → `npm run build` → dev units
+> → **your car card with Conf › Voice · Live › "Call debug readout" ON from the first second** (the trail
+> decides: no echo turn · no real turn lost · `tail:` reasons · chirp lag ≈ measured; **optional probe: one call with Conf › Voice · Live › "Audio route" = call** (the route knob, D76 §A; the in-call deck exposes it too) — untried in the car, may route HFP through the head unit's own mic/AEC) → v1.7.10.
+>
+> **Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173): units RUNNING (left from the release); stop when done
+> (`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`). **Prod** untouched at v1.7.9;
+> `voice.live.debug` is ON there (the owner flipped it) — leave it ON for the next car round.
+
 > *(Swept 2026-09-27 at the CAR ROUND handoff — the 47th session block, verbatim; its state was v1.7.9-just-released.)*
 
 > ## The 47th session (2026-09-26 night) — from HANDOFF.md as of `a517da9`
