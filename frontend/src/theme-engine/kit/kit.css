@@ -764,6 +764,15 @@ body[data-perf="lite"] .kit-composer {
   resize: none;
   line-height: 1.45;
   overflow-wrap: anywhere; /* long unbreakable strings must wrap, never overflow (§14.11) */
+  /* vault COMPOSER-001 — the bar is HIDDEN, the field still scrolls (wheel, touch, caret). Below the
+   * ceiling it only ever flashed during the grow (each new line lands in the old height for a frame and
+   * scrolls the caret into view). Past a ceiling — resting or expanded — a long draft now scrolls with
+   * NO position indicator; that is intended (the owner asked for no bar). The idiom's other use is
+   * gacha's `.cv-stack`; the ::-webkit rule below covers pre-121 Chromium / older WebKit. */
+  scrollbar-width: none;
+}
+.kit-composer textarea::-webkit-scrollbar {
+  display: none;
 }
 .kit-composer textarea::placeholder {
   color: var(--text-3);
@@ -4841,8 +4850,16 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
   font-weight: 700;
   color: var(--text);
 }
+/* vault STYLE-001 — roleplay action text (`*waves*`) takes a subtle accent tint, mixed toward the
+ * SURROUNDING ink (`currentColor`) so an `em` inside a muted blockquote stays proportionally muted. The
+ * result's contrast sits BETWEEN the ink's and the accent's, so a light accent on a light page pulls it
+ * down: 40% is the share the worst shipped pair (frontier day × amber on its gradient's lower stop) still
+ * clears 4.5:1 at, and the e2e contrast matrix measures this rule per theme × mode × accent. Computed here,
+ * at the element, so it always sees the cascaded accent (per-accent, per-banner). `--kit-em-tint` is the
+ * per-theme dial — set nowhere yet. */
 .kit .b.bot .md em {
   font-style: italic;
+  color: color-mix(in oklch, var(--accent) var(--kit-em-tint, 40%), currentColor);
 }
 .kit .b.bot .md blockquote {
   margin: 0 0 8px;

@@ -24,6 +24,7 @@ the voice stub comes from `test_voice_6a`. Writes go through the APIs on a **tem
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from _async import run_async
@@ -106,6 +107,67 @@ def test_an_empty_greeting_seeds_nothing() -> None:
             thread = _new_thread(c, name)
             assert thread["agent"] == name
             assert _messages(c, thread["id"]) == []
+
+
+def test_a_switched_off_greeting_seeds_nothing_at_either_seam_and_keeps_its_text() -> None:
+    """Vault RP-001: `greeting_enabled=False` keeps the text but starts every NEW thread empty — at
+    seam ① (the thread is still pinned to the agent) and at seam ② (the routed specialist's
+    auto-created thread gets no seeded row). The flag round-trips through the agent PUT, and
+    switching it back on seeds again. Threads already greeted are untouched (ordinary history)."""
+    from test_agent_selector_7eg import _capture_chat_session
+
+    import app.api.agent as agent_api
+
+    with _workspace(_ROUTING_CONFIG), _client() as c:
+        coder = {"description": "write and debug python code", "greeting": "Show me the traceback."}
+        _agent(c, "coder", **coder)
+        greeted = _new_thread(c, "coder")["id"]
+        _agent(c, "coder", **coder, greeting_enabled=False)  # the PUT writes the whole field set
+        stored = c.get("/api/agents/coder").json()["agent"]
+        assert stored["greeting_enabled"] is False
+        assert stored["greeting"] == "Show me the traceback."  # the text is kept
+
+        thread = _new_thread(c, "coder")  # seam ①
+        assert thread["agent"] == "coder"
+        assert _messages(c, thread["id"]) == []
+
+        def seam_two() -> str:
+            """Seam ② end to end: the routed auto-created thread, and what the model would be SENT for
+            it — the assembled inference messages, serialized (the greeting's only way in is history)."""
+            with _capture_chat_session(agent_api) as cap:
+                r = c.post("/api/agent/chat", json={"text": "debug my python code"})
+                assert r.status_code == 200, r.text
+            assert cap["agent_name"] == "coder"
+            t = run_async(c.app.state.threads.get(r.json()["threadId"]))
+            assert t is not None
+            return json.dumps(_assemble(c, t, "coder"))
+
+        assert "Show me the traceback." not in seam_two()  # off → absent from the model's context
+
+        assert len(_messages(c, greeted)) == 1  # new threads only — the old opening stays
+
+        _agent(c, "coder", **coder, greeting_enabled=True)
+        assert len(_messages(c, _new_thread(c, "coder")["id"])) == 1
+        assert "Show me the traceback." in seam_two()  # on → the seeded row reaches the model
+
+
+def test_the_greeting_switch_is_per_agent_never_inherited_from_the_root() -> None:
+    """Vault RP-001 (review round №1, MED-1): the ROOT form saves into `agent.defaults`, which every
+    specialist merges under — so a root switched OFF must not mute a specialist that carries no key of
+    its own (every card import, every agent.yaml written before the flag). The root reads its own value;
+    a key-less specialist resolves ON and seeds; an explicit specialist value still wins."""
+    config = "server:\n  port: 5433\nagent:\n  defaults:\n    greeting_enabled: false\n"
+    with _workspace(config) as (tmp, _cfg), _client() as c:
+        folder = tmp / "agents" / "nyx"
+        folder.mkdir(parents=True)
+        (folder / "agent.yaml").write_text("greeting: Hello, traveller.\n", encoding="utf-8")  # no key
+        settings = c.app.state.settings
+        assert settings.default_agent_def().greeting_enabled is False  # the root's own value
+        assert c.get("/api/agents/nyx").json()["agent"]["greeting_enabled"] is True
+        assert len(_messages(c, _new_thread(c, "nyx")["id"])) == 1
+
+        _agent(c, "mute", greeting="Hi.", greeting_enabled=False)
+        assert settings.resolve_agent("mute").greeting_enabled is False
 
 
 def test_the_greeting_is_macro_substituted_at_seed_time() -> None:

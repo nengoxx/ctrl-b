@@ -461,6 +461,59 @@ for (const c of COMBOS) {
       ).toBeGreaterThanOrEqual(p.min);
     }
 
+    // ── THE BOT-BUBBLE ITALICS (vault STYLE-001, review round №1). Not a token pair: the em's ink is a RULE —
+    // `color-mix(in oklch, var(--accent) var(--kit-em-tint, 40%), currentColor)` — whose `currentColor` is
+    // whatever ink the theme's bot bubble inherits, so it is measured off a REAL bubble skeleton (the
+    // ChatThread `.b.bot > .body > .md > em` shape) where the theme's own scoped rules land. The backdrop
+    // is what is actually under the text: the nearest painted ancestor layers, innermost first (gacha's
+    // opaque `--gc-bubble-bot`; frontier's transparent bubble over its body gradient — every stop gated,
+    // worst wins), each translucent layer composited onto the next.
+    const em = await page.evaluate(() => {
+      const host =
+        document.querySelector(".b.bot")?.parentElement ?? document.querySelector("#app-scroll");
+      const bubble = document.createElement("div");
+      bubble.className = "b bot";
+      bubble.innerHTML = '<div class="body"><span class="md"><em>waves</em></span></div>';
+      (host ?? document.body).appendChild(bubble);
+      const ink = getComputedStyle(bubble.querySelector("em") as Element).color;
+      const layers: { bgImage: string; bgColor: string }[] = [];
+      for (let el: Element | null = bubble.querySelector(".body"); el; el = el.parentElement) {
+        const cs = getComputedStyle(el);
+        layers.push({ bgImage: cs.backgroundImage, bgColor: cs.backgroundColor });
+      }
+      bubble.remove();
+      return { ink, layers };
+    });
+    const layerColors = (l: { bgImage: string; bgColor: string }): string[] =>
+      l.bgImage !== "none"
+        ? (l.bgImage.match(/(?:rgba?|oklch|color)\([^)]*\)/g) ?? [l.bgColor])
+        : [l.bgColor];
+    const opaque = (cs: string[]) => cs.every((cc) => (rgb(cc)?.alpha ?? 1) >= 1);
+    // Innermost-first → keep layers until the first opaque one, then flatten bottom-up (white canvas last).
+    const painted: string[][] = [];
+    for (const l of em.layers) {
+      const cs = layerColors(l).filter((cc) => (rgb(cc)?.alpha ?? 1) > 0);
+      if (cs.length === 0) continue;
+      painted.push(cs);
+      if (opaque(cs)) break;
+    }
+    let backdrop = ["rgb(255, 255, 255)"];
+    for (const layer of painted.reverse())
+      backdrop = layer.flatMap((cc) => backdrop.map((b) => composite(cc, b)));
+    let emWorst = { ratio: Infinity, bg: "" };
+    for (const bg of backdrop) {
+      const ratio = wcag(em.ink, bg);
+      if (ratio < emWorst.ratio) emWorst = { ratio, bg };
+    }
+    test.info().annotations.push({
+      type: "apca",
+      description: `${comboId(c)}  bot em(${em.ink}) vs backdrop(${emWorst.bg}) → WCAG ${emWorst.ratio.toFixed(2)}:1 · APCA Lc ${apcaLc(em.ink, emWorst.bg).toFixed(1)}`,
+    });
+    expect(
+      emWorst.ratio,
+      `${comboId(c)}: bot-bubble italics (${em.ink}) vs backdrop ${emWorst.bg} — WCAG ${emWorst.ratio.toFixed(2)}:1 < 4.5:1`,
+    ).toBeGreaterThanOrEqual(4.5);
+
     // The ADVISORY cross-axis probes — measured on the same resolved token set, attached to the report on
     // the SAME channel APCA uses, and never asserted (see `THEME_ADVISORIES` for why the strip has no
     // floor). Worst stop × worst stop, over every listed background token. NON-THROWING by contract

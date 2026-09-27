@@ -19,6 +19,7 @@ function defWith(routing: unknown): AgentDef {
     // the D70 roleplay half — declared on `AgentDef` since S4, and part of what `pickFields` must keep
     duties: "agent",
     greeting: "",
+    greeting_enabled: true,
     alt_greetings: [],
     example_dialogue: "",
     scenario: "",

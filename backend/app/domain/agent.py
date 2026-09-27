@@ -216,6 +216,11 @@ class AgentDef(BaseModel):
     #: `alternate_greetings` — stored in v1 so an imported card round-trips losslessly; the
     #: new-thread picker that chooses between them is a recorded FE seam (§4.2).
     alt_greetings: list[str] = Field(default_factory=list)
+    #: vault RP-001 — gates the WHOLE opening (the greeting, and any future alternate pick): False ⇒
+    #: new threads start empty and the model never sees it (the seeded row is its only way in). The
+    #: TEXT is kept — and still exported as `first_mes` (a card has no "inactive" concept; this is a
+    #: local preference). New threads only: a greeting already seeded stays ordinary history.
+    greeting_enabled: bool = True
     #: `mes_example` — `<START>`-delimited example turns, kept in the ST format VERBATIM so an
     #: import is byte-faithful. Parsed into pseudo-messages by S1.
     example_dialogue: str = ""

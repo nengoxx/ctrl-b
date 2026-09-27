@@ -77,7 +77,10 @@ const LIMITS: { key: keyof AgentDef; label: string }[] = [
 const FIELD_HELP: Record<string, string> = {
   duties:
     "Which duties text this agent runs on: an operator's tools-and-tasks framing, or a conversational one.",
-  greeting: "The message this agent opens a fresh thread with. Blank → the thread starts empty.",
+  greeting:
+    "The message this agent opens a fresh thread with. Blank, or switched off below → the thread starts empty.",
+  greeting_enabled:
+    "Off → new threads start empty and the model never sees the greeting. The text is kept (and still exported).",
   example_dialogue:
     "Sample turns showing how this character speaks, in the <START>-delimited card format. Kept verbatim.",
   scenario: "The situation this conversation happens in.",
@@ -416,6 +419,21 @@ function AgentFieldsForm(props: {
             help={FIELD_HELP.greeting}
             onCommit={(next) => set({ greeting: next })}
           />
+        )}
+        {/* vault RP-001 — the greeting's USE, apart from its text (off keeps the text for the export).
+          Same visibility as the Greeting row; `!== false` so an echo without the key reads as on. */}
+        {rpShow(a.greeting) && (
+          <>
+            <label>Use greeting</label>
+            <div className="mrow-switch">
+              <Switch
+                on={a.greeting_enabled !== false}
+                label="Use greeting"
+                onToggle={() => set({ greeting_enabled: a.greeting_enabled === false })}
+              />
+            </div>
+            <FieldHelp text={FIELD_HELP.greeting_enabled} />
+          </>
         )}
         {rpShow(a.example_dialogue) && (
           <LongField

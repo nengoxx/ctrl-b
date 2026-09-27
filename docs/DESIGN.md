@@ -483,6 +483,8 @@ class ModelRef(BaseModel):              # "pointer + call config" (D42/A10; A11/
 > of agent something IS emerges from which of them it uses — `duties` (`agent` | `conversational`:
 > which duties prompt rides the head's second section, and **never a capability lever** —
 > `tools`/`skills`/`privilege` stay the only gates) · `greeting`/`alt_greetings`/`example_dialogue` ·
+> `greeting_enabled` (vault RP-001: off → new threads seed nothing, the text is kept + exported; per-agent,
+> never inherited from `agent.defaults`) ·
 > `scenario` · `post_history` (the operational last word, emitted AFTER the history) · `persona` (D78:
 > the slug of the OWNER's persona this agent talks to, in the `roleplay.personas` library — not the
 > agent's own SOUL; `""` → `roleplay.default_persona`; resolved by the one

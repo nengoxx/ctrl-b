@@ -127,6 +127,7 @@ YAML-1.1-safe after the 2026-09-05 quoting fix).
 duties: Literal["agent", "conversational"] = "agent"   # §4.2 — which duties prompt rides along
 greeting: str = ""                  # first_mes; "" → no seeded message
 alt_greetings: list[str] = []       # alternate_greetings (stored v1; picker = recorded seam)
+greeting_enabled: bool = True       # as-built (vault RP-001): False → new threads seed nothing
 example_dialogue: str = ""          # mes_example, <START>-delimited (ST format kept verbatim)
 scenario: str = ""                  # its own head block (field convention, R64 §2.2)
 post_history: str = ""              # post_history_instructions → the tail slot (§4.4)
@@ -318,6 +319,14 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   one shared seeding helper serves ①+②, persisting `actor=AGENT` + the resolved agent name
   so attribution and the who-line read correctly. Macro-substituted at seed time.
   `alt_greetings` stored; a new-thread greeting picker is a recorded FE seam.
+  **As-built — the greeting can be switched off without deleting it (vault RP-001, session 50):**
+  `AgentDef.greeting_enabled` (default on; no migration) is gated at the top of `seed_greeting`, so
+  both seams start the thread empty and the model never sees it; the text is kept and still exports
+  as `first_mes` (the flag rides nowhere in the card; import leaves it on); new threads only — an
+  already-seeded greeting stays history. The form's `Use greeting` switch sits under Greeting, same visibility.
+  **Per-agent, never inherited:** the root's own value lives in `agent.defaults` (its form saves there), but
+  `Settings.agent_from` drops the key from the defaults a specialist merges under (the `title` precedent),
+  so switching the root off never mutes a key-less specialist (every card import).
   **Compaction note (coverage audit):** the
   greeting is ordinary history — a long thread's compactor may fold it into the summary like
   any old turn. By design (the head's persona carries identity, not the greeting); S1 records

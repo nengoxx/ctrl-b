@@ -2492,6 +2492,11 @@ class Settings(BaseModel):
         `PUT /api/settings` uses; the folder name always wins for `name` (D15 #1/#3)."""
         defaults = dict(self.agent.defaults)
         defaults.pop("title", None)  # title is per-agent identity — never inherited from defaults
+        if name != self.DEFAULT_AGENT_NAME:
+            # vault RP-001: the greeting switch is a PER-AGENT preference — the root's own value lives in
+            # `agent.defaults` (its form saves there), but a specialist never inherits it, or switching the
+            # root off would silently mute every key-less specialist (every card import).
+            defaults.pop("greeting_enabled", None)
         override = dict(agent_yaml or {})
         merged = deep_merge(defaults, override)
         # D48 C7 (audit L2): a `ModelRef.model` clean name is PROVIDER-RELATIVE — never carried across

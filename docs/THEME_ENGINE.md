@@ -1046,6 +1046,16 @@ never leaks into vapor — **follow it for every future theme:**
 - **Cascade layers order it:** `@layer base, theme` → a theme *may* override a Kit rule in `@layer theme` (the rare
   escape hatch), but the norm is token-only. **Component tokens** (`--kit-appbar-bg: var(--surface)`) are introduced
   only where a theme must diverge beyond what semantic tokens allow — never speculatively (YAGNI).
+  - **USED-ONLY dials** (the kit reads them with an inline fallback and never declares them, so a theme sets
+    one in its `tokens.css` only to move off the default; the `--kit-bg-veil` / `--kit-plan-gap` shape):
+    **`--kit-em-tint`** (default `40%`, session 50 / vault STYLE-001) — how much `--accent` the bot bubble's
+    italics (`.kit .b.bot .md em`) mix into the surrounding ink (`color-mix(in oklch, var(--accent)
+    var(--kit-em-tint, 40%), currentColor)`). The mix's contrast lands BETWEEN the ink's and the accent's —
+    it is NOT guaranteed by construction: a light accent on a light page drags it down (at 55% frontier day
+    × amber measured 3.37:1 on its gradient's lower stop; 40% is the share that clears 4.5:1 there). The e2e
+    contrast matrix gates the rule per theme × mode × accent (`contrast.spec.ts`, the bot-italics probe), so
+    a theme raising the dial must pass it. Computed at the `em`, so it always sees the cascaded accent —
+    never re-declare it as a derived token on `:root` (the var()-on-html trap below). Set by no theme today.
 - **Build the Kit lazily-by-need:** only build a Kit component a theme actually consumes. (`NowMonitoring` + its live
   waveform are deferred until a theme renders a featured-host card — minimal dropped the monitoring section, vapor has
   its own Hero — so K2 skips them; they land in the slice of the first theme that needs them.)

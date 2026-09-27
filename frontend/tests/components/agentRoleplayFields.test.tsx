@@ -243,6 +243,44 @@ describe("AgentRow · the roleplay fields on the form", () => {
     expect(screen.getByRole("button", { name: "Talk" })).toBeTruthy();
   });
 
+  it("USE GREETING (vault RP-001) sits under Greeting, and switching it off reaches the save", () => {
+    renderRow({ greeting: "Hello there." }); // mode OFF — the populated greeting lights both rows
+    const sw = screen.getByRole("switch", { name: "Use greeting" });
+    expect(sw.getAttribute("aria-checked")).toBe("true"); // default on
+    // …directly under the Greeting row: its label is the grid's next child after that row
+    const greetingRow = [...document.querySelectorAll(".mform .prow")].find(
+      (r) => r.querySelector(".prow-name")?.textContent === "Greeting",
+    );
+    expect(greetingRow?.nextElementSibling?.textContent).toBe("Use greeting");
+
+    fireEvent.click(sw);
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
+    expect(sent.agent.greeting_enabled).toBe(false);
+    expect(sent.agent.greeting).toBe("Hello there."); // the text is kept
+  });
+
+  it("USE GREETING reads an off agent as off, an echo WITHOUT the key as on, and hides with Greeting", () => {
+    renderRow({ greeting: "Hello there.", greeting_enabled: false });
+    const sw = screen.getByRole("switch", { name: "Use greeting" });
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(sw);
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    const sent = h.saveAgent.mock.calls[0][0] as { agent: Record<string, unknown> };
+    expect(sent.agent.greeting_enabled).toBe(true);
+    cleanup();
+
+    renderRow({ greeting: "Hello there." }); // the fixture carries no `greeting_enabled` key at all
+    expect(screen.getByRole("switch", { name: "Use greeting" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    cleanup();
+
+    renderRow(); // a plain agent, mode off, no greeting → neither row
+    expect(screen.queryByRole("switch", { name: "Use greeting" })).toBeNull();
+  });
+
   it("alt_greetings has NO editor and survives a save untouched", () => {
     renderRow({ alt_greetings: ["hi", "hey"], lorebooks: ["lyra-book"], greeting: "Hello." }, true);
     // No editor — it round-trips through `pickFields`, nothing more.

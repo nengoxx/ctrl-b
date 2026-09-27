@@ -57,6 +57,7 @@ export interface AgentDef {
   // `PUT /agents/{name}` whether or not a form edits it yet.
   duties: "agent" | "conversational"; // which duties prompt rides in the head (§4.1)
   greeting: string; // `first_mes` — the seeded opening message; "" → none
+  greeting_enabled: boolean; // vault RP-001 — false → new threads start empty; the text is kept (and exported)
   alt_greetings: string[]; // `alternate_greetings`, stored so an imported card round-trips losslessly
   example_dialogue: string; // `mes_example` — `<START>`-delimited turns, kept in the ST format verbatim
   scenario: string;

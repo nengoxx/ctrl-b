@@ -268,6 +268,35 @@ def test_a_card_with_no_sidecar_fills_the_required_keys_empty(home: Path) -> Non
     assert default.v3["data"]["name"] == expected and default.stem == expected
 
 
+def test_a_switched_off_greeting_still_exports_its_text(home: Path) -> None:
+    """Vault RP-001: `greeting_enabled` is a local runtime preference, not part of the character —
+    the card keeps `first_mes` verbatim (exporting "" would destroy the text), and the flag itself
+    rides nowhere in the card (no `extensions` key: nothing would read it)."""
+    with make_client() as c:
+        agent = {"greeting": "Hi.", "greeting_enabled": False}
+        assert c.put("/api/agents/helper", json={"agent": agent}).status_code == 200
+        data = compose(c, "helper").v3["data"]
+    assert data["first_mes"] == "Hi."
+    assert "greeting_enabled" not in json.dumps(data)
+
+
+def test_a_switched_off_greetings_card_round_trips_into_an_agent_that_greets(home: Path) -> None:
+    """Vault RP-001 (review round №1): export the OFF agent's card → import it as a fresh agent → the
+    import resolves the switch ON (the card carries no such concept) with the text intact → export that
+    agent again → `first_mes` is unchanged."""
+    with make_client() as c:
+        agent = {"title": "Nyx", "greeting": "You found the archive.", "greeting_enabled": False}
+        assert c.put("/api/agents/nyx", json={"agent": agent}).status_code == 200
+        card = compose(c, "nyx").v3
+        slug = import_json(c, card)["name"]
+        assert slug != "nyx"  # a fresh agent, not the original
+        fresh = c.get(f"/api/agents/{slug}").json()["agent"]
+        assert fresh["greeting_enabled"] is True
+        assert fresh["greeting"] == "You found the archive."
+        again = compose(c, slug).v3["data"]
+    assert again["first_mes"] == card["data"]["first_mes"] == "You found the archive."
+
+
 def test_the_v2_projection_drops_exactly_the_v3_only_keys(home: Path) -> None:
     with make_client() as c:
         card = compose(c, import_json(c, GOLDEN)["name"])

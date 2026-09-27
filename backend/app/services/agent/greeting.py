@@ -37,11 +37,15 @@ async def seed_greeting(
 ) -> Message | None:
     """Persist `agent`'s greeting as the thread's opening assistant turn. Returns the message, or
     `None` when the agent has no greeting — including one that only becomes empty once its macros
-    render, so an empty seed is impossible to produce (ruling 10's zero-cost coexistence).
+    render, so an empty seed is impossible to produce (ruling 10's zero-cost coexistence) — or has
+    it switched off (`greeting_enabled=False`, vault RP-001: the text is kept, the thread starts
+    empty). One gate here covers both creation seams.
 
     Substituted at SEED time (§4.2): the greeting is stored history from here on, so it carries the
     `{{char}}`/`{{user}}` values that were true when the conversation opened, like every other
     persisted turn — nothing re-renders it later."""
+    if not agent.greeting_enabled:
+        return None
     text = macros_for(agent, settings).render(agent.greeting.strip()).strip()
     if not text:
         return None
