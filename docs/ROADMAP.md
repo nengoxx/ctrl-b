@@ -373,7 +373,7 @@ back to the analysis.
   `oauth:` object on `ProviderCfg` per the shape-to-extend directive; R49 §5 = the recommended
   shape incl. refresh placement + a narrow token write-back that avoids a full `reconfigure()`).
 
-### A14. Chat message actions — retry + reply alternates · delete · edit — **✏️ RULED 2026-09-27 ([`D81`](./DECISIONS.md)) · build = TODO Phase 25 (BE + FE ✅ BUILT 2026-09-27, two-reviewer rounds closed — `a0d8e8c`)**
+### A14. Chat message actions — retry + reply alternates · delete · edit — **✅ SHIPPED v1.7.10 (2026-09-27) · ruled 2026-09-27 ([`D81`](./DECISIONS.md)) · build = TODO Phase 25 (BE + FE, two-reviewer rounds closed — `a0d8e8c`)**
 
 - **What:** the owner's vault backlog CHAT-001/002/003 — SillyTavern-parity actions on the chat: retry
   any tail reply and swipe between its takes (`‹ n/N ›`, `›` at `N/N` regenerates), delete a message

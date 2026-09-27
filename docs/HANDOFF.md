@@ -46,18 +46,19 @@
 - **Dev** (`~/.ctrl-b-dev`, :5434 + Vite :5173, units RUNNING — **the owner: keep them up**): schema 5
   config; the dist is rebuilt + the units restarted by the session-50 commit lane. ⚠ Dev's
   `voice.live.debug` currently reads **OFF** in `~/.ctrl-b-dev/config.yaml` (the 49th block said ON) —
-  flip "Call debug readout" in Conf › Live call if you test on dev. Lynette = the default agent, Ari =
+  flip "Call debug readout" in Conf › Live call if you test on dev (owner-court ③ below). Lynette = the default agent, Ari =
   the default persona. Serve `:8443` fronts the DEV BACKEND (built dist).
 - **Workspace `main`:** at session start 8 commits ahead of `origin/main` (`a517da9` · `d231f00` ·
   `e914329` · `75e0014` · `c59157a` · `cdf7262` · `69b8cc7` · `18dd75f`), plus session 50's commits from
   the commit lane (V1 `b4eb035` · V2 `f739c3a` · C `a2f8cc5` · D81 `a0d8e8c` · the QUALITY counts + this
-  handoff — `git log`). **All pushed** — `main` = `origin/main` (0 ahead) at `9c5a6c6`, tag `v1.7.10`. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
+  handoff `9c5a6c6`), then docs-only commits (`5ad81f1` + the session-50 doc-truth close — `git log`). **All
+  pushed** — `main` = `origin/main` (0 ahead); tag `v1.7.10` = `9c5a6c6`. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
 
 ## ▶▶ NEXT SESSION — THE OWNER'S PROD CARD on v1.7.10 (the vault backlog), then the deferred S10 car card
 
 **The 50th session (2026-09-27 evening → night) — what happened:** the owner pointed the main seat at
-the vault bug/idea inbox (`~/Documents/Maia/40 Projects/2026-08-04-ctrl-b-dashboard-backlog.md` — dictated
+the vault bug/idea inbox (its path is in [`ISSUES.md`](./ISSUES.md)'s header — dictated
 by voice and captured by another agent, so read as HINTS of intent, not spec) and asked for the lot
 before the car card. **Eight items** (UI-001 was already solved in source): BUG-001 · LIVE-001 · RP-001
 · STYLE-001 · COMPOSER-001 · CHAT-001/002/003 (one design, D81). Three read-only Opus 5.5 audits
@@ -114,20 +115,24 @@ next session** (owner, ≈ 21:30: usage reset; test on PROD, the daily surface).
 
 **Facts you must know:**
 - **Live dictation is ON in prod** (`voice.live.dictation: true`, set by you) — you believed it off. Every
-  hold/lock/tap recording streams through the ear. The switch: Conf › Voice · STT › "Live dictation".
+  hold/lock/tap recording streams through the ear. The switch: Conf › Voice · STT › "Live dictation"
+  (intended? owner-court ① below).
 - **The edit cap** = 10,485,760 characters (the upload ceiling, `attachments.max_file_mb` × 1 MiB) — a
   sanity bound, not a real limit; no send-path limit exists, so no new number was invented.
 - **The F20 duplicate-row defect is fixed:** retry on an error bubble now regenerates (no second copy of
-  your message after a reload). One corner remains: a stream cut before the server's first frame, whose
-  turn stored your message but no reply, puts your text back in the composer — re-sending it duplicates
-  (the old behavior, now only there).
+  your message after a reload). One corner remains: a send whose accept never reached the phone, though the
+  server stored your message, puts your text back in the composer — re-sending it duplicates
+  (the old behavior, now only there — ISS-35).
 - **Deleting YOUR message deletes exactly that row** (SillyTavern parity): its reply stays and FOLDS into
   the previous turn's current take — a later swap / tail delete / retry moves them together.
 - **The every-turn GET:** the chat re-reads the thread once at the end of every turn (to learn which
   reply is retryable). One extra GET per turn; if chat feels slower on the Honor 20, say so (the remedy =
-  an identity-preserving merge in the reload).
-- A stop in `thinking` discards anything you said into that turn (you re-say it); a tap within ~100 ms of
-  sending cancels nothing (the server has not registered the turn yet) — recorded residuals.
+  an identity-preserving merge in the reload — ISS-38, WATCH).
+- A stop in `thinking` discards anything you said into that turn (you re-say it — as designed); a tap within
+  ~100 ms of sending cancels nothing (the server has not registered the turn yet — ISS-33).
+- **Every known limitation this session chose not to fix has ONE home, an ISSUES row with its reopen
+  condition: ISS-33 … ISS-43** (listed in "Open issues" below); the owner's open questions are the
+  owner-court list in the Standing ledger.
 
 **OWNER TEST CARD (prod, phone — reload the PWA and accept its update prompt; health shows 1.7.10):**
 1. **Dictation in the car** (Media route, as you use it): dictate a few 3-sentence passages with pauses;
@@ -207,7 +212,7 @@ beside `messages`**, not a message tree nor variants-on-the-row — zero changes
 rollback-safe; the trade is no branching conversation tree · (f) **the greeting
 switch is per-agent, never inherited** from the root's `agent.defaults` (a card import stays ON). A
 pre-existing class is recorded, not fixed: the root's greeting TEXT still reaches never-saved
-specialists — is a root greeting even meaningful? (owner court, no rush).
+specialists — is a root greeting even meaningful? (owner court, no rush — ISS-37).
 
 **Durable session record:** every audit, brief, ruling, frozen diff, review, confirm and lane report is in
 **`~/.cache/tmp/ctrlb-session50/`** (`SESSION_PLAN.md` = the runbook + lane table; `RULINGS.md` = every
@@ -243,12 +248,19 @@ Nothing here needs the main seat until a verdict comes back; the trail is the di
 5. **The owed voice arms, on regular use:** the car on the CLEAN route (then `min_final_ms` 200 → 300
    if home-side noise words persist) · the TV/other-room arm · **ISS-19** (the Honor battery setting
    FIRST, then the lock-screen arm, then the discard toast).
-6. **Per-agent voices** — the owner has not picked from the PocketTTS library (`ganyu` is the interim
-   default everywhere; the cloned voices live in `~/.local/share/tts/voices/pocket`).
+6. **Per-agent voices** — owner-court ④ (the Standing ledger below).
 
 ### 2. Open issues — [`ISSUES.md`](./ISSUES.md) is the ledger; the live ones
 - **Owner look / ruling wanted:** ISS-12 (frontier modal-footer SAVE contrast) · ISS-10 stage ②
-  (owner-parked) · ISS-19 (above).
+  (owner-parked) · ISS-19 (above) · ISS-37 (is a root greeting meaningful?).
+- **Awaiting the owner's prod round (FIXED in v1.7.10):** ISS-31 (`/new` mints + greets — S10 card item 8)
+  · ISS-32 (the ring stays put — S10 card item 9).
+- **Session 50's residual ledger (RECORDED at build, each row names its reopen condition):** ISS-33 (a call
+  stop before the turn registers) · ISS-34 (a Stop exactly at the stash's commit) · ISS-35 (the F20
+  saved-but-unaccepted send) · ISS-36 (the floor-match windows) · ISS-38 (the every-turn GET — WATCH on
+  the Honor 20) · ISS-39 (the contrast probe's backdrop fallback) · ISS-40 (mouse press/release on the
+  call — PARKED) · ISS-41 (dictation trails vs `trail_keep`) · ISS-42 (pre-D81 `meta.skills`) · ISS-43
+  (a text-less parked reply has no who-line). Greeting swipes are a SEAM, not a residual (ROADMAP A14).
 - **Dormant, reopen on recurrence:** ISS-16 (call-mode TTS crackle — not reproduced since PocketTTS;
   the record has the reopen ladder).
 - **✓ FIXED in the S9 wave (`3d27b09`, LIVE in v1.7.9):** ISS-15 · ISS-20 · ISS-22 · ISS-23 · ISS-24 · ISS-26 · ISS-27 · ISS-29 · ISS-30.
@@ -318,7 +330,16 @@ DECISIONS → DESIGN/ARCHITECTURE → TODO (CLAUDE.md's flow), a D-entry before 
 ## Standing ledger (verified 2026-09-26; ask, don't assume)
 
 **Owner-court items:**
-- The ~80 MB untracked `design/prototypes/gacha/` originals — standing "leave untracked for now";
+- **Session 50's open questions (2026-09-27):** ① **Live dictation is ON in prod**
+  (`voice.live.dictation: true`, your own flip — you believed it off): intended? Default = leave it ON
+  (Conf › Voice · STT › "Live dictation"). ② **The A/B/C car-dictation arms** — run them ONLY if the
+  prod card's item 1 still clips. ③ **Dev `voice.live.debug` reads OFF** in `~/.ctrl-b-dev/config.yaml`
+  (the 49th block said ON) — flip it back on for dev rounds, or leave it? ④ **Per-agent voices** — nothing
+  picked from the PocketTTS library yet (`ganyu` = the interim default everywhere; the cloned voices live
+  in `~/.local/share/tts/voices/pocket`). ⑤ **ISS-37** — is a root greeting meaningful? ⑥ the ⚖ veto
+  window (a)–(f) in the ▶▶ block.
+- The ~80 MB untracked `design/prototypes/gacha/` originals (its four art/sheet dirs, gitignored since
+  2026-08-06 — so `git status` never shows them) — standing "leave untracked for now";
   eventual call = leave / move out / delete.
 - D2-A monitor: the owner DAILY-USE round on prod (its memory; per-host switches OFF until then).
 - Cosmos "Alive/uptime" stat shows "—" (backend has no boot time; additive later — its memory).

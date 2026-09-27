@@ -326,7 +326,8 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   already-seeded greeting stays history. The form's `Use greeting` switch sits under Greeting, same visibility.
   **Per-agent, never inherited:** the root's own value lives in `agent.defaults` (its form saves there), but
   `Settings.agent_from` drops the key from the defaults a specialist merges under (the `title` precedent),
-  so switching the root off never mutes a key-less specialist (every card import).
+  so switching the root off never mutes a key-less specialist (every card import). The root's greeting TEXT
+  still inherits the old way — an owner question, ISSUES ISS-37.
   **Compaction note (coverage audit):** the
   greeting is ordinary history — a long thread's compactor may fold it into the summary like
   any old turn. By design (the head's persona carries identity, not the greeting); S1 records

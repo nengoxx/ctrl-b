@@ -1062,7 +1062,8 @@ never leaks into vapor — **follow it for every future theme:**
     `var(--kit-act-danger-tint, 60%)`. 11px caption text, and the raw accent failed 4.5:1 on a bubble in 13
     shipped combos (frontier light × amber 1.21:1), the raw danger in 2; these shares clear every shipped
     palette. The same e2e matrix gates both rules (`contrast.spec.ts`, the rule-ink probe). Set by no theme
-    today.
+    today. (The probe measures against `#app-scroll` when no chat log is mounted — a theme that paints
+    `.chat-log` itself must move it first: ISSUES ISS-39.)
 - **Build the Kit lazily-by-need:** only build a Kit component a theme actually consumes. (`NowMonitoring` + its live
   waveform are deferred until a theme renders a featured-host card — minimal dropped the monitoring section, vapor has
   its own Hero — so K2 skips them; they land in the slice of the first theme that needs them.)
