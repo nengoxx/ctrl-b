@@ -322,6 +322,26 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   greeting is ordinary history — a long thread's compactor may fold it into the summary like
   any old turn. By design (the head's persona carries identity, not the greeting); S1 records
   it in a test comment so nobody later "fixes" it into a pin.
+  **As-built — seam ① gets its first FE caller: `/new` (ISS-31, owner ruling 2026-09-27).** Until
+  then nothing in the FE called `POST /threads`: `/new` only nulled `threadId` in memory and the
+  thread was minted lazily on the first send (②), so a reload came back to the LAST thread and a
+  character's greeting appeared only after the owner spoke first. `/new` (`store/chat.ts`
+  `startNewThread`) now mints through ① with the D75 tandem rule's agent — a default SET → the
+  roster's resolved default name (`lib/composer`'s `defaultAgent`, the same read as `defaultSet`);
+  none set → the kept sticky pick, else the open thread's promoted pin; nobody to keep → a bodyless
+  mint (unpinned, unseeded) — and opens the minted thread fetch-first/swap-second through the one
+  `swapView` every view swap shares; the greeting comes back from the server as ordinary history, and
+  the newest-`updated_at` list order makes it the thread a reload hydrates. **The no-op rule:** a
+  thread with no user turn (greeting-only, or empty — the root greets nobody) is already fresh, so
+  `/new` there does nothing and `/new` twice mints nothing (a second `/new` while the first mint is
+  still in flight is dropped too). **Failure:** a failed mint (network, non-OK, a failed history
+  read) falls back to the pre-ISS-31 thread-less view (the lazy mint ②) plus the note `// couldn't
+  start a new thread — your next message will start one`. **The pin consequence (recorded, not
+  changed):** ① pins the agent it greets as, so every `/new` thread is PINNED to the agent it opens
+  as, and `agent.auto_rotate` (7e-g, off by default) never routes a `/new` thread — exactly as it never
+  routed a gallery-created one. The router now meets only threads minted lazily (a first send in a
+  thread-less view, a `!cmd`) or created before this change; the D75 amendment's auto-route sentence
+  ("with a default set, `/new` starts unpinned, so auto-route may pick a specialist") no longer holds.
   **The "reset the whole character" command — SEMANTICS RULED round 4, feature NOT v1:** a
   red button on the character's own detail that resets the agent to its default/as-imported
   values, **wipes THAT agent's memory files** (its memory dir; the specific agent's, nothing

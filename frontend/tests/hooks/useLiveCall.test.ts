@@ -640,7 +640,7 @@ describe("callReduce — MUTE (§6, the one mechanism)", () => {
 // ── S3: the mouth across a reconnect, the ear-hold, and the interleaving sweep ────────────────────
 
 /** A call on a track whose AEC is NOT the subtractive mode (Fennec, §7-S0 ③) under `mic_hold: auto` —
- *  the ear-hold's own. With no probe verdict it holds the WHOLE reply (every chunk starts held). */
+ *  the ear-hold's own: the D73 rule holds the WHOLE reply (D80 ⑤). */
 const holding = run(CALL_INITIAL, [
   { type: "captureReady", holdMode: "auto", ecAll: false, route: "call", deviceId: "" },
   { type: "ready" },
@@ -650,6 +650,9 @@ const holdingSpeaking = run(holding, [
   { type: "final", text: "tell me a story" },
   { type: "playbackStarted" },
 ]).state;
+/** The wiring's verdict on the tail standing now (D80 ①): the room went quiet. */
+const release = (st: CallState): CallState =>
+  run(st, [{ type: "tailOver", seq: st.tailSeq, reason: "quiet" }]).state;
 
 describe("callReduce — the mouth is not the phase (S3 · mouthLive)", () => {
   it("a reply is still audible across a reconnect: `ready` lands back on SPEAKING", () => {
@@ -680,7 +683,16 @@ describe("callReduce — the mouth is not the phase (S3 · mouthLive)", () => {
     // A settlement that painted `listening` over it would also DRAIN the queue into a reply still
     // speaking (`held()` reads the phase the arm writes) — and on a held track it would do so with the
     // ear closed under a screen claiming the floor is free.
-    const killing = run(holdingSpeaking, [{ type: "barge" }]).state;
+    // (A SUBTRACTIVE track, so the words spoken over the replacement are the owner's and queue — on a
+    // held one they would be the replacement's own leak, dropped flat since D80 took `!killing` out of
+    // the hold: see the held half below.)
+    const open = run(CALL_INITIAL, [
+      { type: "captureReady", holdMode: "auto", ecAll: true, route: "call", deviceId: "" },
+      { type: "ready" },
+      { type: "final", text: "tell me a story" },
+      { type: "playbackStarted" },
+    ]).state;
+    const killing = run(open, [{ type: "barge" }]).state;
     const replaced = run(killing, [
       { type: "playbackStarted" },
       { type: "final", text: "no, the other one" },
@@ -690,10 +702,17 @@ describe("callReduce — the mouth is not the phase (S3 · mouthLive)", () => {
     const settled = run(replaced.state, [{ type: "killSettled" }]);
     expect(settled.state.phase).toBe("speaking"); // the mouth is audible — the screen must say so
     expect(submits(settled.out)).toEqual([]); // …and `speaking` is itself a hold: nothing drains yet
-    expect(settled.state.earHeld).toBe(true); // the leak protection stands over the live audio
     const over = run(settled.state, [{ type: "playbackDrained" }]);
     expect(submits(over.out)).toEqual(["no, the other one"]); // the REAL drain is the release
     expect(over.state.phase).toBe("thinking"); // …and the submit puts the brain to work
+    // …and on a HELD track the same settlement keeps the leak protection standing over the live audio.
+    const heldSettled = run(holdingSpeaking, [
+      { type: "barge" },
+      { type: "playbackStarted" },
+      { type: "killSettled" },
+    ]).state;
+    expect(heldSettled.phase).toBe("speaking");
+    expect(heldSettled.earHeld).toBe(true);
   });
 
   it("playback STARTING during the reconnect leaves `connecting` standing (confirm F1)", () => {
@@ -757,12 +776,15 @@ describe("callReduce — the mouth is not the phase (S3 · mouthLive)", () => {
 });
 
 describe("callReduce — the Fennec EAR-HOLD (S3 · `mic_hold`, D76 §B)", () => {
-  it("closes the ear while the reply speaks, and opens it when the reply ends", () => {
+  it("closes the ear while the reply speaks, and opens it when the reply's TAIL is over (D80 ①)", () => {
     expect(holding.holdMode).toBe("auto");
     expect(holding.ecAll).toBe(false);
     expect(holding.earHeld).toBe(false); // nothing is speaking yet
     expect(holdingSpeaking.earHeld).toBe(true);
-    expect(run(holdingSpeaking, [{ type: "playbackDrained" }]).state.earHeld).toBe(false);
+    const drained = run(holdingSpeaking, [{ type: "playbackDrained" }]).state;
+    expect(drained.earHeld).toBe(true); // the element is done; the car may not be
+    expect(drained.tail).toBe(true);
+    expect(release(drained).earHeld).toBe(false);
   });
 
   it("drops the VAD events and the FINAL heard while it is closed — the whole point", () => {
@@ -781,23 +803,26 @@ describe("callReduce — the Fennec EAR-HOLD (S3 · `mic_hold`, D76 §B)", () =>
     expect(out).toEqual([]);
   });
 
-  it("…and keeps taking them the moment the reply drains", () => {
-    const open = run(holdingSpeaking, [{ type: "playbackDrained" }]).state;
+  it("…and keeps taking them the moment the tail releases", () => {
+    const open = release(run(holdingSpeaking, [{ type: "playbackDrained" }]).state);
     const { out } = run(open, [{ type: "final", text: "what happened next" }]);
     expect(submits(out)).toEqual(["what happened next"]);
   });
 
-  it("releases the INSTANT a kill starts — the interrupting words are not eaten", () => {
-    // Step ① of the kill is a synchronous `dismiss()`, so the audible part is gone before anything can
-    // read this state; and `killSettled` can answer in the same breath (the turn was already terminal),
-    // long before the playback store notices. A hold standing into that window swallows the first thing
-    // the owner says after tapping — which is the one utterance the tap exists to make room for.
+  it("a KILL passes the hold to the TAIL — a tap silences the element, not the car's buffer (D80 ①)", () => {
+    // The `!killing` release this replaces opened the ear the instant the owner tapped — into ~2.3 s of
+    // reply the car had already buffered (the trail's two `barge` taps under a loud tail). The queue's
+    // ORDERING is untouched: the kill still holds it until the cancel settles; the tail only keeps the
+    // EAR closed, and the interrupting words land once the room is quiet.
     const tapped = run(holdingSpeaking, [{ type: "barge" }]);
-    expect(tapped.state.earHeld).toBe(false);
-    const spoken = run(tapped.state, [
-      { type: "killSettled" },
-      { type: "final", text: "no, the other one" },
-    ]);
+    expect(tapped.state.killing).toBe(true);
+    expect(tapped.state.tail).toBe(true);
+    expect(tapped.state.earHeld).toBe(true);
+    const settled = run(tapped.state, [{ type: "killSettled" }]).state;
+    expect(settled.phase).toBe("listening");
+    const inTail = run(settled, [{ type: "final", text: "the car's buffered tail" }]);
+    expect(submits(inTail.out)).toEqual([]); // still the reply, dropped flat
+    const spoken = run(release(settled), [{ type: "final", text: "no, the other one" }]);
     expect(submits(spoken.out)).toEqual(["no, the other one"]);
   });
 
@@ -823,8 +848,8 @@ describe("callReduce — the Fennec EAR-HOLD (S3 · `mic_hold`, D76 §B)", () =>
     const unmuted = run(muted, [{ type: "setMuted", on: false }]).state;
     expect(unmuted.muted).toBe(false);
     expect(unmuted.earHeld).toBe(true);
-    // …and the drain opens it for real.
-    expect(run(unmuted, [{ type: "playbackDrained" }]).state.earHeld).toBe(false);
+    // …and the drain hands it to the tail, whose release opens it for real.
+    expect(release(run(unmuted, [{ type: "playbackDrained" }]).state).earHeld).toBe(false);
   });
 
   it("a TERMINAL releases the hold AND forgets the mode — the track it described is gone", () => {
@@ -840,166 +865,192 @@ describe("callReduce — the Fennec EAR-HOLD (S3 · `mic_hold`, D76 §B)", () =>
   });
 });
 
-// ── D76 S2: THE LEAK PROBE (`mic_hold: auto`, §B.3/§B.4) ─────────────────────────────────────────
+// ── D80 ⑤: `mic_hold: auto` IS THE D73 RULE — the per-chunk leak probe is deleted ────────────────
 
-/** A connected call on a capture under the given policy, and — optionally — with a reply speaking and
- *  chunk 0 started (the probe armed on it). */
-function probeCall(holdMode: HoldMode, ecAll: boolean, speakingChunk0 = true): CallState {
+/** A connected call on a capture under the given policy, optionally with a reply speaking. */
+function holdCall(holdMode: HoldMode, ecAll: boolean, speakingNow = true): CallState {
   const ready = run(CALL_INITIAL, [
     { type: "captureReady", holdMode, ecAll, route: "media", deviceId: "" },
     { type: "ready" },
   ]).state;
-  if (!speakingChunk0) return ready;
-  return run(ready, [
-    { type: "final", text: "tell me a story" },
-    { type: "playbackStarted" },
-    { type: "chunkStarted", idx: 0 },
-  ]).state;
+  if (!speakingNow) return ready;
+  return run(ready, [{ type: "final", text: "tell me a story" }, { type: "playbackStarted" }])
+    .state;
 }
 
-describe("callReduce — THE LEAK PROBE (D76 §B.3 · `mic_hold: auto`)", () => {
-  it("the `earHeld` truth table: holdMode × ecAll × the probe's verdict × mouthLive", () => {
-    // The probe's verdict on chunk 0: none yet, LEAK (held), or CLEAR (released). A verdict reaches
-    // `probeOpen` only on a probing capture (auto, no subtractive canceller) — everywhere else it is
-    // ignored, which is itself a row of the table.
-    type Verdict = "none" | "leak" | "clear";
-    const rows: [HoldMode, boolean, Verdict, boolean][] = [
-      // holdMode, ecAll, verdict → earHeld (mouth LIVE)
-      ["on", false, "none", true],
-      ["on", false, "leak", true],
-      ["on", false, "clear", true], //  `on` ignores the probe
-      ["on", true, "none", true], //    …and outranks even a subtractive canceller
-      ["on", true, "clear", true],
-      ["off", false, "none", false],
-      ["off", false, "leak", false],
-      ["off", true, "none", false],
-      ["auto", true, "none", false], // the canceller subtracts the reply: never held, never probed
-      ["auto", true, "leak", false],
-      ["auto", false, "none", true], // every chunk starts held…
-      ["auto", false, "leak", true], // …a leak keeps it held…
-      ["auto", false, "clear", false], // …and only a clear verdict releases it
+describe("callReduce — `mic_hold` is the D73 rule (D80 ⑤, the probe deleted)", () => {
+  it("the `earHeld` truth table: holdMode × ecAll, while the mouth is live", () => {
+    // The probe judged each chunk in its first 600 ms — before a car had emitted a sample (D80 ③).
+    // What is left is a policy read ONCE from the track: `auto` holds wherever the canceller does not
+    // subtract, exactly like `on`; `on` outranks even a subtractive canceller; `off` never holds.
+    const rows: [HoldMode, boolean, boolean][] = [
+      // holdMode, ecAll → earHeld (mouth LIVE)
+      ["on", false, true],
+      ["on", true, true],
+      ["off", false, false],
+      ["off", true, false],
+      ["auto", false, true], // a leaking readback holds — like `on`
+      ["auto", true, false], // the canceller subtracts the reply: never held
     ];
-    for (const [holdMode, ecAll, verdict, held] of rows) {
-      let st = probeCall(holdMode, ecAll);
-      if (verdict !== "none") {
-        st = run(st, [{ type: "probeResult", idx: 0, leak: verdict === "leak" }]).state;
-      }
-      const label = `${holdMode}/${ecAll ? "all" : "leaky"}/${verdict}`;
+    for (const [holdMode, ecAll, held] of rows) {
+      const st = holdCall(holdMode, ecAll);
+      const label = `${holdMode}/${ecAll ? "all" : "leaky"}`;
       expect(st.mouthLive, label).toBe(true);
       expect(st.earHeld, label).toBe(held);
-      expect(st.probeOpen, label).toBe(holdMode === "auto" && !ecAll && verdict === "clear");
-      // mouthLive FALSE: nothing is audible, nothing is held — whatever the rest says — and the
-      // verdict goes with the reply.
-      const quiet = run(st, [{ type: "playbackDrained" }]).state;
-      expect(quiet.earHeld, `${label}/quiet`).toBe(false);
-      expect(quiet.probeOpen, `${label}/quiet`).toBe(false);
+      // …and with the mouth silent and nothing armed, nothing is held whatever the policy says.
+      expect(holdCall(holdMode, ecAll, false).earHeld, `${label}/silent`).toBe(false);
     }
   });
 
-  it("each CHUNK starts held; a clear verdict releases it; the NEXT chunk is held again", () => {
-    const chunk0 = probeCall("auto", false);
-    expect(chunk0.earHeld).toBe(true);
-    const released = run(chunk0, [{ type: "probeResult", idx: 0, leak: false }]).state;
-    expect(released.earHeld).toBe(false);
-    // …and the ear is the owner's for the rest of the chunk: speech over it goes through.
-    const spoke = run(released, [
-      { type: "speechStart" },
-      { type: "speechStop" },
-      { type: "final", text: "wait" },
-    ]).state;
-    expect(spoke.pending).toEqual(["wait"]);
-    const chunk1 = run(released, [{ type: "chunkStarted", idx: 1 }]).state;
-    expect(chunk1.earHeld).toBe(true); // per chunk, not per reply (Maya F1)
-    expect(chunk1.probeIdx).toBe(1);
-  });
-
-  it("a LEAK keeps the chunk held — and the final it would have leaked is dropped", () => {
-    const { state } = run(probeCall("auto", false), [
-      { type: "probeResult", idx: 0, leak: true },
-      { type: "final", text: "…and then the dragon said" },
-    ]);
-    expect(state.earHeld).toBe(true);
+  it("`auto` without a subtractive canceller holds the WHOLE reply — every chunk, no verdict", () => {
+    const held = holdCall("auto", false);
+    // A synthesis gap's edge (the mouth re-starting mid-reply) changes nothing: it is still held.
+    expect(run(held, [{ type: "playbackStarted" }]).state.earHeld).toBe(true);
+    // …and what the ear hears under it is dropped flat.
+    const { state } = run(held, [{ type: "final", text: "…and then the dragon said" }]);
     expect(state.pending).toEqual([]);
   });
 
-  it("a verdict about ANOTHER chunk, or from an older generation, is ignored", () => {
-    const chunk1 = run(probeCall("auto", false), [{ type: "chunkStarted", idx: 1 }]).state;
-    const stale = run(chunk1, [{ type: "probeResult", idx: 0, leak: false }]).state;
-    expect(stale.earHeld).toBe(true);
-    expect(stale.probeOpen).toBe(false);
-    const ghost = callReduce(chunk1, {
-      type: "probeResult",
-      idx: 1,
-      leak: false,
-      gen: chunk1.gen - 1,
-    }).state;
-    expect(ghost.earHeld).toBe(true);
-    // …while the same verdict under the live generation is taken.
-    expect(
-      callReduce(chunk1, { type: "probeResult", idx: 1, leak: false, gen: chunk1.gen }).state
-        .earHeld,
-    ).toBe(false);
-  });
-
-  it("the mouth going idle resets the release: the NEXT reply starts held", () => {
-    const released = run(probeCall("auto", false), [
-      { type: "probeResult", idx: 0, leak: false },
-    ]).state;
-    const drained = run(released, [{ type: "playbackDrained" }]).state;
-    expect(drained.probeOpen).toBe(false);
-    const next = run(drained, [
-      { type: "final", text: "go on" },
-      { type: "playbackStarted" },
-    ]).state;
-    expect(next.earHeld).toBe(true); // held before its first chunk's `chunkStarted` even lands
-  });
-
-  it("a mouth that RE-STARTS mid-chunk (a synthesis gap's edge) starts held until the next verdict", () => {
-    const released = run(probeCall("auto", false), [
-      { type: "probeResult", idx: 0, leak: false },
-    ]).state;
-    expect(run(released, [{ type: "playbackStarted" }]).state.earHeld).toBe(true);
-  });
-
-  it("a KILL releases at once (the S3 rule) and takes the verdict with the silenced reply", () => {
-    const tapped = run(probeCall("auto", false), [{ type: "barge" }]).state;
-    expect(tapped.earHeld).toBe(false);
-    expect(tapped.probeOpen).toBe(false);
-  });
-
-  it("a RECAPTURE mid-reply holds the fresh ear at once, and the next chunk re-probes (§B.4)", () => {
-    const released = run(probeCall("auto", false), [
-      { type: "probeResult", idx: 0, leak: false },
-    ]).state;
-    const cycled = run(released, [{ type: "routeChange", route: "call" }]);
-    const gen = cycled.state.gen;
-    expect(gen).toBe(released.gen + 1);
-    // The verdict armed under the old ear is a ghost…
-    expect(
-      callReduce(cycled.state, { type: "probeResult", idx: 0, leak: false, gen: released.gen })
-        .state.probeOpen,
-    ).toBe(false);
-    // …the fresh capture re-reads the policy and starts held under the reply still speaking…
-    const fresh = run(cycled.state, [
-      { type: "captureReady", holdMode: "auto", ecAll: false, route: "call", deviceId: "", gen },
+  it("a RECAPTURE mid-reply re-reads the policy from the FRESH track (§5.1)", () => {
+    const cycled = run(holdCall("auto", false), [{ type: "routeChange", route: "call" }]).state;
+    expect(cycled.holdMode).toBe("off"); // the hold belongs to the track, and that track is gone
+    const fresh = run(cycled, [
+      { type: "captureReady", holdMode: "auto", ecAll: false, route: "call", deviceId: "" },
     ]).state;
     expect(fresh.mouthLive).toBe(true);
-    expect(fresh.earHeld).toBe(true);
-    // …and the next chunk's probe can release it again.
-    const next = run(fresh, [
-      { type: "chunkStarted", idx: 1, gen },
-      { type: "probeResult", idx: 1, leak: false, gen },
-    ]).state;
-    expect(next.earHeld).toBe(false);
+    expect(fresh.earHeld).toBe(true); // held at once under the reply still speaking
   });
 
   it("a fresh capture that comes back SUBTRACTIVE is never held, mid-reply or not", () => {
-    const released = run(probeCall("auto", false), [{ type: "routeChange", route: "call" }]).state;
+    const released = run(holdCall("auto", false), [{ type: "routeChange", route: "call" }]).state;
     const fresh = run(released, [
       { type: "captureReady", holdMode: "auto", ecAll: true, route: "call", deviceId: "" },
     ]).state;
     expect(fresh.mouthLive).toBe(true);
     expect(fresh.earHeld).toBe(false);
+  });
+});
+
+describe("callReduce — THE TAIL HOLD (D80 ①: the ear reopens on observed quiet, never on the element)", () => {
+  it("every fall of the mouth under a holding policy ARMS a tail — drain, failure and kill alike", () => {
+    for (const end of [
+      { type: "playbackDrained" },
+      { type: "playbackFailed" },
+      { type: "barge" },
+    ] as CallSignal[]) {
+      const after = run(holdCall("on", false), [end]).state;
+      expect(after.mouthLive, end.type).toBe(false);
+      expect(after.tail, end.type).toBe(true);
+      expect(after.tailSeq, end.type).toBe(1);
+      expect(after.earHeld, end.type).toBe(true);
+    }
+  });
+
+  it("the policy decides whether there is a tail at all — `off` never, `auto` + a subtractive canceller never", () => {
+    const rows: [HoldMode, boolean, boolean][] = [
+      ["on", false, true],
+      ["on", true, true],
+      ["auto", false, true],
+      ["auto", true, false], // the canceller subtracted the reply — there is no tail to hold
+      ["off", false, false],
+      ["off", true, false],
+    ];
+    for (const [holdMode, ecAll, tail] of rows) {
+      const after = run(holdCall(holdMode, ecAll), [{ type: "playbackDrained" }]).state;
+      expect(after.tail, `${holdMode}/${ecAll}`).toBe(tail);
+      expect(after.earHeld, `${holdMode}/${ecAll}`).toBe(tail);
+    }
+  });
+
+  it("`tailOver` for THIS arming releases it; a stale arming or a dead generation frees nothing", () => {
+    const tail = run(holdCall("on", false), [{ type: "playbackDrained" }]).state;
+    const stale = run(tail, [{ type: "tailOver", seq: tail.tailSeq - 1, reason: "quiet" }]).state;
+    expect(stale.earHeld).toBe(true);
+    const ghost = callReduce(tail, {
+      type: "tailOver",
+      seq: tail.tailSeq,
+      reason: "cap",
+      gen: tail.gen - 1,
+    }).state;
+    expect(ghost.earHeld).toBe(true);
+    for (const reason of ["quiet", "cap"] as const) {
+      const over = callReduce(tail, { type: "tailOver", seq: tail.tailSeq, reason, gen: tail.gen });
+      expect(over.state.tail).toBe(false);
+      expect(over.state.earHeld).toBe(false);
+      expect(over.out).toEqual([]);
+    }
+  });
+
+  it("a mouth that RE-STARTS during the tail takes it back; its next fall arms a NEW one", () => {
+    const first = run(holdCall("on", false), [{ type: "playbackDrained" }]).state;
+    const again = run(first, [{ type: "playbackStarted" }]).state;
+    expect(again.tail).toBe(false);
+    expect(again.earHeld).toBe(true); // held by the mouth now
+    const second = run(again, [{ type: "playbackDrained" }]).state;
+    expect(second.tail).toBe(true);
+    expect(second.tailSeq).toBe(first.tailSeq + 1);
+    // …and the FIRST tail's release, measured late, frees nothing.
+    expect(
+      run(second, [{ type: "tailOver", seq: first.tailSeq, reason: "quiet" }]).state.earHeld,
+    ).toBe(true);
+  });
+
+  it("a ROUTE CYCLE and every TERMINAL clear it — the ear it held is gone", () => {
+    const tail = run(holdCall("on", false), [{ type: "playbackDrained" }]).state;
+    expect(tail.phase).toBe("listening");
+    const cycled = run(tail, [{ type: "routeChange", route: "call" }]).state;
+    expect(cycled.tail).toBe(false);
+    expect(cycled.earHeld).toBe(false);
+    for (const end of [{ type: "captureLost" }, { type: "hangup" }] as CallSignal[]) {
+      const after = run(tail, [end]).state;
+      expect(after.tail, end.type).toBe(false);
+      expect(after.earHeld, end.type).toBe(false);
+    }
+  });
+
+  it("a KILL on a policy that does not hold arms nothing — there is no ear to keep closed", () => {
+    for (const [holdMode, ecAll] of [
+      ["off", false],
+      ["auto", true],
+    ] as [HoldMode, boolean][]) {
+      const tapped = run(holdCall(holdMode, ecAll), [{ type: "barge" }]).state;
+      expect(tapped.killing, holdMode).toBe(true);
+      expect(tapped.tail, holdMode).toBe(false);
+      expect(tapped.earHeld, holdMode).toBe(false);
+    }
+  });
+
+  it("the KILL's own step is the one where `killing` rises — the wiring's deadline bit reads that edge", () => {
+    const tapped = run(holdCall("on", false), [{ type: "barge" }]);
+    expect(tapped.state.tail && tapped.state.killing).toBe(true);
+    expect(tapped.state.tailSeq).toBe(1);
+    // …and a `tailOver` reason `kill` releases it like any other, for its own arming only.
+    const over = run(tapped.state, [
+      { type: "tailOver", seq: tapped.state.tailSeq, reason: "kill" },
+    ]).state;
+    expect(over.earHeld).toBe(false);
+  });
+
+  it("MUTE leaves it standing — a muted ear uplinks silence either way, and the tail is about the room", () => {
+    const tail = run(holdCall("on", false), [{ type: "playbackDrained" }]).state;
+    const muted = run(tail, [{ type: "setMuted", on: true }]).state;
+    expect(muted.tail).toBe(true);
+    const unmuted = run(muted, [{ type: "setMuted", on: false }]).state;
+    expect(unmuted.tail).toBe(true);
+    expect(unmuted.earHeld).toBe(true);
+  });
+
+  it("finals and VAD events inside the tail are the reply's, dropped flat — the phase is already `listening`", () => {
+    const tail = run(holdCall("on", false), [{ type: "playbackDrained" }]).state;
+    expect(tail.phase).toBe("listening"); // the machine's phase does not change — only the face does
+    const { state, out } = run(tail, [
+      { type: "speechStart", itemId: "echo" },
+      { type: "speechStop", itemId: "echo" },
+      { type: "final", text: "Text me when you can. I'll be here.", itemId: "echo" },
+    ]);
+    expect(state.userSpeechActive).toBe(false);
+    expect(state.waitingFinal).toBe(false);
+    expect(submits(out)).toEqual([]);
   });
 });
 
@@ -1151,9 +1202,15 @@ describe("callReduce — the interleaving sweep (S3 · F4 · F5 · F6)", () => {
     const back = run(dropped, [{ type: "ready" }]).state;
     expect(back.phase).toBe("speaking");
     expect(back.earHeld).toBe(true);
-    // Only the mouth stopping — or the owner interrupting — opens it.
-    expect(run(back, [{ type: "playbackDrained" }]).state.earHeld).toBe(false);
-    expect(run(back, [{ type: "barge" }]).state.earHeld).toBe(false);
+    // Only the mouth stopping — or the owner interrupting — ends the reply, and even then the TAIL
+    // holds (D80 ①): the ear reopens on the room going quiet, never on the element.
+    for (const end of [{ type: "playbackDrained" }, { type: "barge" }] as CallSignal[]) {
+      const after = run(back, [end]).state;
+      expect(after.tail).toBe(true);
+      expect(after.earHeld).toBe(true);
+      const quiet = run(after, [{ type: "tailOver", seq: after.tailSeq, reason: "quiet" }]).state;
+      expect(quiet.earHeld).toBe(false);
+    }
   });
 });
 
@@ -1372,6 +1429,49 @@ describe("callReduce — the remount re-arm (StrictMode's setup→cleanup→setu
 
 // ── D74 S5: THE TRANSCRIPT GATE (evidence docs/research/R76) ─────────────────────────────────────
 
+describe("callReduce — THE TEXT BACKSTOP (D80 ②)", () => {
+  /** A final the wiring judged against the reply the mouth just spoke. */
+  const judged = (text: string, echo: number | undefined, energyMs?: number): CallSignal => ({
+    type: "final",
+    text,
+    energyMs,
+    minFinalMs: 200,
+    echo,
+    echoMin: 0.75,
+  });
+
+  it("a final AT or ABOVE the knob is the reply's own words: dropped, shown, and NOT cued", () => {
+    for (const sim of [0.75, 0.946, 1]) {
+      const waiting = { ...listening, waitingFinal: true };
+      const { state, out } = run(waiting, [judged("Text me when you can. I'll be here.", sim)]);
+      expect(out, String(sim)).toEqual([]); // no submit, and no drop cue for the car to play back
+      expect(state.pending).toEqual([]);
+      expect(state.heard).toBe(CALL_COPY.ownWords); // the heard line says what happened
+      expect(state.waitingFinal).toBe(false); // …and nothing is in flight any more
+      expect(state.note).toBeNull();
+    }
+  });
+
+  it("a final BELOW it, or one the wiring never stamped (outside the window, too short), is taken", () => {
+    for (const echo of [0.74, 0.5, undefined]) {
+      const { out } = run(listening, [judged("It's okay, no worries.", echo, 400)]);
+      expect(submits(out), String(echo)).toEqual(["It's okay, no worries."]);
+    }
+  });
+
+  it("an echo that is ALSO too quiet is an echo — the more specific diagnosis, and no cue", () => {
+    const { state, out } = run(listening, [judged("Was that okay? Yes.", 1, 0)]);
+    expect(out).toEqual([]);
+    expect(state.heard).toBe(CALL_COPY.ownWords);
+    expect(state.note).toBeNull();
+  });
+
+  it("the HELD and MUTED drops still outrank it — nothing about the backstop reopens a closed ear", () => {
+    const held = { ...listening, earHeld: true, heard: "before" };
+    expect(run(held, [judged("the reply's words", 1)]).state.heard).toBe("before");
+  });
+});
+
 describe("callReduce — the transcript gate (D74 S5)", () => {
   /** A final carrying the ear's own accrual for it, against the owner's floor. */
   const heard = (text: string, energyMs?: number): CallSignal => ({
@@ -1379,6 +1479,23 @@ describe("callReduce — the transcript gate (D74 S5)", () => {
     text,
     energyMs,
     minFinalMs: 200,
+  });
+
+  it("cues only a SUSTAINED drop — a zero-accrual hallucination gets the note and no sound (D80 ⑥)", () => {
+    const flap = run(listening, [heard("Mm-hmm.", 0)]);
+    expect(flap.state.note).toBe(CALL_COPY.tooQuiet);
+    expect(flap.out).toEqual([]); // nothing was heard, so nothing is said — and no cue echo to feed
+    expect(run(listening, [heard("Mm-hmm.", 20)]).out).toEqual([{ type: "dropCue" }]);
+  });
+
+  it("\"too quiet\" clears on the next TAKEN final — and never clears anybody else's note (D80's W6)", () => {
+    const dropped = run(listening, [heard("Thank you for watching.", 40)]).state;
+    expect(dropped.note).toBe(CALL_COPY.tooQuiet);
+    expect(run(dropped, [heard("what time is it", 600)]).state.note).toBeNull();
+    // another drop keeps it; a taken final over a DIFFERENT note leaves that note standing
+    expect(run(dropped, [heard("Mm.", 0)]).state.note).toBe(CALL_COPY.tooQuiet);
+    const strained = { ...listening, note: CALL_COPY.strained };
+    expect(run(strained, [heard("what time is it", 600)]).state.note).toBe(CALL_COPY.strained);
   });
 
   it("DISCARDS a final the ear cannot account for, and says so", () => {
@@ -1509,6 +1626,42 @@ describe("callReduce — the mouth WAITS (the owner's 2026-09-26 ruling on R86 L
     // …and under the held ear's flat drop too, where the segment stays open as well.
     const heldJudged = { ...judged, earHeld: true };
     expect(run(heldJudged, [{ type: "final", text: "leak" }]).state.noiseOpen).toBe(false);
+  });
+
+  it("…but ANOTHER segment's final leaves it standing — Speaches overlaps segments (D80 ③)", () => {
+    // `speech_started(B)` lands before `transcript(A)`: A's final is not B's, and ending B's verdict on
+    // it would put a judged TV segment back in front of the mouth until B happens to stop.
+    const b = run(listening, [{ type: "speechStart", itemId: "B" }]).state;
+    expect(b.speechItem).toBe("B");
+    const judged = run(b, [{ type: "segmentNoise" }]).state;
+    const afterA = run(judged, [{ type: "final", text: "what's the weather", itemId: "A" }]);
+    expect(afterA.state.noiseOpen).toBe(true);
+    expect(mouthMayOpen(afterA.state)).toBe(true);
+    expect(submits(afterA.out)).toEqual(["what's the weather"]); // A itself is taken as ever
+    // …while B's OWN final still ends it, and so does an unnamed one (the pre-D80 rule).
+    expect(run(judged, [{ type: "final", text: "", itemId: "B" }]).state.noiseOpen).toBe(false);
+    expect(run(judged, [{ type: "final", text: "" }]).state.noiseOpen).toBe(false);
+    // The id goes with its segment: a stop clears it.
+    expect(run(b, [{ type: "speechStop", itemId: "B" }]).state.speechItem).toBeNull();
+  });
+
+  it("a STOP naming another segment closes nothing — matching and id-less stops behave as ever (Maya)", () => {
+    const b = run(listening, [{ type: "speechStart", itemId: "B" }]).state;
+    const stray = run(b, [{ type: "speechStop", itemId: "A" }]).state;
+    expect(stray.userSpeechActive).toBe(true);
+    expect(stray.waitingFinal).toBe(false);
+    expect(stray.speechItem).toBe("B");
+    for (const stop of [
+      { type: "speechStop", itemId: "B" },
+      { type: "speechStop" },
+    ] as CallSignal[]) {
+      const after = run(b, [stop]).state;
+      expect(after.userSpeechActive).toBe(false);
+      expect(after.waitingFinal).toBe(true);
+    }
+    // an id-less START matches any stop, the pre-ledger rule
+    const unnamed = run(listening, [{ type: "speechStart" }, { type: "speechStop", itemId: "A" }]);
+    expect(unnamed.state.userSpeechActive).toBe(false);
   });
 
   it("the verdict clears wherever its segment closes or is condemned — stop, mute, a lost or fresh leg", () => {

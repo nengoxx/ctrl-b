@@ -22,7 +22,7 @@ import {
   stagedIds,
   type StagedAttachment,
 } from "../../src/store/attachments";
-import { reloadChat, sendMessage, startNewThread, useChat } from "../../src/store/chat";
+import { reloadChat, resetToThreadless, sendMessage, useChat } from "../../src/store/chat";
 
 type Frame = { event: string; data: unknown };
 
@@ -100,7 +100,7 @@ function bodyOf(index = 0): Record<string, unknown> {
 }
 
 beforeEach(() => {
-  startNewThread({ keepAgent: false });
+  resetToThreadless(null);
   clearStaged();
 });
 afterEach(() => clearStaged());

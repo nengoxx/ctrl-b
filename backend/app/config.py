@@ -679,7 +679,9 @@ class LiveCfg(VoiceServiceCfg):
       retention.
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`,
       `barge_in`, `ring`, `captions`, `mic_hold`, the D76 GATE six (`floor_dbfs`, the three
-      margins, `min_dbfs`/`max_dbfs`), the D73 CAPTURE pair (`route`, `input_device`), the D73 S6
+      margins, `min_dbfs`/`max_dbfs`), the D80 TAIL four (`hold_tail_min_ms`, `tail_quiet_ms`,
+      `tail_quiet_margin_db`, `hold_tail_max_ms`), the D80 BACKSTOP pair (`echo_similarity`,
+      `echo_window_ms`), the D80 `chirp`, the D73 CAPTURE pair (`route`, `input_device`), the D73 S6
       BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`), the D74 pair
       (`min_final_ms`, `debug`), the 2026-09-26 `noise_verdict_ms` and the four S2.5 DICTATION knobs
       are PWA behavior
@@ -767,7 +769,9 @@ class LiveCfg(VoiceServiceCfg):
     #: delivered to the client). 20 is a few sittings of calls; bounded 1–500 so the directory stays
     #: bounded whatever is typed — a trail is diagnosis, not an archive.
     trail_keep: int = Field(default=20, ge=1, le=500)
-    #: §6 overlay mode: true = the focal-anchored face ring, false = art-only + transcript accent.
+    #: §6 overlay mode: true = the face ring over the art, false = art-only + transcript accent. The
+    #: ring sits at ONE position — centred, upper third — whatever the picture's framing point (ISS-32,
+    #: owner ruling 2026-09-27: reverses D71's focal-anchored ring).
     ring: bool = True
     #: THE REPLY, AS CAPTIONS on the call screen (client; owner ask 2026-09-22): the agent's answer as
     #: small fading text above the heard-you line, growing as it streams. A CLIENT knob for the reason
@@ -776,12 +780,14 @@ class LiveCfg(VoiceServiceCfg):
     #: (§4.5), like every knob on this object: a Conf save mid-call applies to the NEXT call. Ships ON
     #: — a call that shows what was SAID but not what was ANSWERED was the owner's whole complaint.
     captions: bool = True
-    #: THE MIC HOLD (D76 §B; Conf "Mic off while it speaks", CONFIG ONLY — never on the deck): is the
-    #: ear held while the reply plays? `on` = held for every reply, whatever the output. `off` = never
-    #: held (a loudspeaker can then transcribe its own reply — the client's near-speech gate is the
-    #: only turn boundary left). `auto` = the per-chunk leak probe (D76 S2). **Until S2 lands, `auto`
-    #: behaves as the D73 route-derived rule**: held where the track's AEC readback is not `"all"`
-    #: (capability-detected per track, NEVER UA-sniffed — §7-S0 ③), free where it is.
+    #: THE MIC HOLD (D76 §B → D80 ⑤; Conf "Mic off while it speaks", CONFIG ONLY — never on the deck):
+    #: is the ear held while the reply plays, and through its tail (the `hold_tail_*` knobs below)?
+    #: `on` = held for every reply, whatever the output. `off` = never held (the reply may then be
+    #: transcribed — the client's near-speech gate and the text backstop are the only turn boundaries
+    #: left). `auto` = the D73 rule: held wherever the track's AEC readback is not `"all"`
+    #: (capability-detected per track, NEVER UA-sniffed — §7-S0 ③), free where it is. D76 S2 made
+    #: `auto` a per-chunk leak probe; D80 deleted it — it judged each chunk in its first 600 ms,
+    #: before a car's Bluetooth had played a sample. The values are unchanged, so no migration.
     mic_hold: Literal["auto", "on", "off"] = "auto"
 
     # ── D76 §C · THE RELATIVE GATE (client; evidence R83) ──
@@ -800,6 +806,60 @@ class LiveCfg(VoiceServiceCfg):
     playback_margin_db: float = Field(default=10.0, ge=0.0, le=40.0)
     min_dbfs: float = Field(default=-60.0, ge=-90.0, le=0.0)
     max_dbfs: float = Field(default=-20.0, ge=-90.0, le=0.0)
+
+    # ── D80 ① · THE TAIL HOLD (client; evidence R91 §1/§4, the car round's trail) ──
+    # The element's `ended` is not the reply's end: a car plays it ≈ 2.3 s later over a Bluetooth link
+    # whose delay the web cannot read (Android discards sink reports ≥ 1 s, R91 §1.4), as loud as the
+    # owner. So when the mouth falls under a holding `mic_hold` the ear stays held until the meter has
+    # heard the room go QUIET — below the NOISE estimate + a margin, never the Sensitivity pin (which
+    # sat inside the echo's band) — for a contiguous stretch, after a minimum, under a cap.
+    #: Nothing before this, ms: a headphone/loudspeaker sink still lags the element by a few hundred
+    #: ms (R91 §J3 (i); §1.5: headphones 0.13–0.3 s). 0–5000.
+    hold_tail_min_ms: int = Field(default=300, ge=0, le=5000)
+    #: The contiguous quiet that releases it, ms: bridges 97 % of the pauses inside a reply (R91 §4.2 —
+    #: p50 440 / p90 620 / max 1000 ms on the call's own replies), and equals `silence_ms`'s own
+    #: definition of "stopped". 100–5000.
+    tail_quiet_ms: int = Field(default=700, ge=100, le=5000)
+    #: What counts as quiet, dB over the tracked NOISE floor (R91 §4.3: the echo sits 20–30 dB over the
+    #: cabin, so +10 separates it cleanly; the `noise_margin_db` reasoning). 0–40.
+    tail_quiet_margin_db: float = Field(default=10.0, ge=0.0, le=40.0)
+    #: The cap, ms after the mouth fell: released regardless (R91 §4.3 — the worst measured audible end
+    #: 3.46 s + the 0.7 s quiet + ~0.8 s headroom). Past it the text backstop below is the belt. 500–15000.
+    hold_tail_max_ms: int = Field(default=5000, ge=500, le=15000)
+
+    # ── D80 ② · THE TEXT BACKSTOP (client; evidence R91 §3) ──
+    # The tail hold measures LEVEL; what escapes it (a pause ≥ `tail_quiet_ms` inside the not-yet-heard
+    # tail, a tail past the cap) comes back as a final whose words are the reply's. The browser knows what
+    # it just spoke, so a final inside the post-reply window that matches the reply's SPOKEN text
+    # (Hermes' Ratcliff/Obershelp matcher, ≥ 10 normalised characters) is dropped, visibly.
+    #: The similarity at or above which a final is the reply's own words (R91 §3.4, replayed on the car
+    #: call: the six echoes scored 0.946–1.0, the genuine turns ≤ 0.538 — 0.75 is the gap's middle;
+    #: Hermes ships 0.6, Mio 0.72). 0.5–1.0: below 0.5 ordinary conversation starts to match.
+    echo_similarity: float = Field(default=0.75, ge=0.5, le=1.0)
+    #: How long after the tail's release (or the mouth's fall, when no tail holds) a final is still
+    #: compared, ms (R91 §6 ②: an echo's final lands ~0.4 s after its stop, which comes `silence_ms`
+    #: after the audible end; 4 s is margin over both). 0 = only while the tail itself holds. 0–15000.
+    echo_window_ms: int = Field(default=4000, ge=0, le=15000)
+    #: D80 ⑦ — THE CONNECT CHIRP (client; evidence R93 §V): a 150 ms 1→3 kHz sweep played once per
+    #: capture (call start, every route cycle) as the call's "connected" sound, which the browser finds
+    #: again in the mic to MEASURE how late this output path plays — the number the web cannot read.
+    #: This wave LOGS the lag (trail + debug readout) and nothing reads it for policy; wave 1.5 lets it
+    #: set the tail hold once a car round confirms it. The whole-feature toggle (the standing
+    #: pluggability requirement): off = no sound, no measurement, no trail line. The owner: "it's only
+    #: once, no problem at all".
+    chirp: bool = True
+
+    @model_validator(mode="after")
+    def _tail_fits_cap(self) -> "LiveCfg":
+        """The tail hold's one ordering (D80 ①): its minimum plus the quiet run must fit under the cap,
+        or no tail could ever end on quiet and every one would sit out the full cap. At LOAD, the
+        `_floor_bounds` precedent, so the bad triple is a Conf 422 rather than a deaf call."""
+        if self.hold_tail_min_ms + self.tail_quiet_ms > self.hold_tail_max_ms:
+            raise ValueError(
+                f"hold_tail_min_ms ({self.hold_tail_min_ms}) + tail_quiet_ms ({self.tail_quiet_ms}) "
+                f"must fit under hold_tail_max_ms ({self.hold_tail_max_ms})"
+            )
+        return self
 
     @model_validator(mode="after")
     def _floor_bounds(self) -> "LiveCfg":
@@ -989,7 +1049,7 @@ class TtsServiceCfg(VoiceServiceCfg):
     # D76 S3a — TRIM THE PAD. Some TTS servers (PocketTTS: 320–760 ms of −81 dBFS before the first
     # sound) pad every clip with digital silence; with this True the server cuts it at the one TTS
     # chokepoint (`core.audio.trim_wav_silence`, keeping 40 ms lead / 120 ms tail), so every sentence
-    # starts sooner AND the live call's leak probe hears the reply's head instead of pad. WAV only —
+    # starts sooner (it was bought for D76's leak probe, deleted by D80; the latency win stands). WAV only —
     # decided by sniffing the bytes, not the asked format (PocketTTS answers WAV to an `opus` ask);
     # mp3/opus/aac/flac clips pass through untouched (no decoder in the stdlib). Server-side only: it
     # changes the bytes, never the client's policy, so it is NOT delivered in `/voice/status`.

@@ -177,8 +177,8 @@ def trim_wav_silence(
     """Cut the leading/trailing digital pad off a WAV clip, keeping `lead_ms`/`tail_ms` of it.
 
     Why it exists: PocketTTS pads every clip with 320–760 ms of −81 dBFS silence before the first
-    sound, so every sentence starts that much late AND the live call's leak probe (which listens to the
-    head of each chunk for the reply bleeding into the mic) hears nothing but pad and releases the ear.
+    sound, so every sentence starts that much late. (It was found by D76's per-chunk leak probe, which
+    heard nothing but pad and released the ear; D80 deleted the probe — the latency win stands.)
 
     A pass-through for everything it does not fully understand — not RIFF/WAVE (mp3/opus/…: there is
     no stdlib decoder, so those are simply not ours), a format other than pcm16 / float32 (plain or

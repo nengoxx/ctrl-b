@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadAgents, loadSkills } from "../../src/lib/composer";
 import {
   openThread,
+  resetToThreadless,
   setStickyAgent,
-  startNewThread,
   useChat,
   useStickyAgent,
 } from "../../src/store/chat";
@@ -432,7 +432,7 @@ describe("tools menu — the open thread's pinned agent", () => {
     return release;
   }
 
-  afterEach(() => startNewThread({ keepAgent: false })); // the pin is store state — every arm starts with none
+  afterEach(() => resetToThreadless(null)); // the pin is store state — every arm starts with none
 
   it("checks the THREAD's agent, and follows a pin that lands while the panel is OPEN", async () => {
     const release = serveThread("ops");

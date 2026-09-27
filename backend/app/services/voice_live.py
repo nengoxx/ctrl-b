@@ -19,6 +19,19 @@ counter.
   at the relay and pays ~33 % base64 overhead on the loopback leg.
 * **Downlink (relay → phone):** JSON only — `state` / `speech_started` / `speech_stopped` /
   `transcript` / `error`. **No audio ever rides this socket** (C3 owns reply audio over HTTP).
+  THE SEGMENT ID (D80 ③): Speaches tags all three segment events with the input buffer's `item_id`
+  (one id per VAD segment — `input_audio_buffer_event_router.py:75-99`, `input_audio_buffer.py:137/164`),
+  and the relay FORWARDS it — `speech_started` also carries Speaches' `audio_start_ms`,
+  `speech_stopped` its `audio_end_ms` (the buffer's own audio clock) — so the phone judges each final on
+  its OWN segment's evidence even when Speaches overlaps them (`speech_started(B)` before
+  `transcript(A)` is routine). Each field rides only when Speaches sent it.
+  THE GAP CUT (D80 ④): a segment whose `speech_started → speech_stopped` span — on the RELAY's arrival
+  clock, the clock the car evidence was measured on — is shorter than `silence_ms / 2` cannot be real
+  speech (Silero cannot emit a real stop under `silence_ms`; it is a flap of the 3 s zero-state
+  rescan), unless Speaches' own audio span is ≥ `silence_ms` (a veto: that is a real stop), so its
+  transcript goes down EMPTY with a reason —
+  `{"type":"transcript","text":"","final":true,"item_id":…,"reason":"short","gap_ms":…}` — which the
+  phone disposes of like any empty final (no cue, no note, no hold). `short` is the only `reason` today.
 
 **The four invariants worth naming**
 
@@ -61,7 +74,8 @@ import base64
 import json
 import logging
 import time
-from collections import deque
+from collections import OrderedDict, deque
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
@@ -123,6 +137,72 @@ CLOSE_PROTOCOL = 1008
 CLOSE_UPSTREAM = 1011
 CLOSE_BUSY = 1013
 CLOSE_OK = 1000
+
+#: THE GAP CUT's ledger bound (D80 ④): how many VAD segments the relay keeps clocks for while their
+#: transcript is still due. Speaches runs one segment at a time and transcribes each in ~0.3–0.5 s, so
+#: a healthy leg holds one or two; the bound is for the segments that NEVER get a transcript (an
+#: errored transcription publishes `error` instead, R86 LC-2) — the oldest is evicted, and a transcript
+#: that arrives for it later simply passes uncut. Bookkeeping, not a preference: the client's own
+#: ledger (`SEGMENT_CAP`, `useLiveCall`) is 16; this one is twice that so the relay is never the side
+#: that forgets first.
+SEGMENT_LEDGER_CAP = 32
+
+
+@dataclass(slots=True)
+class _SegmentClock:
+    """One VAD segment's span on TWO clocks (D80 ④): the relay's monotonic arrival time of its start
+    and stop (the clock the gap cut judges on — the evidence's) and Speaches' own audio clock
+    (`audio_start_ms` on its start, `audio_end_ms` on its stop — the veto; see `gap_cut_ms`). Both are
+    trailed on every cut."""
+
+    audio_start_ms: int | None = None
+    audio_end_ms: int | None = None
+    started_at: float | None = None
+    stopped_at: float | None = None
+
+    def audio_gap_ms(self) -> int | None:
+        if self.audio_start_ms is None or self.audio_end_ms is None:
+            return None
+        return self.audio_end_ms - self.audio_start_ms
+
+    def relay_gap_ms(self) -> int | None:
+        if self.started_at is None or self.stopped_at is None:
+            return None
+        return round((self.stopped_at - self.started_at) * 1000)
+
+
+def gap_cut_ms(relay_gap_ms: int | None, audio_gap_ms: int | None, silence_ms: int) -> int | None:
+    """THE GAP CUT's verdict (D80 ④, the code round's OPEN-1 correction): the span to cut on, or `None`.
+
+    Judged on the RELAY clock — the clock the evidence was measured on (every hallucinated short in the
+    car trail had a `speech_started → speech_stopped` arrival gap ≤ 201 ms, every real one ≥ 2361 ms).
+    Speaches' AUDIO clock cannot judge a flap: its `audio_start_ms` is back-dated to where the 3 s
+    zero-state rescan placed the speech, so a flap's audio span can run far past `silence_ms / 2`. It is
+    a VETO only: an audio span ≥ `silence_ms` is a real path-2 stop (its trailing silence lies inside the
+    span — Silero cannot emit one sooner), never cut, whatever the relay clock says. No relay clock
+    (a stop whose start the relay never timed) ⇒ never cut."""
+    if relay_gap_ms is None or relay_gap_ms >= silence_ms / 2:
+        return None
+    if audio_gap_ms is not None and audio_gap_ms >= silence_ms:
+        return None
+    return relay_gap_ms
+
+
+def _segment_fields(event: dict[str, Any], clock: str | None) -> dict[str, Any]:
+    """The segment identity a Speaches event carries, as the downlink forwards it (D80 ③): its
+    `item_id`, plus the one audio-clock field `clock` names (`audio_start_ms` on a start,
+    `audio_end_ms` on a stop). Each rides only when Speaches sent it with the right type — an older or
+    different ear that omits them yields the pre-D80 frame, which the phone reads as "no id" (its
+    unmeasured, fail-open case) rather than as a malformed one."""
+    fields: dict[str, Any] = {}
+    item_id = event.get("item_id")
+    if isinstance(item_id, str) and item_id:
+        fields["item_id"] = item_id
+    if clock is not None:
+        ms = event.get(clock)
+        if isinstance(ms, int) and not isinstance(ms, bool):
+            fields[clock] = ms
+    return fields
 
 
 # ── admission (the D38 no-await check-and-set, process-wide) ──────────────────────────────────────
@@ -298,6 +378,9 @@ class LiveRelaySession:
         #: such a count lose words, so the flush bursts a CONSTANT worst-case pad instead (see
         #: `_flush`) and the only state kept is this one bit: has this session ever fed audio.
         self._audio_seen = False
+        #: THE GAP CUT's clocks (D80 ④), one per VAD segment by its `item_id`, from its start until its
+        #: transcript consumes it; insertion-ordered, bounded by `SEGMENT_LEDGER_CAP` (oldest evicted).
+        self._segments: OrderedDict[str, _SegmentClock] = OrderedDict()
         #: One `degraded` frame per overflow BURST, not per dropped frame.
         self._overflow_flagged = False
         #: `(monotonic timestamp, ms of audio)` for the recent client binary frames — the rolling
@@ -772,23 +855,86 @@ class LiveRelaySession:
         kind = event.get("type")
         if kind == "input_audio_buffer.speech_started":
             self._speech_open = True
-            await self._send_down({"type": "speech_started"})
+            fields = _segment_fields(event, "audio_start_ms")
+            clock = self._segment_clock(fields.get("item_id"))
+            if clock is not None:
+                clock.audio_start_ms = fields.get("audio_start_ms")
+                clock.started_at = time.monotonic()
+            await self._send_down({"type": "speech_started", **fields})
         elif kind == "input_audio_buffer.speech_stopped":
             self._speech_open = False
-            await self._send_down({"type": "speech_stopped"})
+            fields = _segment_fields(event, "audio_end_ms")
+            clock = self._segment_clock(fields.get("item_id"))
+            if clock is not None:
+                clock.audio_end_ms = fields.get("audio_end_ms")
+                clock.stopped_at = time.monotonic()
+            await self._send_down({"type": "speech_stopped", **fields})
         elif kind == "conversation.item.input_audio_transcription.completed":
             # `final` is the R70 §9.2 seam for phrase-streaming dictation (S2.5): the ear has no
             # partials today (verified twice), so every transcript this relay emits is final — but the
             # FIELD exists from v1 so a partial-capable ear can arrive without a wire change.
-            await self._send_down(
-                {"type": "transcript", "text": event.get("transcript") or "", "final": True}
-            )
+            text = event.get("transcript") or ""
+            fields = _segment_fields(event, None)
+            cut = self._gap_cut(fields.get("item_id"), text)
+            if cut is not None:
+                # A sub-silence flap (D80 ④): its words go down as NOTHING, named — the frame is its own
+                # trail line (the one downlink hook below), and the phone disposes of it like any empty
+                # final. The text it would have carried is the `gap_cut` note's alone (R92 §V: trail it).
+                await self._send_down(
+                    {
+                        "type": "transcript",
+                        "text": "",
+                        "final": True,
+                        **fields,
+                        "reason": "short",
+                        "gap_ms": cut,
+                    }
+                )
+            else:
+                await self._send_down({"type": "transcript", "text": text, "final": True, **fields})
         elif kind == "error":
             await self._handle_upstream_error(event)
         # Everything else (`session.updated`, `input_audio_buffer.committed`, `conversation.item.*`,
         # `rate_limits.*`) is upstream bookkeeping the phone has no use for — absorbed, not forwarded.
         # `committed` in particular DELIBERATELY updates nothing (F3, two rounds): it cannot be
         # correlated with what the relay fed, so no per-buffer accounting hangs off it — see `_flush`.
+
+    def _segment_clock(self, item_id: str | None) -> _SegmentClock | None:
+        """The clock record for segment `item_id`, created on first sight (a start, or a stop whose start
+        was missed) — `None` for an event that named no id, which the gap cut then never judges."""
+        if item_id is None:
+            return None
+        clock = self._segments.get(item_id)
+        if clock is None:
+            if len(self._segments) >= SEGMENT_LEDGER_CAP:
+                self._segments.popitem(last=False)
+            clock = self._segments[item_id] = _SegmentClock()
+        return clock
+
+    def _gap_cut(self, item_id: str | None, text: str) -> int | None:
+        """THE GAP CUT (D80 ④, R92 §L3/§V b1): the span, in ms, of a segment too short to be speech — or
+        `None` to pass the transcript verbatim. The segment's clocks are CONSUMED either way.
+
+        Why the relay and why `silence_ms / 2`: Silero cannot emit a real stop sooner than `silence_ms`
+        after speech (the path-2 stop needs that much trailing silence), so a start→stop span under it
+        is Speaches' other stop — the 3 s zero-state rescan finding nothing on the next append, a FLAP.
+        The car trail: every hallucinated short ("", "Yeah.", "Mm.") came from a span ≤ 201 ms, every
+        real segment's was ≥ 2361 ms. Half of `silence_ms` (350 ms at the default) leaves the relay
+        clock's event bunching room and keeps a real one-syllable word's ~0.1–0.2 s of margin (R92 §V —
+        recorded). The relay owns it because it owns `silence_ms` and sees all three events.
+
+        The CLOCK (`gap_cut_ms`): the relay's own arrival clock judges — the evidence's clock — and
+        Speaches' audio clock only VETOES (a span ≥ `silence_ms` is a real stop). A transcript whose
+        segment the relay never timed (no id, an evicted id, a missing stop) is never cut."""
+        clock = self._segments.pop(item_id, None) if item_id is not None else None
+        if clock is None:
+            return None
+        audio, relay = clock.audio_gap_ms(), clock.relay_gap_ms()
+        gap = gap_cut_ms(relay, audio, self._cfg.silence_ms)
+        if gap is None:
+            return None
+        self._note("gap_cut", item_id=item_id, text=text, gap_ms=gap, audio_gap_ms=audio, relay_gap_ms=relay)
+        return gap
 
     async def _handle_upstream_error(self, event: dict[str, Any]) -> None:
         """Forward upstream errors, minus the ONE known-spurious one.

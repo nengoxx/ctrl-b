@@ -59,7 +59,7 @@ vi.mock("../../src/hooks/useAgentChat", () => ({ useAgentChat: () => chat.view }
 import { useActiveBackdrop } from "../../src/hooks/useActiveBackdrop";
 import type { MediaFile } from "../../src/hooks/useMedia";
 import { pinStickyAgent, runComposer } from "../../src/lib/composer";
-import { getChatStatus, openThread, setStickyAgent, startNewThread } from "../../src/store/chat";
+import { getChatStatus, openThread, resetToThreadless, setStickyAgent } from "../../src/store/chat";
 import { setUI } from "../../src/store/ui";
 import { AgentTab } from "../../src/tabs/AgentTab";
 import { DefaultRoot } from "../../src/theme-engine/kit/DefaultRoot";
@@ -143,8 +143,7 @@ beforeEach(() => {
   setUI({ theme: "cosmos", tab: "agent", agentBackdrop: "operator", motion: "full" });
 });
 afterEach(() => {
-  setStickyAgent(null);
-  startNewThread({ keepAgent: false }); // …and the THREAD pin with it: both rungs of the ladder start each arm empty
+  resetToThreadless(null); // the sticky pick AND the thread pin: both rungs of the ladder start each arm empty
   setUI({ agentBackdrop: "operator" });
   cleanup();
 });

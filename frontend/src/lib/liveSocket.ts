@@ -17,13 +17,22 @@
 //
 // Downlink is JSON only — no audio ever rides this socket (C3 owns reply audio over HTTP).
 
-/** The downlink union, exactly as the relay emits it. */
+/** The downlink union, as the client reads it. The three SEGMENT frames carry the ear's `item_id` when
+ *  the relay forwarded one (D80 ③ — one id per VAD segment, on its start, its stop and its transcript),
+ *  which is what lets the call judge each final on its OWN segment's evidence. The relay also forwards
+ *  Speaches' `audio_start_ms`/`audio_end_ms` and, on a gap-cut final, `reason`/`gap_ms` (D80 ④) — those
+ *  are the trail's, and nothing here reads them, so they are not parsed. */
 export type LiveDown =
   | { type: "state"; state: "ready" | "ended" | "degraded"; reason?: string }
-  | { type: "speech_started" }
-  | { type: "speech_stopped" }
-  | { type: "transcript"; text: string; final: boolean }
+  | { type: "speech_started"; item_id?: string }
+  | { type: "speech_stopped"; item_id?: string }
+  | { type: "transcript"; text: string; final: boolean; item_id?: string }
   | { type: "error"; code: string; message: string };
+
+/** The segment id a frame carries, or nothing — never a non-string (the relay drops malformed ids). */
+function itemIdOf(f: Record<string, unknown>): { item_id?: string } {
+  return typeof f.item_id === "string" && f.item_id !== "" ? { item_id: f.item_id } : {};
+}
 
 /** Close codes seen on this route. 1008 protocol · 1011 upstream · 1013 busy · 1000 clean — plus ONE
  *  private-range code this client mints for itself so the machine can tell "I closed the leg because the
@@ -62,9 +71,9 @@ export function parseLiveFrame(raw: string): LiveDown | null {
       return { type: "state", state: s, ...(reason === undefined ? {} : { reason }) };
     }
     case "speech_started":
-      return { type: "speech_started" };
+      return { type: "speech_started", ...itemIdOf(f) };
     case "speech_stopped":
-      return { type: "speech_stopped" };
+      return { type: "speech_stopped", ...itemIdOf(f) };
     case "transcript":
       // `final` is the relay's own constant `true` today; read it rather than assume it, so a future
       // partial (architecture ② — §4.1 says we have none) arrives as data instead of as a submission.
@@ -72,6 +81,7 @@ export function parseLiveFrame(raw: string): LiveDown | null {
         type: "transcript",
         text: typeof f.text === "string" ? f.text : "",
         final: f.final !== false,
+        ...itemIdOf(f),
       };
     case "error":
       return {

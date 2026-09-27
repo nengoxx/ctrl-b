@@ -201,8 +201,6 @@ describe("trailSig — one signal, one line (D77, council F5/F1)", () => {
       ...live,
       earHeld: true,
       mouthLive: true,
-      probeOpen: false,
-      probeIdx: 3,
     };
     const next: CallState = { ...prev, phase: "thinking", earHeld: false };
     const line = trailSig(
@@ -215,21 +213,21 @@ describe("trailSig — one signal, one line (D77, council F5/F1)", () => {
       textLen: 15,
       energyMs: 400,
       minFinalMs: 200,
-      pre: { earHeld: true, mouthLive: true, probeOpen: false, probeIdx: 3, muted: false },
+      pre: { earHeld: true, mouthLive: true, muted: false },
       phase: "listening→thinking",
     });
     expect(JSON.stringify(line)).not.toContain("wake up");
   });
 
-  it("`sent` loses its text the same way; `chunkStarted` keeps its idx", () => {
+  it("`sent` loses its text the same way; a primitive payload rides verbatim", () => {
     expect(trailSig({ type: "sent", outcome: "accepted", text: "hi there" }, live, live)).toEqual({
       type: "sent",
       outcome: "accepted",
       textLen: 8,
     });
-    expect(trailSig({ type: "chunkStarted", idx: 4, gen: 2 }, live, live)).toEqual({
-      type: "chunkStarted",
-      idx: 4,
+    expect(trailSig({ type: "setMuted", on: true, gen: 2 }, live, live)).toEqual({
+      type: "setMuted",
+      on: true,
     });
   });
 

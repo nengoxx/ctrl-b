@@ -8995,7 +8995,7 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
  *
  * z-index 55 — the ladder is stated once, at `.pm-backdrop.auto-pm` above.
  *
- * TWO MODES, ONE INDICATOR. `.ring` draws the focal-anchored circumference over the art and the phase
+ * TWO MODES, ONE INDICATOR. `.ring` draws the fixed-anchor circumference over the art and the phase
  * line carries no dot; `.no-ring` drops the ring and moves the dot onto the transcript line. Both wear
  * the same state palette (`--call-accent`) and the same muted treatment.
  *
@@ -9023,9 +9023,8 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   /* The halo: a little over half the narrow side on a phone, capped so a tablet does not get a hoop. */
   --call-ring-size: min(56vw, 240px);
   --call-ring-stroke: 2px;
-  /* THE FALLBACK ANCHOR (§6) — centred, upper third — used whenever the picture has no framing point
-   * to invert (a proportional bundled entry, an unmeasured box, or no art at all). An anchored ring
-   * overrides these two inline, in the overlay's own pixels. */
+  /* THE RING'S ANCHOR (§6) — centred, upper third — for every picture: the owner ruled the ring fixed
+   * whatever the art's framing point (ISS-32, 2026-09-27). Nothing overrides these two inline. */
   --call-ring-x: 50%;
   --call-ring-y: 33%;
   /* THE CAPTIONS' box: four lines of reply and the depth of its edge fade. Tuning knobs like the

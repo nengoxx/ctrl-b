@@ -11,8 +11,8 @@
 // PURE BY CONSTRUCTION. Everything here is a function or a small mutable record the call's wiring
 // owns — no React, no clocks, no storage — so the three estimators and the floor are pinned by unit
 // tests alone (`tests/lib/levelGate.test.ts`), and the hook only decides WHEN to feed them. The
-// partition that decides WHICH frames feed them (D76 §B.2: only UPLINKED frames; the held ones belong
-// to the leak probe) is the hook's, stated where the frames arrive.
+// partition that decides WHICH frames feed them (D76 §B.2: only UPLINKED frames; a held one is the
+// reply leaking back in) is the hook's, stated where the frames arrive.
 //
 // THE UNITS ARE THE CONTRACT: every level here is dBFS (0 = full scale, more negative = quieter) and
 // every margin is a dB DIFFERENCE. `rmsToDbfs` is the ONE conversion; nothing else in the call
@@ -143,41 +143,72 @@ export function learnVoice(
 
 // ── C.4 · the effective floor ────────────────────────────────────────────────────────────────────
 
+/** What the effective floor is computed FROM — the estimators' state and the knobs; the pin rides beside
+ *  it in `effectiveFloor`'s own arguments. */
+export interface FloorInputs {
+  noise: number | null;
+  settled: boolean;
+  voiceLevel: number | null;
+  cfg: GateCfg;
+}
+
 /**
- * THE EFFECTIVE FLOOR (D76 §C.4), dBFS — the ONE normalize every consumer reads (the gate's accrual,
- * the barge floor under `playback_margin_db`, the debug readout, S1's meter marker).
+ * THE AUTO FLOOR (D76 §C.4), dBFS — the effective floor with no pin standing.
  *
  * Truth table (N = noise floor, V = voice level, nm/vm = the margins, F = `floor_dbfs`,
  * clamp = into [`min_dbfs`, `max_dbfs`]):
  *
- *   pin   | N     | settled | V     | floor
- *   ------+-------+---------+-------+------------------------------------------------
- *   P     | any   | any     | any   | P                     (the owner's per-call pin)
- *   null  | null  | —       | null  | clamp(F)              (no estimate yet: the ceiling)
- *   null  | null  | —       | V     | clamp(max(F, V − vm))
- *   null  | N     | no      | null  | clamp(min(N + nm, F)) (provisional: never stricter than F)
- *   null  | N     | no      | V     | clamp(max(min(N + nm, F), V − vm))
- *   null  | N     | yes     | null  | clamp(N + nm)
- *   null  | N     | yes     | V     | clamp(max(N + nm, V − vm))
+ *   N     | settled | V     | floor
+ *   ------+---------+-------+------------------------------------------------
+ *   null  | —       | null  | clamp(F)              (no estimate yet: the ceiling)
+ *   null  | —       | V     | clamp(max(F, V − vm))
+ *   N     | no      | null  | clamp(min(N + nm, F)) (provisional: never stricter than F)
+ *   N     | no      | V     | clamp(max(min(N + nm, F), V − vm))
+ *   N     | yes     | null  | clamp(N + nm)
+ *   N     | yes     | V     | clamp(max(N + nm, V − vm))
  *
  * The own-voice term applies as soon as V is KNOWN — seeded from the device store or learned —
  * including before any noise estimate exists (the micro-confirm fold: "with a seeded voice level it
- * fails V − vm from the first frame"); only LEARNING waits for a settled tracker. The pin is taken as
- * given: it is the owner's explicit choice for this call, and S1's control bounds it.
+ * fails V − vm from the first frame"); only LEARNING waits for a settled tracker.
  */
-export function effectiveFloor(args: {
-  noise: number | null;
-  settled: boolean;
-  voiceLevel: number | null;
-  pin: number | null;
-  cfg: GateCfg;
-}): number {
-  const { noise, settled, voiceLevel, pin, cfg } = args;
-  if (pin !== null) return pin;
+export function autoFloor({ noise, settled, voiceLevel, cfg }: FloorInputs): number {
   let base: number;
   if (noise === null) base = cfg.floor_dbfs;
   else if (settled) base = noise + cfg.noise_margin_db;
   else base = Math.min(noise + cfg.noise_margin_db, cfg.floor_dbfs);
   if (voiceLevel !== null) base = Math.max(base, voiceLevel - cfg.voice_margin_db);
   return Math.min(Math.max(base, cfg.min_dbfs), cfg.max_dbfs);
+}
+
+/**
+ * THE PIN'S CEILING (D80 ⑤ — the owner's ruling, CLAMP), dBFS: the highest floor a manual pin may set.
+ * `max_dbfs`, and — once the owner's voice level V is KNOWN — no higher than `V − voice_margin_db`, the
+ * line the automatic floor already treats as "still the owner". The car trail's fact: the pin at −20 sat
+ * ABOVE the owner's learned −21 and dropped their own "See you later, baby."; the least-sensitive
+ * position existed only to silence them (what it was reached for — the reply's echo, Silero's flaps —
+ * no level separates, and D80's tail/backstop/gap cut are their fixes).
+ *
+ * …and NEVER BELOW THE AUTO FLOOR (the code round's O-MED-1, main-seat ruling): Auto is
+ * `max(N + nm, V − vm)`, so once V is known Auto sits at or above `V − vm` — a ceiling of `V − vm` alone
+ * would put Auto above the column's top, and the "less sensitive" end would pin MORE sensitive than
+ * Auto (the car: V −21, N −38 → Auto −28 against a −31 ceiling). The ceiling therefore only ever lowers
+ * the range's top to where Auto already stands, never past it (and so never under `min_dbfs`, which
+ * Auto never is). No knob of its own: `voice_margin_db` is the margin. Computed here, in the ONE
+ * normalize: `effectiveFloor` clamps the pin with it and the Sensitivity control's range tops out at it.
+ */
+export function pinCeiling(inputs: FloorInputs): number {
+  const { voiceLevel, cfg } = inputs;
+  const voiceTop =
+    voiceLevel === null ? cfg.max_dbfs : Math.min(cfg.max_dbfs, voiceLevel - cfg.voice_margin_db);
+  return Math.max(voiceTop, autoFloor(inputs));
+}
+
+/**
+ * THE EFFECTIVE FLOOR (D76 §C.4), dBFS — the ONE normalize every consumer reads (the gate's accrual,
+ * the barge floor under `playback_margin_db`, the debug readout, S1's meter marker): the AUTO floor, or
+ * the owner's per-call pin — never above `pinCeiling` (D80 ⑤, the owner's CLAMP ruling).
+ */
+export function effectiveFloor(args: FloorInputs & { pin: number | null }): number {
+  const { pin, ...inputs } = args;
+  return pin === null ? autoFloor(inputs) : Math.min(pin, pinCeiling(inputs));
 }

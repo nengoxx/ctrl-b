@@ -1,4 +1,4 @@
-import { cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CallDebug } from "../../src/hooks/useLiveCall";
@@ -13,6 +13,7 @@ const h = vi.hoisted(() => {
     userSpeechActive: boolean;
     waitingFinal: boolean;
     muted: boolean;
+    tail: boolean;
     interrupt: ReturnType<typeof vi.fn>;
     toggleMute: ReturnType<typeof vi.fn>;
     route: string;
@@ -31,6 +32,7 @@ const h = vi.hoisted(() => {
     userSpeechActive: false,
     waitingFinal: false,
     muted: false,
+    tail: false,
     interrupt: vi.fn(),
     toggleMute: vi.fn(),
     route: "call",
@@ -40,7 +42,11 @@ const h = vi.hoisted(() => {
     setInputDevice: vi.fn(),
     debug: null,
     // The Sensitivity meter's sampler (D76 §C.7) — a READER the meter polls, never a field.
-    readLevel: vi.fn(() => ({ level: null as number | null, floor: null as number | null })),
+    readLevel: vi.fn(() => ({
+      level: null as number | null,
+      floor: null as number | null,
+      ceiling: null as number | null,
+    })),
     floorAuto: true,
     setFloorPin: vi.fn(),
   };
@@ -59,7 +65,7 @@ const h = vi.hoisted(() => {
     turnLive: false,
     reply: null as { id: string; text: string } | null,
     /** The backdrop hook, as a SPY: what this surface asks it for is a claim of its own. */
-    backdrop: vi.fn((): { url: string } | undefined => undefined),
+    backdrop: vi.fn((): { url: string; focus?: unknown } | undefined => undefined),
   };
 });
 
@@ -127,6 +133,7 @@ beforeEach(() => {
     userSpeechActive: false,
     waitingFinal: false,
     muted: false,
+    tail: false,
     route: "call",
     inputDevice: "",
     canRoute: true,
@@ -134,7 +141,7 @@ beforeEach(() => {
     floorAuto: true,
   };
   h.call.readLevel.mockReset();
-  h.call.readLevel.mockImplementation(() => ({ level: null, floor: null }));
+  h.call.readLevel.mockImplementation(() => ({ level: null, floor: null, ceiling: null }));
   h.call.setFloorPin.mockClear();
   h.call.interrupt.mockClear();
   h.call.toggleMute.mockClear();
@@ -231,13 +238,34 @@ describe("CallOverlay — the two ring modes (§6)", () => {
     expect(overlay().className).toContain("ring");
   });
 
-  it("with no framing point to invert, the ring sets NO inline position — CSS owns the fallback", () => {
-    render(<Host open={true} />);
-    // The fallback anchor (centred, upper third) lives in `--call-ring-x/y`; an inline `left`/`top`
-    // would override it, so the unanchorable case must leave the style attribute empty.
-    const ring = document.querySelector<HTMLElement>(".kit-call-ring")!;
-    expect(ring.style.left).toBe("");
-    expect(ring.style.top).toBe("");
+  it("the ring sits at ONE fixed position whatever the art's framing — CSS owns it (ISS-32)", () => {
+    // The anchor (centred, upper third) lives in `--call-ring-x/y`; an inline `left`/`top` would
+    // override it. The owner ruled the ring fixed regardless of focus (2026-09-27) — so even a picture
+    // WITH a framing point, in a MEASURABLE box (the observer the focal math would have used), sets
+    // nothing inline.
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+    const box = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ width: 400, height: 800 } as DOMRect);
+    h.backdrop.mockReturnValue({
+      url: "/api/media/agents/files/backgrounds/lynette.webp",
+      focus: { mode: "centred", point: { x: 0.8, y: 0.2 }, width: 1600, height: 900 },
+    });
+    try {
+      render(<Host open={true} />);
+      const ring = document.querySelector<HTMLElement>(".kit-call-ring")!;
+      expect(ring.getAttribute("style")).toBeNull();
+    } finally {
+      box.mockRestore();
+      vi.unstubAllGlobals();
+      h.backdrop.mockReturnValue(undefined);
+    }
   });
 
   it("NO-RING mode drops the ring and moves the state onto the transcript line", () => {
@@ -320,6 +348,30 @@ describe("CallOverlay — the two ring modes (§6)", () => {
     h.call = { ...h.call, waitingFinal: false, heard: "lock the vault" };
     view.rerender(<Host open={true} />);
     expect(heard()).toBe("lock the vault");
+  });
+});
+
+describe("CallOverlay — the reply's TAIL (D80 ①)", () => {
+  it("keeps the SPEAKING face over `listening` while the tail holds — the owner still hears her", () => {
+    h.call = { ...h.call, phase: "listening", tail: true };
+    render(<Host open={true} />);
+    expect(overlay().className).toContain("ph-speaking");
+    expect(overlay().className).not.toContain("ph-listening");
+    // …but it does not offer a tap: the element is done, there is nothing on the phone to interrupt.
+    expect(screen.getByText("Speaking")).toBeTruthy();
+  });
+
+  it("the face returns to listening the moment the tail releases", () => {
+    h.call = { ...h.call, phase: "listening", tail: false };
+    render(<Host open={true} />);
+    expect(overlay().className).toContain("ph-listening");
+    expect(screen.getByText("Listening — go ahead")).toBeTruthy();
+  });
+
+  it("never repaints any OTHER phase — a queued turn draining into `thinking` shows thinking", () => {
+    h.call = { ...h.call, phase: "thinking", tail: true };
+    render(<Host open={true} />);
+    expect(overlay().className).toContain("ph-thinking");
   });
 });
 
@@ -690,7 +742,7 @@ describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
   });
 
   it("the BAR follows the sampled level over [min_dbfs, max_dbfs] — at the tick, never per frame", () => {
-    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45 }));
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45, ceiling: null }));
     render(<Host open={true} />);
     fireEvent.click(pill());
     // Read once on open: −40 is halfway up −60…−20; the floor −45 is 15/40 of the way.
@@ -698,16 +750,16 @@ describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
     expect(mark().style.getPropertyValue("--f")).toBe("0.375");
     expect(mark().style.opacity).toBe("1");
     // A new level is not painted until the next tick…
-    h.call.readLevel.mockImplementation(() => ({ level: -30, floor: -45 }));
+    h.call.readLevel.mockImplementation(() => ({ level: -30, floor: -45, ceiling: null }));
     vi.advanceTimersByTime(99);
     expect(fill().style.transform).toBe("scaleY(0.5)");
     vi.advanceTimersByTime(1);
     expect(fill().style.transform).toBe("scaleY(0.75)");
     // …and past either end the bar is empty / full, never out of its column.
-    h.call.readLevel.mockImplementation(() => ({ level: -90, floor: -45 }));
+    h.call.readLevel.mockImplementation(() => ({ level: -90, floor: -45, ceiling: null }));
     vi.advanceTimersByTime(100);
     expect(fill().style.transform).toBe("scaleY(0)");
-    h.call.readLevel.mockImplementation(() => ({ level: -3, floor: -45 }));
+    h.call.readLevel.mockImplementation(() => ({ level: -3, floor: -45, ceiling: null }));
     vi.advanceTimersByTime(100);
     expect(fill().style.transform).toBe("scaleY(1)");
   });
@@ -722,7 +774,7 @@ describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
   it("POLARITY: bottom = min_dbfs = MORE sensitive, top = max_dbfs = less", () => {
     // The Speech slider's own comment once had this backwards; the axis is pinned here from three
     // sides — the range's bounds, the end words in reading order, and where the line sits at `min`.
-    h.call.readLevel.mockImplementation(() => ({ level: -50, floor: MIN }));
+    h.call.readLevel.mockImplementation(() => ({ level: -50, floor: MIN, ceiling: null }));
     render(<Host open={true} />);
     fireEvent.click(pill());
     expect(range().min).toBe(String(MIN));
@@ -738,7 +790,7 @@ describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
   });
 
   it("a DRAG pins at the tick cadence — never per pointer move — and the lift hands over the last value", () => {
-    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45 }));
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45, ceiling: null }));
     render(<Host open={true} />);
     fireEvent.click(pill());
     fireEvent.pointerDown(range());
@@ -763,7 +815,7 @@ describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
   });
 
   it("a close mid-DRAG discards what the finger had not lifted on (S1 code round MED 1)", () => {
-    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45 }));
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45, ceiling: null }));
     render(<Host open={true} />);
     fireEvent.click(pill());
     fireEvent.pointerDown(range());
@@ -775,12 +827,12 @@ describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
   });
 
   it("before a floor exists the range announces AUTO, never the browser's midpoint (S1 code round LOW)", () => {
-    h.call.readLevel.mockImplementation(() => ({ level: null, floor: null }));
+    h.call.readLevel.mockImplementation(() => ({ level: null, floor: null, ceiling: null }));
     render(<Host open={true} />);
     fireEvent.click(pill());
     vi.advanceTimersByTime(100);
     expect(range().getAttribute("aria-valuetext")).toBe("Auto");
-    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45 }));
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45, ceiling: null }));
     vi.advanceTimersByTime(100);
     expect(range().getAttribute("aria-valuetext")).not.toBe("Auto");
   });
@@ -809,6 +861,48 @@ describe("CallOverlay — the Sensitivity meter (D76 §C.7)", () => {
     view.rerender(<Host open={true} />);
     expect(pill().getAttribute("aria-label")).toBe("Sensitivity: auto");
     expect(screen.queryByRole("button", { name: /^Back to auto/ })).toBeNull();
+  });
+
+  it("TOPS OUT at the pin's CEILING once the voice is known — the finger cannot drag above it (D80 ⑤)", () => {
+    // The learned voice −21.4 less its 10 dB margin: nothing above −31.4 may be pinned; the range steps
+    // in whole dB and rounds UP (−31), so an Auto line AT the ceiling still sits on the column.
+    h.call.readLevel.mockImplementation(() => ({ level: -46, floor: -46, ceiling: -31.4 }));
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    expect(range().min).toBe(String(MIN));
+    expect(range().max).toBe("-31");
+    // the bar and the line are drawn on the SAME [min, ceiling] scale the finger moves on
+    expect(mark().style.getPropertyValue("--f")).toBe(String((-46 - MIN) / (-31 - MIN)));
+    expect(fill().style.transform).toBe(`scaleY(${(-46 - MIN) / (-31 - MIN)})`);
+  });
+
+  it("the column top is NEVER under the Auto floor — the 'less' end is at least as insensitive as Auto (O-MED-1)", () => {
+    // The car: V −21, N −38 → Auto −28 = max(−38 + 10, −21 − 10); the machine's ceiling follows Auto.
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -28.4, ceiling: -28.4 }));
+    render(<Host open={true} />);
+    fireEvent.click(pill());
+    expect(Number(range().max)).toBeGreaterThanOrEqual(-28.4); // Auto on-scale
+    const f = Number(mark().style.getPropertyValue("--f"));
+    expect(f).toBeGreaterThan(0.9);
+    expect(f).toBeLessThanOrEqual(1); // the Auto line is on the column, at its top
+  });
+
+  it("…and a pin set BEFORE a lower ceiling was learned is named as the gate applies it, clamped", () => {
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -45, ceiling: null }));
+    const view = render(<Host open={true} />);
+    fireEvent.click(pill());
+    fireEvent.change(range(), { target: { value: "-20" } }); // the car round's pin, at the very top
+    h.call = { ...h.call, floorAuto: false };
+    view.rerender(<Host open={true} />);
+    expect(pill().getAttribute("aria-label")).toBe("Sensitivity: \u221220 dB");
+    // a final teaches the learner a −21 voice: the gate now clamps that pin to −31
+    h.call.readLevel.mockImplementation(() => ({ level: -40, floor: -31, ceiling: -31 }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(range().max).toBe("-31");
+    expect(pill().getAttribute("aria-label")).toBe("Sensitivity: \u221231 dB");
+    expect(range().getAttribute("aria-valuetext")).toBe("\u221231 dB");
   });
 
   it("the tick runs ONLY while the popover is open — closed, the ear is not read at all", () => {
@@ -867,6 +961,7 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     micHold: "auto",
     bargeArmed: true,
     earHeld: false,
+    tail: false,
     mouthLive: false,
     deviceLabel: "Headset earpiece",
     deviceId: "ear-1234567890",
@@ -879,8 +974,8 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     noiseSettled: false,
     voiceLevel: -22.46,
     voiceKey: "ear-1234567890|ec=on",
-    lastFinal: { accruedMs: 320, peakDb: -13.6, chars: 14 },
-    probe: null,
+    lastFinal: { accruedMs: 320, peakDb: -13.6, chars: 14, measured: true },
+    chirp: null,
   };
 
   it("renders NOTHING extra with the knob off", () => {
@@ -901,6 +996,47 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     expect(text).toContain("dBFS  -30.2   peak2s -14.7   floor -45.0 (auto)");
     expect(text).toContain("noise — (provisional)   voice -22.5\n");
     expect(text).toContain("320ms   peak -13.6");
+  });
+
+  it("prints the CONNECT CHIRP's lag — the number the car card compares with each reply's tail (D80 ⑦)", () => {
+    h.call = { ...h.call, debug: snapshot };
+    const { unmount } = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain("\nchirp —");
+    unmount();
+    h.call = {
+      ...h.call,
+      debug: { ...snapshot, chirp: { lagMs: 2301.4, peak: 0.874, second: 0.1 } },
+    };
+    const found = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
+      "chirp 2301ms   peak 0.87",
+    );
+    found.unmount();
+    h.call = {
+      ...h.call,
+      debug: { ...snapshot, chirp: { lagMs: null, peak: 0.09, second: 0.08 } },
+    };
+    render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
+      "chirp none   peak 0.09",
+    );
+  });
+
+  it("says when the hold is the reply's TAIL (D80 ①) — the element is done, the ear still held", () => {
+    h.call = { ...h.call, debug: { ...snapshot, earHeld: true, tail: true } };
+    render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain("held tail");
+  });
+
+  it("names an UNMEASURED final — the ledger held no segment for it (D80 ③'s one fail-open door)", () => {
+    h.call = {
+      ...h.call,
+      debug: { ...snapshot, lastFinal: { accruedMs: 0, peakDb: -120, chars: 9, measured: false } },
+    };
+    render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
+      "final unmeasured   chars 9",
+    );
   });
 
   it("prints the voice key on its OWN line — an id-based device cut to 8, a label-based key whole (S3b)", () => {
@@ -939,21 +1075,6 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     const text = document.querySelector(".kit-call-debug")!.textContent;
     expect(text).toContain("floor -52.0 (pinned)");
     expect(text).toContain("noise -61.0 (settled)");
-  });
-
-  it("prints the leak probe's last verdict — S3's per-chunk evidence line (D76 §B.3)", () => {
-    h.call = { ...h.call, debug: snapshot };
-    const { unmount } = render(<Host open={true} />);
-    expect(document.querySelector(".kit-call-debug")!.textContent).toContain("probe —");
-    unmount();
-    h.call = {
-      ...h.call,
-      debug: { ...snapshot, probe: { idx: 2, maxDb: -57.34, floor: -45, released: true } },
-    };
-    render(<Host open={true} />);
-    expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
-      "probe #2   max -57.3   floor -45.0   released",
-    );
   });
 
   it("is never also a tap-to-interrupt — it rides the cluster's pointer-down stop", () => {

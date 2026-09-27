@@ -518,12 +518,20 @@ export function useStickyAgent(): string | null {
 // The OPEN THREAD's pinned agent (see its field note). Read-only to the app: it is not a pick anyone
 // makes here, it is what the loaded thread already carries, so the writes live at the load seams.
 /** The thread pin, REACTIVELY — the twin of `useStickyAgent` for every surface that must follow it: the
- *  agent backdrop, and the composer menu's checked row. There is deliberately NO non-reactive getter
- *  beside it: this value arrives on its own from `openThread`'s late pin read, so a snapshot taken at
- *  render time can be stale while the surface is still up. Same slice reasoning as its twin: it changes once per thread switch, while the store emits
+ *  agent backdrop, and the composer menu's checked row. A SURFACE must use this, never the getter below:
+ *  the value arrives on its own from `openThread`'s late pin read, so a snapshot taken at render time
+ *  can be stale while the surface is still up. Same slice reasoning as its twin: it changes once per thread switch, while the store emits
  *  on every streamed token. */
 export function useThreadAgent(): string | null {
   return useChatSlice((s) => s.threadAgent);
+}
+
+/** The thread pin, NON-reactively — for an imperative moment that reads it once and is done, in the
+ *  family of `getChatStatus`/`getLiveTurn`: bare `/agent`'s note, which must name the agent that will
+ *  actually answer once the sticky pick is cleared (the thread's own pin outranks the default on the
+ *  server's ladder). Never for rendering — that is `useThreadAgent`'s job (see its note). */
+export function getThreadAgent(): string | null {
+  return state.threadAgent;
 }
 
 /** Write a thread id learned from the WIRE — the stream's `thread` frame, a buffered turn's payload, an
@@ -740,10 +748,54 @@ export function lastReply(): { id: string; text: string } | null {
   return null;
 }
 
+/** What a view swap installs: the conversation's identity (its id, its history, its D11 pin) — and, for
+ *  `/new` only, the sticky pick the tandem rule decided WITH it, so the two land in one `set`. */
+type ViewSwap = Pick<ChatState, "threadId" | "messages" | "threadAgent"> &
+  Partial<Pick<ChatState, "stickyAgent">>;
+
+/** Swap the chat view to another conversation — THE one place the per-conversation client state is
+ *  dropped. Every entry is keyed to the conversation being left (its TTS blobs, the turn-event ordering,
+ *  harvested raw lines, the last harvest receipt), and three doors change the view's identity this way:
+ *  an explicit `openThread`, `/new`'s minted thread, and `/new`'s thread-less fallback. They used to
+ *  carry this block as copies; a third copy is how one of them stops dropping something.
+ *
+ *  Bumps the LOAD GENERATION (see `loadGen`): a swap is a change of view identity, so every
+ *  reconciliation parked against the identity it replaces is stale by definition — a cold `initChat` or
+ *  a `reloadChat` must not land the OLD thread's history (and its pin) on the view just swapped in.
+ *  Returns the new generation so a caller can guard a follow-up on it. Claims NO open ticket
+ *  (`openSeq`): tickets order user DECISIONS, and each caller claimed its own at entry. */
+function swapView(view: ViewSwap): number {
+  const gen = ++loadGen;
+  clearAudioCache(); // 6b-2: revoke the left thread's TTS blobs + stop any playback
+  lastTurnId = null; // D39: a new view starts a fresh per-turn event ordering
+  lastSeq = 0;
+  dropAllRaw(); // FIX C — prune every thread's harvested raw lines (no queued steer survives a swap)
+  lastHarvestSig = null; // FIX E — forget the last harvest receipt (mirrors the backend clear)
+  set({ ...view, status: "idle", streamingId: null });
+  return gen;
+}
+
+/** Drop to a fresh, THREAD-LESS view with `stickyAgent` as the pick — the next send mints the thread
+ *  lazily (D70 §4.2 seam ②: the server creates one when `thread_id` is null). What `/new` did before
+ *  ISS-31, and still what it falls back to when its own mint fails; the pick is persisted through the
+ *  one `writeSticky` seam, beside the `set` that shows it.
+ *
+ *  No streaming guard and no open ticket: both are the CALLER's decision (`startNewThread` makes them
+ *  before it gets here). Exported for the test suites, whose singleton store needs a SYNCHRONOUS reset
+ *  between cases that performs no mint (the "exported for tests" idiom, `store/ui.ts`). */
+export function resetToThreadless(stickyAgent: string | null): void {
+  swapView({ threadId: null, messages: [], threadAgent: null, stickyAgent });
+  writeSticky(stickyAgent);
+}
+
 /** Fetch one thread's persisted history. Split from the state write so a caller can decide what to do
- *  with a FAILED fetch before it has touched the view (see `openThread`). */
+ *  with a FAILED fetch before it has touched the view (see `openThread`). A non-OK answer IS a failed
+ *  fetch (ISS-31): its `{detail}` body is not a message list, and handed back as one it would be set as
+ *  `messages` by whichever loader asked — every caller already has a failure path for a throw. */
 async function fetchMessages(threadId: string): Promise<ChatMessage[]> {
-  return (await (await fetch(`/api/threads/${threadId}/messages`)).json()) as ChatMessage[];
+  const res = await fetch(`/api/threads/${threadId}/messages`);
+  if (!res.ok) throw new Error(`/api/threads/${threadId}/messages → ${res.status}`);
+  return (await res.json()) as ChatMessage[];
 }
 
 /** ONE thread's D11 pin, read from the LIST (`GET /api/threads` publishes whole `Thread` dumps and is the
@@ -795,9 +847,8 @@ async function loadThread(threadId: string, gen: number, agent: string | null): 
  *  (archived) thread, and it must arrive with the same history + re-attach behaviour as the one
  *  `initChat` picks. It cannot call `loadThread` itself — fetch-first-swap-second and the cache drops
  *  have to happen BETWEEN those two parts. The per-thread client caches are dropped when the swap
- *  actually happens, exactly
- *  as `startNewThread` drops them, because every one is keyed to the conversation being left (TTS blobs,
- *  the turn-event ordering, harvested raw lines, the last harvest receipt).
+ *  actually happens, through `swapView` — the one place every view swap (this, `/new`'s mint, its
+ *  thread-less fallback) drops them.
  *
  *  **Fetch first, swap second** (post-14c review): the earlier shape cleared the view and then fetched,
  *  so an unreachable backend left the owner staring at an emptied chat they had not asked to lose. The
@@ -838,17 +889,11 @@ export async function openThread(threadId: string): Promise<boolean> {
       pushSystemNote("// a turn is running — stop it or wait before opening another thread");
       return false;
     }
-    // An explicit open is the one load that is a user DECISION, so it is the one that invalidates any
-    // reconciliation in flight (a slow initChat/reloadChat landing after this must be discarded).
-    const gen = ++loadGen;
-    clearAudioCache();
-    lastTurnId = null;
-    lastSeq = 0;
-    dropAllRaw();
-    lastHarvestSig = null;
+    // An explicit open is a user DECISION, so it invalidates any reconciliation in flight (a slow
+    // initChat/reloadChat landing after this must be discarded) — the swap's generation bump.
     // `threadAgent: null` is the HONEST value at the swap — the pin is not known yet, and a stale one
     // from the thread being left would be worse than none.
-    set({ threadId, messages: msgs, status: "idle", streamingId: null, threadAgent: null });
+    const gen = swapView({ threadId, messages: msgs, threadAgent: null });
     loaded = true; // a later `initChat` must not replace this with the most-recent thread
     if (gen === loadGen) void probeAndReattach(threadId);
     // …and the pin when it arrives, if the VIEW IS STILL ON THIS THREAD. A `null` answer (an unpinned
@@ -959,49 +1004,156 @@ export function pushUserEcho(text: string): void {
   pushLocal("user", text);
 }
 
-/** `/new`: drop back to a fresh, thread-less view. History stays in SQLite; the next send mints a
- *  new thread (the server creates one when `thread_id` is null).
+/** Has anyone TAKEN A TURN in this view — `/new`'s no-op question (ISS-31)? A turn is a message the
+ *  owner authored: `role: "user"` (a typed, steered or dictated message — an automation's injected
+ *  prompt is one too, and a thread carrying one is not fresh either) OR `actor: "user"`, because the
+ *  `!cmd` exec pair persists as assistant + tool rows stamped with the owner as actor
+ *  (`services/agent/exec.py`), and a thread holding a command the owner ran is not a fresh one. What
+ *  is left is the agent's own opening (the seeded greeting, `actor: "agent"`) and client-only notes
+ *  (`role: "system"`) — neither makes a thread worth leaving for another fresh one. */
+function isUserTurn(m: ChatMessage): boolean {
+  return m.role === "user" || m.actor === "user";
+}
+function hasUserTurn(messages: readonly ChatMessage[]): boolean {
+  return messages.some(isUserTurn);
+}
+/** How many turns the owner has taken in `messages` — `/new`'s post-await fence compares it. A COUNT,
+ *  not the last turn's id: a reconnect's `reloadChat` rewrites an optimistic `local-…` id to the durable
+ *  one without anyone taking a turn, while every raced send adds one bubble synchronously. */
+function userTurnCount(messages: readonly ChatMessage[]): number {
+  return messages.filter(isUserTurn).length;
+}
+
+/** The open ticket (`openSeq`) the in-flight `/new` claimed, or `null` when no mint is in flight. */
+let mintTicket: number | null = null;
+
+/** `/new`: MINT a fresh thread through D70 §4.2 **seam ①** (`POST /api/threads {agent}`) and open it
+ *  (ISS-31, owner ruling 2026-09-27). The thread exists server-side from this moment, so a reload or an
+ *  app switch comes back to it (`initChat` hydrates the newest-updated thread), and a character's
+ *  greeting — a REAL seeded assistant message minted with the thread — shows at once, instead of only
+ *  after the owner spoke first on the lazy mint (seam ②). History stays in SQLite.
  *
  *  `keepAgent` is the TANDEM RULE (D75 amendment, 2026-09-26), decided by the caller from whether a
  *  default agent is CONFIGURED (`lib/composer`'s `defaultSet`, from the roster's `default_set`):
  *    · none set → `keepAgent: true` — the fresh thread keeps the agent the owner was talking to: the
  *      sticky pick if there is one, else PROMOTED from the thread's own pin (the agent actually talking
- *      in a character thread, where nothing was sticky);
- *    · a default set (the root or a specialist) → `keepAgent: false` — the pick is cleared, so the
- *      fresh thread runs as that default.
- *  Required, no default: which of the two a `/new` means is a decision, never an accident of arity. */
-export function startNewThread(opts: { keepAgent: boolean }): void {
-  // ACA-10 / S2-C: don't clear out from under a live turn — the reset would strand the streaming
+ *      in a character thread, where nothing was sticky); the pick is kept and minted WITH;
+ *    · a default set (the root or a specialist) → `keepAgent: false` — the pick is cleared, and the
+ *      thread is minted with `defaultAgent`, the roster's RESOLVED default name (`lib/composer`'s
+ *      `defaultAgent`, installed by the same read as `defaultSet`). Read only on this branch.
+ *  Required, no default: which of the two a `/new` means is a decision, never an accident of arity.
+ *  No resolvable agent (neither a pick nor a pin to keep; an empty default name) mints with NO body —
+ *  the pre-D70 unpinned, unseeded thread.
+ *
+ *  **The minted thread is PINNED** to the agent it opens as (seam ①'s contract: a greeted thread is a
+ *  pinned thread — the server persists the RESOLVED name, which is what `threadAgent` takes). So
+ *  `agent.auto_rotate` (7e-g, off by default) never routes a `/new` thread, exactly as it never routed a
+ *  gallery-created one: the router only runs where nothing pins the agent.
+ *
+ *  Refuses, in order:
+ *    · while a turn is STREAMING (ACA-10 / S2-C) — the swap would strand the live reply;
+ *    · while an earlier `/new`'s mint is still in flight AND still the newest intent — it will deliver
+ *      the fresh thread; a second POST (the double Enter) would only mint a twin into the list;
+ *    · SILENTLY when the open thread has no turn in it yet (`hasUserTurn`) — a greeting-only or empty
+ *      thread IS fresh, so `/new` twice mints nothing. A thread-less view proceeds (there is nothing to
+ *      keep). Decided from the messages the store already holds — no fetch. The tandem rule still
+ *      applies to the PICK there (fix wave 1): with a default set, a standing pick is cleared exactly
+ *      as a mint would clear it, so `/agent ops` then `/new` on a fresh default thread still means
+ *      "back to the default"; with none set there is nothing to do.
+ *
+ *  **Fetch first, swap second** (the `openThread` pattern): the mint AND the minted thread's history are
+ *  in hand before the view is touched, so the owner never stares at an emptied chat while the request is
+ *  in flight. The history is read back from the server like any open (the greeting is ordinary
+ *  history), and the swap writes the view AND the tandem rule's pick in ONE `set` (`swapView`), then
+ *  persists the pick through `writeSticky`. A pick the owner changed WHILE the mint was in flight is the
+ *  newer intent and survives the swap. The open ticket is claimed at entry, so an older `openThread`
+ *  resolving later cannot land on the fresh view — and a NEWER open (or `/new`) supersedes this one,
+ *  whose mint then stays behind in the thread list, unopened. The same happens, SILENTLY, when the
+ *  owner kept using the view while the mint was in flight (fix wave 1, the code round's HIGH): a turn
+ *  taken meanwhile — a send appends its user bubble synchronously, so one that started AND settled
+ *  during the mint counts too — or a view that moved to another thread (a lazy mint from a thread-less
+ *  view, a wire mint) or that is streaming (a resume, an answer, a re-attach — none of which append a
+ *  user bubble). Swapping then would hide the turn the owner just took; the mint is the one given up.
+ *
+ *  A FAILED mint (network, a non-OK answer, a malformed body, a failed history read) falls back to
+ *  `resetToThreadless` — the lazy mint on the next send — and says so in the log. */
+export async function startNewThread(opts: {
+  keepAgent: boolean;
+  defaultAgent: string;
+}): Promise<void> {
+  // ACA-10 / S2-C: don't swap out from under a live turn — the reset would strand the streaming
   // reply (and the server would 409 the next send onto the abandoned thread). Ask the owner to wait.
   if (state.status === "streaming") {
     pushSystemNote("// a turn is running — stop it or wait before clearing");
     return;
   }
-  openSeq++; // a /new supersedes any pending explicit open — its fetch must not swap in afterwards
-  loadGen++; // …and every parked RECONCILIATION with it (the S6 review's F3): a cold `initChat` or a
-  // `reloadChat` captured its generation before this clear, and would otherwise land its messages AND
-  // the pin that came with them on the fresh empty view the owner just asked for. Same reasoning as the
-  // ticket above, one rung down: `/new` changes the view's identity, so every in-flight load for the
-  // identity it replaced is stale by definition.
-  clearAudioCache(); // 6b-2: revoke this thread's TTS blobs + stop any playback
-  lastTurnId = null; // D39: a fresh thread view starts a fresh per-turn event ordering
-  lastSeq = 0;
-  dropAllRaw(); // FIX C — prune every thread's harvested raw lines (no queued steer survives a /new)
-  lastHarvestSig = null; // FIX E — a fresh view forgets the last harvest receipt (mirrors the backend clear)
-  // …and the fresh view's THREAD pins nobody: a `/new` thread is minted unpinned. The sticky pick is kept
-  // (promoted from the thread pin when nothing was sticky) or cleared per the tandem rule above — in the
-  // SAME `set` as the view reset, so no subscriber ever sees the new pick beside the old thread, then
-  // persisted through the one `writeSticky` seam `setStickyAgent` uses.
-  const stickyAgent = opts.keepAgent ? (state.stickyAgent ?? state.threadAgent) : null;
-  set({
-    threadId: null,
-    messages: [],
-    status: "idle",
-    streamingId: null,
-    threadAgent: null,
+  if (mintTicket === openSeq) return; // the in-flight /new is still the owner's newest intent
+  if (state.threadId !== null && !hasUserTurn(state.messages)) {
+    // Already fresh (ISS-31) — no mint. But the tandem rule is about the PICK too: a default set clears a
+    // standing pick here exactly as a mint would (through the one sticky seam); none set keeps it.
+    if (!opts.keepAgent && state.stickyAgent !== null) setStickyAgent(null);
+    return;
+  }
+  // A /new supersedes any pending explicit open — its fetch must not swap in afterwards. The load
+  // generation is bumped at the SWAP (`swapView`), exactly as `openThread` does it.
+  const ticket = ++openSeq;
+  mintTicket = ticket;
+  const stickyAtEntry = state.stickyAgent;
+  // The view's identity at entry — what the post-await fence compares against (see the docstring).
+  const threadAtEntry = state.threadId;
+  const turnsAtEntry = userTurnCount(state.messages);
+  const kept = opts.keepAgent ? (state.stickyAgent ?? state.threadAgent) : null;
+  const agent = opts.keepAgent ? kept : opts.defaultAgent || null;
+  let opened: { thread: Thread; messages: ChatMessage[] } | null = null;
+  try {
+    const res = await fetch(
+      "/api/threads",
+      agent
+        ? {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ agent }),
+          }
+        : { method: "POST" },
+    );
+    if (!res.ok) throw new Error(`/api/threads → ${res.status}`);
+    const thread = (await res.json()) as Thread;
+    if (!nonEmpty(thread.id)) throw new Error("/api/threads → no thread id");
+    opened = { thread, messages: await fetchMessages(thread.id) };
+  } catch {
+    /* `opened` stays null → the thread-less fallback below */
+  } finally {
+    if (mintTicket === ticket) mintTicket = null;
+  }
+  // Superseded mid-flight (a newer open or /new): that intent owns the view, and a failure here must
+  // not drop a note into it — the note speaks only for the CURRENT intent (openThread's R3 L2 rule).
+  if (ticket !== openSeq) return;
+  // The owner kept using the view while the mint was in flight: a turn taken meanwhile (its user bubble
+  // is one MORE user turn — even one that already settled), a thread change under us, or a live stream
+  // (a resume/answer/re-attach appends no user bubble). The swap would hide what they just did, so the
+  // mint is given up SILENTLY — the view already shows what the owner chose to do instead.
+  if (
+    state.threadId !== threadAtEntry ||
+    userTurnCount(state.messages) !== turnsAtEntry ||
+    getChatStatus() === "streaming"
+  )
+    return;
+  // The tandem rule's pick, unless the owner re-picked while the mint was in flight (the newer intent).
+  const stickyAgent = state.stickyAgent === stickyAtEntry ? kept : state.stickyAgent;
+  if (opened === null) {
+    resetToThreadless(stickyAgent);
+    pushSystemNote("// couldn't start a new thread — your next message will start one");
+    return;
+  }
+  swapView({
+    threadId: opened.thread.id,
+    messages: opened.messages,
+    threadAgent: opened.thread.agent ?? null,
     stickyAgent,
   });
   writeSticky(stickyAgent);
+  loaded = true; // a later `initChat` must not replace this with the most-recent thread
+  // No re-attach probe (`openThread` runs one): a thread minted this instant has no turn to rejoin.
 }
 
 function emptyAssistant(id: string, agent: string | null = null): ChatMessage {

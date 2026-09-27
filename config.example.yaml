@@ -453,9 +453,9 @@ voice:
                            # D77: ALSO writes a per-call trail to <CTRLB_HOME>/calls/<call>.jsonl
     trail_keep: 20         # D77: how many call trails to keep (1–500) — the oldest go when a new call starts
     max_sessions: 1        # process-wide concurrent live sessions (a second connect gets `busy`)
-    mic_hold: auto         # CLIENT: mic off while the reply speaks — auto | on | off. auto = never held when the
-                           # track's AEC reads "all"; otherwise each CHUNK starts held and the per-chunk leak
-                           # probe (D76 S2, built) releases it if its held audio stays under the floor
+    mic_hold: auto         # CLIENT: mic off while the reply speaks (and through its tail) — auto | on | off.
+                           # auto = held unless the track's echo cancellation reads "all" (the D73 rule, D80);
+                           # off = never held — the reply may be transcribed
     barge_in: false        # CLIENT: hands-free interruption (default off = tap-to-interrupt only); when on, speech must clear the relative floor + playback_margin_db below; needs an open ear — inert while the mic is held
     route: media           # CLIENT: media (DEFAULT: EC off → clean media-path audio, follows Bluetooth
                            # like music, phone speaker otherwise) | call (platform AEC → phone-call mode,
@@ -476,7 +476,20 @@ voice:
     playback_margin_db: 10 # barge floor = effective floor + this while the reply plays
     min_dbfs: -60          # clamp bounds on the effective floor
     max_dbfs: -20
-    ring: true             # CLIENT: overlay mode — true = focal-anchored face ring
+    # D80 / R91 — the TAIL HOLD (CLIENT): while mic_hold holds, the ear stays held AFTER the reply ends
+    # (a car plays it seconds late) until the room sits under noise + tail_quiet_margin_db for
+    # tail_quiet_ms, unbroken — not before hold_tail_min_ms, never past hold_tail_max_ms
+    hold_tail_min_ms: 300  # (0–5000) headphones/speakers still lag the phone this much
+    tail_quiet_ms: 700     # (100–5000) bridges 97% of the pauses inside a reply
+    tail_quiet_margin_db: 10  # (0–40) dB over the room's own noise
+    hold_tail_max_ms: 5000 # (500–15000) min + quiet must fit under it
+    # D80 / R91 §3 — the TEXT BACKSTOP (CLIENT): a final right after the reply that repeats its SPOKEN
+    # words is the reply heard back — dropped, and the call screen says so
+    echo_similarity: 0.75  # (0.5–1.0) the car call's echoes scored 0.95–1.0, genuine turns ≤ 0.54
+    echo_window_ms: 4000   # (0–15000) ms after the tail's release still compared; 0 = only during the tail
+    chirp: true            # D80 / R93: a short "connected" sweep at every capture; the mic's copy of it measures
+                           # how late the speaker plays (logged in the debug readout + trail; no policy yet)
+    ring: true             # CLIENT: overlay mode — true = a face ring over the art (one fixed position)
     captions: true         # CLIENT: the reply as small fading captions on the call screen
     # Streaming DICTATION (S2.5) — the mic's hold/lock rides the SAME realtime ear as the call, and
     # each utterance final appends to the composer draft live. Independent of `enabled` in both

@@ -1,4 +1,5 @@
 import { CUE_HOLD_MS } from "../../src/lib/callCue";
+import { CHIRP_HOLD_MS, type ChirpResult } from "../../src/lib/chirp";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -41,7 +42,18 @@ const h = vi.hoisted(() => ({
         playback_margin_db: 10,
         min_dbfs: -60,
         max_dbfs: -20,
-        // D74 S7 — the readback block, OFF unless a case asks for it (the probe's evidence line).
+        // D80 ① — the tail hold's four, as the backend ships them; the tail cases move them.
+        hold_tail_min_ms: 300,
+        tail_quiet_ms: 700,
+        tail_quiet_margin_db: 10,
+        hold_tail_max_ms: 5000,
+        // D80 ② — the text backstop's pair, as the backend ships them.
+        echo_similarity: 0.75,
+        echo_window_ms: 4000,
+        // D80 ⑦ — the connect chirp, OFF unless a case arms it (its mask would otherwise shift every
+        // uplink assertion here by its window's worth of frames). The backend ships it ON.
+        chirp: false,
+        // D74 S7 — the readback block, OFF unless a case asks for it.
         debug: false,
       },
       stt_auto_stop: { threshold: 0 },
@@ -57,8 +69,12 @@ const h = vi.hoisted(() => ({
   failures: 0,
   staged: [] as { status: string }[],
   liveTurn: null as { threadId: string; turnId: string | null } | null,
+  /** The chat store's last assistant message, as the text backstop reads it (D80 ②). */
+  reply: null as { id: string; text: string } | null,
   /** The socket the hook opened: the test drives the relay through its `onFrame`. */
   frame: null as ((f: LiveDown) => void) | null,
+  /** THE EAR'S SEGMENT IDS, as the real relay now forwards them (D80 ③) — see `stampSegment`. */
+  seg: { next: 0, open: null as string | null, awaiting: [] as string[] },
   /** …and that leg's close, so a case can drop it the way a flaky link does. */
   close: null as (() => void) | null,
   /** How many times the CLIENT asked to close a leg (S6 ② closes one; so does every teardown). In a
@@ -69,8 +85,15 @@ const h = vi.hoisted(() => ({
    *  UPLINKED unless the case says otherwise (D76 §B.1 — the real capture classifies; here the case
    *  plays the capture, so it plays the classification too). */
   mic: null as ((f: { buf: ArrayBuffer; rms: number; uplinked?: boolean }) => void) | null,
-  /** The capture's own AudioContext, as the drop cue sees it (D76 §C.5) — an identity token. */
-  ctx: { tag: "capture-context" },
+  /** The capture's own AudioContext, as the drop cue sees it (D76 §C.5) — an identity token — and the
+   *  two latency numbers the platform reports for it (D80's W6: logged for comparison, never used). */
+  ctx: { tag: "capture-context", outputLatency: 0.28, baseLatency: 0.01, currentTime: 5 },
+  /** THE CONNECT CHIRP (D80 ⑦), as the wiring drives it: every `playChirp` (by context and `when`), and
+   *  the matchers it made; a matcher concludes `chirpVerdict` on its `chirpAfter`-th frame. */
+  chirpPlay: vi.fn((_ctx: unknown, _when: number) => true),
+  chirpMatchers: [] as { rate: number; when: number; frames: number }[],
+  chirpAfter: Infinity,
+  chirpVerdict: null as ChirpResult | null,
   /** Every `playDropCue` the wiring asked for, by the context it was handed. */
   cue: vi.fn(),
   /** Every frame that actually reached the WIRE, by its identifying first byte and in order — the
@@ -97,9 +120,6 @@ const h = vi.hoisted(() => ({
   }),
   /** The controller's registered pre-play tap (S3 confirm F2) — null when nothing is registered. */
   prePlay: null as (() => void) | null,
-  /** …and its CHUNK-START signal (D76 §B.3), the leak probe's clock: the case plays the element's
-   *  `playing` by calling it with the chunk's index. */
-  chunkStart: null as ((idx: number) => void) | null,
   /** …and THE MOUTH'S GATE (the owner's 2026-09-26 ruling): what the controller would ask before an
    *  automatic start — null when nothing is registered. */
   mouthGate: null as (() => boolean) | null,
@@ -146,14 +166,13 @@ vi.mock("../../src/lib/audioController", () => ({
     h.retagAtStops = h.capStops; // how many ears had been released when the mouth was told
   },
   dismiss: h.dismiss,
+  // The mouth's speech policy, as the text backstop reads it (D80 ②): actions DROPPED, the prod setting.
+  getChunkPolicy: () => ({ speakActions: false }),
   openCallVoiceGate: h.openGate,
   setCallVoice: h.setCallVoice,
   useMouthFailures: () => h.failures,
   setCallPrePlay: (cb: (() => void) | null) => {
     h.prePlay = cb;
-  },
-  setCallChunkStart: (cb: ((idx: number) => void) | null) => {
-    h.chunkStart = cb;
   },
   setCallMouthGate: (cb: (() => boolean) | null) => {
     h.mouthGate = cb;
@@ -179,6 +198,21 @@ vi.mock("../../src/api/client", async (importOriginal) => ({
     return Promise.resolve(undefined);
   },
 }));
+vi.mock("../../src/lib/chirp", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/lib/chirp")>()),
+  playChirp: h.chirpPlay,
+  ChirpMatcher: class {
+    private readonly me: { rate: number; when: number; frames: number };
+    constructor(rate: number, when: number) {
+      this.me = { rate, when, frames: 0 };
+      h.chirpMatchers.push(this.me);
+    }
+    feed(): unknown {
+      this.me.frames += 1;
+      return this.me.frames === h.chirpAfter ? (h.chirpVerdict ?? undefined) : undefined;
+    }
+  },
+}));
 vi.mock("../../src/lib/callCue", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/lib/callCue")>()),
   playDropCue: h.cue,
@@ -191,7 +225,7 @@ vi.mock("../../src/lib/liveSocket", () => ({
     trail?: { callId: string; leg: number };
   }) => {
     h.starts.push(opts.trail);
-    h.frame = opts.onFrame;
+    h.frame = (f) => opts.onFrame(stampSegment(f));
     // The leg's own unannounced close — a dropped tailnet link, the one close the machine reconnects
     // through. Bound per leg, so a case can drop THIS leg and watch the ladder open the next one.
     h.close = () => opts.onClose(1006, "");
@@ -244,11 +278,36 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
     };
   },
 }));
+/** The relay forwards Speaches' `item_id` on every segment frame (D80 ③), so a case that writes a
+ *  segment frame WITHOUT one gets the id Speaches would have given it: a start opens the next id, its
+ *  stop carries it, and transcripts land in segment order. A case that names `item_id` itself — the
+ *  interleavings, the unknown id — or writes `item_id: undefined` (a relay that sent none) is left
+ *  exactly as written. */
+function stampSegment(f: LiveDown): LiveDown {
+  if ("item_id" in f) return f;
+  const ids = h.seg;
+  switch (f.type) {
+    case "speech_started":
+      ids.open = `seg-${++ids.next}`;
+      return { ...f, item_id: ids.open };
+    case "speech_stopped": {
+      const id = ids.open ?? `seg-${++ids.next}`;
+      ids.open = null;
+      ids.awaiting.push(id);
+      return { ...f, item_id: id };
+    }
+    case "transcript":
+      return { ...f, item_id: ids.awaiting.shift() ?? ids.open ?? `seg-${++ids.next}` };
+    default:
+      return f;
+  }
+}
 vi.mock("../../src/store/attachments", () => ({ useStagedFiles: () => h.staged }));
 vi.mock("../../src/store/chat", () => ({
   cancelTurn: h.cancelTurn,
   confirmOutstanding: () => h.confirm,
   getLiveTurn: () => h.liveTurn,
+  lastReply: () => h.reply,
   useChatSlice: (sel: (s: { status: string }) => unknown) => sel(h.chat),
 }));
 vi.mock("../../src/store/composer", () => ({ appendDraft: h.appendDraft }));
@@ -298,7 +357,6 @@ beforeEach(() => {
   h.play = { status: "idle" };
   h.playbackSubs.clear();
   h.prePlay = null;
-  h.chunkStart = null;
   h.mouthGate = null;
   h.pokes = 0;
   h.heldNow = false;
@@ -307,7 +365,9 @@ beforeEach(() => {
   h.failures = 0;
   h.staged = [];
   h.liveTurn = null;
+  h.reply = null;
   h.frame = null;
+  h.seg = { next: 0, open: null, awaiting: [] };
   h.close = null;
   h.closes = 0;
   h.mic = null;
@@ -335,6 +395,11 @@ beforeEach(() => {
   h.voice.data.live_call.debug = false;
   localStore.clear();
   h.cue.mockClear();
+  h.chirpPlay.mockClear();
+  h.chirpMatchers = [];
+  h.chirpAfter = Infinity;
+  h.chirpVerdict = { lagMs: 2301, peak: 0.87, second: 0.1 };
+  h.voice.data.live_call.chirp = false;
   setMicRelease(null); // nobody holds the ear unless a case says so
   h.voice.data.stt_auto_stop.threshold = 0;
   h.capGate = Promise.resolve();
@@ -634,6 +699,9 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
     fennec();
     const { view, step, say } = await call();
     expect(h.setHeld).toHaveBeenLastCalledWith(false); // nothing is speaking yet
+    await act(async () => {
+      for (let i = 0; i < 50; i++) h.mic?.({ buf: new ArrayBuffer(8), rms: 0.003 }); // the room, −50
+    });
     await step(() => setPlay("playing"));
     expect(h.setHeld).toHaveBeenLastCalledWith(true); // the reply is audible ⇒ the ear closes
 
@@ -643,6 +711,11 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
     expect(view.result.current.heard).toBe("");
 
     await step(() => setPlay("paused")); // the reply ends…
+    expect(h.setHeld).toHaveBeenLastCalledWith(true); // …the TAIL holds (D80 ①)…
+    await act(async () => {
+      for (let i = 0; i < 50; i++)
+        h.mic?.({ buf: new ArrayBuffer(8), rms: 0.001, uplinked: false }); // …a quiet second
+    });
     expect(h.setHeld).toHaveBeenLastCalledWith(false);
     await say("what happened next");
     expect(texts()).toEqual(["what happened next"]); // …and the ear is the owner's again
@@ -721,7 +794,7 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
 
   it("MEDIA resolves `auto` from the readback like any route — a leaking track HOLDS (D76 §B)", async () => {
     // D76 deleted the headphones branch: the route is the EC ask and nothing else, so `auto` reads the
-    // TRACK on every route — and on a leaking one, the leak probe then decides each chunk (below).
+    // TRACK on every route — and a leaking one holds (the D73 rule, D80 ⑤).
     h.voice.data.live_call.route = "media";
     fennec();
     const { step } = await call();
@@ -768,12 +841,9 @@ describe("useLiveCall — the Fennec EAR-HOLD, applied to the track (S3 · §5.1
   });
 });
 
-describe("useLiveCall — THE LEAK PROBE, wired (D76 S2 · §B.3/§B.4)", () => {
+describe("useLiveCall — THE EAR-HOLD, measured (D80 ⑤: `auto` is the D73 rule, the probe deleted)", () => {
   // The harness plays the CAPTURE: a frame is uplinked unless the machine has the ear held
-  // (`h.heldNow`, the real capture's `uplinked = !(muted || held)` for an unmuted ear). The probe
-  // itself is the wiring's: it arms on the controller's chunk-start, takes the loudest HELD frame of
-  // `PROBE_MS` (600 ms = 30 frames at the harness's 20 ms), and judges it against the effective floor.
-  const PROBE_FRAMES = 30;
+  // (`h.heldNow`, the real capture's `uplinked = !(muted || held)` for an unmuted ear).
   const rmsAt = (dbfs: number): number => 10 ** (dbfs / 20);
   const tagged = (n: number): ArrayBuffer => {
     const buf = new ArrayBuffer(8);
@@ -788,12 +858,10 @@ describe("useLiveCall — THE LEAK PROBE, wired (D76 S2 · §B.3/§B.4)", () => 
   /** One second of a quiet room at −50 dBFS with the mouth silent: the noise tracker's bootstrap
    *  window closes and the effective floor is min(−50 + 10, −45) = −45 (the harness's ceiling). */
   const room = () => act(async () => frames(-50, 50));
-  /** A leaking track (no subtractive canceller) — the only kind `auto` probes. */
+  /** A leaking track (no subtractive canceller) — the one `auto` holds. */
   const leaky = () => {
     h.fennec = true;
   };
-  /** The reply's chunk `idx` becoming audible: the controller's `playing`, via the registered clock. */
-  const chunk = (idx: number) => act(async () => h.chunkStart?.(idx));
   /** What reaches the WIRE next: feed `n` frames tagged 9 at `dbfs`, then bank-and-pump until the
    *  pacer's queue (≤ 50 frames, ≤ 25 per pump) has shipped all of them — and count the tagged frames
    *  that went up as HEARD (a held one goes up as the zero buffer). */
@@ -816,182 +884,266 @@ describe("useLiveCall — THE LEAK PROBE, wired (D76 S2 · §B.3/§B.4)", () => 
     vi.useRealTimers();
   });
 
-  it("a chunk that stays UNDER the floor is RELEASED — what follows goes up as heard", async () => {
+  it("`auto` on a leaking track holds the WHOLE reply — a quiet stretch releases nothing (no probe)", async () => {
+    // The deleted probe released any chunk whose first 600 ms stayed under the floor — which is
+    // exactly what a car's Bluetooth sounds like before it has played a sample (D80 ③).
     leaky();
     const c = await call();
     await room();
     await c.step(() => setPlay("playing"));
-    expect(h.heldNow).toBe(true); // the reply starts held
-    expect(h.chunkStart).not.toBeNull(); // …and the probe's clock is registered
-    await chunk(0);
-    await act(async () => frames(-60, PROBE_FRAMES)); // −60 dBFS: nothing of the reply reaches the mic
-    expect(h.heldNow).toBe(false); // released for the rest of this chunk
-    expect(await shipped(-60)).toBe(5); // …and the owner's frames go up as they are
-    // The NEXT chunk starts held again — per chunk, not per reply.
-    await chunk(1);
     expect(h.heldNow).toBe(true);
+    await act(async () => frames(-60, 60)); // 1.2 s of near-silence at the mic
+    expect(h.heldNow).toBe(true);
+    expect(await shipped(-60)).toBe(0); // …and every frame of it went up as the zero buffer
   });
 
-  it("a chunk that REACHES the floor stays HELD — silence keeps going up", async () => {
-    leaky();
-    const c = await call();
-    await room();
-    await c.step(() => setPlay("playing"));
-    await chunk(0);
-    await act(async () => frames(-20, PROBE_FRAMES)); // the loudspeaker: the reply is in the mic
-    expect(h.heldNow).toBe(true);
-    expect(await shipped(-20)).toBe(0); // every one of them went up as the zero buffer
-  });
-
-  it("the MAX rule: a soft onset and a loud second half is a leak", async () => {
-    leaky();
-    const c = await call();
-    await room();
-    await c.step(() => setPlay("playing"));
-    await chunk(0);
+  // ── D80 ①: THE TAIL'S RELEASE, measured on the ear's own frames (20 ms each in this harness) ──────
+  /** Every trail line the hook has posted so far (the 2 s interval flush, advanced by the case). */
+  const trailLines = async (): Promise<Record<string, unknown>[]> => {
     await act(async () => {
-      frames(-60, PROBE_FRAMES / 2); //  the output path's latency: quiet…
-      frames(-20, PROBE_FRAMES / 2); //  …then the reply arrives
+      vi.advanceTimersByTime(2000);
     });
-    expect(h.heldNow).toBe(true);
-  });
-
-  it("a window the mouth does not fill decides NOTHING — the next reply is not released by it", async () => {
-    leaky();
-    const c = await call();
-    await room();
-    await c.step(() => setPlay("playing"));
-    await chunk(0);
-    await act(async () => frames(-60, 10)); // a third of the window…
-    await c.step(() => setPlay("paused")); // …and the reply ends
-    expect(h.heldNow).toBe(false); // nothing is speaking
-    await c.step(() => setPlay("playing")); // the next reply, before its chunk-start lands
-    await act(async () => frames(-60, PROBE_FRAMES - 10)); // would complete a stale window
-    expect(h.heldNow).toBe(true); // the discarded probe cannot release this reply
-  });
-
-  it("MUTED frames do not count — digital silence proves nothing about the reply", async () => {
-    leaky();
-    const c = await call();
-    await room();
-    await c.step(() => setPlay("playing"));
-    await chunk(0);
-    await c.step(() => c.view.result.current.toggleMute());
-    await act(async () => {
-      for (let i = 0; i < PROBE_FRAMES; i++) h.mic?.({ buf: tagged(1), rms: 0, uplinked: false }); // the disabled track
-    });
-    await c.step(() => c.view.result.current.toggleMute());
-    await act(async () => frames(-60, PROBE_FRAMES - 1));
-    expect(h.heldNow).toBe(true); // the muted stretch filled none of the window
-    await act(async () => frames(-60, 1));
-    expect(h.heldNow).toBe(false); // …its own 30 held frames did
-  });
-
-  it("the DROP CUE's frames are not probe frames — our own tone is not the reply", async () => {
-    leaky();
-    h.voice.data.live_call.min_final_ms = 200;
-    const c = await call();
-    await room();
-    await act(async () => {
-      h.frame?.({ type: "speech_started" });
-      frames(-60, 30); // under the −45 floor: the gate drops it, and the cue plays
-      h.frame?.({ type: "speech_stopped" });
-      h.frame?.({ type: "transcript", text: "Thank you for watching.", final: true });
-      await Promise.resolve();
-    });
-    expect(h.cue).toHaveBeenCalledTimes(1);
-    await c.step(() => setPlay("playing")); // the reply starts inside the cue's window
-    await chunk(0);
-    const cueFrames = Math.ceil(CUE_HOLD_MS / h.voice.data.live_call.frame_ms);
-    await act(async () => frames(-60, cueFrames + PROBE_FRAMES - 1));
-    expect(h.heldNow).toBe(true); // the cue's frames passed the window by
-    await act(async () => frames(-60, 1));
-    expect(h.heldNow).toBe(false);
-  });
-
-  it("BEFORE the room has a noise floor the probe cannot release (§B.4) — the first reply", async () => {
-    leaky();
-    const c = await call(); // no quiet second yet: the tracker has no estimate
-    await c.step(() => setPlay("playing"));
-    await chunk(0);
-    await act(async () => frames(-60, PROBE_FRAMES));
-    expect(h.heldNow).toBe(true);
-  });
-
-  it("no probe under `mic_hold: on` — held for the reply, whatever the mic hears", async () => {
-    leaky();
-    h.voice.data.live_call.mic_hold = "on";
-    const c = await call();
-    await room();
-    expect(h.chunkStart).toBeNull(); // nothing to decide, so no clock
-    await c.step(() => setPlay("playing"));
-    await act(async () => frames(-60, PROBE_FRAMES * 2));
-    expect(h.heldNow).toBe(true);
-  });
-
-  it("no probe on a SUBTRACTIVE canceller under `auto`, and no hold (§B.4)", async () => {
-    const c = await call(); // readback `"all"`
-    await room();
-    expect(h.chunkStart).toBeNull();
-    await c.step(() => setPlay("playing"));
-    expect(h.heldNow).toBe(false);
-  });
-
-  it("D77 — with the trail on, a verdict is a `probe` line and the chunk-start keeps its idx", async () => {
+    return h.posts.flatMap((p) => p.body.entries);
+  };
+  /** A leaking call with the room learned (−50 dBFS ⇒ quiet = under −40), a reply played and DRAINED:
+   *  the tail is armed, frame 0 of its release is next. */
+  const drainedTail = async () => {
     leaky();
     h.voice.data.live_call.debug = true;
     const c = await call();
     await room();
     await c.step(() => setPlay("playing"));
-    await chunk(0);
-    await act(async () => frames(-60, PROBE_FRAMES));
-    await act(async () => {
-      vi.advanceTimersByTime(2000); // the trail's own interval flush
-    });
-    const lines = h.posts.flatMap((p) => p.body.entries);
-    const probeLine = lines.find((l) => l.ev === "probe");
-    expect(probeLine).toMatchObject({ idx: 0, floor: -45, released: true });
-    expect(probeLine?.maxDb).toBeCloseTo(-60, 0);
-    expect(lines.find((l) => l.ev === "sig" && l.type === "chunkStarted")).toMatchObject({
-      idx: 0,
+    await c.step(() => setPlay("paused"));
+    expect(h.heldNow).toBe(true);
+    expect(c.view.result.current.tail).toBe(true);
+    return c;
+  };
+
+  it("QUIET after the minimum releases at min + quiet (300 + 700 ms), with reason `quiet`", async () => {
+    const c = await drainedTail();
+    await act(async () => frames(-60, 49)); // 980 ms: the minimum, then 680 ms of quiet
+    expect(h.heldNow).toBe(true);
+    await act(async () => frames(-60, 1)); // the 1000th ms
+    expect(h.heldNow).toBe(false);
+    expect(c.view.result.current.tail).toBe(false);
+    const tail = (await trailLines()).find((l) => l.ev === "tail");
+    expect(tail).toMatchObject({ reason: "quiet", ms: 1000 });
+  });
+
+  it("a LOUD tail never goes quiet — it releases at the CAP, with reason `cap`", async () => {
+    await drainedTail();
+    await act(async () => frames(-15, 249)); // the car, at the owner's own level
+    expect(h.heldNow).toBe(true);
+    await act(async () => frames(-15, 1)); // 5000 ms
+    expect(h.heldNow).toBe(false);
+    expect((await trailLines()).find((l) => l.ev === "tail")).toMatchObject({
+      reason: "cap",
+      ms: 5000,
     });
   });
 
-  it("a RECAPTURE mid-reply holds the fresh ear at once and re-probes at the next chunk", async () => {
+  it("with NO noise estimate yet there is nothing to be quiet against — only the cap releases", async () => {
+    leaky();
+    const c = await call(); // no `room()`: the tracker has no floor
+    await c.step(() => setPlay("playing"));
+    await c.step(() => setPlay("paused"));
+    await act(async () => frames(-80, 249)); // however silent
+    expect(h.heldNow).toBe(true);
+    await act(async () => frames(-80, 1));
+    expect(h.heldNow).toBe(false);
+  });
+
+  it("the quiet run must be CONTIGUOUS — 680 ms of quiet and then a sound does not release", async () => {
+    await drainedTail();
+    await act(async () => {
+      frames(-60, 15); // 300 ms: the minimum
+      frames(-60, 34); // 680 ms of quiet
+      frames(-20, 1); // …one syllable of the reply's last word
+      frames(-60, 34); // 680 ms again
+    });
+    expect(h.heldNow).toBe(true); // the run restarted at the sound
+    await act(async () => frames(-60, 1));
+    expect(h.heldNow).toBe(false);
+  });
+
+  it("MUTED frames prove nothing about the room — they break the run, and the cap still counts", async () => {
+    const c = await drainedTail();
+    await c.step(() => c.view.result.current.toggleMute());
+    await act(async () => {
+      for (let i = 0; i < 60; i++) h.mic?.({ buf: tagged(1), rms: 0, uplinked: false }); // digital silence
+    });
+    expect(h.heldNow).toBe(true); // 1.2 s of it released nothing
+    await c.step(() => c.view.result.current.toggleMute());
+    await act(async () => frames(-60, 35)); // a real 700 ms of quiet
+    expect(h.heldNow).toBe(false);
+  });
+
+  it("the car trail's own shape: drained at t, echo −15 dBFS from t+0.2 s to t+2.6 s, noise −42 → release at t+3.3 s", async () => {
+    leaky();
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await act(async () => frames(-42, 50)); // the cabin: the tracker's floor lands at −42
+    await c.step(() => setPlay("playing"));
+    await c.step(() => setPlay("paused")); // the ELEMENT is done — the car is not
+    await act(async () => {
+      frames(-45, 10); // 0–200 ms: the car's own latency, nothing yet
+      frames(-15, 120); // 200–2600 ms: the reply's tail out of the car speakers, as loud as the owner
+      frames(-45, 34); // 2600–3280 ms: quiet, but not yet for long enough
+    });
+    expect(h.heldNow).toBe(true); // the old release (at the element's end) would have opened at t
+    await act(async () => frames(-45, 1));
+    expect(h.heldNow).toBe(false); // t + 3.3 s — the echo's end + 700 ms
+    expect((await trailLines()).find((l) => l.ev === "tail")).toMatchObject({
+      reason: "quiet",
+      ms: 3300,
+    });
+  });
+
+  it("every hold EDGE is a trail line — closed by the mouth, kept by the tail, opened by its release", async () => {
+    await drainedTail();
+    await act(async () => frames(-60, 50));
+    const holds = (await trailLines()).filter((l) => l.ev === "hold");
+    expect(holds.map((l) => [l.held, l.why])).toEqual([
+      [true, "mouth"],
+      [false, "tail"],
+    ]);
+  });
+
+  it("a reply that RE-STARTS inside the tail takes it back — its next drain arms a fresh release", async () => {
+    const c = await drainedTail();
+    await act(async () => frames(-60, 40)); // most of the way to a quiet release…
+    await c.step(() => setPlay("playing")); // …and the next reply starts
+    await act(async () => frames(-60, 20)); // what would have completed the first run
+    expect(h.heldNow).toBe(true); // held by the mouth now, not released by a stale run
+    await c.step(() => setPlay("paused"));
+    await act(async () => frames(-60, 49));
+    expect(h.heldNow).toBe(true); // a FRESH 1000 ms from the second drain
+    await act(async () => frames(-60, 1));
+    expect(h.heldNow).toBe(false);
+  });
+
+  // ── D80 ②: THE TEXT BACKSTOP, wired — the reply's own words, heard back after the tail released ──
+  /** The car call's reply and the echo it came back as (EVIDENCE Fact 1). */
+  const REPLY =
+    '*I stand up and stretch, my tail flicking.* "Anyway, yeah. Go crush it today. And... text me when you can. I\'ll be here."';
+  const ECHO = "Text me when you can. I'll be here.";
+  /** One final on segment `id`, with enough energy to pass the gate were it the owner's. */
+  const finalOf = async (text: string, id: string) =>
+    act(async () => {
+      h.frame?.({ type: "speech_started", item_id: id });
+      frames(-20, 20);
+      h.frame?.({ type: "speech_stopped", item_id: id });
+      h.frame?.({ type: "transcript", text, final: true, item_id: id });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  /** A drained tail, released on quiet — the ear is open again and the window is running. */
+  const released = async () => {
+    const c = await drainedTail();
+    h.reply = { id: "r1", text: REPLY };
+    await act(async () => frames(-60, 50)); // the tail releases at 1000 ms
+    expect(h.heldNow).toBe(false);
+    return c;
+  };
+
+  it("a final that IS the reply's words, inside the window, is dropped VISIBLY — and silently to the ear", async () => {
+    const c = await released();
+    await finalOf(ECHO, "echo");
+    expect(texts()).toEqual([]); // never became a turn
+    expect(c.view.result.current.heard).toBe(CALL_COPY.ownWords);
+    expect(h.cue).not.toHaveBeenCalled(); // no cue for the car to play back
+    const echo = (await trailLines()).find((l) => l.ev === "echo");
+    expect(echo).toMatchObject({ chars: 33 });
+    expect(echo?.sim).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("a GENUINE final inside the same window is taken — it scores far below the threshold", async () => {
+    await released();
+    await finalOf("It's okay, no worries. I like it too.", "owner");
+    expect(texts()).toEqual(["It's okay, no worries. I like it too."]);
+  });
+
+  it("a SHORT final is never judged — the owner's one-word answers are theirs (`ECHO_MIN_CHARS`)", async () => {
+    await released();
+    h.reply = { id: "r1", text: '"Yeah, babe. I will."' };
+    await finalOf("Yeah babe", "short"); // 9 normalised characters, and verbatim in the reply
+    expect(texts()).toEqual(["Yeah babe"]);
+    expect((await trailLines()).some((l) => l.ev === "echo")).toBe(false);
+  });
+
+  it("OUTSIDE the window the wiring never stamps it — the same words later are the owner's to say", async () => {
+    await released();
+    await act(async () => {
+      vi.advanceTimersByTime(4001); // past release + `echo_window_ms`
+    });
+    await finalOf(ECHO, "later");
+    expect(texts()).toEqual([ECHO]);
+  });
+
+  it("a dropped echo teaches the voice learner NOTHING (D76 §C.3's dropped-finals rule)", async () => {
+    // A settled room first (the learner's own guard), then the echo at the owner's level.
+    const c = await released();
+    await act(async () => frames(-60, 250)); // a full 5 s window: the noise estimate settles
+    await finalOf(ECHO, "echo");
+    expect(c.view.result.current.heard).toBe(CALL_COPY.ownWords);
+    c.view.unmount(); // the teardown writes the learned level back — there must be none
+    expect(localStore.has("ctrlb.voiceLevels")).toBe(false);
+  });
+
+  it("a TAKEN final inside the echo window teaches nothing either — only one outside it does (O-LOW-2)", async () => {
+    // The design of record: "the learner ignores echo-window finals" — a car-residue-plus-owner segment
+    // that scored under the threshold is taken, but its level is not the owner's alone.
+    const inside = await released();
+    // settle the room (250 frames — the ear's clock; the window runs on the wall clock, still open)
+    await act(async () => frames(-60, 250));
+    await finalOf("It's okay, no worries. I like it too.", "owner"); // taken, inside the window
+    expect(texts()).toEqual(["It's okay, no worries. I like it too."]);
+    inside.view.unmount();
+    expect(localStore.has("ctrlb.voiceLevels")).toBe(false);
+    // …the same words said OUTSIDE the window (settled room, window long closed) do teach.
+    h.play = { status: "idle" };
+    h.sendCall.mockClear();
+    const outside = await released();
+    await act(async () => frames(-60, 250)); // the same settled room…
+    await act(async () => {
+      vi.advanceTimersByTime(4001); // …and the wall clock past release + `echo_window_ms`
+    });
+    await finalOf("It's okay, no worries. I like it too.", "later");
+    expect(texts()).toEqual(["It's okay, no worries. I like it too."]);
+    outside.view.unmount();
+    expect(localStore.has("ctrlb.voiceLevels")).toBe(true);
+  });
+
+  it("a TAP-interrupt's tail ends on its DEADLINE — the owner answering at once is never held past it (O-HIGH)", async () => {
+    // The tap IS the interrupt gesture: the owner talks at once, far above noise + 10, so a quiet rule
+    // would hold their whole answer. A kill-armed tail releases at `hold_tail_min_ms` (300 ms), `kill`.
     leaky();
     h.voice.data.live_call.debug = true;
     const c = await call();
     await room();
     await c.step(() => setPlay("playing"));
-    await chunk(0);
-    await act(async () => frames(-60, PROBE_FRAMES));
-    expect(h.heldNow).toBe(false); // chunk 0 released
-    await act(async () => {
-      vi.advanceTimersByTime(250); // the debug block samples
-    });
-    expect(c.view.result.current.debug?.probe).toEqual({
-      idx: 0,
-      maxDb: expect.closeTo(-60, 5) as number,
-      floor: -45,
-      released: true,
-    });
-
-    await c.step(() => c.view.result.current.setRoute("media")); // mid-reply
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(h.capStops).toBe(1);
-    expect(h.heldNow).toBe(true); // the fresh ear is installed HELD under the live reply
-    expect(h.chunkStart).not.toBeNull(); // …with its own clock
-    await chunk(1);
-    await act(async () => frames(-60, PROBE_FRAMES));
-    await act(async () => {
-      vi.advanceTimersByTime(250);
-    });
-    // Chunk 1 WAS probed — and held, because the fresh ear has no noise floor yet (§B.4).
-    expect(c.view.result.current.debug?.probe).toMatchObject({ idx: 1, released: false });
+    await act(async () => c.view.result.current.interrupt());
+    expect(h.dismiss).toHaveBeenCalled();
+    expect(h.heldNow).toBe(true); // the car's buffer: the minimum still covers the sink's lag
+    await act(async () => frames(-15, 14)); // 280 ms of the owner talking from frame 0
     expect(h.heldNow).toBe(true);
+    await act(async () => frames(-15, 1)); // …300 ms: the deadline, not a pause, opens the ear
+    expect(h.heldNow).toBe(false);
+    expect((await trailLines()).find((l) => l.ev === "tail")).toMatchObject({
+      reason: "kill",
+      ms: 300,
+    });
+  });
+
+  it("a DRAIN-armed tail with the owner talking still waits for quiet or the cap (the recorded trade)", async () => {
+    // Unchanged this wave (no level rule tells the owner from the echo; wave 1.5's chirp deadline does):
+    // an answer that STARTS inside the tail is held until their first 700 ms pause, or the cap.
+    await drainedTail();
+    await act(async () => frames(-15, 249)); // 4980 ms of the owner, never pausing
+    expect(h.heldNow).toBe(true);
+    await act(async () => frames(-15, 1));
+    expect(h.heldNow).toBe(false);
+    expect((await trailLines()).find((l) => l.ev === "tail")).toMatchObject({ reason: "cap" });
   });
 });
 
@@ -1463,6 +1615,152 @@ describe("useLiveCall — THE TRANSCRIPT GATE's epochs (D74 S5, evidence docs/re
   });
 });
 
+describe("useLiveCall — THE SEGMENT LEDGER (D80 ③: finals judged on their OWN segment, by `item_id`)", () => {
+  const mic = (rms: number, n: number): void => {
+    for (let i = 0; i < n; i++) h.mic?.({ buf: new ArrayBuffer(8), rms });
+  };
+  /** A gated call: 200 ms of above-floor energy owed per final (the floor is the −45 dBFS ceiling). */
+  const gated = async () => {
+    h.voice.data.live_call.min_final_ms = 200;
+    return call();
+  };
+  const QUIET = 0.001; // −60 dBFS: under the floor, accrues nothing
+  const LOUD = 0.2; //   −14 dBFS: the owner, well above it
+  const down = (f: LiveDown) =>
+    act(async () => {
+      h.frame?.(f);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+  it("the car trail's exact interleaving — start(A) stop(A) start(B) final(A) final(B) — judges each on its OWN", async () => {
+    // EVIDENCE Fact 3: Speaches emits `speech_started(B)` before `transcript(A)`. The single-slot epoch
+    // judged A on B's (empty) accrual, then closed it, and B's final found no epoch and failed OPEN —
+    // two of the car round's echoes walked in that way. Here A is the owner (loud) and B a quiet
+    // hallucination; each final meets exactly its own segment's evidence.
+    const { view } = await gated();
+    await down({ type: "speech_started", item_id: "A" });
+    await act(async () => mic(LOUD, 20)); // 400 ms of the owner
+    await down({ type: "speech_stopped", item_id: "A" });
+    await down({ type: "speech_started", item_id: "B" });
+    await act(async () => mic(QUIET, 20)); // B: nothing above the floor
+    await down({ type: "transcript", text: "what time is it", final: true, item_id: "A" });
+    expect(texts()).toEqual(["what time is it"]); // A: its own 400 ms — taken
+    await down({ type: "speech_stopped", item_id: "B" });
+    await down({ type: "transcript", text: "Mm-hmm.", final: true, item_id: "B" });
+    expect(texts()).toEqual(["what time is it"]); // B: measured, quiet — DROPPED, never fail-open
+    expect(view.result.current.note).toBe(CALL_COPY.tooQuiet);
+  });
+
+  it("a frame after a segment's STOP is not that segment's — the stop freezes it", async () => {
+    await gated();
+    await down({ type: "speech_started", item_id: "A" });
+    await act(async () => mic(QUIET, 20));
+    await down({ type: "speech_stopped", item_id: "A" });
+    await act(async () => mic(LOUD, 20)); // loud AFTER the stop (the next speaker, a door…)
+    await down({ type: "transcript", text: "Thank you.", final: true, item_id: "A" });
+    expect(texts()).toEqual([]); // A is judged on what it held, not on what came after
+  });
+
+  it("a final for an id NOBODY SAW is unmeasured — it passes, the one surviving fail-open door", async () => {
+    await gated();
+    await down({ type: "transcript", text: "are you there", final: true, item_id: "ghost" });
+    expect(texts()).toEqual(["are you there"]);
+  });
+
+  it("…and so is one from a relay that named NO id at all — the pre-D80 frame never crashes", async () => {
+    await gated();
+    await down({ type: "speech_started", item_id: undefined });
+    await act(async () => mic(QUIET, 20));
+    await down({ type: "speech_stopped", item_id: undefined });
+    await down({ type: "transcript", text: "hello there", final: true, item_id: undefined });
+    expect(texts()).toEqual(["hello there"]); // nothing measured, nothing judged
+  });
+
+  it("an ERRORED transcription (no final for A, ever) does not shift B — the FIFO unsoundness", async () => {
+    // What killed the FIFO alternative: Speaches sends `error` instead of A's final (R86 LC-2), and an
+    // order-based ledger would then judge every later final on its predecessor's evidence forever.
+    const { view } = await gated();
+    await down({ type: "speech_started", item_id: "A" });
+    await act(async () => mic(QUIET, 20)); // A: a flap
+    await down({ type: "speech_stopped", item_id: "A" });
+    await down({ type: "error", code: "upstream_error", message: "transcription failed" });
+    await down({ type: "speech_started", item_id: "B" });
+    await act(async () => mic(LOUD, 20)); // B: the owner
+    await down({ type: "speech_stopped", item_id: "B" });
+    await down({ type: "transcript", text: "turn off the lights", final: true, item_id: "B" });
+    expect(texts()).toEqual(["turn off the lights"]); // judged on B's own 400 ms
+    expect(view.result.current.note).not.toBe(CALL_COPY.tooQuiet);
+  });
+
+  it("an EMPTY final closes its segment and goes nowhere — no queue, no note, no cue (D80 ③/④)", async () => {
+    const { view } = await gated();
+    await down({ type: "speech_started", item_id: "A" });
+    await act(async () => mic(QUIET, 3));
+    await down({ type: "speech_stopped", item_id: "A" });
+    await down({ type: "transcript", text: "", final: true, item_id: "A" }); // the gap cut's shape
+    expect(texts()).toEqual([]);
+    expect(view.result.current.note).toBeNull();
+    expect(h.cue).not.toHaveBeenCalled();
+  });
+
+  it("is BOUNDED — past 16 segments awaiting a final the oldest is evicted, and its final is unmeasured", async () => {
+    await gated();
+    for (let i = 1; i <= 17; i++) {
+      await down({ type: "speech_started", item_id: `s${i}` });
+      await act(async () => mic(QUIET, 15));
+      await down({ type: "speech_stopped", item_id: `s${i}` });
+    }
+    await down({ type: "transcript", text: "Yeah okay then", final: true, item_id: "s1" });
+    expect(texts()).toEqual(["Yeah okay then"]); // evicted ⇒ unmeasured ⇒ passes
+    await down({ type: "transcript", text: "Mm-hmm yes", final: true, item_id: "s17" });
+    expect(texts()).toEqual(["Yeah okay then"]); // still held, measured quiet ⇒ dropped
+  });
+
+  it("the ledger CLEARS where its evidence becomes unknowable — a mute, and an accepted route cycle", async () => {
+    const { view } = await gated();
+    await down({ type: "speech_started", item_id: "A" });
+    await act(async () => mic(QUIET, 20));
+    await down({ type: "speech_stopped", item_id: "A" });
+    await act(async () => view.result.current.toggleMute());
+    await act(async () => view.result.current.toggleMute());
+    await down({ type: "transcript", text: "late for the mute", final: true, item_id: "A" });
+    expect(texts()).toEqual(["late for the mute"]); // its segment was condemned with the mute
+
+    await down({ type: "speech_started", item_id: "B" });
+    await act(async () => mic(QUIET, 20));
+    await down({ type: "speech_stopped", item_id: "B" });
+    await act(async () => view.result.current.setRoute("media")); // an ACCEPTED cycle
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await down({ type: "state", state: "ready" });
+    await down({ type: "transcript", text: "across the cycle", final: true, item_id: "B" });
+    expect(texts()).toEqual(["late for the mute", "across the cycle"]);
+  });
+
+  it("the NOISE VERDICT on B survives A's final — it is fenced on B's segment, not on an epoch", async () => {
+    vi.useFakeTimers();
+    try {
+      h.voice.data.live_call.noise_verdict_ms = 1000;
+      const { step } = await gated();
+      await down({ type: "speech_started", item_id: "A" });
+      await act(async () => mic(LOUD, 20));
+      await down({ type: "speech_stopped", item_id: "A" });
+      await down({ type: "speech_started", item_id: "B" }); // the TV, starting before A's final
+      await act(async () => mic(QUIET, 10));
+      await down({ type: "transcript", text: "what's the weather", final: true, item_id: "A" });
+      expect(texts()).toEqual(["what's the weather"]);
+      expect(h.mouthGate?.()).toBe(false); // B is open: the reply waits
+      await step(() => vi.advanceTimersByTime(1000));
+      expect(h.mouthGate?.()).toBe(true); // …until B is judged noise — A's final did not void it
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidence docs/research/R83)", () => {
   /** `n` frames of `rms` (20 ms each at the harness's `frame_ms`), uplinked unless said otherwise. */
   const frames = (rms: number, n: number, uplinked = true): void => {
@@ -1520,9 +1818,25 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
     await call();
     await utterance("what time is it", 0.2, 30);
     expect(h.cue).not.toHaveBeenCalled();
-    await utterance("Thank you for watching.", 0.001, 30); // −60 dBFS, under the −45 bootstrap floor
+    // 100 ms above the floor, short of the 200 owed: a SUSTAINED drop — somebody said something
+    await utterance("Thank you for watching.", 0.1, 5);
     expect(h.cue).toHaveBeenCalledTimes(1);
     expect(h.cue).toHaveBeenCalledWith(h.ctx);
+  });
+
+  it("a ZERO-accrual drop is silent — a hallucination on a flap gets no cue (D80 ⑥), only the note", async () => {
+    // The car: Parakeet's "Yeah."/"Mm." on segments with nothing above the floor, each one BEEPED, and
+    // the beep's echo came back 2.3 s later as the next flap (12 cues in 5 minutes).
+    h.voice.data.live_call.min_final_ms = 200;
+    const { view } = await call();
+    await utterance("Mm-hmm.", 0.001, 30); // −60 dBFS: under the −45 floor the whole way
+    expect(texts()).toEqual([]);
+    expect(h.cue).not.toHaveBeenCalled();
+    expect(view.result.current.note).toBe(CALL_COPY.tooQuiet);
+    // …and the note retracts itself the moment a final is TAKEN (D80's W6) — it was about that drop.
+    await utterance("what time is it", 0.2, 15); // 300 ms of 200 owed: taken
+    expect(texts()).toEqual(["what time is it"]);
+    expect(view.result.current.note).toBeNull();
   });
 
   it("the NOISE tracker pauses while the mouth is live — a reply's residue is not the room (S0b round MED 1)", async () => {
@@ -1549,7 +1863,7 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
       await act(async () => {
         vi.advanceTimersByTime(5000); // bank a full bucket so frames ship at once
       });
-      await utterance("Thank you for watching.", 0.001, 30); // −60 dBFS: dropped, the cue fires
+      await utterance("Thank you for watching.", 0.1, 5); // 100 ms of 200: dropped, the cue fires
       expect(h.cue).toHaveBeenCalledTimes(1);
       const tagged = (n: number): ArrayBuffer => {
         const buf = new ArrayBuffer(8);
@@ -1697,6 +2011,35 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
     });
     await step(() => setPlay("playing"));
     await utterance("over the reply", 0.1, 20); // the mouth is live: this may be its own leak
+    view.unmount();
+    expect(localStore.has(STORE)).toBe(false);
+  });
+
+  it("every DROPPED final teaches nothing — too quiet, empty, muted, held (D80's W6: the learner's rule, per path)", async () => {
+    // Each of these carries the owner's level (−20 dBFS, clear of the room + both margins) — so the
+    // only thing standing between it and the learner is that the machine did not TAKE it.
+    h.voice.data.live_call.min_final_ms = 200;
+    h.fennec = true; // a held ear, for the last path
+    const { view, step } = await call();
+    await act(async () => {
+      frames(0.001, 300); // a settled room at −60 dBFS
+    });
+    await utterance("Thank you for watching.", 0.1, 5); // TOO QUIET: 100 of 200 ms — sustained, cued
+    await utterance("", 0.1, 20); // EMPTY: a no-speech final (or the relay's gap cut, D80 ④)
+    await step(() => view.result.current.toggleMute());
+    await utterance("while muted", 0.1, 20); // MUTED: dropped flat
+    await step(() => view.result.current.toggleMute());
+    await act(async () => {
+      h.frame?.({ type: "speech_started" }); // HELD: a segment open when the reply starts over it…
+      frames(0.1, 20);
+    });
+    await step(() => setPlay("playing"));
+    await act(async () => {
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({ type: "transcript", text: "over the reply", final: true }); // …its final, dropped
+      await Promise.resolve();
+    });
+    expect(texts()).toEqual([]);
     view.unmount();
     expect(localStore.has(STORE)).toBe(false);
   });
@@ -2255,6 +2598,115 @@ describe("useLiveCall — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R7
   });
 });
 
+describe("useLiveCall — THE CONNECT CHIRP (D80 ⑦: played + logged, not driving)", () => {
+  const tagged = (n: number): ArrayBuffer => {
+    const buf = new ArrayBuffer(8);
+    new Uint8Array(buf).fill(n);
+    return buf;
+  };
+
+  it("plays ONCE per capture, on the capture's own context — and a route cycle plays it again", async () => {
+    h.voice.data.live_call.chirp = true;
+    const c = await call();
+    expect(h.chirpPlay).toHaveBeenCalledTimes(1);
+    const [ctx, when] = h.chirpPlay.mock.calls[0];
+    expect(ctx).toBe(h.ctx); // one clock: the context the mic frames are stamped on
+    expect(when).toBeCloseTo(5 + 0.05, 9); // scheduled a lead ahead of `currentTime`
+    expect(h.chirpMatchers).toEqual([{ rate: 48000, when, frames: 0 }]);
+    // it plays REGARDLESS of `mic_hold` (the harness track is subtractive: nothing holds)
+    await act(async () => c.view.result.current.setRoute("media")); // the sink may have moved
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.chirpPlay).toHaveBeenCalledTimes(2);
+    expect(h.chirpMatchers).toHaveLength(2);
+  });
+
+  it("`chirp: false` plays nothing, measures nothing and trails nothing", async () => {
+    h.voice.data.live_call.debug = true;
+    vi.useFakeTimers();
+    try {
+      await call();
+      await act(async () => {
+        for (let i = 0; i < 10; i++) h.mic?.({ buf: tagged(1), rms: 0.01 });
+        vi.advanceTimersByTime(2000);
+      });
+      expect(h.chirpPlay).not.toHaveBeenCalled();
+      expect(h.chirpMatchers).toEqual([]);
+      const lines = h.posts.flatMap((p) => p.body.entries);
+      expect(lines.some((l) => l.ev === "chirp")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("its matcher hears EVERY frame, and its verdict lands once — on the trail and the debug readout", async () => {
+    h.voice.data.live_call.chirp = true;
+    h.voice.data.live_call.debug = true;
+    h.chirpAfter = 12;
+    vi.useFakeTimers();
+    try {
+      const c = await call();
+      await act(async () => {
+        // masked (inside its own window), held or not — the matcher counts them all
+        for (let i = 0; i < 20; i++) h.mic?.({ buf: tagged(1), rms: 0.01, uplinked: i % 2 === 0 });
+        vi.advanceTimersByTime(2000);
+      });
+      expect(h.chirpMatchers[0].frames).toBe(12); // concluded on the 12th, then dropped
+      const chirps = h.posts.flatMap((p) => p.body.entries).filter((l) => l.ev === "chirp");
+      expect(chirps).toHaveLength(1);
+      expect(chirps[0]).toMatchObject({ lagMs: 2301, peak: 0.87, second: 0.1 });
+      expect(c.view.result.current.debug?.chirp).toEqual({ lagMs: 2301, peak: 0.87, second: 0.1 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("…a verdict of NO return is trailed as `none` — never a lag", async () => {
+    h.voice.data.live_call.chirp = true;
+    h.voice.data.live_call.debug = true;
+    h.chirpAfter = 1;
+    h.chirpVerdict = { lagMs: null, peak: 0.09, second: 0.08 };
+    vi.useFakeTimers();
+    try {
+      await call();
+      await act(async () => {
+        h.mic?.({ buf: tagged(1), rms: 0.01 });
+        vi.advanceTimersByTime(2000);
+      });
+      const chirp = h.posts.flatMap((p) => p.body.entries).find((l) => l.ev === "chirp");
+      expect(chirp).toMatchObject({ none: true, peak: 0.09, second: 0.08 });
+      expect(chirp).not.toHaveProperty("lagMs");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("its window rides up as SILENCE — the drop cue's own mask, so the gate never takes our sound for the owner", async () => {
+    h.voice.data.live_call.chirp = true;
+    vi.useFakeTimers();
+    try {
+      await call();
+      await act(async () => {
+        vi.advanceTimersByTime(5000); // bank a full pacer bucket
+      });
+      h.audio.length = 0;
+      const window = Math.ceil(CHIRP_HOLD_MS / h.voice.data.live_call.frame_ms);
+      await act(async () => {
+        for (let i = 0; i < window; i++) h.mic?.({ buf: tagged(7), rms: 0.3 });
+        h.mic?.({ buf: tagged(9), rms: 0.3 });
+        vi.advanceTimersByTime(5000);
+        h.mic?.({ buf: tagged(5), rms: 0.3 });
+      });
+      expect(h.audio).not.toContain(7);
+      expect(h.audio.filter((b) => b === 9)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("useLiveCall — the unmount fence (S2b audit)", () => {
   it("a final already in flight when the component unmounts never submits", async () => {
     // The shell's `endCall` exit (and a redial's key bump) unmount the machine WITHOUT a hang-up
@@ -2344,10 +2796,13 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
       ec: "all",
       ecCaps: [true, "all"],
       fellBack: false,
+      // D80's W6 — what the platform REPORTS for this context's output path, beside what the ear measures
+      outputLatency: 0.28,
+      baseLatency: 0.01,
       cfg: { floor_dbfs: -45, playback_margin_db: 10, min_final_ms: 0, mic_hold: "auto" },
     });
     // the 1 Hz sampler: ONLY the debug record's moving fields, and the phase they were read in — the
-    // per-capture constants are the capture line's, the probe and the last final are lines of their own
+    // per-capture constants are the capture line's, the last final is a line of its own
     const samples = all.filter((l) => l.ev === "sample");
     expect(samples).toHaveLength(3);
     expect(samples[0]).toMatchObject({ floor: -45, floorPinned: false, phase: "thinking" });
@@ -2365,6 +2820,7 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
         "noiseSettled",
         "voiceLevel",
         "earHeld",
+        "tail",
         "mouthLive",
         "bargeArmed",
         "phase",

@@ -11,6 +11,7 @@ import {
   resumeCall,
   retryLastTurn,
   runShell,
+  resetToThreadless,
   sendMessage,
   setStickyAgent,
   startNewThread,
@@ -96,12 +97,11 @@ function textOf(parts: Part[]): string {
 }
 
 beforeEach(() => {
-  // Reset the module-level store between cases. The sticky pick is PERSISTED now (D75 amendment), so the
-  // storage goes first and the pick is cleared EXPLICITLY before the `/new`: a case that ends mid-stream
-  // leaves `startNewThread` refusing (a turn is live), and the pick must not leak into the next case.
+  // Reset the module-level store between cases — synchronously and WITHOUT a mint (`/new` mints through
+  // seam ① since ISS-31, so it is no longer a reset). The sticky pick is PERSISTED (D75 amendment), so
+  // the storage goes first; the reset then clears the pick and persists the clear.
   localStorage.clear();
-  setStickyAgent(null);
-  startNewThread({ keepAgent: false });
+  resetToThreadless(null);
 });
 
 describe("chat streaming reducer", () => {
@@ -616,7 +616,7 @@ describe("turn integrity — client (Slice 2)", () => {
     expect(result.current.status).toBe("streaming");
 
     act(() => {
-      startNewThread({ keepAgent: false }); // must be refused: a turn is live
+      void startNewThread({ keepAgent: false, defaultAgent: "default" }); // must be refused: a turn is live
     });
     expect(result.current.status).toBe("streaming"); // NOT reset to idle
     expect(
@@ -625,6 +625,7 @@ describe("turn integrity — client (Slice 2)", () => {
       ),
     ).toBe(true);
     expect(result.current.messages.some((m) => m.role === "user")).toBe(true); // log not wiped
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1); // the send alone — the refused /new minted nothing
 
     // Let the held turn finish so nothing leaks into the next case.
     const enc = new TextEncoder();
@@ -1774,7 +1775,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
 
   // Probe-on-done discovery (`void probeAndReattach`) is fire-and-forget; drain any pending probe /
   // re-attach chain after each case so a floating promise can't inject a queued bubble into the NEXT
-  // test's shared module state (the store is a singleton). `startNewThread` in the global beforeEach
+  // test's shared module state (the store is a singleton). `resetToThreadless` in the global beforeEach
   // then resets messages, so a drained probe settles harmlessly against the finishing test. The drain
   // waits past HIGH-2's ~250ms re-probe delay (probeAndReattach's drain-B window bridge) so that timer
   // fires + completes here, never inside the next case (its threadId guard also bails a stale reload).
@@ -2778,7 +2779,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
       p = reattachTurn("t1"); // enteredOn = "t1"; parks on the deferred json()
     });
     act(() => {
-      startNewThread({ keepAgent: false }); // switch away → threadId null, messages cleared
+      resetToThreadless(null); // switch away → threadId null, messages cleared
     });
     expect(result.current.threadId).toBeNull();
 
@@ -2792,7 +2793,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
     expect(result.current.status).toBe("idle");
   });
 
-  it("startNewThread prunes rawByEntry: a later harvest falls back to server text (FIX C)", async () => {
+  it("a view swap (/new) prunes rawByEntry: a later harvest falls back to server text (FIX C)", async () => {
     clearDraft();
     // 1) queue a steer carrying a `/cloud` RAW line on t1 (populates rawByEntry[t1][e1]); end + close.
     {
@@ -2815,9 +2816,10 @@ describe("steering queue — client (Slice 5, D41)", () => {
         await new Promise((r) => setTimeout(r, 320)); // drain the post-done discovery probe
       });
     }
-    // 2) /new prunes rawByEntry (dropAllRaw).
+    // 2) a view swap prunes rawByEntry (`swapView`'s dropAllRaw — every door: an open, /new's mint, its
+    //    thread-less fallback, which is the one driven here).
     act(() => {
-      startNewThread({ keepAgent: false });
+      resetToThreadless(null);
     });
     // 3) a fresh streaming turn; Stop harvests the SAME entry — the raw line was pruned, so the harvest
     //    reconstructs the PLAIN server text ("do X"), NOT the "/cloud do X" raw that would survive a leak.
@@ -3118,29 +3120,13 @@ describe("the sticky agent on the wire", () => {
   });
 
   // D75 amendment (2026-09-26) — the pick is PERSISTED PER DEVICE (`ctrlb.chat` = `{agent}`) through its
-  // one writer, and `/new` keeps or clears it by the tandem rule the caller decides (`keepAgent`). The
-  // thread-pin PROMOTION half needs a loaded thread, so it lives beside the other pin cases in
-  // `chatOpenThread.test.ts`.
+  // one writer, and `/new` keeps or clears it by the tandem rule the caller decides (`keepAgent`). Since
+  // ISS-31 `/new` MINTS through seam ①, so its tandem cases (keep · clear · promote, each persisted) live
+  // with the mint's URL-routed fetch in `chatOpenThread.test.ts`.
   it("setStickyAgent persists `{agent}` — and `null` on the clear", () => {
     setStickyAgent("ops");
     expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: "ops" });
     setStickyAgent(null);
-    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: null });
-  });
-
-  it("/new with keepAgent keeps the sticky pick (no default set) — persisted too", () => {
-    const { result } = renderHook(() => useStickyAgent());
-    act(() => setStickyAgent("lynette"));
-    act(() => startNewThread({ keepAgent: true }));
-    expect(result.current).toBe("lynette");
-    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: "lynette" });
-  });
-
-  it("/new without keepAgent CLEARS the pick (a default set) — persisted too", () => {
-    const { result } = renderHook(() => useStickyAgent());
-    act(() => setStickyAgent("lynette"));
-    act(() => startNewThread({ keepAgent: false }));
-    expect(result.current).toBe(null);
     expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: null });
   });
 

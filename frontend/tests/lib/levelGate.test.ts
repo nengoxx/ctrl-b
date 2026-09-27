@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  autoFloor,
   DBFS_SILENCE,
   effectiveFloor,
   type GateCfg,
@@ -11,6 +12,7 @@ import {
   NOISE_WINDOW_MS,
   type NoiseTracker,
   p90,
+  pinCeiling,
   resetNoise,
   rmsToDbfs,
   trackNoise,
@@ -173,9 +175,19 @@ describe("effectiveFloor — the truth table (§C.4)", () => {
     cfg: GateCfg = CFG,
   ): number => effectiveFloor({ noise, settled, voiceLevel, pin, cfg });
 
-  it("a PIN wins over everything, unclamped — the owner's explicit choice", () => {
+  it("a PIN wins over everything below its ceiling — the owner's explicit choice", () => {
     expect(floor(-50, true, -20, -70)).toBe(-70);
     expect(floor(null, false, null, -30)).toBe(-30);
+  });
+
+  it("…and is CLAMPED to the learned voice − its margin once that is known (D80 ⑤, the owner's ruling)", () => {
+    // The car trail: the pin at −20 sat above the owner's own learned −21 and dropped their words.
+    expect(floor(-42, true, -21, -20)).toBe(-31); // min(−20, max(−21 − 10, Auto −31))
+    expect(floor(-42, true, -21, -40)).toBe(-40); // a pin already under it is untouched
+    // no voice level yet ⇒ nothing to clamp against: the range's own top is the only bound
+    expect(floor(-42, true, null, -20)).toBe(-20);
+    // …and never clamped BELOW Auto (O-MED-1): a noisy cabin puts Auto over V − vm
+    expect(floor(-38, true, -21, -20)).toBe(-28); // Auto = max(−28, −31) = −28
   });
 
   it("no estimate, no voice ⇒ the bootstrap ceiling", () => {
@@ -209,5 +221,37 @@ describe("effectiveFloor — the truth table (§C.4)", () => {
     expect(floor(-10, true, null)).toBe(-20); // 0 → the upper bound
     expect(floor(null, false, -5)).toBe(-20); // a loud seeded voice, clamped too
     expect(floor(null, false, null, null, { ...CFG, floor_dbfs: -75 })).toBe(-60);
+  });
+});
+
+describe("autoFloor + pinCeiling — the column's top never under Auto (D80 ⑤ + the code round's O-MED-1)", () => {
+  const inputs = (noise: number | null, settled: boolean, voiceLevel: number | null) => ({
+    noise,
+    settled,
+    voiceLevel,
+    cfg: CFG,
+  });
+
+  it("is `max_dbfs` until the voice level is known", () => {
+    expect(pinCeiling(inputs(-42, true, null))).toBe(-20);
+    expect(pinCeiling(inputs(null, false, null))).toBe(-20);
+  });
+
+  it("then the voice − `voice_margin_db` in a quiet cabin (N −42, V −21): the ceiling EQUALS Auto (−31)", () => {
+    expect(autoFloor(inputs(-42, true, -21))).toBe(-31); // max(−32, −31)
+    expect(pinCeiling(inputs(-42, true, -21))).toBe(-31); // the 'less' end equals Auto, never below
+  });
+
+  it("…and follows Auto UP in a noisy cabin (N −38, V −21): Auto −28 stays on the column", () => {
+    expect(autoFloor(inputs(-38, true, -21))).toBe(-28);
+    expect(pinCeiling(inputs(-38, true, -21))).toBe(-28);
+  });
+
+  it("only ever LOWERS the top to where Auto stands — a loud voice never lifts it past `max_dbfs`", () => {
+    expect(pinCeiling(inputs(-60, true, -2))).toBe(-20); // −12 would be above the range
+  });
+
+  it("never drops below `min_dbfs` — Auto never does, and the ceiling never drops below Auto", () => {
+    expect(pinCeiling(inputs(-90, true, -75))).toBe(-60); // V − vm = −85, Auto clamps to −60
   });
 });

@@ -104,6 +104,14 @@ const makeSettings = () => ({
       playback_margin_db: 10,
       min_dbfs: -60,
       max_dbfs: -20,
+      // D80 — the tail hold's four, the text backstop's pair and the connect chirp.
+      hold_tail_min_ms: 300,
+      tail_quiet_ms: 700,
+      tail_quiet_margin_db: 10,
+      hold_tail_max_ms: 5000,
+      echo_similarity: 0.75,
+      echo_window_ms: 4000,
+      chirp: true,
       // D74 — the near-speech gate + its calibration readout (evidence docs/research/R76).
       min_final_ms: 200,
       debug: false,
@@ -628,5 +636,72 @@ describe("ConfTab · the relative gate rows (D76 §C)", () => {
     ROWS.forEach(([label]) => fireEvent.change(liveField(label), { target: { value: "" } }));
     fireEvent.click(saveButton());
     for (const [, key] of ROWS) expect(liveOf()?.[key]).toBeNull();
+  });
+});
+
+describe("ConfTab · the car round's rows (D80 — the tail hold, the text backstop, the connect chirp)", () => {
+  /** Label → key, in the order the rows sit right after the gate six. */
+  const ROWS: [string, string][] = [
+    ["Tail hold minimum (ms)", "hold_tail_min_ms"],
+    ["Tail quiet (ms)", "tail_quiet_ms"],
+    ["Tail quiet margin (dB)", "tail_quiet_margin_db"],
+    ["Tail hold cap (ms)", "hold_tail_max_ms"],
+    ["Echo match", "echo_similarity"],
+    ["Echo window (ms)", "echo_window_ms"],
+  ];
+
+  it("renders the six from the live config, directly after the gate's bounds", () => {
+    render(<ConfTab active />);
+    expect(ROWS.map(([label]) => liveField(label).value)).toEqual([
+      "300",
+      "700",
+      "10",
+      "5000",
+      "0.75",
+      "4000",
+    ]);
+    const labels = Array.from(
+      document.getElementById("voice-live")!.querySelectorAll(".confrow .label"),
+    ).map((e) => e.textContent);
+    const at = labels.indexOf("Highest floor (dBFS)");
+    expect(labels.slice(at + 1, at + 1 + ROWS.length)).toEqual(ROWS.map(([label]) => label));
+  });
+
+  it("saves every one coerced to a NUMBER, and a CLEARED one as NULL (0 means something for three)", () => {
+    const { unmount } = render(<ConfTab active />);
+    const typed = ["250", "800", "12", "6000", "0.8", "3000"];
+    ROWS.forEach(([label], i) =>
+      fireEvent.change(liveField(label), { target: { value: typed[i] } }),
+    );
+    fireEvent.click(saveButton());
+    expect(liveOf()).toMatchObject({
+      hold_tail_min_ms: 250,
+      tail_quiet_ms: 800,
+      tail_quiet_margin_db: 12,
+      hold_tail_max_ms: 6000,
+      echo_similarity: 0.8,
+      echo_window_ms: 3000,
+    });
+    unmount();
+    render(<ConfTab active />);
+    ROWS.forEach(([label]) => fireEvent.change(liveField(label), { target: { value: "" } }));
+    fireEvent.click(saveButton());
+    for (const [, key] of ROWS) expect(liveOf(1)?.[key]).toBeNull();
+  });
+
+  it("the connect chirp is a switch, on as shipped, and saves as a boolean", () => {
+    render(<ConfTab active />);
+    const chirp = liveGroup().getByLabelText("Live call connect chirp");
+    expect(chirp.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(chirp);
+    fireEvent.click(saveButton());
+    expect(liveOf()).toMatchObject({ chirp: false });
+  });
+
+  it("the mic-hold row says what each value does — `auto` is the D73 rule again, `off` may transcribe the reply", () => {
+    render(<ConfTab active />);
+    const row = liveGroup().getByText("Mic off while it speaks").closest(".confrow")!;
+    expect(row.textContent).toContain("auto = held unless the browser's echo cancellation is on");
+    expect(row.textContent).toContain("off = never held — the reply may be transcribed");
   });
 });

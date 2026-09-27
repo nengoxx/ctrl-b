@@ -1,7 +1,7 @@
 """`app/core/audio.trim_wav_silence` + its one call site, `VoiceClient.synthesize` (D76 S3a).
 
-PocketTTS pads every clip with 320–760 ms of −81 dBFS digital silence before the first sound; the
-live call's leak probe listens to the head of each chunk, so the pad is cut at the one TTS chokepoint.
+PocketTTS pads every clip with 320–760 ms of −81 dBFS digital silence before the first sound, so every
+sentence starts that much late; the pad is cut at the one TTS chokepoint.
 What the arms pin:
 
 * the cut itself — `lead`/`tail` kept exactly, in sample FRAMES (stereo never shears), for pcm16 and

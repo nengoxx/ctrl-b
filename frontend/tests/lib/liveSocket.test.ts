@@ -244,6 +244,28 @@ describe("liveSocket — the downlink parse", () => {
     });
   });
 
+  it("carries the segment's `item_id` on all three segment frames — and never a malformed one (D80 ③)", () => {
+    expect(
+      parseLiveFrame('{"type":"speech_started","item_id":"item_A","audio_start_ms":40}'),
+    ).toEqual({ type: "speech_started", item_id: "item_A" });
+    expect(parseLiveFrame('{"type":"speech_stopped","item_id":"item_A"}')).toEqual({
+      type: "speech_stopped",
+      item_id: "item_A",
+    });
+    // the gap cut's empty final: the id rides, the trail-only fields are not the client's
+    expect(
+      parseLiveFrame(
+        '{"type":"transcript","text":"","final":true,"item_id":"item_B","reason":"short","gap_ms":80}',
+      ),
+    ).toEqual({ type: "transcript", text: "", final: true, item_id: "item_B" });
+    expect(parseLiveFrame('{"type":"speech_started","item_id":7}')).toEqual({
+      type: "speech_started",
+    });
+    expect(parseLiveFrame('{"type":"speech_stopped","item_id":""}')).toEqual({
+      type: "speech_stopped",
+    });
+  });
+
   it("refuses junk without throwing: bad JSON, a non-object, an unknown state", () => {
     expect(parseLiveFrame("not json")).toBeNull();
     expect(parseLiveFrame("[1,2]")).toBeNull();

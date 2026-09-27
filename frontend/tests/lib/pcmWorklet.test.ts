@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "../../src/lib/pcmWorklet";
 
@@ -11,11 +11,20 @@ import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "../../src/lib/pcmWorklet";
 interface Posted {
   buf: ArrayBuffer;
   rms: number;
+  t: number;
 }
 
-/** Instantiate the SHIPPED processor source in a fake worklet scope. */
+/** The AudioWorkletGlobalScope's two clock globals (D80 ⑦): the processor reads `currentTime` (this
+ *  render quantum's start) and `sampleRate` as FREE identifiers, exactly as the browser exposes them. */
+const SCOPE_RATE = 8000;
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+/** Instantiate the SHIPPED processor source in a fake worklet scope. `feed` hands it one render quantum
+ *  that starts at context time `at` (the scope's `currentTime` during that call). */
 function processor(frameSamples: number): {
-  feed: (block: Float32Array) => void;
+  feed: (block: Float32Array, at?: number) => void;
   process: (inputs: unknown) => boolean;
   posted: Posted[];
   name: string;
@@ -52,8 +61,13 @@ function processor(frameSamples: number): {
     ctor: new (o: unknown) => { process: (i: unknown) => boolean };
   };
   const node = new ctor({ processorOptions: { frameSamples } });
+  vi.stubGlobal("sampleRate", SCOPE_RATE);
+  vi.stubGlobal("currentTime", 0);
   return {
-    feed: (block) => void node.process([[block]]),
+    feed: (block, at = 0) => {
+      vi.stubGlobal("currentTime", at);
+      node.process([[block]]);
+    },
     process: (inputs) => node.process(inputs),
     posted,
     name,
@@ -101,6 +115,20 @@ describe("the pcm worklet — framing", () => {
     // …and it still frames normally afterwards.
     p.feed(Float32Array.from([1, 1, 1, 1]));
     expect(p.posted).toHaveLength(1);
+  });
+});
+
+describe("the pcm worklet — each frame's TIME (D80 ⑦, the connect chirp's clock)", () => {
+  it("stamps the context time of the frame's FIRST sample — the quantum's start plus its offset", () => {
+    const { feed, posted } = processor(3);
+    // Quantum A at t=1.0 carries 5 samples: frame 0 = A[0..3) starts at A's own start; frame 1 begins
+    // at A[3] — 3 samples into A — and is completed by quantum B.
+    feed(Float32Array.from([1, 1, 1, 1, 1]), 1.0);
+    feed(Float32Array.from([1, 1, 1, 1]), 1.0 + 5 / SCOPE_RATE);
+    expect(posted[0].t).toBe(1.0);
+    expect(posted[1].t).toBeCloseTo(1.0 + 3 / SCOPE_RATE, 12);
+    // Frame 2 starts at B[1]: B's start plus one sample.
+    expect(posted[2].t).toBeCloseTo(1.0 + 5 / SCOPE_RATE + 1 / SCOPE_RATE, 12);
   });
 });
 

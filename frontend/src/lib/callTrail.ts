@@ -1,7 +1,7 @@
 // THE CALL TRAIL, browser half (D77) — a buffered, debug-only record of what the call machine decided.
 //
 // Every decision that matters in a live call is made HERE, in the browser — the relative gate's floor,
-// the noise and voice estimates, the leak probe's verdicts, the ear hold, the transcript gate's drops,
+// the noise and voice estimates, the ear hold and its tail, the transcript gate's drops, the chirp,
 // the route readbacks, the phase changes — and the relay sees only the wire. So `useLiveCall` pushes
 // what it decided into this buffer, and the buffer ships it to `POST /api/voice/live/trail`, which
 // appends it to the SAME per-call file the relay writes (`$CTRLB_HOME/calls/<callId>.jsonl`). The main

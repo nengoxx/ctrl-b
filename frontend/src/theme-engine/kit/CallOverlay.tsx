@@ -10,7 +10,6 @@ import {
 import { FocalImg } from "../../components/FocalImg";
 import { Glyph } from "../../components/icons";
 import { useActiveBackdrop } from "../../hooks/useActiveBackdrop";
-import { useFocalAnchor } from "../../hooks/useFocalPosition";
 import {
   useLiveCall,
   type CallDebug,
@@ -43,10 +42,11 @@ import { startCall } from "../../store/liveCall";
 // not a new one — text-over-art legibility is the three-state-backdrop lesson (§8.3a), not an invention.
 //
 // TWO MODES, ONE INDICATOR (`voice.live.ring`, §6):
-//   · RING — a drawn CIRCUMFERENCE over the art, nothing masked or cropped, FOCAL-ANCHORED: centred on
-//     where the backdrop's own framing point lands on screen, so the halo sits over the face at any
-//     viewport and for any picture. No point (or no art at all) → the fallback anchor, centred and upper
-//     third, which CSS owns. The call's state animates the STROKE.
+//   · RING — a drawn CIRCUMFERENCE over the art, nothing masked or cropped, at ONE FIXED position:
+//     centred, upper third, which CSS owns (`--call-ring-x/y`). It used to follow the backdrop's framing
+//     point (D71 §6); the owner ruled it fixed regardless of focus (ISS-32, 2026-09-27) — the ring is the
+//     call's indicator, and one that wandered with each picture read as part of the art. The call's
+//     state animates the STROKE.
 //   · NO RING — the pure art, and the state rides the transcript line's accent instead.
 // The phase line's dot is gone from BOTH: whichever indicator is live is the only one, because two
 // things saying the same thing is how one of them goes stale.
@@ -63,8 +63,10 @@ import { startCall } from "../../store/liveCall";
 // so exactly one entry exists per call and exactly one is spent leaving — and the phone's Back gesture
 // takes the same path, ending the call instead of navigating the app out from under it.
 
-/** What the phase line says. Plain language — this is the owner's screen, not a state dump. */
-function phaseLabel(phase: CallPhase, speaking: boolean, muted: boolean): string {
+/** What the phase line says. Plain language — this is the owner's screen, not a state dump. `phase` is
+ *  the FACE painted (see `face` below), and `tail` says a `speaking` face is the reply's tail (D80 ①) —
+ *  still audible to the owner, but with nothing left on this phone to interrupt. */
+function phaseLabel(phase: CallPhase, speaking: boolean, muted: boolean, tail: boolean): string {
   switch (phase) {
     case "connecting":
       return "Connecting…";
@@ -76,7 +78,7 @@ function phaseLabel(phase: CallPhase, speaking: boolean, muted: boolean): string
     case "thinking":
       return "Thinking…";
     case "speaking":
-      return "Speaking — tap to interrupt";
+      return tail ? "Speaking" : "Speaking — tap to interrupt";
     case "error":
       return "Call ended";
     case "ended":
@@ -419,8 +421,10 @@ function meterFrac(db: number, min: number, max: number): number {
  * above the meter hands the floor back to Auto.
  *
  * POLARITY, stated once because the slider this replaces got it backwards in its own comment: the axis
- * is dBFS, BOTTOM = `min_dbfs`, TOP = `max_dbfs`. A LOWER floor admits quieter sound, so DOWN IS MORE
- * SENSITIVE — which is what the two end words say.
+ * is dBFS, BOTTOM = `min_dbfs`, TOP = the pin's CEILING — `max_dbfs`, lowered to the owner's learned
+ * voice − `voice_margin_db` once that is known (D80 ⑤, the owner's CLAMP ruling: the car trail's pin
+ * at −20 sat above their own −21 voice and dropped their words). A LOWER floor admits quieter sound,
+ * so DOWN IS MORE SENSITIVE — which is what the two end words say.
  *
  * ONE INPUT MECHANISM — the native range, overlaid transparent on the whole 44 × 132 column: the drag
  * target is the column (not a thumb), the keyboard and assistive tech get a real slider for free, and
@@ -439,8 +443,19 @@ function SensitivityControl({ call, min, max }: { call: CallView; min: number; m
   // this control is the only thing that ever sets one — a mirror of its own last write, not a copy of
   // the machine's state.
   const [pinDb, setPinDb] = useState<number | null>(null);
+  /** THE COLUMN'S TOP (D80 ⑤): the highest floor a pin may set — `max` until the owner's voice level is
+   *  known, then that voice − its margin, never below the Auto floor (the machine's `pinCeiling`,
+   *  sampled by the tick), in whole dB rounded UP so the Auto line always sits ON the column (the range
+   *  steps in whole dB; a pin landing a fraction above the ceiling is clamped by the gate itself). A
+   *  state because the range's own `max` and the caption render from it; it moves when a final teaches
+   *  the learner or the room changes, not per tick. The ref is the tick's copy, so the bar and the line
+   *  are drawn on the same scale the finger moves on. */
+  const [top, setTop] = useState(max);
+  const topRef = useRef(max);
   const pinned = !call.floorAuto;
-  const pinText = pinDb === null ? "pinned" : dbLabel(pinDb);
+  // The caption names the pin the GATE applies: a pin set before a lower ceiling was learned is clamped
+  // there (`effectiveFloor`), and the words must not claim the old value.
+  const pinText = pinDb === null ? "pinned" : dbLabel(Math.min(pinDb, top));
   const fillRef = useRef<HTMLElement>(null);
   const markRef = useRef<HTMLElement>(null);
   const rangeRef = useRef<HTMLInputElement>(null);
@@ -463,9 +478,10 @@ function SensitivityControl({ call, min, max }: { call: CallView; min: number; m
       const mark = markRef.current;
       if (!mark) return;
       mark.style.opacity = floor === null ? "0" : "1";
-      if (floor !== null) mark.style.setProperty("--f", String(meterFrac(floor, min, max)));
+      if (floor !== null)
+        mark.style.setProperty("--f", String(meterFrac(floor, min, topRef.current)));
     },
-    [min, max],
+    [min],
   );
 
   /** The finger lifted (or the platform took the gesture): stop batching, and hand the drag's last value
@@ -483,9 +499,12 @@ function SensitivityControl({ call, min, max }: { call: CallView; min: number; m
     document.addEventListener("pointercancel", release, true);
     const tick = (): void => {
       if (pending.current !== null) commit(pending.current);
-      const { level, floor } = readLevel();
+      const { level, floor, ceiling } = readLevel();
+      const t = ceiling === null ? max : Math.min(max, Math.ceil(ceiling));
+      topRef.current = t;
+      setTop(t); // a no-op render-wise unless the ceiling moved a whole dB
       if (fillRef.current)
-        fillRef.current.style.transform = `scaleY(${level === null ? 0 : meterFrac(level, min, max)})`;
+        fillRef.current.style.transform = `scaleY(${level === null ? 0 : meterFrac(level, min, t)})`;
       placeMark(floor);
       const range = rangeRef.current;
       if (range && !dragging.current) {
@@ -582,7 +601,7 @@ function SensitivityControl({ call, min, max }: { call: CallView; min: number; m
               aria-label="Sensitivity floor"
               aria-valuetext="Auto"
               min={min}
-              max={max}
+              max={top}
               step={1}
               disabled={!call.canRoute}
               {...{ orient: "vertical" }}
@@ -753,7 +772,7 @@ function DebugBlock({ d }: { d: CallDebug }) {
     <pre className="kit-call-debug" aria-hidden>
       {`ec    ${raw(d.ecSettings)}   caps ${raw(d.ecCapabilities)}
 route ${d.route || "—"}   hold ${d.micHold || "—"}   fellBack ${d.fellBack ? "yes" : "no"}
-arm   ${d.bargeArmed ? "yes" : "no"}   held ${d.earHeld ? "yes" : "no"}   mouth ${
+arm   ${d.bargeArmed ? "yes" : "no"}   held ${d.earHeld ? (d.tail ? "tail" : "yes") : "no"}   mouth ${
         d.mouthLive ? "yes" : "no"
       }
 dev   ${d.deviceLabel || "—"} ${d.deviceId ? `[${d.deviceId.slice(0, 8)}]` : ""}
@@ -765,14 +784,16 @@ key   ${vkey(d.voiceKey, d.deviceId)}
 final ${
         d.lastFinal === null
           ? "—"
-          : `${d.lastFinal.accruedMs}ms   peak ${db(d.lastFinal.peakDb)}   chars ${d.lastFinal.chars}`
+          : d.lastFinal.measured
+            ? `${d.lastFinal.accruedMs}ms   peak ${db(d.lastFinal.peakDb)}   chars ${d.lastFinal.chars}`
+            : `unmeasured   chars ${d.lastFinal.chars}`
       }
-probe ${
-        d.probe === null
+chirp ${
+        // D80 ⑦ — the output path's measured lag (the owner's car card compares it with each reply's
+        // tail): the lag and its correlation peak, `none` when nothing returned, `—` while listening.
+        d.chirp === null
           ? "—"
-          : `#${d.probe.idx}   max ${db(d.probe.maxDb)}   floor ${db(d.probe.floor)}   ${
-              d.probe.released ? "released" : "held"
-            }`
+          : `${d.chirp.lagMs === null ? "none" : `${Math.round(d.chirp.lagMs)}ms`}   peak ${d.chirp.peak.toFixed(2)}`
       }`}
     </pre>
   );
@@ -816,14 +837,7 @@ export function CallOverlay({ close }: { close: () => boolean }) {
   const labelId = useId();
   const terminal = call.phase === "error" || call.phase === "ended";
   const panelRef = useRef<HTMLDivElement>(null);
-  const artRef = useRef<HTMLDivElement>(null);
   const hangUpRef = useRef<HTMLButtonElement>(null);
-
-  // THE RING'S ANCHOR, in the overlay's OWN coordinates (delta round F9). `.kit-call-art` is
-  // `inset: 0` inside a fixed, inset-0 overlay, so the art's box IS the ring's coordinate space and no
-  // window or visual-viewport offset can enter the calculation — which is precisely what Android's
-  // URL-bar and keyboard transitions would otherwise break. One `ResizeObserver`, the shared one.
-  const anchor = useFocalAnchor(artRef, art?.focus);
 
   // `aria-modal` is a PROMISE about focus, and it was one this overlay could not keep: focus stayed on
   // the composer it covers, so Tab walked an app the screen reader had already been told was hidden.
@@ -847,11 +861,16 @@ export function CallOverlay({ close }: { close: () => boolean }) {
   // own rule, and two copies of that rule is how one of them stops being true.
   const onSurface = (): void => call.interrupt();
 
-  // The state classes the stylesheet animates off: the phase, plus the two orthogonal flags that are not
+  // THE FACE PAINTED (D80 ①): the machine moves to `listening` the moment the element finishes — its
+  // queue and its drain key on that — but the reply may still be playing out of a car for seconds (the
+  // TAIL, while the ear stays held). The owner still hears her, so the screen keeps her speaking face
+  // until the tail releases the ear. What is painted moves; the phase does not.
+  const face: CallPhase = call.tail && call.phase === "listening" ? "speaking" : call.phase;
+  // The state classes the stylesheet animates off: the face, plus the two orthogonal flags that are not
   // phases (§4.2). `muted` is last in the cascade for a reason — it must beat every pulse.
   const classes = [
     "kit-call",
-    `ph-${call.phase}`,
+    `ph-${face}`,
     ringMode ? "ring" : "no-ring",
     call.userSpeechActive ? "speech" : "",
     call.muted ? "muted" : "",
@@ -870,7 +889,7 @@ export function CallOverlay({ close }: { close: () => boolean }) {
       onKeyDown={(e) => modalKeyDown(e, panelRef.current, close)}
     >
       {art !== undefined && (
-        <div className="kit-call-art" ref={artRef} aria-hidden>
+        <div className="kit-call-art" aria-hidden>
           <FocalImg
             className="kit-backdrop-art"
             art={art.focus}
@@ -881,17 +900,12 @@ export function CallOverlay({ close }: { close: () => boolean }) {
           <div className="kit-call-veil" />
         </div>
       )}
-      {/* THE RING. JS places its CENTRE and nothing else; the diameter, the stroke and the fallback
-          anchor are CSS custom properties on the block, because those are feel-round tuning knobs and
-          this is the file that would otherwise collect magic numbers. An unanchorable picture (no
-          framing point, a proportional bundled entry, no art at all) sets no inline position and the
-          stylesheet's own centred/upper-third anchor stands. */}
+      {/* THE RING. Nothing here places it: its anchor, diameter and stroke are CSS custom properties on
+          the block (feel-round tuning knobs, and this is the file that would otherwise collect magic
+          numbers), and the stylesheet's own centred/upper-third anchor stands for every picture —
+          the owner's ISS-32 ruling, 2026-09-27. */}
       {ringMode && (
-        <div
-          className="kit-call-ring"
-          aria-hidden
-          style={anchor === null ? undefined : { left: `${anchor.x}px`, top: `${anchor.y}px` }}
-        >
+        <div className="kit-call-ring" aria-hidden>
           <i className="kit-call-ring-stroke" />
         </div>
       )}
@@ -913,7 +927,7 @@ export function CallOverlay({ close }: { close: () => boolean }) {
             you said, the way the chat does. Nothing at all with the knob off: no wrapper, no gap. */}
         {captions && <CallCaptions />}
         <p className="kit-call-phase" id={labelId}>
-          {phaseLabel(call.phase, call.userSpeechActive, call.muted)}
+          {phaseLabel(face, call.userSpeechActive, call.muted, call.tail)}
         </p>
         {/* What the ear heard YOU say (§6) — so a mishearing is visible instantly. The `…` is the
             live-speech state: the ear has an open segment and no transcript for it yet — and it HOLDS

@@ -1301,7 +1301,14 @@ transport — a spoken turn still arrives over `POST /api/agent/chat` and stream
 **up** one JSON `start` (`{type, sample_rate}`), then binary pcm16 LE mono frames plus `flush`/`stop`;
 **down** JSON only — `state` (`ready`/`ended`/`degraded`) · `speech_started`/`speech_stopped` ·
 `transcript` (`{text, final}`) · `error` (`{code, message}`); **no audio ever rides the downlink** (the
-reply's voice is HTTP TTS, D63). Three refusals, in order: origin, then the feature gate — both
+reply's voice is HTTP TTS, D63). **The segment id (D80 ③):** the three segment frames carry Speaches'
+`item_id` (one per VAD segment) when the ear sent one, `speech_started` its `audio_start_ms` and
+`speech_stopped` its `audio_end_ms` (the ear's own audio clock) — the phone judges each final on its
+own segment's evidence by that id. **The gap cut (D80 ④):** a segment whose start→stop span on the
+relay's own arrival clock is under `silence_ms / 2` (a Silero flap) — unless Speaches' audio span is
+≥ `silence_ms` (a veto: a real stop) — has its transcript sent EMPTY with a reason —
+`{type:"transcript", text:"", final:true, item_id, reason:"short", gap_ms}` — which the phone disposes
+of like any empty final; `short` is the only `reason` today. Three refusals, in order: origin, then the feature gate — both
 pre-`accept()` — then `busy` as a typed frame + close 1013 post-`accept()`; with `server.trusted_hosts`
 set, a `Host`-mismatch 400 precedes all three (the middleware answers the handshake before routing —
 SECURITY_MODEL §2.9). Authority:

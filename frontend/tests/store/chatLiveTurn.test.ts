@@ -6,8 +6,8 @@ import {
   confirmAwaiting,
   confirmOutstanding,
   getLiveTurn,
+  resetToThreadless,
   sendMessage,
-  startNewThread,
   stopTurn,
   useChat,
   type SendOutcome,
@@ -88,7 +88,7 @@ function routes(map: Record<string, (url: string) => Response | Promise<Response
 }
 
 beforeEach(() => {
-  startNewThread({ keepAgent: false });
+  resetToThreadless(null);
   clearDraft();
 });
 

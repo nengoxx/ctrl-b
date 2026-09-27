@@ -1,7 +1,7 @@
 import { renderHook, act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { compactThread, sendMessage, startNewThread, useChat } from "../../src/store/chat";
+import { compactThread, resetToThreadless, sendMessage, useChat } from "../../src/store/chat";
 import type { Part } from "../../src/types";
 
 // store/chat → compactThread (D42 manual `/compact`). The endpoint isn't SSE — it returns a JSON
@@ -64,7 +64,7 @@ async function openThread() {
   return result;
 }
 
-beforeEach(() => startNewThread({ keepAgent: false })); // reset the module-level store between cases
+beforeEach(() => resetToThreadless(null)); // reset the module-level store between cases
 afterEach(() => vi.clearAllMocks());
 
 describe("compactThread (D42 manual /compact)", () => {
@@ -135,7 +135,7 @@ describe("compactThread (D42 manual /compact)", () => {
     });
     await act(async () => {
       const done = compactThread();
-      startNewThread({ keepAgent: false }); // switch away (threadId → null) before the fetch resolves
+      resetToThreadless(null); // switch away (threadId → null) before the fetch resolves
       release();
       await done;
     });

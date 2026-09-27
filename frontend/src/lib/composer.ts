@@ -22,6 +22,7 @@ import { getJSON } from "../api/client";
 import { isUploading, reserveStaged, stagedIds } from "../store/attachments";
 import {
   compactThread,
+  getThreadAgent,
   pushSystemNote,
   runShell,
   sendMessage,
@@ -128,6 +129,8 @@ void loadSkills();
  *  A mixed-case `/agent Ops` genuinely isn't configured, and the "will fall back to default" warning
  *  below is the correct answer rather than a lookup miss. */
 const knownAgents = new Set<string>();
+/** The RESOLVED default agent's name (the roster's `default` — the root when nothing is set): what
+ *  `/agent`'s notes call "default", and the agent `/new` mints its thread with when a default is SET. */
 let defaultAgent = DEFAULT_AGENT;
 /** Whether a default agent is CONFIGURED (`agent.default_agent` non-empty — the roster's `default_set`,
  *  D75 amendment), which is the whole of `/new`'s tandem rule: none set → keep the sticky pick, set →
@@ -309,15 +312,22 @@ interface BuiltinVerb {
  *  pin too (it outranks a thread's own pin, which a clear would let resurface — the tools menu's
  *  default row inside a pinned thread) and gets the default's note, not the typo's. Any other name is
  *  validated against the configured set (best-effort): an unknown one still pins, the backend resolves
- *  it gracefully, and the note says so, so a typo is visible. */
+ *  it gracefully, and the note says so, so a typo is visible.
+ *
+ *  The CLEAR's note names who will actually answer: inside a thread carrying its own D70 §4.2 pin (every
+ *  `/new` thread since ISS-31 is one), the server's ladder falls through to that pin, not the default —
+ *  so the note says the thread's agent when it differs from the default (the code round's O-LOW-3). */
 export function pinStickyAgent(name: string): void {
   setStickyAgent(name || null);
+  const threadAgent = getThreadAgent();
   pushSystemNote(
-    !name || name === defaultAgent
-      ? `// agent → ${defaultAgent} (default)`
-      : knownAgents.has(name)
-        ? `// agent → ${name}`
-        : `// agent → ${name} (not configured — will fall back to default)`,
+    !name && threadAgent !== null && threadAgent !== defaultAgent
+      ? `// agent → ${threadAgent} (this thread's)`
+      : !name || name === defaultAgent
+        ? `// agent → ${defaultAgent} (default)`
+        : knownAgents.has(name)
+          ? `// agent → ${name}`
+          : `// agent → ${name} (not configured — will fall back to default)`,
   );
 }
 
@@ -368,11 +378,13 @@ const BUILTIN_VERBS: readonly BuiltinVerb[] = [
     run: (rest, raw) => void runConsolidate(rest, raw),
   },
   // The D75-amendment tandem rule: a CONFIGURED default → the fresh thread starts on it (the sticky
-  // pick clears); none configured → it keeps the agent the owner was talking to.
+  // pick clears, and the thread is minted with the RESOLVED default's name — `defaultAgent`, installed
+  // by the same roster read as `defaultSet`); none configured → it keeps the agent the owner was talking
+  // to. `/new` mints the thread through D70 §4.2 seam ① so a character's greeting shows at once (ISS-31).
   {
     verb: "new",
     help: "start a new thread",
-    run: () => startNewThread({ keepAgent: !defaultSet }),
+    run: () => void startNewThread({ keepAgent: !defaultSet, defaultAgent }),
   },
   { verb: "help", help: "show this list", run: () => pushSystemNote(helpText()) },
 ];

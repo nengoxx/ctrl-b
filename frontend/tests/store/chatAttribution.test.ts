@@ -8,7 +8,7 @@ import {
   tokensPerSecond,
   windowShare,
 } from "../../src/components/chatAttribution";
-import { reloadChat, sendMessage, startNewThread, useChat } from "../../src/store/chat";
+import { reloadChat, resetToThreadless, sendMessage, useChat } from "../../src/store/chat";
 import type { CallUsage, MessageSource } from "../../src/types";
 
 // D62 — per-message serve attribution, the data half: what the reducer folds off `message.end`, that a
@@ -67,7 +67,7 @@ async function streamTurn(end: Record<string, unknown>) {
 }
 
 beforeEach(() => {
-  startNewThread({ keepAgent: false });
+  resetToThreadless(null);
 });
 
 describe("D62 · the message.end fold", () => {

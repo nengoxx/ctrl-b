@@ -13,6 +13,7 @@ vi.mock("../../src/store/chat", () => ({
   runShell: vi.fn(),
   compactThread: vi.fn(),
   startNewThread: vi.fn(),
+  getThreadAgent: vi.fn(() => null), // the open thread's pin — none unless an arm says so
   setSessionMode: vi.fn(),
   setStickyAgent: vi.fn(),
   setSessionPrivilege: vi.fn(),
@@ -441,6 +442,24 @@ describe("pinStickyAgent — the sticky switch", () => {
     expect(chat.setStickyAgent).toHaveBeenLastCalledWith("typo");
     expect(lastNote()).toBe("// agent → typo (not configured — will fall back to default)");
   });
+
+  // O-LOW-3 (ISS-31 code round): every `/new` thread is pinned now, so a bare `/agent` inside one falls
+  // through to the THREAD's agent on the server's ladder — the note must name who will answer.
+  it("a CLEAR inside a thread pinned to another agent names that agent, not the default", () => {
+    vi.mocked(chat.getThreadAgent).mockReturnValueOnce("lynette");
+    pinStickyAgent("");
+    expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
+    expect(lastNote()).toBe("// agent → lynette (this thread's)");
+  });
+
+  it("…while a thread pinned to the DEFAULT itself, or a by-name pin, keeps the default's note", () => {
+    vi.mocked(chat.getThreadAgent).mockReturnValueOnce("maya");
+    pinStickyAgent("");
+    expect(lastNote()).toBe("// agent → maya (default)");
+    vi.mocked(chat.getThreadAgent).mockReturnValueOnce("lynette");
+    pinStickyAgent("maya"); // the default BY NAME outranks the thread's pin — the note is true as is
+    expect(lastNote()).toBe("// agent → maya (default)");
+  });
 });
 
 // D61 ① — `/consolidate [dry]`. The verb owns no wording of its own: it resolves the registry's EFFECTIVE
@@ -665,22 +684,33 @@ describe("`/new` × the configured default (the tandem rule)", () => {
   const install = (data: Parameters<typeof installAgents>[0]) =>
     installAgents(data, beginAgentsLoad());
 
-  it("none set → keepAgent: true; a default set → keepAgent: false", () => {
+  // ISS-31: `/new` mints through seam ①, so the RESOLVED default's name rides beside `keepAgent` — read
+  // from the SAME installed roster read as `defaultSet` (no second fetch). Only the `false` branch uses it.
+  it("none set → keepAgent: true; a default set → keepAgent: false, minted with the default's name", () => {
     install({ agents: ["ops"], default: "default", default_set: false });
     runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: true });
+    expect(chat.startNewThread).toHaveBeenLastCalledWith({
+      keepAgent: true,
+      defaultAgent: "default",
+    });
     install({ agents: ["ops"], default: "default", default_set: true }); // the root, set explicitly
     runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: false });
+    expect(chat.startNewThread).toHaveBeenLastCalledWith({
+      keepAgent: false,
+      defaultAgent: "default",
+    });
     install({ agents: ["ops"], default: "ops", default_set: true }); // a specialist
     runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: false });
+    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: false, defaultAgent: "ops" });
   });
 
   it("a listing WITHOUT `default_set` (a pre-amendment cache, a mock) reads as none set — keep", () => {
     install({ agents: [], default: "default" });
     runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: true });
+    expect(chat.startNewThread).toHaveBeenLastCalledWith({
+      keepAgent: true,
+      defaultAgent: "default",
+    });
   });
 
   it("the GENERATION guard: an OLDER read landing after a newer one is ignored (Maya, code round)", () => {
@@ -691,7 +721,7 @@ describe("`/new` × the configured default (the tandem rule)", () => {
     installAgents({ agents: ["ops"], default: "ops", default_set: true }, newer);
     installAgents({ agents: [], default: "default", default_set: false }, older); // stale — dropped
     runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: false });
+    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: false, defaultAgent: "ops" });
   });
 });
 

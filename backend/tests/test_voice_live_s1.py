@@ -64,7 +64,7 @@ from app.core.audio import SPEACHES_WIRE_RATE, Pcm16Resampler
 from app.core.provider_registry import resolve_lenient
 from app.domain.provider import LivePolicy, SttPolicy, TtsPolicy
 from app.services.call_trail import CallTrail
-from app.services.voice_live import LiveSessionSlots, realtime_url
+from app.services.voice_live import LiveSessionSlots, gap_cut_ms, realtime_url
 
 ORIGIN = {"Origin": "http://testserver"}
 SECRET = "sk-LIVE-VOICE-CANARY"
@@ -611,14 +611,254 @@ def test_speech_events_and_transcripts_flow_down() -> None:
     with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
         _ready(ws, rate=SPEACHES_WIRE_RATE)
         ws.send_bytes(_pcm(960))
-        assert _json(ws) == {"type": "speech_started"}
+        # D80 ③ — the ear's own audio clock rides down when Speaches sends it (no id here: this fake
+        # event has none, and a missing id is simply absent, never invented)
+        assert _json(ws) == {"type": "speech_started", "audio_start_ms": 40}
         ws.send_bytes(_pcm(960))
-        assert _json(ws) == {"type": "speech_stopped"}
+        assert _json(ws) == {"type": "speech_stopped", "audio_end_ms": 900}
         assert _json(ws) == {
             "type": "transcript",
             "text": "Wake up corsair.",
             "final": True,  # the R70 §9.2 seam — always true in v1 (this ear has no partials)
         }
+
+
+def test_the_segment_id_rides_down_on_all_three_frames() -> None:
+    """D80 ③ — Speaches tags `speech_started`, `speech_stopped` and the transcription with ONE
+    `item_id` (the input buffer's), and overlaps segments routinely: `speech_started(B)` lands before
+    `transcript(A)`. The phone can only judge each final on its own segment's evidence if the id
+    reaches it, so the relay forwards it on all three — here with exactly that interleaving."""
+    fake = FakeSpeaches(
+        [
+            created(),
+            Say({"type": "input_audio_buffer.speech_started", "item_id": "item_A", "audio_start_ms": 40}),
+            Say({"type": "input_audio_buffer.speech_stopped", "item_id": "item_A", "audio_end_ms": 2900}),
+            Say({"type": "input_audio_buffer.speech_started", "item_id": "item_B", "audio_start_ms": 60}),
+            Say(
+                {
+                    "type": "conversation.item.input_audio_transcription.completed",
+                    "item_id": "item_A",
+                    "transcript": "Wake up corsair.",
+                }
+            ),
+            # a malformed id or clock is dropped, never forwarded as-is
+            Say({"type": "input_audio_buffer.speech_stopped", "item_id": 7, "audio_end_ms": "late"}),
+        ]
+    )
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        assert _json(ws) == {"type": "speech_started", "item_id": "item_A", "audio_start_ms": 40}
+        assert _json(ws) == {"type": "speech_stopped", "item_id": "item_A", "audio_end_ms": 2900}
+        assert _json(ws) == {"type": "speech_started", "item_id": "item_B", "audio_start_ms": 60}
+        assert _json(ws) == {
+            "type": "transcript",
+            "text": "Wake up corsair.",
+            "final": True,
+            "item_id": "item_A",
+        }
+        assert _json(ws) == {"type": "speech_stopped"}
+
+
+def _segment(
+    item_id: str, start_ms: int | None, end_ms: int | None, text: str, **stop_gate: Any
+) -> list[Say]:
+    """One Speaches VAD segment — start, stop, transcript — with its audio clock when given."""
+    started: dict[str, Any] = {"type": "input_audio_buffer.speech_started", "item_id": item_id}
+    stopped: dict[str, Any] = {"type": "input_audio_buffer.speech_stopped", "item_id": item_id}
+    if start_ms is not None:
+        started["audio_start_ms"] = start_ms
+    if end_ms is not None:
+        stopped["audio_end_ms"] = end_ms
+    done = {
+        "type": "conversation.item.input_audio_transcription.completed",
+        "item_id": item_id,
+        "transcript": text,
+    }
+    return [Say(started), Say(stopped, **stop_gate), Say(done)]
+
+
+@pytest.mark.parametrize(
+    ("relay_ms", "audio_ms", "cut"),
+    [
+        (
+            150,
+            900,
+            None,
+        ),  # the audio clock VETOES: a ≥ silence_ms span is a real stop, whatever the relay says
+        (150, 400, 150),  # a flap back-dated into the rescan: audio 400 is no veto — cut on the relay's 150
+        (2400, None, None),  # a real segment's arrival gap (the trail's were ≥ 2361 ms) — verbatim
+        (2400, 100, None),  # …and the audio clock can never MAKE a cut
+        (150, None, 150),  # no audio fields — the relay clock alone
+        (349, None, 349),  # the boundary, from below: 349 < silence_ms/2 (700/2 = 350)
+        (350, None, None),  # …and AT it: `gap < silence_ms/2` is strict, so 350 passes
+        (150, 699, 150),  # the veto is `≥ silence_ms`: 699 vetoes nothing
+        (150, 700, None),
+        (None, 100, None),  # a segment the relay never timed is never cut
+    ],
+)
+def test_the_gap_cut_judges_on_the_relay_clock_and_the_audio_clock_only_vetoes(
+    relay_ms: int | None, audio_ms: int | None, cut: int | None
+) -> None:
+    """D80 ④, corrected by the code round (OPEN-1): the car evidence (every hallucinated short ≤ 201 ms,
+    every real segment ≥ 2361 ms) is RELAY-clock evidence, and Speaches back-dates a flap's
+    `audio_start_ms` into its 3 s rescan window — so the relay's arrival clock judges, and the audio
+    clock only vetoes (a span ≥ `silence_ms` is a real stop)."""
+    assert gap_cut_ms(relay_ms, audio_ms, 700) == cut
+
+
+def test_the_gap_cut_empties_a_flap_and_the_audio_veto_spares_a_real_stop() -> None:
+    """End to end on the wire: two segments whose stops land on their starts' heels (a relay gap of a
+    few ms) — the first with a flap's short audio span is cut, EMPTY and named; the second carries an
+    audio span ≥ `silence_ms` (a real stop the relay merely received bunched) and passes verbatim."""
+    fake = FakeSpeaches(
+        [
+            created(),
+            *_segment("item_A", 1000, 1150, "Mm-hmm."),
+            *_segment("item_B", 1000, 3400, "Turn off the lights."),
+        ]
+    )
+    with _fake_app(fake, live_cfg={"silence_ms": 700}).websocket_connect(
+        "/api/voice/live", headers=ORIGIN
+    ) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        _json(ws), _json(ws)
+        cut = _json(ws)
+        _json(ws), _json(ws)
+        kept = _json(ws)
+    assert cut | {"gap_ms": 0} == {
+        "type": "transcript",
+        "text": "",
+        "final": True,
+        "item_id": "item_A",
+        "reason": "short",
+        "gap_ms": 0,
+    }
+    assert cut["gap_ms"] < 350  # the RELAY clock's span — the audio span of 150 is not what judged it
+    assert kept == {"type": "transcript", "text": "Turn off the lights.", "final": True, "item_id": "item_B"}
+
+
+def test_the_gap_cut_falls_back_to_the_relays_own_clock() -> None:
+    """An ear that omits `audio_start_ms`/`audio_end_ms` is timed on the relay's monotonic clock between
+    the two events it did send: a stop arriving on the start's heels is a flap, one that took longer
+    than `silence_ms / 2` to arrive is not."""
+    flap = FakeSpeaches([created(), *_segment("item_A", None, None, "Yeah.")])
+    with _fake_app(flap).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        _json(ws), _json(ws)
+        assert _json(ws) | {"gap_ms": 0} == {
+            "type": "transcript",
+            "text": "",
+            "final": True,
+            "item_id": "item_A",
+            "reason": "short",
+            "gap_ms": 0,
+        }
+    real = FakeSpeaches([created(), *_segment("item_B", None, None, "No.", delay_s=0.5)])
+    with _fake_app(real).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        _json(ws), _json(ws)
+        assert _json(ws) == {"type": "transcript", "text": "No.", "final": True, "item_id": "item_B"}
+
+
+def test_the_gap_cut_never_judges_a_segment_it_did_not_time() -> None:
+    """No id, or an id whose start/stop the relay never saw: the transcript passes verbatim — the cut
+    only ever acts on evidence, like the phone's own gate."""
+    fake = FakeSpeaches(
+        [
+            created(),
+            Say({"type": "input_audio_buffer.speech_started", "audio_start_ms": 0}),
+            Say({"type": "input_audio_buffer.speech_stopped", "audio_end_ms": 40}),
+            transcribed("Yeah."),  # no item_id anywhere: never judged
+            Say(
+                {
+                    "type": "conversation.item.input_audio_transcription.completed",
+                    "item_id": "never_seen",
+                    "transcript": "Okay.",
+                }
+            ),
+        ]
+    )
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        _json(ws), _json(ws)
+        assert _json(ws) == {"type": "transcript", "text": "Yeah.", "final": True}
+        assert _json(ws) == {"type": "transcript", "text": "Okay.", "final": True, "item_id": "never_seen"}
+
+
+def test_a_cut_is_trailed_with_its_reason_and_the_words_it_dropped(tmp_path: Any) -> None:
+    """The down frame IS the trail line (the one downlink hook), so the reason rides it; the words the
+    flap would have carried are on a relay-only `gap_cut` note beside both clocks (R92 §V: trail the
+    flap text) — the only place they are written, since the wire carries none."""
+    fake = FakeSpeaches([created(), *_segment("item_A", 1000, 1080, "Mm.")])
+    trail = CallTrail(tmp_path / "calls")
+    app = _fake_app(fake, live_cfg={"debug": True}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _traced(ws)
+        _json(ws), _json(ws)
+        assert _json(ws)["reason"] == "short"
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+    lines = _trail_lines(tmp_path / "calls")
+    cut = [line for line in lines if line["ev"] == "gap_cut"]
+    assert len(cut) == 1
+    assert cut[0] | {"t": 0} == {
+        "t": 0,
+        "src": "relay",
+        "leg": 3,
+        "ev": "gap_cut",
+        "item_id": "item_A",
+        "text": "Mm.",
+        "gap_ms": cut[0]["relay_gap_ms"],  # the RELAY clock judges (OPEN-1); the audio span rides beside it
+        "audio_gap_ms": 80,
+        "relay_gap_ms": cut[0]["relay_gap_ms"],
+    }
+    down = [line["frame"] for line in lines if line["ev"] == "down" and line["frame"]["type"] == "transcript"]
+    assert down == [
+        {
+            "type": "transcript",
+            "text": "",
+            "final": True,
+            "item_id": "item_A",
+            "reason": "short",
+            "gap_ms": cut[0]["relay_gap_ms"],
+        }
+    ]
+
+
+def test_the_relays_segment_clocks_are_bounded() -> None:
+    """Segments whose transcript never comes (an errored transcription sends `error` instead) must not
+    accumulate for the whole call: past `SEGMENT_LEDGER_CAP` the oldest clock is evicted, and a late
+    transcript for it passes uncut."""
+    from app.services.voice_live import SEGMENT_LEDGER_CAP
+
+    script = [created()]
+    for i in range(SEGMENT_LEDGER_CAP + 1):
+        script += [
+            Say({"type": "input_audio_buffer.speech_started", "item_id": f"s{i}", "audio_start_ms": 0}),
+            Say({"type": "input_audio_buffer.speech_stopped", "item_id": f"s{i}", "audio_end_ms": 40}),
+        ]
+    script += [
+        Say(
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "item_id": "s0",
+                "transcript": "a",
+            }
+        ),
+        Say(
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "item_id": "s1",
+                "transcript": "b",
+            }
+        ),
+    ]
+    with _fake_app(FakeSpeaches(script)).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        for _ in range(2 * (SEGMENT_LEDGER_CAP + 1)):
+            _json(ws)
+        assert _json(ws)["text"] == "a"  # evicted: no clock, so never cut
+        assert _json(ws)["text"] == ""  # still held: a 40 ms flap, cut
 
 
 def test_realtime_url_shapes() -> None:
@@ -647,7 +887,7 @@ def test_a_full_session_never_commits() -> None:
         _ready(ws, rate=SPEACHES_WIRE_RATE)
         for _ in range(5):
             ws.send_bytes(_pcm(960))
-        assert _json(ws) == {"type": "speech_started"}
+        assert _json(ws) == {"type": "speech_started", "audio_start_ms": 0}
         ws.send_json({"type": "flush"})
         ws.send_json({"type": "stop"})
         assert _drain_until(ws, "state")["state"] == "ended"
@@ -1180,6 +1420,13 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "playback_margin_db": 6.0,
             "min_dbfs": -70.0,
             "max_dbfs": -25.0,
+            "hold_tail_min_ms": 250,
+            "tail_quiet_ms": 800,
+            "tail_quiet_margin_db": 12.0,
+            "hold_tail_max_ms": 6000,
+            "echo_similarity": 0.8,
+            "echo_window_ms": 3000,
+            "chirp": False,
             "route": "call",
             "input_device": "dev-42",
             "background": False,
@@ -1223,6 +1470,18 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "playback_margin_db": 6.0,
         "min_dbfs": -70.0,
         "max_dbfs": -25.0,
+        # D80 ① (R91) — the TAIL HOLD's four: CLIENT knobs, for the gate's reason — the level the
+        # release judges is measured in the browser, against the browser's own noise estimate.
+        "hold_tail_min_ms": 250,
+        "tail_quiet_ms": 800,
+        "tail_quiet_margin_db": 12.0,
+        "hold_tail_max_ms": 6000,
+        # D80 ② (R91 §3) — the TEXT BACKSTOP's pair: the reply's spoken words and the matcher live in
+        # the browser, so the threshold and the window arrive here.
+        "echo_similarity": 0.8,
+        "echo_window_ms": 3000,
+        # D80 ⑦ (R93 §V) — the CONNECT CHIRP's toggle: the browser plays it and finds it in its own mic.
+        "chirp": False,
         # D73 S5 — the capture pair. CLIENT knobs like their neighbours: they are `getUserMedia`
         # arguments, so nothing below the browser reads them and they have to arrive here or be
         # defaulted twice (the call's ear and dictation's open with the SAME two).
@@ -1378,6 +1637,15 @@ def test_live_config_defaults() -> None:
     # The noise verdict ships at 1 s: a segment still sounding a second in, with less than
     # `min_final_ms` of accrual, is noise and stops holding the reply (the owner's 2026-09-26 ruling).
     assert cfg.noise_verdict_ms == 1000
+    # D80 ① (R91 §4) — the tail hold: nothing for 300 ms, then 700 ms of quiet under noise + 10 dB,
+    # capped at 5 s (the worst measured audible end, 3.46 s, + the quiet run + headroom).
+    assert (cfg.hold_tail_min_ms, cfg.tail_quiet_ms, cfg.hold_tail_max_ms) == (300, 700, 5000)
+    assert cfg.tail_quiet_margin_db == 10.0
+    # D80 ② (R91 §3.4) — the text backstop: 0.75, the middle of the measured 0.538 → 0.946 gap, and a
+    # 4 s window past the tail's release.
+    assert (cfg.echo_similarity, cfg.echo_window_ms) == (0.75, 4000)
+    # D80 ⑦ — the connect chirp ships ON (the owner: "it's only once, no problem at all").
+    assert cfg.chirp is True
     # D76 §A — the capture pair ships as `media` on the system default device: EC off ⇒ media-path
     # audio following the system's own routing (the 2026-09-23 device probe's verdict). `call`
     # (platform AEC, comm mode) is the owner's pick.
@@ -1451,11 +1719,34 @@ def test_live_config_defaults() -> None:
         {"max_dbfs": 1.0},
         {"min_dbfs": -20.0, "max_dbfs": -60.0},
         {"min_dbfs": -40.0, "max_dbfs": -40.0},
+        # D80 ① — the tail hold's four, each bounded; and the triple ORDERED by the model validator
+        # (a minimum + quiet run past the cap could never end on quiet — every tail would sit out the cap).
+        {"hold_tail_min_ms": -1},
+        {"hold_tail_min_ms": 5001},
+        {"tail_quiet_ms": 99},
+        {"tail_quiet_ms": 5001},
+        {"tail_quiet_margin_db": -0.5},
+        {"tail_quiet_margin_db": 40.5},
+        {"hold_tail_max_ms": 499},
+        {"hold_tail_max_ms": 15001},
+        {"hold_tail_min_ms": 1000, "tail_quiet_ms": 1000, "hold_tail_max_ms": 1999},
+        # D80 ② — the backstop's pair: below 0.5 ordinary conversation matches; a window is bounded.
+        {"echo_similarity": 0.49},
+        {"echo_similarity": 1.01},
+        {"echo_window_ms": -1},
+        {"echo_window_ms": 15001},
     ],
 )
 def test_live_config_bounds_reject_wedging_values(bad: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         LiveCfg(**bad)
+
+
+def test_the_tail_triple_loads_at_its_edge() -> None:
+    """The validator is `min + quiet ≤ cap`, not `<`: a tail that can end on quiet exactly at the cap
+    is still a tail that can end on quiet."""
+    cfg = LiveCfg(hold_tail_min_ms=1000, tail_quiet_ms=1000, hold_tail_max_ms=2000)
+    assert (cfg.hold_tail_min_ms, cfg.tail_quiet_ms, cfg.hold_tail_max_ms) == (1000, 1000, 2000)
 
 
 def test_barge_threshold_is_no_longer_a_knob_d76() -> None:

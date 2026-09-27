@@ -97,10 +97,11 @@ class FakeTrack {
   }
 }
 
-/** What the worklet posts up: pcm16 bytes + the RMS of the same samples. */
+/** What the worklet posts up: pcm16 bytes + the RMS of the same samples + the frame's context time. */
 interface PcmFrameLike {
   buf: ArrayBuffer;
   rms: number;
+  t?: number;
 }
 
 let track: FakeTrack;
@@ -193,7 +194,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
 
   it("the EAR-HOLD never touches the track — `track.enabled` is MUTE's alone (D76 §B.1)", async () => {
     // Since D76 the hold is uplink SILENCE SUBSTITUTION, not a closed track: the client has to keep
-    // hearing (the leak probe measures held frames), and the OS mic indicator stays the owner's
+    // hearing (the tail hold's release measures held frames, D80 ①), and the OS mic indicator stays the owner's
     // privacy switch — which only mute drives.
     const cap = await startPcmCapture({
       frameMs: 20,
@@ -216,15 +217,17 @@ describe("startPcmCapture — the context has to actually RUN", () => {
   });
 
   it("CLASSIFIES every frame `uplinked = !(muted || held)`, with its real level (D76 §B.1)", async () => {
-    const got: { rms: number; uplinked: boolean; bytes: number }[] = [];
+    const got: { rms: number; uplinked: boolean; bytes: number; t: number }[] = [];
     const cap = await startPcmCapture({
       frameMs: 20,
       route: ROUTE_CALL,
-      onFrame: (f) => got.push({ rms: f.rms, uplinked: f.uplinked, bytes: f.buf.byteLength }),
+      onFrame: (f) =>
+        got.push({ rms: f.rms, uplinked: f.uplinked, bytes: f.buf.byteLength, t: f.t }),
       onEnded: () => {},
     });
+    // …and each frame's context TIME rides through untouched (D80 ⑦, the connect chirp's clock).
     const post = (rms: number): void =>
-      workletPort?.onmessage?.({ data: { buf: new ArrayBuffer(8), rms } });
+      workletPort?.onmessage?.({ data: { buf: new ArrayBuffer(8), rms, t: rms * 10 } });
     post(0.2);
     cap.setHeld(true);
     post(0.3); // the reply leaking back in: HEARD, at its real level, but not uplinked
@@ -235,11 +238,11 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     cap.setMuted(false);
     post(0.6);
     expect(got).toEqual([
-      { rms: 0.2, uplinked: true, bytes: 8 },
-      { rms: 0.3, uplinked: false, bytes: 8 },
-      { rms: 0.4, uplinked: false, bytes: 8 },
-      { rms: 0.5, uplinked: false, bytes: 8 },
-      { rms: 0.6, uplinked: true, bytes: 8 },
+      { rms: 0.2, uplinked: true, bytes: 8, t: 2 },
+      { rms: 0.3, uplinked: false, bytes: 8, t: 3 },
+      { rms: 0.4, uplinked: false, bytes: 8, t: 4 },
+      { rms: 0.5, uplinked: false, bytes: 8, t: 5 },
+      { rms: 0.6, uplinked: true, bytes: 8, t: 6 },
     ]);
   });
 

@@ -176,7 +176,7 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
     <div className="conf-card">
       <SettingRow
         label="Auto-route to specialists"
-        desc="routes each turn to the best-matching specialist when no agent is pinned — after /new with a default set, or after a bare /agent"
+        desc="routes each turn to the best-matching specialist when no agent is pinned — neither an /agent pick nor the thread (a /new thread is pinned to the agent it opens as)"
       >
         <Switch
           on={props.cfg.auto_rotate}

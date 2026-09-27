@@ -66,16 +66,15 @@ export interface LiveCallWire {
   /** Automatic (voice) interruption. OFF ⇒ walkie-talkie: speech over the reply still transcribes and
    *  queues; the tap stays every browser's interrupt. Ships OFF (owner re-ruling 2026-09-22). */
   barge_in: boolean;
-  /** §6 overlay mode — the focal-anchored face ring. S2b renders it; S2a's minimal overlay does not. */
+  /** §6 overlay mode — the face ring, at one fixed position whatever the art's framing (ISS-32). */
   ring: boolean;
   /** The agent's reply as fading CAPTIONS on the call screen (owner ask 2026-09-22). Optional for the
    *  usual reason — a backend that predates the field says nothing, and the overlay's own `?? true`
    *  dresses the `LiveCfg` default rather than inventing a second one. */
   captions?: boolean;
-  /** D76 §B — `auto | on | off`: is the ear held while the reply plays? `on` = always, `off` = never,
-   *  `auto` = the leak probe: never held on a track whose AEC readback is `"all"` (the S0 ruling, per
-   *  track, never UA-sniffed); anywhere else each chunk starts held and is released for the rest of it
-   *  when the first `PROBE_MS` of held audio stays under the effective floor (D76 §B.3). */
+  /** D76 §B → D80 ⑤ — `auto | on | off`: is the ear held while the reply plays (and through its tail)?
+   *  `on` = always, `off` = never, `auto` = the D73 rule: held unless the track's AEC readback is
+   *  `"all"` (the S0 ruling, per track, never UA-sniffed). */
   mic_hold: string;
   /** D76 §C (evidence R83) — the RELATIVE near-speech gate, all in dB. `floor_dbfs` is the bootstrap
    *  ceiling (the floor before a noise estimate, and its cap meanwhile); the three MARGINS are relative
@@ -88,6 +87,26 @@ export interface LiveCallWire {
   playback_margin_db: number;
   min_dbfs: number;
   max_dbfs: number;
+  /** D80 ① (evidence R91 §1/§4) — THE TAIL HOLD: when the mouth falls under a holding `mic_hold`, the
+   *  ear stays held until the call's own meter has heard the room sit below the NOISE floor +
+   *  `tail_quiet_margin_db` for `tail_quiet_ms` contiguously — not before `hold_tail_min_ms`, never past
+   *  `hold_tail_max_ms`. A car plays the reply seconds after the element does; the web cannot read that
+   *  delay, so the ear listens for it instead. Required, like the gate six: a tail with no numbers
+   *  would never end. */
+  hold_tail_min_ms: number;
+  tail_quiet_ms: number;
+  tail_quiet_margin_db: number;
+  hold_tail_max_ms: number;
+  /** D80 ② (evidence R91 §3) — THE TEXT BACKSTOP: a final landing inside the window (from the mouth's
+   *  fall through the tail's release + `echo_window_ms`) whose normalised words score ≥
+   *  `echo_similarity` against the reply's SPOKEN text is the reply's own echo, dropped visibly.
+   *  Required with the tail four. */
+  echo_similarity: number;
+  echo_window_ms: number;
+  /** D80 ⑦ (evidence R93 §V) — THE CONNECT CHIRP: a 150 ms sweep played once per capture as the call's
+   *  "connected" sound, found again in the mic to measure the output path's real lag (logged only in
+   *  this wave). The whole-feature toggle: off = no sound, no measurement. */
+  chirp: boolean;
   /** D76 §A — `"media"` (default) or `"call"`: how the mic is opened, which decides how the reply is
    *  played. `media` ⇒ `echoCancellation: false`, which keeps Chrome Android out of communication mode
    *  and TTS on the media path, following the system's own routing — Bluetooth when connected, the

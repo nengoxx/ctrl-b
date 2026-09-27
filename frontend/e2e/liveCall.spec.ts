@@ -45,6 +45,15 @@ const LIVE_CALL = {
   playback_margin_db: 10,
   min_dbfs: -60,
   max_dbfs: -20,
+  // D80 — the tail hold's four, the text backstop's pair and the connect chirp, as the backend ships
+  // them (required fields: a tail with no numbers would never end).
+  hold_tail_min_ms: 300,
+  tail_quiet_ms: 700,
+  tail_quiet_margin_db: 10,
+  hold_tail_max_ms: 5000,
+  echo_similarity: 0.75,
+  echo_window_ms: 4000,
+  chirp: true,
   // D73 S5 — the route pair (added with the S5-review fix wave; the fixture is supposed to be what
   // `/voice/status` sends, S5 itself forgot its own two). `call` keeps the AEC ask these cases were
   // written against; the backend default is `media`.

@@ -24,7 +24,7 @@ vi.mock("../../src/hooks/useNotificationPrefs", () => ({
 }));
 
 import { useForegroundNotifications } from "../../src/hooks/useForegroundNotifications";
-import { reattachTurn, sendMessage, startNewThread, useChat } from "../../src/store/chat";
+import { reattachTurn, resetToThreadless, sendMessage, useChat } from "../../src/store/chat";
 import { onNotify, type NotifySignal } from "../../src/lib/notifyBus";
 
 type Frame = { event: string; data: unknown; id?: string };
@@ -170,7 +170,7 @@ const captured: NotifySignal[] = [];
 const unsub = onNotify((s) => captured.push(s));
 
 beforeEach(() => {
-  startNewThread({ keepAgent: false });
+  resetToThreadless(null);
   captured.length = 0;
 });
 afterEach(() => {
@@ -590,7 +590,7 @@ describe("the non-live transports publish the same signals", () => {
             permission: { callId: "c1", token: "t", tool: "shutdown_host", prompt: "confirm?" },
           }),
         } as unknown as Response);
-      startNewThread({ keepAgent: false }); // the owner taps /new exactly while the reload's re-read is in flight
+      resetToThreadless(null); // the view swaps away (a `/new`) exactly while the reload's re-read is in flight
       cleared = true;
       return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
     });

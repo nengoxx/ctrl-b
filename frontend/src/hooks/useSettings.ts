@@ -125,9 +125,9 @@ export interface VoiceLive extends VoiceServiceCommon {
   debug: boolean; //          show the call's live gate numbers on the overlay (calibration aid) — and
   //                          write the per-call trail to `<home>/calls/` (D77)
   trail_keep: number; //      D77: how many call trails the server keeps, 1..500 (a SERVER knob)
-  ring: boolean; //           §6 overlay mode: the focal-anchored face ring, or art-only
+  ring: boolean; //           §6 overlay mode: the face ring (at a fixed anchor, ISS-32), or art-only
   captions: boolean; //       the reply as fading text on the call screen (owner ask 2026-09-22)
-  mic_hold: string; //        auto | on | off — is the ear held while the reply plays (D76 §B)
+  mic_hold: string; //        auto | on | off — is the ear held while the reply plays (D76 §B → D80 ⑤)
   // D76 §C (evidence R83) — the RELATIVE gate, in dB; client knobs (read by `lib/levelGate`), no Conf
   // rows until D76 S1.
   floor_dbfs: number; //      bootstrap ceiling, dBFS
@@ -136,6 +136,16 @@ export interface VoiceLive extends VoiceServiceCommon {
   playback_margin_db: number; // barge floor = floor + this while the reply plays
   min_dbfs: number; //        clamp bounds on the effective floor, dBFS
   max_dbfs: number;
+  // D80 ① (evidence R91) — THE TAIL HOLD: the ear stays held after the mouth falls until the room is
+  // quiet (below the noise floor + the margin) for the quiet run, after the minimum, under the cap.
+  hold_tail_min_ms: number; //  nothing before this, ms
+  tail_quiet_ms: number; //     contiguous quiet that releases it, ms
+  tail_quiet_margin_db: number; // quiet = below noise + this, dB
+  hold_tail_max_ms: number; //  released regardless at this, ms
+  // D80 ② (evidence R91 §3) — THE TEXT BACKSTOP: a post-reply final matching the reply's words is dropped.
+  echo_similarity: number; //   0.5–1.0: at or above this, a final is the reply's own words
+  echo_window_ms: number; //    ms after the tail's release a final is still compared
+  chirp: boolean; //            D80 ⑦: the connect chirp — played once per capture, its return measured
   // D73 S5 — the CAPTURE pair (evidence docs/research/R74). One owner-facing choice plus the device
   // it opens, read by every capture the app makes (the call's and dictation's alike), which is why
   // they are modelled here rather than left to the relay's YAML-only caps.

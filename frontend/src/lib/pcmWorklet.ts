@@ -22,6 +22,13 @@
 // sustained rate under 2× realtime. A worklet that emits exactly `frame_ms` per frame at capture speed
 // satisfies all three by construction — which is why the frame size is a CONSTRUCTOR option (from the
 // server's knob) and never a number in here.
+//
+// EACH FRAME CARRIES ITS TIME (D80 ⑦): `t`, the AudioContext time of the frame's FIRST sample — the
+// scope's `currentTime` at the render quantum it arrived in, plus its offset into that quantum at the
+// scope's `sampleRate`. It is the same clock the context schedules its own sounds on, which is what lets
+// the call's connect chirp be played at one context time and found in the mic at another with nothing
+// between the two readings but the path being measured. Purely additive: consumers that ignore it are
+// unchanged.
 
 /** The processor name `registerProcessor` publishes — the same string `new AudioWorkletNode` takes. */
 export const PCM_WORKLET_NAME = "ctrlb-pcm-frames";
@@ -43,6 +50,7 @@ class CtrlbPcmFrames extends AudioWorkletProcessor {
     this.size = size > 0 ? size : 128;
     this.buf = new Float32Array(this.size);
     this.n = 0;
+    this.t0 = 0;
   }
 
   process(inputs) {
@@ -51,6 +59,8 @@ class CtrlbPcmFrames extends AudioWorkletProcessor {
     // returning false would retire the processor for the rest of the call.
     if (!ch) return true;
     for (let i = 0; i < ch.length; i++) {
+      // The frame's FIRST sample stamps its time: this quantum's start plus where in it the sample sits.
+      if (this.n === 0) this.t0 = currentTime + i / sampleRate;
       this.buf[this.n++] = ch[i];
       if (this.n === this.size) this.emit();
     }
@@ -70,7 +80,7 @@ class CtrlbPcmFrames extends AudioWorkletProcessor {
       view.setInt16(i * 2, Math.round(c < 0 ? c * 32768 : c * 32767), true);
     }
     // Transferred, not copied: at 48 kHz/40 ms this runs 25×/s on the audio thread.
-    this.port.postMessage({ buf: out, rms: Math.sqrt(sum / n) }, [out]);
+    this.port.postMessage({ buf: out, rms: Math.sqrt(sum / n), t: this.t0 }, [out]);
   }
 }
 

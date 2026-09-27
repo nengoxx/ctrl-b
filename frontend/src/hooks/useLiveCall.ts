@@ -3,12 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { postJSON } from "../api/client";
 import {
   dismiss,
+  getChunkPolicy,
   getPlayStatus,
   markStreamRetag,
   openCallVoiceGate,
   type PlayStatus,
   pokeCallMouth,
-  setCallChunkStart,
   setCallMouthGate,
   setCallPrePlay,
   setCallVoice,
@@ -17,13 +17,23 @@ import {
 } from "../lib/audioController";
 import { CUE_HOLD_MS, playDropCue } from "../lib/callCue";
 import { type CallTrail, createCallTrail } from "../lib/callTrail";
+import {
+  CHIRP_HOLD_MS,
+  CHIRP_LEAD_MS,
+  ChirpMatcher,
+  type ChirpResult,
+  playChirp,
+} from "../lib/chirp";
 import { sendCallTranscript } from "../lib/composer";
+import { ECHO_MIN_CHARS, echoSimilarity, normalizeForEcho } from "../lib/echoText";
 import {
   DBFS_SILENCE,
   effectiveFloor,
+  type FloorInputs,
   type GateCfg,
   learnVoice,
   newNoiseTracker,
+  pinCeiling,
   type NoiseTracker,
   resetNoise,
   rmsToDbfs,
@@ -38,9 +48,16 @@ import {
   type MicRequest,
   type PcmCapture,
 } from "../lib/pcmCapture";
+import { toSpeech } from "../lib/toSpeech";
 import { accrue, enqueueBounded, newPacer, pump, type PacerState } from "../lib/uplinkPacer";
 import { useStagedFiles } from "../store/attachments";
-import { cancelTurn, confirmOutstanding, getLiveTurn, useChatSlice } from "../store/chat";
+import {
+  cancelTurn,
+  confirmOutstanding,
+  getLiveTurn,
+  lastReply,
+  useChatSlice,
+} from "../store/chat";
 import { appendDraft } from "../store/composer";
 import { endCall } from "../store/liveCall";
 import { releaseMic } from "../store/micRelease";
@@ -84,13 +101,35 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // from that stretch is dropped. Nothing is lost by it: interruption there is the tap, which is every
 // browser's interrupt anyway (§4.3's trigger B).
 //
-// THE LEAK PROBE (`mic_hold: auto`, D76 §B.3). Not every leaking TRACK leaks: a phone playing into a car
-// or a pair of headphones hears nothing of the reply, and holding it deafens the owner for no reason.
-// So under `auto` the hold is decided per CHUNK, by listening: every chunk starts held, the wiring
-// takes the loudest held frame of its first `PROBE_MS`, and a chunk whose loudest frame stayed under
-// the effective floor is released for the rest of it (`probeOpen`). The next chunk asks again — a
-// device that starts leaking mid-reply is caught one chunk later. `on` holds every reply regardless;
-// `off` never holds; `auto` on a subtractive (`"all"`) canceller never holds, and never probes.
+// `mic_hold: auto` IS THE D73 RULE (D80 ⑤): held unless the track's canceller reads back `"all"` — the
+// one readback that subtracts the reply. It was briefly a per-chunk LEAK PROBE (D76 §B.3) that released
+// any chunk whose first 600 ms stayed under the floor; the owner's car falsified its premise (the car
+// round, LIVE_VOICE_PLAN §7): the probe judged each chunk in its first 600 ms — before a car had
+// emitted a sample — and a Bluetooth head unit plays the reply seconds late AND as loud as the owner.
+// So `auto` holds exactly where `on` does unless the canceller subtracts; `on` holds every reply
+// regardless; `off` never holds.
+//
+// THE TAIL (D80 ①). The element's `ended` is not the reply's end: the owner's car plays it ≈ 2.3 s
+// LATER over a Bluetooth link whose delay the web cannot read (Android discards sink reports ≥ 1 s,
+// R91 §1), as loud as the owner — and a hold released on the element opened the ear into the last
+// sentence, which came back as the owner's next turn. So when the mouth falls — drained, failed, or
+// KILLED by a tap (the car keeps playing what it already buffered) — the hold passes to `tail`, and
+// the ear reopens only on OBSERVED QUIET: the wiring's meter, below the room's NOISE floor + a margin
+// (never the Sensitivity pin, which sits inside the echo's band) for a contiguous stretch, after a
+// minimum and under a cap (`hold_tail_*`, `tail_quiet_*`). A tail a KILL armed is the exception: it
+// ends at the minimum, quiet or not — the owner answers a tap at once, and their own voice would never
+// let a quiet rule hear quiet. The reducer decides, the wiring measures
+// (`tailOver`, fenced on the tail it was armed for). What escapes a LEVEL rule — a long pause inside
+// the tail not yet heard, a tail past the cap — the TEXT BACKSTOP catches (D80 ②, `lib/echoText`): a
+// final in the post-reply window that repeats the reply's spoken words is dropped, visibly.
+//
+// THE LEDGER (D80 ③). Every final is judged on ITS OWN segment's evidence, keyed by the ear's
+// `item_id` (the relay forwards Speaches' one id per VAD segment). Speaches overlaps segments —
+// `speech_started(B)` before `transcript(A)` is routine — and a single "current utterance" slot judged
+// A on B's accrual and let B through unmeasured. The fail-open survives only for an id nobody measured.
+//
+// THE CONNECT CHIRP (D80 ⑦, `lib/chirp`). Each capture opens with a short sweep the mic listens for,
+// which MEASURES how late this output path plays — logged (trail, debug readout) and not yet obeyed.
 //
 // THE RELATIVE GATE (D76 §C). What counts as the owner speaking is measured in dBFS against a floor
 // that FOLLOWS the room — a minimum-tracking noise estimate, the owner's own learned voice level, a
@@ -114,10 +153,11 @@ import { useVoiceStatus } from "./useVoiceStatus";
 
 // ── the named constants (all of them, in this one file — the R69 precedent) ──────────────────────
 // What is NOT here: every §4.1 tunable (`frame_ms`, `buffered_ceiling_ms`, `min_speech_ms`,
-// `barge_in`, the D76 §C gate six). Those are the owner's, delivered by
-// `/voice/status.live_call`, and this hook reads them — it never defaults them. The level gate's own
-// estimator constants live beside the estimators (`lib/levelGate`), the drop cue's beside the cue
-// (`lib/callCue`).
+// `barge_in`, the D76 §C gate six, the D80 tail four + backstop pair + `chirp`). Those are the owner's,
+// delivered by `/voice/status.live_call`, and this hook reads them — it never defaults them. The level
+// gate's own estimator constants live beside the estimators (`lib/levelGate`), the drop cue's beside
+// the cue (`lib/callCue`), the chirp's beside the chirp (`lib/chirp`), the echo matcher's beside the
+// matcher (`lib/echoText`), and the segment ledger's bound (`SEGMENT_CAP`) beside the meter below.
 
 /** Reconnect attempts before the call gives up (§4.5's "bounded attempts with backoff"). One per entry
  *  in the backoff schedule below, which is what keeps the two from drifting apart.
@@ -203,14 +243,6 @@ const IDLE_EDGES: ReadonlySet<CallSignal["type"]> = new Set([
  *  decision makes both of those harder to read. */
 const BARGE_HIT_RATIO = 0.75;
 
-/** THE LEAK PROBE'S WINDOW, ms (D76 §B.3): how much of each chunk's start is listened to, HELD, before
- *  the chunk is released or kept held — the deaf window the owner accepted over a self-transcribed turn.
- *  A platform/latency safety constant, not a preference: it has to outlast the output path's own
- *  latency so the reply's leak has arrived before the probe judges it — and Bluetooth output latency
- *  (A2DP ~100–250 ms) only exists on the paths that do not leak, while a loudspeaker leaks within tens
- *  of ms. S3 measures it (the debug block's probe line). Not a knob, for `EAR_OUTAGE_MS`'s reason. */
-const PROBE_MS = 600;
-
 /** How often the debug block re-reads, ms (D74 S7). The measurements it shows arrive on the audio
  *  callback at 25–50 Hz, and re-rendering the overlay per frame to show them is exactly the trade the
  *  meter's ref refused — so the block SAMPLES instead. 250 ms is fast enough to watch a syllable move
@@ -227,8 +259,8 @@ const TRAIL_SAMPLE_MS = 1000;
 
 /** WHAT that sample carries (D77) — the readback record's MOVING fields, named here and nowhere else.
  *  The per-capture constants (the route, the hold lever, the echo pair, the device, the voice key)
- *  are written once, on the `capture` line; the probe's verdict and the last final have lines of their
- *  own (`probe`, `final`). A second of a half-hour call should not repeat what cannot have changed. */
+ *  are written once, on the `capture` line; the last final has a line of its own (`final`). A second
+ *  of a half-hour call should not repeat what cannot have changed. */
 const TRAIL_SAMPLE_FIELDS = [
   "level",
   "levelPeak2s",
@@ -238,6 +270,7 @@ const TRAIL_SAMPLE_FIELDS = [
   "noiseSettled",
   "voiceLevel",
   "earHeld",
+  "tail",
   "mouthLive",
   "bargeArmed",
 ] as const satisfies readonly (keyof CallDebug)[];
@@ -340,6 +373,12 @@ export const CALL_COPY = {
    *  up to the DISCARD rather than explaining the mechanism — what the owner needs to know is that
    *  their words did not go, and that saying it louder is the remedy. */
   tooQuiet: "too quiet — didn't take that",
+  /** D80 ② — THE TEXT BACKSTOP: a final that is the reply's own words, heard back through the mic (a
+   *  car still playing the tail). It stands on the HEARD line, in place of the words, so the owner sees
+   *  what the ear dropped and why — parenthesised, because it is not something anybody said. The house
+   *  copy names no pronoun for the agent anywhere (every line above talks about "the reply"), so the
+   *  ruled "(her own words)" is kept NEUTRAL here. */
+  ownWords: "(the reply's own words)",
   /** D73 S6 ④ — the background idle end. The terminal face already says "Call ended", so the note is
    *  the REASON, which is the one thing a call that ended on its own owes the owner. */
   idleBackground: "the call sat idle in the background",
@@ -356,23 +395,28 @@ const CONNECTION_NOTES: readonly string[] = [CALL_COPY.strained, CALL_COPY.busyR
 
 export type CallPhase = "connecting" | "listening" | "thinking" | "speaking" | "error" | "ended";
 
-/** `mic_hold` (D76 §B): `on` = held under every reply, `off` = never, `auto` = the leak probe. */
+/** `mic_hold` (D76 §B → D80 ⑤): `on` = held under every reply, `off` = never, `auto` = the D73 rule —
+ *  held unless the track's canceller subtracts the reply (`"all"`). */
 export type HoldMode = "auto" | "on" | "off";
 
-/** Does this capture RUN the leak probe — `auto` on an ear whose canceller does not subtract the reply?
- *  The one predicate: the normalize reads it for the hold, the wiring for whether to listen at all. */
-const probes = (s: CallState): boolean => s.holdMode === "auto" && !s.ecAll;
-/** …and can this capture be held at ALL (the pre-play tap's question): `on`, or a probing `auto`. */
-const mayHold = (s: CallState): boolean => s.holdMode === "on" || probes(s);
+/** Does THIS capture hold the ear under the reply — the policy half of `earHeld`, and the pre-play
+ *  tap's question. `on`, or `auto` on an ear whose canceller does not subtract (D80 ⑤). The ONE
+ *  predicate: the normalize reads it for the hold, the wiring for whether to register the tap. */
+const mayHold = (s: CallState): boolean =>
+  s.holdMode === "on" || (s.holdMode === "auto" && !s.ecAll);
 
 export interface CallState {
   phase: CallPhase;
   /** Between the server VAD's `speech_started` and `speech_stopped`. */
   userSpeechActive: boolean;
+  /** …and WHICH segment that is: the ear's `item_id` for the open segment (D80 ③), `null` when none is
+   *  open or the relay named none. DERIVED to `null` with `userSpeechActive` (see `callReduce`). What
+   *  lets a final for ANOTHER segment — Speaches overlaps them — leave this one's verdict alone. */
+  speechItem: string | null;
   /** Speech stopped, its transcript not yet consumed or discarded. */
   waitingFinal: boolean;
   /** THE NOISE VERDICT (the owner's 2026-09-26 ruling): the segment open right now has run
-   *  `noise_verdict_ms` with less epoch-matched accrual than `min_final_ms` — the transcript gate would
+   *  `noise_verdict_ms` with less of its OWN accrual than `min_final_ms` — the transcript gate would
    *  drop its final as "too quiet", so it does not hold the mouth. Only ever true WITH
    *  `userSpeechActive` (normalized — see `callReduce`): a verdict is about one open segment. */
   noiseOpen: boolean;
@@ -402,18 +446,20 @@ export interface CallState {
   holdMode: HoldMode;
   /** Did the ear that actually opened come back with the SUBTRACTIVE canceller (`echoCancellation ===
    *  "all"`, the S0 ruling — the track's readback, never UA-sniffed)? Under `auto` it is the whole
-   *  answer: a canceller that subtracts the reply needs no hold and no probe (D76 §B.4). */
+   *  answer: a canceller that subtracts the reply needs no hold (D73 → D80 ⑤). */
   ecAll: boolean;
-  /** The chunk the mouth last STARTED (`chunkStarted`, −1 before any) — what a `probeResult` must be
-   *  about to count. */
-  probeIdx: number;
-  /** The leak probe RELEASED this chunk (D76 §B.3): its first `PROBE_MS` stayed under the floor. Every
-   *  chunk starts `false` (held) and a silent mouth clears it (see `normalize`). */
-  probeOpen: boolean;
   /** Is the canceller ENGAGED on the ear that actually opened — the track's readback, never the ask
    *  (ISS-18 review F3): an EC-off route whose capture came back EC-on (`ecStuck`) is still IN comm
    *  mode, and only this bit knows it. Seeded on `captureReady`; what `leavesComm` measures against. */
   ecOn: boolean;
+  /** THE TAIL HOLD (D80 ①): the mouth has fallen under a holding policy and the reply may still be in
+   *  the air — a car plays it seconds after the element does. ARMED by the normalize on every fall of
+   *  `mouthLive` while `mayHold` (drain, failure AND kill), cleared by a rising mouth, a policy that no
+   *  longer holds (a route cycle, a terminal) or the wiring's `tailOver` for THIS arming. */
+  tail: boolean;
+  /** …and which arming it is: bumped on every one, so a `tailOver` measured for an older tail is a
+   *  ghost (the `degradeHold`/generation fence, one level finer). */
+  tailSeq: number;
   /** …and is it closed right now. DERIVED after every reduce (see `normalize`) — never set by an arm. */
   earHeld: boolean;
   /** THE ROUTE THIS CALL IS ON, and the device it asked for (D74 S2) — EPHEMERAL, per call. Seeded
@@ -438,6 +484,7 @@ export interface CallState {
 export const CALL_INITIAL: CallState = {
   phase: "connecting",
   userSpeechActive: false,
+  speechItem: null,
   waitingFinal: false,
   noiseOpen: false,
   pending: [],
@@ -450,8 +497,8 @@ export const CALL_INITIAL: CallState = {
   mouthLive: false,
   holdMode: "off",
   ecAll: false,
-  probeIdx: -1,
-  probeOpen: false,
+  tail: false,
+  tailSeq: 0,
   earHeld: false,
   route: "",
   ecOn: false,
@@ -466,18 +513,35 @@ export type SendResult = "accepted" | "refused" | "unknown" | "held";
 export type CallSignal = { gen?: number } & (
   | { type: "ready" } //                       the relay said `state: ready`
   | { type: "socketLost" } //                  the leg closed while the call was still wanted
-  | { type: "speechStart" }
-  | { type: "speechStop" }
+  /** The three SEGMENT signals carry the ear's `item_id` (D80 ③ — the relay forwards Speaches' one id
+   *  per VAD segment) as `itemId`; absent when the relay named none, which is the unmeasured case. */
+  | { type: "speechStart"; itemId?: string }
+  | { type: "speechStop"; itemId?: string }
   /** THE NOISE VERDICT on the segment still open: it has run `noise_verdict_ms` and its accrual is below
-   *  `min_final_ms` (measured in the wiring, on the epoch it was armed under). Ignored with no segment
+   *  `min_final_ms` (measured in the wiring, on the segment it was armed for). Ignored with no segment
    *  open. */
   | { type: "segmentNoise" }
   /** …with THE TRANSCRIPT GATE's two numbers (D74 S5), carried on the signal because the rule is the
    *  reducer's and the measurement is the wiring's. `energyMs` is the ear's own accrual for the
-   *  utterance this final is about — ABSENT when no epoch matched, which is the fail-open case: a
-   *  final nobody measured is unmeasured, not quiet. `minFinalMs` is the owner's knob, delivered the
-   *  same way every other §4.1 tunable is; absent or 0 means the gate is off. */
-  | { type: "final"; text: string; energyMs?: number; minFinalMs?: number }
+   *  SEGMENT this final is about (D80 ③, keyed by its `itemId`) — ABSENT when no segment of that id was
+   *  measured, which is the fail-open case: a final nobody measured is unmeasured, not quiet.
+   *  `minFinalMs` is the owner's knob, delivered the same way every other §4.1 tunable is; absent or 0
+   *  means the gate is off. */
+  /** …and THE TEXT BACKSTOP's pair (D80 ②), the same split: `echo` is how much the final looks like the
+   *  reply the mouth just spoke (`lib/echoText`), stamped by the wiring ONLY for a final that landed
+   *  inside the post-reply window and is long enough to judge — ABSENT otherwise, which is never an
+   *  echo; `echoMin` is the owner's `echo_similarity`. `inEchoWindow` says the final landed inside that
+   *  window at all (judged or not): the reducer ignores it, the voice learner does not learn from it. */
+  | {
+      type: "final";
+      text: string;
+      itemId?: string;
+      energyMs?: number;
+      minFinalMs?: number;
+      echo?: number;
+      echoMin?: number;
+      inEchoWindow?: true;
+    }
   /** The uplink is losing audio — the relay's own overflow state, or (A-F2) our own bounded queue
    *  dropping its oldest frames. ONE signal for both, deliberately: it is one loss chain, and two notes
    *  for it would be two things saying the same thing. */
@@ -514,14 +578,11 @@ export type CallSignal = { gen?: number } & (
   | { type: "barge" } //                       trigger A (voice) or B (tap) — the same edge
   | { type: "killSettled" }
   | { type: "playbackStarted" }
-  /** THE CHUNK-START (D76 §B.3): chunk `idx` of the reply just became audible — the controller's
-   *  `setCallChunkStart`, once per chunk (a stall's re-fired `playing` is deduped at the source). The
-   *  chunk starts HELD; the probe that judges it arms on this edge, never on the status edge. */
-  | { type: "chunkStarted"; idx: number }
-  /** …and the probe's verdict on chunk `idx`: did its first `PROBE_MS` of held audio reach the
-   *  effective floor? Measured in the wiring (the meter's split); decided here. */
-  | { type: "probeResult"; idx: number; leak: boolean }
   | { type: "playbackDrained" }
+  /** THE TAIL'S RELEASE (D80 ①), measured in the wiring: the ear heard `quiet` for long enough after
+   *  the minimum, the `cap` ran out, or — for a tail a KILL armed — the minimum itself passed (`kill`).
+   *  For the arming `seq` only — a stale one is ignored. */
+  | { type: "tailOver"; seq: number; reason: TailReason }
   | { type: "playbackFailed" }
   | { type: "turnSettled" } //                 chat status left `streaming`
   | { type: "confirmHold"; on: boolean }
@@ -632,7 +693,7 @@ function mouth(s: CallState, live: boolean): CallState {
 
 /** THE TRANSCRIPT GATE'S VERDICT (D74 S5), ONE predicate for the two places that judge by it — the
  *  `final` arm it was built for, and the wiring's noise verdict on a segment still open (the owner's
- *  2026-09-26 ruling: "noise" means exactly what this gate would drop). True only on epoch-matched
+ *  2026-09-26 ruling: "noise" means exactly what this gate would drop). True only on the segment's own
  *  evidence below a knob that is on: absent evidence is unmeasured, not quiet, and absent/0 is the gate
  *  off. */
 function tooQuiet(sig: { energyMs?: number; minFinalMs?: number }): boolean {
@@ -644,15 +705,22 @@ function tooQuiet(sig: { energyMs?: number; minFinalMs?: number }): boolean {
   );
 }
 
+/** Is a segment signal about the OPEN segment (D80 ③)? Two KNOWN ids that differ are two segments;
+ *  anything unnamed on either side keeps the pre-ledger rule (it is). ONE predicate for the `speechStop`
+ *  and `final` arms. */
+function sameSegment(itemId: string | undefined, open: string | null): boolean {
+  return itemId === undefined || open === null || itemId === open;
+}
+
 /** Start the §4.3 ORDERED kill. Both triggers land here, so the state the kill leaves behind is written
  *  once.
  *
  *  `mouthLive` goes down with it, and that is not an inference about the element: step ① of the effect is
- *  a SYNCHRONOUS `dismiss()`, so by the time anything else reads this state the audible part is already
- *  gone. Waiting for the playback store's own drain to say so would leave a window — a `killSettled` that
- *  answers synchronously (the turn was already terminal, the common case per council F1) lands BEFORE the
- *  drain does — in which the ear-hold would close again over exactly the words the owner interrupted
- *  with. */
+ *  a SYNCHRONOUS `dismiss()`, so by the time anything else reads this state the element is already
+ *  silent. What is NOT silent is whatever the output path had buffered — a car keeps playing ~2 s of it
+ *  (D80 ①; the owner's answer ⑥) — so the ear-hold does not lift here: the mouth's fall arms the TAIL
+ *  (see `callReduce`), which a kill's wiring ends on a DEADLINE — `hold_tail_min_ms` — rather than on
+ *  quiet, because the owner is talking into it (`TailRun.deadline`). */
 function killNow(s: CallState): Step {
   return { state: { ...mouth(s, false), killing: true }, out: [{ type: "kill" }] };
 }
@@ -683,7 +751,7 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
       mouthLive: false,
       holdMode: "off",
       ecAll: false,
-      probeOpen: false,
+      tail: false,
       earHeld: false,
       gen: s.gen + 1,
     },
@@ -696,8 +764,8 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
  *  carries primitives only — with three deliberate exceptions (council F5/F1):
  *  · a `text` becomes `textLen`: the owner's words are in the trail ONCE, in the relay's `transcript`
  *    line (which is how a self-transcribed reply is recognised), never copied here;
- *  · a `final` snapshots the PRE-reduce state the ear decision turns on (`pre`), so a final released
- *    by a probe that judged silence — a residual the design records rather than fixes — is VISIBLE;
+ *  · a `final` snapshots the PRE-reduce state the ear decision turns on (`pre`), so a final that
+ *    walked in through an ear that was open when it should not have been is VISIBLE;
  *  · a signal armed under another generation says so (`staleGen`) — the fence dropped it.
  *  `phase`/`note` appear only when the reduce moved them, and so does `genMove`: the line is STAMPED
  *  after the reduce, so a signal that moved the generation (a terminal, an accepted route cycle) would
@@ -715,13 +783,7 @@ export function trailSig(
   }
   if (gen !== undefined && gen !== prev.gen) line.staleGen = gen;
   if (type === "final")
-    line.pre = {
-      earHeld: prev.earHeld,
-      mouthLive: prev.mouthLive,
-      probeOpen: prev.probeOpen,
-      probeIdx: prev.probeIdx,
-      muted: prev.muted,
-    };
+    line.pre = { earHeld: prev.earHeld, mouthLive: prev.mouthLive, muted: prev.muted };
   if (prev.phase !== next.phase) line.phase = `${prev.phase}→${next.phase}`;
   if (prev.gen !== next.gen) line.genMove = `${prev.gen}→${next.gen}`;
   if (prev.note !== next.note) line.note = next.note;
@@ -733,27 +795,37 @@ export function trailSig(
  *
  * THE EAR-HOLD IS DERIVED, NOT DECIDED (S3): `earHeld` is normalized once here, after the arm has had its
  * say, rather than being maintained by every arm that could move one of its inputs. A rule spread
- * across a dozen arms is a rule with a dozen chances to be forgotten by the next one.
+ * across a dozen arms is a rule with a dozen chances to be forgotten by the next one. The TAIL is armed
+ * here for the same reason (D80 ①): "the mouth fell" is a fact about the step, not about any one arm.
  */
 export function callReduce(s: CallState, sig: CallSignal): Step {
   const step = reduce(s, sig);
   const st = step.state;
-  // A probe's release is about ONE chunk of ONE reply: a mouth that went silent (drained, failed,
-  // killed, a terminal) takes it with it, so the next reply starts held without any arm remembering to.
-  const probeOpen = st.probeOpen && st.mouthLive;
-  // …and a NOISE VERDICT is about ONE open segment: every arm that closes or condemns it (the stop, a
-  // mute, a lost or fresh leg, a route cycle, a terminal) takes the verdict with it, and the next segment
-  // starts unjudged, without any arm remembering to.
+  // A NOISE VERDICT is about ONE open segment: every arm that closes or condemns it (the stop, a mute,
+  // a lost or fresh leg, a route cycle, a terminal) takes the verdict with it, and the next segment
+  // starts unjudged, without any arm remembering to. The segment's ID goes the same way.
   const noiseOpen = st.noiseOpen && st.userSpeechActive;
-  // The POLICY is the capture's (`holdMode` × `ecAll` × the probe's verdict, D76 §B), `mouthLive` the
-  // transport's (is the reply audible?), and `!killing` the machine's own: an interrupt in flight has
-  // ALREADY silenced the mouth synchronously, and holding the ear until the cancel settles would eat
-  // the first word of exactly the sentence the owner interrupted with.
-  const earHeld =
-    st.mouthLive && !st.killing && (st.holdMode === "on" || (probes(st) && !probeOpen));
-  if (earHeld === st.earHeld && probeOpen === st.probeOpen && noiseOpen === st.noiseOpen)
+  const speechItem = st.userSpeechActive ? st.speechItem : null;
+  // The POLICY is the capture's (`holdMode` × `ecAll`, D73 → D80 ⑤), `mouthLive` the transport's (is
+  // the reply audible?), and `tail` the reply's afterlife (D80 ①): EVERY fall of the mouth under a
+  // holding policy arms a new tail — a drain, a failure, and a KILL alike, because a tap silences the
+  // element and not the car's buffer (D80 ①, the owner's answer ⑥ — the `!killing` release this
+  // replaces opened the ear into ~2.3 s of it). A rising mouth takes the tail back (the next fall arms
+  // a new one), and so does a policy that stopped holding (a route cycle, a terminal).
+  const holds = mayHold(st);
+  const armed = holds && s.mouthLive && !st.mouthLive;
+  const tail = holds && !st.mouthLive && (armed || st.tail);
+  const tailSeq = armed ? st.tailSeq + 1 : st.tailSeq;
+  const earHeld = (st.mouthLive || tail) && holds;
+  if (
+    earHeld === st.earHeld &&
+    noiseOpen === st.noiseOpen &&
+    speechItem === st.speechItem &&
+    tail === st.tail &&
+    tailSeq === st.tailSeq
+  )
     return step;
-  return { state: { ...st, earHeld, probeOpen, noiseOpen }, out: step.out };
+  return { state: { ...st, earHeld, noiseOpen, speechItem, tail, tailSeq }, out: step.out };
 }
 
 /** MAY THE MOUTH BECOME AUDIBLE NOW (§4.2's iron rule, enforced by waiting — the owner's 2026-09-26
@@ -858,17 +930,21 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // CHARACTER — so a VAD event from that stretch is the phone listening to itself, and taking it
       // would light "speaking" for nobody and hold the mouth for a phantom.
       if (s.muted || s.earHeld) return { state: s, out: [] };
-      return { state: { ...s, userSpeechActive: true }, out: [] };
+      return { state: { ...s, userSpeechActive: true, speechItem: sig.itemId ?? null }, out: [] };
 
     case "speechStop":
       // A stop PAIRS WITH AN ACCEPTED START, or it is nothing (the design round's A2). A start the
       // machine ignored (muted, held) or one a mute already condemned opened no segment, and a stop that
       // raised `waitingFinal` for it would hold the mouth for a final that is never coming.
       if (!s.userSpeechActive) return { state: s, out: [] };
+      // …and it pairs with ITS OWN start (D80 ③, Maya's code round): a stop naming another segment than
+      // the open one closes nothing — the `final` arm's identity rule, applied to the stop. Speaches'
+      // order (stop(A) before start(B)) makes it unreachable today; the meter already freezes by id.
+      if (!sameSegment(sig.itemId, s.speechItem)) return { state: s, out: [] };
       // HELD, a stop still LOWERS the flag it pairs with — it never raises `waitingFinal`, whose final
       // the held arm below drops anyway (R86 LC-1's knock-on). A segment can be open when the hold
-      // engages (a kill that settles under a mouth that restarted during it); a flag left up behind it
-      // would hold the next reply at the mouth's door, the epoch having closed with its final.
+      // engages (a reply that restarts over it); a flag left up behind it would hold the next reply at
+      // the mouth's door for a final the held arm drops.
       if (s.earHeld) return { state: { ...s, userSpeechActive: false }, out: [] };
       return { state: { ...s, userSpeechActive: false, waitingFinal: true }, out: [] };
 
@@ -895,8 +971,12 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // THE VERDICT ENDS WITH ITS SEGMENT'S FINAL (Emma's code round F2): a final that lands before or
       // without `speech_stopped` leaves the segment open, and the normalization in `callReduce` would
       // keep the verdict with it — the mouth permitted over a segment whose judgement has expired. So
-      // EVERY exit below runs with it cleared, once; a later segment is a new epoch with its own timer.
-      if (s.noiseOpen) return reduce({ ...s, noiseOpen: false }, sig);
+      // EVERY exit below runs with it cleared, once; a later segment is a new one with its own timer.
+      // …but ONLY ITS OWN (D80 ③): Speaches overlaps segments — `speech_started(B)` lands before
+      // `transcript(A)` — and A's final ending B's verdict would put a judged TV segment back in front
+      // of the mouth. Two KNOWN ids that differ are two segments; anything unnamed keeps the old rule.
+      if (s.noiseOpen && sameSegment(sig.itemId, s.speechItem))
+        return reduce({ ...s, noiseOpen: false }, sig);
       // "Mute means don't send that" (owner-ratified), applied FLAT: a final that arrives while muted is
       // dropped whether it is the condemned half-utterance or one the server endpointed a moment before
       // the tap. One rule, no window where the words go out anyway.
@@ -910,6 +990,13 @@ function reduce(s: CallState, sig: CallSignal): Step {
       const text = sig.text.trim();
       // Empty finals are discarded (§4.5's no-speech path): nothing submits, the flag clears.
       if (!text) return { state: { ...s, waitingFinal: false }, out: [] };
+      // THE TEXT BACKSTOP (D80 ②): the reply's own words, heard back after the element finished — the
+      // tail hold's residue (a pause inside the not-yet-heard tail, a tail past the cap). Dropped
+      // VISIBLY on the heard line, and SILENTLY to the ear: a cue here would be one more sound for the
+      // car to play back. BEFORE the transcript gate, because it is the more specific diagnosis — an echo
+      // that is also quiet is still an echo, and a cue for it would be wrong twice.
+      if (sig.echo !== undefined && sig.echoMin !== undefined && sig.echo >= sig.echoMin)
+        return { state: { ...s, waitingFinal: false, heard: CALL_COPY.ownWords }, out: [] };
       // THE TRANSCRIPT GATE (D74 S5 ③). A Whisper-family endpoint does not answer noise with nothing
       // — it answers with a PLAUSIBLE SENTENCE (R76), and on a call that sentence is submitted to the
       // agent as if the owner had said it. The relay cannot tell; the client can, because it already
@@ -917,18 +1004,32 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // one line saying so — never silently, because a discarded utterance the owner believes went
       // out is the worse failure of the two.
       //
-      // FAIL-OPEN BY CONSTRUCTION: it fires only when there IS epoch-matched evidence. A final that
-      // arrives after a reconnect, or a second final for one speech segment, carries no accrual — and
-      // absence of evidence is not evidence of silence. AFTER the empty check on purpose: a no-speech
-      // final is already handled, and it deserves no note.
+      // FAIL-OPEN, NARROWED TO UNKNOWN IDS (D74 → D80 ③): it fires only when there IS evidence for this
+      // final's OWN segment. A final whose id no measured segment carries — a start the machine ignored
+      // (held, muted), a leg that died, an id nobody saw — carries no accrual, and absence of evidence
+      // is not evidence of silence. AFTER the empty check on purpose: a no-speech final (and the relay's
+      // gap-cut `short` one, D80 ④) is already handled, and it deserves no note.
       if (tooQuiet(sig)) {
         // …and HEARD, not only shown (D76 §C.5): the note line is useless to an owner who is driving.
+        // But only for a SUSTAINED drop (D80 ⑥): a final whose segment put NOTHING above the floor is a
+        // hallucination on a flap (Parakeet's "Yeah."/"Mm." on car noise), not an owner too quiet to
+        // hear — and in the car the cue's own echo came back 2.3 s later as the next flap, which dropped,
+        // which cued (12 beeps in 5 minutes). Nothing heard, nothing said.
         return {
           state: { ...s, waitingFinal: false, note: CALL_COPY.tooQuiet },
-          out: [{ type: "dropCue" }],
+          out: (sig.energyMs ?? 0) > 0 ? [{ type: "dropCue" }] : [],
         };
       }
-      return drain({ ...s, waitingFinal: false, heard: text, pending: [...s.pending, text] });
+      // A TAKEN final retracts the "too quiet" note (D80's W6): it was about the last drop, and it stood
+      // for the rest of the call. Only ITS OWN note — the `degradedOver` rule: anything else there is
+      // news of its own that the owner has not read yet.
+      return drain({
+        ...s,
+        waitingFinal: false,
+        heard: text,
+        pending: [...s.pending, text],
+        note: s.note === CALL_COPY.tooQuiet ? null : s.note,
+      });
     }
 
     case "barge":
@@ -942,13 +1043,12 @@ function reduce(s: CallState, sig: CallSignal): Step {
 
     case "playbackStarted": {
       // The transport spoke, so the flag lands FIRST and unconditionally — what the phase logic below
-      // decides to do about it is a separate question (see `mouthLive`). The mouth (re)starting is a
-      // chunk nobody has probed yet, so it starts HELD (D76 §B.3); its `chunkStarted` re-arms the probe.
+      // decides to do about it is a separate question (see `mouthLive`).
       // NO KILL (the owner's 2026-09-26 ruling on R86 LC-1 / R88 E-1): §4.2's iron rule is enforced
       // BEFORE this edge, at the controller's gate (`mouthMayOpen`), by waiting — so an automatic start
       // reaches here only over a settled ear, and one over an unsettled ear is the owner's own gesture
       // (a resume tap, a seek), which is theirs to make.
-      const open = { ...mouth(s, true), probeOpen: false };
+      const open = mouth(s, true);
       // THE RECONNECT OWNS THE PHASE while the leg is down (confirm round F1's survivor). `socketLost`
       // deliberately paints `connecting` over a live mouth and `playbackDrained` preserves it — an arm
       // that repainted `speaking` here would be the one voice disagreeing about who owns the screen
@@ -958,17 +1058,11 @@ function reduce(s: CallState, sig: CallSignal): Step {
       return { state: { ...open, phase: "speaking" }, out: [] };
     }
 
-    case "chunkStarted":
-      // A NEW chunk is audible: it starts held, whatever the last one's verdict was (D76 §B.3 — per
-      // chunk, not per reply). Recorded on every policy — only `probes()` ever reads it.
-      return { state: { ...s, probeIdx: sig.idx, probeOpen: false }, out: [] };
-
-    case "probeResult":
-      // THE VERDICT, fenced twice: by the generation (a recapture moved it — this verdict is about the
-      // old ear), and by the CHUNK (a verdict about any chunk but the one now playing is history). Only
-      // a probing capture takes one: `on` holds regardless and `off`/`"all"` never hold.
-      if (!probes(s) || sig.idx !== s.probeIdx || !s.mouthLive) return { state: s, out: [] };
-      return { state: { ...s, probeOpen: !sig.leak }, out: [] };
+    case "tailOver":
+      // THE TAIL ENDS (D80 ①) — fenced twice: by the generation (the reduce's first line) and by the
+      // ARMING, so a release measured for a tail that a new reply already replaced frees nothing.
+      if (!s.tail || sig.seq !== s.tailSeq) return { state: s, out: [] };
+      return { state: { ...s, tail: false }, out: [] };
 
     case "playbackDrained": {
       // The mouth stopped: the flag goes down even where the arm declines to move the phase, because a
@@ -1011,9 +1105,6 @@ function reduce(s: CallState, sig: CallSignal): Step {
           ...s,
           holdMode: sig.holdMode,
           ecAll: sig.ecAll,
-          // A FRESH EAR IS UNPROBED (D76 §B.4): a recapture while the mouth is live holds at once (under
-          // `auto` without a subtractive canceller) and the next `chunkStarted` probes again.
-          probeOpen: false,
           note: sig.note ?? s.note,
           route: sig.route,
           ecOn: sig.ecOn ?? wantsAec(sig.route),
@@ -1062,7 +1153,8 @@ function reduce(s: CallState, sig: CallSignal): Step {
           // fresh `captureReady` decides it again under the new route. `earHeld` follows in normalize.
           holdMode: "off",
           ecAll: false,
-          probeOpen: false,
+          // …and so does its TAIL (D80 ①): the fresh ear is not the one the reply was leaking into.
+          tail: false,
           // THE FENCE (F7). The old leg's frames, its close, this capture's `onEnded` and any send
           // outcome armed under it all become ghosts — which is the point: the redial below is driven
           // by the acquisition, not by the close, so a `socketLost` from the leg we are closing must
@@ -1269,6 +1361,26 @@ function reduce(s: CallState, sig: CallSignal): Step {
 // 25–50 Hz, and re-rendering React for it is exactly the trade the dictation meter's ref already
 // refused. What the reducer gets is the DECISION — `barge`, or a final's accrual on its own signal.
 
+/** THE LEDGER'S BOUND (D80 ③): how many segments may be awaiting their final at once. Speaches runs one
+ *  VAD segment at a time and transcribes each in ~0.3–0.5 s, so a healthy ear has one or two in flight;
+ *  the bound exists for the segments that NEVER get a final (a transcription that errored sends
+ *  `error` instead, R86 LC-2) — without it they would accumulate for the whole call. The oldest is
+ *  evicted, and a final arriving for it later is unmeasured, the fail-open case. A property of the
+ *  bookkeeping, not a preference: 16 is an order of magnitude past anything a live ear keeps open. */
+const SEGMENT_CAP = 16;
+
+/** One speech segment's evidence (D80 ③ — was the single-slot utterance EPOCH): the accrual the
+ *  transcript gate reads, and the voice learner's samples, for ONE ear segment. */
+interface Segment {
+  /** ms of UPLINKED frames at or above the effective floor since this segment's speech-start
+   *  (D76 §C.5), and the loudest of them, dBFS. */
+  accruedMs: number;
+  accruedPeak: number;
+  /** The VOICE LEARNER's evidence for the same segment (D76 §C.3): every uplinked frame's level, and
+   *  whether any of them arrived while the reply was audible. */
+  utterance: UtteranceLevels;
+}
+
 interface EarMeter {
   /** The last frame's level, and the loudest one still inside `PEAK_HOLD_MS` (S7), dBFS — `null` until
    *  the first frame. Every frame, held or not: what the microphone hears is true either way. */
@@ -1280,21 +1392,20 @@ interface EarMeter {
   window: boolean[];
   at: number;
   hits: number;
-  /** THE UTTERANCE EPOCH (S5) — which (leg, utterance) the accrual below is evidence about, or `null`
-   *  when no utterance is open and there is therefore NO evidence to offer. The distinction is the
-   *  gate's whole fail-open rule: a final with no matching epoch is not quiet, it is unmeasured. */
-  epoch: { leg: number; seq: number } | null;
-  seq: number;
-  /** …and the accrual: ms of UPLINKED frames at or above the effective floor since this utterance's
-   *  speech-start (D76 §C.5), and the loudest of them, dBFS. */
-  accruedMs: number;
-  accruedPeak: number;
-  /** …and the VOICE LEARNER's evidence for the same utterance (D76 §C.3): every uplinked frame's level,
-   *  and whether any of them arrived while the reply was audible. */
-  utterance: UtteranceLevels;
-  /** What the LAST final was judged on, kept for the debug block. An `accruedMs` of 0 beside a
-   *  non-zero `chars` is the fail-open signature — a final that arrived with no epoch behind it. */
-  last: { accruedMs: number; peakDb: number; chars: number } | null;
+  /** THE SEGMENT LEDGER (D80 ③) — every segment the machine ACCEPTED a start for whose final has not
+   *  landed yet, keyed `${leg}:${item_id}` (`segmentKey`). It replaced a single EPOCH slot that
+   *  whichever final landed next closed: Speaches emits `speech_started(B)` before `transcript(A)`
+   *  routinely, so A was judged on B's empty accrual and B's final found nothing and failed OPEN — two
+   *  of the car round's echoes walked in through that door (EVIDENCE Fact 3). Insertion-ordered, so the
+   *  first key is the oldest (`SEGMENT_CAP`'s eviction). */
+  segments: Map<string, Segment>;
+  /** The segment frames accrue to RIGHT NOW — the one the ear has open (Silero is sequential: one at
+   *  a time), `null` between a stop and the next start. Its `speech_stopped` FREEZES it: frames after
+   *  the stop belong to nobody, never to a finished segment. */
+  open: Segment | null;
+  /** What the LAST final was judged on, kept for the debug block. `measured: false` is the fail-open
+   *  signature — a final whose segment the ledger did not hold (D80 ③: an unknown id). */
+  last: { accruedMs: number; peakDb: number; chars: number; measured: boolean } | null;
 }
 
 function newEarMeter(): EarMeter {
@@ -1305,20 +1416,23 @@ function newEarMeter(): EarMeter {
     window: [],
     at: 0,
     hits: 0,
-    epoch: null,
-    seq: 0,
-    accruedMs: 0,
-    accruedPeak: DBFS_SILENCE,
-    utterance: { samples: [], duringPlayback: false },
+    segments: new Map(),
+    open: null,
     last: null,
   };
+}
+
+/** A segment's ledger key: its LEG and the ear's `item_id`. The leg is in it because a reconnect is a
+ *  fresh Speaches session whose ids share no namespace with the old one's. */
+function segmentKey(leg: number, itemId: string): string {
+  return `${leg}:${itemId}`;
 }
 
 /**
  * One frame, consumed ONCE. Everything below reads what this wrote.
  *
- * THE PARTITION (D76 §B.2): the level and its peak are every frame's; the utterance's accrual and the
- * learner's samples take only UPLINKED frames — a held frame is the reply leaking back in, and a
+ * THE PARTITION (D76 §B.2): the level and its peak are every frame's; the open segment's accrual and
+ * the learner's samples take only UPLINKED frames — a held frame is the reply leaking back in, and a
  * muted one is silence the owner chose; neither is evidence that the owner spoke.
  */
 function meterFrame(
@@ -1337,12 +1451,13 @@ function meterFrame(
     m.peakDb = db;
     m.peakAt = now;
   }
-  if (m.epoch === null || !uplinked) return;
-  m.utterance.samples.push(db);
-  if (mouthLive) m.utterance.duringPlayback = true;
+  const seg = m.open;
+  if (seg === null || !uplinked) return;
+  seg.utterance.samples.push(db);
+  if (mouthLive) seg.utterance.duringPlayback = true;
   if (db >= floor) {
-    m.accruedMs += frameMs;
-    if (db > m.accruedPeak) m.accruedPeak = db;
+    seg.accruedMs += frameMs;
+    if (db > seg.accruedPeak) seg.accruedPeak = db;
   }
 }
 
@@ -1368,26 +1483,33 @@ function clearBarge(m: EarMeter): void {
   m.hits = 0;
 }
 
-function openUtterance(m: EarMeter, leg: number): void {
-  m.seq += 1;
-  m.epoch = { leg, seq: m.seq };
-  m.accruedMs = 0;
-  m.accruedPeak = DBFS_SILENCE;
-  m.utterance = { samples: [], duringPlayback: false };
+/** Open segment `key` — it takes the frames from here. The ledger stays bounded (`SEGMENT_CAP`). */
+function openSegment(m: EarMeter, key: string): void {
+  if (m.segments.size >= SEGMENT_CAP) {
+    const oldest = m.segments.keys().next().value;
+    if (oldest !== undefined) m.segments.delete(oldest);
+  }
+  const seg: Segment = {
+    accruedMs: 0,
+    accruedPeak: DBFS_SILENCE,
+    utterance: { samples: [], duringPlayback: false },
+  };
+  m.segments.delete(key); // a re-used key re-inserts at the END, so eviction stays oldest-first
+  m.segments.set(key, seg);
+  m.open = seg;
 }
 
-/** THE UTTERANCE'S EVIDENCE for leg `leg` — the ONE reader for both judgements made on it (a `final`'s
- *  transcript gate, and the noise verdict on a segment still open): the accrual only when the open
- *  epoch is that leg's, else `undefined` — unmeasured, which no verdict is ever taken on. */
-function epochAccrual(m: EarMeter, leg: number): number | undefined {
-  return m.epoch?.leg === leg ? m.accruedMs : undefined;
+/** THE SEGMENT'S EVIDENCE — the ONE reader for both judgements made on it (a `final`'s transcript
+ *  gate, and the noise verdict on a segment still open): its accrual, or `undefined` when the ledger
+ *  holds no segment under `key` — unmeasured, which no verdict is ever taken on. */
+function segmentAccrual(m: EarMeter, key: string | null): number | undefined {
+  return key === null ? undefined : m.segments.get(key)?.accruedMs;
 }
 
-function closeUtterance(m: EarMeter): void {
-  m.epoch = null;
-  m.accruedMs = 0;
-  m.accruedPeak = DBFS_SILENCE;
-  m.utterance = { samples: [], duringPlayback: false };
+/** Forget every segment — the ear they were measured on is gone or condemned. */
+function clearSegments(m: EarMeter): void {
+  m.segments.clear();
+  m.open = null;
 }
 
 /**
@@ -1395,18 +1517,19 @@ function closeUtterance(m: EarMeter): void {
  * rule about what voids the ear's evidence is a rule about the SIGNAL that arrived, and a copy of it
  * inside each arm is a copy the next edge gets forgotten in.
  *
- * WHAT CLEARS WHAT, and why they are not the same set (S5 / review F2):
+ * WHAT CLEARS WHAT, and why they are not the same set (S5 / review F2 → D80 ③):
  *  · the trigger's WINDOW clears on the mouth's rising edge, because the reply's own start transient
  *    is not the owner talking and must not pre-fill a window that is about to kill the reply;
- *  · the UTTERANCE's accrual clears wherever the thing it is evidence about ends or becomes
- *    unknowable — a new speech-start (which opens the next one), the final it was collected for, a
- *    mute, a leg that died, a leg that came up, and the route cycle;
+ *  · a SEGMENT opens on an accepted speech-start that names its id, is FROZEN by its own stop, and is
+ *    consumed by its own final — each keyed by the ear's `item_id`, never by arrival order;
+ *  · the whole LEDGER clears wherever the evidence becomes unknowable — a mute, a leg that died, a leg
+ *    that came up, and the route cycle (and the teardown);
  *  · and MUTE clears both, because "the ear is closed" has to mean it.
  *
- * RETURNS the closing utterance's level evidence when the signal was a final the reducer TOOK (it
- * joined the queue or went out) — the voice learner's one input (D76 §C.3), keyed, like the epoch
+ * RETURNS the closing segment's level evidence when the signal was a final the reducer TOOK (it
+ * joined the queue or went out) — the voice learner's one input (D76 §C.3), keyed, like the segment
  * edges, on the ACCEPTED transition and never on a re-derivation of the arm's rules. `null` otherwise:
- * a final that was dropped (too quiet, muted, held, empty) teaches nothing.
+ * a final that was dropped (too quiet, muted, held, empty, echo) teaches nothing.
  */
 function meterEdge(
   m: EarMeter,
@@ -1419,38 +1542,135 @@ function meterEdge(
   switch (sig.type) {
     case "speechStart":
       // ONLY when the reducer TOOK it (code round F2): a muted/held speech-start is ignored by the
-      // machine, and an epoch opened for it would attribute the next frames to an utterance that,
+      // machine, and a segment opened for it would attribute the next frames to an utterance that,
       // as far as the call is concerned, never happened. The accepted transition is the state diff,
-      // never a re-derivation of the arm's own eligibility rules.
-      if (next.userSpeechActive && !prev.userSpeechActive) openUtterance(m, leg);
+      // never a re-derivation of the arm's own eligibility rules. A start the relay named no id for
+      // opens NOTHING (its final is then unmeasured — the fail-open case, D80 ③).
+      if (next.userSpeechActive && !prev.userSpeechActive) {
+        if (sig.itemId === undefined) m.open = null;
+        else openSegment(m, segmentKey(leg, sig.itemId));
+      }
       break;
+    case "speechStop": {
+      // Its stop FREEZES the segment (D80 ③): its evidence is complete, whatever the ear hears before
+      // its final lands — the next segment's start, or its frames, are never this one's.
+      const seg =
+        sig.itemId === undefined ? undefined : m.segments.get(segmentKey(leg, sig.itemId));
+      if (seg !== undefined && m.open === seg) m.open = null;
+      break;
+    }
     case "final": {
-      m.last = { accruedMs: m.accruedMs, peakDb: m.accruedPeak, chars: sig.text.trim().length };
+      const key = sig.itemId === undefined ? null : segmentKey(leg, sig.itemId);
+      const seg = key === null ? undefined : m.segments.get(key);
+      m.last = {
+        accruedMs: seg?.accruedMs ?? 0,
+        peakDb: seg?.accruedPeak ?? DBFS_SILENCE,
+        chars: sig.text.trim().length,
+        measured: seg !== undefined,
+      };
+      if (key !== null) m.segments.delete(key);
+      if (seg !== undefined && m.open === seg) m.open = null;
       const taken =
         next.pending.length > prev.pending.length || out.some((e) => e.type === "submit");
-      const evidence = taken ? m.utterance : null;
-      closeUtterance(m);
-      return evidence;
+      return taken && seg !== undefined ? seg.utterance : null;
     }
     case "playbackStarted":
       clearBarge(m);
       break;
     case "setMuted":
       clearBarge(m);
-      closeUtterance(m);
+      clearSegments(m);
       break;
     case "ready":
     case "socketLost":
-      closeUtterance(m);
+      clearSegments(m);
       break;
     case "routeChange":
       // Same F2 gate, other direction: a route change the reducer REFUSED (outside the stable
       // phases, or nothing moved) must not throw away evidence for an utterance that is still
       // live. An accepted cycle paints `connecting`, and that edge is the truth to key on.
-      if (next.phase !== prev.phase) closeUtterance(m);
+      if (next.phase !== prev.phase) clearSegments(m);
       break;
   }
   return null;
+}
+
+// ── THE TAIL'S RELEASE, measured (D80 ①) ─────────────────────────────────────────────────────────
+//
+// The reducer ARMS the tail when the mouth falls; the wiring decides when the reply has actually left
+// the room — on the ear's own frames (the `cueFramesLeft` precedent: frames ARE the ear's clock, so a
+// frozen page cannot release a tail it never heard), and against the NOISE floor, never the effective
+// floor: the owner's Sensitivity pin sat at −20 dBFS, inside the echo's own −11…−35 band, and "quiet"
+// read against it called the echo quiet mid-sentence (R91 §4.3 — the reconciliation of DEBUG_PLAN §J3).
+
+/** The knobs one tail release runs under — `LiveCfg`'s four, structurally (the wire type satisfies it). */
+interface TailCfg {
+  hold_tail_min_ms: number;
+  tail_quiet_ms: number;
+  tail_quiet_margin_db: number;
+  hold_tail_max_ms: number;
+}
+
+/** One running release: which arming it is for (and under which generation), how long it has run, and
+ *  the contiguous quiet it has heard since the minimum. Mutated in place per frame, like the meter. */
+interface TailRun {
+  seq: number;
+  gen: number;
+  elapsedMs: number;
+  quietMs: number;
+  /** A KILL armed this tail (the code round's O-HIGH, main-seat ruling): it ends on the DEADLINE —
+   *  `hold_tail_min_ms` — and never waits for quiet. The tap IS the interrupt gesture, so the owner
+   *  talks at once by design, and their own voice would keep a quiet rule from ever hearing quiet: the
+   *  whole answer held until their first long pause (lost), or a fragment sent at the cap. The minimum
+   *  covers a headphone/loudspeaker sink's lag; in a car the killed reply's buffered second or two
+   *  leaks into the text backstop until wave 1.5's chirp sets a measured deadline. */
+  deadline: boolean;
+}
+
+/** Why a tail ended (D80 ①): heard quiet, ran out its cap, or — kill-armed — reached its deadline. */
+type TailReason = "quiet" | "cap" | "kill";
+
+/**
+ * One frame into a running tail release; the reason it ends ON this frame, or `null`.
+ *
+ *  1. nothing before `hold_tail_min_ms` — a headphone or loudspeaker sink still lags the element by a
+ *     few hundred ms (R91 §J3 (i));
+ *  2. then CONTIGUOUS frames below `noise + tail_quiet_margin_db`: `tail_quiet_ms` of them is `quiet`
+ *     (700 ms bridges 97 % of the pauses inside a reply, R91 §4.2 — a shorter run would reopen the ear
+ *     between two of its sentences). A MUTED frame is digital silence and proves nothing about the
+ *     room, so it breaks the run; with no noise estimate yet there is nothing to be quiet against, and
+ *     only the cap can end it;
+ *  3. `hold_tail_max_ms` after the arming ends it regardless — `cap` (a cabin louder than its own
+ *     margin, or an owner who started talking into the tail; the text backstop is the belt there).
+ *
+ * A KILL-armed tail (`run.deadline`) skips 2 and 3: it ends at `hold_tail_min_ms` — `kill` — whatever
+ * the meter hears, because what it would hear is the owner answering the tap (see `TailRun.deadline`).
+ */
+function tailStep(
+  run: TailRun,
+  db: number,
+  noise: number | null,
+  muted: boolean,
+  frameMs: number,
+  cfg: TailCfg,
+): TailReason | null {
+  const from = run.elapsedMs; // where THIS frame starts, after the arming
+  run.elapsedMs += frameMs;
+  if (run.deadline) return run.elapsedMs >= cfg.hold_tail_min_ms ? "kill" : null;
+  if (from >= cfg.hold_tail_min_ms) {
+    const quiet = noise !== null && !muted && db < noise + cfg.tail_quiet_margin_db;
+    run.quietMs = quiet ? run.quietMs + frameMs : 0;
+    if (run.quietMs >= cfg.tail_quiet_ms) return "quiet";
+  }
+  return run.elapsedMs >= cfg.hold_tail_max_ms ? "cap" : null;
+}
+
+/** Why the ear-hold just moved, for the trail's `hold` line (D80 ①): what closed it (the reply — or a
+ *  tail, which only ever arms under a hold already standing), or what opened it (the tail's release,
+ *  or the policy itself letting go — a route cycle, a terminal). */
+function holdWhy(sig: CallSignal, next: CallState): "mouth" | "tail" | "policy" {
+  if (next.earHeld) return next.mouthLive ? "mouth" : "tail";
+  return sig.type === "tailOver" ? "tail" : "policy";
 }
 
 // ── THE RELATIVE GATE'S STATE (D76 §C) ───────────────────────────────────────────────────────────
@@ -1462,7 +1682,12 @@ interface GateState {
   /** The gate's knobs, taken from the acquisition that opened the current capture (§4.5 — read at
    *  call start). `null` before any acquisition: there is no floor to compute without them. */
   cfg:
-    | (GateCfg & { playback_margin_db: number; min_final_ms?: number; noise_verdict_ms?: number })
+    | (GateCfg & {
+        playback_margin_db: number;
+        min_final_ms?: number;
+        noise_verdict_ms?: number;
+        echo_window_ms: number;
+      })
     | null;
   noise: NoiseTracker;
   /** The owner's learned voice level on THIS capture's device, dBFS — seeded from `store/voiceLevels`
@@ -1480,16 +1705,21 @@ function newGateState(): GateState {
   return { cfg: null, noise: newNoiseTracker(), voiceLevel: null, voiceKey: null, pin: null };
 }
 
-/** THE effective floor right now under `cfg` (D76 §C.4 — `effectiveFloor` holds the truth table). The
+/** What the gate's floor is computed from right now (`lib/levelGate`'s `FloorInputs`). */
+function floorInputs(g: GateState, cfg: GateCfg): FloorInputs {
+  return { noise: g.noise.floor, settled: g.noise.settled, voiceLevel: g.voiceLevel, cfg };
+}
+
+/** THE effective floor right now under `cfg` (D76 §C.4 — `autoFloor` holds the truth table). The
  *  ONE place the hook asks; every consumer reads its answer. */
 function gateFloor(g: GateState, cfg: GateCfg): number {
-  return effectiveFloor({
-    noise: g.noise.floor,
-    settled: g.noise.settled,
-    voiceLevel: g.voiceLevel,
-    pin: g.pin,
-    cfg,
-  });
+  return effectiveFloor({ ...floorInputs(g, cfg), pin: g.pin });
+}
+
+/** …and the highest a pin may go right now (D80 ⑤ → the code round's O-MED-1): the same inputs, the
+ *  same module, so the Sensitivity column's top and the floor the gate applies cannot disagree. */
+function gateCeiling(g: GateState, cfg: GateCfg): number {
+  return pinCeiling(floorInputs(g, cfg));
 }
 
 /** Write the learned level back under its device (D76 §C.3) — on every release of a capture: the
@@ -1519,11 +1749,9 @@ export interface CallDebug {
    *  interrupt, whether the ear is closed right now, and whether the mouth is audible. */
   bargeArmed: boolean;
   earHeld: boolean;
+  /** …and whether that hold is the reply's TAIL (D80 ①) — the element is done, the room may not be. */
+  tail: boolean;
   mouthLive: boolean;
-  /** THE LEAK PROBE'S LAST VERDICT (D76 §B.3 — S3's evidence line): which chunk, the loudest held
-   *  frame of its window, the effective floor it was judged against (dBFS), and whether it released.
-   *  `null` until a probe has decided (and always, on a capture that does not probe). */
-  probe: { idx: number; maxDb: number; floor: number; released: boolean } | null;
   /** Which ear actually opened, and whether it is the one that was asked for. */
   deviceLabel: string;
   deviceId: string;
@@ -1543,9 +1771,13 @@ export interface CallDebug {
   voiceLevel: number | null;
   /** …and the key that level is stored under (S3b: device × granted echo mode), `null` = unnamed. */
   voiceKey: string | null;
-  /** …and what the last final was judged on (S5), its peak in dBFS. `accruedMs: 0` beside a non-zero
-   *  `chars` is the fail-open signature — a final that arrived with no epoch behind it. */
-  lastFinal: { accruedMs: number; peakDb: number; chars: number } | null;
+  /** …and what the last final was judged on (S5), its peak in dBFS. `measured: false` is the fail-open
+   *  signature — a final whose segment the ledger did not hold (D80 ③). */
+  lastFinal: { accruedMs: number; peakDb: number; chars: number; measured: boolean } | null;
+  /** THE CONNECT CHIRP's verdict on this capture (D80 ⑦): the output path's measured lag (ms, `null` =
+   *  no return), with the correlation peak and the runner-up — what the owner's car card compares with
+   *  each reply's measured tail. `null` until the matcher's window has closed (or with `chirp` off). */
+  chirp: ChirpResult | null;
 }
 
 /** What the overlay renders + the things it can do. */
@@ -1559,6 +1791,9 @@ export interface CallView {
   waitingFinal: boolean;
   /** The ear is closed (§6) — a STATIC look on the ring/accent, never a pulse. */
   muted: boolean;
+  /** THE TAIL (D80 ①): the element has finished but the reply may still be playing out of the car —
+   *  the overlay keeps showing the speaking face over `listening` while it holds. */
+  tail: boolean;
   /** Trigger B — a tap outside the control cluster during `speaking` (§4.3). Inert elsewhere. */
   interrupt: () => void;
   /** Mute/unmute the ear. The track goes silent; the frames keep flowing (see `PcmCapture.setMuted`). */
@@ -1574,10 +1809,12 @@ export interface CallView {
   /** D74 S7 — the readback block, or `null` with the knob off (which is every ordinary call). */
   debug: CallDebug | null;
   /** D76 §C.7 (S1's Sensitivity meter) — SAMPLE the ear: the current level and the effective floor,
-   *  dBFS (`null` before the first frame / before the knobs). A READER, not a field: the numbers move at
-   *  25–50 Hz and ride refs (the D74 S7 rule), so a value on this view would be as stale as the last
-   *  render. The meter polls it at its own tick. */
-  readLevel: () => { level: number | null; floor: number | null };
+   *  dBFS (`null` before the first frame / before the knobs), and — D80 ⑤ — the highest a pin may go
+   *  right now (`pinCeiling`: `max_dbfs`, lowered to the learned voice − its margin once that is known,
+   *  never below the Auto floor).
+   *  A READER, not a field: the numbers move at 25–50 Hz and ride refs (the D74 S7 rule), so a value on
+   *  this view would be as stale as the last render. The meter polls it at its own tick. */
+  readLevel: () => { level: number | null; floor: number | null; ceiling: number | null };
   /** …whether the floor is Auto (no manual pin standing). */
   floorAuto: boolean;
   /** …and the pin itself: a dBFS floor for THIS call, or `null` to hand the floor back to Auto. Writes
@@ -1639,14 +1876,22 @@ export function useLiveCall(): CallView {
    *  that ran on `performance.now()` would expire unheard across a freeze. 0 = no cue playing.
    *  Wiring-owned, like `overflowed`: it is about what this capture sends. */
   const cueFramesLeft = useRef(0);
-  /** THE LEAK PROBE'S MEASUREMENT (D76 §B.3) — the chunk it is judging, the generation it was armed
-   *  under, how many HELD frames of its `PROBE_MS` window are still to come, and the loudest of those
-   *  seen so far (dBFS). `null` = no probe listening. Wiring-owned, by the ear meter's split: the frames
-   *  arrive at 25–50 Hz and are a measurement; the reducer gets the VERDICT (`probeResult`). */
-  const probe = useRef<{ idx: number; gen: number; framesLeft: number; max: number } | null>(null);
-  /** …and the last verdict, kept for the debug block (S3's evidence line): what was heard, what it was
-   *  judged against, and which way it went. */
-  const lastProbe = useRef<CallDebug["probe"]>(null);
+  /** THE TAIL'S RELEASE, running (D80 ①) — armed by `send` on the reducer's rising `tail` edge, stepped
+   *  by the frame handler, dropped the moment the machine says the tail is over. Wiring-owned, by the
+   *  meter's split: the frames are a measurement, the reducer gets the decision (`tailOver`). */
+  const tailRun = useRef<TailRun | null>(null);
+  /** THE TEXT BACKSTOP'S WINDOW (D80 ②), on `performance.now()`: a final arriving at or before this
+   *  instant is compared with the reply's spoken words. Opened (to +∞) when the mouth falls into a tail,
+   *  closed to the tail's release + `echo_window_ms` when the tail ends (or to the fall + that window
+   *  when no tail was armed), shut when the next reply starts. −∞ = no window. A wall clock, not the
+   *  frames': what it bounds is when a TRANSCRIPT lands, and transcripts arrive on the socket. */
+  const echoUntil = useRef(-Infinity);
+  /** THE CONNECT CHIRP's matcher (D80 ⑦) — alive from the chirp's scheduling until its window closes,
+   *  fed EVERY frame of the capture that played it (held, muted or masked alike: it is looking for our
+   *  own sound). One per capture; a route cycle's recapture replaces it with its own. */
+  const chirp = useRef<ChirpMatcher | null>(null);
+  /** …and its verdict, for the debug block. */
+  const lastChirp = useRef<ChirpResult | null>(null);
   /** THE CALL TRAIL (D77) — `null` unless `voice.live.debug` is on, so every site below is a
    *  `trail.current?.push(…)` that costs nothing in the shipped default. The id is minted ONCE per
    *  instance (lazily, and only for a debug call): a reconnect, a route cycle or StrictMode's re-run
@@ -1685,6 +1930,7 @@ export function useLiveCall(): CallView {
       micHold: knobs?.mic_hold ?? "",
       bargeArmed: bargeArmed.current,
       earHeld: s.earHeld,
+      tail: s.tail,
       mouthLive: s.mouthLive,
       deviceLabel: cap?.readback.label ?? "",
       deviceId: cap?.readback.deviceId ?? "",
@@ -1698,7 +1944,7 @@ export function useLiveCall(): CallView {
       voiceLevel: g.voiceLevel,
       voiceKey: g.voiceKey,
       lastFinal: m.last,
-      probe: lastProbe.current,
+      chirp: lastChirp.current,
     };
   }, [knobs]);
 
@@ -1722,12 +1968,12 @@ export function useLiveCall(): CallView {
     persistVoice(gate.current);
     capture.current?.stop();
     capture.current = null;
+    chirp.current = null; // …and so is the chirp's, if its window was still open
+    clearSegments(meter.current); // the ledger's evidence is about an ear that is gone (D80 ③)
     dismiss(); // an ended call does not keep talking
     setCallVoice(false, false);
     setCallPrePlay(null); // the pre-play tap dies with the capture it closes over
-    setCallChunkStart(null); // …and so does the probe's clock
     setCallMouthGate(null); // …and the mouth's gate, with whatever start it was holding (nothing runs)
-    probe.current = null;
     const lock = wakeLock.current;
     wakeLock.current = null;
     void lock?.release().catch(() => {});
@@ -1756,6 +2002,34 @@ export function useLiveCall(): CallView {
       // effects run, so a re-entrant signal an effect sends lands after the one that caused it. A
       // terminal ends the trail on the same edge (the redial is a fresh instance, a fresh call).
       trail.current?.push("sig", trailSig(sig, prev, next));
+      // EVERY EDGE OF THE EAR-HOLD is a line (D80 ①): what closed it and what opened it — the car
+      // round's whole diagnosis was hold timing read off 1 Hz samples; the edges are exact.
+      if (prev.earHeld !== next.earHeld)
+        trail.current?.push("hold", { held: next.earHeld, why: holdWhy(sig, next) });
+      // THE TAIL'S RELEASE ARMS on the reducer's arming (a new `tailSeq` with the tail up), and dies the
+      // moment the machine says the tail is over — a rising mouth, a route cycle, a terminal, its own
+      // `tailOver`. One run at a time: a fresh arming replaces whatever was still counting.
+      // A tail the KILL itself armed (the step where `killing` went up is the one `killNow` took —
+      // the mouth's fall and the kill land in the same reduce) releases on its deadline, not on quiet.
+      if (next.tail && next.tailSeq !== prev.tailSeq)
+        tailRun.current = {
+          seq: next.tailSeq,
+          gen: next.gen,
+          elapsedMs: 0,
+          quietMs: 0,
+          deadline: next.killing && !prev.killing,
+        };
+      else if (!next.tail) tailRun.current = null;
+      // THE TEXT BACKSTOP'S WINDOW (D80 ②) follows the same two edges: from the mouth's LAST fall
+      // (drain, failure, kill) through the tail's release, plus `echo_window_ms` — the echo's final
+      // lands ~0.4 s after its own stop, and that stop comes `silence_ms` after the audible end (R91 §6).
+      // A reply starting closes it: only the CURRENT reply is ever compared.
+      const echoMs = gate.current.cfg?.echo_window_ms ?? 0;
+      if (!prev.mouthLive && next.mouthLive) echoUntil.current = -Infinity;
+      else if (prev.mouthLive && !next.mouthLive)
+        echoUntil.current = next.tail ? Infinity : performance.now() + echoMs;
+      else if (prev.tail && !next.tail && !next.mouthLive)
+        echoUntil.current = performance.now() + echoMs;
       if (!isTerminal(prev.phase) && isTerminal(next.phase)) endTrail();
       for (const eff of out) {
         switch (eff.type) {
@@ -1832,12 +2106,9 @@ export function useLiveCall(): CallView {
             pacer.current = null;
             overflowed.current = false;
             // The pre-play tap closes over the capture it is about to release (S3 confirm F2), so it
-            // goes with it; the fresh capture registers its own if its track needs one. The probe's
-            // clock and any probe it armed go the same way (D76 §B.4): the fresh ear re-probes from
-            // the next chunk, and a verdict about the old one is fenced out by the generation anyway.
+            // goes with it; the fresh capture registers its own if its track needs one.
             setCallPrePlay(null);
-            setCallChunkStart(null);
-            probe.current = null;
+            chirp.current = null; // the fresh ear plays — and measures — its own chirp (the route moved)
             clearTimeout(noiseTimer.current); // a verdict about a segment on the ear being released
             // The OLD ear's learned level goes back under the OLD device's key (D76 §C.3) before the
             // fresh capture seeds from whatever its own key holds.
@@ -1858,7 +2129,11 @@ export function useLiveCall(): CallView {
             const ctx = capture.current?.context;
             if (ctx && knobs) {
               playDropCue(ctx);
-              cueFramesLeft.current = Math.ceil(CUE_HOLD_MS / knobs.frame_ms);
+              // `max`: a cue inside the connect chirp's window (D80 ⑦) must not SHORTEN that window.
+              cueFramesLeft.current = Math.max(
+                cueFramesLeft.current,
+                Math.ceil(CUE_HOLD_MS / knobs.frame_ms),
+              );
             }
             break;
           }
@@ -1878,16 +2153,23 @@ export function useLiveCall(): CallView {
       const taken = meterEdge(meter.current, sig, legSeq.current, prev, next, out);
       const g = gate.current;
       // THE FINAL'S JUDGEMENT NUMBERS (D77), beside its `sig` line (which carries the energy and the
-      // knob): the utterance's peak is the meter's record, just written by `meterEdge` — its one source
-      // — and the effective floor is read NOW, before the learner below can move it.
+      // knob): the segment's peak is the meter's record, just written by `meterEdge` — its one source
+      // — and the effective floor is read NOW, before the learner below can move it. An EMPTY final (a
+      // no-speech answer, or the relay's gap cut, D80 ④) says so: it closed its segment and went
+      // nowhere — no queue, no note, no cue, no learner.
       if (sig.type === "final")
         trail.current?.push("final", {
           ...meter.current.last,
           floor: g.cfg && gateFloor(g, g.cfg),
+          ...(sig.text.trim() === "" ? { empty: true } : {}),
         });
       // THE VOICE LEARNER (D76 §C.3) — fed only a final the machine took, and guarded inside
-      // `learnVoice` (a settled noise term, a clear margin above it, no playback during it).
-      if (taken && g.cfg) g.voiceLevel = learnVoice(g.voiceLevel, taken, g.noise, g.cfg);
+      // `learnVoice` (a settled noise term, a clear margin above it, no playback during it). A final
+      // that landed inside the ECHO WINDOW teaches nothing even when taken (D80 — the design of record;
+      // the code round's O-LOW-2): the car's residue under the owner's words would walk the level up.
+      const echoWindowFinal = sig.type === "final" && sig.inEchoWindow === true;
+      if (taken && g.cfg && !echoWindowFinal)
+        g.voiceLevel = learnVoice(g.voiceLevel, taken, g.noise, g.cfg);
       // The noise verdict is about the segment that is open; with none open there is nothing to judge.
       if (!ref.current.userSpeechActive) clearTimeout(noiseTimer.current);
       // THE MOUTH'S HOLD LIFTS HERE (the owner's 2026-09-26 ruling): the one answer to "the ear may have
@@ -1898,6 +2180,24 @@ export function useLiveCall(): CallView {
     },
     [teardown, endTrail],
   );
+
+  /** THE TEXT BACKSTOP'S MEASUREMENT (D80 ②) for a final landing INSIDE the post-reply window (the
+   *  caller asks `performance.now() <= echoUntil` once and passes only those): how much it looks like
+   *  the reply the mouth just spoke — or `undefined` when it cannot be judged: under `ECHO_MIN_CHARS` (a
+   *  one-word answer is never called an echo), or with no reply to compare. The spoken words are read
+   *  ONCE, here, from the chat store's last reply through the mouth's own speech policy — the controller
+   *  drops its chunk texts at finish, and the captions already read the reply from the same store
+   *  (`lastReply`). Every judged final is an `echo` trail line, dropped or not: the car card calibrates
+   *  the threshold on the scores. */
+  const echoOf = useCallback((text: string): number | undefined => {
+    const chars = normalizeForEcho(text).length;
+    if (chars < ECHO_MIN_CHARS) return undefined;
+    const reply = lastReply();
+    if (reply === null) return undefined;
+    const sim = echoSimilarity(text, toSpeech(reply.text, getChunkPolicy()));
+    trail.current?.push("echo", { sim, chars });
+    return sim;
+  }, []);
 
   /** Open ONE socket leg against the live capture. Reconnect is a FRESH session (no resume protocol,
    *  §3.3) — a new `start` with the same measured rate. */
@@ -1939,51 +2239,61 @@ export function useLiveCall(): CallView {
             break;
           case "speech_started": {
             const was = ref.current.userSpeechActive;
-            send({ type: "speechStart", gen });
+            send({ type: "speechStart", itemId: frame.item_id, gen });
             // THE NOISE VERDICT (the owner's 2026-09-26 ruling): a segment the machine ACCEPTED is judged
             // once, `noise_verdict_ms` in, by the transcript gate's own measure — a final it would drop
-            // as "too quiet" is noise, and noise does not hold the mouth. Fenced on the LEG and the meter
-            // EPOCH it was armed under (the design round's A3): a leg death closes the epoch, and a
-            // callback surviving it must read nothing. 0 on either knob = no verdict, ever: the mouth
-            // waits for the stop.
+            // as "too quiet" is noise, and noise does not hold the mouth. Fenced on the LEG and on THIS
+            // SEGMENT (D80 ③ — was the meter's single epoch, which an overlapping earlier final closed
+            // under it): the verdict reads only the segment it was armed for, and only while that one is
+            // still the open one. 0 on either knob = no verdict, ever: the mouth waits for the stop.
             const cfg = gate.current.cfg;
             const verdictMs = cfg?.noise_verdict_ms ?? 0;
             const minFinalMs = cfg?.min_final_ms ?? 0;
-            const epoch = meter.current.epoch;
+            const key = frame.item_id === undefined ? null : segmentKey(leg, frame.item_id);
+            const seg = key === null ? undefined : meter.current.segments.get(key);
             if (
               !was &&
               ref.current.userSpeechActive &&
               verdictMs > 0 &&
               minFinalMs > 0 &&
-              epoch?.leg === leg
+              seg !== undefined &&
+              meter.current.open === seg
             ) {
-              const seq = epoch.seq;
               clearTimeout(noiseTimer.current);
               noiseTimer.current = setTimeout(() => {
                 const m = meter.current;
-                if (!mine() || m.epoch?.seq !== seq || !ref.current.userSpeechActive) return;
-                if (tooQuiet({ energyMs: epochAccrual(m, leg), minFinalMs }))
+                if (!mine() || m.open !== seg || !ref.current.userSpeechActive) return;
+                if (tooQuiet({ energyMs: seg.accruedMs, minFinalMs }))
                   send({ type: "segmentNoise", gen });
               }, verdictMs);
             }
             break;
           }
           case "speech_stopped":
-            send({ type: "speechStop", gen });
+            send({ type: "speechStop", itemId: frame.item_id, gen });
             break;
-          case "transcript":
-            // THE TRANSCRIPT GATE's evidence (D74 S5), offered only when the accrual belongs to THIS
-            // leg's open utterance. Anything else carries none, and the reducer passes it: a final
-            // nobody measured is unmeasured, not quiet.
-            if (frame.final)
-              send({
-                type: "final",
-                text: frame.text,
-                energyMs: epochAccrual(meter.current, leg),
-                minFinalMs: knobs.min_final_ms,
-                gen,
-              });
+          case "transcript": {
+            // THE TRANSCRIPT GATE's evidence (D74 S5), offered only for THIS final's own segment
+            // (D80 ③, by its `item_id` on this leg). Anything else carries none, and the reducer passes
+            // it: a final nobody measured is unmeasured, not quiet.
+            if (!frame.final) break;
+            const key = frame.item_id === undefined ? null : segmentKey(leg, frame.item_id);
+            // THE ECHO WINDOW (D80 ②), asked ONCE: it decides both whether the backstop judges this
+            // final and whether the voice learner may learn from it (the design of record: "the learner
+            // ignores echo-window finals" — the code round's O-LOW-2).
+            const inWindow = performance.now() <= echoUntil.current;
+            send({
+              type: "final",
+              text: frame.text,
+              itemId: frame.item_id,
+              energyMs: segmentAccrual(meter.current, key),
+              minFinalMs: knobs.min_final_ms,
+              ...(inWindow ? { echo: echoOf(frame.text), inEchoWindow: true } : {}),
+              echoMin: knobs.echo_similarity,
+              gen,
+            });
             break;
+          }
           case "error":
             send({ type: "serverError", code: frame.code, message: frame.message, gen });
             break;
@@ -1996,7 +2306,7 @@ export function useLiveCall(): CallView {
         if (mine()) send({ type: "socketLost", gen });
       },
     });
-  }, [knobs, send]);
+  }, [knobs, send, echoOf]);
 
   openLegRef.current = openLeg;
 
@@ -2123,8 +2433,31 @@ export function useLiveCall(): CallView {
               // frames keep arriving whatever the classification, so there is no stranded tail here and no
               // flush-on-mute question: the queue is pumped by a callback that never stops while the
               // capture is alive.
+              // THE CONNECT CHIRP's matcher sees EVERY frame first (D80 ⑦) — its own sound is exactly
+              // what it listens for, so no mask applies to it. Its verdict lands once, on the frame that
+              // closes its window; nothing reads it for POLICY in this wave.
+              const cm = chirp.current;
+              if (cm !== null) {
+                const verdict = cm.feed(frame.buf, frame.t);
+                if (verdict !== undefined) {
+                  chirp.current = null;
+                  lastChirp.current = verdict;
+                  const { lagMs, peak, second } = verdict;
+                  trail.current?.push(
+                    "chirp",
+                    lagMs === null ? { none: true, peak, second } : { lagMs, peak, second },
+                  );
+                  // THE WAVE 1.5 SEAM (D80 ⑦): once one car round shows this lag ≈ each reply's
+                  // measured tail (within ±100 ms), it SETS the tail hold — release = playback end +
+                  // `verdict.lagMs` + 300 ms, the minimum and the cap collapsing onto it — the
+                  // self-calibration that makes one number right on every route. Monotone-safe (R93 §V):
+                  // it may only LENGTHEN the hold, and no return (`lagMs: null`) keeps the quiet rule.
+                  // Deliberately NOT wired now: the lag is logged, and compared, first.
+                }
+              }
               // …and the drop cue's own window rides up as silence too (the S0b code round, MED 2): the
-              // tone plays on this device's output, and on a media route the microphone hears it.
+              // tone plays on this device's output, and on a media route the microphone hears it. The
+              // connect chirp's window rides the same mask (D80 ⑦ — one mechanism for our own sounds).
               const inCue = cueFramesLeft.current > 0;
               if (inCue) cueFramesLeft.current -= 1;
               const uplinked = frame.uplinked && !inCue;
@@ -2149,42 +2482,34 @@ export function useLiveCall(): CallView {
               // dBFS AT THE CHOKEPOINT (D76 §C.1): the ONE conversion, on every frame, before anything
               // below compares a level against anything.
               const db = rmsToDbfs(frame.rms);
-              // THE PARTITION (D76 §B.2). The noise tracker takes UPLINKED frames only; a HELD frame is
-              // the leak probe's alone (D76 §B.3, below), and nothing else here reads one. And it PAUSES
-              // while the mouth is live (R83 §8, the S0b code round MED 1): on the call route the ear
-              // stays open under the reply and the canceller's residue is not the room — a long reply
-              // would ratchet the minimum up, half a window at a time, into the next quiet turn.
+              // THE PARTITION (D76 §B.2). The noise tracker takes UPLINKED frames only — a HELD frame is
+              // the reply leaking back in, not the room. And it PAUSES while the mouth is live (R83 §8,
+              // the S0b code round MED 1): on the call route the ear stays open under the reply and the
+              // canceller's residue is not the room — a long reply would ratchet the minimum up, half a
+              // window at a time, into the next quiet turn.
               if (uplinked && !ref.current.mouthLive) trackNoise(g.noise, db, knobs.frame_ms);
               // THE effective floor for this frame — the one normalize (`gateFloor`); every reader below
               // takes this number.
               const floor = gateFloor(g, knobs);
-              // THE LEAK PROBE (D76 §B.3) — the other side of the partition. It listens ONLY to frames
-              // held BECAUSE OF THE HOLD: the capture did not uplink this frame (`!frame.uplinked`),
-              // the machine says the ear is held right now, and the owner has not muted it — a muted
-              // frame is digital silence and proves nothing. A drop-cue frame is not a probe frame
-              // either: that is our own tone on this device's output, not the reply. Neither kind
-              // counts toward the window; they just pass it by.
-              const pr = probe.current;
-              if (pr !== null) {
-                // The reply stopped (drained, killed, failed) or the ear was replaced before the window
-                // filled: nothing left to decide about this chunk.
-                if (pr.gen !== ref.current.gen || !ref.current.mouthLive) probe.current = null;
-                else if (!frame.uplinked && !inCue && ref.current.earHeld && !ref.current.muted) {
-                  pr.max = Math.max(pr.max, db);
-                  pr.framesLeft -= 1;
-                  if (pr.framesLeft <= 0) {
-                    probe.current = null;
-                    // LEAK ⇔ the loudest held frame reached THE effective floor (§B.3's one-floor rule
-                    // — the gate's own number, never a second threshold). And before the room has a
-                    // noise estimate at all there is nothing to be quieter than (§B.4): held.
-                    const leak = g.noise.floor === null || pr.max >= floor;
-                    lastProbe.current = { idx: pr.idx, maxDb: pr.max, floor, released: !leak };
-                    trail.current?.push("probe", lastProbe.current);
-                    send({ type: "probeResult", idx: pr.idx, leak, gen: pr.gen });
-                    // The verdict reaches the capture before the NEXT frame is classified — the
-                    // playback subscription's same-task rule, applied to the release.
-                    capture.current?.setHeld(ref.current.earHeld);
-                  }
+              // THE TAIL'S RELEASE (D80 ①) — every frame while a tail holds, held or not (a held frame
+              // still carries its REAL level, D76 §B.1: that is what the release listens to), against
+              // the NOISE estimate (`tailStep`). The verdict reaches the capture before the NEXT frame
+              // is classified, the playback subscription's same-task rule.
+              const tr = tailRun.current;
+              if (tr !== null) {
+                const reason = tailStep(
+                  tr,
+                  db,
+                  g.noise.floor,
+                  ref.current.muted,
+                  knobs.frame_ms,
+                  knobs,
+                );
+                if (reason !== null) {
+                  tailRun.current = null;
+                  trail.current?.push("tail", { seq: tr.seq, reason, ms: tr.elapsedMs });
+                  send({ type: "tailOver", seq: tr.seq, reason, gen: tr.gen });
+                  capture.current?.setHeld(ref.current.earHeld);
                 }
               }
               // THE EAR METER, FED ONCE (D74 S4 ⑥): trigger A below, the transcript gate's accrual (S5),
@@ -2271,9 +2596,9 @@ export function useLiveCall(): CallView {
           // never contradicts these two flags.
           //
           // `on`/`off` are the owner's override of the HOLD half only; the two decisions stay separate
-          // flags (`barge_in` may be off on a perfectly open ear — walkie-talkie by choice). And under
-          // `auto` a leaking readback is only the QUESTION: the leak probe answers it per chunk (D76
-          // §B.3), so a phone on a car's Bluetooth or a pair of headphones is not held for nothing.
+          // flags (`barge_in` may be off on a perfectly open ear — walkie-talkie by choice). Under
+          // `auto` a readback that is not `"all"` HOLDS (the D73 rule, D80 ⑤): nothing a page can
+          // measure in time tells a car that leaks seconds late from headphones that do not leak.
           const ecAll = cap.readback.echoCancellation === "all";
           bargeArmed.current = knobs.barge_in && ecAll;
           const hold = knobs.mic_hold;
@@ -2317,6 +2642,11 @@ export function useLiveCall(): CallView {
               ec: cap.readback.echoCancellation,
               ecCaps: cap.readback.echoCapabilities,
               fellBack: cap.fellBack,
+              // D80's W6 (R91 §1, §6 ③) — what the platform REPORTS about this context's output path, for
+              // COMPARISON ONLY: Android's Bluetooth drivers discard delay reports ≥ 1 s, so on the car
+              // these read ~0.28 s against a measured ~2.3 s. Never a policy input — nothing reads them.
+              outputLatency: cap.context.outputLatency,
+              baseLatency: cap.context.baseLatency,
               voiceKey: g.voiceKey,
               voiceLevel: g.voiceLevel,
               cfg: {
@@ -2346,30 +2676,22 @@ export function useLiveCall(): CallView {
           // asks the element to play — observation, however synchronous, races the audio thread. The tap
           // is a bare "close now": stable until the play event's own reduce confirms it (nothing can
           // transition `earHeld` in that gap), and a rejected play's status edge is what reopens it.
-          // Under `auto` that is EVERY chunk's play, not just the reply's first: the last chunk's
-          // release must not carry into the next one's first samples, and it is the next chunk's
-          // `chunkStarted` (on `playing`) that confirms the hold in the machine. A play request also
-          // ENDS whatever probe was still listening: the chunk it was judging is over, and the frames
-          // from here on belong to the next one.
-          if (mayHold(ref.current))
-            setCallPrePlay(() => {
-              probe.current = null;
-              cap.setHeld(true);
-            });
-          // THE PROBE'S CLOCK (D76 §B.3): only a capture that probes registers it — `on` holds
-          // regardless, `off` and a subtractive canceller never hold, so there is nothing to decide.
-          if (probes(ref.current)) {
-            const probeFrames = Math.ceil(PROBE_MS / knobs.frame_ms);
-            setCallChunkStart((idx) => {
-              const gen = ref.current.gen;
-              send({ type: "chunkStarted", idx, gen });
-              // Armed only on an ear the machine actually holds (a kill in flight has released it):
-              // the probe measures what a HELD ear hears, and it never inherits an older chunk's.
-              probe.current = ref.current.earHeld
-                ? { idx, gen, framesLeft: probeFrames, max: -Infinity }
-                : null;
-              cap.setHeld(ref.current.earHeld); // same task as the audible start (see the tap above)
-            });
+          if (mayHold(ref.current)) setCallPrePlay(() => cap.setHeld(true));
+          // THE CONNECT CHIRP (D80 ⑦, R93 §V): once per CAPTURE — the call's start and every route cycle,
+          // because the sink can change with the route — scheduled on this capture's own context before
+          // the leg opens (so the ear is listening, and the owner has not yet been told it is), whatever
+          // `mic_hold` says: it is the call's "connected" sound. Its own window rides the drop cue's mask,
+          // and its matcher hears everything. `chirp: false` plays nothing, measures nothing, trails
+          // nothing (the whole-feature toggle).
+          if (knobs.chirp) {
+            const when = cap.context.currentTime + CHIRP_LEAD_MS / 1000;
+            if (playChirp(cap.context, when)) {
+              chirp.current = new ChirpMatcher(cap.sampleRate, when);
+              cueFramesLeft.current = Math.max(
+                cueFramesLeft.current,
+                Math.ceil(CHIRP_HOLD_MS / knobs.frame_ms),
+              );
+            }
           }
           openLeg();
         })
@@ -2467,10 +2789,6 @@ export function useLiveCall(): CallView {
       const was = prevPlay.current;
       if (was === status) return; // the store emits for time/intent too — only the status edge matters
       prevPlay.current = status;
-      // Every status edge is the mouth starting, pausing, gapping or stopping — whatever leak probe was
-      // still listening was about the chunk BEFORE it (D76 §B.3), and it ends here, deterministically,
-      // rather than at whichever frame next notices. A starting chunk re-arms on its own `playing`.
-      probe.current = null;
       const gen = ref.current.gen;
       if (status === "playing") send({ type: "playbackStarted", gen });
       // Synthesis that never produced a sample is the mouth FAILING; audio that played and stopped is
@@ -2645,9 +2963,17 @@ export function useLiveCall(): CallView {
   // ── the Sensitivity seam (D76 §C.7 — S1 renders it) ──────────────────────────────────────────────
   // A SAMPLER over the same refs the debug block reads, never a per-frame state write (the D74 S7
   // rule): the meter that consumes it polls at its own tick.
-  const readLevel = useCallback((): { level: number | null; floor: number | null } => {
+  const readLevel = useCallback((): {
+    level: number | null;
+    floor: number | null;
+    ceiling: number | null;
+  } => {
     const g = gate.current;
-    return { level: meter.current.db, floor: g.cfg && gateFloor(g, g.cfg) };
+    return {
+      level: meter.current.db,
+      floor: g.cfg && gateFloor(g, g.cfg),
+      ceiling: g.cfg && gateCeiling(g, g.cfg),
+    };
   }, []);
   /** The manual floor for THIS call (D76 §C.7): the frame path reads the ref from its next frame, and
    *  only the Auto bit reaches React. Writes nothing — the pin dies with the call. */
@@ -2663,6 +2989,7 @@ export function useLiveCall(): CallView {
     userSpeechActive: state.userSpeechActive,
     waitingFinal: state.waitingFinal,
     muted: state.muted,
+    tail: state.tail,
     interrupt,
     toggleMute,
     route: state.route,

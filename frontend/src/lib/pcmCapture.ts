@@ -26,7 +26,7 @@ import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "./pcmWorklet";
 // (never UA-sniffed) and handed up; the machine arms the automatic interrupt only on `"all"` — and
 // everywhere else it arms the EAR-HOLD instead (`setHeld`, S3), which is the same readback read for its
 // other consequence: an ear that cannot be left open under the reply is held while the reply speaks
-// (under `mic_hold: auto` per CHUNK — the leak probe releases a chunk that does not leak, D76 §B.3).
+// and through its tail (`mic_hold`, the D73 rule — D80 ①/⑤).
 // Since D76 §B.1 a hold is a CLASSIFICATION, not a closed track: every frame still arrives with its real
 // level and a `uplinked` bit, and the call machine substitutes silence on the way up (see `setHeld`).
 
@@ -295,11 +295,13 @@ const KEEPALIVE_GAIN = 1e-4;
 
 /** What the worklet posts up: pcm16 LE mono bytes, plus the RMS of the same samples (§4.3's energy gate
  *  reuses the worklet's own pass — there is deliberately no second AnalyserNode measuring the same
- *  audio). This is the whole contract of `attachPcmUplink`, i.e. dictation's frames, which are never
- *  held and never muted by this module. */
+ *  audio), plus `t`, the AudioContext time of the frame's first sample (D80 ⑦ — the connect chirp's
+ *  clock: the same one `AudioContext.currentTime` schedules on). This is the whole contract of
+ *  `attachPcmUplink`, i.e. dictation's frames, which are never held and never muted by this module. */
 export interface WorkletFrame {
   buf: ArrayBuffer;
   rms: number;
+  t: number;
 }
 
 /** One CALL capture frame (D76 §B.1): the worklet's frame, CLASSIFIED at the capture callback.
@@ -307,7 +309,7 @@ export interface WorkletFrame {
  *  is not uplinked still carries its REAL `rms` (a held track is live; only a muted one is silence), so
  *  what the microphone hears stays measurable while the uplink carries silence. The consumers upstairs
  *  are partitioned on this bit (§B.2): the noise tracker, the voice learner and the gate's accrual take
- *  only uplinked frames; the leak probe (S2) only held ones. */
+ *  only uplinked frames; the tail hold's release (D80 ①) listens to the held ones' real level. */
 export interface PcmFrame extends WorkletFrame {
   uplinked: boolean;
 }
@@ -379,7 +381,7 @@ export interface PcmCapture {
    *  the owner's privacy switch and the OS mic indicator. The call machine sends a held frame up as a
    *  zeroed buffer of the same length, so the SERVER still receives exactly the digital silence it used
    *  to (its endpointing and silence timers are untouched), while the CLIENT keeps hearing — which is
-   *  what the leak probe (D76 §B.3) measures. `uplinked = !(muted || held)`: the two still share one
+   *  what the tail hold's release measures (D80 ①). `uplinked = !(muted || held)`: the two still share one
    *  effective rule for what goes up, so a hold released while the owner is muted sends nothing, and an
    *  unmute under a live hold sends nothing either. */
   setHeld: (held: boolean) => void;
@@ -546,7 +548,7 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
   // mute and the call machine's echo hold — so each setter stores its own answer, and the frame callback
   // classifies every frame against BOTH (`uplinked = !(muted || held)`). Only `muted` reaches the track
   // (`applyEnabled`): mute is privacy and must silence the samples at the source; the hold is not, and a
-  // held track has to keep hearing for the leak probe.
+  // held track has to keep hearing for the tail hold's release (D80 ①).
   let muted = false;
   let held = false;
   // THE EAR'S LIVENESS + THE KEEPALIVE (D73 S6 ②/③) — both are facts about the graph this function
@@ -618,7 +620,7 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
         if (!deaf) lastHeard = performance.now();
         // THE CLASSIFICATION (D76 §B.1), taken HERE because this is where both answers live: the frame
         // is delivered either way with its real level, and the caller substitutes silence upstairs.
-        opts.onFrame({ buf: frame.buf, rms: frame.rms, uplinked: !(muted || held) });
+        opts.onFrame({ buf: frame.buf, rms: frame.rms, t: frame.t, uplinked: !(muted || held) });
       },
     });
     track.addEventListener("ended", () => {

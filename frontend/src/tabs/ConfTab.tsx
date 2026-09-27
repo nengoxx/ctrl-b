@@ -865,6 +865,13 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   playback_margin_db: 10,
   min_dbfs: -60,
   max_dbfs: -20,
+  hold_tail_min_ms: 300,
+  tail_quiet_ms: 700,
+  tail_quiet_margin_db: 10,
+  hold_tail_max_ms: 5000,
+  echo_similarity: 0.75,
+  echo_window_ms: 4000,
+  chirp: true,
   route: "media",
   input_device: "",
   background: true,
@@ -1906,6 +1913,17 @@ export function ConfTab({ active }: Props) {
           playback_margin_db: numOrNull(draft.voice.live.playback_margin_db),
           min_dbfs: numOrNull(draft.voice.live.min_dbfs),
           max_dbfs: numOrNull(draft.voice.live.max_dbfs),
+          // D80 ①'s tail four take `numOrNull` for the gate six's reason: 0 is MEANINGFUL for the
+          // minimum and the margin (no minimum; quiet = under the noise floor itself), and the other two
+          // are floored above 0 server-side — a blank must earn the visible 422, never a silent 0.
+          hold_tail_min_ms: numOrNull(draft.voice.live.hold_tail_min_ms),
+          tail_quiet_ms: numOrNull(draft.voice.live.tail_quiet_ms),
+          tail_quiet_margin_db: numOrNull(draft.voice.live.tail_quiet_margin_db),
+          hold_tail_max_ms: numOrNull(draft.voice.live.hold_tail_max_ms),
+          // D80 ②'s pair: the window's 0 MEANS something (compare only while the tail holds), and the
+          // similarity is floored at 0.5 — both earn the visible 422 for a blank, never a silent 0.
+          echo_similarity: numOrNull(draft.voice.live.echo_similarity),
+          echo_window_ms: numOrNull(draft.voice.live.echo_window_ms),
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
@@ -2926,7 +2944,7 @@ export function ConfTab({ active }: Props) {
           {/* D76 §B — CONFIG ONLY (never on the call deck): the ear-hold while the reply plays. */}
           <SettingRow
             label="Mic off while it speaks"
-            desc="auto decides per reply (D76) · on = always, whatever the output · off = never (a loudspeaker may transcribe its own reply)"
+            desc="auto = held unless the browser's echo cancellation is on · on = always held · off = never held — the reply may be transcribed"
           >
             <Seg<string>
               label="Mic off while it speaks"
@@ -2937,6 +2955,19 @@ export function ConfTab({ active }: Props) {
                 { val: "off", label: "off" },
               ]}
               onPick={(v) => setLive("mic_hold", v)}
+            />
+          </SettingRow>
+          {/* D80 ⑦ (evidence docs/research/R93 §V) — the call's "connected" sound doubles as a
+              measurement: the mic listens for its return, which says how late this output plays (a car
+              over Bluetooth: seconds). Logged for now; a later wave lets it time the mic hold. */}
+          <SettingRow
+            label="Connect chirp"
+            desc="a short rising tone when the call connects — the call listens for it to measure how late your speaker plays (the debug readout shows it)"
+          >
+            <Switch
+              on={!!vlive?.chirp}
+              label="Live call connect chirp"
+              onToggle={() => setLive("chirp", !vlive?.chirp)}
             />
           </SettingRow>
           {/* D76 §A (evidence docs/research/R74, R80) — the axis is MEDIA vs CALL: on the phone,
@@ -3069,6 +3100,49 @@ export function ConfTab({ active }: Props) {
             desc="…and never above this (−90–0) — the least sensitive"
             value={String(vlive?.max_dbfs ?? "")}
             onChange={(v) => setLive("max_dbfs", v as unknown as number)}
+          />
+          {/* D80 ① (evidence docs/research/R91) — the TAIL HOLD. A car plays the reply seconds after
+              the phone finishes it, and nothing a web page can read says how long; so while "Mic off
+              while it speaks" holds, the mic STAYS off after the reply until it hears the room go quiet.
+              These four are that listening: the minimum, the quiet run, what counts as quiet, the cap. */}
+          <Field
+            label="Tail hold minimum (ms)"
+            desc="after the reply ends, the mic stays off at least this long (0–5000) — covers headphones' and speakers' own delay"
+            value={String(vlive?.hold_tail_min_ms ?? "")}
+            onChange={(v) => setLive("hold_tail_min_ms", v as unknown as number)}
+          />
+          <Field
+            label="Tail quiet (ms)"
+            desc="…then it reopens once the room has been quiet this long, unbroken (100–5000) — long enough to span the pauses inside a reply"
+            value={String(vlive?.tail_quiet_ms ?? "")}
+            onChange={(v) => setLive("tail_quiet_ms", v as unknown as number)}
+          />
+          <Field
+            label="Tail quiet margin (dB)"
+            desc="quiet = less than this above the room's own noise (0–40)"
+            value={String(vlive?.tail_quiet_margin_db ?? "")}
+            onChange={(v) => setLive("tail_quiet_margin_db", v as unknown as number)}
+          />
+          <Field
+            label="Tail hold cap (ms)"
+            desc="…and it reopens at this at the latest, quiet or not (500–15000); minimum + quiet must fit under it"
+            value={String(vlive?.hold_tail_max_ms ?? "")}
+            onChange={(v) => setLive("hold_tail_max_ms", v as unknown as number)}
+          />
+          {/* D80 ② (evidence docs/research/R91 §3) — the TEXT BACKSTOP behind the tail hold: a
+              transcript right after the reply that repeats the reply's own words is the reply heard
+              back, not you — it is dropped, and the call screen says so. */}
+          <Field
+            label="Echo match"
+            desc="how closely a transcript right after the reply must repeat the reply's own words to be dropped as its echo (0.5–1.0) — lower catches more, but may drop you repeating it"
+            value={String(vlive?.echo_similarity ?? "")}
+            onChange={(v) => setLive("echo_similarity", v as unknown as number)}
+          />
+          <Field
+            label="Echo window (ms)"
+            desc="how long after the mic reopens a transcript is still checked against the reply (0–15000); 0 = only while the mic is held"
+            value={String(vlive?.echo_window_ms ?? "")}
+            onChange={(v) => setLive("echo_window_ms", v as unknown as number)}
           />
           <SettingRow
             label="Call debug readout"

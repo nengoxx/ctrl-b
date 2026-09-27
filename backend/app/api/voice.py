@@ -144,7 +144,7 @@ async def voice_status(request: Request) -> dict[str, object]:
         # `ring` beside it: the words it draws are already in the browser's own chat store, so this
         # end is only ever asked whether to draw them.
         "captions": live.captions,
-        # D76 §B — the mic hold while the reply plays (`auto` = the leak probe, D76 S2).
+        # D76 §B → D80 ⑤ — the mic hold while the reply plays (`auto` = the D73 rule).
         "mic_hold": live.mic_hold,
         # D76 §C (evidence R83) — the relative gate: the bootstrap ceiling, the three margins, the two
         # clamp bounds. Client knobs for the reason `min_final_ms` is: the level they gate on is
@@ -155,6 +155,20 @@ async def voice_status(request: Request) -> dict[str, object]:
         "playback_margin_db": live.playback_margin_db,
         "min_dbfs": live.min_dbfs,
         "max_dbfs": live.max_dbfs,
+        # D80 ① (evidence R91) — the TAIL HOLD's four: the ear stays held after the mouth falls until
+        # the browser's own meter hears the room go quiet. Client knobs for the gate six's reason: the
+        # level they judge is measured in the browser.
+        "hold_tail_min_ms": live.hold_tail_min_ms,
+        "tail_quiet_ms": live.tail_quiet_ms,
+        "tail_quiet_margin_db": live.tail_quiet_margin_db,
+        "hold_tail_max_ms": live.hold_tail_max_ms,
+        # D80 ② (evidence R91 §3) — the TEXT BACKSTOP's pair: a post-reply final matching the reply's
+        # spoken words is dropped. Client knobs: the reply's words and the matcher live in the browser.
+        "echo_similarity": live.echo_similarity,
+        "echo_window_ms": live.echo_window_ms,
+        # D80 ⑦ (evidence R93 §V) — the CONNECT CHIRP's toggle: the browser plays the sweep and finds it
+        # in its own mic; nothing below it hears either.
+        "chirp": live.chirp,
         # D73 S5 — the capture pair. It reaches the browser for the same reason its neighbours do: the
         # constraints and the device are `getUserMedia` arguments, and every capture this app opens
         # (call and dictation alike) reads them from here rather than defaulting them locally.

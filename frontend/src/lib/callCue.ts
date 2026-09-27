@@ -21,10 +21,13 @@ export const CUE_GAIN = 0.15;
 /** Its length, ms — a blip, over before the owner could start their retry. Owner: the cue's own voice
  *  (fixed). */
 export const CUE_MS = 120;
-/** How long the EAR treats frames as not-uplinked around the cue: the tone plus the output path's own
- *  latency (Bluetooth A2DP ~100–250 ms is the long end — R83). A platform/latency safety constant, the
- *  `PROBE_MS` kind; the owner never tunes it. */
-export const CUE_HOLD_MS = CUE_MS + 250;
+/** The output path's own latency the ear allows for after one of our sounds (Bluetooth A2DP
+ *  ~100–250 ms is the long end — R83). A platform/latency safety constant; the owner never tunes it.
+ *  (A car's head unit is seconds, not this — D80's car round measured 2.3 s; what that sets off is the
+ *  relay's gap cut's to dispose of, D80 ④, and the chirp is what measures it, D80 ⑦.) */
+export const CUE_LATENCY_MS = 250;
+/** How long the EAR treats frames as not-uplinked around the cue: the tone plus that latency. */
+export const CUE_HOLD_MS = CUE_MS + CUE_LATENCY_MS;
 /** The attack/release ramp, ms: a sine switched on or off at full gain clicks audibly. A property of
  *  the signal, not a preference. */
 export const CUE_RAMP_MS = 10;
