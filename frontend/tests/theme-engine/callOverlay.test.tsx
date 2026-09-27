@@ -976,6 +976,7 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     voiceKey: "ear-1234567890|ec=on",
     lastFinal: { accruedMs: 320, peakDb: -13.6, chars: 14, measured: true },
     chirp: null,
+    lastTail: null,
   };
 
   it("renders NOTHING extra with the knob off", () => {
@@ -1019,6 +1020,33 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     render(<Host open={true} />);
     expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
       "chirp none   peak 0.09",
+    );
+  });
+
+  it("prints the last TAIL's rule and deadline, then how it ended (D80 ⑦ as-built)", () => {
+    h.call = { ...h.call, debug: snapshot };
+    const { unmount } = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain("\ntail  —\n");
+    unmount();
+    h.call = {
+      ...h.call,
+      debug: { ...snapshot, lastTail: { rule: "lag", deadlineMs: 2600 } },
+    };
+    const running = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
+      "tail  lag 2600ms   holding",
+    );
+    running.unmount();
+    h.call = {
+      ...h.call,
+      debug: {
+        ...snapshot,
+        lastTail: { rule: "quiet", deadlineMs: null, reason: "cap", ms: 5000 },
+      },
+    };
+    render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
+      "tail  quiet   → cap @5000ms",
     );
   });
 

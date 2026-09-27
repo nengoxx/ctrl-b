@@ -679,8 +679,8 @@ class LiveCfg(VoiceServiceCfg):
       retention.
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`,
       `barge_in`, `ring`, `captions`, `mic_hold`, the D76 GATE six (`floor_dbfs`, the three
-      margins, `min_dbfs`/`max_dbfs`), the D80 TAIL four (`hold_tail_min_ms`, `tail_quiet_ms`,
-      `tail_quiet_margin_db`, `hold_tail_max_ms`), the D80 BACKSTOP pair (`echo_similarity`,
+      margins, `min_dbfs`/`max_dbfs`), the D80 TAIL five (`hold_tail_min_ms`, `tail_quiet_ms`,
+      `tail_quiet_margin_db`, `hold_tail_max_ms`, `tail_lag_margin_ms`), the D80 BACKSTOP pair (`echo_similarity`,
       `echo_window_ms`), the D80 `chirp`, the D73 CAPTURE pair (`route`, `input_device`), the D73 S6
       BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`), the D74 pair
       (`min_final_ms`, `debug`), the 2026-09-26 `noise_verdict_ms` and the four S2.5 DICTATION knobs
@@ -826,6 +826,13 @@ class LiveCfg(VoiceServiceCfg):
     #: The cap, ms after the mouth fell: released regardless (R91 §4.3 — the worst measured audible end
     #: 3.46 s + the 0.7 s quiet + ~0.8 s headroom). Past it the text backstop below is the belt. 500–15000.
     hold_tail_max_ms: int = Field(default=5000, ge=500, le=15000)
+    #: D80 ⑦ as-built (wave 1.5, evidence R93 §V): when the connect CHIRP measured this sink's lag, the
+    #: tail ends at `lag + this` after the mouth fell — a DEADLINE, whatever the meter hears — instead of
+    #: on quiet (which an owner answering at once never gives it). The margin covers lag jitter + the
+    #: ear's own 135–271 ms reporting delay (D80 ⑦: "playback end + lag + 300 ms"). Floored at
+    #: `hold_tail_min_ms`, bounded by `hold_tail_max_ms` (a deadline past the cap ends at the cap — so
+    #: the margin need not fit under it, and no validator pairs them). 0–2000.
+    tail_lag_margin_ms: int = Field(default=300, ge=0, le=2000)
 
     # ── D80 ② · THE TEXT BACKSTOP (client; evidence R91 §3) ──
     # The tail hold measures LEVEL; what escapes it (a pause ≥ `tail_quiet_ms` inside the not-yet-heard
@@ -843,8 +850,8 @@ class LiveCfg(VoiceServiceCfg):
     #: D80 ⑦ — THE CONNECT CHIRP (client; evidence R93 §V): a 150 ms 1→3 kHz sweep played once per
     #: capture (call start, every route cycle) as the call's "connected" sound, which the browser finds
     #: again in the mic to MEASURE how late this output path plays — the number the web cannot read.
-    #: This wave LOGS the lag (trail + debug readout) and nothing reads it for policy; wave 1.5 lets it
-    #: set the tail hold once a car round confirms it. The whole-feature toggle (the standing
+    #: The measured lag SETS the tail hold (D80 ⑦ as-built, wave 1.5: `lag + tail_lag_margin_ms`) and is
+    #: trailed + shown in the debug readout; no return keeps the fallbacks. The whole-feature toggle (the standing
     #: pluggability requirement): off = no sound, no measurement, no trail line. The owner: "it's only
     #: once, no problem at all".
     chirp: bool = True

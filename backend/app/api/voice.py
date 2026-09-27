@@ -162,6 +162,9 @@ async def voice_status(request: Request) -> dict[str, object]:
         "tail_quiet_ms": live.tail_quiet_ms,
         "tail_quiet_margin_db": live.tail_quiet_margin_db,
         "hold_tail_max_ms": live.hold_tail_max_ms,
+        # …and D80 ⑦ as-built (wave 1.5): the margin over the chirp's MEASURED lag that times the tail
+        # when there is one — a client knob for the same reason: the lag is measured in the browser.
+        "tail_lag_margin_ms": live.tail_lag_margin_ms,
         # D80 ② (evidence R91 §3) — the TEXT BACKSTOP's pair: a post-reply final matching the reply's
         # spoken words is dropped. Client knobs: the reply's words and the matcher live in the browser.
         "echo_similarity": live.echo_similarity,

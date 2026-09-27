@@ -51,6 +51,7 @@ const LIVE_CALL = {
   tail_quiet_ms: 700,
   tail_quiet_margin_db: 10,
   hold_tail_max_ms: 5000,
+  tail_lag_margin_ms: 300,
   echo_similarity: 0.75,
   echo_window_ms: 4000,
   chirp: true,

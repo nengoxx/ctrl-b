@@ -12,9 +12,10 @@ import { CUE_GAIN, CUE_LATENCY_MS, CUE_RAMP_MS } from "./callCue";
 // harmonics; it does not share a sweep's) — with sub-millisecond lag error, and it doubles as the
 // call's "connected" sound (the owner: "it's only once, no problem at all").
 //
-// THIS WAVE PLAYS AND LOGS IT, NOTHING MORE (D80 ⑦): the lag goes to the trail and the debug readout;
-// nothing reads it for policy. Wave 1.5 — after one car round shows the chirp's lag agrees with each
-// reply's measured tail — lets it SET the tail hold (see the seam in `useLiveCall`).
+// WHAT READS IT (D80 ⑦ as-built, wave 1.5): the lag SETS the tail hold — after each reply the ear stays
+// held for `lag + tail_lag_margin_ms` (`useLiveCall`'s `tailPlan`), measured on this capture's own sink;
+// no return keeps the fallbacks (R93 §V's safety rule: never "no hold"). It also goes to the trail and the
+// debug readout, which is how the car round checks it against each reply's echo.
 //
 // ONE CLOCK. The chirp is scheduled on the CAPTURE's own AudioContext (the drop cue's context — already
 // running, already gesture-unlocked), and every mic frame carries that same context's time for its first

@@ -1019,9 +1019,15 @@ function hasUserTurn(messages: readonly ChatMessage[]): boolean {
 }
 /** How many turns the owner has taken in `messages` — `/new`'s post-await fence compares it. A COUNT,
  *  not the last turn's id: a reconnect's `reloadChat` rewrites an optimistic `local-…` id to the durable
- *  one without anyone taking a turn, while every raced send adds one bubble synchronously. */
+ *  one without anyone taking a turn, while every raced send adds one bubble synchronously.
+ *
+ *  QUEUED steer bubbles (`m.queued` = the server's `entry_id`, D41) are NOT counted (fix wave 2): they
+ *  come and go on the server's schedule, not the owner's — `reconcileSteerQueue` drops a drained or
+ *  removed one (and re-creates a still-queued one) whenever a probe lands, which right after a turn
+ *  settles can be mid-mint. Truthiness, not key presence: `resolveSteerBubble` clears the marker to
+ *  `undefined` in place when a steer drains into a durable message. */
 function userTurnCount(messages: readonly ChatMessage[]): number {
-  return messages.filter(isUserTurn).length;
+  return messages.filter((m) => isUserTurn(m) && !m.queued).length;
 }
 
 /** The open ticket (`openSeq`) the in-flight `/new` claimed, or `null` when no mint is in flight. */
@@ -1054,8 +1060,11 @@ let mintTicket: number | null = null;
  *    · while a turn is STREAMING (ACA-10 / S2-C) — the swap would strand the live reply;
  *    · while an earlier `/new`'s mint is still in flight AND still the newest intent — it will deliver
  *      the fresh thread; a second POST (the double Enter) would only mint a twin into the list;
- *    · SILENTLY when the open thread has no turn in it yet (`hasUserTurn`) — a greeting-only or empty
- *      thread IS fresh, so `/new` twice mints nothing. A thread-less view proceeds (there is nothing to
+ *    · SILENTLY when the open thread has no turn in it yet (`hasUserTurn`) AND is pinned to the very
+ *      agent this `/new` would mint with — a greeting-only or empty thread IS fresh, so `/new` twice
+ *      mints nothing. A fresh thread pinned to ANOTHER agent (`/agent ops` on Seraphina's greeting
+ *      thread; the configured default changed meanwhile) is not the thread asked for: it mints, and
+ *      the fresh-but-wrong thread stays behind in the list (fix wave 2). A thread-less view proceeds (there is nothing to
  *      keep). Decided from the messages the store already holds — no fetch. The tandem rule still
  *      applies to the PICK there (fix wave 1): with a default set, a standing pick is cleared exactly
  *      as a mint would clear it, so `/agent ops` then `/new` on a fresh default thread still means
@@ -1088,7 +1097,11 @@ export async function startNewThread(opts: {
     return;
   }
   if (mintTicket === openSeq) return; // the in-flight /new is still the owner's newest intent
-  if (state.threadId !== null && !hasUserTurn(state.messages)) {
+  // The tandem rule's agent — decided BEFORE guard 2, because a fresh thread is only "already fresh"
+  // for the agent it is pinned to (fix wave 2).
+  const kept = opts.keepAgent ? (state.stickyAgent ?? state.threadAgent) : null;
+  const agent = opts.keepAgent ? kept : opts.defaultAgent || null;
+  if (state.threadId !== null && !hasUserTurn(state.messages) && agent === state.threadAgent) {
     // Already fresh (ISS-31) — no mint. But the tandem rule is about the PICK too: a default set clears a
     // standing pick here exactly as a mint would (through the one sticky seam); none set keeps it.
     if (!opts.keepAgent && state.stickyAgent !== null) setStickyAgent(null);
@@ -1102,8 +1115,6 @@ export async function startNewThread(opts: {
   // The view's identity at entry — what the post-await fence compares against (see the docstring).
   const threadAtEntry = state.threadId;
   const turnsAtEntry = userTurnCount(state.messages);
-  const kept = opts.keepAgent ? (state.stickyAgent ?? state.threadAgent) : null;
-  const agent = opts.keepAgent ? kept : opts.defaultAgent || null;
   let opened: { thread: Thread; messages: ChatMessage[] } | null = null;
   try {
     const res = await fetch(

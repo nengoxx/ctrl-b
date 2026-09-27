@@ -97,6 +97,9 @@ export interface LiveCallWire {
   tail_quiet_ms: number;
   tail_quiet_margin_db: number;
   hold_tail_max_ms: number;
+  /** D80 ⑦ as-built (wave 1.5, evidence R93 §V): when the connect chirp measured the sink's lag, the tail
+   *  ends at `lag + tail_lag_margin_ms` — a deadline — and the quiet rule above is only the fallback. */
+  tail_lag_margin_ms: number;
   /** D80 ② (evidence R91 §3) — THE TEXT BACKSTOP: a final landing inside the window (from the mouth's
    *  fall through the tail's release + `echo_window_ms`) whose normalised words score ≥
    *  `echo_similarity` against the reply's SPOKEN text is the reply's own echo, dropped visibly.

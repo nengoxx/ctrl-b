@@ -142,6 +142,7 @@ export interface VoiceLive extends VoiceServiceCommon {
   tail_quiet_ms: number; //     contiguous quiet that releases it, ms
   tail_quiet_margin_db: number; // quiet = below noise + this, dB
   hold_tail_max_ms: number; //  released regardless at this, ms
+  tail_lag_margin_ms: number; // D80 ⑦: with a measured chirp lag, the tail ends at lag + this, ms
   // D80 ② (evidence R91 §3) — THE TEXT BACKSTOP: a post-reply final matching the reply's words is dropped.
   echo_similarity: number; //   0.5–1.0: at or above this, a final is the reply's own words
   echo_window_ms: number; //    ms after the tail's release a final is still compared

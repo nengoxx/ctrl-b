@@ -47,6 +47,7 @@ const h = vi.hoisted(() => ({
         tail_quiet_ms: 700,
         tail_quiet_margin_db: 10,
         hold_tail_max_ms: 5000,
+        tail_lag_margin_ms: 300, // D80 ⑦ as-built — the margin over the chirp's measured lag
         // D80 ② — the text backstop's pair, as the backend ships them.
         echo_similarity: 0.75,
         echo_window_ms: 4000,
@@ -913,6 +914,11 @@ describe("useLiveCall — THE EAR-HOLD, measured (D80 ⑤: `auto` is the D73 rul
     const c = await call();
     await room();
     await c.step(() => setPlay("playing"));
+    // THE REPLY LEAKS (wave 1.5): the loudspeaker is in the mic at −20 dBFS while it plays — 400 ms of
+    // it, past the leak evidence's `tail_quiet_ms / 2` (350 ms). With no chirp lag, a reply that never
+    // reached the mic now releases at the minimum (`noleak`); these cases are about the quiet-rule
+    // FALLBACK, which is the leaking, unmeasured sink.
+    await act(async () => frames(-20, 20));
     await c.step(() => setPlay("paused"));
     expect(h.heldNow).toBe(true);
     expect(c.view.result.current.tail).toBe(true);
@@ -946,6 +952,7 @@ describe("useLiveCall — THE EAR-HOLD, measured (D80 ⑤: `auto` is the D73 rul
     leaky();
     const c = await call(); // no `room()`: the tracker has no floor
     await c.step(() => setPlay("playing"));
+    await act(async () => frames(-80, 5)); // the reply's frames: no floor to judge a leak against ⇒ leaked
     await c.step(() => setPlay("paused"));
     await act(async () => frames(-80, 249)); // however silent
     expect(h.heldNow).toBe(true);
@@ -984,6 +991,7 @@ describe("useLiveCall — THE EAR-HOLD, measured (D80 ⑤: `auto` is the D73 rul
     const c = await call();
     await act(async () => frames(-42, 50)); // the cabin: the tracker's floor lands at −42
     await c.step(() => setPlay("playing"));
+    await act(async () => frames(-17, 20)); // the car playing the reply's head into the mic: it LEAKS
     await c.step(() => setPlay("paused")); // the ELEMENT is done — the car is not
     await act(async () => {
       frames(-45, 10); // 0–200 ms: the car's own latency, nothing yet
@@ -1012,14 +1020,332 @@ describe("useLiveCall — THE EAR-HOLD, measured (D80 ⑤: `auto` is the D73 rul
   it("a reply that RE-STARTS inside the tail takes it back — its next drain arms a fresh release", async () => {
     const c = await drainedTail();
     await act(async () => frames(-60, 40)); // most of the way to a quiet release…
-    await c.step(() => setPlay("playing")); // …and the next reply starts
-    await act(async () => frames(-60, 20)); // what would have completed the first run
+    await c.step(() => setPlay("playing")); // …and the next reply starts (and leaks, like the first)
+    await act(async () => frames(-60, 19)); // what would have completed the first run…
+    await act(async () => frames(-20, 20)); // …and the second reply, audible in the mic
     expect(h.heldNow).toBe(true); // held by the mouth now, not released by a stale run
     await c.step(() => setPlay("paused"));
     await act(async () => frames(-60, 49));
     expect(h.heldNow).toBe(true); // a FRESH 1000 ms from the second drain
     await act(async () => frames(-60, 1));
     expect(h.heldNow).toBe(false);
+  });
+
+  // ── D80 ⑦ as-built (wave 1.5): the tail's release is a MEASURED deadline, quiet only the fallback ──
+  /** A leaking call whose connect chirp concluded on its first frame with `lagMs` (null = no return),
+   *  and a learned room — the chirp's own mask swallows the first frames' uplink, so two seconds. */
+  const measured = async (lagMs: number | null) => {
+    leaky();
+    h.voice.data.live_call.debug = true;
+    h.voice.data.live_call.chirp = true;
+    h.chirpAfter = 1;
+    h.chirpVerdict = { lagMs, peak: lagMs === null ? 0.09 : 0.87, second: 0.08 };
+    const c = await call();
+    await act(async () => frames(-50, 100)); // the chirp concludes on frame 1; the room is learned
+    return c;
+  };
+  /** One reply: played, `leak` ? audible in the mic : not, then drained — the tail armed. */
+  const reply = async (c: Awaited<ReturnType<typeof call>>, leak: boolean) => {
+    await c.step(() => setPlay("playing"));
+    await act(async () => frames(leak ? -20 : -60, 20)); // 400 ms: past the 350 ms leak threshold
+    await c.step(() => setPlay("paused"));
+    expect(h.heldNow).toBe(true);
+  };
+  const lastTailLine = async () => (await trailLines()).filter((l) => l.ev === "tail").pop();
+
+  it("a MEASURED lag sets the deadline — 2300 + 300 → released at exactly 2600 ms, the owner talking throughout", async () => {
+    const c = await measured(2300);
+    await reply(c, true);
+    await act(async () => frames(-15, 129)); // 2580 ms of the owner answering at once
+    expect(h.heldNow).toBe(true);
+    await act(async () => frames(-15, 1));
+    expect(h.heldNow).toBe(false); // the deadline, not a pause, opened the ear
+    expect(await lastTailLine()).toMatchObject({
+      reason: "lag",
+      ms: 2600,
+      deadlineMs: 2600,
+      lagMs: 2300,
+      leakSeen: true,
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(250); // the debug block samples
+    });
+    expect(c.view.result.current.debug?.lastTail).toEqual({
+      rule: "lag",
+      deadlineMs: 2600,
+      reason: "lag",
+      ms: 2600,
+    });
+  });
+
+  it("a SHORT measured lag is floored at the minimum — a loudspeaker still holds `hold_tail_min_ms`", async () => {
+    h.voice.data.live_call.tail_lag_margin_ms = 0;
+    try {
+      const c = await measured(40);
+      await reply(c, true);
+      await act(async () => frames(-15, 14)); // 280 ms
+      expect(h.heldNow).toBe(true);
+      await act(async () => frames(-15, 1)); // 300 ms: max(40 + 0, 300)
+      expect(h.heldNow).toBe(false);
+      expect(await lastTailLine()).toMatchObject({ reason: "lag", ms: 300, deadlineMs: 300 });
+    } finally {
+      h.voice.data.live_call.tail_lag_margin_ms = 300;
+    }
+  });
+
+  it("a measured lag past the CAP ends at the cap — 6000 + 300 against 5000 → `cap` at 5000", async () => {
+    const c = await measured(6000);
+    await reply(c, true);
+    await act(async () => frames(-15, 249));
+    expect(h.heldNow).toBe(true);
+    await act(async () => frames(-15, 1));
+    expect(h.heldNow).toBe(false);
+    expect(await lastTailLine()).toMatchObject({ reason: "cap", ms: 5000, deadlineMs: 6300 });
+  });
+
+  it("NO lag and a reply that never reached the mic → the minimum, `noleak`, the owner talking", async () => {
+    const c = await measured(null);
+    await reply(c, false); // −60 dBFS during the reply: under noise + 10
+    await act(async () => frames(-15, 14));
+    expect(h.heldNow).toBe(true);
+    await act(async () => frames(-15, 1)); // 300 ms
+    expect(h.heldNow).toBe(false);
+    const line = await lastTailLine();
+    expect(line).toMatchObject({ reason: "noleak", ms: 300, deadlineMs: 300, leakSeen: false });
+    expect(line).not.toHaveProperty("lagMs");
+  });
+
+  it("NO lag and a reply that LEAKED → the wave-1 quiet rule (the fallback: a sink nothing measured)", async () => {
+    const c = await measured(null);
+    await reply(c, true);
+    await act(async () => frames(-60, 49));
+    expect(h.heldNow).toBe(true);
+    await act(async () => frames(-60, 1)); // 300 + 700
+    expect(h.heldNow).toBe(false);
+    const line = await lastTailLine();
+    expect(line).toMatchObject({ reason: "quiet", ms: 1000, leakSeen: true });
+    expect(line).not.toHaveProperty("deadlineMs");
+  });
+
+  it("a KILL with a measured lag waits the lag too — the killed reply's buffer is at most one lag", async () => {
+    const c = await measured(2300);
+    await c.step(() => setPlay("playing"));
+    await act(async () => frames(-20, 5));
+    await act(async () => c.view.result.current.interrupt());
+    await act(async () => frames(-15, 129));
+    expect(h.heldNow).toBe(true);
+    await act(async () => frames(-15, 1));
+    expect(h.heldNow).toBe(false);
+    expect(await lastTailLine()).toMatchObject({ reason: "lag", ms: 2600 });
+  });
+
+  it("a chirp NOT concluded at a tail's arming is no lag for that tail; the next tail reads the verdict", async () => {
+    leaky();
+    h.voice.data.live_call.debug = true;
+    h.voice.data.live_call.chirp = true;
+    h.chirpVerdict = { lagMs: 2300, peak: 0.87, second: 0.08 };
+    const c = await call(); // `chirpAfter` stays ∞: the window is still open
+    await act(async () => frames(-50, 100));
+    await reply(c, true);
+    await act(async () => frames(-60, 50)); // the fallback: quiet at 1000 ms
+    expect(h.heldNow).toBe(false);
+    expect(await lastTailLine()).toMatchObject({ reason: "quiet" });
+    h.chirpAfter = h.chirpMatchers[0].frames + 1; // the window closes on the next frame
+    await act(async () => frames(-50, 1));
+    await reply(c, true);
+    await act(async () => frames(-60, 129));
+    expect(h.heldNow).toBe(true); // quiet for 2.58 s — the measured deadline holds regardless
+    await act(async () => frames(-60, 1));
+    expect(h.heldNow).toBe(false);
+    expect(await lastTailLine()).toMatchObject({ reason: "lag", ms: 2600, lagMs: 2300 });
+  });
+
+  it("a ROUTE CYCLE forgets the old sink's lag — the fresh capture re-chirps and the next tail waits for it", async () => {
+    const c = await measured(2300);
+    await act(async () => c.view.result.current.setRoute("media"));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.chirpPlay).toHaveBeenCalledTimes(2); // the fresh ear measures its own sink
+    await act(async () => {
+      h.frame?.({ type: "state", state: "ready" });
+      await Promise.resolve();
+    });
+    h.chirpAfter = Infinity; // …and its window is still open when the next reply drains
+    await act(async () => frames(-50, 100)); // the fresh ear's room
+    await reply(c, false);
+    await act(async () => frames(-15, 15));
+    expect(h.heldNow).toBe(false); // no lag (forgotten), no leak ⇒ the minimum
+    expect(await lastTailLine()).toMatchObject({ reason: "noleak", ms: 300 });
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(c.view.result.current.debug?.chirp).toBeNull();
+  });
+
+  it("`chirp: false` never releases on a lag — only the no-leak minimum or the quiet fallback", async () => {
+    const c = await drainedTail(); // the harness default: chirp off; the reply leaked
+    await act(async () => frames(-60, 50));
+    expect(h.heldNow).toBe(false);
+    expect(await lastTailLine()).toMatchObject({ reason: "quiet" });
+    expect(h.chirpPlay).not.toHaveBeenCalled();
+    await reply(c, false);
+    await act(async () => frames(-15, 15));
+    expect(h.heldNow).toBe(false);
+    expect(await lastTailLine()).toMatchObject({ reason: "noleak" });
+  });
+
+  // ── the LEAK EVIDENCE (wave 1.5's fix wave): cumulative, and keyed by the reply ──────────────────
+  /** A call with a learned room (−50 dBFS ⇒ "loud" = ≥ −40) and no chirp: the leak evidence alone picks
+   *  between `noleak` (the minimum) and the quiet rule. */
+  const quietRoom = async () => {
+    leaky();
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await room();
+    return c;
+  };
+
+  it("ONE loud frame during a reply is not a leak — a cough or a clink leaves it `noleak` (O-W15-HIGH)", async () => {
+    const c = await quietRoom();
+    await c.step(() => setPlay("playing"));
+    await act(async () => {
+      frames(-60, 19);
+      frames(-15, 1); // the owner's "mm-hm", one frame over noise + 10
+    });
+    await c.step(() => setPlay("paused"));
+    await act(async () => frames(-15, 15)); // the owner answering at once
+    expect(h.heldNow).toBe(false); // released at the minimum
+    expect(await lastTailLine()).toMatchObject({ reason: "noleak", leakSeen: false, leakMs: 20 });
+  });
+
+  it("…while ≥ 350 ms of it (`tail_quiet_ms / 2`) IS — 340 ms stays `noleak`, 360 ms takes the quiet rule", async () => {
+    const c = await quietRoom();
+    await c.step(() => setPlay("playing"));
+    await act(async () => frames(-20, 17)); // 340 ms
+    await c.step(() => setPlay("paused"));
+    await act(async () => frames(-60, 15));
+    expect(await lastTailLine()).toMatchObject({ reason: "noleak", leakMs: 340 });
+    await c.step(() => setPlay("playing")); // the next reply (no id in the store ⇒ a fresh reply)
+    await act(async () => frames(-20, 18)); // 360 ms
+    await c.step(() => setPlay("paused"));
+    await act(async () => frames(-60, 50));
+    expect(await lastTailLine()).toMatchObject({ reason: "quiet", leakSeen: true, leakMs: 360 });
+  });
+
+  it("a MUTED frame during the reply forces it leaked at once — digital silence proves nothing", async () => {
+    const c = await quietRoom();
+    await c.step(() => setPlay("playing"));
+    await c.step(() => c.view.result.current.toggleMute());
+    await act(async () => h.mic?.({ buf: tagged(1), rms: 0, uplinked: false }));
+    await c.step(() => c.view.result.current.toggleMute());
+    await c.step(() => setPlay("paused"));
+    await act(async () => frames(-60, 50));
+    expect(await lastTailLine()).toMatchObject({ reason: "quiet", leakSeen: true, leakMs: 0 });
+  });
+
+  it("a pause→resume INSIDE one reply keeps its evidence; a NEW reply id starts over (M-W15-MED)", async () => {
+    const c = await quietRoom();
+    h.reply = { id: "r1", text: "a long reply" };
+    await c.step(() => setPlay("playing"));
+    await act(async () => frames(-20, 10)); // 200 ms of leak…
+    await c.step(() => setPlay("paused")); // …the owner pauses (a tail arms: 200 ms is no leak yet)
+    await c.step(() => setPlay("playing")); // …and resumes the SAME reply
+    await act(async () => frames(-20, 10)); // another 200 ms
+    await c.step(() => setPlay("paused"));
+    await act(async () => frames(-60, 50));
+    expect(await lastTailLine()).toMatchObject({ reason: "quiet", leakSeen: true, leakMs: 400 });
+    h.reply = { id: "r2", text: "the next reply" };
+    await c.step(() => setPlay("playing"));
+    await act(async () => frames(-60, 20)); // nothing reaches the mic this time
+    await c.step(() => setPlay("paused"));
+    await act(async () => frames(-15, 15));
+    expect(await lastTailLine()).toMatchObject({ reason: "noleak", leakMs: 0 });
+  });
+
+  it("a DEVICE CHANGE while the capture is still opening schedules nothing — the capture's own chirp measures it", async () => {
+    const devices = new EventTarget();
+    Object.defineProperty(navigator, "mediaDevices", { value: devices, configurable: true });
+    try {
+      leaky();
+      h.voice.data.live_call.chirp = true;
+      let open = (): void => {};
+      h.capGate = new Promise<void>((r) => {
+        open = r;
+      });
+      renderHook(() => useLiveCall());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        devices.dispatchEvent(new Event("devicechange")); // getUserMedia still pending…
+        vi.advanceTimersByTime(500); // …and it opens INSIDE what would have been the settle window
+      });
+      expect(h.chirpPlay).not.toHaveBeenCalled();
+      await act(async () => {
+        open();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(h.chirpPlay).toHaveBeenCalledTimes(1); // the capture's own chirp
+      await act(async () => {
+        vi.advanceTimersByTime(2000);
+      });
+      expect(h.chirpPlay).toHaveBeenCalledTimes(1); // …and no second one replaces its measurement
+      await act(async () => {
+        devices.dispatchEvent(new Event("devicechange")); // once the capture exists, a change counts
+        vi.advanceTimersByTime(1500);
+      });
+      expect(h.chirpPlay).toHaveBeenCalledTimes(2);
+    } finally {
+      Reflect.deleteProperty(navigator, "mediaDevices");
+    }
+  });
+
+  it("a mid-call DEVICE CHANGE forgets the lag at once, re-chirps ONCE when the list settles, and the next tail plans by it (O-W15-MED)", async () => {
+    // jsdom has no `mediaDevices`: give the page one the case can raise `devicechange` on (restored after
+    // — `unstubAllGlobals` would also drop this file's own storage stubs).
+    const devices = new EventTarget();
+    Object.defineProperty(navigator, "mediaDevices", { value: devices, configurable: true });
+    try {
+      const c = await measured(500); // the phone's own speaker: a short lag
+      expect(h.chirpPlay).toHaveBeenCalledTimes(1);
+      // the car's Bluetooth connects: a BURST of events while its profiles negotiate
+      await act(async () => {
+        devices.dispatchEvent(new Event("devicechange"));
+        vi.advanceTimersByTime(700);
+        devices.dispatchEvent(new Event("devicechange"));
+        vi.advanceTimersByTime(700);
+        devices.dispatchEvent(new Event("devicechange"));
+      });
+      // the old sink's lag is already gone — a tail armed now takes the no-lag rules
+      await act(async () => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(c.view.result.current.debug?.chirp).toBeNull();
+      expect(h.chirpPlay).toHaveBeenCalledTimes(1); // nothing re-played inside the burst
+      h.chirpVerdict = { lagMs: 2300, peak: 0.9, second: 0.1 };
+      h.chirpAfter = 1;
+      await act(async () => {
+        vi.advanceTimersByTime(1500); // the list has sat still: ONE re-chirp
+      });
+      expect(h.chirpPlay).toHaveBeenCalledTimes(2);
+      expect(h.chirpMatchers).toHaveLength(2);
+      await act(async () => frames(-50, 1)); // the new matcher concludes: the car's lag
+      await reply(c, true);
+      await act(async () => frames(-15, 129));
+      expect(h.heldNow).toBe(true);
+      await act(async () => frames(-15, 1));
+      expect(h.heldNow).toBe(false);
+      expect(await lastTailLine()).toMatchObject({ reason: "lag", ms: 2600, lagMs: 2300 });
+      const resets = h.posts
+        .flatMap((p) => p.body.entries)
+        .filter((l) => l.ev === "chirp" && l.reset === "devicechange");
+      expect(resets).toHaveLength(3);
+    } finally {
+      Reflect.deleteProperty(navigator, "mediaDevices");
+    }
   });
 
   // ── D80 ②: THE TEXT BACKSTOP, wired — the reply's own words, heard back after the tail released ──
@@ -2799,7 +3125,21 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
       // D80's W6 — what the platform REPORTS for this context's output path, beside what the ear measures
       outputLatency: 0.28,
       baseLatency: 0.01,
-      cfg: { floor_dbfs: -45, playback_margin_db: 10, min_final_ms: 0, mic_hold: "auto" },
+      cfg: {
+        floor_dbfs: -45,
+        playback_margin_db: 10,
+        min_final_ms: 0,
+        mic_hold: "auto",
+        // every knob a tail's release, the backstop and the chirp decide by (the trail reconstructs them)
+        hold_tail_min_ms: 300,
+        tail_quiet_ms: 700,
+        tail_quiet_margin_db: 10,
+        hold_tail_max_ms: 5000,
+        tail_lag_margin_ms: 300,
+        echo_similarity: 0.75,
+        echo_window_ms: 4000,
+        chirp: false,
+      },
     });
     // the 1 Hz sampler: ONLY the debug record's moving fields, and the phase they were read in — the
     // per-capture constants are the capture line's, the last final is a line of its own

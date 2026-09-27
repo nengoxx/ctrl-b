@@ -1424,6 +1424,7 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "tail_quiet_ms": 800,
             "tail_quiet_margin_db": 12.0,
             "hold_tail_max_ms": 6000,
+            "tail_lag_margin_ms": 450,
             "echo_similarity": 0.8,
             "echo_window_ms": 3000,
             "chirp": False,
@@ -1476,6 +1477,9 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "tail_quiet_ms": 800,
         "tail_quiet_margin_db": 12.0,
         "hold_tail_max_ms": 6000,
+        # D80 ⑦ as-built (wave 1.5) — the margin over the chirp's measured lag: a CLIENT knob, the lag
+        # is measured in the browser.
+        "tail_lag_margin_ms": 450,
         # D80 ② (R91 §3) — the TEXT BACKSTOP's pair: the reply's spoken words and the matcher live in
         # the browser, so the threshold and the window arrive here.
         "echo_similarity": 0.8,
@@ -1641,6 +1645,8 @@ def test_live_config_defaults() -> None:
     # capped at 5 s (the worst measured audible end, 3.46 s, + the quiet run + headroom).
     assert (cfg.hold_tail_min_ms, cfg.tail_quiet_ms, cfg.hold_tail_max_ms) == (300, 700, 5000)
     assert cfg.tail_quiet_margin_db == 10.0
+    # D80 ⑦ as-built (wave 1.5, R93 §V) — "playback end + lag + 300 ms".
+    assert cfg.tail_lag_margin_ms == 300
     # D80 ② (R91 §3.4) — the text backstop: 0.75, the middle of the measured 0.538 → 0.946 gap, and a
     # 4 s window past the tail's release.
     assert (cfg.echo_similarity, cfg.echo_window_ms) == (0.75, 4000)
@@ -1730,6 +1736,9 @@ def test_live_config_defaults() -> None:
         {"hold_tail_max_ms": 499},
         {"hold_tail_max_ms": 15001},
         {"hold_tail_min_ms": 1000, "tail_quiet_ms": 1000, "hold_tail_max_ms": 1999},
+        # D80 ⑦ as-built — the lag margin: 0–2000 (it need not fit under the cap; the cap bounds it)
+        {"tail_lag_margin_ms": -1},
+        {"tail_lag_margin_ms": 2001},
         # D80 ② — the backstop's pair: below 0.5 ordinary conversation matches; a window is bounded.
         {"echo_similarity": 0.49},
         {"echo_similarity": 1.01},
@@ -1740,6 +1749,13 @@ def test_live_config_defaults() -> None:
 def test_live_config_bounds_reject_wedging_values(bad: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         LiveCfg(**bad)
+
+
+def test_the_lag_margin_need_not_fit_under_the_cap() -> None:
+    """D80 ⑦ as-built: a deadline past `hold_tail_max_ms` ends at the cap (the client's `tailStep`), so
+    no validator pairs the margin with the cap — a margin larger than the cap still loads."""
+    cfg = LiveCfg(tail_lag_margin_ms=2000, hold_tail_min_ms=0, tail_quiet_ms=500, hold_tail_max_ms=1000)
+    assert cfg.tail_lag_margin_ms == 2000
 
 
 def test_the_tail_triple_loads_at_its_edge() -> None:

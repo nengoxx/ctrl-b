@@ -483,12 +483,15 @@ voice:
     tail_quiet_ms: 700     # (100–5000) bridges 97% of the pauses inside a reply
     tail_quiet_margin_db: 10  # (0–40) dB over the room's own noise
     hold_tail_max_ms: 5000 # (500–15000) min + quiet must fit under it
+    tail_lag_margin_ms: 300  # (0–2000) D80 ⑦ wave 1.5: when the connect chirp MEASURED the speaker's delay, the
+                           # tail ends at that delay + this (a deadline); the quiet rule above is the fallback
     # D80 / R91 §3 — the TEXT BACKSTOP (CLIENT): a final right after the reply that repeats its SPOKEN
     # words is the reply heard back — dropped, and the call screen says so
     echo_similarity: 0.75  # (0.5–1.0) the car call's echoes scored 0.95–1.0, genuine turns ≤ 0.54
     echo_window_ms: 4000   # (0–15000) ms after the tail's release still compared; 0 = only during the tail
     chirp: true            # D80 / R93: a short "connected" sweep at every capture; the mic's copy of it measures
-                           # how late the speaker plays (logged in the debug readout + trail; no policy yet)
+                           # how late the speaker plays — the mic stays off that long (+ tail_lag_margin_ms) after
+                           # each reply; shown in the debug readout + trail
     ring: true             # CLIENT: overlay mode — true = a face ring over the art (one fixed position)
     captions: true         # CLIENT: the reply as small fading captions on the call screen
     # Streaming DICTATION (S2.5) — the mic's hold/lock rides the SAME realtime ear as the call, and

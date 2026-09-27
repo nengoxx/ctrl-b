@@ -109,6 +109,7 @@ const makeSettings = () => ({
       tail_quiet_ms: 700,
       tail_quiet_margin_db: 10,
       hold_tail_max_ms: 5000,
+      tail_lag_margin_ms: 300,
       echo_similarity: 0.75,
       echo_window_ms: 4000,
       chirp: true,
@@ -646,17 +647,19 @@ describe("ConfTab · the car round's rows (D80 — the tail hold, the text backs
     ["Tail quiet (ms)", "tail_quiet_ms"],
     ["Tail quiet margin (dB)", "tail_quiet_margin_db"],
     ["Tail hold cap (ms)", "hold_tail_max_ms"],
+    ["Tail lag margin (ms)", "tail_lag_margin_ms"],
     ["Echo match", "echo_similarity"],
     ["Echo window (ms)", "echo_window_ms"],
   ];
 
-  it("renders the six from the live config, directly after the gate's bounds", () => {
+  it("renders the seven from the live config, directly after the gate's bounds", () => {
     render(<ConfTab active />);
     expect(ROWS.map(([label]) => liveField(label).value)).toEqual([
       "300",
       "700",
       "10",
       "5000",
+      "300",
       "0.75",
       "4000",
     ]);
@@ -669,7 +672,7 @@ describe("ConfTab · the car round's rows (D80 — the tail hold, the text backs
 
   it("saves every one coerced to a NUMBER, and a CLEARED one as NULL (0 means something for three)", () => {
     const { unmount } = render(<ConfTab active />);
-    const typed = ["250", "800", "12", "6000", "0.8", "3000"];
+    const typed = ["250", "800", "12", "6000", "500", "0.8", "3000"];
     ROWS.forEach(([label], i) =>
       fireEvent.change(liveField(label), { target: { value: typed[i] } }),
     );
@@ -679,6 +682,7 @@ describe("ConfTab · the car round's rows (D80 — the tail hold, the text backs
       tail_quiet_ms: 800,
       tail_quiet_margin_db: 12,
       hold_tail_max_ms: 6000,
+      tail_lag_margin_ms: 500,
       echo_similarity: 0.8,
       echo_window_ms: 3000,
     });
@@ -687,6 +691,14 @@ describe("ConfTab · the car round's rows (D80 — the tail hold, the text backs
     ROWS.forEach(([label]) => fireEvent.change(liveField(label), { target: { value: "" } }));
     fireEvent.click(saveButton());
     for (const [, key] of ROWS) expect(liveOf(1)?.[key]).toBeNull();
+  });
+
+  it("the quiet-rule rows say they are the FALLBACK — for when the chirp couldn't measure the speaker", () => {
+    render(<ConfTab active />);
+    for (const label of ["Tail quiet (ms)", "Tail quiet margin (dB)", "Tail hold cap (ms)"]) {
+      const row = liveField(label).closest(".confrow")!;
+      expect(row.textContent, label).toContain("if the connect chirp couldn't measure the speaker");
+    }
   });
 
   it("the connect chirp is a switch, on as shipped, and saves as a boolean", () => {

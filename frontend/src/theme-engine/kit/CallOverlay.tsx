@@ -788,6 +788,17 @@ final ${
             ? `${d.lastFinal.accruedMs}ms   peak ${db(d.lastFinal.peakDb)}   chars ${d.lastFinal.chars}`
             : `unmeasured   chars ${d.lastFinal.chars}`
       }
+tail  ${
+        // D80 ⑦ as-built — the last tail's rule and deadline (ms after the reply ended; the quiet rule has
+        // none), then how it ended: the car card compares a `lag` release with any `echo` right after it.
+        d.lastTail === null
+          ? "—"
+          : `${d.lastTail.rule}${d.lastTail.deadlineMs === null ? "" : ` ${d.lastTail.deadlineMs}ms`}${
+              d.lastTail.reason === undefined
+                ? "   holding"
+                : `   → ${d.lastTail.reason} @${d.lastTail.ms ?? 0}ms`
+            }`
+      }
 chirp ${
         // D80 ⑦ — the output path's measured lag (the owner's car card compares it with each reply's
         // tail): the lag and its correlation peak, `none` when nothing returned, `—` while listening.

@@ -981,6 +981,15 @@ describe("callReduce — THE TAIL HOLD (D80 ①: the ear reopens on observed qui
     }
   });
 
+  it("every release reason ends its own arming alike — the measured `lag`/`noleak` (D80 ⑦) as the rest", () => {
+    const tail = run(holdCall("on", false), [{ type: "playbackDrained" }]).state;
+    for (const reason of ["lag", "noleak", "kill", "quiet", "cap"] as const) {
+      const over = run(tail, [{ type: "tailOver", seq: tail.tailSeq, reason }]).state;
+      expect(over.earHeld, reason).toBe(false);
+      expect(over.tail, reason).toBe(false);
+    }
+  });
+
   it("a mouth that RE-STARTS during the tail takes it back; its next fall arms a NEW one", () => {
     const first = run(holdCall("on", false), [{ type: "playbackDrained" }]).state;
     const again = run(first, [{ type: "playbackStarted" }]).state;

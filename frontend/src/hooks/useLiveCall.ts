@@ -114,11 +114,13 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // R91 §1), as loud as the owner — and a hold released on the element opened the ear into the last
 // sentence, which came back as the owner's next turn. So when the mouth falls — drained, failed, or
 // KILLED by a tap (the car keeps playing what it already buffered) — the hold passes to `tail`, and
-// the ear reopens only on OBSERVED QUIET: the wiring's meter, below the room's NOISE floor + a margin
-// (never the Sensitivity pin, which sits inside the echo's band) for a contiguous stretch, after a
-// minimum and under a cap (`hold_tail_*`, `tail_quiet_*`). A tail a KILL armed is the exception: it
-// ends at the minimum, quiet or not — the owner answers a tap at once, and their own voice would never
-// let a quiet rule hear quiet. The reducer decides, the wiring measures
+// the ear reopens on a MEASURED DEADLINE (D80 ⑦ as-built, wave 1.5 — `tailPlan`): the connect chirp's
+// lag + `tail_lag_margin_ms` when it measured this sink; the minimum when it did not but nothing of the
+// reply reached the mic (or a tap armed it — the owner answers a tap at once). Only a leaking sink the
+// chirp never measured falls back to OBSERVED QUIET: the wiring's meter, below the room's NOISE floor +
+// a margin (never the Sensitivity pin, which sits inside the echo's band) for a contiguous stretch,
+// after a minimum and under a cap (`hold_tail_*`, `tail_quiet_*`) — quiet was only ever a proxy for the
+// lag, and an owner who answers quickly never gives it. The reducer decides, the wiring measures
 // (`tailOver`, fenced on the tail it was armed for). What escapes a LEVEL rule — a long pause inside
 // the tail not yet heard, a tail past the cap — the TEXT BACKSTOP catches (D80 ②, `lib/echoText`): a
 // final in the post-reply window that repeats the reply's spoken words is dropped, visibly.
@@ -129,7 +131,7 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // A on B's accrual and let B through unmeasured. The fail-open survives only for an id nobody measured.
 //
 // THE CONNECT CHIRP (D80 ⑦, `lib/chirp`). Each capture opens with a short sweep the mic listens for,
-// which MEASURES how late this output path plays — logged (trail, debug readout) and not yet obeyed.
+// which MEASURES how late this output path plays — the number the tail's deadline is built on.
 //
 // THE RELATIVE GATE (D76 §C). What counts as the owner speaking is measured in dBFS against a floor
 // that FOLLOWS the room — a minimum-tracking noise estimate, the owner's own learned voice level, a
@@ -242,6 +244,16 @@ const IDLE_EDGES: ReadonlySet<CallSignal["type"]> = new Set([
  *  `playback_margin_db`, D76 §C.6) and the window (`min_speech_ms`), and a third dial on the same
  *  decision makes both of those harder to read. */
 const BARGE_HIT_RATIO = 0.75;
+
+/** How long the device list must sit STILL before a mid-call `devicechange` re-chirps, ms (D80 ⑦ as-built,
+ *  the wave-1.5 fix wave's O-W15-MED). A Bluetooth device connecting raises SEVERAL `devicechange` events
+ *  while its profiles negotiate (input and output lists move separately), and the system does not route
+ *  the page's audio to the new sink until its stream is up — so the re-chirp waits for the burst to end
+ *  (a trailing debounce: every event restarts it; one chirp per settled change) and plays into a route
+ *  that has had a moment to move. 1.5 s spans a typical connect burst without leaving the tails that
+ *  arm meanwhile unmeasured for long (they take the no-lag rules, the safe side). A property of the
+ *  platform's event pattern, not a preference — not a knob. */
+const RECHIRP_SETTLE_MS = 1500;
 
 /** How often the debug block re-reads, ms (D74 S7). The measurements it shows arrive on the audio
  *  callback at 25–50 Hz, and re-rendering the overlay per frame to show them is exactly the trade the
@@ -1595,43 +1607,146 @@ function meterEdge(
   return null;
 }
 
-// ── THE TAIL'S RELEASE, measured (D80 ①) ─────────────────────────────────────────────────────────
+// ── THE TAIL'S RELEASE, measured (D80 ① · ⑦) ─────────────────────────────────────────────────────
 //
 // The reducer ARMS the tail when the mouth falls; the wiring decides when the reply has actually left
-// the room — on the ear's own frames (the `cueFramesLeft` precedent: frames ARE the ear's clock, so a
-// frozen page cannot release a tail it never heard), and against the NOISE floor, never the effective
-// floor: the owner's Sensitivity pin sat at −20 dBFS, inside the echo's own −11…−35 band, and "quiet"
-// read against it called the echo quiet mid-sentence (R91 §4.3 — the reconciliation of DEBUG_PLAN §J3).
+// the room. FIRST by what was MEASURED (wave 1.5): the connect chirp's lag sets a deadline, and a reply
+// that never reached the mic has nothing to outwait (`tailPlan`). Only when nothing measured a leaking
+// sink does the wave-1 QUIET rule run — on the ear's own frames (the `cueFramesLeft` precedent: frames
+// ARE the ear's clock, so a frozen page cannot release a tail it never heard), and against the NOISE
+// floor, never the effective floor: the owner's Sensitivity pin sat at −20 dBFS, inside the echo's own
+// −11…−35 band, and "quiet" read against it called the echo quiet mid-sentence (R91 §4.3).
 
-/** The knobs one tail release runs under — `LiveCfg`'s four, structurally (the wire type satisfies it). */
+/** The knobs one tail release runs under — `LiveCfg`'s tail five, structurally (the wire type satisfies
+ *  it). */
 interface TailCfg {
   hold_tail_min_ms: number;
   tail_quiet_ms: number;
   tail_quiet_margin_db: number;
   hold_tail_max_ms: number;
+  tail_lag_margin_ms: number;
 }
 
-/** One running release: which arming it is for (and under which generation), how long it has run, and
- *  the contiguous quiet it has heard since the minimum. Mutated in place per frame, like the meter. */
+/** A tail's release DEADLINE, chosen at its arming (D80 ⑦ as-built — wave 1.5), and the evidence behind
+ *  it: `lag` = the connect chirp measured this sink, so the tail ends a known `lag + tail_lag_margin_ms`
+ *  after the element did; `kill` = a tap with nothing measured (the owner is talking into it — the code
+ *  round's O-HIGH), so it ends at the minimum; `noleak` = nothing measured, but nothing of this reply
+ *  reached the microphone either, so there is nothing to wait for past the minimum. */
+interface TailDeadline {
+  ms: number;
+  reason: "lag" | "noleak" | "kill";
+}
+
+/** One running release: which arming it is for (and under which generation), how long it has run, the
+ *  contiguous quiet it has heard since the minimum (the fallback rule's count), and the plan it runs.
+ *  Mutated in place per frame, like the meter. `lagMs`/`leakSeen` are the evidence the plan was chosen
+ *  on, carried for the trail line. */
 interface TailRun {
   seq: number;
   gen: number;
   elapsedMs: number;
   quietMs: number;
-  /** A KILL armed this tail (the code round's O-HIGH, main-seat ruling): it ends on the DEADLINE —
-   *  `hold_tail_min_ms` — and never waits for quiet. The tap IS the interrupt gesture, so the owner
-   *  talks at once by design, and their own voice would keep a quiet rule from ever hearing quiet: the
-   *  whole answer held until their first long pause (lost), or a fragment sent at the cap. The minimum
-   *  covers a headphone/loudspeaker sink's lag; in a car the killed reply's buffered second or two
-   *  leaks into the text backstop until wave 1.5's chirp sets a measured deadline. */
-  deadline: boolean;
+  /** The measured-or-decided deadline, or `null` = the quiet rule (the one case nothing measured). */
+  deadline: TailDeadline | null;
+  lagMs: number | null;
+  leakSeen: boolean;
+  leakMs: number;
 }
 
-/** Why a tail ended (D80 ①): heard quiet, ran out its cap, or — kill-armed — reached its deadline. */
-type TailReason = "quiet" | "cap" | "kill";
+/**
+ * DID THIS REPLY REACH THE MIC (D80 ⑦ as-built — wave 1.5, its fix wave): the leak EVIDENCE of one reply,
+ * accumulated on the frames while the mouth is live and read ONLY at a tail's arming, to choose its
+ * release rule when the chirp measured nothing (`tailPlan`'s rule 3 vs 4). It is NOT the deleted leak
+ * probe (D76 §B.3 → D80 ⑤): it never opens the ear during a reply and judges nothing per chunk — the ear
+ * stays held for the whole reply either way.
+ *
+ *  · CUMULATIVE, not one frame (the fix wave's O-W15-HIGH): `ms` counts the frames that read ≥ the NOISE
+ *    floor + `tail_quiet_margin_db` (the tail's own "not quiet" line — one definition of loud), and the
+ *    reply counts as leaked at `ms ≥ tail_quiet_ms / 2` (`leaked`). A DERIVED threshold, not a knob: a
+ *    sink that really leaks the reply fills it within the reply's first second (seconds of speech at the
+ *    mic), while a cough, a clink or an "mm-hm" on earbuds the chirp cannot hear is a frame or two —
+ *    and one frame used to send the tail back to the quiet rule, the whole-answer loss this slice ends.
+ *    The OWNER talking over the reply for that long still counts — the safe direction, by design.
+ *  · UNKNOWN IS LEAKED, at once (`unknown`): no noise estimate yet, or a MUTED frame (digital silence,
+ *    which proves nothing) — the safe branch.
+ *  · KEYED BY THE REPLY (the fix wave's M-W15-MED): `replyId` is the chat store's last assistant message
+ *    at the mouth's rising edge — the same identity the text backstop reads — so a pause/resume or a
+ *    stall's re-fire INSIDE one reply keeps its evidence; only a different reply starts over. (An
+ *    assistant message's id is fixed before any of it can be spoken: `message.start` adopts the
+ *    server's id before the first text delta, and nothing rewrites it after. A `null` id — no reply in
+ *    the store — is no identity at all, so it starts over every time, the pre-fix rule.)
+ */
+interface LeakEvidence {
+  replyId: string | null;
+  ms: number;
+  unknown: boolean;
+}
+
+function newLeak(replyId: string | null): LeakEvidence {
+  return { replyId, ms: 0, unknown: false };
+}
+
+/** One frame of a live mouth into the evidence (mutated in place, like the meter). */
+function leakFrame(
+  e: LeakEvidence,
+  db: number,
+  noise: number | null,
+  muted: boolean,
+  frameMs: number,
+  marginDb: number,
+): void {
+  if (noise === null || muted) e.unknown = true;
+  else if (db >= noise + marginDb) e.ms += frameMs;
+}
+
+/** Has this reply leaked, by the evidence — see `LeakEvidence`. */
+function leaked(e: LeakEvidence, cfg: TailCfg): boolean {
+  return e.unknown || e.ms >= cfg.tail_quiet_ms / 2;
+}
+
+/** Why a tail ended (D80 ①/⑦): its deadline (`lag`/`noleak`/`kill`), heard quiet, or ran out its cap. */
+type TailReason = TailDeadline["reason"] | "quiet" | "cap";
+
+/**
+ * THE TAIL'S RELEASE RULE, chosen at its ARMING by the evidence there is, in this order (D80 ⑦ as-built,
+ * the owner's "fix those issues forever"):
+ *
+ *  1. the connect CHIRP measured this sink (`lagMs` known) ⇒ a DEADLINE at `lagMs + tail_lag_margin_ms`
+ *     — whatever the meter hears, so an owner who answers at once (or taps and talks) is no longer held
+ *     whole: quiet was only ever a PROXY for this number (R93 §V; the margin covers lag jitter and the
+ *     ear's own 135–271 ms reporting delay). A kill uses it too: what a tap leaves in the sink's buffer
+ *     is at most one lag.
+ *  2. no lag, and a KILL ⇒ the minimum (`kill` — fix wave 1's rule; kept distinct in the trail).
+ *  3. no lag, and nothing of this reply reached the mic (`!leakSeen`) ⇒ the minimum (`noleak`): there is
+ *     no echo to outwait.
+ *  4. no lag, and the reply DID leak (or leaking could not be judged) ⇒ `null`: the wave-1 QUIET rule —
+ *     the fallback for a sink that leaks and was never measured (a head unit that clipped the chirp).
+ *
+ * Every deadline is floored at `hold_tail_min_ms` (a loudspeaker's 40 ms lag still holds the minimum);
+ * the cap still bounds everything (`tailStep`). A chirp whose window has not CONCLUDED when a tail arms (a
+ * reply that drains within ~6 s of the capture) is "no lag" for that tail; the next one reads the verdict.
+ */
+function tailPlan(
+  killed: boolean,
+  lagMs: number | null,
+  leakSeen: boolean,
+  cfg: TailCfg,
+): TailDeadline | null {
+  if (lagMs !== null)
+    return {
+      ms: Math.max(cfg.hold_tail_min_ms, lagMs + cfg.tail_lag_margin_ms),
+      reason: "lag",
+    };
+  if (killed) return { ms: cfg.hold_tail_min_ms, reason: "kill" };
+  if (!leakSeen) return { ms: cfg.hold_tail_min_ms, reason: "noleak" };
+  return null;
+}
 
 /**
  * One frame into a running tail release; the reason it ends ON this frame, or `null`.
+ *
+ * A tail with a DEADLINE (`tailPlan`'s rules 1–3) ends at it — its own reason — whatever the meter hears;
+ * a deadline past `hold_tail_max_ms` ends at the cap instead (`cap`). Otherwise, the QUIET rule (rule 4):
  *
  *  1. nothing before `hold_tail_min_ms` — a headphone or loudspeaker sink still lags the element by a
  *     few hundred ms (R91 §J3 (i));
@@ -1642,9 +1757,6 @@ type TailReason = "quiet" | "cap" | "kill";
  *     only the cap can end it;
  *  3. `hold_tail_max_ms` after the arming ends it regardless — `cap` (a cabin louder than its own
  *     margin, or an owner who started talking into the tail; the text backstop is the belt there).
- *
- * A KILL-armed tail (`run.deadline`) skips 2 and 3: it ends at `hold_tail_min_ms` — `kill` — whatever
- * the meter hears, because what it would hear is the owner answering the tap (see `TailRun.deadline`).
  */
 function tailStep(
   run: TailRun,
@@ -1656,7 +1768,11 @@ function tailStep(
 ): TailReason | null {
   const from = run.elapsedMs; // where THIS frame starts, after the arming
   run.elapsedMs += frameMs;
-  if (run.deadline) return run.elapsedMs >= cfg.hold_tail_min_ms ? "kill" : null;
+  const d = run.deadline;
+  if (d !== null) {
+    if (d.ms > cfg.hold_tail_max_ms) return run.elapsedMs >= cfg.hold_tail_max_ms ? "cap" : null;
+    return run.elapsedMs >= d.ms ? d.reason : null;
+  }
   if (from >= cfg.hold_tail_min_ms) {
     const quiet = noise !== null && !muted && db < noise + cfg.tail_quiet_margin_db;
     run.quietMs = quiet ? run.quietMs + frameMs : 0;
@@ -1682,12 +1798,13 @@ interface GateState {
   /** The gate's knobs, taken from the acquisition that opened the current capture (§4.5 — read at
    *  call start). `null` before any acquisition: there is no floor to compute without them. */
   cfg:
-    | (GateCfg & {
-        playback_margin_db: number;
-        min_final_ms?: number;
-        noise_verdict_ms?: number;
-        echo_window_ms: number;
-      })
+    | (GateCfg &
+        TailCfg & {
+          playback_margin_db: number;
+          min_final_ms?: number;
+          noise_verdict_ms?: number;
+          echo_window_ms: number;
+        })
     | null;
   noise: NoiseTracker;
   /** The owner's learned voice level on THIS capture's device, dBFS — seeded from `store/voiceLevels`
@@ -1778,6 +1895,15 @@ export interface CallDebug {
    *  no return), with the correlation peak and the runner-up — what the owner's car card compares with
    *  each reply's measured tail. `null` until the matcher's window has closed (or with `chirp` off). */
   chirp: ChirpResult | null;
+  /** THE LAST TAIL (D80 ⑦ as-built): the rule it was armed with (`lag`/`noleak`/`kill`, or `quiet` =
+   *  the fallback) and its deadline in ms after the arming (`null` on the quiet rule), then — once it
+   *  ended — why and when. `null` before the first tail. */
+  lastTail: {
+    rule: TailDeadline["reason"] | "quiet";
+    deadlineMs: number | null;
+    reason?: TailReason;
+    ms?: number;
+  } | null;
 }
 
 /** What the overlay renders + the things it can do. */
@@ -1880,6 +2006,11 @@ export function useLiveCall(): CallView {
    *  by the frame handler, dropped the moment the machine says the tail is over. Wiring-owned, by the
    *  meter's split: the frames are a measurement, the reducer gets the decision (`tailOver`). */
   const tailRun = useRef<TailRun | null>(null);
+  /** …and the last one's plan and outcome, for the debug block. */
+  const lastTail = useRef<CallDebug["lastTail"]>(null);
+  /** THE CURRENT REPLY'S LEAK EVIDENCE (`LeakEvidence`, D80 ⑦ as-built): re-keyed at the mouth's rising
+   *  edge, fed by the frame handler while the mouth is live, read at a tail's arming. */
+  const leak = useRef<LeakEvidence>(newLeak(null));
   /** THE TEXT BACKSTOP'S WINDOW (D80 ②), on `performance.now()`: a final arriving at or before this
    *  instant is compared with the reply's spoken words. Opened (to +∞) when the mouth falls into a tail,
    *  closed to the tail's release + `echo_window_ms` when the tail ends (or to the fall + that window
@@ -1892,6 +2023,8 @@ export function useLiveCall(): CallView {
   const chirp = useRef<ChirpMatcher | null>(null);
   /** …and its verdict, for the debug block. */
   const lastChirp = useRef<ChirpResult | null>(null);
+  /** THE RE-CHIRP after a mid-call `devicechange` (see `RECHIRP_SETTLE_MS`) — one pending timer. */
+  const rechirpTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** THE CALL TRAIL (D77) — `null` unless `voice.live.debug` is on, so every site below is a
    *  `trail.current?.push(…)` that costs nothing in the shipped default. The id is minted ONCE per
    *  instance (lazily, and only for a debug call): a reconnect, a route cycle or StrictMode's re-run
@@ -1945,6 +2078,7 @@ export function useLiveCall(): CallView {
       voiceKey: g.voiceKey,
       lastFinal: m.last,
       chirp: lastChirp.current,
+      lastTail: lastTail.current,
     };
   }, [knobs]);
 
@@ -1954,6 +2088,7 @@ export function useLiveCall(): CallView {
     clearTimeout(degradeTimer.current);
     clearTimeout(idleTimer.current);
     clearTimeout(noiseTimer.current);
+    clearTimeout(rechirpTimer.current);
     // THE CLEAN END CLEARS THE MARKER (S6 ⑦). This is the one release path every exit funnels through
     // — a terminal, a hang-up, the unmount — so it is the one place that can honestly say "this tab is
     // not in a call any more". What does NOT reach here (a killed tab, a crash) is exactly the case
@@ -1969,6 +2104,8 @@ export function useLiveCall(): CallView {
     capture.current?.stop();
     capture.current = null;
     chirp.current = null; // …and so is the chirp's, if its window was still open
+    lastChirp.current = null; // …and what it measured: the next call's capture measures its own sink
+    leak.current = newLeak(null);
     clearSegments(meter.current); // the ledger's evidence is about an ear that is gone (D80 ③)
     dismiss(); // an ended call does not keep talking
     setCallVoice(false, false);
@@ -2009,17 +2146,35 @@ export function useLiveCall(): CallView {
       // THE TAIL'S RELEASE ARMS on the reducer's arming (a new `tailSeq` with the tail up), and dies the
       // moment the machine says the tail is over — a rising mouth, a route cycle, a terminal, its own
       // `tailOver`. One run at a time: a fresh arming replaces whatever was still counting.
-      // A tail the KILL itself armed (the step where `killing` went up is the one `killNow` took —
-      // the mouth's fall and the kill land in the same reduce) releases on its deadline, not on quiet.
-      if (next.tail && next.tailSeq !== prev.tailSeq)
+      // Its RULE is chosen here, once, by the evidence there is (`tailPlan`): the chirp's measured lag,
+      // whether the KILL itself armed it (the step where `killing` went up is the one `killNow` took —
+      // the mouth's fall and the kill land in the same reduce), and whether this reply reached the mic.
+      // (No knobs yet is unreachable — a tail arms only under a capture's policy, and the acquisition
+      // latched them first — and it would fall back to the quiet rule rather than leave a tail unarmed.)
+      if (next.tail && next.tailSeq !== prev.tailSeq) {
+        const cfg = gate.current.cfg;
+        const lagMs = lastChirp.current?.lagMs ?? null;
+        const killed = next.killing && !prev.killing;
+        const leakSeen = cfg ? leaked(leak.current, cfg) : true;
+        const deadline = cfg ? tailPlan(killed, lagMs, leakSeen, cfg) : null;
         tailRun.current = {
           seq: next.tailSeq,
           gen: next.gen,
           elapsedMs: 0,
           quietMs: 0,
-          deadline: next.killing && !prev.killing,
+          deadline,
+          lagMs,
+          leakSeen,
+          leakMs: leak.current.ms,
         };
-      else if (!next.tail) tailRun.current = null;
+        lastTail.current = { rule: deadline?.reason ?? "quiet", deadlineMs: deadline?.ms ?? null };
+      } else if (!next.tail) tailRun.current = null;
+      // A NEW REPLY is a new question for the leak evidence; the SAME reply resuming (a pause, a stall)
+      // keeps what its first half showed. One read of the store at the edge, no subscription.
+      if (!prev.mouthLive && next.mouthLive) {
+        const replyId = lastReply()?.id ?? null;
+        if (replyId === null || replyId !== leak.current.replyId) leak.current = newLeak(replyId);
+      }
       // THE TEXT BACKSTOP'S WINDOW (D80 ②) follows the same two edges: from the mouth's LAST fall
       // (drain, failure, kill) through the tail's release, plus `echo_window_ms` — the echo's final
       // lands ~0.4 s after its own stop, and that stop comes `silence_ms` after the audible end (R91 §6).
@@ -2109,6 +2264,9 @@ export function useLiveCall(): CallView {
             // goes with it; the fresh capture registers its own if its track needs one.
             setCallPrePlay(null);
             chirp.current = null; // the fresh ear plays — and measures — its own chirp (the route moved)
+            lastChirp.current = null; // …and until it has, the old sink's lag is no evidence about this one
+            clearTimeout(rechirpTimer.current); // …which is the re-chirp a pending device change wanted
+            leak.current = newLeak(null); // the fresh ear re-measures the rest of any reply still playing
             clearTimeout(noiseTimer.current); // a verdict about a segment on the ear being released
             // The OLD ear's learned level goes back under the OLD device's key (D76 §C.3) before the
             // fresh capture seeds from whatever its own key holds.
@@ -2390,6 +2548,17 @@ export function useLiveCall(): CallView {
    *              per-RUN: StrictMode's first setup must go on refusing its own late capture even after
    *              the second setup has started a real one.
    */
+  /** THE CONNECT CHIRP, played and listened for on `cap` (D80 ⑦): scheduled on the capture's own context
+   *  a lead ahead of its clock, a fresh matcher over the same clock, and its window riding the drop cue's
+   *  mask (`max`-merged — never shortening one already running). ONE door for both callers: the
+   *  capture's start and a mid-call device change. */
+  const startChirp = useCallback((cap: PcmCapture, frameMs: number): void => {
+    const when = cap.context.currentTime + CHIRP_LEAD_MS / 1000;
+    if (!playChirp(cap.context, when)) return;
+    chirp.current = new ChirpMatcher(cap.sampleRate, when);
+    cueFramesLeft.current = Math.max(cueFramesLeft.current, Math.ceil(CHIRP_HOLD_MS / frameMs));
+  }, []);
+
   const acquire = useCallback(
     (req: MicRequest, alive: () => boolean): void => {
       if (!knobs) return;
@@ -2435,7 +2604,7 @@ export function useLiveCall(): CallView {
               // capture is alive.
               // THE CONNECT CHIRP's matcher sees EVERY frame first (D80 ⑦) — its own sound is exactly
               // what it listens for, so no mask applies to it. Its verdict lands once, on the frame that
-              // closes its window; nothing reads it for POLICY in this wave.
+              // closes its window, and from then on times every tail on this capture (`tailPlan`).
               const cm = chirp.current;
               if (cm !== null) {
                 const verdict = cm.feed(frame.buf, frame.t);
@@ -2447,12 +2616,6 @@ export function useLiveCall(): CallView {
                     "chirp",
                     lagMs === null ? { none: true, peak, second } : { lagMs, peak, second },
                   );
-                  // THE WAVE 1.5 SEAM (D80 ⑦): once one car round shows this lag ≈ each reply's
-                  // measured tail (within ±100 ms), it SETS the tail hold — release = playback end +
-                  // `verdict.lagMs` + 300 ms, the minimum and the cap collapsing onto it — the
-                  // self-calibration that makes one number right on every route. Monotone-safe (R93 §V):
-                  // it may only LENGTHEN the hold, and no return (`lagMs: null`) keeps the quiet rule.
-                  // Deliberately NOT wired now: the lag is logged, and compared, first.
                 }
               }
               // …and the drop cue's own window rides up as silence too (the S0b code round, MED 2): the
@@ -2495,6 +2658,17 @@ export function useLiveCall(): CallView {
               // still carries its REAL level, D76 §B.1: that is what the release listens to), against
               // the NOISE estimate (`tailStep`). The verdict reaches the capture before the NEXT frame
               // is classified, the playback subscription's same-task rule.
+              // …and THIS REPLY'S LEAK EVIDENCE, accumulated on the same frames while the mouth is live
+              // (`LeakEvidence`: loud against the noise floor by the tail's own margin, or unknown).
+              if (ref.current.mouthLive)
+                leakFrame(
+                  leak.current,
+                  db,
+                  g.noise.floor,
+                  ref.current.muted,
+                  knobs.frame_ms,
+                  knobs.tail_quiet_margin_db,
+                );
               const tr = tailRun.current;
               if (tr !== null) {
                 const reason = tailStep(
@@ -2507,7 +2681,17 @@ export function useLiveCall(): CallView {
                 );
                 if (reason !== null) {
                   tailRun.current = null;
-                  trail.current?.push("tail", { seq: tr.seq, reason, ms: tr.elapsedMs });
+                  if (lastTail.current)
+                    lastTail.current = { ...lastTail.current, reason, ms: tr.elapsedMs };
+                  trail.current?.push("tail", {
+                    seq: tr.seq,
+                    reason,
+                    ms: tr.elapsedMs,
+                    ...(tr.deadline ? { deadlineMs: tr.deadline.ms } : {}),
+                    ...(tr.lagMs !== null ? { lagMs: tr.lagMs } : {}),
+                    leakSeen: tr.leakSeen,
+                    leakMs: tr.leakMs,
+                  });
                   send({ type: "tailOver", seq: tr.seq, reason, gen: tr.gen });
                   capture.current?.setHeld(ref.current.earHeld);
                 }
@@ -2659,6 +2843,16 @@ export function useLiveCall(): CallView {
                 min_final_ms: knobs.min_final_ms,
                 noise_verdict_ms: knobs.noise_verdict_ms,
                 mic_hold: knobs.mic_hold,
+                // …and every knob a tail's release, the text backstop and the chirp decide by (D80), so a
+                // release can be reconstructed from the trail after the fact (the car card reads it).
+                hold_tail_min_ms: knobs.hold_tail_min_ms,
+                tail_quiet_ms: knobs.tail_quiet_ms,
+                tail_quiet_margin_db: knobs.tail_quiet_margin_db,
+                hold_tail_max_ms: knobs.hold_tail_max_ms,
+                tail_lag_margin_ms: knobs.tail_lag_margin_ms,
+                echo_similarity: knobs.echo_similarity,
+                echo_window_ms: knobs.echo_window_ms,
+                chirp: knobs.chirp,
               },
             });
             if (trailSampler.current === undefined)
@@ -2683,23 +2877,14 @@ export function useLiveCall(): CallView {
           // `mic_hold` says: it is the call's "connected" sound. Its own window rides the drop cue's mask,
           // and its matcher hears everything. `chirp: false` plays nothing, measures nothing, trails
           // nothing (the whole-feature toggle).
-          if (knobs.chirp) {
-            const when = cap.context.currentTime + CHIRP_LEAD_MS / 1000;
-            if (playChirp(cap.context, when)) {
-              chirp.current = new ChirpMatcher(cap.sampleRate, when);
-              cueFramesLeft.current = Math.max(
-                cueFramesLeft.current,
-                Math.ceil(CHIRP_HOLD_MS / knobs.frame_ms),
-              );
-            }
-          }
+          if (knobs.chirp) startChirp(cap, knobs.frame_ms);
           openLeg();
         })
         .catch((e: unknown) => {
           if (alive()) send({ type: "failed", note: micFailure(e) });
         });
     },
-    [knobs, openLeg, send, readDebug],
+    [knobs, openLeg, send, readDebug, startChirp],
   );
 
   acquireRef.current = acquire;
@@ -2753,8 +2938,36 @@ export function useLiveCall(): CallView {
     // it is holding across the cycle is released by the poke that follows the cycle's own reduce.
     setCallMouthGate(() => mouthMayOpen(ref.current));
     acquire({ route: knobs.route, deviceId: knobs.input_device }, () => !disposed);
+    // THE SINK CAN MOVE WITHOUT A ROUTE CYCLE (D80 ⑦ as-built, the wave-1.5 fix wave's O-W15-MED): a
+    // call started on the phone's speaker, and the car's Bluetooth connects mid-call — every tail would
+    // go on planning the SPEAKER's lag (≈ 0.5 s) while the car plays 2.3 s late, the dangerous direction.
+    // So a `devicechange` forgets the measured lag AT ONCE (the tails between take the no-lag rules, the
+    // safe side), drops a matcher still listening, and RE-CHIRPS on the same capture once the list has
+    // settled (`RECHIRP_SETTLE_MS`) — even over a reply: the matcher is proven under over-talk. Its own
+    // listener, deliberately not the Sound picker's: that one refreshes a LIST on the overlay (and lives
+    // only while the deck is rendered); this one is the machine's evidence, and must not depend on what
+    // the screen happens to show. UNVERIFIED on the car itself: whether an A2DP-only head unit raises
+    // `devicechange` on Android Chrome at all (its INPUT list may not move) — the car card probes it;
+    // the passive per-reply onset-lag check (R93 §V.b5) is the recorded seam that would not need it.
+    const md: MediaDevices | undefined = navigator.mediaDevices;
+    const onDevices = (): void => {
+      // A change while `getUserMedia` is still opening needs no re-chirp: the capture's own chirp,
+      // scheduled once it opens, already measures whatever output is current by then.
+      if (!capture.current) return;
+      lastChirp.current = null;
+      chirp.current = null;
+      trail.current?.push("chirp", { reset: "devicechange" });
+      clearTimeout(rechirpTimer.current);
+      rechirpTimer.current = setTimeout(() => {
+        const cap = capture.current;
+        if (cap && !isTerminal(ref.current.phase)) startChirp(cap, knobs.frame_ms);
+      }, RECHIRP_SETTLE_MS);
+    };
+    if (knobs.chirp) md?.addEventListener("devicechange", onDevices);
     return () => {
       disposed = true;
+      md?.removeEventListener("devicechange", onDevices);
+      clearTimeout(rechirpTimer.current);
       // THROUGH THE REDUCER, not a bare `teardown()`: the `unmounted` arm moves the generation FIRST,
       // so a callback that lands after this cleanup — `close()` only starts the socket's handshake,
       // and a `killSettled`/`sent` settlement answers whenever it answers — is a ghost by the same

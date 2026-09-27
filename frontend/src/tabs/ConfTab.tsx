@@ -869,6 +869,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   tail_quiet_ms: 700,
   tail_quiet_margin_db: 10,
   hold_tail_max_ms: 5000,
+  tail_lag_margin_ms: 300,
   echo_similarity: 0.75,
   echo_window_ms: 4000,
   chirp: true,
@@ -1920,6 +1921,8 @@ export function ConfTab({ active }: Props) {
           tail_quiet_ms: numOrNull(draft.voice.live.tail_quiet_ms),
           tail_quiet_margin_db: numOrNull(draft.voice.live.tail_quiet_margin_db),
           hold_tail_max_ms: numOrNull(draft.voice.live.hold_tail_max_ms),
+          // …and D80 ⑦'s lag margin, the same way: 0 MEANS something (release exactly at the lag).
+          tail_lag_margin_ms: numOrNull(draft.voice.live.tail_lag_margin_ms),
           // D80 ②'s pair: the window's 0 MEANS something (compare only while the tail holds), and the
           // similarity is floored at 0.5 — both earn the visible 422 for a blank, never a silent 0.
           echo_similarity: numOrNull(draft.voice.live.echo_similarity),
@@ -2959,10 +2962,10 @@ export function ConfTab({ active }: Props) {
           </SettingRow>
           {/* D80 ⑦ (evidence docs/research/R93 §V) — the call's "connected" sound doubles as a
               measurement: the mic listens for its return, which says how late this output plays (a car
-              over Bluetooth: seconds). Logged for now; a later wave lets it time the mic hold. */}
+              over Bluetooth: seconds), and that is how long the mic stays off after each reply. */}
           <SettingRow
             label="Connect chirp"
-            desc="a short rising tone when the call connects — the call listens for it to measure how late your speaker plays (the debug readout shows it)"
+            desc="a short rising tone when the call connects — the call listens for it to measure how late your speaker plays, and keeps the mic off after each reply for that long; off → the mic listens for the reply's echo to die away instead"
           >
             <Switch
               on={!!vlive?.chirp}
@@ -3113,21 +3116,30 @@ export function ConfTab({ active }: Props) {
           />
           <Field
             label="Tail quiet (ms)"
-            desc="…then it reopens once the room has been quiet this long, unbroken (100–5000) — long enough to span the pauses inside a reply"
+            desc="if the connect chirp couldn't measure the speaker, it reopens once the room has been quiet this long, unbroken (100–5000) — long enough to span the pauses inside a reply"
             value={String(vlive?.tail_quiet_ms ?? "")}
             onChange={(v) => setLive("tail_quiet_ms", v as unknown as number)}
           />
           <Field
             label="Tail quiet margin (dB)"
-            desc="quiet = less than this above the room's own noise (0–40)"
+            desc="if the connect chirp couldn't measure the speaker, quiet = less than this above the room's own noise (0–40)"
             value={String(vlive?.tail_quiet_margin_db ?? "")}
             onChange={(v) => setLive("tail_quiet_margin_db", v as unknown as number)}
           />
           <Field
             label="Tail hold cap (ms)"
-            desc="…and it reopens at this at the latest, quiet or not (500–15000); minimum + quiet must fit under it"
+            desc="if the connect chirp couldn't measure the speaker, it reopens at this at the latest, quiet or not — a measured delay never holds it longer either (500–15000); minimum + quiet must fit under it"
             value={String(vlive?.hold_tail_max_ms ?? "")}
             onChange={(v) => setLive("hold_tail_max_ms", v as unknown as number)}
+          />
+          {/* D80 ⑦ (wave 1.5) — when the connect chirp measured how late the speaker plays, the mic's
+              hold after a reply is that delay plus this margin; the four rows above are the fallback
+              for a sink the chirp could not measure. */}
+          <Field
+            label="Tail lag margin (ms)"
+            desc="how much longer than the measured speaker delay the mic stays off after a reply (0–2000)"
+            value={String(vlive?.tail_lag_margin_ms ?? "")}
+            onChange={(v) => setLive("tail_lag_margin_ms", v as unknown as number)}
           />
           {/* D80 ② (evidence docs/research/R91 §3) — the TEXT BACKSTOP behind the tail hold: a
               transcript right after the reply that repeats the reply's own words is the reply heard
