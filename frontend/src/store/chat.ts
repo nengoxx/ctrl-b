@@ -2906,7 +2906,11 @@ export async function sendMessage(
 
   const placeholderId = `assist-${Date.now()}`;
   set({
-    messages: [...state.messages, tempUser, placeholder(placeholderId)],
+    // Session-51 #1c — the placeholder wears the agent that WILL answer, so the "working…" bubble has
+    // the right name + avatar from its first frame (the regenerate path's mirror): the sticky pick this
+    // POST names, else the thread's pin — the server's own fallback order. DISPLAY ONLY: `reqBody` is
+    // untouched. Neither ⇒ `null` (the default) until `message_start` stamps the server's.
+    messages: [...state.messages, tempUser, placeholder(placeholderId, agent ?? state.threadAgent)],
     status: "streaming",
     streamingId: placeholderId,
   });

@@ -57,7 +57,14 @@ describe("resolveAgentArt — the summary × media-index join", () => {
   it("falls back to the slug when the agent set no title, and omits an unset voice", () => {
     const art = resolveAgentArt("ops", summary(), index([]));
     expect(art.title).toBe("ops");
+    expect(art.titled).toBe(false); // the who-line's "untitled" fact (session-51 #1)
     expect(art.voice).toBeUndefined();
+  });
+
+  it("says whether the title is the agent's OWN — even when it spells the slug (session-51 #1)", () => {
+    expect(resolveAgentArt("lynette", summary({ title: "Lynette" }), index([])).titled).toBe(true);
+    // a title that happens to equal the slug is still the agent's own — never inferred by comparison
+    expect(resolveAgentArt("ops", summary({ title: "ops" }), index([])).titled).toBe(true);
   });
 
   it("resolves avatar and background independently, from their own roles", () => {
@@ -78,6 +85,7 @@ describe("resolveAgentArt — the summary × media-index join", () => {
     expect(resolveAgentArt("ghost", undefined, index([row({ file: "a.png" })]))).toEqual({
       name: "ghost",
       title: "ghost",
+      titled: false,
       avatar: undefined,
       background: undefined,
       voice: undefined,

@@ -183,7 +183,8 @@ export function BotWhoLine({
   children,
 }: {
   m: ChatMessage;
-  /** The turn's speaker — the AgentDef name for a specialist turn, else "assistant" (7e-c). */
+  /** The turn's speaker (ChatThread's `whoLabel`, session-51 polish #1): the agent's own title when it
+   *  has one (the default agent included), else its slug for a specialist, else "assistant". */
   label: string;
   /** The already-formatted `hh:mm` (ChatThread owns the clock format). */
   time: string;

@@ -375,11 +375,14 @@ function CmdBubble({
   call,
   result,
   ts,
+  who,
   reasoning,
 }: {
   call: ToolCallPart;
   result: ToolResult | undefined;
   ts: string;
+  /** The turn's who-line name (`whoLabel`) — the same one its text bubble carries (session-51 #1, Q1b). */
+  who: string;
   reasoning?: string;
 }) {
   const hits = call.tool === "web_search" ? hitsFrom(result) : [];
@@ -390,7 +393,9 @@ function CmdBubble({
   const line = callLine(call);
   return (
     <div className={"b cmd" + (result ? " cmd-resolved" : "")}>
-      <div className="who">assistant · {hm(ts)}</div>
+      <div className="who">
+        {who} · {hm(ts)}
+      </div>
       <div className="body">
         {/* The thinking that led to this call renders here so each reasoning block sits with its
             tool call (one assistant turn = think → act). Collapsed; tap to read. */}
@@ -496,10 +501,13 @@ function QuestionBubble({
   call,
   result,
   ts,
+  who,
 }: {
   call: ToolCallPart;
   result: ToolResult | undefined;
   ts: string;
+  /** The turn's who-line name (`whoLabel`) — the same one its text bubble carries (session-51 #1, Q1b). */
+  who: string;
 }) {
   const prompt = typeof call.args.prompt === "string" ? call.args.prompt : "";
   const awaiting = !result && call.state === "awaiting_answer";
@@ -527,7 +535,9 @@ function QuestionBubble({
   };
   return (
     <div className="b cmd question">
-      <div className="who">assistant · {hm(ts)}</div>
+      <div className="who">
+        {who} · {hm(ts)}
+      </div>
       <div className="body">
         <div className="q-prompt">{prompt || "(question)"}</div>
         {awaiting ? (
@@ -626,6 +636,20 @@ function selectOne(hostId: string, n: number): void {
   void selectAlternate(hostId, n);
 }
 
+/** The who-line NAME of an assistant turn (session-51 polish #1, owner-ruled Q1a): a character with a
+ *  `title` shows it — the default agent included, which the 7e-c rule used to hide behind
+ *  "assistant". An untitled agent keeps the 7e-c look: "assistant" for the resolved default (and a
+ *  bare `null` turn, which IS the default), its slug for a specialist. Read off `titled`, never by
+ *  comparing `title` to the slug (the resolver folds a missing title into the slug). */
+function whoLabel(
+  agent: string | null,
+  art: AgentArt,
+  resolvedDefault: string | undefined,
+): string {
+  if (art.titled) return art.title;
+  return agent && agent !== resolvedDefault ? agent : "assistant";
+}
+
 // React.memo so a streamed token re-renders ONLY the streaming bubble, not the whole log: during text
 // streaming the store preserves the identity of every non-streaming message (appendDelta returns the same
 // `m` for them), and all the other props are referentially stable (resultFor is ref-backed below;
@@ -642,6 +666,7 @@ const Bubbles = memo(function Bubbles({
   resolvedDefault,
   ttsOn,
   agentArt,
+  avatars,
 }: {
   m: ChatMessage;
   streaming: boolean;
@@ -658,15 +683,18 @@ const Bubbles = memo(function Bubbles({
   /** D81 — RETRY as a new variant (I4 risk-aware: the store confirms before re-running a reply that
    *  ran a non-retry-safe tool) — stable. The F20 pill and the disclosure's `retry` both call it. */
   onRegenerate: (hostId: string) => void;
-  /** The resolved default agent slug (7e-c). An assistant turn is labelled with its `agent` only
-   * when it differs from this — so default turns stay clean and specialist turns are attributed. */
+  /** The resolved default agent slug (7e-c): an UNTITLED agent's turn is labelled with its slug only
+   * when it differs from this — see `whoLabel` (session-51 #1: a titled agent always shows its title). */
   resolvedDefault: string | undefined;
   /** Whether TTS is configured (6b-2) — gates the per-bubble read-aloud toggle. */
   ttsOn: boolean;
-  /** D70 §8.5 — the who-line avatar resolver, or `undefined` while the Appearance switch is off (which
-   *  is how the whole feature turns into today's dot: nothing to resolve, nothing to draw). Stable like
-   *  `resultFor` above, so threading it costs the memo nothing. */
-  agentArt?: (name: string | null) => AgentArt;
+  /** D70 §8.5 — the agent resolver, handed down ALWAYS: the who-line NAME reads it whatever the
+   *  Appearance switch says (session-51 #1 — avatars off ≠ names off). Stable like `resultFor` above,
+   *  so threading it costs the memo nothing. */
+  agentArt: (name: string | null) => AgentArt;
+  /** The Appearance switch (`chatAvatarsVisible`): off ⇒ no avatar is drawn and every bubble takes
+   *  the `.who::before` dot path. A boolean, so it is memo-stable too. */
+  avatars: boolean;
 }) {
   if (m.role === "tool") return null; // results render inside their command bubble (paired by id)
 
@@ -743,6 +771,11 @@ const Bubbles = memo(function Bubbles({
     (c) => c.tool !== "task_plan" && c.tool !== "question",
   )?.call_id;
   const reasoningInBot = !!reasoning && !reasoningHostId;
+  // A null `agent` is a turn the DEFAULT agent ran (7e-c), so that is who it resolves to — the
+  // resolver's own `null` contract. One resolution serves the name (every bubble of the turn) and the
+  // avatar (only while the Appearance switch is on).
+  const art = agentArt(m.agent ?? null);
+  const who = whoLabel(m.agent ?? null, art, resolvedDefault);
   const showBot = !!(text || err || working || reasoningInBot);
   // D81 — the owner's actions on a DURABLE reply row, only while no turn streams. `retry` + the counter
   // hang off the tail's host (`reply`, the server's annotation); `edit` needs text to edit (a folded row
@@ -785,11 +818,9 @@ const Bubbles = memo(function Bubbles({
               trailing extras stay here (they're ChatThread's own furniture) and ride in as children. */}
           <BotWhoLine
             m={m}
-            label={m.agent && m.agent !== resolvedDefault ? m.agent : "assistant"}
+            label={who}
             time={hm(m.ts)}
-            // A null `agent` is a turn the DEFAULT agent ran (7e-c), so that is whose avatar it wears —
-            // the resolver's own `null` contract.
-            avatar={agentArt?.(m.agent ?? null).avatar}
+            avatar={avatars ? art.avatar : undefined}
             actions={actions}
             variant={variant}
           >
@@ -823,7 +854,9 @@ const Bubbles = memo(function Bubbles({
               </span>
             ) : (
               <span className="md">
-                <Markdown text={text} />
+                {/* Q2b — a settled reply italicizes an action the model never closed; mid-stream it
+                    stays literal until the closer arrives (session-51 #2). */}
+                <Markdown text={text} settled={!streaming} />
                 {streaming && text && <span className="caret">▍</span>}
               </span>
             )}
@@ -834,13 +867,20 @@ const Bubbles = memo(function Bubbles({
         c.tool === "task_plan" ? (
           <PlanBubble key={c.call_id} call={c} result={resultFor(c.call_id)} />
         ) : c.tool === "question" ? (
-          <QuestionBubble key={c.call_id} call={c} result={resultFor(c.call_id)} ts={m.ts} />
+          <QuestionBubble
+            key={c.call_id}
+            call={c}
+            result={resultFor(c.call_id)}
+            ts={m.ts}
+            who={who}
+          />
         ) : (
           <CmdBubble
             key={c.call_id}
             call={c}
             result={resultFor(c.call_id)}
             ts={m.ts}
+            who={who}
             reasoning={c.call_id === reasoningHostId ? reasoning : undefined}
           />
         ),
@@ -886,12 +926,12 @@ export function ChatThread({ active, chat, emptyState }: Props) {
   // for plan placement, so this avoids a second O(n) pairing. `resultByCall` is memoized there;
   // `resolvedDefault` attributes per-turn agents (7e-c); `ttsOn` gates the per-bubble read-aloud.
   const { messages, status, streamingId, resultByCall, resolvedDefault, ttsOn } = chat;
-  // D70 §8.5 — the who-line avatar. ONE resolver for the whole log (a per-bubble hook would be two
-  // query observers per message), and the Appearance switch is honored HERE by not handing one down at
-  // all: off ⇒ every bubble takes the `.who::before` dot path with nothing resolved for it.
+  // D70 §8.5 — ONE agent resolver for the whole log (a per-bubble hook would be two query observers
+  // per message), handed down always: it answers the who-line NAME (session-51 #1) as well as the
+  // avatar. The Appearance switch gates only the AVATAR — off ⇒ every bubble takes the `.who::before`
+  // dot path, but still shows the agent's name.
   const chatAvatars = useUISlice((s) => s.chatAvatarsVisible);
-  const resolveArt = useAgentArt();
-  const agentArt = chatAvatars ? resolveArt : undefined;
+  const agentArt = useAgentArt();
   // D81 fix wave 1 — the last UNSENT bubble's index: every message before it is `locked` (no retry).
   let lastUnsent = -1;
   for (let i = messages.length - 1; i >= 0; i--)
@@ -1005,6 +1045,7 @@ export function ChatThread({ active, chat, emptyState }: Props) {
             resolvedDefault={resolvedDefault}
             ttsOn={ttsOn}
             agentArt={agentArt}
+            avatars={chatAvatars}
           />
         </ArriveWrap>
       ))}

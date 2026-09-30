@@ -15,23 +15,33 @@ vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: []
 // D70 §8.5 — the agent-art resolver is a QUERY PAIR (roster + media index), so it is mocked rather than
 // dragging a QueryClient in (the same reason `useActionSpecs` is mocked above). `art` is the mutable
 // answer: NO ART by default, which is the state every pre-D70 assertion in this file is about.
-const art = vi.hoisted(() => ({
-  url: undefined as string | undefined,
-  focus: undefined as FocalArt | undefined,
-}));
+// `titles` (session-51 #1) is the mocked roster's OWN titles; an agent absent from it is untitled, so
+// its `title` is the slug fallback exactly as `resolveAgentArt` folds it.
+const art = vi.hoisted(() => {
+  const titles: Record<string, string> = {};
+  return {
+    url: undefined as string | undefined,
+    focus: undefined as FocalArt | undefined,
+    titles,
+  };
+});
 vi.mock("../../src/hooks/useAgentArt", () => ({
-  useAgentArt: () => (name: string | null) => ({
-    name: name ?? "default",
-    title: name ?? "default",
-    avatar: art.url === undefined ? undefined : { url: art.url, focus: art.focus },
-  }),
+  useAgentArt: () => (name: string | null) => {
+    const target = name ?? "default";
+    return {
+      name: target,
+      title: art.titles[target] || target,
+      titled: !!art.titles[target],
+      avatar: art.url === undefined ? undefined : { url: art.url, focus: art.focus },
+    };
+  },
 }));
 
 import { ChatThread } from "../../src/components/ChatThread";
 import type { FocalArt } from "../../src/lib/focalPosition";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
 import { AUTOMATIONS_GROUP_ID } from "../../src/hooks/useAutomations";
-import { sendMessage, useChat } from "../../src/store/chat";
+import { openThread, sendMessage, setStickyAgent, useChat } from "../../src/store/chat";
 import { clearGroupScrollTarget, getGroupScrollTarget } from "../../src/store/groupScroll";
 import { getUI, setUI } from "../../src/store/ui";
 import {
@@ -56,6 +66,7 @@ afterEach(() => {
   setPlanSheetOpen(false); // module state — reset between cases
   art.url = undefined; // ...and the mocked agent art (D70 §8.5)
   art.focus = undefined;
+  art.titles = {};
   setUI({ chatAvatarsVisible: true });
 });
 
@@ -773,5 +784,165 @@ describe("D70 · the who-line avatar swap", () => {
     const { container } = render(<ChatThread active chat={botChat()} />);
     expect(container.querySelector(".b.bot .who .who-face")).not.toBeNull();
     expect(container.querySelector(".b.bot .who")?.textContent).toMatch(/^assistant · /);
+  });
+});
+
+// ── session-51 polish #1 (owner-ruled Q1a/Q1b) — the who-line NAMES the character: a titled agent
+// shows its title (the default agent included); an untitled default keeps "assistant", an untitled
+// specialist its slug. The name never rides the Appearance switch, and every bubble of a turn — the
+// text, a tool call, a question — carries the same one.
+describe("session-51 #1 · the who-line names the character", () => {
+  const withDefault = (chat: AgentChat, resolvedDefault: string): AgentChat => ({
+    ...chat,
+    resolvedDefault,
+  });
+  const whoOf = (c: HTMLElement, sel = ".b.bot .who") => c.querySelector(sel)?.textContent ?? "";
+
+  it("shows the DEFAULT agent's title — the owner's bug (Lynette read as 'assistant')", () => {
+    art.titles = { lynette: "Lynette" };
+    const { container } = render(
+      <ChatThread active chat={withDefault(botChat({ agent: "lynette" }), "lynette")} />,
+    );
+    expect(whoOf(container)).toMatch(/^Lynette · \d\d:\d\d/);
+  });
+
+  it("names a bare (null-agent) turn by the default agent it ran as", () => {
+    art.titles = { default: "Lynette" };
+    const { container } = render(<ChatThread active chat={withDefault(botChat(), "default")} />);
+    expect(whoOf(container)).toMatch(/^Lynette · /);
+  });
+
+  it("keeps 'assistant' for an UNTITLED default agent", () => {
+    const { container } = render(
+      <ChatThread active chat={withDefault(botChat({ agent: "lynette" }), "lynette")} />,
+    );
+    expect(whoOf(container)).toMatch(/^assistant · /);
+  });
+
+  it("shows a titled specialist's title, and an untitled specialist's slug", () => {
+    art.titles = { seraphina: "Seraphina" };
+    const titled = render(
+      <ChatThread active chat={withDefault(botChat({ agent: "seraphina" }), "lynette")} />,
+    );
+    expect(whoOf(titled.container)).toMatch(/^Seraphina · /);
+    cleanup();
+    const untitled = render(
+      <ChatThread active chat={withDefault(botChat({ agent: "ops" }), "lynette")} />,
+    );
+    expect(whoOf(untitled.container)).toMatch(/^ops · /);
+  });
+
+  it("keeps the name with the Appearance switch OFF (avatars off ≠ names off)", () => {
+    art.titles = { lynette: "Lynette" };
+    art.url = "/api/media/agents/files/avatars/lynette.png?rev=r1";
+    setUI({ chatAvatarsVisible: false });
+    const { container } = render(
+      <ChatThread active chat={withDefault(botChat({ agent: "lynette" }), "lynette")} />,
+    );
+    expect(whoOf(container)).toMatch(/^Lynette · /);
+    expect(container.querySelector(".b.bot .who .who-face")).toBeNull(); // only the avatar is gated
+  });
+
+  it("a tool-call bubble carries the turn's name (Q1b)", () => {
+    art.titles = { seraphina: "Seraphina" };
+    const chat = awaitingChat();
+    chat.messages = chat.messages.map((m) => ({ ...m, agent: "seraphina" }));
+    const { container } = render(<ChatThread active chat={withDefault(chat, "lynette")} />);
+    expect(whoOf(container, ".b.cmd .who")).toMatch(/^Seraphina · \d\d:\d\d/);
+  });
+
+  it("a question bubble carries the turn's name (Q1b)", () => {
+    art.titles = { lynette: "Lynette" };
+    const chat = questionChat({ prompt: "Tea?" });
+    chat.messages = chat.messages.map((m) => ({ ...m, agent: "lynette" }));
+    const { container } = render(<ChatThread active chat={withDefault(chat, "lynette")} />);
+    expect(whoOf(container, ".b.cmd.question .who")).toMatch(/^Lynette · /);
+  });
+
+  // #1c — the "working…" placeholder a SEND shows before `message.start` wears the agent the POST
+  // names, not the default's (the regenerate path already mirrored it).
+  it("the send placeholder carries the agent the request names (#1c)", async () => {
+    // The turn's POST is held open so the placeholder can be read before `message.start`; every later
+    // fetch (the end-of-turn floor re-read) answers at once.
+    const frames = [
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "done", data: { state: "done" } },
+    ];
+    let release: (r: Response) => void = () => {};
+    globalThis.fetch = vi
+      .fn(() => Promise.resolve(sseResponse(frames)))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            release = resolve;
+          }),
+      );
+    setStickyAgent("seraphina");
+    try {
+      const { result } = renderHook(() => useChat());
+      let sent!: Promise<unknown>;
+      act(() => {
+        sent = sendMessage("hello");
+      });
+      const body = JSON.parse(
+        (vi.mocked(globalThis.fetch).mock.calls[0][1] as RequestInit).body as string,
+      ) as { agent: string | null };
+      const placeholder = result.current.messages.find((m) => m.id.startsWith("assist-"));
+      expect(body.agent).toBe("seraphina");
+      expect(placeholder?.agent).toBe("seraphina"); // the same value the wire carries
+      release(sseResponse(frames));
+      await act(async () => {
+        await sent;
+      });
+    } finally {
+      setStickyAgent(null);
+    }
+  });
+
+  // Fix wave 1 — with no sticky pick, the agent that will answer is the THREAD's pin (the server's own
+  // fallback order), so a Seraphina thread's placeholder is Seraphina's; the POST still names no agent.
+  it("the send placeholder falls back to the thread's pinned agent, display only (#1c)", async () => {
+    const frames = [
+      { event: "thread", data: { threadId: "t-sera" } },
+      { event: "done", data: { state: "done" } },
+    ];
+    const json = (body: unknown) =>
+      ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as unknown as Response;
+    let release: (r: Response) => void = () => {};
+    globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("/api/threads?"))
+        return Promise.resolve(json([{ id: "t-sera", agent: "seraphina" }]));
+      if (url.startsWith("/api/threads/")) return Promise.resolve(json([]));
+      if (url.startsWith("/api/agent/turns/")) return Promise.resolve(json({ running: false }));
+      if (url === "/api/agent/chat")
+        return new Promise<Response>((resolve) => {
+          release = resolve;
+        });
+      return Promise.resolve(sseResponse(frames));
+    });
+    setStickyAgent(null);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await openThread("t-sera");
+    });
+    await vi.waitFor(() => expect(result.current.threadAgent).toBe("seraphina"));
+    let sent!: Promise<unknown>;
+    act(() => {
+      sent = sendMessage("hello");
+    });
+    const chatCall = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(([u]) => String(u) === "/api/agent/chat");
+    const body = JSON.parse((chatCall![1] as RequestInit).body as string) as {
+      agent: string | null;
+    };
+    const placeholder = result.current.messages.find((m) => m.id.startsWith("assist-"));
+    expect(body.agent).toBeNull(); // the request is unchanged: the server resolves the pin itself
+    expect(placeholder?.agent).toBe("seraphina");
+    release(sseResponse(frames));
+    await act(async () => {
+      await sent;
+    });
   });
 });

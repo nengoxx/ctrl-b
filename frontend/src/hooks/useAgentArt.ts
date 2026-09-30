@@ -48,6 +48,10 @@ export interface BoundArt {
 export interface AgentArt {
   name: string;
   title: string;
+  /** The agent set its OWN title (false ⇒ `title` is the slug fallback). The who-line needs the
+   *  difference — an untitled default reads "assistant" (session-51 polish #1) — and comparing `title`
+   *  to the slug would misread an agent whose title happens to equal its slug. */
+  titled: boolean;
   avatar?: BoundArt;
   background?: BoundArt;
   /** The agent's own TTS voice binding; absent ⇒ the global `voice.tts` chain answers (ruling 21). */
@@ -79,6 +83,7 @@ export function resolveAgentArt(
   return {
     name,
     title: summary?.title || name,
+    titled: !!summary?.title,
     avatar: bound(index?.roles?.[AVATARS_ROLE], summary?.avatar ?? ""),
     background: bound(index?.roles?.[BACKGROUNDS_ROLE], summary?.background ?? ""),
     voice: summary?.voice || undefined,
