@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-10-01 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 54 (Fable) bought R98, RULED the VAD-model boundary (ASR_PLAN §3.4.1, R25 — Silero v6.2 the default) and BUILT + two-reviewer-CLOSED + COMMITTED Phase 26 session A's first slice, S1 telemetry (`6e87f30`); R98 + the amendment = `66ead3a`. 16 commits on `main` UNPUSHED (incl. this handoff); push on the owner's word. Next = S2 in a CLEAN session (the brief is written). v1.7.11 = polish + session A once A lands; v1.7.12 = session B**)
+## Where we are (2026-10-01 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 55 (Fable) BUILT + two-reviewer-closed + COMMITTED Phase 26 session A's S2 (`ad94796`, the wall-clock uplink allowance) and SP (`cd2cb02`, the dictation policy rulings), RULED S3 absorbed (`db742d6`). 20 commits on `main` UNPUSHED (incl. this handoff); push on the owner's word. Next = K6 in a CLEAN session (the brief is written) → D9 → D8 → D5 → v1.7.11 = polish + session A; v1.7.12 = session B**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): at writing time
   tag **`v1.7.10` on `9c5a6c6` — LIVE** (released 2026-09-27 evening ≈ 18:14Z per `deploy/linux/README.md`
@@ -56,6 +56,68 @@
   `origin/main` `778b960`:** `53f8010` · `7522040` · `c09d47b` · `31953a9` · `23fd88a` · `c1c8bad`, plus this
   handoff. Push on the owner's word. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
+
+## ▶▶ NEW (2026-10-01, Fable seat, session 55) — PHASE 26 S2 BUILT + COMMITTED · S3 RULED ABSORBED · SP BUILT + COMMITTED · NEXT = K6 IN A CLEAN SESSION (the brief is written)
+
+**Read first:** [`ASR_PLAN.md`](./ASR_PLAN.md) §7.1 (the session-A ladder: S1 ✅ → S2 ✅ → S3 ✅ absorbed → SP ✅ → **K6 next** → D9 → D8 →
+D5 → release) · §3.3 (the allowance, as built in S2) · §3.9 ③/⑤ (SP as built; K6 the spec). The session record is
+`~/.cache/tmp/ctrlb-session55/` (`SESSION_PLAN.md` · `RULINGS.md` = every finding of both reviewers with its ruling, S2 AND SP, plus the
+S3 scope ruling · `brief-S2-*` / `lane-S2-report.md` · `brief-SP-*` / `lane-SP-report.md` (D1–D20 + the stop-path → release table +
+the `clip_bytes` order per path) · `review-*`/`confirm*-*` for both rounds · **`brief-K6-16khz-capture.md` = the NEXT lane's brief,
+READY** · `REVIEW_COMMON.md`).
+
+### What happened (in order)
+1. **S2 — the wall-clock uplink allowance** (`ad94796`): `_note_frame` is a token bucket (audio-ms, capacity `UPLINK_ALLOWANCE_MS` =
+   30 s, plus a frame-count twin 30 s / `frame_ms`), both START FULL, refilled at wall rate, armed immediately before `ready`
+   (`_arm_allowance`, its own stamp — never `_LegStats.started`); a violation = 1008 naming the budget + the credit found;
+   `RATE_WINDOW_S`/`RATE_MULTIPLIER`/the deque GONE. The Q2 inequality is a `LiveCfg` load validator
+   (`_allowance_covers_the_reservoirs`: 30 000 ≥ 10 000 keepalive + max(buffered_ceiling_ms, call_backlog_ms) + buffered_ceiling_ms
+   + 500 pacer cap + 2·frame_ms = 12 580 at defaults); the three constants live in `app/config.py` (config never imports a
+   service). T2 = `credit_min_ms` + `budget` on the leg-end line + trail. Client: PROSE ONLY. **Consequence:** `buffered_ceiling_ms`
+   > 9 710 or `call_backlog_ms` > 18 420 (others at defaults) now REFUSE to load / 422 (neither live config sets them). Round:
+   Opus ∥ Emma SHIP WITH FIXES (all prose/copy) → wave → Opus CONFIRMED, Emma NOT CONFIRMED (2 LOW prose) → wave 2 → both
+   CONFIRMED SHIP.
+2. **S3 RULED ABSORBED** (`db742d6`, docs): S1 already delivered the typed codes + the spec-pinned StopReason vocabulary (every
+   K-path is classifiable from the trail), S2 rewrote the K3-reversal prose; a `protocol` StopReason member REJECTED (S8 rewrites
+   the death consequence). No build, no round. TODO S1/S2/S3 ticked.
+3. **SP — the dictation policy rulings P1·P2·P3** (`cd2cb02`): P1 the hands-free idle stop measures against a RELATIVE floor —
+   `levelGate`'s noise tracker (REUSED) + NEW `dictation_idle_margin_db` (10 dB, 0–40) — `dictation_idle_s` 300 (was 15), 0–1800,
+   **0 = off**; a dead/digital-zero input (Android's mic privacy toggle) counts as silence (`db < NOISE_DISCARD_DBFS`, ruled D1);
+   Tier-0 UNTOUCHED. P2 `dictation_max_s` 1790 (was 120) under `max_session_s` 1800 with the NEW validator
+   `_dictation_cap_under_session` (`<`; Conf 422); the recorder asks `audioBitsPerSecond` 32 000 (`RECORDER_BITRATE`, T-1 pin);
+   the dictation `end` line gains `clip_bytes` (T4; `null` on the drop paths). P3 the wake lock LIFTED into `lib/wakeLock.ts`
+   (`takeWakeLock(state, stillWanted)` / `releaseWakeLock`, the call's body verbatim, the fence parameterized); dictation takes
+   a FRESH state per recording right after `rec.start()` and releases in `teardownDetector` (every stop path reaches it — the
+   table in the lane report); no visibility re-take (foreground-only). `/voice/status` delivers the margin; Conf gains its row;
+   cleared `dictation_idle_s`/margin ride as NULL (the 0-means-something precedent). LIVE_VOICE_PLAN §4.1/§5.1 mirrored. Round:
+   Opus SHIP WITH FIXES (2 MED: the 0-final leg drop left an UNBOUNDED hot mic with the screen held — fixed, the lock goes back with the leg; a rollback trap — a stored `dictation_idle_s` of 0 or > 300 breaks v1.7.10's 3–300 bounds — §8.3 + the card) ∥ Emma DO NOT SHIP (HIGH = MY freeze omitted the two NEW files — `git diff` skips untracked; MED = a 1 s bootstrap can seat the floor on speech — fixed with a `settled` gate; MED = the margin copy was REVERSED — fixed) → wave 1 → Opus CONFIRMED (v2 + his own v3 one-liner) · **Emma NOT CONFIRMED on one ACCEPTED RESIDUAL** (a minimum tracker needs the speaker's gaps; a voice with no 10 dB dip for a whole 5 s window reads as a room and a legal SHORT `dictation_idle_s` could stop mid-sentence — recorded as a KNOWN LIMIT in the config comment; the 300 s default is where the policy lives; the voice reference belongs to S8/TUNE; **owner may re-rule**, e.g. a `ge` of 30 s).
+
+### ▶▶ NEXT SESSION = K6 (16 kHz capture at both sites) — the brief is written, spawn it first thing
+- **Spawn** ONE Opus 5.5 build lane on `~/.cache/tmp/ctrlb-session55/brief-K6-16khz-capture.md` (pins ONE helper
+  `openCaptureContext(stream)` in `pcmCapture.ts` — `{ sampleRate: 16000 }`, probe `createMediaStreamSource`, fall back to the
+  native rate on a throw; both sites call it; `native_rate` on the `capture`/`rec` trail lines; `fftSize` 1024; prose sites).
+  Open a NEW scratch dir `~/.cache/tmp/ctrlb-session56/` (copy `REVIEW_COMMON.md` + the K6 brief across; leave 55's record).
+- **Then the standing round** (Opus ∥ Emma on the frozen diff → RULINGS → the wave by `SendMessage` → confirms → commit). **Wait on
+  Emma's OUTPUT FILE for the verdict line ONLY** — a `pgrep -f '<pattern>'` in the wait loop self-matches the loop's own bash
+  wrapper and never exits (45 min lost this session).
+- **K6 ends in THE OWNER'S PHONE CARD** (ASR_PLAN §7.1 K6 row; the lane writes the checklist into its report): trail rate 16000 ·
+  one call + one 5–10 min dictation transcribe normally · chirp lag + `outputLatency`/`baseLatency` readout within ~10 ms ·
+  level gates self-adjust · EC-call and EC-media arms · one Fennec run (the fallback). Plus SP's field checks on the same round:
+  a 6-min hands-free dictation with 30 s pauses survives, screen on; a muted mic idles out at 300 s; `clip_bytes` ≈ 4 KB/s.
+  Rebuild the dev dist + restart the dev units for it.
+- **After K6:** D9 → D8 → D5 → the QUALITY.md counts sweep (ONE refresh at the end of A) → the v1.7.11 release card (notes owed:
+  S1's PWA-update-window trail split · S2's "a stored `buffered_ceiling_ms` > 9 710 / `call_backlog_ms` > 18 420 refuses to
+  load" · SP's "a stored `max_session_s` ≤ 1790 without a lower `dictation_max_s` refuses to load" — neither live config
+  stores any of these · **ROLLBACK to v1.7.10: clear a stored `dictation_idle_s` of 0 or > 300 FIRST** (ASR_PLAN §8.3) · a cached
+  v1.7.10 PWA reads a delivered `dictation_idle_s: 0` as "stop at the first quiet reading" until it updates — transient) → push on the owner's word → v1.7.11 per ASR_PLAN §8.2.1.
+
+### Standing facts from this session (verified)
+- Slices stay SEQUENTIAL (useDictation.ts is touched by S2/SP/K6/D5); parallelism = the two reviewers. Both reviewers on every
+  slice; a NOT CONFIRMED on prose is normal — apply, refreeze, re-confirm both.
+- The owner's context bound: hand off at ≤ ~350k; one build slice + its round per session is the comfortable unit.
+- `python` is not on PATH — the gate is `TMPDIR=/home/emma/.cache/tmp backend/.venv/bin/python tools/check.py --fast`.
+- Dev units RUNNING (untouched this session; the dist is STALE — S1/S2/SP are not in it). Nothing pushed: 20 commits
+  over `origin/main`.
 
 ## ▶▶ NEW (2026-10-01, Fable seat, session 54) — R98 BOUGHT · THE VAD-MODEL BOUNDARY RULED (§3.4.1, R25, Silero v6.2 DEFAULT) · PHASE 26 S1 BUILT + CONFIRMED + COMMITTED · NEXT = S2 IN A CLEAN SESSION
 

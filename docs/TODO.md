@@ -1778,9 +1778,10 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
 - [x] S3 — Per-mode kill paths with typed codes; the degrade consequence arrives at S8. ✅ ABSORBED by S1 (T3/T4) +
       S2 (the K3 prose) — ruled 2026-10-01, ASR_PLAN §7.1 S3 row; nothing to build.
 - [ ] ~~S4~~ — WITHDRAWN (interim Speaches ops skipped).
-- [ ] SP — P1: idle stop 300 s, 0 = off, 10 dB relative. P2: cap 1790 / relay 1800 as the interim, with the recorder at
+- [x] SP — P1: idle stop 300 s, 0 = off, 10 dB relative. P2: cap 1790 / relay 1800 as the interim, with the recorder at
       32 kbps and the `max_upload_bytes` test. P3: the wake lock lifted with its fence parameterized. Tier-0 stays suspended
-      while streaming. The e2e fixture is updated.
+      while streaming. The e2e fixture is updated. ✅ `cd2cb02` (2026-10-01; the idle stop arms once the tracker SETTLES; a min tracker's
+      known limit recorded in the config comment).
 - [ ] K6 — A 16 kHz `AudioContext` at both sites, with the native-rate fallback via `primeAudio` (R96). Phone-card
       item, including the EC-call/EC-media arms and a Fennec run.
 - [ ] D9 — The client's awaited-id set (closes LIVE_VOICE_PLAN OPEN-2).
