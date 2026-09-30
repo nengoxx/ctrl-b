@@ -501,11 +501,16 @@ voice:
     # Streaming DICTATION (S2.5) — the mic's hold/lock rides the SAME realtime ear as the call, and
     # each utterance final appends to the composer draft live. Independent of `enabled` in both
     # directions: this switch alone opens the ear, no call feature required. OFF = today's whole-clip
-    # POST through voice.stt. All four are CLIENT knobs; the relay enforces none of them.
+    # POST through voice.stt. All five are CLIENT knobs; the relay enforces none of them.
     dictation: false       # whole-feature toggle for streaming dictation
     tail_wait_ms: 2000     # how long the client waits for the TAIL final after its release flush
-    dictation_idle_s: 15   # hands-free idle stop for a LOCKED session (the trailing phrase is kept)
-    dictation_max_s: 120   # hard cap on ONE streaming session — applies to hold as well as lock
+    dictation_idle_s: 300  # hands-free idle stop for a LOCKED session (the trailing phrase is kept); 0 = off.
+                           # 300 so the owner's own pauses never end a dictation (R21)
+    dictation_idle_margin_db: 10  # (0–40) dB above the room's measured noise below which you count as
+                           # silent — raise it if your pauses never stop a dictation, lower it if it
+                           # stops while you speak; relative, so another phone or a car cannot misread it
+    dictation_max_s: 1790  # hard cap on ONE streaming session — applies to hold as well as lock; must stay
+                           # under max_session_s so the dictation ends before the relay cuts it (interim)
     release_tail_ms: 400   # S11: after YOU stop (release / tap), keep recording this long so the last word
                            # is not clipped (0–1500; 0 = off). Whole-clip dictation too. Cancel, a call,
                            # a hidden page, the cap and the silence auto-stop stay immediate

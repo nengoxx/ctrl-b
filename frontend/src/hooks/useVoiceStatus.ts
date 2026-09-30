@@ -142,9 +142,16 @@ export interface LiveCallWire {
    *  worst measured 530–830 ms tail). `flush` has NO ack, so this bound is the client's only clock. */
   tail_wait_ms: number;
   /** HANDS-FREE idle stop, s: a run of below-floor mic energy this long ends a LOCKED streaming
-   *  session through the ordinary release (R70 §9.3). A `hold` is exempt — the finger is the timeout. */
+   *  session through the ordinary release (R70 §9.3). A `hold` is exempt — the finger is the timeout.
+   *  **0 = off** (Phase 26 SP, R21 P1: 300 by default, so the owner's own pauses never end one). The
+   *  run cannot start until the noise tracker has SETTLED (~6 s of audio), so a value under ~6 s cannot
+   *  fire before then — a dead (digital-zero) input excepted. */
   dictation_idle_s: number;
-  /** The hard cap on any one streaming dictation session, s (R70 §9.3) — `hold` included. */
+  /** Phase 26 SP (R21 P1) — the idle stop's threshold, dB ABOVE the room's noise floor as the browser's
+   *  own tracker measures it (`lib/levelGate`): a reading under `floor + this` counts as silence. */
+  dictation_idle_margin_db: number;
+  /** The hard cap on any one streaming dictation session, s (R70 §9.3) — `hold` included. Always under
+   *  the relay's `max_session_s` (a load validator), so the owner's cap ends it first. */
   dictation_max_s: number;
   /** S11 (BUG-001 T1) — THE RELEASE POST-ROLL, ms: after a USER stop (a hold released, the lock's tap,
    *  the keyboard's stop) the recorder and the uplink keep running this long before the ordinary stop,

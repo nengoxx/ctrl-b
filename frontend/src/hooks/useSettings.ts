@@ -162,8 +162,9 @@ export interface VoiceLive extends VoiceServiceCommon {
   // toggle beside `enabled`: calls and streaming dictation are switched independently.
   dictation: boolean; //      the mic's hold/lock streams to the relay and appends phrase by phrase
   tail_wait_ms: number; //    how long the release waits for the flush's tail final, 500..10000
-  dictation_idle_s: number; //hands-free idle stop, 3..300 (a `hold` needs none — the finger is it)
-  dictation_max_s: number; // the hard cap on one streaming session, 10..1800
+  dictation_idle_s: number; //hands-free idle stop, 0..1800; 0 = off (a `hold` needs none — the finger is it)
+  dictation_idle_margin_db: number; // SP: dB over the tracked room noise that still counts as talking, 0..40
+  dictation_max_s: number; // the hard cap on one streaming session, 10..1800 (< max_session_s)
   release_tail_ms: number; // S11: a USER stop keeps recording this long first, 0..1500 (0 = off)
   // W2/D72 — the CALL's uplink bound: how much audio the client-side pacer may hold for a leg
   // before it drops the OLDEST frames. A client knob like the four above (the pacer runs in the

@@ -188,6 +188,9 @@ async def voice_status(request: Request) -> dict[str, object]:
         "dictation": live.dictation,
         "tail_wait_ms": live.tail_wait_ms,
         "dictation_idle_s": live.dictation_idle_s,
+        # Phase 26 SP (R21 P1) — the idle stop's threshold over the browser's own noise tracker: a client
+        # knob for the gate six's reason — the level it judges is measured in the browser.
+        "dictation_idle_margin_db": live.dictation_idle_margin_db,
         "dictation_max_s": live.dictation_max_s,
         # S11 (BUG-001 T1) — the release post-roll: how long a USER stop keeps the recorder + uplink
         # running before it stops. It rides beside the capture pair for their reason: it governs the

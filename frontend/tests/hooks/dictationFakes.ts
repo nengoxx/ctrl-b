@@ -25,9 +25,12 @@ export class FakeMediaRecorder {
   ondataavailable: ((e: { data: Blob }) => void) | null = null;
   onstop: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  /** What the hook constructed it with (Phase 26 SP, T-1 — the bitrate rides BOTH ctor branches). */
+  options: MediaRecorderOptions | undefined;
   private pendingStop = false;
-  constructor(_stream: unknown, opts?: { mimeType?: string }) {
+  constructor(_stream: unknown, opts?: MediaRecorderOptions) {
     this.mimeType = opts?.mimeType ?? "audio/webm";
+    this.options = opts;
     FakeMediaRecorder.last = this;
   }
   start() {

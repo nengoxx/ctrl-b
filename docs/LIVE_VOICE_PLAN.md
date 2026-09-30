@@ -217,7 +217,8 @@ exactly as for stt/tts (§5.1):
 | `debug` | false | both | The in-call readout AND the D77 call trail (`$CTRLB_HOME/calls/`) |
 | `trail_keep` | 20 | server | D77 retention (bounded 1–500) |
 | `uplink_idle_s` | 15 | server | R86 LC-8: a leg with NO uplink audio this long (a frozen page, a dead ear — the client ships a frame every `frame_ms`, held/muted ones as silence) ends as a `session_limit`-class terminal instead of holding the slot to `max_session_s`; bounded 5–120, load-validated to outlast `tail_wait_ms` |
-| `dictation` · `tail_wait_ms` · `dictation_idle_s` · `dictation_max_s` | false · 2000 · 15 · 120 | client | S2.5 streaming dictation on the same ear |
+| `dictation` · `tail_wait_ms` · `dictation_idle_s` · `dictation_max_s` | false · 2000 · 300 (0 = off) · 1790 | client | S2.5 streaming dictation on the same ear; the idle stop and the cap re-ruled by Phase 26 SP (R21 P1/P2): the cap is load-validated `< max_session_s` (the interim under Speaches' kill; S10 raises the pair to 1800 / 2100) |
+| `dictation_idle_margin_db` | 10.0 | client | Phase 26 SP (R21 P1): the hands-free idle stop's threshold, dB over the browser's own tracked noise floor (`levelGate`); a dead/digital-zero input counts as silence. Bounded 0–40 |
 | `release_tail_ms` | 400 | client | S11 (BUG-001 T1): after a USER stop (a hold released, the lock's tap, the keyboard's stop) the recorder + uplink run this long before the ordinary stop; cancel / a call taking the mic / a hidden page / the cap / the silence stops stay immediate. Governs the whole-clip path too; the 1000 ms floor measures to the release. Bounded 0–1500; 0 = off |
 | `buffered_ceiling_ms` · `call_backlog_ms` | 1000 · 1000 | client | Uplink backpressure: reconnect ceiling; the lossy call pacer's backlog |
 | `frame_ms` · `max_frame_bytes` · `max_session_s` · `max_sessions` · `relay_queue_ms` · `start_timeout_s` · `allowed_origins` | 40 · 32768 · 1800 · 1 · 2000 · 5.0 · [] | server | The relay's own caps + the Origin escape hatch |
@@ -478,10 +479,11 @@ voice:
     captions: true          # the reply as fading captions on the call screen
     debug: false            # the in-call readout AND the D77 call trail
     trail_keep: 20          # server: D77 retention
-    dictation: false        # S2.5 streaming dictation on the same ear, and its three knobs
+    dictation: false        # S2.5 streaming dictation on the same ear, and its knobs
     tail_wait_ms: 2000
-    dictation_idle_s: 15
-    dictation_max_s: 120
+    dictation_idle_s: 300           # 0 = off (Phase 26 SP)
+    dictation_idle_margin_db: 10    # dB over the tracked room noise (SP)
+    dictation_max_s: 1790           # < max_session_s (SP interim; S10 → 1800 / 2100)
     buffered_ceiling_ms: 1000   # client outbound-buffer ceiling before close+reconnect (F6)
     call_backlog_ms: 1000       # client: the lossy call pacer's backlog (A-F2)
     frame_ms: 40            # server cap (the client paces by it too)

@@ -114,8 +114,10 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
 }));
 
 import { postJSON } from "../../src/api/client";
-import { useDictation } from "../../src/hooks/useDictation";
+import { RECORDER_BITRATE, useDictation } from "../../src/hooks/useDictation";
+import { rmsToDbfs } from "../../src/lib/levelGate";
 import { BUCKET_CAP_MS } from "../../src/lib/uplinkPacer";
+import { newWakeLockState, releaseWakeLock, takeWakeLock } from "../../src/lib/wakeLock";
 import { FakeMediaRecorder, gateMediaDevices, mockStt, setMediaDevices } from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
@@ -184,7 +186,8 @@ const KNOBS = {
   dictation: true,
   tail_wait_ms: 2000,
   dictation_idle_s: 15, //          = 150 readings of the 100 ms poll
-  dictation_max_s: 120, //          = 1200 readings
+  dictation_idle_margin_db: 10, //  Phase 26 SP — silence = under the tracked room floor + this
+  dictation_max_s: 120, //          = 1200 readings (the suite's own, not the backend's 1790)
 };
 
 const AUTO_STOP = { enabled: false, silence_s: 3, threshold: 0.01 };
@@ -282,6 +285,24 @@ async function tick(ms: number): Promise<void> {
   await act(async () => {
     vi.advanceTimersByTime(ms);
   });
+}
+
+/** THE ROOM (Phase 26 SP, R21 P1): a quiet room's noise, −60 dBFS — what "silence" is to the RELATIVE
+ *  idle stop. Never digital zero: `levelGate`'s tracker discards anything under −84 dBFS as a dead
+ *  input, so a stream of zeros teaches it no floor (and Tier 0's absolute arms keep their own 0). */
+const ROOM = 0.001;
+/** A linear RMS at `db` dBFS — the margin cases' levels, exact to the dB. */
+const atDb = (db: number): number => 10 ** (db / 20);
+
+/** Let the idle stop's tracker LEARN THE ROOM and SETTLE: the 1 s bootstrap plus one full 5 s window
+ *  of room noise (SP fix wave 1, P3 — the idle run cannot start before the tracker has settled), then a
+ *  word — so the floor is −60 dBFS, settled, and the idle run starts from zero. Every reading of this
+ *  window is 100 ms of admitted audio: the window closes on the 60th. */
+async function learnRoom(): Promise<void> {
+  micLevel = ROOM;
+  await tick(6000);
+  micLevel = 0.5;
+  await tick(100);
 }
 
 /** Run the release's wait out to its BOUND (`tail_wait_ms` flat — three review rounds proved no
@@ -1239,7 +1260,8 @@ describe("useDictation · streaming ⑨ the three §9.3 rules", () => {
     const { result } = renderHook(() => useDictation(withAutoStop()));
     await hold(result); // hand on the button: `handsFree` stays false
     ready();
-    micLevel = 0;
+    await learnRoom(); // a floor exists, so only the finger can be what keeps it alive
+    micLevel = ROOM;
     await tick(60_000); // four times the configured idle window
     expect(result.current.status).toBe("recording");
   });
@@ -1249,7 +1271,8 @@ describe("useDictation · streaming ⑨ the three §9.3 rules", () => {
     await tapStart(result); // the keyboard path IS hands-free (R69 §8.1)
     ready();
     phrase("left running");
-    micLevel = 0;
+    await learnRoom();
+    micLevel = ROOM;
     await tick(14_900); // one reading short of `dictation_idle_s`
     expect(result.current.status).toBe("recording");
     await tick(100);
@@ -1287,7 +1310,8 @@ describe("useDictation · streaming ⑨ the three §9.3 rules", () => {
     expect(result.current.status).toBe("recording");
     ready();
     phrase("left running");
-    micLevel = 0;
+    await learnRoom();
+    micLevel = ROOM;
     await tick(15_000); // `dictation_idle_s`
     expect(h.sent[0]).toBe("flush"); // the ordinary release ran — the idle clock was armed
   });
@@ -1296,13 +1320,16 @@ describe("useDictation · streaming ⑨ the three §9.3 rules", () => {
     const { result } = renderHook(() => useDictation(withAutoStop()));
     await tapStart(result);
     ready();
-    micLevel = 0;
+    await learnRoom();
+    micLevel = ROOM;
     await tick(14_000);
     micLevel = 0.5; // a word
     await tick(200);
-    micLevel = 0;
+    micLevel = ROOM;
     await tick(14_000); // 28 s elapsed, under 15 s of unbroken silence
     expect(result.current.status).toBe("recording");
+    await tick(1000); // …and the run that started after the word DOES reach it (the test is not vacuous)
+    expect(h.sent[0]).toBe("flush");
   });
 
   it("(c) `dictation_max_s` caps EVERY session — the held one included", async () => {
@@ -1612,11 +1639,12 @@ describe("useDictation · S11 fix wave 1 — the streaming tail's cuts, and no l
   it("the hands-free IDLE stop landing inside the tail stops at once — one flush, one close", async () => {
     // A tap-started recording is hands-free; `stop("user")` is the keyboard's own stop.
     const knobs = { ...KNOBS, dictation_idle_s: 3, release_tail_ms: 1500 };
-    const auto = { enabled: false, silence_s: 3, threshold: 0.01 }; // the idle floor rides `threshold`
-    const { result } = renderHook(() => useDictation(opts({ liveCall: knobs, autoStop: auto })));
+    // The idle floor is the RELATIVE tracker's since Phase 26 SP — Tier 0's `threshold` is not read.
+    const { result } = renderHook(() => useDictation(opts({ liveCall: knobs })));
     await tapStart(result);
     ready();
-    micLevel = 0;
+    await learnRoom();
+    micLevel = ROOM;
     await tick(2500);
     act(() => result.current.stop("user"));
     expect(FakeMediaRecorder.last!.state).toBe("recording");
@@ -1695,7 +1723,8 @@ describe("useDictation · Phase 26 S1 — the `end` line names the stop (STOP-1�
     await tapStart(result);
     ready();
     phrase("then silence");
-    micLevel = 0;
+    await learnRoom();
+    micLevel = ROOM;
     await tick(KNOBS.dictation_idle_s * 1000);
     await runOutTail();
     expect(result.current.status).toBe("idle");
@@ -1706,7 +1735,8 @@ describe("useDictation · Phase 26 S1 — the `end` line names the stop (STOP-1�
     const { result } = renderHook(() => useDictation(opts({ liveCall: DEBUG })));
     await hold(result);
     ready();
-    micLevel = 0;
+    await learnRoom();
+    micLevel = ROOM;
     await tick(4 * KNOBS.dictation_idle_s * 1000);
     expect(result.current.status).toBe("recording");
     expect(ends()).toEqual([]);
@@ -1937,5 +1967,458 @@ describe("useDictation · Phase 26 S1 — the `end` line names the stop (STOP-1�
     const end = theEnd();
     expect(end).not.toHaveProperty("oversize");
     expect((end.lastError as { message: string }).message).toHaveLength(500);
+  });
+});
+
+// ── Phase 26 SP · the dictation policy (ASR_PLAN §3.9 ③, the owner's R21 P1 · P2 · P3) ─────────────
+//
+// P1 — the hands-free idle stop measures against a RELATIVE floor (`levelGate`'s noise tracker + the
+// `dictation_idle_margin_db` margin), and `dictation_idle_s: 0` is OFF. P2 — the recorder asks for an
+// explicit bitrate, so the clip has a size bound (T-1), and the `end` line says how big it was (T4).
+// P3 — the screen stays on while a recording runs: the call's wake lock, lifted into `lib/wakeLock`.
+
+describe("useDictation · Phase 26 SP — P1 the relative idle stop", () => {
+  const lines = (): Record<string, unknown>[] =>
+    vi
+      .mocked(postJSON)
+      .mock.calls.flatMap((c) => (c[1] as { entries: Record<string, unknown>[] }).entries);
+  const ends = (): Record<string, unknown>[] => lines().filter((l) => l.ev === "end");
+
+  it("`dictation_idle_s: 0` is OFF — a long silent hands-free run never stops", async () => {
+    const knobs = { ...KNOBS, debug: true, dictation_idle_s: 0 };
+    const { result } = renderHook(() => useDictation(opts({ liveCall: knobs })));
+    await tapStart(result);
+    ready();
+    await learnRoom();
+    micLevel = ROOM;
+    await tick(100_000); // far past any idle window, still under the suite's 120 s cap
+    expect(result.current.status).toBe("recording");
+    expect(h.sent).not.toContain("flush");
+    expect(ends()).toEqual([]); // no `reason` was ever written — nothing stopped it
+    act(() => result.current.cancel());
+  });
+
+  it("at the MARGIN: floor + margin − 1 dB is silence and stops it; floor + margin + 1 dB resets the run", async () => {
+    // The room is −60 dBFS (`learnRoom`), the margin 10 dB: −51 is a pause, −49 is the owner.
+    const knobs = { ...KNOBS, debug: true };
+    const { result } = renderHook(() => useDictation(opts({ liveCall: knobs })));
+    await tapStart(result);
+    ready();
+    await learnRoom();
+    micLevel = atDb(-51);
+    await tick(3000); // 3 s of the idle run accrued…
+    micLevel = atDb(-49);
+    await tick(100); // …ONE reading above the threshold resets it
+    micLevel = atDb(-51);
+    await tick(14_900); // unreset, the run would have reached 15 s twelve seconds into this stretch
+    expect(result.current.status).toBe("recording");
+    expect(h.sent).not.toContain("flush");
+    await tick(100); // `dictation_idle_s` of UNBROKEN below-threshold readings
+    expect(h.sent[0]).toBe("flush"); // the ordinary release
+    await runOutTail();
+    expect(ends()).toHaveLength(1);
+    expect(ends()[0]).toMatchObject({ reason: "idle" });
+  });
+
+  it("…and EXACTLY floor + margin is NOT silence — the comparison is strict (P8)", async () => {
+    // EXACT IN FLOATING POINT, which the fake analyser's Float32 buffer only is for powers of two: a
+    // 2⁻¹⁰ room (≈ −60.2 dBFS) and a 2⁻⁸ edge (≈ −48.2), with the margin their exact difference.
+    const QUIET = 2 ** -10;
+    const EDGE = 2 ** -8;
+    const margin = rmsToDbfs(EDGE) - rmsToDbfs(QUIET);
+    expect(rmsToDbfs(QUIET) + margin).toBe(rmsToDbfs(EDGE)); // the premise, to the bit
+    const knobs = { ...KNOBS, dictation_idle_s: 3, dictation_idle_margin_db: margin };
+    const { result } = renderHook(() => useDictation(opts({ liveCall: knobs })));
+    await tapStart(result);
+    ready();
+    micLevel = QUIET;
+    await tick(6000); // the tracker settles on the room (`learnRoom`, at this room's level)
+    micLevel = 0.5;
+    await tick(100);
+    micLevel = EDGE; // floor + margin, exactly
+    await tick(4000); // past the 3 s window — inside the same tracker window, so the floor holds
+    expect(result.current.status).toBe("recording");
+    expect(h.sent).not.toContain("flush"); // a `<=` would have stopped it a second ago
+    micLevel = 2 ** -9; // …and 6 dB under the edge IS silence (the positive control)
+    await tick(3000);
+    expect(h.sent[0]).toBe("flush");
+    await runOutTail();
+  });
+
+  it("until the tracker SETTLES (a full 5 s window after the 1 s bootstrap) NOTHING accrues (P3)", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await tapStart(result);
+    ready();
+    micLevel = ROOM; // silent from the very first reading
+    // Readings 1–10 are the bootstrap, 11–60 the first full window: the 60th settles the tracker and is
+    // the first to count — so the stop lands 5.9 s later than it would have with a floor from the start.
+    await tick(20_800);
+    expect(result.current.status).toBe("recording");
+    expect(h.sent).not.toContain("flush");
+    await tick(100);
+    expect(h.sent[0]).toBe("flush");
+    await runOutTail();
+  });
+
+  it.each([
+    // The ruling's envelope: the voice drops to the room between syllables, every ~300 ms.
+    ["syllable gaps to the room every 300 ms", (i: number) => (i % 3 === 0 ? ROOM : 0.3)],
+    // …and Emma #2's case: the FIRST second is speech only (shallow syllable dips, −16.5 dBFS), with
+    // breaths to the room every 1.5 s from t = 1.5 s. A floor seated by the 1 s bootstrap sits ON the
+    // voice (−16.5), so every reading reads as silence and a `3` stopped it at ~4 s before P3.
+    [
+      "a speech-only first second, breaths every 1.5 s",
+      (i: number) => (i % 15 === 0 ? ROOM : i % 3 === 0 ? 0.15 : 0.3),
+    ],
+  ])(
+    "continuous SPEECH from t = 0 never idles out a short `dictation_idle_s: 3` (%s)",
+    async (_name, level) => {
+      const knobs = { ...KNOBS, dictation_idle_s: 3 };
+      const { result } = renderHook(() => useDictation(opts({ liveCall: knobs })));
+      await tapStart(result);
+      ready();
+      for (let i = 1; i <= 120; i++) {
+        micLevel = level(i); // reading i (at i × 100 ms) hears this
+        await tick(100);
+      }
+      expect(result.current.status).toBe("recording");
+      expect(h.sent).not.toContain("flush");
+      act(() => result.current.cancel());
+    },
+  );
+
+  it("a MUTED mic (digital zero) still idles out — a dead input IS silence, floor or no floor", async () => {
+    // Android 12+'s mic privacy toggle hands the page pure zeros. `levelGate` refuses to learn a floor
+    // from anything under −84 dBFS, so without the dead-input clause this recording would never get
+    // one and would ride the cap with the screen held on (the main seat's D1 ruling). No bootstrap
+    // wait either: the very first reading counts.
+    const { result } = renderHook(() =>
+      useDictation(opts({ liveCall: { ...KNOBS, debug: true } })),
+    );
+    await tapStart(result);
+    ready();
+    micLevel = 0;
+    await tick(KNOBS.dictation_idle_s * 1000 - 100); // one reading short
+    expect(result.current.status).toBe("recording");
+    expect(h.sent).not.toContain("flush");
+    await tick(100); // `dictation_idle_s` of dead input
+    expect(h.sent[0]).toBe("flush"); // the ordinary release
+    await runOutTail();
+    const ends = vi
+      .mocked(postJSON)
+      .mock.calls.flatMap((c) => (c[1] as { entries: Record<string, unknown>[] }).entries)
+      .filter((l) => l.ev === "end");
+    expect(ends).toEqual([expect.objectContaining({ reason: "idle" })]);
+  });
+
+  it("Tier 0 stays SUSPENDED while a streaming leg is live — hands-free, with the idle stop off", async () => {
+    // Tier 0's absolute floor (0.01) hears dead silence for three times its 3 s window; with the
+    // relative idle stop switched off, Tier 0 is the ONLY thing that could end this — and it may not.
+    const knobs = { ...KNOBS, dictation_idle_s: 0 };
+    const auto = { enabled: true, silence_s: 3, threshold: 0.01 };
+    const { result } = renderHook(() => useDictation(opts({ liveCall: knobs, autoStop: auto })));
+    await tapStart(result);
+    ready();
+    micLevel = 0;
+    await tick(10_000);
+    expect(result.current.status).toBe("recording");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    act(() => result.current.cancel());
+  });
+});
+
+describe("useDictation · Phase 26 SP — P2 the recorder's bitrate (T-1) and the clip's size (T4)", () => {
+  const ends = (): Record<string, unknown>[] =>
+    vi
+      .mocked(postJSON)
+      .mock.calls.flatMap((c) => (c[1] as { entries: Record<string, unknown>[] }).entries)
+      .filter((l) => l.ev === "end");
+  const DEBUG = { ...KNOBS, debug: true };
+
+  it("the recorder is asked for RECORDER_BITRATE — with a picked container…", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    expect(FakeMediaRecorder.last!.options).toEqual({
+      mimeType: "audio/webm;codecs=opus",
+      audioBitsPerSecond: RECORDER_BITRATE,
+    });
+    act(() => result.current.cancel());
+  });
+
+  it("…and on the browser-default branch too", async () => {
+    const spy = vi.spyOn(FakeMediaRecorder, "isTypeSupported").mockReturnValue(false);
+    try {
+      const { result } = renderHook(() => useDictation(opts()));
+      await hold(result);
+      expect(FakeMediaRecorder.last!.options).toEqual({ audioBitsPerSecond: RECORDER_BITRATE });
+      act(() => result.current.cancel());
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("T-1 · the bitrate × the longest dictation fits under the upload bound", () => {
+    // A DOCUMENTED-DEFAULT sanity pin, deliberately not a live mirror of either number: 1800 s is
+    // `LiveCfg.dictation_max_s`'s ceiling (`le=1800`, backend/app/config.py) and 25 MiB is
+    // `voice.stt.max_upload_bytes`'s default (same file) — the clip door S8's recovery re-uploads to.
+    expect((RECORDER_BITRATE / 8) * 1800).toBeLessThan(25 * 1024 * 1024);
+  });
+
+  it("T4 · `clip_bytes` on the `end` line: the assembled clip, after a release (phrases or not)", async () => {
+    const { result } = renderHook(() => useDictation(opts({ liveCall: DEBUG })));
+    await hold(result);
+    ready();
+    phrase("with a phrase");
+    await release(result);
+    // The fake recorder's one chunk is the 5-byte "audio" Blob.
+    expect(ends()).toEqual([expect.objectContaining({ clip: "discarded", clip_bytes: 5 })]);
+
+    vi.mocked(postJSON).mockClear();
+    await hold(result); // …and a recording with NO phrase: the same clip, this time uploaded
+    ready();
+    await release(result);
+    expect(ends()).toEqual([expect.objectContaining({ clip: "uploaded", clip_bytes: 5 })]);
+  });
+
+  it("…and `null` where no clip exists yet: a cancel, a death with nothing in the draft", async () => {
+    const { result } = renderHook(() => useDictation(opts({ liveCall: DEBUG })));
+    await hold(result);
+    ready();
+    act(() => result.current.cancel()); // the leg is dropped BEFORE the recorder's `onstop`
+    expect(ends()).toEqual([expect.objectContaining({ reason: "cancel", clip_bytes: null })]);
+
+    vi.mocked(postJSON).mockClear();
+    const second = renderHook(() => useDictation(opts({ liveCall: DEBUG })));
+    await hold(second.result);
+    ready();
+    await act(async () => {
+      h.closeWith?.(1011, "upstream lost"); // 0 finals: the recording carries on without its leg
+    });
+    expect(ends()).toEqual([expect.objectContaining({ reason: null, clip_bytes: null })]);
+    act(() => second.result.current.cancel());
+  });
+});
+
+describe("useDictation · Phase 26 SP — P3 the screen stays on (the lifted wake lock, T-12)", () => {
+  /** A minimal Screen Wake Lock API (jsdom has none). `gate` holds every request open until the case
+   *  resolves it by hand — the stale-resolve window. */
+  interface FakeLock {
+    released: boolean;
+    release: () => Promise<void>;
+  }
+  const locks: FakeLock[] = [];
+  const pending: ((l: FakeLock) => void)[] = [];
+  const mint = (): FakeLock => {
+    const lock: FakeLock = {
+      released: false,
+      release: async () => {
+        lock.released = true;
+      },
+    };
+    return lock;
+  };
+  const install = (gate = false): void => {
+    Object.defineProperty(navigator, "wakeLock", {
+      configurable: true,
+      value: {
+        request: () => {
+          if (gate) return new Promise<FakeLock>((res) => pending.push(res));
+          const lock = mint();
+          locks.push(lock);
+          return Promise.resolve(lock);
+        },
+      },
+    });
+  };
+  const settle = async (): Promise<void> => {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  const hideAs = async (state: DocumentVisibilityState): Promise<void> => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: state });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+    });
+  };
+
+  beforeEach(() => {
+    locks.length = 0;
+    pending.length = 0;
+  });
+  afterEach(() => {
+    delete (navigator as unknown as Record<string, unknown>).wakeLock;
+  });
+
+  type Mounted = { result: Mic; unmount: () => void };
+  /** Every stop path the recording has (S1's STOP-1…10 + `cancel` + `unmount`), each driven the way
+   *  the field drives it — and every one must reach the ONE release (the detector's teardown). */
+  const PATHS: [string, "hold" | "tap", (m: Mounted) => Promise<void>][] = [
+    ["user", "hold", async ({ result }) => release(result)],
+    [
+      "idle",
+      "tap",
+      async () => {
+        await learnRoom();
+        micLevel = ROOM;
+        await tick(KNOBS.dictation_idle_s * 1000);
+      },
+    ],
+    ["max_duration", "hold", async () => tick(KNOBS.dictation_max_s * 1000)],
+    [
+      "page_hidden",
+      "hold",
+      async () => {
+        try {
+          await hideAs("hidden");
+        } finally {
+          await hideAs("visible");
+        }
+      },
+    ],
+    [
+      "socket_lost",
+      "hold",
+      async () => {
+        phrase("words");
+        await act(async () => h.closeWith?.(1006, ""));
+      },
+    ],
+    [
+      "send_buffer",
+      "hold",
+      async () => {
+        phrase("words");
+        await act(async () => h.closeWith?.(4000, "uplink backpressure"));
+      },
+    ],
+    [
+      "client_backlog",
+      "hold",
+      async () => {
+        phrase("words");
+        await act(async () => h.closeWith?.(4001, "client backlog"));
+      },
+    ],
+    ["media_error", "hold", async () => act(() => FakeMediaRecorder.last!.onerror!())],
+    [
+      "call_handover",
+      "hold",
+      async () => {
+        await act(async () => {
+          await releaseMic();
+        });
+      },
+    ],
+    ["unmount", "hold", async ({ unmount }) => unmount()],
+    ["cancel", "hold", async ({ result }) => act(() => result.current.cancel())],
+  ];
+
+  it.each(PATHS)("taken at start, RELEASED on `%s`", async (_reason, how, end) => {
+    install();
+    const { result, unmount } = renderHook(() => useDictation(opts()));
+    if (how === "hold") await hold(result);
+    else await tapStart(result);
+    ready();
+    await settle();
+    expect(locks).toHaveLength(1); // ONE sentinel for the recording, hold or lock alike
+    expect(locks[0].released).toBe(false);
+    await end({ result, unmount });
+    expect(locks[0].released).toBe(true);
+    expect(locks).toHaveLength(1); // …and nothing re-took it on the way out
+    if (result.current.status === "recording") act(() => result.current.cancel());
+  });
+
+  it("the WHOLE-CLIP path takes and releases it too (streaming off)", async () => {
+    install();
+    const { result } = renderHook(() =>
+      useDictation(opts({ liveCall: { ...KNOBS, dictation: false } })),
+    );
+    await hold(result);
+    await settle();
+    expect(locks.map((l) => l.released)).toEqual([false]);
+    await release(result);
+    expect(locks.map((l) => l.released)).toEqual([true]);
+  });
+
+  it("a lock resolving AFTER its recording ended is released, never kept — and never latches the next one out", async () => {
+    install(true);
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    expect(pending).toHaveLength(1); // the first recording's request, still in flight
+    act(() => result.current.cancel());
+    await hold(result); // a second recording starts while the first request is STILL pending
+    expect(pending).toHaveLength(2); // …and asks for its OWN lock: a fresh state per recording
+    const stale = mint();
+    const fresh = mint();
+    await act(async () => {
+      pending[0](stale);
+      pending[1](fresh);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(stale.released).toBe(true); // the ended recording's sentinel went straight back
+    expect(fresh.released).toBe(false); // the live recording keeps its own
+    act(() => result.current.cancel());
+    expect(fresh.released).toBe(true);
+  });
+
+  it("a leg DROPPED while the recording carries on gives the screen back (P2 — its clocks went with it)", async () => {
+    install();
+    const { result } = renderHook(() => useDictation(opts()));
+    await tapStart(result);
+    ready();
+    await settle();
+    expect(locks.map((l) => l.released)).toEqual([false]);
+    await act(async () => h.closeWith?.(1011, "upstream lost")); // 0 finals: the silent degrade
+    expect(result.current.status).toBe("recording"); // the clip carries on…
+    expect(locks.map((l) => l.released)).toEqual([true]); // …without the lock: pre-SP behaviour
+    act(() => result.current.cancel());
+    expect(locks).toHaveLength(1); // nothing re-took it
+  });
+
+  it("…and a request still IN FLIGHT at the drop (a leg that never reached `ready`) is released when it lands", async () => {
+    install(true);
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    expect(pending).toHaveLength(1);
+    await act(async () => h.closeWith?.(1013, "busy")); // never `ready`: the degrade
+    expect(result.current.status).toBe("recording");
+    const late = mint();
+    await act(async () => {
+      pending[0](late);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(late.released).toBe(true);
+    act(() => result.current.cancel());
+  });
+
+  it("THE HANDOVER ORDER (T-12): a call taking the ear releases DICTATION's sentinel, never the call's", async () => {
+    install();
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("said before the call");
+    await settle();
+    const dictation = locks[0];
+    // The call takes its own lock at mount — its OWN `WakeLockState`, through the same lifted function
+    // `useLiveCall` calls — BEFORE it asks for the ear (`releaseMic`, D74 S6 ⑧).
+    const call = newWakeLockState();
+    takeWakeLock(call, () => true);
+    await settle();
+    const callLock = locks[1];
+    expect([dictation.released, callLock.released]).toEqual([false, false]);
+    await act(async () => {
+      await releaseMic(); // the handover: dictation stops with `call_handover`
+    });
+    expect(dictation.released).toBe(true);
+    expect(callLock.released).toBe(false); // the call's screen stays on through the handover
+    await runOutTail();
+    expect(callLock.released).toBe(false); // …and through the dictation's release choreography
+    releaseWakeLock(call);
+    expect(callLock.released).toBe(true);
   });
 });

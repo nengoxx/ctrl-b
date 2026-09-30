@@ -51,6 +51,7 @@ import {
 } from "../lib/pcmCapture";
 import { toSpeech } from "../lib/toSpeech";
 import { accrue, enqueueBounded, newPacer, pump, type PacerState } from "../lib/uplinkPacer";
+import { newWakeLockState, releaseWakeLock, takeWakeLock as takeScreenLock } from "../lib/wakeLock";
 import { useStagedFiles } from "../store/attachments";
 import {
   cancelTurn,
@@ -2004,10 +2005,9 @@ export function useLiveCall(): CallView {
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** The strained note's hold — re-armed by every `degraded` frame, cleared by the teardown. */
   const degradeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const wakeLock = useRef<WakeLockSentinel | null>(null);
-  /** One request in flight at a time (A1): the re-acquire runs on every return to the foreground, and
-   *  two overlapping requests would leave the loser sentinel held by nothing that can release it. */
-  const lockPending = useRef(false);
+  /** The call's screen lock (`lib/wakeLock` — its own `WakeLockState`, never dictation's: two holders
+   *  are two sentinels, T-12). One request in flight at a time (A1) is the state's `pending`. */
+  const wakeLock = useRef(newWakeLockState());
   /** The BACKGROUND idle clock (S6 ④) — one timer, owned here, armed from `armIdle` alone. */
   const idleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** THE S6 KNOBS, latched at CALL START (§4.5 — settings edited mid-call apply to the NEXT call).
@@ -2167,9 +2167,7 @@ export function useLiveCall(): CallView {
     setCallVoice(false, false);
     setCallPrePlay(null); // the pre-play tap dies with the capture it closes over
     setCallMouthGate(null); // …and the mouth's gate, with whatever start it was holding (nothing runs)
-    const lock = wakeLock.current;
-    wakeLock.current = null;
-    void lock?.release().catch(() => {});
+    releaseWakeLock(wakeLock.current);
   }, [endUplinkLeg]);
 
   /** `openLeg` needs `send` (its frames drive the machine) and `send` needs `openLeg` (a reconnect
@@ -2589,34 +2587,18 @@ export function useLiveCall(): CallView {
    *  platform RELEASES the sentinel when the page hides, so a call the owner came back to would
    *  otherwise be running without one — which is the whole reason 5/5 field projects re-acquire, and
    *  MDN's own instruction. Feature-detected, never UA-sniffed; a browser without it keeps today's
-   *  screen behaviour. Idempotent: a lock still held is not re-requested. */
+   *  screen behaviour. Idempotent: a lock still held is not re-requested. The body is `lib/wakeLock`'s
+   *  (lifted in Phase 26 SP so dictation takes the same one); the FENCE stays the call's. */
   const takeWakeLock = useCallback((): void => {
-    if (lockPending.current) return;
-    if (wakeLock.current !== null && !wakeLock.current.released) return;
-    // The request is taken BEFORE the latch is set, deliberately: an optional chain that found no API
-    // short-circuits the `then`/`catch` with it, and a latch armed on a promise that will never settle
-    // would refuse every later attempt for the life of the call.
-    // (Explicit `=== undefined`, never a truthiness test: a Promise in a boolean conditional is the
-    // `no-misused-promises` trap, and the same line is written this way in `useForegroundNotifications`.)
-    const request: Promise<WakeLockSentinel> | undefined = navigator.wakeLock?.request("screen");
-    if (request === undefined) return;
-    wakeLock.current = null;
-    lockPending.current = true;
     // The GENERATION rides the request (S6 code-review F2): a lock resolving after this call's exit
-    // must not become the NEXT call's sentinel — a stale sentinel makes the re-take guard above skip
-    // the acquisition the fresh call actually needs. Terminal-phase alone cannot tell the two apart:
-    // the next call's phase is not terminal.
+    // must not become the NEXT call's sentinel — a stale sentinel makes the re-take guard skip the
+    // acquisition the fresh call actually needs. Terminal-phase alone cannot tell the two apart: the
+    // next call's phase is not terminal.
     const gen = ref.current.gen;
-    void request
-      .then((lock) => {
-        lockPending.current = false;
-        if (gen !== ref.current.gen || isTerminal(ref.current.phase))
-          void lock.release().catch(() => {});
-        else wakeLock.current = lock;
-      })
-      .catch(() => {
-        lockPending.current = false;
-      });
+    takeScreenLock(
+      wakeLock.current,
+      () => gen === ref.current.gen && !isTerminal(ref.current.phase),
+    );
   }, []);
 
   /**

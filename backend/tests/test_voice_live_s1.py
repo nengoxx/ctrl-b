@@ -544,6 +544,22 @@ def test_the_inequality_holds_over_every_accepted_config_and_names_its_terms() -
     assert loaded and refused  # the corners really do straddle the bound
 
 
+def test_the_dictation_cap_sits_under_the_session_cap(tmp_path: Path) -> None:
+    """Phase 26 SP (ASR_PLAN §3.9 ③, council 21): `dictation_max_s < max_session_s`, so the client's
+    `max_duration` release comes before the relay's typed `session_limit`. The defaults hold; the edge
+    (one second under) loads; a config that breaks it is refused at LOAD, naming both values."""
+    assert LiveCfg().dictation_max_s < LiveCfg().max_session_s
+    assert LiveCfg(dictation_max_s=599, max_session_s=600).dictation_max_s == 599
+    with pytest.raises(ValidationError, match=r"dictation_max_s \(1800\) must be < max_session_s \(1800\)"):
+        LiveCfg(dictation_max_s=1800)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("voice:\n  live:\n    max_session_s: 900\n", encoding="utf-8")  # under the default 1790
+    with pytest.raises(ConfigValidationError, match="must be < max_session_s"):
+        load_settings(cfg)
+    cfg.write_text("voice:\n  live:\n    max_session_s: 900\n    dictation_max_s: 899\n", encoding="utf-8")
+    assert load_settings(cfg).voice.live.dictation_max_s == 899
+
+
 def test_a_config_that_breaks_the_inequality_is_refused_at_load(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
     cfg.write_text("voice:\n  live:\n    buffered_ceiling_ms: 10000\n", encoding="utf-8")
@@ -1875,6 +1891,7 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "dictation": True,
             "tail_wait_ms": 2500,
             "dictation_idle_s": 20,
+            "dictation_idle_margin_db": 7.5,
             "dictation_max_s": 300,
             "release_tail_ms": 600,
             "prefix_padding_ms": 200,  # a SERVER knob: configured, never delivered (below)
@@ -1941,6 +1958,9 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         "dictation": True,
         "tail_wait_ms": 2500,
         "dictation_idle_s": 20,
+        # Phase 26 SP (R21 P1) — the idle stop's threshold over the browser's noise tracker: a CLIENT
+        # knob for the gate's reason — the level it judges is measured in the browser.
+        "dictation_idle_margin_db": 7.5,
         "dictation_max_s": 300,
         # S11 (BUG-001 T1) — the release post-roll: a CLIENT knob (the recorder is the browser's), and
         # it governs the whole-clip path too, like the capture pair.
@@ -2104,10 +2124,13 @@ def test_live_config_defaults() -> None:
     assert (cfg.background, cfg.background_keepalive, cfg.background_idle_s) == (True, True, 600)
     assert (cfg.relay_queue_ms, cfg.start_timeout_s, cfg.allowed_origins) == (2000, 5.0, [])
     assert cfg.provider is None and cfg.fallbacks == []  # blank ⇒ resolve like stt
-    # S2.5 — the dictation four. `dictation` ships OFF beside `enabled` (its own whole-feature toggle),
-    # and the three numbers are R70 §4/§9.3's measured defaults.
+    # S2.5 — the dictation four. `dictation` ships OFF beside `enabled` (its own whole-feature toggle);
+    # the tail wait is R70 §4's measured default. Phase 26 SP (R21): the idle stop 300 s over a
+    # RELATIVE 10 dB margin, the cap 1790 s — the interim under `max_session_s`'s 1800 (council 21).
     assert cfg.dictation is False
-    assert (cfg.tail_wait_ms, cfg.dictation_idle_s, cfg.dictation_max_s) == (2000, 15, 120)
+    assert (cfg.tail_wait_ms, cfg.dictation_idle_s, cfg.dictation_max_s) == (2000, 300, 1790)
+    assert cfg.dictation_idle_margin_db == 10.0
+    assert cfg.dictation_max_s < cfg.max_session_s
     # S11 (BUG-001) — the release post-roll (T1) and the ear's slice-start pre-roll (H3, the OpenAI
     # server_vad default).
     assert (cfg.release_tail_ms, cfg.prefix_padding_ms) == (400, 300)
@@ -2149,10 +2172,19 @@ def test_live_config_defaults() -> None:
         # stop ends a session between two words; a 0 s cap opens a socket that closes immediately).
         {"tail_wait_ms": 0},
         {"tail_wait_ms": 60000},
-        {"dictation_idle_s": 0},
+        # Phase 26 SP (R21): 0 is now a REAL idle value (off), so only a negative one is rejected at
+        # the floor; the margin is a dB knob like the gate's three (0–40); the cap is ORDERED under
+        # `max_session_s` by the model validator — at the defaults AND against a lowered session cap.
+        {"dictation_idle_s": -1},
+        {"dictation_idle_s": 1801},
         {"dictation_idle_s": 3600},
+        {"dictation_idle_margin_db": -0.5},
+        {"dictation_idle_margin_db": 40.5},
         {"dictation_max_s": 1},
+        {"dictation_max_s": 1800},
         {"dictation_max_s": 7200},
+        {"max_session_s": 1790},
+        {"dictation_max_s": 600, "max_session_s": 600},
         # D73 S6 — the background idle window. 0 is a REAL value (off), so only a negative one is
         # rejected at the floor; the ceiling is `max_session_s`'s, past which it could never fire.
         {"background_idle_s": -1},

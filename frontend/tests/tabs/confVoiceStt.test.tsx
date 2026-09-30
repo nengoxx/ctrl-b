@@ -125,8 +125,9 @@ const makeSettings = () => ({
       // parallel-maps mistake the standing rule names.
       dictation: false,
       tail_wait_ms: 2000,
-      dictation_idle_s: 15,
-      dictation_max_s: 120,
+      dictation_idle_s: 300, // Phase 26 SP (R21 P1): 0 = off
+      dictation_idle_margin_db: 10, // …over the tracked room noise (SP)
+      dictation_max_s: 1790, // …under the relay's max_session_s (SP, the interim)
       release_tail_ms: 400, // S11 — the release post-roll
     },
   },
@@ -315,20 +316,26 @@ describe("ConfTab · auto-stop dictation rows (R51 Tier 0)", () => {
 });
 
 describe("ConfTab · streaming dictation rows (S3.5 — rendered in the STT group, keys on voice.live)", () => {
-  it("renders the dictation toggle + its three numerics in the STT group, from the live config", () => {
+  it("renders the dictation toggle + its four numerics in the STT group, from the live config", () => {
     render(<ConfTab active />);
     expect(sttGroup().getByLabelText("Live dictation enabled").getAttribute("aria-checked")).toBe(
       "false",
     );
     expect(field("Phrase tail wait").value).toBe("2000");
-    expect(field("Dictation idle stop").value).toBe("15");
-    expect(field("Dictation time limit").value).toBe("120");
-    // …and the Live call group no longer renders ANY of the four: ONE home per row (the S3.5
-    // move; Emma F4 — all four asserted, so a single row duplicated back cannot pass).
+    expect(field("Dictation idle stop").value).toBe("300");
+    expect(field("Dictation idle margin (dB)").value).toBe("10"); // Phase 26 SP — right after it
+    expect(field("Dictation time limit").value).toBe("1790");
+    const labels = Array.from(
+      document.getElementById("voice-stt")!.querySelectorAll(".confrow .label"),
+    ).map((e) => e.textContent);
+    expect(labels[labels.indexOf("Dictation idle stop") + 1]).toBe("Dictation idle margin (dB)");
+    // …and the Live call group no longer renders ANY of them: ONE home per row (the S3.5
+    // move; Emma F4 — all asserted, so a single row duplicated back cannot pass).
     for (const label of [
       "Live dictation enabled",
       "Phrase tail wait",
       "Dictation idle stop",
+      "Dictation idle margin (dB)",
       "Dictation time limit",
     ]) {
       expect(liveGroup().queryByLabelText(label)).toBeNull();
@@ -345,20 +352,46 @@ describe("ConfTab · streaming dictation rows (S3.5 — rendered in the STT grou
       dictation: true,
       tail_wait_ms: 2500, // coerced, not the typed "2500"
       dictation_idle_s: 20,
-      dictation_max_s: 120, // untouched, and still a number
+      dictation_idle_margin_db: 10, // untouched, and still a number
+      dictation_max_s: 1790, // untouched, and still a number
     });
     // the STT section itself rides along unharmed — the rows edit a NEIGHBOUR's keys
     expect(voiceOf()).toMatchObject({ auto_stop_threshold: 0.01 });
   });
 
-  it("a CLEARED dictation numeric rides as 0 — every one is floored well above it", () => {
-    // The `silence_ms` rule, not the `min_speech_ms` one: 0 is not a meaning any of these three can
-    // carry (the backend floors them at 500 / 3 / 10), so a blank earns the same visible 422 rather
-    // than a null the reader has to interpret.
+  it("a CLEARED tail wait or time limit rides as 0 — both are floored well above it", () => {
+    // The `silence_ms` rule, not the `min_speech_ms` one: 0 is not a meaning either can carry (the
+    // backend floors them at 500 / 10), so a blank earns the same visible 422 rather than a null the
+    // reader has to interpret.
     render(<ConfTab active />);
     fireEvent.change(field("Phrase tail wait"), { target: { value: "" } });
+    fireEvent.change(field("Dictation time limit"), { target: { value: "" } });
     fireEvent.click(saveButton());
     expect(liveOf()?.tail_wait_ms).toBe(0);
+    expect(liveOf()?.dictation_max_s).toBe(0);
+  });
+
+  it("a CLEARED idle stop or idle margin rides as NULL — 0 MEANS something for both (Phase 26 SP)", () => {
+    // The `background_idle_s` / gate-six rule: `dictation_idle_s: 0` is OFF and a 0 dB margin is "no
+    // margin", so a blank coercing to 0 would silently change the idle stop instead of earning the
+    // visible 422.
+    render(<ConfTab active />);
+    fireEvent.change(field("Dictation idle stop"), { target: { value: "" } });
+    fireEvent.change(field("Dictation idle margin (dB)"), { target: { value: "" } });
+    fireEvent.click(saveButton());
+    expect(liveOf()?.dictation_idle_s).toBeNull();
+    expect(liveOf()?.dictation_idle_margin_db).toBeNull();
+  });
+
+  it("the idle margin ROUND-TRIPS: rendered from `voice.live`, edited, saved back a NUMBER (SP)", () => {
+    h.settings.voice.live.dictation_idle_margin_db = 4; // a stored non-default: the row reads the config
+    render(<ConfTab active />);
+    expect(field("Dictation idle margin (dB)").value).toBe("4");
+    fireEvent.change(field("Dictation idle margin (dB)"), { target: { value: "6.5" } });
+    fireEvent.change(field("Dictation idle stop"), { target: { value: "0" } });
+    fireEvent.click(saveButton());
+    // coerced, not the typed strings — and an explicit 0 idle stop saves AS 0 (off), never null
+    expect(liveOf()).toMatchObject({ dictation_idle_margin_db: 6.5, dictation_idle_s: 0 });
   });
 });
 

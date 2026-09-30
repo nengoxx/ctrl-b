@@ -366,6 +366,7 @@ def test_voice_live_dictation_knobs_round_trip_to_the_status_probe() -> None:
                             "dictation": True,
                             "tail_wait_ms": 2500,
                             "dictation_idle_s": 20,
+                            "dictation_idle_margin_db": 6.5,
                             "dictation_max_s": 300,
                         }
                     }
@@ -381,6 +382,7 @@ def test_voice_live_dictation_knobs_round_trip_to_the_status_probe() -> None:
             assert knobs["dictation"] is True
             assert (knobs["tail_wait_ms"], knobs["dictation_idle_s"]) == (2500, 20)
             assert knobs["dictation_max_s"] == 300
+            assert knobs["dictation_idle_margin_db"] == 6.5  # Phase 26 SP: the fifth rides the same path
 
             # …and an out-of-bounds value earns the same visible 422 its neighbours do (nothing saved).
             bad = c.put("/api/settings", json={"voice": {"live": {"tail_wait_ms": 0}}})
@@ -411,6 +413,34 @@ def test_a_live_knob_that_breaks_the_uplink_allowance_is_a_422() -> None:
             assert "must cover the reservoirs" in bad.text and "call_backlog_ms (18421)" in bad.text
             assert c.app.state.settings.voice.live.call_backlog_ms == 18420
             assert "18421" not in cfg.read_text(encoding="utf-8")
+    finally:
+        os.environ.pop("CTRLB_CONFIG", None)
+        os.environ.pop("CTRLB_DB", None)
+
+
+def test_a_dictation_cap_at_or_past_the_session_cap_is_a_422() -> None:
+    """Phase 26 SP (ASR_PLAN §3.9 ③, council 21): `dictation_max_s < max_session_s` rides the SAME
+    per-section validation every other knob does, so a Conf save that breaks it — the cap raised to
+    the session's, or the session lowered under the cap — is the ordinary visible 422, nothing is
+    saved, and the detail names both values. One second under still saves."""
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    cfg.write_text("server:\n  poll_seconds: 5\n", encoding="utf-8")
+    os.environ["CTRLB_CONFIG"] = str(cfg)
+    os.environ["CTRLB_DB"] = str(tmp / "t.db")
+    try:
+        with _client() as c:
+            bad = c.put("/api/settings", json={"voice": {"live": {"dictation_max_s": 1800}}})
+            assert bad.status_code == 422, bad.text
+            assert "dictation_max_s (1800)" in bad.text and "max_session_s (1800)" in bad.text
+            low = c.put("/api/settings", json={"voice": {"live": {"max_session_s": 1000}}})
+            assert low.status_code == 422, low.text
+            assert "dictation_max_s (1790)" in low.text and "max_session_s (1000)" in low.text
+            assert c.app.state.settings.voice.live.dictation_max_s == 1790
+            assert "dictation_max_s" not in cfg.read_text(encoding="utf-8")
+            ok = c.put("/api/settings", json={"voice": {"live": {"dictation_max_s": 1799}}})
+            assert ok.status_code == 200, ok.text
+            assert c.app.state.settings.voice.live.dictation_max_s == 1799
     finally:
         os.environ.pop("CTRLB_CONFIG", None)
         os.environ.pop("CTRLB_DB", None)

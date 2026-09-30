@@ -705,8 +705,8 @@ class LiveCfg(VoiceServiceCfg):
       `tail_quiet_margin_db`, `hold_tail_max_ms`, `tail_lag_margin_ms`), the D80 BACKSTOP pair (`echo_similarity`,
       `echo_window_ms`), the D80 `chirp`, the D73 CAPTURE pair (`route`, `input_device`), the D73 S6
       BACKGROUND three (`background`, `background_keepalive`, `background_idle_s`), the D74 pair
-      (`min_final_ms`, `debug`), the 2026-09-26 `noise_verdict_ms`, the four S2.5 DICTATION knobs and
-      the S11 `release_tail_ms` are PWA behavior
+      (`min_final_ms`, `debug`), the 2026-09-26 `noise_verdict_ms`, the four S2.5 DICTATION knobs, the
+      Phase 26 SP `dictation_idle_margin_db` and the S11 `release_tail_ms` are PWA behavior
       (Speaches' `TurnDetection` accepts exactly five fields, §4.1, so an interruption floor cannot be
       a server knob). They are delivered verbatim by `GET /voice/status` (`live_call`) and nothing
       below the browser reads them.
@@ -904,6 +904,19 @@ class LiveCfg(VoiceServiceCfg):
         return self
 
     @model_validator(mode="after")
+    def _dictation_cap_under_session(self) -> "LiveCfg":
+        """ASR_PLAN §3.9 ③ / council 21 — the client's dictation cap must end a recording BEFORE the
+        relay's own session cap does, so the owner's stop is the ordinary `max_duration` release (the
+        trailing phrase kept) rather than the relay's typed `session_limit` cutting the leg under it.
+        At LOAD, the `_tail_fits_cap` precedent, so a Conf value that breaks it is a 422 rather than a
+        dictation that dies at the relay's hand."""
+        if self.dictation_max_s >= self.max_session_s:
+            raise ValueError(
+                f"dictation_max_s ({self.dictation_max_s}) must be < max_session_s ({self.max_session_s})"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _allowance_covers_the_reservoirs(self) -> "LiveCfg":
         """ASR_PLAN §3.3 / Q2 — the relay's uplink allowance must cover every reservoir between the mic
         and the relay, or a LEGITIMATE client's post-stall burst could trip it and a transport hiccup
@@ -1022,14 +1035,31 @@ class LiveCfg(VoiceServiceCfg):
     #: mic in `sending`.
     tail_wait_ms: int = Field(default=2000, ge=500, le=10000)
     #: HANDS-FREE idle stop: a run of below-floor mic energy this long ends a LOCKED streaming session
-    #: through the ordinary release choreography (the trailing phrase is kept). R70 §9.3 — Claude Code's
-    #: own number. It is what makes leaving the lock on safe; a `hold` needs none (the finger is the
-    #: timeout). The floor it measures against is `stt.auto_stop_threshold` — dictation's own calibrated
-    #: silence floor (the call's relative gate is a call-only mechanism).
-    dictation_idle_s: int = Field(default=15, ge=3, le=300)
-    #: The HARD cap on any one streaming dictation session, s (R70 §9.3, Claude Code's 120). Unlike the
-    #: idle stop this applies to `hold` too: it bounds the open socket, not the user's patience.
-    dictation_max_s: int = Field(default=120, ge=10, le=1800)
+    #: through the ordinary release choreography (the trailing phrase is kept). It is what makes leaving
+    #: the lock on safe; a `hold` needs none (the finger is the timeout). **0 = off.** 300 s since Phase
+    #: 26 SP (ASR_PLAN §3.9 ③, the owner's R21 P1): R70 §9.3's 15 s — Claude Code's number — ended the
+    #: owner's own pauses. The floor it measures against is RELATIVE — `levelGate`'s noise tracker (the
+    #: call's estimator, reused) plus `dictation_idle_margin_db` — where it used to borrow Tier 0's
+    #: ABSOLUTE `stt.auto_stop_threshold`, one RMS number tuned for push-to-talk, which follows neither
+    #: another device nor a car. Tier-0 (`stt.auto_stop*`) is UNTOUCHED: it keeps its absolute floor and
+    #: only ever runs with no live leg. Ceiling = the cap's own. The run cannot START until the tracker
+    #: has settled (~6 s of audio: the 1 s bootstrap + one full 5 s window — SP fix wave 1), so a value
+    #: under ~6 s cannot fire before then; a dead (digital-zero) input is silence from the first reading.
+    #: KNOWN LIMIT (accepted, SP round): a MINIMUM tracker needs the speaker's own gaps — a voice that never
+    #: dips 10 dB below itself for a whole window seats the floor on the voice, and a SHORT value could then
+    #: stop mid-sentence. Real speech has gaps; the 300 s default is where this policy is designed to live;
+    #: a voice reference (the call's learned level) is the real answer — S8 / the TUNE pass.
+    dictation_idle_s: int = Field(default=300, ge=0, le=1800)
+    #: P1's threshold above the tracked noise floor, dB (R21: 10). The call's `noise_margin_db` is the
+    #: precedent — same unit, same idea — but a DIFFERENT knob: dictation's silence is a whole pause,
+    #: not a turn gate. 0–40.
+    dictation_idle_margin_db: float = Field(default=10.0, ge=0.0, le=40.0)
+    #: The HARD cap on any one streaming dictation session, s (R70 §9.3). Unlike the idle stop this
+    #: applies to `hold` too: it bounds the open socket, not the user's patience. 1790 since Phase 26 SP
+    #: (R21 P2) — the INTERIM under Speaches' 30-min hard kill: the relay's typed `session_limit` at
+    #: `max_session_s` (1800) must come FIRST (council 21; `_dictation_cap_under_session`). S10 raises
+    #: the pair to 1800 / 2100.
+    dictation_max_s: int = Field(default=1790, ge=10, le=1800)
     #: THE RELEASE POST-ROLL, ms (Phase 24 S11, BUG-001 T1): after a USER stop (a hold released, the
     #: lock's tap, the keyboard's stop) the recorder and the uplink keep running this long before the
     #: ordinary stop, so a release timed with the last syllable does not clip it. Every other stop —

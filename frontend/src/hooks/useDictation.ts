@@ -4,6 +4,13 @@ import type { LiveCallWire, SttAutoStopWire } from "./useVoiceStatus";
 import { type CallTrail, createCallTrail, postTrail } from "../lib/callTrail";
 import { runComposer } from "../lib/composer";
 import {
+  newNoiseTracker,
+  NOISE_DISCARD_DBFS,
+  type NoiseTracker,
+  rmsToDbfs,
+  trackNoise,
+} from "../lib/levelGate";
+import {
   CLOSE_BACKPRESSURE,
   CLOSE_CLIENT_BACKLOG,
   liveSocketUrl,
@@ -12,6 +19,12 @@ import {
 } from "../lib/liveSocket";
 import { attachPcmUplink, openMicStream, type PcmUplink } from "../lib/pcmCapture";
 import { accrue, DRAIN_PACE, enqueue, pump, type PacerState } from "../lib/uplinkPacer";
+import {
+  newWakeLockState,
+  releaseWakeLock,
+  takeWakeLock,
+  type WakeLockState,
+} from "../lib/wakeLock";
 import { appendDraft, clearDraft, getDraft } from "../store/composer";
 import { setMicRelease } from "../store/micRelease";
 import { pushToast } from "../store/toast";
@@ -140,6 +153,13 @@ const METER_FULL_RMS = 0.12;
  *  the keyboard toggle alike — because "a clip too short to be speech" is one fact about the clip, not
  *  a property of how the recording was started. */
 const MIN_CLIP_MS = 1000;
+
+/** THE RECORDER'S BITRATE, bits/s (Phase 26 SP, T-1) — asked for explicitly so the clip has a SIZE
+ *  bound: 32 kbps × the 1800 s ceiling on `dictation_max_s` ≈ 7.2 MB plus the container, under the
+ *  25 MB `voice.stt.max_upload_bytes` default the clip door enforces (and S8's recovery re-uploads this
+ *  very clip). Opus at 32 kbps is transparent for speech. A browser that ignores the option records at
+ *  its own default, and nothing here depends on it being honoured. */
+export const RECORDER_BITRATE = 32_000;
 
 /** The teaching line that replaces the discarded blip (R69 §2: Signal teaches at exactly this moment).
  *  Short, and it names the gesture rather than scolding. ONE string for both presentations: since the
@@ -295,6 +315,10 @@ interface StreamSession extends PacerState {
   /** The two §9.3 clocks, both ticked by the ONE 100 ms detector poll — no timers of their own. */
   elapsedMs: number;
   idleMs: number;
+  /** …and the idle clock's FLOOR (Phase 26 SP, R21 P1): the call's own minimum tracker
+   *  (`lib/levelGate`), fresh per session and fed by the same poll. RELATIVE, so it needs no per-device
+   *  calibration and follows a car onto the motorway. */
+  noise: NoiseTracker;
   /** S11 — THIS recording's trail (D77's machinery), or null: minted only with `live_call.debug` on
    *  (and a secure context's `randomUUID`), ended with the leg (`endTrail`). */
   trail: CallTrail | null;
@@ -327,6 +351,12 @@ function endTrail(s: StreamSession, data: Record<string, unknown>): void {
   });
   t.flush("end");
   t.dispose();
+}
+
+/** The assembled clip's size, bytes (T4's `clip_bytes`): the sum of its chunks IS the size of the
+ *  `Blob` the upload builds from them. */
+function clipBytes(clip: Clip): number {
+  return clip.chunks.reduce((n, c) => n + c.size, 0);
 }
 
 /** The stop reason a leg's death carries when words are already in the draft (T4): the client's own
@@ -481,6 +511,13 @@ export function useDictation({
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hiddenRef = useRef<(() => void) | null>(null);
+  /** P3 (Phase 26 SP, R21) — THIS recording's screen lock (`lib/wakeLock`): a fresh state per
+   *  recording, taken at `rec.start()`, released by the detector's one teardown (every terminal). */
+  const screenRef = useRef<WakeLockState>(newWakeLockState());
+  /** …and whether THIS recording still wants the screen (SP fix wave 1, P2): armed at `rec.start()`,
+   *  cleared when its leg is dropped while the recording carries on — read by the lock's fence, so a
+   *  request still in flight at the drop is released when it lands. */
+  const screenWantedRef = useRef(false);
 
   // The streaming leg (S2.5). Null whenever the mic is on the plain whole-clip path, which is every
   // recording until `liveEar && live_call.dictation` is true.
@@ -501,7 +538,8 @@ export function useDictation({
   const frameMs = liveCall?.frame_ms ?? 0;
   const ceilingMs = liveCall?.buffered_ceiling_ms ?? 0;
   const tailWaitMs = liveCall?.tail_wait_ms ?? 0;
-  const idleMs = (liveCall?.dictation_idle_s ?? 0) * 1000;
+  const idleMs = (liveCall?.dictation_idle_s ?? 0) * 1000; // 0 = the idle stop is OFF (SP)
+  const marginDb = liveCall?.dictation_idle_margin_db ?? 0;
   const maxMs = (liveCall?.dictation_max_s ?? 0) * 1000;
   // D73 S5 — the CAPTURE pair, flattened for the same reason. Unlike the knobs above these govern the
   // WHOLE-CLIP path too: the mic's `getUserMedia` used to pass no constraints at all (R51 §6.1), which
@@ -578,7 +616,10 @@ export function useDictation({
         s.closeReason = bail.reason;
         s.socket.close(bail.code, bail.reason);
       } else s.socket.close();
-      endTrail(s, { finals: s.finals, closed: "dropped" });
+      // `clip_bytes: null` (T4) is the honest record: every drop runs BEFORE the recorder's `onstop`
+      // assembles a clip (cancel, `onerror`, the unmount belt) or while the recording carries on
+      // without its leg (a death with nothing in the draft, a handshake that never came).
+      endTrail(s, { finals: s.finals, closed: "dropped", clip_bytes: null });
       setPending(false);
     },
     [setPending],
@@ -590,7 +631,22 @@ export function useDictation({
   const dropStream = useCallback(
     (s: StreamSession, bail?: LegBail): void => {
       closeStream(s, bail);
-      if (streamRef.current === s) streamRef.current = null;
+      if (streamRef.current !== s) return;
+      streamRef.current = null;
+      // THE SCREEN GOES BACK WITH THE LEG (Phase 26 SP fix wave 1, P2). The ② clocks — the idle stop
+      // and the cap, the only bounds on a hands-free streaming recording — ride the session this just
+      // detached, so a recording that carries on without its leg (a 0-final death, a leg that never
+      // reached `ready`, a worklet that would not install, the pre-`ready` bail) has no clock left;
+      // Tier 0 ships OFF. Its bound was the screen's own timeout → the hidden page → `page_hidden`,
+      // and a held lock would remove exactly that — an unbounded hot mic with the screen on. So the
+      // degraded recording gets back EXACTLY its pre-SP behaviour, as this function's doc promises.
+      // (`cancel`/`onerror`/the unmount belt reach here too; they release at the teardown anyway.)
+      // S8 REVERSES THIS (council 2): once the clocks outlive the leg, a dropped leg no longer ends
+      // the recording's bounds, and the lock may stay with the recording. Only when THIS drop detached the
+      // CURRENT recording's leg (the guard above — Opus's confirm-round note): a stale leg's late failure
+      // (a worklet install rejecting after the next recording began) must not give away the next one's screen.
+      screenWantedRef.current = false;
+      releaseWakeLock(screenRef.current);
     },
     [closeStream],
   );
@@ -839,14 +895,17 @@ export function useDictation({
   }, []);
 
   /** The auto-stop detector's ONE idempotent teardown (council MED-2): the audio half PLUS the
-   *  visibility listener. Called from EVERY terminal path — `onstop` (BEFORE the upload begins),
-   *  `onerror`, a failed start, unmount — so nothing ever watches a mic that is no longer recording. */
+   *  visibility listener — PLUS, since Phase 26 SP (P3), the recording's screen lock, which is why this
+   *  is where it is released: the same "every terminal" rule already holds here. Called from EVERY
+   *  terminal path — `onstop` (BEFORE the upload begins), `onerror`, a failed start, unmount — so
+   *  nothing ever watches a mic that is no longer recording, or keeps a screen on for one. */
   const teardownDetector = useCallback(() => {
     teardownAudio();
     if (hiddenRef.current) {
       document.removeEventListener("visibilitychange", hiddenRef.current);
       hiddenRef.current = null;
     }
+    releaseWakeLock(screenRef.current);
   }, [teardownAudio]);
 
   /**
@@ -986,6 +1045,9 @@ export function useDictation({
       endTrail(s, {
         finals: s.finals,
         clip: s.finals > 0 ? "discarded" : "uploaded",
+        // T4 (Phase 26 SP) — the release runs AFTER `onstop` assembled the clip, so its size is known
+        // on every stop that reaches here (T-1's field check: the 32 kbps bound, measured).
+        clip_bytes: clipBytes(clip),
         dead: s.dead,
       });
       setPending(false);
@@ -1166,6 +1228,7 @@ export function useDictation({
         tail: null,
         elapsedMs: 0,
         idleMs: 0,
+        noise: newNoiseTracker(),
         trail,
         sawFrame: false,
         stopReason: null,
@@ -1386,10 +1449,33 @@ export function useDictation({
             return;
           }
           //    The IDLE stop is HANDS-FREE ONLY. While the finger is down the finger IS the timeout,
-          //    and a pause is the entire point of phrase dictation. The floor is `stt_auto_stop`'s —
-          //    dictation's one calibrated silence floor per device — so an uncalibrated 0 leaves the
-          //    idle stop DISARMED rather than firing on every reading.
-          if (handsFreeRef.current && silenceFloor > 0 && rms < silenceFloor) {
+          //    and a pause is the entire point of phrase dictation. Its floor is RELATIVE (Phase 26 SP,
+          //    R21 P1): the call's own minimum tracker, fed EVERY reading here — hold or lock, so the
+          //    floor is ready the moment a lock lands — and a MIN over its window, so the owner talking
+          //    cannot lift it (speech has gaps; the minimum finds them). A reading under that floor plus
+          //    `dictation_idle_margin_db` is silence. Tier 0's absolute `stt_auto_stop` floor is NOT
+          //    read here any more: one RMS number tuned for push-to-talk follows neither another device
+          //    nor a car (and read 0 — disarmed — wherever the policy object was absent).
+          //    Two consequences, both deliberate: `dictation_idle_s` 0 is OFF (never "fire on the first
+          //    reading"), and until the tracker has SETTLED — its first FULL 5 s window closed, ~6 s of
+          //    audio after the 1 s bootstrap — NOTHING counts (SP fix wave 1, P3). R83's argument for the
+          //    5 s window is that it always holds the gaps the minimum finds; a 1 s bootstrap may not, so
+          //    a recording that opens on unbroken speech would seat the floor ON the voice and a short
+          //    `dictation_idle_s` would stop it mid-sentence. The provisional floor is fine for the call's
+          //    gate; it is not trusted to END a recording. (What a min tracker cannot do at all is tell a
+          //    long stretch of steady speech from a quiet room — the call answers that with the owner's
+          //    learned voice level, which dictation does not have: a question for S8 / the TUNE pass.)
+          //    …ONE EXCEPTION to "no settled floor, no idle": a DEAD input (under `NOISE_DISCARD_DBFS`, which the
+          //    tracker refuses to learn from) IS silence by definition. Android 12+'s mic privacy toggle
+          //    (and a hardware mute) hands the page pure digital zeros, which would otherwise never
+          //    teach a floor — and a hands-free dictation would ride the cap with the screen held on
+          //    (P3). With a floor it changes nothing: every floor is ≥ that line, so such a reading is
+          //    already under floor + margin.
+          const db = rmsToDbfs(rms);
+          trackNoise(live.noise, db, SILENCE_POLL_MS);
+          const floor = live.noise.settled ? live.noise.floor : null;
+          const silent = db < NOISE_DISCARD_DBFS || (floor !== null && db < floor + marginDb);
+          if (handsFreeRef.current && idleMs > 0 && silent) {
             live.idleMs += SILENCE_POLL_MS;
             if (live.idleMs >= idleMs) {
               stop("idle");
@@ -1399,7 +1485,8 @@ export function useDictation({
             live.idleMs = 0;
           }
         }
-        // ③ THE POLICY — unchanged, and still the only thing that can end a recording from in here.
+        // ③ THE POLICY (Tier 0) — unchanged; with the two ② clocks above, the only things that can end a
+        //    recording from in here.
         if (!autoStopOn) return;
         //    …EXCEPT that it is SUSPENDED while a streaming session is live (§9.3-a): Tier 0's whole
         //    job is to end a push-to-talk clip at the first pause, and under phrase dictation the
@@ -1425,6 +1512,7 @@ export function useDictation({
       autoStopOn,
       goLive,
       idleMs,
+      marginDb,
       maxMs,
       silenceFloor,
       silenceMs,
@@ -1513,7 +1601,11 @@ export function useDictation({
       const mime = pickMime();
       let rec: MediaRecorder;
       try {
-        rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        // T-1 (Phase 26 SP) — the bitrate on BOTH branches: the size bound is the clip's, whatever
+        // container the browser picked.
+        rec = mime
+          ? new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: RECORDER_BITRATE })
+          : new MediaRecorder(stream, { audioBitsPerSecond: RECORDER_BITRATE });
       } catch {
         // Construction can throw (no supported container) — release the stream we just opened.
         teardownDetector();
@@ -1612,6 +1704,21 @@ export function useDictation({
       liveOwedRef.current = true; // S11 — "go" is owed from here, said once the words-carrying path runs
       rec.start();
       startedAtRef.current = Date.now(); // the 1000 ms floor's start, read once in `onstop`
+      // P3 (Phase 26 SP, R21) — THE SCREEN STAYS ON while this recording runs: every recording, hold or
+      // lock (a held finger keeps the screen on anyway; the lock costs nothing). A FRESH state per
+      // recording, so a request still in flight from the last one cannot latch this one out. The fence
+      // is the F2 ownership rule — this recorder still owns the hook — and not being thrown away
+      // (`cancel`/`onerror` arm the discard before their teardown): a lock landing after its recording
+      // ended is released, never kept. NO re-take on visibility — dictation is foreground-only, and a
+      // hidden page stops a streaming (or auto-stop) recording outright (ASR_PLAN §3.9 ③).
+      // …and a leg dropped mid-recording gives it back (`dropStream`, P2): `screenWanted` is that fact.
+      const screen = newWakeLockState();
+      screenRef.current = screen;
+      screenWantedRef.current = true;
+      takeWakeLock(
+        screen,
+        () => recRef.current === rec && !discardRef.current && screenWantedRef.current,
+      );
       setPhase("recording");
       // ALWAYS armed (OF-3): the analyser is the METER first and the auto-stop's input second. The
       // policy toggle now lives inside the poll, so a recording with auto-stop off still behaves

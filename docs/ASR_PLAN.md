@@ -862,7 +862,10 @@ the owner's later call.
 
 - **Off v1.7.11 → v1.7.10:** plain `bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.10` — no config changed, no migration.
   A stale v1.7.11 PWA against the v1.7.10 relay is compatible: a 16 kHz `start` is inside the relay's 8–96 kHz bounds, the
-  relay ignores an unknown `client_id`, and D9 already speaks Speaches' ids.
+  relay ignores an unknown `client_id`, and D9 already speaks Speaches' ids. **One config check first (SP):** if Conf ever
+  SAVED `voice.live.dictation_idle_s` as 0 or above 300, clear it (or set it inside 3–300) before rolling back — v1.7.10's
+  bounds are 3–300 and it would refuse the config at boot; the new `dictation_idle_margin_db` key is simply ignored there
+  (`LiveCfg` is `extra="allow"`).
 - **Off v1.7.12 → v1.7.11 — a config re-point first.** v1.7.11's relay dials Speaches' REALTIME WebSocket, which
   parakeet-server lacks: ⓪ `systemctl --user start speaches` if the owner has stopped it, then wait for its `/health` (N-7)
   → ① stop `ctrl-b-dashboard` → ② restore `config.yaml.<UTCstamp>.pre-v1.7.12` (re-points every chain at the still-running

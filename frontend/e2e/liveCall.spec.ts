@@ -65,6 +65,10 @@ const LIVE_CALL = {
   background: true,
   background_keepalive: true,
   background_idle_s: 600,
+  // Phase 26 SP (T-8) — the dictation idle stop's margin over the tracked noise floor, as the backend
+  // ships it. No case here dictates; the fixture carries it because it is supposed to be what
+  // `/voice/status` sends.
+  dictation_idle_margin_db: 10,
 };
 
 interface Relay {

@@ -881,8 +881,9 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   background_idle_s: 600,
   dictation: false,
   tail_wait_ms: 2000,
-  dictation_idle_s: 15,
-  dictation_max_s: 120,
+  dictation_idle_s: 300,
+  dictation_idle_margin_db: 10,
+  dictation_max_s: 1790,
   release_tail_ms: 400,
   call_backlog_ms: 1000,
 };
@@ -1879,16 +1880,22 @@ export function ConfTab({ active }: Props) {
         // takes `numOrNull` for the documented reason the wake timings do: its floor is ZERO and zero is
         // a MEANINGFUL value (no floor), so a blank coercing to 0 would silently change the call's
         // behaviour instead of surfacing the mistake.
-        // S2.5's three dictation numbers take the bare `Number` `silence_ms` takes, for its reason:
-        // every one of them is floored well above 0 server-side (500 / 3 / 10), so zero is not a
-        // value any of them can mean — a cleared field earns the same visible 422.
+        // S2.5's tail wait and dictation cap take the bare `Number` `silence_ms` takes, for its reason:
+        // both are floored well above 0 server-side (500 / 10), so zero is not a value either can
+        // mean — a cleared field earns the same visible 422. (The idle stop and its margin left that
+        // rule in Phase 26 SP: their 0 MEANS something — see below.)
         live: {
           ...draft.voice.live,
           vad_threshold: numOrNull(draft.voice.live.vad_threshold),
           silence_ms: Number(draft.voice.live.silence_ms),
           min_speech_ms: numOrNull(draft.voice.live.min_speech_ms),
           tail_wait_ms: Number(draft.voice.live.tail_wait_ms),
-          dictation_idle_s: Number(draft.voice.live.dictation_idle_s),
+          // Phase 26 SP (R21 P1) — the idle stop takes `numOrNull` now, for the background idle
+          // window's reason: its floor IS zero and zero MEANS something (off), so a blank coercing to 0
+          // would silently switch the idle stop off instead of earning the visible 422. Its margin
+          // takes it for the gate six's: a 0 dB margin is "no margin", a real value, never a blank's.
+          dictation_idle_s: numOrNull(draft.voice.live.dictation_idle_s),
+          dictation_idle_margin_db: numOrNull(draft.voice.live.dictation_idle_margin_db),
           dictation_max_s: Number(draft.voice.live.dictation_max_s),
           // W2/D72's pacer bound takes the bare `Number` too: it is floored at 200 server-side,
           // so zero is not a value it can mean.
@@ -2718,13 +2725,19 @@ export function ConfTab({ active }: Props) {
           />
           <Field
             label="Dictation idle stop"
-            desc="seconds of silence that end a hands-free dictation (3–300) — a held finger is never idle"
+            desc="seconds of silence that end a hands-free dictation (0–1800; 0 = off) — a held finger is never idle"
             value={String(vlive?.dictation_idle_s ?? "")}
             onChange={(v) => setLive("dictation_idle_s", v as unknown as number)}
           />
           <Field
+            label="Dictation idle margin (dB)"
+            desc="dB above the room's noise below which you count as silent (0–40) — raise it if your pauses never stop a dictation, lower it if it stops while you speak"
+            value={String(vlive?.dictation_idle_margin_db ?? "")}
+            onChange={(v) => setLive("dictation_idle_margin_db", v as unknown as number)}
+          />
+          <Field
             label="Dictation time limit"
-            desc="seconds one dictation may run before it stops itself (10–1800)"
+            desc="seconds one dictation may run before it stops itself (10–1800; must stay under the call's 30-min session limit, so 1799 at most today)"
             value={String(vlive?.dictation_max_s ?? "")}
             onChange={(v) => setLive("dictation_max_s", v as unknown as number)}
           />
