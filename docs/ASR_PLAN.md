@@ -8,12 +8,12 @@
 > = session B** once B's criteria (§6.4) pass. This file owns the ASR/VAD design;
 > [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) keeps the call loop, the mouth and the client admission layer. Evidence:
 > [R94](./research/R94-asr-audits-verification.md) · [R95](./research/R95-vad-placement.md) · [R96](./research/R96-16khz-capture.md) ·
-> [R97](./research/R97-peer-engine-design.md).
+> [R97](./research/R97-peer-engine-design.md) · [R98](./research/R98-vad-model-landscape.md) (the VAD-model landscape + the plug-in boundary — the §3.4.1 amendment, 2026-10-01).
 
 ## 0. How to read this
 
 Precedence on conflict: the rulings (§0.1, incl. council №1) > the stress-test audit (folded, recorded in §3.10) >
-R97 > R96 > R94 > R95. Slices keep R94 §10's S1–S10 numbering; session A adds **SP**, **K6**, **D9**, **D8**, **D5**;
+R98 (the §3.4.1 model boundary; supersedes §3.4's v5 pin) > R97 > R96 > R94 > R95. Slices keep R94 §10's S1–S10 numbering; session A adds **SP**, **K6**, **D9**, **D8**, **D5**;
 S4 is withdrawn. Session B runs S6-i → S6-ii → S9 → TUNE → S7a (client half) → S7b (the flip) → field rounds → S8 → S8b → S10 (§7.2). `R94-evidence/L2` (private transcripts) is
 never cited, committed, or named in a brief. §10.1 maps the HANDOFF agenda's A7, §B and §C (A1–A6
 are the polish ledger, `POLISH_LEFTOVERS`; §D is housekeeping — neither is this plan's).
@@ -46,6 +46,7 @@ are the polish ledger, `POLISH_LEFTOVERS`; §D is housekeeping — neither is th
 | R22 | **S8b reload survival RULED IN** — a full slice right after S8 (§3.8, §7.2) | owner |
 | R23 | The owner's longer-pause intent ("test 0.7 first; widen to 3000") — **re-shaped by R97 P-3:** `silence_ms` stays the VAD end (500–1200); a longer pause is the client `turn_hold_ms` (0–3000, default 0). **Option A RULED 2026-09-30** — R23 closed as re-shaped; S7a/S7b unblocked | owner |
 | R24 | **NO SHADOW MODE, NO SPEACHES BASELINE, NO SEAMS PRODUCTION WON'T USE.** Speaches is replaced because it hallucinates and fails in noise, so it is no reference. The new ear is tuned BY HAND on captured reference audio with an OFFLINE replay tool; the one runtime addition is a debug-gated raw-audio capture. The ASR host swaps on the clip door BEFORE the live flip, so the flip removes Speaches from the live and TTS routes in one move | owner |
+| R25 | **The VAD is a plug-in behind ONE model boundary (§3.4.1, R98, 2026-10-01):** `VadModel`/`VadStream` + a dict of constructors; `VadParams` in ms with the EMA as a time constant; every count derived from the model's hop; a per-model calibrated `default_act`; non-causal models refused on the live door; **the default model is Silero v6.2 (v5.1.2 stays registered as the replay A/B)** — owner: "agnostic … I don't want a big refactor later"; the main seat ruled the shape on R98's evidence | owner + main seat |
 | Q1–Q4 | The stress-test amendments, ACCEPTED (§3.10) | main seat |
 | C1–C28 | Council №1's reconciled rulings (`RULINGS-P.md`), all folded (§11 lists where) | main seat |
 | M-1…M-4 · P-1…P-7 · T-1…T-12 | The main-seat read, R97's peer-engine check and the traceability audit — all folded (§11) | main seat |
@@ -120,7 +121,7 @@ second VAD in its HTTP door empties ~21% of segments. The car "Yeah." was the ec
 
 ### 2.3 Inheritance
 
-Taken: Silero `VADIterator`'s per-leg state (L4 §1.1–§1.2) · LiveKit's EMA smoothing (`p̂ = 0.35·p̂ + 0.65·p`) under a
+Taken: Silero `VADIterator`'s per-leg state (L4 §1.1–§1.2) · LiveKit's EMA smoothing (`p̂ = 0.35·p̂ + 0.65·p` per 32 ms window — expressed as a time constant, §3.4.1) under a
 consecutive-`≥ act` onset, `deact = act − 0.15`, a 500 ms pre-roll and a segment cap (L4 §1.3; R97 §2, §4) · Home
 Assistant's onset re-arm delay (R97 §2.4) · LiveKit/Pipecat's split of "speech ended" from "turn over" (R97 §9.2) ·
 Pipecat's trailing-silence pad (R97 §6.2) · Deepgram/AssemblyAI's wall-clock bucket (L4 §2) · the peer class's
@@ -148,7 +149,7 @@ phone: getUserMedia (NS on ⇒ Chrome's track FIXED at 48 kHz) → AudioContext(
   ⇢ 4G/Wi-Fi → Tailscale Serve → uvicorn (keepalive 5 s + 5 s = the K4 horizon, qh9-pinned)
 RELAY  _accept_audio: size caps → WALL-CLOCK BUCKET (§3.3) → leg index stamped (§3.2)
          → PyAV resampler to 16 kHz (anti-aliased; identity on the 16 kHz main path) → per-leg queue
-       VAD worker (one `vad` thread/process): batch-drain → Silero v5 (state per leg) → Segmenter → edges
+       VAD worker (one `vad` thread/process): batch-drain → the configured `VadModel` (Silero v6.2 default; state per leg) → Segmenter → edges
        per-leg ASR worker (serial): PRE-ASR PASS (to_thread) → WAV → VoiceClient.transcribe(door="live")
        downlink: ready{clock:"leg", answer_ttl_ms} · speech_started · speech_stopped · transcript{audio_*_ms, reason} · error{item_id} · state:flushed
 CLIP   POST /api/voice/stt[?from_ms=N]: PyAV decode (bounded) → trim → the SAME pass → per-chunk transcribe(door="stt")
@@ -164,7 +165,7 @@ stream, not the context.
 
 | Concern | Today | After D82 |
 |---|---|---|
-| When speech starts/stops | Speaches (rescan) | relay `SileroSegmenter` (§3.4) |
+| When speech starts/stops | Speaches (rescan) | relay `VadSegmenter` (§3.4) |
 | Whether a segment reaches ASR | Speaches' hidden 2nd VAD | ctrl-b's pre-ASR pass — the clip door from S9, the live door from S7b (§3.6) |
 | Words | Speaches' Parakeet | any OpenAI-shaped engine via the provider seam; parakeet-server by default (§3.7) |
 | Ids, order, one answer per stop | Speaches, implicitly (L5 §0) | the relay, explicitly (§3.5) |
@@ -201,10 +202,19 @@ stream, not the context.
 
 ### 3.4 The VAD engine (C1, placement-agnostic)
 
-- **Model/runtime:** Silero v5 via raw `onnxruntime` + `numpy`, per window `[1, 64+512]` @ 16 kHz, `state [2,1,128]`,
-  `sr`. The vendored model is the official single-file **v5.1.2** (`silero_vad.onnx`, MIT, ~2.3 MB) in
-  `backend/app/assets/silero/`, SHA-256 test-pinned; v6 is a later A/B through the replay tool. Never the
-  `silero-vad` package (torch); not `sherpa-onnx` (a bool, no tentative edge).
+- **Model/runtime (amended by R98 — §3.4.1 is the contract):** the engine speaks to a `VadModel`, never to an ONNX
+  tensor. **The default model is Silero v6.2** (the official single-file `silero_vad.onnx` at tag v6.2 = v6.2.1, sha256
+  `1a153a22…`, MIT, 2 327 524 B — the file LiveKit bundles), and **v5.1.2** (sha256 `2623a295…`, same IO contract) stays
+  REGISTERED as the replay A/B; both vendored in `backend/app/assets/silero/`, SHA-256 test-pinned. Why v6.2 (R98 §2.3,
+  MEASURED on emma, hop by hop): AUC 0.957 vs 0.925 clean and 0.952 vs 0.913 in car noise at 0 dB; under the plan's own
+  policy at act 0.6 v6.2 found 126/126 labelled segments clean and 125/126 in car and babble noise, with 0 phantom
+  segments/min on car, babble and kitchen noise at native level (0.7/min on quieter babble; 0.5 scored 126/126/126) where
+  v5 found 120/119/118 and produced 7–9/min on babble — the speech-like-background class a
+  radio or a passenger belongs to. v5 was pinned only for Speaches parity, which R24 dropped. The Silero adapter runs raw
+  `onnxruntime` + `numpy` per window `[1, 64+512]` @ 16 kHz, `state [2,1,128]`, `sr`. Never the `silero-vad` package
+  (torch); not `sherpa-onnx` (its Python binding is a bool, and its policy is duplicated inside every model).
+  **A model swap is a re-calibration event** (R84, R98 §6): v6.2's probability scale sits higher on speech than v5's
+  (thr@5 % miss 0.40 vs 0.09), so the threshold's SCALE is the model's (§3.4.1 ④).
 - **Dependencies:** a `voice` optional extra (`onnxruntime`, `numpy`, `av`, exact pins, justified), installed by
   `install.sh` and CI — a wheel-less profile (Termux) still installs, and the lazy import reports the `live`/`stt` bits
   unconfigured instead of failing the boot (council 11 / O-LOW-4).
@@ -214,11 +224,11 @@ stream, not the context.
   whole-signal pass (stateful streaming); a −6 dBFS 9 kHz tone at 48 kHz and at 44.1 kHz lands on its 7 kHz alias at −67 dBFS
   (≈ 61 dB down); 1 kHz and 6.5 kHz pass at −6.0 dBFS; it holds its filter delay internally (an impulse lands on its expected
   output index once flushed). Fallback: `python-soxr` `ResampleStream` (cp314 wheel). **ONE golden test:** the 9 kHz alias
-  ≥ 30 dB down. Edges map by output-sample count, tolerance ONE window (32 ms). An identity at 16 kHz; the linear
+  ≥ 30 dB down. Edges map by output-sample count, tolerance ONE hop or 32 ms, whichever is larger (§3.4.1 ②). An identity at 16 kHz; the linear
   `Pcm16Resampler` keeps only the Speaches 24 kHz hop until the flip and dies in S10.
 - **Runtime:** one process-wide single-thread `vad` executor; the worker drains every queued frame per wake and runs the
   windows in ONE executor call (Q3 ②); the policy runs inline; state per leg, reset only at leg start. **Budget
-  (council 14):** per-window processing p95 < 32 ms, `emit_lag_ms` (edge wall time − its window's receipt) p95 < 60 ms, no
+  (council 14, hop-relative per §3.4.1 ③):** per-hop processing p95 < `hop_ms` and each batched `probs()` call shorter than the audio it represents, `emit_lag_ms` (edge wall time − its hop's receipt) p95 < 60 ms, no
   keepalive death, read on the contended box in the first post-flip rounds (§6.4); CPU affinity is decided only if these fail.
   **Behind is a failure (R97 P-5c):** the oldest queued frame older than `VAD_MAX_LAG_MS` (3000) ⇒ the `ear_failed` path —
   a call closes 1011 into the EXISTING reconnect ladder (a fresh leg, VAD state reset — not terminal; N-6), dictation
@@ -227,9 +237,11 @@ stream, not the context.
   `error{code:"ear_failed"}` + the T1 reason, never a bare 1011; after one ASR timeout the segments queued AT THAT MOMENT answer
   `asr_error` without calling the engine (not a latched breaker — R97 §5.2); in-flight ASR is cancelled at leg end; the `VoiceClient` generation is re-read
   per segment (`app.state.voice`), never captured for the leg.
-- **The policy** — a pure `step(state, probs, first_index) → (state, edges)` over a frozen `VadParams`. Each 32 ms
-  window's probability is first smoothed with LiveKit's EMA, `p̂ = 0.35·p̂ + 0.65·p` (`VadParams.ema_alpha`; raw = a replay
-  variant — R97 P-5b), then falls in one of three bands (council 7):
+- **The policy** — a pure `step(state, counts, probs, first_index) → (state, edges)` over a frozen `VadParams` (in ms)
+  and a `counts` object derived ONCE per leg from the model's hop (§3.4.1 ③). Each hop's probability is first smoothed
+  with LiveKit's EMA — `p̂ = α·p̂ + (1−α)·p` with `α = exp(−hop_ms/τ)`, `VadParams.ema_tau_ms` ≈ 30.5 (= LiveKit's 0.35 at
+  32 ms; raw = a replay variant — R97 P-5b) — then falls in one of three bands (council 7). In the tables below "window"
+  = one hop; the `/32` counts are written for the Silero hop and are DERIVED, never literal (`⌈x_ms/hop_ms⌉`):
 
 | Band | Tentative segment | Confirmed segment |
 |---|---|---|
@@ -247,13 +259,135 @@ stream, not the context.
 | Dictation | `onset_ms = 0` — every crossing is a segment; the pre-ASR pass is the only filter (today's parity); no retraction |
 
   No buffer rotation, no 3 s window: B1/B2/B7 cannot occur by construction.
-- **The seam:** `Segmenter.feed(StampedFrame) -> list[Edge]`, `Segmenter.flush() -> list[Edge]` (force-endpoints whatever
-  is open, tentative included). A later `EdgeSegmenter` (C2) touches nothing downstream (R95 §8).
-- **Golden vectors** — JSON `{params, probs[], first_index, expected edges[]}`, **hand-authored from the tables above
-  before the implementation runs, never regenerated from its output** (council 11): R94 §9's VAD-1…10 · no pin · pre-roll
+- **The seams:** downstream, `Segmenter.feed(StampedFrame) -> list[Edge]`, `Segmenter.flush() -> list[Edge]` (force-endpoints
+  whatever is open, tentative included) — a later `EdgeSegmenter` (C2, a bool-only model's home) touches nothing downstream
+  (R95 §8); upstream, the `VadModel` boundary of §3.4.1 — a second probability model touches nothing in the policy.
+- **Golden vectors** — JSON `{params, hop, sample_rate, probs[], first_index, expected edges[]}` (the hop is a vector
+  input, §3.4.1 ③), **hand-authored from the tables above before the implementation runs, never regenerated from its
+  output** (council 11): R94 §9's VAD-1…10 · no pin · pre-roll
   crosses the previous end · the Q1 flicker stays ONE id · **hover at `deact ± 0.05` for 5 s ⇒ one retraction within the
   bound** · **hover at `act ± 0.05` for 5 s ⇒ at most one start/retraction pair** (P-1) · EMA applied (P-5b) · a `[deact, act)` dip resets confirmation but not the segment · dictation onset 0 · a split with zero pre-roll
-  and `reason: max_segment` · an unconfirmed segment at the cap retracts · flush endpoints a tentative onset.
+  and `reason: max_segment` · an unconfirmed segment at the cap retracts · flush endpoints a tentative onset · **two vectors at a 10 ms hop that pin the ms→count and τ→α derivations** (R98).
+
+#### 3.4.1 The VAD-model boundary (R25 · R98, amendment of 2026-10-01, revised the same day on review round A — binds S6-i, S6-ii, S9, S7b and the replay tool)
+
+**Why.** The owner wants the ear model-agnostic (*"Silero today … other VAD models we might want to test … no big refactor
+later"*). R98 measured every candidate and read every peer: the frameworks that fused the policy into the model paid for it
+(sherpa duplicates the policy per model; LiveKit has one plugin), the ones that split model from policy still got three
+things wrong — one threshold shared across models whose scales differ, the EMA and every count written for one hop, and
+residual samples dropped at the frame boundary. The boundary below is the peer-converged shape (vad-web's `Model`,
+Pipecat's `voice_confidence` + `num_frames_required`, LiveKit's `stream()`) plus the two facts none of them declares:
+a per-model calibrated activation and a declared delay. Pattern: **Strategy** (the model) behind one small **Adapter** per
+model, a plain dict of constructors — nothing more (R24).
+
+① **The protocol** (`services/voice_vad.py`):
+
+```python
+class VadModel(Protocol):            # one per process per model; owns its ORT session; immutable
+    name: str                        # the config value, the trail's `leg_start.model`, replay `--model`
+    sample_rate: int                 # 16000 for every live-eligible candidate — the relay already delivers it
+    hop: int                         # samples per probability (Silero 512 · TEN 256/160 · FireRed 160)
+    delay_hops: int                  # 0 causal; probability j describes hop j − delay_hops (declared, see ⑤)
+    default_act: float               # THIS model's calibrated activation — the replay tool's recommendation and
+                                     # the config default's provenance; NOT consulted at runtime (④)
+    prepass_act: float               # the pre-ASR pass's threshold on THIS model's scale (⑤) — read by the pass
+    def open(self) -> VadStream: ... # fresh per-leg state ("reset" = open a new stream; reset only at leg start)
+
+class VadStream(Protocol):
+    def probs(self, pcm: NDArray[np.float32]) -> NDArray[np.float32]:
+        """len(pcm) % hop == 0 → exactly len(pcm)//hop probabilities in [0, 1], in order; state carried."""
+
+VAD_MODELS: dict[str, Callable[[], VadModel]]   # {"silero-v6.2": …, "silero-v5.1.2": …}
+```
+
+The adapter owns everything model-specific: context samples (Silero's 64), recurrent state, features (a future fbank/CMVN
+or pitch frontend — with any fractional frontend lookahead normalized INSIDE the adapter to its integer `delay_hops`
+ceiling and documented placeholders at start-up; if a real delayed model cannot be represented that way, `delay_hops`
+becomes an `(offset_samples, drain_hops)` pair THEN, not now), and collapsing several outputs to one P(speech). `open()`
+returning a stream (not `new_state()` + a pure function) is deliberate: a feature stream or a native handle is an object,
+and a stream hides that without a second abstraction. A `close()` is added only when a model with a native handle is
+adopted (R24). One ORT session is shared by the `vad` thread's stream and the pre-pass's `to_thread` stream: concurrent
+`InferenceSession.run()` on one session is thread-safe by ORT's contract (its docs); the per-stream STATE is what is
+never shared.
+
+② **The `VadSegmenter` owns the frame↔hop mismatch and the clock mapping** — model-agnostic, ONE implementation:
+- **A 16 kHz model-sample cursor** (post-resampler samples, `m`), separate from the LEG CLOCK (client-rate samples,
+  §3.2). Each `StampedFrame` carries `(leg_index, client_samples)` and the Segmenter keeps frame anchors reaching back at
+  least `max(prefix_padding_ms, 1000 ms) + hop` of audio (a START edge maps up to the pre-roll back, a cap cut up to
+  `cut_span` back); a pre-roll that reaches before the leg's first sample clamps to it; a model boundary at cursor `m` maps back through the frame that contains it: `leg = frame.leg_index +
+  round((m − frame.m_start) · client_rate / 16000)`. On the 16 kHz main path the two clocks coincide; on the native-rate
+  fallback (44.1/48 kHz, R11) the mapping is the only correct one, and a DROPPED call frame (§3.2: a GAP in the leg
+  index) can never shift a boundary because no boundary is ever computed by adding hops to a leg index.
+- **The residual.** The relay's 40 ms frame is 640 samples; Silero's hop is 512 (1.25 per frame), TEN-256's 2.5. The
+  Segmenter keeps a `< hop` residual and calls `probs()` on the largest multiple; nothing is dropped and no edge is
+  quantized to the caller's frame (every peer that dropped the remainder lost 32–128 samples per frame, R98 §3).
+- **The hop convention (review round A, Emma HIGH):** hop `j` covers model samples `[m_j, m_j + hop)`, `m_j = m_first +
+  (j − delay_hops)·hop`. A **START** edge is at `m_j` of the first `≥ act` hop, minus the pre-roll (in SAMPLES,
+  `prefix_padding_ms · 16`, independent of hop); a **max_segment cut** is at the `m_j` of the chosen lowest hop; a
+  **STOP** edge — confirmation, retraction and the endpoint alike — is at the EXCLUSIVE end `m_j + hop` of the hop that
+  completed the run, so `audio_end_ms` is the sample after the FULL `silence_ms` run (§3.4 End rule; §3.8's cut
+  `audio_end_ms − silence_ms/2` depends on it). Both conventions are pinned in the 32 ms AND the 10 ms golden vectors.
+- **Flush** zero-pads the `< hop` leftover to one hop (so the last real samples are judged) — and every edge is CLAMPED to
+  the last real sample, so a stop that lands in the pad never reports an `audio_end_ms` past the recording; a delayed
+  model (none registered — the drain code is written only then) would be drained with `delay_hops·hop` zeros; the pre-pass (§3.6) uses the SAME residual/pad/drain helper on a whole buffer — one
+  function, no second copy.
+
+③ **`VadParams` stays in milliseconds; counts are derived once per leg** — `counts = derive(params, hop, sample_rate)`
+holds `k_onset = ⌈onset_ms/hop_ms⌉`, `k_end = ⌈silence_ms/hop_ms⌉`, `k_rearm`, `age_bound`, `α`, `max_hops`, `cut_span =
+⌈1000/hop_ms⌉` — Home Assistant's time-unit lesson without its per-chunk float decrement, so the golden vectors stay
+integer and exact. **The EMA** is `p̂ ← α·p̂ + (1 − α)·p` with `α = exp(−hop_ms / ema_tau_ms)`, `ema_tau_ms = 32 / ln(1/0.35)
+≈ 30.48` (LiveKit's α 0.35 IS per 32 ms; a 10 ms model with the same α would smooth three times as fast), `p̂₀` = the
+first `p`, and `ema_tau_ms = 0` ⇒ raw (α = 0, the replay variant). The age bound and the re-arm guard are in ms, so a
+finer hop (more single-hop crossings) stays bounded in TIME; one 10 ms vector pins it. **The runtime budget is
+hop-relative** (Emma MED): per-hop processing p95 < `hop_ms` AND each batched `probs()` call shorter than the audio it
+represents (a 10 ms model can pass a flat 32 ms gate while falling behind), plus the `emit_lag_ms` p95 < 60 ms of §3.4.
+
+④ **The threshold stays an explicit number; the SCALE is the model's.** `voice.live.vad_threshold` remains a required
+float in Conf (D76's row, unchanged in kind — review round A rejected an optional "model default" value: nothing could
+display or persist it cleanly, R88 forbids delivering server keys, and a blank Conf field would silently change meaning).
+Its default becomes **0.6 for `silero-v6.2`** (R98's bake-off at 0.6: 126/126 clean, 125/126 in car and babble noise, 0
+phantom segments/min on native-level noise — provisional until TUNE; 0.5 scored 126/126/126), its config BOUNDS widen to
+**0.1–0.95** (D76's 0.5–0.8 was a v5 calibration; TEN's matched point is 0.44, FireRed-stream's 0.17), and the Conf
+slider follows. The hysteresis gap stays the LiveKit/Silero constant `deact = act − 0.15` clamped to `≥ 0.05`; a
+per-model gap is a seam no registered model needs (R24). **A model swap is a re-calibration the owner performs:** the
+replay tool prints each model's `default_act` and its sweep, the runbook's swap procedure says "set `vad_threshold` to
+the replay's recommendation", and the ALWAYS-ON T1 leg-end line (S7b extends S1's `_LegStats`) plus the trail's `leg_start` carry `model`,
+`hop_ms` and `act`, so a mismatched operating point is visible in `journalctl` on the first leg, not only in a debug
+trail.
+
+⑤ **`voice.live.vad_model`** — a config-only key (no Conf row, the `max_segment_s` precedent), a closed `Literal` of the
+registry's keys, default `silero-v6.2`, landing in **S6-i with the registry** (the S9 pre-pass reads it before S7b
+does). Causality is a **registry invariant, tested, never checked at load** (building a model inside a validator would
+import ORT at boot, council 11): one test asserts, for every `VAD_MODELS` entry, `delay_hops · hop_ms ≤ 32` (today: 0 for
+both) and that the `Literal`'s keys equal the dict's — a non-causal model cannot be registered without failing it. **The
+pre-ASR pass (§3.6) runs the SAME `vad_model` in a fresh stream** (one model per process). Its threshold is the
+model's `prepass_act` (registry metadata, read by the pass — the pass never reads `vad_threshold`), 0.5 for both Silero
+entries as the STARTING point on the new scale (0.5 scored 126/126/126 in R98's bake-off); because the pass becomes
+authoritative on the clip door at S9 — BEFORE TUNE — **the S9 gate gains a pre-pass row** (§6.4): a threshold sweep
+over the corpus positives and the push-to-talk clips with zero labelled-speech clips answered `no_speech`, the settled
+value written back as the entry's `prepass_act`; TUNE re-checks it, and **a `vad_model` swap re-runs the sweep** (the
+runbook's swap line: set `vad_threshold` to the replay's recommendation AND run the pre-pass sweep). A separate pre-pass model (where lookahead is free —
+the only door a FireRedVAD-non-stream or MarbleNet could ever serve) is a RECORDED seam (`prepass_model`, R98 §5 ④), not
+built.
+
+⑥ **Per-model conformance test** (one per registry entry, beside the policy's golden vectors): chunk invariance (40 ms
+frames vs one block ⇒ identical probabilities — measured bit-exact for Silero v5/v6.2), a short fixture WAV within 1e-5
+of the upstream reference, `len(out) == len(pcm)//hop`, the file's sha256, and the first second of a leg (warm-up
+behaviour is a model fact; a "not ready" output maps to 0.0).
+
+⑦ **Replay (`vad_replay.py --model <key>`)** prints the model, its sha256, `default_act` and the effective act in the
+header; two runs side by side are the A/B. Captures are model-independent by construction (raw 16 kHz post-resampler
+WAV, §6.1).
+
+**Named exits kept lean:** bool-only models (WebRTC) → `EdgeSegmenter`, not admitted to the probability path (R98's
+measurements give no reason to build it); the Silero v6.2 **sequence export** (`silero_vad_16k_sequence.onnx`, release
+v6.2.2, bit-exact with per-window v6.2, 42–58 µs/window batched) = a performance exit inside the Silero adapter if the
+§3.4 budget ever fails — not built while 84 µs/window meets it ~380×; the `delay_hops` shift/drain code = written only
+when a delayed model is registered (the attribute exists so the invariant test can read it). **What a model swap cannot
+fix (R98 §2):** the phantom "Yeah."/"Mm-hmm." class is real speech (echo residue, a radio, a passenger); every generic
+VAD passes it and the only research line aimed at it (foreground VAD) is unreleased. AEC, the hold, the backstop and the
+pre-ASR pass stay the levers; the ranked try-next list is R98 §5 (v5.1.2 ↔ v6.2 · TEN native behind a libc++ + licence
+check · FireRed-stream · non-causal models for the pre-pass only).
 
 ### 3.5 The producer contract (R94 §7.3, amended by Q1 and council 3/8)
 
@@ -309,8 +443,8 @@ R95 §4) · the echo backstop · the voice learner · the overlay · the idle cl
 
 ### 3.6 The pre-ASR pass, both doors (R3, R5; R94 §7.2.4; L3 §3.4)
 
-- **One function**, `prepass(pcm16k) → no_speech | chunks[]` (`services/voice_prepass.py`): a fresh-state batch Silero on
-  its own ORT session with the constants Speaches' HTTP door used `PREPASS_THRESHOLD = 0.5` (neg 0.35), `PREPASS_MIN_SILENCE_MS = 160`,
+- **One function**, `prepass(pcm16k) → no_speech | chunks[]` (`services/voice_prepass.py`): a fresh-state batch run of the configured `vad_model` on
+  its own stream of the configured `vad_model` (§3.4.1 ⑤) with the constants Speaches' HTTP door used — the model's `prepass_act` (0.5 for both Silero entries; neg = act − 0.15; settled by the S9 pre-pass sweep, §6.4), `PREPASS_MIN_SILENCE_MS = 160`,
   `PREPASS_PAD_MS = 400`, `PREPASS_MAX_CHUNK_S = 30`: no speech → `outcome: no_speech`, no ASR; else crop `[first − 400, last + 400]`
   ms, split > 30 s at speech boundaries, transcribe in order, join with spaces.
 - **Authority:** authoritative on the clip door from S9 (the host swap needs it — parakeet is WAV-only and has no
@@ -501,7 +635,8 @@ bounds and the validator; a violation gets a clamp step (6), never a runtime rep
 
 | Key (`voice.live.*` unless named) | Type · default · range | Reader | Conf | Change | Verdict |
 |---|---|---|---|---|---|
-| `vad_threshold` · `silence_ms` · `prefix_padding_ms` | 0.6 (0.5–0.8) · 700 (500–1200) · **500** (was 300; 0–1000) | server | Live call › Speech detection | leave `session.update` → `act`, the VAD end, the pre-roll ring (P-5d) | additive; the pre-roll default is unstored |
+| `vad_threshold` · `silence_ms` · `prefix_padding_ms` | 0.6 (**0.1–0.95**, was 0.5–0.8 — the scale is the model's, §3.4.1 ④) · 700 (500–1200) · **500** (was 300; 0–1000) | server | Live call › Speech detection | leave `session.update` → `act`, the VAD end, the pre-roll ring (P-5d) | bounds widened (S7b; a stored 0.5–0.8 value stays valid); the pre-roll default is unstored |
+| **`vad_model`** | Literal of `VAD_MODELS` keys · **`silero-v6.2`** | server | **none** — config-only (§3.4.1 ⑤) | NEW (R98, lands in S6-i): which registered `VadModel` both doors run; causality is a registry-invariant test, not a load check | additive |
 | **`turn_hold_ms`** | int · **0** · 0–3000 | client | Live call (S7a: FE row + round-trip test) | NEW (R97 P-3): the pending-turn hold that generalizes the R20 join | additive |
 | **`onset_ms`** | int · **200** · 0–500 | server | Live call › Speech detection (S7b: FE row + round-trip test) | NEW: confirmation + hangover + the tentative bound | additive |
 | **`max_segment_s`** | int · **20** · 5–**20** | server | **none** — config-only ceiling (D76, council 18) | NEW | additive |
@@ -524,8 +659,8 @@ bounds and the validator; a violation gets a clamp step (6), never a runtime rep
 **Not keys:** K6 (a capability fallback) · `UPLINK_ALLOWANCE_MS`, `KEEPALIVE_HORIZON_MS`, `BUCKET_CAP_MS` (P-6) ·
 `VAD_MAX_LAG_MS` · `RECOVERY_TIMEOUT_MS` · `REC_TIMESLICE_MS` · `PREPASS_*` (Speaches-door
 constants) · the Silero assets. `/voice/status` `live_call` delivers CLIENT keys only; the R88 reader-parity test gains
-`dictation_idle_margin_db` (in SP) and `turn_hold_ms` (in S7a) and proves `onset_ms` and `max_segment_s` are never
-delivered (in S7a).
+`dictation_idle_margin_db` (in SP) and `turn_hold_ms` (in S7a) and proves `onset_ms`, `max_segment_s` and `vad_model` are
+never delivered (in S7a).
 
 ---
 
@@ -533,7 +668,7 @@ delivered (in S7a).
 
 | # | Field / line | Lands in | Gate | Built in |
 |---|---|---|---|---|
-| T1 | **Leg end on EVERY path** (`_ClientGone`, clean stop, keepalive death, `_fail`, idle reaper, supersede, `ear_failed`): `mode · duration_s · frames · audio_ms · finals · reason · close_code · last_err`; later + aggregates (p50/max `asr_ms`, `asr_error`/`no_speech` counts, VAD p95 inference + `emit_lag_ms`, **event-loop lag**, `late_answers`) | relay `log.info` | always | S1; aggregates S7b |
+| T1 | **Leg end on EVERY path** (`_ClientGone`, clean stop, keepalive death, `_fail`, idle reaper, supersede, `ear_failed`): `mode · duration_s · frames · audio_ms · finals · reason · close_code · last_err`; from S7b + `model · hop_ms · act` (§3.4.1 ④) and the aggregates (p50/max `asr_ms`, `asr_error`/`no_speech` counts, VAD p95 inference + `emit_lag_ms`, **event-loop lag**, `late_answers`) | relay `log.info` | always | S1; aggregates S7b |
 | T2 | Budget tripped · **bucket credit** at the trip (min seen) | T1 | always | S2 |
 | T3 | Client close code (4000 send_buffer · 4001 client_backlog · 1000 normal) | T1 | always | S1 |
 | T4 | Dictation: `onClose(code, reason)` · `lastError` · `StopReason` (`user · idle · max_duration · page_hidden · socket_lost · client_backlog · send_buffer · media_error · call_handover · unmount · cancel`) into `stop()`; clip bytes (T-1) | dictation `end` line | debug | S1; bytes SP |
@@ -578,10 +713,10 @@ the reference is the owner's own reading of real audio.
 
 ### 6.2 The replay tool (`tools/vad_replay.py`, S6-ii; offline, never runtime)
 
-`vad_replay.py <wav…> [--set onset_ms=… act=… silence_ms=…] [--variant m1] [--asr http://127.0.0.1:<clip port>/v1]`
+`vad_replay.py <wav…> [--model silero-v6.2|silero-v5.1.2] [--set onset_ms=… act=… silence_ms=…] [--variant m1] [--asr http://127.0.0.1:<clip port>/v1]`
 
 - **It reuses the shipped code.** It imports the SHIPPED modules (the resampler, the `VadParams` policy,
-  `SileroSegmenter`, `prepass`) and re-implements nothing.
+  `VadSegmenter`, `prepass`) and re-implements nothing.
 - **It runs them over captured WAVs and prints, per segment:**
   - the edges: start/end ms, reason, max probability;
   - with `--asr`, the transcript, produced through the same pass/chunk path on `parakeet-clip`.
@@ -627,7 +762,7 @@ The hand-authored golden vectors (§3.4) are the unit tests. The tool is the ear
 
 | Gate | Pass |
 |---|---|
-| **S9 → clip door on parakeet (dev)** | • the gate-walk test passes<br>• live-sized p95 < 1 s uncontended and < 2 s contended (requests ≤ 20 s)<br>• RSS < 2 GB per instance<br>• R10 (a)–(b) hold<br>• **no language crossing:** English and Spanish short answers and car negatives never come back in the other language (T-5)<br>• the owner reads the push-to-talk clips and the replayed reference transcripts by hand and finds them acceptable — **Spanish included** (T-5) |
+| **S9 → clip door on parakeet (dev)** | • the gate-walk test passes<br>• **the pre-pass sweep (§3.4.1 ⑤):** `prepass_act` swept over the corpus positives + the push-to-talk clips on the configured model — zero labelled-speech clips answered `no_speech`, the negatives' hit rate reported (T10)<br>• live-sized p95 < 1 s uncontended and < 2 s contended (requests ≤ 20 s)<br>• RSS < 2 GB per instance<br>• R10 (a)–(b) hold<br>• **no language crossing:** English and Spanish short answers and car negatives never come back in the other language (T-5)<br>• the owner reads the push-to-talk clips and the replayed reference transcripts by hand and finds them acceptable — **Spanish included** (T-5) |
 | **TUNE → the flip (S7b)** | • the golden vectors are green<br>• the owner's hand judgement of the replayed reference set (edges + transcripts, with the chosen `VadParams`) finds: no phantom segments on the negatives, every short answer present, no clipped onset |
 | **Release v1.7.12** (R94 §9 field acceptance, on the flipped dev) | • 5 min of no-owner-speech car audio → 0 false turns<br>• 20× each short answer, **English and Spanish** → recall ≥ 95%, no first-phoneme clipping, **no answer transcribed in the other language**<br>• no perceptible added lag<br>• ASR p95 < 1 s<br>• the §3.4 VAD budget met<br>• **a ≥ 10-min 4G dictation with induced stalls → zero stops, the suffix recovered, no duplicated text**<br>• the kill-clip-engine arm (§3.8)<br>• a > 20 s call turn arrives as ONE turn (R20)<br>• a reload mid-dictation recovers (S8b) |
 
@@ -659,20 +794,20 @@ round — blind Opus 5.5 ∥ blind Emma.**
 
 | Slice | Scope · files | Tests | Accept / field |
 |---|---|---|---|
-| **S6-i** engine/DSP | **Files:**<br>• the `voice` extra<br>• `assets/silero/` + SHA<br>• `voice_vad.py` (ORT wrapper, `VadParams` policy, `SileroSegmenter`)<br>• `voice_prepass.py` (the pass + bounded PyAV decode)<br>• the PyAV resampler wrapper<br>• hand-authored golden vectors (EMA, re-arm, both hovers)<br>• the `voice` extra wired into `install.sh:116`, `ci.yml:80`, `deploy/bootstrap.py`, `deploy/windows/` (T-12)<br>**No relay or route change.** | • the golden vectors<br>• the wrapper vs a recorded ONNX output (state carried)<br>• ORT options asserted<br>• the ONE alias golden test + chunked == whole<br>• the pass constants<br>• decode fixtures (webm/ogg/mp4/wav) + bounds | — |
-| **S6-ii** capture + replay + corpus | • receipt stamping<br>• the 16 kHz resampled copy<br>• the debug-gated capture (§6.1)<br>• `tools/vad_replay.py`<br>• `tools/asr_corpus.py`<br>• SECURITY_MODEL §2.12<br>• a Conf privacy line on `debug` | • capture happens only with `debug`<br>• retention follows the trail<br>• permissions<br>• the header is finalized, and a `.part` is importable<br>• replay prints edges for a fixture WAV | **Step 0: Conf › Live call › Call debug readout ON on dev** (it is OFF on dev and prod today — M-2). Then the owner's first capture rounds build the reference set (car + home, calls + dictations, both languages). |
+| **S6-i** engine/DSP | **Files:**<br>• the `voice` extra<br>• `assets/silero/` — v6.2 + v5.1.2, both SHA-pinned<br>• `voice_vad.py` (the `VadModel`/`VadStream` protocol + `VAD_MODELS` + the `vad_model` key and its registry-invariant test (§3.4.1 ⑤) · the Silero adapter serving v6.2 AND v5.1.2 · `VadParams` in ms + `derive(params, hop)` · the policy · `VadSegmenter` with the residual carry, the 16 kHz cursor → leg-clock mapping and the hop start/end conventions (§3.4.1 ②))<br>• `voice_prepass.py` (the pass + bounded PyAV decode)<br>• `config.py` (the `vad_model` key, §3.4.1 ⑤)<br>• the PyAV resampler wrapper<br>• hand-authored golden vectors (EMA, re-arm, both hovers; both hop conventions; two at a 10 ms hop; one native-rate fallback vector with a dropped-frame gap)<br>• the per-model conformance test (§3.4.1 ⑥)<br>• the `voice` extra wired into `install.sh:116`, `ci.yml:80`, `deploy/bootstrap.py`, `deploy/windows/` (T-12)<br>**No relay or route change.** | • the golden vectors<br>• the wrapper vs a recorded ONNX output (state carried)<br>• ORT options asserted<br>• the ONE alias golden test + chunked == whole<br>• the pass constants<br>• decode fixtures (webm/ogg/mp4/wav) + bounds | — |
+| **S6-ii** capture + replay + corpus | • receipt stamping<br>• the 16 kHz resampled copy<br>• the debug-gated capture (§6.1)<br>• `tools/vad_replay.py` (`--model`, §3.4.1 ⑦)<br>• `tools/asr_corpus.py`<br>• SECURITY_MODEL §2.12<br>• a Conf privacy line on `debug` | • capture happens only with `debug`<br>• retention follows the trail<br>• permissions<br>• the header is finalized, and a `.part` is importable<br>• replay prints edges for a fixture WAV | **Step 0: Conf › Live call › Call debug readout ON on dev** (it is OFF on dev and prod today — M-2). Then the owner's first capture rounds build the reference set (car + home, calls + dictations, both languages). |
 | **S9** the host + the clip door | • clone parakeet.cpp next to `~/github/speaches`<br>• machine-wide units + the runbook section "The ASR engines"<br>• `VoiceClient.transcribe(door=…)`<br>• the clip door = decode + pass + per-chunk `parakeet-clip`; undecodable → 422<br>• `max_concurrent_requests: 1`<br>• the dev config: stt → `[parakeet-clip, vault-speaches]`, live PINNED to `emma-speaches`<br>• T9/T10 on the clip door<br>• the bake-off through the real `VoiceClient` request (the `vad_filter` extra accepted or dropped, T-5), the 30-min row timed end to end through Serve | • the gate-walk test<br>• no speech → "" with no ASR call<br>• > 30 s splits in order<br>• never on the event loop<br>• the bake-off table | Push-to-talk clips and the whole-clip dictation fallback run on parakeet; the owner judges them → the S9 gate. |
-| **TUNE** (owner + main seat, no code slice) | 0. `debug` ON on dev (M-2)<br>1. more capture rounds<br>2. `promote`<br>3. `vad_replay.py` sweeps with `--asr` on `parakeet-clip`<br>4. the owner's hand judgement<br>5. `VadParams` defaults settled (a config edit or a one-line default change) | — | → the TUNE → flip gate (§6.4) |
+| **TUNE** (owner + main seat, no code slice) | 0. `debug` ON on dev (M-2)<br>1. more capture rounds<br>2. `promote`<br>3. `vad_replay.py` sweeps with `--asr` on `parakeet-clip`<br>4. the owner's hand judgement<br>5. `VadParams` defaults settled (a config edit or a one-line default change)<br>6. the pre-pass sweep re-checked (it settles the entry's `prepass_act`; re-run on any `vad_model` swap, §3.4.1 ⑤) | — | → the TUNE → flip gate (§6.4) |
 | **S7a — client half** (N-3; ships + is reviewed first) | **INERT until `ready{clock:"leg"}`:** `config.py` owns `turn_hold_ms` here (EM-2) · `LiveDown` fields + validation (bounds, reason incl. `flush`, `flushed`, `answer_ttl_ms`), the awaited-id TTL, **`turn_hold_ms`** + the `max_segment` join + the N-2 release rule (call pending + dictation append), the R88 parity (`turn_hold_ms` in; no server-only key is ever delivered — asserted per key as each lands, `onset_ms`/`max_segment_s` at S7b; R4-1), Conf rows + round-trip test, `e2e/liveCall.spec.ts` fixture (T-8), **an `ear_failed` arm in the call's `serverError` — note-only, like `busy` (R2-1)**, the `outcome` field + (reason, outcome) pair validation incl. `short`/`skipped` — tested against a scripted relay | without the capability everything is today's behaviour · the TTL expiry drops an id + logs · **each N-2 release path** (the last absorbed non-`max_segment` final of every other reason incl. a gate-dropped one, `flushed`, socket loss submits, mute discards, hold expiry — EM-1/R3-1) · a 25 s turn submits ONE turn · the dictation join appends once · **`stop(A)→start(B)→final(A)→stop(B)→final(B)` ⇒ ONE turn (E-N3)** · **`ear_failed` + 1011 ⇒ a reconnect, not a terminal (R2-1)** · a three-segment capped turn ⇒ ONE turn (EM-1) · several absorbed segments release on the LAST one's final (R3-1) · a late final with text is taken, an empty one dropped (R3-2) · invalid (reason, outcome) pairs rejected (EL-1) | — |
-| **S7b — THE FLIP** | the `vad` executor + batched drain + the `VAD_MAX_LAG_MS` rule, lossless dictation enqueue, typed `ear_failed` (a call → the reconnect ladder, N-6); the relay VAD produces the events (tentative + bounds + re-arm, EMA, `seg_<n>`, finals with bounds + reason, `flushed`, `ready{clock, answer_ttl_ms}`, dictation onset 0, `max_segment`); ASR = `transcribe(door="live")` on `parakeet-live` inside the ONE per-segment `timeout_s` deadline (N-1), the pass authoritative with the tail pad; T8/T9/T10 + the T1 aggregates; **the dev config move** (live → `parakeet-live` + `[parakeet-clip]`, Kokoro out of TTS — no LIVE or TTS route references `emma-speaches`/Kokoro after the flip; the pre-existing `vault-speaches` clip fallback and the `emma-speaches` provider definition (rollback) remain) · `voice_live.py`, `adapters/voice.py`, `core/provider_registry.py` (`LivePolicy` + `extra_body`, collapse log, primary warning), `config.py` (server-side VAD/deadline keys only: `onset_ms`, `max_segment_s`, `timeout_s`, `prefix_padding_ms` 500) | lossless dictation enqueue under a 10 s burst (Q3 ②) · a worker exception and a lagging worker ⇒ `ear_failed` + T1 (a call reconnects) · alternation · FIFO · stops not held · one answer per stop incl. 5xx + timeout · **a slow primary + fallback walk answers `asr_error` at `timeout_s`, never later** · queued-at-that-moment segments after a timeout answer `asr_error` · flush with a tentative onset (`reason: flush`) · split zero pre-roll + tail pad · **the Q1 flicker end-to-end: no mouth opening between halves** · the leg survives an engine death | car + home calls (no phantom turns, short answers kept, no clipped word, latency not worse) + a pause-heavy dictation; the VAD budget + event-loop lag read on the contended box |
+| **S7b — THE FLIP** | the `vad` executor + batched drain + the `VAD_MAX_LAG_MS` rule, lossless dictation enqueue, typed `ear_failed` (a call → the reconnect ladder, N-6); the relay VAD produces the events (tentative + bounds + re-arm, EMA, `seg_<n>`, finals with bounds + reason, `flushed`, `ready{clock, answer_ttl_ms}`, dictation onset 0, `max_segment`); ASR = `transcribe(door="live")` on `parakeet-live` inside the ONE per-segment `timeout_s` deadline (N-1), the pass authoritative with the tail pad; T8/T9/T10 + the T1 aggregates; **the dev config move** (live → `parakeet-live` + `[parakeet-clip]`, Kokoro out of TTS — no LIVE or TTS route references `emma-speaches`/Kokoro after the flip; the pre-existing `vault-speaches` clip fallback and the `emma-speaches` provider definition (rollback) remain) · `voice_live.py`, `adapters/voice.py`, `core/provider_registry.py` (`LivePolicy` + `extra_body`, collapse log, primary warning), `config.py` (server-side VAD/deadline keys only: `onset_ms`, `max_segment_s`, `timeout_s`, `prefix_padding_ms` 500, the `vad_threshold` bounds 0.1–0.95 per §3.4.1 ④ — `ConfTab.tsx`'s slider bounds + `config.example.yaml`'s comment follow) · `_LegStats` + `model · hop_ms · act` on T1 | lossless dictation enqueue under a 10 s burst (Q3 ②) · a worker exception and a lagging worker ⇒ `ear_failed` + T1 (a call reconnects) · alternation · FIFO · stops not held · one answer per stop incl. 5xx + timeout · **a slow primary + fallback walk answers `asr_error` at `timeout_s`, never later** · queued-at-that-moment segments after a timeout answer `asr_error` · flush with a tentative onset (`reason: flush`) · split zero pre-roll + tail pad · **the Q1 flicker end-to-end: no mouth opening between halves** · the leg survives an engine death | car + home calls (no phantom turns, short answers kept, no clipped word, latency not worse) + a pause-heavy dictation; the VAD budget + event-loop lag read on the contended box |
 | **Field rounds** (owner) | car + home calls and dictations on the flipped dev, `debug` ON (captures keep feeding the corpus), English and Spanish | — | no phantom turns, short answers kept, no clipped word, latency not worse; dev rollback = re-point the config + revert S7b |
 | **S8** recording outlives its leg | `useDictation.ts` (degrade triggers incl. the first `asr_error`, the frozen boundary, `streamRef` kept, clocks kept, recorder↔leg mapping, the frame-timestamp ring + `from_ms`, the clip re-upload, retry once, `RECOVERY_TIMEOUT_MS`, Retry/Discard, append/auto-send once, the capability gate, R70 ③ reversed) · `api/voice.py` (`from_ms`) · T13 | **STOP-5:** the socket dies after the first final → the recording continues → the suffix recovers, no duplicated text · **the boundary advances only on the matching successful final** · a mid-leg `asr_error` degrades · **Tier-0 cannot end a dead-leg recording** · tail-wait timeout ⇒ recovery · retry then Retry/Discard · **no capability → no recovery** · no_speech × {endpoint, max_segment, flush} boundary tests (E-N1) · a delayed final past the ordinary horizon still maps (E-N4) · `max_segment(ok) → endpoint(asr_error)` recovers the text exactly once (EH-1) · both cut paths (`endpoint` − silence/2, `flush` − 0) · **ONE scripted-relay e2e** (`routeWebSocket`: `ready{clock}`, a final with bounds, a close ⇒ the release POSTs the clip with `from_ms`, T-8) | the ≥ 10-min 4G dictation with induced stalls; the kill-clip-engine arm (fallbacks off); **the real recorder↔leg mapping error measured — acceptance ≤ ±350 ms** (debug capture × clip cross-correlation, R2-2, EL-2) |
 | **S8b** reload survival (R22) | `useDictation.ts` (`rec.start(REC_TIMESLICE_MS)`, the chunk append, `from_ms` persisted as finals land, delete on completion/discard) · a small IndexedDB store module (one record, try/catch'd) · the load-time "Recover the interrupted dictation" affordance + Discard · the marker fallback — reuses the §3.8 clip door + failure contract, no new upload path or decoder | chunk append · the concatenation decodes (header in the first chunk) through the clip door's PyAV path · the recovery offer after a simulated reload · delete on completion · another tab's fresh record left alone · IndexedDB unavailable / quota ⇒ memory-only + marker | a reload mid-dictation on the phone recovers the captured part |
 | **S10** code off Speaches | the §3.11 deletions (the gap cut is dead from the flip) · `dictation_max_s` 1800 / `max_session_s` 2100 · **the pre-tag config report** (T-7) · docs: LIVE_VOICE_PLAN (status, §0 seams, §2 pointer + Smart Turn's changed trigger, §4.1/§5.1, §5.2), SECURITY_MODEL §2.10 + §2.1 (**the engines' and Speaches' 0.0.0.0 binds under the LAN-trust posture**, T-6 as ruled) + §3 + §6, CLAUDE.md's LIVE_VOICE_PLAN row, AGENTS.md, QUALITY.md counts. **No unit is stopped** (R18) | the full gate; a fake batch engine | — |
 
 **Deferred (not Phase 26):** S6b (R7) · NEW-engine ASR fallbacks (R4) · a server energy gate (`quiet`) · client accrual on
-the leg clock (R94 §7.3 (i)) — **when it lands, delete the tentative start and its retraction** (R97 §2.2) · Silero v6 /
-FireRedVAD A/Bs · streaming ASR / EOU · **Smart Turn v3** (relay-owned audio makes it possible; LIVE_VOICE_PLAN §2.1's shelved
+the leg clock (R94 §7.3 (i)) — **when it lands, delete the tentative start and its retraction** (R97 §2.2) · future VAD-model
+A/Bs through `vad_replay.py --model` (FireRed-stream, TEN — R98 §5) · streaming ASR / EOU · **Smart Turn v3** (relay-owned audio makes it possible; LIVE_VOICE_PLAN §2.1's shelved
 trigger changes) · a shorter hop-1 read timeout so a HUNG primary still walks to the fallback (R2-3) · dictation reconnect-and-continue · an Opus/WebCodecs uplink (R96 §1) · R94 §8's dropped items: an NS/AGC
 A/B (after T5 exists), a high-pass (measure band energy on the corpus first), RMS DC offset (diagnostic only); EMA smoothing is
 now ADOPTED (P-5b). **Hard rules that stand:** no lexical filters, no logprob gate, no threshold raise to 0.9, no
@@ -765,6 +900,7 @@ the owner's later call.
 | **Named exit C2-H** — phone VAD + one HTTP POST per segment (R95 §2, §10.1) | revisit only if S2/S3/S8 fail in the field; the seam + vectors keep it a port |
 | **Named exit sherpa-onnx** | behind: no probability/tentative edge, open quiet-audio bug #3997 |
 | Any later rework of the engine shape | start from R97's per-peer tables (LiveKit / Pipecat / Home Assistant, sections listed in §2.3), not from scratch |
+| **A VAD-model swap** (Silero fails the TUNE gate or the release card) | R98 §5's ranked list; a swap is one registry entry + a re-calibration in the replay tool (§3.4.1); the phantom-turn class is NOT a model problem (R98 §2) |
 
 ---
 
@@ -810,6 +946,8 @@ question with evidence — there is no knob to force it.
 
 ## 11. Council record
 
+**Amendment of 2026-10-01 (R25, §3.4.1):** the owner asked for VAD/ASR-engine agnosticism before the build; R98 (the model landscape, measured on emma) was bought and the main seat ruled the `VadModel` boundary + the v6.2 default; reviewed blind by Opus 5.5 ∥ Emma on the amendment only (session-54 scratch `review-A-*`; both BUILD WITH CHANGES — the hop-end convention (Emma HIGH), the 16 kHz cursor → leg-clock mapping, the explicit threshold with widened bounds instead of an optional one, the registry-invariant test instead of a load-time 422, the S9 pre-pass sweep, the hop-relative budget and the naming sweep were folded the same day; confirm rounds recorded there).
+
 **CLOSED 2026-09-30 (six waves):** Opus 5.5 — CONFIRMED BUILD (confirm round 4; `confirm-P-opus.md`). Emma (Sol) — confirm round 3 (`confirm3-P-emma.md`) closed every item but ONE wording line in S7a's test column (the release path must name the last absorbed non-`max_segment` final), applied verbatim by the main seat together with Opus's R4-1 nit and ruled closed; her only other hold was the `turn_hold_ms` owner ruling, pending BY DESIGN at the time. **Both owner items were RULED at session close (2026-09-30): the turn hold = Option A · the cadence = two releases (v1.7.11 = polish + A · v1.7.12 = B). The plan is buildable end to end.**
 
 **Council №1 (2026-09-30) — blind Opus 5.5 ∥ blind Emma (Sol), both BUILD WITH CHANGES** (reviews `review-P-opus.md`,
@@ -848,7 +986,8 @@ continuing `max_segment` hold, release on the last absorbed final, late finals a
   (§1.7, §3.4, §4, §6), [L4](./research/R94-evidence/L4-external-research.md) (§1–§4),
   [L5](./research/R94-evidence/L5-call-admission-consumers.md) (§0, §1.3–§1.6, §5–§7) — L2 private, not cited ·
   [R95](./research/R95-vad-placement.md) §0, §2–§8, §10 · [R96](./research/R96-16khz-capture.md) §0–§6, §9 ·
-  [R97](./research/R97-peer-engine-design.md) §0, §2, §4–§9, §12 · the traceability audit (audit T, 2026-09-30).
+  [R97](./research/R97-peer-engine-design.md) §0, §2, §4–§9, §12 · the traceability audit (audit T, 2026-09-30) ·
+  [R98](./research/R98-vad-model-landscape.md) §0–§6, §8–§10 (the §3.4.1 amendment; MEASURED on emma 2026-09-30).
 - **Docs:** [LIVE_VOICE_PLAN](./LIVE_VOICE_PLAN.md) §2.1, §3.1, §4.1, §5.1–§5.3, §7 (the D80 CAR ROUND block, S11), §9 ·
   DECISIONS D40, D48, D71, D74, D76, D77, D80 · [UPDATE_PLAN](./UPDATE_PLAN.md) §3, §12a ·
   [SECURITY_MODEL](./SECURITY_MODEL.md) §2.10, §2.11, §3 · [ARCHITECTURE](./ARCHITECTURE.md) §6 · `deploy/linux/README.md`

@@ -6034,9 +6034,9 @@ per-agent link makes it right by construction).
 
 **Rulings:**
 
-① **The relay owns a stateful Silero v5 VAD (C1), shaped so that placement is a detail.**
+① **The relay owns a stateful VAD (C1) behind ONE model boundary, shaped so that placement — and the model — are details.** *(Amended 2026-10-01, R25 / [R98](./research/R98-vad-model-landscape.md): the owner asked for engine agnosticism before the build; the plan's §3.4.1 now defines `VadModel`/`VadStream` + a dict of constructors, `VadParams` in ms with counts derived from the model's hop, a per-model calibrated `default_act` (`vad_threshold` optional), a config-only `vad_model`, non-causal models refused on the live door, and **Silero v6.2 as the default** — measured on emma: AUC 0.957 vs v5's 0.925 clean, 0/min vs 7–9/min phantom segments on babble; v5.1.2 stays registered as the replay A/B.)*
 - It runs on raw `onnxruntime` + `numpy`, shipped as a `voice` optional extra (owner, D3).
-- The model is the official single-file Silero v5.1.2, vendored with a pinned SHA-256.
+- The default model is the official single-file Silero v6.2 (v5.1.2 also vendored and registered), each with a pinned SHA-256; a model swap is a registry entry + a re-calibration in the replay tool, never a policy change.
 - The policy is a pure function over probabilities and sample indices, pinned by HAND-AUTHORED golden vectors.
 - Segment bounds are leg-sample indices, stamped at receipt.
 - The segmenter sits behind a one-method interface.
@@ -6209,7 +6209,7 @@ duration and time. It accepts `from_ms` to trim the decoded head.
 - NEW-engine ASR fallbacks.
 - A server-side energy gate (`quiet` is reserved).
 - Client accrual on the leg clock.
-- Silero v6 and FireRedVAD A/Bs.
+- Silero v5.1.2 ↔ v6.2 and FireRedVAD/TEN A/Bs through the replay tool's `--model` (R98 §5 = the ranked list; the boundary makes each a registry entry).
 - Streaming ASR and EOU.
 - Reconnect-and-continue for dictation.
 - An Opus/WebCodecs uplink.

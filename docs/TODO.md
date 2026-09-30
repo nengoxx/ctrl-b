@@ -1791,8 +1791,8 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
 **Session B — engine, capture, the host, hand tuning, the client half, THE FLIP, recovery (no shadow, no Speaches baseline):**
 - [ ] S6-i — The pure engine/DSP:
   - the `voice` extra;
-  - Silero v5.1.2 + SHA;
-  - the `VadParams` policy (EMA, re-arm guard) with hand-authored golden vectors;
+  - the `VadModel`/`VadStream` boundary + `VAD_MODELS` (ASR_PLAN §3.4.1, R98) — Silero v6.2 default + v5.1.2 registered, both SHA-pinned; the per-model conformance test;
+  - the `VadParams` policy in ms + `derive(params, hop)` (EMA as `ema_tau_ms`, re-arm guard) with hand-authored golden vectors (two at a 10 ms hop);
   - the ORT wrapper;
   - PyAV's `AudioResampler` with the one alias golden test;
   - the prepass;
@@ -1859,7 +1859,7 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
   - S6b, the phone VAD probe;
   - NEW-engine ASR fallbacks;
   - a server-side energy gate;
-  - Silero v6 / FireRedVAD A/Bs;
+  - Silero v5.1.2 ↔ v6.2 / FireRedVAD / TEN A/Bs via `vad_replay.py --model` (R98 §5);
   - streaming ASR / EOU;
   - reconnect-and-continue for dictation;
   - an Opus uplink.
