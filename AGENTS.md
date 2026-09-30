@@ -134,7 +134,8 @@ SQLite holds chat/memory/events; YAML holds config (round-tripped by the Conf ta
 Streaming is **SSE** — *with one narrow exception*: **`WS /api/voice/live`**, the live-voice relay's
 continuous **media ingress** (D71 §3.2 — the only WebSocket in the codebase, admitted for audio frames
 only; everything else stays SSE down / HTTP up). `uvicorn` serves the API and the built `frontend/dist`
-(SPA fallback). Design detail: `docs/ARCHITECTURE.md` + `docs/DESIGN.md` + `docs/LIVE_VOICE_PLAN.md`.
+(SPA fallback). Design detail: `docs/ARCHITECTURE.md` + `docs/DESIGN.md` + `docs/LIVE_VOICE_PLAN.md` (the call
+loop) + `docs/ASR_PLAN.md` (the ear: VAD, ASR, the uplink guard — D82).
 
 **OS-agnostic invariant.** Branch on the managed **host's** `os_type` (ping/SSH command shape), never on the
 *server's* OS. Server-OS branches are a **closed allowlist** (`fleet._ping_cmd` ping syntax · `run_shell`'s

@@ -1759,6 +1759,109 @@ displaced replies move to `message_alternates` (migration 7 — additive, rollba
 - [ ] *Seam, not this phase:* greeting swipes — `AgentDef.alt_greetings` seeded as `anchor_id NULL`
       variants with no model call (closes R87's "alt greetings inert"). Owner of record: ROADMAP A14.
 
+## Phase 26 — Live voice stops depending on Speaches: the wall-clock uplink guard · 16 kHz capture · the relay-owned VAD · batch ASR per door · the recording outlives its leg (and a reload) — **✏️ DESIGN RULED 2026-09-30 ([`D82`](./DECISIONS.md)); design council №1 closed (blind Opus 5.5 ∥ Emma, 28 rulings folded)** · spec = [`ASR_PLAN.md`](./ASR_PLAN.md) (§7 = the slice ladder; §3.10 = the stress-test amendments; §11 = the council record; build against the plan, NOT this list) · D82 ratified first, then two sessions on DEV, ONE release (v1.7.11 = the session-52 polish + A + B; no config migration)
+
+This phase fixes the two live-voice failures R94 verified:
+- **dictation and calls die on 4G stalls.** The fix is the wall-clock bucket, plus the recording outliving its leg.
+- **phantom "Yeah."/"Mm-hmm." turns.** The fix is a stateful relay VAD plus ctrl-b's own pre-ASR pass.
+
+ctrl-b moves its ASR to parakeet-server: one machine-wide instance per door, shared by dev and prod. Speaches itself is
+never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-reviewer round, blind Opus 5.5 ∥ blind Emma** (owner directive).
+
+- [ ] **S5 — D82 ratified (THIS session, before A).**
+
+**Session A — transport, the dictation rulings, 16 kHz capture (Speaches is still the ear):**
+- [ ] S1 — Telemetry: an always-logged leg-end line, StopReason, close codes, the pacer-drop field, and the trail
+      retention split per mode (closes ISS-41).
+- [ ] S2 — The wall-clock bucket: ONE `UPLINK_ALLOWANCE_MS` (30 s) plus a load-validated inequality covering every
+      reservoir. No mirror pins.
+- [ ] S3 — Per-mode kill paths with typed codes; the degrade consequence arrives at S8.
+- [ ] ~~S4~~ — WITHDRAWN (interim Speaches ops skipped).
+- [ ] SP — P1: idle stop 300 s, 0 = off, 10 dB relative. P2: cap 1790 / relay 1800 as the interim, with the recorder at
+      32 kbps and the `max_upload_bytes` test. P3: the wake lock lifted with its fence parameterized. Tier-0 stays suspended
+      while streaming. The e2e fixture is updated.
+- [ ] K6 — A 16 kHz `AudioContext` at both sites, with the native-rate fallback via `primeAudio` (R96). Phone-card
+      item, including the EC-call/EC-media arms and a Fennec run.
+- [ ] D9 — The client's awaited-id set (closes LIVE_VOICE_PLAN OPEN-2).
+- [ ] D8 — The provisional early-call floor.
+- [ ] D5 — Slot takeover by the per-tab `sessionStorage` `client_id`; the slot is acquired after `start`.
+
+**Session B — engine, capture, the host, hand tuning, the client half, THE FLIP, recovery (no shadow, no Speaches baseline):**
+- [ ] S6-i — The pure engine/DSP:
+  - the `voice` extra;
+  - Silero v5.1.2 + SHA;
+  - the `VadParams` policy (EMA, re-arm guard) with hand-authored golden vectors;
+  - the ORT wrapper;
+  - PyAV's `AudioResampler` with the one alias golden test;
+  - the prepass;
+  - bounded PyAV decode;
+  - the `voice` extra wired into install.sh, CI, bootstrap and the Windows scripts.
+- [ ] S6-ii — The debug-gated raw-audio capture (beside the trail, same gate and retention), `vad_replay.py`
+      (offline), `asr_corpus.py`, and SECURITY_MODEL §2.12. Then, with `debug` ON on dev, the owner's first capture rounds
+      BUILD the reference set: there is no audio today.
+- [ ] S9 — The host on the CLIP door:
+  - parakeet.cpp cloned beside Speaches;
+  - machine-wide units + the runbook;
+  - `transcribe(door)`, and the clip door = decode + pass + parakeet-clip;
+  - `max_concurrent_requests: 1`;
+  - the bake-off (contended row), run through the real `VoiceClient` request, including the no-language-crossing row
+    and the 30-min row timed end to end.
+
+  Dev config: stt → parakeet-clip, with live pinned to Speaches.
+- [ ] TUNE — Owner capture rounds → promote → offline replay sweeps judged by hand → the `VadParams` defaults settled.
+- [ ] S7a — The client half, INERT until `ready{clock:"leg"}`, shipped and reviewed first:
+  - `config.py` owns `turn_hold_ms` (S7b keeps only the server-side VAD/deadline keys);
+  - `LiveDown` fields + validation;
+  - the awaited-id TTL;
+  - `turn_hold_ms` + the `max_segment` join + the ONE release rule;
+  - the R88 parity;
+  - the Conf rows;
+  - the e2e fixture;
+  - a note-only `ear_failed` arm (a call reconnects, it does not end);
+  - the hold absorbs segments already open or awaited; an absorbed `max_segment` continues it; release on the LAST
+    absorbed final; late finals after the TTL are taken if they have text;
+  - the `reason` / `outcome` fields, with `skipped` for `short` and pair validation.
+- [ ] S7b — THE FLIP:
+  - the relay VAD + parakeet-live;
+  - ONE per-segment `timeout_s` answer deadline covering primary + fallback + gate waits;
+  - `ready{clock, answer_ttl_ms}`, `flushed`, bounds + reason on every final;
+  - `LivePolicy` + `extra_body`;
+  - the tail pad and the `VAD_MAX_LAG_MS` rule;
+  - `ear_failed` → the reconnect ladder on a call;
+  - telemetry T8–T10;
+  - the dev config move: live → parakeet-live + [parakeet-clip], and Kokoro out of TTS. After it, no live or TTS route references
+    `emma-speaches`/Kokoro; the `vault-speaches` clip fallback and the rollback provider definition remain.
+- [ ] Field rounds — car + home on the flipped dev (captures keep feeding the corpus).
+- [ ] S8 — The recording outlives its leg:
+  - the degrade triggers (including dictation `asr_error`);
+  - the EXISTING Opus clip re-uploaded once with `from_ms`;
+  - the failure contract;
+  - the capability gate;
+  - the boundary advancing only on `outcome` ok/no_speech with `reason` endpoint (cut − silence/2) or flush (cut at the
+    end);
+  - the dictation hold discarded on `asr_error`/degrade, so recovery lands the text once;
+  - the field-measured mapping bound (≤ ±350 ms);
+  - the frame mappings kept from the earliest unresolved segment;
+  - the frame-timestamp `from_ms` (a flush cut sits AT its end; re-anchored on each context resume), and the 10-min
+    recovery timeout;
+  - one scripted-relay e2e;
+  - R70 ③ reversed.
+- [ ] S8b — Reload survival: timeslice chunks in one IndexedDB record, the "Recover the interrupted dictation"
+      affordance through the same clip door, and the marker fallback.
+- [ ] S10 — The code deletions (the realtime client, the gap cut), the 1800 / 2100 caps, the pre-tag config report, and
+      the doc sweep (SECURITY_MODEL §2.1: the 0.0.0.0 engine binds). No unit is stopped.
+- [ ] Release v1.7.11 per `ASR_PLAN` §8.2 (local e2e → stop → backup + the one config move → `update.sh` → verify). Rollback is
+      a config restore + the tag (§8.3).
+
+- [ ] *Deferred, not this phase:*
+  - S6b, the phone VAD probe;
+  - NEW-engine ASR fallbacks;
+  - a server-side energy gate;
+  - Silero v6 / FireRedVAD A/Bs;
+  - streaming ASR / EOU;
+  - reconnect-and-continue for dictation;
+  - an Opus uplink.
+
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.

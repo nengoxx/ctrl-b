@@ -438,6 +438,11 @@ back to the analysis.
     (AudioWorklet PCM + provisional-draft) — no parallel component. **TTS** streams as a second *source
     strategy* on the `audioController` singleton (MSE progressive playback), trading the seekable scrubber
     for time-to-first-audio in `stream` mode. **Full design + cost in D19.**
+  - **STT update (2026-09-30, [D82](./DECISIONS.md)):** ctrl-b stops using the Speaches `/v1/realtime` ear described above
+    (Speaches itself stays installed, un-configured). The streaming STT design now lives in [`ASR_PLAN.md`](./ASR_PLAN.md) (TODO Phase 26):
+    the relay owns a stateful Silero VAD; ASR is a batch provider call per door through the provider seam (parakeet-server by
+    default, machine-wide units); dictation's recording outlives its live leg. Speaches leaves the STT path at v1.7.11. The TTS
+    half of this bullet (D19's MSE progressive playback) is unaffected.
 - **Revision note (2026-06-22):** this supersedes the earlier "STT is always buffered, no toggle" line —
   the owner asked for streaming STT as a real, integrated pattern, and Speaches already exposes the
   realtime ASR, so it's now a first-class designed transport (D19), just deferred (post-v1 polish, not a
@@ -598,6 +603,12 @@ one — only the browser binary can). That splits C2 into two features that must
   Fennec's ineffective — hence the owner ruling "Chrome first-class, Fennec gets the ear-hold"
   (plan §7-S0). **Architecture ① was chosen** (Speaches-realtime ear + the untouched agent loop +
   C3 as the mouth); ② stays the fallback if S4 judges fixed endpointing sluggish.
+- **The ear, as of D82 (2026-09-30):** ctrl-b stops using architecture ①'s Speaches-realtime ear (Speaches stays installed,
+  un-configured) — its zero-state 3 s rescan caused the flaps, the 3 s pin and onset clipping (R94). The relay now owns a
+  stateful Silero VAD (C1: placement-agnostic, hand-authored golden vectors); a pre-ASR pass and parakeet-server, one
+  machine-wide instance per door, sit behind the provider seam. The client loop, C3 and the WebSocket admission are
+  unchanged. Architecture ②'s browser-side leg stays recorded as **C2-H** (phone VAD + HTTP segments), the named exit in
+  ASR_PLAN §9. Spec: [`ASR_PLAN.md`](./ASR_PLAN.md). Evidence: R94 · R95 · R96 · R97.
 
 ## D. Fleet automation
 
