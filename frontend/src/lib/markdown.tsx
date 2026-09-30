@@ -11,6 +11,7 @@
 
 import { memo, useState, type JSX, type ReactNode } from "react";
 
+import { ACTION_OPEN, ACTION_SPAN } from "./actionSpan";
 import { fillComposer } from "./composer";
 
 // ── inline ──
@@ -125,9 +126,103 @@ const RE = {
   ol: /^\s*\d+\.\s+(.*)$/,
 };
 
+// ── multi-line actions (session-51 polish #2) ──
+//
+// Inline markup is parsed PER LINE (`withBreaks` → `inline`), so a `*…*` whose closer sits on a later
+// line — a roleplay action the model wraps over several lines or whole paragraphs — used to render as
+// two literal asterisks. The ear already pairs it as ONE span (lib/actionSpan, read by lib/toSpeech),
+// so this text-level pre-pass makes the eye agree: every multi-line single-`*` span is rewritten into
+// one `*…*` per line (the standard "split at block boundary" technique — one `<em>` cannot wrap
+// several `<p>`/`<br>`s). A single break becomes `<em>…</em><br/><em>…</em>` in one `<p>`; a blank line
+// becomes two `<p>`s, each with its own `<em>`. Single-line pairs are left byte-for-byte as they were.
+// Scope is `*` only: `_` pairs falsely across lines in snake_case prose, and `**` is its own construct.
+
+/** Stars that are STRUCTURE, not emphasis, blanked (same length) before pairing so they can never
+ *  close a span: a `*` bullet marker (also after a `>`), and a `***` / `* * *` rule line. The ear
+ *  strips these before its action pass too (lib/toSpeech's line-prefix passes), so both halves agree
+ *  a bullet list after a stray `*` stays a list. */
+const STRUCTURAL_STAR = /^([ \t]*(?:>[ \t]?)*)\*(?=[ \t])/gm;
+const STAR_RULE = /^ {0,3}\*(?:[ \t]*\*){2,}[ \t]*$/gm;
+/** Inline code is literal, so its stars can neither open nor close a span (fix wave 1: the
+ *  `` - `*.log` `` / `` - `*.tmp` `` bullets paired through their globs). The renderer's own inline-code
+ *  spelling (`INLINE`'s `` `([^`]+)` ``), kept to one line because `inline()` never sees a `\n`. */
+const INLINE_CODE = /`[^`\n]+`/g;
+
+/** What a continuation line keeps OUTSIDE its `*…*` wrapper: indentation plus any block marker
+ *  (quote / bullet / ordered / heading), so the block parser still sees the line's structure. */
+const LINE_LEAD = /^[ \t]*(?:>[ \t]?)*(?:[-*+][ \t]+|\d+\.[ \t]+|#{1,6}[ \t]+)?/;
+
+/** One `*…*` per line of a span's inner text. Whitespace (and a continuation line's block marker)
+ *  stays outside the wrapper, so every segment still satisfies the em rule (`*` + non-space); an
+ *  empty segment (the blank line of a paragraph break) and a rule line are emitted as they are. */
+function perLine(inner: string): string {
+  return inner
+    .split("\n")
+    .map((seg, idx) => {
+      if (idx > 0 && RE.hr.test(seg)) return seg;
+      const lead = (idx > 0 ? LINE_LEAD : /^\s*/).exec(seg)![0];
+      const body = seg.slice(lead.length);
+      const core = body.trimEnd();
+      return core ? `${lead}*${core}*${body.slice(core.length)}` : seg;
+    })
+    .join("\n");
+}
+
+/** Rewrite the multi-line action spans of one run of NON-fence text. `tailOpen` (Q2b, the settled
+ *  reply's last run only): an opener the model never closed is italicized to the end, as if a closer
+ *  followed — while streaming it stays literal until the closer arrives, so nothing flickers. */
+function splitActions(text: string, tailOpen: boolean): string {
+  const blankStars = (m: string) => m.replace(/\*/g, "\u0000");
+  const mask = text
+    .replace(INLINE_CODE, blankStars)
+    .replace(STAR_RULE, blankStars)
+    .replace(STRUCTURAL_STAR, (_m, lead: string) => `${lead}\u0000`);
+  const spans: { start: number; end: number; closed: boolean }[] = [];
+  for (const m of mask.matchAll(ACTION_SPAN))
+    spans.push({ start: m.index, end: m.index + m[0].length, closed: true });
+  if (tailOpen) {
+    // The ear's order: closed spans first, then an opener left over at the end (lib/toSpeech).
+    const at = mask.replace(ACTION_SPAN, (m) => " ".repeat(m.length)).search(ACTION_OPEN);
+    if (at >= 0) spans.push({ start: at, end: text.length, closed: false });
+  }
+  let out = "";
+  let from = 0;
+  for (const { start, end, closed } of spans) {
+    const inner = text.slice(start + 1, closed ? end - 1 : end);
+    out += text.slice(from, start);
+    out += closed && !inner.includes("\n") ? text.slice(start, end) : perLine(inner);
+    from = end;
+  }
+  return out + text.slice(from);
+}
+
+/** The pre-pass over a whole (newline-normalized) source: fenced code is never touched — the source
+ *  is walked with the SAME fence rule `blocks` uses (an unclosed trailing fence captures the rest), so
+ *  a span can neither pair across a fence nor italicize one. */
+function carryActions(src: string, settled: boolean): string {
+  if (!src.includes("*")) return src; // no star, no span — a plain reply pays nothing per token
+  const runs: { text: string[]; fence: boolean }[] = [];
+  let fenced = false;
+  for (const line of src.split("\n")) {
+    const isFence = RE.fence.test(line);
+    const inFence = fenced || isFence;
+    const last = runs.at(-1);
+    if (last && last.fence === inFence && !(isFence && !fenced)) last.text.push(line);
+    else runs.push({ text: [line], fence: inFence });
+    if (isFence) fenced = !fenced;
+  }
+  return runs
+    .map((r, idx) =>
+      r.fence
+        ? r.text.join("\n")
+        : splitActions(r.text.join("\n"), settled && idx === runs.length - 1),
+    )
+    .join("\n");
+}
+
 /** Split markdown into a flat list of rendered block nodes. */
-function blocks(src: string): ReactNode[] {
-  const lines = src.replace(/\r\n?/g, "\n").split("\n");
+function blocks(src: string, settled: boolean): ReactNode[] {
+  const lines = carryActions(src.replace(/\r\n?/g, "\n"), settled).split("\n");
   const out: ReactNode[] = [];
   let i = 0;
   let key = 0;
@@ -210,9 +305,20 @@ function blocks(src: string): ReactNode[] {
 }
 
 /** Render a markdown string as themed React nodes (styling = kit.css `.md` — the one source since D51 V5).
- *  Memoized on `text`: during streaming the whole chat-log re-renders per token, but a COMPLETED bubble's
- *  text is byte-stable, so it skips the full from-scratch re-parse (the LibreChat / Vercel-AI-SDK
- *  block-memoization pattern at the message grain). Only the still-growing streaming bubble re-parses. */
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
-  return <>{blocks(text)}</>;
+ *  Memoized on its props: during streaming the whole chat-log re-renders per token, but a COMPLETED
+ *  bubble's text is byte-stable, so it skips the full from-scratch re-parse (the LibreChat /
+ *  Vercel-AI-SDK block-memoization pattern at the message grain). Only the still-growing streaming bubble
+ *  re-parses.
+ *
+ *  `settled` (session-51 polish #2, Q2b): the text is final — no token will extend it — so an action
+ *  opener the model never closed is italicized to the end. Absent/false keeps it literal (the streaming
+ *  posture: a closer may still arrive). */
+export const Markdown = memo(function Markdown({
+  text,
+  settled = false,
+}: {
+  text: string;
+  settled?: boolean;
+}) {
+  return <>{blocks(text, settled)}</>;
 });
