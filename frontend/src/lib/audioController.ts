@@ -581,6 +581,17 @@ function ensureEl(): HTMLAudioElement {
   a.addEventListener("loadedmetadata", syncDuration);
   a.addEventListener("play", () => {
     if (priming) return; // the gesture unlock is not playback — see `primeAudio`
+    // Session-51 polish #4, review F1: a play the CONTROLLER did not issue — a Bluetooth/car key or the
+    // lock screen, which hit the element directly (no mediaSession handlers) — is still the owner asking
+    // for play. Every internal `play()` runs with the intent already set (the mouth gate and the
+    // load-and-hold both refuse while it is off), so a `play` arriving with the intent OFF is exactly
+    // that external one. Without this, a headset replay after the reply ended (intent cleared on park)
+    // would play chunk 0, then hold at the seam with the face reading "play". `parked` is transport's.
+    // Accepted residuals (confirm N2/N3): a pause tapped in the one task between a seam's own `play()`
+    // and its queued event re-arms the intent (paused, face "pause", until the next tap); and after a
+    // hardware replay `parked` stays set, so a later in-app resume of a holed read-along queue replays.
+    const s = liveSession();
+    if (s && !s.wantPlay) setIntent(s, true);
     set({ status: "playing" });
   });
   a.addEventListener("pause", () => {
@@ -1156,6 +1167,12 @@ function finish(s: Session, a: HTMLAudioElement): void {
     return;
   }
   s.parked = true; // retained for replay — a straggler failing from here drops an S1 queue too
+  // Session-51 polish #4 (owner ruling Q4): the reply is OVER, so the owner's play intent ends with it.
+  // Left set, the parked session kept answering `playIntent()` true and the MiniPlayer's face stayed on
+  // "pause" over a silent player; a waveform tap from here also silently STARTED playback, since a seek
+  // rides the intent (`seekChunked`). Cleared, the face reads "play" and an after-the-end seek only
+  // moves the playhead. The replay tap (`transport`) sets the intent back itself.
+  setIntent(s, false);
   s.playIdx = first;
   s.waiting = false;
   s.seek = null;

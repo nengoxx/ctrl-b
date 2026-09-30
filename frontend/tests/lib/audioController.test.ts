@@ -1,4 +1,5 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, render, renderHook } from "@testing-library/react";
+import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({ toast: vi.fn<(text: string, kind?: string) => void>() }));
@@ -29,6 +30,7 @@ import {
   usePlayback,
   usePlayIntent,
 } from "../../src/lib/audioController";
+import { MiniPlayer } from "../../src/components/MiniPlayer";
 
 // lib/audioController — the shared TTS playback singleton. We replace the DOM <audio> with a
 // controllable fake (so we can drive media events) and mock `fetch`, then assert the reactive playback
@@ -644,6 +646,89 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(result.current.status).toBe("paused");
     expect(result.current.current).toBe(0);
     expect(lastAudio.src).toBe("blob:1"); // rewound — a re-tap replays the message from the top
+  });
+
+  // ── session-51 polish #4 — the reply is OVER, so the play intent ends with it (owner ruling Q4) ──
+
+  it("a queue that plays through clears the intent: the MiniPlayer reads PLAY, and a tap replays from the top", async () => {
+    // The parked session used to keep `wantPlay` set, so the docked player's face (which rides INTENT)
+    // stayed on "pause" over a silent, finished reply. Rendered for real here, through `useNowPlaying`.
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const intent = renderHook(() => usePlayIntent());
+    const face = render(createElement(MiniPlayer));
+    const button = () => face.container.querySelector<HTMLButtonElement>(".mp-play")!;
+    try {
+      await act(async () => {
+        await toggle("m1", REPLY);
+      });
+      await flush();
+      expect(button().getAttribute("aria-label")).toBe("pause"); // playing: the face agrees
+      for (let k = 0; k < 3; k++) {
+        await act(async () => lastAudio.finish());
+        await flush();
+      }
+      expect(result.current.status).toBe("paused"); // parked for replay…
+      expect(intent.result.current).toBe(false); // …and nobody is asking for play any more
+      expect(button().getAttribute("aria-label")).toBe("play"); // THE owner's bug: this read "pause"
+      expect(button().className).not.toContain("playing");
+
+      act(() => togglePlay()); // the replay tap: from the top, the intent back on
+      expect(lastAudio.src).toBe("blob:1");
+      expect(lastAudio.currentTime).toBe(0);
+      expect(lastAudio.paused).toBe(false);
+      expect(result.current.status).toBe("playing");
+      expect(intent.result.current).toBe(true);
+      expect(button().getAttribute("aria-label")).toBe("pause");
+    } finally {
+      face.unmount(); // review F6: a failed assertion must not leak the mounted player into later cases
+    }
+  });
+
+  it("a HARDWARE play after the end (headset / car key / lock screen) replays the whole reply (review F1)", async () => {
+    // Those hit the <audio> element directly — no mediaSession handlers exist — so the controller only
+    // sees the element's `play`. With the intent cleared on park, that play must turn it back on, or the
+    // queue would hold at chunk 1's seam and the face would read "play" over audible audio.
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const intent = renderHook(() => usePlayIntent());
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    for (let k = 0; k < 3; k++) {
+      await act(async () => lastAudio.finish());
+      await flush();
+    }
+    expect(intent.result.current).toBe(false); // parked, intent off
+
+    await act(async () => lastAudio.play()); // the headset's play, straight to the element
+    expect(intent.result.current).toBe(true);
+    expect(result.current.status).toBe("playing");
+    expect(lastAudio.src).toBe("blob:1");
+
+    await act(async () => lastAudio.finish()); // chunk 1 ends → the queue CONTINUES
+    await flush();
+    expect(lastAudio.src).toBe("blob:2");
+    expect(lastAudio.paused).toBe(false);
+    expect(result.current.status).toBe("playing");
+  });
+
+  it("a mid-reply pause and resume are unchanged — only the END clears the intent", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const intent = renderHook(() => usePlayIntent());
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    await act(async () => lastAudio.finish()); // onto chunk 2
+    await flush();
+    expect(lastAudio.src).toBe("blob:2");
+    act(() => togglePlay());
+    expect(result.current.status).toBe("paused");
+    expect(intent.result.current).toBe(false);
+    act(() => togglePlay()); // a RESUME, not a replay: chunk 2 carries on where it was
+    expect(lastAudio.src).toBe("blob:2");
+    expect(result.current.status).toBe("playing");
+    expect(intent.result.current).toBe(true);
   });
 
   it("holds the latch when playback catches up, and resumes when the late chunk arrives", async () => {
@@ -1508,6 +1593,33 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     expect(lastAudio.src).toBe("blob:1");
     expect(lastAudio.currentTime).toBeCloseTo(1, 6);
     expect(globalThis.fetch).toHaveBeenCalledTimes(3); // nothing re-synthesized
+  });
+
+  it("a waveform seek AFTER the end moves the playhead and stays paused (session-51 polish #4, ruling Q4)", async () => {
+    // "If narration has already finished, there's no reason to start playing … by seeking." The seek
+    // rides the intent, and the finished reply's intent is now off — so a tap only moves the playhead.
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const intent = renderHook(() => usePlayIntent());
+    await timeline3();
+    for (let k = 0; k < 3; k++) {
+      await act(async () => lastAudio.finish());
+      await flush();
+    }
+    expect(result.current.status).toBe("paused"); // parked, rewound to the top
+    const plays = lastAudio.plays;
+
+    act(() => seekFraction(7 / 10.5)); // 7 s in → chunk 3, 1 s into it
+    expect(lastAudio.src).toBe("blob:3");
+    expect(lastAudio.currentTime).toBeCloseTo(1, 6);
+    expect(result.current.current).toBeCloseTo(7, 6);
+    expect(result.current.status).toBe("paused");
+    expect(lastAudio.paused).toBe(true);
+    expect(lastAudio.plays).toBe(plays); // nothing started
+    expect(intent.result.current).toBe(false);
+
+    act(() => togglePlay()); // …and the next tap plays from where the owner put the playhead
+    expect(lastAudio.src).toBe("blob:3");
+    expect(result.current.status).toBe("playing");
   });
 
   it("clamps the seek to the timeline's ends and to the target chunk's own length", async () => {
