@@ -57,6 +57,83 @@
   handoff. Push on the owner's word. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
 
+## ▶▶ NEXT SESSION = DESIGN + DISCUSSION ONLY (owner ruling 2026-09-30): the agenda — nothing is built until it is walked
+
+The owner: *"next session is going to be more like design and discussion about the approaches and what's left to do."*
+Open the session by walking this list with the owner, recording each answer in DECISIONS/RULINGS, THEN brief build
+lanes in a fresh session. Every item carries the main seat's default so the walk is fast.
+
+**A. Polish leftovers (session 52; recorded, not built)**
+1. The renderer's per-line `em` rule (`lib/markdown.tsx` `INLINE`) is a second spelling of the pairing rule WITHOUT
+   the boundary guard, so a glued `Hello*She walks*` italicizes on screen but is spoken. Default: fold into the
+   next markdown touch (pass the previous char to the em rule); not a separate slice.
+2. An unbackticked `*.tmp` in prose italicizes (eye) / drops (ear) to the END of a settled reply — D74's accepted
+   class, now visible. Default: keep; option = require the opener to be followed by a letter/digit/quote in
+   BOTH halves (one regex edit in `actionSpan.ts`). Owner's call: has this ever bitten in real use?
+3. CJK one-word rule (no spaces ⇒ a whole-sentence action is spoken). Default: accept, the owner writes in
+   English/Spanish.
+4. Player residuals: a pause tapped in the one task between a seam's `play()` and its event re-arms intent
+   (face "pause" while paused until the next tap); `parked` stays set after a hardware replay. Default: accept.
+5. Gacha: the phone eyeball is the verification (DPR doubt above). The spec's desktop project still opens a blank
+   page before skipping (cosmetic). Default: accept both.
+6. Eye/ear divergence across a fenced block (the eye splits at fences, the ear strips them first). Default: accept.
+7. PUSH the 7 commits (owner's word) and CONFIRM the release shape: v1.7.11 = polish + ASR session A together
+   (rollback v1.7.10; P1/P2 add `LiveCfg` keys → additive, likely NO config migration — verify) — or polish first?
+
+**B. ASR session A — transport + the dictation rulings (R94 §7.1, §11; no VAD change)**
+1. D1 guard violation: close with 1008 (default) vs throttle; `uplink_burst_ms` default (~10 s ≥ K4's window).
+2. P1 idle stop: 5 min, `0 = off`, OWN quiet threshold — which scale? Default: the same relative-dB model the
+   Sensitivity meter uses (D76), surfaced as its own Conf row under Voice/Dictation.
+3. P2 cap 30 min: raise the relay `max_session_s` headroom above it; Speaches' own 30-min hard kill binds until
+   S10 (S8 makes it survivable). Default: cap 1800, relay 2100.
+4. P3 foreground-only + wake lock: reuse the call's `takeWakeLock` (`useLiveCall.ts`), extracted, not copied.
+   Default: yes if the extraction is a pure lift.
+5. D7 drop the Kokoro-on-Speaches TTS fallback: an explicit ops step on prod (config edit + backup), not silent.
+   Does the `voice.tts` chain need ANY second fallback? Default: no (PocketTTS stable), document the rollback.
+6. D8 early-call floor seeded from the remembered per-device level, provisional only, measured floor takes over
+   in either direction. Default: build it in session A (it is a level-gate change, not a VAD change).
+7. S4 ops while Speaches remains: `STT_MODEL_TTL=-1` (ends reload spikes), review the `0.0.0.0:9000` bind +
+   unauthenticated UI against SECURITY_MODEL, `LOG_LEVEL=info`. Default: all three, now.
+8. K4 keepalive stays 5/5 (default). K5 slot takeover by client identity (D5): its own small slice, default
+   session A's tail. K6 16 kHz capture (R95 Q3): promote to right after S3 — but it needs the owner's phone
+   field check (AEC/NS at 16 kHz, the chirp under 8 kHz, the barge calibration). Default: promote, gated on
+   that check.
+9. S1 telemetry field list (R94 §7.1.7) + R95's extra field: count call-pacer drops per leg and their distance to
+   the next `speech_started`. D9 the client `waitingFinal` id-set as defense in depth. Default: both in.
+10. The four stress-test questions (R94 §11.1 end): tentative-start vs held boundary/barge; token bucket vs K4
+    window; sample-exact suffix recovery under pacer drops; per-door serialization vs live latency. The main
+    seat answers these in the design session before briefing.
+
+**C. ASR session B — the VAD + the host (leaving Speaches; R94 §7.2–§7.6, R95 §10)**
+1. D3 FORMAL: relay-owned stateful Silero (C1), placement-agnostic shape (pure policy + golden vectors, leg-sample
+   bounds, segmenter interface); dependency = raw `onnxruntime` + `numpy` (~110 MB, cp314 verified) for
+   per-window probabilities vs `sherpa-onnx` (44 MB, bool only). Default: C1 + raw onnxruntime. Owner accepted
+   server-side on 2026-09-30; wants Speaches GONE.
+2. D2 onset emission: tentative start (ii, client unchanged) vs confirmed start + client accrual (i). Default (ii).
+3. D10 keep the pre-ASR no-speech pass (parity with Speaches' hidden ~21% empties). Default: keep.
+4. D4 clip-door decoding for a WAV-only host: decode in ctrl-b (PyAV/ffmpeg — verify cp314) vs phone-side WAV vs
+   the onnx-asr sidecar. Default: decode in ctrl-b inside the pre-ASR pass.
+5. The ASR host: parakeet-server (CPU f16, MIT, one instance PER DOOR because it serializes) as primary; the
+   onnx-asr sidecar (today's exact model) as the parity reference/fallback; CrispASR NOT primary but allowed as
+   a configured engine; every engine speaks the OpenAI transcription door → engines/models = config through the
+   existing provider registry (D48) — verify the `voice.stt` chain shape carries a per-door endpoint. Owner
+   wants both parakeet.cpp and a second engine possible.
+6. Speaches retirement: TTS fallback #1 goes (B5), `vault-speaches` (the whisper fallback) unaffected, the
+   deployed speaches fork (`~/github/speaches`, fd4b956) retired with it — unit stop + removal step in the runbook.
+7. Shadow mode (S6) + replay harness + corpus: WHICH recordings (car, home, both languages), stored OUTSIDE git
+   (the L2 class), consent = the owner's own voice only. Default: a `~/.local/share/ctrl-b/asr-corpus/` dir.
+8. S6b phone probe (R95): run it at all? It needs ort-web wasm served + precached (vite ceiling 2 MiB, the
+   woff2 CacheFirst pattern). Main-seat lean: DEFER until after S7 — the decision no longer hinges on it.
+9. Where the record lives: a new `docs/ASR_PLAN.md` (Phase 25?) vs amendments to LIVE_VOICE_PLAN — the doc-map
+   flow (HANDOFF → ROADMAP → DECISIONS → DESIGN → TODO). Default: a new plan doc + one D-entry (S5) + TODO phase.
+10. Cadence: one release per session (A → v1.7.11, B → v1.7.12), pause after each slice for the owner's car and
+    phone rounds between shadow and flip. Config migrations expected: possibly one in B (VAD/ASR keys).
+
+**D. Housekeeping**
+- `docs/research/R94-evidence/L2-trail-forensics.md` stays UNTRACKED: add it to `.git/info/exclude` (local, not
+  the tracked `.gitignore`) so no lane can stage it by accident. Default: do it at the start of next session.
+- Dev units STOPPED at session close (start them again only when there is something to poke).
+
 ## ▶▶ NEW (2026-09-30, Fable seat, session 52) — THE FIVE POLISH ITEMS BUILT + TWO-REVIEWER-CLOSED + COMMITTED; NOT RELEASED
 
 The session-51 owner polish audit (`~/.cache/tmp/ctrlb-session51/audit-owner-polish-2026-09-29.md`; the owner
