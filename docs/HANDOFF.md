@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-09-30 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 52 (Fable) BUILT, two-reviewer-closed and COMMITTED the five session-51 polish items, plus the R94/R95 docs. They are on `main` UNPUSHED; push on the owner's word. v1.7.11 is HELD until the ASR/VAD work (R94 + R95, sessions A then B) lands too (owner ruling)**)
+## Where we are (2026-09-30 evening — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 53 (Fable) BUILT polish #6 (`e249f12`), bought R96/R97 and DESIGNED + council-CONFIRMED the ASR/VAD plan of record (`docs/ASR_PLAN.md`, D82, Phase 26 — NOTHING of it built). 11+ commits on `main` UNPUSHED; push on the owner's word. v1.7.11 HELD until sessions A + B land (owner ruling; the cadence question is open — see the rulings block below)**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): at writing time
   tag **`v1.7.10` on `9c5a6c6` — LIVE** (released 2026-09-27 evening ≈ 18:14Z per `deploy/linux/README.md`
@@ -57,7 +57,81 @@
   handoff. Push on the owner's word. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
 
-## ▶▶ NEXT SESSION = DESIGN + DISCUSSION ONLY (owner ruling 2026-09-30): the agenda — nothing is built until it is walked
+## ▶▶ NEW (2026-09-30, Fable seat, session 53) — POLISH #6 BUILT + COMMITTED · THE ASR/VAD PLAN OF RECORD DESIGNED, COUNCIL-CLOSED, COMMITTED · NEXT SESSION = BUILD (clean session)
+
+**Read first:** [`ASR_PLAN.md`](./ASR_PLAN.md) (the plan of record, ≈88 KB — §0.1 = every ruling, §3 = the architecture,
+§7 = the slice ladder, §8 = release/rollback, §10.2 = what is still open, §11 = the council record) · D82 in
+[`DECISIONS.md`](./DECISIONS.md) · TODO Phase 26. The session record is `~/.cache/tmp/ctrlb-session53/` (`SESSION_PLAN.md`,
+`ASR_RULINGS.md` = the owner's rulings in order, `RULINGS-P.md` = every council finding + its ruling, the reviews and confirms,
+`lane-P-report.md` = where every ruling landed, `POLISH_LEFTOVERS.md` = the LOCAL polish ledger).
+
+### What happened (in order)
+1. **Polish #6 — the DUTIES GATE** (`e249f12`): the roleplay `*…*` action convention (eye carry + ear drop) applies ONLY to
+   `duties: conversational` agents; agent-duties replies keep plain per-line emphasis and are spoken in full; `Speaker {agent,
+   actions}` on every audio entry point; the D80 echo backstop reads a message-scoped effective policy. Two-reviewer round (blind
+   Opus ∥ Maya) + fix wave, both closed. FE 4286 tests · BE 7. **Dev dist rebuilt; the owner tests it on dev.**
+2. **R96** (`0510dc7`): 16 kHz capture is standard for raw-PCM-over-WS clients, worth it, small; the relay's resampler aliases
+   (linear, no low-pass). **R97**: the plan's engine held against LiveKit · Pipecat · Home Assistant (per-peer tables = the record
+   for any future revision). Both indexed in `docs/research/README.md`.
+3. **The ASR/VAD plan** (`docs/ASR_PLAN.md`, D82, Phase 26): written from R94/R95/R96 + the owner's rulings; a stress-test audit
+   (4 R94 questions: 1 defect, 3 conditions — all folded); design council №1 = blind Opus 5.5 ∥ EMMA (Sol), both BUILD WITH
+   CHANGES → 28 reconciled rulings; R97 peer check + a traceability audit (every source item → plan §) → wave 3; six waves in all;
+   **Opus CONFIRMED BUILD (round 4) · Emma: see §11 / the line below.** Owner rulings that shaped it: Speaches NEVER stopped or
+   deleted (un-configured only; parakeet.cpp cloned beside it); engines = MACHINE-WIDE user units on 0.0.0.0, shared by dev +
+   prod + Hermes; NO shadow mode / NO Speaches baseline (capture + offline replay + hand tuning); the cap-split JOIN; reload
+   survival (S8b) IN; K6 16 kHz in session A; `language: en` stays (parakeet ignores it; whisper — the hallucination source —
+   reads it); Kokoro out of TTS (PocketTTS → vault-alltalk); one release v1.7.11 = polish + A + B.
+
+### The build order for the clean session (from ASR_PLAN §7; every slice: pinned Opus lane → main-seat audit → blind Opus 5.5 ∥ EMMA review → fix wave → confirm → commit; the owner's pause after each)
+- **S5 ✅ done here** (D82 + TODO + ROADMAP + doc-map applied).
+- **Session A** (Speaches still the ear): S1 telemetry → S2 the 30 s uplink allowance → S3 typed kill paths → SP (P1 300 s /
+  10 dB · P2 1790 → 1800 · P3 wake lock; recorder 32 kbps) → K6 16 kHz capture (+ the owner's phone card) → D9 awaited-id set →
+  D8 provisional floor → D5 slot takeover. Brief S1 first; S2 and SP may run in parallel lanes (disjoint files).
+- **Session B**: S6-i engine/DSP → S6-ii capture + replay tool + corpus (then the OWNER's capture rounds with `debug` ON on dev —
+  there is NO audio on emma today) → S9 parakeet units + the clip door (bake-off) → TUNE (owner hand judgement via
+  `tools/vad_replay.py`) → S7a client half (inert) → S7b THE FLIP (dev config move) → field rounds → S8 recovery → S8b reload
+  survival → S10 code off Speaches → release v1.7.11 per §8.2.
+
+### ⚖️ RULINGS THE OWNER STILL HAS TO MAKE (read these cold; answer in the next session — ASR_PLAN §10.2)
+
+**1. The turn hold — how a "thinking pause" is handled in a call (blocks ONLY the flip slices S7a/S7b).**
+Today ONE knob (`silence_ms`, 0.7 s, Conf range 0.5–1.2 s) decides both "your speech has ended" (the detector closes the
+segment and sends it to the recognizer) and "your turn is over" (the reply starts). You said: test 0.7 first, but you wanted the
+option of a longer pause, and I proposed widening that knob to 3 s. The peer check (R97) showed LiveKit and Pipecat keep those two
+things SEPARATE, because widening the one knob delays every transcription by the same amount (a 3 s setting = every reply 3 s
+late). **Option A (the plan's design, recommended):** `silence_ms` stays the detector's end rule at 0.5–1.2 s; a NEW setting
+`turn_hold_ms` (Conf › Live call, 0–3 s, DEFAULT 0 = exactly today's behaviour) holds a finished turn open and absorbs more speech
+into it; transcription still starts at the segment end, so a long hold costs no recognition latency. The 20 s cap-split join uses
+the same mechanism. **Option B:** no new setting; widen `silence_ms` to 3 s as first proposed, accepting the reply delay whenever
+you raise it. → Say "A" or "B".
+
+**2. Release cadence — one release or two (a product/ops choice, no design change).**
+You ruled ONE release: v1.7.11 = the six polish fixes + session A (transport) + session B (the new ear). The cost, stated by both
+reviewers: prod dictations keep dying on the relay's flood guard (the 2026-09-28 class) until session B passes its dev gates,
+and B's gates need several of your car/home capture + tuning rounds — realistically weeks. **Option A (your current ruling):**
+one release when everything is done. **Option B:** v1.7.11 = polish + session A NOW (fixes the dictation deaths on prod; Speaches
+still the ear; no config migration; rollback v1.7.10), then v1.7.12 = session B. → "one" or "two".
+
+**3. Not a ruling, a watch item:** parakeet ignores the language setting and auto-detects; the plan gates it against
+cross-language errors on short/noisy English + Spanish clips (S9 bake-off + release). If it ever crosses, that becomes an engine
+question (there is no knob to force it) — you would hear about it with evidence, not decide it now.
+
+Everything else you asked about is RULED and in the plan: Speaches never stopped/deleted (un-configured only), engines
+machine-wide on 0.0.0.0 shared with Hermes, no shadow mode, the cap-split join, reload survival, `language: en` (parakeet ignores
+it; whisper — the hallucination source — reads it), Kokoro out of TTS, 16 kHz capture in A, Emma as the second reviewer on
+every slice.
+
+### Other agenda for later sessions (not Phase 26)
+- **Machine-wide service update pass (owner, 09-30):** inventory every service on emma (PocketTTS · Speaches · Hermes · Tailscale
+  · the ctrl-b units · …) and bring DEV + PROD up to date with them. A separate ops session.
+- **Polish leftovers** stay in the LOCAL ledger (`~/.cache/tmp/ctrlb-session53/POLISH_LEFTOVERS.md`) until the owner's dev test
+  of #1–#6 closes the audit: glued `Hello*She walks*` (test first), CJK (out of scope), player N2/N3 (owner feels it out), gacha
+  desktop blank page (test-only), fenced-block eye/ear split (accept).
+- **Push:** 11+ commits UNPUSHED on `main` (the 7 from session 52 + `e249f12` + `0510dc7` + this session's docs). Push on the
+  owner's word; v1.7.11 HELD until A + B land.
+- Dev units RUNNING (the owner is testing polish); stop them when done.
+
+## ✅ WALKED 2026-09-30 (session 53) — the design agenda, kept as the record: every §B/§C item → ASR_PLAN §10.1; §A → the local polish ledger + polish #6; §D done
 
 The owner: *"next session is going to be more like design and discussion about the approaches and what's left to do."*
 Open the session by walking this list with the owner, recording each answer in DECISIONS/RULINGS, THEN brief build
