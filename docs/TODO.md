@@ -1759,7 +1759,7 @@ displaced replies move to `message_alternates` (migration 7 — additive, rollba
 - [ ] *Seam, not this phase:* greeting swipes — `AgentDef.alt_greetings` seeded as `anchor_id NULL`
       variants with no model call (closes R87's "alt greetings inert"). Owner of record: ROADMAP A14.
 
-## Phase 26 — Live voice stops depending on Speaches: the wall-clock uplink guard · 16 kHz capture · the relay-owned VAD · batch ASR per door · the recording outlives its leg (and a reload) — **✏️ DESIGN RULED 2026-09-30 ([`D82`](./DECISIONS.md)); design council №1 closed (blind Opus 5.5 ∥ Emma, 28 rulings folded)** · spec = [`ASR_PLAN.md`](./ASR_PLAN.md) (§7 = the slice ladder; §3.10 = the stress-test amendments; §11 = the council record; build against the plan, NOT this list) · D82 ratified first, then two sessions on DEV, ONE release (v1.7.11 = the session-52 polish + A + B; no config migration)
+## Phase 26 — Live voice stops depending on Speaches: the wall-clock uplink guard · 16 kHz capture · the relay-owned VAD · batch ASR per door · the recording outlives its leg (and a reload) — **✏️ DESIGN RULED 2026-09-30 ([`D82`](./DECISIONS.md)); design council №1 closed (blind Opus 5.5 ∥ Emma, 28 rulings folded)** · spec = [`ASR_PLAN.md`](./ASR_PLAN.md) (§7 = the slice ladder; §3.10 = the stress-test amendments; §11 = the council record; build against the plan, NOT this list) · D82 ratified first, then two sessions on DEV, TWO releases (v1.7.11 = the six polish fixes + session A · v1.7.12 = session B; no config migration in either)
 
 This phase fixes the two live-voice failures R94 verified:
 - **dictation and calls die on 4G stalls.** The fix is the wall-clock bucket, plus the recording outliving its leg.
@@ -1785,6 +1785,8 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
 - [ ] D9 — The client's awaited-id set (closes LIVE_VOICE_PLAN OPEN-2).
 - [ ] D8 — The provisional early-call floor.
 - [ ] D5 — Slot takeover by the per-tab `sessionStorage` `client_id`; the slot is acquired after `start`.
+- [ ] **Release v1.7.11** (the six polish fixes + session A) per `ASR_PLAN` §8.2.1 — the standard runbook §Release, no
+      config step. Rollback: plain `update.sh v1.7.10`.
 
 **Session B — engine, capture, the host, hand tuning, the client half, THE FLIP, recovery (no shadow, no Speaches baseline):**
 - [ ] S6-i — The pure engine/DSP:
@@ -1850,8 +1852,8 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
       affordance through the same clip door, and the marker fallback.
 - [ ] S10 — The code deletions (the realtime client, the gap cut), the 1800 / 2100 caps, the pre-tag config report, and
       the doc sweep (SECURITY_MODEL §2.1: the 0.0.0.0 engine binds). No unit is stopped.
-- [ ] Release v1.7.11 per `ASR_PLAN` §8.2 (local e2e → stop → backup + the one config move → `update.sh` → verify). Rollback is
-      a config restore + the tag (§8.3).
+- [ ] **Release v1.7.12** (session B) per `ASR_PLAN` §8.2.2 (local e2e → stop → backup + the one config move →
+      `update.sh` → verify). Rollback: a config restore + `update.sh v1.7.11` (§8.3).
 
 - [ ] *Deferred, not this phase:*
   - S6b, the phone VAD probe;

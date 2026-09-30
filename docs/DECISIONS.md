@@ -6051,8 +6051,7 @@ per-agent link makes it right by construction).
   segment starts at the cut with zero pre-roll.
 - **The client JOINS a `max_segment` final with the next one into ONE turn or phrase** (owner): a cap cut is not a
   pause.
-- **"Speech ended" is split from "turn over" (owner ruling PENDING; revert = a `silence_ms` ceiling of 3000 and no
-  `turn_hold_ms`)** (the LiveKit/Pipecat shape). `silence_ms` stays the VAD end, bounded
+- **"Speech ended" is split from "turn over" (owner Option A, RULED 2026-09-30)** (the LiveKit/Pipecat shape). `silence_ms` stays the VAD end, bounded
   500–1200. A NEW client key, `turn_hold_ms` (0–3000, default 0 = today), holds a call's pending turn after a final; a
   `speech_started` inside the hold joins the SAME turn. That one mechanism also carries the `max_segment` join. ASR runs
   at segment end regardless, so a long hold costs no ASR latency. The owner's R23 intent (longer pauses) is met here.
@@ -6194,8 +6193,8 @@ duration and time. It accepts `from_ms` to trim the decoded head.
 **Amends:**
 - **D71:** the ear; §3.1's rolling ~2× ceiling; §5.2's "touches nothing outside the project", which now admits the
   owner-ruled engine units.
-- **D76 ④:** the three VAD knobs move to relay config; a longer pause becomes the client `turn_hold_ms` (owner ruling
-  PENDING; the revert is a `silence_ms` ceiling of 3000 and no `turn_hold_ms`).
+- **D76 ④:** the three VAD knobs move to relay config; a longer pause becomes the client `turn_hold_ms` (RULED 2026-09-30,
+  Option A).
 - **D80 ④:** the gap cut is retired on the evidence.
 - **R70 ③:** reversed.
 - **R94 §7.3 ③:** the stop-hold is deleted.
@@ -6213,9 +6212,11 @@ duration and time. It accepts `from_ms` to trim the decoded head.
 - An Opus/WebCodecs uplink.
 
 **Review:** every Phase 26 slice gets the two-reviewer round (blind Opus 5.5 ∥ blind Emma; owner directive). **Build order:** session B's live flip lands in two parts, a client half that stays inert until the relay declares the
-leg clock, then the relay flip. **Release:** D82 is ratified before session A. v1.7.11 carries the session-52 polish plus sessions A and B.
-- There is **no config migration**: every key is additive or changes an unstored default, and config shape stays 5.
-- There is no DB migration.
-- **Rollback to v1.7.10:** start Speaches if it has been stopped, then restore the hand-taken `config.yaml.<stamp>.pre-v1.7.11`, which re-points the chains at
-  the still-running Speaches, then roll back the tag (`ASR_PLAN` §8.3).
-- **Open (owner):** the one-release cadence's cost — prod keeps K1 until session B passes on dev.
+leg clock, then the relay flip. **Release:** D82 is ratified before session A. **Two releases (owner, ruled at session close):**
+- **v1.7.11 = the six polish fixes + session A.** Speaches is still the ear. There is no config migration. Rollback is a
+  plain `update.sh v1.7.10`.
+- **v1.7.12 = session B.** The flip's one config move is an explicit ops step at release. Rollback: start Speaches if it
+  has been stopped, restore the hand-taken `config.yaml.<stamp>.pre-v1.7.12`, which re-points the chains at the
+  still-running Speaches, then `update.sh v1.7.11` (`ASR_PLAN` §8.3).
+- There is **no config migration** in either release: every key is additive or changes an unstored default, and config
+  shape stays 5. There is no DB migration.

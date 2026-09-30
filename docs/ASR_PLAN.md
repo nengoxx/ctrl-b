@@ -3,8 +3,9 @@
 > **Status: ✏️ DESIGN — plan of record for Phase 26 ([TODO](./TODO.md)) / [D82](./DECISIONS.md), written 2026-09-30
 > (session 53); council №1 (blind Opus 5.5 ∥ Emma, both BUILD WITH CHANGES) folded in full over six waves; **Opus CONFIRMED BUILD · Emma closed on the last wording line (§11)**. NOTHING BUILT.**
 > Order: **S5 — D82 ratified THIS session, before session A** → session **A** on dev (transport, the dictation
-> rulings, 16 kHz capture) → session **B** on dev (the host on the clip door, raw-audio capture and hand tuning, then THE FLIP — ctrl-b off Speaches in one config move) → **ONE release, v1.7.11**
-> (session-52 polish + A + B) once B's criteria (§6.4) pass. This file owns the ASR/VAD design;
+> rulings, 16 kHz capture) → session **B** on dev (the host on the clip door, raw-audio capture and hand tuning, then THE FLIP — ctrl-b off Speaches in one config move) → **TWO releases (owner,
+> ruled at close): v1.7.11 = the six polish fixes + session A** once A's field checks pass (Speaches still the ear) · **v1.7.12
+> = session B** once B's criteria (§6.4) pass. This file owns the ASR/VAD design;
 > [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) keeps the call loop, the mouth and the client admission layer. Evidence:
 > [R94](./research/R94-asr-audits-verification.md) · [R95](./research/R95-vad-placement.md) · [R96](./research/R96-16khz-capture.md) ·
 > [R97](./research/R97-peer-engine-design.md).
@@ -21,7 +22,7 @@ are the polish ledger, `POLISH_LEFTOVERS`; §D is housekeeping — neither is th
 
 | # | Ruling | By |
 |---|---|---|
-| R1 | v1.7.11 = polish + A + B; both on dev; no prod push until B passes (cadence cost noted, §10.2) | owner |
+| R1 | **TWO releases (ruled at session close, Option B):** v1.7.11 = the six polish fixes + session A (Speaches still the ear; no config migration; rollback = plain `update.sh v1.7.10`) · v1.7.12 = session B (the flip's one config move at release; rollback = config restore + `update.sh v1.7.11`). Each built and field-checked on dev first (§8) | owner |
 | R2 | D3: `onnxruntime` + `numpy` into the backend — as an optional `voice` extra (council 11) | owner |
 | R3 | D4: clip-door decoding inside ctrl-b's pre-ASR pass — **PyAV** (cp314 abi3 wheel verified; council 15) | owner |
 | R4 | parakeet-server primary, one instance per door; NEW-engine fallbacks later; engines = config via the registry | owner |
@@ -43,7 +44,7 @@ are the polish ledger, `POLISH_LEFTOVERS`; §D is housekeeping — neither is th
 | R20 | **A `max_segment` cut is not a pause** — its final is JOINED with the next segment into ONE turn/phrase (both modes) | owner |
 | R21 | P1 threshold = relative 10 dB over the noise tracker · P2 = 1800 s cap / 2100 s relay | owner |
 | R22 | **S8b reload survival RULED IN** — a full slice right after S8 (§3.8, §7.2) | owner |
-| R23 | The owner's longer-pause intent ("test 0.7 first; widen to 3000") — **re-shaped by R97 P-3:** `silence_ms` stays the VAD end (500–1200); a longer pause is the client `turn_hold_ms` (0–3000, default 0). Flagged back to the owner (§10.2) | owner → main seat (ruling pending, §10.2) |
+| R23 | The owner's longer-pause intent ("test 0.7 first; widen to 3000") — **re-shaped by R97 P-3:** `silence_ms` stays the VAD end (500–1200); a longer pause is the client `turn_hold_ms` (0–3000, default 0). **Option A RULED 2026-09-30** — R23 closed as re-shaped; S7a/S7b unblocked | owner |
 | R24 | **NO SHADOW MODE, NO SPEACHES BASELINE, NO SEAMS PRODUCTION WON'T USE.** Speaches is replaced because it hallucinates and fails in noise, so it is no reference. The new ear is tuned BY HAND on captured reference audio with an OFFLINE replay tool; the one runtime addition is a debug-gated raw-audio capture. The ASR host swaps on the clip door BEFORE the live flip, so the flip removes Speaches from the live and TTS routes in one move | owner |
 | Q1–Q4 | The stress-test amendments, ACCEPTED (§3.10) | main seat |
 | C1–C28 | Council №1's reconciled rulings (`RULINGS-P.md`), all folded (§11 lists where) | main seat |
@@ -484,7 +485,7 @@ R95 §4) · the echo backstop · the voice learner · the overlay · the idle cl
 - **Speaches itself is untouched (R18):** never stopped, never deleted by this phase. On dev, S9 moves `voice.stt` to
   `parakeet-clip` and PINS `voice.live.provider: emma-speaches` explicitly (a blank live provider would collapse onto the new
   stt chain and aim the still-realtime relay at parakeet); **the flip (S7b) then removes the last references — `voice.live`
-  and the Kokoro TTS fallback (R8, D7) — in ONE config move.** Prod does it all in one move at release (§8.2). The
+  and the Kokoro TTS fallback (R8, D7) — in ONE config move.** Prod does it all in one move at the v1.7.12 release (§8.2.2). The
   `providers.emma-speaches` entry stays defined, so rollback is a re-point. `vault-speaches` is unaffected.
 
 ---
@@ -628,7 +629,7 @@ The hand-authored golden vectors (§3.4) are the unit tests. The tool is the ear
 |---|---|
 | **S9 → clip door on parakeet (dev)** | • the gate-walk test passes<br>• live-sized p95 < 1 s uncontended and < 2 s contended (requests ≤ 20 s)<br>• RSS < 2 GB per instance<br>• R10 (a)–(b) hold<br>• **no language crossing:** English and Spanish short answers and car negatives never come back in the other language (T-5)<br>• the owner reads the push-to-talk clips and the replayed reference transcripts by hand and finds them acceptable — **Spanish included** (T-5) |
 | **TUNE → the flip (S7b)** | • the golden vectors are green<br>• the owner's hand judgement of the replayed reference set (edges + transcripts, with the chosen `VadParams`) finds: no phantom segments on the negatives, every short answer present, no clipped onset |
-| **Release** (R94 §9 field acceptance, on the flipped dev) | • 5 min of no-owner-speech car audio → 0 false turns<br>• 20× each short answer, **English and Spanish** → recall ≥ 95%, no first-phoneme clipping, **no answer transcribed in the other language**<br>• no perceptible added lag<br>• ASR p95 < 1 s<br>• the §3.4 VAD budget met<br>• **a ≥ 10-min 4G dictation with induced stalls → zero stops, the suffix recovered, no duplicated text**<br>• the kill-clip-engine arm (§3.8)<br>• a > 20 s call turn arrives as ONE turn (R20)<br>• a reload mid-dictation recovers (S8b) |
+| **Release v1.7.12** (R94 §9 field acceptance, on the flipped dev) | • 5 min of no-owner-speech car audio → 0 false turns<br>• 20× each short answer, **English and Spanish** → recall ≥ 95%, no first-phoneme clipping, **no answer transcribed in the other language**<br>• no perceptible added lag<br>• ASR p95 < 1 s<br>• the §3.4 VAD budget met<br>• **a ≥ 10-min 4G dictation with induced stalls → zero stops, the suffix recovered, no duplicated text**<br>• the kill-clip-engine arm (§3.8)<br>• a > 20 s call turn arrives as ONE turn (R20)<br>• a reload mid-dictation recovers (S8b) |
 
 ---
 
@@ -679,42 +680,70 @@ absolute-dBFS VAD.
 
 ---
 
-## 8. Release and rollback
+## 8. Release and rollback — two releases (R1)
 
-### 8.1 v1.7.11
+### 8.1 What each release carries
 
-Carries the 10 unpushed commits (the session-52 polish, polish #6 `e249f12`, the R94–R96 docs through `0510dc7`) + A + B. **Config migration: NONE** (§4). **DB: none** (schema 7).
+#### 8.1.1 v1.7.11 = the six polish fixes + session A
+
+The session-52 polish (five fixes) + polish #6 `e249f12` + the R94–R97 and plan docs + session A (S1, S2, S3, SP, K6, D9, D8,
+D5). **Speaches is still the ear** — the relay still dials its realtime WebSocket. **Config migration: NONE** (session A's
+keys are additive or unstored-default changes, §4; SP's interim `dictation_max_s` 1790 / `max_session_s` 1800). **DB: none.**
+No new dependency (the `voice` extra arrives in B). It ships the transport fixes that stop the 2026-09-28 dictation deaths
+on prod while B is tuned.
+
+#### 8.1.2 v1.7.12 = session B
+
+S6-i … S10: the engine, capture, the clip door on parakeet, S7a/S7b the flip, S8/S8b recovery, S10 (caps 1800 / 2100).
+**Config migration: NONE** in code (§4); the flip's ONE config move is an explicit ops step at release (§8.2.2). **DB: none.**
 `install.sh` installs the `voice` extra; the engines are already running machine-wide since S9 (R19).
 
-### 8.2 Prod steps, in order (commands in S9's runbook section) — symmetric with §8.3 (M-1)
+### 8.2 Prod steps
+
+#### 8.2.1 v1.7.11 — the standard runbook, no config step
+
+`deploy/linux/README.md` §Release end to end: pre-flight (CI + the tag's release gate green · **a local e2e run**,
+`tools/check.py --e2e`, T-8 · session A's dev field checks passed, §7.1, incl. K6's phone card) → tag → `update.sh v1.7.11` →
+verify (health, a dictation, a call). Nothing in `config.yaml` changes.
+
+#### 8.2.2 v1.7.12 — symmetric with §8.3 (M-1; commands in S9's runbook section)
 
 1. Pre-flight: CI + the tag's release gate green · **a local e2e run** (`tools/check.py --e2e`, T-8) · dev's §6.4 release
    criteria met · the S10 pre-tag config report clean.
 2. `curl 127.0.0.1:<port>/health` on both engines (shared with dev since S9); R10 (a)–(b) re-checked.
 3. `systemctl --user stop ctrl-b-dashboard`.
-4. **Backup + the ONE config move:** `cp -p ~/.ctrl-b/config.yaml ~/.ctrl-b/backups/config.yaml.<UTCstamp>.pre-v1.7.11`;
+4. **Backup + the ONE config move:** `cp -p ~/.ctrl-b/config.yaml ~/.ctrl-b/backups/config.yaml.<UTCstamp>.pre-v1.7.12`;
    + the two engine providers (`max_concurrent_requests: 1`) · `voice.live.provider` = parakeet-live, `fallbacks:
    [parakeet-clip]`, `timeout_s: 10` · `voice.stt.provider` = parakeet-clip, fallbacks `[vault-speaches]` ·
    `voice.tts.fallbacks` = `[vault-alltalk]` (R8).
-5. **`update.sh v1.7.11`** (installs, starts, health-checks).
+5. **`update.sh v1.7.12`** (installs, starts, health-checks).
 6. Verify: a dictation, a call, a push-to-talk clip, a TTS failover; T1 lines in the journal.
 
-There is no window where a v1.7.10 realtime relay meets a parakeet config, or a v1.7.11 relay meets an untested
-"relay VAD + Speaches batch door" pairing.
-Speaches' unit is not touched (R18); whether it keeps running (its RAM, §3.7) is the owner's later call.
+There is no window where a v1.7.11 realtime relay meets a parakeet config, or a v1.7.12 relay meets an untested
+"relay VAD + Speaches batch door" pairing. Speaches' unit is not touched (R18); whether it keeps running (its RAM, §3.7) is
+the owner's later call.
 
-### 8.3 Rollback to v1.7.10 — a config re-point
+### 8.3 Rollback, per release
 
-v1.7.10's relay dials Speaches' REALTIME WebSocket, which parakeet-server lacks — so config first: ⓪ `systemctl --user start speaches` if the owner has stopped it,
-then wait for its `/health` (N-7) → ① stop `ctrl-b-dashboard` → ② restore `config.yaml.<UTCstamp>.pre-v1.7.11` (re-points every chain at the still-running Speaches)
-→ ③ `update.sh v1.7.10` (or §Rollback's manual sequence) → ④ verify health + a call. The engines stay up (other consumers).
-A stale v1.7.11 PWA against the rolled-back relay sees no `ready.clock` and keeps today's behaviour (§3.2).
+- **Off v1.7.11 → v1.7.10:** plain `bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.10` — no config changed, no migration.
+  A stale v1.7.11 PWA against the v1.7.10 relay is compatible: a 16 kHz `start` is inside the relay's 8–96 kHz bounds, the
+  relay ignores an unknown `client_id`, and D9 already speaks Speaches' ids.
+- **Off v1.7.12 → v1.7.11 — a config re-point first.** v1.7.11's relay dials Speaches' REALTIME WebSocket, which
+  parakeet-server lacks: ⓪ `systemctl --user start speaches` if the owner has stopped it, then wait for its `/health` (N-7)
+  → ① stop `ctrl-b-dashboard` → ② restore `config.yaml.<UTCstamp>.pre-v1.7.12` (re-points every chain at the still-running
+  Speaches) → ③ `update.sh v1.7.11` (or §Rollback's manual sequence) → ④ verify health + a call. The engines stay up (other
+  consumers). A stale v1.7.12 PWA against the rolled-back relay sees no `ready.clock` and keeps today's behaviour (§3.2).
 
-### 8.4 The owner's prod card (after v1.7.11)
+### 8.4 The owner's prod cards
 
-A car call on the clean route (no phantom "Yeah.", short answers taken) · a > 20 s monologue arrives as one turn · a ≥
-10-min 4G dictation through a blip (no stop, the suffix recovered) · a 6-min hands-free dictation with long pauses (screen
-on) · a reload mid-dictation offers the recovery · a push-to-talk clip · a TTS failover · the chirp lag unchanged (the 16 kHz rate assertion lives on the DEV K6 card — no prod debug toggling, E-L1) · Spanish short answers taken.
+- **After v1.7.11 (session A):** a ≥ 10-min 4G dictation through a tunnel/airplane blip no longer dies `protocol` (S2) · a
+  6-min hands-free dictation with long pauses survives, screen on (SP) · a call's first seconds on a fresh route: no quiet
+  false turn, no deaf owner (D8) · a re-dial right after a dropped leg is not `busy` (D5) · K6's behavioural arms — one call
+  + one 5–10 min dictation transcribe normally, the chirp lag and the latency readout unchanged, both EC routes behave (the
+  16 kHz rate assertion stays on the DEV card, E-L1).
+- **After v1.7.12 (the ear):** a car call on the clean route (no phantom "Yeah.", short answers taken) · a > 20 s monologue
+  arrives as one turn · a ≥ 10-min 4G dictation through a blip (no stop, the suffix recovered) · a reload mid-dictation offers
+  the recovery · a push-to-talk clip · a TTS failover · the chirp lag unchanged · Spanish short answers taken.
 
 ---
 
@@ -722,7 +751,7 @@ on) · a reload mid-dictation offers the recovery · a push-to-talk clip · a TT
 
 | Risk | Mitigation / exit |
 |---|---|
-| **Cadence cost (R1):** prod dictations keep dying on K1 until B passes its dev gates | raised to the owner (§10.2); the one-release ruling stands unless changed |
+| Cadence (R1) — **CLOSED at session close:** two releases | v1.7.11 ships session A's transport fixes to prod while B is tuned on dev |
 | The relay VAD mis-segments in real rooms | golden vectors · the reference set replayed and judged by hand before the flip · field rounds after it · on dev the flip reverts by a config re-point |
 | The act-based confirmation retracts a very short real answer; a hover around `act` re-arms repeatedly | vectors + the replayed short answers before S7b · the re-arm guard (P-1) · the M1 variant compared in the replay tool · `onset_ms` is a Conf row · dictation exempt |
 | Shared engines: dev tests and Hermes contend with prod calls (R19) | written down; the D40 gate walks only WITHIN a process — cross-process waits show in T9 `asr_ms` (T-3) |
@@ -745,7 +774,7 @@ on) · a reload mid-dictation offers the recovery · a push-to-talk clip · a TT
 
 | Item | Answer |
 |---|---|
-| A7 release shape | R1 — one v1.7.11; config migration verified NONE (§4) |
+| A7 release shape | R1 — two releases (v1.7.11 = polish + A · v1.7.12 = B), ruled at close; config migration verified NONE (§4, §8.1) |
 | B1 D1 guard | R12 close 1008 · `uplink_burst_ms` replaced by one allowance + inequality (Q2 as amended by P-6, §3.3) |
 | B2 P1 idle stop | R21 — 300 s, 0 = off, relative 10 dB (SP) |
 | B3 P2 cap | R21 — 1800 / 2100 (interim 1790 / 1800 while Speaches is the ear, council 21) |
@@ -765,26 +794,23 @@ on) · a reload mid-dictation offers the recovery · a push-to-talk clip · a TT
 | C7 corpus | R9 + R24 + council 19 — debug-gated capture → `$CTRLB_HOME/asr-corpus/` (§6); no audio exists today |
 | C8 S6b | R7 — deferred |
 | C9 the record | R6 |
-| C10 cadence | R1 (one release) — its cost stays open (§10.2) |
+| C10 cadence | R1 — two releases, ruled at session close (§8) |
 
 **Residual closures (T-11):** S1 closes ISS-41 (dictation taps spending `trail_keep`); D9 closes LIVE_VOICE_PLAN OPEN-2
 (the one-flag `waitingFinal`). ISS-16 (crackle) and ISS-19 (lock-screen call) are untouched; ISS-16's counter-arm (TTS
 back to Kokoro on `emma-speaches`) stays runnable only while Speaches runs and its provider entry stays defined.
 
-### 10.2 Still open (owner)
+### 10.2 Still open
 
-- **Cadence cost (R1):** with one release, prod dictations keep dying on the flood guard until B passes its dev gates
-  (likely weeks). Alternative: v1.7.11 = polish + session A (Speaches still the ear), v1.7.12 = B. The ruling stands unless
-  the owner changes it.
-- **The turn hold (P-3) — OWNER RULING PENDING (E-N5):** the design keeps `silence_ms` at 500–1200 and meets R23's "longer
-  pauses" with `turn_hold_ms` (default 0 = today's 0.7 s feel). **If the owner declines, the one-line revert:** `silence_ms`
-  ceiling 3000 and no `turn_hold_ms` (the `max_segment` join stays). Must be ruled before S7a/S7b are briefed.
+Nothing the owner has to rule. **One watch item:** parakeet ignores `language` and auto-detects; the S9 and Release gates
+test English + Spanish short and noisy clips for language crossing (§6.4). If it ever crosses, it comes back as an engine
+question with evidence — there is no knob to force it.
 
 ---
 
 ## 11. Council record
 
-**CLOSED 2026-09-30 (six waves):** Opus 5.5 — CONFIRMED BUILD (confirm round 4; `confirm-P-opus.md`). Emma (Sol) — confirm round 3 (`confirm3-P-emma.md`) closed every item but ONE wording line in S7a's test column (the release path must name the last absorbed non-`max_segment` final), applied verbatim by the main seat together with Opus's R4-1 nit and ruled closed; her only other hold was the `turn_hold_ms` owner ruling, pending BY DESIGN (§10.2). **The plan is buildable; S7a/S7b wait for that ruling.**
+**CLOSED 2026-09-30 (six waves):** Opus 5.5 — CONFIRMED BUILD (confirm round 4; `confirm-P-opus.md`). Emma (Sol) — confirm round 3 (`confirm3-P-emma.md`) closed every item but ONE wording line in S7a's test column (the release path must name the last absorbed non-`max_segment` final), applied verbatim by the main seat together with Opus's R4-1 nit and ruled closed; her only other hold was the `turn_hold_ms` owner ruling, pending BY DESIGN at the time. **Both owner items were RULED at session close (2026-09-30): the turn hold = Option A · the cadence = two releases (v1.7.11 = polish + A · v1.7.12 = B). The plan is buildable end to end.**
 
 **Council №1 (2026-09-30) — blind Opus 5.5 ∥ blind Emma (Sol), both BUILD WITH CHANGES** (reviews `review-P-opus.md`,
 `review-P-emma.md`; reconciled `RULINGS-P.md`, 28 rulings, all ACCEPTED except E-MED-12 — moot, Speaches is never
@@ -803,7 +829,7 @@ ACCEPTED as N-1…N-8):** the per-segment answer deadline + TTL from one key, th
 the flush cut, the context re-anchor, `ear_failed` → the reconnect ladder, rollback step ⓪, S9's full wording, the DNS-rebinding
 clause in the bind sentence. **Wave 5 (Emma confirm: 21 closed, 2 HIGH · 3 MED · 2 LOW new; Opus round 2: 1 MED + 2 LOW):**
 `reason` vs `outcome` split (E-N1), the deadline wording verified (E-N2), hold absorption of open/awaited segments (E-N3),
-the frame-mapping retention invariant (E-N4), the turn-hold refinement marked owner-pending (E-N5), the dev-only rate check
+the frame-mapping retention invariant (E-N4), the turn-hold refinement marked owner-pending (E-N5; RULED at close, Option A), the dev-only rate check
 (E-L1), the precise Speaches wording (E-L2), the client `ear_failed` arm (R2-1), the recorder-time source (R2-2), the hung-
 primary clause (R2-3); owner directive: every slice two-reviewer (Opus ∥ Emma). **Wave 6 (Opus round 3: CONFIRMED BUILD +
 R3-1/R3-2; Emma round 2: E-N1 + EH-1, EM-1, EM-2, EL-1, EL-2):** the conditional cut, the dictation hold discard, the
