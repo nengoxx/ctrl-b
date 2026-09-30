@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-10-01 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 55 (Fable) BUILT + two-reviewer-closed + COMMITTED Phase 26 session A's S2 (`ad94796`, the wall-clock uplink allowance) and SP (`cd2cb02`, the dictation policy rulings), RULED S3 absorbed (`db742d6`). 20 commits on `main` UNPUSHED (incl. this handoff); push on the owner's word. Next = K6 in a CLEAN session (the brief is written) → D9 → D8 → D5 → v1.7.11 = polish + session A; v1.7.12 = session B**)
+## Where we are (2026-10-01 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 56 (Fable) BUILT + two-reviewer-closed + COMMITTED Phase 26 session A's K6 (`96fdc4e`, 16 kHz capture at both sites). 22 commits on `main` UNPUSHED (incl. this handoff); push on the owner's word. Next = THE OWNER'S PHONE CARD (K6 + SP field checks, below) on the rebuilt dev dist → D9 → D8 → D5 → v1.7.11 = polish + session A; v1.7.12 = session B**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): at writing time
   tag **`v1.7.10` on `9c5a6c6` — LIVE** (released 2026-09-27 evening ≈ 18:14Z per `deploy/linux/README.md`
@@ -56,6 +56,67 @@
   `origin/main` `778b960`:** `53f8010` · `7522040` · `c09d47b` · `31953a9` · `23fd88a` · `c1c8bad`, plus this
   handoff. Push on the owner's word. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
+
+## ▶▶ NEW (2026-10-01, Fable seat, session 56) — PHASE 26 K6 BUILT + COMMITTED (`96fdc4e`) · NEXT = THE OWNER'S PHONE CARD, THEN D9
+
+**Read first:** [`ASR_PLAN.md`](./ASR_PLAN.md) §7.1 (the session-A ladder: S1 ✅ → S2 ✅ → S3 ✅ absorbed → SP ✅ → **K6 ✅** → D9 next →
+D8 → D5 → release) · §3.9 ⑤ (K6 as built) · [R96](./research/R96-16khz-capture.md) (the evidence). The session record is
+`~/.cache/tmp/ctrlb-session56/` (`SESSION_PLAN.md` · `RULINGS.md` = every finding of both reviewers with its ruling, pre-round + round 1
++ the wave · `brief-K6-16khz-capture.md` / `lane-K6-report.md` (the as-built record: the helper's contract, every downstream
+`ctx.sampleRate` reader verified file:line, the prose sites, the phone-card checklist, the notes for D9, the "Wave 1" section) ·
+`review-K6-{opus,emma}.md` · `confirm-K6-{opus,emma}.md` · `diff-K6{,-v2}.patch` · `e2e-K6.log` · `REVIEW_COMMON.md`).
+
+### What happened
+1. **K6 — 16 kHz capture at both sites** (`96fdc4e`): ONE **synchronous** helper `openCaptureContext(stream)` in `pcmCapture.ts`
+   (`CAPTURE_RATE = 16000`, not a config key) builds `new AudioContext({ sampleRate: 16000 })`, PROBES it with
+   `createMediaStreamSource` (pre-148 Firefox/Fennec throws `NotSupportedError` there, R96 §2.3), and on ANY throw closes it and
+   returns a plain device-rate context, `nativeRate: true`. Both sites call it (`startPcmCapture`; dictation's `armDetector`) and
+   keep their OWN resume + "must be running" contract byte-for-byte, so a fallback context reaches `running` through the same
+   path (council 25) and dictation's ownership token parks whichever context came back BEFORE its await (the brief's async
+   `onOpened` shape was dropped — a lane deviation, KEPT: strictly smaller, the mid-await cancellation case disappears).
+   Downstream unchanged by construction (worklet frame size 640 @ 40 ms, `start.sample_rate`, the socket ceiling, chirp factor 1,
+   `rec.rate`); the relay resamples 16 → 24 kHz for the interim Speaches ear (R96 §3: a wash; a clean win at session B).
+   `nativeRate` on the call's `capture` line · `native_rate` on the dictation `rec` line (each line's own convention) ·
+   `fftSize` 1024 at 16 kHz only · prose incl. the two backend docstrings + ASR_PLAN's "via `primeAudio`" → "via the caller's own
+   resume path" (`primeAudio` unlocks only the `<audio>` element). Wire SHAPE unchanged; `start.sample_rate` now says 16000.
+2. **The round:** Opus ∥ Emma SHIP WITH FIXES (Opus 4 LOW · Emma 1 MED + 3 LOW) → wave 1 (two missing test arms: dictation
+   fallback + stuck-suspended, call wiring 48 kHz/`nativeRate: true`; `resumeGate` fake parity; the prose) → **both CONFIRMED
+   SHIP**. REJECTED: Emma's MED "await the rejected context's close before building the fallback" (no named browser; every
+   teardown → next-arm already constructs without awaiting; the async shape re-imports the cancellation case) — recorded as the
+   helper's KNOWN ASSUMPTION so a Fennec field failure has a named suspect; Emma's LOW on the `capture` key spelling (per-line
+   convention wins). Both reviewers confirmed the rulings hold.
+3. **e2e** (`npm run test:e2e`, the real-Chromium proof of the cross-rate path — a 48 kHz oscillator track into a 16 kHz
+   context): see `e2e-K6.log` (result recorded below in "Standing facts"). The run rebuilt `frontend/dist`; the dev units were
+   restarted for the card.
+
+### ▶▶ THE OWNER'S PHONE CARD (dev, Serve `:8443`; `voice.live.debug` ON in Conf › Live call so the trails write)
+K6 (ASR_PLAN §7.1 K6 row):
+1. **Trail rate.** A call's trail `capture` line reads `ctxRate: 16000, nativeRate: false` (`trackRate` probably 48000); a dictation's
+   `rec` line reads `rate: 16000, native_rate: false`. (The relay journal's `leg_start rate=16000` says the same.)
+2. **One call** transcribes normally — turns land, no truncated/garbled finals.
+3. **One 5–10 min dictation** transcribes normally — phrases stream, the draft reads right.
+4. **Chirp + latency.** The chirp is found with lag/peak comparable to earlier trails on the same route; `outputLatency`/`baseLatency`
+   on the `capture` line move ≤ ~10 ms vs a pre-K6 trail on that route (R96 §2.2's estimate, the safe direction).
+5. **Level gates self-adjust** — no early false turns, no deaf owner in the first seconds; the remembered voice level may read
+   slightly low for ONE call; the dictation meter looks normal.
+6. **Both routes:** one call on EC-call and one on EC-media behave as before (routing, hold, barge).
+7. **One Fennec run:** a call and a dictation work. Trail `nativeRate: true` + the device rate if that Fennec is < 148, `false` +
+   16000 if ≥ 148 — BOTH are passes; record which. The UNVERIFIED part is the fallback context's `resume()` on Fennec (R96 §6 ①):
+   a failure shows as the call's error terminal / dictation degrading to the clip, exactly today's suspended case.
+SP's field checks (same round): a 6-min hands-free dictation with 30 s pauses survives, screen on · a muted mic idles out at 300 s ·
+`clip_bytes` on the `end` line ≈ 4 KB/s.
+
+### After the card
+D9 (the awaited-id set; the lane report's "What D9 should know": no overlap with K6 beyond one `useLiveCall.ts` trail line; the
+wiring harness now defaults to a 16 kHz context over a 48 kHz track with `h.nativeRate`/`h.rates` knobs) → D8 → D5 → the QUALITY.md
+counts sweep (ONE refresh at the end of A) → the v1.7.11 release card (notes owed: session 55's list + K6's "a v1.7.10 relay accepts
+the 16000 declaration; nothing to roll back on the wire") → push on the owner's word → v1.7.11 per ASR_PLAN §8.2.1.
+
+### Standing facts from this session (verified)
+- Slices stay SEQUENTIAL; both reviewers on every slice; wait on Emma's OUTPUT FILE only; freeze with `git add -N`.
+- `python` is not on PATH — the gate is `TMPDIR=/home/emma/.cache/tmp backend/.venv/bin/python tools/check.py --fast`.
+- Dev units RUNNING; the dist REBUILT by the e2e run (S1/S2/SP/K6 all in it). 22 commits over `origin/main`, nothing pushed.
+- e2e result: `npm run test:e2e` GREEN after K6 — 403 passed · 10 skipped · 0 failed (2.5 min), every `liveCall.spec` case incl. the real-Chromium 48 kHz-track → 16 kHz-context path (`e2e-K6.log`).
 
 ## ▶▶ NEW (2026-10-01, Fable seat, session 55) — PHASE 26 S2 BUILT + COMMITTED · S3 RULED ABSORBED · SP BUILT + COMMITTED · NEXT = K6 IN A CLEAN SESSION (the brief is written)
 

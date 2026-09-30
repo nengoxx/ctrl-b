@@ -1782,8 +1782,10 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
       32 kbps and the `max_upload_bytes` test. P3: the wake lock lifted with its fence parameterized. Tier-0 stays suspended
       while streaming. The e2e fixture is updated. ✅ `cd2cb02` (2026-10-01; the idle stop arms once the tracker SETTLES; a min tracker's
       known limit recorded in the config comment).
-- [ ] K6 — A 16 kHz `AudioContext` at both sites, with the native-rate fallback via `primeAudio` (R96). Phone-card
-      item, including the EC-call/EC-media arms and a Fennec run.
+- [x] K6 — A 16 kHz `AudioContext` at both sites through ONE synchronous helper (`openCaptureContext`), with the
+      native-rate fallback via the caller's own resume path (R96). ✅ `96fdc4e` (2026-10-01; `nativeRate`/`native_rate` on the
+      trail lines; `fftSize` 1024 at 16 kHz). **Phone-card item still OWED** (the owner's round: EC-call/EC-media arms + a
+      Fennec run — HANDOFF session 56).
 - [ ] D9 — The client's awaited-id set (closes LIVE_VOICE_PLAN OPEN-2).
 - [ ] D8 — The provisional early-call floor.
 - [ ] D5 — Slot takeover by the per-tab `sessionStorage` `client_id`; the slot is acquired after `start`.
