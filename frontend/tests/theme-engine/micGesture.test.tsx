@@ -870,7 +870,7 @@ describe("OF-3/OF-4 (+S2.5) · the recorder seams the gesture registers", () => 
     await hold();
     await tick(HELD_MS);
     up();
-    expect(mic.stop).toHaveBeenCalledWith(true);
+    expect(mic.stop).toHaveBeenCalledWith("user");
     expect(mic.cancel).not.toHaveBeenCalled();
   });
 

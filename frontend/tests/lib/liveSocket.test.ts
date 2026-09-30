@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   CLOSE_BACKPRESSURE,
+  CLOSE_CLIENT_BACKLOG,
   bufferedCeilingBytes,
   liveSocketUrl,
   openLiveSocket,
@@ -346,5 +347,58 @@ describe("liveSocket — close reporting", () => {
     const spy = vi.spyOn(ws, "close");
     socket.close();
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe("liveSocket — the client's own close codes (Phase 26 S1, T3)", () => {
+  it("the two private-range codes: 4000 the socket's buffer (K3), 4001 the pacer's backlog (K2)", () => {
+    expect(CLOSE_BACKPRESSURE).toBe(4000);
+    expect(CLOSE_CLIENT_BACKLOG).toBe(4001);
+  });
+
+  it("a CODED `close` goes out on the wire with its code and reason — bare stays bare", () => {
+    const a = leg();
+    a.ws.ready();
+    a.socket.close(CLOSE_CLIENT_BACKLOG, "client backlog");
+    expect(a.ws.closed).toEqual({ code: 4001, reason: "client backlog" });
+    expect(a.closes).toEqual([{ code: 4001, reason: "client backlog" }]);
+    const b = leg();
+    b.ws.ready();
+    b.socket.close();
+    expect(b.ws.closed).toEqual({ code: undefined, reason: undefined });
+  });
+
+  it("reports the code THIS CLIENT chose even when the link never echoed it (the browser says 1006)", () => {
+    // A leg thrown away over a backed-up link is exactly the one whose closing handshake cannot finish:
+    // the server's echo never arrives and the event reads 1006. The readers want the client's reason.
+    const { socket, ws, closes } = leg({ ceilingMs: 1000, sampleRate: 48000 });
+    ws.ready();
+    ws.close = (code?: number, reason?: string) => {
+      ws.closed = { code, reason }; // the close frame goes out… and nothing comes back
+      ws.readyState = WebSocket.CLOSING;
+    };
+    ws.bufferedAmount = 96001;
+    socket.sendAudio(new ArrayBuffer(1920)); // the K3 bail
+    ws.onclose?.({ code: 1006, reason: "" } as CloseEvent); // …the abnormal end, much later
+    expect(closes).toEqual([{ code: CLOSE_BACKPRESSURE, reason: "uplink backpressure" }]);
+  });
+
+  it("…but an AUTHORITATIVE server close that raced ours wins — the server's code is the truth", () => {
+    const { socket, ws, closes } = leg();
+    ws.ready();
+    ws.close = (code?: number, reason?: string) => {
+      ws.closed = { code, reason };
+      ws.readyState = WebSocket.CLOSING;
+    };
+    socket.close(CLOSE_CLIENT_BACKLOG, "client backlog"); // ours goes out…
+    ws.onclose?.({ code: 1011, reason: "upstream lost" } as CloseEvent); // …the relay's closed first
+    expect(closes).toEqual([{ code: 1011, reason: "upstream lost" }]);
+  });
+
+  it("…and a leg the SERVER ended keeps the server's code", () => {
+    const { closes, ws } = leg();
+    ws.ready();
+    ws.onclose?.({ code: 1011, reason: "upstream lost" } as CloseEvent);
+    expect(closes).toEqual([{ code: 1011, reason: "upstream lost" }]);
   });
 });

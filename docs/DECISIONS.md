@@ -5893,7 +5893,9 @@ live overlay for a driver.
 `leg_end` cannot be mistaken for the new leg's. The client MINTS the id (`crypto.randomUUID()`, once
 per call machine — a route cycle/recapture/reconnect keeps it, a redial after a terminal is a new
 call) and hands it to the relay in the `start` control (`call_id` + `leg`, both optional, validated
-with `sample_rate`'s strictness; absent ⇒ that leg writes nothing — dictation legs send none).
+with `sample_rate`'s strictness; absent ⇒ that leg writes nothing — dictation legs sent none until
+S11, since which a debug dictation names its own trail, `leg: 1`, filed under `calls/dictation/`
+since Phase 26 S1).
 
 ② **The transport is HTTP, because D71 says so.** `POST /api/voice/live/trail` carries the
 browser's batches (≤ 200 entries, ≤ 64 KB, ≤ 2 KB per entry; JSON body only — the preflight IS the
@@ -5904,8 +5906,9 @@ flush rides `fetch(…, {keepalive: true})` under the browser's ~64 KiB keepaliv
 ③ **The gate is the existing knob.** `voice.live.debug` (off by default) turns the readout AND the
 trail on; the endpoint answers 404 while it is off (the feature does not exist), the client buffers
 nothing, the wire's `start` stays byte-identical. Retention is `voice.live.trail_keep` (20): the
-oldest files past it go when a NEW call's first line lands. No read endpoint, no UI: the reader is
-the main seat at the shell.
+oldest files past it go when a NEW call's first line lands — per mode directory since Phase 26 S1
+(calls in `calls/`, dictations in `calls/dictation/`, each keeping its own `trail_keep`; ISS-41). No
+read endpoint, no UI: the reader is the main seat at the shell.
 
 ④ **What is written.** Relay: `leg_start` (the rate + the exact `session.update` it sends),
 every downlink frame (`down` — state/speech_started/speech_stopped/transcript/error/degraded),

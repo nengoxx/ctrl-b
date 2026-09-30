@@ -4,7 +4,8 @@
 // the noise and voice estimates, the ear hold and its tail, the transcript gate's drops, the chirp,
 // the route readbacks, the phase changes — and the relay sees only the wire. So `useLiveCall` pushes
 // what it decided into this buffer, and the buffer ships it to `POST /api/voice/live/trail`, which
-// appends it to the SAME per-call file the relay writes (`$CTRLB_HOME/calls/<callId>.jsonl`). The main
+// appends it to the SAME per-call file the relay writes (`$CTRLB_HOME/calls/<callId>.jsonl` — or, for a
+// dictation, `calls/dictation/<callId>.jsonl`: every batch names its `mode`, Phase 26 S1). The main
 // seat reads the file after the owner's phone round instead of reconstructing the call from memory.
 //
 // PURE-ISH ON PURPOSE: no React, no store, no fetch of its own — the POST is injected (`post`), the
@@ -52,6 +53,12 @@ export const TRAIL_MAX_ENTRY_BYTES = 2048;
 
 export type TrailFlushReason = "interval" | "count" | "hidden" | "end";
 
+/** WHICH FEATURE a trail belongs to (Phase 26 S1) — the relay's `start.mode` vocabulary, and the
+ *  directory the server files the batch under (`services/call_trail.py::LIVE_MODES`, mirrored here: a
+ *  call at the root, a dictation in its own directory with its own retention, ISS-41). Typed ONCE, here;
+ *  the two trail writers import it. */
+export type TrailMode = "call" | "dictation";
+
 export interface CallTrail {
   /** Buffer one line: `{t, leg, gen, ev, ...data}` — stamped at push time. */
   push(ev: string, data?: Record<string, unknown>): void;
@@ -63,6 +70,8 @@ export interface CallTrail {
 
 export interface CallTrailOpts {
   callId: string;
+  /** Rides every batch's envelope (`{call_id, mode, entries}`) — see `TrailMode`. */
+  mode: TrailMode;
   /** The injected write — `postJSON(<route>, body, { keepalive })` in production. */
   post: (body: unknown, keepalive: boolean) => Promise<void>;
   /** WHICH leg and generation a line belongs to, read at PUSH time (council F4): one call is many legs
@@ -97,7 +106,11 @@ export function createCallTrail(opts: CallTrailOpts): CallTrail {
 
   const ship = (entries: Record<string, unknown>[], keepalive: boolean): void => {
     for (let i = 0; i < entries.length; i += TRAIL_POST_ENTRIES) {
-      const body = { call_id: opts.callId, entries: entries.slice(i, i + TRAIL_POST_ENTRIES) };
+      const body = {
+        call_id: opts.callId,
+        mode: opts.mode,
+        entries: entries.slice(i, i + TRAIL_POST_ENTRIES),
+      };
       // `.catch` on the promise AND a try around the call: a `post` that throws synchronously must
       // not reach the call machine either.
       try {

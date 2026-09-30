@@ -35,10 +35,24 @@ function itemIdOf(f: Record<string, unknown>): { item_id?: string } {
   return typeof f.item_id === "string" && f.item_id !== "" ? { item_id: f.item_id } : {};
 }
 
-/** Close codes seen on this route. 1008 protocol · 1011 upstream · 1013 busy · 1000 clean — plus ONE
- *  private-range code this client mints for itself so the machine can tell "I closed the leg because the
- *  uplink backed up" from anything the server said (§3.1's client-side backpressure rule). */
+/** THE CLOSE CODES seen on this route — the relay's four, and the two private-range codes this client
+ *  mints for itself so a reader (the machine, the dictation's `end` line, the relay's leg-end summary —
+ *  Phase 26 S1, T3) can tell "the client threw the leg away" from anything the server said:
+ *
+ *  | code | who    | meaning                                                                        |
+ *  |------|--------|--------------------------------------------------------------------------------|
+ *  | 1000 | relay  | a clean end (a `stop`, the session limit, the uplink-idle reaper)             |
+ *  | 1008 | relay  | protocol — the client broke the wire contract (or a pre-accept refusal)        |
+ *  | 1011 | relay  | upstream — the ear refused the handshake, or died mid-session                 |
+ *  | 1013 | relay  | busy — every live slot is taken                                               |
+ *  | 4000 | client | `send_buffer` — the socket's own outbound buffer passed the ceiling (K3, §3.1) |
+ *  | 4001 | client | `client_backlog` — dictation's pacer queue passed `buffered_ceiling_ms` (K2)    |
+ *
+ *  (1005/1006 are the browser's own: no status / abnormal — a link that died without a close frame.) */
 export const CLOSE_BACKPRESSURE = 4000;
+/** …the dictation leg thrown away over its own PACER backlog (K2) — before `ready` (a handshake that is
+ *  not coming) or after it (stale speech). Distinct from 4000, which is the SOCKET's buffer. */
+export const CLOSE_CLIENT_BACKLOG = 4001;
 
 /** The relay's URL on this origin. `wss:` under Tailscale Serve, `ws:` on plain-HTTP dev — derived from
  *  the page rather than configured, because the route is same-origin by construction (the server's
@@ -110,8 +124,10 @@ export interface LiveSocket {
   flush: () => boolean;
   /** The clean end. DISCARDS audio the ear has not endpointed yet. Same boolean truth as `flush`. */
   stop: () => boolean;
-  /** Drop the leg without a `stop` — teardown and the backpressure bail. */
-  close: () => void;
+  /** Drop the leg without a `stop` — teardown and the backpressure bail. A caller that is throwing the
+   *  leg away for a reason of its OWN names it with one of the private-range codes above (the pacer's
+   *  backlog bail, `CLOSE_CLIENT_BACKLOG`); bare, it is the browser's ordinary close. */
+  close: (code?: number, reason?: string) => void;
   /** Downlink frames this build does not know, counted rather than thrown (forward compatibility with
    *  a proof: the arm asserts the socket keeps working past one). */
   unknown: () => number;
@@ -124,6 +140,8 @@ export interface LiveSocketOpts {
   /** `/voice/status.live_call.buffered_ceiling_ms` — the outbound buffer ceiling, in ms of audio. */
   ceilingMs: number;
   onFrame: (frame: LiveDown) => void;
+  /** Once per leg. The close event's code — or THIS client's own (4000/4001) when it closed the leg with
+   *  one and the event could only say 1005/1006 (the link never completed the closing handshake). */
   onClose: (code: number, reason: string) => void;
   /** THE LEG'S FEATURE (S11) — sent in `start` as `mode` ONLY when present. Dictation passes
    *  `"dictation"`, and the relay skips the D80 ④ gap cut on that leg; a call passes nothing (the relay's
@@ -159,6 +177,17 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
   // is listening to yet. So the door drops it, per leg (a fresh leg latches afresh), exactly like the
   // reconnect gap it already dropped; the callers' pacers keep their own clocks either way.
   let ready = false;
+  // THE CLOSE THIS CLIENT CHOSE (Phase 26 S1, T3/T4), when it chose one: the backpressure bail, or a
+  // caller's own coded `close`. `onClose` reports IT in place of a NON-authoritative event code (1005
+  // no status · 1006 abnormal), because a leg thrown away over a backed-up link is exactly the leg whose
+  // closing handshake cannot complete — the server's echo never arrives and the browser says 1006, which
+  // would erase the one fact the readers want. A code the SERVER actually sent (1000/1008/1011/1013 — it
+  // closed first, racing ours) is the truth and always wins.
+  let chosen: { code: number; reason: string } | null = null;
+  const closeWith = (code: number, reason: string): void => {
+    chosen = { code, reason };
+    ws.close(code, reason);
+  };
 
   // …and it REPORTS the readyState it checked (see `LiveSocket.flush`): "the socket was not OPEN" is a
   // fact only this line has, and a caller that has to choreograph around an unsent control cannot
@@ -195,7 +224,8 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
   ws.onclose = (e: CloseEvent) => {
     if (done) return;
     done = true;
-    opts.onClose(e.code, e.reason);
+    const mine = chosen !== null && (e.code === 1005 || e.code === 1006) ? chosen : null;
+    opts.onClose(mine?.code ?? e.code, mine?.reason ?? e.reason);
   };
   ws.onerror = () => {
     /* an error is always followed by a close — the close is the one report (no double-reporting). */
@@ -210,15 +240,17 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
       // utterance and says so. Checked BEFORE the send, against what the buffer would hold AFTER it —
       // the backlog alone would admit one frame past the ceiling, which is the thing the ceiling is.
       if (ws.bufferedAmount + buf.byteLength > ceiling) {
-        ws.close(CLOSE_BACKPRESSURE, "uplink backpressure");
+        closeWith(CLOSE_BACKPRESSURE, "uplink backpressure");
         return;
       }
       ws.send(buf);
     },
     flush: () => control("flush"),
     stop: () => control("stop"),
-    close: () => {
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+    close: (code, reason) => {
+      if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) return;
+      if (code === undefined) ws.close();
+      else closeWith(code, reason ?? "");
     },
     unknown: () => unknown,
   };

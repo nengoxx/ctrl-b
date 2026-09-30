@@ -205,7 +205,7 @@ describe("useDictation · the gesture verbs (S0.5)", () => {
         armed = v;
       });
     });
-    act(() => result.current.stop()); // released mid-acquisition
+    act(() => result.current.stop("user")); // released mid-acquisition
     await act(async () => {
       open(); // …and only now does the browser hand over the stream
       await Promise.resolve();
@@ -268,7 +268,7 @@ describe("useDictation · the gesture verbs (S0.5)", () => {
         armed = v;
       });
     });
-    act(() => result.current.stop()); // released inside the window → the attempt is aborted
+    act(() => result.current.stop("user")); // released inside the window → the attempt is aborted
     await act(async () => {
       deny(); // …and only now is the prompt answered, too late to matter
       await Promise.resolve();
@@ -817,26 +817,39 @@ describe("useDictation · S11 the release post-roll + the go seam (whole-clip pa
     const { result } = renderHook(() => useDictation(tailOpts()));
     await startRecording(result);
     await tick(700); // a 700 ms blip…
-    act(() => result.current.stop(true));
+    act(() => result.current.stop("user"));
     await tick(400); // …plus the 400 ms tail is 1100 ms of recording, but the HOLD was 700
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(pushToast).toHaveBeenCalledWith(TOO_SHORT_MSG, "info");
   });
 
-  it("every NON-user stop is immediate — the recorder stops on the call", async () => {
-    const { result } = renderHook(() => useDictation(tailOpts()));
-    await startRecording(result);
-    await tick(1200);
-    act(() => result.current.stop()); // the cap / auto-stop / a death / unmount all call it bare
-    expect(FakeMediaRecorder.last!.state).toBe("inactive");
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-  });
+  // Phase 26 S1 (T4): the settle is DERIVED from the reason — `user` is the only one that settles.
+  it.each([
+    "idle",
+    "max_duration",
+    "page_hidden",
+    "socket_lost",
+    "client_backlog",
+    "send_buffer",
+    "call_handover",
+    "unmount",
+  ] as const)(
+    "every NON-user stop is immediate — `%s` stops the recorder on the call",
+    async (reason) => {
+      const { result } = renderHook(() => useDictation(tailOpts()));
+      await startRecording(result);
+      await tick(1200);
+      act(() => result.current.stop(reason));
+      expect(FakeMediaRecorder.last!.state).toBe("inactive");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("a CANCEL inside the tail discards at once — no POST, and the timer is gone", async () => {
     const { result } = renderHook(() => useDictation(tailOpts()));
     await startRecording(result);
     await tick(1200);
-    act(() => result.current.stop(true));
+    act(() => result.current.stop("user"));
     act(() => result.current.cancel());
     expect(FakeMediaRecorder.last!.state).toBe("inactive");
     await tick(2000);
@@ -848,7 +861,7 @@ describe("useDictation · S11 the release post-roll + the go seam (whole-clip pa
     const { result } = renderHook(() => useDictation(tailOpts()));
     await startRecording(result);
     await tick(1200);
-    act(() => result.current.stop(true));
+    act(() => result.current.stop("user"));
     let freed = false;
     await act(async () => {
       await releaseMic().then(() => {
@@ -863,7 +876,7 @@ describe("useDictation · S11 the release post-roll + the go seam (whole-clip pa
     const { result } = renderHook(() => useDictation(tailOpts()));
     await startRecording(result);
     await tick(1200);
-    act(() => result.current.stop(true));
+    act(() => result.current.stop("user"));
     let armed: boolean | undefined;
     await act(async () => {
       armed = await result.current.start();
@@ -884,7 +897,7 @@ describe("useDictation · S11 the release post-roll + the go seam (whole-clip pa
     await tick(1200);
     rerender(tailOpts(800));
     expect(FakeMediaRecorder.last!.state).toBe("recording");
-    act(() => result.current.stop(true));
+    act(() => result.current.stop("user"));
     await tick(799);
     expect(FakeMediaRecorder.last!.state).toBe("recording");
     await tick(1);
@@ -895,7 +908,7 @@ describe("useDictation · S11 the release post-roll + the go seam (whole-clip pa
     const { result } = renderHook(() => useDictation(tailOpts(0)));
     await startRecording(result);
     await tick(1200);
-    act(() => result.current.stop(true));
+    act(() => result.current.stop("user"));
     expect(FakeMediaRecorder.last!.state).toBe("inactive");
   });
 
@@ -907,7 +920,7 @@ describe("useDictation · S11 the release post-roll + the go seam (whole-clip pa
     micLevel = 0.06;
     await tick(1200);
     expect(meter).toHaveBeenCalled();
-    act(() => result.current.stop(true));
+    act(() => result.current.stop("user"));
     meter.mockClear();
     await tick(300);
     expect(meter).not.toHaveBeenCalled();
@@ -939,7 +952,7 @@ describe("useDictation · S11 the release post-roll + the go seam (whole-clip pa
     const { result } = renderHook(() => useDictation(tailOpts()));
     result.current.onLive.current = onLive;
     await startRecording(result);
-    act(() => result.current.stop(true)); // released before the first poll
+    act(() => result.current.stop("user")); // released before the first poll
     await tick(500);
     expect(onLive).not.toHaveBeenCalled();
   });
@@ -974,7 +987,7 @@ describe("useDictation · S11 the non-user stops CUT a running tail (whole-clip 
   async function intoTail(result: { current: ReturnType<typeof useDictation> }) {
     await startRecording(result);
     await tick(1200);
-    act(() => result.current.stop(true));
+    act(() => result.current.stop("user"));
     expect(FakeMediaRecorder.last!.state).toBe("recording"); // settling
   }
 
@@ -1025,11 +1038,11 @@ describe("useDictation · S11 the non-user stops CUT a running tail (whole-clip 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("a DOUBLE `stop(true)` is one tail and one upload", async () => {
+  it('a DOUBLE `stop("user")` is one tail and one upload', async () => {
     const { result } = renderHook(() => useDictation(withTail()));
     await intoTail(result);
     await tick(300);
-    act(() => result.current.stop(true)); // a second release (a stray tap) must not restart the tail
+    act(() => result.current.stop("user")); // a second release (a stray tap) must not restart the tail
     await tick(100); // the FIRST tail's deadline
     await expectCutOnce(result);
   });

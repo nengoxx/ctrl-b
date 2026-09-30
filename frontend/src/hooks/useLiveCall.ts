@@ -294,6 +294,20 @@ const TRAIL_SAMPLE_FIELDS = [
   "bargeArmed",
 ] as const satisfies readonly (keyof CallDebug)[];
 
+/** THE CALL PACER'S DROPS, per leg (Phase 26 S1, ASR_PLAN §5 T6 — R95 §6). The bounded enqueue loses the
+ *  OLDEST audio past `call_backlog_ms`, and the strained note says so once per burst; this says HOW MUCH
+ *  and WHEN, for the trail — how many frames the leg lost, how many bursts they came in, and the ones
+ *  still unreported, which ride the next `speech_started` as ONE `uplink {drops, ms_since_drop}` line (a
+ *  turn that starts right after a loss may be missing its head). The leg's totals are written where the
+ *  leg ends (`endUplinkLeg`). Counted always — a few integers — and written only by a debug trail. */
+interface UplinkDrops {
+  total: number;
+  bursts: number;
+  /** Frames dropped since the last `uplink` line, and the `performance.now()` of the latest of them. */
+  since: number;
+  lastAt: number;
+}
+
 /** THE UPLINK'S SILENCE (D76 §B.1): the ONE zeroed buffer a held frame is sent as, reallocated only when
  *  the frame size changes (a capture's size is fixed by its rate and `frame_ms`, so in practice once per
  *  capture). Sharing it across queued entries is safe because nothing writes to it and the wire COPIES:
@@ -2022,6 +2036,9 @@ export function useLiveCall(): CallView {
    *  mirrored client-side: a drop RAISES the strained note once and an enqueue that drops nothing lowers
    *  the latch, so a struggling link re-arms the note instead of re-rendering the overlay per frame. */
   const overflowed = useRef(false);
+  /** …and what those drops came to, for the trail (T6 — see `UplinkDrops`). Per leg, like the pacer:
+   *  made with it in `openLeg`, closed out where the leg ends (`endUplinkLeg`). */
+  const uplinkDrops = useRef<UplinkDrops | null>(null);
   /** How many more FRAMES the DROP CUE is audible for — frames inside the window ride up as silence, so
    *  the tone the owner hears cannot be heard by the EAR on a route without a canceller (the S0b code
    *  round: a cue that reaches the relay is a new quiet final, which drops, which cues…). Counted in
@@ -2065,15 +2082,25 @@ export function useLiveCall(): CallView {
    *  machine says no segment is open (a stop, a mute, a lost or fresh leg, a route cycle, a terminal). */
   const noiseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  /** THE LEG'S DROP TOTALS (T6), written once where the leg ends — a fresh leg (`openLeg`, BEFORE the
+   *  leg number moves, so the line is stamped with the leg it describes), a route cycle, the trail's own
+   *  end — and then forgotten. Idempotent: a second caller finds nothing. */
+  const endUplinkLeg = useCallback((): void => {
+    const d = uplinkDrops.current;
+    uplinkDrops.current = null;
+    if (d) trail.current?.push("uplink", { leg_drops: d.total, leg_bursts: d.bursts });
+  }, []);
+
   /** The trail's end — its last flush rides `keepalive`, then it stops. Idempotent: the terminal edge
    *  and the unmount both call it, and whichever comes second finds nothing. */
   const endTrail = useCallback((): void => {
+    endUplinkLeg(); // the live leg's totals, before the last flush
     clearInterval(trailSampler.current);
     trailSampler.current = undefined;
     trail.current?.flush("end");
     trail.current?.dispose();
     trail.current = null;
-  }, []);
+  }, [endUplinkLeg]);
 
   /** THE READBACK RECORD (D74 S7), built in ONE place: the debug block renders it every
    *  `DEBUG_TICK_MS` and the call trail samples its moving fields every `TRAIL_SAMPLE_MS` (D77) — one
@@ -2126,6 +2153,7 @@ export function useLiveCall(): CallView {
     // The pacer dies with the leg it metered: whatever it still held is audio for a session that is over.
     pacer.current = null;
     overflowed.current = false;
+    endUplinkLeg(); // …and its drop totals (already written by the trail's own end, on a terminal)
     // What this call learned about the owner's voice outlives it, on this device (D76 §C.3).
     persistVoice(gate.current);
     capture.current?.stop();
@@ -2141,7 +2169,7 @@ export function useLiveCall(): CallView {
     const lock = wakeLock.current;
     wakeLock.current = null;
     void lock?.release().catch(() => {});
-  }, []);
+  }, [endUplinkLeg]);
 
   /** `openLeg` needs `send` (its frames drive the machine) and `send` needs `openLeg` (a reconnect
    *  effect opens one), so one of the two rides a ref. Assigned during render — the latch-ref idiom
@@ -2302,6 +2330,7 @@ export function useLiveCall(): CallView {
             socket.current = null;
             pacer.current = null;
             overflowed.current = false;
+            endUplinkLeg(); // the released leg's drop totals (T6), stamped with its own leg
             // The pre-play tap closes over the capture it is about to release (S3 confirm F2), so it
             // goes with it; the fresh capture registers its own if its track needs one.
             setCallPrePlay(null);
@@ -2378,7 +2407,7 @@ export function useLiveCall(): CallView {
       // `dismiss()` has dropped the held start; a terminal's teardown has taken the gate).
       pokeCallMouth();
     },
-    [teardown, endTrail],
+    [teardown, endTrail, endUplinkLeg],
   );
 
   /** THE TEXT BACKSTOP'S MEASUREMENT (D80 ②) for a final landing INSIDE the post-reply window (the
@@ -2413,6 +2442,8 @@ export function useLiveCall(): CallView {
     // leg takes a number; only the newest one may speak. The CALL generation cannot do this job: it is
     // bumped by terminals only, deliberately, so that an HTTP send's outcome still lands across a
     // reconnect (the socket dropping says nothing about whether the chat POST was taken).
+    // The PREVIOUS leg's drop totals (T6) go first, while the stamp still reads its number.
+    endUplinkLeg();
     const leg = ++legSeq.current;
     const mine = (): boolean => legSeq.current === leg;
     // THIS TAB IS IN A CALL (S6 ⑦), written at the leg rather than at the machine: what the marker
@@ -2424,6 +2455,7 @@ export function useLiveCall(): CallView {
     // banked budget was earned against a socket that is gone.
     pacer.current = newPacer();
     overflowed.current = false;
+    uplinkDrops.current = { total: 0, bursts: 0, since: 0, lastAt: 0 };
     socket.current?.close();
     socket.current = openLiveSocket({
       url: liveSocketUrl(),
@@ -2440,6 +2472,16 @@ export function useLiveCall(): CallView {
             else send({ type: "serverEnded", gen });
             break;
           case "speech_started": {
+            // T6 — the pacer's unreported drops ride THIS turn's start as one line: a turn that begins
+            // right after the queue lost audio may be missing its head, and the gap says how likely.
+            const d = uplinkDrops.current;
+            if (d !== null && d.since > 0) {
+              trail.current?.push("uplink", {
+                drops: d.since,
+                ms_since_drop: Math.round(performance.now() - d.lastAt),
+              });
+              d.since = 0;
+            }
             const was = ref.current.userSpeechActive;
             send({ type: "speechStart", itemId: frame.item_id, gen });
             // THE NOISE VERDICT (the owner's 2026-09-26 ruling): a segment the machine ACCEPTED is judged
@@ -2508,7 +2550,7 @@ export function useLiveCall(): CallView {
         if (mine()) send({ type: "socketLost", gen });
       },
     });
-  }, [knobs, send, echoOf]);
+  }, [knobs, send, echoOf, endUplinkLeg]);
 
   openLegRef.current = openLeg;
 
@@ -2671,7 +2713,16 @@ export function useLiveCall(): CallView {
               const p = pacer.current;
               if (p) {
                 const up = uplinked ? frame.buf : silenceLike(frame.buf);
-                if (enqueueBounded(p, up, knobs.frame_ms, knobs.call_backlog_ms)) {
+                const dropped = enqueueBounded(p, up, knobs.frame_ms, knobs.call_backlog_ms);
+                if (dropped > 0) {
+                  // …counted for the trail (T6): how many, and when the last one went.
+                  const d = uplinkDrops.current;
+                  if (d !== null) {
+                    d.total += dropped;
+                    d.since += dropped;
+                    d.lastAt = performance.now();
+                    if (!overflowed.current) d.bursts += 1;
+                  }
                   // The client's own drop presents the RELAY'S signal, locally raised: one loss chain, one
                   // note, one hold that times out the same way (`degraded` → `degradeHold`). Once per burst —
                   // see the `overflowed` latch.
@@ -2869,6 +2920,13 @@ export function useLiveCall(): CallView {
               label: cap.readback.label,
               ec: cap.readback.echoCancellation,
               ecCaps: cap.readback.echoCapabilities,
+              // T5 (Phase 26 S1) — the rest of what the track granted, raw, and the two rates: the
+              // track's own and the context's the worklet runs at (what `start.sample_rate` declares).
+              ns: cap.readback.noiseSuppression,
+              agc: cap.readback.autoGainControl,
+              channels: cap.readback.channelCount,
+              trackRate: cap.readback.sampleRate,
+              ctxRate: cap.context.sampleRate,
               fellBack: cap.fellBack,
               // D80's W6 (R91 §1, §6 ③) — what the platform REPORTS about this context's output path, for
               // COMPARISON ONLY: Android's Bluetooth drivers discard delay reports ≥ 1 s, so on the car
@@ -2947,6 +3005,7 @@ export function useLiveCall(): CallView {
       callId.current ??= crypto.randomUUID();
       trail.current = createCallTrail({
         callId: callId.current,
+        mode: "call", // the trail route files it at the root (Phase 26 S1)
         post: postTrail,
         stamp: () => ({ leg: legSeq.current, gen: ref.current.gen }),
       });

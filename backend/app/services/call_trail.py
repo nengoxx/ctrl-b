@@ -6,13 +6,17 @@ only the wire — so until this module there was no record of a call anywhere, a
 phone sessions from memory. The trail is written by BOTH halves into one file per call, keyed by the
 `call_id` the client mints: the relay's lines (`src: "relay"`, `services/voice_live.py`) and the
 browser's (`src: "client"`, through `POST /api/voice/live/trail`). The main seat reads
-`$CTRLB_HOME/calls/<call_id>.jsonl` after the fact.
+`$CTRLB_HOME/calls/<call_id>.jsonl` after the fact — a CALL's trail; a streaming DICTATION's lives one
+directory down, `$CTRLB_HOME/calls/dictation/<call_id>.jsonl` (Phase 26 S1, ISS-41).
 
 **Debug data, and shaped like it.** Gated by `voice.live.debug` (off by default — the same knob that
 turns the on-screen readout on); no fsync, because a lost tail on a power cut is a lost diagnostic,
 not lost data; and a write failure (disk full, a read-only mount) is logged ONCE and swallowed —
 a trail must never end a call. Retention is by count (`voice.live.trail_keep`), pruned when a NEW
-call's first line lands, so the directory cannot grow without bound however many calls are made.
+call's first line lands, so the directory cannot grow without bound however many calls are made — and
+PER MODE DIRECTORY (Phase 26 S1, ISS-41): every debug dictation writes a trail of its own, so under one
+shared count a dictation-heavy sitting pruned the call trails it was meant to sit beside. Each mode's
+directory keeps its own newest `trail_keep`, and neither can evict the other's.
 
 **The filename is the path-traversal guard.** `call_id` comes off the wire (the relay's `start`
 control, the trail route's body), so it is validated against ONE canonical-UUID pattern before it
@@ -30,7 +34,7 @@ import logging
 import os
 import re
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -53,6 +57,13 @@ CALL_ID_RE = re.compile(CALL_ID_PATTERN)
 TRAIL_MAX_BODY_BYTES = 64 * 1024
 TRAIL_MAX_ENTRY_BYTES = 2048
 TRAIL_MAX_ENTRIES = 200
+
+#: What a live leg serves — `start.mode` on the relay's wire (S11) and `mode` on the trail route's body
+#: (Phase 26 S1). ONE vocabulary, owned HERE because the store turns it into a directory: `call` is the
+#: root (every pre-S1 trail stays where it is), any other mode is the subdirectory of that name. The
+#: relay and the route import it; neither re-spells it.
+LiveMode = Literal["call", "dictation"]
+LIVE_MODES: tuple[LiveMode, ...] = get_args(LiveMode)
 
 
 def valid_call_id(value: object) -> bool:
@@ -79,25 +90,41 @@ class CallTrail:
     def root(self) -> Path:
         return self._root
 
-    def append(self, call_id: str, lines: Iterable[Mapping[str, Any]], *, keep: int) -> None:
-        """Append `lines` to `<root>/<call_id>.jsonl`, one compact JSON object per line.
+    def append(
+        self,
+        call_id: str,
+        lines: Iterable[Mapping[str, Any]],
+        *,
+        keep: int,
+        mode: LiveMode = "call",
+    ) -> None:
+        """Append `lines` to `<root>/<call_id>.jsonl` (a call) or `<root>/<mode>/<call_id>.jsonl` (any
+        other mode), one compact JSON object per line.
 
-        Raises `ValueError` for a malformed `call_id` (a caller bug or a hostile id — never a path).
-        Every I/O failure is swallowed after the one warning. When this append CREATED the file, the
-        directory is pruned to the newest `keep` trails by mtime — a second append to the same call
-        never prunes, so a long call cannot delete its own history mid-flight.
+        Raises `ValueError` for a malformed `call_id` or a `mode` outside `LIVE_MODES` (a caller bug or
+        a hostile value — never a path). Every I/O failure is swallowed after the one warning. When this
+        append CREATED the file, ITS directory is pruned to the newest `keep` trails by mtime — a second
+        append to the same call never prunes, so a long call cannot delete its own history mid-flight,
+        and a dictation's prune never reaches a call's trail (or the reverse).
         """
         if not valid_call_id(call_id):
             raise ValueError("call_id must be a canonical lowercase UUID")
+        if mode not in LIVE_MODES:
+            raise ValueError(f"mode must be one of {', '.join(LIVE_MODES)}")
         payload = "".join(
             json.dumps(line, separators=(",", ":"), ensure_ascii=False) + "\n" for line in lines
         ).encode("utf-8")
         if not payload:
             return
-        path = self._root / f"{call_id}.jsonl"
+        directory = self._root if mode == "call" else self._root / mode
+        path = directory / f"{call_id}.jsonl"
         with self._lock:
             try:
+                # Each level made owner-only in its own step: `mkdir(parents=True)` applies `mode` to the
+                # LEAF alone, so a dictation arriving first would otherwise leave the root at the umask.
                 self._root.mkdir(mode=0o700, parents=True, exist_ok=True)
+                if directory != self._root:
+                    directory.mkdir(mode=0o700, exist_ok=True)
                 created = not path.exists()
                 # 0o600: the lines carry the owner's transcripts. O_APPEND, one batch per open; the
                 # buffered writer loops a short `write(2)` to completion or raises (the S3 code round,
@@ -106,7 +133,7 @@ class CallTrail:
                 with os.fdopen(fd, "ab") as f:
                     f.write(payload)
                 if created:
-                    self._prune(keep, current=path)
+                    self._prune(directory, keep, current=path)
             except OSError:
                 if not self._warned:
                     self._warned = True
@@ -116,11 +143,13 @@ class CallTrail:
                         exc_info=True,
                     )
 
-    def _prune(self, keep: int, *, current: Path) -> None:
-        """Keep `current` plus the newest `keep - 1` OTHER trails by mtime; unlink the rest (best-effort,
-        per file). `current` is never a candidate (the S3 code round, F5): on a coarse-mtime filesystem
-        the file just created can tie with an older one, and a tie must not delete the live call."""
-        others = sorted((p for p in self._root.glob("*.jsonl") if p != current), key=_mtime, reverse=True)
+    def _prune(self, directory: Path, keep: int, *, current: Path) -> None:
+        """Keep `current` plus the newest `keep - 1` OTHER trails in `directory` by mtime; unlink the
+        rest (best-effort, per file). `current` is never a candidate (the S3 code round, F5): on a
+        coarse-mtime filesystem the file just created can tie with an older one, and a tie must not
+        delete the live call. The glob is NON-recursive on purpose — the call root holds the mode
+        subdirectories, and their trails are theirs to keep (Phase 26 S1)."""
+        others = sorted((p for p in directory.glob("*.jsonl") if p != current), key=_mtime, reverse=True)
         for stale in others[max(keep - 1, 0) :]:
             try:
                 stale.unlink()

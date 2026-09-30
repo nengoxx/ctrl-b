@@ -7,6 +7,7 @@ import {
   TRAIL_INTERVAL_MS,
   TRAIL_MAX_ENTRIES,
   TRAIL_MAX_ENTRY_BYTES,
+  type TrailMode,
 } from "../../src/lib/callTrail";
 
 // lib/callTrail — THE CALL TRAIL's browser buffer (D77), and `trailSig`, the one function that turns a
@@ -16,7 +17,7 @@ import {
 // failing POST is dropped and never reaches the call.
 
 interface Posted {
-  body: { call_id: string; entries: Record<string, unknown>[] };
+  body: { call_id: string; mode: string; entries: Record<string, unknown>[] };
   keepalive: boolean;
 }
 
@@ -24,9 +25,13 @@ let posted: Posted[] = [];
 let stamp = { leg: 1, gen: 0 };
 let clock = 1000;
 
-function trail(post?: (body: unknown, keepalive: boolean) => Promise<void>) {
+function trail(
+  post?: (body: unknown, keepalive: boolean) => Promise<void>,
+  mode: TrailMode = "call",
+) {
   return createCallTrail({
     callId: "call-1",
+    mode,
     post:
       post ??
       ((body, keepalive) => {
@@ -59,11 +64,24 @@ describe("callTrail — the buffer", () => {
     expect(posted).toHaveLength(1);
     expect(posted[0].body).toEqual({
       call_id: "call-1",
+      mode: "call",
       entries: [
         { t: 1000, leg: 1, gen: 0, ev: "sig", type: "ready" },
         { t: 2000, leg: 2, gen: 1, ev: "sample", level: -50 },
       ],
     });
+  });
+
+  it("every batch's envelope names the trail's MODE — the server files it by it (Phase 26 S1)", () => {
+    const t = trail(undefined, "dictation");
+    t.push("rec", { rate: 48000 });
+    t.flush("interval");
+    t.push("end", { finals: 1 });
+    t.flush("end");
+    expect(posted.map((p) => [p.body.call_id, p.body.mode])).toEqual([
+      ["call-1", "dictation"],
+      ["call-1", "dictation"],
+    ]);
   });
 
   it("flushes on COUNT at 50 entries", () => {
@@ -144,6 +162,7 @@ describe("callTrail — the buffer", () => {
   it("SPLITS a flush past 200 entries into several POSTs", () => {
     const t = createCallTrail({
       callId: "call-1",
+      mode: "call",
       post: (body, keepalive) => {
         posted.push({ body: body as Posted["body"], keepalive });
         return Promise.resolve();

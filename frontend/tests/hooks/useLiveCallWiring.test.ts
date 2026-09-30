@@ -92,7 +92,13 @@ const h = vi.hoisted(() => ({
   mic: null as ((f: { buf: ArrayBuffer; rms: number; uplinked?: boolean }) => void) | null,
   /** The capture's own AudioContext, as the drop cue sees it (D76 §C.5) — an identity token — and the
    *  two latency numbers the platform reports for it (D80's W6: logged for comparison, never used). */
-  ctx: { tag: "capture-context", outputLatency: 0.28, baseLatency: 0.01, currentTime: 5 },
+  ctx: {
+    tag: "capture-context",
+    outputLatency: 0.28,
+    baseLatency: 0.01,
+    currentTime: 5,
+    sampleRate: 48000, // the context the worklet runs at (Phase 26 S1 T5 — the trail's `ctxRate`)
+  },
   /** THE CONNECT CHIRP (D80 ⑦), as the wiring drives it: every `playChirp` (by context and `when`), and
    *  the matchers it made; a matcher concludes `chirpVerdict` on its `chirpAfter`-th frame. */
   chirpPlay: vi.fn((_ctx: unknown, _when: number) => true),
@@ -282,6 +288,12 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
         echoCapabilities: h.fennec ? [true] : [true, "all"],
         label: "Speakerphone",
         deviceId: h.voice.data.live_call.input_device,
+        // T5 (Phase 26 S1) — the rest of the grant, raw; a track rate that is NOT the context's, so a
+        // case can tell the trail's two rates apart
+        noiseSuppression: true,
+        autoGainControl: false,
+        channelCount: 1,
+        sampleRate: 16000,
       },
       fellBack: h.fellBack,
       setMuted: h.setMuted,
@@ -1594,6 +1606,50 @@ describe("useLiveCall — THE UPLINK PACER (A-F2, evidence docs/research/R71)", 
       });
       await burst(100, 1);
       expect(h.audio).toEqual([100]); // …and not one frame of the dead leg's backlog
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("T6 (Phase 26 S1) · the drops ride the next `speech_started` as ONE `uplink` line; the leg's totals close it", async () => {
+    // R95 §6: a turn that starts right after the pacer lost audio may be missing its head — the trail
+    // says how many frames went and how long before the turn. Debug-gated by construction (the trail).
+    h.voice.data.live_call.debug = true;
+    vi.useFakeTimers();
+    try {
+      const uplinks = (): Record<string, unknown>[] =>
+        h.posts.flatMap((p) => p.body.entries).filter((l) => l.ev === "uplink");
+      await call();
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      await burst(1, 125); // ships the 25-frame cap, queues 50 (the 1000 ms bound), drops the other 50
+      await act(async () => {
+        vi.advanceTimersByTime(300);
+      });
+      await act(async () => {
+        h.frame?.({ type: "speech_started" });
+        h.frame?.({ type: "speech_stopped" });
+        h.frame?.({ type: "speech_started" }); // no new drops since: no second line
+        vi.advanceTimersByTime(2000); // the trail's interval flush
+      });
+      expect(uplinks()).toEqual([
+        expect.objectContaining({ ev: "uplink", leg: 1, drops: 50, ms_since_drop: 300 }),
+      ]);
+      // The link drops and the ladder redials: the OLD leg's totals land, stamped with ITS number…
+      await act(async () => {
+        h.close?.();
+        vi.advanceTimersByTime(400);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(2000);
+      });
+      expect(uplinks().at(-1)).toMatchObject({ leg: 1, leg_drops: 50, leg_bursts: 1 });
+      // …and the fresh leg starts from zero, closed out by the trail's own end.
+      cleanup();
+      expect(uplinks().at(-1)).toMatchObject({ leg: 2, leg_drops: 0, leg_bursts: 0 });
+      expect(uplinks()).toHaveLength(3);
     } finally {
       vi.useRealTimers();
     }
@@ -3140,6 +3196,12 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
       label: "Speakerphone",
       ec: "all",
       ecCaps: [true, "all"],
+      // T5 (Phase 26 S1) — the rest of what the track granted, and BOTH rates
+      ns: true,
+      agc: false,
+      channels: 1,
+      trackRate: 16000,
+      ctxRate: 48000,
       fellBack: false,
       // D80's W6 — what the platform REPORTS for this context's output path, beside what the ear measures
       outputLatency: 0.28,
@@ -3233,7 +3295,10 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
     c.view.unmount(); // the terminal — `end` rides keepalive too
     expect(h.posts.length).toBeGreaterThan(before);
     expect(h.posts.at(-1)?.keepalive).toBe(true);
-    expect(h.posts.at(-1)?.body.entries.at(-1)).toMatchObject({ ev: "sig", type: "unmounted" });
+    // the terminal signal, then the live leg's drop totals (Phase 26 S1, T6) — the trail's last word
+    const tail = h.posts.at(-1)?.body.entries.slice(-2);
+    expect(tail?.[0]).toMatchObject({ ev: "sig", type: "unmounted" });
+    expect(tail?.[1]).toMatchObject({ ev: "uplink", leg_drops: 0, leg_bursts: 0 });
     const after = h.posts.length;
     await act(async () => {
       vi.advanceTimersByTime(10_000);

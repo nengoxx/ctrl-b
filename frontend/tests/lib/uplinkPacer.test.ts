@@ -116,15 +116,15 @@ describe("uplinkPacer — the two backlog rules", () => {
     expect(out.sent[0]).toBe(1);
   });
 
-  it("BOUNDED drops the OLDEST past the bound, and says so once per burst (the call's rule)", () => {
+  it("BOUNDED drops the OLDEST past the bound, and says how many (the call's rule)", () => {
     const s = newPacer();
     const boundMs = 200; // = 5 frames at 40 ms
     // Under the bound: nothing is lost and nothing is reported.
-    for (let i = 1; i <= 5; i++) expect(enqueueBounded(s, frame(i), FRAME_MS, boundMs)).toBe(false);
+    for (let i = 1; i <= 5; i++) expect(enqueueBounded(s, frame(i), FRAME_MS, boundMs)).toBe(0);
     expect(s.backlog).toHaveLength(5);
     // The sixth is one frame too many: the queue keeps its depth by losing its HEAD — the stale end,
     // not the phrase end the endpointer needs.
-    expect(enqueueBounded(s, frame(6), FRAME_MS, boundMs)).toBe(true);
+    expect(enqueueBounded(s, frame(6), FRAME_MS, boundMs)).toBe(1);
     expect(s.backlog).toHaveLength(5);
     const out = sink();
     vi.advanceTimersByTime(1000);
@@ -139,7 +139,7 @@ describe("uplinkPacer — the two backlog rules", () => {
     let drops = 0;
     for (let i = 1; i <= 50; i++) {
       vi.advanceTimersByTime(FRAME_MS);
-      if (enqueueBounded(s, frame(i), FRAME_MS, 1000)) drops += 1;
+      drops += enqueueBounded(s, frame(i), FRAME_MS, 1000);
       accrue(s);
       pump(s, FRAME_MS, out.send);
     }
@@ -151,9 +151,22 @@ describe("uplinkPacer — the two backlog rules", () => {
     // Not a configuration we ship (the knob is bounded server-side) — pinned because the drop loop's
     // exit condition is arithmetic on a value that arrives over the wire.
     const s = newPacer();
-    expect(enqueueBounded(s, frame(1), FRAME_MS, 0)).toBe(true);
+    expect(enqueueBounded(s, frame(1), FRAME_MS, 0)).toBe(1);
     expect(s.backlog).toEqual([]);
-    expect(enqueueBounded(s, frame(2), FRAME_MS, -5)).toBe(true);
+    expect(enqueueBounded(s, frame(2), FRAME_MS, -5)).toBe(1);
     expect(s.backlog).toEqual([]);
+  });
+
+  it("the return is the NUMBER dropped, not a flag — every head frame lost is counted (Phase 26 S1, T6)", () => {
+    // One push over a steady bound loses one frame; a tighter bound than the queue already holds loses
+    // the whole excess at once, and the count says so — the call trail's `uplink` line sums these.
+    const s = newPacer();
+    for (let i = 1; i <= 5; i++) enqueueBounded(s, frame(i), FRAME_MS, 200);
+    expect(enqueueBounded(s, frame(6), FRAME_MS, 80)).toBe(4); // 6 queued, room for 2
+    const out = sink();
+    vi.advanceTimersByTime(1000);
+    accrue(s);
+    pump(s, FRAME_MS, out.send);
+    expect(out.sent).toEqual([5, 6]);
   });
 });

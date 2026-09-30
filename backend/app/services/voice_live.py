@@ -79,6 +79,8 @@ import asyncio
 import base64
 import json
 import logging
+import re
+import sys
 import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
@@ -88,7 +90,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 import anyio
 
 from app.core.audio import SPEACHES_WIRE_RATE, Pcm16Resampler, silence
-from app.services.call_trail import valid_call_id
+from app.services.call_trail import LIVE_MODES, LiveMode, valid_call_id
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -133,10 +135,6 @@ FRAME_MS_TOLERANCE = 2.0
 #: other number this relay takes off the wire; a million legs is far past any real call.
 MAX_LEG = 1_000_000
 
-#: `start.mode`'s vocabulary (S11). Absent = `call`, the pre-S11 wire; `dictation` is the streaming mic,
-#: whose legs skip the D80 ④ gap cut.
-LIVE_MODES = ("call", "dictation")
-
 #: How many relay trail lines are buffered before one batch goes to disk (D77). Batched so the relay
 #: never pays a thread hop per downlink frame; `run()`'s `finally` flushes whatever is left.
 TRAIL_BATCH_LINES = 20
@@ -147,6 +145,9 @@ CLOSE_PROTOCOL = 1008
 CLOSE_UPSTREAM = 1011
 CLOSE_BUSY = 1013
 CLOSE_OK = 1000
+
+#: What the leg summary accepts as an upstream error CODE (`last_err`) — identifier-shaped, bounded.
+_ERROR_CODE_RE = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
 
 #: THE GAP CUT's ledger bound (D80 ④): how many VAD segments the relay keeps clocks for while their
 #: transcript is still due. Speaches runs one segment at a time and transcribes each in ~0.3–0.5 s, so
@@ -219,6 +220,61 @@ def _segment_fields(event: dict[str, Any], clock: str | None) -> dict[str, Any]:
         if isinstance(ms, int) and not isinstance(ms, bool):
             fields[clock] = ms
     return fields
+
+
+@dataclass(slots=True)
+class _LegStats:
+    """THE LEG'S SUMMARY (Phase 26 S1, ASR_PLAN §5 T1/T3/T7) — what ONE `log.info` says about every leg
+    end, whatever ended it, so a dead dictation or a dropped call is classified from `journalctl` alone.
+    Accumulated by the session as the leg runs and read ONCE, by `run()`'s `finally` — the one place
+    every path passes (a clean `stop`, every `_fail`, the phone going away — its keepalive death and its
+    own close arrive the same way, as `websocket.disconnect` — and an outer cancellation). The trail's
+    `leg_end` carries the same counters (`counters`), so the journal and the trail agree.
+
+    Counts and codes only, BY CONSTRUCTION: no field can hold a transcript (the journal never sees the
+    owner's words; the trail's `down` lines are where those live)."""
+
+    #: `time.monotonic()` when the relay said `ready`; `None` for a leg that never got there (duration 0).
+    started: float | None = None
+    #: Binary frames past every uplink cap, and the audio they carried (ms at the declared rate).
+    frames: int = 0
+    audio_ms: float = 0.0
+    #: Transcript frames sent down — and how many carried words: an EMPTY final (the gap cut's, or an ear
+    #: that heard nothing) discharges an endpoint, it is not speech.
+    finals: int = 0
+    finals_text: int = 0
+    #: Uplink items the bounded queue EVICTED (T7) — the count beside the once-per-burst `degraded`.
+    drops: int = 0
+    #: How the leg ended: the `_fail` code (or its finer `summary` — `uplink_idle` for the reaper, whose
+    #: wire code is `session_limit`), `stop`, `client_gone`, `cancelled` — or `error` for an exception no
+    #: handler owns (still a leg end, still a line).
+    reason: str | None = None
+    #: The close code the leg ended with (T3): ours from `_close`, or — on `client_gone` — the PEER's, off
+    #: its `websocket.disconnect` (4000/4001 the client's own closes, 1000 clean, 1005/1006 abnormal).
+    close_code: int | None = None
+    #: The last upstream error code the relay forwarded (`_handle_upstream_error`), if any.
+    last_err: str | None = None
+
+    def counters(self) -> dict[str, Any]:
+        """Everything but `reason` — the trail's `leg_end` already names its own."""
+        duration = 0.0 if self.started is None else time.monotonic() - self.started
+        return {
+            "duration_s": round(duration, 1),
+            "frames": self.frames,
+            "audio_ms": round(self.audio_ms),
+            "finals": self.finals,
+            "finals_text": self.finals_text,
+            "drops": self.drops,
+            "close_code": self.close_code,
+            "last_err": self.last_err,
+        }
+
+    def line(self, mode: str) -> str:
+        """The journal line's `key=value` body, `-` for an absent value."""
+        c = self.counters()
+        ending = {"reason": self.reason, "close_code": c.pop("close_code"), "last_err": c.pop("last_err")}
+        fields: dict[str, Any] = {"mode": mode, **c, **ending}
+        return " ".join(f"{k}={'-' if v is None else v}" for k, v in fields.items())
 
 
 # ── admission (the D38 no-await check-and-set, process-wide) ──────────────────────────────────────
@@ -327,7 +383,14 @@ class _UpstreamLost(Exception):
 
 
 class _ClientGone(Exception):
-    """The phone's socket closed. Nothing left to send and nothing to close — teardown only."""
+    """The phone's socket closed. Nothing left to send and nothing to close — teardown only.
+
+    `code` is the PEER's close code off the `websocket.disconnect` message (Phase 26 S1, T3) — `None`
+    when the socket was already gone and there was no message to read it from."""
+
+    def __init__(self, message: str, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class _UplinkIdle(Exception):
@@ -365,7 +428,10 @@ class LiveRelaySession:
         self._call_id: str | None = None
         self._leg: int | None = None
         #: Which feature this leg serves (`start.mode`, S11) — `call` unless the client said otherwise.
-        self._mode = "call"
+        #: Also the trail's DIRECTORY (Phase 26 S1): a dictation's trail lives under `calls/dictation/`.
+        self._mode: LiveMode = "call"
+        #: THE LEG'S SUMMARY (Phase 26 S1, T1) — accumulated as the leg runs, logged once at its end.
+        self._stats = _LegStats()
         self._trail_lines: list[dict[str, Any]] = []
         self._trail_write = asyncio.Lock()
         self._trail_tasks: set[asyncio.Task[None]] = set()
@@ -429,7 +495,12 @@ class LiveRelaySession:
                 await self._dial_upstream()
                 await self._configure_upstream()
                 await self._send_down({"type": "state", "state": "ready"})
+                # The leg's clock starts once `ready` actually went down — a send the gone phone
+                # swallowed never started a leg (its duration stays 0).
+                if not self._client_gone:
+                    self._stats.started = time.monotonic()
                 await self._pump()
+                self._stats.reason = "stop"  # the pump returns only on the client's clean `stop`
                 await self._send_down({"type": "state", "state": "ended"})
                 await self._close(CLOSE_OK, "ended")
         except _ProtocolError as exc:
@@ -443,16 +514,36 @@ class LiveRelaySession:
         except _UplinkIdle as exc:
             # The session_limit CLASS — a clean end the relay chose, not an upstream or wire fault —
             # with its own sentence, so the owner (and the trail) can tell the two apart.
-            await self._fail("session_limit", str(exc), CLOSE_OK, "uplink idle")
-        except _ClientGone:
-            pass  # the phone hung up: nothing to tell it, nothing to close
+            # The leg summary names it apart (`uplink_idle`); the wire code stays `session_limit`.
+            await self._fail("session_limit", str(exc), CLOSE_OK, "uplink idle", summary="uplink_idle")
+        except _ClientGone as exc:
+            # The phone hung up: nothing to tell it, nothing to close — but HOW it hung up is the one
+            # fact the relay has about its end (T3: the client's own 4000/4001, a clean 1000, or a
+            # keepalive death's 1006), so it is kept for the leg's summary.
+            self._stats.reason = "client_gone"
+            self._stats.close_code = exc.code
         finally:
+            # A leg end no handler above owned — an outer cancellation (the server stopping), or an
+            # exception nothing here names — is still a leg end, and still says so (invariant 8).
+            if self._stats.reason is None:
+                self._stats.reason = (
+                    "cancelled" if isinstance(sys.exception(), asyncio.CancelledError) else "error"
+                )
+            # THE LEG-END LINE (Phase 26 S1, T1): ONE per leg, on EVERY path, from this one chokepoint —
+            # and FIRST, before any await, so a second cancellation landing in the teardown below cannot
+            # skip it. Counts and codes only — never the owner's words (`_LegStats`).
+            log.info("live voice: leg end %s", self._stats.line(self._mode))
             await self._close_upstream()
             # The trail's last word (D77). A session that never reached `_close` — the phone hung up,
             # or the task was cancelled — still says how it ended; then the tail goes to disk, shielded
             # so a cancellation cannot eat the lines that explain it.
             if not self._trail_ended:
-                self._note("leg_end", code=None, reason="client gone" if self._client_gone else "aborted")
+                self._note(
+                    "leg_end",
+                    code=None,
+                    reason="client gone" if self._client_gone else "aborted",
+                    **self._stats.counters(),
+                )
             with anyio.CancelScope(shield=True):
                 await self._flush_trail()
                 await asyncio.gather(*self._trail_tasks, return_exceptions=True)
@@ -475,7 +566,7 @@ class LiveRelaySession:
         self._client_rate = rate
         self._resampler = Pcm16Resampler(rate, SPEACHES_WIRE_RATE)
 
-    def _parse_start(self, msg: dict[str, Any]) -> tuple[int, str | None, int | None, str]:
+    def _parse_start(self, msg: dict[str, Any]) -> tuple[int, str | None, int | None, LiveMode]:
         """`(sample_rate, call_id, leg, mode)` — `call_id`/`leg` `None` on a leg that writes no trail,
         `mode` `"call"` when the client sent none."""
         text = msg.get("text")
@@ -742,6 +833,8 @@ class LiveRelaySession:
         # it — a frame too short to produce an output sample is CARRIED as phase, not discarded, so
         # even a byte-count view would say "nothing fed" about audio that is really in flight (F3).
         self._audio_seen = True
+        self._stats.frames += 1
+        self._stats.audio_ms += ms
         assert self._resampler is not None
         try:
             converted = self._resampler.feed(data)
@@ -819,6 +912,7 @@ class LiveRelaySession:
                     # (a missed `task_done`) or return early (an extra one).
                     self._queue.task_done()
                     dropped = True
+                    self._stats.drops += 1  # T7 — the COUNT beside the once-per-burst flag below
                 except asyncio.QueueEmpty:  # pragma: no cover — the consumer drained it meanwhile
                     pass
         if dropped and not self._overflow_flagged:
@@ -909,6 +1003,9 @@ class LiveRelaySession:
             text = event.get("transcript") or ""
             fields = _segment_fields(event, None)
             cut = self._gap_cut(fields.get("item_id"), text)
+            self._stats.finals += 1
+            if cut is None and text.strip():
+                self._stats.finals_text += 1
             if cut is not None:
                 # A sub-silence flap (D80 ④): its words go down as NOTHING, named — the frame is its own
                 # trail line (the one downlink hook below), and the phone disposes of it like any empty
@@ -1022,6 +1119,13 @@ class LiveRelaySession:
             self._pre_roll_ms = 0
             self._note_pre_roll_mismatch()
         self._note("up_error", error=error)
+        # The leg summary's `last_err` (T1): the error's CODE — an identifier, never its message text.
+        # Identifier-shaped only: an upstream is free to put prose in `code`, and the journal line keeps
+        # none — anything else reads `unspecified`.
+        code = error.get("code") or error.get("type")
+        self._stats.last_err = (
+            code if isinstance(code, str) and _ERROR_CODE_RE.fullmatch(code) else "unspecified"
+        )
         log.info("live voice: upstream error — %s", message or error.get("type") or "unspecified")
         await self._send_down(
             {
@@ -1044,7 +1148,11 @@ class LiveRelaySession:
             raise _ClientGone("client socket already closed") from None
         if msg.get("type") == "websocket.disconnect":
             self._client_gone = True
-            raise _ClientGone(f"client disconnected (code {msg.get('code')})")
+            code = msg.get("code")
+            raise _ClientGone(
+                f"client disconnected (code {code})",
+                code if isinstance(code, int) and not isinstance(code, bool) else None,
+            )
         return dict(msg)  # ASGI hands back a MutableMapping; the relay reads a plain dict
 
     async def _recv_upstream(self) -> dict[str, Any]:
@@ -1098,8 +1206,12 @@ class LiveRelaySession:
             except Exception:  # noqa: BLE001 — the socket is gone; the finally path still runs
                 self._client_gone = True
 
-    async def _fail(self, code: str, message: str, close_code: int, reason: str) -> None:
-        """The ONE way a session ends badly: a typed `error` frame, then the matching close."""
+    async def _fail(
+        self, code: str, message: str, close_code: int, reason: str, *, summary: str | None = None
+    ) -> None:
+        """The ONE way a session ends badly: a typed `error` frame, then the matching close. `summary` is
+        the leg-end line's reason when it names the end more finely than the wire code (`uplink_idle`)."""
+        self._stats.reason = summary or code
         log.info("live voice: session ending — %s (%s)", code, message)
         await self._send_down({"type": "error", "code": code, "message": message})
         await self._close(close_code, reason)
@@ -1107,8 +1219,9 @@ class LiveRelaySession:
     async def _close(self, code: int, reason: str) -> None:
         """Close the phone's socket once. `reason` stays short — a WS close reason is capped at 123
         bytes on the wire, so the detail lives in the `error` frame that precedes it."""
+        self._stats.close_code = code
         if not self._trail_ended:
-            self._note("leg_end", code=code, reason=reason)
+            self._note("leg_end", code=code, reason=reason, **self._stats.counters())
         if self._closed or self._client_gone:
             self._closed = True
             return
@@ -1148,7 +1261,9 @@ class LiveRelaySession:
         async with self._trail_write:
             lines, self._trail_lines = self._trail_lines, []
             if lines:
-                await asyncio.to_thread(self._trail.append, self._call_id, lines, keep=self._cfg.trail_keep)
+                await asyncio.to_thread(
+                    self._trail.append, self._call_id, lines, keep=self._cfg.trail_keep, mode=self._mode
+                )
 
     async def _close_upstream(self) -> None:
         """Close the realtime leg — WITHOUT a commit (the invariant). A failure here must not escape:

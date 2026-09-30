@@ -3,7 +3,13 @@ import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 
 import type { LiveCallWire, SttAutoStopWire } from "./useVoiceStatus";
 import { type CallTrail, createCallTrail, postTrail } from "../lib/callTrail";
 import { runComposer } from "../lib/composer";
-import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
+import {
+  CLOSE_BACKPRESSURE,
+  CLOSE_CLIENT_BACKLOG,
+  liveSocketUrl,
+  openLiveSocket,
+  type LiveSocket,
+} from "../lib/liveSocket";
 import { attachPcmUplink, openMicStream, type PcmUplink } from "../lib/pcmCapture";
 import { accrue, DRAIN_PACE, enqueue, pump, type PacerState } from "../lib/uplinkPacer";
 import { appendDraft, clearDraft, getDraft } from "../store/composer";
@@ -100,7 +106,7 @@ import { pushToast } from "../store/toast";
 // Phase 24 / S11 — THE HEAD AND THE TAIL (BUG-001, the owner's car dictation clipping; LIVE_VOICE_PLAN
 // §7 "S11 as-built"). Two losses were this hook's:
 //   · T1 — a USER stop cut the recorder at the release instant, so a release timed with the last
-//     syllable clipped it. `stop(true)` (the gesture's release, the lock's tap, the keyboard's stop)
+//     syllable clipped it. `stop("user")` (the gesture's release, the lock's tap, the keyboard's stop)
 //     now keeps the recorder AND the uplink running `live_call.release_tail_ms` first, painting
 //     `sending` at the release; every other stop (cancel, `yieldMic`, the hidden page, the cap, the
 //     silence auto-stop / idle stop, unmount, a death) stays immediate and cuts a running tail short.
@@ -199,6 +205,43 @@ export function dictationAppends(): number {
   return streamAppends;
 }
 
+/** WHY A RECORDING STOPPED (Phase 26 S1, ASR_PLAN §5 T4 — R94 §7.1.7), threaded into `stop()` by every
+ *  caller and written on the dictation trail's `end` line, so a stopped mic is classified from the trail
+ *  instead of from the owner's memory. One member per SITE, nothing speculative:
+ *    · `user`           — the owner: the gesture's release, the lock's tap, the keyboard's stop. The ONLY
+ *                         reason that SETTLES (runs `release_tail_ms` of post-roll first, S11 T1);
+ *    · `idle`           — silence ran out: the hands-free streaming idle stop, or Tier 0's auto-stop;
+ *    · `max_duration`   — `dictation_max_s`, the hard cap;
+ *    · `page_hidden`    — the page went hidden (the policy's / the streaming leg's hidden-page stop);
+ *    · `socket_lost`    — the leg died with words in the draft (rule ③: the clip would repeat them);
+ *    · `send_buffer`    — …because the SOCKET's own buffer passed the ceiling (close 4000, K3);
+ *    · `client_backlog` — …because the PACER's queue passed `buffered_ceiling_ms` (close 4001, K2);
+ *    · `media_error`    — the MediaRecorder failed (no `stop()` runs there — its `onerror` records it);
+ *    · `call_handover`  — a starting call took the ear (`yieldMic`, D74 S6 ⑧);
+ *    · `unmount`        — the composer went away mid-recording;
+ *    · `cancel`         — the owner discarded it (no `stop()` either — `cancel()` records it). */
+export type StopReason =
+  | "user"
+  | "idle"
+  | "max_duration"
+  | "page_hidden"
+  | "socket_lost"
+  | "client_backlog"
+  | "send_buffer"
+  | "media_error"
+  | "call_handover"
+  | "unmount"
+  | "cancel";
+
+/** The reasons that arrive THROUGH `stop()` — `cancel` and `media_error` never do (`cancel()` and the
+ *  recorder's `onerror` record themselves on the session), so the type refuses them at the door. */
+export type StopCallReason = Exclude<StopReason, "cancel" | "media_error">;
+
+/** The relay's typed error text kept on the `end` line is capped: the trail refuses a whole LINE past
+ *  2 KB (it becomes an `oversize` marker), and the line that explains a stopped mic must not be the
+ *  one lost. The relay's own sentences are far inside it; an upstream error forwarded verbatim may not. */
+const TRAIL_ERROR_CHARS = 500;
+
 /** A finished recording, out of the hook's refs and on its way to a decision: upload it, or drop it
  *  because the phrases already said what it says (rule ③). By VALUE — see `upload`'s `@param clip`. */
 interface Clip {
@@ -257,17 +300,51 @@ interface StreamSession extends PacerState {
   trail: CallTrail | null;
   /** …and whether the uplink has delivered its first frame yet (the trail's `uplink` line, once). */
   sawFrame: boolean;
+  /** WHY THE RECORDING STOPPED (T4) — the FIRST reason given (a later stop cutting a settling tail short
+   *  does not rewrite it); null while it runs, and on a leg that ended without the recording stopping
+   *  (a death with nothing in the draft, a handshake that never came — the clip carries on). */
+  stopReason: StopReason | null;
+  /** The leg's close as `onClose` reported it (or as THIS hook closed it, where the close is its own and
+   *  no event will be heard) — null while it is open. */
+  closeCode: number | null;
+  closeReason: string | null;
+  /** The last typed `error` frame the relay sent (T4 — STOP-7/STOP-8: `upstream_lost`, the
+   *  `session_limit` sentence), kept to the end line. */
+  lastError: { code: string; message: string } | null;
 }
 
-/** End a session's trail, once: its last line, the `keepalive` flush, then nothing more. */
+/** End a session's trail, once: its last line, the `keepalive` flush, then nothing more. The line says
+ *  how the recording ended (T4): the stop reason, the leg's close, and the relay's last typed error. */
 function endTrail(s: StreamSession, data: Record<string, unknown>): void {
   const t = s.trail;
   if (!t) return;
   s.trail = null;
-  t.push("end", data);
+  t.push("end", {
+    ...data,
+    reason: s.stopReason,
+    ...(s.closeCode === null ? {} : { code: s.closeCode, closeReason: s.closeReason }),
+    ...(s.lastError === null ? {} : { lastError: s.lastError }),
+  });
   t.flush("end");
   t.dispose();
 }
+
+/** The stop reason a leg's death carries when words are already in the draft (T4): the client's own
+ *  two closes name themselves; anything else is the link. */
+function deathReason(code: number): StopCallReason {
+  if (code === CLOSE_BACKPRESSURE) return "send_buffer";
+  if (code === CLOSE_CLIENT_BACKLOG) return "client_backlog";
+  return "socket_lost";
+}
+
+/** A leg this hook throws away for a reason of its OWN, named on the wire (T3). */
+interface LegBail {
+  code: number;
+  reason: string;
+}
+
+/** THE PACER'S BACKLOG BAIL (K2) — `buffered_ceiling_ms` passed, before `ready` or after it. */
+const CLIENT_BACKLOG_BAIL: LegBail = { code: CLOSE_CLIENT_BACKLOG, reason: "client backlog" };
 
 /** How long the release's pre-flush drain (N1) parks between pumps. NOT a tunable: the drain's RATE is
  *  `DRAIN_PACE` whatever this is — a shorter tick just spends the same budget in smaller pieces — so the
@@ -482,9 +559,12 @@ export function useDictation({
 
   /** Close ONE streaming leg. NEVER flushes — every caller has either flushed already or decided there
    *  is nothing to wait for. The uplink goes first so no frame can reach a socket that is closing, and
-   *  a release still parked on the tail is woken rather than left to its timeout. */
+   *  a release still parked on the tail is woken rather than left to its timeout.
+   *  @param bail the client's own coded close (T3), when this hook is the reason the leg goes — sent on
+   *  the wire AND kept for the `end` line, since the session is torn down here and no `onClose` for it
+   *  will ever be heard. */
   const closeStream = useCallback(
-    (s: StreamSession): void => {
+    (s: StreamSession, bail?: LegBail): void => {
       if (s.closed) return;
       s.closed = true;
       s.dead = true;
@@ -493,7 +573,11 @@ export function useDictation({
       const tail = s.tail;
       s.tail = null;
       tail?.();
-      s.socket.close();
+      if (bail) {
+        s.closeCode = bail.code;
+        s.closeReason = bail.reason;
+        s.socket.close(bail.code, bail.reason);
+      } else s.socket.close();
       endTrail(s, { finals: s.finals, closed: "dropped" });
       setPending(false);
     },
@@ -504,8 +588,8 @@ export function useDictation({
    *  whole-clip path for the rest of this recording (R70 §8's free degrade). Silent by contract — the
    *  loud version is `degradeStream`, for a leg that never opened at all. */
   const dropStream = useCallback(
-    (s: StreamSession): void => {
-      closeStream(s);
+    (s: StreamSession, bail?: LegBail): void => {
+      closeStream(s, bail);
       if (streamRef.current === s) streamRef.current = null;
     },
     [closeStream],
@@ -515,8 +599,8 @@ export function useDictation({
    *  MISCONFIGURATION (a refused handshake, a busy relay, a worklet that would not install), and a
    *  feature that silently does nothing forever is the one failure mode worth one line of toast. */
   const degradeStream = useCallback(
-    (s: StreamSession): void => {
-      dropStream(s);
+    (s: StreamSession, bail?: LegBail): void => {
+      dropStream(s, bail);
       noteLiveDegrade();
     },
     [dropStream],
@@ -630,20 +714,26 @@ export function useDictation({
     rec.stop(); // fires onstop → cleanup → the release choreography, or the upload
   }, []);
 
-  /** @param settle a USER stop (S11 T1): the recorder and the uplink run `release_tail_ms` more before
-   *  the ordinary stop, so a release timed with the last syllable keeps it. Every other caller passes
-   *  nothing and stops at once — and cuts a settling tail short, since its reason (a call waiting, a
-   *  hidden page, the cap, silence) outranks the post-roll. */
+  /** @param reason WHY (T4 — see `StopReason`), recorded once per recording on the streaming session
+   *  for the trail's `end` line. It also decides the SETTLE (S11 T1): a `user` stop is the only one
+   *  whose recorder and uplink run `release_tail_ms` more before the ordinary stop, so a release timed
+   *  with the last syllable keeps it. Every other reason stops at once — and cuts a settling tail short,
+   *  since it (a call waiting, a hidden page, the cap, silence) outranks the post-roll. */
   const stop = useCallback(
-    (settle = false) => {
+    (reason: StopCallReason) => {
       if (abortArming()) return; // released inside the acquisition window — nothing started (F5)
       const rec = recRef.current;
       if (!rec || rec.state === "inactive") return;
       liveOwedRef.current = false; // no "go" once the owner has let go
+      const settle = reason === "user";
       const tailMs = settle ? releaseTailRef.current : 0;
       if (releasedAtRef.current === 0) {
         releasedAtRef.current = Date.now(); // the floor measures to the FIRST stop, never through a tail
-        streamRef.current?.trail?.push("release", { settle, tail_ms: tailMs });
+        const s = streamRef.current;
+        if (s) {
+          s.stopReason ??= reason; // …and so does the reason: the first one given is why it ended
+          s.trail?.push("release", { settle, tail_ms: tailMs });
+        }
       }
       if (tailMs > 0) {
         if (tailTimerRef.current !== undefined) return; // already settling — one tail per recording
@@ -677,7 +767,12 @@ export function useDictation({
     // append. What already landed STAYS in the draft (rule ⑤) — retracting it could destroy an edit the
     // owner made beside it, and a cancel is about the CLIP, which is what `discardRef` throws away.
     const s = streamRef.current;
-    if (s) dropStream(s);
+    if (s) {
+      // T4 — `cancel` runs no `stop()`, so it names itself here; `=`, not `??=`: a cancel inside a user's
+      // settling tail is the truth of what happened to this recording (it was discarded).
+      s.stopReason = "cancel";
+      dropStream(s);
+    }
     rec.stop();
   }, [abortArming, dropStream]);
 
@@ -717,7 +812,7 @@ export function useDictation({
       freeRef.current = { promise, resolve };
     }
     const pending = freeRef.current;
-    stop();
+    stop("call_handover");
     return pending.promise;
   }, [stop]);
 
@@ -936,6 +1031,7 @@ export function useDictation({
       const trail = callId
         ? createCallTrail({
             callId,
+            mode: "dictation", // filed in its own directory, with its own retention (Phase 26 S1)
             post: postTrail, // the call trail's own poster — one route, one spelling
             stamp: () => ({ leg: 1, gen: 0 }),
           })
@@ -993,13 +1089,20 @@ export function useDictation({
             }
             case "error":
               // Every typed error is followed by the relay's own close, which is where the decision
-              // lives — one rule for "the leg is gone", however it went.
+              // lives — one rule for "the leg is gone", however it went. What it SAID is kept for the
+              // trail's `end` line (T4): `upstream_lost` vs the relay's own `session_limit` sentence.
+              s.lastError = {
+                code: frame.code,
+                message: frame.message.slice(0, TRAIL_ERROR_CHARS),
+              };
               break;
           }
         },
-        onClose: () => {
+        onClose: (code, reason) => {
           const s = mine();
           if (!s) return;
+          s.closeCode = code; // T4 — how the leg closed, for the `end` line whichever branch writes it
+          s.closeReason = reason;
           if (s.finishing) {
             // THE RELEASE IS ALREADY RUNNING and the leg died underneath it (S2.5 review F2).
             // Swallowing this — which "the release owns its own close" used to do — parks the
@@ -1040,7 +1143,7 @@ export function useDictation({
           s.uplink = null;
           setPending(false);
           pushToast(LIVE_LOST_MSG, "err");
-          stop();
+          stop(deathReason(code));
         },
       });
       // Assigned SYNCHRONOUSLY, before the socket can deliver anything: every callback above is
@@ -1064,6 +1167,10 @@ export function useDictation({
         idleMs: 0,
         trail,
         sawFrame: false,
+        stopReason: null,
+        closeCode: null,
+        closeReason: null,
+        lastError: null,
       };
       streamRef.current = session;
       if (trail) {
@@ -1106,7 +1213,9 @@ export function useDictation({
             // THE READY BOUND, and it is a ceiling the owner already configured: a handshake that is
             // not coming looks exactly like a backlog nothing drains. Past it the leg holds a second
             // of stale speech and is worse than no leg at all.
-            if (s.backlog.length * frameMs > ceilingMs) degradeStream(s);
+            // …closed with THE CLIENT'S OWN CODE (T3, 4001), so the relay's leg-end line reads
+            // `client_gone close_code=4001` rather than an anonymous close.
+            if (s.backlog.length * frameMs > ceilingMs) degradeStream(s, CLIENT_BACKLOG_BAIL);
             return;
           }
           // …and AFTER it, THE TOKEN BUCKET earns audio-time from the WALL CLOCK and spends it on the
@@ -1122,7 +1231,9 @@ export function useDictation({
           // `ready` is not a handshake that never came, it is stale speech — audio the ear would
           // transcribe into a turn the owner has long since moved past. Throw the leg away and let
           // `onClose`'s own mid-death rules decide what that costs; no new mechanism, no new knob.
-          if (s.backlog.length * frameMs > ceilingMs) s.socket.close();
+          // (4001 on the wire, T3 — `onClose` hears it back and names the stop `client_backlog`.)
+          if (s.backlog.length * frameMs > ceilingMs)
+            s.socket.close(CLIENT_BACKLOG_BAIL.code, CLIENT_BACKLOG_BAIL.reason);
         },
       })
         .then((uplink) => {
@@ -1178,7 +1289,7 @@ export function useDictation({
       // recording, never a listener that comes and goes with a socket.
       if (autoStopOn || streamWanted) {
         const onHidden = () => {
-          if (document.visibilityState === "hidden") stop();
+          if (document.visibilityState === "hidden") stop("page_hidden");
         };
         document.addEventListener("visibilitychange", onHidden);
         hiddenRef.current = onHidden;
@@ -1270,7 +1381,7 @@ export function useDictation({
           //    socket, not the owner's patience.
           live.elapsedMs += SILENCE_POLL_MS;
           if (live.elapsedMs >= maxMs) {
-            stop();
+            stop("max_duration");
             return;
           }
           //    The IDLE stop is HANDS-FREE ONLY. While the finger is down the finger IS the timeout,
@@ -1280,7 +1391,7 @@ export function useDictation({
           if (handsFreeRef.current && silenceFloor > 0 && rms < silenceFloor) {
             live.idleMs += SILENCE_POLL_MS;
             if (live.idleMs >= idleMs) {
-              stop();
+              stop("idle");
               return;
             }
           } else {
@@ -1303,7 +1414,9 @@ export function useDictation({
           return;
         }
         silentMs += SILENCE_POLL_MS;
-        if (silentMs >= silenceMs) stop(); // the SAME path as tapping stop → onstop → upload
+        // `idle` too (T4): Tier 0 is the other silence stop. It only ever fires with no live leg (see
+        // above), so no `end` line reads it today — the reason is still the honest one.
+        if (silentMs >= silenceMs) stop("idle"); // the SAME path as tapping stop → onstop → upload
       }, SILENCE_POLL_MS);
     },
     [
@@ -1481,8 +1594,12 @@ export function useDictation({
         teardownDetector();
         // …and the streaming leg goes with it, unflushed: a recorder that failed has no release to
         // choreograph. Phrases already appended stay in the draft (rule ⑤) — they are the owner's.
+        // No `stop()` runs on this path, so the reason is named here (T4) for the leg's `end` line.
         const live = streamRef.current;
-        if (live) dropStream(live);
+        if (live) {
+          live.stopReason = "media_error"; // `=`: a failure inside a settling tail is what ended it
+          dropStream(live);
+        }
         stream.getTracks().forEach((t) => t.stop());
         earFreed(); // D74 S6 ⑧ — the tracks are gone, so a waiting call may open its own
         startedAtRef.current = 0;
@@ -1522,7 +1639,7 @@ export function useDictation({
    *  `preflight`, which `start` re-runs for the gesture. */
   const toggle = useCallback(() => {
     if (phase === "recording") {
-      stop(true); // a USER stop — it settles through the release post-roll (S11 T1)
+      stop("user"); // a USER stop — it settles through the release post-roll (S11 T1)
       return;
     }
     // `start` runs the pre-flight itself; running it HERE too would double the plain-HTTP nudge. The
@@ -1545,7 +1662,7 @@ export function useDictation({
   // down here too — a timer/listener must never outlive the mount that owns it.
   useEffect(
     () => () => {
-      stop();
+      stop("unmount");
       teardownDetector();
       // EVERY EXIT TEARS THE LEG DOWN, UNMOUNT INCLUDED (S2.5 — the S2b lesson generalized: an exit
       // that skips the teardown is an exit that leaks the ear). The REACHABLE half is `stop()` above:
@@ -1566,7 +1683,10 @@ export function useDictation({
       // until `onstop` detaches it — an unguarded drop here would close the very leg whose queued
       // choreography still owes the flush, and the tail phrase would be lost on every tab switch.
       const s = streamRef.current;
-      if (s && !s.finishing) dropStream(s);
+      if (s && !s.finishing) {
+        s.stopReason ??= "unmount";
+        dropStream(s);
+      }
     },
     [stop, teardownDetector, dropStream],
   );

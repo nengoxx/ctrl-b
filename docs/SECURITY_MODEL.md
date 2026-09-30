@@ -574,8 +574,11 @@ half of a live call's diagnostic record; the relay writes its half in-process. F
   relay's `start` parse. **Bounded:** body ≤ 64 KB counted as it streams (413), ≤ 200 entries of
   ≤ 2 KB each (422), `voice.live.trail_keep` files kept. **No read endpoint.**
 
-Files: `$CTRLB_HOME/calls/<call_id>.jsonl` (dir 0700, files 0600) — the owner's transcripts (once, in
-the relay's `transcript` frames) and gate numbers; **no secrets** (the bearer canary is test-pinned).
+Files: `$CTRLB_HOME/calls/<call_id>.jsonl` — a dictation's under `calls/dictation/` (Phase 26 S1; the
+batch's `mode` picks the directory from a fixed two-word vocabulary, never a path) — (dirs 0700, files
+0600) — the owner's transcripts (once, in the relay's `transcript` frames) and gate numbers; **no
+secrets** (the bearer canary is test-pinned). The relay's leg-end JOURNAL line (T1) carries counts and
+codes only — never transcript text (test-pinned).
 
 ---
 

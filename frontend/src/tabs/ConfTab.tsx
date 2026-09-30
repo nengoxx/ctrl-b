@@ -3195,7 +3195,7 @@ export function ConfTab({ active }: Props) {
               write), which is why it is a settings field and not a `/voice/status` one. */}
           <Field
             label="Trails kept"
-            desc="how many call trails to keep (1–500) — the oldest are deleted when a new call starts"
+            desc="how many trails to keep (1–500), counted separately for calls and dictations — the oldest are deleted when a new one starts"
             value={String(vlive?.trail_keep ?? "")}
             onChange={(v) => setLive("trail_keep", v as unknown as number)}
           />

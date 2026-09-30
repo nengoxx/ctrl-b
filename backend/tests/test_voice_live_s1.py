@@ -40,6 +40,7 @@ import json
 import logging
 import re
 import struct
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -937,7 +938,9 @@ def test_a_dictation_leg_is_never_gap_cut(tmp_path: Any) -> None:
         }
         ws.send_json({"type": "stop"})
         assert _drain_until(ws, "state")["state"] == "ended"
-    lines = _trail_lines(tmp_path / "calls")
+    # …in the DICTATION directory (Phase 26 S1, ISS-41): its own retention, never a call's
+    assert not (tmp_path / "calls" / f"{CALL}.jsonl").exists()
+    lines = _trail_lines(tmp_path / "calls" / "dictation")
     assert lines[0]["ev"] == "leg_start" and lines[0]["mode"] == "dictation"
     assert not [line for line in lines if line["ev"] == "gap_cut"]
 
@@ -2183,3 +2186,329 @@ def test_trail_keep_is_a_bounded_server_knob() -> None:
             LiveCfg(trail_keep=bad)
     # a SERVER knob — never delivered to the client
     assert "trail_keep" not in _app().get("/api/voice/status").json()["live_call"]
+
+
+# ── 14. the leg-end line (Phase 26 S1, ASR_PLAN §5 T1/T3/T7) ──────────────────────────────────────
+#
+# ONE `log.info` per leg, on EVERY path, from `run()`'s `finally` — so a dead dictation or a dropped call
+# is classified from `journalctl` alone. Each arm below is one path; the last pins the rule that makes the
+# line safe to keep forever: no transcript text, ever.
+
+LEG_END = "live voice: leg end "
+
+
+def _leg_ends(caplog: pytest.LogCaptureFixture) -> list[dict[str, str]]:
+    """Every leg-end line, parsed `key=value`."""
+    out: list[dict[str, str]] = []
+    for record in caplog.records:
+        msg = record.getMessage()
+        if record.name == "app.services.voice_live" and msg.startswith(LEG_END):
+            out.append(dict(pair.split("=", 1) for pair in msg[len(LEG_END) :].split(" ")))
+    return out
+
+
+def _leg_end(caplog: pytest.LogCaptureFixture, timeout: float = 5.0) -> dict[str, str]:
+    """THE leg-end line — exactly one — waited for on a deadline: the relay's teardown runs on the
+    TestClient's portal thread, and a client-side close has no server frame to wait on instead."""
+    deadline = time.monotonic() + timeout
+    while not _leg_ends(caplog) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    ends = _leg_ends(caplog)
+    assert len(ends) == 1, f"expected exactly one leg-end line, got {len(ends)}"
+    return ends[0]
+
+
+@pytest.fixture
+def journal(caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFixture:
+    caplog.set_level(logging.INFO, logger="app.services.voice_live")
+    return caplog
+
+
+def test_a_clean_stop_logs_one_leg_end_with_its_counters(journal: pytest.LogCaptureFixture) -> None:
+    fake = FakeSpeaches(
+        [
+            created(),
+            transcribed("first", after_appends=1),
+            transcribed("", after_appends=2),  # an empty final: an endpoint discharged, not words
+            Say(
+                {"type": "error", "error": {"type": "invalid_request_error", "code": "bad_chunk"}},
+                after_appends=2,
+            ),
+        ]
+    )
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        for _ in range(3):
+            ws.send_bytes(_pcm(960))  # 40 ms each at the declared 24 kHz
+        assert _drain_until(ws, "transcript")["text"] == "first"
+        assert _drain_until(ws, "transcript")["text"] == ""
+        _drain_until(ws, "error")
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+        assert _closed(ws)[0] == 1000
+    end = _leg_end(journal)
+    assert end == {
+        "mode": "call",
+        "duration_s": end["duration_s"],
+        "frames": "3",
+        "audio_ms": "120",
+        "finals": "2",
+        "finals_text": "1",
+        "drops": "0",
+        "reason": "stop",
+        "close_code": "1000",
+        "last_err": "bad_chunk",  # the upstream error's CODE — never its message
+    }
+    assert float(end["duration_s"]) >= 0
+    assert list(end) == [  # the order a reader scans: what, how long, how much, how it ended
+        "mode",
+        "duration_s",
+        "frames",
+        "audio_ms",
+        "finals",
+        "finals_text",
+        "drops",
+        "reason",
+        "close_code",
+        "last_err",
+    ]
+
+
+@pytest.mark.parametrize("code", [4000, 4001, 1000, 1006])
+def test_a_client_gone_leg_carries_the_peers_close_code(code: int, journal: pytest.LogCaptureFixture) -> None:
+    """T3 — the client's own 4000 (`send_buffer`) / 4001 (`client_backlog`), a clean 1000, a keepalive
+    death's 1006: all arrive as `websocket.disconnect`, and the PEER's code is the leg's close code."""
+    with _fake_app(FakeSpeaches([created()])).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": 48000, "mode": "dictation"})
+        assert _json(ws) == {"type": "state", "state": "ready"}
+        ws.close(code=code)
+        end = _leg_end(journal)  # waited for INSIDE the block: nothing comes back down a gone socket
+    assert (end["mode"], end["reason"], end["close_code"]) == ("dictation", "client_gone", str(code))
+    assert end["last_err"] == "-"
+
+
+def test_a_protocol_failure_logs_its_code_and_ours(journal: pytest.LogCaptureFixture) -> None:
+    with _fake_app(FakeSpeaches([created()])).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws)
+        ws.send_json({"type": "hello"})
+        assert _json(ws)["code"] == "protocol"
+        assert _closed(ws)[0] == 1008
+    end = _leg_end(journal)
+    assert (end["reason"], end["close_code"], end["frames"]) == ("protocol", "1008", "0")
+
+
+def test_a_leg_that_never_got_ready_still_logs_its_end(journal: pytest.LogCaptureFixture) -> None:
+    """A refused handshake never reached `ready`: duration 0, and the line still lands."""
+
+    async def connect(*_a: Any, **_kw: Any) -> Any:
+        raise refusal(403)
+
+    with _app(connector=connect).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": 48000})
+        assert _json(ws)["code"] == "upstream_refused"
+        _closed(ws)
+    end = _leg_end(journal)
+    assert (end["reason"], end["close_code"], end["duration_s"]) == ("upstream_refused", "1011", "0.0")
+
+
+def test_the_session_limit_logs_its_leg_end(journal: pytest.LogCaptureFixture) -> None:
+    app = _fake_app(FakeSpeaches([created()]))
+    app.app.state.settings.voice.live.max_session_s = 1  # past the ge=10 floor — the mechanism is the subject
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws)
+        assert _drain_until(ws, "error")["code"] == "session_limit"
+        assert _closed(ws) == (1000, "session limit")
+    end = _leg_end(journal)
+    assert (end["reason"], end["close_code"]) == ("session_limit", "1000")
+
+
+def test_the_uplink_idle_reaper_logs_its_leg_end(journal: pytest.LogCaptureFixture) -> None:
+    """The reaper shares the `session_limit` WIRE code (the relay's own clean end), but the leg summary
+    names it apart — `reason=uplink_idle` — so `journalctl` alone tells it from the session cap."""
+    app = _fake_app(FakeSpeaches([created()]))
+    app.app.state.settings.voice.live.uplink_idle_s = 0.3  # past the ge=5 floor — see the reaper arm
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        ws.send_bytes(_pcm(960))
+        assert _drain_until(ws, "error")["code"] == "session_limit"
+        assert _closed(ws) == (1000, "uplink idle")
+    end = _leg_end(journal)
+    assert (end["reason"], end["close_code"], end["frames"]) == ("uplink_idle", "1000", "1")
+    detail = [r.getMessage() for r in journal.records if "session ending" in r.getMessage()]
+    assert detail == [
+        "live voice: session ending — session_limit (no audio from the phone for 0.3s — the call was ended)"
+    ]
+
+
+def test_an_outer_cancellation_is_a_leg_end_too(journal: pytest.LogCaptureFixture) -> None:
+    """The server stopping cancels the session task: no handler owns that, and the line still lands —
+    `reason=cancelled` (invariant 8: every leg end carries a reason)."""
+
+    class Parked:
+        async def receive(self) -> dict[str, Any]:
+            await asyncio.Event().wait()  # a phone that never says `start`
+            raise AssertionError  # pragma: no cover
+
+    async def scenario() -> None:
+        session = LiveRelaySession(
+            Parked(),  # type: ignore[arg-type]  # the one method the handshake reads
+            cfg=LiveCfg(),
+            target=target("speaches", "http://ear:9000/v1", model="parakeet"),
+            policy=LivePolicy(language="en"),
+        )
+        task = asyncio.create_task(session.run())
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+    end = _leg_end(journal)
+    assert (end["reason"], end["close_code"], end["duration_s"]) == ("cancelled", "-", "0.0")
+
+
+def test_the_leg_end_line_survives_a_second_cancellation_in_the_teardown(
+    journal: pytest.LogCaptureFixture,
+) -> None:
+    """The line is written FIRST in `finally`, before the teardown's first await — a server stopping
+    twice (the second cancel landing in a slow upstream close) cannot skip it."""
+
+    class Parked:
+        async def receive(self) -> dict[str, Any]:
+            await asyncio.Event().wait()
+            raise AssertionError  # pragma: no cover
+
+    class SlowClose:
+        async def close(self) -> None:
+            await asyncio.Event().wait()  # an upstream close that never finishes
+
+    async def scenario() -> None:
+        session = LiveRelaySession(
+            Parked(),  # type: ignore[arg-type]
+            cfg=LiveCfg(),
+            target=target("speaches", "http://ear:9000/v1", model="parakeet"),
+            policy=LivePolicy(language="en"),
+        )
+        session._up = SlowClose()  # type: ignore[assignment]  # noqa: SLF001 — the teardown's await
+        task = asyncio.create_task(session.run())
+        await asyncio.sleep(0)
+        task.cancel()  # the first: into the handshake
+        await asyncio.sleep(0)
+        task.cancel()  # the second: into `_close_upstream`
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+    assert _leg_end(journal)["reason"] == "cancelled"
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        ({"type": "invalid_request_error", "code": "bad_chunk"}, "bad_chunk"),
+        ({"type": "server_error"}, "server_error"),
+        ({"code": "the owner said: unlock the door"}, "unspecified"),  # prose is never an identifier
+        ({"code": "x" * 65}, "unspecified"),
+        ({}, "unspecified"),
+    ],
+)
+def test_last_err_takes_only_an_identifier_shaped_code(
+    error: dict[str, Any], expected: str, journal: pytest.LogCaptureFixture
+) -> None:
+    fake = FakeSpeaches([created(), Say({"type": "error", "error": error})])
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws)
+        _drain_until(ws, "error")
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+    assert _leg_end(journal)["last_err"] == expected
+
+
+def test_a_whitespace_final_is_not_words(journal: pytest.LogCaptureFixture) -> None:
+    fake = FakeSpeaches([created(), transcribed("   ", after_appends=1)])
+    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws, rate=SPEACHES_WIRE_RATE)
+        ws.send_bytes(_pcm(960))
+        _drain_until(ws, "transcript")
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+    end = _leg_end(journal)
+    assert (end["finals"], end["finals_text"]) == ("1", "0")
+
+
+def test_the_relay_queues_drops_are_counted_beside_the_burst_flag(journal: pytest.LogCaptureFixture) -> None:
+    """T7 — the bounded queue's evictions as a COUNT (the `degraded` frame says once per burst that
+    audio went; the leg end says how much)."""
+    fake = FakeSpeaches([created()])
+    app = _fake_app(fake, live_cfg={"relay_queue_ms": 200, "frame_ms": 40})  # depth 5
+
+    async def gated(_self: Any) -> None:
+        await asyncio.Event().wait()  # the uplink leg never dequeues: the queue alone decides
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(LiveRelaySession, "_pump_uplink", gated)
+        with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+            _ready(ws, rate=SPEACHES_WIRE_RATE)
+            for _ in range(20):
+                ws.send_bytes(_pcm(960))
+            assert _drain_until(ws, "state")["state"] == "degraded"
+            ws.send_json({"type": "stop"})
+            assert _drain_until(ws, "state")["state"] == "ended"
+    end = _leg_end(journal)
+    # 20 frames into a depth-5 queue nothing drains: 5 wait, the other 15 were evicted
+    assert (end["frames"], end["drops"]) == ("20", "15")
+
+
+def test_the_leg_end_never_carries_the_owners_words(journal: pytest.LogCaptureFixture, tmp_path: Any) -> None:
+    """The journal is kept forever and read by anyone with a shell: the transcript is the TRAIL's (its
+    `down` lines, debug-gated, pruned), never a log line's — on the leg-end line or any other."""
+    words = "please unlock the garage door"
+    fake = FakeSpeaches([created(), transcribed(words, after_appends=1)])
+    trail = CallTrail(tmp_path / "calls")
+    app = _fake_app(fake, live_cfg={"debug": True}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _traced(ws)
+        ws.send_bytes(_pcm(960))
+        assert _drain_until(ws, "transcript")["text"] == words
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+    end = _leg_end(journal)
+    assert (end["finals"], end["finals_text"]) == ("1", "1")
+    assert not [r for r in journal.records if words in r.getMessage()]
+    # …while the trail (debug) still carries them once, on the relay's transcript line — and its
+    # `leg_end` says what the journal said (the same counters)
+    lines = _trail_lines(tmp_path / "calls")
+    assert sum(words in json.dumps(line) for line in lines) == 1
+    leg_end = lines[-1]
+    assert leg_end["ev"] == "leg_end"
+    assert {
+        k: leg_end[k] for k in ("frames", "finals", "finals_text", "drops", "close_code", "last_err")
+    } == {
+        "frames": 1,
+        "finals": 1,
+        "finals_text": 1,
+        "drops": 0,
+        "close_code": 1000,
+        "last_err": None,
+    }
+
+
+def test_the_trails_client_gone_end_carries_the_peers_code(tmp_path: Any) -> None:
+    """The trail's own `leg_end` for a vanished phone keeps its `code=None` (no `_close` ran) and gains
+    the summary's `close_code` — the peer's."""
+    trail = CallTrail(tmp_path / "calls")
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"debug": True}, trail=trail)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _traced(ws, leg=1)
+        ws.close(code=4001)
+        deadline = time.monotonic() + 5
+        path = tmp_path / "calls" / f"{CALL}.jsonl"
+        while time.monotonic() < deadline and not (path.exists() and '"leg_end"' in path.read_text()):
+            time.sleep(0.01)
+    tail = _trail_lines(tmp_path / "calls")[-1]
+    assert (tail["ev"], tail["code"], tail["reason"], tail["close_code"]) == (
+        "leg_end",
+        None,
+        "client gone",
+        4001,
+    )

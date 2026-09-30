@@ -339,6 +339,16 @@ export interface MicReadback {
   /** Which device actually opened, in the browser's own words. */
   label: string;
   deviceId: string;
+  /** …and the rest of what the track GRANTED (Phase 26 S1, T5 — R94 §7.1.7), for the trail: the two
+   *  processing stages beside the canceller, and the format the platform actually delivers. Raw like
+   *  `echoCancellation` — `undefined` where the browser reports nothing — and read by nothing but the
+   *  trail: no policy decides by them. */
+  noiseSuppression: boolean | undefined;
+  autoGainControl: boolean | undefined;
+  channelCount: number | undefined;
+  /** The TRACK's rate — not necessarily the context's (`PcmCapture.sampleRate`, what the relay resamples
+   *  from): the browser resamples between the two, and the trail records both to see where. */
+  sampleRate: number | undefined;
 }
 
 export interface PcmCapture {
@@ -649,6 +659,10 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
             : undefined,
         label: track.label,
         deviceId: settings.deviceId ?? "",
+        noiseSuppression: settings.noiseSuppression,
+        autoGainControl: settings.autoGainControl,
+        channelCount: settings.channelCount,
+        sampleRate: settings.sampleRate,
       },
       fellBack,
       ecStuck,

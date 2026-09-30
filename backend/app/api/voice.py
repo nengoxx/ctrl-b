@@ -11,8 +11,9 @@ relay, which bridges the phone to a Speaches realtime session. Its session objec
 the process-wide admission slot.
 
 `POST /api/voice/live/trail` (D77) is the browser's half of the CALL TRAIL — a debug-gated, bounded
-JSON append into `$CTRLB_HOME/calls/<call_id>.jsonl` (`services/call_trail.py`); 404 while
-`voice.live.debug` is off, 204 on success, and no read path anywhere.
+JSON append into `$CTRLB_HOME/calls/<call_id>.jsonl` (a call) or `$CTRLB_HOME/calls/dictation/…` (a
+dictation — the body's `mode`, Phase 26 S1) (`services/call_trail.py`); 404 while `voice.live.debug` is
+off, 204 on success, and no read path anywhere.
 
 HTTP contract: a success always returns 200 with `X-Voice-Served-By: <provider>` — the NAME of the
 registry provider that actually served (A11/D48; a fallback serve carries that fallback's provider name,
@@ -44,6 +45,7 @@ from app.services.call_trail import (
     TRAIL_MAX_ENTRIES,
     TRAIL_MAX_ENTRY_BYTES,
     CallTrail,
+    LiveMode,
 )
 from app.services.voice_live import (
     CLOSE_BUSY,
@@ -309,6 +311,9 @@ class TrailEntry(BaseModel):
 
 class TrailBatch(BaseModel):
     call_id: str = Field(pattern=CALL_ID_PATTERN)
+    #: Which feature wrote the batch (Phase 26 S1) — the store's `LiveMode`, so the route and the relay
+    #: share one vocabulary. Absent = `call`: a pre-S1 client's batches land exactly where they did.
+    mode: LiveMode = "call"
     entries: list[TrailEntry] = Field(min_length=1, max_length=TRAIL_MAX_ENTRIES)
 
 
@@ -327,8 +332,9 @@ def _is_json(content_type: str | None) -> bool:
 async def live_trail(request: Request) -> Response:
     """Append a batch of the BROWSER's call-trail lines (D77) — `204`, or: `404` while
     `voice.live.debug` is off (the feature does not exist then), `415` for a body that is not JSON,
-    `413` past `TRAIL_MAX_BODY_BYTES`, `422` for a bad shape, a malformed `call_id`, more than
-    `TRAIL_MAX_ENTRIES` entries or one entry past `TRAIL_MAX_ENTRY_BYTES` (the detail names its index).
+    `413` past `TRAIL_MAX_BODY_BYTES`, `422` for a bad shape, a malformed `call_id`, an unknown `mode`,
+    more than `TRAIL_MAX_ENTRIES` entries or one entry past `TRAIL_MAX_ENTRY_BYTES` (the detail names
+    its index).
 
     **The CONTENT TYPE is the CSRF control here** (SECURITY_MODEL §2.7's rule, §2.11): the app has no
     application-layer auth, so the attacker worth designing against is the owner's own browser on
@@ -371,7 +377,7 @@ async def live_trail(request: Request) -> Response:
         data.pop("src", None)
         lines.append({"src": "client", **data})
     trail: CallTrail = request.app.state.call_trail
-    await asyncio.to_thread(trail.append, batch.call_id, lines, keep=live.trail_keep)
+    await asyncio.to_thread(trail.append, batch.call_id, lines, keep=live.trail_keep, mode=batch.mode)
     return Response(status_code=204)
 
 

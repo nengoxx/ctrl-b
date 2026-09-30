@@ -6,12 +6,15 @@ The arms, by what they defend:
 
 * **the store** — JSONL on disk (one compact object per line, appended); the directory made lazily;
   the call id as the PATH GUARD (a malformed one is a `ValueError`, never a filename); retention by
-  count, pruned when a NEW call's first line lands and never by a second append to the same call; and
-  a failing disk logged once and swallowed — a trail must never end a call.
+  count, pruned when a NEW call's first line lands and never by a second append to the same call; the
+  PER-MODE split (Phase 26 S1, ISS-41 — a dictation's trail lives in `dictation/`, and each directory
+  keeps its own count, so neither mode can evict the other's); and a failing disk logged once and
+  swallowed — a trail must never end a call.
 * **the route** — the feature does not exist while `voice.live.debug` is off (404); the JSON-only rail
   that makes the cross-origin write die at the preflight (SECURITY_MODEL §2.7/§2.11 — 415 for any
   safelisted body shape, a missing type included); the bounds (413 on the body, 422 on an entry, on the
-  count, on the id); and the stored line — `src: "client"` stamped, the rest verbatim.
+  count, on the id, on the mode); the stored line — `src: "client"` stamped, the rest verbatim; and the
+  batch's `mode` choosing the directory.
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ from fastapi.testclient import TestClient
 
 from app.api import voice as voice_api
 from app.config import Settings
-from app.services.call_trail import TRAIL_MAX_BODY_BYTES, CallTrail
+from app.services.call_trail import LIVE_MODES, TRAIL_MAX_BODY_BYTES, CallTrail
 
 CALL = "0f8e2c4a-1b3d-4e5f-8a9b-0c1d2e3f4a5b"
 URL = "/api/voice/live/trail"
@@ -100,6 +103,52 @@ def test_a_second_append_to_the_same_call_does_not_prune(tmp_path: Path) -> None
     assert len(list(root.glob("*.jsonl"))) == 4
 
 
+def test_a_dictation_trail_lives_in_its_own_directory(tmp_path: Path) -> None:
+    root = tmp_path / "calls"
+    CallTrail(root).append(CALL, [{"t": 1, "ev": "rec"}], keep=20, mode="dictation")
+    assert _read(root / "dictation") == [{"t": 1, "ev": "rec"}]
+    assert not (root / f"{CALL}.jsonl").exists()
+    if os.name != "nt":  # both levels owner-only, even when the dictation made the root
+        assert (root.stat().st_mode & 0o777) == 0o700
+        assert ((root / "dictation").stat().st_mode & 0o777) == 0o700
+
+
+def test_each_mode_prunes_its_own_directory_and_never_the_other(tmp_path: Path) -> None:
+    """ISS-41 — a dictation-heavy sitting used to spend the ONE shared `trail_keep` and prune the call
+    trails it sat beside. Now each directory keeps its own newest `keep`, and neither prune reaches
+    across."""
+    root = tmp_path / "calls"
+    trail = CallTrail(root)
+    now = time.time()
+    for n in range(3):  # three CALL trails, oldest first
+        trail.append(_call(n), [{"t": n, "ev": "x"}], keep=10)
+        os.utime(root / f"{_call(n)}.jsonl", (now - 200 + n, now - 200 + n))
+    for n in range(10, 16):  # six dictations, each pruning to 2 — the calls are untouched
+        trail.append(_call(n), [{"t": n, "ev": "x"}], keep=2, mode="dictation")
+        os.utime(root / "dictation" / f"{_call(n)}.jsonl", (now - 100 + n, now - 100 + n))
+    assert sorted(p.stem for p in (root / "dictation").glob("*.jsonl")) == [_call(14), _call(15)]
+    assert sorted(p.stem for p in root.glob("*.jsonl")) == [_call(0), _call(1), _call(2)]
+    # …and the reverse: a new call pruning to 1 keeps only itself among CALLS, the dictations stay
+    trail.append(_call(20), [{"t": 20, "ev": "x"}], keep=1)
+    assert [p.stem for p in root.glob("*.jsonl")] == [_call(20)]
+    assert sorted(p.stem for p in (root / "dictation").glob("*.jsonl")) == [_call(14), _call(15)]
+
+
+@pytest.mark.parametrize("bad", ["chat", "", "Dictation", "../calls", "dictation/.."])
+def test_append_rejects_an_unknown_mode(tmp_path: Path, bad: str) -> None:
+    with pytest.raises(ValueError):
+        CallTrail(tmp_path / "calls").append(CALL, [{"t": 1, "ev": "a"}], keep=20, mode=bad)  # type: ignore[arg-type]
+    assert not (tmp_path / "calls").exists()
+
+
+def test_the_mode_vocabulary_is_the_relays() -> None:
+    """ONE vocabulary (Phase 26 S1): the store owns it, the relay and the route import it."""
+    from app.api import voice as api_voice
+
+    assert LIVE_MODES == ("call", "dictation")
+    assert api_voice.TrailBatch.model_fields["mode"].default == "call"
+
+
 def test_a_write_error_is_swallowed_and_logged_once(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     blocker = tmp_path / "calls"
     blocker.write_text("a FILE where the directory should be", encoding="utf-8")
@@ -121,8 +170,8 @@ def _app(tmp_path: Path, *, debug: bool = True, keep: int = 20) -> TestClient:
     return TestClient(app)
 
 
-def _batch(entries: list[dict[str, Any]], call: str = CALL) -> dict[str, Any]:
-    return {"call_id": call, "entries": entries}
+def _batch(entries: list[dict[str, Any]], call: str = CALL, mode: str | None = None) -> dict[str, Any]:
+    return {"call_id": call, "entries": entries, **({} if mode is None else {"mode": mode})}
 
 
 def test_the_route_does_not_exist_while_debug_is_off(tmp_path: Path) -> None:
@@ -153,6 +202,15 @@ def test_a_batch_is_stored_stamped_client_with_its_extras_verbatim(tmp_path: Pat
     assert lines[1]["cfg"] == {"floor_dbfs": -45} and lines[1]["ecCaps"] == [True, "all"]
     assert (lines[2]["level"], lines[2]["noise"]) == (-52.5, None)
     assert list(lines[0])[0] == "src"  # the stamp leads the line, for the eye reading the file
+
+
+def test_a_dictation_batch_lands_in_the_dictation_directory(tmp_path: Path) -> None:
+    client = _app(tmp_path)
+    assert client.post(URL, json=_batch([{"t": 1, "ev": "rec"}], mode="dictation")).status_code == 204
+    assert client.post(URL, json=_batch([{"t": 2, "ev": "sig"}], _call(1), mode="call")).status_code == 204
+    assert _read(tmp_path / "calls" / "dictation") == [{"src": "client", "t": 1, "ev": "rec"}]
+    assert _read(tmp_path / "calls", _call(1)) == [{"src": "client", "t": 2, "ev": "sig"}]
+    assert not (tmp_path / "calls" / f"{CALL}.jsonl").exists()
 
 
 def test_the_route_prunes_by_the_live_keep(tmp_path: Path) -> None:
@@ -206,6 +264,8 @@ def test_an_entry_past_2kb_is_422_naming_its_index(tmp_path: Path) -> None:
         _batch([]),  # an empty batch
         _batch([{"t": 1, "ev": "x"}], "../../etc/passwd"),  # the id is the path guard
         _batch([{"t": 1, "ev": "x"}], CALL.upper()),
+        _batch([{"t": 1, "ev": "x"}], mode="chat"),  # a mode outside the store's vocabulary
+        _batch([{"t": 1, "ev": "x"}], mode="../dictation"),
         {"entries": [{"t": 1, "ev": "x"}]},  # no id
         _batch([{"ev": "x"}]),  # no t
         _batch([{"t": 1, "ev": ""}]),  # empty ev

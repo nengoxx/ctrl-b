@@ -489,8 +489,9 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
           }
           case "stop":
             // Every gesture stop is the OWNER's (a hold released, the lock's tap, the keyboard's stop),
-            // so it settles through the release post-roll (S11 T1) — the last word is not clipped.
-            micRef.current.stop(true);
+            // so it settles through the release post-roll (S11 T1) — the last word is not clipped — and
+            // the dictation trail's `end` line reads `reason: "user"` (Phase 26 S1, T4).
+            micRef.current.stop("user");
             break;
           case "cancel":
             buzz(VIB_CANCEL_MS);

@@ -677,7 +677,7 @@ class LiveCfg(VoiceServiceCfg):
       Speaches; `frame_ms`,
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `uplink_idle_s`, `allowed_origins` are the relay's own caps; `trail_keep` is the D77 call trail's
-      retention.
+      retention (per mode directory since Phase 26 S1 — calls and dictations each keep their own).
     * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`,
       `barge_in`, `ring`, `captions`, `mic_hold`, the D76 GATE six (`floor_dbfs`, the three
       margins, `min_dbfs`/`max_dbfs`), the D80 TAIL five (`hold_tail_min_ms`, `tail_quiet_ms`,

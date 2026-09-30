@@ -77,21 +77,22 @@ export function enqueue(s: PacerState, buf: ArrayBuffer): void {
  *  HEAD (the relay's own `_enqueue(drop_oldest=True)` posture, R71 §5.4 — not RVC's drop-newest, which
  *  discards exactly the phrase end the endpointer needs).
  *
- *  RETURNS WHETHER ANYTHING WAS DROPPED, so the caller can report it the way the relay does: once per
- *  overflow BURST, not once per frame (`voice_live.py::_overflow_flagged`). The length guard is
- *  load-bearing rather than defensive: without it a bound that ever read below zero would spin on an
- *  empty array. */
+ *  RETURNS HOW MANY FRAMES IT DROPPED (0 = none), so the caller can report it the way the relay does —
+ *  the strained note once per overflow BURST, not once per frame (`voice_live.py::_overflow_flagged`) —
+ *  AND count it, the way the relay's leg-end line does (Phase 26 S1, T6: the trail's `uplink` line). The
+ *  length guard is load-bearing rather than defensive: without it a bound that ever read below zero
+ *  would spin on an empty array. */
 export function enqueueBounded(
   s: PacerState,
   buf: ArrayBuffer,
   frameMs: number,
   boundMs: number,
-): boolean {
+): number {
   s.backlog.push(buf);
-  let dropped = false;
+  let dropped = 0;
   while (s.backlog.length > 0 && s.backlog.length * frameMs > boundMs) {
     s.backlog.shift();
-    dropped = true;
+    dropped += 1;
   }
   return dropped;
 }
