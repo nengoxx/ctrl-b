@@ -1771,11 +1771,12 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
 - [ ] **S5 — D82 ratified (THIS session, before A).**
 
 **Session A — transport, the dictation rulings, 16 kHz capture (Speaches is still the ear):**
-- [ ] S1 — Telemetry: an always-logged leg-end line, StopReason, close codes, the pacer-drop field, and the trail
-      retention split per mode (closes ISS-41).
-- [ ] S2 — The wall-clock bucket: ONE `UPLINK_ALLOWANCE_MS` (30 s) plus a load-validated inequality covering every
-      reservoir. No mirror pins.
-- [ ] S3 — Per-mode kill paths with typed codes; the degrade consequence arrives at S8.
+- [x] S1 — Telemetry: an always-logged leg-end line, StopReason, close codes, the pacer-drop field, and the trail
+      retention split per mode (closes ISS-41). ✅ `6e87f30` (2026-10-01).
+- [x] S2 — The wall-clock bucket: ONE `UPLINK_ALLOWANCE_MS` (30 s) plus a load-validated inequality covering every
+      reservoir. No mirror pins. ✅ `ad94796` (2026-10-01).
+- [x] S3 — Per-mode kill paths with typed codes; the degrade consequence arrives at S8. ✅ ABSORBED by S1 (T3/T4) +
+      S2 (the K3 prose) — ruled 2026-10-01, ASR_PLAN §7.1 S3 row; nothing to build.
 - [ ] ~~S4~~ — WITHDRAWN (interim Speaches ops skipped).
 - [ ] SP — P1: idle stop 300 s, 0 = off, 10 dB relative. P2: cap 1790 / relay 1800 as the interim, with the recorder at
       32 kbps and the `max_upload_bytes` test. P3: the wake lock lifted with its fence parameterized. Tier-0 stays suspended
