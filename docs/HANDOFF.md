@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-09-30 evening — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 53 (Fable) BUILT polish #6 (`e249f12`), bought R96/R97 and DESIGNED + council-CONFIRMED the ASR/VAD plan of record (`docs/ASR_PLAN.md`, D82, Phase 26 — NOTHING of it built). 11+ commits on `main` UNPUSHED; push on the owner's word. v1.7.11 = polish + session A once A lands; v1.7.12 = session B (both owner items ruled at session close)**)
+## Where we are (2026-10-01 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 54 (Fable) bought R98, RULED the VAD-model boundary (ASR_PLAN §3.4.1, R25 — Silero v6.2 the default) and BUILT + two-reviewer-CLOSED + COMMITTED Phase 26 session A's first slice, S1 telemetry (`6e87f30`); R98 + the amendment = `66ead3a`. 16 commits on `main` UNPUSHED (incl. this handoff); push on the owner's word. Next = S2 in a CLEAN session (the brief is written). v1.7.11 = polish + session A once A lands; v1.7.12 = session B**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): at writing time
   tag **`v1.7.10` on `9c5a6c6` — LIVE** (released 2026-09-27 evening ≈ 18:14Z per `deploy/linux/README.md`
@@ -56,6 +56,70 @@
   `origin/main` `778b960`:** `53f8010` · `7522040` · `c09d47b` · `31953a9` · `23fd88a` · `c1c8bad`, plus this
   handoff. Push on the owner's word. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
+
+## ▶▶ NEW (2026-10-01, Fable seat, session 54) — R98 BOUGHT · THE VAD-MODEL BOUNDARY RULED (§3.4.1, R25, Silero v6.2 DEFAULT) · PHASE 26 S1 BUILT + CONFIRMED + COMMITTED · NEXT = S2 IN A CLEAN SESSION
+
+**Read first:** [`ASR_PLAN.md`](./ASR_PLAN.md) §3.4.1 (the model boundary — NEW this session; §0.1 R25 · §4's `vad_threshold`/`vad_model`
+rows · §6.4's S9 pre-pass row) · [R98](./research/R98-vad-model-landscape.md) (the VAD-model landscape, MEASURED on emma) · §7.1 (the
+session-A ladder: S1 ✅ → **S2 next** → S3 → SP → K6 → D9 → D8 → D5). The session record is `~/.cache/tmp/ctrlb-session54/`
+(`SESSION_PLAN.md` = the lane table + mechanics · `RULINGS.md` = every finding of both reviewers with its ruling · `brief-S1-*` /
+`lane-S1-report.md` (the as-built record incl. every `stop()` site and D1–D13) · `brief-R98-*` · `review-*`/`confirm-*` for rounds A and
+S1 · **`brief-S2-uplink-allowance.md` = the NEXT lane's brief, READY** · `REVIEW_COMMON.md` = the review rules pasted into every round).
+
+### What happened (in order)
+1. **The owner's two asks before the build:** (a) research every VAD model we might swap to, so the ear is agnostic without a later
+   refactor; (b) the ASR side likewise. → **R98** (Opus 5.5 lane, `docs/research/R98-vad-model-landscape.md`): 16 models' IO contracts
+   verified at source; a bake-off on emma (the TEN labelled set + DEMAND car/cafeteria/kitchen noise, streamed hop by hop); every peer's
+   abstraction read. **Silero v6.2 beats v5.1.2 on every axis** (AUC 0.957 vs 0.925 clean · 0.952 vs 0.913 car 0 dB; under the plan's
+   policy 126/126 clean + 125/126 noisy segments with 0 phantoms/min at native level vs v5's 6 misses + 7–9/min on babble). No released
+   streaming model clearly beats it for a car (TEN ties clean, loses on babble; FireRed-stream measures BELOW it — its headline F1 is
+   its NON-streaming 1.6 s-lookahead model). **The phantom "Yeah." class is NOT a VAD-model problem** (echo residue and a radio ARE speech;
+   foreground VAD is unreleased) — AEC, the hold, the backstop and the pre-pass stay the levers. ASR side: CrispASR ignores unknown
+   multipart fields; onnx-asr has no HTTP server; parakeet-server's tolerance stays UNVERIFIED until S9's unit exists (plan T-5).
+2. **The amendment — ASR_PLAN §3.4.1 (R25), D82 ①, TODO S6-i, the research index** (`66ead3a`): `VadModel` (name · sample_rate · hop ·
+   delay_hops · default_act · prepass_act · open()) + `VadStream.probs()` + a dict of constructors; `VadSegmenter` owns the residual carry,
+   a 16 kHz model cursor mapped back to the leg clock through frame anchors, and the hop conventions (START/cut edges at the hop start,
+   STOP edges at the exclusive hop end — Emma's HIGH); `VadParams` in ms + `derive(params, hop)`, the EMA as `ema_tau_ms ≈ 30.48`;
+   `vad_threshold` stays an EXPLICIT float, default 0.6 for v6.2, bounds widened to 0.1–0.95 (an optional "model default" was REJECTED —
+   nothing could display or persist it); `vad_model` config-only, lands in S6-i; causality = a registry-invariant TEST (never a load
+   check); the pre-pass runs the same model at a per-entry `prepass_act` settled by an S9 sweep (re-run on any model swap); T1 gains
+   `model · hop_ms · act` in S7b. Design round A: blind Opus 5.5 ∥ Emma, both BUILD WITH CHANGES → revised → **both CONFIRMED BUILD**.
+3. **Phase 26 S1 — telemetry + the trail retention split** (`6e87f30`): ONE leg-end `log.info` from `run()`'s `finally` on every path
+   (before any await), from `_LegStats` (mode · duration · frames · audio_ms · finals · finals_text · drops · reason incl. a distinct
+   `uplink_idle` · close_code incl. the PEER's on client-gone · identifier-shaped `last_err`); `LIVE_MODES` moved into `call_trail.py`,
+   dictation trails under `calls/dictation/` with their own `trail_keep` (**closes ISS-41**), the trail route's batch carries `mode`;
+   dictation `stop(reason: StopCallReason)` (only `user` settles; STOP-1…10 pinned), the `end` line records reason/close/lastError;
+   client close 4001 (K2) beside 4000 (K3); `liveSocket` reports the client's own code only when the browser says 1005/1006; the call's
+   `capture` line gains NS/AGC/channels/rates; `uplink` drop lines per leg. Round S1: Opus ∥ Emma both SHIP WITH FIXES → one 11-item fix
+   wave → **both CONFIRMED SHIP**. Gate green (full `tools/check.py`). Dev dist NOT rebuilt (S1 is observability; the owner tests it with
+   K6's phone card at the end of A).
+
+### ▶▶ NEXT SESSION = S2 (the wall-clock uplink allowance) — the brief is written, spawn it first thing
+- **Spawn** ONE Opus 5.5 build lane on `~/.cache/tmp/ctrlb-session54/brief-S2-uplink-allowance.md` (read it once; it pins the design from
+  ASR_PLAN §3.3 + the S1 lane report's notes for S2, incl. "do NOT reuse `_LegStats.started` as the bucket clock"). Open a NEW scratch
+  dir `~/.cache/tmp/ctrlb-session55/` (copy `REVIEW_COMMON.md` + the S2 brief across; leave session 54's record where it is).
+- **Then the standing round:** freeze `git diff > diff-S2.patch` → blind Opus 5.5 (Agent, `model: "opus"`, "Reasoning effort: HIGH") ∥
+  **Emma** (`~/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main --profile emma -z "$(cat prompt)" -m gpt-5.6-sol-900k --reasoning
+  high --ignore-rules -t file,terminal --in /home/emma/github/ctrl-b > out.md 2> out.err < /dev/null`, backgrounded — `--profile` is
+  pre-parsed before argparse and absent from `--help`; the CLI double-forks, wait on the OUTPUT FILE, not the PID) on the same prompt
+  (REVIEW_COMMON.md pasted first + the slice questions) → RULINGS → the fix wave by `SendMessage` to the SAME lane → confirm (Opus by
+  `SendMessage`; Emma by a fresh self-contained `-z` with her review pasted) → commit by hunk. Slices are SEQUENTIAL (useDictation.ts is
+  touched by S1/S2/S3/SP/K6/D5 — two lanes on one file race the Edit tool); parallelism = the two reviewers.
+- **After S2:** S3 → SP → K6 (**the owner's phone card**, ASR_PLAN §7.1) → D9 → D8 → D5 → the QUALITY.md counts sweep (ONE refresh at the
+  end of A, not per slice) → the v1.7.11 release card (add S1's note: during the PWA update window an old PWA's dictation trail splits
+  across `calls/` and `calls/dictation/` — transient, debug-only) → push on the owner's word → v1.7.11 per ASR_PLAN §8.2.1.
+
+### Standing facts from this session (verified)
+- **Both reviewers on EVERY Phase 26 slice** (owner directive 2026-09-30, `dual-reviewers-for-critical-code` memory): Emma = hermes
+  profile `emma`, `gpt-5.6-sol-900k`; two Emma runs in parallel on the same profile worked; a review takes 8–15 min, a confirm 3–10.
+- **Agreement is not evidence:** round A's Opus and Emma agreed on the arithmetic and disagreed on the threshold shape; the main seat
+  ruled a THIRD, leaner shape (explicit float + wide bounds) and both confirmed it. Round S1: Opus called the T7 test "not a flake",
+  Emma called it nondeterministic — the deterministic gated-consumer test won.
+- **R98's raw results live in `~/.cache/tmp/r98/`** (venv, scripts, `results_all.json`; the DEMAND clips + model files) — re-run
+  `bench_policy.py` there before re-buying any VAD number. The dossier's phantom-segment "0/min" is at NATIVE noise level; at −35 dBFS
+  babble v6.2 still produced 0.7/min.
+- Dev units RUNNING (`ctrl-b-dashboard-dev` + `-dev-web`); the owner's polish #1–#6 test on dev is still open (session 53's card) —
+  stop them when done. Speaches + PocketTTS units untouched. Nothing pushed.
 
 ## ▶▶ NEW (2026-09-30, Fable seat, session 53) — POLISH #6 BUILT + COMMITTED · THE ASR/VAD PLAN OF RECORD DESIGNED, COUNCIL-CLOSED, COMMITTED · NEXT SESSION = BUILD (clean session)
 
