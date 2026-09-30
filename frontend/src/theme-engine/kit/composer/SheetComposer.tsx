@@ -34,7 +34,7 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
   // A staged rail moves the clip + the toggle into the rail's TAIL (S6 fix wave, F1/F2) — which in
   // THIS layout genuinely changes the field's width, since both of them are embedded in `.field`.
   const staged = attach.files.length > 0;
-  const { onKeyDown, expand } = useComposerChrome(taRef, draft, send, staged);
+  const { onKeyDown, expand } = useComposerChrome(taRef, draft, send, { widthKey: staged });
   // THE DUAL-MODE MIC GESTURE (D71 §6 / S0.5) — the same three lines as every variant; see KitComposer.
   const gesture = useMicGesture(mic, liveReady);
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.

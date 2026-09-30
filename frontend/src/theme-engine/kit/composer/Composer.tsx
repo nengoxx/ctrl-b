@@ -52,7 +52,7 @@ export function KitComposer({
   // which changes the FIELD's rendered width — hence the same flag reaching the chrome hook below.
   const staged = attach.files.length > 0;
   // Shared presentational chrome (auto-grow + its expand ceiling, Enter-to-send) — §3.1.
-  const { onKeyDown, expand } = useComposerChrome(taRef, draft, send, staged);
+  const { onKeyDown, expand } = useComposerChrome(taRef, draft, send, { widthKey: staged });
   // THE DUAL-MODE MIC GESTURE (D71 §6 / S0.5) — hold to record, swipe up to lock, slide left to cancel,
   // tap to switch mode. The same three lines in every variant: one hook, the button's handlers, and the
   // shared chrome as a positioned SIBLING of the bar (see MicGestureChrome for why it cannot be a child).

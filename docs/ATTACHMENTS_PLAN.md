@@ -669,3 +669,16 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   rotation changes no latch input, so a boundary stack can sit one state stale until the next
   keystroke · the exit band's ceiling guard is presently unreachable (the trio ≤ the ceiling by
   construction) and kept as belt.
+- **AMENDMENT 2026-09-30 (the owner's intermission round — supersedes the stack mechanics and the
+  expand semantics above):** the latch did NOT kill the width-feedback oscillation — it allowed one
+  flip per keystroke, so on a narrow field (reproduced at 360px: 5 lines in the row → 3 stacked) the
+  mic hopped on every character for a line of typing. **Now:** `useComposerChrome` also measures the
+  field at a caller-named width (`{widthKey, probeWidth}` options → `probePx`), and LineComposer
+  decides at the STACKED width — the same value in either shape — so the decision cannot feed its
+  own input; band, latch and re-baselining DELETED (the rotation residual closes with them).
+  **The pair decides:** the stack engages once mic + send fit (78px, ~3 lines) — the toggle rides on
+  top uncounted and the pill grows to hold it on a 3–4 line field (owner-ruled over the leading lane
+  or hiding it); a lone button never stacks. **Expand pins the tall height at once** (Signal /
+  Telegram Android), all three layouts — the S5 "taller ceiling and nothing else" ruling
+  owner-overridden ("doesn't really do much"); on the line pill the stack engages with the tap.
+  Guard: `e2e/lineStack.spec.ts` (flip count at 360px, red-proven against the current-width probe).

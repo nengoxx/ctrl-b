@@ -1088,7 +1088,7 @@ describe("the ROW FREEZE · the trailing controls may not change while a recordi
     let content = 22;
     Object.defineProperty(field, "scrollHeight", { configurable: true, get: () => content });
     await hold();
-    // Six lines land mid-dictation: the resting field paints the trio's 112 — stack-eligible, but
+    // Six lines land mid-dictation: the resting field paints its 112 ceiling — stack-eligible, but
     // the decision is FROZEN with the row (the same jank through the other door).
     content = 132;
     act(() => setDraft("one\ntwo\nthree\nfour\nfive\nsix"));

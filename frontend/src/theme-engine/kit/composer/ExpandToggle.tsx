@@ -12,15 +12,15 @@ import type { ExpandControl } from "./useComposerChrome";
 //     open-webui `top-2.5 right-3`). Signal's hover-revealed tab centred on the composer's top edge is
 //     the outlier and is structurally unusable on touch;
 //   · LEAVABLE — a mode you can exit, so the control never vanishes while it is on (`ExpandControl.show`).
-// WHAT WE DID NOT TAKE: what expanded OPENS. All four peers open a second surface (rich editor ·
-// text-only modal · fixed-height field); we have no rich text and want no second editor, so expanded is
-// a taller auto-grow CEILING in `useComposerChrome` — the field still grows with content, the mode only
-// raises where growth stops. The line composer is the primary beneficiary ("very little space" — owner),
+// WHAT EXPANDED OPENS: the field itself, pinned at the tall height at once (Signal's taller fixed field,
+// Telegram Android's jump — the owner's 2026-09-30 round retired the original "taller auto-grow
+// ceiling", which did nothing visible until the text reached it). No second surface: we have no rich
+// text and want no second editor. The line composer is the primary beneficiary ("very little space" — owner),
 // but the seam is the shared chrome hook, so all three layouts get it and no per-variant fork exists.
 //
 // THE MIC IS UNTOUCHED. Every peer hides or disables it in expanded mode (R62 §5's mic row: Telegram Web
 // A disables it, Signal hides it) — because for them expanded is a separate WRITING mode that displaces
-// the composer. Ours displaces nothing; it moves a ceiling. Hiding the mic here would break the owner's
+// the composer. Ours displaces nothing; it only makes the field taller. Hiding the mic here would break the owner's
 // standing mic-never-blocked posture (the same ruling that keeps staged attachments from gating it) for
 // no reason at all.
 //

@@ -20,8 +20,8 @@ import { dictationAppends } from "../../../hooks/useDictation";
 // stage of `composer/useMicGesture`'s state machine. The reason they were a JS-toggled class rather than
 // CSS `:active` (Fennec leaves `:active` wedged after a tap) carried over with them; see `MicGesture.pressing`.
 //
-// Since D68 S5 it owns the EXPAND affordance too, and for the same reason: expanding is nothing but a
-// second auto-grow CEILING, so it belongs to whoever owns the first one — all three variants get it from
+// Since D68 S5 it owns the EXPAND affordance too, and for the same reason: expanding only moves the
+// field's HEIGHT (pinned tall since 2026-09-30), so it belongs to whoever owns the auto-grow — all three variants get it from
 // one place and no per-variant fork exists to write (ATTACHMENTS_PLAN §9-S5, the E-amend (c) finding).
 //
 // (vapor kept a bespoke `components/Composer.tsx` beside this until Phase 16 DELETED it — D51 §3 V4:
@@ -30,8 +30,8 @@ import { dictationAppends } from "../../../hooks/useDictation";
 /** The COLLAPSED auto-grow ceiling, in px. 112, not the long-standing 96 (owner S6 re-round №3,
  *  "extend the minimum… just a little so the mic icon would fit without having to click expand"):
  *  112 is EXACTLY the line pill's full control column — expand 28 + mic 36 + send 36 + two 6px
- *  gaps — so the resting field can now paint enough for the stack to engage (at 5 rendered lines)
- *  without entering the expand mode, and not one pixel more than that ask. Mirrored by
+ *  gaps — so from 5 rendered lines the resting field covers the whole column (the stack itself
+ *  engages earlier, on the mic+send pair — LineComposer), and not one pixel more than that ask. Mirrored by
  *  `.kit-composer textarea { max-height }` in kit.css, which is what actually clamps the paint;
  *  the expanded ceiling below lifts that inline. */
 const CEIL_PX = 112;
@@ -78,10 +78,10 @@ export function micLabel(status: string, mode: "mic" | "call"): string {
 }
 
 /** THE EXPAND AFFORDANCE's state (D68 S5) — what `<ExpandToggle/>` renders off, and the only thing any
- *  variant needs to know about it. Deliberately NOT a mode: `on` moves ONE number (the auto-grow
- *  ceiling), so nothing else in the composer changes shape when it flips. */
+ *  variant needs to know about it. `on` moves ONE number — the field's height, pinned to the tall
+ *  one — and everything else follows from that height (the line pill's stack reads it). */
 export interface ExpandControl {
-  /** The field is expanded — the auto-grow ceiling is the tall one. */
+  /** The field is expanded — it paints the tall height, whatever the draft's length. */
   on: boolean;
   /** Render the trigger at all: the draft renders at ≥3 lines, OR the mode is on (a control you can
    *  enter and not leave is a trap — the collapse affordance must outlive the condition that offered
@@ -94,46 +94,55 @@ export interface ComposerChrome {
   onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
   /** The expand affordance (D68 S5) — hand it straight to `<ExpandToggle/>`. */
   expand: ExpandControl;
-  /** The field's PAINTED height in px — the `Math.min(ceiling, scrollHeight)` this hook just wrote
-   *  as the textarea's height (0 for an empty draft). Exposed so a layout can make its own
-   *  does-it-fit decisions (the S6 re-round's control stack in LineComposer) in the one honest
-   *  currency: the RENDERED line count is a lie about space whenever the ceiling is the binding
-   *  term — a 20-line draft still PAINTS 96px at rest (the re-round review's MED-2). Read-only
-   *  fallout of the measurement that already runs; nothing new is observed. */
-  fieldPx: number;
-  /** The CEILING that measurement ran under (96 at rest, the viewport-derived tall one while
-   *  expanded) — the most the field can ever paint right now. The stack's exit rule needs it: its
-   *  hysteresis band may absorb a width re-wrap, but must never hold a column the current ceiling
-   *  cannot cover (the collapse-while-stacked hole the re-round's tail fix closed). */
-  fieldCeilPx: number;
+  /** The height in px the field WOULD paint at the `probeWidth` the caller named — the same value
+   *  this hook writes as the textarea's height (`Math.min(ceiling, scrollHeight)`, or the pinned tall
+   *  height while expanded), measured at that width instead of the current one (0 for an empty draft,
+   *  or with no probe). Exposed so a layout
+   *  can make its own does-it-fit decisions (LineComposer's control stack) in the one honest
+   *  currency: the PAINTED height, never the rendered line count, which lies whenever the ceiling
+   *  binds (a 20-line draft still paints the ceiling — the S6 re-round review's MED-2). */
+  probePx: number;
+}
+
+/** The layout-specific inputs of the measurement — one options object, so the next one is an additive
+ *  field rather than another trailing positional. */
+export interface ComposerChromeOptions {
+  /** ANYTHING THAT CHANGES THE FIELD'S RENDERED WIDTH, as one value whose IDENTITY changes with it
+   *  (the S6 fix wave MED-3, widened by the re-round): staging a rail moves the clip + toggle out of
+   *  the field row, and the line pill's control stack frees or reclaims a whole button lane — either
+   *  way the textarea re-wraps with no keystroke, and a stale measurement is a stale trigger, a stale
+   *  height and a stale probe. The stacked/sheet variants pass their staged boolean; LineComposer
+   *  passes a composite key carrying the stack state too. The measurement keys on it for the same
+   *  reason it keys on the viewport. */
+  widthKey?: unknown;
+  /** A width to ALSO measure the field at — `probePx` reports the height it would paint there. A
+   *  layout whose decision CHANGES the field's width (LineComposer's stack frees a button lane)
+   *  must not decide from the current width: the answer would feed back into its own input (the
+   *  keystroke-by-keystroke flip the owner hit, 2026-09-30). Measuring at one FIXED hypothetical
+   *  width keeps the decision a pure function of the content. Read inside the measurement, so it
+   *  must be referentially stable (a `useCallback` over refs); `null` → skip the probe. */
+  probeWidth?: (ta: HTMLTextAreaElement) => number | null;
 }
 
 export function useComposerChrome(
   taRef: RefObject<HTMLTextAreaElement | null>,
   draft: string,
   send: () => void,
-  /** ANYTHING THAT CHANGES THE FIELD'S RENDERED WIDTH, as one value whose IDENTITY changes with it
-   *  (the S6 fix wave MED-3, widened by the re-round): staging a rail moves the clip + toggle out of
-   *  the field row, and the line pill's control stack frees or reclaims a whole button lane — either
-   *  way the textarea re-wraps with no keystroke, and a stale measurement is a stale trigger, a stale
-   *  height and a stale painted-px. The stacked/sheet variants pass their staged boolean; LineComposer
-   *  passes a composite key carrying the stack state too. The measurement below keys on it for the
-   *  same reason it keys on the viewport. */
-  fieldWidthKey: unknown = false,
+  { widthKey = false, probeWidth }: ComposerChromeOptions = {},
 ): ComposerChrome {
-  // THE EXPAND AFFORDANCE (D68 S5 / ATTACHMENTS_PLAN §7 + §9-S5; main-seat ruling on R62 §5's evidence,
-  // owner-overridable at S6). Expanded is a TALLER AUTO-GROW CEILING AND NOTHING ELSE — the field still
-  // grows with content, the mode only raises where growth stops. (The peers' "expanded" opens a second
-  // editor surface — Telegram a rich one, open-webui a text-only modal, Signal a taller fixed field. We
-  // have no rich text and want no second editor, so the ceiling IS the feature.)
+  // THE EXPAND AFFORDANCE (D68 S5 / ATTACHMENTS_PLAN §7 + §9-S5). Expanded PINS THE FIELD AT THE TALL
+  // HEIGHT, at once, whatever the draft's length (the owner's 2026-09-30 round: a trigger that only
+  // raised a ceiling "doesn't really do much" until the text reached it — Telegram Android's expand
+  // and Signal's taller fixed field both jump straight to the tall box). Still no second editor
+  // surface (we have no rich text): the field itself is the tall box, the draft scrolls inside it,
+  // and collapsing hands it back to the auto-grow.
   const [expanded, setExpanded] = useState(false);
   const [lines, setLines] = useState(1);
-  // The PAINTED height and its ceiling (see `ComposerChrome.fieldPx`/`fieldCeilPx`) — set beside
-  // `lines` by the same measurement.
-  const [fieldPx, setFieldPx] = useState(0);
-  const [fieldCeilPx, setFieldCeilPx] = useState(CEIL_PX);
+  // The probed painted height (see `ComposerChrome.probePx`) — set beside `lines` by the same
+  // measurement.
+  const [probePx, setProbePx] = useState(0);
 
-  // Auto-grow the textarea to fit content (ceiling: 96px, or half the viewport while expanded), including
+  // Auto-grow the textarea to fit content (ceiling: 112px; expanded pins half the viewport), including
   // the initial render so a restored draft gets the right height as soon as the composer becomes visible.
   // The SAME measurement yields the RENDERED line count the trigger keys on (R62 §5: Telegram's own is
   // ResizeObserver-backed, ours is free — this effect already forces the layout) — no second observer.
@@ -149,7 +158,7 @@ export function useComposerChrome(
   // change, and `expanded` — the only state that reads `--app-h` — cannot be reached without one, so our
   // listener is always the later registration and sees the freshly written value.
   //
-  // IT RUNS ON `railStaged` TOO (S6 fix wave, MED-3), and for the third face of the same fact: staging
+  // IT RUNS ON THE `widthKey` TOO (S6 fix wave, MED-3), and for the third face of the same fact: staging
   // the first file (or clearing the last) moves the clip + the toggle between the field row and the
   // rail's tail, so the textarea's WIDTH changes with no keystroke — and a draft sitting on the
   // 2-line/3-line boundary would otherwise keep a stale line count, hence a stale trigger and a stale
@@ -172,7 +181,7 @@ export function useComposerChrome(
       if (ta.value === "") {
         ta.style.maxHeight = "";
         setLines(1);
-        setFieldPx(0);
+        setProbePx(0);
         return;
       }
       ta.style.height = "auto";
@@ -184,7 +193,23 @@ export function useComposerChrome(
       const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
       setLines(Math.max(1, Math.round((ta.scrollHeight - pad) / lineH)));
       const ceil = expanded ? expandedCeilPx() : CEIL_PX;
-      const painted = Math.min(ceil, ta.scrollHeight);
+      const painted = expanded ? ceil : Math.min(ceil, ta.scrollHeight);
+      // THE PROBE — the same read at the caller's width, taken while the field is still at `auto`
+      // (inline flex/width pinned for one forced layout, then handed back to the stylesheet; nothing
+      // paints in between, so the field never visibly moves). Expanded, the height is the pin at any
+      // width, so there is nothing to measure.
+      const probeW = probeWidth?.(ta) ?? null;
+      let probed = 0;
+      if (probeW !== null && expanded) probed = ceil;
+      else if (probeW !== null) {
+        const { flex, width } = ta.style;
+        ta.style.flex = "none";
+        ta.style.width = probeW + "px";
+        probed = Math.min(ceil, ta.scrollHeight);
+        ta.style.flex = flex;
+        ta.style.width = width;
+      }
+      setProbePx(probed);
       // THE GROWTH ANIMATES (owner, S6 re-round №2 — Telegram's smooth grow): kit.css carries a
       // motion-gated `transition: height` for this write, but the scrollHeight read above forced a
       // layout AT `auto`, which would become the transition's FROM and erase the animation (auto
@@ -207,8 +232,6 @@ export function useComposerChrome(
       ta.style.height = livePx > 0 ? livePx + "px" : prev;
       void ta.offsetHeight;
       ta.style.height = painted + "px";
-      setFieldPx(painted);
-      setFieldCeilPx(ceil);
     };
     measure();
     // `visualViewport` is the surface that reports the KEYBOARD (`window`'s resize does not fire for it on
@@ -226,7 +249,7 @@ export function useComposerChrome(
     }
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [draft, taRef, expanded, fieldWidthKey]);
+  }, [draft, taRef, expanded, widthKey, probeWidth]);
 
   // ── THE CARET, ACROSS A STREAMING PHRASE (S2.5 / R70 §5) ──────────────────────────────────────
   //
@@ -328,7 +351,6 @@ export function useComposerChrome(
       show: lines >= EXPAND_AT_LINES || expanded,
       toggle: () => setExpanded((v) => !v),
     },
-    fieldPx,
-    fieldCeilPx,
+    probePx,
   };
 }

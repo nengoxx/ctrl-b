@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { useAttachments } from "../../../hooks/useAttachments";
 import { useComposer } from "../../../hooks/useComposer";
@@ -55,15 +55,29 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   // THE CONTROL STACK's state (decided below, after the measurement it reads) — declared first
   // because the chrome hook's width key carries it.
   const [stacked, setStacked] = useState(false);
-  const { onKeyDown, expand, fieldPx, fieldCeilPx } = useComposerChrome(
-    taRef,
-    draft,
-    send,
-    // The field's width follows BOTH facts (the hook's `fieldWidthKey`): staging moves the clip +
-    // toggle to the rail, and the stack frees or reclaims a whole button lane. Flipping either
-    // re-measures at once, so the height and the painted-px are never stale (re-round MED-1).
-    `${staged}|${stacked}`,
-  );
+  // THE STACKED WIDTH — what the field is wide when the cluster is a COLUMN: its current width plus
+  // whatever the cluster would free by collapsing to its widest single control. Read off the live
+  // boxes, so it comes out the SAME whichever shape the cluster has right now (stacked, it frees
+  // nothing and this is the current width) — the invariant the stack decision below rests on. The
+  // row-shaped cluster's absolutely-positioned toggle adds no width and is narrower than a lane.
+  const clusterRef = useRef<HTMLDivElement>(null);
+  const stackedFieldWidth = useCallback((ta: HTMLTextAreaElement) => {
+    const cluster = clusterRef.current;
+    if (!cluster) return null;
+    // COMPUTED widths, not boxes: a pressed mic's scale or the stack hop's slide are transforms and
+    // must not read as a narrower lane — and unrounded, unlike `offsetWidth`, so the arithmetic stays
+    // exact against the field's own fractional width.
+    const w = (el: Element) => parseFloat(getComputedStyle(el).width) || 0;
+    const lane = Math.max(0, ...Array.from(cluster.children, w));
+    return ta.getBoundingClientRect().width + w(cluster) - lane;
+  }, []);
+  const { onKeyDown, expand, probePx } = useComposerChrome(taRef, draft, send, {
+    // The field's width follows BOTH facts (the hook's `widthKey`): staging moves the clip + toggle
+    // to the rail, and the stack frees or reclaims a whole button lane. Flipping either re-measures
+    // at once, so the height is never stale (re-round MED-1).
+    widthKey: `${staged}|${stacked}`,
+    probeWidth: stackedFieldWidth,
+  });
   // THE DUAL-MODE MIC GESTURE (D71 §6 / S0.5) — the same three lines as every variant; see KitComposer.
   const gesture = useMicGesture(mic, liveReady);
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
@@ -88,8 +102,8 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   // button. A LATCH, not a hide: whatever the row showed when the recording began stays (a
   // pre-typed draft keeps its send; an empty one doesn't summon it until release) — so the freeze
   // itself can never cause the reflow it prevents. Release re-evaluates at once; the D39 Stop
-  // morph waits with it (owner-accepted trade, plan §7-S3.5 addendum). Written during render —
-  // this file's own latch idiom (`entryNeeds`/`flippedFor` below).
+  // morph waits with it (owner-accepted trade, plan §7-S3.5 addendum). Written during render — a
+  // ref latch, so the frozen value never costs a re-render.
   const recording = mic.status === "recording";
   const showSendLive = !sttReady || sendable || isStreaming;
   const sendLatch = useRef(showSendLive);
@@ -98,67 +112,37 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
 
   // THE CONTROL STACK (the owner's S6 re-round, 2026-09-03): once the field is TALL enough, the
   // trailing controls turn vertical — mic over send, "same distance and everything" — and the text
-  // gets the freed lane back. "Only when there's space" (owner) is the whole rule, and the honest
-  // currency for "space" is the PAINTED field height the chrome hook just wrote — never the rendered
-  // line count, which lies whenever the ceiling binds (a 20-line draft still paints 96px at rest —
-  // the re-round review's MED-2, conf 1.00). Consequences that fall out for free:
-  //   · the PAIR (mic+send, 78px) fits under the 96px resting ceiling, so it stacks from ~3 lines
-  //     (77.25px painted — the 1px grace below accepts the sub-pixel, the pill grows ≤0.75px);
-  //   · the TRIO (the no-rail case adds the 28px toggle: 112px) does NOT fit a resting field at all —
-  //     it engages only while the owner has EXPANDED, where the painted height can actually cover it;
-  //   · the sum counts what actually RENDERS (re-round MED-3): no STT → no mic lane in the arithmetic.
-  // THE MEMORY (re-round MED-1, both rounds): stacking frees ~42px of width, the text re-wraps, and
-  // the freshly re-measured painted-px can fall back under the entry bar — a strict predicate would
-  // flip per keystroke, and NO band is provably wide enough (a narrow field can re-wrap more than
-  // one line — the confirm round's residual). So the loop is closed STRUCTURALLY, not by tuning:
-  //   · entry is strict (fits, with 1px grace for the 77.25-vs-78 sub-pixel, accepted);
-  //   · exit gives one 22px line of hysteresis, GUARDED by the ceiling (the band absorbs the
-  //     stack's own re-wrap, never holds a column the CURRENT ceiling cannot paint — which is what
-  //     un-stacks on mode collapse);
-  //   · a NEEDS change while stacked re-tests STRICTLY (confirm MED-5: an upload completing makes
-  //     send appear — a 78px pair must not ride a 36px entry's band on a 55px field);
-  //   · and THE LATCH: the decision may flip at most ONCE per change of its EXTERNAL inputs (the
-  //     draft, the rail, the mode, the column's needs). A flip re-measures at the new width (the
-  //     hook's width key), and whatever that self-induced measurement says, it cannot flip the
-  //     state back — the pathological geometry parks on the first answer until a real input moves.
-  //     Every oscillation dies here by construction, whatever the thresholds miss. (A rotation
-  //     changes no input, so a boundary case can sit one state stale until the next keystroke —
-  //     accepted, recorded.)
-  // Written as the React adjust-state-during-render idiom (never an effect: the cascading-render
-  // idiom eslint rightly flags — and a ref would not re-render, so the hook's width key would lag).
+  // gets the freed lane back. The honest currency for "tall enough" is the PAINTED field height —
+  // never the rendered line count, which lies whenever the ceiling binds (the re-round's MED-2).
+  // THE PAIR DECIDES (the owner's 2026-09-30 round — "you need too much text to make it switch"):
+  // the stack engages the moment MIC + SEND fit (78px, ~3 lines — 77.25 painted, hence the 1px
+  // grace), never waiting on the expand toggle. The toggle RIDES ON TOP of the column when it
+  // renders, and where a 3–4 line field is shorter than toggle + pair (112px) the pill simply grows
+  // to hold the column — the row's `flex-end` keeps the text where it was, only the pill's top edge
+  // rises (owner-ruled over moving the toggle to the leading lane or hiding it). Counting it would
+  // cost two whole lines of typing before the switch. A lone button never stacks: there is no lane
+  // to free, so the column would only move the toggle (and a no-STT field has no mic lane at all).
+  // Expanded, the field is pinned at the tall height, so the stack engages with the tap.
+  // THE HEIGHT IS MEASURED AT THE STACKED WIDTH, whatever the current shape (`stackedFieldWidth`
+  // above; the owner's jumping-buttons round, 2026-09-30). Stacking frees ~42px of width, so the
+  // CURRENT height is an input the decision itself moves: on a narrow phone field a draft painting
+  // 5 lines in the row re-wraps to 3 once stacked, and a decision read off the current width
+  // flipped back and forth on every keystroke for a whole line's worth of characters (reproduced at
+  // 360px). No hysteresis band is provably wide enough (a narrow field can re-wrap by more than a
+  // line). Measured at the one fixed width, the height no longer depends on the decision — it
+  // cannot oscillate, and stacking and un-stacking land on the same character typing forward and
+  // deleting back. A rotation or a mode change re-measures, so the decision follows them too.
   const GAP = 6; // the row's own gap — "same distance and everything" (owner)
-  const stackNeeds =
-    [!staged && 28, showMic && 36, showSend && 36]
-      .filter((h): h is number => h !== false)
-      .reduce((sum, h, at) => sum + h + (at > 0 ? GAP : 0), 0) || Number.MAX_SAFE_INTEGER; // an empty column never stacks
-  const entryNeeds = useRef(0); // what the column needed when the stack ENGAGED
-  const flippedFor = useRef(""); // the input-context the latch already spent its flip on
-  const stackCtx = `${draft}|${staged}|${expand.on}|${stackNeeds}`;
-  const fits = fieldPx >= stackNeeds - 1; // the strict entry test (1px grace: 77.25 vs 78)
-  const holds = fieldPx >= stackNeeds - 23 && fieldCeilPx >= stackNeeds - 1;
+  const LANE = 36; // one `.line-btn`
+  const stackNeeds = showMic && showSend ? LANE + GAP + LANE : Number.POSITIVE_INFINITY;
   // The stack decision FREEZES with the row (the same 2026-09-14 rule): the field auto-growing
   // under appended phrases could otherwise engage the stack mid-recording and move the mic — the
-  // exact jank the send latch just closed, through the other door. On release the ordinary rules
-  // run against the final geometry (a needs change re-tests strictly, as always).
-  const nextStacked = recording
-    ? stacked
-    : !stacked
-      ? fits
-      : stackNeeds !== entryNeeds.current // the column itself changed — strict re-test (MED-5)
-        ? fits
-        : holds;
-  // Re-baseline whenever the stack STANDS — entering, or SURVIVING a needs change on the strict
-  // re-test (the final confirm's catch: without this, a survived change left `entryNeeds` stale and
-  // every later input re-tested strictly, quietly killing the hysteresis for the whole episode).
-  // Idempotent while nothing changes, so it rides every render.
-  // …and NOT while the row is frozen (review F3): a needs change landing mid-recording (staging a
-  // file hands-free) must still face the STRICT re-test on release — a baseline rewritten under
-  // the freeze would quietly hand it the permissive `holds` band instead.
-  if (!recording && nextStacked) entryNeeds.current = stackNeeds;
-  if (nextStacked !== stacked && flippedFor.current !== stackCtx) {
-    flippedFor.current = stackCtx;
-    setStacked(nextStacked);
-  }
+  // exact jank the send latch closed, through the other door. On release it re-evaluates against
+  // the final geometry. Written as the React adjust-state-during-render idiom (never an effect: the
+  // cascading-render idiom eslint rightly flags — and a ref would not re-render, so the hook's width
+  // key would lag); it settles in one pass, since the target never reads `stacked`.
+  const nextStacked = recording ? stacked : probePx >= stackNeeds - 1; // 1px grace: 77.25 vs 78
+  if (nextStacked !== stacked) setStacked(nextStacked);
 
   return (
     <>
@@ -224,10 +208,10 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
               invisible: an unpositioned flex row with the row's own 6px gap, so the mic/send pair
               lays out exactly as it did as bare row children — and the expand toggle, rendered
               INSIDE it, still absolutely positions against `.line-row` (the nearest positioned
-              ancestor; the cluster deliberately is not one). Stacked (`.stack`, ≥3/≥5 rendered
-              lines per the arithmetic above) it turns into a bottom-anchored COLUMN — mic over
+              ancestor; the cluster deliberately is not one). Stacked (`.stack`, once mic + send
+              fit — the rule above) it turns into a bottom-anchored COLUMN — mic over
               send, the toggle in-flow on top exactly as the rail tail carries it. */}
-          <div className={"line-cluster" + (stacked ? " stack" : "")}>
+          <div ref={clusterRef} className={"line-cluster" + (stacked ? " stack" : "")}>
             {/* THE EXPAND TOGGLE — the field's top-right (R62 §5). This layout has no `.field`
                 wrapper (the ROW is the field), so it hangs off `.line-row`'s top-right corner —
                 which the `flex-end` row leaves empty — until the stack claims it in-flow. WHILE
