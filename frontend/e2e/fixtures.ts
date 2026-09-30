@@ -456,6 +456,76 @@ export async function seedUI(page: Page, ui: Record<string, unknown>): Promise<v
   }, ui);
 }
 
+/** One usable background in the `agents` media library, plus the bytes its URL serves — what a spec needs
+ *  to make the RESOLVED DEFAULT agent paint a known picture (the agent backdrop, gacha's oracle). */
+export interface AgentBackground {
+  name: string;
+  file: string;
+  format: string;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  contentType: string;
+  /** The picture's bytes, base64. */
+  base64: string;
+}
+
+/** The URL the media index names for `bg` (what the painted `<img>`'s `src` contains). */
+export const agentBackgroundUrl = (bg: AgentBackground) =>
+  `/api/media/agents/files/backgrounds/${bg.file}`;
+
+/** The `agents` media index with `bg` as its one usable background. */
+export function agentMediaIndex(bg: AgentBackground) {
+  return {
+    ns: "agents",
+    collation: "library-v1",
+    roles: {
+      avatars: [],
+      backgrounds: [
+        {
+          name: bg.name,
+          file: bg.file,
+          url: agentBackgroundUrl(bg),
+          format: bg.format,
+          size_bytes: bg.sizeBytes,
+          revision: `1:${bg.sizeBytes}`,
+          width: bg.width,
+          height: bg.height,
+          unusable: false,
+          unusable_reason: null,
+        },
+      ],
+    },
+    slots: {},
+  };
+}
+
+/** The roster with `bg` bound on the RESOLVED DEFAULT — the agent a bare boot runs as, so the picture
+ *  paints with no sticky pin and no interaction at all. */
+export function agentRosterFor(bg: AgentBackground) {
+  return {
+    agents: [],
+    default: "default",
+    summaries: {
+      default: { title: "default", description: "", avatar: "", background: bg.file, voice: "" },
+    },
+  };
+}
+
+/** Route the media index, the roster and the picture itself for `bg`. Registered after `mockApi`, so these
+ *  win (last-registered wins in Playwright); a spec can still layer its own routes on top. */
+export async function routeAgentBackground(page: Page, bg: AgentBackground): Promise<void> {
+  await page.route("**/api/media/agents", (route) => json(route, agentMediaIndex(bg)));
+  await page.route("**/api/agents", (route) => json(route, agentRosterFor(bg)));
+  await page.route(`**${agentBackgroundUrl(bg)}*`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: bg.contentType,
+      body: Buffer.from(bg.base64, "base64"),
+    }),
+  );
+}
+
 /** A thread whose last assistant message carries a `task_plan` call — the shape `currentPlanOf` reads, and
  *  therefore the only way to make the pinned panel mount from a seeded page. Shared, because every spec that
  *  needs a PINNED PLAN needs exactly this thread (layout's plan-chrome arms, and the agent backdrop's own). */

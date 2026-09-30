@@ -2039,6 +2039,15 @@ worst phase, the comb reads **0.32 (Chromium) / 0.51 (Gecko)** against 0.97 / 1.
 Both masks are static and mode-scoped: outside `data-oracle="fade"` nothing changes at all —
 `data-oracle="scroll"` renders byte-identically.
 
+*As-built, session 52 (2026-09-30), the owner's "lighter 1px line" at the art's bottom (session-51 polish #5):*
+the seam depends on the screen density. The face's bottom edge falls mid device pixel at DPR 2.625, 2.75 and
+3.5. There, Chromium painted the partial row with the pixel-snapped `<img>` and covered it only partly with the
+anti-aliased scrim (white-art probe: 51, 66 and 81 against 29 above). The fix is a **symmetric 1px overdraw**:
+`.gc-oracle-art { height: calc(100% + 1px) }` plus `.gc-oracle-face::after { inset: 0 0 -1px }`, so the block's
+padding-box clip cuts art and scrim at one edge. A scrim-only overdraw turned the row darker instead. Both modes
+are fixed, and scroll mode's hairline is untouched. The test is `e2e/gacha-oracle-edge.spec.ts`: Chromium only
+(Gecko never showed the seam), mobile project, both modes, |last row − row above| ≤ 4.
+
 **⑤ THE PEEK DETENT (owner report, same round: the stars CLIP at the half-closed sheet).** Measured at
 393px with a ★5 tab, the deepest mark: the peek fold sat at the sheet's **+166px** with the tab's bottom
 rim at **+169** — **3.1px past it, clipped** — and the stars themselves only 1.9px clear before their own

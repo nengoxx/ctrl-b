@@ -4107,7 +4107,14 @@
       position: absolute;
       inset: 0;
       width: 100%;
-      height: 100%;
+      /* The ART's half of the 1px overdraw (session-51 polish #5) — see the scrim `::after` below, which
+       * bleeds by the same pixel. Both layers now overrun the face's bottom into the block's `overflow:
+       * hidden` clip, so that ONE clip decides the edge for art and scrim together: with the scrim alone
+       * bleeding, the partial last row read darker instead (probe: 20/23 against 30 above at DPR 2.75/3.5).
+       * The height alone carries it (with `top` and `height` set, `bottom` is ignored). `cover` now frames
+       * over 301px instead of 300 — a 1/300 scale change that moves the focal crop by under a pixel
+       * (accepted, session-52 review). */
+      height: calc(100% + 1px);
       object-fit: cover;
       object-position: var(--gc-oracle-pos);
     }
@@ -4117,7 +4124,13 @@
     .gc-oracle-face::after {
       content: "";
       position: absolute;
-      inset: 0;
+      /* The SCRIM's half of the 1px overdraw (session-51 polish #5, the owner's "lighter 1px line"): at a
+       * fractional device-pixel edge the pixel-snapped <img> painted the partial last row while the
+       * anti-aliased scrim only partly covered it, so raw art showed there (probe, white art: 51/66/81
+       * against 29 above at DPR 2.625/2.75/3.5 — e2e/gacha-oracle-edge.spec.ts). The art bleeds by the
+       * same pixel (`.gc-oracle-art` above), so the block's `overflow: hidden` clip cuts both at one edge;
+       * that clip is the padding box, so scroll mode's hairline is untouched. */
+      inset: 0 0 -1px;
       background: var(--gc-oracle-scrim);
     }
     /* M6 — the scanline. Transform-only travel over a STATIC comb (§14.11), blended to screen like the

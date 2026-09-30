@@ -1,5 +1,15 @@
-import { expect, test } from "./fixtures";
-import { planThread, seedThread, seedUI } from "./fixtures";
+import {
+  agentBackgroundUrl,
+  agentMediaIndex,
+  agentRosterFor,
+  planThread,
+  routeAgentBackground,
+  seedThread,
+  seedUI,
+  expect,
+  test,
+  type AgentBackground,
+} from "./fixtures";
 
 // THE AGENT BACKDROP in the REAL built app (D70 §8.3/§8.3a) — the half the unit suite structurally cannot
 // reach. `tests/theme-engine/agentBackdrop.test.tsx` proves WHAT MOUNTS; everything asserted here needs a
@@ -11,41 +21,24 @@ import { planThread, seedThread, seedUI } from "./fixtures";
 // reconcile HOLDS the seeded pick) — plus two routed fixtures: an agent that HAS a background, and the
 // library row it binds. Registered after `mockApi`, so they win (last-registered wins in Playwright).
 
-const BG = "/api/media/agents/files/backgrounds/hall.webp";
-
-/** The `agents` media index with one usable background — the row the binding below names. */
-const AGENT_MEDIA = {
-  ns: "agents",
-  collation: "library-v1",
-  roles: {
-    avatars: [],
-    backgrounds: [
-      {
-        name: "hall",
-        file: "hall.webp",
-        url: BG,
-        format: "webp",
-        size_bytes: 90_000,
-        revision: "1:90000",
-        width: 1200,
-        height: 1600,
-        unusable: false,
-        unusable_reason: null,
-      },
-    ],
-  },
-  slots: {},
+/** The agent's one usable background. The picture itself never has to decode for any assertion here
+ *  (geometry and stacking are the claims), but a 404 would log noise and leave a broken-image box — so the
+ *  URL serves a 1×1 GIF and the layer paints something. */
+const HALL: AgentBackground = {
+  name: "hall",
+  file: "hall.webp",
+  format: "webp",
+  sizeBytes: 90_000,
+  width: 1200,
+  height: 1600,
+  contentType: "image/gif",
+  base64: "R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==",
 };
-
-/** The roster with that binding on the RESOLVED DEFAULT — the agent a bare boot runs as, so the backdrop
- *  paints with no sticky pin and no interaction at all. */
-const AGENT_ROSTER = {
-  agents: [],
-  default: "default",
-  summaries: {
-    default: { title: "default", description: "", avatar: "", background: "hall.webp", voice: "" },
-  },
-};
+const BG = agentBackgroundUrl(HALL);
+/** The `agents` media index with that one background, and the roster binding it on the RESOLVED DEFAULT —
+ *  the base objects the sticky-pick arm below layers a second agent onto. */
+const AGENT_MEDIA = agentMediaIndex(HALL);
+const AGENT_ROSTER = agentRosterFor(HALL);
 
 type Mode = "operator" | "full" | "off";
 
@@ -64,29 +57,7 @@ async function boot(
     v: 1,
     ...ui,
   });
-  await page.route("**/api/media/agents", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(AGENT_MEDIA),
-    }),
-  );
-  await page.route("**/api/agents", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(AGENT_ROSTER),
-    }),
-  );
-  // The picture itself never has to decode for any assertion here (geometry and stacking are the claims),
-  // but a 404 would log noise and leave a broken-image box — serve a 1×1 so the layer paints something.
-  await page.route(`**${BG}*`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "image/gif",
-      body: Buffer.from("R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==", "base64"),
-    }),
-  );
+  await routeAgentBackground(page, HALL);
   await page.goto("/");
   await page.waitForSelector("#tab-agent.active");
 }
