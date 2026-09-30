@@ -181,8 +181,9 @@ vi.mock("../../src/lib/audioController", () => ({
     h.dismissTurn();
     h.dismiss();
   },
-  // The mouth's speech policy, as the text backstop reads it (D80 ②): actions DROPPED, the prod setting.
-  getChunkPolicy: () => ({ speakActions: false }),
+  // The policy the mouth SPOKE the reply by, as the text backstop reads it (D80 ②): actions DROPPED —
+  // the prod setting, on a conversational speaker (session-51 polish #6).
+  getSpokenPolicy: () => ({ speakActions: false }),
   openCallVoiceGate: h.openGate,
   setCallVoice: h.setCallVoice,
   useMouthFailures: () => h.failures,

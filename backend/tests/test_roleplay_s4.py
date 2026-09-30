@@ -3,7 +3,7 @@
 One compact per-agent projection beside the names, so the gallery, the composer's agent picker, the
 who-line avatar and the backdrop share ONE always-on read instead of fetching every agent in full.
 
-What is pinned here: the map holds the root default AND every specialist; the five showcase fields
+What is pinned here: the map holds the root default AND every specialist; the five showcase fields + `duties`
 come straight off the loaded `AgentDef`; the RESOLVED default is always a key (so `default` can be
 looked up in the map); media stays unresolved (ids, not URLs — that join is the media index's); and a
 specialist whose folder will not load degrades to a name-only row rather than 500ing the route.
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from test_roleplay_s0 import _agent, _client, _workspace
 
-_FIELDS = {"title", "description", "avatar", "background", "voice"}
+_FIELDS = {"title", "description", "avatar", "background", "voice", "duties"}
 
 
 def _listing(c) -> dict:
@@ -47,9 +47,22 @@ def test_the_map_carries_the_default_and_every_specialist() -> None:
             "avatar": "lynette.png",  # a LIBRARY ENTRY NAME, never a URL — the index owns that join
             "background": "cafe.webp",
             "voice": "af_sky",
+            "duties": "agent",  # the AgentDef default — a hand-made specialist is an agent until flipped
         }
         # every specialist is listed, and the map answers for each of them
         assert set(body["agents"]) <= set(body["summaries"])
+
+
+def test_the_summary_carries_the_duties_fact() -> None:
+    """`duties` is the one "kind"-like fact the client reads off the map: the roleplay action convention
+    (single-`*` stage directions — carried across lines on screen, dropped by the ear) applies to a
+    `conversational` agent only, so the root default must read `agent` and a conversational specialist
+    `conversational` (session-51 polish #6)."""
+    with _workspace(), _client() as c:
+        _agent(c, "seraphina", title="Seraphina", duties="conversational")
+        summaries = _listing(c)["summaries"]
+        assert summaries["seraphina"]["duties"] == "conversational"
+        assert summaries["default"]["duties"] == "agent"
 
 
 def test_the_resolved_default_is_always_a_key() -> None:

@@ -1527,7 +1527,10 @@ async def get_default_prompt() -> dict[str, str]:
 #: agent+SOUL fetches per mount.
 #: Media stays UNRESOLVED here — `avatar`/`background` are library entry names, and turning one into a
 #: URL + focal point is the media index's job (`GET /api/media/agents`), never a second resolver.
-_SUMMARY_FIELDS = ("title", "description", "avatar", "background", "voice")
+#: `duties` rides along because the client gates the roleplay ACTION convention on it (single-`*`
+#: spans as stage directions — the multi-line carry on screen, the drop in the ear): it applies to a
+#: `conversational` agent only (session-51 polish #6). A degraded row's `""` reads as "not conversational".
+_SUMMARY_FIELDS = ("title", "description", "avatar", "background", "voice", "duties")
 
 
 def _agent_summary(agent: AgentDef) -> dict[str, str]:

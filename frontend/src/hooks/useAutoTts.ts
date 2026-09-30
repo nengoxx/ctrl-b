@@ -7,10 +7,12 @@ import {
   getTurnStops,
   useCallVoice,
   usePlayback,
+  type Speaker,
 } from "../lib/audioController";
 import { useChat } from "../store/chat";
 import type { ChatMessage } from "../types";
 import { useUISlice } from "../store/ui";
+import { useAgentArt } from "./useAgentArt";
 import { useVoiceStatus } from "./useVoiceStatus";
 
 // Phase 6b-2 — auto read-aloud. When a chat turn *finishes* (status streaming→idle) and the AppBar
@@ -68,9 +70,11 @@ export function useAutoTts(): void {
   /** What this turn has fed: the message id, the exact markdown (the flush's fallback when the turn's
    *  last message never becomes text-bearing), and whether the player ever docked it — an undock
    *  after that is the "user stopped" gate D63 named but no controller flag expresses. */
-  const fed = useRef<{ id: string; text: string; agent: string | null; docked: boolean } | null>(
-    null,
-  );
+  const fed = useRef<{ id: string; text: string; speaker: Speaker; docked: boolean } | null>(null);
+  // WHO each reply is read as: the agent picks the voice, and its duties decide whether `*…*` spans are
+  // roleplay actions the ear may drop (session-51 polish #6). Resolved through the one agent resolver
+  // (the roster the bubbles already read), never a second roster query.
+  const agentArt = useAgentArt();
   const abandoned = useRef(false);
   /** The controller's turn-stop count as this turn began (LIVE-001): a call's stop (`dismissTurn`) bumps
    *  it, and a bump mid-turn is the SAME "the user stopped it" as an undock — but one that needs nothing
@@ -108,7 +112,12 @@ export function useAutoTts(): void {
       dismiss();
     }
     // The turn this render is about — hoisted because both the feed and the terminal edge need it.
-    const live = finalReply(messages);
+    const reply = finalReply(messages);
+    const live = reply && {
+      id: reply.id,
+      text: reply.text,
+      speaker: { agent: reply.agent, actions: agentArt(reply.agent).actions },
+    };
     // The override's first bypass: `ttsAuto` (the AppBar toggle). It only ever ADDS a voice — this
     // gate never silences anything. (What DOES silence a pre-call reply is the call DOOR's one-time
     // `dismiss()` at start, whose undock arms `abandoned` above and keeps that turn silent — the
@@ -126,7 +135,7 @@ export function useAutoTts(): void {
       const target = live ?? fed.current;
       if (!target || target.id === spokenId.current) return;
       spokenId.current = target.id;
-      void endTurnSpeak(target.id, target.text, target.agent);
+      void endTurnSpeak(target.id, target.text, target.speaker);
       return;
     }
     if (status !== "streaming") return;
@@ -148,9 +157,9 @@ export function useAutoTts(): void {
     fed.current = {
       id: live.id,
       text: live.text,
-      agent: live.agent,
+      speaker: live.speaker,
       docked: fed.current?.id === live.id && fed.current.docked,
     };
-    feedReadAlong(live.id, live.text, live.agent);
-  }, [status, messages, ttsAuto, ttsOk, chunking, dockedId, callSpeaks]);
+    feedReadAlong(live.id, live.text, live.speaker);
+  }, [status, messages, ttsAuto, ttsOk, chunking, dockedId, callSpeaks, agentArt]);
 }

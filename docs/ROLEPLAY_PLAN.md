@@ -194,6 +194,9 @@ config migration step 5 (§14.1 A5).*
     yourself, tools available when genuinely useful, no task-plan pushing, no progress
     narration. Written fresh in S0, tuned by the owner via the Phase 18 editor like any
     registry prompt (`prompts:` override + Conf).
+  - *(As-built 2026-09-30, session-51 polish #6:)* `duties` also rides the `GET /agents` summary map for
+    two CLIENT consumers — the bubble's multi-line `*…*` action carry and the ear's `speak_actions` drop
+    both apply to a `conversational` agent only (the roleplay action convention; DECISIONS D74 ⑤).
 
 ### 4.1a The two duties texts — v1 drafts, verbatim (registry defaults; owner-tunable per Phase 18)
 

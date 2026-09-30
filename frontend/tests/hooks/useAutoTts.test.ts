@@ -36,6 +36,9 @@ const h = vi.hoisted(() => {
     dismiss: vi.fn(),
     /** The controller's turn-stop count (LIVE-001 — a call's stop bumps it). */
     stops: 0,
+    /** The agent resolver, ONE stable function (the real one is memoized): `lynette` is the
+     *  conversational agent here, every other turn (the default included) an `agent`-duties one. */
+    art: (name: string | null) => ({ actions: name === "lynette" }),
   };
 });
 
@@ -44,6 +47,8 @@ vi.mock("../../src/store/ui", () => ({
   useUISlice: (sel: (s: { ttsAuto: boolean }) => unknown) => sel(h.ui),
 }));
 vi.mock("../../src/hooks/useVoiceStatus", () => ({ useVoiceStatus: () => ({ data: h.voice }) }));
+// The one agent resolver (session-51 polish #6) — `h.art`, stable across renders like the real one.
+vi.mock("../../src/hooks/useAgentArt", () => ({ useAgentArt: () => h.art }));
 vi.mock("../../src/lib/audioController", () => ({
   feedReadAlong: h.feed,
   endTurnSpeak: h.endTurn,
@@ -54,6 +59,9 @@ vi.mock("../../src/lib/audioController", () => ({
 }));
 
 import { useAutoTts } from "../../src/hooks/useAutoTts";
+
+/** The speaker of a default turn: the global voice, and not conversational. */
+const AGENT = { agent: null, actions: false };
 
 function message(id: string, role: "user" | "assistant", parts: Part[]): ChatMessage {
   return {
@@ -104,14 +112,14 @@ describe("useAutoTts — the read-along feed (C3 S2)", () => {
     expect(h.feed).not.toHaveBeenCalled();
 
     step("streaming", [user, said("a1", "Sure thing.")]);
-    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "Sure thing.", null);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "Sure thing.", AGENT);
 
     // The suffix is what carries the boundary — text past the last feed with none in it is not a feed.
     step("streaming", [user, said("a1", "Sure thing. Let me")]);
     expect(h.feed).toHaveBeenCalledTimes(1);
     step("streaming", [user, said("a1", "Sure thing. Let me look.")]);
     expect(h.feed).toHaveBeenCalledTimes(2);
-    expect(h.feed).toHaveBeenLastCalledWith("a1", "Sure thing. Let me look.", null);
+    expect(h.feed).toHaveBeenLastCalledWith("a1", "Sure thing. Let me look.", AGENT);
   });
 
   it("never feeds REASONING — only the message's text part is ever spoken", () => {
@@ -127,7 +135,7 @@ describe("useAutoTts — the read-along feed (C3 S2)", () => {
         { type: "text", text: "Done." },
       ]),
     ]);
-    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "Done.", null);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "Done.", AGENT);
   });
 
   it("feeds nothing when auto-TTS is muted", () => {
@@ -157,7 +165,7 @@ describe("useAutoTts — the read-along feed (C3 S2)", () => {
     step("streaming", [user, said("a1", "Sure thing.")]);
     expect(h.feed).not.toHaveBeenCalled();
     step("idle", [user, said("a1", "Sure thing.")]);
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Sure thing.", null);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Sure thing.", AGENT);
   });
 });
 
@@ -167,7 +175,7 @@ describe("useAutoTts — the turn-end flush", () => {
     step("streaming", [user]); // D17: nothing streams, the reply lands whole at the end
     expect(h.feed).not.toHaveBeenCalled();
     step("idle", [user, said("a1", "The whole reply.")]);
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "The whole reply.", null);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "The whole reply.", AGENT);
   });
 
   it("flushes a Stop mid-stream: what was generated is what gets read", () => {
@@ -175,7 +183,7 @@ describe("useAutoTts — the turn-end flush", () => {
     step("streaming", [user, said("a1", "Half a reply.")]);
     expect(h.feed).toHaveBeenCalledTimes(1);
     step("idle", [user, said("a1", "Half a reply. And a bi")]); // stopTurn settles on idle
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Half a reply. And a bi", null);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Half a reply. And a bi", AGENT);
   });
 
   it("flushes an ERRORED turn exactly once — the `done(error)` behind it is not a second turn", () => {
@@ -187,7 +195,7 @@ describe("useAutoTts — the turn-end flush", () => {
       { type: "error", message: "agent error", retryable: true },
     ]);
     step("error", [user, failed]);
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Half a reply.", null);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Half a reply.", AGENT);
     step("error", [user, failed]); // the `done{state:"error"}` frame right behind it
     expect(h.endTurn).toHaveBeenCalledTimes(1);
   });
@@ -195,33 +203,40 @@ describe("useAutoTts — the turn-end flush", () => {
   it("flushes the session it OWNS when the turn's last message never became text-bearing", () => {
     const step = mount();
     step("streaming", [user, said("a1", "Let me check the fleet.")]);
-    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "Let me check the fleet.", null);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "Let me check the fleet.", AGENT);
     // The tool step opens a second assistant message that only ever holds a tool_call — `finalReply`
     // reads null there, which would strand the preamble already being read aloud.
     const toolOnly = message("a2", "assistant", [
       { type: "tool_call", call_id: "c1", tool: "fleet", args: {}, state: "ok" },
     ]);
     step("idle", [user, said("a1", "Let me check the fleet."), toolOnly]);
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Let me check the fleet.", null);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Let me check the fleet.", AGENT);
   });
 
   // D70 §8.5 (ruling 21) — the turn's AGENT rides both entry points, so read-along and the turn-end
-  // flush speak in that agent's voice; `null` (a default turn, every case above) omits the field.
-  it("carries a specialist turn's agent through both the feed and the flush", () => {
+  // flush speak in that agent's voice; `null` (a default turn, every case above) omits the field. Its
+  // duties ride beside it as `actions` (session-51 polish #6) — resolved by the one agent resolver.
+  it("carries a specialist turn's speaker (agent + duties gate) through both the feed and the flush", () => {
     const spoken = message("a1", "assistant", [{ type: "text", text: "Sure thing." }]);
     spoken.agent = "lynette";
     const step = mount();
     step("streaming", [user, spoken]);
-    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "Sure thing.", "lynette");
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "Sure thing.", {
+      agent: "lynette",
+      actions: true,
+    });
     step("idle", [user, spoken]);
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Sure thing.", "lynette");
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Sure thing.", {
+      agent: "lynette",
+      actions: true,
+    });
   });
 
   it("a later text-bearing message wins the flush (per-message superseding)", () => {
     const step = mount();
     step("streaming", [user, said("a1", "Let me check.")]);
     step("idle", [user, said("a1", "Let me check."), said("a2", "It is awake.")]);
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a2", "It is awake.", null);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a2", "It is awake.", AGENT);
   });
 });
 
@@ -251,7 +266,7 @@ describe("useAutoTts — the per-turn abandon latch", () => {
     expect(h.endTurn).not.toHaveBeenCalled();
     // …and only for THAT turn: the next one reads along again.
     step("streaming", [user, said("a2", "Here. Now.")]);
-    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a2", "Here. Now.", null);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a2", "Here. Now.", AGENT);
   });
 
   it("losing TTS mid-turn stops the open session instead of stranding it", () => {
@@ -280,7 +295,7 @@ describe("useAutoTts — the per-turn abandon latch", () => {
     step("streaming", [user, said("a1", "One sentence. Two sentences.")]);
     expect(h.feed).toHaveBeenCalledTimes(2);
     step("idle", [user, said("a1", "One sentence. Two sentences.")]);
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "One sentence. Two sentences.", null);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "One sentence. Two sentences.", AGENT);
   });
 
   it("the latch is per TURN — the next turn reads along again", () => {
@@ -295,7 +310,7 @@ describe("useAutoTts — the per-turn abandon latch", () => {
 
     const turn2 = [user, said("a1", "One. Two. Three."), user, said("a2", "A new reply.")];
     step("streaming", turn2);
-    expect(h.feed).toHaveBeenLastCalledWith("a2", "A new reply.", null);
+    expect(h.feed).toHaveBeenLastCalledWith("a2", "A new reply.", AGENT);
   });
 });
 
@@ -306,9 +321,9 @@ describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
     h.call = { active: true, waiting: false };
     const step = mount();
     step("streaming", [user, said("a1", "On my way.")]);
-    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "On my way.", null);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "On my way.", AGENT);
     step("idle", [user, said("a1", "On my way.")]);
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "On my way.", null);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "On my way.", AGENT);
   });
 
   it("does NOT pick up the turn that was already streaming — not even after it is RENAMED", () => {
@@ -335,7 +350,7 @@ describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
     h.call = { active: true, waiting: false }; // the machine opens it on exactly that edge
     const next = [user, said("m1", "Half-read already."), user, said("m2", "This one is yours.")];
     step("streaming", next);
-    expect(h.feed).toHaveBeenCalledExactlyOnceWith("m2", "This one is yours.", null);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("m2", "This one is yours.", AGENT);
   });
 
   it("the GATE never silences: with auto-TTS on and the gate shut, the feeder still feeds", () => {
@@ -347,9 +362,9 @@ describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
     h.call = { active: true, waiting: true };
     const step = mount();
     step("streaming", [user, said("m1", "Half-read already.")]);
-    expect(h.feed).toHaveBeenCalledExactlyOnceWith("m1", "Half-read already.", null);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("m1", "Half-read already.", AGENT);
     step("idle", [user, said("m1", "Half-read already.")]);
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("m1", "Half-read already.", null);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("m1", "Half-read already.", AGENT);
   });
 
   it("with chunking OFF the reply still speaks — whole, at turn end (§4.5's stated fallback)", () => {
@@ -360,7 +375,7 @@ describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
     step("streaming", [user, said("a1", "Nothing to split.")]);
     expect(h.feed).not.toHaveBeenCalled();
     step("idle", [user, said("a1", "Nothing to split.")]);
-    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Nothing to split.", null);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Nothing to split.", AGENT);
   });
 
   it("does not override TTS being unconfigured — there is no mouth to force on", () => {

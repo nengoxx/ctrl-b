@@ -17,6 +17,9 @@ import type { ChatMessage } from "../../src/types";
 
 const h = vi.hoisted(() => ({
   chat: { messages: [] as ChatMessage[], status: "idle" },
+  /** The agent resolver, ONE stable function (the real one is memoized): `lynette` is the routed
+   *  conversational specialist, every other turn an `agent`-duties one (session-51 polish #6). */
+  art: (name: string | null) => ({ actions: name === "lynette" }),
 }));
 
 vi.mock("../../src/store/toast", () => ({ pushToast: vi.fn() }));
@@ -29,6 +32,9 @@ vi.mock("../../src/hooks/useVoiceStatus", () => ({
     data: { tts: true, tts_chunking: { mode: "sentence", read_along: true } },
   }),
 }));
+
+// The agent resolver reads the roster query; no roster here — `h.art` answers for it.
+vi.mock("../../src/hooks/useAgentArt", () => ({ useAgentArt: () => h.art }));
 
 import { useAutoTts } from "../../src/hooks/useAutoTts";
 import {
@@ -68,6 +74,8 @@ class FakeAudio {
 }
 
 let synths = 0;
+/** What reached the wire, per synth — the speaker's agent and the words its policy kept. */
+let bodies: { text: string; agent?: string }[] = [];
 
 function msg(id: string, role: "user" | "assistant", text: string): ChatMessage {
   return {
@@ -104,8 +112,10 @@ beforeEach(() => {
   URL.createObjectURL = vi.fn(() => "blob:x");
   URL.revokeObjectURL = vi.fn();
   synths = 0;
-  globalThis.fetch = vi.fn(async () => {
+  bodies = [];
+  globalThis.fetch = vi.fn(async (_url: unknown, init?: RequestInit) => {
     synths += 1;
+    bodies.push(JSON.parse(String(init?.body)) as { text: string; agent?: string });
     return {
       ok: true,
       status: 200,
@@ -123,7 +133,7 @@ beforeEach(() => {
     lookahead: 1,
     format: "opus",
     readAlong: true,
-    speakActions: true,
+    speakActions: false, // the prod setting — so a speaker's duties are visible on the wire
   });
   h.chat = { messages: [], status: "idle" };
 });
@@ -186,10 +196,16 @@ describe("useAutoTts × audioController — a call stop in THINKING speaks nothi
     act(() => dismissTurn());
     await step("idle", [user, msg("a4", "assistant", "Sure")]);
     const again = msg("u2", "user", "the right question");
-    await step("streaming", [user, again, msg("a5", "assistant", "")]);
-    await step("idle", [user, again, msg("a5", "assistant", "Right. Here it is.")]);
+    // the next turn is ROUTED to the conversational specialist (Maya M3): its speaker — agent AND
+    // duties — must cross the real feeder → controller seam, so its action is dropped on the wire
+    const routed = (text: string) => ({ ...msg("a5", "assistant", text), agent: "lynette" });
+    await step("streaming", [user, again, routed("")]);
+    await step("idle", [user, again, routed("*She nods.* Right. Here it is.")]);
     expect(synths).toBeGreaterThan(0);
     expect(view.result.current.id).toBe("a5");
+    expect(bodies.every((b) => b.agent === "lynette")).toBe(true);
+    expect(bodies.map((b) => b.text).join(" ")).not.toContain("nods");
+    expect(bodies.map((b) => b.text).join(" ")).toContain("Here it is.");
   });
 
   it("a composer Stop (no stop door) still speaks its partial — owner ruling 1 stands", async () => {

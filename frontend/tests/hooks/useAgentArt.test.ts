@@ -38,6 +38,7 @@ const summary = (over: Partial<AgentSummary> = {}): AgentSummary => ({
   avatar: "",
   background: "",
   voice: "",
+  duties: "agent",
   ...over,
 });
 
@@ -67,6 +68,17 @@ describe("resolveAgentArt — the summary × media-index join", () => {
     expect(resolveAgentArt("ops", summary({ title: "ops" }), index([])).titled).toBe(true);
   });
 
+  it("gates the roleplay action convention on conversational duties (session-51 polish #6)", () => {
+    expect(resolveAgentArt("sera", summary({ duties: "conversational" }), index([])).actions).toBe(
+      true,
+    );
+    // the root default / any hand-made specialist is an `agent` — single `*` is plain emphasis there
+    expect(resolveAgentArt("default", summary({ duties: "agent" }), index([])).actions).toBe(false);
+    // the degraded name-only row (`""`) and an agent missing from the map both read as NOT conversational
+    expect(resolveAgentArt("broken", summary({ duties: "" }), index([])).actions).toBe(false);
+    expect(resolveAgentArt("ghost", undefined, index([])).actions).toBe(false);
+  });
+
   it("resolves avatar and background independently, from their own roles", () => {
     const art = resolveAgentArt(
       "lynette",
@@ -86,6 +98,7 @@ describe("resolveAgentArt — the summary × media-index join", () => {
       name: "ghost",
       title: "ghost",
       titled: false,
+      actions: false,
       avatar: undefined,
       background: undefined,
       voice: undefined,

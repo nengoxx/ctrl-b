@@ -136,6 +136,11 @@ const RE = {
 // several `<p>`/`<br>`s). A single break becomes `<em>…</em><br/><em>…</em>` in one `<p>`; a blank line
 // becomes two `<p>`s, each with its own `<em>`. Single-line pairs are left byte-for-byte as they were.
 // Scope is `*` only: `_` pairs falsely across lines in snake_case prose, and `**` is its own construct.
+//
+// The whole pre-pass is the ROLEPLAY action convention, so it runs for a CONVERSATIONAL agent only
+// (`actions`, session-51 polish #6): on an `agent`-duties reply an unbackticked `*.tmp` in prose would
+// otherwise italicize to the end of the settled reply. There single `*` is ordinary per-line emphasis —
+// no carry across lines, no settled-tail italics.
 
 /** Stars that are STRUCTURE, not emphasis, blanked (same length) before pairing so they can never
  *  close a span: a `*` bullet marker (also after a `>`), and a `***` / `* * *` rule line. The ear
@@ -220,9 +225,11 @@ function carryActions(src: string, settled: boolean): string {
     .join("\n");
 }
 
-/** Split markdown into a flat list of rendered block nodes. */
-function blocks(src: string, settled: boolean): ReactNode[] {
-  const lines = carryActions(src.replace(/\r\n?/g, "\n"), settled).split("\n");
+/** Split markdown into a flat list of rendered block nodes. `actions` false skips the action pre-pass
+ *  entirely (session-51 polish #6) — `settled` then changes nothing, it only ever fed that pass. */
+function blocks(src: string, settled: boolean, actions: boolean): ReactNode[] {
+  const norm = src.replace(/\r\n?/g, "\n");
+  const lines = (actions ? carryActions(norm, settled) : norm).split("\n");
   const out: ReactNode[] = [];
   let i = 0;
   let key = 0;
@@ -312,13 +319,19 @@ function blocks(src: string, settled: boolean): ReactNode[] {
  *
  *  `settled` (session-51 polish #2, Q2b): the text is final — no token will extend it — so an action
  *  opener the model never closed is italicized to the end. Absent/false keeps it literal (the streaming
- *  posture: a closer may still arrive). */
+ *  posture: a closer may still arrive).
+ *
+ *  `actions` (session-51 polish #6): the text follows the roleplay action convention (a conversational
+ *  agent's reply — `AgentArt.actions`), so single-`*` spans carry across lines and `settled` applies.
+ *  Default FALSE: a plain markdown renderer does not carry emphasis across blocks. */
 export const Markdown = memo(function Markdown({
   text,
   settled = false,
+  actions = false,
 }: {
   text: string;
   settled?: boolean;
+  actions?: boolean;
 }) {
-  return <>{blocks(text, settled)}</>;
+  return <>{blocks(text, settled, actions)}</>;
 });

@@ -507,7 +507,14 @@ export function agentRosterFor(bg: AgentBackground) {
     agents: [],
     default: "default",
     summaries: {
-      default: { title: "default", description: "", avatar: "", background: bg.file, voice: "" },
+      default: {
+        title: "default",
+        description: "",
+        avatar: "",
+        background: bg.file,
+        voice: "",
+        duties: "agent", // mirrors the wire: the root default is an `agent` (session-51 polish #6)
+      },
     },
   };
 }

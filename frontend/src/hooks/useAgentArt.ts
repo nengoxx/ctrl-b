@@ -52,6 +52,11 @@ export interface AgentArt {
    *  difference — an untitled default reads "assistant" (session-51 polish #1) — and comparing `title`
    *  to the slug would misread an agent whose title happens to equal its slug. */
   titled: boolean;
+  /** The roleplay ACTION convention — single-`*` spans are stage directions, carried across lines on
+   *  screen and dropped by the ear under `speak_actions: false` — applies to a CONVERSATIONAL agent
+   *  only; an `agent`-duties reply keeps single `*` as ordinary per-line emphasis and is read in full
+   *  (session-51 polish #6). Unknown (no summary, degraded row) ⇒ false. */
+  actions: boolean;
   avatar?: BoundArt;
   background?: BoundArt;
   /** The agent's own TTS voice binding; absent ⇒ the global `voice.tts` chain answers (ruling 21). */
@@ -84,6 +89,8 @@ export function resolveAgentArt(
     name,
     title: summary?.title || name,
     titled: !!summary?.title,
+    // the duties gate (session-51 polish #6): only a talking agent narrates, so only its stars are actions
+    actions: summary?.duties === "conversational",
     avatar: bound(index?.roles?.[AVATARS_ROLE], summary?.avatar ?? ""),
     background: bound(index?.roles?.[BACKGROUNDS_ROLE], summary?.background ?? ""),
     voice: summary?.voice || undefined,

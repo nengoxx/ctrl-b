@@ -5,7 +5,7 @@ import { useAgentArt, type AgentArt } from "../hooks/useAgentArt";
 import type { AgentChat } from "../hooks/useAgentChat";
 import { AUTOMATIONS_GROUP_ID, fmtWhen } from "../hooks/useAutomations";
 import { useOverlayBackGuard } from "../hooks/useOverlayBackGuard";
-import { toggle as playMessage, usePlayback } from "../lib/audioController";
+import { toggle as playMessage, usePlayback, type Speaker } from "../lib/audioController";
 import { fillComposer } from "../lib/composer";
 import { modalKeyDown } from "../lib/focusTrap";
 import { Markdown } from "../lib/markdown";
@@ -352,7 +352,7 @@ function ThinkBlock({ text, open }: { text: string; open?: boolean }) {
  *
  *  D62/D25: the who-line's metrics disclosure toggles on its IDENTITY run only (`BotWhoLine`, owner
  *  2026-09-24) — this button sits outside that zone, so a tap here reaches nothing else. */
-function TtsButton({ id, text, agent }: { id: string; text: string; agent: string | null }) {
+function TtsButton({ id, text, speaker }: { id: string; text: string; speaker: Speaker }) {
   const mine = usePlayback((p) => (p.id === id ? p.status : "idle"));
   const playing = mine === "playing";
   const loading = mine === "loading";
@@ -363,9 +363,10 @@ function TtsButton({ id, text, agent }: { id: string; text: string; agent: strin
       aria-label={playing ? "pause read-aloud" : "read aloud"}
       title={playing ? "pause" : "read aloud"}
       onClick={() => {
-        // D70 §8.5 — read it in the turn's OWN agent's voice; null ⇒ the global chain (voice.py's
-        // `_voice_id` resolves the default on an absent agent, so the field is simply omitted).
-        void playMessage(id, text, agent);
+        // D70 §8.5 — read it in the turn's OWN agent's voice; a null agent ⇒ the global chain (voice.py's
+        // `_voice_id` resolves the default on an absent agent, so the field is simply omitted). The
+        // speaker's `actions` is the duties gate on the ear (session-51 polish #6).
+        void playMessage(id, text, speaker);
       }}
     />
   );
@@ -827,7 +828,11 @@ const Bubbles = memo(function Bubbles({
             {working && <span className="status-tag">{reasoning ? "thinking" : "working"}</span>}
             {/* Read-aloud toggle (6b-2): only on a settled text reply, and only when TTS is configured. */}
             {ttsOn && !streaming && text && (
-              <TtsButton id={m.id} text={text} agent={m.agent ?? null} />
+              <TtsButton
+                id={m.id}
+                text={text}
+                speaker={{ agent: m.agent ?? null, actions: art.actions }}
+              />
             )}
           </BotWhoLine>
           <div className="body">
@@ -856,7 +861,7 @@ const Bubbles = memo(function Bubbles({
               <span className="md">
                 {/* Q2b — a settled reply italicizes an action the model never closed; mid-stream it
                     stays literal until the closer arrives (session-51 #2). */}
-                <Markdown text={text} settled={!streaming} />
+                <Markdown text={text} settled={!streaming} actions={art.actions} />
                 {streaming && text && <span className="caret">▍</span>}
               </span>
             )}

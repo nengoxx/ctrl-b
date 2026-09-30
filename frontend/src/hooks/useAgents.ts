@@ -158,6 +158,12 @@ export interface AgentSummary {
   avatar: string;
   background: string;
   voice: string;
+  /** The agent's duties (ROLEPLAY_PLAN §4.1). The client reads it to gate the roleplay ACTION convention
+   *  (single-`*` stage directions — the multi-line carry on screen, the drop in the ear): it applies to
+   *  a `conversational` agent only (session-51 polish #6). `""` is the degraded name-only row (an
+   *  agent whose folder will not load) — the same empty-string sentinel `voice` uses — and reads as
+   *  "not conversational". */
+  duties: "agent" | "conversational" | "";
 }
 
 /** `GET /api/agents` — the names, the resolved default, whether a default is CONFIGURED, and one

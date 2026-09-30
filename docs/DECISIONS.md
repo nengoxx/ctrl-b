@@ -5474,7 +5474,11 @@ whitespace inside — is emphasis and is READ, `*sighs*` included by owner rulin
 spaces, so a whole-sentence CJK action reads as one word and is spoken), pairing matched to the eye's markdown, an unclosed opener dropped
 to end-of-input, the streaming cut HOLDING at an em opener only under skip. The old "accepted
 residual" ruling on stray delimiters now stands on the scrub, not on tolerance — its "rare shape"
-premise died with roleplay.
+premise died with roleplay. (**Amended 2026-09-30, session-51 polish #6, owner ruling — the DUTIES
+GATE:** the action convention — the drop, its read-along cut and the eye's multi-line carry — applies
+to a `duties: conversational` agent ONLY; an `agent`-duties reply keeps single `*` as ordinary
+per-line emphasis on screen and is spoken in full whatever `speak_actions` says, the scrub still taking
+a stray star.)
 ⑥ **Capture exclusivity:** a starting call awaits `releaseMic()` (a plain module slot driving
 dictation's own stop path) before opening its ear — two captures never coexist (R78: the live one
 pins the other's AEC mode). The Conf label probe serializes on its own latch (S5 review F2's race).

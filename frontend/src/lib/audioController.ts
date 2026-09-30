@@ -114,12 +114,48 @@ export function setChunkPolicy(next: ChunkPolicy): void {
   policy = next;
 }
 
-/** …and read it back — the policy this mouth speaks by. The call's text backstop (D80 ②) needs the
- *  reply's words exactly as they were SPOKEN (`toSpeech` under this policy's `speakActions`), and this
- *  module is the one owner of that policy; a second copy in the call would be one a Conf save could
- *  make disagree with what was actually said. */
-export function getChunkPolicy(): ChunkPolicy {
-  return policy;
+/** WHO is being read — the per-message facts the mouth needs beyond the text, in one object so the
+ *  next one is an added field rather than another positional parameter on every entry point.
+ *  `agent` picks the voice (D70 §8.5; null ⇒ the global chain, no field on the wire). `actions` says the
+ *  reply follows the roleplay ACTION convention — a conversational agent's (`AgentArt.actions`) — which
+ *  is what lets `speakActions: false` drop its `*…*` spans; an `agent`-duties reply is always read in
+ *  full (session-51 polish #6). */
+export interface Speaker {
+  agent: string | null;
+  actions: boolean;
+}
+
+/** The policy ONE message is spoken by (session-51 polish #6): the published policy, except that the
+ *  action drop is the conversational convention's — for any other speaker `speakActions` is forced on,
+ *  so neither the drop, nor the read-along cut at an unclosed opener, nor the unclosed-tail drop can
+ *  eat an agent's `*.tmp` prose (`toSpeech`'s final residual-`*` scrub still takes a stray star). */
+function effectivePolicy(base: ChunkPolicy, speaker: Speaker): ChunkPolicy {
+  return speaker.actions ? base : { ...base, speakActions: true };
+}
+
+/** WHICH message the mouth last BEGAN and the effective policy it speaks it by (`speaking`); null
+ *  before any, and after that message is forgotten or the conversation is left. Keyed by the message id
+ *  because per-speaker policies differ (session-51 polish #6): a bare "last policy" would let the NEXT
+ *  reply's begin — or a stale one after `/new` — reshape the words the backstop compares a PREVIOUS
+ *  reply by (Maya M1). */
+let spoken: { id: string; cfg: ChunkPolicy } | null = null;
+
+/** Record `cfg` as the policy message `id` is spoken by — it just began (`toggle`, or the first closed
+ *  chunk of a read-along feed) — and hand it back. */
+function speaking(id: string, cfg: ChunkPolicy): ChunkPolicy {
+  spoken = { id, cfg };
+  return cfg;
+}
+
+/** …and read it back — the policy the mouth SPOKE message `id` by. The call's text backstop (D80 ②)
+ *  needs the reply's words exactly as they were said (`toSpeech` under that message's EFFECTIVE
+ *  `speakActions` — an agent-duties reply kept its stars' words even with the switch off), and this
+ *  module is the one owner of that policy; a copy in the call would be one a Conf save — or a speaker's
+ *  duties — could make disagree with what was actually said. Any other id (not the message the mouth
+ *  last began, or nothing begun yet): the published policy. Recorded per message rather than read off
+ *  the session because the whole-clip (`off`) path has no session. */
+export function getSpokenPolicy(id: string): ChunkPolicy {
+  return spoken?.id === id ? spoken.cfg : policy;
 }
 
 // ── D71 §6 / §4.5 — THE CALL's three touches on this singleton ───────────────────────────────────
@@ -424,7 +460,9 @@ interface Session {
   /** The SPLIT config this session plans from, snapshotted at its start: the module-level `policy` is
    *  replaced by any Conf voice save, and a mid-turn re-split would leave the enqueued chunks and the
    *  cursor disagreeing. Only the chunker's fields are frozen this way — `pump` deliberately reads
-   *  `lookahead`/`format` live, because neither changes the identity of a planned chunk. */
+   *  `lookahead`/`format` live, because neither changes the identity of a planned chunk. It is the
+   *  speaker's EFFECTIVE policy (`effectivePolicy`, session-51 polish #6), so every `toSpeech` /
+   *  `stableMarkdownPrefix` / `chunkPlanFrom` of this reply applies the duties gate the same way. */
   cfg: ChunkPolicy;
   /** The stable markdown prefix already planned — the identity, not just its length: a reconnect
    *  overlays the open message's text WHOLESALE, and a buffer that no longer EXTENDS this one must
@@ -435,9 +473,10 @@ interface Session {
   dropped: boolean;
   /** WHOSE turn this queue is reading (D70 §8.5) — the message's agent, rendered in that agent's voice.
    *  On the SESSION because the chunks reach the wire long after the entry point returned (`pump` calls
-   *  `synthChunk` as the cursor advances), and every chunk of one reply must speak in one voice. `null`
-   *  ⇒ no field on the wire ⇒ the global chain, which is every pre-D70 turn. */
-  agent: string | null;
+   *  `synthChunk` as the cursor advances), and every chunk of one reply must speak in one voice. `agent:
+   *  null` ⇒ no field on the wire ⇒ the global chain, which is every pre-D70 turn. Its `actions` fact is
+   *  already folded into `cfg` (`effectivePolicy`); it stays here so a replay keeps the whole speaker. */
+  speaker: Speaker;
   abort: AbortController;
 }
 let session: Session | null = null;
@@ -726,7 +765,8 @@ async function requestTts(
 async function synthWhole(
   id: string,
   markdown: string,
-  agent?: string | null,
+  speaker: Speaker,
+  cfg: ChunkPolicy,
 ): Promise<string | null> {
   // Keyed by MESSAGE id, unchanged: a message's agent never changes, so the clip cached for it is the
   // clip its agent's voice produces. (A voice BINDING edited mid-session still serves the cached clip —
@@ -736,10 +776,10 @@ async function synthWhole(
   if (cached) return cached;
   // A reply that strips to NOTHING never reaches the wire — the pre-D63 guard, which D74 leans on: an
   // all-action reply under `speakActions: false` is exactly this case, and it must not POST empty text.
-  const text = toSpeech(markdown, policy);
+  const text = toSpeech(markdown, cfg);
   if (!text) return null;
   const epoch = forgets.get(id) ?? 0;
-  const out = await requestTts(text, { agent });
+  const out = await requestTts(text, { agent: speaker.agent });
   if (!out.ok) {
     if (out.message) pushToast(out.message, "err");
     return null;
@@ -757,9 +797,10 @@ async function playWhole(
   markdown: string,
   seq: number,
   a: HTMLAudioElement,
-  agent?: string | null,
+  speaker: Speaker,
+  cfg: ChunkPolicy,
 ): Promise<void> {
-  const url = await synthWhole(id, markdown, agent);
+  const url = await synthWhole(id, markdown, speaker, cfg);
   if (seq !== reqSeq) return; // superseded by a newer toggle while we awaited the synth
   if (!url) {
     reset();
@@ -797,14 +838,16 @@ async function playWhole(
 // ── chunked: split → synth-ahead → src-swap on `ended` ───────────────────────────────────────────
 
 /** A fresh queue over an ordered chunk list — the five index-parallel arrays and the flags that ride
- *  them, in one place for both entry points (a tap and the read-along feed). `cfg` freezes the SPLIT
- *  config as it stands right now: only read-along re-plans, and it must not see a Conf save mid-turn. */
+ *  them, in one place for both entry points (a tap and the read-along feed). `cfg` is the speaker's
+ *  effective policy the first plan was made by (`effectivePolicy`), frozen as it stands right now: only
+ *  read-along re-plans, and it must not see a Conf save mid-turn. */
 function newSession(
   id: string,
   seq: number,
   chunks: string[],
   readAlong: boolean,
-  agent: string | null,
+  speaker: Speaker,
+  cfg: ChunkPolicy,
 ): Session {
   return {
     id,
@@ -826,10 +869,10 @@ function newSession(
     parked: false,
     readAlong,
     open: readAlong, // a fed queue is born open; a tapped one plays a message that is already whole
-    cfg: policy,
+    cfg,
     srcFed: "",
     dropped: false,
-    agent,
+    speaker,
     abort: new AbortController(),
   };
 }
@@ -851,7 +894,13 @@ function beginMessage(id: string, a: HTMLAudioElement): number {
 
 /** Start (or replay) the chunk queue for a message. Returns immediately — the first chunk's synth
  *  releases the latch and starts playback. */
-function startChunked(id: string, markdown: string, seq: number, agent: string | null): void {
+function startChunked(
+  id: string,
+  markdown: string,
+  seq: number,
+  speaker: Speaker,
+  cfg: ChunkPolicy,
+): void {
   let s = session;
   if (s && s.id === id) {
     // A replay / resume of the retained message: keep every blob already synthesized, re-arm the rest.
@@ -877,7 +926,7 @@ function startChunked(id: string, markdown: string, seq: number, agent: string |
     for (let i = 0; i < s.urls.length; i++)
       if (s.urls[i] && s.durations[i] === null) probeDuration(s, i);
   } else {
-    const plan = chunkPlan(toSpeech(markdown, policy), policy);
+    const plan = chunkPlan(toSpeech(markdown, cfg), cfg);
     if (!plan.chunks.length) {
       reset(); // nothing speakable (a code-only reply, or an all-action one under D74's skip) — the
       // same outcome as the `off` path's empty text: no session, no request, nothing docked
@@ -887,7 +936,7 @@ function startChunked(id: string, markdown: string, seq: number, agent: string |
       // D63 moved the per-MESSAGE bound here from the per-request 422: the tail is dropped, said once.
       pushToast("Reply too long to read in full — the tail was skipped", "info");
     }
-    s = newSession(id, seq, plan.chunks, false, agent);
+    s = newSession(id, seq, plan.chunks, false, speaker, cfg);
     session = s;
   }
   publishTimeline(s); // the bar spans the whole reply from the first frame (estimated until it isn't)
@@ -915,7 +964,7 @@ function pump(s: Session): void {
 
 async function synthChunk(s: Session, i: number): Promise<void> {
   const out = await requestTts(s.texts[i], {
-    agent: s.agent,
+    agent: s.speaker.agent,
     format: policy.format,
     // The failover pin: chunk 1 discovers who served, the rest ask for that target FIRST. A vanished
     // pin is a silent miss server-side, so a mid-reply death still falls over instead of erroring.
@@ -1247,7 +1296,7 @@ const extendsFed = (s: Session, markdown: string): boolean => markdown.startsWit
  * Start — or extend — the read-along queue for the message currently streaming. Called per boundary
  * by the feeder; everything about "what is safe to speak yet" is decided here.
  */
-export function feedReadAlong(id: string, markdown: string, agent?: string | null): void {
+export function feedReadAlong(id: string, markdown: string, speaker: Speaker): void {
   const s = liveSession();
   if (s && s.id === id) {
     if (!s.open || s.dropped) return; // flushed, abandoned, or capped — this turn has said its piece
@@ -1262,11 +1311,12 @@ export function feedReadAlong(id: string, markdown: string, agent?: string | nul
   // Dismissed or muted while open: the generation moved on but the queue is still here. The user
   // stopped THIS message — a later boundary must not resurrect it from the top.
   if (session && session.id === id && session.seq !== reqSeq) return;
-  const src = stableMarkdownPrefix(markdown, policy);
-  const plan = chunkPlanFrom(toSpeech(src, policy), policy, 0);
+  const cfg = effectivePolicy(policy, speaker);
+  const src = stableMarkdownPrefix(markdown, cfg);
+  const plan = chunkPlanFrom(toSpeech(src, cfg), cfg, 0);
   if (!plan.chunks.length) return; // nothing has closed yet — no session, no docked player
   const a = ensureEl();
-  const next = newSession(id, beginMessage(id, a), plan.chunks, true, agent ?? null);
+  const next = newSession(id, beginMessage(id, a), plan.chunks, true, speaker, speaking(id, cfg));
   next.srcFed = src;
   next.dropped = plan.dropped;
   session = next;
@@ -1281,11 +1331,7 @@ export function feedReadAlong(id: string, markdown: string, agent?: string | nul
  * turn (D17: no deltas were ever fed) needs. The feeder must never call `toggle` itself: for a message
  * that IS the docked one, `pb.id === id` reads as a tap and PAUSES the reply mid-sentence.
  */
-export async function endTurnSpeak(
-  id: string,
-  markdown: string,
-  agent?: string | null,
-): Promise<void> {
+export async function endTurnSpeak(id: string, markdown: string, speaker: Speaker): Promise<void> {
   const s = liveSession();
   if (s && s.id === id && s.readAlong) {
     if (!s.open) return; // abandoned mid-turn (a reload rewrote the text) — it keeps what it has
@@ -1304,7 +1350,7 @@ export async function endTurnSpeak(
     drainClosed(s);
     return;
   }
-  await toggle(id, markdown, agent);
+  await toggle(id, markdown, speaker);
 }
 
 // ── the public surface ───────────────────────────────────────────────────────────────────────────
@@ -1388,10 +1434,11 @@ function transport(): void {
  *   - if it's the active message → pause/resume in place,
  *   - otherwise → load it (synth-on-first-play, cached after), stopping any other, and play.
  *
- * `agent` is whose turn this is (D70 §8.5) — it picks the voice. Omitted/null ⇒ the global chain. A
- * REPLAY keeps the retained queue's own agent: it is the same message, so it is the same speaker.
+ * `speaker` is whose turn this is: its `agent` picks the voice (D70 §8.5; null ⇒ the global chain) and
+ * its `actions` whether the reply's `*…*` spans are roleplay actions (session-51 polish #6). A REPLAY
+ * keeps the retained queue's own speaker: it is the same message, so it is the same speaker.
  */
-export async function toggle(id: string, markdown: string, agent?: string | null): Promise<void> {
+export async function toggle(id: string, markdown: string, speaker: Speaker): Promise<void> {
   const a = ensureEl();
   if (pb.id === id) {
     transport(); // pause/resume in place (a re-tap while loading is ignored)
@@ -1399,11 +1446,15 @@ export async function toggle(id: string, markdown: string, agent?: string | null
   }
   // Single-message retention (D63): a different message starting is what reaps the previous queue.
   const seq = beginMessage(id, a);
+  // The speaker's effective policy, derived ONCE here for both paths (session-51 polish #6). A REPLAY
+  // of the retained queue keeps that queue's own snapshot — the same message, the same speaker —
+  // and `beginMessage` has already reaped any OTHER message's queue, so a surviving one IS the replay.
+  const cfg = speaking(id, session?.id === id ? session.cfg : effectivePolicy(policy, speaker));
   if (policy.mode === "off") {
-    await playWhole(id, markdown, seq, a, agent);
+    await playWhole(id, markdown, seq, a, speaker, cfg);
     return;
   }
-  startChunked(id, markdown, seq, agent ?? null);
+  startChunked(id, markdown, seq, speaker, cfg);
 }
 
 /** The docked player's play/pause (acts on whatever's active). */
@@ -1542,6 +1593,7 @@ export function forgetMessage(id: string): void {
     revokeSession(session);
     session = null;
   }
+  if (spoken?.id === id) spoken = null; // its words are gone; nothing can be compared to them now
 }
 
 /** Revoke cached object URLs (e.g. on `/new`). Cheap; keeps a long session from leaking blobs. */
@@ -1549,6 +1601,7 @@ export function clearAudioCache(): void {
   for (const url of cache.values()) URL.revokeObjectURL(url);
   cache.clear();
   forgets.clear();
+  spoken = null; // the conversation is left (`/new`, a thread swap) — no reply of it is compared again
   if (session) {
     session.abort.abort();
     revokeSession(session);

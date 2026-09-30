@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   dismiss,
   dismissTurn,
-  getChunkPolicy,
   getPlayStatus,
+  getSpokenPolicy,
   markStreamRetag,
   openCallVoiceGate,
   type PlayStatus,
@@ -2385,16 +2385,18 @@ export function useLiveCall(): CallView {
    *  caller asks `performance.now() <= echoUntil` once and passes only those): how much it looks like
    *  the reply the mouth just spoke — or `undefined` when it cannot be judged: under `ECHO_MIN_CHARS` (a
    *  one-word answer is never called an echo), or with no reply to compare. The spoken words are read
-   *  ONCE, here, from the chat store's last reply through the mouth's own speech policy — the controller
-   *  drops its chunk texts at finish, and the captions already read the reply from the same store
-   *  (`lastReply`). Every judged final is an `echo` trail line, dropped or not: the car card calibrates
+   *  ONCE, here, from the chat store's last reply through the policy the mouth SPOKE that very message
+   *  by (keyed by its id — its speaker's effective one: an agent-duties reply keeps its `*…*` words,
+   *  session-51 polish #6) —
+   *  the controller drops its chunk texts at finish, and the captions already read the reply from the
+   *  same store (`lastReply`). Every judged final is an `echo` trail line, dropped or not: the car card calibrates
    *  the threshold on the scores. */
   const echoOf = useCallback((text: string): number | undefined => {
     const chars = normalizeForEcho(text).length;
     if (chars < ECHO_MIN_CHARS) return undefined;
     const reply = lastReply();
     if (reply === null) return undefined;
-    const sim = echoSimilarity(text, toSpeech(reply.text, getChunkPolicy()));
+    const sim = echoSimilarity(text, toSpeech(reply.text, getSpokenPolicy(reply.id)));
     trail.current?.push("echo", { sim, chars });
     return sim;
   }, []);

@@ -13,6 +13,7 @@ import {
   endTurnSpeak,
   feedReadAlong,
   forgetMessage,
+  getSpokenPolicy,
   getTurnStops,
   markStreamRetag,
   pokeCallMouth,
@@ -23,6 +24,7 @@ import {
   setCallVoice,
   subscribePlayback,
   setChunkPolicy,
+  type Speaker,
   STREAM_RETAG_MS,
   toggle,
   togglePlay,
@@ -120,6 +122,10 @@ const OFF: ChunkPolicy = {
   readAlong: false,
   speakActions: true,
 };
+/** The speaker of a plain default turn — the global voice, `agent` duties (session-51 polish #6: the
+ *  speaker is a required argument; every queue case that is not ABOUT the speaker reads as this). */
+const TURN: Speaker = { agent: null, actions: false };
+
 /** Floors off so one sentence = one chunk; that keeps the queue cases about the QUEUE. */
 const chunked = (over: Partial<ChunkPolicy> = {}): ChunkPolicy => ({
   ...OFF,
@@ -149,7 +155,7 @@ function errRes(status: number): Response {
 }
 
 interface Call {
-  body: { text: string; format?: string; prefer?: string };
+  body: { text: string; format?: string; prefer?: string; agent?: string };
   resolve: (r: Response) => void;
   reject: (e: unknown) => void;
 }
@@ -202,7 +208,7 @@ describe("audioController — whole-message path (chunking: off)", () => {
   it("toggle synthesizes once and plays the message", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     expect(result.current.id).toBe("m1");
     expect(result.current.status).toBe("playing");
@@ -211,7 +217,7 @@ describe("audioController — whole-message path (chunking: off)", () => {
 
   it("sends only `text` — no chunk format, no pin (byte-identical to the pre-D63 request)", async () => {
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     const init = vi.mocked(globalThis.fetch).mock.calls[0][1] as RequestInit;
     expect(JSON.parse(String(init.body))).toEqual({ text: "hello" });
@@ -222,7 +228,7 @@ describe("audioController — whole-message path (chunking: off)", () => {
   // (the case pinned by the request-shape assertion just above).
   it("names the message's agent when it has one, in the same one request the text rides", async () => {
     await act(async () => {
-      await toggle("m1", "hello", "lynette");
+      await toggle("m1", "hello", { agent: "lynette", actions: true });
     });
     const init = vi.mocked(globalThis.fetch).mock.calls[0][1] as RequestInit;
     expect(JSON.parse(String(init.body))).toEqual({ text: "hello", agent: "lynette" });
@@ -231,14 +237,14 @@ describe("audioController — whole-message path (chunking: off)", () => {
   it("toggling the same message pauses then resumes — no re-synth (cache hit)", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     await act(async () => {
-      await toggle("m1", "hello"); // playing → pause
+      await toggle("m1", "hello", TURN); // playing → pause
     });
     expect(result.current.status).toBe("paused");
     await act(async () => {
-      await toggle("m1", "hello"); // paused → resume
+      await toggle("m1", "hello", TURN); // paused → resume
     });
     expect(result.current.status).toBe("playing");
     expect(globalThis.fetch).toHaveBeenCalledTimes(1); // synthesized once, replayed from cache
@@ -247,10 +253,10 @@ describe("audioController — whole-message path (chunking: off)", () => {
   it("switching to a different message re-synths and swaps the active id", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "one");
+      await toggle("m1", "one", TURN);
     });
     await act(async () => {
-      await toggle("m2", "two");
+      await toggle("m2", "two", TURN);
     });
     expect(result.current.id).toBe("m2");
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
@@ -259,7 +265,7 @@ describe("audioController — whole-message path (chunking: off)", () => {
   it("togglePlay pauses/resumes the active clip", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     act(() => togglePlay());
     expect(result.current.status).toBe("paused");
@@ -270,7 +276,7 @@ describe("audioController — whole-message path (chunking: off)", () => {
   it("seekFraction maps to currentTime once duration is known", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     act(() => {
       lastAudio.duration = 10;
@@ -285,7 +291,7 @@ describe("audioController — whole-message path (chunking: off)", () => {
   it("ended resets to the start, paused (ready to replay)", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     act(() => {
       lastAudio.currentTime = 9;
@@ -298,7 +304,7 @@ describe("audioController — whole-message path (chunking: off)", () => {
   it("dismiss clears the player back to idle", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     act(() => dismiss());
     expect(result.current.id).toBeNull();
@@ -314,7 +320,7 @@ describe("audioController — whole-message path (chunking: off)", () => {
 
     let pending!: Promise<void>;
     await act(async () => {
-      pending = toggle("m1", "hello"); // synth starts, status → loading, awaits the (pending) fetch
+      pending = toggle("m1", "hello", TURN); // synth starts, status → loading, awaits the (pending) fetch
     });
     expect(result.current.status).toBe("loading");
 
@@ -333,11 +339,11 @@ describe("audioController — whole-message path (chunking: off)", () => {
     const { result } = renderHook(() => usePlayback((p) => p));
 
     await act(async () => {
-      void toggle("m1", "one"); // fetch[0] pending
+      void toggle("m1", "one", TURN); // fetch[0] pending
     });
     let p2!: Promise<void>;
     await act(async () => {
-      p2 = toggle("m2", "two"); // pauses m1, bumps reqSeq, fetch[1] pending
+      p2 = toggle("m2", "two", TURN); // pauses m1, bumps reqSeq, fetch[1] pending
     });
     expect(result.current.id).toBe("m2");
 
@@ -362,7 +368,7 @@ describe("audioController — the chunk queue (D63)", () => {
   it("plays chunk 1 as soon as it lands and synthesizes exactly `lookahead` ahead", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     expect(result.current.status).toBe("playing");
@@ -380,7 +386,7 @@ describe("audioController — the chunk queue (D63)", () => {
     /** Play a chunked reply through to its end, emitting `ended` per chunk. */
     const playThrough = async (id: string) => {
       await act(async () => {
-        await toggle(id, REPLY);
+        await toggle(id, REPLY, TURN);
       });
       await flush();
       for (let i = 0; i < 6; i++) {
@@ -427,13 +433,13 @@ describe("audioController — the chunk queue (D63)", () => {
         clock += STREAM_RETAG_MS - LEFT; // most of the window has passed…
         markStreamRetag(); // …when the route leaves comm mode; mouth silent: nothing more to unload
         // The call's reply arrives the way a call's replies do — READ-ALONG fed while it streams.
-        act(() => feedReadAlong("m2", "One. Two.")); // "One." closes; chunk 0 alone on the wire
+        act(() => feedReadAlong("m2", "One. Two.", TURN)); // "One." closes; chunk 0 alone on the wire
         await flush(); // chunk 0's synth lands…
         expect(result.current.status).toBe("loading"); // …and is HELD, honestly
         expect(lastAudio.src).toBe("");
         // …and MORE of the reply lands during the hold: the window is open now (chunk 0 pinned the
         // target), so chunks 1–2 go on the wire, land, and re-enter `playNext` through the latch.
-        act(() => feedReadAlong("m2", "One. Two. Three. Four."));
+        act(() => feedReadAlong("m2", "One. Two. Three. Four.", TURN));
         await flush();
         expect(vi.mocked(globalThis.fetch).mock.calls.length).toBeGreaterThan(4); // m1's 3 + chunk 0 + more
         expect(lastAudio.src).toBe(""); // still held — and NOT chunk 1 (the re-entry met the gate)
@@ -446,7 +452,7 @@ describe("audioController — the chunk queue (D63)", () => {
         // the re-entries must not have armed more timers, or chunk 0 would start once per timer
         expect(lastAudio.plays).toBe(playsBefore + 1);
         await act(async () => {
-          await endTurnSpeak("m2", "One. Two. Three. Four."); // AWAITED: a floating close leaks into the next arm
+          await endTurnSpeak("m2", "One. Two. Three. Four.", TURN); // AWAITED: a floating close leaks into the next arm
         });
         for (let i = 0; i < 8; i++) {
           await act(async () => lastAudio.emit("ended"));
@@ -454,7 +460,7 @@ describe("audioController — the chunk queue (D63)", () => {
         }
         // the window is spent: the next reply plays at once
         await act(async () => {
-          await toggle("m3", REPLY);
+          await toggle("m3", REPLY, TURN);
         });
         await flush();
         expect(result.current.status).toBe("playing");
@@ -469,7 +475,7 @@ describe("audioController — the chunk queue (D63)", () => {
         const { result } = renderHook(() => usePlayback((p) => p));
         setCallVoice(true, false);
         await act(async () => {
-          await toggle("m1", REPLY);
+          await toggle("m1", REPLY, TURN);
         });
         await flush();
         expect(result.current.status).toBe("playing");
@@ -482,7 +488,7 @@ describe("audioController — the chunk queue (D63)", () => {
         expect(lastAudio.src).toBe(""); // the finish unloaded it: the window runs from HERE
         clock += STREAM_RETAG_MS - LEFT;
         await act(async () => {
-          await toggle("m2", REPLY);
+          await toggle("m2", REPLY, TURN);
         });
         await flush();
         expect(result.current.status).toBe("loading"); // held for what is left of it
@@ -501,7 +507,7 @@ describe("audioController — the chunk queue (D63)", () => {
         const { result } = renderHook(() => usePlayback((p) => p));
         setCallVoice(true, false);
         await act(async () => {
-          await toggle("m1", REPLY);
+          await toggle("m1", REPLY, TURN);
         });
         await flush();
         act(() => togglePlay()); // the owner pauses mid-reply
@@ -518,7 +524,7 @@ describe("audioController — the chunk queue (D63)", () => {
         expect(lastAudio.src).toBe(""); // finished in-call: unloaded, stamped NOW
         clock += STREAM_RETAG_MS - LEFT;
         await act(async () => {
-          await toggle("m2", REPLY);
+          await toggle("m2", REPLY, TURN);
         });
         await flush();
         expect(result.current.status).toBe("loading");
@@ -539,13 +545,13 @@ describe("audioController — the chunk queue (D63)", () => {
         const { result } = renderHook(() => usePlayback((p) => p));
         setCallVoice(true, false);
         await act(async () => {
-          await toggle("m1", "hello");
+          await toggle("m1", "hello", TURN);
         });
         expect(result.current.status).toBe("playing");
         expect(lastAudio.src).toBe("blob:1");
         const calls = deferredFetch(); // m2's synth stays pending…
         act(() => {
-          void toggle("m2", "world"); // beginMessage PAUSES m1's clip; the element keeps its src
+          void toggle("m2", "world", TURN); // beginMessage PAUSES m1's clip; the element keeps its src
         });
         expect(result.current.status).toBe("loading");
         expect(lastAudio.src).toBe("blob:1");
@@ -593,7 +599,7 @@ describe("audioController — the chunk queue (D63)", () => {
       setCallVoice(true, false);
       await playThrough("m1");
       await act(async () => {
-        await toggle("m2", REPLY);
+        await toggle("m2", REPLY, TURN);
       });
       await flush();
       expect(result.current.status).toBe("playing");
@@ -602,7 +608,7 @@ describe("audioController — the chunk queue (D63)", () => {
 
   it("carries the agent on EVERY chunk — one reply is read in one voice (D70 §8.5)", async () => {
     await act(async () => {
-      await toggle("m1", REPLY, "lynette");
+      await toggle("m1", REPLY, { agent: "lynette", actions: true });
     });
     await flush();
     const bodies = vi
@@ -614,7 +620,7 @@ describe("audioController — the chunk queue (D63)", () => {
 
   it("omits the field entirely on a turn with no agent — the pre-D70 request shape", async () => {
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     const bodies = vi
@@ -626,7 +632,7 @@ describe("audioController — the chunk queue (D63)", () => {
   it("advances on `ended` by swapping src, and rewinds to the top when the queue drains", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     expect(lastAudio.src).toBe("blob:1");
@@ -659,7 +665,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const button = () => face.container.querySelector<HTMLButtonElement>(".mp-play")!;
     try {
       await act(async () => {
-        await toggle("m1", REPLY);
+        await toggle("m1", REPLY, TURN);
       });
       await flush();
       expect(button().getAttribute("aria-label")).toBe("pause"); // playing: the face agrees
@@ -691,7 +697,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const intent = renderHook(() => usePlayIntent());
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     for (let k = 0; k < 3; k++) {
@@ -716,7 +722,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const intent = renderHook(() => usePlayIntent());
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     await act(async () => lastAudio.finish()); // onto chunk 2
@@ -735,7 +741,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const calls = deferredFetch();
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     expect(result.current.status).toBe("loading"); // latched on chunk 1
 
@@ -761,7 +767,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const calls = deferredFetch();
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -786,7 +792,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const calls = deferredFetch();
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -815,7 +821,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const { result } = renderHook(() => usePlayback((p) => p.status));
     const intent = renderHook(() => usePlayIntent());
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -850,7 +856,7 @@ describe("audioController — the chunk queue (D63)", () => {
     renderHook(() => usePlayback((p) => p.status));
     const intent = renderHook(() => usePlayIntent());
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -867,7 +873,7 @@ describe("audioController — the chunk queue (D63)", () => {
   it("skips a failed chunk and keeps reading — one toast for the whole message", async () => {
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -888,7 +894,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     globalThis.fetch = vi.fn(async () => errRes(502));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     await flush();
@@ -897,7 +903,7 @@ describe("audioController — the chunk queue (D63)", () => {
 
     globalThis.fetch = vi.fn(async () => okRes()); // the TTS server came back
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     expect(globalThis.fetch).toHaveBeenCalled(); // fresh requests, not an instant replay of the corpse
@@ -908,7 +914,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -926,7 +932,7 @@ describe("audioController — the chunk queue (D63)", () => {
 
     globalThis.fetch = vi.fn(async () => okRes()); // the TTS server came back
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     const fresh = globalThis.fetch as ReturnType<typeof vi.fn>;
@@ -941,7 +947,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -964,7 +970,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -986,7 +992,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1000,7 +1006,7 @@ describe("audioController — the chunk queue (D63)", () => {
     await flush();
 
     await act(async () => {
-      await toggle("m1", REPLY); // replay resumes the retained queue and re-requests the hole
+      await toggle("m1", REPLY, TURN); // replay resumes the retained queue and re-requests the hole
     });
     await flush();
     await act(async () => calls[calls.length - 1].resolve(errRes(500))); // the retry fails mid-replay
@@ -1012,7 +1018,7 @@ describe("audioController — the chunk queue (D63)", () => {
     const calls = deferredFetch();
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     act(() => dismiss()); // reqSeq++ and the AbortController fires
     await flush();
@@ -1024,10 +1030,10 @@ describe("audioController — the chunk queue (D63)", () => {
   it("a synth landing after the queue was superseded revokes its URL instead of retaining it", async () => {
     const calls = deferredFetch({ abortRejects: false }); // the response had already settled
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => {
-      await toggle("m2", REPLY); // new message: m1's queue is dropped mid-flight
+      await toggle("m2", REPLY, TURN); // new message: m1's queue is dropped mid-flight
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1037,7 +1043,7 @@ describe("audioController — the chunk queue (D63)", () => {
 
   it("retention is ONE message: starting a new one revokes the previous queue's blobs", async () => {
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     await act(async () => lastAudio.finish());
@@ -1045,14 +1051,14 @@ describe("audioController — the chunk queue (D63)", () => {
     revoked = [];
 
     await act(async () => {
-      await toggle("m2", REPLY);
+      await toggle("m2", REPLY, TURN);
     });
     expect(revoked).toEqual(expect.arrayContaining(["blob:1", "blob:2"]));
   });
 
   it("`/new` reaps the queue too", async () => {
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     revoked = [];
@@ -1063,7 +1069,7 @@ describe("audioController — the chunk queue (D63)", () => {
   it("echoes the pin: chunk 1 discovers the target, chunks 2..N ask for it by `prefer`", async () => {
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     expect(calls[0].body).toEqual({ text: "One.", format: "opus" }); // no pin to echo yet
     await act(async () => calls[0].resolve(okRes("emma/kokoro")));
@@ -1075,7 +1081,7 @@ describe("audioController — the chunk queue (D63)", () => {
     setChunkPolicy(chunked({ lookahead: 3 }));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     expect(calls).toHaveLength(1); // lookahead 3, but nobody past chunk 1 may go out unpinned yet
     await act(async () => calls[0].resolve(okRes("emma/kokoro")));
@@ -1089,7 +1095,7 @@ describe("audioController — the chunk queue (D63)", () => {
     setChunkPolicy(chunked({ lookahead: 3 }));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(errRes(500)));
     await flush();
@@ -1099,7 +1105,7 @@ describe("audioController — the chunk queue (D63)", () => {
 
   it("says nothing about who served on the happy path (the flash is exception-only)", async () => {
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     await act(async () => lastAudio.finish());
@@ -1112,7 +1118,7 @@ describe("audioController — the chunk queue (D63)", () => {
   it("flashes the first target only when the chain was DEGRADED to reach it", async () => {
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes("vault/alltalk", { degraded: true })));
     await flush();
@@ -1123,7 +1129,7 @@ describe("audioController — the chunk queue (D63)", () => {
   it("flashes again when the pin actually moves mid-reply", async () => {
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes("emma/kokoro"))); // happy first serve → silent
     await flush();
@@ -1141,7 +1147,7 @@ describe("audioController — the chunk queue (D63)", () => {
   it("drops the tail past the per-message budget and says so once", async () => {
     setChunkPolicy(chunked({ maxTextChars: 5 })); // only "One." fits
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
@@ -1153,7 +1159,7 @@ describe("audioController — the chunk queue (D63)", () => {
   it("a reply with nothing speakable never reaches the wire", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "```\nonly code\n```");
+      await toggle("m1", "```\nonly code\n```", TURN);
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(result.current.id).toBeNull();
@@ -1161,14 +1167,16 @@ describe("audioController — the chunk queue (D63)", () => {
 
   // D74 — an ALL-ACTION reply with actions switched off is the same case, reached by a new door: the
   // text policy rides the published `ChunkPolicy`, so the plan is empty and nothing is docked. Both
-  // paths, because `off` synthesizes the whole message and `sentence` plans chunks.
+  // paths, because `off` synthesizes the whole message and `sentence` plans chunks. The speaker is a
+  // CONVERSATIONAL agent's: the drop is the roleplay convention's (session-51 polish #6).
   it("an all-action reply speaks nothing when actions are off — in both chunking modes", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const md = "*She leans across the desk and watches the fleet wake up, host by host.*";
+    const rp: Speaker = { agent: "lynette", actions: true };
     for (const p of [chunked({ speakActions: false }), { ...OFF, speakActions: false }]) {
       setChunkPolicy(p);
       await act(async () => {
-        await toggle("m1", md);
+        await toggle("m1", md, rp);
       });
       expect(globalThis.fetch).not.toHaveBeenCalled();
       expect(result.current.id).toBeNull();
@@ -1176,7 +1184,7 @@ describe("audioController — the chunk queue (D63)", () => {
     // …and with actions ON (the shipped default) the very same reply does reach the wire.
     setChunkPolicy(chunked());
     await act(async () => {
-      await toggle("m1", md);
+      await toggle("m1", md, rp);
     });
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
@@ -1200,7 +1208,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     const { result } = renderHook(() => usePlayback((p) => p));
     open = false;
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush(); // chunk 0 lands…
     expect(result.current.status).toBe("loading"); // …and waits, honestly
@@ -1222,7 +1230,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     const calls = deferredFetch();
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1252,7 +1260,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     open = false;
     let done = false;
     act(() => {
-      void toggle("m1", "hello").then(() => (done = true));
+      void toggle("m1", "hello", TURN).then(() => (done = true));
     });
     await flush();
     expect(result.current.status).toBe("loading");
@@ -1270,7 +1278,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     const { result } = renderHook(() => usePlayback((p) => p));
     open = false;
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     act(() => dismiss());
@@ -1280,11 +1288,11 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     expect(result.current.status).toBe("idle");
     open = false;
     await act(async () => {
-      await toggle("m2", REPLY); // held too…
+      await toggle("m2", REPLY, TURN); // held too…
     });
     await flush();
     await act(async () => {
-      await toggle("m3", "Four. Five."); // …and replaced by the next reply before the ear settled
+      await toggle("m3", "Four. Five.", TURN); // …and replaced by the next reply before the ear settled
     });
     await flush();
     open = true;
@@ -1298,7 +1306,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     const { result } = renderHook(() => usePlayback((p) => p));
     open = false;
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     act(() => setCallMouthGate(null));
@@ -1307,7 +1315,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     expect(result.current.status).toBe("loading");
     // …and a reply outside a call (no gate registered) plays the moment its chunk lands.
     await act(async () => {
-      await toggle("m2", REPLY);
+      await toggle("m2", REPLY, TURN);
     });
     await flush();
     expect(result.current.status).toBe("playing");
@@ -1317,7 +1325,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     setChunkPolicy(chunked());
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     act(() => togglePlay()); // the owner pauses…
@@ -1332,7 +1340,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     const { result } = renderHook(() => usePlayback((p) => p));
     open = false;
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush(); // chunk 0 landed behind the closed gate
     expect(result.current.status).toBe("loading");
@@ -1354,7 +1362,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     const calls = deferredFetch();
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes())); // chunk 0 plays; the pin opens the window
     await flush();
@@ -1388,7 +1396,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     const { result } = renderHook(() => usePlayback((p) => p));
     open = false;
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await flush();
     act(() => togglePlay()); // paused under the hold
@@ -1407,7 +1415,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
     const calls = deferredFetch();
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1440,7 +1448,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
       const { result } = renderHook(() => usePlayback((p) => p));
       setCallVoice(true, false);
       await act(async () => {
-        await toggle("m1", REPLY);
+        await toggle("m1", REPLY, TURN);
       });
       await flush();
       for (let i = 0; i < 6; i++) {
@@ -1452,7 +1460,7 @@ describe("audioController — THE MOUTH WAITS (the call's gate · D71 §4.2, the
       markStreamRetag();
       open = false;
       await act(async () => {
-        await toggle("m2", REPLY);
+        await toggle("m2", REPLY, TURN);
       });
       await flush();
       expect(result.current.status).toBe("loading"); // the retag's hold…
@@ -1481,7 +1489,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     setChunkPolicy(chunked({ lookahead: 3 }));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1504,7 +1512,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     const { result } = renderHook(() => usePlayback((p) => p));
     deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     expect(result.current.duration).toBeCloseTo(14 / 15, 6); // 14 chars at the display-only fallback
     expect(result.current.estimated).toBe(true);
@@ -1515,7 +1523,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1564,7 +1572,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     const { result } = renderHook(() => usePlayback((p) => p.chunks));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1637,7 +1645,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     setChunkPolicy(chunked({ lookahead: 3 }));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1662,7 +1670,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch(); // lookahead 1: chunk 3 is nowhere near the window
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1694,7 +1702,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1716,7 +1724,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1734,7 +1742,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
   it("the metadata one-shot fires once, and a stale one is inert after the message changes", async () => {
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1752,7 +1760,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
   it("a metadata one-shot left dangling by a message switch touches nothing", async () => {
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1763,7 +1771,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     expect(lastAudio.currentTime).toBe(0); // loaded + armed, but metadata has not read yet
 
     await act(async () => {
-      await toggle("m2", REPLY); // ...and the user moves to another message first
+      await toggle("m2", REPLY, TURN); // ...and the user moves to another message first
     });
     const parked = lastAudio.currentTime;
     act(() => lastAudio.meta(6));
@@ -1774,7 +1782,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     // The confirm-round catch: the generation/index guards can't see a second seek into the SAME chunk.
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1817,7 +1825,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
     await act(async () => {
-      await toggle("m1", REPLY);
+      await toggle("m1", REPLY, TURN);
     });
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -1841,7 +1849,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     setChunkPolicy(OFF);
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     act(() => {
       lastAudio.duration = 10;
@@ -1867,7 +1875,7 @@ describe("audioController — read-along (C3 S2)", () => {
     setChunkPolicy(chunked({ lookahead: 3 })); // even wide open, bootstrap holds it to one
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", WHOLE)); // two chunks closed, the third withheld
+    act(() => feedReadAlong("m1", WHOLE, TURN)); // two chunks closed, the third withheld
 
     expect(result.current.id).toBe("m1");
     expect(result.current.status).toBe("loading");
@@ -1882,7 +1890,7 @@ describe("audioController — read-along (C3 S2)", () => {
 
   it("feeds nothing until a chunk has actually CLOSED", async () => {
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", "One.")); // the only piece is still the merge buffer
+    act(() => feedReadAlong("m1", "One.", TURN)); // the only piece is still the merge buffer
     expect(calls).toHaveLength(0);
     const { result } = renderHook(() => usePlayback((p) => p));
     expect(result.current.id).toBeNull(); // no session, no docked player, nothing to un-dock
@@ -1891,7 +1899,7 @@ describe("audioController — read-along (C3 S2)", () => {
   it("catching up mid-stream takes the LATCH — it never finishes or rewinds the reply", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", HALF));
+    act(() => feedReadAlong("m1", HALF, TURN));
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     expect(lastAudio.src).toBe("blob:1");
@@ -1905,7 +1913,7 @@ describe("audioController — read-along (C3 S2)", () => {
     expect(lastAudio.src).toBe("blob:1"); // ...and NOT rewound to the top
     expect(calls).toHaveLength(1);
 
-    act(() => feedReadAlong("m1", WHOLE)); // the next sentence closes → the latch releases on arrival
+    act(() => feedReadAlong("m1", WHOLE, TURN)); // the next sentence closes → the latch releases on arrival
     expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]);
     await act(async () => calls[1].resolve(okRes()));
     await flush();
@@ -1916,14 +1924,14 @@ describe("audioController — read-along (C3 S2)", () => {
   it("the timeline GROWS with the reply and stays estimated", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", HALF));
+    act(() => feedReadAlong("m1", HALF, TURN));
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     act(() => metaFor("blob:1", 2)); // "One." = 4 chars in 2 s → 2 chars/s
     expect(result.current.duration).toBeCloseTo(2, 6);
     expect(result.current.chunks).toHaveLength(1);
 
-    act(() => feedReadAlong("m1", WHOLE));
+    act(() => feedReadAlong("m1", WHOLE, TURN));
     expect(result.current.duration).toBeCloseTo(4, 6); // + "Two." at the learned rate
     expect(result.current.chunks).toHaveLength(2);
     expect(result.current.estimated).toBe(true);
@@ -1932,13 +1940,13 @@ describe("audioController — read-along (C3 S2)", () => {
   it("the flush emits the withheld tail, and the queue then finishes normally", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", HALF));
+    act(() => feedReadAlong("m1", HALF, TURN));
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     await act(async () => lastAudio.finish()); // latched at the end of the fed text
     await flush();
 
-    await act(async () => void endTurnSpeak("m1", WHOLE));
+    await act(async () => void endTurnSpeak("m1", WHOLE, TURN));
     expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]); // + the tail, one window deep
     await act(async () => calls[1].resolve(okRes()));
     await flush();
@@ -1959,12 +1967,12 @@ describe("audioController — read-along (C3 S2)", () => {
   it("a feed after `dismiss()` is inert — the user stopped this message", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", HALF));
+    act(() => feedReadAlong("m1", HALF, TURN));
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     act(() => dismiss());
 
-    act(() => feedReadAlong("m1", WHOLE));
+    act(() => feedReadAlong("m1", WHOLE, TURN));
     expect(calls).toHaveLength(1); // nothing new on the wire...
     expect(result.current.id).toBeNull(); // ...and the player stays undocked
   });
@@ -1972,13 +1980,13 @@ describe("audioController — read-along (C3 S2)", () => {
   it("replaying a dismissed read-along from the bubble ENDS — the open latch does not outlive it", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", HALF));
+    act(() => feedReadAlong("m1", HALF, TURN));
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     act(() => dismiss()); // the user stopped it; the turn end then never flushes an abandoned session
 
     await act(async () => {
-      await toggle("m1", HALF); // ...and later taps the bubble to hear it again
+      await toggle("m1", HALF, TURN); // ...and later taps the bubble to hear it again
     });
     await flush();
     expect(result.current.status).toBe("playing");
@@ -1990,12 +1998,12 @@ describe("audioController — read-along (C3 S2)", () => {
   it("a feed for a DIFFERENT message supersedes the previous one and revokes its blobs", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", HALF));
+    act(() => feedReadAlong("m1", HALF, TURN));
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     revoked = [];
 
-    act(() => feedReadAlong("m2", HALF)); // the turn's next message starts reading
+    act(() => feedReadAlong("m2", HALF, TURN)); // the turn's next message starts reading
     expect(result.current.id).toBe("m2");
     expect(revoked).toContain("blob:1"); // D63 single-message retention, one boundary earlier
   });
@@ -2003,18 +2011,18 @@ describe("audioController — read-along (C3 S2)", () => {
   it("a cap hit mid-stream stops the feed and toasts exactly ONCE, at the flush", async () => {
     setChunkPolicy(chunked({ maxTextChars: 9 })); // "One." + "Two." fit; "Three." does not
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", HALF));
+    act(() => feedReadAlong("m1", HALF, TURN));
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     const tooLong = () =>
       h.toast.mock.calls.filter(([t]) => String(t).startsWith("Reply too long"));
 
-    act(() => feedReadAlong("m1", `${WHOLE} Four.`)); // the budget runs out mid-stream
+    act(() => feedReadAlong("m1", `${WHOLE} Four.`, TURN)); // the budget runs out mid-stream
     expect(tooLong()).toHaveLength(0); // said nothing yet — the copy assumes a finished reply
-    act(() => feedReadAlong("m1", `${WHOLE} Four. Five.`)); // capped → no further planning
+    act(() => feedReadAlong("m1", `${WHOLE} Four. Five.`, TURN)); // capped → no further planning
     expect(tooLong()).toHaveLength(0);
 
-    await act(async () => void endTurnSpeak("m1", `${WHOLE} Four. Five.`));
+    await act(async () => void endTurnSpeak("m1", `${WHOLE} Four. Five.`, TURN));
     expect(tooLong()).toHaveLength(1);
     expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]); // the tail never went out
   });
@@ -2022,13 +2030,13 @@ describe("audioController — read-along (C3 S2)", () => {
   it("plans the whole turn from the SPLIT config it started with — a Conf save can't re-split it", async () => {
     setChunkPolicy(chunked({ lookahead: 3 })); // so every appended chunk reaches the wire at once
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", HALF));
+    act(() => feedReadAlong("m1", HALF, TURN));
     await act(async () => calls[0].resolve(okRes()));
     await flush();
 
     // A voice save lands mid-turn: floors that would merge every sentence into one chunk.
     setChunkPolicy(chunked({ lookahead: 3, minWords: 20, minChars: 200 }));
-    act(() => feedReadAlong("m1", `${WHOLE} Four.`));
+    act(() => feedReadAlong("m1", `${WHOLE} Four.`, TURN));
     await act(async () => calls[1].resolve(okRes()));
     await flush();
     // Still the snapshot's split (one sentence per chunk); a re-split would have made the cursor lie.
@@ -2038,13 +2046,13 @@ describe("audioController — read-along (C3 S2)", () => {
   it("a buffer that no longer EXTENDS what was fed abandons read-along instead of re-speaking", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", WHOLE)); // "One." + "Two." enqueued
+    act(() => feedReadAlong("m1", WHOLE, TURN)); // "One." + "Two." enqueued
     await act(async () => calls[0].resolve(okRes()));
     await flush();
 
-    act(() => feedReadAlong("m1", "Something else entirely.")); // a reconnect overlaid the message
+    act(() => feedReadAlong("m1", "Something else entirely.", TURN)); // a reconnect overlaid the message
     expect(calls).toHaveLength(2); // only the lookahead that was already in flight
-    await act(async () => void endTurnSpeak("m1", "Something else entirely."));
+    await act(async () => void endTurnSpeak("m1", "Something else entirely.", TURN));
     expect(calls).toHaveLength(2); // the flush of an abandoned session adds nothing either
 
     await act(async () => calls[1].resolve(okRes()));
@@ -2063,12 +2071,12 @@ describe("audioController — read-along (C3 S2)", () => {
     // its cursor cannot address would speak the stale queue and omit the replacement (review MED-1).
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", WHOLE)); // "One." + "Two." enqueued
+    act(() => feedReadAlong("m1", WHOLE, TURN)); // "One." + "Two." enqueued
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]);
 
-    await act(async () => void endTurnSpeak("m1", "A. B. C.")); // the reload's text, straight to the flush
+    await act(async () => void endTurnSpeak("m1", "A. B. C.", TURN)); // the reload's text, straight to the flush
     expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]); // "C." was never planned
 
     await act(async () => calls[1].resolve(okRes()));
@@ -2084,14 +2092,14 @@ describe("audioController — read-along (C3 S2)", () => {
   it("a partly-failed read-along PARKS, and the replay re-requests the hole it kept", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", WHOLE));
+    act(() => feedReadAlong("m1", WHOLE, TURN));
     await act(async () => calls[0].resolve(errRes(500))); // chunk 0 fails: the hole is at the TOP
     await flush();
     await act(async () => calls[1].resolve(okRes()));
     await flush();
     expect(lastAudio.src).toBe("blob:1"); // "Two." — the skip, exactly as S1 does it
 
-    await act(async () => void endTurnSpeak("m1", WHOLE));
+    await act(async () => void endTurnSpeak("m1", WHOLE, TURN));
     await act(async () => calls[2].resolve(okRes()));
     await flush();
     await act(async () => lastAudio.finish());
@@ -2116,7 +2124,7 @@ describe("audioController — read-along (C3 S2)", () => {
   it("delegates a turn with no fed session to the ordinary play path (D17 buffered)", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await endTurnSpeak("m1", WHOLE); // nothing was ever fed — this is today's turn-end path
+      await endTurnSpeak("m1", WHOLE, TURN); // nothing was ever fed — this is today's turn-end path
     });
     await flush();
     expect(result.current.id).toBe("m1");
@@ -2126,12 +2134,12 @@ describe("audioController — read-along (C3 S2)", () => {
   it("never PAUSES the reply it is flushing (the `toggle` hazard MED-3 closes)", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", HALF));
+    act(() => feedReadAlong("m1", HALF, TURN));
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     expect(result.current.status).toBe("playing");
 
-    await act(async () => void endTurnSpeak("m1", WHOLE));
+    await act(async () => void endTurnSpeak("m1", WHOLE, TURN));
     expect(result.current.status).toBe("playing"); // `toggle` here would have paused it mid-sentence
   });
 });
@@ -2144,7 +2152,7 @@ describe("audioController — the call's STOP door (LIVE-001 · `dismissTurn`)",
 
   it("silences the player exactly like `dismiss`, and counts one turn stop", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
-    await act(async () => void endTurnSpeak("m-stop", WHOLE));
+    await act(async () => void endTurnSpeak("m-stop", WHOLE, TURN));
     await flush();
     expect(result.current.status).toBe("playing");
     const before = getTurnStops();
@@ -2163,7 +2171,7 @@ describe("audioController — the call's STOP door (LIVE-001 · `dismissTurn`)",
   it("the controller itself refuses nothing afterwards — the next message plays (the latch is the feeder's)", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     act(() => dismissTurn());
-    await act(async () => void endTurnSpeak("m-next", WHOLE));
+    await act(async () => void endTurnSpeak("m-next", WHOLE, TURN));
     await flush();
     expect(result.current.id).toBe("m-next");
     expect(result.current.status).toBe("playing");
@@ -2186,11 +2194,11 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     const { result } = renderHook(() => usePlayback((p) => p.status));
     const since = failureDelta();
     await act(async () => {
-      await toggle("m1", "hello"); // creates the element…
+      await toggle("m1", "hello", TURN); // creates the element…
     });
     lastAudio.playRejects = true; // …which the autoplay guard then refuses
     await act(async () => {
-      await toggle("m2", "again");
+      await toggle("m2", "again", TURN);
     });
     expect(result.current).toBe("paused");
     expect(since()).toBe(1);
@@ -2212,18 +2220,18 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
       setCallVoice(true, false);
       const since = failureDelta();
       globalThis.fetch = vi.fn(async () => errRes(502));
-      act(() => feedReadAlong("m1", "One. Two."));
+      act(() => feedReadAlong("m1", "One. Two.", TURN));
       await flush();
-      await act(async () => void (await endTurnSpeak("m1", "One. Two. Three.")));
+      await act(async () => void (await endTurnSpeak("m1", "One. Two. Three.", TURN)));
       await flush();
       await flush();
       expect(edges).toEqual(["idle->loading", "loading->paused", "paused->idle"]);
       expect(since()).toBe(1); // ONE tick for the reply, however many chunks failed
       // …and a reply that DID play finishes as the drain it always was — no tick.
       globalThis.fetch = vi.fn(async () => okRes());
-      act(() => feedReadAlong("m2", "One. Two."));
+      act(() => feedReadAlong("m2", "One. Two.", TURN));
       await flush();
-      await act(async () => void (await endTurnSpeak("m2", "One. Two.")));
+      await act(async () => void (await endTurnSpeak("m2", "One. Two.", TURN)));
       for (let i = 0; i < 4; i++) {
         await act(async () => lastAudio.emit("ended"));
         await flush();
@@ -2247,9 +2255,9 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     });
     try {
       globalThis.fetch = vi.fn(async () => errRes(502));
-      act(() => feedReadAlong("m1", "One. Two."));
+      act(() => feedReadAlong("m1", "One. Two.", TURN));
       await flush();
-      await act(async () => void (await endTurnSpeak("m1", "One. Two. Three.")));
+      await act(async () => void (await endTurnSpeak("m1", "One. Two. Three.", TURN)));
       await flush();
       await flush();
       expect(edges).toEqual(["idle->loading", "loading->idle"]);
@@ -2262,7 +2270,7 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     setChunkPolicy(chunked());
     const since = failureDelta();
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", "One. Two."));
+    act(() => feedReadAlong("m1", "One. Two.", TURN));
     lastAudio.playRejects = true;
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -2273,7 +2281,7 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     setChunkPolicy(chunked());
     const since = failureDelta();
     const calls = deferredFetch();
-    act(() => feedReadAlong("m1", "One. Two. Three."));
+    act(() => feedReadAlong("m1", "One. Two. Three.", TURN));
     await act(async () => calls[0].resolve(okRes()));
     await flush();
     await act(async () => calls[1].resolve(okRes()));
@@ -2296,17 +2304,17 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     const { result } = renderHook(() => usePlayback((p) => p.status));
     const since = failureDelta();
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     expect(result.current).toBe("playing");
     await act(async () => {
-      await toggle("m1", "hello"); // …the same message: pause in place
+      await toggle("m1", "hello", TURN); // …the same message: pause in place
     });
     expect(result.current).toBe("paused");
 
     lastAudio.playRejects = true;
     await act(async () => {
-      await toggle("m1", "hello"); // …and resume, which the engine now refuses
+      await toggle("m1", "hello", TURN); // …and resume, which the engine now refuses
     });
     expect(since()).toBe(1);
     expect(result.current).toBe("paused");
@@ -2320,14 +2328,14 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     const seen: boolean[] = [];
     setCallPrePlay(() => seen.push(lastAudio.paused));
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     expect(seen).toEqual([true]); // the tap ran, and it ran while the element had not yet played
     expect(lastAudio.paused).toBe(false); // …and the play still happened
 
     setCallPrePlay(null); // unregistered (the call's teardown): the door goes back to a bare play
     await act(async () => {
-      await toggle("m2", "again");
+      await toggle("m2", "again", TURN);
     });
     expect(seen).toEqual([true]);
   });
@@ -2336,7 +2344,7 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     const { result } = renderHook(() => usePlayback((p) => p.status));
     const since = failureDelta();
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     expect(since()).toBe(0);
     await act(async () => lastAudio.emit("error"));
@@ -2348,9 +2356,9 @@ describe("audioController — the mouth's own failures, counted (D71 §4.5)", ()
     setChunkPolicy(OFF);
     const since = failureDelta();
     const calls = deferredFetch();
-    void toggle("m1", "one");
+    void toggle("m1", "one", TURN);
     await flush();
-    void toggle("m2", "two"); // supersedes the first synth before it ever plays
+    void toggle("m2", "two", TURN); // supersedes the first synth before it ever plays
     await flush();
     await act(async () => calls[0].resolve(okRes()));
     await flush();
@@ -2366,7 +2374,7 @@ describe("audioController — forgetting ONE message (D81 · `forgetMessage`)", 
   it("drops the cached clip and dismisses the player docked on it — the next play re-synthesizes", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "old words");
+      await toggle("m1", "old words", TURN);
     });
     expect(result.current.status).toBe("playing");
     const clip = `blob:${urlSeq}`; // the clip just minted for m1
@@ -2375,7 +2383,7 @@ describe("audioController — forgetting ONE message (D81 · `forgetMessage`)", 
     expect(result.current.status).toBe("idle");
     expect(revoked).toContain(clip);
     await act(async () => {
-      await toggle("m1", "new words");
+      await toggle("m1", "new words", TURN);
     });
     expect(globalThis.fetch).toHaveBeenCalledTimes(2); // not the stale cached clip
     const init = vi.mocked(globalThis.fetch).mock.calls[1][1] as RequestInit;
@@ -2386,7 +2394,7 @@ describe("audioController — forgetting ONE message (D81 · `forgetMessage`)", 
     const calls = deferredFetch();
     let first!: Promise<void>;
     act(() => {
-      first = toggle("m1", "old words");
+      first = toggle("m1", "old words", TURN);
     });
     act(() => forgetMessage("m1")); // an edit saved while the whole-clip synth is out
     await act(async () => {
@@ -2395,7 +2403,7 @@ describe("audioController — forgetting ONE message (D81 · `forgetMessage`)", 
     });
     let second!: Promise<void>;
     act(() => {
-      second = toggle("m1", "new words");
+      second = toggle("m1", "new words", TURN);
     });
     expect(calls).toHaveLength(2); // re-synthesized: the late clip was not cached under the edited id
     expect(calls[1].body.text).toBe("new words");
@@ -2408,7 +2416,7 @@ describe("audioController — forgetting ONE message (D81 · `forgetMessage`)", 
   it("forgetting ANOTHER id leaves the docked message playing and its clip cached", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
-      await toggle("m1", "hello");
+      await toggle("m1", "hello", TURN);
     });
     const before = [...revoked]; // (the beforeEach cache reset revokes the previous case's blobs)
     act(() => forgetMessage("m2"));
@@ -2420,12 +2428,145 @@ describe("audioController — forgetting ONE message (D81 · `forgetMessage`)", 
   it("reaps a retained CHUNK queue for the id too", async () => {
     setChunkPolicy(chunked());
     const { result } = renderHook(() => usePlayback((p) => p));
-    await act(async () => void toggle("m1", "One. Two."));
+    await act(async () => void toggle("m1", "One. Two.", TURN));
     await flush();
     expect(result.current.id).toBe("m1");
     const before = revoked.length;
     act(() => forgetMessage("m1"));
     expect(result.current.status).toBe("idle");
     expect(revoked.length).toBeGreaterThan(before); // the queue's synthesized chunks were revoked
+  });
+});
+
+describe("audioController — the duties gate (session-51 polish #6)", () => {
+  // The single-`*` ACTION convention is a roleplay one: `speak_actions: false` drops a CONVERSATIONAL
+  // agent's `*…*` spans, and never touches an `agent`-duties reply — whose unbackticked `*.tmp` used to
+  // open an "action" the ear then deleted to the end of the reply.
+  const AGENT: Speaker = { agent: null, actions: false };
+  const RP: Speaker = { agent: "lynette", actions: true };
+  const STRAY = "I removed every *.tmp file under the cache. The disk is at forty one percent now.";
+  const ACTED = "*She smiles and leans in.* The fleet is awake.";
+  /** Everything the mouth put on the wire, in order. */
+  const wire = () =>
+    vi
+      .mocked(globalThis.fetch)
+      .mock.calls.map(
+        (c) => (JSON.parse(String((c[1] as RequestInit).body)) as { text: string }).text,
+      )
+      .join(" ");
+  const bothModes = () => [chunked({ speakActions: false }), { ...OFF, speakActions: false }];
+
+  it("reads an agent-duties reply IN FULL with actions off — both chunking modes", async () => {
+    for (const p of bothModes()) {
+      clearAudioCache();
+      vi.mocked(globalThis.fetch).mockClear();
+      setChunkPolicy(p);
+      await act(async () => {
+        await toggle("m1", STRAY, AGENT);
+      });
+      await flush();
+      expect(wire()).toContain("tmp file under the cache");
+      expect(wire()).toContain("forty one percent");
+    }
+  });
+
+  it("still drops a conversational reply's actions — and speaks them for an agent", async () => {
+    for (const p of bothModes()) {
+      clearAudioCache();
+      vi.mocked(globalThis.fetch).mockClear();
+      setChunkPolicy(p);
+      await act(async () => {
+        await toggle("m1", ACTED, RP);
+      });
+      await flush();
+      expect(wire()).not.toContain("smiles");
+      expect(wire()).toContain("The fleet is awake.");
+
+      clearAudioCache();
+      vi.mocked(globalThis.fetch).mockClear();
+      await act(async () => {
+        await toggle("m2", ACTED, AGENT);
+      });
+      await flush();
+      expect(wire()).toContain("She smiles and leans in.");
+    }
+  });
+
+  it("the read-along feed does not cut an agent's reply at an unclosed opener", async () => {
+    setChunkPolicy(chunked({ speakActions: false }));
+    const calls = deferredFetch();
+    const md = "Every *.tmp file is gone. The disk is fine. Anything";
+    act(() => feedReadAlong("m1", md, RP)); // conversational: the opener may still close — held back
+    expect(calls).toHaveLength(0);
+    act(() => feedReadAlong("m2", md, AGENT)); // an agent: nothing to hold, the sentence is spoken
+    expect(calls[0]?.body.text).toContain("tmp file is gone.");
+  });
+
+  it("a REPLAY keeps the retained queue's speaker — its voice and its policy", async () => {
+    setChunkPolicy(chunked({ speakActions: false }));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", "One. Two. Three.", RP)); // "One." + "Two." closed
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    expect(calls).toHaveLength(2); // "Two." in flight…
+    act(() => dismiss()); // …and aborted: the queue is retained with it un-synthesized
+    await flush();
+
+    await act(async () => {
+      await toggle("m1", "One. Two. Three.", AGENT); // the bubble's tap replays the same message
+    });
+    await flush();
+    expect(calls.at(-1)?.body).toMatchObject({ text: "Two.", agent: "lynette" });
+    expect(getSpokenPolicy("m1").speakActions).toBe(false); // still the conversational speaker's policy
+  });
+
+  it("the backstop reads the policy the reply was SPOKEN by — the speaker's effective one", async () => {
+    setChunkPolicy({ ...OFF, speakActions: false }); // the whole-clip path: no session to read it off
+    await act(async () => {
+      await toggle("m1", "Hello there.", AGENT);
+    });
+    expect(getSpokenPolicy("m1").speakActions).toBe(true); // an agent's reply was read in full
+    setChunkPolicy(chunked({ speakActions: false }));
+    await act(async () => {
+      await toggle("m2", "Hello once more.", AGENT);
+    });
+    expect(getSpokenPolicy("m2").speakActions).toBe(true); // …and the same through the chunk queue
+  });
+
+  // Maya M1 — the record is the MESSAGE's: another reply's begin can never lend it its policy.
+  it("a reply is compared by ITS OWN policy — never the one another reply began with", async () => {
+    setChunkPolicy({ ...OFF, speakActions: false });
+    await act(async () => {
+      await toggle("m1", "Hello there.", AGENT);
+    });
+    // the next reply is in the store but has not begun speaking: the published policy, not m1's
+    expect(getSpokenPolicy("m2").speakActions).toBe(false);
+    expect(getSpokenPolicy("m1").speakActions).toBe(true); // m1's own is unchanged by being asked
+    await act(async () => {
+      await toggle("m0", "An older bubble.", RP); // a different-duties reply begins after it…
+    });
+    expect(getSpokenPolicy("m0").speakActions).toBe(false);
+    await act(async () => {
+      await toggle("m3", "Agent again.", AGENT);
+    });
+    // …and m0, no longer the one the mouth began, falls back to the published policy — not m3's
+    expect(getSpokenPolicy("m0").speakActions).toBe(false);
+  });
+
+  it("a forgotten message, or a left conversation, falls back to the published policy", async () => {
+    setChunkPolicy({ ...OFF, speakActions: false });
+    await act(async () => {
+      await toggle("m1", "Hello there.", AGENT);
+    });
+    expect(getSpokenPolicy("m1").speakActions).toBe(true);
+    act(() => forgetMessage("m1")); // an edit saved / the row deleted (D81)
+    expect(getSpokenPolicy("m1").speakActions).toBe(false);
+
+    await act(async () => {
+      await toggle("m2", "Hello again.", AGENT);
+    });
+    expect(getSpokenPolicy("m2").speakActions).toBe(true);
+    act(() => clearAudioCache()); // `/new` or a thread swap
+    expect(getSpokenPolicy("m2").speakActions).toBe(false);
   });
 });
