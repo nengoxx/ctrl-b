@@ -2909,6 +2909,8 @@ export function useLiveCall(): CallView {
               channels: cap.readback.channelCount,
               trackRate: cap.readback.sampleRate,
               ctxRate: cap.context.sampleRate,
+              // K6 — the 16 kHz ask was abandoned for the device rate (`openCaptureContext`'s fallback).
+              nativeRate: cap.readback.nativeRate,
               fellBack: cap.fellBack,
               // D80's W6 (R91 §1, §6 ③) — what the platform REPORTS about this context's output path, for
               // COMPARISON ONLY: Android's Bluetooth drivers discard delay reports ≥ 1 s, so on the car

@@ -97,7 +97,7 @@ const h = vi.hoisted(() => ({
     outputLatency: 0.28,
     baseLatency: 0.01,
     currentTime: 5,
-    sampleRate: 48000, // the context the worklet runs at (Phase 26 S1 T5 — the trail's `ctxRate`)
+    sampleRate: 16000, // the context the worklet runs at (Phase 26 S1 T5 — the trail's `ctxRate`; K6's rate)
   },
   /** THE CONNECT CHIRP (D80 ⑦), as the wiring drives it: every `playChirp` (by context and `when`), and
    *  the matchers it made; a matcher concludes `chirpVerdict` on its `chirpAfter`-th frame. */
@@ -149,6 +149,10 @@ const h = vi.hoisted(() => ({
   fennec: false,
   /** D73 S5 — did the picked `input_device` refuse to open, so the DEFAULT route took the call? */
   fellBack: false,
+  /** Phase 26 K6 — did the 16 kHz ask fall back to the device rate? (Set with `ctx.sampleRate`.) */
+  nativeRate: false,
+  /** …and every `start.sample_rate` a leg opened with, in order. */
+  rates: [] as number[],
   /** D73 S6 ② — how long ago the ear last heard a frame, in ms (the capture's own liveness). */
   earGap: 0,
   /** …and every `setKeepalive` the wiring asked for, in order (S6 ③): the node is invisible to the
@@ -242,11 +246,13 @@ vi.mock("../../src/lib/callCue", async (importOriginal) => ({
 vi.mock("../../src/lib/liveSocket", () => ({
   liveSocketUrl: () => "ws://x/api/voice/live",
   openLiveSocket: (opts: {
+    sampleRate: number;
     onFrame: (f: LiveDown) => void;
     onClose: (code: number, reason: string) => void;
     trail?: { callId: string; leg: number };
   }) => {
     h.starts.push(opts.trail);
+    h.rates.push(opts.sampleRate);
     h.frame = (f) => opts.onFrame(stampSegment(f));
     // The leg's own unannounced close — a dropped tailnet link, the one close the machine reconnects
     // through. Bound per leg, so a case can drop THIS leg and watch the ladder open the next one.
@@ -282,18 +288,19 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
     h.capOpts = { route: opts.route, deviceId: opts.deviceId };
     return {
       context: h.ctx,
-      sampleRate: 48000,
+      sampleRate: h.ctx.sampleRate,
       readback: {
         echoCancellation: h.fennec ? true : "all",
         echoCapabilities: h.fennec ? [true] : [true, "all"],
         label: "Speakerphone",
         deviceId: h.voice.data.live_call.input_device,
         // T5 (Phase 26 S1) — the rest of the grant, raw; a track rate that is NOT the context's, so a
-        // case can tell the trail's two rates apart
+        // case can tell the trail's two rates apart (K6: the track's 48 kHz, the context's 16 kHz)
         noiseSuppression: true,
         autoGainControl: false,
         channelCount: 1,
-        sampleRate: 16000,
+        sampleRate: 48000,
+        nativeRate: h.nativeRate,
       },
       fellBack: h.fellBack,
       setMuted: h.setMuted,
@@ -412,6 +419,9 @@ beforeEach(() => {
   h.order = [];
   h.fennec = false;
   h.fellBack = false;
+  h.nativeRate = false;
+  h.ctx.sampleRate = 16000;
+  h.rates = [];
   h.capOpts = null;
   h.capStops = 0;
   h.voice.data.live_call.route = "call";
@@ -3012,7 +3022,7 @@ describe("useLiveCall — THE CONNECT CHIRP (D80 ⑦: played + logged, not drivi
     const [ctx, when] = h.chirpPlay.mock.calls[0];
     expect(ctx).toBe(h.ctx); // one clock: the context the mic frames are stamped on
     expect(when).toBeCloseTo(5 + 0.05, 9); // scheduled a lead ahead of `currentTime`
-    expect(h.chirpMatchers).toEqual([{ rate: 48000, when, frames: 0 }]);
+    expect(h.chirpMatchers).toEqual([{ rate: 16000, when, frames: 0 }]); // K6 — the capture's rate
     // it plays REGARDLESS of `mic_hold` (the harness track is subtractive: nothing holds)
     await act(async () => c.view.result.current.setRoute("media")); // the sink may have moved
     await act(async () => {
@@ -3167,6 +3177,23 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
     expect(h.posts.every((p) => p.path === "/api/voice/live/trail")).toBe(true);
   });
 
+  it("K6's NATIVE PATH — a 48 kHz fallback capture is declared, matched and logged at 48 kHz", async () => {
+    // The explicit device-rate case (pre-148 Firefox): the capture fell back, and every consumer reads
+    // the context's REAL rate — the relay's `start`, the chirp matcher, the trail's `capture` line.
+    h.voice.data.live_call.debug = true;
+    h.voice.data.live_call.chirp = true;
+    h.ctx.sampleRate = 48000;
+    h.nativeRate = true;
+    const c = await call();
+    expect(h.rates).toEqual([48000]);
+    expect(h.chirpMatchers.map((m) => m.rate)).toEqual([48000]);
+    c.view.unmount();
+    expect(lines().find((l) => l.ev === "capture")).toMatchObject({
+      ctxRate: 48000,
+      nativeRate: true,
+    });
+  });
+
   it("ON: a `sig` line per signal (with its phase move), a `capture` line, `sample`s at 1 Hz", async () => {
     h.voice.data.live_call.debug = true;
     const c = await call();
@@ -3199,8 +3226,9 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
       ns: true,
       agc: false,
       channels: 1,
-      trackRate: 16000,
-      ctxRate: 48000,
+      trackRate: 48000,
+      ctxRate: 16000,
+      nativeRate: false, // K6 — the 16 kHz ask held
       fellBack: false,
       // D80's W6 — what the platform REPORTS for this context's output path, beside what the ear measures
       outputLatency: 0.28,

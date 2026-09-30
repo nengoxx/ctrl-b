@@ -33,45 +33,50 @@ const dbToAmp = (db: number): number => 10 ** (db / 20);
 const rms = (x: Float32Array): number => Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
 
 /** The whole mic stream from `WHEN − 0.2 s` to past the window: the sweep returned `lagMs` late at
- *  `echoDb` RMS (or not at all), white noise at `noiseDb` RMS, and an optional extra layer. */
+ *  `echoDb` RMS (or not at all), white noise at `noiseDb` RMS, and an optional extra layer — at the
+ *  device's 48 kHz unless a case asks for another capture `rate` (K6's 16 kHz). */
 function stream(opts: {
   lagMs: number | null;
   echoDb?: number;
   noiseDb?: number;
   extra?: (t: number) => number;
-}): { start: number; x: Float32Array } {
+  rate?: number;
+}): { start: number; x: Float32Array; rate: number } {
+  const rate = opts.rate ?? RATE;
   const start = WHEN - 0.2;
-  const n = Math.ceil((0.2 + (CHIRP_SEARCH_MS + CHIRP_MS) / 1000 + 0.2) * RATE);
+  const n = Math.ceil((0.2 + (CHIRP_SEARCH_MS + CHIRP_MS) / 1000 + 0.2) * rate);
   const x = new Float32Array(n);
   const rand = rng(7);
   const noiseAmp = dbToAmp(opts.noiseDb ?? -42) * Math.sqrt(3); // uniform ±a has RMS a/√3
   for (let i = 0; i < n; i++)
-    x[i] = (rand() * 2 - 1) * noiseAmp + (opts.extra?.(start + i / RATE) ?? 0);
+    x[i] = (rand() * 2 - 1) * noiseAmp + (opts.extra?.(start + i / rate) ?? 0);
   if (opts.lagMs !== null) {
-    const tpl = chirpTemplate(RATE);
+    const tpl = chirpTemplate(rate);
     const gain = dbToAmp(opts.echoDb ?? -15) / rms(tpl);
-    const at = Math.round((0.2 + opts.lagMs / 1000) * RATE);
+    const at = Math.round((0.2 + opts.lagMs / 1000) * rate);
     for (let i = 0; i < tpl.length && at + i < n; i++) x[at + i] += tpl[i] * gain;
   }
-  return { start, x };
+  return { start, x, rate };
 }
 
 /** Feed `x` to the matcher frame by frame, as pcm16 LE with each frame's context time; the results it
  *  returned, in order (it must return exactly one). */
 function run(
-  s: { start: number; x: Float32Array },
-  m = new ChirpMatcher(RATE, WHEN),
+  s: { start: number; x: Float32Array; rate?: number },
+  m = new ChirpMatcher(s.rate ?? RATE, WHEN),
 ): ChirpResult[] {
+  const rate = s.rate ?? RATE;
+  const frame = (FRAME * rate) / RATE; // the same 40 ms at whatever rate the capture runs
   const out: ChirpResult[] = [];
-  for (let f = 0; f * FRAME < s.x.length; f++) {
-    const len = Math.min(FRAME, s.x.length - f * FRAME);
+  for (let f = 0; f * frame < s.x.length; f++) {
+    const len = Math.min(frame, s.x.length - f * frame);
     const buf = new ArrayBuffer(len * 2);
     const view = new DataView(buf);
     for (let i = 0; i < len; i++) {
-      const v = Math.max(-1, Math.min(1, s.x[f * FRAME + i]));
+      const v = Math.max(-1, Math.min(1, s.x[f * frame + i]));
       view.setInt16(i * 2, Math.round(v < 0 ? v * 32768 : v * 32767), true);
     }
-    const r = m.feed(buf, s.start + (f * FRAME) / RATE);
+    const r = m.feed(buf, s.start + (f * frame) / rate);
     if (r !== undefined) out.push(r);
   }
   return out;
@@ -97,6 +102,16 @@ describe("ChirpMatcher — the car's return, found (R93 §V)", () => {
     const [r] = run(stream({ lagMs: 2300, extra: voice }));
     expect(r.lagMs).not.toBeNull();
     expect(Math.abs(r.lagMs! - 2300)).toBeLessThanOrEqual(5);
+  });
+
+  it("K6 — at the 16 kHz capture rate (factor 1, nothing decimated) the same return is found", () => {
+    const [r] = run(stream({ lagMs: 2300, rate: 16000 }));
+    expect(r.lagMs).not.toBeNull();
+    expect(Math.abs(r.lagMs! - 2300)).toBeLessThanOrEqual(5);
+    expect(r.peak).toBeGreaterThanOrEqual(CHIRP_MIN_PEAK);
+    expect(r.peak).toBeGreaterThanOrEqual(3 * r.second);
+    // …and no return is still `null` there — never a guess
+    expect(run(stream({ lagMs: null, rate: 16000 }))[0].lagMs).toBeNull();
   });
 
   it("finds a headphone-short return too — the lag is whatever the path is", () => {

@@ -587,9 +587,11 @@ R95 §4) · the echo backstop · the voice learner · the overlay · the idle cl
    live-call marker's precedent), sent in `start` on every leg; the relay acquires the slot AFTER reading `start`. Full and
    the holder's `client_id` matches ⇒ the slot transfers at once, the old leg gets `state:ended{reason:"superseded"}` and
    closes in the background; another client gets `busy`; one release per slot.
-5. **K6 — 16 kHz capture (R11).** `new AudioContext({ sampleRate: 16000 })` at `pcmCapture.ts` (~:604) and
-   `useDictation.ts` (~:1195); on `NotSupportedError` from `createMediaStreamSource`, close and rebuild at the native rate
-   (capability-checked, never UA-sniffed), the rebuilt context brought to `running` via `primeAudio` (council 25).
+5. **K6 — 16 kHz capture (R11).** `new AudioContext({ sampleRate: 16000 })` through ONE synchronous helper,
+   `openCaptureContext` in `pcmCapture.ts`, called at both context sites (`startPcmCapture` and `useDictation.ts`'s
+   `armDetector`); on `NotSupportedError` from `createMediaStreamSource`, close and rebuild at the native rate
+   (capability-checked, never UA-sniffed), the rebuilt context brought to `running` via the caller's own resume path
+   (council 25).
    Comment/test updates: the worklet's frame-contract prose, `chirp.ts`'s `CHIRP_MATCH_RATE` note, capture tests;
    optionally the dictation analyser's `fftSize` 1024. Through the interim Speaches hop quality is a measured wash (R96 §3).
 
@@ -785,7 +787,7 @@ round — blind Opus 5.5 ∥ blind Emma.**
 | **S3** kill paths | dictation K2/K3 close with typed codes + StopReason (the degrade consequence arrives at S8); the K3 reversal in docs + tests; the call unchanged. **✅ ABSORBED (ruled 2026-10-01, session 55 — no build, no round):** S1 delivered the typed codes + the T4 vocabulary (4000 `send_buffer` · 4001 `client_backlog` · `deathReason` · `closeCode`/`lastError` on the `end` line — every K-path is classifiable from the trail: K1 = 1008 + `lastError.code=protocol`, K4 = 1006, K5 = 1013, relay `session_limit` = 1000); S2 rewrote every live doc/test for the K3 reversal (R94 §7.1.3's "raise K3" is provenance). A `protocol` StopReason member was REJECTED: the vocabulary is spec-pinned and S8 rewrites the death consequence. | a code per path | — |
 | **S4** | **WITHDRAWN** (R10) | — | — |
 | **SP** P1·P2·P3 | `config.py` (defaults, bounds, `dictation_idle_margin_db`, validator, the 1790/1800 interim) · `useDictation.ts` (`audioBitsPerSecond` 32 kbps, T4 clip bytes) · `levelGate.ts` (reuse) · `lib/wakeLock.ts` (fence parameterized) · `useLiveCall.ts` · `ConfTab.tsx` + settings type · `e2e/liveCall.spec.ts`'s `/voice/status` fixture (T-8) | validator · `dictation_max_s × bitrate < max_upload_bytes` · 0 = off · idle at the margin · cap · **Tier-0 stays suspended while streaming** · wake lock on every stop path + the handover-order test · R88 parity gains `dictation_idle_margin_db` · one Conf round-trip | a 6-min hands-free dictation with 30 s pauses survives, screen on |
-| **K6** 16 kHz | the two context sites + the native-rate fallback via `primeAudio` · comment/test updates · optional `fftSize` | 16 kHz path · fallback on a thrown `createMediaStreamSource` · **fallback context reaches running** · frame size | **phone card:** trail rate 16000 · one call + one 5–10 min dictation transcribe normally · chirp lag + latency readout unchanged · level gates self-adjust · **EC-call and EC-media arms** · **one Fennec run** (the fallback) |
+| **K6** 16 kHz | the two context sites + the native-rate fallback via the caller's own resume path (council 25) · comment/test updates · optional `fftSize` | 16 kHz path · fallback on a thrown `createMediaStreamSource` · **fallback context reaches running** · frame size | **phone card:** trail rate 16000 · one call + one 5–10 min dictation transcribe normally · chirp lag + latency readout unchanged · level gates self-adjust · **EC-call and EC-media arms** · **one Fennec run** (the fallback) |
 | **D9** | reducer awaited set · `liveSocket.ts` (`error.item_id`) · overlay selector (closes LIVE_VOICE_PLAN OPEN-2, T-11) | L5 §1.3's `stop(A)→start(B)→stop(B)→transcript(A)→transcript(B)` keeps the mouth shut until B's final · the id-less belt | — |
 | **D8** | `levelGate.ts`, `useLiveCall.ts` | seed tiers · settled overrides up AND down · never learned | a call's first 5 s on a fresh route |
 | **D5** (A's tail) | `LiveSessionSlots` holder map + supersede · slot acquired after `start` (`api/voice.py`) · `client_id` in `sessionStorage` · both hooks | same-tab supersede incl. after a reload · another client `busy` · `ended{superseded}` · one release per slot | — |

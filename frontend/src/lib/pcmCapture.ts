@@ -29,6 +29,13 @@ import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "./pcmWorklet";
 // and through its tail (`mic_hold`, the D73 rule — D80 ①/⑤).
 // Since D76 §B.1 a hold is a CLASSIFICATION, not a closed track: every frame still arrives with its real
 // level and a `uplinked` bit, and the call machine substitutes silence on the way up (see `setHeld`).
+//
+// THE RATE IS ASKED FOR, NOT TAKEN (Phase 26 K6, evidence docs/research/R96): both legs open their
+// context through `openCaptureContext`, at `CAPTURE_RATE` — the browser's own windowed-sinc resampler
+// filters the mic down to what the ear's models read, and the uplink carries a third of the bytes a
+// device-rate context would. Where the pair cannot be built (Firefox/Fennec before 148) it falls back
+// to the device rate, and either way the context's REAL rate is what every consumer reads and the
+// relay is told.
 
 // ── THE ROUTE (D73 S5 → D76 §A; evidence docs/research/R74, R80) ─────────────────────────────────
 // Chrome Android puts the whole device into `MODE_IN_COMMUNICATION` — and re-tags the page's OWN
@@ -349,6 +356,11 @@ export interface MicReadback {
   /** The TRACK's rate — not necessarily the context's (`PcmCapture.sampleRate`, what the relay resamples
    *  from): the browser resamples between the two, and the trail records both to see where. */
   sampleRate: number | undefined;
+  /** Phase 26 K6 — the `CAPTURE_RATE` context could not take this stream and the capture fell back to
+   *  the DEVICE rate (`openCaptureContext`). Not a track property like its neighbours, but a fact about
+   *  the same moment of opening, read by nothing but the trail: the phone card's one line for "which
+   *  path did this browser take". */
+  nativeRate: boolean;
 }
 
 export interface PcmCapture {
@@ -356,8 +368,9 @@ export interface PcmCapture {
    *  for the call's sound cue (`lib/callCue`, D76 §C.5), which plays on the one context a call already
    *  owns rather than minting a second. Nothing may keep it past `stop()`. */
   context: AudioContext;
-  /** The context's REAL rate — what `start.sample_rate` must declare (§3.1: the browser gives 44.1k or
-   *  48k by device and there is no reliable way to ask for 24k, so the relay resamples from this). */
+  /** The context's REAL rate — what `start.sample_rate` must declare (§3.1): `CAPTURE_RATE` when the
+   *  browser built the pair at that rate, the device's own on the fallback (`openCaptureContext`), and
+   *  the relay resamples from whichever it is. Read off the context, never assumed from the ask. */
   sampleRate: number;
   /** The live track's own readback — the arming decision's input, and the overlay's debug block. */
   readback: MicReadback;
@@ -488,6 +501,56 @@ export async function attachPcmUplink(
   }
 }
 
+// ── THE CAPTURE RATE (Phase 26 K6 — ASR_PLAN §3.9 ⑤, evidence docs/research/R96) ──────────────────
+// A default context runs at the output device's preferred rate (48 kHz on the owner's phone), so the
+// uplink used to carry 768 kbit/s of pcm16 and the relay decimated it with a linear resampler that has
+// no anti-alias filter (R96 §3, measured: at 48 → 16 kHz it is pure drop-sampling). Asking the CONTEXT
+// for the ear's rate moves that step into the browser's own windowed-sinc resampler (Chrome's
+// `SincResampler`, R96 §2.2) and cuts the uplink to a third — what the raw-PCM-over-WebSocket peer class
+// does (ElevenLabs, Pipecat, Google's Live console, R96 §1). The worklet frame size, `start.sample_rate`,
+// the socket ceiling and the chirp matcher all key on `ctx.sampleRate`, so nothing downstream changes.
+
+/** The rate every capture context is asked for, Hz: Silero VAD's and Parakeet's input rate (R96 §3). A
+ *  property of the models the audio is for, not a preference — hence not a config key (ASR_PLAN §4). */
+export const CAPTURE_RATE = 16000;
+
+/** Open a capture context at `CAPTURE_RATE`, proving the stream can feed it; fall back to the device
+ *  rate.
+ *
+ *  THE PROOF IS A PROBE, NEVER A UA SNIFF (the house rule): Firefox/Fennec before 148 build the context
+ *  happily and then THROW `NotSupportedError` at `createMediaStreamSource` when its rate differs from
+ *  the track's (Mozilla bug 1674892, R96 §2.3) — so the one test that can tell is that call, made here,
+ *  before the caller builds anything on the context. Any throw — that one, or a constructor that rejects
+ *  the option — closes the `CAPTURE_RATE` context and opens a plain one at the device rate, which is the
+ *  pre-K6 capture exactly (the relay resamples it as it always did). The probe's node is dropped with no
+ *  connections, which is all a `disconnect()` would leave it with; the context's `close()` retires it.
+ *
+ *  SYNCHRONOUS, AND IT DOES NOT RESUME. Node creation needs no running context, so both constructions
+ *  happen before the caller's first `await` — and the caller keeps its own resume, its own "the context
+ *  must RUN" check and its own failure contract exactly as they were (the call fails its start, dictation
+ *  degrades to the clip). A fallback context therefore reaches `running` through the SAME resume path a
+ *  first-choice one does (ASR_PLAN council 25), and a caller that parks the context as an ownership token
+ *  before that await parks whichever one this returned. Throws only if the device-rate constructor
+ *  itself throws — i.e. exactly where a plain `new AudioContext()` used to.
+ *
+ *  A KNOWN ASSUMPTION on the throw path: the rejected context's `close()` is NOT awaited before the
+ *  device-rate one is built — the same order every teardown → next arm already uses. If a browser ever
+ *  refuses a second context until the first one's close settles, this is the suspect. */
+export function openCaptureContext(stream: MediaStream): {
+  ctx: AudioContext;
+  nativeRate: boolean;
+} {
+  let asked: AudioContext | null = null;
+  try {
+    asked = new AudioContext({ sampleRate: CAPTURE_RATE });
+    asked.createMediaStreamSource(stream);
+    return { ctx: asked, nativeRate: false };
+  } catch {
+    if (asked) void asked.close().catch(() => {});
+  }
+  return { ctx: new AudioContext(), nativeRate: true };
+}
+
 // ── THE EC-RELEASE BARRIER (D75 ③, evidence docs/research/R80 §5) ────────────────────────────────
 // The communication mode is evaluated ONLY for the FIRST input stream (`has_input_streams` early-return)
 // and restored ONLY when the LAST one is released — and that release happens in the audio SERVICE, after
@@ -611,12 +674,16 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
   };
 
   try {
-    ctx = new AudioContext();
+    // K6 — the context at `CAPTURE_RATE`, or the device-rate fallback; either way through the resume
+    // and the running check below, unchanged.
+    const opened = openCaptureContext(stream);
+    ctx = opened.ctx;
     if (ctx.state === "suspended") await ctx.resume().catch(() => {});
     // A context that will not run is a SILENT CALL: the graph builds, the worklet installs, and not one
     // frame is ever pulled — the overlay would reach "Listening" and sit there forever with a dead ear.
     // Failing the start instead puts it where the owner can see it (the call's error terminal). The
-    // gesture unlock this needs is `primeAudio`'s job, inside the tap; there is no second chance here.
+    // `resume()` above rides the sticky user activation of the call's tap (`primeAudio` unlocks only the
+    // `<audio>` element, never a context); there is no second chance here.
     if (ctx.state !== "running") throw new Error("audio context suspended");
     uplink = await attachPcmUplink(ctx, stream, {
       frameMs: opts.frameMs,
@@ -663,6 +730,7 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
         autoGainControl: settings.autoGainControl,
         channelCount: settings.channelCount,
         sampleRate: settings.sampleRate,
+        nativeRate: opened.nativeRate,
       },
       fellBack,
       ecStuck,

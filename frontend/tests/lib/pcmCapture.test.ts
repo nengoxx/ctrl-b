@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  CAPTURE_RATE,
   listAudioInputs,
   micConstraints,
+  openCaptureContext,
   openMicStream,
   ROUTE_CALL,
   ROUTE_MEDIA,
@@ -18,15 +20,34 @@ import {
 /** The Web Audio stand-ins, minimal and driveable. `state` is the whole point of the suspended case. */
 class FakeContext {
   static last: FakeContext | null = null;
+  /** Every context made, in order — the K6 fallback makes two. */
+  static all: FakeContext[] = [];
+  /** K6 — the device's own rate: what a context runs at when no rate is asked for. */
+  static deviceRate = 48000;
+  /** K6 — Firefox/Fennec before 148: `createMediaStreamSource` THROWS on a context whose rate is not
+   *  the track's (R96 §2.3). The track here runs at the device rate. */
+  static foreignRateThrows = false;
+  /** K6 — a browser that takes the option and runs at the device rate anyway (R96 §2.2's unverified
+   *  "some devices stick to the system default"): whatever it GIVES is what must be declared. */
+  static ignoresRateOption = false;
+  /** What the constructor was handed — the K6 ask, recorded. */
+  options: AudioContextOptions | undefined;
   state: AudioContextState = "running";
-  sampleRate = 48000;
+  /** The rate the fake RUNS at: the requested one, as a real context honours it, unless a case says
+   *  otherwise. */
+  sampleRate: number;
+  streamSources = 0;
   closed = 0;
   resumes = 0;
   /** What `resume()` leaves the context in — a policy that refuses the resume leaves it suspended. */
   resumesTo: AudioContextState = "running";
   audioWorklet = { addModule: vi.fn(async () => {}) };
-  constructor() {
+  constructor(options?: AudioContextOptions) {
+    this.options = options;
+    this.sampleRate =
+      (!FakeContext.ignoresRateOption && options?.sampleRate) || FakeContext.deviceRate;
     FakeContext.last = this;
+    FakeContext.all.push(this);
   }
   async resume(): Promise<void> {
     this.resumes += 1;
@@ -37,6 +58,12 @@ class FakeContext {
     this.state = "closed";
   }
   createMediaStreamSource() {
+    if (FakeContext.foreignRateThrows && this.sampleRate !== FakeContext.deviceRate)
+      throw new DOMException(
+        "Connecting AudioNodes from AudioContexts with different sample-rate is currently not supported.",
+        "NotSupportedError",
+      );
+    this.streamSources += 1;
     return { connect: () => {} };
   }
   /** Every gain this context ever made: the uplink's silent sink, and (D73 S6 ③) the keepalive's. */
@@ -107,6 +134,8 @@ interface PcmFrameLike {
 let track: FakeTrack;
 /** The installed worklet's PORT — the case plays the audio thread through it (D73 S6 ②). */
 let workletPort: { onmessage: ((e: { data: PcmFrameLike }) => void) | null } | null = null;
+/** …and the `processorOptions` it was built with — the frame size, derived from the context's rate. */
+let workletOpts: { frameSamples: number } | undefined;
 let minted: string[] = [];
 let revoked: string[] = [];
 /** The stubbed `getUserMedia` — what the ROUTE cases assert against (the constraints are the whole
@@ -125,14 +154,24 @@ beforeEach(() => {
   minted = [];
   revoked = [];
   FakeContext.last = null;
+  FakeContext.all = [];
+  FakeContext.deviceRate = 48000;
+  FakeContext.foreignRateThrows = false;
+  FakeContext.ignoresRateOption = false;
+  workletOpts = undefined;
   vi.stubGlobal("AudioContext", FakeContext);
   vi.stubGlobal(
     "AudioWorkletNode",
     class {
       port = { onmessage: null as ((e: { data: PcmFrameLike }) => void) | null };
       connect() {}
-      constructor() {
+      constructor(
+        _ctx: unknown,
+        _name: string,
+        opts?: { processorOptions?: { frameSamples: number } },
+      ) {
         workletPort = this.port;
+        workletOpts = opts?.processorOptions;
       }
     },
   );
@@ -162,7 +201,8 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       onFrame: () => {},
       onEnded: () => {},
     });
-    expect(cap.sampleRate).toBe(48000);
+    expect(cap.sampleRate).toBe(CAPTURE_RATE); // K6 — what the context was asked for, and gave
+    expect(cap.readback.nativeRate).toBe(false);
     expect(cap.readback.echoCancellation).toBe("all");
     expect(track.stopped).toBe(0);
   });
@@ -274,8 +314,8 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     vi.stubGlobal(
       "AudioContext",
       class extends FakeContext {
-        constructor() {
-          super();
+        constructor(o?: AudioContextOptions) {
+          super(o);
           this.state = "suspended";
         }
       },
@@ -290,8 +330,8 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     vi.stubGlobal(
       "AudioContext",
       class extends FakeContext {
-        constructor() {
-          super();
+        constructor(o?: AudioContextOptions) {
+          super(o);
           this.state = "suspended";
           this.resumesTo = "suspended";
         }
@@ -309,8 +349,8 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     vi.stubGlobal(
       "AudioContext",
       class extends FakeContext {
-        constructor() {
-          super();
+        constructor(o?: AudioContextOptions) {
+          super(o);
           this.audioWorklet = { addModule: vi.fn(async () => Promise.reject(new Error("nope"))) };
         }
       },
@@ -321,6 +361,128 @@ describe("startPcmCapture — the context has to actually RUN", () => {
     expect(track.stopped).toBe(1);
     expect(FakeContext.last?.closed).toBe(1);
     expect(revoked).toEqual(["blob:worklet"]);
+  });
+});
+
+// ── Phase 26 K6 · THE CAPTURE RATE (ASR_PLAN §3.9 ⑤, evidence docs/research/R96) ────────────────
+
+describe("startPcmCapture — the context is ASKED for the ear's rate (K6)", () => {
+  const start = (frameMs = 40) =>
+    startPcmCapture({ frameMs, route: ROUTE_CALL, onFrame: () => {}, onEnded: () => {} });
+
+  it("asks for `CAPTURE_RATE` and declares the rate the context RUNS at", async () => {
+    const cap = await start();
+    expect(CAPTURE_RATE).toBe(16000);
+    expect(FakeContext.all).toHaveLength(1); // one context: the probe proved it, nothing was rebuilt
+    expect(FakeContext.all[0].options).toEqual({ sampleRate: 16000 });
+    expect(cap.context).toBe(FakeContext.all[0]);
+    expect(cap.sampleRate).toBe(16000); // → `start.sample_rate` (the call's socket reads this)
+    expect(cap.readback.nativeRate).toBe(false);
+  });
+
+  it("the worklet's frame is `frame_ms` AT THAT RATE — 640 samples per 40 ms", async () => {
+    await start(40);
+    expect(workletOpts).toEqual({ frameSamples: 640 });
+  });
+
+  it("FALLS BACK to the device rate when the stream cannot feed it (pre-148 Firefox's NotSupportedError)", async () => {
+    // THE NATIVE PATH, kept explicit: the pre-K6 capture exactly, at the device's 48 kHz.
+    FakeContext.foreignRateThrows = true;
+    const cap = await start(40);
+    expect(FakeContext.all).toHaveLength(2);
+    const [asked, native] = FakeContext.all;
+    expect(asked.options).toEqual({ sampleRate: 16000 });
+    expect(asked.closed).toBe(1); // the context the stream could not feed is released at once
+    expect(native.options).toBeUndefined(); // a plain context: the device's own rate
+    expect(cap.context).toBe(native);
+    expect(cap.sampleRate).toBe(48000);
+    expect(cap.readback.nativeRate).toBe(true);
+    expect(workletOpts).toEqual({ frameSamples: 1920 }); // 40 ms at 48 kHz
+    expect(native.closed).toBe(0);
+    expect(track.stopped).toBe(0); // …and the capture is up
+  });
+
+  it("…and the same way when the constructor REJECTS the option outright", async () => {
+    vi.stubGlobal(
+      "AudioContext",
+      class extends FakeContext {
+        constructor(o?: AudioContextOptions) {
+          if (o?.sampleRate) throw new DOMException("rate not supported", "NotSupportedError");
+          super(o);
+        }
+      },
+    );
+    const cap = await start();
+    expect(FakeContext.all).toHaveLength(1);
+    expect(cap.sampleRate).toBe(48000);
+    expect(cap.readback.nativeRate).toBe(true);
+  });
+
+  it("the FALLBACK context has to RUN too — stuck suspended fails the start exactly as today (council 25)", async () => {
+    FakeContext.foreignRateThrows = true;
+    vi.stubGlobal(
+      "AudioContext",
+      class extends FakeContext {
+        constructor(o?: AudioContextOptions) {
+          super(o);
+          this.state = "suspended";
+          this.resumesTo = "suspended";
+        }
+      },
+    );
+    await expect(start()).rejects.toThrow("audio context suspended");
+    const [asked, native] = FakeContext.all;
+    expect(asked.resumes).toBe(0); // the probe needs no running context — only the survivor is resumed
+    expect(native.resumes).toBe(1); // …through the ONE resume path the first choice would have taken
+    expect(asked.closed).toBe(1);
+    expect(native.closed).toBe(1);
+    expect(track.stopped).toBe(1);
+    expect(minted).toEqual([]);
+  });
+
+  it("a browser that IGNORES the ask is declared at the rate it GAVE — never at the rate asked for", async () => {
+    FakeContext.ignoresRateOption = true;
+    const cap = await start(40);
+    expect(FakeContext.all[0].options).toEqual({ sampleRate: 16000 });
+    expect(cap.sampleRate).toBe(48000);
+    expect(cap.readback.nativeRate).toBe(false); // nothing fell back: the context simply runs at 48k
+    expect(workletOpts).toEqual({ frameSamples: 1920 });
+  });
+});
+
+describe("openCaptureContext — the probe, alone", () => {
+  const stream = {} as MediaStream;
+
+  it("is synchronous and never resumes: the caller's own resume + running check govern either context", () => {
+    vi.stubGlobal(
+      "AudioContext",
+      class extends FakeContext {
+        constructor(o?: AudioContextOptions) {
+          super(o);
+          this.state = "suspended";
+        }
+      },
+    );
+    const { ctx, nativeRate } = openCaptureContext(stream);
+    expect(nativeRate).toBe(false);
+    expect(ctx.state).toBe("suspended");
+    expect(FakeContext.all[0].resumes).toBe(0);
+    expect(FakeContext.all[0].streamSources).toBe(1); // the probe itself
+  });
+
+  it("a device-rate constructor that throws propagates — where a plain `new AudioContext()` used to", () => {
+    vi.stubGlobal(
+      "AudioContext",
+      class extends FakeContext {
+        constructor(o?: AudioContextOptions) {
+          if (!o?.sampleRate) throw new Error("no audio");
+          super(o);
+        }
+      },
+    );
+    FakeContext.foreignRateThrows = true;
+    expect(() => openCaptureContext(stream)).toThrow("no audio");
+    expect(FakeContext.all[0].closed).toBe(1); // the first choice is still released on the way out
   });
 });
 

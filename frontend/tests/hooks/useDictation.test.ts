@@ -387,14 +387,26 @@ class FakeAnalyser {
 class FakeAudioContext {
   /** Emulates a context the browser refuses to run (autoplay policy) — the degrade-to-manual path. */
   static stuckSuspended = false;
-  /** When set, the NEXT context starts `suspended` and its resume() parks on this gate (consumed by
-   *  that one context) — how a test holds one recording's async arm open across the next recording. */
+  /** When set, the next context starts `suspended` and the first resume() parks on this gate (consumed
+   *  by the context that RESUMES — since K6 a context the probe rejected is made first and never
+   *  resumed) — how a test holds one recording's async arm open across the next recording. */
   static resumeGate: Promise<void> | null = null;
+  /** K6 — Firefox/Fennec before 148: `createMediaStreamSource` THROWS on a context whose rate is not
+   *  the track's (R96 §2.3). The track here runs at the device's 48 kHz. */
+  static foreignRateThrows = false;
   state: string;
-  gate: Promise<void> | null;
+  gate: Promise<void> | null = null;
+  /** What the constructor was handed — the K6 ask, recorded. */
+  options: AudioContextOptions | undefined;
+  /** The rate it RUNS at: the requested one, as a real context honours it; else the device's. */
+  sampleRate: number;
   analyser = new FakeAnalyser();
   source = { connect: vi.fn(), disconnect: vi.fn() };
   resume = vi.fn(async () => {
+    if (!this.gate && FakeAudioContext.resumeGate) {
+      this.gate = FakeAudioContext.resumeGate;
+      FakeAudioContext.resumeGate = null;
+    }
     if (this.gate) await this.gate;
     // A closed context stays closed — the real resume() rejects on one (the hook swallows it).
     if (!FakeAudioContext.stuckSuspended && this.state !== "closed") this.state = "running";
@@ -402,16 +414,19 @@ class FakeAudioContext {
   close = vi.fn(async () => {
     this.state = "closed";
   });
-  constructor() {
-    this.gate = FakeAudioContext.resumeGate;
-    FakeAudioContext.resumeGate = null;
-    this.state = FakeAudioContext.stuckSuspended || this.gate ? "suspended" : "running";
+  constructor(options?: AudioContextOptions) {
+    this.options = options;
+    this.sampleRate = options?.sampleRate ?? 48000;
+    this.state =
+      FakeAudioContext.stuckSuspended || FakeAudioContext.resumeGate ? "suspended" : "running";
     contexts.push(this);
   }
   createAnalyser() {
     return this.analyser;
   }
   createMediaStreamSource() {
+    if (FakeAudioContext.foreignRateThrows && this.sampleRate !== 48000)
+      throw new DOMException("different sample-rate", "NotSupportedError");
     return this.source;
   }
 }
@@ -447,6 +462,7 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
     contexts = [];
     FakeAudioContext.stuckSuspended = false;
     FakeAudioContext.resumeGate = null;
+    FakeAudioContext.foreignRateThrows = false;
     FakeMediaRecorder.last = null;
     vi.stubGlobal("AudioContext", FakeAudioContext);
     vi.mocked(pushToast).mockClear();
@@ -612,6 +628,63 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
     expect(contexts[1].close).not.toHaveBeenCalled();
     await tick(3000); // …and B's detector still works: its own silence run ends its own recording
     expect(result.current.status).toBe("idle");
+  });
+
+  it("K6 — a stop during the FALLBACK context's resume closes the context the probe left parked", async () => {
+    // THE NATIVE PATH (pre-148 Firefox): the 16 kHz context is rejected by the probe and released at
+    // once, and the device-rate context that replaces it is the ownership token parked before the
+    // await — so a stop landing inside that await still finds, and closes, the right one.
+    FakeAudioContext.foreignRateThrows = true;
+    let openA!: () => void;
+    FakeAudioContext.resumeGate = new Promise<void>((resolve) => {
+      openA = resolve;
+    });
+    const { result } = renderHook(() => useDictation(stopOpts()));
+    await startRecording(result); // its arm is stuck mid-resume, on the FALLBACK context
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0].options).toEqual({ sampleRate: 16000 });
+    expect(contexts[0].close).toHaveBeenCalled();
+    expect(contexts[0].resume).not.toHaveBeenCalled(); // the probe needs no running context
+    expect(contexts[1].options).toBeUndefined();
+    expect(contexts[1].resume).toHaveBeenCalledTimes(1); // the ONE resume path, on the survivor
+    await act(async () => {
+      result.current.toggle(); // stop DURING the await
+    });
+    expect(contexts[1].close).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      openA(); // …and the stale continuation adds nothing: no poll, no second close
+    });
+    expect(contexts[1].close).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("K6 — a FALLBACK context that will not run degrades exactly as today's suspended one (council 25)", async () => {
+    // The stuck-suspended contract on the NATIVE path: the probe rejects the 16 kHz context, the
+    // device-rate one goes through the ONE resume path, refuses to run, and the recording carries on
+    // as plain push-to-talk on the clip — the live leg's degrade noted, only the AUDIO half released.
+    FakeAudioContext.foreignRateThrows = true;
+    FakeAudioContext.stuckSuspended = true;
+    const streaming = {
+      ...stopOpts(),
+      liveEar: true,
+      liveCall: { frame_ms: 40, buffered_ceiling_ms: 1000, tail_wait_ms: 2000, dictation: true },
+    } as unknown as Parameters<typeof useDictation>[0];
+    const { result } = renderHook(() => useDictation(streaming));
+    await startRecording(result);
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0].close).toHaveBeenCalled(); // the 16 kHz one, released by the probe
+    expect(contexts[0].resume).not.toHaveBeenCalled();
+    expect(contexts[1].resume).toHaveBeenCalledTimes(1);
+    expect(contexts[1].close).toHaveBeenCalledTimes(1); // `teardownAudio` — the audio half only
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Live dictation"), "info");
+    expect(result.current.status).toBe("recording"); // …and the recording carries on
+    await tick(1500);
+    await act(async () => {
+      result.current.toggle();
+    });
+    expect(result.current.status).toBe("idle");
+    expect(getDraft()).toBe("hello world"); // the clip carried it
   });
 
   it("a recorder error runs the full cleanup (interval · nodes · context · listener)", async () => {
@@ -786,6 +859,7 @@ describe("useDictation · S11 the release post-roll + the go seam (whole-clip pa
     contexts = [];
     FakeAudioContext.stuckSuspended = false;
     FakeAudioContext.resumeGate = null;
+    FakeAudioContext.foreignRateThrows = false;
     FakeMediaRecorder.last = null;
     vi.stubGlobal("AudioContext", FakeAudioContext);
     vi.mocked(pushToast).mockClear();
@@ -975,6 +1049,7 @@ describe("useDictation · S11 the non-user stops CUT a running tail (whole-clip 
     contexts = [];
     FakeAudioContext.stuckSuspended = false;
     FakeAudioContext.resumeGate = null;
+    FakeAudioContext.foreignRateThrows = false;
     FakeMediaRecorder.last = null;
     vi.stubGlobal("AudioContext", FakeAudioContext);
     vi.mocked(pushToast).mockClear();

@@ -17,7 +17,13 @@ import {
   openLiveSocket,
   type LiveSocket,
 } from "../lib/liveSocket";
-import { attachPcmUplink, openMicStream, type PcmUplink } from "../lib/pcmCapture";
+import {
+  attachPcmUplink,
+  CAPTURE_RATE,
+  openCaptureContext,
+  openMicStream,
+  type PcmUplink,
+} from "../lib/pcmCapture";
 import { accrue, DRAIN_PACE, enqueue, pump, type PacerState } from "../lib/uplinkPacer";
 import {
   newWakeLockState,
@@ -1071,9 +1077,10 @@ export function useDictation({
    * own stream (rule: never a second `getUserMedia`, never a second `AudioContext` — R70 §8's third
    * consumer). Failures are silent-plus-one-notice degrades; nothing in here can end a recording except
    * the two rules that are meant to (the §9.3 clocks, and a death with words already in the draft).
+   * `nativeRate` is `openCaptureContext`'s answer (K6), carried only to the trail's `rec` line.
    */
   const armStream = useCallback(
-    (ctx: AudioContext, stream: MediaStream): void => {
+    (ctx: AudioContext, stream: MediaStream, nativeRate: boolean): void => {
       const leg = ++legRef.current;
       /** This leg's own session, held in the CLOSURE rather than read back off `streamRef`: the
        *  release DETACHES the session from that ref while the choreography is still running (so no
@@ -1102,7 +1109,8 @@ export function useDictation({
       const socket = openLiveSocket({
         url: liveSocketUrl(),
         // The context's REAL rate — the relay builds its resampler from what we declare here, so it
-        // must be what the worklet actually produces (44.1k or 48k by device; there is no asking).
+        // must be what the worklet actually produces. Since K6 we ASK for `CAPTURE_RATE` (16 kHz) and
+        // declare what we GOT: that, or the device's own rate on the fallback (`openCaptureContext`).
         sampleRate: ctx.sampleRate,
         ceilingMs,
         // The leg's FEATURE (S11): the relay skips the D80 ④ gap cut on dictation legs — a flap here
@@ -1246,6 +1254,8 @@ export function useDictation({
           t_activate: activateAtRef.current,
           t_rec: startedAtRef.current,
           rate: ctx.sampleRate,
+          // K6 — the 16 kHz ask was abandoned for the device rate (the phone card's Fennec arm).
+          native_rate: nativeRate,
           route: route ?? null,
           label: track?.label ?? null,
           ec: cfg.echoCancellation ?? null,
@@ -1366,8 +1376,12 @@ export function useDictation({
         return;
       }
       let ctx: AudioContext;
+      let nativeRate: boolean;
       try {
-        ctx = new AudioContext(); // constructed inside the start gesture, so it may autoplay-unlock
+        // Constructed inside the start gesture, so it may autoplay-unlock — at `CAPTURE_RATE`, or at the
+        // device rate where this stream cannot feed that (K6). Synchronous, so whichever context it
+        // returns is the one parked below, before the await; a throw here is the old constructor's.
+        ({ ctx, nativeRate } = openCaptureContext(stream));
       } catch {
         if (streamWanted) noteLiveDegrade();
         goLive();
@@ -1394,6 +1408,10 @@ export function useDictation({
       let analyser: AnalyserNode;
       try {
         analyser = ctx.createAnalyser();
+        // K6 — the default 2048 samples would be a 128 ms window at `CAPTURE_RATE`; 1024 (64 ms) stays
+        // near the 43 ms the 48 kHz context read (R96 §6 ④). The device-rate fallback keeps the default,
+        // i.e. exactly its pre-K6 window. The silence clocks count POLLS, so neither changes with it.
+        if (ctx.sampleRate <= CAPTURE_RATE) analyser.fftSize = 1024;
         const source = ctx.createMediaStreamSource(stream);
         source.connect(analyser); // analyser only — never the destination (that would echo the mic)
         analyserRef.current = analyser;
@@ -1417,7 +1435,7 @@ export function useDictation({
       // final would then discard (rule ③) the clip that carries the entire utterance. Once the owner
       // has let go, the clip is the carrier.
       if (streamWanted && releasedAtRef.current === 0) {
-        if (ctx.audioWorklet) armStream(ctx, stream);
+        if (ctx.audioWorklet) armStream(ctx, stream, nativeRate);
         else noteLiveDegrade();
       }
       const samples = new Float32Array(analyser.fftSize);

@@ -569,9 +569,9 @@ class LiveRelaySession:
     async def _handshake_client(self) -> None:
         """Await the ONE `start` control message and build the session's resampler from it.
 
-        The client measures its real `AudioContext.sampleRate` and declares it (§3.1) — a browser gives
-        44.1 k or 48 k depending on the device and there is no way to ask for 24 k reliably, so the
-        declared rate plus one stateful resampler is the whole rate contract.
+        The client measures its real `AudioContext.sampleRate` and declares it (§3.1) — it asks for
+        16 kHz (`CAPTURE_RATE`, Phase 26 K6) and declares what it GOT, the device rate on its fallback,
+        so the declared rate (8–96 kHz) plus one stateful resampler is the whole rate contract.
         """
         try:
             async with asyncio.timeout(self._cfg.start_timeout_s):

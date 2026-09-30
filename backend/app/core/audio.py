@@ -1,7 +1,8 @@
 """PCM16 audio primitives — pure, stdlib-only (Phase 24 / D71 §3.1).
 
 The live-voice relay has to reconcile two fixed rates it does not control: the phone declares its real
-`AudioContext.sampleRate` (44.1 k / 48 k / whatever the device gives it) and Speaches' realtime door
+`AudioContext.sampleRate` (it asks for 16 kHz since Phase 26 K6 and declares what it got — the device
+rate on its fallback; anything 8–96 kHz is accepted and resampled) and Speaches' realtime door
 hardcodes **24 kHz** with no negotiation (§7-S0 ②). So a resampler is mandatory — and it must be
 STATEFUL, because the audio arrives as a stream of independent frames: a per-frame whole-clip
 resampler would re-anchor at every boundary and stamp a discontinuity into the signal 25 times a

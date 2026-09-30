@@ -22,6 +22,10 @@
 // than the uplink allowance (30 s of audio, or of `frame_ms` frames) ahead of the wall clock. A worklet
 // that emits exactly `frame_ms` per frame at capture speed satisfies all three by construction — which
 // is why the frame size is a CONSTRUCTOR option (from the server's knob) and never a number in here.
+// That rate is the CONTEXT's, and this processor never resamples: since Phase 26 K6 the context is asked
+// for `CAPTURE_RATE` (16 kHz — 640 samples per 40 ms frame; the browser's own resampler has filtered the
+// mic down to it before a sample reaches here), or runs at the device rate on the fallback
+// (`pcmCapture.openCaptureContext`).
 //
 // EACH FRAME CARRIES ITS TIME (D80 ⑦): `t`, the AudioContext time of the frame's FIRST sample — the
 // scope's `currentTime` at the render quantum it arrived in, plus its offset into that quantum at the

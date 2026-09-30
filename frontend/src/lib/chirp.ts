@@ -50,11 +50,13 @@ export const CHIRP_SEARCH_MS = 6000;
 export const CHIRP_MIN_PEAK = 0.35;
 export const CHIRP_PEAK_RATIO = 3;
 export const CHIRP_EXCLUDE_MS = 20;
-/** The rate the matcher correlates at, Hz: the capture runs at the DEVICE rate (44.1/48 kHz), where
- *  direct correlation over the 6 s window is ~2×10⁹ multiply-adds; boxcar-decimated to ~16 kHz it is
- *  ~2×10⁸ spread across 6 s of frames, and the 3 kHz top of the sweep keeps its phase (a coarser grid
- *  would cost up to a third of the peak at the worst sub-sample offset). R93 §V ran its detection at
- *  16 kHz. A property of the arithmetic, not a knob. */
+/** The rate the matcher correlates at, Hz: since Phase 26 K6 the capture runs at `CAPTURE_RATE`, this
+ *  very rate, so the factor is 1 and nothing is decimated — the browser's resampler already filtered
+ *  the mic to it (R96 §4). On the device-rate FALLBACK (44.1/48 kHz, `openCaptureContext`) the boxcar
+ *  decimation below still runs: direct correlation over the 6 s window there is ~2×10⁹ multiply-adds;
+ *  decimated to ~16 kHz it is ~2×10⁸ spread across 6 s of frames, and the 3 kHz top of the sweep keeps
+ *  its phase (a coarser grid would cost up to a third of the peak at the worst sub-sample offset). R93
+ *  §V ran its detection at 16 kHz. A property of the arithmetic, not a knob. */
 export const CHIRP_MATCH_RATE = 16000;
 
 /** The sweep at `sampleRate`, unit peak: a linear 1→3 kHz chirp under raised-cosine ramps (a sweep

@@ -143,32 +143,46 @@ class FakeAudioContext {
   /** Emulates a context WITHOUT `audioWorklet` — an insecure (plain-HTTP) page, where the property
    *  simply does not exist (secure-context-only, MDN). The worklet gate's whole subject. */
   static noWorklet = false;
-  /** When set, the NEXT context starts `suspended` and its `resume()` parks on this gate — a resume
-   *  slower than the whole hold (S11 fix wave 1). Consumed by that one context. */
+  /** When set, the next context starts `suspended` and the first `resume()` parks on this gate — a
+   *  resume slower than the whole hold (S11 fix wave 1). Consumed by the context that RESUMES — since K6
+   *  a context the probe rejected is made first and never resumed, and must not take the gate. */
   static resumeGate: Promise<void> | null = null;
+  /** K6 — Firefox/Fennec before 148: `createMediaStreamSource` THROWS on a context whose rate is not
+   *  the track's (R96 §2.3). The track here runs at the device's 48 kHz. */
+  static foreignRateThrows = false;
   gate: Promise<void> | null = null;
   state: string;
-  sampleRate = 48000;
+  /** What the constructor was handed — the K6 ask, recorded. */
+  options: AudioContextOptions | undefined;
+  /** The rate it RUNS at: the requested one, as a real context honours it; else the device's. */
+  sampleRate: number;
   audioWorklet: object | undefined = FakeAudioContext.noWorklet ? undefined : {};
   analyser = new FakeAnalyser();
   source = { connect: vi.fn(), disconnect: vi.fn() };
   resume = vi.fn(async () => {
+    if (!this.gate && FakeAudioContext.resumeGate) {
+      this.gate = FakeAudioContext.resumeGate;
+      FakeAudioContext.resumeGate = null;
+    }
     if (this.gate) await this.gate;
     if (!FakeAudioContext.stuckSuspended && this.state !== "closed") this.state = "running";
   });
   close = vi.fn(async () => {
     this.state = "closed";
   });
-  constructor() {
-    this.gate = FakeAudioContext.resumeGate;
-    FakeAudioContext.resumeGate = null;
-    this.state = FakeAudioContext.stuckSuspended || this.gate ? "suspended" : "running";
+  constructor(options?: AudioContextOptions) {
+    this.options = options;
+    this.sampleRate = options?.sampleRate ?? 48000;
+    this.state =
+      FakeAudioContext.stuckSuspended || FakeAudioContext.resumeGate ? "suspended" : "running";
     contexts.push(this);
   }
   createAnalyser() {
     return this.analyser;
   }
   createMediaStreamSource() {
+    if (FakeAudioContext.foreignRateThrows && this.sampleRate !== 48000)
+      throw new DOMException("different sample-rate", "NotSupportedError");
     return this.source;
   }
 }
@@ -325,6 +339,7 @@ beforeEach(() => {
   FakeAudioContext.stuckSuspended = false;
   FakeAudioContext.noWorklet = false;
   FakeAudioContext.resumeGate = null;
+  FakeAudioContext.foreignRateThrows = false;
   setMediaDevices(true);
   clearDraft();
   mockStt(200, { text: "the whole clip" });
@@ -401,10 +416,29 @@ describe("useDictation · streaming arms only when BOTH toggles say so", () => {
   it("arms per recording when the ear is up and `dictation` is on, on the DETECTOR's own context", async () => {
     const { result } = renderHook(() => useDictation(opts()));
     await hold(result);
-    expect(h.opens).toEqual([{ sampleRate: 48000, ceilingMs: 1000 }]);
+    // K6 — the context was ASKED for 16 kHz, and `start.sample_rate` declares the rate it runs at.
+    expect(contexts[0].options).toEqual({ sampleRate: 16000 });
+    expect(h.opens).toEqual([{ sampleRate: 16000, ceilingMs: 1000 }]);
     // never a second getUserMedia and never a second context: ONE of each, shared with the recorder
     // and the meter (R70 §8's third consumer).
     expect(contexts).toHaveLength(1);
+    expect(h.onFrame).toBeTypeOf("function");
+    // …and the meter's window stays near its pre-K6 length at the new rate (R96 §6 ④: 64 ms).
+    expect(contexts[0].analyser.fftSize).toBe(1024);
+  });
+
+  it("K6's FALLBACK: a stream that cannot feed a 16 kHz context streams at the DEVICE rate", async () => {
+    // THE NATIVE PATH, kept explicit (pre-148 Firefox's NotSupportedError at the probe): the 16 kHz
+    // context is released at once, a device-rate one carries the leg exactly as before K6.
+    FakeAudioContext.foreignRateThrows = true;
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0].close).toHaveBeenCalled();
+    expect(contexts[1].options).toBeUndefined();
+    expect(contexts[1].state).toBe("running");
+    expect(h.opens).toEqual([{ sampleRate: 48000, ceilingMs: 1000 }]);
+    expect(contexts[1].analyser.fftSize).toBe(32); // the fallback keeps the analyser's own default
     expect(h.onFrame).toBeTypeOf("function");
   });
 
@@ -1603,9 +1637,24 @@ describe("useDictation · S11 the DICTATION TRAIL (debug only) rides the call tr
     const rec = lines()[0];
     expect(rec.t_activate).toBeTypeOf("number");
     expect(rec.t_rec).toBeTypeOf("number");
+    expect(rec).toMatchObject({ rate: 16000, native_rate: false }); // K6 — the phone card reads these
     expect(lines()[3]).toMatchObject({ settle: true, tail_ms: 400 });
     expect(lines()[4]).toMatchObject({ finals: 1, clip: "discarded", reason: "user" });
     expect(lines().every((l) => l.leg === 1)).toBe(true);
+  });
+
+  it("K6 — the `rec` line says when the 16 kHz ask fell back to the device rate", async () => {
+    FakeAudioContext.foreignRateThrows = true;
+    const { result } = renderHook(() => useDictation(opts({ liveCall: DEBUG })));
+    await hold(result);
+    mic(1);
+    ready();
+    phrase("hello there");
+    await tick(1200);
+    act(() => result.current.stop("user"));
+    await tick(400);
+    await runOutTail(); // the trail ships on the leg's end — run the whole release out
+    expect(lines()[0]).toMatchObject({ ev: "rec", rate: 48000, native_rate: true });
   });
 
   it("no trail — and no trail POST — with debug off", async () => {
