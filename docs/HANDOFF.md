@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-10-01 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 56 (Fable) BUILT + two-reviewer-closed + COMMITTED Phase 26 session A's K6 (`96fdc4e`, 16 kHz capture at both sites). 22 commits on `main` UNPUSHED (incl. this handoff); push on the owner's word. Next = THE OWNER'S PHONE CARD (K6 + SP field checks, below) on the rebuilt dev dist → D9 → D8 → D5 → v1.7.11 = polish + session A; v1.7.12 = session B**)
+## Where we are (2026-10-01 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 56 (Fable) BUILT + two-reviewer-closed + COMMITTED Phase 26 session A's K6 (`96fdc4e`, 16 kHz capture at both sites). 23 commits on `main` UNPUSHED (incl. this handoff); push on the owner's word. Next = THE OWNER'S PHONE CARD (K6 + SP field checks, below) on the rebuilt dev dist → D9 → D8 → D5 → v1.7.11 = polish + session A; v1.7.12 = session B**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): at writing time
   tag **`v1.7.10` on `9c5a6c6` — LIVE** (released 2026-09-27 evening ≈ 18:14Z per `deploy/linux/README.md`
@@ -89,22 +89,57 @@ D8 → D5 → release) · §3.9 ⑤ (K6 as built) · [R96](./research/R96-16khz-
    context): see `e2e-K6.log` (result recorded below in "Standing facts"). The run rebuilt `frontend/dist`; the dev units were
    restarted for the card.
 
-### ▶▶ THE OWNER'S PHONE CARD (dev, Serve `:8443`; `voice.live.debug` ON in Conf › Live call so the trails write)
-K6 (ASR_PLAN §7.1 K6 row):
-1. **Trail rate.** A call's trail `capture` line reads `ctxRate: 16000, nativeRate: false` (`trackRate` probably 48000); a dictation's
-   `rec` line reads `rate: 16000, native_rate: false`. (The relay journal's `leg_start rate=16000` says the same.)
-2. **One call** transcribes normally — turns land, no truncated/garbled finals.
-3. **One 5–10 min dictation** transcribes normally — phrases stream, the draft reads right.
-4. **Chirp + latency.** The chirp is found with lag/peak comparable to earlier trails on the same route; `outputLatency`/`baseLatency`
-   on the `capture` line move ≤ ~10 ms vs a pre-K6 trail on that route (R96 §2.2's estimate, the safe direction).
-5. **Level gates self-adjust** — no early false turns, no deaf owner in the first seconds; the remembered voice level may read
-   slightly low for ONE call; the dictation meter looks normal.
-6. **Both routes:** one call on EC-call and one on EC-media behave as before (routing, hold, barge).
-7. **One Fennec run:** a call and a dictation work. Trail `nativeRate: true` + the device rate if that Fennec is < 148, `false` +
-   16000 if ≥ 148 — BOTH are passes; record which. The UNVERIFIED part is the fallback context's `resume()` on Fennec (R96 §6 ①):
-   a failure shows as the call's error terminal / dictation degrading to the clip, exactly today's suspended case.
-SP's field checks (same round): a 6-min hands-free dictation with 30 s pauses survives, screen on · a muted mic idles out at 300 s ·
-`clip_bytes` on the `end` line ≈ 4 KB/s.
+### ▶▶ THE OWNER'S PHONE CARD — step by step (K6 + SP field checks; dev only)
+
+**Where:** DEV = `https://emma.lobster-vector.ts.net:8443` on the phone (NOT the bare `https://emma.lobster-vector.ts.net` — that is
+prod v1.7.10, without K6/SP). Dev's dist is rebuilt and both dev units are up. Close and reopen the PWA once so it takes the
+new build. Everything below writes a trail the next session reads by itself — you only need to DO the steps and tell me what
+felt off (delay, false turns, garbled words, anything).
+
+**Step 0 — turn the trails on.** Conf › Live call › **"Call debug readout" → ON** (dev currently has it OFF, so nothing writes
+until you flip it). Leave it on for the whole card.
+
+**Step 1 — a call on the default route (EC-media).** Start a call, talk for 1–2 minutes with a few real replies, hang up.
+*Pass = turns land, no truncated/garbled finals, no false turn in the first seconds, no "deaf" spell.*
+
+**Step 2 — a call on EC-call.** In the in-call deck flip the route to the other one (Sound/Mic — the D74 deck), repeat step 1.
+
+**Step 3 — a 5–10 minute streaming dictation.** Tap the composer mic, read something aloud for 5–10 minutes, stop.
+*Pass = phrases stream in as you talk and the draft reads right.*
+
+**Step 4 — SP's three checks** (the dictation policy rulings from session 55, same round):
+- **4a** a hands-free dictation of about 6 minutes with several **30-second pauses**, screen ON: it must NOT stop on the pauses
+  (the idle stop is 300 s against a relative floor now).
+- **4b** start a dictation, then mute the mic with Android's privacy toggle (quick settings → mic off) and wait: it should stop
+  by itself after **5 minutes** (300 s) — note roughly when it stopped.
+- **4c** nothing to do — the trail's `end` line carries `clip_bytes`; the next session checks ≈ 4 KB per second of recording.
+
+**Step 5 — one Fennec run (Firefox on the phone).** Open the same dev URL in Firefox, do one short call and one short
+dictation. *Both outcomes are passes* — the next session reads off the trail whether Firefox took 16 kHz or fell back to the
+device rate. What matters: did the call connect and did the dictation stream (or at least land as a clip)? Note your Firefox
+version (about:… or Settings › About) if handy.
+
+**Step 6 — tell me.** One line per step: PASS / odd / FAIL and what you noticed. The chirp/latency arm needs no action from
+you — the trail's `chirp` + `outputLatency`/`baseLatency` fields are compared by the next session against prod's pre-K6 trails.
+
+### ▶▶ HOW THE NEXT SESSION READS THE CARD (do this FIRST, before any build)
+- **Call trails:** `~/.ctrl-b-dev/calls/*.jsonl` (append-only JSONL, one file per call, `trail_keep` 20). **Dictation trails:**
+  `~/.ctrl-b-dev/calls/dictation/*.jsonl`. The card's files = anything dated 2026-10-01 or later (`ls -lt`). The relay's own
+  journal: `journalctl --user -u ctrl-b-dashboard-dev --since 2026-10-01 | grep -E 'leg_start|leg_end|budget'`.
+- **Reader** (no tool exists; this is the recipe — each line is `{"src","t","ev",...}`):
+  ```bash
+  for f in $(ls -t ~/.ctrl-b-dev/calls/*.jsonl ~/.ctrl-b-dev/calls/dictation/*.jsonl 2>/dev/null); do echo "== $f"; \
+    python3 -c "import json,sys
+for l in open(sys.argv[1]):
+    d=json.loads(l)
+    if d.get('ev') in ('capture','chirp','rec','end','leg_end','uplink'): print({k:d[k] for k in d if k not in ('cfg',)})" "$f"; done
+  ```
+- **What to check, per arm:** `capture` → `ctxRate: 16000`, `nativeRate: false`, `trackRate` (48000 expected), `outputLatency`/
+  `baseLatency` vs prod's pre-K6 trails in `~/.ctrl-b/calls/` (they read `outputLatency` 0–0.02, `baseLatency` 0.02 — a move ≤ ~0.01
+  is the pass) · `chirp` → `lagMs`/`peak` found, comparable to the same route's earlier trails · `rec` → `rate: 16000`,
+  `native_rate: false` (the Fennec run: `true` + the device rate if Firefox < 148) · `end` → `clip_bytes` ≈ 4000 × seconds,
+  `reason` = `user` for the manual stops, `idle` for step 4b at ≈ 300 s · the journal's `leg_start rate=16000` · no `budget` trips.
+- **Then:** rule each arm PASS/FAIL against ASR_PLAN §7.1's K6 row + SP's row, record it in HANDOFF, and only then write D9's brief.
 
 ### After the card
 D9 (the awaited-id set; the lane report's "What D9 should know": no overlap with K6 beyond one `useLiveCall.ts` trail line; the
@@ -115,7 +150,7 @@ the 16000 declaration; nothing to roll back on the wire") → push on the owner'
 ### Standing facts from this session (verified)
 - Slices stay SEQUENTIAL; both reviewers on every slice; wait on Emma's OUTPUT FILE only; freeze with `git add -N`.
 - `python` is not on PATH — the gate is `TMPDIR=/home/emma/.cache/tmp backend/.venv/bin/python tools/check.py --fast`.
-- Dev units RUNNING; the dist REBUILT by the e2e run (S1/S2/SP/K6 all in it). 22 commits over `origin/main`, nothing pushed.
+- Dev units RUNNING; the dist REBUILT by the e2e run (S1/S2/SP/K6 all in it). 23 commits over `origin/main`, nothing pushed.
 - e2e result: `npm run test:e2e` GREEN after K6 — 403 passed · 10 skipped · 0 failed (2.5 min), every `liveCall.spec` case incl. the real-Chromium 48 kHz-track → 16 kHz-context path (`e2e-K6.log`).
 
 ## ▶▶ NEW (2026-10-01, Fable seat, session 55) — PHASE 26 S2 BUILT + COMMITTED · S3 RULED ABSORBED · SP BUILT + COMMITTED · NEXT = K6 IN A CLEAN SESSION (the brief is written)
