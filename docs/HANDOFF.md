@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-09-27 night — **PROD = v1.7.10 LIVE @ `9c5a6c6` (released 2026-09-27 evening by the runbook; session 50 CLOSED). The owner's vault backlog (8 items) is BUILT on top of Phase 24 S10 (the car round, `75e0014` · `c59157a`); BUG-001 · LIVE-001 · RP-001 · STYLE-001 · COMPOSER-001 + D81's backend two-reviewer-closed, D81's frontend (CHAT-001/002/003) two-reviewer round CLOSED too; all five lanes committed + released. The owner's prod card is next; the S10 car card is deferred**)
+## Where we are (2026-09-30 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 52 (Fable) BUILT, two-reviewer-closed and COMMITTED the five session-51 polish items, plus the R94/R95 docs. They are on `main` UNPUSHED; push on the owner's word. v1.7.11 is HELD until the ASR/VAD work (R94 + R95, sessions A then B) lands too (owner ruling)**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): at writing time
   tag **`v1.7.10` on `9c5a6c6` — LIVE** (released 2026-09-27 evening ≈ 18:14Z per `deploy/linux/README.md`
@@ -52,8 +52,93 @@
   `e914329` · `75e0014` · `c59157a` · `cdf7262` · `69b8cc7` · `18dd75f`), plus session 50's commits from
   the commit lane (V1 `b4eb035` · V2 `f739c3a` · C `a2f8cc5` · D81 `a0d8e8c` · the QUALITY counts + this
   handoff `9c5a6c6`), then docs-only commits (`5ad81f1` + the session-50 doc-truth close — `git log`). **All
-  pushed** — `main` = `origin/main` (0 ahead); tag `v1.7.10` = `9c5a6c6`. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
+  pushed** at session 50's close, and tag `v1.7.10` = `9c5a6c6`. **Session 52 added 7 UNPUSHED commits on top of
+  `origin/main` `778b960`:** `53f8010` · `7522040` · `c09d47b` · `31953a9` · `23fd88a` · `c1c8bad`, plus this
+  handoff. Push on the owner's word. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
+
+## ▶▶ NEW (2026-09-30, Fable seat, session 52) — THE FIVE POLISH ITEMS BUILT + TWO-REVIEWER-CLOSED + COMMITTED; NOT RELEASED
+
+The session-51 owner polish audit (`~/.cache/tmp/ctrlb-session51/audit-owner-polish-2026-09-29.md`; the owner
+ruled every recommended default on 09-30) was built by three Opus lanes: A = chat eye (#1 + #2), B = voice
+(#3 + #4), C = gacha CSS (#5). Each lane's frozen diff went through a blind Opus review in parallel with a Maya
+review, then fix waves and confirm rounds, until **all three lanes were CONFIRMED SHIP by both reviewers**. The
+main seat also read every source diff. The six commits are on `main` and **UNPUSHED**: `53f8010` · `7522040` ·
+`c09d47b` · `31953a9` · `23fd88a`, plus `c1c8bad` (the R94 + R95 docs). FE-only, with no migration and no config
+change. **v1.7.11 is HELD** until the ASR/VAD work lands too (owner: "after we fix everything, we push for
+production"). The session record is in `~/.cache/tmp/ctrlb-session52/`: `SESSION_PLAN.md`, `RULINGS.md` (every
+finding's ruling) and `commit-report.md`.
+
+1. **Who-line** (`53f8010`). The bubble shows the character's `title` (from `useAgentArt`'s new `titled` flag, not
+   gated by the avatars switch). The untitled root keeps "assistant". The tool-call and question bubbles follow.
+   **#1c:** the send placeholder is seeded with `agent ?? threadAgent`, the agent that will actually answer
+   (display only; the request body is unchanged).
+2. **Multi-line italics** (`7522040`). The new **`lib/actionSpan.ts`** is the one pairing rule shared by the eye
+   and the ear, with boundary guards (`(?<![\w*])`, so `**bold**`, `2*3` and `f*ck` never open a span). The
+   markdown pre-pass carries an open `*` across single and blank-line breaks, skips fences and inline code, and
+   italicizes an unclosed tail only once the reply is settled. Accepted residual: an unbackticked `*.tmp` in
+   prose italicizes to the end of a settled reply (the ear already drops it; D74's class).
+3. **One-word emphasis with narrate-actions OFF** (`c09d47b`). A span with no whitespace inside (`*really*`,
+   `*sighs*`) is spoken inline. The tail search now runs on a mask of closed spans, and stars inside code become
+   a space. D74 ⑤, the Conf description and the SpeechOpts comment were all updated.
+4. **MiniPlayer intent** (`31953a9`). `finish()` clears intent on park, so after a reply ends the face shows
+   "play" and a waveform tap only seeks. **A headset or lock-screen play after the end re-arms intent**, so the
+   whole reply replays (review finding B-F1).
+5. **Gacha oracle bottom row** (`23fd88a`). The real mechanism was **screen density**: DPR 2.625/2.75/3.5
+   reproduce, 2 and 3 don't. The audit's inferred fractional-inset cause was wrong in detail but right in class.
+   The cure is a **symmetric 1px overdraw**: art and scrim both bleed 1px into the clip, and the border change
+   was not needed. The new `e2e/gacha-oracle-edge.spec.ts` pins "last row ≈ the row above". It is
+   **Chromium-only** on purpose, because Firefox never showed the seam and its last row is page background for
+   an unrelated reason. The as-built note is in GACHA_PLAN G6.7 ④.
+
+**Session mechanics for the next seat:** the scratch-dir layout is the session-50 default (memory
+`token-lean-delegation-default`). ⚠ **Gotcha: give Maya her OWN output file in every prompt.** A confirm run told
+"Opus writes X, Maya prints" wrote into the Opus file and clobbered it.
+
+### The owner's test card — on PROD after v1.7.11 (dev not needed; these ride the next release)
+1. **Who-line:** Lynette's and Seraphina's bubbles show their names, not "ASSISTANT". Their tool-call bubbles
+   show the names too. Just after you send, the placeholder already carries the name of the agent that answers.
+2. **Italics:** Lynette's greeting shows no literal `*`. An action that spans a line break is italic across
+   it, including one broken by a blank line.
+3. **Narrate-actions OFF:** a reply containing `*really*` speaks "really". Longer `*actions*` stay silent.
+4. **MiniPlayer:** after a reply ends, the face shows "play", not "pause". A waveform tap then only seeks and
+   does not start playback. Pressing play on the headset replays the whole reply.
+5. **Gacha oracle, on the phone:** no lighter or darker line under the oracle art, with an empty thread and with
+   a scrolled one. ⚠ Residual doubt: the owner's screenshot is 720px wide, which suggests DPR 2, and headless
+   Chromium never reproduced the row at DPR 2. This eyeball is the real verification.
+
+## ▶▶ NEW (2026-09-28, Opus 5.5 seat) — R94 LIVE-VOICE VERIFICATION: FABLE REVIEW FIRST
+
+The owner commissioned five external audits of the ASR side, covering live-call false turns and dictation stopping by itself. The Opus seat verified them with five read-only Opus lanes against code, the prod journal, the call trails and emma measurements. **Read [`research/R94-asr-audits-verification.md`](./research/R94-asr-audits-verification.md)**:
+- §1 is the one-page answer;
+- §11.0 holds the owner's rulings;
+- the evidence is in `research/R94-evidence/` (L1–L5), and the audits verbatim in `research/R94-external-audits/`.
+
+**NOTHING BUILT.** The R94 docs, the README row and R95 were committed in session 52 (`c1c8bad`). ⚠ **`R94-evidence/L2` quotes private call transcripts. It stays UNTRACKED forever (owner ruling 2026-09-30):** keep it off every commit and every commit brief's file list.
+
+- **Problem A (dictation and a call cut mid-session on 09-28).** The relay's own flood guard `_note_frame` (100 frames / 2 s, on server READ time) mistakes 4G/Tailscale burst delivery for a flood: 5 kills, one of them a call. Four sibling kill paths go the same way (K2–K6). The fix does not touch the VAD: S1 telemetry → S2 wall-clock token bucket → S3 per-mode client kill paths, then S8 "the recording's lifetime ≠ the live leg's".
+- **Problem B (phantom "Yeah."/"Mm-hmm.").**
+  - The cause is Speaches' 3 s zero-state rescan: flaps, plus **the 3 s pin**, plus onset clipping.
+  - A hidden second VAD in Speaches' HTTP door empties ~21% of segments today.
+  - The car "Yeah." was an echo tail, not the VAD.
+  - Proposed: a relay-owned stateful VAD + a pre-ASR pass + batch ASR through the provider seam (parakeet.cpp was measured faster than today). **The owner wants Fable to challenge this direction and research alternatives before ruling (R94 §11.0 D3).**
+- **Owner rulings in:**
+  - idle stop 5 min (0 = off, own threshold);
+  - dictation cap 30 min (keep the relay's session limit above it);
+  - foreground-only dictation, plus a wake lock if clean;
+  - ASR failure never refuses a call;
+  - drop the Kokoro TTS fallback;
+  - a provisional early-call floor from the remembered voice level.
+- **R95 is IN** ([`research/R95-vad-placement.md`](./research/R95-vad-placement.md), session 52, the owner's D3 challenge). Its recommendation:
+  - Keep the relay-owned VAD (**C1**), shaped so placement is a detail: the policy is a pure function with golden vectors, segment bounds are leg-sample indices, and the segmenter sits behind a one-method interface.
+  - **No quality/battery toggle now.** Quality does not depend on placement, and battery is a wash on the only numbers that exist.
+  - Add the **S6b** debug-gated Honor 20 phone probe.
+  - **Promote K6 (16 kHz capture)**, the real battery/data lever.
+  - **C2-H** (phone VAD + HTTP segments, no WebSocket) is recorded as the named exit.
+- **Fable's job:**
+  - Review R94 (§11.1 lists D1/D2/D4/D5/D9/D10 plus the four stress-test questions) together with R95 §10, and rule **D3 formally in the ASR session** as S5's D-entry.
+  - Then brief Opus build lanes. The plan is **session A = S1–S4 + P1–P3**, then **session B = the VAD** (S5 → S6/S6b → …).
+  - **v1.7.11 ships after this work**, carrying the five polish commits above.
 
 ## ▶▶ NEXT SESSION — THE OWNER'S PROD CARD on v1.7.10 (the vault backlog), then the deferred S10 car card
 
@@ -261,6 +346,16 @@ Nothing here needs the main seat until a verdict comes back; the trail is the di
   the Honor 20) · ISS-39 (the contrast probe's backdrop fallback) · ISS-40 (mouse press/release on the
   call — PARKED) · ISS-41 (dictation trails vs `trail_keep`) · ISS-42 (pre-D81 `meta.skills`) · ISS-43
   (a text-less parked reply has no who-line). Greeting swipes are a SEAM, not a residual (ROADMAP A14).
+- **Session 52's residual ledger** (the polish items; rulings in `~/.cache/tmp/ctrlb-session52/RULINGS.md`):
+  - **Fold into the next markdown touch.** The renderer's per-line `em` rule in `INLINE` (`lib/markdown.tsx`)
+    is a second spelling of the pairing rule, and it lacks the boundary guard: the scanner matches on `rest`
+    slices, so a lookbehind can't see the previous character. As a result, a glued `Hello*She walks*`
+    italicizes on screen but is spoken. Fix: pass the previous character to the `em` rule.
+  - **Accepted:**
+    - An unbackticked `*.tmp` in prose italicizes (or, for the ear, drops) to the end of a settled reply.
+    - The CJK one-word rule: with no spaces, a whole-sentence action is spoken.
+    - The one-task pause/play window in `audioController`.
+    - `parked` is not cleared after a hardware replay.
 - **Dormant, reopen on recurrence:** ISS-16 (call-mode TTS crackle — not reproduced since PocketTTS;
   the record has the reopen ladder).
 - **✓ FIXED in the S9 wave (`3d27b09`, LIVE in v1.7.9):** ISS-15 · ISS-20 · ISS-22 · ISS-23 · ISS-24 · ISS-26 · ISS-27 · ISS-29 · ISS-30.

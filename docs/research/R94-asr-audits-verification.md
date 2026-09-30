@@ -38,7 +38,7 @@ The owner treated these as **hints, not instructions**, and so does this documen
 - **[INFERRED]** — follows from verified parts.
 - **[OPEN]** — needs a ruling or an experiment.
 
-> ⚠ **Before committing:** `R94-evidence/L2-trail-forensics.md` quotes lines from the owner's private call transcripts. The owner should review or redact them before commit/push.
+> ⚠ **L2 is private and stays untracked (owner ruling 2026-09-30):** `R94-evidence/L2-trail-forensics.md` quotes lines from the owner's private call transcripts, so it lives only in the emma workspace and is never committed. Every other R94 file is committed; the findings L2 supports are summarized in this document.
 
 ---
 
