@@ -83,7 +83,7 @@ import { pushToast } from "../store/toast";
 //   ① FEED ONLY AFTER `ready`. Frames captured during the handshake BUFFER and drain ahead of the live
 //     frame once the relay answers — audio ORDER is the contract, and the first words of a sentence are
 //     exactly the ones a handshake would eat. ONE queue carries both phases and ONE wall-clock token
-//     bucket meters it, under the relay's own 2×-realtime rolling budget
+//     bucket meters it, inside the relay's uplink allowance
 //     (`services/voice_live.py::_note_frame`); a backlog past `buffered_ceiling_ms` is a handshake that
 //     is not coming (before `ready`) or stale speech (after it), and neither may reach the ear.
 //   ② THE RELEASE IS DRAIN → `flush` → AWAIT THE TAIL → `stop`. (The drain is N1's: the uplink's pacer
@@ -853,7 +853,8 @@ export function useDictation({
    * THE RELEASE CHOREOGRAPHY (rule ②), owned by the ONE terminal that knows the recording is over.
    *
    * Pace out whatever the stopped uplink left queued (N1) → `flush` (a relay-side silence burst — the
-   * client may not mint one, §3.1's rate ceiling makes an 88-frame burst a protocol close) → await the
+   * client does not mint one: 88 frames in 3 ms would run the phone seconds ahead of the wall clock, on
+   * the relay's uplink allowance, for silence the relay makes for free) → await the
    * release's OWN tail, or `tail_wait_ms` → `stop` → close. The order is the wire's, not a preference:
    * `flush` has NO ack, so the endpoint's own transcript IS the response, and `stop` DISCARDS whatever
    * the ear has not endpointed, so it can only come last — which is also why the wait re-reads the
@@ -887,8 +888,8 @@ export function useDictation({
         // `ceilingMs / DRAIN_PACE` is the whole job, plus one tick for the pump that finishes it.
         const until = performance.now() + ceilingMs / DRAIN_PACE + DRAIN_TICK_MS;
         while (!s.dead && s.backlog.length > 0 && performance.now() < until) {
-          // The SAME bucket the live uplink spends from (`lib/uplinkPacer`), so these frames are under
-          // the relay's rolling budget by construction rather than by a second calculation.
+          // The SAME bucket the live uplink spends from (`lib/uplinkPacer`), so these frames are inside
+          // the relay's uplink allowance by construction rather than by a second calculation.
           accrue(s);
           pump(s, frameMs, s.socket.sendAudio);
           if (s.backlog.length === 0) break;

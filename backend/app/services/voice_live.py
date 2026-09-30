@@ -52,8 +52,9 @@ counter.
    exceeds 3000 ms, so padding the buffer is the only legal way to force an endpoint. The pad is a
    CONSTANT worst case — R70's `3000 − fed_ms` shortening assumed a per-buffer count the relay cannot
    actually keep (F3, two review rounds; see `_flush`). It lives HERE and not on the phone because an
-   88-frame burst in 3 ms would violate this relay's own §3.1 message-rate ceiling. The burst is also
-   a **delivery barrier** (S1 review F2): the flush does not return until every one of its frames has
+   88-frame burst in 3 ms is the phone running seconds AHEAD of the wall clock, spent from the uplink
+   allowance (`_note_frame`) that exists for real stalls — and the relay makes silence for free. The
+   burst is also a **delivery barrier** (S1 review F2): the flush does not return until every one of its frames has
    actually gone upstream, or the mic audio that follows it would evict the tail of the burst out of
    the same bounded queue and the endpoint would never fire.
 3. **Backpressure is ours alone.** Speaches has no server-side backpressure (unbounded pubsub
@@ -82,13 +83,14 @@ import logging
 import re
 import sys
 import time
-from collections import OrderedDict, deque
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import anyio
 
+from app.config import UPLINK_ALLOWANCE_MS
 from app.core.audio import SPEACHES_WIRE_RATE, Pcm16Resampler, silence
 from app.services.call_trail import LIVE_MODES, LiveMode, valid_call_id
 
@@ -116,12 +118,6 @@ FLUSH_MARGIN_MS = 200
 #: Silero's window: it cannot emit `speech_stopped` before the buffer exceeds this (R70 §1.1 — the
 #: `MAX_VAD_WINDOW_SIZE_SAMPLES = 3000 * MS_SAMPLE_RATE` read at source).
 VAD_WINDOW_MS = 3000
-
-#: The rate-ceiling window (§3.1: "sustained excess over ~2× the nominal 1000/frame_ms per second").
-#: A rolling burst budget rather than an instantaneous rate, so a legitimate jitter catch-up passes
-#: and only a sustained flood closes. Two budgets ride this one window — see `_note_frame`.
-RATE_WINDOW_S = 2.0
-RATE_MULTIPLIER = 2
 
 #: The per-frame DURATION ceiling, as a multiple of the configured `frame_ms` (S1 review F4). ×2
 #: admits a client that occasionally coalesces two frames after a scheduler hiccup; anything larger is
@@ -254,6 +250,14 @@ class _LegStats:
     close_code: int | None = None
     #: The last upstream error code the relay forwarded (`_handle_upstream_error`), if any.
     last_err: str | None = None
+    #: THE UPLINK ALLOWANCE (Phase 26 S2, T2): the least audio credit the bucket held this leg, in ms —
+    #: after each accepted frame, or the credit a refused one found (`_note_frame`). How close a legit
+    #: client came to the allowance is the number that says whether 30 s is still comfortable. `None`
+    #: for a leg that never armed the bucket (never reached `ready`).
+    credit_min_ms: float | None = None
+    #: Which budget refused a frame — `ms` (audio ahead of the wall clock) or `frames` (a tiny-frame
+    #: flood) — `None` when none did.
+    budget: str | None = None
 
     def counters(self) -> dict[str, Any]:
         """Everything but `reason` — the trail's `leg_end` already names its own."""
@@ -267,12 +271,16 @@ class _LegStats:
             "drops": self.drops,
             "close_code": self.close_code,
             "last_err": self.last_err,
+            "credit_min_ms": None if self.credit_min_ms is None else round(self.credit_min_ms),
+            "budget": self.budget,
         }
 
     def line(self, mode: str) -> str:
-        """The journal line's `key=value` body, `-` for an absent value."""
+        """The journal line's `key=value` body, `-` for an absent value. The allowance pair (T2) goes
+        LAST, after how the leg ended, so the S1 order a reader scans is unchanged."""
         c = self.counters()
         ending = {"reason": self.reason, "close_code": c.pop("close_code"), "last_err": c.pop("last_err")}
+        ending |= {"credit_min_ms": c.pop("credit_min_ms"), "budget": c.pop("budget")}
         fields: dict[str, Any] = {"mode": mode, **c, **ending}
         return " ".join(f"{k}={'-' if v is None else v}" for k, v in fields.items())
 
@@ -476,9 +484,12 @@ class LiveRelaySession:
         self._segments: OrderedDict[str, _SegmentClock] = OrderedDict()
         #: One `degraded` frame per overflow BURST, not per dropped frame.
         self._overflow_flagged = False
-        #: `(monotonic timestamp, ms of audio)` for the recent client binary frames — the rolling
-        #: rate ceiling's two budgets read the same deque.
-        self._recent_frames: deque[tuple[float, float]] = deque()
+        #: THE UPLINK ALLOWANCE's two buckets (`_note_frame`): audio credit in ms and its frame-count
+        #: twin, both refilled at wall rate from `_credit_at` — which `_arm_allowance` stamps just before
+        #: `ready` goes down. Filled there, not here: a leg's allowance starts with its `ready`.
+        self._credit_ms = 0.0
+        self._credit_frames = 0.0
+        self._credit_at: float | None = None
 
     # ── public entry ──────────────────────────────────────────────────────────────────────────────
 
@@ -494,6 +505,11 @@ class LiveRelaySession:
                 await self._handshake_client()
                 await self._dial_upstream()
                 await self._configure_upstream()
+                # THE ALLOWANCE'S CLOCK starts HERE, just before `ready` (§3.3) — never at the first
+                # frame, so the backlog a dictation pumps the moment it hears `ready` is paid from the
+                # full bucket, not from refill that has not accrued. Its own stamp, not `started`
+                # below: that one waits for the send to succeed (the two differ by the send, on purpose).
+                self._arm_allowance()
                 await self._send_down({"type": "state", "state": "ready"})
                 # The leg's clock starts once `ready` actually went down — a send the gone phone
                 # swallowed never started a leg (its duration stays 0).
@@ -810,7 +826,7 @@ class LiveRelaySession:
 
         THREE caps, because they bound three different things and a byte ceiling alone bounds only the
         first (F4): `max_frame_bytes` bounds one message, `FRAME_MS_TOLERANCE × frame_ms` bounds the
-        AUDIO one message may carry, and `_note_frame` bounds both over a rolling window. The frame's
+        AUDIO one message may carry, and `_note_frame` bounds both against the wall clock. The frame's
         duration is implied by its length at the rate the client DECLARED — the same rate the
         resampler was built from — and the per-frame cap is what keeps the frame-COUNT queue depth
         truthful in milliseconds.
@@ -842,42 +858,64 @@ class LiveRelaySession:
             raise _ProtocolError(str(exc)) from None
         await self._enqueue(converted, drop_oldest=True)
 
+    def _arm_allowance(self) -> None:
+        """Fill both buckets and start their wall clock — once per leg, just before `ready` (§3.3)."""
+        self._credit_ms = float(UPLINK_ALLOWANCE_MS)
+        self._credit_frames = UPLINK_ALLOWANCE_MS / self._cfg.frame_ms
+        self._credit_at = time.monotonic()
+        self._stats.credit_min_ms = self._credit_ms
+
     def _note_frame(self, ms: float) -> None:
-        """The ENFORCED uplink ceiling (§3.1, confirm-round residual — a protocol close, not a
-        warning): TWO budgets over one rolling `RATE_WINDOW_S` window, because they bound two
-        different resources and either alone is trivially evaded (F4).
+        """THE UPLINK ALLOWANCE (Phase 26 S2, ASR_PLAN §3.3 — a protocol close, not a warning): a
+        real-time source can arrive LATE by any amount, but never AHEAD of the wall clock by more than
+        the reservoirs between the mic and the relay hold. So the guard is a token bucket refilled at
+        wall rate, capacity `UPLINK_ALLOWANCE_MS`, started FULL just before `ready` (`_arm_allowance`).
+        The bucket sits full while the phone is on time; a stall's backlog is paid from that STANDING
+        capacity (a stall refills at most what earlier early arrivals spent), which is why the capacity
+        must cover every reservoir — and `LiveCfg`'s load-time inequality proves it does, so a legit
+        client cannot trip it and the call's terminal treatment of a 1008 stays honest. The cap also
+        bounds banked credit: a leg idle for a minute can dump 30 s, not 60. No drift term — see the
+        constant.
 
-        * the **count** budget bounds per-message CPU: more than `RATE_MULTIPLIER ×` the nominal
-          `1000/frame_ms` frames per second in the window is a flood of (possibly tiny) messages, each
-          of which costs a base64 decode plus a synchronous Silero pass on Speaches' event loop;
-        * the **ms** budget bounds audio THROUGHPUT: more than `RATE_MULTIPLIER ×` realtime worth of
-          audio in the window is a flood that a few huge frames can mount while staying far inside the
-          count budget — which is exactly how a compliant-looking client could ship ~100× realtime.
+        TWO budgets, because they bound two different resources and either alone is trivially evaded
+        (F4):
 
-        Together they bound both, at 2× realtime. Both are BURST budgets over a window rather than
-        instantaneous rates, so a short catch-up after a scheduler hiccup passes and only sustained
-        excess closes. The relay's own flush burst is exempt BY CONSTRUCTION — it is generated past
-        this point and never travels through `_accept_audio`; keep it that way.
+        * the **ms** budget bounds audio THROUGHPUT: `UPLINK_ALLOWANCE_MS` of credit, earning 1000 ms
+          per wall second — a flood a few huge frames can mount while staying far inside any count;
+        * the **frames** budget bounds per-message CPU: `UPLINK_ALLOWANCE_MS / frame_ms` frames of
+          credit, earning `1000 / frame_ms` per second — a flood of tiny messages, each costing a base64
+          decode plus a synchronous Silero pass on Speaches' event loop, that carries realtime audio and
+          is invisible to the ms budget.
+
+        A frame whose debit would take either below zero is refused, naming the budget and the credit
+        it found. The relay's own flush burst is exempt BY CONSTRUCTION — it is generated past this
+        point and never travels through `_accept_audio`; keep it that way.
         """
-        nominal_per_s = 1000.0 / self._cfg.frame_ms
-        frame_allowance = int(RATE_MULTIPLIER * nominal_per_s * RATE_WINDOW_S)
-        ms_allowance = RATE_MULTIPLIER * RATE_WINDOW_S * 1000
+        assert self._credit_at is not None  # armed before `ready`, and `_pump` runs after it
+        frame_ms = self._cfg.frame_ms
+        cap_frames = UPLINK_ALLOWANCE_MS / frame_ms
         now = time.monotonic()
-        self._recent_frames.append((now, ms))
-        cutoff = now - RATE_WINDOW_S
-        while self._recent_frames and self._recent_frames[0][0] < cutoff:
-            self._recent_frames.popleft()
-        if len(self._recent_frames) > frame_allowance:
-            raise _ProtocolError(
-                f"uplink frame rate exceeded: more than {frame_allowance} frames in "
-                f"{RATE_WINDOW_S:g}s ({RATE_MULTIPLIER}× the nominal {nominal_per_s:g}/s for "
-                f"frame_ms={self._cfg.frame_ms})"
+        elapsed_ms = (now - self._credit_at) * 1000
+        self._credit_at = now
+        self._credit_ms = min(float(UPLINK_ALLOWANCE_MS), self._credit_ms + elapsed_ms)
+        self._credit_frames = min(cap_frames, self._credit_frames + elapsed_ms / frame_ms)
+        refused = "ms" if ms > self._credit_ms else "frames" if self._credit_frames < 1 else None
+        if refused is None:
+            self._credit_ms -= ms
+            self._credit_frames -= 1
+        stats = self._stats
+        if stats.credit_min_ms is None or self._credit_ms < stats.credit_min_ms:
+            stats.credit_min_ms = self._credit_ms
+        if refused is not None:
+            stats.budget = refused
+            why = (
+                f"the phone ran more than {UPLINK_ALLOWANCE_MS} ms of audio ahead of the wall clock"
+                if refused == "ms"
+                else f"the {cap_frames:g}-frame allowance at frame_ms={frame_ms} is exhausted — a tiny-frame flood"
             )
-        window_ms = sum(entry[1] for entry in self._recent_frames)
-        if window_ms > ms_allowance:
             raise _ProtocolError(
-                f"uplink audio rate exceeded: {window_ms:.0f} ms of audio in {RATE_WINDOW_S:g}s "
-                f"({RATE_MULTIPLIER}× realtime is {ms_allowance:g} ms)"
+                f"uplink allowance exceeded ({refused} budget): a {ms:.0f} ms frame against "
+                f"{self._credit_ms:.0f} ms and {self._credit_frames:.2f} frames of credit — {why}"
             )
 
     async def _enqueue(self, pcm: bytes, *, drop_oldest: bool) -> None:

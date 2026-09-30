@@ -393,7 +393,7 @@ describe("callReduce — terminals (§4.3/§4.5)", () => {
       {
         type: "serverError",
         code: "protocol",
-        message: "uplink frame rate exceeded: 4040 ms of audio in 2s (2× realtime is 4000 ms)",
+        message: "uplink allowance exceeded (ms budget): a 40 ms frame against 12 ms of credit — …",
       },
     ]);
     expect(state.phase).toBe("error");

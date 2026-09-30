@@ -659,6 +659,27 @@ class SttServiceCfg(VoiceServiceCfg):
     auto_stop_threshold: float = Field(default=0.01, ge=0.001, le=0.5)
 
 
+# ── THE UPLINK ALLOWANCE (Phase 26 S2, ASR_PLAN §3.3 / Q2 as amended by R97 P-6) ──
+# Wire-contract constants the relay's token bucket spends (`services/voice_live.py::_note_frame`) and
+# `LiveCfg`'s load-time inequality reads. They live HERE, not in the relay, because the validator needs
+# them and config never imports a service (services import config, never the reverse).
+#: How far AHEAD of the wall clock a live client's audio may arrive, in ms — the capacity of the relay's
+#: audio bucket (its frame-count twin holds `UPLINK_ALLOWANCE_MS / frame_ms` frames). A real-time source
+#: can only be LATE, never early, by more than what the reservoirs between the mic and the relay hold
+#: and dump at once after a stall; this is one constant comfortably above their sum, and
+#: `LiveCfg._allowance_covers_the_reservoirs` proves it at load (12 580 ms at the defaults). No drift
+#: term: at a 0.1 % phone/server clock drift 30 s lasts > 8 h, past `max_session_s`'s ceiling.
+UPLINK_ALLOWANCE_MS = 30_000
+#: The longest stall a live socket survives before the server's keepalive kills it — the uvicorn launch
+#: flags `--ws-ping-interval 5 --ws-ping-timeout 5` (`deploy/linux/systemd/ctrl-b-dashboard*.service`,
+#: `deploy/linux/run.sh`, `deploy/windows/start.ps1`). A stall any longer ends the leg as a 1006 first,
+#: so its backlog never reaches the bucket. A plain mirror: change it with the flags.
+KEEPALIVE_HORIZON_MS = 10_000
+#: The client pacer's bucket ceiling — `frontend/src/lib/uplinkPacer.ts` `BUCKET_CAP_MS`: the most banked
+#: audio one dispatch may ship on top of the queue. A plain mirror: change it with the pacer.
+BUCKET_CAP_MS = 500
+
+
 class LiveCfg(VoiceServiceCfg):
     """LIVE VOICE / call mode (Phase 24 / D71, `docs/LIVE_VOICE_PLAN.md` §5.1) — the realtime EAR behind
     `WS /api/voice/live`. Inherits the house target shape from `VoiceServiceCfg`
@@ -731,7 +752,9 @@ class LiveCfg(VoiceServiceCfg):
     #: `min_duration`, plan §4.3). A CLIENT gate — Speaches' TurnDetection has no such field.
     min_speech_ms: int = Field(default=300, ge=0, le=5000)
     #: Client outbound-buffer ceiling, in ms of audio, before the client closes + reconnects a fresh
-    #: session (plan §3.1/F6 — `WebSocket.send()` has no awaitable backpressure).
+    #: session (plan §3.1/F6 — `WebSocket.send()` has no awaitable backpressure). A term (twice) of the
+    #: uplink allowance's inequality, so a value past what `UPLINK_ALLOWANCE_MS` covers is refused at
+    #: load (`_allowance_covers_the_reservoirs`).
     buffered_ceiling_ms: int = Field(default=1000, ge=100, le=10000)
     #: The CLIENT pacer's backlog bound for a call leg, in ms of audio (A-F2 / R71). The uplink is
     #: paced — a stall accrues frames instead of firing them all at the socket on recovery — and past
@@ -740,7 +763,8 @@ class LiveCfg(VoiceServiceCfg):
     #: same units and same bounds deliberately, so the two read as the one backpressure pair they are.
     #: Dictation's pacer is LOSSLESS instead (a dictated phrase must arrive whole) and reads nothing
     #: here. A client-side drop presents the same "strained" note the relay's drop does — one loss
-    #: chain, one signal.
+    #: chain, one signal. A term of the uplink allowance's inequality too (a post-stall burst can dump
+    #: the whole backlog at once), so a value past what `UPLINK_ALLOWANCE_MS` covers is refused at load.
     call_backlog_ms: int = Field(default=1000, ge=200, le=20000)
     #: Hands-free interruption master (client). False ⇒ tap-to-interrupt only, which is also the honest
     #: degrade on a browser whose AEC does not remove the phone's own playback (§7-S0 ③, Fennec).
@@ -876,6 +900,34 @@ class LiveCfg(VoiceServiceCfg):
             raise ValueError(
                 f"hold_tail_min_ms ({self.hold_tail_min_ms}) + tail_quiet_ms ({self.tail_quiet_ms}) "
                 f"must fit under hold_tail_max_ms ({self.hold_tail_max_ms})"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _allowance_covers_the_reservoirs(self) -> "LiveCfg":
+        """ASR_PLAN §3.3 / Q2 — the relay's uplink allowance must cover every reservoir between the mic
+        and the relay, or a LEGITIMATE client's post-stall burst could trip it and a transport hiccup
+        would read as a protocol violation (the 1008 the call treats as terminal). The sum is what a
+        live socket can hold back and then deliver at once: the stall it survives (the keepalive
+        horizon), the pacer's queue (dictation bails past `buffered_ceiling_ms`, the call drops past
+        `call_backlog_ms` — whichever is larger), the browser's own send buffer (the
+        `buffered_ceiling_ms` ceiling, K3), the pacer's bucket, and two frames in flight. At LOAD, the
+        `_tail_fits_cap` precedent, so a Conf value that breaks it is a 422 rather than a dead leg."""
+        backlog = max(self.buffered_ceiling_ms, self.call_backlog_ms)
+        need = KEEPALIVE_HORIZON_MS + backlog + self.buffered_ceiling_ms + BUCKET_CAP_MS + 2 * self.frame_ms
+        if need > UPLINK_ALLOWANCE_MS:
+            terms = " + ".join(
+                (
+                    f"keepalive horizon ({KEEPALIVE_HORIZON_MS})",
+                    f"max(buffered_ceiling_ms ({self.buffered_ceiling_ms}), "
+                    f"call_backlog_ms ({self.call_backlog_ms}))",
+                    f"buffered_ceiling_ms ({self.buffered_ceiling_ms})",
+                    f"pacer bucket ({BUCKET_CAP_MS})",
+                    f"2 × frame_ms ({self.frame_ms})",
+                )
+            )
+            raise ValueError(
+                f"the uplink allowance ({UPLINK_ALLOWANCE_MS} ms) must cover the reservoirs: {terms} = {need} ms"
             )
         return self
 

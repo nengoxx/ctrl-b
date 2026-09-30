@@ -18,10 +18,10 @@
 // beside them.
 //
 // THE FRAME CONTRACT (relay-enforced, `services/voice_live.py`): pcm16 LITTLE-ENDIAN mono at the rate the
-// client declared in `start`, one frame ≤ `max_frame_bytes` AND ≤ 2× `frame_ms` of audio, and the
-// sustained rate under 2× realtime. A worklet that emits exactly `frame_ms` per frame at capture speed
-// satisfies all three by construction — which is why the frame size is a CONSTRUCTOR option (from the
-// server's knob) and never a number in here.
+// client declared in `start`, one frame ≤ `max_frame_bytes` AND ≤ 2× `frame_ms` of audio, and never more
+// than the uplink allowance (30 s of audio, or of `frame_ms` frames) ahead of the wall clock. A worklet
+// that emits exactly `frame_ms` per frame at capture speed satisfies all three by construction — which
+// is why the frame size is a CONSTRUCTOR option (from the server's knob) and never a number in here.
 //
 // EACH FRAME CARRIES ITS TIME (D80 ⑦): `t`, the AudioContext time of the frame's FIRST sample — the
 // scope's `currentTime` at the render quantum it arrived in, plus its offset into that quantum at the

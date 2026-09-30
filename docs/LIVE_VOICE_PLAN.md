@@ -148,8 +148,11 @@ and irreversible.
   reconnects as a fresh session, so a tailnet blip never drains seconds of stale speech into an
   obsolete transcript. Declared numeric bounds (testable, not vibes): accepted `start` sample
   rates 8–96 kHz, max binary frame `max_frame_bytes` (config, default 32 KiB), an ENFORCED
-  message-rate ceiling (sustained excess over ~2× the nominal 1000/`frame_ms` per second is a
-  protocol-error close, not a warning — confirm-round residual), max session seconds (default
+  UPLINK ALLOWANCE (Phase 26 S2, ASR_PLAN §3.3, replacing the old rolling 2 s / ~2×-realtime
+  window — an audio-ms token bucket plus a frame-count twin, refilled at wall rate, started FULL just
+  before `ready`, capacity `UPLINK_ALLOWANCE_MS` = 30 s, the twin 30 s / `frame_ms` frames; the
+  inequality that it covers every reservoir between mic and relay is validated when the config
+  loads; a violation is a protocol-error close 1008, not a warning), max session seconds (default
   aligned to Speaches' 30 min lifetime), one live session per connection and a process-wide
   live-session cap (§5.2).
 

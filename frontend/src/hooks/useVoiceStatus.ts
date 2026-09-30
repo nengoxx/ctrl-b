@@ -53,9 +53,10 @@ export interface LiveCallWire {
    *  leg and reconnects as a fresh session rather than draining stale speech into an obsolete turn. */
   buffered_ceiling_ms: number;
   /** How much audio the CALL's uplink pacer may hold before it drops its oldest, in ms (A-F2, evidence
-   *  docs/research/R71). The bound exists because a main-thread stall dispatches a burst the relay's
-   *  rolling budget reads as a protocol violation; the pacer meters it out, and past this depth the head
-   *  of the queue is speech too stale for a conversation with a clock on both sides. Worth keeping at
+   *  docs/research/R71). A main-thread stall dispatches its queued frames in one burst; the pacer meters
+   *  it out (one dispatch ships at most its cap — a term of the relay's uplink-allowance inequality, as
+   *  this bound is too), and past this depth the head of the queue is speech too stale for a
+   *  conversation with a clock on both sides. Worth keeping at
    *  or under the relay's own `relay_queue_ms` so the visible bound is the client's — a recommendation,
    *  not an invariant: nothing cross-validates the two knobs, and a larger value here simply hands the
    *  drop back to the relay. Dictation has no such bound — it is lossless by rule (`lib/uplinkPacer`). */

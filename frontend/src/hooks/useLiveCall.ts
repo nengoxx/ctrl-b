@@ -373,7 +373,7 @@ export const CALL_COPY = {
   limit: "call time limit reached",
   strained: "connection strained",
   /** A `protocol` terminal, in the owner's words. The relay's own message is an internal sentence
-   *  ("uplink frame rate exceeded: 4040 ms of audio in 2s …") written for a log, and the terminal face
+   *  ("uplink allowance exceeded (ms budget): …") written for a log, and the terminal face
    *  already carries the action (Call again) — so the note says what happened, not what tripped. */
   protocol: "the connection had a problem",
   micLost: "the microphone stopped",
@@ -1344,10 +1344,11 @@ function reduce(s: CallState, sig: CallSignal): Step {
             out: [],
           };
         case "protocol":
-          // The client and the relay disagreed about the wire (A-F2: an uplink burst past the rolling
-          // budget is the one way this happens in practice, which the pacer is there to prevent). The
-          // relay's `message` is a diagnostic sentence for the journal, not a line for the owner's
-          // screen, so this arm is the one place the default's echo is refused.
+          // The client and the relay disagreed about the wire. Since Phase 26 S2 the uplink allowance
+          // covers every reservoir a legit client has (a stall's burst no longer trips it), so this is a
+          // real client bug, and terminal is the honest answer. The relay's `message` is a diagnostic
+          // sentence for the journal, not a line for the owner's screen, so this arm is the one place
+          // the default's echo is refused.
           return terminal(s, "error", CALL_COPY.protocol);
         default:
           return terminal(s, "error", sig.message || CALL_COPY.lost);
@@ -2671,15 +2672,14 @@ export function useLiveCall(): CallView {
             route: req.route,
             deviceId: req.deviceId,
             onFrame: (frame) => {
-              // THE UPLINK GOES THROUGH THE PACER (A-F2, evidence docs/research/R71). Shipping each frame the
-              // instant the worklet hands it over is safe at the ordinary cadence and fatal after a stall: the
-              // worklet's MessagePort deliveries queue while the main thread is blocked and then dispatch in
-              // ONE tick, which the relay's rolling 2×-realtime budget reads as a protocol violation and
-              // answers with `error{code:"protocol"}` + close 1008 — a call that simply ends, mid-sentence,
-              // with no reconnect. Dictation has metered this wire since S2.5; the call now spends from the
-              // same bucket (`lib/uplinkPacer`), under the CALL's backlog rule: drop-OLDEST past
-              // `call_backlog_ms`, because a call has a clock on both sides and a second of stale speech
-              // endpoints a turn the owner has moved past (R71 §5.3).
+              // THE UPLINK GOES THROUGH THE PACER (A-F2, evidence docs/research/R71). The worklet's
+              // MessagePort deliveries queue while the main thread is blocked and then dispatch in ONE tick;
+              // shipped raw, only the relay's idle reaper (`uplink_idle_s`) and the send-buffer ceiling would
+              // bound that burst. Metered, it is a burst the uplink allowance's proof COUNTS (the pacer's
+              // cap), and the backlog behind it obeys a stale-speech rule. Dictation has metered this wire
+              // since S2.5; the call spends from the same bucket (`lib/uplinkPacer`), under the CALL's
+              // backlog rule: drop-OLDEST past `call_backlog_ms`, because a call has a clock on both
+              // sides and a second of stale speech endpoints a turn the owner has moved past (R71 §5.3).
               //
               // THE SUBSTITUTION (D76 §B.1) happens HERE, at the pacer boundary, and nowhere else: a frame
               // that is not `uplinked` (muted, or held under the reply) goes up as the ONE zeroed buffer of

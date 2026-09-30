@@ -442,7 +442,9 @@ voice:
     buffered_ceiling_ms: 1000   # CLIENT outbound-buffer ceiling before close+reconnect
     call_backlog_ms: 1000  # CLIENT pacer backlog for a call leg, in ms of audio; past it the OLDEST
                            # frames are dropped (the mirror of relay_queue_ms below, one hop upstream).
-                           # Dictation's pacer is lossless instead and ignores this.
+                           # Dictation's pacer is lossless instead and ignores this. Together with the
+                           # send-buffer ceiling (buffered_ceiling_ms) it must fit the 30 s uplink
+                           # allowance — a value that does not is refused at load (a Conf 422).
     min_final_ms: 200      # D74/R76: ms of mic energy at or above the RELATIVE floor (the gate six below)
                            # an utterance must carry before its transcript becomes a turn — the
                            # near-speech gate that keeps a TV or the next room out of the conversation;

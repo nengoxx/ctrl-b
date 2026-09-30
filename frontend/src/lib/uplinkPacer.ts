@@ -10,9 +10,12 @@
 // WHY A CLOCK AND NOT A PER-CALLBACK RATIO (S2.5 review F5): the worklet's MessagePort deliveries QUEUE
 // while the main thread is stalled (heavy jank, a large decode, an app-switch race) and then dispatch in
 // one burst, so anything paced per CALLBACK ships at dispatch speed — fifty queued callbacks are fifty
-// sends in one tick, straight through the relay's rolling window and into a protocol close mid-session
-// (`services/voice_live.py::_note_frame`). A budget earned from `performance.now()` cannot be outrun by a
-// burst: the burst carries no wall clock with it.
+// sends in one tick, a burst whose size nothing on this side bounds. A budget earned from
+// `performance.now()` cannot be outrun by a burst: the burst carries no wall clock with it. That bound is
+// what the relay's UPLINK ALLOWANCE counts on (`services/voice_live.py::_note_frame`, Phase 26 S2): a
+// wall-clock token bucket of 30 s that refuses a phone running further AHEAD of the wall clock than the
+// reservoirs between the mic and the relay can explain — and this pacer's `BUCKET_CAP_MS` is one of the
+// terms of that sum.
 //
 // THE TWO BACKLOG RULES, and the difference between them is a CLOCK (R71 §5.3):
 //   · LOSSLESS (`enqueue` — dictation). A phrase that reaches the draft late is still the owner's words
@@ -30,21 +33,24 @@
 // audio — into a session that knows nothing about either.
 
 /** How much audio-time the queue earns per millisecond of WALL CLOCK. 1.5× realtime sustained clears a
- *  full ceiling of backlog in a couple of seconds while staying under the relay's own budget with margin:
- *  `_note_frame` closes the leg past 2× realtime in a rolling 2 s window, and draining at exactly 2×
- *  would sit ON that bound, where one retained boundary frame is a protocol close.
+ *  full ceiling of backlog in a couple of seconds. The pace is not what keeps the relay's allowance
+ *  (`_note_frame`) honest: a queue can only hold audio the mic ALREADY produced, so however fast it
+ *  drains, the relay sees the phone late, never early. The relay's bucket sits full while the phone is
+ *  on time; a stall's backlog is paid from that standing capacity, which is why its inequality must
+ *  cover every reservoir — this queue and the CAP below among them.
  *
  *  Do NOT raise it to "catch up" (R71 §5.6): the catch-up lever is the CAP, not the rate — the field's own
  *  answer to a deep backlog is time-compression, which we cannot use because the ear transcribes what we
  *  send. */
 export const DRAIN_PACE = 1.5;
 
-/** …and the bucket's CEILING, which is what bounds a post-stall burst. The most the wire can take in one
- *  dispatch is `BUCKET_CAP_MS` of banked audio, so over any rolling relay window the total is at most
- *  `cap + DRAIN_PACE × window`. Against the relay's 2 s window that is 500 + 1.5×2000 = 3500 ms under its
- *  2×-realtime budget of 4000 ms — and the same margin holds for its FRAME-count budget at any `frame_ms`,
- *  because both sides scale by the frame size (3500/frame_ms frames against an allowance of
- *  4000/frame_ms). */
+/** …and the bucket's CEILING, which is what bounds a post-stall burst: one dispatch ships at most
+ *  `BUCKET_CAP_MS` OF the queued backlog, the rest leaving at `DRAIN_PACE`. It is a TERM of the relay's
+ *  uplink-allowance inequality (ASR_PLAN §3.3 — keepalive horizon + the backlog bound + the send-buffer
+ *  ceiling + this cap + two frames ≤ 30 000 ms, 12 580 ms at the defaults, validated when the config
+ *  loads), mirrored there as `app/config.py::BUCKET_CAP_MS` — change the two together. The frame-count
+ *  twin of that allowance scales by the frame size like everything here, so the same margin holds at
+ *  any `frame_ms`. */
 export const BUCKET_CAP_MS = 500;
 
 /** One leg's pacer: the FIFO its frames wait in, oldest first, and the wall-clock bucket that empties it.

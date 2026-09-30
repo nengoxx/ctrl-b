@@ -533,10 +533,15 @@ of CORS middleware, which is the entire defence for the §2.7/§2.8/§2.9 write 
   a second `start`, or an oversized frame close 1008. The client supplies NO session parameter
   beyond `start.sample_rate` (bounds-validated at the same boundary): the server-VAD knobs in the
   relay's one `session.update` come from config alone (D76 §D deleted the in-call
-  `start.vad_threshold` override; an unknown `start` key is ignored). Two budgets ride one rolling window because
-  they bound two different resources: a **count** budget (per-message CPU) and an **ms-of-audio**
-  budget (throughput) — together ~2× realtime, which is what stops a compliant-*looking* client from
-  shipping ~100× realtime inside the count budget. A realtime client is untouched.
+  `start.vad_threshold` override; an unknown `start` key is ignored). The uplink is bounded against
+  the WALL CLOCK (Phase 26 S2, ASR_PLAN §3.3): an **audio-ms token bucket** plus a **frame-count
+  twin**, refilled at wall rate, started full just before `ready`, capacity 30 s
+  (`UPLINK_ALLOWANCE_MS`; the twin 30 s / `frame_ms` frames) — two budgets because they bound two
+  different resources, throughput and per-message CPU, and the twin is what stops a flood of tiny
+  frames the ms bucket cannot see. The inequality that the capacity covers every reservoir between
+  mic and relay (keepalive horizon + client backlog + send buffer + pacer cap + two frames) is
+  validated at config load, so a legit client, however late, cannot trip it; a violation closes
+  1008.
 
 **Secrets:** the upstream key rides an `Authorization: Bearer` header the relay injects server-side
 (`voice_live.py`); it appears in **no log record and no downlink frame** on any failure path, which
@@ -603,7 +608,7 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | **Approvals never expire in v1 (D44)** | **accepted** | No TTL / decay-on-disuse (that needs a queryable fire-log = an events-schema migration; reserved). A grant stands until revoked in Conf → Tools or `config.yaml`; revocation is live from the next invoke. |
 | **The media write API will have no kill switch (D65)** | **accepted, owner waiver 2026-08-24** | The whole-feature-toggle rule is knowingly waived: `PUT`/`DELETE /api/media/…` is specified unconditional. A toggle over one typed, allowlisted, registry-confined path buys nothing a rollback does not, and stays trivially additive (§2.7). *Ruled at S0; the routes land at S1.* |
 | **DNS rebinding reaches the whole API** (an attacker-controlled name re-resolving to the LAN/tailnet address is same-origin, so CORS never applies — and it removes the premise of the §2.10 WS `Origin` rail the same way) | **open BY OWNER CHOICE — the rail is BUILT** | Pre-existing, whole-API. **`server.trusted_hosts` closes it (§2.9, R73/D72 ⑥) and is shipped** — but it ships **EMPTY = not mounted**, and the owner ruled 2026-09-16 that it stays empty until they opt in (the rail costs every name and address they browse by; a missing name answers 400 everywhere with a hand-edit of `config.yaml` as the only recovery). So the residual stands on this deploy, by decision rather than by omission. Scoped to the cleartext bind either way — TLS makes the Serve front door unrebindable. *(No longer a Phase 19 item: D72 closed the design question.)* |
-| **The one WebSocket is an ingress CORS cannot reach** (`WS /api/voice/live`, D71) | **accepted, gated (the call ON by default since v1.7.8)** | §2.10. No preflight exists on an upgrade, so the absence of CORS middleware protects nothing here and the pre-`accept()` `Origin` rail is the boundary instead. Bounded by: the feature gate (a configured realtime chain; `voice.enabled` outranks; the call toggle ON by default since v1.7.8, dictation OFF), a `max_sessions` slot reaped by the uplink-idle bound (`uplink_idle_s`, R86), the relay's count+ms burst budgets, and the bearer never reaching a log or the downlink. Media ingress ONLY — a spoken turn still rides `POST /api/agent/chat` + SSE. |
+| **The one WebSocket is an ingress CORS cannot reach** (`WS /api/voice/live`, D71) | **accepted, gated (the call ON by default since v1.7.8)** | §2.10. No preflight exists on an upgrade, so the absence of CORS middleware protects nothing here and the pre-`accept()` `Origin` rail is the boundary instead. Bounded by: the feature gate (a configured realtime chain; `voice.enabled` outranks; the call toggle ON by default since v1.7.8, dictation OFF), a `max_sessions` slot reaped by the uplink-idle bound (`uplink_idle_s`, R86), the relay's wall-clock uplink allowance (an audio-ms token bucket + a frame-count twin, capacity 30 s, its covering inequality validated at load, a violation = 1008), and the bearer never reaching a log or the downlink. Media ingress ONLY — a spoken turn still rides `POST /api/agent/chat` + SSE. |
 | **Safelisted-reachable POST mutations are a CLASS** — multipart (`POST /api/voice/stt`) plus the bodyless / path-param routes that run whatever content type a cross-origin form sends | **pre-existing, open → Phase 19** | CORS withholds a cross-origin read-back, never the send. Not introduced by D65 — surfaced by it, which is why §1's correction scopes the "first surface" claim to owner FILES. Enumeration + disposition = Packet ③ (HARDENING §8.2); §2.7 names three examples. |
 | **The steer queue is in-memory (D41)** | **accepted** | A backend restart loses queued-but-undrained steers — no durability is promised (mirrors the in-memory confirm-token stance). Single-user, the queue is seconds-lived; accepted. |
 

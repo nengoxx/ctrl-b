@@ -391,6 +391,31 @@ def test_voice_live_dictation_knobs_round_trip_to_the_status_probe() -> None:
         os.environ.pop("CTRLB_DB", None)
 
 
+def test_a_live_knob_that_breaks_the_uplink_allowance_is_a_422() -> None:
+    """Phase 26 S2 (ASR_PLAN §3.3): `LiveCfg`'s load-time inequality — the uplink allowance must cover
+    every reservoir between the mic and the relay — rides the SAME per-section validation every other
+    knob does, so a Conf save that breaks it is the ordinary visible 422, nothing is saved, and the
+    detail names the terms. `call_backlog_ms` is the one of its terms Conf edits: 18 420 is the most
+    the defaults leave room for (10 000 + b + 1000 + 500 + 80 ≤ 30 000), 18 421 is one too many."""
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    cfg.write_text("server:\n  poll_seconds: 5\n", encoding="utf-8")
+    os.environ["CTRLB_CONFIG"] = str(cfg)
+    os.environ["CTRLB_DB"] = str(tmp / "t.db")
+    try:
+        with _client() as c:
+            ok = c.put("/api/settings", json={"voice": {"live": {"call_backlog_ms": 18420}}})
+            assert ok.status_code == 200, ok.text
+            bad = c.put("/api/settings", json={"voice": {"live": {"call_backlog_ms": 18421}}})
+            assert bad.status_code == 422, bad.text
+            assert "must cover the reservoirs" in bad.text and "call_backlog_ms (18421)" in bad.text
+            assert c.app.state.settings.voice.live.call_backlog_ms == 18420
+            assert "18421" not in cfg.read_text(encoding="utf-8")
+    finally:
+        os.environ.pop("CTRLB_CONFIG", None)
+        os.environ.pop("CTRLB_DB", None)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

@@ -172,9 +172,9 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
   let done = false;
   // THE READY LATCH (R86 LC-5). The relay reads nothing from the client between `start` and its
   // `_pump` — it is dialling and configuring the upstream — so frames sent in that window reach
-  // `_note_frame` in ONE burst when the pump starts, and a handshake past ~2 s bursts through the
-  // rolling 2×-realtime budget into a protocol TERMINAL. Audio before `ready` is also audio no session
-  // is listening to yet. So the door drops it, per leg (a fresh leg latches afresh), exactly like the
+  // `_note_frame` in ONE burst when the pump starts, spending the relay's uplink allowance (30 s, full
+  // at `ready`) on a handshake instead of keeping it for the stall it exists for. Audio before `ready`
+  // is also audio no session is listening to yet. So the door drops it, per leg (a fresh leg latches afresh), exactly like the
   // reconnect gap it already dropped; the callers' pacers keep their own clocks either way.
   let ready = false;
   // THE CLOSE THIS CLIENT CHOSE (Phase 26 S1, T3/T4), when it chose one: the backpressure bail, or a

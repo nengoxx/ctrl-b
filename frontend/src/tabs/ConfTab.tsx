@@ -3204,7 +3204,7 @@ export function ConfTab({ active }: Props) {
               recovering connection replays a second of your voice rather than a minute of it. */}
           <Field
             label="Uplink backlog"
-            desc="ms of your voice the call may hold on a stalled link (200–20000) — past it the oldest audio is dropped, not queued"
+            desc="ms of your voice the call may hold on a stalled link (200–20000; together with the send-buffer ceiling it must fit the 30 s uplink allowance) — past it the oldest audio is dropped, not queued"
             value={String(vlive?.call_backlog_ms ?? "")}
             onChange={(v) => setLive("call_backlog_ms", v as unknown as number)}
           />

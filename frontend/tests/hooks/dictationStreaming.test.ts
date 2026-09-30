@@ -115,6 +115,7 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
 
 import { postJSON } from "../../src/api/client";
 import { useDictation } from "../../src/hooks/useDictation";
+import { BUCKET_CAP_MS } from "../../src/lib/uplinkPacer";
 import { FakeMediaRecorder, gateMediaDevices, mockStt, setMediaDevices } from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
@@ -466,23 +467,17 @@ describe("useDictation · streaming ① frames buffer until `ready`, then drain 
 
 // ── rule ① (continued) · the PACER is a WALL CLOCK, not a callback ratio (S2.5 review F5) ──────────
 
-/** The relay's own uplink budget, restated in its own arithmetic (`services/voice_live.py`:
- *  `RATE_MULTIPLIER` 2 × `RATE_WINDOW_S` 2.0). TWO budgets ride one rolling window — a FRAME count and
- *  a 2×-realtime MS total — and tripping either is a protocol close in the middle of a recording. */
-const RELAY_WINDOW_MS = 2000;
-const RELAY_FRAME_BUDGET = Math.trunc(2 * (1000 / KNOBS.frame_ms) * (RELAY_WINDOW_MS / 1000)); // 100
-const RELAY_MS_BUDGET = 2 * RELAY_WINDOW_MS; // 4000 ms of audio in the window
+/** The most the pacer may put on the wire at ONE instant: its `BUCKET_CAP_MS` of banked audio. That cap
+ *  is a TERM of the relay's uplink allowance (`services/voice_live.py::_note_frame`, Phase 26 S2 — a
+ *  30 s wall-clock bucket proven at config load to cover every reservoir between mic and relay), so a
+ *  dispatch that stays inside it is one the relay's inequality already counted; an unmetered one is not. */
+const CAP_FRAMES = Math.floor(BUCKET_CAP_MS / KNOBS.frame_ms); // 12
 
-/** The worst rolling-window load the wire ever saw, in FRAMES — the one number both relay budgets read
- *  off (`× frame_ms` gives the ms total). */
-function worstWindowFrames(): number {
-  let worst = 0;
-  for (let i = 0; i < h.audioAt.length; i++) {
-    let n = 0;
-    while (i + n < h.audioAt.length && h.audioAt[i + n] - h.audioAt[i] < RELAY_WINDOW_MS) n += 1;
-    if (n > worst) worst = n;
-  }
-  return worst;
+/** The most frames the wire ever took at one instant — a stall's burst, if nothing metered it. */
+function worstDispatchFrames(): number {
+  const perInstant = new Map<number, number>();
+  for (const t of h.audioAt) perInstant.set(t, (perInstant.get(t) ?? 0) + 1);
+  return Math.max(0, ...perInstant.values());
 }
 
 /** A MAIN-THREAD STALL: the worklet kept producing through it, and its MessagePort deliveries then
@@ -499,18 +494,17 @@ function stallThenBurst(stallMs: number): void {
   });
 }
 
-describe("useDictation · streaming ① a stall's burst cannot outrun the relay's rolling budget", () => {
+describe("useDictation · streaming ① a stall's burst is metered to the pacer's cap", () => {
   it("meters the dispatch by the clock the burst does not carry", async () => {
     const { result } = renderHook(() => useDictation(opts()));
     await hold(result);
     ready();
     for (let i = 0; i < 50; i++) mic(i); // two seconds of ordinary cadence, one frame per 40 ms
     stallThenBurst(5000); //                …then five seconds of jank, delivered in one tick
-    // Paced per CALLBACK, those 125 queued deliveries are 125 sends at one instant — over the relay's
-    // frame budget AND its 2×-realtime ms budget, i.e. a protocol close mid-recording. Paced by the
-    // clock, the burst may spend only what the bucket banked (`BUCKET_CAP_MS`).
-    expect(worstWindowFrames()).toBeLessThanOrEqual(RELAY_FRAME_BUDGET);
-    expect(worstWindowFrames() * KNOBS.frame_ms).toBeLessThanOrEqual(RELAY_MS_BUDGET);
+    // Paced per CALLBACK, those 125 queued deliveries would be 125 sends at one instant. Paced by the
+    // clock, one dispatch ships only what the bucket banked (`BUCKET_CAP_MS`) — the burst the relay's
+    // allowance proof counts — and the rest leaves at `DRAIN_PACE`.
+    expect(worstDispatchFrames()).toBe(CAP_FRAMES);
     expect(shipped().length).toBeGreaterThan(50); // …and it did keep draining, not stall the uplink
   });
 
@@ -578,9 +572,8 @@ describe("useDictation · streaming ② the release paces out what is already ca
     });
     expect(shipped()).toEqual(Array.from({ length: 20 }, (_, i) => i + 1)); // all of it, in order
     expect(h.sent[0]).toBe("flush"); // …and only THEN the release's own choreography
-    // The drain spends the SAME bucket the live uplink does, so it cannot trip the relay's budget.
-    expect(worstWindowFrames()).toBeLessThanOrEqual(RELAY_FRAME_BUDGET);
-    expect(worstWindowFrames() * KNOBS.frame_ms).toBeLessThanOrEqual(RELAY_MS_BUDGET);
+    // The drain spends the SAME bucket the live uplink does, so no instant takes more than its cap.
+    expect(worstDispatchFrames()).toBeLessThanOrEqual(CAP_FRAMES);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(KNOBS.tail_wait_ms);

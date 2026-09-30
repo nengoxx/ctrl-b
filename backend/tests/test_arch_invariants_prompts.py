@@ -136,9 +136,9 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/automations/service.py", "AutomationService._update"),
         ("app/services/automations/service.py", "AutomationService.claim"),
         # D71 S1 live voice: the WS protocol-error text the relay puts in its `error` downlink frame
-        # when a client floods the uplink past either §3.1 ceiling — the frame-count budget or (S1
-        # review F4) the ms-of-audio budget beside it. Each NAMES the numbers that refused (the
-        # measured burst budget, the multiplier, the configured `frame_ms`, the milliseconds seen),
+        # when a client runs past the uplink allowance (Phase 26 S2, ASR_PLAN §3.3) — its ms-of-audio
+        # budget or (S1 review F4) the frame-count twin beside it. It NAMES the numbers that refused
+        # (which budget, the credit each held, the allowance, the configured `frame_ms`),
         # which is the half a client author acts on — the same operator-facing-diagnostic class as the
         # entries around it. No model ever sees a frame from this socket. `_accept_audio` carries the
         # per-frame twin: the duration one frame may hold, at the rate the client itself declared.

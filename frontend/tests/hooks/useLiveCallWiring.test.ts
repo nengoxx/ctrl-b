@@ -1529,9 +1529,8 @@ describe("useLiveCall — THE UPLINK PACER (A-F2, evidence docs/research/R71)", 
       await act(async () => {
         vi.advanceTimersByTime(5000);
       });
-      // …and 125 frames (2.5 s of audio at 20 ms) arrive at once. Shipped raw, that is a rolling window
-      // far past the relay's 2×-realtime budget — `error{code:"protocol"}` + close 1008, a call that
-      // simply ends mid-sentence with no reconnect.
+      // …and 125 frames (2.5 s of audio at 20 ms) arrive at once. Metered, one dispatch ships only the
+      // cap — the burst the relay's allowance proof counts — and the rest obeys the stale-speech rule.
       await burst(1, 125);
       expect(h.audio).toHaveLength(500 / 20); // the cap, exactly — 25 frames
       expect(h.audio[0]).toBe(1); // …from the head: order is the contract

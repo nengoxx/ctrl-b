@@ -10,8 +10,9 @@ The arms, by what they defend:
 
 * **protocol** — every way a client can break the wire contract closes 1008, and a compliant client
   does not. Including the three uplink caps and what each one bounds: bytes per frame, MILLISECONDS
-  per frame, and both frames and milliseconds over a rolling window (the S1 review's F4 — a byte cap
-  alone lets a compliant client ship ~100x realtime).
+  per frame, and both frames and milliseconds against the wall clock — the uplink allowance (Phase 26
+  S2: a 30 s token bucket + its frame-count twin, the inequality it covers proven at load; the S1
+  review's F4 — a byte cap alone lets a compliant client ship ~100x realtime).
 * **origin** — the ONLY defence a WebSocket has in a CORS-less app (SECURITY_MODEL §2.7).
 * **gates** — `enabled` / no chain / no TTS / busy, and the `live` capability bit's truth table.
 * **wire** — the five-field `turn_detection`, the language rule, TEXT-framed base64 appends whose
@@ -36,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import itertools
 import json
 import logging
 import re
@@ -61,10 +63,20 @@ from websockets.http11 import Response
 
 from app.adapters.voice import VoiceClient
 from app.api import voice as voice_api
-from app.config import LiveCfg, Settings, VoiceServiceCfg
+from app.config import (
+    BUCKET_CAP_MS,
+    KEEPALIVE_HORIZON_MS,
+    UPLINK_ALLOWANCE_MS,
+    ConfigValidationError,
+    LiveCfg,
+    Settings,
+    VoiceServiceCfg,
+    load_settings,
+)
 from app.core.audio import SPEACHES_WIRE_RATE, Pcm16Resampler
 from app.core.provider_registry import resolve_lenient
 from app.domain.provider import LivePolicy, SttPolicy, TtsPolicy
+from app.services import voice_live
 from app.services.call_trail import CallTrail
 from app.services.voice_live import (
     LiveRelaySession,
@@ -312,6 +324,31 @@ def _drain_until(ws: Any, kind: str, *, limit: int = 40) -> dict[str, Any]:
     raise AssertionError(f"no {kind!r} frame within {limit} frames")
 
 
+class _Clock:
+    """The RELAY's clock, stepped by hand (ASR_PLAN §7.1 S2; the `test_multihome_d47.py` fake-monotonic
+    precedent). Patched onto the relay module's own `time` binding rather than onto `time.monotonic`
+    itself: the TestClient's event loop reads that same function, and a frozen or jumping loop clock
+    would stall or fire every timer the relay arms. `time()` stays real — the trail's wall stamps."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+    time = staticmethod(time.time)
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> _Clock:
+    fake = _Clock()
+    monkeypatch.setattr(voice_live, "time", fake)
+    return fake
+
+
 # ── 1. protocol ───────────────────────────────────────────────────────────────────────────────────
 
 
@@ -366,28 +403,30 @@ def test_oversized_frame_is_a_protocol_close() -> None:
         assert _closed(ws)[0] == 1008
 
 
-def test_frame_rate_ceiling_closes_a_flood_but_not_a_compliant_client() -> None:
-    """§3.1's ENFORCED ceiling: > 2x the nominal `1000/frame_ms` per second over a 2 s window.
+def test_the_frames_budget_closes_a_tiny_frame_flood_but_not_the_full_allowance(clock: _Clock) -> None:
+    """ASR_PLAN §3.3's frame-COUNT twin: `UPLINK_ALLOWANCE_MS / frame_ms` frames of credit, refilled at
+    the nominal `1000/frame_ms` per wall second. It is what sees a flood of TINY messages — each one a
+    base64 decode plus a Silero pass upstream — that carries so little audio the ms budget never notices.
 
-    With `frame_ms: 40` the nominal is 25/s, so the burst budget is 100 frames in 2 s. 60 frames back
-    to back is inside it (a jitter catch-up must not be punished); 130 is not.
+    On a frozen clock (no refill) with `frame_ms: 200` the twin holds 150 frames: 150 back to back pass
+    (3 s of audio, a tenth of the ms budget), the 151st is refused, naming the budget that refused it.
     """
-    fake = FakeSpeaches([created()])
-    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"frame_ms": 200})
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
         _ready(ws, rate=SPEACHES_WIRE_RATE)
-        for _ in range(60):
-            ws.send_bytes(_pcm(960))
+        for _ in range(150):
+            ws.send_bytes(_pcm(480))  # 20 ms each
         ws.send_json({"type": "stop"})
         assert _drain_until(ws, "state")["state"] == "ended"
         assert _closed(ws)[0] == 1000
 
-    fake = FakeSpeaches([created()])
-    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"frame_ms": 200})
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
         _ready(ws, rate=SPEACHES_WIRE_RATE)
-        for _ in range(130):
-            ws.send_bytes(_pcm(960))
+        for _ in range(151):
+            ws.send_bytes(_pcm(480))
         frame = _drain_until(ws, "error")
-        assert frame["code"] == "protocol" and "frame rate" in frame["message"]
+        assert frame["code"] == "protocol" and "(frames budget)" in frame["message"]
         assert _closed(ws)[0] == 1008
 
 
@@ -407,31 +446,223 @@ def test_a_frame_carrying_too_much_audio_is_a_protocol_close() -> None:
         assert _closed(ws)[0] == 1008
 
 
-def test_the_audio_rate_ceiling_closes_a_few_huge_frames_but_not_a_realtime_client() -> None:
-    """The second budget on the same rolling window (F4): the COUNT budget bounds per-message CPU, the
-    MS budget bounds audio THROUGHPUT, and each alone is trivially evaded.
+def test_the_ms_budget_closes_a_few_huge_frames_that_a_frame_count_would_wave_through(clock: _Clock) -> None:
+    """The ms budget beside the twin (F4): the COUNT budget bounds per-message CPU, the MS budget bounds
+    audio THROUGHPUT, and each alone is trivially evaded.
 
-    With `frame_ms` 40 the count budget is 100 frames per 2 s and the ms budget is 4000 ms per 2 s. A
-    client sending 80 ms frames (exactly the per-frame ceiling) mounts a 2x-realtime flood with 51
-    messages — half the count budget — so counting frames would wave it through.
+    With `frame_ms: 200` the allowance is 30 000 ms or 150 frames. Frames at the per-frame ceiling
+    (400 ms) spend it in 75 messages — half the frame credit — so a count alone would pass the 76th,
+    which is 30.4 s of audio ahead of a clock that has not moved.
     """
-    fake = FakeSpeaches([created()])
-    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"frame_ms": 200})
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
         _ready(ws, rate=SPEACHES_WIRE_RATE)
-        for _ in range(50):
-            ws.send_bytes(_pcm(960))  # 50 x 40 ms = 2000 ms in the window: exactly realtime
+        for _ in range(75):
+            ws.send_bytes(_pcm(9600))  # 400 ms each: exactly the allowance, in 75 messages
         ws.send_json({"type": "stop"})
         assert _drain_until(ws, "state")["state"] == "ended"
         assert _closed(ws)[0] == 1000
 
-    fake = FakeSpeaches([created()])
-    with _fake_app(fake).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"frame_ms": 200})
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
         _ready(ws, rate=SPEACHES_WIRE_RATE)
-        for _ in range(51):
-            ws.send_bytes(_pcm(1920))  # 51 x 80 ms = 4080 ms, in 51 messages
+        for _ in range(76):
+            ws.send_bytes(_pcm(9600))
         frame = _drain_until(ws, "error")
-        assert frame["code"] == "protocol" and "audio rate" in frame["message"]
+        assert frame["code"] == "protocol" and "(ms budget)" in frame["message"]
         assert _closed(ws)[0] == 1008
+
+
+# ── 1b. the uplink allowance (Phase 26 S2, ASR_PLAN §3.3 / Q2) ───────────────────────────────────────
+#
+# A real-time source can arrive LATE by any amount but never AHEAD of the wall clock by more than the
+# reservoirs between the mic and the relay hold; one constant covers them, and `LiveCfg` proves it at
+# load. The bucket's arithmetic is pinned one frame at a time on an ARMED session (`_bucket`) — no socket
+# between the test and the clock — and the ends of it through the real route on a frozen clock.
+
+
+def _bucket(**cfg: Any) -> LiveRelaySession:
+    """A relay session with its allowance ARMED, as `run()` arms it just before `ready`. `_note_frame`
+    is synchronous and reads only the clock, `frame_ms` and its own credit."""
+    session = LiveRelaySession(
+        None,  # type: ignore[arg-type] — the bucket never touches the socket
+        cfg=LiveCfg(**cfg),
+        target=target("speaches", "http://ear:9000/v1", model="parakeet"),
+        policy=LivePolicy(language="en"),
+    )
+    session._arm_allowance()
+    return session
+
+
+def _need(buffered: int, backlog: int, frame_ms: int) -> int:
+    """§3.3's right-hand side, spelled out once here so the test is not a copy of the validator's code."""
+    return KEEPALIVE_HORIZON_MS + max(buffered, backlog) + buffered + BUCKET_CAP_MS + 2 * frame_ms
+
+
+def test_the_allowance_covers_every_reservoir_at_the_defaults() -> None:
+    cfg = LiveCfg()
+    need = _need(cfg.buffered_ceiling_ms, cfg.call_backlog_ms, cfg.frame_ms)
+    assert need == 12_580  # the plan's number: 10 000 + 1000 + 1000 + 500 + 2×40
+    assert UPLINK_ALLOWANCE_MS == 30_000 and UPLINK_ALLOWANCE_MS >= need
+
+
+def test_the_inequality_holds_over_every_accepted_config_and_names_its_terms() -> None:
+    """Every corner of the three terms' bounds either LOADS — and then the allowance covers it — or is
+    refused at load with a message naming every term and its value (a Conf 422, below). No accepted
+    config can leave a legit client able to trip the relay."""
+    fields = LiveCfg.model_fields
+    corners = {
+        name: (
+            fields[name].default,
+            *(m.ge for m in fields[name].metadata if hasattr(m, "ge")),
+            *(m.le for m in fields[name].metadata if hasattr(m, "le")),
+        )
+        for name in ("buffered_ceiling_ms", "call_backlog_ms", "frame_ms")
+    }
+    loaded = refused = 0
+    for buffered, backlog, frame_ms in itertools.product(*corners.values()):
+        need = _need(buffered, backlog, frame_ms)
+        kw = {"buffered_ceiling_ms": buffered, "call_backlog_ms": backlog, "frame_ms": frame_ms}
+        if need <= UPLINK_ALLOWANCE_MS:
+            LiveCfg(**kw)
+            loaded += 1
+            continue
+        with pytest.raises(ValidationError) as caught:
+            LiveCfg(**kw)
+        message = str(caught.value)
+        for term in (
+            f"uplink allowance ({UPLINK_ALLOWANCE_MS} ms)",
+            f"keepalive horizon ({KEEPALIVE_HORIZON_MS})",
+            f"buffered_ceiling_ms ({buffered})",
+            f"call_backlog_ms ({backlog})",
+            f"pacer bucket ({BUCKET_CAP_MS})",
+            f"frame_ms ({frame_ms})",
+            f"= {need} ms",
+        ):
+            assert term in message
+        refused += 1
+    assert loaded and refused  # the corners really do straddle the bound
+
+
+def test_a_config_that_breaks_the_inequality_is_refused_at_load(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("voice:\n  live:\n    buffered_ceiling_ms: 10000\n", encoding="utf-8")
+    with pytest.raises(ConfigValidationError, match="must cover the reservoirs"):
+        load_settings(cfg)
+    cfg.write_text("voice:\n  live:\n    buffered_ceiling_ms: 9000\n", encoding="utf-8")  # 28 540 ms
+    assert load_settings(cfg).voice.live.buffered_ceiling_ms == 9000
+
+
+def test_a_late_burst_after_a_stall_passes_from_the_standing_capacity(clock: _Clock) -> None:
+    """The 2026-09-28 death, reversed: a 4G stall delivers its backlog as ONE bunch. The bucket sits
+    full while the phone is on time, so the bunch is paid from that standing capacity — which is why
+    the capacity must cover every reservoir — and it passes; the rolling window read it as a flood."""
+    s = _bucket()  # frame_ms 40
+    for _ in range(250):  # 10 s of a healthy link
+        clock.advance(0.04)
+        s._note_frame(40)
+    clock.advance(12.0)  # the link stalls; the phone keeps recording
+    for _ in range(300):  # …and the 12 s backlog arrives in one instant
+        s._note_frame(40)
+    assert s._stats.budget is None
+    assert s._stats.credit_min_ms == pytest.approx(UPLINK_ALLOWANCE_MS - 12_000, abs=1)
+
+
+def test_sustained_excess_trips_the_ms_budget_within_a_bounded_time(clock: _Clock) -> None:
+    """1.1× realtime — 44 ms of audio every 40 ms of wall — runs 4 ms further ahead per frame, so the
+    30 s allowance is spent in ~300 s and the next frame is refused, naming the ms budget."""
+    s = _bucket()
+    accepted = 0
+    with pytest.raises(voice_live._ProtocolError, match=r"\(ms budget\).*ahead of the wall clock$"):
+        while accepted < 10_000:
+            clock.advance(0.04)
+            s._note_frame(44)
+            accepted += 1
+    assert 299 < accepted * 0.04 < 301
+    assert s._stats.budget == "ms" and s._stats.credit_min_ms is not None and s._stats.credit_min_ms < 44
+
+
+def test_a_tiny_frame_flood_at_realtime_audio_trips_the_frames_budget(clock: _Clock) -> None:
+    """Ten 4 ms frames per 40 ms of wall is REALTIME audio — the ms budget never moves — at ten times
+    the nominal message rate. The frame-count twin is the only thing that sees it (F4)."""
+    s = _bucket()
+    # …and the refusal says what it saw: the frame allowance exhausted, not audio ahead of the clock (R5)
+    with pytest.raises(voice_live._ProtocolError, match=r"\(frames budget\).*a tiny-frame flood$"):
+        for _ in range(5000):
+            clock.advance(0.004)
+            s._note_frame(4)
+    assert s._stats.budget == "frames"
+    assert s._credit_ms > UPLINK_ALLOWANCE_MS - 10  # the audio bucket never noticed
+
+
+def test_standing_credit_is_capped_at_the_allowance(clock: _Clock) -> None:
+    """A minute of silence on the wire leaves the credit capped at 30 s, never 60 — the bucket was
+    already full, and the cap is what stops a slow sender from hoarding minutes and dumping them."""
+    s = _bucket()
+    clock.advance(60.0)
+    for _ in range(750):  # 30 000 ms of 40 ms frames: exactly the cap
+        s._note_frame(40)
+    with pytest.raises(voice_live._ProtocolError, match=r"\(ms budget\)"):
+        s._note_frame(40)
+    assert s._stats.credit_min_ms == 0
+
+
+def test_the_allowance_starts_full_at_ready_and_one_frame_more_trips(
+    clock: _Clock, journal: pytest.LogCaptureFixture
+) -> None:
+    """T0 = `ready`, and the bucket starts FULL: a dictation pumps its pre-`ready` backlog the moment it
+    hears `ready`, before any refill has accrued. Sent here right behind `start` (the backlog a slow
+    handshake builds), the whole allowance passes on a clock that never moves; one frame more trips —
+    and the leg-end line says which budget and how low the credit went (T2)."""
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"frame_ms": 200})
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": SPEACHES_WIRE_RATE, "mode": "dictation"})
+        for _ in range(150):
+            ws.send_bytes(_pcm(4800))  # 200 ms each: 30 000 ms, 150 frames — both buckets, exactly
+        assert _json(ws) == {"type": "state", "state": "ready"}
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+        assert _closed(ws)[0] == 1000
+    clean = _leg_end(journal)
+    assert (clean["reason"], clean["credit_min_ms"], clean["budget"]) == ("stop", "0", "-")
+    journal.clear()
+
+    app = _fake_app(FakeSpeaches([created()]), live_cfg={"frame_ms": 200})
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": SPEACHES_WIRE_RATE, "mode": "dictation"})
+        for _ in range(151):
+            ws.send_bytes(_pcm(4800))
+        assert _json(ws) == {"type": "state", "state": "ready"}
+        frame = _drain_until(ws, "error")
+        assert frame["code"] == "protocol" and "(ms budget)" in frame["message"]
+        assert _closed(ws)[0] == 1008
+    tripped = _leg_end(journal)
+    assert (tripped["reason"], tripped["close_code"], tripped["frames"]) == ("protocol", "1008", "150")
+    assert (tripped["credit_min_ms"], tripped["budget"]) == ("0", "ms")
+
+
+def test_the_allowance_is_armed_just_before_ready_goes_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§3.3's T0 = `ready`: the allowance is armed BEFORE `ready` goes down, never after it. Pinned as an
+    order only — under start-full (and the cap) the arm point is behaviour-neutral: any arm before the
+    first read gives the same full bucket at the first debit."""
+    order: list[str] = []
+    arm, send_down = LiveRelaySession._arm_allowance, LiveRelaySession._send_down
+
+    def arm_spy(self: LiveRelaySession) -> None:
+        order.append("arm")
+        arm(self)
+
+    async def send_spy(self: LiveRelaySession, frame: dict[str, Any]) -> None:
+        order.append(f"down:{frame.get('state', frame.get('type'))}")
+        await send_down(self, frame)
+
+    monkeypatch.setattr(LiveRelaySession, "_arm_allowance", arm_spy)
+    monkeypatch.setattr(LiveRelaySession, "_send_down", send_spy)
+    with _fake_app(FakeSpeaches([created()])).websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        _ready(ws)
+        ws.send_json({"type": "stop"})
+        assert _drain_until(ws, "state")["state"] == "ended"
+    assert order[:2] == ["arm", "down:ready"]
 
 
 # ── 2. origin ─────────────────────────────────────────────────────────────────────────────────────
@@ -1428,7 +1659,7 @@ def test_a_leg_that_keeps_sending_is_never_reaped_and_the_clock_starts_at_the_pu
     with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
         _ready(ws, rate=SPEACHES_WIRE_RATE)  # 2.5 s — no audio sent before it, as the latch rules
         for _ in range(50):
-            ws.send_bytes(_pcm(960))  # 2000 ms of audio at once: inside the 4000 ms/2 s budget
+            ws.send_bytes(_pcm(960))  # 2000 ms of audio at once: well inside the 30 s allowance
         ws.send_json({"type": "stop"})
         assert _drain_until(ws, "state")["state"] == "ended"
         assert _closed(ws)[0] == 1000
@@ -2258,8 +2489,13 @@ def test_a_clean_stop_logs_one_leg_end_with_its_counters(journal: pytest.LogCapt
         "reason": "stop",
         "close_code": "1000",
         "last_err": "bad_chunk",  # the upstream error's CODE — never its message
+        # Phase 26 S2 (T2) — the least allowance credit this leg held (120 ms spent, a few ms of real
+        # wall clock refilled between the frames) and no budget tripped
+        "credit_min_ms": end["credit_min_ms"],
+        "budget": "-",
     }
     assert float(end["duration_s"]) >= 0
+    assert UPLINK_ALLOWANCE_MS - 120 <= int(end["credit_min_ms"]) <= UPLINK_ALLOWANCE_MS
     assert list(end) == [  # the order a reader scans: what, how long, how much, how it ended
         "mode",
         "duration_s",
@@ -2271,6 +2507,8 @@ def test_a_clean_stop_logs_one_leg_end_with_its_counters(journal: pytest.LogCapt
         "reason",
         "close_code",
         "last_err",
+        "credit_min_ms",  # …and the allowance pair LAST (S2), so the S1 order above never moved
+        "budget",
     ]
 
 

@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   accrue,
   BUCKET_CAP_MS,
-  DRAIN_PACE,
   enqueue,
   enqueueBounded,
   newPacer,
@@ -68,7 +67,7 @@ describe("uplinkPacer — the bucket is a wall clock", () => {
     const s = newPacer();
     const out = sink();
     // Each 40 ms callback banks 1.5 × 40 = 60 ms, so it spends one frame and half of a second one —
-    // the pace that drains a backlog without ever sitting on the relay's 2× ceiling.
+    // the pace that drains a backlog in seconds, and only ever of audio the mic already produced.
     for (let i = 1; i <= 6; i++) realtime(s, i, out);
     expect(out.sent).toEqual([1, 2, 3, 4, 5, 6]);
     expect(s.backlog).toEqual([]);
@@ -85,7 +84,7 @@ describe("uplinkPacer — the bucket is a wall clock", () => {
     expect(out.sent).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
-  it("the CAP bounds what one dispatch may spend — the relay's rolling budget, in the client", () => {
+  it("the CAP bounds what one dispatch may spend — a term of the relay's uplink allowance", () => {
     const s = newPacer();
     const out = sink();
     // Five seconds of stall: the worklet kept producing, its MessagePort deliveries queued, and they
@@ -96,10 +95,10 @@ describe("uplinkPacer — the bucket is a wall clock", () => {
     pump(s, FRAME_MS, out.send);
     // Paced per callback that is 125 sends at one instant. Paced by the clock it is the CAP, and only
     // the cap: 500 ms of banked audio ⇒ 12 frames at 40 ms.
+    // …and that cap is what the relay's allowance counts for this dispatch: one TERM of its load-time
+    // inequality (ASR_PLAN §3.3 — keepalive horizon + backlog + send buffer + this cap + two frames,
+    // 12 580 ms at the defaults, against 30 000). The rest leaves at `DRAIN_PACE`, late, never early.
     expect(out.sent).toHaveLength(Math.floor(BUCKET_CAP_MS / FRAME_MS));
-    // …and the cap is what keeps the whole window under the relay's 2×-realtime budget: the worst it
-    // can see is `cap + DRAIN_PACE × window` = 500 + 1.5 × 2000 = 3500 ms against an allowance of 4000.
-    expect(BUCKET_CAP_MS + DRAIN_PACE * 2000).toBeLessThan(2 * 2000);
   });
 });
 

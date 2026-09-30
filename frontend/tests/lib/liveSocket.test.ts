@@ -124,7 +124,7 @@ describe("liveSocket — the uplink", () => {
 
   it("…and only once the relay said `ready` — the handshake window is not a burst (R86 LC-5)", () => {
     // The relay reads nothing between `start` and its pump (it is dialling the upstream), so anything
-    // sent here lands on `_note_frame` in one burst — past ~2 s, a protocol terminal.
+    // sent here lands on `_note_frame` in one burst, spending the uplink allowance on a handshake.
     const { socket, ws, frames } = leg();
     ws.open();
     for (let i = 0; i < 5; i++) socket.sendAudio(new ArrayBuffer(8));
