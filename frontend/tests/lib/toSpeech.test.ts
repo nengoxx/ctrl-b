@@ -113,6 +113,70 @@ describe("toSpeech", () => {
     expect(toSpeech("Hello. **bold never closed", skip)).toBe("Hello. bold never closed");
   });
 
+  // ── session-51 polish #3 (owner ruling Q3) — a ONE-WORD span is emphasis, spoken inline ──────────
+  // "One word" = no whitespace inside the span. A genuine one-word action (`*sighs*`) is spoken too:
+  // "a single word narration is fine."
+
+  it("speaks a one-word span inline — emphasis is part of the dialogue", () => {
+    expect(toSpeech("I *really* mean it.", skip)).toBe("I really mean it.");
+    expect(toSpeech("*sighs* Fine.", skip)).toBe("sighs Fine."); // the ruled price of the simple rule
+  });
+
+  it("still drops a span with whitespace inside it", () => {
+    expect(toSpeech("I *really* mean it. *She turns away.* Bye.", skip)).toBe(
+      "I really mean it. Bye.",
+    );
+    expect(toSpeech("She has *cat ears* on.", skip)).toBe("She has on.");
+  });
+
+  it("a contraction or a hyphenated word is ONE word", () => {
+    expect(toSpeech("I *don't* know.", skip)).toBe("I don't know.");
+    expect(toSpeech("So *self-aware* today.", skip)).toBe("So self-aware today.");
+  });
+
+  it("a span that crosses a line break is an action, even when each line is one word", () => {
+    expect(toSpeech("Hi. *Sighs\ndeeply* Ok.", skip)).toBe("Hi. Ok.");
+  });
+
+  it("punctuation after a kept one-word span does not read as an unclosed action opener", () => {
+    // The kept span's closing `*` + punctuation looks like an `em` opener; the shared regexes' boundary
+    // guard (no opener right after a word character) is what keeps ACTION_OPEN from dropping the rest.
+    expect(toSpeech("*Really*, I mean it.", skip)).toBe("Really, I mean it.");
+    expect(toSpeech("It is *mine*.", skip)).toBe("It is mine.");
+  });
+
+  it("a kept span whose closer follows punctuation is not read as an unclosed opener (wave 3, N1)", () => {
+    expect(toSpeech('"*Really?*" she asked, smiling.', skip)).toBe('"Really?" she asked, smiling.');
+    expect(toSpeech("*Wow!*, that's great.", skip)).toBe("Wow!, that's great.");
+  });
+
+  it("an UNCLOSED one-word tail still drops — mid-stream it could be an action's start", () => {
+    expect(toSpeech("Hello. *really", skip)).toBe("Hello.");
+    expect(toSpeech("I *really* mean it. *She turns", skip)).toBe("I really mean it.");
+  });
+
+  it("inline code and a link inside a one-word span are read — they unwrap BEFORE the action pass", () => {
+    // Pins the pass ORDER (code → links → … → bold → actions → italic): by the time the action replacer
+    // runs, `*`code`*` is already `*code*`, so it is judged as the one word it reads as.
+    expect(toSpeech("Run *`code`* now.", skip)).toBe("Run code now.");
+    expect(toSpeech("See *[word](https://example.com)* now.", skip)).toBe("See word now.");
+  });
+
+  it("a `*` inside inline code is never an action opener — the sentence is spoken whole (wave 2)", () => {
+    expect(toSpeech("Delete `*.tmp` files, then reboot", skip)).toBe(
+      "Delete .tmp files, then reboot",
+    );
+    for (const opts of [{ speakActions: true }, {}]) expect(toSpeech("`a*b`", opts)).toBe("a b");
+  });
+
+  it("with actions spoken (true / absent) every span is unchanged: unwrapped and read", () => {
+    for (const opts of [{ speakActions: true }, {}]) {
+      expect(toSpeech("I *really* mean it. *She turns away.* Bye.", opts)).toBe(
+        "I really mean it. She turns away. Bye.",
+      );
+    }
+  });
+
   it("an all-action reply speaks NOTHING (→ the caller never synthesizes, no empty POST)", () => {
     expect(toSpeech("*He smiles.*", skip)).toBe("");
     expect(toSpeech("*He smiles.*")).toBe("He smiles."); // …and is spoken in full by default
@@ -200,5 +264,18 @@ describe("stableMarkdownPrefix", () => {
     expect(stableMarkdownPrefix("check auto_stop_sil", skip)).toBe("check auto_stop_sil");
     // an unclosed BOLD is still cut by bold's own rule, one pass earlier — not read as an action
     expect(stableMarkdownPrefix("emma is **up and re", skip)).toBe("emma is ");
+  });
+
+  it("a CLOSED one-word span mid-buffer never stalls the prefix (session-51 polish #3)", () => {
+    // The mask blanks every closed span, the one-word ones `toSpeech` now speaks included — otherwise
+    // `*really*`'s opener would stay visible and read-along would cut there until the turn-end flush.
+    const skip = { speakActions: false } as const;
+    const md = "I *really* mean it. And I *don't* care";
+    expect(stableMarkdownPrefix(md, skip)).toBe(md);
+    expect(toSpeech(stableMarkdownPrefix(md, skip), skip)).toBe(
+      "I really mean it. And I don't care",
+    );
+    // …while an unclosed tail after it still holds, exactly as before
+    expect(stableMarkdownPrefix("I *really* mean it. *She tur", skip)).toBe("I *really* mean it. ");
   });
 });

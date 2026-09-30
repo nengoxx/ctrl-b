@@ -5469,7 +5469,9 @@ speakable — closes the read-along mid-span leak, the owner's "scratching"), an
 `voice.tts.speak_actions: false` (shipped default true; **re-ruled FALSE 2026-09-22** — the owner's
 first live round wanted dialogue-only as the resting state; the client's wire-absence fallbacks
 stay `true`, absence = a pre-D74 backend that spoke actions) drops single-asterisk spans entirely — the
-SillyTavern "dialogue only" mode, pairing matched to the eye's markdown, an unclosed opener dropped
+SillyTavern "dialogue only" mode (**amended 2026-09-30, session-51 polish #3:** a ONE-WORD span — no
+whitespace inside — is emphasis and is READ, `*sighs*` included by owner ruling; residual: CJK text has no
+spaces, so a whole-sentence CJK action reads as one word and is spoken), pairing matched to the eye's markdown, an unclosed opener dropped
 to end-of-input, the streaming cut HOLDING at an em opener only under skip. The old "accepted
 residual" ruling on stray delimiters now stands on the scrub, not on tolerance — its "rare shape"
 premise died with roleplay.

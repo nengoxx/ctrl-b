@@ -2828,7 +2828,7 @@ export function ConfTab({ active }: Props) {
               unaffected on purpose — emphasis is something you say, a stage direction is not. */}
           <SettingRow
             label="Speak actions"
-            desc="read *actions* aloud — off → the words between single asterisks are skipped, and only the spoken part is read"
+            desc="read *actions* aloud — off → the words between single asterisks are skipped, and only the spoken part is read (a single *word* is still read)"
           >
             <Switch
               on={!!vtts?.speak_actions}

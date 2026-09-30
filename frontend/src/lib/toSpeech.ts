@@ -10,6 +10,8 @@
 // The table/emoji strips are ours on purpose rather than the TTS server's — Speaches happens to strip
 // some of this, a different OpenAI-compatible endpoint in the failover chain would not.
 
+import { ACTION_OPEN, ACTION_OPENER, ACTION_SPAN } from "./actionSpan";
+
 /** Emoji, as a RUN of code points: `\p{RGI_Emoji}` is a property-of-STRINGS, so it needs the `v` flag
  *  to match a whole ZWJ/skin-tone sequence rather than its pieces (the same regex open-webui landed on
  *  after its code-point version missed the entire BMP emoji block). */
@@ -18,26 +20,23 @@ const EMOJI = /\p{RGI_Emoji}/gv;
 /** D74 — the one speech-shaping option, so this stays a PURE function (the policy lives on the
  *  `ChunkPolicy` the server publishes; nothing here reads module state). `speakActions: false` drops
  *  single-asterisk `*…*` spans — the roleplay ACTION convention — instead of unwrapping them; bold
- *  still unwraps, because emphasis is speech and an action is not. Absent = today's behavior. */
+ *  still unwraps, because emphasis is speech and an action is not. A ONE-WORD span (no whitespace
+ *  inside: `*really*`, `*sighs*`) is emphasis and is read (session-51 polish #3). Absent = today's
+ *  behavior. */
 export interface SpeechOpts {
   speakActions?: boolean;
 }
 
-/** A CLOSED single-asterisk span, in lib/markdown.tsx's `em` spelling (`^\*([^*\s][^*]*)\*`) so the
- *  EAR drops exactly what the EYE italicizes. `[^*]` matches newlines on purpose: a roleplay action
- *  routinely runs over several lines, and the eye's per-line parse is the one that is wrong there. */
-const ACTION_SPAN = /\*[^*\s][^*]*\*/g;
-/** …and the one the model never closed (D74/S2 council ruling: an action is an action even when the
- *  close is missing — without this the `*` scrub below would make its words speakable). Anchored to
- *  end-of-input, so it only ever fires on text nothing will extend. The opener must look like an em
- *  opener (`*` + non-space) and not be half of a `**`, or "3 * 4" and an unclosed bold would delete
- *  the rest of the reply. */
-const ACTION_OPEN = /(?<!\*)\*(?!\*)[^*\s][^*]*$/;
-
 export function toSpeech(md: string, opts: SpeechOpts = {}): string {
   let s = md;
   s = s.replace(/```[\s\S]*?```/g, " "); // fenced code blocks — don't read code aloud
-  s = s.replace(/`([^`]+)`/g, "$1"); // inline code → its text
+  // Inline code → its text, MINUS its asterisks (session-51 polish #3, wave 2). Unwrapped, a code `*`
+  // is loose in the prose, and under `speakActions: false` "Delete `*.tmp` files, then reboot" read as
+  // an unclosed action at `*.tmp` and lost the rest of the sentence. A code `*` is never an action
+  // delimiter (the eye masks it, read-along blanks the span first), and the residual `*` scrub below
+  // would blank it anyway — so blanking it here, to a SPACE like that scrub (`2*3` reads "2 3", not
+  // "23"; the collapse below tidies it), changes nothing audible except that dropped tail (wave 4).
+  s = s.replace(/`([^`]+)`/g, (_, c: string) => c.replace(/\*/g, " "));
   s = s.replace(/<[^>]+>/g, " "); // stray inline HTML tags — don't voice "<div>"
   s = s.replace(/!\[[^\]]*\]\([^)]*\)/g, " "); // images → nothing
   s = s.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1"); // links → the link text
@@ -55,8 +54,21 @@ export function toSpeech(md: string, opts: SpeechOpts = {}): string {
     // D74 — ACTIONS ARE NOT SPEECH. Runs AFTER the bold pass (every closed `**…**` is already
     // unwrapped, so a `*` left here is a single-asterisk one) and BEFORE the italic unwrap, which
     // then handles `_…_` and anything these two deliberately don't match.
-    s = s.replace(ACTION_SPAN, " ");
-    s = s.replace(ACTION_OPEN, " ");
+    // Session-51 polish #3 (owner ruling Q3): only a span with WHITESPACE inside is an action. A
+    // one-word span (`*really*`, `*don't*`, `*self-aware*`) is emphasis inside the dialogue, so it is
+    // spoken inline — a genuine one-word action (`*sighs*`) is spoken too, the accepted price of the
+    // simple rule. `\s` includes `\n`, so a span crossing a line still drops. The one-word span is
+    // returned as-is for the italic pass below (the ONE unwrap path).
+    s = s.replace(ACTION_SPAN, (m) => (/\s/.test(m) ? " " : m));
+    // The UNCLOSED tail keeps dropping whatever its length: mid-stream, a one-word tail is
+    // indistinguishable from an action's start. It is searched on a MASK with every closed span still
+    // standing blanked — the eye's and read-along's order (closed spans first, then the tail) is the
+    // invariant — because a kept span's closer can itself look like an opener: in `"*Really?*" she
+    // asked` the closer follows `?`, not a word character, so the boundary guard doesn't refuse it, and
+    // a bare `replace(ACTION_OPEN)` deleted the rest of the reply (wave 3, confirm N1). Same-length
+    // mask, so its index addresses `s`.
+    const at = s.replace(ACTION_SPAN, (m) => " ".repeat(m.length)).search(ACTION_OPEN);
+    if (at >= 0) s = s.slice(0, at) + " ";
   }
   s = s.replace(/(\*|_)(.*?)\1/g, "$2"); // italic
   s = s.replace(/~~(.*?)~~/g, "$1"); // strikethrough
@@ -105,8 +117,11 @@ const REWRITES: { closed: RegExp; opener: RegExp }[] = [
 /** The single-asterisk pair, added to the list ONLY under `speakActions: false` (see the note above).
  *  It sits last because it must read a buffer whose `**…**` pairs are already blanked; its opener is
  *  the `em` opener — a `*` followed by a non-space that is not half of a `**` — so ordinary prose
- *  ("3 * 4", a bullet, an unclosed bold) still costs read-along nothing. */
-const ACTION_REWRITE = { closed: ACTION_SPAN, opener: /(?<!\*)\*(?!\*)(?=[^*\s])/ };
+ *  ("3 * 4", a bullet, an unclosed bold) still costs read-along nothing.
+ *  `closed` masks EVERY closed span, the one-word ones `toSpeech` now speaks included (session-51
+ *  polish #3): this is a mask, not the drop rule — narrowed to multi-word spans, a closed `*really*`
+ *  would leave its opener visible and read-along would cut there until the turn-end flush. */
+const ACTION_REWRITE = { closed: ACTION_SPAN, opener: ACTION_OPENER };
 
 /** Blank a closed construct WITHOUT moving anything: same length, same line breaks, so the next pass's
  *  indices still address the original string and `.` (which never matches `\n`) still can't span lines. */
