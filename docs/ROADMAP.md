@@ -385,6 +385,70 @@ back to the analysis.
   call); an Undo toast for delete (the stash can hold a `deleted` variant — an added column, not a
   sibling table).
 
+### A15. Conversations per agent — the chat-app model (Telegram / Discord style) — **owner ask 2026-10-01 · "I will definitely want that" · design wanted, NOT scheduled**
+
+- **What:** every agent has its OWN conversation(s), and choosing an agent switches the visible chat
+  to that agent's conversation — its latest one, or a fresh greeted one when it has none. Several
+  agents can be working at the same time, each in its own thread, and the owner hops between them
+  the way you hop between people in Telegram or Discord, seeing what each one is working on. In the
+  owner's words: *"we can have different threads with different agents at the same time and we will
+  only have to switch the agent and see what each one is working on at the same time — more like a
+  general chat app like Telegram or Discord, where you can just chat with different persons at the
+  same time."*
+- **Why — what today's model gets wrong:** one view = one thread, and the agent is a per-MESSAGE
+  override on it (A7's `/agent` verb → the D75 sticky pick, which outranks the thread's own D70 pin).
+  Switching agent therefore changes who answers NEXT, never the conversation. Two defects follow from
+  that shape: on a fresh thread the old agent's greeting stays (ISS-49 — patched in place, see
+  below), and mid-chat the next agent reads the previous agent's turns as its OWN prior turns
+  (ISS-50 — unfixed). Per-agent conversations remove both by construction: agents never share a
+  thread, nothing is re-seated or rewritten.
+- **The established pattern:** character-chat apps work this way — SillyTavern (pick a character →
+  its last chat loads; a per-character chat list; group chats are a separate kind), Character.AI
+  (one ongoing chat per character + history), and messengers generally (a conversation list,
+  last-message preview, unread / typing indicators). To be confirmed by a research pass before the
+  design (see below), not assumed from this paragraph.
+- **Seams ALREADY in place (most of the backend exists):**
+  - threads carry their agent: `threads.agent`, the D70 §4.2 pin every `/new` thread gets (ISS-31);
+    `GET /api/threads` lists them newest-`updated_at` first (archived automation runs excluded);
+  - **concurrent agents already run server-side:** turns are server-owned detached tasks (DECISIONS
+    D39) that keep running when the view leaves their thread, with a per-thread turn marker (D38) and
+    the cross-thread `agent.turns.max_active_turns` cap; opening a thread re-attaches to its live turn
+    (`openThread`'s probe → `GET /api/agent/turns/{thread}`, snapshot-primary);
+  - notifications (F1) already emit thread-namespaced `turn_done` / `agent_input` events, and the
+    notification-TAP slice opens a thread;
+  - the agents gallery (D70 §8.4) has a Talk button per agent — the natural "open this agent's chat"
+    door; the backdrop already follows the active agent.
+- **What is genuinely NEW:**
+  - **a conversation-list surface** — none exists today (the only `openThread` caller is the
+    automations history); per-agent rows with a last-message preview and a working / unread badge;
+  - **list-level live status** — which non-open threads have a running turn or unread replies (the
+    turns registry knows the first; "unread" needs a per-thread last-seen marker);
+  - **the pick changes meaning:** the D75 sticky pick becomes NAVIGATION (pick = open that agent's
+    conversation) instead of a per-message override; the D75 tandem rule and `/new` get re-ruled
+    (likely: `/new` = a fresh conversation with the CURRENT agent);
+  - **ISS-49's re-seat stops being a pick trigger** — the `PUT /threads/{id}/opening` route survives
+    only for the recorded `alt_greetings` picker (same agent, another greeting). The owner chose to
+    ship ISS-49 first as the stopgap (2026-10-01), knowing this.
+- **Open questions for the design session:**
+  1. **Per-message agent switching inside ONE conversation** (A7 — handing a fleet question to a
+     specialist mid-chat): drop it, keep it for tool agents only, or turn it into a one-off
+     `@agent` mention for a single reply?
+  2. **One conversation per agent, or many** (a per-agent chat list like SillyTavern's)?
+  3. **Group chats** (several characters in one thread) — out of scope, or a later kind?
+  4. **Where the list lives at 390 px** — a tab, the gallery, a drawer; how a theme skins it
+     (VAPOR_PATTERNS / the theme engine's Surface rules).
+  5. **The root / default agent and the tool agents** — just more chats in the list, or a pinned
+     "assistant" conversation?
+  6. **Legacy threads:** unpinned (pre-D70) threads → the root's; automation run threads stay out.
+  7. **Live voice calls** bind to one thread — what switching chats mid-call does.
+  8. **Per-device state:** the persisted sticky pick becomes "the last open conversation" per device.
+  9. **Unread semantics** across devices (the owner uses the phone and the desktop).
+  10. **Notifications:** a `turn_done` for a thread that is not open → a badge in the list, and
+      the tap opens that conversation.
+- **Next step:** a research pass on peer projects (SillyTavern chats + groups, open-webui, LibreChat,
+  Character.AI-style apps, messenger list UX) → a `docs/research/` dossier → the design session →
+  a D-entry → a TODO phase. Nothing is built for it yet.
+
 ## B. Memory (configurable, pluggable)
 
 ### B1. Selectable memory backends — ✏️ RESHAPED to the TIER MODEL (D57, 2026-08-17)
