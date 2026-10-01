@@ -8,7 +8,10 @@ owner, and it is written the way the agent loop writes every other assistant tur
 
 ONE helper, called from exactly the two enumerated INTERACTIVE creation seams (§4.2): the explicit
 new-thread endpoint and the chat endpoint's auto-created thread, the latter only AFTER
-`_auto_route_agent` has resolved who the turn belongs to. Automation and subagent threads are
+`_auto_route_agent` has resolved who the turn belongs to — plus one REOPEN seam (ISS-49): `PUT
+/threads/{id}/opening`, which replaces a still-FRESH thread's opening (pin + greeting) when the owner
+picks another agent before saying anything. It re-seats a thread one of the two creation seams opened,
+so the headless rule below is untouched. Automation and subagent threads are
 ruled out and reach this module from nowhere — a headless run wants no greeting in its transcript.
 
 **Compaction, by design:** the seeded message is ordinary history, so a long thread's compactor may

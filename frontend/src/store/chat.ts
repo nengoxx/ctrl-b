@@ -543,6 +543,13 @@ export function getThreadAgent(): string | null {
   return state.threadAgent;
 }
 
+/** The open thread's id, NON-reactively — the same imperative-moment family as `getThreadAgent`: the
+ *  pick seam snapshots it before its confirm, so the discard it asks about stays bound to THAT thread
+ *  (ISS-49). Never for rendering. */
+export function getThreadId(): string | null {
+  return state.threadId;
+}
+
 /** Write a thread id learned from the WIRE — the stream's `thread` frame, a buffered turn's payload, an
  *  exec response: the three places a send can MINT a thread. A DIFFERENT id is exactly that mint, and a
  *  just-created thread carries no D11 pin, so the thread agent resets with it. The SAME id is the
@@ -1179,13 +1186,18 @@ let mintTicket: number | null = null;
  *      the fresh thread; a second POST (the double Enter) would only mint a twin into the list;
  *    · SILENTLY when the open thread has no turn in it yet (`hasUserTurn`) AND is pinned to the very
  *      agent this `/new` would mint with — a greeting-only or empty thread IS fresh, so `/new` twice
- *      mints nothing. A fresh thread pinned to ANOTHER agent (`/agent ops` on Seraphina's greeting
- *      thread; the configured default changed meanwhile) is not the thread asked for: it mints, and
- *      the fresh-but-wrong thread stays behind in the list (fix wave 2). A thread-less view proceeds (there is nothing to
- *      keep). Decided from the messages the store already holds — no fetch. The tandem rule still
- *      applies to the PICK there (fix wave 1): with a default set, a standing pick is cleared exactly
- *      as a mint would clear it, so `/agent ops` then `/new` on a fresh default thread still means
- *      "back to the default"; with none set there is nothing to do.
+ *      mints nothing. A fresh thread pinned to ANOTHER agent (the configured default changed
+ *      meanwhile; a fresh thread the owner re-seated by picking — see below) is not the thread asked
+ *      for: it mints, and the fresh-but-wrong thread stays behind in the list (fix wave 2). A
+ *      thread-less view proceeds (there is nothing to keep). Decided from the messages the store already
+ *      holds — no fetch. The tandem rule still applies to the PICK there (fix wave 1): with a default
+ *      set, a standing pick is cleared exactly as a mint would clear it; with none set there is nothing
+ *      to do. Since ISS-49 a pick on a fresh thread RE-SEATS it (`reseatOpening`), so `/agent ops` on a
+ *      fresh default thread makes it an ops thread: a later `/new` with a default set then MINTS a new
+ *      default thread (the pick cleared) and leaves the re-seated ops thread behind — the same
+ *      fresh-but-wrong class as above, not a re-seat back (ROADMAP A15's per-agent conversations turn
+ *      those left-behind threads into each agent's own conversation); with none set the kept pick IS
+ *      the re-seated pin, so `/new` there is the silent no-op.
  *
  *  **Fetch first, swap second** (the `openThread` pattern): the mint AND the minted thread's history are
  *  in hand before the view is touched, so the owner never stares at an emptied chat while the request is
@@ -1282,6 +1294,16 @@ export async function startNewThread(opts: {
   writeSticky(stickyAgent);
   loaded = true; // a later `initChat` must not replace this with the most-recent thread
   // No re-attach probe (`openThread` runs one): a thread minted this instant has no turn to rejoin.
+  // ISS-49: a pick made WHILE the mint was in flight was too late to mint with — re-seat the fresh
+  // thread's opening to it (a minted thread holds no edit to lose). Only a CHANGED pick: an unchanged
+  // one was minted with, and still differing from the pin means the server resolved it elsewhere (a
+  // since-deleted name, folded to the root) — a re-seat would only 422 on it.
+  if (
+    state.stickyAgent !== stickyAtEntry &&
+    state.stickyAgent &&
+    state.stickyAgent !== opened.thread.agent
+  )
+    void reseatOpening(state.stickyAgent);
 }
 
 function emptyAssistant(id: string, agent: string | null = null): ChatMessage {
@@ -3136,12 +3158,19 @@ function actionable(): boolean {
  *  with the host id the first one just replaced (an honest 409, but a pointless one). */
 let syncInFlight = false;
 
-/** Run ONE of the three sync routes (swap/edit/delete) and install the floor it answers with. A refusal
- *  (409 stale/busy/folded, 422, 404, 403) says the server's own sentence and re-reads the floor — the
- *  usual cause is a view that no longer matches the thread (another device acted), and the fresh floor is
- *  the fix. `before` runs just ahead of the install (the edit's audio forget). Resolves whether the route
- *  TOOK the change — `false` for a refusal, a failure, or a local one (a turn streaming, a route already
- *  in flight): the editor uses it to hand the owner's typed text back. */
+/** ISS-49 — an opening re-seat that found a sync route in flight (`reseatOpening`), PARKED with the
+ *  thread it was asked for and whether the owner confirmed discarding that thread's edited opening. The
+ *  route's `finally` runs ONE more re-seat for whatever the pick is by then — latest intent wins, no
+ *  queue — and only while that same thread is still the one in view. */
+let reseatParked: { threadId: string; discard: boolean } | null = null;
+
+/** Run ONE of the sync routes (swap/edit/delete, and ISS-49's opening re-seat) and install the floor it
+ *  answers with. A refusal (409 stale/busy/folded, 422, 404, 403) says the server's own sentence and
+ *  re-reads the floor — the usual cause is a view that no longer matches the thread (another device
+ *  acted), and the fresh floor is the fix. `before` runs just ahead of the install (the edit's audio
+ *  forget). An answer that carries the `thread` too (the re-seat) installs its pin as `threadAgent`.
+ *  Resolves whether the route TOOK the change — `false` for a refusal, a failure, or a local one (a turn
+ *  streaming, a route already in flight): the editor uses it to hand the owner's typed text back. */
 async function syncMessageRoute(
   url: string,
   init: RequestInit,
@@ -3159,9 +3188,12 @@ async function syncMessageRoute(
       await reloadFloor();
       return false;
     }
-    const data = (await res.json()) as { messages?: unknown };
+    const data = (await res.json()) as { messages?: unknown; thread?: Thread };
     if (!Array.isArray(data.messages)) throw new Error("no floor");
     before?.();
+    // The re-seat's new pin lands even under a turn that started meanwhile: the server DID re-seat, and
+    // that turn's own floor will not carry the pin.
+    if (data.thread) set({ threadAgent: data.thread.agent ?? null });
     // A turn that started meanwhile will land its own floor; the change itself was taken either way.
     if (getChatStatus() !== "streaming") applyFloor(data.messages as ChatMessage[]);
     return true;
@@ -3170,6 +3202,12 @@ async function syncMessageRoute(
     return false;
   } finally {
     syncInFlight = false;
+    const parked = reseatParked;
+    reseatParked = null;
+    // Opening another thread meanwhile drops the parked re-seat: a pick never re-seats a thread it was
+    // not made on.
+    if (parked && state.threadId === parked.threadId)
+      void reseatOpening(state.stickyAgent ?? "", parked.discard ? parked.threadId : null);
   }
 }
 
@@ -3417,6 +3455,60 @@ export async function deleteMessage(messageId: string): Promise<void> {
     threadPath(threadId, messageId),
     { method: "DELETE" },
     "could not delete the message",
+  );
+}
+
+// ── ISS-49 — a pick on a FRESH thread re-seats its opening (pin + greeting) ──────────────────────────
+
+/** Would picking `name` re-seat the open thread's opening? A real name (a bare `/agent` clear never
+ *  re-seats), a thread to re-seat, no turn taken in it yet (`hasUserTurn` — the server's `is_owner_turn`
+ *  refuses the same set), and a pin that differs. Read from LIVE state on every call — the pick seam asks
+ *  before its confirm, and `reseatOpening` asks again after it. */
+export function wouldReseat(name: string): boolean {
+  return (
+    name !== "" &&
+    state.threadId !== null &&
+    !hasUserTurn(state.messages) &&
+    name !== state.threadAgent
+  );
+}
+
+/** Does the open thread's opening carry the owner's own edit (D81 `edited`)? A re-seat would discard
+ *  it, so the pick seam asks first (`lib/composer#pinStickyAgent`) — never a silent loss. */
+export function openingEdited(): boolean {
+  return state.messages.some((m) => !!m.edited);
+}
+
+/** Replace the open thread's opening with `name`'s — `PUT /api/threads/{id}/opening` (ISS-49): the owner
+ *  ran `/new` (minted for the default) and picked another agent before saying anything, so the thread
+ *  should open as THAT agent, greeting and who-line alike. Called explicitly by the pick seam and by
+ *  `/new`'s tail — never from a subscription, so opening or hydrating a thread never re-seats.
+ *
+ *  A no-op unless `wouldReseat(name)`, and while the opening is edited unless the caller's confirm
+ *  covers it: `discardFor` is the THREAD the owner confirmed discarding an edited opening on (the id the
+ *  confirm was asked about), honoured only while that thread is still the one in view — a confirm never
+ *  travels to another thread's edit. Runs through the D81 `syncMessageRoute` — same thread id, so no
+ *  `swapView` — which installs the floor + the new pin, or says the server's refusal (an addendum to the
+ *  pick note) and re-reads the floor. A sync route already in flight (an earlier re-seat, a D81
+ *  edit/delete) parks this one (`reseatParked`, its confirm OR-ed into one already parked for the same
+ *  thread): that route's `finally` re-runs it ONCE for the pick as it stands then. */
+export async function reseatOpening(name: string, discardFor: string | null = null): Promise<void> {
+  const discard = discardFor !== null && discardFor === state.threadId;
+  if (!wouldReseat(name) || (openingEdited() && !discard)) return;
+  const threadId = state.threadId!;
+  if (syncInFlight) {
+    const kept = reseatParked?.threadId === threadId && reseatParked.discard;
+    reseatParked = { threadId, discard: discard || kept };
+    return;
+  }
+  await syncMessageRoute(
+    `/api/threads/${encodeURIComponent(threadId)}/opening`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: name, discard_edited: discard }),
+    },
+    "could not switch the greeting",
   );
 }
 

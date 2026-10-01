@@ -52,6 +52,8 @@ _MUTATION_MARKERS = (
     "alternates.",
     "messages.delete_ids(",
     "messages.edit_text(",
+    # ISS-49 — the opening re-seat re-pins the thread row (the one writer after `create`).
+    "threads.set_agent(",
 )
 
 
@@ -86,8 +88,8 @@ def _code_only(src: str) -> str:
 #: Handlers allowed to mutate WITHOUT a marker. Empty today — additions need a D38-level ruling.
 _EXEMPT: frozenset[str] = frozenset()
 
-#: The complete guarded set as of ACA Slice 2 (D38), widened by D81's four message-action routes. A new
-#: guarded endpoint updates this pin.
+#: The complete guarded set as of ACA Slice 2 (D38), widened by D81's four message-action routes and
+#: ISS-49's opening re-seat. A new guarded endpoint updates this pin.
 _EXPECTED = {
     "chat",
     "resume",
@@ -99,6 +101,7 @@ _EXPECTED = {
     "select_alternate",
     "delete_message",
     "edit_message",
+    "reseat_opening",
 }
 
 

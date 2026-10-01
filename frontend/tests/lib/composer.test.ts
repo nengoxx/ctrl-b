@@ -14,12 +14,18 @@ vi.mock("../../src/store/chat", () => ({
   compactThread: vi.fn(),
   startNewThread: vi.fn(),
   getThreadAgent: vi.fn(() => null), // the open thread's pin — none unless an arm says so
+  getThreadId: vi.fn(() => "t1"),
   setSessionMode: vi.fn(),
   setStickyAgent: vi.fn(),
   setSessionPrivilege: vi.fn(),
   pushSystemNote: vi.fn(),
+  // ISS-49 — the pick seam's re-seat: no fresh thread to re-seat unless an arm says so.
+  wouldReseat: vi.fn(() => false),
+  openingEdited: vi.fn(() => false),
+  reseatOpening: vi.fn(() => Promise.resolve()),
 }));
 vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
+vi.mock("../../src/store/confirm", () => ({ requestConfirm: vi.fn(() => Promise.resolve(true)) }));
 
 import {
   agentPin,
@@ -44,6 +50,7 @@ import {
   takeComposerSkills,
   toggleComposerSkill,
 } from "../../src/store/composerSkills";
+import { requestConfirm } from "../../src/store/confirm";
 import { setUI } from "../../src/store/ui";
 
 // loadSkills/loadAgents fire a best-effort fetch on import; make it a quiet no-op so nothing hits the
@@ -423,22 +430,22 @@ describe("pinStickyAgent — the sticky switch", () => {
   const lastNote = () => vi.mocked(chat.pushSystemNote).mock.calls.at(-1)?.[0];
 
   it('`""` CLEARS the pin — back to the thread\'s pin, else the default', () => {
-    pinStickyAgent("");
+    void pinStickyAgent("");
     expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
     expect(lastNote()).toBe("// agent → maya (default)");
   });
 
   it("the default's own NAME pins it — with the default's note, not the typo's", () => {
-    pinStickyAgent("maya");
+    void pinStickyAgent("maya");
     expect(chat.setStickyAgent).toHaveBeenLastCalledWith("maya");
     expect(lastNote()).toBe("// agent → maya (default)");
   });
 
   it("a specialist pins; an unknown name still pins, and the note says it will fall back", () => {
-    pinStickyAgent("ops");
+    void pinStickyAgent("ops");
     expect(chat.setStickyAgent).toHaveBeenLastCalledWith("ops");
     expect(lastNote()).toBe("// agent → ops");
-    pinStickyAgent("typo");
+    void pinStickyAgent("typo");
     expect(chat.setStickyAgent).toHaveBeenLastCalledWith("typo");
     expect(lastNote()).toBe("// agent → typo (not configured — will fall back to default)");
   });
@@ -447,18 +454,74 @@ describe("pinStickyAgent — the sticky switch", () => {
   // through to the THREAD's agent on the server's ladder — the note must name who will answer.
   it("a CLEAR inside a thread pinned to another agent names that agent, not the default", () => {
     vi.mocked(chat.getThreadAgent).mockReturnValueOnce("lynette");
-    pinStickyAgent("");
+    void pinStickyAgent("");
     expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
     expect(lastNote()).toBe("// agent → lynette (this thread's)");
   });
 
   it("…while a thread pinned to the DEFAULT itself, or a by-name pin, keeps the default's note", () => {
     vi.mocked(chat.getThreadAgent).mockReturnValueOnce("maya");
-    pinStickyAgent("");
+    void pinStickyAgent("");
     expect(lastNote()).toBe("// agent → maya (default)");
     vi.mocked(chat.getThreadAgent).mockReturnValueOnce("lynette");
-    pinStickyAgent("maya"); // the default BY NAME outranks the thread's pin — the note is true as is
+    void pinStickyAgent("maya"); // the default BY NAME outranks the thread's pin — the note is true as is
     expect(lastNote()).toBe("// agent → maya (default)");
+  });
+
+  // ISS-49 — a pick on a FRESH thread re-seats its opening. The pin + note stay synchronous (nothing is
+  // awaited before them) unless the pick would discard an opening the owner EDITED: that one asks first.
+  describe("the opening re-seat (ISS-49)", () => {
+    beforeEach(() => {
+      vi.mocked(chat.setStickyAgent).mockClear();
+      vi.mocked(chat.pushSystemNote).mockClear();
+      vi.mocked(chat.reseatOpening).mockClear();
+      vi.mocked(requestConfirm).mockClear();
+    });
+
+    it("no edited opening → pin + note at once, then the re-seat — no confirm", () => {
+      vi.mocked(chat.wouldReseat).mockReturnValueOnce(true);
+      void pinStickyAgent("ops");
+      expect(chat.setStickyAgent).toHaveBeenLastCalledWith("ops"); // synchronous, as before
+      expect(lastNote()).toBe("// agent → ops");
+      expect(chat.reseatOpening).toHaveBeenCalledWith("ops", null); // no discard to confirm
+      expect(requestConfirm).not.toHaveBeenCalled();
+    });
+
+    it("an EDITED opening asks first; Cancel changes nothing — no pin, no note, no re-seat", async () => {
+      vi.mocked(chat.wouldReseat).mockReturnValueOnce(true);
+      vi.mocked(chat.openingEdited).mockReturnValueOnce(true);
+      vi.mocked(chat.getThreadAgent).mockReturnValueOnce("lynette");
+      vi.mocked(requestConfirm).mockResolvedValueOnce(false);
+      await pinStickyAgent("ops");
+      expect(requestConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({ confirmLabel: "Switch", danger: true }),
+      );
+      expect(vi.mocked(requestConfirm).mock.calls[0][0].body).toMatch(/lynette.*ops/);
+      expect(chat.setStickyAgent).not.toHaveBeenCalled();
+      expect(chat.pushSystemNote).not.toHaveBeenCalled();
+      expect(chat.reseatOpening).not.toHaveBeenCalled();
+    });
+
+    it("…Switch pins, notes, and re-seats with the discard confirmed FOR the thread asked about", async () => {
+      vi.mocked(chat.wouldReseat).mockReturnValueOnce(true);
+      vi.mocked(chat.openingEdited).mockReturnValueOnce(true);
+      vi.mocked(requestConfirm).mockImplementationOnce(() => {
+        vi.mocked(chat.getThreadId).mockReturnValue("t2"); // the view moves while the dialog is open
+        return Promise.resolve(true);
+      });
+      await pinStickyAgent("ops");
+      vi.mocked(chat.getThreadId).mockReturnValue("t1");
+      expect(chat.setStickyAgent).toHaveBeenLastCalledWith("ops");
+      expect(lastNote()).toBe("// agent → ops");
+      expect(chat.reseatOpening).toHaveBeenCalledWith("ops", "t1"); // snapshotted BEFORE the dialog
+    });
+
+    it("an edit on a thread the pick would NOT re-seat (a bare clear, a turn taken) never asks", () => {
+      vi.mocked(chat.openingEdited).mockReturnValueOnce(true); // wouldReseat stays false
+      void pinStickyAgent("");
+      expect(requestConfirm).not.toHaveBeenCalled();
+      expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
+    });
   });
 });
 

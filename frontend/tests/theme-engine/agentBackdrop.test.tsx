@@ -333,7 +333,7 @@ describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-
     const view = draw(<AgentTab active />);
     expect(src(view.container)).toBe(painted("hall"));
     act(() => {
-      pinStickyAgent("lynette"); // the menu's row
+      void pinStickyAgent("lynette"); // the menu's row
     });
     expect(src(view.container)).toBe(painted("lynette"));
     serveCompletedTurn();
@@ -350,7 +350,7 @@ describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-
     // A call's turns route by the same ladder (`sendMessage` reads the sticky pin), so the call surface
     // wears the menu's pick — the call-side wiring is pinned in callOverlay's own suite.
     act(() => {
-      pinStickyAgent("lynette");
+      void pinStickyAgent("lynette");
     });
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
@@ -365,7 +365,7 @@ describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-
     const view = draw(<AgentTab active />);
     expect(src(view.container)).toBe(painted("lynette"));
     act(() => {
-      pinStickyAgent("");
+      void pinStickyAgent("");
     });
     expect(src(view.container)).toBe(painted("hall"));
   });
@@ -561,7 +561,7 @@ describe("the OPEN THREAD's pin is the ladder's second rung (wave 1c)", () => {
     const view = draw(<AgentTab active />);
     expect(src(view.container)).toBe(painted("lynette"));
     act(() => {
-      pinStickyAgent("default");
+      void pinStickyAgent("default");
     });
     expect(src(view.container)).toBe(painted("hall"));
   });

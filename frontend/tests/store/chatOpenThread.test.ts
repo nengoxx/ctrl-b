@@ -61,6 +61,10 @@ let mintAgent: string | null | undefined;
  *  user bubbles, and drops local ones the server no longer lists. */
 let probeQueue: { entry_id: string; kind: string; text: string }[] | undefined;
 
+/** ISS-49 — when set, `PUT /api/threads/{id}/opening` REFUSES with this status + `{detail}` sentence;
+ *  `null` → it re-seats (the new pin, a one-row greeting `greet-<agent>`). */
+let reopenRefusal: { status: number; detail: string } | null = null;
+
 /** A `fetch` stub whose per-URL responses can be DEFERRED: `hold(url)` parks every request for EXACTLY
  *  that URL (a POST is keyed `POST <url>`) until `release(url)`, which is how a slow loader is made to
  *  land after a fast one. Exact
@@ -77,14 +81,46 @@ function deferrableFetch() {
   const calls: string[] = [];
   /** Every `POST /api/threads` body, parsed (`null` = a bodyless POST) — what `/new` minted with. */
   const mints: ({ agent?: string } | null)[] = [];
+  /** Every `PUT /api/threads/{id}/opening` (ISS-49's re-seat), with its parsed body. */
+  const reopens: { url: string; body: { agent: string; discard_edited: boolean } }[] = [];
   const impl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-    // A POST is keyed `POST <url>` — `/api/threads` is BOTH the list read and the mint, and an arm must be
-    // able to park one without the other.
+    // A write is keyed `<METHOD> <url>` — `/api/threads` is BOTH the list read and the mint, and an arm
+    // must be able to park one without the other.
     const url = String(input);
-    const key = init?.method === "POST" ? `POST ${url}` : url;
+    const method = init?.method ?? "GET";
+    const key = method === "GET" ? url : `${method} ${url}`;
     calls.push(key);
     let payload: unknown;
-    if (key === "POST /api/threads") {
+    if (method === "PUT" && url.endsWith("/opening")) {
+      // ISS-49's re-seat: the server re-pins and seeds the new agent's greeting — or refuses.
+      const body = JSON.parse(String(init?.body)) as { agent: string; discard_edited: boolean };
+      reopens.push({ url, body });
+      const id = url.split("/")[3];
+      if (reopenRefusal) {
+        const { status, detail } = reopenRefusal;
+        return Promise.resolve({
+          ok: false,
+          status,
+          json: async () => ({ detail }),
+        } as unknown as Response);
+      }
+      histories[id] = [msg(`greet-${body.agent}`, id, `${body.agent} says hello`)];
+      threadList = threadList.map((t) => (t.id === id ? { ...t, agent: body.agent } : t));
+      payload = {
+        thread: {
+          id,
+          title: null,
+          agent: body.agent,
+          created_at: "",
+          updated_at: "",
+          archived: false,
+        },
+        messages: histories[id],
+      };
+    } else if (method !== "GET" && url.includes("/messages/")) {
+      // A D81 sync route (edit/delete/swap): it answers with the thread's floor.
+      payload = { messages: histories[url.split("/")[3]] ?? [] };
+    } else if (key === "POST /api/threads") {
       const body = init?.body ? (JSON.parse(String(init.body)) as { agent?: string }) : null;
       mints.push(body);
       payload = {
@@ -116,6 +152,7 @@ function deferrableFetch() {
     impl,
     calls,
     mints,
+    reopens,
     hold: (url: string) => held.add(url),
     release: (url: string) => {
       for (const resolve of pending.get(url) ?? []) resolve();
@@ -149,6 +186,7 @@ beforeEach(() => {
   histories = {};
   mintAgent = undefined;
   probeQueue = undefined;
+  reopenRefusal = null;
   net = deferrableFetch();
   vi.stubGlobal("fetch", net.impl);
 });
@@ -779,5 +817,221 @@ describe("`/new` mints the thread through seam ① (ISS-31)", () => {
     expect(result.current.threadId).toBe("fresh");
     expect(result.current.stickyAgent).toBe("ops");
     expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: "ops" });
+  });
+});
+
+// ── ISS-49 — a pick on a FRESH thread re-seats its opening (pin + greeting) ───────────────────────────
+// `/new` mints for the default (the tandem rule), so the owner's pick right after it must replace the
+// thread's opening too — or the who-line keeps the old agent and the picked agent's model reads that
+// greeting as its own turn. The store's `reseatOpening` runs the PUT through the D81 `syncMessageRoute`
+// (same thread id: no view swap); the trigger is re-derived from LIVE state on every call.
+describe("a pick on a fresh thread re-seats its opening (ISS-49)", () => {
+  /** Open lynette's greeting-only thread (the generic history = ONE agent-authored message). */
+  async function greeted(chat: Awaited<ReturnType<typeof freshChat>>, history?: ChatMessage[]) {
+    threadList = [{ id: "greeted", agent: "lynette" }];
+    if (history) histories.greeted = history;
+    const hook = renderHook(() => chat.useChat());
+    await chat.openThread("greeted");
+    await waitFor(() => expect(hook.result.current.threadAgent).toBe("lynette"));
+    return hook;
+  }
+
+  it("the trigger: a real name, a thread, no turn taken, a different pin", async () => {
+    const chat = await freshChat();
+    expect(chat.wouldReseat("emma")).toBe(false); // no thread in view
+    await greeted(chat);
+    expect(chat.wouldReseat("emma")).toBe(true);
+    expect(chat.wouldReseat("lynette")).toBe(false); // the pin it already has
+    expect(chat.wouldReseat("")).toBe(false); // a bare `/agent` clear never re-seats
+
+    const talked = await freshChat();
+    await greeted(talked, [msg("g", "greeted", "hi"), userMsg("u1", "greeted", "hello")]);
+    expect(talked.wouldReseat("emma")).toBe(false); // the owner spoke
+
+    const ran = await freshChat();
+    await greeted(ran, [
+      msg("g", "greeted", "hi"),
+      { ...msg("x1", "greeted", "ls"), actor: "user" },
+    ]);
+    expect(ran.wouldReseat("emma")).toBe(false); // a `!cmd` the owner ran is a turn too
+  });
+
+  it("re-seats in place: the PUT, the new floor, the new pin — same thread, the pick untouched", async () => {
+    const chat = await freshChat();
+    const { result } = await greeted(chat);
+    chat.setStickyAgent("emma");
+    await chat.reseatOpening("emma");
+
+    expect(net.reopens).toEqual([
+      { url: "/api/threads/greeted/opening", body: { agent: "emma", discard_edited: false } },
+    ]);
+    expect(result.current.threadId).toBe("greeted");
+    expect(result.current.messages.map((m) => m.id)).toEqual(["greet-emma"]);
+    expect(result.current.threadAgent).toBe("emma");
+    expect(result.current.stickyAgent).toBe("emma"); // KEPT after a re-seat
+    expect(result.current.messages.some((m) => m.role === "system")).toBe(false);
+  });
+
+  it("an EDITED opening is never discarded silently — only with the caller's confirm", async () => {
+    const chat = await freshChat();
+    await greeted(chat, [
+      { ...msg("g", "greeted", "tea, with honey?"), edited: "2026-10-01T10:00:00Z" },
+    ]);
+    expect(chat.openingEdited()).toBe(true);
+    await chat.reseatOpening("emma");
+    expect(net.reopens).toHaveLength(0);
+
+    await chat.reseatOpening("emma", "elsewhere"); // a confirm given for ANOTHER thread is no confirm
+    expect(net.reopens).toHaveLength(0);
+    await chat.reseatOpening("emma", "greeted");
+    expect(net.reopens.map((r) => r.body)).toEqual([{ agent: "emma", discard_edited: true }]);
+  });
+
+  it("the new pin lands even when a turn is streaming at landing; the floor waits for that turn", async () => {
+    const chat = await freshChat();
+    const { result } = await greeted(chat);
+    const base = net.impl.getMockImplementation()!;
+    net.impl.mockImplementation((input, init) =>
+      String(input) === "/api/agent/chat"
+        ? new Promise<Response>(() => {}) // the turn is still going
+        : base(input, init),
+    );
+    net.hold("PUT /api/threads/greeted/opening");
+    const reseat = chat.reseatOpening("emma");
+    void chat.sendMessage("hello");
+    expect(chat.getChatStatus()).toBe("streaming");
+    net.release("PUT /api/threads/greeted/opening");
+    await reseat;
+
+    expect(result.current.threadAgent).toBe("emma"); // the server DID re-seat
+    expect(result.current.messages.some((m) => m.id === "greet-emma")).toBe(false); // not installed
+  });
+
+  it("a refusal says the server's sentence and re-reads the floor", async () => {
+    reopenRefusal = {
+      status: 409,
+      detail: "this conversation has started — the pick applies from the next reply",
+    };
+    const chat = await freshChat();
+    const { result } = await greeted(chat);
+    // Another device spoke meanwhile — the floor the refusal re-reads carries the turn.
+    histories.greeted = [msg("g", "greeted", "hi"), userMsg("u9", "greeted", "from the phone")];
+    await chat.reseatOpening("emma");
+
+    expect(net.reopens).toHaveLength(1);
+    expect(result.current.threadAgent).toBe("lynette");
+    // The note is the server's sentence verbatim (an addendum to the pick note), and it survives the
+    // re-read: `applyFloor` keeps client-only notes around the durable rows it installs.
+    const notes = result.current.messages.filter((m) => m.role === "system");
+    expect(notes.map((m) => (m.parts[0].type === "text" ? m.parts[0].text : ""))).toEqual([
+      "// this conversation has started — the pick applies from the next reply",
+    ]);
+    expect(result.current.messages.filter((m) => !m.local).map((m) => m.id)).toEqual(["g", "u9"]);
+    expect(chat.wouldReseat("emma")).toBe(false);
+  });
+
+  it("two rapid picks: the second waits for the first, then runs ONCE for the LATEST pick", async () => {
+    const chat = await freshChat();
+    const { result } = await greeted(chat);
+    net.hold("PUT /api/threads/greeted/opening");
+    chat.setStickyAgent("emma");
+    const first = chat.reseatOpening("emma");
+    chat.setStickyAgent("seraphina");
+    await chat.reseatOpening("seraphina"); // a sync route is in flight → parked, no second PUT yet
+    chat.setStickyAgent("frieren");
+    await chat.reseatOpening("frieren"); // still parked — the latest pick is what runs
+    expect(net.reopens).toHaveLength(1);
+    net.release("PUT /api/threads/greeted/opening");
+    await first;
+
+    await waitFor(() => expect(result.current.threadAgent).toBe("frieren"));
+    expect(net.reopens.map((r) => r.body.agent)).toEqual(["emma", "frieren"]);
+    expect(result.current.messages.map((m) => m.id)).toEqual(["greet-frieren"]);
+  });
+
+  // Fix wave (Maya MED-1 ∥ Opus L1): a parked re-seat keeps its thread AND its confirmed discard.
+  it("a CONFIRMED discard parked behind an in-flight D81 route survives and is sent", async () => {
+    const edited = { ...msg("g", "greeted", "tea, with honey?"), edited: "2026-10-01T10:00:00Z" };
+    const chat = await freshChat();
+    await greeted(chat, [edited]);
+    net.hold("PATCH /api/threads/greeted/messages/g");
+    const edit = chat.editMessage("g", "tea, with lemon?");
+    chat.setStickyAgent("emma");
+    await chat.reseatOpening("emma", "greeted"); // parked behind the edit
+    expect(net.reopens).toHaveLength(0);
+    net.release("PATCH /api/threads/greeted/messages/g");
+    await edit;
+
+    await waitFor(() => expect(net.reopens).toHaveLength(1));
+    expect(net.reopens[0].body).toEqual({ agent: "emma", discard_edited: true });
+  });
+
+  it("a re-seat parked, then the view moves to another thread → the other thread is NOT re-seated", async () => {
+    const chat = await freshChat();
+    const { result } = await greeted(chat);
+    threadList = [...threadList, { id: "other", agent: "lynette" }]; // fresh too: re-seatable
+    net.hold("PUT /api/threads/greeted/opening");
+    chat.setStickyAgent("emma");
+    const first = chat.reseatOpening("emma");
+    chat.setStickyAgent("frieren");
+    await chat.reseatOpening("frieren"); // parked for `greeted`
+    await chat.openThread("other");
+    await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
+    net.release("PUT /api/threads/greeted/opening");
+    await first;
+
+    expect(net.reopens.map((r) => r.url)).toEqual(["/api/threads/greeted/opening"]);
+    expect(result.current.threadId).toBe("other");
+    expect(result.current.threadAgent).toBe("lynette");
+  });
+
+  // Fix wave (Maya MED-2): the confirm is bound to the thread it was asked about. The pick seam
+  // snapshots the id before its dialog (`lib/composer` test); here the view moved while it was open.
+  it("a confirm asked on one thread never discards an edited opening on the thread the view moved to", async () => {
+    const chat = await freshChat();
+    const { result } = await greeted(chat);
+    const askedFor = chat.getThreadId(); // what `pinStickyAgent` snapshots before `requestConfirm`
+    threadList = [...threadList, { id: "other", agent: "lynette" }];
+    histories.other = [{ ...msg("o", "other", "my own words"), edited: "2026-10-01T10:00:00Z" }];
+    await chat.openThread("other"); // the view moved while the dialog was open…
+    await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
+    chat.setStickyAgent("emma"); // …then Switch: the pin lands…
+    await chat.reseatOpening("emma", askedFor); // …but the discard was for `greeted`
+
+    expect(net.reopens).toHaveLength(0);
+    expect(result.current.messages.map((m) => m.id)).toEqual(["o"]); // the edited opening stays
+  });
+
+  it("a pick made WHILE `/new` mints re-seats the minted thread to it", async () => {
+    histories = { fresh: [msg("greet", "fresh", "*Lynette looks up from her tea.*")] };
+    const chat = await freshChat();
+    const { result } = renderHook(() => chat.useChat());
+    net.hold("POST /api/threads");
+    const mint = chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
+    chat.setStickyAgent("emma"); // the pick lands before the mint does
+    net.release("POST /api/threads");
+    await mint;
+
+    await waitFor(() => expect(result.current.threadAgent).toBe("emma"));
+    expect(net.mints).toEqual([{ agent: "lynette" }]);
+    expect(net.reopens.map((r) => r.body)).toEqual([{ agent: "emma", discard_edited: false }]);
+    expect(result.current.threadId).toBe("fresh");
+    expect(result.current.messages.map((m) => m.id)).toEqual(["greet-emma"]);
+  });
+
+  it("…but an UNCHANGED pick the server resolved elsewhere (a since-deleted name) is not re-seated", async () => {
+    mintAgent = "default";
+    const chat = await freshChat();
+    chat.setStickyAgent("ghost");
+    await chat.startNewThread({ keepAgent: true, defaultAgent: "default" });
+    expect(net.mints).toEqual([{ agent: "ghost" }]);
+    expect(net.reopens).toHaveLength(0);
+  });
+
+  it("opening a thread never re-seats, whatever the standing pick", async () => {
+    localStorage.setItem("ctrlb.chat", JSON.stringify({ agent: "emma" })); // a persisted pick
+    const chat = await freshChat();
+    await greeted(chat);
+    expect(net.reopens).toHaveLength(0);
   });
 });

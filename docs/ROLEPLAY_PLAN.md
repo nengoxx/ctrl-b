@@ -355,6 +355,20 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   routed a gallery-created one. The router now meets only threads minted lazily (a first send in a
   thread-less view, a `!cmd`) or created before this change; the D75 amendment's auto-route sentence
   ("with a default set, `/new` starts unpinned, so auto-route may pick a specialist") no longer holds.
+  **As-built — the re-seat seam (ISS-49, 2026-10-01).** With a default set, `/new` mints for the
+  default (the tandem rule), so picking another agent right after it left the default's greeting and
+  pin in place — and the picked agent's model read that greeting as its own turn. A third caller of
+  `seed_greeting`, a REOPEN seam: `PUT /api/threads/{id}/opening {agent, discard_edited?}` replaces a
+  still-FRESH thread's opening (fresh = no owner turn — `services/conversation.is_owner_turn`, the
+  server twin of the client's `isUserTurn`) in ONE transaction: every message row goes (only the
+  seeded greeting can exist on a fresh thread), `ThreadRepo.set_agent` re-pins and touches
+  `updated_at`, and the new agent's greeting seeds (or nothing does). Strict name (a name that does not
+  resolve to itself is a 422 — never the root fallback); same pin → a no-op; an owner turn → 409 (the
+  pick governs the next reply, as before); an opening the owner EDITED → 409 unless the client sends
+  `discard_edited` after its confirm. The FE calls it from the pick seam (`pinStickyAgent` →
+  `store/chat` `reseatOpening`, latest-intent-wins behind the D81 `syncMessageRoute`) and from `/new`'s
+  tail when the pick changed mid-mint; opening or hydrating a thread never re-seats. Named for the
+  operation so the `alt_greetings` picker can add its greeting index to the same route.
   **The "reset the whole character" command — SEMANTICS RULED round 4, feature NOT v1:** a
   red button on the character's own detail that resets the agent to its default/as-imported
   values, **wipes THAT agent's memory files** (its memory dir; the specific agent's, nothing

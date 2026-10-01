@@ -86,6 +86,15 @@ class ThreadRepo:
             "UPDATE threads SET updated_at = ? WHERE id = ?", (_iso(updated_at), thread_id)
         )
 
+    async def set_agent(self, thread_id: str, agent: str, updated_at: datetime) -> None:
+        """Re-pin the thread (D11) — the ONE writer after `create`, for the opening re-seat (ISS-49:
+        `PUT /threads/{id}/opening`, which calls it inside its own transaction). `updated_at` moves with
+        it: the re-seated thread is the one a reload should hydrate (`initChat` opens the newest)."""
+        await self._db.execute(
+            "UPDATE threads SET agent = ?, updated_at = ? WHERE id = ?",
+            (agent, _iso(updated_at), thread_id),
+        )
+
     async def get(self, thread_id: str) -> Thread | None:
         rows = await self._db.query("SELECT * FROM threads WHERE id = ?", (thread_id,))
         return self._row(rows[0]) if rows else None
@@ -459,6 +468,15 @@ def is_anchor(m: Message) -> bool:
     """A turn OPENER: a `role="user"` row that is not a mid-turn steer (D57's marker). The same boundary
     `_seed_recall` walks back to and compaction's fold snaps to."""
     return m.role == "user" and not m.steer
+
+
+def is_owner_turn(m: Message) -> bool:
+    """A turn the OWNER took: a `role="user"` row (typed, steered, dictated — an automation's injected
+    prompt too) OR any row stamped `actor=user` — the `!cmd` exec pair persists as assistant + tool rows
+    with the owner as actor. The server twin of the client's `isUserTurn` (`frontend/src/store/chat.ts`),
+    keep the two in step: a thread with none is FRESH, and only a fresh thread's opening may be re-seated
+    (ISS-49). NB `MessageRepo.count_user_messages` counts `role='user'` only — not this predicate."""
+    return m.role == "user" or m.actor == Actor.USER
 
 
 def is_agent_row(m: Message) -> bool:

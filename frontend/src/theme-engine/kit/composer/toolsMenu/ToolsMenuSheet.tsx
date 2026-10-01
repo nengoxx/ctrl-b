@@ -197,7 +197,7 @@ function AgentRow({
         className="tools-radio"
         name={AGENT_RADIO_NAME}
         checked={on}
-        onChange={() => pinStickyAgent(pin)}
+        onChange={() => void pinStickyAgent(pin)}
       />
       <span className="tools-tick" aria-hidden>
         {on ? "•" : ""}

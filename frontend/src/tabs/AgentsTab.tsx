@@ -227,8 +227,10 @@ export function AgentsContent() {
     // The `/agent` seam verbatim, through `agentPin` — the tools menu's rows take the same expression: any
     // other agent is a pin by name; the resolved default is whatever "back to the default" means for the
     // OPEN thread (a clear, or the default by name inside a thread pinned to a character). Then the ONE
-    // nav chokepoint, which is where the chat log lives.
-    pinStickyAgent(agentPin(name, threadAgent, resolvedDefault));
+    // nav chokepoint, which is where the chat log lives — at once, not after the pin: when the pick would
+    // discard an edited greeting (ISS-49) the confirm is app-level, so it opens over the very chat whose
+    // opening it is asking about.
+    void pinStickyAgent(agentPin(name, threadAgent, resolvedDefault));
     navigate("agent");
   };
 

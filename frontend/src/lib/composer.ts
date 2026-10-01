@@ -23,7 +23,10 @@ import { isUploading, reserveStaged, stagedIds } from "../store/attachments";
 import {
   compactThread,
   getThreadAgent,
+  getThreadId,
+  openingEdited,
   pushSystemNote,
+  reseatOpening,
   runShell,
   sendMessage,
   type SendOutcome,
@@ -31,8 +34,10 @@ import {
   setSessionMode,
   setSessionPrivilege,
   startNewThread,
+  wouldReseat,
 } from "../store/chat";
 import { setDraft } from "../store/composer";
+import { requestConfirm } from "../store/confirm";
 import { clearComposerSkills, takeComposerSkills } from "../store/composerSkills";
 import { createStore } from "../store/createStore";
 import { setUI } from "../store/ui";
@@ -316,8 +321,27 @@ interface BuiltinVerb {
  *
  *  The CLEAR's note names who will actually answer: inside a thread carrying its own D70 §4.2 pin (every
  *  `/new` thread since ISS-31 is one), the server's ladder falls through to that pin, not the default —
- *  so the note says the thread's agent when it differs from the default (the code round's O-LOW-3). */
-export function pinStickyAgent(name: string): void {
+ *  so the note says the thread's agent when it differs from the default (the code round's O-LOW-3).
+ *
+ *  ISS-49: a pick on a FRESH thread (nothing said yet) also re-seats its opening — pin and greeting —
+ *  through the store's `reseatOpening`, after the pin + note. An opening the owner EDITED would be
+ *  discarded, so that one case asks first: Cancel changes NOTHING (no pin, no note); Switch pins and
+ *  re-seats with the discard confirmed FOR THE THREAD IT WAS ASKED ABOUT (snapshotted before the
+ *  dialog — if the view moved meanwhile, the other thread's edit is never discarded). Without an edit
+ *  nothing is awaited before the pin, so the pin and the note stay synchronous. */
+export async function pinStickyAgent(name: string): Promise<void> {
+  const discard = wouldReseat(name) && openingEdited();
+  const askedFor = discard ? getThreadId() : null;
+  if (discard) {
+    const from = getThreadAgent() ?? defaultAgent;
+    const ok = await requestConfirm({
+      title: "Discard the edited greeting?",
+      body: `You edited ${from}'s opening message. Switching to ${name} replaces it with ${name}'s greeting.`,
+      confirmLabel: "Switch",
+      danger: true,
+    });
+    if (!ok) return;
+  }
   setStickyAgent(name || null);
   const threadAgent = getThreadAgent();
   pushSystemNote(
@@ -329,6 +353,7 @@ export function pinStickyAgent(name: string): void {
           ? `// agent → ${name}`
           : `// agent → ${name} (not configured — will fall back to default)`,
   );
+  void reseatOpening(name, askedFor);
 }
 
 const BUILTIN_VERBS: readonly BuiltinVerb[] = [
@@ -338,7 +363,7 @@ const BUILTIN_VERBS: readonly BuiltinVerb[] = [
     help: "switch the active agent (bare = back to default)",
     // `/agent <name>` sets the sticky agent pick (persisted per device, D75 amendment); bare `/agent`
     // clears it (back to the thread's / configured default).
-    run: (rest) => pinStickyAgent(rest.split(/\s+/)[0] || ""),
+    run: (rest) => void pinStickyAgent(rest.split(/\s+/)[0] || ""),
   },
   {
     verb: "privilege",
