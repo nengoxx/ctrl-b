@@ -385,9 +385,18 @@ back to the analysis.
   call); an Undo toast for delete (the stash can hold a `deleted` variant — an added column, not a
   sibling table).
 
-### A15. Conversations per agent — the chat-app model (Telegram / Discord style) — **owner ask 2026-10-01 · "I will definitely want that" · design wanted, NOT scheduled**
+### A15. Past conversations + conversations per agent — the chat-app model (Telegram / Discord style) — **owner ask 2026-10-01 · "I will definitely want that" · design wanted, NOT scheduled**
 
-- **What:** every agent has its OWN conversation(s), and choosing an agent switches the visible chat
+- **Baseline, wanted REGARDLESS of the per-agent question (owner, 2026-10-01): PAST CONVERSATIONS.**
+  *"Ideally, we should think about having past conversations regardless, because every other app like
+  this has that and we kind of don't."* Today the app is single-threaded **from the owner's side**: the
+  server keeps every thread (each `/new` mints one, the old ones keep their history, `session_search`
+  can find them) but the UI shows exactly ONE — `initChat` opens the newest — and has NO way back to an
+  earlier one (the only `openThread` caller is the automations history). A browsable list of past
+  conversations (title/first line, agent, date; open → `openThread`) is the first, model-independent
+  piece and could ship before the per-agent decision. Its shape (a tab, a drawer, a sheet; search;
+  rename/delete — there is no thread-delete route yet) is part of the design session.
+- **What (the per-agent model):** every agent has its OWN conversation(s), and choosing an agent switches the visible chat
   to that agent's conversation — its latest one, or a fresh greeted one when it has none. Several
   agents can be working at the same time, each in its own thread, and the owner hops between them
   the way you hop between people in Telegram or Discord, seeing what each one is working on. In the
@@ -432,7 +441,11 @@ back to the analysis.
 - **Open questions for the design session:**
   1. **Per-message agent switching inside ONE conversation** (A7 — handing a fleet question to a
      specialist mid-chat): drop it, keep it for tool agents only, or turn it into a one-off
-     `@agent` mention for a single reply?
+     `@agent` mention for a single reply? **The owner is NOT sold on dropping it** (2026-10-01: "I
+     don't know if I want to drop switching the agent in a particular thread — maybe there's a use
+     case for that instead of having the agents have their own thread and that's it") — so the
+     design must weigh a HYBRID (per-agent threads as the default navigation + an explicit in-thread
+     switch) against the pure model; do not assume either.
   2. **One conversation per agent, or many** (a per-agent chat list like SillyTavern's)?
   3. **Group chats** (several characters in one thread) — out of scope, or a later kind?
   4. **Where the list lives at 390 px** — a tab, the gallery, a drawer; how a theme skins it
