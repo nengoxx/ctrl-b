@@ -1921,7 +1921,11 @@ out of scope, over-machinery) · F5 the `accept` filter dropped (Android chooser
 mistyped files) · F6 `aria-pressed` on TickGrid (all four consumers) · F7 indexed warning
 keys. **Rider `b365d45` (main-seat): the two same-class TWINS the fix builder flagged on the
 S4 surface** — AgentRow's identical collapsed-dirty defect (failing-before proven) and the
-card-import `accept` filter.
+card-import `accept` filter. *(F5 REVISED 2026-10-01 on device evidence, ISS-47: the card
+import's main button takes `accept="image/png"` — on the measured Android 10 / Chrome 154 phone, the image
+picker is the only picker Chrome itself opens that hands over a Downloads file's real size and mtime
+(Android 13+'s system Photo Picker unverified); a quiet "or import from a .json / .charx file" door on
+the same input keeps F5's no-filter, and the lorebook input stays un-filtered.)*
 
 **Her confirm round: 5/7 RESOLVED + the F4 objection + F3 surviving + 2 sweep MEDs → the
 micro-wave `0ce4dd4`** (main-seat, all four tests proven red pre-fix): F3 properly (a

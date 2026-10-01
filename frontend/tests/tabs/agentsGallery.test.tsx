@@ -310,6 +310,40 @@ describe("AgentsTab · card import (§5)", () => {
     expect(screen.getByRole("button", { name: /import a character card/ })).toBeTruthy();
   });
 
+  // ISS-47 — the picker IS the fix on Android: only an image-only `accept` gets Chrome's image picker
+  // (real size + mtime); the quiet link keeps the unfiltered picker for JSON / CHARX. ONE input, so
+  // what each door must set is `accept` AT THE MOMENT the picker opens.
+  it("the main door opens the PNG picker, the link the unfiltered one — through ONE input", () => {
+    h.roleplayOn = true;
+    render(<AgentsTab active />);
+    const opened: string[] = [];
+    const click = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (
+      this: HTMLInputElement,
+    ) {
+      opened.push(this.accept);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /import a character card/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /or import from a \.json \/ \.charx file/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /import a character card/ }));
+    click.mockRestore();
+    expect(opened).toEqual(["image/png", "", "image/png"]);
+    expect(document.querySelectorAll('input[type="file"]')).toHaveLength(1);
+  });
+
+  it("disables BOTH doors while an import is in flight", () => {
+    h.roleplayOn = true;
+    h.importPending = true;
+    render(<AgentsTab active />);
+    expect(screen.getByRole("button", { name: /importing…/ }).hasAttribute("disabled")).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: /or import from a \.json \/ \.charx file/ })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
   it("sends the picked FILE and renders the report the server answered with", () => {
     h.roleplayOn = true;
     render(<AgentsTab active />);

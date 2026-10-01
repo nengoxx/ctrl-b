@@ -8903,14 +8903,16 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
  * `.lb-import` rides the same recipe: the app has exactly two "pick a file the field authored" rows
  * (the character card, §5, and the lorebook, §6.5) and they are the same affordance — one hidden input
  * behind one full-width outline button. The class is named for its own surface rather than shared so
- * neither surface reads as living inside the other's section. ── */
+ * neither surface reads as living inside the other's section. The recipe is the row's OWN button
+ * (`>`): the card row also carries a quiet second door (`.agal-import-alt`, the JSON / CHARX picker —
+ * AgentsTab says why), which wears the report's `.agrep-x` text-link recipe instead. ── */
 .kit .agal-import,
 .kit .lb-import {
   padding: 10px 12px;
   border-top: 1px solid var(--line);
 }
-.kit .agal-import button,
-.kit .lb-import button {
+.kit .agal-import > button,
+.kit .lb-import > button {
   all: unset;
   box-sizing: border-box;
   display: block;
@@ -8925,19 +8927,19 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   border-radius: var(--radius-sm);
   color: var(--text-2);
 }
-.kit .agal-import button:disabled,
-.kit .lb-import button:disabled {
+.kit .agal-import > button:disabled,
+.kit .lb-import > button:disabled {
   opacity: 0.5;
   cursor: default;
 }
-.kit .agal-import button:not(:disabled):active,
-.kit .lb-import button:not(:disabled):active {
+.kit .agal-import > button:not(:disabled):active,
+.kit .lb-import > button:not(:disabled):active {
   background: var(--surface-2);
   color: var(--accent);
   border-color: var(--accent);
 }
-.kit .agal-import button:focus-visible,
-.kit .lb-import button:focus-visible {
+.kit .agal-import > button:focus-visible,
+.kit .lb-import > button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -8954,7 +8956,8 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   font-size: 12px;
   color: var(--text);
 }
-.kit .agrep-x {
+.kit .agrep-x,
+.kit .agal-import-alt button {
   all: unset;
   margin-inline-start: auto;
   cursor: pointer;
@@ -8962,10 +8965,26 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   color: var(--text-3);
 }
 .kit .agrep-x:hover,
-.kit .agrep-x:active {
+.kit .agrep-x:active,
+.kit .agal-import-alt button:not(:disabled):hover,
+.kit .agal-import-alt button:not(:disabled):active {
   color: var(--text);
 }
-.kit .agrep-x:focus-visible {
+.kit .agal-import-alt {
+  margin: 4px 0 0;
+  text-align: center;
+}
+/* After the shared `all: unset`: a thumb-sized target around the 11px text (Opus picker round F1). */
+.kit .agal-import-alt button {
+  display: inline-block;
+  padding: 6px 8px;
+}
+.kit .agal-import-alt button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.kit .agrep-x:focus-visible,
+.kit .agal-import-alt button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
