@@ -428,7 +428,7 @@ test.describe("the composer menu's agent pick is sticky", () => {
     await row("lynette").click();
     await expect(art).toHaveAttribute("src", /lynette\.webp/); // switched on the pick…
     await expect(trigger).not.toHaveClass(/armed/); // …and nothing is pending: it is a switch, not a shot
-    await trigger.click(); // close the panel — the trigger is the close gesture
+    await expect(page.locator("#composer-tools.open")).toHaveCount(0); // an agent pick closes the panel
 
     await page.locator(".kit-composer textarea").fill("hi there");
     await page.locator("#cmd-send").click();

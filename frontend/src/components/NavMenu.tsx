@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { useOutsideDismiss } from "../hooks/useOutsideDismiss";
 import { useSections } from "../hooks/useSections";
 import type { AppbarMode } from "../store/ui";
 import type { TabId } from "../theme-engine/types";
@@ -152,14 +153,11 @@ export function NavMenu({ docked = false }: { docked?: boolean }) {
   const launcherRef = useRef<HTMLButtonElement>(null);
 
   // close on an outside pointer-down (non-modal popover)
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [open]);
+  useOutsideDismiss(
+    open,
+    (t) => !!rootRef.current?.contains(t),
+    () => setOpen(false),
+  );
 
   // on open, move focus to the active (else first) item
   useEffect(() => {

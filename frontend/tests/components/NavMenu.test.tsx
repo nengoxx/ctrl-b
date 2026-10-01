@@ -66,6 +66,26 @@ describe("NavMenu collapse ladder", () => {
     expect(btn?.getAttribute("aria-label")).toBe("Navigation menu");
     expect(btn?.classList.contains("navmenu-direct")).toBe(false); // launcher, not the direct form
   });
+
+  // LIGHT DISMISS (the shared `useOutsideDismiss`): a pointer going down OUTSIDE closes the popover — on the
+  // capture phase, so a surface that stops the event's propagation can't keep it open — and one inside
+  // (the launcher, the items) doesn't.
+  it("menu of many → a pointerdown outside closes the popover; one inside keeps it", () => {
+    setUI({ appbarMode: "minimal" });
+    const { container } = render(
+      <>
+        <NavMenu />
+        <div className="elsewhere" onPointerDown={(e) => e.stopPropagation()} />
+      </>,
+    );
+    fireEvent.click(container.querySelector<HTMLButtonElement>(".navmenu-launch")!);
+    const pop = () => container.querySelector(".navmenu-pop");
+    expect(pop()).not.toBeNull();
+    fireEvent.pointerDown(container.querySelector("[role='menuitem']")!);
+    expect(pop()).not.toBeNull();
+    fireEvent.pointerDown(container.querySelector(".elsewhere")!);
+    expect(pop()).toBeNull();
+  });
 });
 
 describe("NavHome quick-jump", () => {

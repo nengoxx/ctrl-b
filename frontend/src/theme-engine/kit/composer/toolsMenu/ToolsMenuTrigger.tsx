@@ -8,7 +8,7 @@ import {
 } from "../../../../store/composerOverlay";
 import { useComposerSkills } from "../../../../store/composerSkills";
 import { runMicCancel, useMicCancelOffered } from "../../../../store/micCancel";
-import { TOOLS_SHEET_ID } from "./ToolsMenuSheet";
+import { TOOLS_SHEET_ID, TOOLS_TRIGGER_ID } from "./ToolsMenuSheet";
 
 // The tools/skills menu TRIGGER (A6) — the `controlsStart` half of the addon, at the controls LEADING edge
 // (before the plan pill; ROADMAP A6 "beside the plan pill"). Plain composer chrome: it reuses `.kit-cbtn`,
@@ -19,7 +19,7 @@ import { TOOLS_SHEET_ID } from "./ToolsMenuSheet";
 // ticked skills for the next message. Without it the ticks are invisible the moment the panel closes, and
 // a message would silently ride skills the owner forgot about. The agent section does not light it: the
 // agent is a standing switch, not a pending one, and the chat already shows who is active (the backdrop,
-// the who-line, the `// agent → …` note the pick pushes).
+// the who-line, and mid-chat the `// agent → …` note the pick pushes).
 //
 // IT IS ALSO THE LOCKED RECORDING'S CANCEL (Phase 24 / S0.5 feel round OF-5, owner 2026-09-13). While a
 // hold-to-record is LOCKED the hand is free and WCAG 2.5.1 wants a real tap target for "discard this" —
@@ -77,6 +77,7 @@ export function ToolsMenuTrigger() {
   return (
     <button
       type="button"
+      id={TOOLS_TRIGGER_ID}
       className={
         "kit-cbtn tools" +
         (cancelling ? " cancelling" : (open ? " open" : "") + (armed ? " armed" : ""))

@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { FocalFace } from "../../../../components/FocalFace";
 import { useActiveAgent } from "../../../../hooks/useActiveAgent";
 import { useAgentArt, type AgentArt } from "../../../../hooks/useAgentArt";
 import { DEFAULT_AGENT, useAgentRoster } from "../../../../hooks/useAgents";
+import { useOutsideDismiss } from "../../../../hooks/useOutsideDismiss";
 import {
   agentPin,
   getKnownSkills,
@@ -49,6 +50,9 @@ import {
 
 /** The panel element id — one composer is mounted at a time, like `#composer-suggest`/`#cmd-input`. */
 export const TOOLS_SHEET_ID = "composer-tools";
+/** The trigger's id — declared HERE, beside the panel's, because the trigger already imports from this
+ *  module and the panel needs it too (the outside-tap exclusion, the focus return after a pick). */
+export const TOOLS_TRIGGER_ID = "composer-tools-trigger";
 
 const AGENTS_LABEL_ID = "composer-tools-agents";
 const SKILLS_LABEL_ID = "composer-tools-skills";
@@ -68,6 +72,39 @@ export function ToolsMenuSheet() {
   // surface displaced us it owns the slot and keeps it. (The plan sheet's persistence is DELIBERATE — a
   // plan outlives the composer's mount; an open menu doesn't.)
   useEffect(() => () => releaseComposerOverlay("menu"), []);
+  // LIGHT DISMISS (owner, 2026-10-01): a pointer going down outside the panel closes it, and still does its
+  // own job (the shared hook's NavMenu contract). The TRIGGER counts as inside: it is a separate slot, and
+  // its own click toggles — a close on its pointerdown would have that click re-open the menu.
+  useOutsideDismiss(
+    open,
+    (t) =>
+      !!document.getElementById(TOOLS_SHEET_ID)?.contains(t) ||
+      !!document.getElementById(TOOLS_TRIGGER_ID)?.contains(t),
+    () => releaseComposerOverlay("menu"),
+  );
+  // Set by an ARROW keydown in the agent group: the browser's arrow-key radio navigation dispatches a
+  // `click` on the newly checked radio, and that is browsing, not a pick — so it must not close the panel.
+  // SPENT by the click it guards (a held arrow re-sets it on every repeat keydown), and also cleared on
+  // the group's keyup (an arrow that moved nothing — a one-row group), on a pointer going down on it, and
+  // whenever the panel opens: a keyup can land elsewhere (a discard confirm took focus mid-keypress, an
+  // outside tap closed the panel), and a stale guard would swallow the next real pick's close.
+  const arrowNav = useRef(false);
+  useEffect(() => {
+    if (open) arrowNav.current = false;
+  }, [open]);
+  /** An agent row was ACTIVATED (tap, Space, a TalkBack double-tap — the checked row included): the owner
+   *  picked who to talk to, so the panel closes (owner, 2026-10-01; skills keep it open — several are
+   *  ticked together). Focus goes back to the trigger, as NavMenu's close does: the radio it sat on is
+   *  now inside an inert panel — and a discard confirm `pinStickyAgent` may raise captures it to restore.
+   *  Runs before the row's `onChange` for the same click, so that capture sees the trigger. */
+  const picked = (): void => {
+    if (arrowNav.current) {
+      arrowNav.current = false;
+      return;
+    }
+    releaseComposerOverlay("menu");
+    document.getElementById(TOOLS_TRIGGER_ID)?.focus();
+  };
 
   // The roster, and its resolved default — `DEFAULT_AGENT` stands in until the query lands (the gallery's
   // own fallback); the rows fill in on the same render the backdrop would.
@@ -110,7 +147,16 @@ export function ToolsMenuSheet() {
         <div className="tools-lbl" id={AGENTS_LABEL_ID}>
           active agent
         </div>
-        <div className="tools-list" role="radiogroup" aria-labelledby={AGENTS_LABEL_ID}>
+        <div
+          className="tools-list"
+          role="radiogroup"
+          aria-labelledby={AGENTS_LABEL_ID}
+          onKeyDown={(e) => {
+            if (e.key.startsWith("Arrow")) arrowNav.current = true;
+          }}
+          onKeyUp={() => (arrowNav.current = false)}
+          onPointerDown={() => (arrowNav.current = false)}
+        >
           {rows.map((n) => (
             <AgentRow
               key={n}
@@ -119,6 +165,7 @@ export function ToolsMenuSheet() {
               on={active === n}
               pin={agentPin(n, threadAgent, defaultAgent)}
               avatar={art(n).avatar}
+              onPick={picked}
             />
           ))}
         </div>
@@ -154,8 +201,7 @@ export function ToolsMenuSheet() {
       </div>
       {/* Only when a skill IS ticked — an always-present "clear" reads as an action with nothing to do.
           It clears the skills alone: the agent is a standing switch, and its own "default" row is how it
-          goes back. The panel never closes on a pick — agent + skills are usually chosen together, and
-          the trigger is the close gesture. */}
+          goes back. A skill tick keeps the panel open (several ride one message); an agent pick closes it. */}
       {armed && (
         <button type="button" className="tools-clear" onClick={clearComposerSkills}>
           clear
@@ -183,12 +229,15 @@ function AgentRow({
   on,
   pin,
   avatar,
+  onPick,
 }: {
   name: string;
   tag?: string;
   on: boolean;
   pin: string;
   avatar: AgentArt["avatar"];
+  /** Every activation, the already-checked row included (`onChange` fires only on a change). */
+  onPick: () => void;
 }) {
   return (
     <label className={"tools-row" + (on ? " on" : "")}>
@@ -197,6 +246,7 @@ function AgentRow({
         className="tools-radio"
         name={AGENT_RADIO_NAME}
         checked={on}
+        onClick={onPick}
         onChange={() => void pinStickyAgent(pin)}
       />
       <span className="tools-tick" aria-hidden>

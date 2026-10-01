@@ -313,6 +313,100 @@ describe("tools menu — the agent switch (sticky)", () => {
   });
 });
 
+// THE CLOSE RULES (owner, 2026-10-01): picking an AGENT closes the panel (you picked who to talk to);
+// ticking a SKILL keeps it open (several ride one message); a pointer going down OUTSIDE closes it (light
+// dismiss) — the trigger excepted, whose own click is the toggle.
+describe("tools menu — closing", () => {
+  it("an agent pick CLOSES the panel and hands focus back to the trigger", async () => {
+    const { container } = renderComposer();
+    await openMenu(container);
+    radios(container)[1].focus(); // where a keyboard pick or the label's activation leaves it
+    fireEvent.click(radios(container)[1]); // "ops"
+    expect(checkedRows(container)).toEqual(["ops"]); // the pick still lands…
+    expect(panelOpen(container)).toBe(false); // …and the panel closes
+    expect(document.activeElement).toBe(trigger(container)); // not stranded in the inert panel
+  });
+
+  it("tapping the ALREADY-checked row closes it too — 'this one, let's talk'", async () => {
+    const { container } = renderComposer();
+    await openMenu(container);
+    fireEvent.click(radios(container)[0]); // "default", already checked: no change, still a pick
+    expect(checkedRows(container)).toEqual(["default"]);
+    expect(panelOpen(container)).toBe(false);
+  });
+
+  it("ticking a skill keeps it open", async () => {
+    const { container } = renderComposer();
+    await openMenu(container);
+    fireEvent.click(container.querySelector<HTMLElement>("#composer-tools [role=checkbox]")!);
+    expect(panelOpen(container)).toBe(true);
+  });
+
+  it("arrow-key browsing does not close it; the key's release re-arms the pick", async () => {
+    const { container } = renderComposer();
+    await openMenu(container);
+    const group = container.querySelector<HTMLElement>("#composer-tools [role=radiogroup]")!;
+    // the browser's arrow navigation: keydown → a simulated click on the newly checked radio → keyup
+    fireEvent.keyDown(group, { key: "ArrowDown" });
+    fireEvent.click(radios(container)[1]);
+    fireEvent.keyUp(group, { key: "ArrowDown" });
+    expect(checkedRows(container)).toEqual(["ops"]); // browsing still moves the pick…
+    expect(panelOpen(container)).toBe(true); // …without closing
+    // an arrow that moved nothing (no click) can't leave the guard up: the next Space pick closes
+    fireEvent.keyDown(group, { key: "ArrowUp" });
+    fireEvent.keyUp(group, { key: "ArrowUp" });
+    fireEvent.click(radios(container)[1]); // Space on the checked row
+    expect(panelOpen(container)).toBe(false);
+  });
+
+  it("an arrow whose keyup lands ELSEWHERE can't swallow the next pick's close", async () => {
+    const { container } = renderComposer();
+    await openMenu(container);
+    const group = container.querySelector<HTMLElement>("#composer-tools [role=radiogroup]")!;
+    // the guard is spent by the click it guards — the keyup went to a confirm dialog, never to the group
+    fireEvent.keyDown(group, { key: "ArrowDown" });
+    fireEvent.click(radios(container)[1]);
+    expect(panelOpen(container)).toBe(true);
+    fireEvent.click(radios(container)[1]); // the next tap is a pick
+    expect(panelOpen(container)).toBe(false);
+    // …and an arrow that moved nothing, its keyup lost: a pointer going down on the group re-arms the pick
+    await openMenu(container);
+    fireEvent.keyDown(group, { key: "ArrowUp" });
+    fireEvent.pointerDown(radios(container)[0].closest("label")!);
+    fireEvent.click(radios(container)[0]);
+    expect(panelOpen(container)).toBe(false);
+    // …and one left up when an outside tap closed the panel mid-keypress: opening it again re-arms a
+    // KEYBOARD pick too (a Space activation has no pointerdown to clear it)
+    await openMenu(container);
+    fireEvent.keyDown(group, { key: "ArrowUp" });
+    fireEvent.pointerDown(container.querySelector("#composer textarea")!);
+    expect(panelOpen(container)).toBe(false);
+    await openMenu(container);
+    fireEvent.click(radios(container)[0]); // Space
+    expect(panelOpen(container)).toBe(false);
+  });
+
+  it("a pointerdown OUTSIDE closes it; inside the panel it doesn't", async () => {
+    const { container } = renderComposer();
+    await openMenu(container);
+    fireEvent.pointerDown(panel(container).querySelector(".tools-lbl")!);
+    expect(panelOpen(container)).toBe(true);
+    fireEvent.pointerDown(container.querySelector("#composer textarea")!);
+    expect(panelOpen(container)).toBe(false);
+  });
+
+  it("the TRIGGER still toggles — its pointerdown is not an outside tap that its click would undo", async () => {
+    const { container } = renderComposer();
+    await openMenu(container);
+    fireEvent.pointerDown(trigger(container));
+    fireEvent.click(trigger(container));
+    expect(panelOpen(container)).toBe(false); // closed by the toggle, not re-opened
+    fireEvent.pointerDown(trigger(container));
+    fireEvent.click(trigger(container));
+    expect(panelOpen(container)).toBe(true);
+  });
+});
+
 // THE SKILLS SECTION STAYS A ONE-SHOT: ticked for the next message, spent on dispatch — and it is the only
 // thing the trigger's dot, its label and the clear row speak for.
 describe("tools menu — the skills one-shot", () => {
