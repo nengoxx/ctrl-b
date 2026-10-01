@@ -22,6 +22,7 @@ import { getJSON } from "../api/client";
 import { isUploading, reserveStaged, stagedIds } from "../store/attachments";
 import {
   compactThread,
+  conversationStarted,
   getThreadAgent,
   getThreadId,
   openingEdited,
@@ -328,7 +329,10 @@ interface BuiltinVerb {
  *  discarded, so that one case asks first: Cancel changes NOTHING (no pin, no note); Switch pins and
  *  re-seats with the discard confirmed FOR THE THREAD IT WAS ASKED ABOUT (snapshotted before the
  *  dialog — if the view moved meanwhile, the other thread's edit is never discarded). Without an edit
- *  nothing is awaited before the pin, so the pin and the note stay synchronous. */
+ *  nothing is awaited before the pin, so the pin and the note stay synchronous.
+ *
+ *  The note is MID-CHAT only (`conversationStarted`): before the owner's first turn it would be the sole
+ *  line in an otherwise empty chat — except the unknown-name note, the one a typo has. */
 export async function pinStickyAgent(name: string): Promise<void> {
   const discard = wouldReseat(name) && openingEdited();
   const askedFor = discard ? getThreadId() : null;
@@ -344,15 +348,19 @@ export async function pinStickyAgent(name: string): Promise<void> {
   }
   setStickyAgent(name || null);
   const threadAgent = getThreadAgent();
-  pushSystemNote(
-    !name && threadAgent !== null && threadAgent !== defaultAgent
-      ? `// agent → ${threadAgent} (this thread's)`
-      : !name || name === defaultAgent
-        ? `// agent → ${defaultAgent} (default)`
-        : knownAgents.has(name)
-          ? `// agent → ${name}`
-          : `// agent → ${name} (not configured — will fall back to default)`,
-  );
+  const unknown = !!name && name !== defaultAgent && !knownAgents.has(name);
+  // Nothing said yet → no note: the chat should hold only the opening (or nothing), and the re-seat's
+  // greeting + who-line already show who answers (owner nit 2026-10-01). A typo still says so.
+  if (conversationStarted() || unknown)
+    pushSystemNote(
+      !name && threadAgent !== null && threadAgent !== defaultAgent
+        ? `// agent → ${threadAgent} (this thread's)`
+        : !name || name === defaultAgent
+          ? `// agent → ${defaultAgent} (default)`
+          : unknown
+            ? `// agent → ${name} (not configured — will fall back to default)`
+            : `// agent → ${name}`,
+    );
   void reseatOpening(name, askedFor);
 }
 

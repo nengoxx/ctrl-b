@@ -3473,6 +3473,12 @@ export function wouldReseat(name: string): boolean {
   );
 }
 
+/** Has the owner taken a turn in the open view (`hasUserTurn`)? Until then the chat holds only the
+ *  agent's opening, and the pick seam keeps its `// agent → …` note out of it (`lib/composer#pinStickyAgent`). */
+export function conversationStarted(): boolean {
+  return hasUserTurn(state.messages);
+}
+
 /** Does the open thread's opening carry the owner's own edit (D81 `edited`)? A re-seat would discard
  *  it, so the pick seam asks first (`lib/composer#pinStickyAgent`) — never a silent loss. */
 export function openingEdited(): boolean {

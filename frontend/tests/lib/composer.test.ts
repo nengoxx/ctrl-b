@@ -19,6 +19,8 @@ vi.mock("../../src/store/chat", () => ({
   setStickyAgent: vi.fn(),
   setSessionPrivilege: vi.fn(),
   pushSystemNote: vi.fn(),
+  // mid-chat unless an arm says so — the pick note is suppressed before the owner's first turn
+  conversationStarted: vi.fn(() => true),
   // ISS-49 — the pick seam's re-seat: no fresh thread to re-seat unless an arm says so.
   wouldReseat: vi.fn(() => false),
   openingEdited: vi.fn(() => false),
@@ -426,6 +428,7 @@ describe("pinStickyAgent — the sticky switch", () => {
         : Promise.resolve({ ok: false } as Response),
     );
     await loadAgents();
+    vi.mocked(chat.conversationStarted).mockReturnValue(true); // mid-chat unless an arm says otherwise
   });
   const lastNote = () => vi.mocked(chat.pushSystemNote).mock.calls.at(-1)?.[0];
 
@@ -445,6 +448,21 @@ describe("pinStickyAgent — the sticky switch", () => {
     void pinStickyAgent("ops");
     expect(chat.setStickyAgent).toHaveBeenLastCalledWith("ops");
     expect(lastNote()).toBe("// agent → ops");
+    void pinStickyAgent("typo");
+    expect(chat.setStickyAgent).toHaveBeenLastCalledWith("typo");
+    expect(lastNote()).toBe("// agent → typo (not configured — will fall back to default)");
+  });
+
+  // Owner nit 2026-10-01: before the first turn the chat holds only the opening — no pick note in it,
+  // except the typo's, which is the only word an unknown name gets.
+  it("before the owner's first turn: no note — the pin still lands; a typo still says so", () => {
+    vi.mocked(chat.pushSystemNote).mockClear();
+    vi.mocked(chat.conversationStarted).mockReturnValue(false);
+    void pinStickyAgent("ops");
+    void pinStickyAgent("maya");
+    void pinStickyAgent("");
+    expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
+    expect(chat.pushSystemNote).not.toHaveBeenCalled();
     void pinStickyAgent("typo");
     expect(chat.setStickyAgent).toHaveBeenLastCalledWith("typo");
     expect(lastNote()).toBe("// agent → typo (not configured — will fall back to default)");

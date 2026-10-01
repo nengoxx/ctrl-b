@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadAgents, loadSkills } from "../../src/lib/composer";
 import {
   openThread,
+  pushUserEcho,
   resetToThreadless,
   setStickyAgent,
   useChat,
@@ -62,6 +63,7 @@ const SKILLS = [{ name: "deploy" }, { name: "backups" }];
 beforeEach(async () => {
   clearDraft();
   clearComposerSkills();
+  resetToThreadless(null); // an empty chat — the arms that read the pick note take a turn first
   setStickyAgent(null);
   setComposerOverlay(null);
   localStorage.clear();
@@ -191,6 +193,7 @@ describe("tools menu — trigger/panel wiring", () => {
 // until switched again. Nothing about it is pending, so it never lights the trigger's dot.
 describe("tools menu — the agent switch (sticky)", () => {
   it("picking a row PINS the sticky agent and pushes the `/agent` note — no dot, nothing pending", async () => {
+    pushUserEcho("hi"); // mid-chat — the note is held back before the owner's first turn
     const p = probes();
     const { container } = renderComposer();
     await openMenu(container);
@@ -202,8 +205,19 @@ describe("tools menu — the agent switch (sticky)", () => {
     expect(container.querySelector(".tools-clear")).toBe(null); // the clear row is the skills' alone
   });
 
+  it("before the owner's first turn a pick still PINS, but adds no line to the empty chat", async () => {
+    const p = probes();
+    const { container } = renderComposer();
+    await openMenu(container);
+    fireEvent.click(radios(container)[1]); // "ops"
+    expect(p.pin()).toBe("ops");
+    expect(p.lastNote()).toBe(undefined);
+    expect(checkedRows(container)).toEqual(["ops"]);
+  });
+
   it("the DEFAULT row CLEARS the pin in an unpinned thread, and reads checked", async () => {
     setStickyAgent("ops");
+    pushUserEcho("hi");
     const p = probes();
     const { container } = renderComposer();
     await openMenu(container);
@@ -469,6 +483,7 @@ describe("tools menu — the open thread's pinned agent", () => {
     await act(async () => {
       await openThread("t1");
     });
+    act(() => pushUserEcho("hi")); // mid-chat — the note is held back before the owner's first turn
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
     await waitFor(() => expect(checkedRows(container)).toEqual(["ops"])); // the thread's pin answers
