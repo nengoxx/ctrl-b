@@ -143,12 +143,12 @@ def _read_png(body: bytes, cfg: CardImportCfg) -> Container:
     chunks = _png_text_chunks(body)
     present = [k for k in CARD_KEYWORDS if k in chunks]
     if not present:
-        raise CardImportError(415, "this PNG carries no character card (no `ccv3` or `chara` tEXt chunk)")
+        raise CardImportError(415, "this PNG carries no character card (no 'ccv3' or 'chara' tEXt chunk)")
     notes = []
     if len(present) > 1:
         # The spec's downgrade note, pointed the useful way: we took the NEWER one, and saying so is
         # what stops "why did my V2 edits not apply" being a mystery.
-        notes.append("the card carried both `ccv3` and `chara` metadata; the V3 chunk was used")
+        notes.append("the card carried both 'ccv3' and 'chara' metadata; the V3 chunk was used")
     return Container("png", _decode_card_json(chunks[present[0]], cfg, base64_encoded=True), body, notes)
 
 
@@ -306,7 +306,7 @@ def _read_charx(body: bytes, cfg: CardImportCfg) -> Container:
         _check_zip_bounds(archive, cfg)
         raw = _zip_member(archive, CHARX_CARD, cfg.max_card_json_bytes)
         if raw is None:
-            raise CardImportError(422, f"the CHARX file has no `{CHARX_CARD}` at its root")
+            raise CardImportError(422, f"the CHARX file has no '{CHARX_CARD}' at its root")
         card = _decode_card_json(raw, cfg)
         image, notes = _charx_icon(archive, card, cfg)
     return Container("charx", card, image, notes)
@@ -554,7 +554,7 @@ def normalize(raw: dict[str, Any]) -> Normalized:
         kind, expected = rung
         data = raw.get("data")
         if not isinstance(data, dict):
-            raise CardImportError(422, f"the card declares spec {spec!r} but carries no `data` object")
+            raise CardImportError(422, f"the card declares spec {spec!r} but carries no 'data' object")
         _require_name(data)
         version = _text(raw.get("spec_version")).strip()
         notes = (
@@ -567,8 +567,8 @@ def normalize(raw: dict[str, Any]) -> Normalized:
     if not any(_text(raw.get(k)).strip() for k in _V1_BODY):
         raise CardImportError(
             422,
-            "the JSON is not a character card: no `spec` field, and not the V1 shape either "
-            "(a `name` plus a description, personality, first message, scenario or example dialogue)",
+            "the JSON is not a character card: no 'spec' field, and not the V1 shape either "
+            "(a 'name' plus a description, personality, first message, scenario or example dialogue)",
         )
     _require_name(raw)
     return Normalized("v1", raw, {})
@@ -830,7 +830,7 @@ def _depth_prompt_note(fields: dict[str, Any]) -> list[str]:
     if not isinstance(note, dict) or not _text(note.get("prompt")).strip():
         return []
     return [
-        f"the card's Character's Note (ST `depth_prompt`, depth {_text(note.get('depth')) or '?'}) is "
+        f"the card's Character's Note (ST 'depth_prompt', depth {_text(note.get('depth')) or '?'}) is "
         f"not used by this build — it is kept in the agent's card.json; paste it into Post-history "
         f"if the character needs it"
     ]

@@ -288,7 +288,7 @@ def test_a_json_object_that_is_not_a_card_is_422(home: Path) -> None:
 def test_a_spec_card_with_no_data_object_is_422(home: Path) -> None:
     with make_client() as c:
         r = put_card(c, json.dumps({"spec": "chara_card_v2", "name": "Nyx"}).encode("utf-8"))
-    assert r.status_code == 422 and "no `data` object" in r.json()["detail"]
+    assert r.status_code == 422 and "no 'data' object" in r.json()["detail"]
 
 
 def test_an_unknown_spec_is_refused(home: Path) -> None:

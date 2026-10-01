@@ -142,7 +142,7 @@ _NON_SELECTIVE = "carried secondary keys the source marks non-selective — kept
 _INERT_PROBABILITY = "rolled a probability below 100 — v1 does not roll, so a key hit always activates them"
 _INERT_GROUP = "belonged to an inclusion group — v1 has no groups, so every member can activate together"
 _INERT_RECURSION = "carried a recursion flag — v1 does not scan recursively, so the flag does nothing"
-_INERT_SCAN_DEPTH = "set their own scan depth — v1 scans `lorebooks.scan_depth` for every entry"
+_INERT_SCAN_DEPTH = "set their own scan depth — v1 scans 'lorebooks.scan_depth' for every entry"
 _INERT_REGEX = "had a regex-looking key — v1 matches keys as literal text"
 
 #: ST's regex-key syntax (`parseRegexFromString`): a whole key written `/pattern/flags`.
@@ -201,7 +201,7 @@ def import_book(raw: Any, *, default_name: str = "") -> ImportedBook:
     elif isinstance(raw_entries, list):
         items = list(raw_entries)
     else:
-        raise CardImportError(422, "the JSON is not a lorebook: it carries no `entries`")
+        raise CardImportError(422, "the JSON is not a lorebook: it carries no 'entries'")
 
     entries: list[LorebookEntry] = []
     for index, item in enumerate(items, start=1):
@@ -246,7 +246,7 @@ def _book_object(raw: Any) -> dict[str, Any]:
         raise CardImportError(422, f"the lorebook declares an unknown spec {spec!r}")
     data = raw.get("data")
     if not isinstance(data, dict):
-        raise CardImportError(422, f"the lorebook declares spec {spec!r} but carries no `data` object")
+        raise CardImportError(422, f"the lorebook declares spec {spec!r} but carries no 'data' object")
     return data
 
 

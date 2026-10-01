@@ -823,7 +823,7 @@ def test_iss22_the_book_report_is_one_count_line_per_class(home: Path) -> None:
         "1 entry belonged to an inclusion group — v1 has no groups, so every member can activate together",
         "1 entry used AND-ALL (every secondary key had to hit), approximated as AND-ANY",
         "1 entry carried a recursion flag — v1 does not scan recursively, so the flag does nothing",
-        "1 entry set their own scan depth — v1 scans `lorebooks.scan_depth` for every entry",
+        "1 entry set their own scan depth — v1 scans 'lorebooks.scan_depth' for every entry",
         "1 entry had a regex-looking key — v1 matches keys as literal text",
         "1 entry carried secondary keys the source marks non-selective — kept as provenance only, they do "
         "not gate activation",
