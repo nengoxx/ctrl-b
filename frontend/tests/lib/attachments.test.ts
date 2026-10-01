@@ -8,8 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 //
 // Driven through the REAL module, with exactly two things faked: the export WORKER (a worker cannot
 // be constructed in jsdom, and `tests/lib/imageExport.test.ts` already owns the encoder's own
-// contract) and `fetch`. Everything else — the real guard ladder, the real header reader, the real
-// name minting, the real store — is the shipped code, so what these arms prove is the WIRING:
+// contract) and the network (a fake XHR — `putBytes`' transport). Everything else — the real guard
+// ladder, the real header reader, the real name minting, the real store — is the shipped code, so
+// what these arms prove is the WIRING:
 //
 //  · every refusal reaches the owner as its OWN sentence, on its OWN chip (R62 §3.2's lesson), and
 //    never touches the files beside it;
@@ -32,6 +33,7 @@ import {
   setAttachmentInfo,
 } from "../../src/lib/attachments";
 import { clearStaged, isUploading, stagedFiles, stagedIds } from "../../src/store/attachments";
+import { installFakeXhr, type XhrAnswer } from "../api/fakeXhr";
 
 const IMAGES = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "images");
 const bytes = (name: string): Uint8Array<ArrayBuffer> =>
@@ -43,28 +45,25 @@ const note = (name = "notes.txt", body = "hello"): File =>
   new File([body], name, { type: "text/plain" });
 
 /** The mint's answer — the row `api/attachments.py#StagedAttachment` returns. */
-function mintOk(over: Partial<Record<string, unknown>> = {}) {
+function mintOk(over: Partial<Record<string, unknown>> = {}): XhrAnswer {
   return {
-    ok: true,
     status: 201,
-    json: async () => ({
+    json: {
       attachment_id: "a".repeat(32),
       name: "photo.webp",
       kind: "image",
       mime: "image/webp",
       bytes: 4096,
       ...over,
-    }),
-  } as unknown as Response;
+    },
+  };
 }
 
-function mintRefusal(status: number, detail: string) {
-  return {
-    ok: false,
-    status,
-    json: async () => ({ detail }),
-  } as unknown as Response;
+function mintRefusal(status: number, detail: string): XhrAnswer {
+  return { status, json: { detail } };
 }
+
+let xhr: ReturnType<typeof installFakeXhr>;
 
 /** The worker's answer. It carries the OPTIONAL thumbnail arm since the S6 fix wave (owner finding
  *  F3): the persisted face of a staged chip, made from the pixels the export already had open. */
@@ -81,10 +80,11 @@ const EXPORTED = {
 
 beforeEach(() => {
   exporter.exportImage.mockResolvedValue(EXPORTED);
-  globalThis.fetch = vi.fn(async () => mintOk());
+  xhr = installFakeXhr(mintOk());
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   clearStaged();
   // Back to the class defaults so one arm's server numbers never leak into the next.
   setAttachmentInfo({});
@@ -145,7 +145,7 @@ describe("admission — every refusal is named, and only its own file fails", ()
     const [chip] = stagedFiles();
     expect(chip.status).toBe("failed");
     expect(chip.error).toContain(".docx files are not accepted");
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(xhr.calls).toHaveLength(0);
   });
 
   it("a HEIC photo is refused with the sentence that names the FIX", async () => {
@@ -210,7 +210,7 @@ describe("the admission window (MED-3)", () => {
     await Promise.all([first, second]);
     expect(stagedFiles().map((f) => f.status)).toEqual(["staged", "failed"]);
     expect(stagedFiles()[1].error).toContain("up to 1 file");
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1); // nothing uploaded past the cap
+    expect(xhr.calls).toHaveLength(1); // nothing uploaded past the cap
   });
 
   it("the preview is minted with the guard's verdict, never before it", async () => {
@@ -230,7 +230,7 @@ describe("the admission window (MED-3)", () => {
 // bytes with a sentence this chip already knows how to show.
 describe("the guard's scope (MED-4)", () => {
   it("a `.md` that happens to begin with `<svg` stages clean", async () => {
-    globalThis.fetch = vi.fn(async () =>
+    xhr.respond.mockReturnValue(
       mintOk({ name: "drawing.md", kind: "text", mime: "text/markdown", bytes: 40 }),
     );
     await offerFiles([new File(['<svg width="10"><circle r="4"/></svg>'], "drawing.md")]);
@@ -239,7 +239,7 @@ describe("the guard's scope (MED-4)", () => {
   });
 
   it("…and a text file is never refused for the shape of its bytes", async () => {
-    globalThis.fetch = vi.fn(async () =>
+    xhr.respond.mockReturnValue(
       mintOk({ name: "data.json", kind: "text", mime: "application/json", bytes: 9 }),
     );
     // A PNG signature inside a `.json` is the server's business (its sniff), not a client refusal.
@@ -252,7 +252,7 @@ describe("the guard's scope (MED-4)", () => {
     await offerFiles([new File([new Uint8Array(2 * 1024 * 1024)], "log.txt")]);
     expect(stagedFiles()[0].status).toBe("failed");
     expect(stagedFiles()[0].error).toContain("this app accepts up to 1.0 MB per file");
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(xhr.calls).toHaveLength(0);
   });
 });
 
@@ -280,12 +280,10 @@ describe("the delivery", () => {
 
   it("the PUT carries the minted name and the chip adopts the SERVER's answer", async () => {
     await offerFiles([picture("holiday snap.png")]);
-    const [url, init] = (
-      globalThis.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
-    ).mock.calls[0];
+    const { url, method } = xhr.calls[0];
     // The name follows the EXPORT's extension (the encoder's own bytes), sanitised by `mintName`.
     expect(url).toBe("/api/attachments/staging/holiday%20snap.webp");
-    expect(init.method).toBe("PUT"); // never POST, never multipart (SECURITY_MODEL §2.8)
+    expect(method).toBe("PUT"); // never POST, never multipart (SECURITY_MODEL §2.8)
     expect(stagedFiles()[0]).toMatchObject({
       status: "staged",
       attachmentId: "a".repeat(32),
@@ -334,23 +332,19 @@ describe("the delivery", () => {
   });
 
   it("a text file is uploaded VERBATIM — no encoder is asked about it", async () => {
-    globalThis.fetch = vi.fn(async () =>
+    xhr.respond.mockReturnValue(
       mintOk({ name: "notes.txt", kind: "text", mime: "text/plain", bytes: 5 }),
     );
     await offerFiles([note()]);
     expect(exporter.exportImage).not.toHaveBeenCalled();
-    const [url, init] = (
-      globalThis.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
-    ).mock.calls[0];
+    const { url, body } = xhr.calls[0];
     expect(url).toBe("/api/attachments/staging/notes.txt");
-    expect(init.body).toBeInstanceOf(File);
+    expect(body).toBeInstanceOf(File);
     expect(stagedFiles()[0]).toMatchObject({ status: "staged", kind: "text" });
   });
 
   it("a refused upload keeps the server's own sentence on the chip", async () => {
-    globalThis.fetch = vi.fn(async () =>
-      mintRefusal(415, "that file is not an image, a PDF or text"),
-    );
+    xhr.respond.mockReturnValue(mintRefusal(415, "that file is not an image, a PDF or text"));
     await offerFiles([picture()]);
     expect(stagedFiles()[0]).toMatchObject({ status: "failed" });
     expect(stagedFiles()[0].error).toContain("not an image, a PDF or text");
@@ -358,7 +352,7 @@ describe("the delivery", () => {
   });
 
   it("an unreachable backend says so in the owner's terms", async () => {
-    globalThis.fetch = vi.fn(() => Promise.reject(new TypeError("network")));
+    xhr.respond.mockReturnValue("network-error");
     await offerFiles([note()]);
     expect(stagedFiles()[0].error).toContain("did not reach the server");
   });

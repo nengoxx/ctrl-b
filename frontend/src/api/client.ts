@@ -154,20 +154,59 @@ export function putJSON<T>(path: string, body: unknown): Promise<T> {
  *  the request non-safelisted, which is the very property the paragraph above rests on.
  *
  *  The one POST that does exist beside this (`postBlob`, below) is a derivation that stores nothing —
- *  its doc comment says why that is not an exception to this rule. */
+ *  its doc comment says why that is not an exception to this rule.
+ *
+ *  **XHR, not `fetch` — in Chromium, the one transport that sends a picked FILE by reference**
+ *  (2026-10-01, the owner's ST card imports; ISS-47). On Android, a file from the GENERIC picker
+ *  can reach the page with a size of ZERO (Chrome 154 / Android 10, a Downloads file: `file.size
+ *  === 0`, and `arrayBuffer()` is empty too). Everything that reads a `Blob` is bounded by that
+ *  recorded size, so `fetch(…, { body: file })` sent 0 bytes and the server answered "empty
+ *  upload". XHR's `send(file)` attaches a file-backed `File` by its PATH instead (Blink
+ *  `xml_http_request.cc`, the `HasBackingFile` → `AppendFile` branch), and the network stack reads
+ *  the whole file at send time — measured on the owner's phone: same file, `fetch` 0 bytes, XHR
+ *  every byte, sha-identical. Its limit is not reading but Chromium's upload check that the file's
+ *  mtime is within 1 s of the one the picker reported (`ERR_UPLOAD_FILE_CHANGED`, a bare network
+ *  error here); past it NO transport can send the file, so the real fix is the picker — the card
+ *  import's `image/png` door (AgentsTab) gets Chrome's image picker, which reports true metadata. A
+ *  body that is NOT a picked file (a canvas-encoded upload) is an ordinary in-memory blob either
+ *  way. That is Blink's behaviour, not a web-platform promise — Gecko sends a `File` over XHR
+ *  normally too, it just was not where this bug lived. So never "simplify" this back to `fetch`,
+ *  and never wrap or pre-read the `File` before it gets here (`new Blob([file])`, `await
+ *  file.arrayBuffer()`) — both read through the recorded zero size.
+ *  The answer is rebuilt as a `Response` so the refusal path stays the shared `refuse`. */
 export async function putBytes<T>(
   path: string,
   body: Blob,
   headers: Record<string, string> = {},
 ): Promise<T> {
-  const res = await fetch(path, {
-    method: "PUT",
-    headers: {
+  const res = await new Promise<Response>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", path);
+    const all = {
       "Content-Type": body.type || "application/octet-stream",
       Accept: "application/json",
       ...headers,
-    },
-    body,
+    };
+    for (const [name, value] of Object.entries(all)) xhr.setRequestHeader(name, value);
+    xhr.onload = () => {
+      // A null-body status may not carry a body into a `Response`, and a status outside 200–599 (a
+      // misbehaving proxy) makes the constructor throw — which, inside a handler, would leave this
+      // promise pending forever and the caller stuck on "importing…". So a throw REJECTS.
+      try {
+        const empty = xhr.status === 204 || xhr.status === 205 || xhr.status === 304;
+        resolve(
+          new Response(empty ? null : xhr.responseText, {
+            status: xhr.status,
+            statusText: xhr.statusText,
+          }),
+        );
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    };
+    // `fetch`'s network-failure CLASS (a `TypeError`), so every caller's catch classifies it as before.
+    xhr.onerror = xhr.onabort = xhr.ontimeout = () => reject(new TypeError("Failed to fetch"));
+    xhr.send(body);
   });
   if (!res.ok) await refuse(res);
   return (await res.json()) as T;
