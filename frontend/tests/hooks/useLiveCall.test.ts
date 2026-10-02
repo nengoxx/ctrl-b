@@ -1844,21 +1844,38 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     // The HOLD belongs to the released track; the fresh `captureReady` decides it again.
     expect(state.holdMode).toBe("off");
     expect(state.ecAll).toBe(false);
-    // call (EC on) → media (EC off) LEAVES comm mode: the mouth must re-tag (ISS-18 / R81).
-    expect(out).toEqual([{ type: "recapture", route: "media", deviceId: "", leavesComm: true }]);
+    // call (EC on) → media (EC off) LEAVES comm mode: the mouth must re-tag (ISS-18 / R81). The media
+    // route's ear opens at once — the stream it leaves behind is harmless off comm mode (ISS-54).
+    expect(out).toEqual([
+      {
+        type: "recapture",
+        route: "media",
+        deviceId: "",
+        leavesComm: true,
+        freshSink: false,
+      },
+    ]);
   });
 
   it("…and the device half alone, against the standing route", () => {
     const { state, out } = run(routed, [{ type: "routeChange", deviceId: "bt-headset" }]);
     expect(state.route).toBe("call");
-    // the route did not move, so comm mode was not left
+    // the route did not move, so comm mode was neither left nor entered — but a fresh ear ON the call
+    // route still waits the output pool out (ISS-54 design round, Maya M2: a comm-device switch re-routes VOICE streams)
     expect(out).toEqual([
-      { type: "recapture", route: "call", deviceId: "bt-headset", leavesComm: false },
+      {
+        type: "recapture",
+        route: "call",
+        deviceId: "bt-headset",
+        leavesComm: false,
+        freshSink: true,
+      },
     ]);
   });
 
   // ISS-18 (R81): only an EC-on → EC-off flip leaves comm mode. A device move on the EC-off route,
-  // or a flip INTO comm mode, opens nothing stale — the reverse direction re-routes on its own (R81 §3).
+  // or a flip INTO comm mode, does not LEAVE it — since ISS-54 every recapture onto the call route is a
+  // `freshSink` one instead (pinned in the dead-ear suite below).
   it("`leavesComm` is the EC-on → EC-off edge only", () => {
     const onMedia = run(routed, [{ type: "routeChange", route: "media" }]);
     expect(onMedia.out[0]).toMatchObject({ type: "recapture", leavesComm: true });
@@ -1953,7 +1970,15 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     ]);
     expect(state.phase).toBe("connecting");
     expect(state.note).toBe(CALL_COPY.busyRetrying);
-    expect(out).toEqual([{ type: "recapture", route: "media", deviceId: "", leavesComm: true }]);
+    expect(out).toEqual([
+      {
+        type: "recapture",
+        route: "media",
+        deviceId: "",
+        leavesComm: true,
+        freshSink: false,
+      },
+    ]);
     // …and the 1013 close that follows drives the ladder, as for every note-only refusal.
     expect(run(state, [{ type: "socketLost" }]).out).toEqual([{ type: "reconnect", delayMs: 400 }]);
   });
@@ -1970,5 +1995,241 @@ describe("callReduce — the route cycle (D74 S2)", () => {
     ]);
     // …and re-picking what is already live costs no reconnect.
     expect(run(routed, [{ type: "routeChange", route: "call" }]).out).toEqual([]);
+  });
+});
+
+// ── ISS-54: THE EAR THAT NEVER HEARD (evidence docs/research/R99 §1.4–§1.5 · §3) ─────────────────
+
+/** A connected call on the MEDIA route, whose ear came back EC-off — the seed of the flip into comm mode. */
+const mediaRouted = run(CALL_INITIAL, [
+  {
+    type: "captureReady",
+    holdMode: "auto",
+    ecAll: false,
+    route: "media",
+    deviceId: "",
+    ecOn: false,
+  },
+  { type: "ready" },
+]).state;
+
+describe("callReduce — the dead ear's rebuild (ISS-54)", () => {
+  const dead: CallSignal = { type: "earDead", reason: "noFrame", heard: false };
+
+  it("rebuilds the ear on the SAME route + device, after the pool's wait, and says so", () => {
+    const { state, out } = run(routed, [{ ...dead }]);
+    expect(state.phase).toBe("connecting");
+    expect(state.note).toBe(CALL_COPY.earStalled);
+    expect(state.gen).toBe(routed.gen + 1); // the leg in flight is fenced
+    expect(state.attempts).toBe(0);
+    expect(state.priorLeg).toBe(true); // the redial may meet our own unreaped slot (R86 LC-4)
+    expect(state.earRetried).toBe(true);
+    // the route cycle's own reset: the hold dies with the track, the fresh capture decides it again
+    expect(state.holdMode).toBe("off");
+    expect(state.route).toBe("call");
+    expect(out).toEqual([
+      {
+        type: "recapture",
+        route: "call",
+        deviceId: "",
+        leavesComm: false,
+        freshSink: true,
+      },
+    ]);
+  });
+
+  it("is legal in EVERY non-terminal phase — `connecting` included — and inert on a terminal", () => {
+    const thinking = run(routed, [{ type: "final", text: "hi" }]).state;
+    expect(thinking.phase).toBe("thinking");
+    const speakingRouted = run(routed, [{ type: "playbackStarted" }]).state;
+    const reconnecting = run(routed, [{ type: "socketLost" }]).state;
+    expect(reconnecting.phase).toBe("connecting");
+    for (const from of [CALL_INITIAL, reconnecting, routed, thinking, speakingRouted]) {
+      const { state, out } = run(from, [{ ...dead }]);
+      expect(state.phase).toBe("connecting");
+      expect(state.gen).toBe(from.gen + 1);
+      expect(out.map((e) => e.type)).toEqual(["recapture"]);
+    }
+    const ended = run(routed, [{ type: "hangup" }]).state;
+    const after = run(ended, [{ ...dead }]);
+    expect(after.out).toEqual([]);
+    expect(after.state).toBe(ended);
+  });
+
+  it("a death armed under another generation is a ghost", () => {
+    const { state, out } = run(routed, [{ ...dead, gen: routed.gen + 7 }]);
+    expect(out).toEqual([]);
+    expect(state).toBe(routed);
+  });
+
+  it("ONE rebuild per route (ISS-54 design round, Maya M1): a second death — heard or not — ends the call `micLost`", () => {
+    for (const heard of [false, true]) {
+      const once = run(routed, [{ ...dead, heard }, { type: "ready" }]).state;
+      expect(once.phase).toBe("listening");
+      const twice = run(once, [{ type: "earDead", reason: "error", heard: !heard }]);
+      expect(twice.state.phase).toBe("error");
+      expect(twice.state.note).toBe(CALL_COPY.micLost);
+      expect(twice.out).toEqual([{ type: "teardown", close: false }]);
+    }
+  });
+
+  it("…and the second death HARVESTS what was queued, like every failure terminal", () => {
+    // Queued BEFORE the first death: a final taken after the rebuild would earn the bound back
+    // (ISS-54 code round, Opus 2), and the second death would rebuild instead.
+    const queued = run(routed, [
+      { type: "playbackStarted" },
+      { type: "final", text: "keep this" },
+      { ...dead },
+      { type: "ready" },
+    ]).state;
+    expect(queued.pending).toEqual(["keep this"]);
+    const { out } = run(queued, [{ ...dead }]);
+    expect(out).toEqual([
+      { type: "harvest", lines: ["keep this"] },
+      { type: "teardown", close: false },
+    ]);
+  });
+
+  it("a ROUTE CYCLE resets the bound — the owner's own move earns the new route its own rebuild", () => {
+    const retried = run(routed, [{ ...dead }, { type: "ready" }]).state;
+    expect(retried.earRetried).toBe(true);
+    const moved = run(retried, [{ type: "routeChange", route: "media" }]).state;
+    expect(moved.earRetried).toBe(false);
+    const again = run(moved, [
+      { type: "captureReady", holdMode: "auto", ecAll: false, route: "media", deviceId: "" },
+      { type: "ready" },
+      { ...dead },
+    ]);
+    expect(again.state.phase).toBe("connecting"); // rebuilt, not ended
+    expect(again.out.at(-1)).toMatchObject({ type: "recapture", route: "media", freshSink: true });
+  });
+
+  it("the note STANDS past the fresh leg — what the dead ear missed is not connection news", () => {
+    const back = run(routed, [{ ...dead }, { type: "ready" }]).state;
+    expect(back.phase).toBe("listening");
+    expect(back.note).toBe(CALL_COPY.earStalled);
+  });
+
+  it("leaves the MOUTH and the queue alone — a reply still playing lands `speaking` on the fresh leg", () => {
+    const talking = run(routed, [{ type: "playbackStarted" }]).state;
+    const { state } = run(talking, [{ ...dead }]);
+    expect(state.mouthLive).toBe(true);
+    expect(run(state, [{ type: "ready" }]).state.phase).toBe("speaking");
+  });
+
+  it("releases a kill in flight — the route cycle's rule, shared", () => {
+    const killing = run(routed, [{ type: "playbackStarted" }, { type: "barge" }]).state;
+    expect(killing.killing).toBe(true);
+    expect(run(killing, [{ ...dead }]).state.killing).toBe(false);
+  });
+});
+
+describe("callReduce — the flip INTO the call route waits the pool out (ISS-54 ②)", () => {
+  it("media → call: a `freshSink` recapture, and the screen says why it takes this long", () => {
+    const { state, out } = run(mediaRouted, [{ type: "routeChange", route: "call" }]);
+    expect(out).toEqual([
+      {
+        type: "recapture",
+        route: "call",
+        deviceId: "",
+        leavesComm: false,
+        freshSink: true,
+      },
+    ]);
+    expect(state.note).toBe(CALL_COPY.switchingRoute);
+    // …and the fresh leg ends the wait, so it retracts the line (connection news, `CONNECTION_NOTES`)
+    expect(run(state, [{ type: "ready" }]).state.note).toBeNull();
+  });
+
+  it("a device move WITHIN the call route waits too, but is not 'switching to call mode' (ISS-54 lane D2, RULINGS)", () => {
+    const { state, out } = run(routed, [{ type: "routeChange", deviceId: "bt-headset" }]);
+    expect(out[0]).toMatchObject({ freshSink: true });
+    expect(state.note).toBe(routed.note);
+  });
+
+  it("a stuck media ear (EC came back ON) never left comm mode — no switching note, still a fresh sink", () => {
+    const stuck = run(CALL_INITIAL, [
+      {
+        type: "captureReady",
+        holdMode: "auto",
+        ecAll: true,
+        route: "media",
+        deviceId: "",
+        ecOn: true,
+      },
+      { type: "ready" },
+    ]).state;
+    const flipped = run(stuck, [{ type: "routeChange", route: "call" }]);
+    expect(flipped.out[0]).toMatchObject({ freshSink: true });
+    expect(flipped.state.note).toBe(stuck.note); // it was already in call mode — nothing to announce
+  });
+
+  it("a media-route device move opens at once, and keeps the note line as it was", () => {
+    const { state, out } = run(mediaRouted, [{ type: "routeChange", deviceId: "usb" }]);
+    expect(out[0]).toMatchObject({ leavesComm: false, freshSink: false });
+    expect(state.note).toBe(mediaRouted.note);
+  });
+});
+
+describe("callReduce — the MOUTH waits for the fresh ear on the call route (ISS-54 code round, Opus 1)", () => {
+  it("a flip INTO the call route holds the mouth until `captureReady` — comm mode is off until the gUM", () => {
+    const thinking = run(mediaRouted, [{ type: "final", text: "what time is it" }]).state;
+    expect(thinking.phase).toBe("thinking");
+    expect(mouthMayOpen(thinking)).toBe(true);
+    const waiting = run(thinking, [{ type: "routeChange", route: "call" }]).state;
+    expect(waiting.sinkWait).toBe(true);
+    expect(mouthMayOpen(waiting)).toBe(false);
+    const opened = run(waiting, [
+      { type: "captureReady", holdMode: "auto", ecAll: true, route: "call", deviceId: "" },
+    ]).state;
+    expect(opened.sinkWait).toBe(false);
+    expect(mouthMayOpen(opened)).toBe(true); // before `ready` even: the ear's gUM is what it waited for
+  });
+
+  it("a device move within the call route and an `earDead` rebuild there hold it too", () => {
+    expect(run(routed, [{ type: "routeChange", deviceId: "bt" }]).state.sinkWait).toBe(true);
+    const dead = run(routed, [{ type: "earDead", reason: "noFrame", heard: false }]).state;
+    expect(dead.sinkWait).toBe(true);
+    expect(mouthMayOpen(dead)).toBe(false);
+  });
+
+  it("…but nothing off the call route: a flip to media, a media device move, a media `earDead`", () => {
+    expect(run(routed, [{ type: "routeChange", route: "media" }]).state.sinkWait).toBe(false);
+    expect(run(mediaRouted, [{ type: "routeChange", deviceId: "usb" }]).state.sinkWait).toBe(false);
+    const dead = run(mediaRouted, [{ type: "earDead", reason: "error", heard: true }]);
+    expect(dead.state.sinkWait).toBe(false);
+    expect(dead.out[0]).toMatchObject({ freshSink: true }); // the ear still waits the pool out
+  });
+
+  it("a terminal during the wait clears it — no recapture is coming to", () => {
+    const waiting = run(routed, [{ type: "routeChange", deviceId: "bt" }]).state;
+    expect(run(waiting, [{ type: "captureLost" }]).state.sinkWait).toBe(false);
+    expect(run(waiting, [{ type: "hangup" }]).state.sinkWait).toBe(false);
+  });
+});
+
+describe("callReduce — a TAKEN final earns the rebuild back (ISS-54 code round, Opus 2)", () => {
+  const dead: CallSignal = { type: "earDead", reason: "noFrame", heard: false };
+
+  it("rebuild → a taken final → a second death REBUILDS again instead of `micLost`", () => {
+    const heard = run(routed, [
+      { ...dead },
+      { type: "ready" },
+      { type: "final", text: "still here" },
+    ]);
+    expect(submits(heard.out)).toEqual(["still here"]);
+    expect(heard.state.earRetried).toBe(false);
+    const again = run(heard.state, [{ ...dead }]);
+    expect(again.state.phase).toBe("connecting");
+    expect(again.out.map((e) => e.type)).toEqual(["recapture"]);
+  });
+
+  it("rebuild → no taken final → the second death ends the call `micLost`", () => {
+    // A final that is DROPPED (empty, here) proves nothing about the ear end-to-end.
+    const quiet = run(routed, [{ ...dead }, { type: "ready" }, { type: "final", text: "" }]).state;
+    expect(quiet.earRetried).toBe(true);
+    const twice = run(quiet, [{ ...dead }]);
+    expect(twice.state.phase).toBe("error");
+    expect(twice.state.note).toBe(CALL_COPY.micLost);
   });
 });

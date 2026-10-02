@@ -12,6 +12,7 @@ import {
   setCallMouthGate,
   setCallPrePlay,
   setCallVoice,
+  STREAM_RETAG_MS,
   subscribePlayback,
   useMouthFailures,
 } from "../lib/audioController";
@@ -44,6 +45,7 @@ import {
 import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
 import {
   ecEngaged,
+  type EarDeath,
   startPcmCapture,
   wantsAec,
   type MicRequest,
@@ -219,7 +221,12 @@ const KILL_BUZZ_MS = 20;
  *  main-thread stall the uplink pacer was built for (R71) — and it is a small fraction of the ~90 s of
  *  background silence R75 §3.5 derives before a freeze can even begin, so nothing short of an ear that
  *  genuinely stopped can trip it. NOT a config knob, for `DEGRADED_NOTE_MS`'s reason: it describes the
- *  platform's behaviour, not a preference of the owner's. */
+ *  platform's behaviour, not a preference of the owner's.
+ *
+ *  ITS SIBLING is the ear that never heard AT ALL (ISS-54): the capture's own first-frame watchdog and
+ *  its context's `error` (`pcmCapture`'s `FIRST_FRAME_MS`) → `earDead`. That one REBUILDS the capture
+ *  instead of redialling over it — a render-error context does not come back the way a frozen one does
+ *  (the `earDead` arm). */
 const EAR_OUTAGE_MS = 4000;
 
 /** The signals that re-arm the background idle clock (D73 S6 ④ / Maya F6): the owner speaking, their
@@ -399,6 +406,14 @@ export const CALL_COPY = {
    *  the leg is being redialled. It says what the owner needs to know and nothing else: a resumed call
    *  must never present as if it heard, and the stretch it missed is not recoverable. */
   earAsleep: "the ear was asleep — nothing said while away was heard",
+  /** ISS-54 — the capture's ear DIED (no frame ever, or its context errored) and is being rebuilt. The
+   *  `earAsleep` honesty rule: it STANDS past the fresh leg, because what was said into the dead ear
+   *  stays unheard whatever the rebuild fixes. */
+  earStalled: "the microphone stalled — anything said just now wasn't heard",
+  /** ISS-54 ② — the flip INTO call mode (`entersComm`) waits out the output pool (`STREAM_RETAG_MS`)
+   *  before the fresh ear opens, so the screen says why `connecting` takes this long. Connection news: the
+   *  fresh leg that ends the wait retracts it (`CONNECTION_NOTES`). */
+  switchingRoute: "switching to call mode — about five seconds",
   /** D74 S5 — a final the EAR has no energy to account for: the relay answered a stretch of near
    *  silence with a plausible sentence (R76), and the microphone says nobody said it. The line owns
    *  up to the DISCARD rather than explaining the mechanism — what the owner needs to know is that
@@ -418,9 +433,13 @@ export const CALL_COPY = {
 /** The notes a FRESH LEG retracts — connection news, which a live connection has just made false.
  *  Everything else standing there (a refused send, a mouth failure, an upstream hiccup) arrived for its
  *  own reason and is the owner's unread news, which a reconnect has no business clearing (S2b confirm
- *  F3). The set exists because there are now two: the strained note, and the busy-retrying one the
- *  reconnect itself put up. */
-const CONNECTION_NOTES: readonly string[] = [CALL_COPY.strained, CALL_COPY.busyRetrying];
+ *  F3). The set exists because there is more than one: the strained note, the busy-retrying one the
+ *  reconnect itself put up, and the route cycle's wait (ISS-54 ②) — which a leg that came up has ended. */
+const CONNECTION_NOTES: readonly string[] = [
+  CALL_COPY.strained,
+  CALL_COPY.busyRetrying,
+  CALL_COPY.switchingRoute,
+];
 
 // ── the machine ──────────────────────────────────────────────────────────────────────────────────
 
@@ -510,6 +529,18 @@ export interface CallState {
   gen: number;
   /** Reconnect attempts spent since the last `ready`. */
   attempts: number;
+  /** ISS-54 — this ROUTE has already had its one automatic rebuild after an `earDead`. Set by that
+   *  rebuild, reset by a route cycle (the owner's own move) or by a TAKEN final (the rebuilt ear heard
+   *  speech end-to-end — ISS-54 code round, Opus 2): a second death with neither in between ends the
+   *  call (`micLost`) instead of looping ~8 s rebuilds the ladder could never bound. */
+  earRetried: boolean;
+  /** ISS-54 code round (Opus 1): a fresh-sink recapture onto the CALL route is under way, so comm mode
+   *  is OFF until the fresh ear's `getUserMedia` turns it back on — and a stream the mouth opened in
+   *  that window would be born MEDIA-tagged and re-routed by the switch. The mouth waits (`mouthMayOpen`,
+   *  the existing seam), which it asks only when a reply STARTS, or RESUMES after a gap
+   *  (`audioController`'s chunked path) — a reply already playing keeps talking through the wait. Set by
+   *  `routeChange`/`earDead`, cleared by `captureReady` (the ear's gUM has run) and by every terminal. */
+  sinkWait: boolean;
 }
 
 export const CALL_INITIAL: CallState = {
@@ -537,6 +568,8 @@ export const CALL_INITIAL: CallState = {
   priorLeg: false,
   gen: 0,
   attempts: 0,
+  earRetried: false,
+  sinkWait: false,
 };
 
 export type SendResult = "accepted" | "refused" | "unknown" | "held";
@@ -602,6 +635,15 @@ export type CallSignal = { gen?: number } & (
   /** D73 S6 ② — the ear missed a stretch: the frames stopped arriving while the page was away (a
    *  frozen renderer, R75 §3.4) and the gap outran `EAR_OUTAGE_MS`. */
   | { type: "earOutage" }
+  /** ISS-54 — the capture's ear DIED (`PcmCaptureOpts.onDead`): its context raised `error`, or it never
+   *  posted a frame. `heard` (any frame ever) and `visibilityState` (the page when it died, ISS-54 design round F6) ride for
+   *  the trail; the reducer decides by neither. */
+  | {
+      type: "earDead";
+      reason: EarDeath;
+      heard: boolean;
+      visibilityState?: DocumentVisibilityState;
+    }
   /** D73 S6 ④ — a BACKGROUNDED call sat past `background_idle_s` with no speech and no reply. */
   | { type: "idleExpired" }
   | { type: "serverError"; code: string; message: string }
@@ -651,7 +693,10 @@ export type CallSignal = { gen?: number } & (
    *  dies at birth ("Call ended", no note, redial included). Carries no `gen` ON PURPOSE: it is the
    *  one signal that must land across the generation the cleanup moved. */
   | { type: "remount" }
-  | { type: "failed"; note: string } //        the call could not start at all
+  /** The call could not start at all. `cause` is TRAIL-ONLY (ISS-54 confirm round): which failure the
+   *  start threw (`failureCause`), so a render error ("audio context suspended (error)") reads apart from
+   *  a policy suspend; the reducer decides by `note` alone. */
+  | { type: "failed"; note: string; cause?: string }
 );
 
 export type CallEffect =
@@ -675,7 +720,8 @@ export type CallEffect =
   /** THE ROUTE CYCLE (D74 S2): close this leg cleanly, release the ear, and run the SAME acquisition
    *  the mount effect runs — under the new constraints. In-place `applyConstraints` is rejected by
    *  design (R78 §8: the mode is pinned by the live source for the device, and the round-trip reports
-   *  success on a set it never widened), so the only honest way to change the route is a new track. */
+   *  success on a set it never widened), so the only honest way to change the route is a new track.
+   *  Since ISS-54 it is also the dead ear's rebuild (`earDead`) — same route, same device, new track. */
   | {
       type: "recapture";
       route: string;
@@ -683,6 +729,16 @@ export type CallEffect =
       /** The flip leaves comm mode (EC on → off): the mouth must open a FRESH output stream for the next
        *  reply (`audioController.markStreamRetag`, ISS-18 / R81). */
       leavesComm: boolean;
+      /** THE EAR's half of the same mirror (ISS-54 ②, R99 §1.4): the fresh capture must not open its
+       *  context until the output pool has let the old context's stream go — `STREAM_RETAG_MS` from the
+       *  release — or it draws that stream back and the comm-mode re-route kills it. True for every
+       *  recapture onto the call route (a flip in, a device move within) and every `earDead` rebuild;
+       *  false where the old stream is harmless (a flip out of comm mode, a media-route device move).
+       *  …and the MOUTH's half (ISS-54 code round, Maya M1): every fresh-sink recapture ON THE CALL ROUTE
+       *  re-enters comm mode — releasing the last input left it for the wait — so the next reply opens a
+       *  fresh output stream too (`markStreamRetag`). Off the call route nothing is re-routed, and a
+       *  re-tag would only cost the next reply the 5.5 s element wait (ISS-54 confirm round, Opus). */
+      freshSink: boolean;
     }
   /** Release everything. `close` additionally dismisses the overlay — the user's own exit gets no
    *  terminal screen (§6); an `error`/`ended` terminal keeps the overlay up to say why. */
@@ -765,6 +821,46 @@ function killNow(s: CallState): Step {
   return { state: { ...mouth(s, false), killing: true }, out: [{ type: "kill" }] };
 }
 
+/** THE EAR STARTS OVER (D74 S2's route cycle, shared since ISS-54 with the `earDead` rebuild): the
+ *  state for "this leg closes, this ear is released, a fresh one is being acquired". ONE helper for both
+ *  arms, so a rule about what dies with the old track cannot be written into one and forgotten in the
+ *  other. The route pair, the note and the rebuild bound are the caller's. */
+function freshEar(s: CallState): CallState {
+  return {
+    ...s,
+    // The SCREEN is honest about what is happening: this is a fresh leg on a fresh ear, and the
+    // ladder starts clean because the redial is the acquisition's, not a rung of the ladder's (the
+    // `earDead` rebuild carries its own bound, `earRetried`).
+    phase: "connecting",
+    attempts: 0,
+    // …and THIS TAB DEMONSTRABLY OWNED A LEG a moment ago (R86 LC-4): the old one's slot is
+    // released only after its close has crossed Serve and the relay's upstream teardown has run,
+    // so the redial can be refused `busy` by our own leg. That is exactly the S6 ⑦ case — the
+    // note-only path, where the 1013 close drives the ladder that outlasts the slot.
+    priorLeg: true,
+    // The utterance in flight dies with the track, exactly as it does on a `socketLost`: the
+    // audio is gone and no session will endpoint it.
+    userSpeechActive: false,
+    waitingFinal: false,
+    // …and a kill in flight is released rather than left standing: its `killSettled` was armed
+    // under the generation this arm is about to move, so nothing would ever clear the flag and
+    // the pending queue would be held for the rest of the call.
+    killing: false,
+    // The HOLD belongs to the track (§5.1, resolved ONCE per capture), so it dies with it; the
+    // fresh `captureReady` decides it again under the new route. `earHeld` follows in normalize.
+    holdMode: "off",
+    ecAll: false,
+    // …and so does its TAIL (D80 ①): the fresh ear is not the one the reply was leaking into.
+    tail: false,
+    // THE FENCE (F7). The old leg's frames, its close, this capture's `onEnded` and any send
+    // outcome armed under it all become ghosts — which is the point: the redial is driven by the
+    // acquisition, not by the close, so a `socketLost` from the leg being closed must not spend a
+    // rung of a ladder that is not running. The one thing it costs is an in-flight chat POST's
+    // outcome, which is a note the owner loses, not speech (the queue is kept).
+    gen: s.gen + 1,
+  };
+}
+
 /** Land on a terminal: the pending queue is HARVESTED (never-lose applies to failures), the flags are
  *  cleared, and the generation moves so nothing armed under the old one can still fire. */
 function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
@@ -793,6 +889,8 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
       ecAll: false,
       tail: false,
       earHeld: false,
+      // …and no recapture is coming to clear the mouth's wait (ISS-54): the terminal's teardown runs.
+      sinkWait: false,
       gen: s.gen + 1,
     },
     out,
@@ -869,11 +967,12 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
 }
 
 /** MAY THE MOUTH BECOME AUDIBLE NOW (§4.2's iron rule, enforced by waiting — the owner's 2026-09-26
- *  ruling)? No transcript in flight, and no segment open unless it has been judged noise. The whole of
+ *  ruling)? No transcript in flight, no segment open unless it has been judged noise, and no fresh ear
+ *  still waiting for comm mode to come back (`sinkWait`, ISS-54). The whole of
  *  the controller's gate (`setCallMouthGate`); `barge_in` plays no part in it — a barge-in interrupts
  *  something AUDIBLE, and a mouth still waiting is not. */
 export function mouthMayOpen(s: CallState): boolean {
-  return !s.waitingFinal && (!s.userSpeechActive || s.noiseOpen);
+  return !s.waitingFinal && (!s.userSpeechActive || s.noiseOpen) && !s.sinkWait;
 }
 
 function reduce(s: CallState, sig: CallSignal): Step {
@@ -1069,6 +1168,10 @@ function reduce(s: CallState, sig: CallSignal): Step {
         heard: text,
         pending: [...s.pending, text],
         note: s.note === CALL_COPY.tooQuiet ? null : s.note,
+        // …and a rebuilt ear that heard speech end-to-end earns its one rebuild back (ISS-54 code round,
+        // Opus 2): a long call's second, unrelated render error is not a loop — a flapping headset
+        // yields no taken finals between flaps, so it stays bounded.
+        earRetried: false,
       });
     }
 
@@ -1162,6 +1265,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
           route: sig.route,
           ecOn: sig.ecOn ?? wantsAec(sig.route),
           inputDevice: sig.deviceId,
+          // The fresh ear's `getUserMedia` has run, so comm mode is back on: the mouth may open again
+          // (ISS-54 code round, Opus 1), and the poke after this reduce releases a start it held.
+          sinkWait: false,
         },
         out: [],
       };
@@ -1180,42 +1286,29 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // finishes on the old route. The Sound picker's footer says so, statically, where the choice is
       // made (owner ruling 2026-09-24) — not a note on the overlay's line, which read as an alarm.
       const leavesComm = s.ecOn && !wantsAec(route);
+      // …and its mirror (ISS-54): entering comm mode re-routes the mouth's pooled MEDIA stream (ISS-54
+      // design round F2) — the one move the note names — and ANY ear opened on the call route (a flip in,
+      // or a device move within it) must wait the pool out before its context draws a stream (ISS-54
+      // design round, Maya M2: a comm-device switch re-routes VOICE streams too).
+      const entersComm = !s.ecOn && wantsAec(route);
+      const freshSink = wantsAec(route);
       return {
         state: {
-          ...s,
+          ...freshEar(s),
           route,
           inputDevice: deviceId,
-          // The SCREEN is honest about what is happening: this is a fresh leg on a fresh ear, and the
-          // ladder starts clean because it is a deliberate redial, not a failure to recover from.
-          phase: "connecting",
-          attempts: 0,
-          // …and THIS TAB DEMONSTRABLY OWNED A LEG a moment ago (R86 LC-4): the old one's slot is
-          // released only after its close has crossed Serve and the relay's upstream teardown has run,
-          // so the redial can be refused `busy` by our own leg. That is exactly the S6 ⑦ case — the
-          // note-only path, where the 1013 close drives the ladder that outlasts the slot.
-          priorLeg: true,
-          // The utterance in flight dies with the track, exactly as it does on a `socketLost`: the
-          // audio is gone and no session will endpoint it.
-          userSpeechActive: false,
-          waitingFinal: false,
-          // …and a kill in flight is released rather than left standing: its `killSettled` was armed
-          // under the generation this arm is about to move, so nothing would ever clear the flag and
-          // the pending queue would be held for the rest of the call.
-          killing: false,
-          // The HOLD belongs to the track (§5.1, resolved ONCE per capture), so it dies with it; the
-          // fresh `captureReady` decides it again under the new route. `earHeld` follows in normalize.
-          holdMode: "off",
-          ecAll: false,
-          // …and so does its TAIL (D80 ①): the fresh ear is not the one the reply was leaking into.
-          tail: false,
-          // THE FENCE (F7). The old leg's frames, its close, this capture's `onEnded` and any send
-          // outcome armed under it all become ghosts — which is the point: the redial below is driven
-          // by the acquisition, not by the close, so a `socketLost` from the leg we are closing must
-          // not spend a rung of a ladder that is not running. The one thing it costs is an in-flight
-          // chat POST's outcome, which is a note the owner loses, not speech (the queue is kept).
-          gen: s.gen + 1,
+          // A new route gets its own one rebuild (ISS-54 design round, Maya M1): the bound is per route,
+          // and this is the owner's own move, not the machine's loop.
+          earRetried: false,
+          // The mouth waits for the fresh ear's gUM on the call route (ISS-54 code round, Opus 1).
+          sinkWait: freshSink && wantsAec(route),
+          // ISS-54 design round F7 — the flip INTO call mode waits ~5.5 s in `connecting`, and the screen owes that an
+          // explanation. Only that flip: a device move within the call route waits too but is not
+          // "switching to call mode" (ISS-54 lane D2, RULINGS), and every other move keeps the line as it
+          // was (the flip out has the picker's footer — owner ruling 2026-09-24).
+          note: entersComm ? CALL_COPY.switchingRoute : s.note,
         },
-        out: [{ type: "recapture", route, deviceId, leavesComm }],
+        out: [{ type: "recapture", route, deviceId, leavesComm, freshSink }],
       };
     }
 
@@ -1381,6 +1474,36 @@ function reduce(s: CallState, sig: CallSignal): Step {
       return {
         state: { ...s, phase: "connecting", note: CALL_COPY.earAsleep },
         out: [{ type: "closeLeg" }],
+      };
+
+    case "earDead":
+      // THE EAR THAT NEVER HEARD (ISS-54, R99 §3). NOT `earOutage`'s remedy: that redials the socket
+      // over the SAME capture, which a frozen context survives and a render-error context does not —
+      // the fresh leg would come up `ready` on a dead ear. The remedy is the route cycle's own: release
+      // the ear and acquire a fresh one, after the output pool has let the dead context's stream go
+      // (`freshSink`). Legal in EVERY non-terminal phase, `connecting` included: a death before `ready`
+      // must not be lost, the generation move fences the leg in flight, and the effect clears a pending
+      // reconnect and closes the socket.
+      // ONE rebuild per route (ISS-54 design round, Maya M1): the ladder cannot bound this (`ready` resets
+      // it before a watchdog can fire), so a second death on the same route is the micLost terminal —
+      // the owner redials. A TAKEN final earns the rebuild back (the `final` arm, ISS-54 code round Opus 2).
+      if (s.earRetried) return terminal(s, "error", CALL_COPY.micLost);
+      return {
+        state: {
+          ...freshEar(s),
+          note: CALL_COPY.earStalled,
+          earRetried: true,
+          sinkWait: wantsAec(s.route), // the effect's `freshSink` is always true here
+        },
+        out: [
+          {
+            type: "recapture",
+            route: s.route,
+            deviceId: s.inputDevice,
+            leavesComm: false,
+            freshSink: true,
+          },
+        ],
       };
 
     case "idleExpired":
@@ -1577,7 +1700,7 @@ function clearSegments(m: EarMeter): void {
  *  · a SEGMENT opens on an accepted speech-start that names its id, is FROZEN by its own stop, and is
  *    consumed by its own final — each keyed by the ear's `item_id`, never by arrival order;
  *  · the whole LEDGER clears wherever the evidence becomes unknowable — a mute, a leg that died, a leg
- *    that came up, and the route cycle (and the teardown);
+ *    that came up, the route cycle and the dead ear's rebuild (and the teardown);
  *  · and MUTE clears both, because "the ear is closed" has to mean it.
  *
  * RETURNS the closing segment's level evidence when the signal was a final the reducer TOOK (it
@@ -1644,6 +1767,12 @@ function meterEdge(
       // phases, or nothing moved) must not throw away evidence for an utterance that is still
       // live. An accepted cycle paints `connecting`, and that edge is the truth to key on.
       if (next.phase !== prev.phase) clearSegments(m);
+      break;
+    case "earDead":
+      // …and the ISS-54 rebuild releases the ear the same way. It may land in `connecting`, where the
+      // phase does not move, so the edge here is the generation: a stale death the fence dropped moved
+      // nothing and voids nothing.
+      if (next.gen !== prev.gen) clearSegments(m);
       break;
   }
   return null;
@@ -2179,7 +2308,9 @@ export function useLiveCall(): CallView {
   const armIdleRef = useRef<() => void>(() => {});
   /** …and once more for THE ACQUISITION (D74 S2): `send` runs the `recapture` effect, and `acquire`
    *  needs `openLeg`, which needs `send`. Same latch-ref idiom, same read-only-from-a-callback rule. */
-  const acquireRef = useRef<(req: MicRequest, alive: () => boolean) => void>(() => {});
+  const acquireRef = useRef<(req: MicRequest, alive: () => boolean, notBefore?: number) => void>(
+    () => {},
+  );
 
   const send = useCallback(
     function send(sig: CallSignal): void {
@@ -2322,8 +2453,12 @@ export function useLiveCall(): CallView {
             const gen = ref.current.gen;
             // ISS-18 (R81): the mouth's next reply must open a FRESH output stream once comm mode is
             // left — told BEFORE the ear is released, so a silent mouth is unloaded and its 5 s starts
-            // alongside the redial rather than after it.
-            if (eff.leavesComm) markStreamRetag();
+            // alongside the redial rather than after it. …and on every FRESH-SINK recapture (ISS-54 code
+            // round, Maya M1) ON THE CALL ROUTE: the wait leaves comm mode and the fresh ear's gUM
+            // re-enters it, so whatever the mouth pooled is re-routed; the reducer's `sinkWait` keeps the
+            // mouth shut until that gUM, and this makes its next `src` a fresh stream. A media-route
+            // fresh sink (an `earDead` there) re-routes nothing, so it re-tags nothing (confirm round).
+            if (eff.leavesComm || (eff.freshSink && wantsAec(eff.route))) markStreamRetag();
             clearTimeout(retryTimer.current);
             socket.current?.close();
             socket.current = null;
@@ -2343,12 +2478,18 @@ export function useLiveCall(): CallView {
             persistVoice(gate.current);
             capture.current?.stop();
             capture.current = null;
+            // THE POOL ESCAPE (ISS-54 ②, R99 §1.4): the clock starts HERE, at the release — closing
+            // the old context is what hands its output stream back to the pool, and only a stream
+            // idle past Chromium's close delay is gone. `STREAM_RETAG_MS` is that delay plus slack,
+            // the mouth's own number for the same pool (ISS-18).
+            const notBefore = eff.freshSink ? performance.now() + STREAM_RETAG_MS : 0;
             // NOT `markLeg(false)`: this tab is still in a call. And the fence is the generation this
             // arm just moved — a hang-up or a terminal inside the acquisition gap moves it again, and
             // the capture that resolves afterwards stops itself exactly as the mount path's does.
             acquireRef.current(
               { route: eff.route, deviceId: eff.deviceId },
               () => ref.current.gen === gen,
+              notBefore,
             );
             break;
           }
@@ -2616,6 +2757,8 @@ export function useLiveCall(): CallView {
    * @param alive the CALLER's own fence. The mount effect's is its `disposed` local, which has to stay
    *              per-RUN: StrictMode's first setup must go on refusing its own late capture even after
    *              the second setup has started a real one.
+   * @param notBefore ISS-54 ② — `performance.now()` before which the ear must not open (the output
+   *              pool's wait, set by a `freshSink` recapture). 0 — the mount path — opens at once.
    */
   /** THE CONNECT CHIRP, played and listened for on `cap` (D80 ⑦): scheduled on the capture's own context
    *  a lead ahead of its clock, a fresh matcher over the same clock, and its window riding the drop cue's
@@ -2629,7 +2772,7 @@ export function useLiveCall(): CallView {
   }, []);
 
   const acquire = useCallback(
-    (req: MicRequest, alive: () => boolean): void => {
+    (req: MicRequest, alive: () => boolean, notBefore = 0): void => {
       if (!knobs) return;
       // Trigger A's window, in FRAMES — the same `min_speech_ms` the consecutive run spent, read once
       // here rather than divided on every frame (D74 S4 ⑥).
@@ -2647,8 +2790,16 @@ export function useLiveCall(): CallView {
       // honestly reports a mode this call never chose. Stop, THEN open. It resolves at once when
       // nothing was recording, which is every ordinary call.
       void releaseMic()
-        .then(() =>
-          startPcmCapture({
+        .then(async () => {
+          // THE POOL'S WAIT (ISS-54 ②) sits BEFORE `getUserMedia`: the fresh context opens after comm
+          // mode is on and after the old stream has aged out of the pool — exactly what a direct
+          // call-route start gets — and a call that ended during the wait never opens a mic at all.
+          const wait = notBefore - performance.now();
+          if (wait > 0) {
+            await new Promise((resolve) => setTimeout(resolve, wait));
+            if (!alive()) return null;
+          }
+          return startPcmCapture({
             frameMs: knobs.frame_ms,
             // D73 S5 — the capture pair, read at call start like every other knob (§4.5).
             route: req.route,
@@ -2806,9 +2957,22 @@ export function useLiveCall(): CallView {
               }
             },
             onEnded: () => send({ type: "captureLost", gen: ref.current.gen }),
-          }),
-        )
+            // ISS-54 — the ear died without the track ending (a context `error`, or no frame ever).
+            // The page's visibility rides along for the trail (ISS-54 design round F6): a locked screen's death reads
+            // differently from one in front of the owner.
+            onDead: (reason, heard) =>
+              send({
+                type: "earDead",
+                reason,
+                heard,
+                visibilityState: document.visibilityState,
+                gen: ref.current.gen,
+              }),
+          });
+        })
         .then((cap) => {
+          // The pool's wait outlived the call — nothing was opened, so there is nothing to release.
+          if (cap === null) return;
           // TERMINAL beside DISPOSED (S6 code-review F1): a close-class exit (`hidden`, `pagehide`, a
           // hang-up) lands the machine terminal SYNCHRONOUSLY, but the unmount whose cleanup sets
           // `disposed` waits for React's commit — and a capture resolving inside that window would
@@ -2941,6 +3105,9 @@ export function useLiveCall(): CallView {
                 chirp: knobs.chirp,
               },
             });
+            // ISS-54 design round F4 — the context's own events, from birth: whatever it raised before this install
+            // first, then each one as it lands, until the capture is released.
+            cap.watchContext((e) => trail.current?.push("ctx", { ...e }));
             if (trailSampler.current === undefined)
               trailSampler.current = setInterval(() => {
                 // The debug block's record, only its moving fields (`TRAIL_SAMPLE_FIELDS`) — and the
@@ -2949,6 +3116,10 @@ export function useLiveCall(): CallView {
                 const line: Record<string, unknown> = {};
                 for (const k of TRAIL_SAMPLE_FIELDS) line[k] = d[k];
                 line.phase = ref.current.phase;
+                // ISS-54 / R99 §4 — is the context RENDERING: `running` proves nothing on its own, and
+                // `currentTime` advances only while a render happens.
+                line.ctxState = capture.current?.context.state;
+                line.ctxTime = capture.current?.context.currentTime;
                 trail.current?.push("sample", line);
               }, TRAIL_SAMPLE_MS);
           }
@@ -2967,7 +3138,7 @@ export function useLiveCall(): CallView {
           openLeg();
         })
         .catch((e: unknown) => {
-          if (alive()) send({ type: "failed", note: micFailure(e) });
+          if (alive()) send({ type: "failed", note: micFailure(e), cause: failureCause(e) });
         });
     },
     [knobs, openLeg, send, readDebug, startChirp],
@@ -3302,6 +3473,14 @@ export function useLiveCall(): CallView {
     floorAuto: !pinned,
     setFloorPin,
   };
+}
+
+/** …and the same failure in the ENGINE's words, for the trail only (ISS-54 confirm round): a platform
+ *  `DOMException`'s class (`NotAllowedError`, …), or — for the capture's own plain `Error` — its message,
+ *  which is a fixed sentence of `pcmCapture`'s (never a browser string that could carry anything else). */
+function failureCause(e: unknown): string {
+  if (!(e instanceof Error)) return "unknown";
+  return e.name === "Error" ? e.message : e.name;
 }
 
 /** Why the ear never opened, in the owner's words rather than the engine's. */

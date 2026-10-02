@@ -36,6 +36,14 @@ import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "./pcmWorklet";
 // device-rate context would. Where the pair cannot be built (Firefox/Fennec before 148) it falls back
 // to the device rate, and either way the context's REAL rate is what every consumer reads and the
 // relay is told.
+//
+// A CONTEXT CAN DIE AFTER IT RAN (ISS-54, evidence docs/research/R99 §1.4–§1.5 · §3): the one-shot
+// "is it running" check at start proves nothing about rendering. A media→call flip can hand the fresh
+// context the previous one's pooled output stream, which the switch into communication mode re-routes
+// and AAudio then disconnects — a render error (`error` + `suspended`) with not one frame ever posted.
+// So the capture WATCHES its own context for the life of the call: a first-frame watchdog and the
+// context's `error` event, reported once through `onDead` beside `onEnded`. What to do about it (one
+// rebuild that waits the pool out) is the call machine's business, not this module's.
 
 // ── THE ROUTE (D73 S5 → D76 §A; evidence docs/research/R74, R80) ─────────────────────────────────
 // Chrome Android puts the whole device into `MODE_IN_COMMUNICATION` — and re-tags the page's OWN
@@ -363,6 +371,19 @@ export interface MicReadback {
   nativeRate: boolean;
 }
 
+/** How a capture's ear died (ISS-54): the context's own `error` event (a render error — the R99 §1.5
+ *  device-change chain), or `noFrame` — the first-frame watchdog ran out with nothing posted. */
+export type EarDeath = "error" | "noFrame";
+
+/** One event on the capture's context, as the trail records it (ISS-54 / R99 §6). `ctxTime` is the
+ *  context's `currentTime` at the event — the clock that only advances while it renders. Not `t`: the
+ *  trail stamps every line with its own `t`, and a payload field of that name would overwrite it. */
+export interface CtxEvent {
+  event: "statechange" | "error";
+  state: AudioContextState;
+  ctxTime: number;
+}
+
 export interface PcmCapture {
   /** This capture's own `AudioContext` — running, gesture-unlocked, and released by `stop()`. Exposed
    *  for the call's sound cue (`lib/callCue`, D76 §C.5), which plays on the one context a call already
@@ -433,6 +454,13 @@ export interface PcmCapture {
    *  It lives here because this context is this module's, and it is invisible to everything above: it
    *  is not playback, it has no status, and no rule in the call machine can see it. Idempotent. */
   setKeepalive: (on: boolean) => void;
+  /** THE CONTEXT'S OWN EVENTS, for the trail (ISS-54 design round F4). The listeners go on the moment the context
+   *  exists — before the resume — because the evidence that matters most can land before anybody
+   *  upstairs holds this capture; until a watcher is set the events wait in a small bounded log. Setting
+   *  one hands it that log, then every later event, until `stop()` (which removes the listeners: a
+   *  close's own `statechange` must not land under the next leg's stamp). Trail only — nothing decides
+   *  by a `statechange` (a frozen page suspends too, R75 §3.4); `error` alone is a death (`onDead`). */
+  watchContext: (watch: (e: CtxEvent) => void) => void;
   /** Release everything: the worklet, the graph, the context, the track, and the Blob URL. Idempotent. */
   stop: () => void;
 }
@@ -444,6 +472,11 @@ export interface PcmCaptureOpts extends MicRequest {
   /** The track ENDED on its own — permission revoked, a real phone call stole the mic, a headset
    *  unplugged (§4.5's capture-loss rule: the call ends in `error` with a plain reason). */
   onEnded: () => void;
+  /** The ear DIED without the track ending (ISS-54): the context raised `error`, or no frame arrived
+   *  within `FIRST_FRAME_MS` of the start. Called at most once, never after `stop()`, and never for a
+   *  track that has ENDED — that is `onEnded`'s outcome, one unplug, one report. `heard` says whether
+   *  any frame ever arrived (deaf or not) — trail evidence for which death it was. */
+  onDead: (reason: EarDeath, heard: boolean) => void;
 }
 
 /** The worklet graph, detachable (S2.5). Deliberately NOT a `PcmCapture`: it owns neither the stream
@@ -603,6 +636,21 @@ async function openEcChecked(
   };
 }
 
+// ── THE EAR THAT NEVER HEARD (ISS-54, evidence docs/research/R99 §1.4–§1.5 · §4 · §6 ①) ────────────
+
+/** How long a started capture may go without its FIRST frame before it is reported dead, ms. A healthy
+ *  ear posts within 1 s on the owner's phone (the direct call-route start, `bc9d8d20`: chirp heard by
+ *  the first 1 Hz sample) — a frame is one `frame_ms` (40 ms) plus one sink start after the worklet's
+ *  `addModule` restart (R99 §2.3). 2 s is twice that bound, and far under the relay's 15 s
+ *  `uplink_idle` reap, which is what ends a deaf call today. A PLATFORM constant like
+ *  `EC_RELEASE_RETRY_MS`, not a knob: a false trip costs one bounded rebuild, never the call. */
+export const FIRST_FRAME_MS = 2000;
+
+/** How many context events wait for a watcher (`watchContext`). The window they cover is the start's
+ *  own — resume, worklet install — where a handful is the most the platform raises; past this, the
+ *  rest are dropped rather than grown without bound by a context flapping before anyone looks. */
+const CTX_EVENT_LOG_MAX = 8;
+
 /**
  * Open the call's capture chain. Throws whatever `getUserMedia` throws (a denied permission, an absent
  * device) — the caller renders that as the call's error terminal; everything it allocated before a later
@@ -631,6 +679,41 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
    *  different property and this module's own two rules above). Frames still arrive; they are silence. */
   let deaf = false;
   let keepalive: { src: ConstantSourceNode; gain: GainNode } | null = null;
+  // THE EAR'S DEATH (ISS-54). `framed` is ANY frame — deaf ones included: an OS-muted track still posts
+  // its silence (R99 §2.1), so a mute cannot trip the watchdog; only a graph that never ran can.
+  // `errored` latches a context `error` raised before the watchdog is armed (ISS-54 design round F4). `dead` is the one
+  // outcome a capture reports, whichever door — `ended` or `onDead` — reached it first.
+  let framed = false;
+  let errored = false;
+  let armed = false;
+  let dead = false;
+  let firstFrame: ReturnType<typeof setTimeout> | undefined;
+  const ctxLog: CtxEvent[] = [];
+  let ctxWatch: ((e: CtxEvent) => void) | null = null;
+  /** Report the death once — or, for a track that has ENDED (an unplug raises both), the end instead
+   *  (ISS-54 design round F5): the call machine gets one outcome per failure, and an unplug is the micLost terminal. */
+  const die = (reason: EarDeath): void => {
+    if (stopped || dead) return;
+    dead = true;
+    clearTimeout(firstFrame);
+    if (track.readyState === "ended") opts.onEnded();
+    else opts.onDead(reason, framed);
+  };
+  /** Both context listeners' one body: the trail's record, the pre-arm latch, and — once armed — the
+   *  death. A `statechange` is recorded and decides nothing. */
+  const onCtxEvent = (ev: Event): void => {
+    if (stopped || !ctx) return;
+    const e: CtxEvent = {
+      event: ev.type === "error" ? "error" : "statechange",
+      state: ctx.state,
+      ctxTime: ctx.currentTime,
+    };
+    if (ctxWatch) ctxWatch(e);
+    else if (ctxLog.length < CTX_EVENT_LOG_MAX) ctxLog.push(e);
+    if (e.event !== "error") return;
+    errored = true;
+    if (armed) die("error");
+  };
   const applyEnabled = (): void => {
     // Guarded on `stopped` for the same reason every other exit here is: a released track is not a muted
     // one, and re-enabling one the call has already torn down would be a lie about the ear.
@@ -663,11 +746,18 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
   const stop = (): void => {
     if (stopped) return;
     stopped = true;
+    clearTimeout(firstFrame);
+    ctxWatch = null;
     // Before the context goes: the node is this graph's, and a keepalive outliving the call it kept
     // alive would be a page held audible by nothing.
     setKeepalive(false);
     for (const t of stream.getTracks()) t.stop();
-    if (ctx) void ctx.close().catch(() => {});
+    if (ctx) {
+      // No listener survives the capture (ISS-54 design round, Maya L1): the close below raises its own `statechange`.
+      ctx.removeEventListener("error", onCtxEvent);
+      ctx.removeEventListener("statechange", onCtxEvent);
+      void ctx.close().catch(() => {});
+    }
     // The graph's own release (its Blob URL): the uplink owns what it minted, this owns the context
     // and the track. Order is irrelevant — both are idempotent and neither reaches into the other.
     uplink?.stop();
@@ -678,19 +768,28 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
     // and the running check below, unchanged.
     const opened = openCaptureContext(stream);
     ctx = opened.ctx;
+    // WATCHED FROM BIRTH (ISS-54 design round F4): an `error` raised during the resume or the worklet install is exactly the
+    // flip's evidence, and a listener armed later would never hear it.
+    ctx.addEventListener("error", onCtxEvent);
+    ctx.addEventListener("statechange", onCtxEvent);
     if (ctx.state === "suspended") await ctx.resume().catch(() => {});
     // A context that will not run is a SILENT CALL: the graph builds, the worklet installs, and not one
     // frame is ever pulled — the overlay would reach "Listening" and sit there forever with a dead ear.
     // Failing the start instead puts it where the owner can see it (the call's error terminal). The
     // `resume()` above rides the sticky user activation of the call's tap (`primeAudio` unlocks only the
     // `<audio>` element, never a context); there is no second chance here.
-    if (ctx.state !== "running") throw new Error("audio context suspended");
+    // …and the message says whether the context raised `error` on the way (ISS-54 code round, Opus 6):
+    // a policy that refused the resume and a render error both leave it suspended, and only the latch
+    // above can tell them apart.
+    if (ctx.state !== "running")
+      throw new Error(errored ? "audio context suspended (error)" : "audio context suspended");
     uplink = await attachPcmUplink(ctx, stream, {
       frameMs: opts.frameMs,
       // The `stopped` guard stays HERE rather than riding the uplink's own `detached`: a released
       // CAPTURE must deliver nothing even in the window before `stop()` reaches the graph.
       onFrame: (frame) => {
         if (stopped) return;
+        framed = true;
         // THE STAMP (S6 ②): only a frame the ear genuinely HEARD moves it. While the track is OS-muted
         // the frames are silence, and counting them would tell the outage detector the ear was awake
         // through exactly the stretch it slept.
@@ -700,8 +799,25 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
         opts.onFrame({ buf: frame.buf, rms: frame.rms, t: frame.t, uplinked: !(muted || held) });
       },
     });
+    // THE WATCHDOG (ISS-54), armed once the graph exists and before this resolves: no frame within
+    // `FIRST_FRAME_MS` is a dead ear. An `error` that already landed during the start dies on a 0 ms
+    // timer instead — after the caller has installed this capture, so the report reaches a call that
+    // holds it (ISS-54 design round F4). A `statechange` is never a death, and the one-shot running check above still
+    // owns a context that never ran (a failed start, as before).
+    armed = true;
+    firstFrame = setTimeout(
+      () => {
+        if (errored) die("error");
+        else if (!framed) die("noFrame");
+      },
+      errored ? 0 : FIRST_FRAME_MS,
+    );
     track.addEventListener("ended", () => {
-      if (!stopped) opts.onEnded();
+      // The same one-outcome latch as `die`: a capture that already reported its death says nothing more.
+      if (stopped || dead) return;
+      dead = true;
+      clearTimeout(firstFrame);
+      opts.onEnded();
     });
     // …and the two events beside it (S6 ②). `muted` is the TRACK's own property — the OS handing the
     // mic to a phone call, a headset event — and it is not `ended`: the track comes back, which is
@@ -744,6 +860,11 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
       },
       earGapMs: () => performance.now() - lastHeard,
       setKeepalive,
+      watchContext: (watch) => {
+        if (stopped) return;
+        for (const e of ctxLog.splice(0)) watch(e);
+        ctxWatch = watch;
+      },
       stop,
     };
   } catch (e) {

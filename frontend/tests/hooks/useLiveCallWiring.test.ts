@@ -98,7 +98,21 @@ const h = vi.hoisted(() => ({
     baseLatency: 0.01,
     currentTime: 5,
     sampleRate: 16000, // the context the worklet runs at (Phase 26 S1 T5 — the trail's `ctxRate`; K6's rate)
+    state: "running", // ISS-54 — the 1 Hz sample's `ctxState`
   },
+  /** ISS-54 — the live capture's `onDead`: the case plays the context dying (`die(reason, heard)`). */
+  dead: null as ((reason: "error" | "noFrame", heard: boolean) => void) | null,
+  /** …and its `watchContext` watcher, so a case can play the context's own events into the trail. */
+  ctxWatch: null as
+    | ((e: { event: "statechange" | "error"; state: AudioContextState; ctxTime: number }) => void)
+    | null,
+  /** How many captures have been STARTED (`startPcmCapture` calls that got past the case's gate). */
+  capStarts: 0,
+  /** What the next `startPcmCapture` THROWS, when a case wants the start to fail (ISS-54 confirm round). */
+  capFail: null as Error | null,
+  /** ISS-54 — make the MEDIA route's readback EC-OFF (a real Chrome's), so a flip back INTO the call
+   *  route genuinely enters comm mode. Off by default: every older case reads `"all"` on either route. */
+  mediaEcOff: false,
   /** THE CONNECT CHIRP (D80 ⑦), as the wiring drives it: every `playChirp` (by context and `when`), and
    *  the matchers it made; a matcher concludes `chirpVerdict` on its `chirpAfter`-th frame. */
   chirpPlay: vi.fn((_ctx: unknown, _when: number) => true),
@@ -178,7 +192,11 @@ const h = vi.hoisted(() => ({
   }[],
 }));
 
-vi.mock("../../src/lib/audioController", () => ({
+vi.mock("../../src/lib/audioController", async (importActual) => ({
+  // ISS-54 — the pool's wait the route cycle reuses: the REAL platform number, so a case pins the
+  // shipped wait rather than the harness's opinion of it.
+  STREAM_RETAG_MS: (await importActual<typeof import("../../src/lib/audioController")>())
+    .STREAM_RETAG_MS,
   /** ISS-18: how many times the route cycle told the mouth to open a FRESH output stream. */
   markStreamRetag: () => {
     h.retags += 1;
@@ -280,17 +298,21 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
   ecEngaged: (await importActual<typeof import("../../src/lib/pcmCapture")>()).ecEngaged,
   startPcmCapture: async (opts: {
     onFrame: (f: { buf: ArrayBuffer; rms: number; uplinked: boolean }) => void;
+    onDead: (reason: "error" | "noFrame", heard: boolean) => void;
     route?: string;
     deviceId?: string;
   }) => {
     await h.capGate; // resolved by default; an arm swaps in a deferred to hold acquisition open
+    if (h.capFail) throw h.capFail;
+    h.capStarts += 1;
     h.mic = (f) => opts.onFrame({ uplinked: true, ...f });
+    h.dead = opts.onDead;
     h.capOpts = { route: opts.route, deviceId: opts.deviceId };
     return {
       context: h.ctx,
       sampleRate: h.ctx.sampleRate,
       readback: {
-        echoCancellation: h.fennec ? true : "all",
+        echoCancellation: h.fennec ? true : h.mediaEcOff && opts.route === "media" ? false : "all",
         echoCapabilities: h.fennec ? [true] : [true, "all"],
         label: "Speakerphone",
         deviceId: h.voice.data.live_call.input_device,
@@ -307,6 +329,9 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
       setHeld: h.setHeld,
       earGapMs: () => h.earGap,
       setKeepalive: (on: boolean) => h.keepalive.push(on),
+      watchContext: (watch: NonNullable<typeof h.ctxWatch>) => {
+        h.ctxWatch = watch;
+      },
       stop: () => {
         h.capStops += 1;
       },
@@ -351,6 +376,8 @@ vi.mock("../../src/store/liveCall", () => ({ endCall: h.endCall }));
 vi.mock("../../src/hooks/useVoiceStatus", () => ({ useVoiceStatus: () => h.voice }));
 
 import { CALL_COPY, useLiveCall } from "../../src/hooks/useLiveCall";
+// The mock's own re-export of the REAL number (see the audioController mock above).
+import { STREAM_RETAG_MS } from "../../src/lib/audioController";
 // REAL, deliberately (D74 S6 ⑧): the handover is the seam under test, and a mocked one would pin the
 // harness's opinion of it rather than the module both sides actually share.
 import { setMicRelease } from "../../src/store/micRelease";
@@ -424,6 +451,12 @@ beforeEach(() => {
   h.rates = [];
   h.capOpts = null;
   h.capStops = 0;
+  h.capStarts = 0;
+  h.capFail = null;
+  h.dead = null;
+  h.ctxWatch = null;
+  h.mediaEcOff = false;
+  h.ctx.state = "running";
   h.voice.data.live_call.route = "call";
   h.voice.data.live_call.input_device = "";
   h.voice.data.live_call.mic_hold = "auto";
@@ -494,6 +527,18 @@ async function call() {
 }
 
 const texts = () => h.sendCall.mock.calls.map(([t]) => t);
+
+/** ISS-54 ② — run a `freshSink` recapture's pool wait out on the FAKE clock (the caller has faked it),
+ *  then let the acquisition settle. `performance.now()` is NOT faked: the wiring computes the deadline
+ *  and the wait from the real clock a few microtasks apart, so the wait is a hair UNDER the full
+ *  `STREAM_RETAG_MS` — advancing by the full constant always covers it. */
+const retagWait = async (): Promise<void> => {
+  await act(async () => {
+    await Promise.resolve(); // `releaseMic()` resolves, the wait is armed
+    vi.advanceTimersByTime(STREAM_RETAG_MS);
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+  });
+};
 
 describe("useLiveCall — the read-along gate (§4.5)", () => {
   it("arms the override OPEN when nothing was streaming at call start", async () => {
@@ -2150,6 +2195,26 @@ describe("useLiveCall — THE SEGMENT LEDGER (D80 ③: finals judged on their OW
     expect(texts()).toEqual(["late for the mute", "across the cycle"]);
   });
 
+  it("…and across the dead ear's REBUILD (ISS-54, `meterEdge`'s `earDead` case)", async () => {
+    vi.useFakeTimers();
+    try {
+      await gated();
+      await down({ type: "speech_started", item_id: "C" });
+      await act(async () => mic(QUIET, 20));
+      await down({ type: "speech_stopped", item_id: "C" });
+      await act(async () => {
+        h.dead?.("noFrame", false);
+        await Promise.resolve();
+      });
+      await retagWait();
+      await down({ type: "state", state: "ready" });
+      await down({ type: "transcript", text: "across the rebuild", final: true, item_id: "C" });
+      expect(texts()).toEqual(["across the rebuild"]); // the dead ear's evidence was voided, not judged
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("the NOISE VERDICT on B survives A's final — it is fenced on B's segment, not on an epoch", async () => {
     vi.useFakeTimers();
     try {
@@ -2461,13 +2526,16 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
     });
     await utterance("hello there", 0.1, 20);
     h.voice.data.live_call.input_device = "usb-mic-1"; // what the next capture will read back
-    await step(() => view.result.current.setInputDevice("usb-mic-1"));
-    const stored = JSON.parse(localStore.get(STORE) ?? "{}") as Record<string, number>;
-    expect(stored["Speakerphone|ec=all"]).toBeCloseTo(-20, 6);
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    // A device move ON THE CALL ROUTE waits the output pool out before the fresh ear opens (ISS-54 design round, Maya M2).
+    vi.useFakeTimers();
+    try {
+      await step(() => view.result.current.setInputDevice("usb-mic-1"));
+      const stored = JSON.parse(localStore.get(STORE) ?? "{}") as Record<string, number>;
+      expect(stored["Speakerphone|ec=all"]).toBeCloseTo(-20, 6);
+      await retagWait();
+    } finally {
+      vi.useRealTimers();
+    }
     // A fresh ear: the noise estimate starts over and this device has no voice level.
     expect(view.result.current.readLevel().floor).toBe(-45);
   });
@@ -2506,8 +2574,11 @@ describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/researc
   });
 
   // ISS-18 (R81): a flip OUT of comm mode tells the mouth to open a fresh output stream — before the
-  // ear is released, so a silent mouth's 5 s runs alongside the redial; a flip back in tells it nothing.
-  it("tells the mouth to re-tag on the EC-on → EC-off flip, and only then", async () => {
+  // ear is released, so a silent mouth's 5 s runs alongside the redial. ISS-54 (design round F2, code
+  // round Maya M1): so does every recapture onto the call route — the wait leaves comm mode and the
+  // fresh ear's gUM re-enters it, re-routing whatever the mouth pooled.
+  it("tells the mouth to re-tag on a flip out and on every call-route recapture, and on nothing else", async () => {
+    h.mediaEcOff = true; // a real Chrome's media-route readback: the canceller is off
     const { view, step } = await call();
     h.retags = 0;
     await step(() => view.result.current.setRoute("media"));
@@ -2518,16 +2589,35 @@ describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/researc
     await act(async () => {
       h.frame?.({ type: "state", state: "ready" });
     });
-    await step(() => view.result.current.setRoute("call"));
-    expect(h.retags).toBe(1); // back INTO comm mode: nothing stale to close
+    await step(() => view.result.current.setInputDevice("usb-mic")); // EC off → EC off: no edge
+    expect(h.retags).toBe(1);
+    await settle();
+    await act(async () => {
+      h.frame?.({ type: "state", state: "ready" });
+    });
+    vi.useFakeTimers();
+    try {
+      await step(() => view.result.current.setRoute("call"));
+      expect(h.retags).toBe(2); // back INTO comm mode (EC off → on)
+      expect(h.retagAtStops).toBe(2); // …told before this ear went, too
+      await retagWait(); // let the pool's wait finish inside the fake clock
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("the DEVICE half rides the same cycle, and the route it was on survives", async () => {
     const { view, step } = await call();
-    await step(() => view.result.current.setInputDevice("bt-headset"));
-    await settle();
-    expect(h.capOpts).toEqual({ route: "call", deviceId: "bt-headset" });
-    expect(view.result.current.inputDevice).toBe("bt-headset");
+    // On the call route the fresh ear waits the output pool out first (ISS-54 design round, Maya M2) — see `retagWait`.
+    vi.useFakeTimers();
+    try {
+      await step(() => view.result.current.setInputDevice("bt-headset"));
+      await retagWait();
+      expect(h.capOpts).toEqual({ route: "call", deviceId: "bt-headset" });
+      expect(view.result.current.inputDevice).toBe("bt-headset");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("is refused while the leg is down — and says so through `canRoute`", async () => {
@@ -2540,6 +2630,283 @@ describe("useLiveCall — THE IN-CALL ROUTE CYCLE (D74 S2, evidence docs/researc
     await settle();
     expect(h.capOpts?.route).toBe("call"); // …nothing re-acquired
     expect(h.capStops).toBe(0);
+  });
+});
+
+describe("useLiveCall — THE EAR THAT NEVER HEARD (ISS-54, evidence docs/research/R99)", () => {
+  beforeEach(() => {
+    // `performance` faked too (ISS-54 code round, Opus 7): the pool's deadline and its wait are both
+    // read off `performance.now()`, so on the fake clock the wait is EXACTLY `STREAM_RETAG_MS` — no
+    // real-clock drift for a margin to absorb (a GC pause can no longer flake the "not yet" asserts).
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date", "performance"],
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** The capture's ear dies — the lib's watchdog or its context's `error`, played through `onDead`. */
+  const die = async (reason: "error" | "noFrame" = "noFrame", heard = false): Promise<void> => {
+    await act(async () => {
+      h.dead?.(reason, heard);
+      await Promise.resolve();
+    });
+  };
+  const ready = async (): Promise<void> => {
+    await act(async () => {
+      h.frame?.({ type: "state", state: "ready" });
+    });
+  };
+  /** Advance the fake clock and let the acquisition's promise chain run. */
+  const advance = async (ms: number): Promise<void> => {
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(ms);
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+  };
+  /** Settle microtasks only — an acquisition with no wait resolves here. */
+  const settle = async (): Promise<void> => advance(0);
+
+  it("(g) a dead ear is released NOW and re-opened on the same route + device only after the pool's wait", async () => {
+    const { view } = await call();
+    expect(h.capStarts).toBe(1);
+    const legs = h.starts.length;
+    await die("noFrame", false);
+    expect(view.result.current.phase).toBe("connecting");
+    expect(view.result.current.note).toBe(CALL_COPY.earStalled);
+    expect(h.capStops).toBe(1); // the dead ear is gone at once
+    // On the faked `performance` clock the wait is exactly STREAM_RETAG_MS: 1 ms short is still waiting.
+    await advance(STREAM_RETAG_MS - 1);
+    expect(h.capStarts).toBe(1);
+    await advance(1);
+    expect(h.capStarts).toBe(2);
+    expect(h.capOpts).toEqual({ route: "call", deviceId: "" });
+    expect(h.starts.length).toBe(legs + 1); // one fresh leg on the fresh ear
+    await ready();
+    expect(view.result.current.phase).toBe("listening");
+    expect(view.result.current.note).toBe(CALL_COPY.earStalled); // it STANDS (the earAsleep rule)
+  });
+
+  it("(h) a second death on the same route ends the call `micLost` — one rebuild, no loop", async () => {
+    const { view } = await call();
+    await die("noFrame", false);
+    await retagWait();
+    await ready();
+    await die("noFrame", false);
+    expect(view.result.current.phase).toBe("error");
+    expect(view.result.current.note).toBe(CALL_COPY.micLost);
+    expect(h.capStops).toBe(2); // the terminal's teardown released the rebuilt ear
+    await advance(STREAM_RETAG_MS);
+    expect(h.capStarts).toBe(2); // …and nothing was opened after it
+  });
+
+  it("(i) a death AFTER the ear heard is rebuilt too — and it spends the same one rebuild (ISS-54 design-round amendment A1)", async () => {
+    const { view } = await call();
+    await die("error", true);
+    expect(view.result.current.phase).toBe("connecting");
+    expect(view.result.current.note).toBe(CALL_COPY.earStalled);
+    await retagWait();
+    expect(h.capStarts).toBe(2);
+    await ready();
+    await die("error", true); // a flapping headset's second render error
+    expect(view.result.current.phase).toBe("error");
+    expect(view.result.current.note).toBe(CALL_COPY.micLost);
+  });
+
+  // The overlay's Hang up is `endCall()` (store/liveCall), and the overlay's unmount IS the machine's
+  // teardown — so at this layer the real hang-up control IS the unmount (the `unmounted` arm).
+  it("(j) the overlay's Hang up (endCall → the machine unmounts) during the wait opens no microphone", async () => {
+    const { view } = await call();
+    await die();
+    view.unmount();
+    await advance(STREAM_RETAG_MS + 1000);
+    expect(h.capStarts).toBe(1); // no `getUserMedia` for a call that is over
+  });
+
+  it("(j′) …and the document dying (`pagehide`, the `hidden` arm) during the wait opens none either", async () => {
+    const { view } = await call();
+    await die();
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+    expect(view.result.current.phase).toBe("ended");
+    await advance(STREAM_RETAG_MS + 1000);
+    expect(h.capStarts).toBe(1);
+  });
+
+  // ── the MOUTH's half (ISS-54 code round: Maya M1 + Opus 1) ─────────────────────────────────────
+  it("a call-route DEVICE change under a playing reply re-tags the mouth and shuts its gate until the fresh ear's capture — a reply STARTING or RESUMING after a gap waits; one already playing keeps talking", async () => {
+    const { view, step } = await call();
+    await step(() => setPlay("playing"));
+    h.retags = 0;
+    await step(() => view.result.current.setInputDevice("bt-headset"));
+    expect(h.retags).toBe(1);
+    expect(h.mouthGate?.()).toBe(false); // comm mode is off until the fresh ear's gUM
+    await advance(STREAM_RETAG_MS - 1);
+    expect(h.mouthGate?.()).toBe(false);
+    await advance(1); // the capture resolves → `captureReady`
+    expect(h.capStarts).toBe(2);
+    expect(h.mouthGate?.()).toBe(true); // before `ready`: the gUM is what the mouth waited for
+  });
+
+  it("…and so does an `earDead` rebuild on the call route under a playing reply", async () => {
+    const { step } = await call();
+    await step(() => setPlay("playing"));
+    h.retags = 0;
+    await die("error", true);
+    expect(h.retags).toBe(1);
+    expect(h.mouthGate?.()).toBe(false);
+    await retagWait();
+    expect(h.mouthGate?.()).toBe(true);
+  });
+
+  it("a MEDIA-route `earDead` re-tags nothing and never shuts the gate — nothing is re-routed (confirm round)", async () => {
+    h.voice.data.live_call.route = "media";
+    h.mediaEcOff = true;
+    const { step } = await call();
+    await step(() => setPlay("playing"));
+    h.retags = 0;
+    await die("noFrame", false);
+    expect(h.retags).toBe(0); // the next reply is not made to wait 5.5 s for nothing
+    expect(h.mouthGate?.()).toBe(true);
+    await retagWait(); // the EAR still waits the pool out (`freshSink`)
+    expect(h.capStarts).toBe(2);
+  });
+
+  it("the media→call flip while THINKING: no reply may start before the fresh ear's capture", async () => {
+    h.voice.data.live_call.route = "media";
+    h.mediaEcOff = true;
+    const { view, step, say } = await call();
+    await say("what time is it");
+    expect(view.result.current.phase).toBe("thinking");
+    expect(h.mouthGate?.()).toBe(true);
+    h.retags = 0;
+    await step(() => view.result.current.setRoute("call"));
+    expect(h.retags).toBe(1);
+    expect(h.mouthGate?.()).toBe(false); // a reply landing in the wait is held at the controller's gate
+    await advance(STREAM_RETAG_MS - 1);
+    expect(h.mouthGate?.()).toBe(false);
+    await advance(1);
+    expect(h.mouthGate?.()).toBe(true);
+  });
+
+  it("(k) only an ear opened ON THE CALL ROUTE waits: media→call and a call-route device move wait; call→media and a media device move do not", async () => {
+    h.voice.data.live_call.route = "media";
+    h.mediaEcOff = true;
+    const { view, step } = await call();
+    expect(h.capStarts).toBe(1);
+    // media → media (a device move): the stream it leaves is harmless off comm mode — at once.
+    await step(() => view.result.current.setInputDevice("usb-mic"));
+    await settle();
+    expect(h.capStarts).toBe(2);
+    await ready();
+    // media → call: the switch would re-route the pooled MEDIA stream — wait, and say so (ISS-54
+    // design-round amendment A7).
+    await step(() => view.result.current.setRoute("call"));
+    expect(view.result.current.note).toBe(CALL_COPY.switchingRoute);
+    await advance(STREAM_RETAG_MS - 1);
+    expect(h.capStarts).toBe(2);
+    await advance(1);
+    expect(h.capStarts).toBe(3);
+    expect(h.capOpts).toEqual({ route: "call", deviceId: "usb-mic" });
+    await ready();
+    expect(view.result.current.note).toBeNull(); // the fresh leg retracts the wait's line
+    // call → call (a device move): a comm-device switch re-routes VOICE streams too (ISS-54 design
+    // round, Maya M2) — wait, but WITHOUT the "switching to call mode" line: the call is already in it
+    // (ISS-54 lane D2, RULINGS).
+    await step(() => view.result.current.setInputDevice("bt-headset"));
+    expect(view.result.current.phase).toBe("connecting");
+    expect(view.result.current.note).toBeNull();
+    await advance(STREAM_RETAG_MS - 1);
+    expect(h.capStarts).toBe(3);
+    await advance(1);
+    expect(h.capStarts).toBe(4);
+    await ready();
+    // call → media: leaving comm mode, nothing to wait for — at once (it works, 2026-10-02).
+    await step(() => view.result.current.setRoute("media"));
+    await settle();
+    expect(h.capStarts).toBe(5);
+    expect(h.capOpts?.route).toBe("media");
+  });
+
+  it("a death while a RECONNECT is pending clears that rung — exactly one leg opens, on the fresh ear", async () => {
+    const { view } = await call();
+    await act(async () => {
+      h.close?.(); // the link dropped: `socketLost` armed the ladder's first rung (400 ms)
+    });
+    expect(view.result.current.phase).toBe("connecting");
+    const legs = h.starts.length;
+    await die(); // …and the ear dies inside the gap — legal in `connecting`
+    expect(view.result.current.note).toBe(CALL_COPY.earStalled);
+    await advance(400); // the rung's moment passes: nothing dials
+    expect(h.starts.length).toBe(legs);
+    await retagWait();
+    expect(h.starts.length).toBe(legs + 1);
+    await advance(10_000);
+    expect(h.starts.length).toBe(legs + 1);
+  });
+
+  it("a death UNDER a playing reply leaves the mouth alone — the fresh leg lands `speaking`", async () => {
+    const { view, step } = await call();
+    await step(() => setPlay("playing"));
+    expect(view.result.current.phase).toBe("speaking");
+    h.dismiss.mockClear();
+    await die();
+    expect(view.result.current.phase).toBe("connecting");
+    await retagWait();
+    await ready();
+    expect(view.result.current.phase).toBe("speaking"); // C3 rides HTTP: the reply kept playing
+    expect(h.dismiss).not.toHaveBeenCalled();
+  });
+
+  it("the trail: the context's own events as `ctx` lines, and the death's `sig` line with its evidence", async () => {
+    h.voice.data.live_call.debug = true;
+    const { view } = await call();
+    await act(async () => {
+      h.ctxWatch?.({ event: "error", state: "suspended", ctxTime: 0.02 });
+      h.ctxWatch?.({ event: "statechange", state: "suspended", ctxTime: 0.02 });
+    });
+    await die("error", false);
+    view.unmount();
+    const all = h.posts.flatMap((p) => p.body.entries);
+    expect(all.filter((l) => l.ev === "ctx")).toEqual([
+      expect.objectContaining({ event: "error", state: "suspended", ctxTime: 0.02 }),
+      expect.objectContaining({ event: "statechange", state: "suspended", ctxTime: 0.02 }),
+    ]);
+    expect(all.find((l) => l.ev === "sig" && l.type === "earDead")).toMatchObject({
+      reason: "error",
+      heard: false,
+      visibilityState: "visible",
+      phase: "listening→connecting",
+      note: CALL_COPY.earStalled,
+    });
+  });
+
+  it("a FAILED start's `sig` line names its cause — a render error reads apart from a policy suspend (confirm round)", async () => {
+    h.voice.data.live_call.debug = true;
+    h.capFail = new Error("audio context suspended (error)");
+    const first = await call();
+    first.view.unmount();
+    cleanup();
+    // A browser's DOMException IS an Error with its class as `name` (jsdom's is not an `Error` subclass,
+    // so the case builds the browser's shape directly).
+    h.capFail = Object.assign(new Error("denied"), { name: "NotAllowedError" });
+    const second = await call();
+    expect(second.view.result.current.note).toBe("microphone permission denied"); // owner copy as before
+    second.view.unmount();
+    const failed = h.posts
+      .flatMap((p) => p.body.entries)
+      .filter((l) => l.ev === "sig" && l.type === "failed");
+    expect(failed).toEqual([
+      expect.objectContaining({
+        cause: "audio context suspended (error)",
+        phase: "connecting→error",
+      }),
+      expect.objectContaining({ cause: "NotAllowedError", note: "microphone permission denied" }),
+    ]);
   });
 });
 
@@ -3253,7 +3620,13 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
     // per-capture constants are the capture line's, the last final is a line of its own
     const samples = all.filter((l) => l.ev === "sample");
     expect(samples).toHaveLength(3);
-    expect(samples[0]).toMatchObject({ floor: -45, floorPinned: false, phase: "thinking" });
+    expect(samples[0]).toMatchObject({
+      floor: -45,
+      floorPinned: false,
+      phase: "thinking",
+      ctxState: "running",
+      ctxTime: 5,
+    });
     expect(Object.keys(samples[0]).sort()).toEqual(
       [
         "t",
@@ -3272,6 +3645,9 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
         "mouthLive",
         "bargeArmed",
         "phase",
+        // ISS-54 / R99 §4 — is the context rendering (`currentTime` moves only while it does)
+        "ctxState",
+        "ctxTime",
       ].sort(),
     );
     // the S3b key (device × granted echo mode) is on the capture line, once

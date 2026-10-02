@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   CAPTURE_RATE,
+  type CtxEvent,
+  FIRST_FRAME_MS,
   listAudioInputs,
   micConstraints,
   openCaptureContext,
@@ -42,6 +44,24 @@ class FakeContext {
   /** What `resume()` leaves the context in — a policy that refuses the resume leaves it suspended. */
   resumesTo: AudioContextState = "running";
   audioWorklet = { addModule: vi.fn(async () => {}) };
+  /** The render clock (ISS-54's trail field) — a case moves it by hand. */
+  currentTime = 0;
+  /** ISS-54 — the context's own `error`/`statechange` listeners, the `FakeTrack` pattern. */
+  ctxListeners: Record<string, ((e: Event) => void)[]> = {};
+  addEventListener(type: string, cb: (e: Event) => void) {
+    (this.ctxListeners[type] ||= []).push(cb);
+  }
+  removeEventListener(type: string, cb: (e: Event) => void) {
+    this.ctxListeners[type] = (this.ctxListeners[type] ?? []).filter((c) => c !== cb);
+  }
+  /** Raise one of the context's events the way the renderer does (R99 §1.5: `error`, then the state). */
+  fire(type: string) {
+    for (const cb of [...(this.ctxListeners[type] ?? [])]) cb(new Event(type));
+  }
+  /** How many listeners are still attached, across both events — `stop()` must leave none (ISS-54 design round, Maya L1). */
+  listening(): number {
+    return Object.values(this.ctxListeners).reduce((n, l) => n + l.length, 0);
+  }
   constructor(options?: AudioContextOptions) {
     this.options = options;
     this.sampleRate =
@@ -104,6 +124,8 @@ class FakeContext {
 class FakeTrack {
   stopped = 0;
   enabled = true;
+  /** `"ended"` once the platform took the track away (an unplug) — ISS-54 design round F5's precedence reads it. */
+  readyState: "live" | "ended" = "live";
   /** What `getSettings().echoCancellation` READS BACK — the D75 ③ detector's whole input, so a case
    *  that is about the flip not taking sets it. `"all"` is the platform-AEC grant, i.e. the default
    *  every AEC-asking case here expects. */
@@ -200,6 +222,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     expect(cap.sampleRate).toBe(CAPTURE_RATE); // K6 — what the context was asked for, and gave
     expect(cap.readback.nativeRate).toBe(false);
@@ -216,6 +239,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     cap.setMuted(true);
     expect(track.enabled).toBe(false);
@@ -241,6 +265,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     cap.setHeld(true);
     expect(track.enabled).toBe(true);
@@ -264,6 +289,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       onFrame: (f) =>
         got.push({ rms: f.rms, uplinked: f.uplinked, bytes: f.buf.byteLength, t: f.t }),
       onEnded: () => {},
+      onDead: () => {},
     });
     // …and each frame's context TIME rides through untouched (D80 ⑦, the connect chirp's clock).
     const post = (rms: number): void =>
@@ -292,6 +318,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     expect(cap.context).toBe(FakeContext.last);
   });
@@ -302,6 +329,7 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     cap.setMuted(true);
     cap.stop();
@@ -320,7 +348,13 @@ describe("startPcmCapture — the context has to actually RUN", () => {
         }
       },
     );
-    await startPcmCapture({ frameMs: 20, route: ROUTE_CALL, onFrame: () => {}, onEnded: () => {} });
+    await startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+      onDead: () => {},
+    });
     expect(FakeContext.last?.resumes).toBe(1);
   });
 
@@ -338,7 +372,13 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       },
     );
     await expect(
-      startPcmCapture({ frameMs: 20, route: ROUTE_CALL, onFrame: () => {}, onEnded: () => {} }),
+      startPcmCapture({
+        frameMs: 20,
+        route: ROUTE_CALL,
+        onFrame: () => {},
+        onEnded: () => {},
+        onDead: () => {},
+      }),
     ).rejects.toThrow();
     expect(track.stopped).toBe(1); // the mic light goes out
     expect(FakeContext.last?.closed).toBe(1);
@@ -356,7 +396,13 @@ describe("startPcmCapture — the context has to actually RUN", () => {
       },
     );
     await expect(
-      startPcmCapture({ frameMs: 20, route: ROUTE_CALL, onFrame: () => {}, onEnded: () => {} }),
+      startPcmCapture({
+        frameMs: 20,
+        route: ROUTE_CALL,
+        onFrame: () => {},
+        onEnded: () => {},
+        onDead: () => {},
+      }),
     ).rejects.toThrow();
     expect(track.stopped).toBe(1);
     expect(FakeContext.last?.closed).toBe(1);
@@ -368,7 +414,13 @@ describe("startPcmCapture — the context has to actually RUN", () => {
 
 describe("startPcmCapture — the context is ASKED for the ear's rate (K6)", () => {
   const start = (frameMs = 40) =>
-    startPcmCapture({ frameMs, route: ROUTE_CALL, onFrame: () => {}, onEnded: () => {} });
+    startPcmCapture({
+      frameMs,
+      route: ROUTE_CALL,
+      onFrame: () => {},
+      onEnded: () => {},
+      onDead: () => {},
+    });
 
   it("asks for `CAPTURE_RATE` and declares the rate the context RUNS at", async () => {
     const cap = await start();
@@ -504,6 +556,7 @@ describe("startPcmCapture — the ear's own liveness (S6 ② / A2)", () => {
       route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     heard();
     expect(cap.earGapMs()).toBe(0);
@@ -524,6 +577,7 @@ describe("startPcmCapture — the ear's own liveness (S6 ② / A2)", () => {
       route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     heard();
     track.fire("mute");
@@ -546,6 +600,7 @@ describe("startPcmCapture — the background keepalive (S6 ③ / Maya F2)", () =
       route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     const ctx = FakeContext.last;
     expect(ctx?.sources).toHaveLength(0); // a foreground call needs nothing
@@ -571,12 +626,210 @@ describe("startPcmCapture — the background keepalive (S6 ③ / Maya F2)", () =
       route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     cap.setKeepalive(true);
     cap.stop();
     expect(FakeContext.last?.sources[0].stopped).toBe(1);
     cap.setKeepalive(true); // …and a released capture cannot be woken back up
     expect(FakeContext.last?.sources).toHaveLength(1);
+  });
+});
+
+// ── ISS-54 · THE EAR THAT NEVER HEARD (evidence docs/research/R99 §1.4–§1.5 · §4 · §6) ──────────────
+
+describe("startPcmCapture — the ear's DEATH, observed (ISS-54)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** One frame from the audio thread, through the worklet's port exactly as the real one arrives. */
+  const frame = (): void =>
+    workletPort?.onmessage?.({ data: { buf: new ArrayBuffer(8), rms: 0.1 } });
+  const open = (onDead = vi.fn(), onEnded = vi.fn()) =>
+    startPcmCapture({ frameMs: 40, route: ROUTE_CALL, onFrame: () => {}, onEnded, onDead });
+  const ctxOf = (): FakeContext => {
+    const c = FakeContext.last;
+    if (!c) throw new Error("no context");
+    return c;
+  };
+
+  it("(a) no frame within FIRST_FRAME_MS → `noFrame`, unheard, exactly once", async () => {
+    const onDead = vi.fn();
+    await open(onDead);
+    vi.advanceTimersByTime(FIRST_FRAME_MS - 1);
+    expect(onDead).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onDead).toHaveBeenCalledTimes(1);
+    expect(onDead).toHaveBeenCalledWith("noFrame", false);
+    vi.advanceTimersByTime(60_000);
+    expect(onDead).toHaveBeenCalledTimes(1);
+  });
+
+  it("(b) a frame before then — the ear works, nothing fires", async () => {
+    const onDead = vi.fn();
+    await open(onDead);
+    vi.advanceTimersByTime(500);
+    frame();
+    vi.advanceTimersByTime(60_000);
+    expect(onDead).not.toHaveBeenCalled();
+  });
+
+  it("(c) a DEAF frame counts — an OS-muted track still posts its silence (R99 §2.1)", async () => {
+    // The outage stamp ignores muted frames (S6 ②); the watchdog must not, or a phone call stealing
+    // the mic at the start would read as a dead graph and cycle rebuilds against the OS.
+    const onDead = vi.fn();
+    await open(onDead);
+    track.fire("mute");
+    frame();
+    vi.advanceTimersByTime(60_000);
+    expect(onDead).not.toHaveBeenCalled();
+  });
+
+  it("(d) the context's `error` is a death at once — with `heard` true after a frame — and only once", async () => {
+    const onDead = vi.fn();
+    await open(onDead);
+    frame();
+    ctxOf().state = "suspended"; // R99 §1.5: the render error stops rendering and suspends
+    ctxOf().fire("error");
+    ctxOf().fire("statechange");
+    expect(onDead).toHaveBeenCalledTimes(1);
+    expect(onDead).toHaveBeenCalledWith("error", true);
+    ctxOf().fire("error");
+    vi.advanceTimersByTime(60_000);
+    expect(onDead).toHaveBeenCalledTimes(1);
+  });
+
+  it("a `statechange` alone decides nothing — a frozen page suspends too (R75 §3.4)", async () => {
+    const onDead = vi.fn();
+    await open(onDead);
+    frame();
+    ctxOf().state = "suspended";
+    ctxOf().fire("statechange");
+    vi.advanceTimersByTime(60_000);
+    expect(onDead).not.toHaveBeenCalled();
+  });
+
+  it("(e) `stop()` disarms both, and leaves no listener on the context (ISS-54 design round, Maya L1)", async () => {
+    const onDead = vi.fn();
+    const cap = await open(onDead);
+    expect(ctxOf().listening()).toBe(2);
+    cap.stop();
+    expect(ctxOf().listening()).toBe(0);
+    ctxOf().fire("error");
+    vi.advanceTimersByTime(60_000);
+    expect(onDead).not.toHaveBeenCalled();
+  });
+
+  it("(f) a capture that FAILS its start arms nothing — the start's own error is the report", async () => {
+    vi.stubGlobal(
+      "AudioContext",
+      class extends FakeContext {
+        constructor(o?: AudioContextOptions) {
+          super(o);
+          this.state = "suspended";
+          this.resumesTo = "suspended";
+        }
+      },
+    );
+    const onDead = vi.fn();
+    await expect(open(onDead)).rejects.toThrow();
+    expect(ctxOf().listening()).toBe(0);
+    vi.advanceTimersByTime(60_000);
+    expect(onDead).not.toHaveBeenCalled();
+  });
+
+  it("an `error` DURING the start (ISS-54 design round F4) is latched, and dies on a 0 ms timer — after the caller holds it", async () => {
+    vi.stubGlobal(
+      "AudioContext",
+      class extends FakeContext {
+        constructor(o?: AudioContextOptions) {
+          super(o);
+          // The flip's evidence lands while the worklet installs — before anybody upstairs has the
+          // capture. The context still READ `running` at the one-shot check, so the start succeeds.
+          this.audioWorklet = {
+            addModule: vi.fn(async () => {
+              this.fire("statechange");
+              this.fire("error");
+            }),
+          };
+        }
+      },
+    );
+    const onDead = vi.fn();
+    const cap = await open(onDead);
+    expect(onDead).not.toHaveBeenCalled(); // not inside the start: the caller is installing it now
+    vi.advanceTimersByTime(0);
+    expect(onDead).toHaveBeenCalledTimes(1);
+    expect(onDead).toHaveBeenCalledWith("error", false);
+    // …and the trail still gets the evidence: the log drains into the watcher, then live events follow
+    const seen: CtxEvent[] = [];
+    cap.watchContext((e) => seen.push(e));
+    expect(seen.map((e) => e.event)).toEqual(["statechange", "error"]);
+    ctxOf().currentTime = 0.02;
+    ctxOf().fire("statechange");
+    expect(seen.at(-1)).toEqual({ event: "statechange", state: "running", ctxTime: 0.02 });
+    cap.stop();
+    ctxOf().fire("statechange"); // the close's own edge — no listener survives the capture
+    expect(seen).toHaveLength(3);
+  });
+
+  it("a start that FAILS on a render error says so — `(error)` in the thrown message (ISS-54 code round, Opus 6)", async () => {
+    // A policy-refused resume and a render error both leave the context suspended; only the latch can
+    // tell them apart, and a failed start discards the event log with everything else.
+    vi.stubGlobal(
+      "AudioContext",
+      class extends FakeContext {
+        constructor(o?: AudioContextOptions) {
+          super(o);
+          this.state = "suspended";
+          this.resumesTo = "suspended";
+        }
+        async resume(): Promise<void> {
+          await super.resume();
+          this.fire("error");
+        }
+      },
+    );
+    await expect(open()).rejects.toThrow("audio context suspended (error)");
+  });
+
+  it("the waiting log is BOUNDED — a context flapping before anyone watches cannot grow it", async () => {
+    const cap = await open();
+    for (let i = 0; i < 50; i++) ctxOf().fire("statechange");
+    const seen: CtxEvent[] = [];
+    cap.watchContext((e) => seen.push(e));
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.length).toBeLessThan(50);
+  });
+
+  it("ISS-54 design round F5 — an ENDED track reports the end, not the death: one unplug, one outcome", async () => {
+    const onDead = vi.fn();
+    const onEnded = vi.fn();
+    await open(onDead, onEnded);
+    track.readyState = "ended";
+    ctxOf().fire("error"); // the unplug's render error lands first…
+    expect(onEnded).toHaveBeenCalledTimes(1);
+    expect(onDead).not.toHaveBeenCalled();
+    track.fire("ended"); // …and the track's own event after it says nothing more
+    vi.advanceTimersByTime(60_000);
+    expect(onEnded).toHaveBeenCalledTimes(1);
+    expect(onDead).not.toHaveBeenCalled();
+  });
+
+  it("…and the other order: `ended` first, then the watchdog stays quiet", async () => {
+    const onDead = vi.fn();
+    const onEnded = vi.fn();
+    await open(onDead, onEnded);
+    track.readyState = "ended";
+    track.fire("ended");
+    ctxOf().fire("error");
+    vi.advanceTimersByTime(60_000);
+    expect(onEnded).toHaveBeenCalledTimes(1);
+    expect(onDead).not.toHaveBeenCalled();
   });
 });
 
@@ -659,6 +912,7 @@ describe("openMicStream — the picked device's ONE retry (R74 §2.2(b))", () =>
       deviceId: "gone",
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     expect(cap.fellBack).toBe(true);
     expect(askedAt(0)).toMatchObject({ echoCancellation: false });
@@ -774,7 +1028,13 @@ describe("openMicStream — the STEERING RULE (D74 S3, evidence docs/research/R7
 describe("startPcmCapture — the readback-mismatch detector + its ONE retry", () => {
   /** An EC-off capture, opened. The cases below differ only in what the track READS BACK. */
   const openMedia = () =>
-    startPcmCapture({ frameMs: 20, route: ROUTE_MEDIA, onFrame: () => {}, onEnded: () => {} });
+    startPcmCapture({
+      frameMs: 20,
+      route: ROUTE_MEDIA,
+      onFrame: () => {},
+      onEnded: () => {},
+      onDead: () => {},
+    });
 
   it("re-opens ONCE when an EC-off ask comes back EC-ON, and says so when it stays stuck", async () => {
     // The race: Android evaluates the communication mode only for the FIRST input stream and restores
@@ -829,6 +1089,7 @@ describe("startPcmCapture — the readback-mismatch detector + its ONE retry", (
       route: ROUTE_CALL,
       onFrame: () => {},
       onEnded: () => {},
+      onDead: () => {},
     });
     expect(gum).toHaveBeenCalledTimes(1);
     expect(cap.ecStuck).toBe(false);

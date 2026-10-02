@@ -543,6 +543,11 @@ context, reactive `unavailable` after a server error.
   ends a backgrounded call with no speech, no final in flight and no reply; the ear-outage check
   redials on return; `pagehide` still ends it cleanly. `background: false` restores the old clean
   end on hide. Wake Lock held (and re-taken on return) while the overlay is up.
+- A capture that never hears (no frame within `FIRST_FRAME_MS` 2 s, or a context `error`) is rebuilt
+  once per route, after the output pool's 5.5 s (`STREAM_RETAG_MS`); a second death with no taken
+  final in between ends the call `micLost`. Only a RE-opened ear on the call route waits the 5.5 s (a
+  flip in, a device move within it, an `earDead` rebuild), with the mouth held until it opens; a direct
+  call-route start and a flip to media do not (ISS-54, R99).
 - The Tier 0 auto-stop path stays as-is — the call mode neither replaces nor requires it.
 
 ## 6. The UI (VAPOR_PATTERNS governs; kit overlay contract) — **visual design RATIFIED (owner, 2026-09-11 visual round)**
