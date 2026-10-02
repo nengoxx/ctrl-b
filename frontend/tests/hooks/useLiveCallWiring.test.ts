@@ -35,6 +35,8 @@ const h = vi.hoisted(() => ({
         min_final_ms: 0,
         // The owner's 2026-09-26 ruling — the noise verdict's clock, OFF unless a case arms it.
         noise_verdict_ms: 0,
+        // ISS-55 — the turn hold, OFF as the backend ships it; the turn-hold cases arm it.
+        turn_hold_ms: 0,
         // D76 §C — the relative gate's six, as the backend ships them; the gate cases move them.
         floor_dbfs: -45,
         noise_margin_db: 10,
@@ -462,6 +464,7 @@ beforeEach(() => {
   h.voice.data.live_call.mic_hold = "auto";
   h.voice.data.live_call.min_final_ms = 0; // the transcript gate OFF unless a case arms it
   h.voice.data.live_call.noise_verdict_ms = 0; // …and the noise verdict with it
+  h.voice.data.live_call.turn_hold_ms = 0; // …and the turn hold (ISS-55)
   h.voice.data.live_call.playback_margin_db = 10;
   h.voice.data.live_call.floor_dbfs = -45;
   h.voice.data.live_call.debug = false;
@@ -3818,5 +3821,185 @@ describe("useLiveCall — the owner's STOP (LIVE-001 · D71 amendment №3)", ()
     c.view.unmount();
     const kill = h.posts.flatMap((p) => p.body.entries).find((l) => l.ev === "kill");
     expect(kill).toMatchObject({ turn: null, live: false, phase: "speaking" });
+  });
+});
+
+describe("useLiveCall — THE TURN HOLD, wired (ISS-55)", () => {
+  const lines = () => h.posts.flatMap((p) => p.body.entries);
+  /** `n` frames of `rms` (20 ms each at the harness's `frame_ms`), uplinked. */
+  const frames = (rms: number, n: number): void => {
+    for (let i = 0; i < n; i++) h.mic?.({ buf: new ArrayBuffer(8), rms, uplinked: true });
+  };
+  const wait = async (ms: number): Promise<void> => {
+    await act(async () => {
+      vi.advanceTimersByTime(ms);
+      await Promise.resolve();
+    });
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("two finals 2 s apart go out as ONE message, `turn_hold_ms` after the LAST — and nothing before", async () => {
+    h.voice.data.live_call.turn_hold_ms = 5000;
+    const c = await call();
+    await c.say("a");
+    await wait(2000);
+    await c.say("b"); // restarts the hold
+    await wait(4999);
+    expect(h.sendCall).not.toHaveBeenCalled();
+    await wait(1);
+    expect(texts()).toEqual(["a b"]);
+    await wait(10_000);
+    expect(h.sendCall).toHaveBeenCalledTimes(1);
+  });
+
+  it("the mouth's gate is SHUT while the hold stands, and the release pokes it open", async () => {
+    h.voice.data.live_call.turn_hold_ms = 5000;
+    const c = await call();
+    await c.say("a");
+    expect(h.mouthGate?.()).toBe(false); // the ear is settled — the hold alone shuts it
+    const pokes = h.pokes;
+    await wait(5000);
+    expect(h.mouthGate?.()).toBe(true);
+    expect(h.pokes).toBeGreaterThan(pokes);
+  });
+
+  it("the knob is LATCHED at call start — a `/voice/status` refresh mid-call moves nothing (C5)", async () => {
+    h.voice.data.live_call.turn_hold_ms = 5000;
+    const on = await call();
+    await on.step(() => {
+      h.voice.data.live_call.turn_hold_ms = 0; // a Conf save mid-call: the NEXT call's value
+    });
+    await on.say("still held");
+    expect(h.sendCall).not.toHaveBeenCalled();
+    await wait(5000);
+    expect(texts()).toEqual(["still held"]);
+    on.view.unmount();
+    // …and the other way round: a call started at 0 stays immediate.
+    h.sendCall.mockClear();
+    h.voice.data.live_call.turn_hold_ms = 0;
+    const off = await call();
+    await off.step(() => {
+      h.voice.data.live_call.turn_hold_ms = 5000;
+    });
+    await off.say("at once");
+    expect(texts()).toEqual(["at once"]);
+  });
+
+  it("hanging up inside the hold SENDS nothing — the held words land in the draft, once (TH code round, Opus M1)", async () => {
+    h.voice.data.live_call.turn_hold_ms = 5000;
+    const c = await call();
+    await c.say("remind me to");
+    await c.say("call the garage");
+    c.view.unmount();
+    await wait(10_000);
+    expect(h.sendCall).not.toHaveBeenCalled();
+    expect(h.appendDraft).toHaveBeenCalledTimes(1);
+    expect(h.appendDraft).toHaveBeenCalledWith("remind me to\ncall the garage", "\n");
+  });
+
+  it("a DROPPED final that releases a due hold teaches the voice learner nothing — the submit is the hold's", async () => {
+    h.voice.data.live_call.turn_hold_ms = 5000;
+    const c = await call();
+    await c.say("before the room settled"); // taken, but too early to teach anything
+    await act(async () => {
+      frames(0.001, 300); // a settled room at −60 dBFS
+    });
+    await act(async () => {
+      h.frame?.({ type: "speech_started", item_id: "B" });
+      frames(0.1, 20); // the owner's level, clear of the room + both margins
+    });
+    await wait(5000); // the pause ran out over B: due
+    expect(h.sendCall).not.toHaveBeenCalled();
+    await act(async () => {
+      h.frame?.({ type: "speech_stopped", item_id: "B" });
+      h.frame?.({ type: "transcript", text: "", final: true, item_id: "B" }); // empty: dropped
+      await Promise.resolve();
+    });
+    expect(texts()).toEqual(["before the room settled"]); // the release
+    c.view.unmount();
+    expect(localStore.has("ctrlb.voiceLevels")).toBe(false);
+  });
+
+  it("the trail: a `turn` line per edge, the knob on the `capture` cfg and the `final` sig — no text", async () => {
+    h.voice.data.live_call.debug = true;
+    h.voice.data.live_call.turn_hold_ms = 5000;
+    const c = await call();
+    await c.say("one");
+    await wait(2000);
+    await c.say("two");
+    await wait(5000);
+    c.view.unmount();
+    const all = lines();
+    expect(all.filter((l) => l.ev === "turn")).toEqual([
+      expect.objectContaining({ held: true, why: "open", seq: 1, n: 1 }),
+      expect.objectContaining({ held: true, why: "restart", seq: 2, n: 2 }),
+      expect.objectContaining({ held: false, why: "expiry", seq: 2, n: 2 }),
+    ]);
+    expect(all.find((l) => l.ev === "capture")).toMatchObject({ cfg: { turn_hold_ms: 5000 } });
+    expect(all.find((l) => l.ev === "sig" && l.type === "final")).toMatchObject({
+      turnHoldMs: 5000,
+    });
+    expect(all.filter((l) => l.ev === "sig" && l.type === "turnHoldOver")).toHaveLength(1);
+    expect(JSON.stringify(all.filter((l) => l.ev === "turn"))).not.toContain("one");
+  });
+
+  /** Every `turn` line's `why`, in order, for one driven call. */
+  const whys = () => lines().flatMap((l) => (l.ev === "turn" ? [l.why] : []));
+  const debugHeld = async () => {
+    h.voice.data.live_call.debug = true;
+    h.voice.data.live_call.turn_hold_ms = 5000;
+    const c = await call();
+    await c.say("a");
+    return c;
+  };
+
+  it("the trail names every way the hold moves — `due`, then `settle` when the owed segment answers empty", async () => {
+    const c = await debugHeld();
+    await act(async () => {
+      h.frame?.({ type: "speech_started", item_id: "B" });
+    });
+    await wait(5000);
+    await act(async () => {
+      h.frame?.({ type: "speech_stopped", item_id: "B" });
+      h.frame?.({ type: "transcript", text: "", final: true, item_id: "B" });
+      await Promise.resolve();
+    });
+    c.view.unmount();
+    expect(whys()).toEqual(["open", "due", "settle"]);
+  });
+
+  it.each([
+    ["leg", (_c: Awaited<ReturnType<typeof call>>) => h.close?.()],
+    ["route", (c: Awaited<ReturnType<typeof call>>) => c.view.result.current.setRoute("media")],
+    [
+      "terminal",
+      (_c: Awaited<ReturnType<typeof call>>) =>
+        h.frame?.({ type: "error", code: "protocol", message: "x" }),
+    ],
+  ])("…and `%s` when that is what let it go", async (why, drive) => {
+    const c = await debugHeld();
+    await act(async () => {
+      drive(c);
+      await Promise.resolve();
+    });
+    c.view.unmount();
+    expect(whys()).toEqual(["open", why]);
+  });
+
+  it("OFF (0, as shipped): no `turn` line and no `turnHoldMs` on the final — the pre-hold trail", async () => {
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await c.say("hello");
+    expect(texts()).toEqual(["hello"]);
+    c.view.unmount();
+    const all = lines();
+    expect(all.filter((l) => l.ev === "turn")).toEqual([]);
+    expect(all.find((l) => l.ev === "sig" && l.type === "final")).not.toHaveProperty("turnHoldMs");
   });
 });

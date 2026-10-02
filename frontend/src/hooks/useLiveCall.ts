@@ -91,6 +91,13 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // utterances join an ordered pending queue and drain as a SINGLE message, in order, when the last hold
 // clears. Never a one-slot overwrite (the coherence sweep's correction), never lost speech.
 //
+// THE TURN HOLD (ISS-55, `turn_hold_ms`; amends ASR_PLAN §3.5 ⑤) is a fifth reason on that queue. The ear
+// ends a SEGMENT after `silence_ms`, and a thinking pause is longer than that: one monologue reached the
+// agent as three or four turns whose replies queued behind each other. With the knob on, a TAKEN final is
+// queued rather than sent and (re)starts the hold; only when the hold runs out over a SETTLED ear does
+// the queue drain — one message, however many pauses it spanned. While it stands the mouth stays shut
+// (`mouthMayOpen`): the owner holds the floor. 0 is the call without it, signal for signal.
+//
 // THE MOUTH IS NOT THE PHASE (S3). C3 plays over HTTP, so the reply is audible or not for reasons this
 // call's socket knows nothing about — a leg that drops mid-reply changes the SCREEN and nothing else.
 // `mouthLive` carries that truth beside the phase, and everything meaning "there is something to
@@ -551,6 +558,21 @@ export interface CallState {
    *  (`audioController`'s chunked path) — a reply already playing keeps talking through the wait. Set by
    *  `routeChange`/`earDead`, cleared by `captureReady` (the ear's gUM has run) and by every terminal. */
   sinkWait: boolean;
+  /** THE TURN HOLD (ISS-55, `turn_hold_ms`): a TAKEN final waits in `pending` until the owner's pause has
+   *  run `turnHoldMs`, and a final taken inside it joins the same message and starts it over. One more
+   *  reason in `held()`, released only through `drain()` — by `callReduce`, once the hold is DUE and the
+   *  ear settled. Set by the `final` arm; cleared by that release, a lost leg, a fresh ear (`freshEar`)
+   *  and every terminal. Never set with the knob at 0. */
+  turnHold: boolean;
+  /** …which arming it is: bumped on every open and restart, so a `turnHoldOver` measured for an older
+   *  one is a ghost (the tail's `tailSeq` fence) — and the wiring arms its clock on exactly this edge. */
+  turnHoldSeq: number;
+  /** …how long THIS arming runs, ms: the final's `turnHoldMs`, written with the seq, so the clock the
+   *  wiring arms on that edge reads it from the state it arms for. */
+  turnHoldMs: number;
+  /** …and the pause has RUN OUT while the ear still owed something (a segment open, a transcript in
+   *  flight): the release waits for the ear to settle — a taken final starts the hold over instead. */
+  turnHoldDue: boolean;
 }
 
 export const CALL_INITIAL: CallState = {
@@ -581,6 +603,10 @@ export const CALL_INITIAL: CallState = {
   attempts: 0,
   earRetried: false,
   sinkWait: false,
+  turnHold: false,
+  turnHoldSeq: 0,
+  turnHoldMs: 0,
+  turnHoldDue: false,
 };
 
 export type SendResult = "accepted" | "refused" | "unknown" | "held";
@@ -607,6 +633,8 @@ export type CallSignal = { gen?: number } & (
    *  inside the post-reply window and is long enough to judge — ABSENT otherwise, which is never an
    *  echo; `echoMin` is the owner's `echo_similarity`. `inEchoWindow` says the final landed inside that
    *  window at all (judged or not): the reducer ignores it, the voice learner does not learn from it. */
+  /** …and THE TURN HOLD's length (ISS-55), the `minFinalMs` contract: the owner's `turn_hold_ms`, stamped
+   *  by the wiring only when it is on — absent or 0 means a taken final is sent at once. */
   | {
       type: "final";
       text: string;
@@ -616,6 +644,7 @@ export type CallSignal = { gen?: number } & (
       echo?: number;
       echoMin?: number;
       inEchoWindow?: true;
+      turnHoldMs?: number;
     }
   /** The uplink is losing audio — the relay's own overflow state, or (A-F2) our own bounded queue
    *  dropping its oldest frames. ONE signal for both, deliberately: it is one loss chain, and two notes
@@ -678,6 +707,8 @@ export type CallSignal = { gen?: number } & (
    *  the minimum, the `cap` ran out, or — for a tail a KILL armed — the minimum itself passed (`kill`).
    *  For the arming `seq` only — a stale one is ignored. */
   | { type: "tailOver"; seq: number; reason: TailReason }
+  /** THE TURN HOLD'S CLOCK ran out (ISS-55) — for the arming `seq` only, like `tailOver`. */
+  | { type: "turnHoldOver"; seq: number }
   | { type: "playbackFailed" }
   | { type: "turnSettled" } //                 chat status left `streaming`
   | { type: "confirmHold"; on: boolean }
@@ -771,9 +802,11 @@ const isTerminal = (p: CallPhase): boolean => p === "error" || p === "ended";
 const isStable = (p: CallPhase): boolean =>
   p === "listening" || p === "thinking" || p === "speaking";
 
-/** Every reason a queued utterance may not go out right now (§4.3's one mechanism, four holds). */
+/** Every reason a queued utterance may not go out right now (§4.3's one mechanism, four holds — and
+ *  the owner's own pause, the turn hold, ISS-55). */
 function held(s: CallState): boolean {
   return (
+    s.turnHold ||
     s.killing ||
     s.confirmHold ||
     s.heldUpload ||
@@ -887,6 +920,12 @@ function freshEar(s: CallState): CallState {
     ecAll: false,
     // …and so does its TAIL (D80 ①): the fresh ear is not the one the reply was leaking into.
     tail: false,
+    // …and the TURN HOLD lets go (ISS-55), keeping its words: the pause it was timing belonged to the
+    // ear being released — nothing that ear heard can arrive to join them now — and the move below
+    // makes its clock a ghost, so a hold left standing would never release. The queue drains at the
+    // fresh leg's `ready` (`connecting` holds it until then), like every other queued utterance.
+    turnHold: false,
+    turnHoldDue: false,
     // THE FENCE (F7). The old leg's frames, its close, this capture's `onEnded` and any send
     // outcome armed under it all become ghosts — which is the point: the redial is driven by the
     // acquisition, not by the close, so a `socketLost` from the leg being closed must not spend a
@@ -926,6 +965,9 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
       earHeld: false,
       // …and no recapture is coming to clear the mouth's wait (ISS-54): the terminal's teardown runs.
       sinkWait: false,
+      // …nor a turn hold to release (ISS-55): its words are in the harvest above.
+      turnHold: false,
+      turnHoldDue: false,
       gen: s.gen + 1,
     },
     out,
@@ -992,28 +1034,41 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
   const tail = holds && !st.mouthLive && (armed || st.tail);
   const tailSeq = armed ? st.tailSeq + 1 : st.tailSeq;
   const earHeld = (st.mouthLive || tail) && holds;
-  if (
+  const normalized: Step =
     earHeld === st.earHeld &&
     noiseOpen === st.noiseOpen &&
     speechItem === st.speechItem &&
     waitingFinal === st.waitingFinal &&
     tail === st.tail &&
     tailSeq === st.tailSeq
-  )
-    return step;
-  return {
-    state: { ...st, earHeld, noiseOpen, speechItem, waitingFinal, tail, tailSeq },
-    out: step.out,
-  };
+      ? step
+      : {
+          state: { ...st, earHeld, noiseOpen, speechItem, waitingFinal, tail, tailSeq },
+          out: step.out,
+        };
+  // THE TURN HOLD'S RELEASE (ISS-55) — ONE site, here, after the normalize, for the reason the ear-hold
+  // is derived here: "the pause has run out and the ear has settled" is a fact about the step, not about
+  // any one arm. A hold that ran out over an open or owed segment is released by WHATEVER settles the
+  // ear — that segment's dropped or empty final, a noise verdict, an `upstream_error`, a mute condemning
+  // the half-utterance — and a release inside an arm would read an ear the normalize had not yet
+  // re-derived (TH design round, Opus H1 / Maya H2). A TAKEN final never lands here: it starts the hold
+  // over. `drain` still honours every other hold (`speaking`, `connecting`, a kill, a confirm, an
+  // upload), and the queue then waits for THAT release, as any queued utterance does.
+  const ns = normalized.state;
+  if (!ns.turnHold || !ns.turnHoldDue || earUnsettled(ns)) return normalized;
+  const released = drain({ ...ns, turnHold: false, turnHoldDue: false });
+  return { state: released.state, out: [...normalized.out, ...released.out] };
 }
 
 /** MAY THE MOUTH BECOME AUDIBLE NOW (§4.2's iron rule, enforced by waiting — the owner's 2026-09-26
- *  ruling)? No transcript in flight, no segment open unless it has been judged noise, and no fresh ear
- *  still waiting for comm mode to come back (`sinkWait`, ISS-54). The whole of
+ *  ruling)? No transcript in flight, no segment open unless it has been judged noise, no fresh ear
+ *  still waiting for comm mode to come back (`sinkWait`, ISS-54), and no TURN HOLD standing (ISS-55 —
+ *  the owner is mid-thought and holds the floor: a reply readied meanwhile waits, and one already
+ *  playing pauses at its next synthesis gap until the hold lets go). The whole of
  *  the controller's gate (`setCallMouthGate`); `barge_in` plays no part in it — a barge-in interrupts
  *  something AUDIBLE, and a mouth still waiting is not. */
 export function mouthMayOpen(s: CallState): boolean {
-  return !earUnsettled(s) && !s.sinkWait;
+  return !earUnsettled(s) && !s.sinkWait && !s.turnHold;
 }
 
 /** IS THE EAR STILL OWED SOMETHING — a transcript in flight, or a segment open that has not been judged
@@ -1037,13 +1092,25 @@ function reduce(s: CallState, sig: CallSignal): Step {
     // about failures, not about the user's own decision (§4.3's terminal disposition). `unmounted`
     // alone does not `close` — its component is ALREADY unmounting, and an `endCall()` here would end
     // the fresh call a redial's key bump is mounting in the same commit.
+    // …except where the queue holds FINISHED words. A page that WENT AWAY (`hidden` — background off, or
+    // the document dying) is not a decision about words already said (TH design round, Opus L2), and a
+    // TURN HOLD standing is words the pre-hold call would already have sent — "remind me to …", then the
+    // hang-up two seconds later (TH code round, Opus M1). Both are HARVESTED to the draft, exactly as a
+    // terminal harvests, never submitted. Anything else queued (words held behind a reply) keeps the
+    // hang-up's discard. Never twice: this arm consumes `pending` (CALL_INITIAL), so a second exit on the
+    // same instance finds it empty — and StrictMode's simulated cleanup runs only at mount (nothing
+    // queued), while a redial's key bump unmounts the old instance once, from its own state.
+    const out: CallEffect[] = [];
+    if ((sig.type === "hidden" || s.turnHold) && s.pending.length)
+      out.push({ type: "harvest", lines: s.pending });
+    out.push({ type: "teardown", close: sig.type !== "unmounted" });
     return {
       // `priorLeg` survives the reset (S6 code-review F3, reshaped): StrictMode's simulated cleanup
       // funnels through THIS arm, and its teardown clears the sessionStorage marker — so the state's
       // copy is the only carrier left when the re-run's `remount` re-arms. A REAL exit loses nothing
       // by it: a redial's key bump mounts a fresh instance whose state starts at CALL_INITIAL anyway.
       state: { ...CALL_INITIAL, phase: "ended", priorLeg: s.priorLeg, gen: s.gen + 1 },
-      out: [{ type: "teardown", close: sig.type !== "unmounted" }],
+      out,
     };
   }
   // The re-arm HAS to outrank the terminal guard — the terminal it recovers from is the one the
@@ -1096,6 +1163,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // §4.5, stated honestly: a drop mid-utterance LOSES that utterance — the audio is gone — so
       // the awaited set clears rather than waiting for transcripts no session will send. Playback is
       // untouched: C3 rides HTTP, not this socket.
+      // …and a TURN HOLD lets go (ISS-55), for the same reason: the continuation it was waiting for
+      // can no longer arrive, so the words already taken go at the fresh leg's `ready` (`connecting`
+      // holds them until then) instead of sitting out a pause nobody is in.
       return {
         state: {
           ...s,
@@ -1103,6 +1173,8 @@ function reduce(s: CallState, sig: CallSignal): Step {
           attempts: attempt,
           userSpeechActive: false,
           awaiting: [],
+          turnHold: false,
+          turnHoldDue: false,
         },
         out: [{ type: "reconnect", delayMs: RECONNECT_BACKOFF_MS[attempt - 1] }],
       };
@@ -1155,6 +1227,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // words in flight are not going to be sent, so nothing waits on them — and §4.2's iron rule (no
       // playback while `userSpeechActive || waitingFinal`) must not go on holding the mouth for a final
       // that is never coming. Unmuting is simply the ear opening again; the next utterance is fresh.
+      // A TURN HOLD standing is NOT condemned (ISS-55, the main seat's Q1): its words were taken before
+      // the tap — only the half-utterance in flight is — so a cough-mute cannot throw a finished
+      // monologue away. It runs on; one already due is released by the ear this settles (`callReduce`).
       if (sig.on) {
         return {
           state: { ...s, muted: true, userSpeechActive: false, awaiting: [] },
@@ -1220,7 +1295,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // A TAKEN final retracts the "too quiet" note (D80's W6): it was about the last drop, and it stood
       // for the rest of the call. Only ITS OWN note — the `degradedOver` rule: anything else there is
       // news of its own that the owner has not read yet.
-      return drain({
+      const taken: CallState = {
         ...settled,
         heard: text,
         pending: [...s.pending, text],
@@ -1229,7 +1304,25 @@ function reduce(s: CallState, sig: CallSignal): Step {
         // Opus 2): a long call's second, unrelated render error is not a loop — a flapping headset
         // yields no taken finals between flaps, so it stays bounded.
         earRetried: false,
-      });
+      };
+      // THE TURN HOLD (ISS-55): with the knob on the words WAIT — a pause shorter than the hold joins
+      // the next segment into the same message. EVERY taken final (re)starts it, a due one included
+      // (the ASR_PLAN §3.5 ⑤ amendment: serial pauses stay ONE turn), and none drains here: the release
+      // is `callReduce`'s, once the hold is due over a settled ear. A DROPPED final above never reaches
+      // this: echo, noise or a TV must not hold the owner's turn open — it only answers its segment.
+      const holdMs = sig.turnHoldMs ?? 0;
+      if (holdMs > 0)
+        return {
+          state: {
+            ...taken,
+            turnHold: true,
+            turnHoldDue: false,
+            turnHoldSeq: s.turnHoldSeq + 1,
+            turnHoldMs: holdMs,
+          },
+          out: [],
+        };
+      return drain(taken);
     }
 
     case "barge":
@@ -1276,6 +1369,14 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // ARMING, so a release measured for a tail that a new reply already replaced frees nothing.
       if (!s.tail || sig.seq !== s.tailSeq) return { state: s, out: [] };
       return { state: { ...s, tail: false }, out: [] };
+
+    case "turnHoldOver":
+      // THE PAUSE RAN OUT (ISS-55) — fenced like the tail's release: by the generation (the reduce's
+      // first line) and by the ARMING, so a clock for a hold that a later final already restarted
+      // releases nothing. The arm only marks it DUE: the release is `callReduce`'s, the one site that
+      // reads the settled ear — a segment still open or owed holds it until that segment is answered.
+      if (!s.turnHold || s.turnHoldDue || sig.seq !== s.turnHoldSeq) return { state: s, out: [] };
+      return { state: { ...s, turnHoldDue: true }, out: [] };
 
     case "playbackDrained": {
       // The mouth stopped: the flag goes down even where the arm declines to move the phase, because a
@@ -1574,7 +1675,10 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // `speechStart` re-arms the clock once, but a sentence can outlast a short window, and a final can
       // still be in flight — ending there loses the utterance. The knob's contract is "no speech AND no
       // reply". A no-op here; the wiring re-arms on this very signal (`IDLE_EDGES`).
-      if (s.mouthLive || s.userSpeechActive || s.waitingFinal) return { state: s, out: [] };
+      // …and a TURN HOLD standing is the owner mid-thought (ISS-55, TH design round Opus L1): their
+      // words are queued and seconds from going out, which is speech, not idleness.
+      if (s.mouthLive || s.userSpeechActive || s.waitingFinal || s.turnHold)
+        return { state: s, out: [] };
       return terminal(s, "ended", CALL_COPY.idleBackground);
 
     case "failed":
@@ -1806,8 +1910,12 @@ function meterEdge(
       };
       if (key !== null) m.segments.delete(key);
       if (seg !== undefined && m.open === seg) m.open = null;
+      // A submit in the same step is THIS final's own only when no turn hold stood before it (ISS-55):
+      // with one standing, a taken final always grows the queue (it restarts the hold), and the submit
+      // a DROPPED final's step can carry is the hold's release — words that were judged long ago.
       const taken =
-        next.pending.length > prev.pending.length || out.some((e) => e.type === "submit");
+        next.pending.length > prev.pending.length ||
+        (!prev.turnHold && out.some((e) => e.type === "submit"));
       return taken && seg !== undefined ? seg.utterance : null;
     }
     case "playbackStarted":
@@ -2019,6 +2127,24 @@ function holdWhy(sig: CallSignal, next: CallState): "mouth" | "tail" | "policy" 
   return sig.type === "tailOver" ? "tail" : "policy";
 }
 
+/** Why the TURN HOLD just moved, for the trail's `turn` line (ISS-55): a taken final opened or
+ *  restarted it; its clock ran out over an ear still owed (`due`); or it let go — at its clock's
+ *  `expiry` over a settled ear, once a due hold's ear `settle`d, on a lost `leg`, on a fresh ear (a
+ *  `route` cycle or an `earDead` rebuild — both move the generation) or at a `terminal`. */
+function turnWhy(
+  sig: CallSignal,
+  prev: CallState,
+  next: CallState,
+): "open" | "restart" | "due" | "expiry" | "settle" | "leg" | "route" | "terminal" {
+  if (!prev.turnHold) return "open";
+  if (next.turnHold) return next.turnHoldSeq !== prev.turnHoldSeq ? "restart" : "due";
+  if (isTerminal(next.phase)) return "terminal";
+  if (sig.type === "turnHoldOver") return "expiry";
+  if (sig.type === "socketLost") return "leg";
+  if (next.gen !== prev.gen) return "route";
+  return "settle";
+}
+
 // ── THE RELATIVE GATE'S STATE (D76 §C) ───────────────────────────────────────────────────────────
 //
 // The estimators the effective floor is computed from, and the owner's per-call pin. Measurements, so
@@ -2134,6 +2260,9 @@ export interface CallDebug {
     reason?: TailReason;
     ms?: number;
   } | null;
+  /** THE TURN HOLD standing right now (ISS-55): which arming, and whether its pause has run out over an
+   *  ear still owed something. `null` when none stands (always, with `turn_hold_ms` at 0). */
+  turnHold: { seq: number; due: boolean } | null;
 }
 
 /** What the overlay renders + the things it can do. */
@@ -2270,6 +2399,16 @@ export function useLiveCall(): CallView {
    *  speech-start and living exactly as long as the segment it judges: `send` clears it the moment the
    *  machine says no segment is open (a stop, a mute, a lost or fresh leg, a route cycle, a terminal). */
   const noiseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** THE TURN HOLD's clock (ISS-55) — ONE timer, armed by `send` on the reducer's arming edge (a new
+   *  `turnHoldSeq` with the hold up) and dropped the moment the hold falls or the call tears down. */
+  const turnHoldTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** …and the KNOB it runs on (`turn_hold_ms` — not the state's per-arming `turnHoldMs`, which the
+   *  `final` arm copies from the signal this stamps), LATCHED at call start with `bg` (§4.5 — a setting edited mid-call
+   *  applies to the next call). Not read off the leg's `knobs` like `min_final_ms`: those are the query
+   *  result the leg was opened under, and a reconnect after a `/voice/status` refetch opens its leg
+   *  under the NEW one — a hold whose length moved between two pauses of one call would be a hold the
+   *  owner cannot reason about. 0 = off, and it stays 0 until the knobs arrive. */
+  const holdKnob = useRef(0);
 
   /** THE LEG'S DROP TOTALS (T6), written once where the leg ends — a fresh leg (`openLeg`, BEFORE the
    *  leg number moves, so the line is stamped with the leg it describes), a route cycle, the trail's own
@@ -2322,6 +2461,7 @@ export function useLiveCall(): CallView {
       lastFinal: m.last,
       chirp: lastChirp.current,
       lastTail: lastTail.current,
+      turnHold: s.turnHold ? { seq: s.turnHoldSeq, due: s.turnHoldDue } : null,
     };
   }, [knobs]);
 
@@ -2332,6 +2472,7 @@ export function useLiveCall(): CallView {
     clearTimeout(idleTimer.current);
     clearTimeout(noiseTimer.current);
     clearTimeout(rechirpTimer.current);
+    clearTimeout(turnHoldTimer.current);
     // THE CLEAN END CLEARS THE MARKER (S6 ⑦). This is the one release path every exit funnels through
     // — a terminal, a hang-up, the unmount — so it is the one place that can honestly say "this tab is
     // not in a call any more". What does NOT reach here (a killed tab, a crash) is exactly the case
@@ -2387,6 +2528,40 @@ export function useLiveCall(): CallView {
       // round's whole diagnosis was hold timing read off 1 Hz samples; the edges are exact.
       if (prev.earHeld !== next.earHeld)
         trail.current?.push("hold", { held: next.earHeld, why: holdWhy(sig, next) });
+      // …and EVERY EDGE OF THE TURN HOLD (ISS-55), on its own line: `hold` means the EAR's edges, and
+      // the car card's readers key on it. `seq` is the arming the edge is about (a fall reports the one
+      // that fell — `hidden`'s reset would otherwise read 0), `n` the queued segments it carries (a
+      // fall: the ones it let go — whether they went out is the `sig` line's phase move beside it).
+      // A hold that was never up moves nothing worth a line (`hidden`/`unmounted` reset the seq).
+      if (
+        prev.turnHold !== next.turnHold ||
+        (next.turnHold &&
+          (prev.turnHoldSeq !== next.turnHoldSeq || prev.turnHoldDue !== next.turnHoldDue))
+      )
+        trail.current?.push("turn", {
+          held: next.turnHold,
+          why: turnWhy(sig, prev, next),
+          seq: next.turnHold ? next.turnHoldSeq : prev.turnHoldSeq,
+          n: next.turnHold ? next.pending.length : prev.pending.length,
+        });
+      // THE TURN HOLD'S CLOCK (ISS-55) arms on the reducer's arming — a new `turnHoldSeq` with the
+      // hold up, an open or a taken final's restart — replacing whatever was counting, and dies the
+      // moment the hold falls: the tail's state-edge pattern, so no effect has to say when.
+      // A plain `setTimeout`, deliberately, with no visibility reconcile (the `degradeHold` timer has
+      // none either; TH design round, Maya M2 ruled): it is armed from a socket message, never chained
+      // from another timer, so Chrome's intensive throttling — which only bites chained timers — does
+      // not apply; a hidden page aligns it to the 1 Hz wake-ups (at most ~1 s late), a frozen one runs
+      // it the moment it unfreezes, and an ear that froze through the pause goes `earOutage` →
+      // `socketLost`, which releases the hold on its own.
+      if (next.turnHold && next.turnHoldSeq !== prev.turnHoldSeq) {
+        clearTimeout(turnHoldTimer.current);
+        const seq = next.turnHoldSeq;
+        const gen = next.gen;
+        turnHoldTimer.current = setTimeout(
+          () => send({ type: "turnHoldOver", seq, gen }),
+          next.turnHoldMs,
+        );
+      } else if (!next.turnHold) clearTimeout(turnHoldTimer.current);
       // THE TAIL'S RELEASE ARMS on the reducer's arming (a new `tailSeq` with the tail up), and dies the
       // moment the machine says the tail is over — a rising mouth, a route cycle, a terminal, its own
       // `tailOver`. One run at a time: a fresh arming replaces whatever was still counting.
@@ -2731,6 +2906,9 @@ export function useLiveCall(): CallView {
               itemId: frame.item_id,
               energyMs: segmentAccrual(meter.current, key),
               minFinalMs: knobs.min_final_ms,
+              // ISS-55 — THE TURN HOLD, stamped only while it is on: at 0 (or an older backend's absent
+              // knob) the signal — and its trail line — stays exactly the pre-hold call's.
+              ...(holdKnob.current > 0 ? { turnHoldMs: holdKnob.current } : {}),
               ...(inWindow ? { echo: echoOf(frame.text), inEchoWindow: true } : {}),
               echoMin: knobs.echo_similarity,
               gen,
@@ -3157,6 +3335,8 @@ export function useLiveCall(): CallView {
                 playback_margin_db: knobs.playback_margin_db,
                 min_final_ms: knobs.min_final_ms,
                 noise_verdict_ms: knobs.noise_verdict_ms,
+                // ISS-55 — the turn hold this call runs: the call-start latch, which is what governs it.
+                turn_hold_ms: holdKnob.current,
                 mic_hold: knobs.mic_hold,
                 // …and every knob a tail's release, the text backstop and the chirp decide by (D80), so a
                 // release can be reconstructed from the trail after the fact (the car card reads it).
@@ -3248,6 +3428,8 @@ export function useLiveCall(): CallView {
       keepalive: knobs.background_keepalive,
       idleMs: knobs.background_idle_s * 1000,
     };
+    // …and the TURN HOLD's length (ISS-55), with them and for their reason (see the ref).
+    holdKnob.current = knobs.turn_hold_ms ?? 0;
     // …and the tab's own marker, read BEFORE the first leg writes one (S6 ⑦). This order is the whole
     // mechanism: what it can report is the PREVIOUS document's unfinished call, never this one's.
     if (markStanding()) send({ type: "priorLeg", gen: ref.current.gen });

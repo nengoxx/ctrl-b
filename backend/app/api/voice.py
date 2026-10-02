@@ -136,6 +136,10 @@ async def voice_status(request: Request) -> dict[str, object]:
         # energy they gate on is measured in the browser, and the server-side VAD has no field left
         # that would express either of them.
         "min_final_ms": live.min_final_ms,
+        # ISS-55 — THE TURN HOLD: how long the browser keeps a taken final queued before it sends the
+        # turn. A client knob: the queue it holds is the call machine's, and nothing below the browser
+        # ever sees a turn before it is sent.
+        "turn_hold_ms": live.turn_hold_ms,
         # …and the NOISE VERDICT beside it (the owner's 2026-09-26 ruling): how long an open segment
         # runs before the browser may judge it by that same gate and stop holding the reply for it.
         "noise_verdict_ms": live.noise_verdict_ms,

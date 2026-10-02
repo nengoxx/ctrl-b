@@ -699,7 +699,7 @@ class LiveCfg(VoiceServiceCfg):
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `uplink_idle_s`, `allowed_origins` are the relay's own caps; `trail_keep` is the D77 call trail's
       retention (per mode directory since Phase 26 S1 — calls and dictations each keep their own).
-    * CLIENT knobs — `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`,
+    * CLIENT knobs — `turn_hold_ms` (ISS-55), `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`,
       `barge_in`, `ring`, `captions`, `mic_hold`, the D76 GATE six (`floor_dbfs`, the three
       margins, `min_dbfs`/`max_dbfs`), the D80 TAIL five (`hold_tail_min_ms`, `tail_quiet_ms`,
       `tail_quiet_margin_db`, `hold_tail_max_ms`, `tail_lag_margin_ms`), the D80 BACKSTOP pair (`echo_similarity`,
@@ -748,6 +748,15 @@ class LiveCfg(VoiceServiceCfg):
     prefix_padding_ms: int = Field(default=300, ge=0, le=1000)
 
     # ── client-side behavior, delivered by `GET /voice/status` and read only by the PWA ──
+    #: THE TURN HOLD (ISS-55; amends ASR_PLAN §3.5 ⑤): how long a call waits after a TAKEN final before
+    #: it sends what the owner said — a thinking pause shorter than this joins the next segment into the
+    #: SAME message, and every taken final restarts it (serial pauses stay one turn). `silence_ms` above
+    #: cannot do this job: it ends the EAR's segment (capped at 1200 so a phrase still endpoints), and
+    #: one monologue became three or four turns whose replies queued. The cost is latency, all of it on
+    #: purpose: a reply now starts `silence_ms` + this + ASR + TTFT after the owner stops. 0 = send at
+    #: once (today's call, byte-identical); the ceiling is the owner's own 10 s cap. A CLIENT knob — the
+    #: queue it holds is the browser's.
+    turn_hold_ms: int = Field(default=0, ge=0, le=10000)
     #: Interruption floor: speech shorter than this never counts as a barge-in (livekit's
     #: `min_duration`, plan §4.3). A CLIENT gate — Speaches' TurnDetection has no such field.
     min_speech_ms: int = Field(default=300, ge=0, le=5000)

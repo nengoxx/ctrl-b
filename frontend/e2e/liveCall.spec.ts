@@ -69,6 +69,9 @@ const LIVE_CALL = {
   // ships it. No case here dictates; the fixture carries it because it is supposed to be what
   // `/voice/status` sends.
   dictation_idle_margin_db: 10,
+  // ISS-55 — the turn hold, as the backend ships it: 0 sends every taken final at once, which is what
+  // every case below was written against.
+  turn_hold_ms: 0,
 };
 
 interface Relay {

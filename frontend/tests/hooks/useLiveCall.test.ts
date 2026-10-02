@@ -1307,10 +1307,23 @@ describe("callReduce — the interleaving sweep (S3 · F4 · F5 · F6)", () => {
 describe("callReduce — the page going away (§5.3)", () => {
   it("ends the call CLEANLY, like a hang-up and not like a failure", () => {
     // Since D73 S6 the WIRING decides who sends this — `pagehide` always, `visibilitychange` only
-    // with `background` off — but the rule it lands on is unchanged, and still shared with hang-up.
+    // with `background` off — but the rule it lands on is the hang-up's (with nothing queued, the
+    // very same effects; the queue is the one difference, below).
     const { state, out } = run(speaking, [{ type: "hidden" }]);
     expect(state.phase).toBe("ended");
     expect(out).toEqual([{ type: "teardown", close: true }]);
+  });
+
+  it("…but HARVESTS what was queued, where a hang-up discards it (TH design round, Opus L2)", () => {
+    // A page going away is not a decision about words already said — the owner's own exit is.
+    const queued = run(speaking, [{ type: "final", text: "wait" }]).state;
+    expect(queued.pending).toEqual(["wait"]);
+    expect(run(queued, [{ type: "hidden" }]).out).toEqual([
+      { type: "harvest", lines: ["wait"] },
+      { type: "teardown", close: true },
+    ]);
+    expect(run(queued, [{ type: "hangup" }]).out).toEqual([{ type: "teardown", close: true }]);
+    expect(run(queued, [{ type: "unmounted" }]).out).toEqual([{ type: "teardown", close: false }]);
   });
 });
 
@@ -2390,5 +2403,303 @@ describe("callReduce — the awaited-id set (Phase 26 D9)", () => {
     ]).state;
     expect(back.awaiting).toEqual([]);
     expect(mouthMayOpen(back)).toBe(true);
+  });
+});
+
+describe("callReduce — THE TURN HOLD (ISS-55, `turn_hold_ms`)", () => {
+  const HOLD = 5000;
+  /** A TAKEN-shaped final with the hold on, as the wiring stamps it. */
+  const fin = (text: string, itemId?: string): Extract<CallSignal, { type: "final" }> => ({
+    type: "final",
+    text,
+    turnHoldMs: HOLD,
+    ...(itemId === undefined ? {} : { itemId }),
+  });
+  /** One whole segment: start, stop, its final. */
+  const said = (id: string, text: string): CallSignal[] => [
+    seg("speechStart", id),
+    seg("speechStop", id),
+    fin(text, id),
+  ];
+  const over = (s: CallState): CallSignal => ({ type: "turnHoldOver", seq: s.turnHoldSeq });
+
+  it("a taken final OPENS the hold: queued, nothing sent, the phase unmoved", () => {
+    const { state, out } = run(routed, said("A", "a"));
+    expect(state.turnHold).toBe(true);
+    expect(state.turnHoldSeq).toBe(routed.turnHoldSeq + 1);
+    expect(state.turnHoldMs).toBe(HOLD);
+    expect(state.turnHoldDue).toBe(false);
+    expect(state.pending).toEqual(["a"]);
+    expect(state.heard).toBe("a");
+    expect(state.phase).toBe("listening");
+    expect(submits(out)).toEqual([]);
+  });
+
+  it("its expiry over a settled ear sends the WHOLE queue as one message — a second final restarted and joined it", () => {
+    const a = run(routed, said("A", "a")).state;
+    const b = run(a, said("B", "b")).state;
+    expect(b.turnHoldSeq).toBe(a.turnHoldSeq + 1); // restarted
+    expect(b.pending).toEqual(["a", "b"]);
+    const { state, out } = run(b, [over(b)]);
+    expect(submits(out)).toEqual(["a b"]);
+    expect(state.turnHold).toBe(false);
+    expect(state.phase).toBe("thinking");
+  });
+
+  it("a THIRD segment after two pauses is still ONE turn — every taken final restarts (the §3.5 ⑤ amendment)", () => {
+    const a = run(routed, said("A", "a")).state;
+    const b = run(a, said("B", "b")).state;
+    const c = run(b, said("C", "c")).state;
+    // The two clocks the restarts replaced are ghosts — neither sends half the turn.
+    const ghosts = run(c, [over(a), over(b)]);
+    expect(submits(ghosts.out)).toEqual([]);
+    expect(ghosts.state.turnHold).toBe(true);
+    expect(ghosts.state.turnHoldDue).toBe(false);
+    const { out } = run(ghosts.state, [over(c)]);
+    expect(submits(out)).toEqual(["a b c"]);
+  });
+
+  it("speech INSIDE the hold makes its expiry DUE, and that segment's taken final starts it over", () => {
+    const a = run(routed, said("A", "a")).state;
+    const talking = run(a, [seg("speechStart", "B")]).state;
+    const due = run(talking, [over(talking)]);
+    expect(submits(due.out)).toEqual([]);
+    expect(due.state.turnHold).toBe(true);
+    expect(due.state.turnHoldDue).toBe(true);
+    const restarted = run(due.state, [seg("speechStop", "B"), fin("b", "B")]);
+    expect(submits(restarted.out)).toEqual([]); // answered by a taken final: no release, a restart
+    expect(restarted.state.turnHoldDue).toBe(false);
+    expect(restarted.state.turnHoldSeq).toBe(a.turnHoldSeq + 1);
+    expect(submits(run(restarted.state, [over(restarted.state)]).out)).toEqual(["a b"]);
+  });
+
+  it("a DUE hold is released by whatever settles the ear — the segment's EMPTY final (C1, driven, not seeded)", () => {
+    const a = run(routed, said("A", "a")).state;
+    const due = run(a, [seg("speechStart", "B"), over(a)]).state;
+    expect(due.turnHoldDue).toBe(true);
+    const stopped = run(due, [seg("speechStop", "B")]);
+    expect(submits(stopped.out)).toEqual([]); // B is still owed
+    const { state, out } = run(stopped.state, [{ ...fin("", "B") }]);
+    expect(submits(out)).toEqual(["a"]);
+    expect(state.turnHold).toBe(false);
+    expect(state.turnHoldDue).toBe(false);
+  });
+
+  it("…and every other settle path releases a due hold through the same one site", () => {
+    const a = run(routed, said("A", "a")).state;
+    const open = run(a, [seg("speechStart", "B"), over(a)]).state; // B open, hold due
+    const owedB = run(open, [seg("speechStop", "B")]).state; // B owed, hold due
+    const paths: [string, CallState, CallSignal[]][] = [
+      ["too quiet", owedB, [{ ...fin("b", "B"), energyMs: 50, minFinalMs: 200 }]],
+      ["echo", owedB, [{ ...fin("b", "B"), echo: 0.9, echoMin: 0.75 }]],
+      ["upstream_error", owedB, [{ type: "serverError", code: "upstream_error", message: "x" }]],
+      ["noise verdict", open, [{ type: "segmentNoise" }]],
+      // MUTE while due (TH design round, Maya H2): the half-utterance is condemned, the held text goes.
+      ["mute", open, [{ type: "setMuted", on: true }]],
+    ];
+    for (const [why, from, sigs] of paths) {
+      const { state, out } = run(from, sigs);
+      expect(submits(out), why).toEqual(["a"]);
+      expect(state.turnHold, why).toBe(false);
+    }
+  });
+
+  it("a DROPPED final leaves a RUNNING hold untouched — echo, noise or a TV must not hold the turn open", () => {
+    const a = run(routed, said("A", "a")).state;
+    for (const dropped of [
+      fin("", "Z"),
+      { ...fin("tv", "Z"), energyMs: 10, minFinalMs: 200 },
+      { ...fin("reply", "Z"), echo: 1, echoMin: 0.75 },
+    ]) {
+      const { state, out } = run(a, [dropped]);
+      expect(out.filter((e) => e.type === "submit")).toEqual([]);
+      expect(state.turnHold).toBe(true);
+      expect(state.turnHoldSeq).toBe(a.turnHoldSeq);
+      expect(state.pending).toEqual(["a"]);
+    }
+  });
+
+  it("a lost leg RELEASES it, and the fresh leg's `ready` sends the words", () => {
+    const a = run(routed, said("A", "a")).state;
+    const lost = run(a, [{ type: "socketLost" }]);
+    expect(lost.state.turnHold).toBe(false);
+    expect(lost.state.phase).toBe("connecting");
+    expect(lost.state.pending).toEqual(["a"]);
+    expect(submits(lost.out)).toEqual([]);
+    // the old clock finds no hold standing
+    expect(submits(run(lost.state, [over(a)]).out)).toEqual([]);
+    expect(submits(run(lost.state, [{ type: "ready" }]).out)).toEqual(["a"]);
+  });
+
+  it("a route cycle or an earDead rebuild CLEARS it and keeps the queue — the old clock is a ghost", () => {
+    const a = run(routed, said("A", "a")).state;
+    for (const sig of [
+      { type: "routeChange", route: "media" },
+      { type: "earDead", reason: "noFrame", heard: true },
+    ] as CallSignal[]) {
+      const moved = run(a, [sig]).state;
+      expect(moved.turnHold).toBe(false);
+      expect(moved.turnHoldDue).toBe(false);
+      expect(moved.pending).toEqual(["a"]);
+      expect(moved.gen).toBe(a.gen + 1);
+      const ghost = run(moved, [{ ...over(a), gen: a.gen }]);
+      expect(submits(ghost.out)).toEqual([]);
+      expect(submits(run(moved, [{ type: "ready", gen: moved.gen }]).out)).toEqual(["a"]);
+    }
+  });
+
+  it("a terminal or a page going away HARVESTS the held words", () => {
+    const a = run(routed, said("A", "a")).state;
+    const failed = run(a, [{ type: "serverError", code: "protocol", message: "" }]);
+    expect(failed.out[0]).toEqual({ type: "harvest", lines: ["a"] });
+    expect(failed.state.turnHold).toBe(false);
+    expect(run(a, [{ type: "hidden" }]).out[0]).toEqual({ type: "harvest", lines: ["a"] });
+  });
+
+  it("a HANG-UP inside the hold harvests the held words too — ONCE, never a submit (TH code round, Opus M1)", () => {
+    const ab = run(run(routed, said("A", "a")).state, said("B", "b")).state;
+    for (const exit of [{ type: "unmounted" }, { type: "hangup" }] as CallSignal[]) {
+      const first = run(ab, [exit]);
+      expect(first.out).toEqual([
+        { type: "harvest", lines: ["a", "b"] },
+        { type: "teardown", close: exit.type !== "unmounted" },
+      ]);
+      // A second exit on the same instance (a doubled cleanup) finds the queue consumed.
+      expect(run(first.state, [{ type: "unmounted" }]).out).toEqual([
+        { type: "teardown", close: false },
+      ]);
+    }
+    // …and with the knob at 0 it is today's hang-up: words queued behind a reply are discarded.
+    const queued = run(routed, [
+      { type: "final", text: "hello" },
+      { type: "playbackStarted" },
+      { type: "final", text: "wait" },
+    ]).state;
+    expect(queued.pending).toEqual(["wait"]);
+    expect(run(queued, [{ type: "unmounted" }]).out).toEqual([{ type: "teardown", close: false }]);
+  });
+
+  it("an ear outage mid-hold: the expiry in `connecting` lets go, the lost leg redials, `ready` sends ONCE", () => {
+    const a = run(routed, said("A", "a")).state;
+    const asleep = run(a, [{ type: "earOutage" }]);
+    expect(asleep.out).toEqual([{ type: "closeLeg" }]);
+    const expired = run(asleep.state, [over(a)]);
+    expect(submits(expired.out)).toEqual([]); // `connecting` holds the queue
+    expect(expired.state.turnHold).toBe(false);
+    const back = run(expired.state, [{ type: "socketLost" }, { type: "ready" }]);
+    expect(submits(back.out)).toEqual(["a"]);
+  });
+
+  it("a stale or homeless `turnHoldOver` is inert", () => {
+    const a = run(routed, said("A", "a")).state;
+    for (const sig of [
+      { type: "turnHoldOver", seq: a.turnHoldSeq - 1 },
+      { type: "turnHoldOver", seq: a.turnHoldSeq, gen: a.gen - 1 },
+    ] as CallSignal[]) {
+      const { state, out } = run(a, [sig]);
+      expect(out).toEqual([]);
+      expect(state).toBe(a);
+    }
+    // …and with no hold standing at all.
+    const none = run(routed, [{ type: "turnHoldOver", seq: routed.turnHoldSeq }]);
+    expect(none.out).toEqual([]);
+    expect(none.state.turnHoldDue).toBe(false);
+  });
+
+  it("MUTE keeps the held text (the main seat's Q1): only the half-utterance in flight is condemned", () => {
+    const a = run(routed, said("A", "a")).state;
+    const muted = run(a, [{ type: "setMuted", on: true }]).state;
+    expect(muted.turnHold).toBe(true);
+    expect(muted.pending).toEqual(["a"]);
+    expect(submits(run(muted, [over(muted)]).out)).toEqual(["a"]);
+  });
+
+  it("the MOUTH stays shut while it stands — over a settled ear — and opens on its release", () => {
+    const a = run(routed, said("A", "a")).state;
+    expect(a.waitingFinal).toBe(false);
+    expect(a.userSpeechActive).toBe(false);
+    expect(mouthMayOpen(a)).toBe(false);
+    expect(mouthMayOpen(run(a, [over(a)]).state)).toBe(true);
+  });
+
+  it("a hold taken while the reply SPEAKS waits for the drain as well — and a drain inside it sends nothing", () => {
+    const routedSpeaking = run(routed, [
+      { type: "final", text: "hello" },
+      { type: "playbackStarted" },
+    ]).state;
+    const a = run(routedSpeaking, [fin("wait")]).state;
+    expect(a.turnHold).toBe(true);
+    // expiry first: the hold lets go, `speaking` still holds the queue, the drain sends it
+    const expired = run(a, [over(a)]);
+    expect(submits(expired.out)).toEqual([]);
+    expect(expired.state.turnHold).toBe(false);
+    expect(submits(run(expired.state, [{ type: "playbackDrained" }]).out)).toEqual(["wait"]);
+    // drain first: the reply ends, the hold still stands, its expiry sends it
+    const drained = run(a, [{ type: "playbackDrained" }]);
+    expect(submits(drained.out)).toEqual([]);
+    expect(drained.state.phase).toBe("listening");
+    expect(submits(run(drained.state, [over(a)]).out)).toEqual(["wait"]);
+  });
+
+  it("E-N3, both orders, is ONE turn — even with a clock running out between the two finals", () => {
+    // stop(A) → start(B) → final(A) → stop(B) → final(B): Speaches' routine overlap.
+    const routine = run(routed, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      fin("a", "A"),
+    ]);
+    const mid = run(routine.state, [over(routine.state)]).state; // B is open: due, nothing sent
+    expect(mid.turnHoldDue).toBe(true);
+    const r = run(mid, [seg("speechStop", "B"), fin("b", "B")]);
+    expect(submits([...routine.out, ...r.out])).toEqual([]);
+    expect(submits(run(r.state, [over(r.state)]).out)).toEqual(["a b"]);
+    // stop(A) → start(B) → stop(B) → final(A) → final(B): the order D9's set exists for.
+    const owedBoth = run(routed, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+      fin("a", "A"),
+    ]).state;
+    const dueOwed = run(owedBoth, [over(owedBoth)]).state; // B still owed
+    expect(dueOwed.turnHoldDue).toBe(true);
+    const both = run(dueOwed, [fin("b", "B")]);
+    expect(submits(both.out)).toEqual([]);
+    expect(submits(run(both.state, [over(both.state)]).out)).toEqual(["a b"]);
+  });
+
+  it("a backgrounded call is not IDLE while a hold stands (TH design round, Opus L1)", () => {
+    const a = run(routed, said("A", "a")).state;
+    const { state, out } = run(a, [{ type: "idleExpired" }]);
+    expect(out).toEqual([]);
+    expect(state.phase).toBe("listening");
+    expect(state.pending).toEqual(["a"]);
+  });
+
+  it("`turnHoldMs` absent or 0 is today's call, state for state and effect for effect", () => {
+    const today: CallSignal[] = [
+      { type: "final", text: "first" },
+      { type: "playbackStarted" },
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      { type: "final", text: "wait", itemId: "A" },
+      { type: "final", text: "actually never mind" },
+      { type: "playbackDrained" },
+      { type: "turnSettled" },
+      { type: "final", text: "" },
+      { type: "final", text: "quiet", energyMs: 10, minFinalMs: 200 },
+      { type: "final", text: "last" },
+    ];
+    const absent = run(routed, today);
+    const zero = run(
+      routed,
+      today.map((sig) => (sig.type === "final" ? { ...sig, turnHoldMs: 0 } : sig)),
+    );
+    expect(zero.steps).toEqual(absent.steps);
+    expect(zero.state).toEqual(absent.state);
+    expect(submits(absent.out)).toEqual(["first", "wait actually never mind", "last"]);
+    expect(absent.state.turnHold).toBe(false);
+    expect(absent.state.turnHoldSeq).toBe(routed.turnHoldSeq);
   });
 });

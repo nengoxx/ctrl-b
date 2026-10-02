@@ -93,6 +93,7 @@ const makeSettings = () => ({
       vad_threshold: 0.6,
       silence_ms: 700,
       prefix_padding_ms: 300, // S11 — the ear's slice-start pre-roll (rides session.update)
+      turn_hold_ms: 4000, // ISS-55 — the turn hold (a CLIENT knob; off = 0 as shipped)
       min_speech_ms: 300,
       barge_in: true,
       ring: true,
@@ -421,6 +422,30 @@ describe("ConfTab · S11 — the release post-roll (STT group) + the speech pre-
     fireEvent.click(saveButton());
     expect(liveOf(1)?.release_tail_ms).toBeNull();
     expect(liveOf(1)?.prefix_padding_ms).toBeNull();
+  });
+});
+
+describe("ConfTab · ISS-55 — the turn hold (Live call)", () => {
+  it("renders from the live config, in the Live call group only, right after the speech pre-roll", () => {
+    render(<ConfTab active />);
+    expect(liveField("Thinking pause (ms)").value).toBe("4000");
+    expect(sttGroup().queryByLabelText("Thinking pause (ms)")).toBeNull();
+    const labels = Array.from(
+      document.getElementById("voice-live")!.querySelectorAll(".confrow .label"),
+    ).map((e) => e.textContent);
+    expect(labels[labels.indexOf("Speech pre-roll (ms)") + 1]).toBe("Thinking pause (ms)");
+  });
+
+  it("saves it coerced to a NUMBER on `voice.live`, and a CLEARED one as NULL (0 = send at once)", () => {
+    const { unmount } = render(<ConfTab active />);
+    fireEvent.change(liveField("Thinking pause (ms)"), { target: { value: "5000" } });
+    fireEvent.click(saveButton());
+    expect(liveOf()?.turn_hold_ms).toBe(5000);
+    unmount();
+    render(<ConfTab active />);
+    fireEvent.change(liveField("Thinking pause (ms)"), { target: { value: "" } });
+    fireEvent.click(saveButton());
+    expect(liveOf(1)?.turn_hold_ms).toBeNull();
   });
 });
 

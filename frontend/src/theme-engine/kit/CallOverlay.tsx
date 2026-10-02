@@ -819,6 +819,11 @@ final ${
             ? `${d.lastFinal.accruedMs}ms   peak ${db(d.lastFinal.peakDb)}   chars ${d.lastFinal.chars}`
             : `unmeasured   chars ${d.lastFinal.chars}`
       }
+turn  ${
+        // ISS-55 — the turn hold standing now: its arming, and whether its pause has run out while the
+        // ear still owes something (`due` — it goes the moment that segment is answered).
+        d.turnHold === null ? "—" : `#${d.turnHold.seq}   ${d.turnHold.due ? "due" : "holding"}`
+      }
 tail  ${
         // D80 ⑦ as-built — the last tail's rule and deadline (ms after the reply ended; the quiet rule has
         // none), then how it ended: the car card compares a `lag` release with any `echo` right after it.

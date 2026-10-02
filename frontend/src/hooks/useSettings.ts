@@ -115,6 +115,7 @@ export interface VoiceLive extends VoiceServiceCommon {
   vad_threshold: number; //   Silero speech-probability floor, 0.5..0.8 (D76/R84) — rides `session.update`
   silence_ms: number; //      the silence run that ends an utterance, 500..1200
   prefix_padding_ms: number; // S11: pre-roll on every segment's START, 0..1000 — rides `session.update`
+  turn_hold_ms: number; //    ISS-55: the call's thinking pause before a turn is sent, 0..10000; 0 = at once
   min_speech_ms: number; //   client interruption floor, 0..5000
   barge_in: boolean; //       hands-free interruption; off = tap-to-interrupt only
   // D74 — the near-speech gate on a COMMITTED turn (evidence docs/research/R76: Silero is nearly

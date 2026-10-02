@@ -1864,6 +1864,7 @@ def test_status_carries_the_client_side_call_knobs() -> None:
             "vad_threshold": 0.7,
             "min_final_ms": 350,
             "noise_verdict_ms": 1500,
+            "turn_hold_ms": 5000,
             "debug": True,
             "ring": False,
             "captions": False,
@@ -1913,6 +1914,8 @@ def test_status_carries_the_client_side_call_knobs() -> None:
         # …and the NOISE VERDICT beside it (the owner's 2026-09-26 ruling): how long an open segment
         # runs before the browser judges it by that same gate — a CLIENT knob for the same reason.
         "noise_verdict_ms": 1500,
+        # ISS-55 — THE TURN HOLD: the queue it holds is the browser's call machine, so a CLIENT knob.
+        "turn_hold_ms": 5000,
         "debug": True,
         "ring": False,
         # The call screen's two PRESENTATION knobs travel together (owner ask 2026-09-22): what the
@@ -2104,6 +2107,8 @@ def test_live_config_defaults() -> None:
     # The noise verdict ships at 1 s: a segment still sounding a second in, with less than
     # `min_final_ms` of accrual, is noise and stops holding the reply (the owner's 2026-09-26 ruling).
     assert cfg.noise_verdict_ms == 1000
+    # ISS-55 — the turn hold ships OFF: 0 sends every taken final at once, exactly the pre-hold call.
+    assert cfg.turn_hold_ms == 0
     # D80 ① (R91 §4) — the tail hold: nothing for 300 ms, then 700 ms of quiet under noise + 10 dB,
     # capped at 5 s (the worst measured audible end, 3.46 s, + the quiet run + headroom).
     assert (cfg.hold_tail_min_ms, cfg.tail_quiet_ms, cfg.hold_tail_max_ms) == (300, 700, 5000)
@@ -2197,6 +2202,9 @@ def test_live_config_defaults() -> None:
         # …and the noise verdict beside it: 0 is REAL (never judge — always wait for the stop).
         {"noise_verdict_ms": -1},
         {"noise_verdict_ms": 5001},
+        # ISS-55 — the turn hold: 0 is REAL (off); past the owner's 10 s cap a pause is a hang-up.
+        {"turn_hold_ms": -1},
+        {"turn_hold_ms": 10001},
         # D76 §C.4 — the relative floor's clamp: its two bounds are each bounded to dBFS, and ORDERED
         # by the model validator (inverted or equal bounds pin every automatic floor to one number).
         {"min_dbfs": -95.0},

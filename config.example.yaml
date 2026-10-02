@@ -435,6 +435,9 @@ voice:
     silence_ms: 700        # silence run that ends an utterance (500–1200); rides session.update
     prefix_padding_ms: 300 # S11: pre-roll on the START of every speech segment (0–1000), so a phrase keeps
                            # its onset; rides session.update (the owned Speaches fork honours it)
+    turn_hold_ms: 0        # CLIENT (ISS-55): the call's THINKING PAUSE — after you stop, wait this long before
+                           # sending what you said; talking again inside it joins the same message (and
+                           # restarts the wait). Every reply starts this much later (0–10000; 0 = send at once)
     min_speech_ms: 300     # CLIENT interruption floor — speech shorter than this is not a barge-in
     frame_ms: 40           # uplink frame duration (10–200); also the flush burst's granularity
     max_session_s: 1800    # hard session lifetime; 1800 aligns with Speaches' own 30-min expiry

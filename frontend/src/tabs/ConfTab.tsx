@@ -851,6 +851,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   vad_threshold: 0.6,
   silence_ms: 700,
   prefix_padding_ms: 300,
+  turn_hold_ms: 0,
   min_speech_ms: 300,
   barge_in: false,
   min_final_ms: 200,
@@ -1914,6 +1915,8 @@ export function ConfTab({ active }: Props) {
           // …and the noise verdict beside it, for the same reason: 0 MEANS something (never judge a
           // segment noise — the reply always waits for the stop).
           noise_verdict_ms: numOrNull(draft.voice.live.noise_verdict_ms),
+          // ISS-55's turn hold, the same way: 0 MEANS something (send every turn at once).
+          turn_hold_ms: numOrNull(draft.voice.live.turn_hold_ms),
           // D76 §C's gate six take `numOrNull` for the same reason: zero is a MEANINGFUL value for
           // every one of them (a 0 dB margin is "no margin"; 0 dBFS is a floor nothing reaches), so a
           // blank coercing to 0 would silently reconfigure the gate instead of earning the visible 422.
@@ -3074,6 +3077,15 @@ export function ConfTab({ active }: Props) {
             desc="ms kept from just before the ear heard you start, so a sentence keeps its first sound (0–1000; 0 = off) · calls and live dictation alike"
             value={String(vlive?.prefix_padding_ms ?? "")}
             onChange={(v) => setLive("prefix_padding_ms", v as unknown as number)}
+          />
+          {/* ISS-55 — THE TURN HOLD: the silence window above ends the EAR's phrase; this is how long
+              the CALL then waits before it sends what you said, so a thinking pause does not split one
+              monologue into several turns. Every reply starts this much later; calls only. */}
+          <Field
+            label="Thinking pause (ms)"
+            desc="how long the call waits after you stop before it sends what you said — talking again inside it joins the same message (0–10000; 0 = send at once) · calls only"
+            value={String(vlive?.turn_hold_ms ?? "")}
+            onChange={(v) => setLive("turn_hold_ms", v as unknown as number)}
           />
           <Field
             label="Minimum speech"

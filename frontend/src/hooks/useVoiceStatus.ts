@@ -178,6 +178,12 @@ export interface LiveCallWire {
    *  `min_final_ms`'s reason: a client that invented a number would be deciding what counts as noise on
    *  a value nobody chose. The backend ships 1000. */
   noise_verdict_ms?: number;
+  /** ISS-55 — THE TURN HOLD, ms: how long the call keeps a TAKEN final queued before it sends the turn;
+   *  a final taken inside it joins the same message and restarts it, so a thinking pause shorter than
+   *  this never splits a monologue. Read ONCE at call start (§4.5). **0 = send at once.** OPTIONAL, and
+   *  absent reads as 0 — an older backend has no hold, and a client that invented one would delay every
+   *  reply on a number nobody chose. The backend ships 0. */
+  turn_hold_ms?: number;
   /** D74 S7 — the call overlay's READBACK block: the track's resolved echo-cancellation mode beside
    *  its open-time capability, the live level (dBFS) against the floor, and the flags the arming
    *  decision was taken from (R78 §6.2). Diagnostic only; off renders nothing extra. Optional for the

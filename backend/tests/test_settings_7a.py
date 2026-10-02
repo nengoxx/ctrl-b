@@ -299,7 +299,9 @@ def test_d74_text_and_gate_knobs_round_trip_to_the_status_probe() -> None:
     `voice.live` beside the other client knobs — so they ride the existing per-section machinery with
     nothing added for them. Pinned end to end (PUT → disk → live settings → `/voice/status`) for the
     dictation four's reason: every one of them is applied in the BROWSER, so the probe is the only
-    surface that carries them, and a knob that saved but never arrived would look like a dead knob."""
+    surface that carries them, and a knob that saved but never arrived would look like a dead knob.
+    ISS-55's `turn_hold_ms` (the call's thinking pause) is another call knob of the same kind and rides
+    the same path."""
     tmp = Path(tempfile.mkdtemp())
     cfg = tmp / "config.yaml"
     cfg.write_text("server:\n  poll_seconds: 5\n", encoding="utf-8")
@@ -312,13 +314,19 @@ def test_d74_text_and_gate_knobs_round_trip_to_the_status_probe() -> None:
             assert body["tts_chunking"]["speak_actions"] is False
             assert (body["live_call"]["min_final_ms"], body["live_call"]["debug"]) == (200, False)
             assert body["live_call"]["noise_verdict_ms"] == 1000
+            assert body["live_call"]["turn_hold_ms"] == 0  # ISS-55: the turn hold ships off
 
             r = c.put(
                 "/api/settings",
                 json={
                     "voice": {
                         "tts": {"speak_actions": True},
-                        "live": {"min_final_ms": 350, "noise_verdict_ms": 1500, "debug": True},
+                        "live": {
+                            "min_final_ms": 350,
+                            "noise_verdict_ms": 1500,
+                            "turn_hold_ms": 5000,
+                            "debug": True,
+                        },
                     }
                 },
             )
@@ -329,16 +337,22 @@ def test_d74_text_and_gate_knobs_round_trip_to_the_status_probe() -> None:
             on_disk = cfg.read_text(encoding="utf-8")
             assert "min_final_ms: 350" in on_disk
             assert "noise_verdict_ms: 1500" in on_disk  # restart-durable, not only in memory (F3)
+            assert live.turn_hold_ms == 5000 and "turn_hold_ms: 5000" in on_disk
 
             body = c.get("/api/voice/status").json()
             assert body["tts_chunking"]["speak_actions"] is True
             assert (body["live_call"]["min_final_ms"], body["live_call"]["debug"]) == (350, True)
             assert body["live_call"]["noise_verdict_ms"] == 1500
+            assert body["live_call"]["turn_hold_ms"] == 5000
 
             # …and an out-of-bounds gate earns the same visible 422 its neighbours do (nothing saved).
             bad = c.put("/api/settings", json={"voice": {"live": {"min_final_ms": -1}}})
             assert bad.status_code == 422, bad.text
             assert c.app.state.settings.voice.live.min_final_ms == 350
+            # …the turn hold past the owner's 10 s cap included (ISS-55).
+            bad = c.put("/api/settings", json={"voice": {"live": {"turn_hold_ms": 10001}}})
+            assert bad.status_code == 422, bad.text
+            assert c.app.state.settings.voice.live.turn_hold_ms == 5000
     finally:
         os.environ.pop("CTRLB_CONFIG", None)
         os.environ.pop("CTRLB_DB", None)

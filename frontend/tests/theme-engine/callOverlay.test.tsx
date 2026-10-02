@@ -1036,6 +1036,7 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     lastFinal: { accruedMs: 320, peakDb: -13.6, chars: 14, measured: true },
     chirp: null,
     lastTail: null,
+    turnHold: null,
   };
 
   it("renders NOTHING extra with the knob off", () => {
@@ -1107,6 +1108,20 @@ describe("CallOverlay — the readback block (D74 S7)", () => {
     expect(document.querySelector(".kit-call-debug")!.textContent).toContain(
       "tail  quiet   → cap @5000ms",
     );
+  });
+
+  it("prints the TURN HOLD standing now — its arming, holding or due (ISS-55)", () => {
+    h.call = { ...h.call, debug: snapshot };
+    const { unmount } = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain("\nturn  —\n");
+    unmount();
+    h.call = { ...h.call, debug: { ...snapshot, turnHold: { seq: 3, due: false } } };
+    const holding = render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain("turn  #3   holding");
+    holding.unmount();
+    h.call = { ...h.call, debug: { ...snapshot, turnHold: { seq: 3, due: true } } };
+    render(<Host open={true} />);
+    expect(document.querySelector(".kit-call-debug")!.textContent).toContain("turn  #3   due");
   });
 
   it("says when the hold is the reply's TAIL (D80 ①) — the element is done, the ear still held", () => {
