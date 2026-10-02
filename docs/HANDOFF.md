@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-10-01 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 56 (Fable) BUILT + two-reviewer-closed + COMMITTED Phase 26 session A's K6 (`96fdc4e`, 16 kHz capture at both sites). 23 commits on `main` UNPUSHED (incl. this handoff); push on the owner's word. Next = THE OWNER'S PHONE CARD (K6 + SP field checks, below) on the rebuilt dev dist → D9 → D8 → D5 → v1.7.11 = polish + session A; v1.7.12 = session B**)
+## Where we are (2026-10-03 — **PROD = v1.7.10 LIVE @ `9c5a6c6` (unchanged). Session 58 (Fable) READ THE OWNER'S PHONE CARD, bought R99, then BUILT + two-reviewer-closed + COMMITTED THREE slices the same night: ISS-54 `403c102` (the deaf media→call flip: a capture that watches its own context + one bounded rebuild that waits out Chromium's output pool) · D9 `91c5669` (the awaited-id set) · ISS-55 `a0ba1d0` (the TURN HOLD `turn_hold_ms`, 0–10000, the owner's thinking pause). 37 commits on `main` UNPUSHED (`git rev-list --count origin/main..HEAD`, incl. the session-58 docs commit); push on the owner's word. Dev dist REBUILT + units restarted. Next = THE OWNER'S PHONE CARD below (turn hold at 5000 · the flip · BT direct start), then D8 → D5 → v1.7.11.**)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): at writing time
   tag **`v1.7.10` on `9c5a6c6` — LIVE** (released 2026-09-27 evening ≈ 18:14Z per `deploy/linux/README.md`
@@ -56,6 +56,77 @@
   `origin/main` `778b960`:** `53f8010` · `7522040` · `c09d47b` · `31953a9` · `23fd88a` · `c1c8bad`, plus this
   handoff. Push on the owner's word. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
+
+## ▶▶ NEW (2026-10-02/03, Fable seat, session 58) — THE CARD READ · R99 · ISS-54 + D9 + ISS-55 BUILT, REVIEWED, COMMITTED · NEXT = THE OWNER'S PHONE CARD
+
+**Read first:** [`ISSUES.md`](./ISSUES.md) ISS-54 / ISS-55 / ISS-56 (the as-built summaries + residuals) · [R99](./research/R99-android-16k-comm-mode.md)
+· [`ASR_PLAN.md`](./ASR_PLAN.md) §3.5 ⑤ (the AMENDED turn-hold release rule), §3.9 ① (D9 as built), the §4 `turn_hold_ms` row, the §7.2 S7a
+note. The session record is `~/.cache/tmp/ctrlb-session58/` (`CARD_READ.md` · `RULINGS.md` = every finding of every round with its
+ruling · `audit-ISS54.md` / `audit-ISS55.md` (the design audits + seam maps) · `brief-ISS54.md` / `brief-D9-TH.md` (pinned briefs + the
+design-round amendments) · `review-design-*` / `review-code-*` / `confirm-code-*` ({opus,maya}) · `lane-{ISS54,D9,TH}-report.md` (as-built,
+file:line, state tables, phone cards) · `frozen-*.diff` + interdiffs · `commit-*.txt`).
+
+### What happened (in order)
+1. **The owner's card, read from the dev trails** (steps 1–2 only): K6's arms PASS on the media route (16 kHz ctx, chirp 197 ms ≈ prod, no
+   budget trip; `baseLatency` 0.06 is device frames ÷ context rate, NOT a latency change — R99 §1.3); **no hallucinations** beside loud
+   water (the D74 gate dropped 13 blip finals). The owner's verdict: **turns end too fast** (`silence_ms` 700, cap 1200 → one monologue =
+   four turns, replies queued). The **call route was DEAF after a media→call flip** (0 frames, 15 s reap), twice.
+2. **R99 bought** (Opus lane, Chromium `main` + AOSP read whole): the 16 kHz rate is NOT the cause — Android's sink is the hardware rate
+   either way; the flip reuses the pooled MEDIA-tagged output stream, comm mode re-routes it, AAudio disconnects, Chrome raises a render
+   error nobody watched. **The owner's discriminator the same evening (`bc9d8d20`): a DIRECT call-route start WORKS** ⇒ the flip is the bug.
+3. **Owner rulings:** fix both THIS session; the turn hold pulled forward with a 10 s cap; "double check everything with both Opus 5.5 and
+   Maya before doing anything, then a review with both afterwards".
+4. **The workflow, three times:** Opus audit lane (seam map + draft brief) → main-seat rulings → pinned brief → DESIGN round (blind Opus ∥
+   Maya; 6 + 3 findings on ISS-54, 9 + 5 on D9/TH — the load-bearing ones: Opus H1 "the due-release inside an arm reads a STALE derived
+   flag → release once after normalize"; Maya H1/H2 "an error with an id must settle it" / "mute while due deadlocks"; Opus M1/M2 the FIFO
+   + sentinel belt) → build lane → frozen diff → CODE round (blind Opus ∥ Maya) → fix wave → CONFIRM (Opus by SendMessage, Maya by a fresh
+   self-contained `-z`) → commit. **Slices sequential** (all touch `useLiveCall.ts`).
+5. **ISS-54 `403c102`** — `pcmCapture.ts` watches its own context from birth (`error` + `statechange`, a first-frame watchdog
+   `FIRST_FRAME_MS` 2000, ONE death latch → `onDead` beside `onEnded`, listeners removed on stop, a bounded event log → `ctx` trail
+   lines); `earDead` → the EXISTING `recapture` with `freshSink` → `acquire` waits `STREAM_RETAG_MS` (5.5 s, ISS-18's pool wait) BEFORE
+   `getUserMedia`; one automatic rebuild per route (`earRetried`, reset by a route change or a TAKEN final), the second death =
+   `micLost`; every recapture ONTO the call route waits the same way; the mouth is re-tagged (`markStreamRetag`) and HELD (`sinkWait`)
+   until the new mic opens. Notes: "switching to call mode — about five seconds" (flip in only) · "the microphone stalled — anything
+   said just now wasn't heard". Two waves (Maya M1 the mouth half · Opus 1–7 · X1–X3). Residuals + ISS-56 WATCH in ISSUES.
+6. **D9 `91c5669`** — `awaiting` (ordered ids, `""` sentinel), `waitingFinal` DERIVED, ONE `settle` helper (FIFO through the head;
+   unknown id → sentinels only; id-less → clear all; `upstream_error` with id settles + notes), `earUnsettled(s)` = the one predicate,
+   `mouthMayOpen = !earUnsettled && !sinkWait`, `error.item_id` parsed (the relay sends none yet). OPEN-2 closed.
+7. **ISS-55 `a0ba1d0`** — `voice.live.turn_hold_ms` (0–10000, default 0, Conf › Live call › "Thinking pause (ms)", latched at call
+   start): a TAKEN final waits in `pending` (one more `held()` reason), every taken final restarts the hold, release through the one
+   `drain()` when it expires with the ear settled — THE due-release once in `callReduce` after normalize; no reply STARTS over a held
+   floor; `socketLost` releases at `ready`; route change / ear rebuild clear + keep the queue; mute keeps the text; hang-up or screen-off
+   inside a hold HARVESTS to the composer draft; a `turn` trail line + a debug readout. ASR_PLAN §3.5 ⑤ AMENDED (serial pauses = one turn;
+   mute keeps; harvest). Full FE suite 4499/4499 (Maya's confirm run).
+
+### ▶▶ THE OWNER'S PHONE CARD — dev (`https://emma.lobster-vector.ts.net:8443`), dist rebuilt + units restarted 2026-10-03; close + reopen the PWA once
+**Step 0.** Conf › Live call › **"Thinking pause (ms)" = 5000** and **"Call debug readout" ON**, BEFORE dialling (the knob is latched at
+call start). Route = Media.
+**A. The turn hold** (debug block shows a `turn` line: `—` / `#n holding` / `#n due`):
+1. ONE monologue: a sentence, pause 3–4 s, another, pause 3–4 s, a third, silence → ONE message ~5 s after the last; trail `turn` lines
+   open → restart → restart → expiry. 2. A pause > 5 s → two messages. 3. No reply STARTS while the line reads holding/due (a reply already
+   playing may pause at a sentence gap and resume when your turn goes out). 4. Talk right around the 5 s mark: the line may flip to `due`,
+   your sentence restarts it, still ONE message. 5. Speak, tap mute within 5 s → the words still go out when the pause runs out. 6. Hang up
+   inside a pause → nothing sent, the words land in the composer draft once. 7. Set 0 and redial → every sentence goes at once (control).
+**B. The flip (ISS-54):** 1. Media→call mid-call: "switching to call mode — about five seconds" ~6 s → chirp → she hears you (the trail:
+`ctx` lines, `ctxState running`, `ctxTime` advancing, no `earDead`). 2. Call→media: immediate, unchanged. 3. A direct call-route start
+(Conf route = Call): unchanged, no wait.
+**C. Bluetooth on the call route — FIRST a DIRECT start with the headset** (BT was never measured; `FIRST_FRAME_MS` 2000 is the only
+number not evidenced there — a false `noFrame` would end BT calls at ~10 s "the microphone stopped"; the trail tells). Then a media→call
+flip with the headset; then switch the input device on the call route mid-reply: ~6 s `connecting`, NO note; a reply already playing
+keeps talking; one that starts during the wait begins on a fresh stream afterwards.
+**D. Still owed from the session-56 card:** the 5–10 min dictation · SP's 4a/4b/4c · one Fennec run.
+**Tell me one line per item.** The next session reads the trails itself (`~/.ctrl-b-dev/calls/`, the session-56 recipe).
+
+### After the card
+D8 → D5 → the QUALITY.md counts sweep (ONE refresh at the end of A) → the v1.7.11 release card (notes: session 55's list + K6 + ISS-54/55 +
+D9; config shape unchanged — `turn_hold_ms` is a NEW key with a default, no migration; rollback = v1.7.10 by tag) → push on the owner's word.
+
+### Standing facts from this session (verified)
+- Three reviewer rounds per slice is the owner's standing bar now ("as always"); Maya's confirm rounds are fresh self-contained `-z` runs.
+- `git add -N` before freezing; the pre-commit hook runs lint/format/prettier only — the lanes ran typecheck + the touched suites +
+  `check.py --fast`; CI runs the rest. `interdiff` works on the frozen diffs.
+- Dev `voice.live`: `{dictation, debug ON, mic_hold on, route media}` — the owner flipped route back to media after the discriminator.
+- `~/.cache/tmp/ctrlb-session58/` holds every artifact; the HANDOFF/README/R99 docs ride the session's docs commit.
 
 ## ▶▶ NEW (2026-10-01, Fable seat, session 56) — PHASE 26 K6 BUILT + COMMITTED (`96fdc4e`) · NEXT = THE OWNER'S PHONE CARD, THEN D9
 
