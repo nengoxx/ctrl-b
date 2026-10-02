@@ -401,7 +401,11 @@ check · FireRed-stream · non-causal models for the pre-pass only).
    invalid pair is a protocol anomaly, tested (council 3).
 3. **Ordering** — transcripts FIFO (the serial worker); **stops go out when they happen**. R94 §7.3 ③'s "`transcript(n)`
    before `speech_stopped(n+1)`" is DELETED (council 8): with D9 required it only kept the next segment open on the client,
-   leaking post-speech audio into its D74 accrual. The Q1 `short` exemption is thereby moot.
+   leaking post-speech audio into its D74 accrual. The Q1 `short` exemption is thereby moot. **D9 as built (2026-10-02)
+   RELIES on this: every answer — `endpoint`, `flush`, `short`, `max_segment`, the §3.5 ⑨ deadline answer and an
+   `upstream_error` alike — goes out in STOP order, because a known id settles every id queued ahead of it (FIFO). An answer
+   sent out of order would silently settle a younger segment; the relay's ordering is therefore a contract, not a courtesy
+   (D9 code round, Opus L2).
 4. **Onset** — tentative start + the §3.4 bounds: client timing, accrual, the noise verdict and `min_final_ms` behave as
    today, and a flickering real onset stays ONE segment, so the mouth gate never opens between halves of one utterance.
 5. **The turn hold (R20 + R97 P-3) — ONE mechanism: a held pending turn absorbs the next final.** After a call's final the
@@ -570,10 +574,18 @@ R95 §4) · the echo backstop · the voice learner · the overlay · the idle cl
 
 ### 3.9 Client changes (session A unless marked)
 
-1. **D9 — awaited-id set.** `waitingFinal: boolean` → `awaiting: ReadonlySet<string>`, `waitingFinal` derived
-   (`mouthMayOpen`, `CallOverlay` unchanged). An accepted `speechStop(id)` adds; `final(id)` removes; `error{upstream_error}`
-   WITH `item_id` sets the note only, WITHOUT one clears the set (the Speaches-era belt); `ready`/`socketLost`/mute clear.
-   `parseLiveFrame` gains `error.item_id`. Speaches-compatible (D80 W3 already forwards ids).
+1. **D9 — awaited-id set (✅ BUILT 2026-10-02, session 58; AS-BUILT amends this paragraph — the code round's rulings).**
+   `waitingFinal: boolean` → `awaiting: readonly string[]` — an ORDERED list (FIFO, §3.5 ③), `""` for an id-less stop —
+   with `waitingFinal` DERIVED in the reducer's normalize (`mouthMayOpen`, `CallOverlay`, `idleExpired` unchanged; no arm
+   writes it). An accepted `speechStop(id)` appends. ONE `settle(id)` rule for every `final` exit (taken or not) AND for
+   `error{upstream_error}`: an id IN the set removes itself and every id ahead of it (FIFO — a stop whose answer never comes
+   heals on the next answer); an id NOT in the set (a late final after its id expired, §3.5 ⑨) removes only the `""`
+   sentinels, never the other awaited ids (no early mouth); an id-LESS answer clears all (the Speaches-era belt).
+   `upstream_error` WITH `item_id` settles that id AND sets the note (the protocol sends it INSTEAD of a final); WITHOUT one
+   clears all. `ready`/`socketLost`/mute/`routeChange`/`terminal`/the ISS-54 ear reset clear. `earUnsettled(s)` =
+   `awaiting.length > 0 || (userSpeechActive && !noiseOpen)` is the ONE predicate anything that waits on the ear reads (the
+   turn hold, ⑤ below); `mouthMayOpen = !earUnsettled && !sinkWait`. `parseLiveFrame` gains `error.item_id` — today's relay
+   sends none on errors, so only the belt runs until S7b (documented in code). Closes LIVE_VOICE_PLAN OPEN-2.
 2. **D8 — provisional floor.** Starts from the trail (why did that call's floor sit at −60?). Until the tracker settles the
    floor seeds from `V − 2·voice_margin_db` (the exact key, else the device's other EC mode, else the last learned level);
    once settled the measured floor wins in EITHER direction; never learned from. No key.

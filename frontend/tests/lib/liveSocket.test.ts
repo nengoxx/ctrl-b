@@ -288,6 +288,22 @@ describe("liveSocket — the downlink parse", () => {
     });
   });
 
+  it("an `error` carries the segment it answered when named — and only a well-formed one (Phase 26 D9)", () => {
+    expect(
+      parseLiveFrame(
+        '{"type":"error","code":"upstream_error","message":"asr failed","item_id":"item_A"}',
+      ),
+    ).toEqual({ type: "error", code: "upstream_error", message: "asr failed", item_id: "item_A" });
+    // the relay forwards none today: the id-less frame parses exactly as before
+    expect(
+      parseLiveFrame('{"type":"error","code":"upstream_error","message":"x","item_id":7}'),
+    ).toEqual({
+      type: "error",
+      code: "upstream_error",
+      message: "x",
+    });
+  });
+
   it("refuses junk without throwing: bad JSON, a non-object, an unknown state", () => {
     expect(parseLiveFrame("not json")).toBeNull();
     expect(parseLiveFrame("[1,2]")).toBeNull();

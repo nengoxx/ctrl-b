@@ -77,7 +77,8 @@ import { useVoiceStatus } from "./useVoiceStatus";
 //
 // THE THREE RUN CONCURRENTLY, so one linear enum cannot carry the truth (council F5): a rendered PRIMARY
 // PHASE plus two ORTHOGONAL FLAGS (`userSpeechActive` between the server VAD's start/stop,
-// `waitingFinal` from a speech-stop until its transcript is consumed or discarded). The rule those flags
+// `waitingFinal` from a speech-stop until its transcript is consumed or discarded — since Phase 26 D9 derived
+// from `awaiting`, the ordered ids of every segment whose transcript is still owed). The rule those flags
 // exist for is §4.2's: **playback may not start while either holds** — the gap between "you stopped
 // talking" and "your words arrived" must not let an older reply begin. Enforced by WAITING, not killing
 // (the owner's ruling 2026-09-26 on R86 LC-1 / R88 E-1): the mouth's automatic starts ask the pure
@@ -463,7 +464,16 @@ export interface CallState {
    *  open or the relay named none. DERIVED to `null` with `userSpeechActive` (see `callReduce`). What
    *  lets a final for ANOTHER segment — Speaches overlaps them — leave this one's verdict alone. */
   speechItem: string | null;
-  /** Speech stopped, its transcript not yet consumed or discarded. */
+  /** THE AWAITED SET (Phase 26 D9): the segments whose speech has STOPPED and whose transcript is not yet
+   *  consumed or discarded, by the ear's `item_id`, in stop order; an id-less stop holds a `""` placeholder.
+   *  A set, not a bit, because the ear can owe several at once (Speaches overlaps segments, and session
+   *  B's batch ASR makes it routine): with one bit, A's final cleared the wait B's stop had raised and the
+   *  mouth could open before B's words arrived (LIVE_VOICE_PLAN OPEN-2). Moved only by `settle` (an
+   *  answer) and by an accepted `speechStop` (an add); every clear path writes `[]`. */
+  awaiting: readonly string[];
+  /** Speech stopped, its transcript not yet consumed or discarded — DERIVED from `awaiting` after every
+   *  reduce (see `callReduce`), never set by an arm. Kept as a field for its readers (the overlay's `…`,
+   *  `idleExpired`); the mouth's gate reads the set itself (`earUnsettled`). */
   waitingFinal: boolean;
   /** THE NOISE VERDICT (the owner's 2026-09-26 ruling): the segment open right now has run
    *  `noise_verdict_ms` with less of its OWN accrual than `min_final_ms` — the transcript gate would
@@ -547,6 +557,7 @@ export const CALL_INITIAL: CallState = {
   phase: "connecting",
   userSpeechActive: false,
   speechItem: null,
+  awaiting: [],
   waitingFinal: false,
   noiseOpen: false,
   pending: [],
@@ -646,7 +657,10 @@ export type CallSignal = { gen?: number } & (
     }
   /** D73 S6 ④ — a BACKGROUNDED call sat past `background_idle_s` with no speech and no reply. */
   | { type: "idleExpired" }
-  | { type: "serverError"; code: string; message: string }
+  /** `itemId` — the segment an `upstream_error` was raised for, when the relay names one (D9: the error
+   *  arrives INSTEAD of that segment's final). The relay forwards none today, so only the id-less branch
+   *  runs until session B's ear carries one. */
+  | { type: "serverError"; code: string; message: string; itemId?: string }
   | { type: "serverEnded" } //                 the relay said `state: ended`
   /** Trigger A — VOICE over an AUDIBLE reply (the wiring's sustained-energy window). Interrupts the
    *  mouth and nothing else: inert while it is silent, so speech during `thinking` steers (D41). */
@@ -807,6 +821,27 @@ function sameSegment(itemId: string | undefined, open: string | null): boolean {
   return itemId === undefined || open === null || itemId === open;
 }
 
+/** THE EAR ANSWERED a segment (Phase 26 D9) — its final, dropped or taken, or the `upstream_error` it
+ *  sends instead — so that segment is no longer awaited. ONE rule for every answer:
+ *  · a KNOWN id leaves the set WITH every id ahead of it: the ear answers in stop order (Speaches per
+ *    session, session B's serial worker by construction), so anything still ahead lost its answer — a
+ *    stop whose final never came is healed by the next answer instead of holding the mouth for the rest
+ *    of the call (D9 design round, Opus M1; never worse than the one bit this replaces);
+ *  · an id the set does NOT hold (a late final, one a clear already settled) was never awaited by name:
+ *    it settles only the `""` placeholders, one of which may be its own id-less stop (Opus M2 / Maya M1)
+ *    — clearing everything here would open the mouth over a segment still owed;
+ *  · an id-LESS answer (a relay that names no segment — every error today) clears the whole set: the
+ *    pre-D9 belt, because nothing says which one it was.
+ *  Returns `s` itself when nothing moved, like `mouth`. */
+function settle(s: CallState, itemId: string | undefined): CallState {
+  if (s.awaiting.length === 0) return s;
+  if (itemId === undefined) return { ...s, awaiting: [] };
+  const at = s.awaiting.indexOf(itemId);
+  if (at >= 0) return { ...s, awaiting: s.awaiting.slice(at + 1) };
+  if (!s.awaiting.includes("")) return s;
+  return { ...s, awaiting: s.awaiting.filter((id) => id !== "") };
+}
+
 /** Start the §4.3 ORDERED kill. Both triggers land here — the voice barge and the owner's stop (which
  *  also takes it from `thinking`, with no mouth to fall) — so the state the kill leaves behind is written
  *  once.
@@ -839,9 +874,9 @@ function freshEar(s: CallState): CallState {
     // note-only path, where the 1013 close drives the ladder that outlasts the slot.
     priorLeg: true,
     // The utterance in flight dies with the track, exactly as it does on a `socketLost`: the
-    // audio is gone and no session will endpoint it.
+    // audio is gone and no session will endpoint it — and so is every transcript still owed.
     userSpeechActive: false,
-    waitingFinal: false,
+    awaiting: [],
     // …and a kill in flight is released rather than left standing: its `killSettled` was armed
     // under the generation this arm is about to move, so nothing would ever clear the flag and
     // the pending queue would be held for the rest of the call.
@@ -874,7 +909,7 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
       note,
       pending: [],
       userSpeechActive: false,
-      waitingFinal: false,
+      awaiting: [],
       killing: false,
       // …`muted` included: the terminal's teardown RELEASES the capture, so a closed ear is not a state
       // any more, and the terminal face carries no control to reopen it. A ring still wearing the static
@@ -944,6 +979,8 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
   // starts unjudged, without any arm remembering to. The segment's ID goes the same way.
   const noiseOpen = st.noiseOpen && st.userSpeechActive;
   const speechItem = st.userSpeechActive ? st.speechItem : null;
+  // The wait is the SET's (D9): no arm writes the bit, so it can never disagree with the ids behind it.
+  const waitingFinal = st.awaiting.length > 0;
   // The POLICY is the capture's (`holdMode` × `ecAll`, D73 → D80 ⑤), `mouthLive` the transport's (is
   // the reply audible?), and `tail` the reply's afterlife (D80 ①): EVERY fall of the mouth under a
   // holding policy arms a new tail — a drain, a failure, and a KILL alike, because a tap silences the
@@ -959,11 +996,15 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
     earHeld === st.earHeld &&
     noiseOpen === st.noiseOpen &&
     speechItem === st.speechItem &&
+    waitingFinal === st.waitingFinal &&
     tail === st.tail &&
     tailSeq === st.tailSeq
   )
     return step;
-  return { state: { ...st, earHeld, noiseOpen, speechItem, tail, tailSeq }, out: step.out };
+  return {
+    state: { ...st, earHeld, noiseOpen, speechItem, waitingFinal, tail, tailSeq },
+    out: step.out,
+  };
 }
 
 /** MAY THE MOUTH BECOME AUDIBLE NOW (§4.2's iron rule, enforced by waiting — the owner's 2026-09-26
@@ -972,7 +1013,17 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
  *  the controller's gate (`setCallMouthGate`); `barge_in` plays no part in it — a barge-in interrupts
  *  something AUDIBLE, and a mouth still waiting is not. */
 export function mouthMayOpen(s: CallState): boolean {
-  return !s.waitingFinal && (!s.userSpeechActive || s.noiseOpen) && !s.sinkWait;
+  return !earUnsettled(s) && !s.sinkWait;
+}
+
+/** IS THE EAR STILL OWED SOMETHING — a transcript in flight, or a segment open that has not been judged
+ *  noise? The EAR's half of the mouth's gate (`sinkWait` is the sink's), named so that what waits on the
+ *  ear to SPEAK can ask one predicate. Not `idleExpired`'s: that guard keeps its own rule on purpose (any
+ *  open segment, noise or not, keeps a backgrounded call alive). It reads the awaited SET, never the
+ *  derived `waitingFinal`: an arm's state has not been through the normalize yet, so the bit can be stale
+ *  there. */
+function earUnsettled(s: CallState): boolean {
+  return s.awaiting.length > 0 || (s.userSpeechActive && !s.noiseOpen);
 }
 
 function reduce(s: CallState, sig: CallSignal): Step {
@@ -1025,7 +1076,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
         phase: s.mouthLive ? "speaking" : "listening",
         attempts: 0,
         userSpeechActive: false,
-        waitingFinal: false,
+        awaiting: [],
         note: s.note !== null && CONNECTION_NOTES.includes(s.note) ? null : s.note,
       });
 
@@ -1043,7 +1094,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
         return terminal(s, "error", why);
       }
       // §4.5, stated honestly: a drop mid-utterance LOSES that utterance — the audio is gone — so
-      // `waitingFinal` clears rather than waiting for a transcript no session will send. Playback is
+      // the awaited set clears rather than waiting for transcripts no session will send. Playback is
       // untouched: C3 rides HTTP, not this socket.
       return {
         state: {
@@ -1051,7 +1102,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
           phase: "connecting",
           attempts: attempt,
           userSpeechActive: false,
-          waitingFinal: false,
+          awaiting: [],
         },
         out: [{ type: "reconnect", delayMs: RECONNECT_BACKOFF_MS[attempt - 1] }],
       };
@@ -1085,7 +1136,13 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // engages (a reply that restarts over it); a flag left up behind it would hold the next reply at
       // the mouth's door for a final the held arm drops.
       if (s.earHeld) return { state: { ...s, userSpeechActive: false }, out: [] };
-      return { state: { ...s, userSpeechActive: false, waitingFinal: true }, out: [] };
+      // The segment's transcript is now OWED, by its id (D9) — or by a `""` placeholder when the relay
+      // named none, which an id-less answer, an unknown id, or a known id's answer queued BEHIND it
+      // settles (see `settle`).
+      return {
+        state: { ...s, userSpeechActive: false, awaiting: [...s.awaiting, sig.itemId ?? ""] },
+        out: [],
+      };
 
     case "segmentNoise":
       // The verdict on the segment STILL OPEN: it lifts the mouth's hold for it, and nothing else — its
@@ -1100,7 +1157,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // that is never coming. Unmuting is simply the ear opening again; the next utterance is fresh.
       if (sig.on) {
         return {
-          state: { ...s, muted: true, userSpeechActive: false, waitingFinal: false },
+          state: { ...s, muted: true, userSpeechActive: false, awaiting: [] },
           out: [],
         };
       }
@@ -1122,20 +1179,21 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // …and the same flat drop while the ear is HELD (S3), where the words are the reply's own leaking
       // back in: transcribing the character into the owner's next message is the exact failure the hold
       // exists to prevent, and it must not depend on whether the VAD pair that framed it was seen.
-      // Either drop still CLEARS the wait (R86 LC-1's knock-on, as at `speechStop`): the final has
-      // arrived, so nothing is in flight — a `waitingFinal` stranded here holds the mouth for nothing.
-      if (s.muted || s.earHeld)
-        return { state: s.waitingFinal ? { ...s, waitingFinal: false } : s, out: [] };
+      // Either drop still SETTLES the wait (R86 LC-1's knock-on, as at `speechStop`): the final has
+      // arrived, so its segment is no longer in flight — an id stranded here holds the mouth for nothing.
+      // EVERY exit below runs on `settled` for the same reason (D9): an answer is an answer, taken or not.
+      const settled = settle(s, sig.itemId);
+      if (s.muted || s.earHeld) return { state: settled, out: [] };
       const text = sig.text.trim();
-      // Empty finals are discarded (§4.5's no-speech path): nothing submits, the flag clears.
-      if (!text) return { state: { ...s, waitingFinal: false }, out: [] };
+      // Empty finals are discarded (§4.5's no-speech path): nothing submits, the wait settles.
+      if (!text) return { state: settled, out: [] };
       // THE TEXT BACKSTOP (D80 ②): the reply's own words, heard back after the element finished — the
       // tail hold's residue (a pause inside the not-yet-heard tail, a tail past the cap). Dropped
       // VISIBLY on the heard line, and SILENTLY to the ear: a cue here would be one more sound for the
       // car to play back. BEFORE the transcript gate, because it is the more specific diagnosis — an echo
       // that is also quiet is still an echo, and a cue for it would be wrong twice.
       if (sig.echo !== undefined && sig.echoMin !== undefined && sig.echo >= sig.echoMin)
-        return { state: { ...s, waitingFinal: false, heard: CALL_COPY.ownWords }, out: [] };
+        return { state: { ...settled, heard: CALL_COPY.ownWords }, out: [] };
       // THE TRANSCRIPT GATE (D74 S5 ③). A Whisper-family endpoint does not answer noise with nothing
       // — it answers with a PLAUSIBLE SENTENCE (R76), and on a call that sentence is submitted to the
       // agent as if the owner had said it. The relay cannot tell; the client can, because it already
@@ -1155,7 +1213,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
         // hear — and in the car the cue's own echo came back 2.3 s later as the next flap, which dropped,
         // which cued (12 beeps in 5 minutes). Nothing heard, nothing said.
         return {
-          state: { ...s, waitingFinal: false, note: CALL_COPY.tooQuiet },
+          state: { ...settled, note: CALL_COPY.tooQuiet },
           out: (sig.energyMs ?? 0) > 0 ? [{ type: "dropCue" }] : [],
         };
       }
@@ -1163,8 +1221,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // for the rest of the call. Only ITS OWN note — the `degradedOver` rule: anything else there is
       // news of its own that the owner has not read yet.
       return drain({
-        ...s,
-        waitingFinal: false,
+        ...settled,
         heard: text,
         pending: [...s.pending, text],
         note: s.note === CALL_COPY.tooQuiet ? null : s.note,
@@ -1430,11 +1487,13 @@ function reduce(s: CallState, sig: CallSignal): Step {
           // The ONE code the relay keeps the session alive through — so the client must too.
           // …and it is what the ear sends INSTEAD of the final (R86 LC-2: Speaches publishes `error` and
           // never the `…completed` for a transcription that raised), so nothing is in flight any more.
-          // A `waitingFinal` left standing would hold every reply at the mouth's door from here on.
-          // Only this flag: `userSpeechActive` may be a NEW segment, genuinely live. A final that does
-          // turn up later is taken by its own arm regardless of the flag, so the clear loses nothing.
+          // A wait left standing would hold every reply at the mouth's door from here on. So it SETTLES
+          // like the final it replaces (D9, design round Maya H1): with an id, that segment (and any
+          // ahead of it); with none — the relay forwards none today — the whole set, the belt.
+          // Only the wait: `userSpeechActive` may be a NEW segment, genuinely live. A final that does
+          // turn up later is taken by its own arm regardless of the set, so the clear loses nothing.
           return {
-            state: { ...s, waitingFinal: false, note: sig.message || CALL_COPY.lost },
+            state: { ...settle(s, sig.itemId), note: sig.message || CALL_COPY.lost },
             out: [],
           };
         case "protocol":
@@ -2679,7 +2738,13 @@ export function useLiveCall(): CallView {
             break;
           }
           case "error":
-            send({ type: "serverError", code: frame.code, message: frame.message, gen });
+            send({
+              type: "serverError",
+              code: frame.code,
+              message: frame.message,
+              itemId: frame.item_id,
+              gen,
+            });
             break;
         }
       },

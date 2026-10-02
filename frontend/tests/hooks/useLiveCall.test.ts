@@ -1532,7 +1532,9 @@ describe("callReduce — THE TEXT BACKSTOP (D80 ②)", () => {
 
   it("a final AT or ABOVE the knob is the reply's own words: dropped, shown, and NOT cued", () => {
     for (const sim of [0.75, 0.946, 1]) {
-      const waiting = { ...listening, waitingFinal: true };
+      // An id-less stop's placeholder (D9): the bit is DERIVED from the set, so a seeded bit alone would
+      // be normalized away before the assertion below could fail (D9 design round Opus L4).
+      const waiting: CallState = { ...listening, awaiting: [""] };
       const { state, out } = run(waiting, [judged("Text me when you can. I'll be here.", sim)]);
       expect(out, String(sim)).toEqual([]); // no submit, and no drop cue for the car to play back
       expect(state.pending).toEqual([]);
@@ -2231,5 +2233,162 @@ describe("callReduce — a TAKEN final earns the rebuild back (ISS-54 code round
     const twice = run(quiet, [{ ...dead }]);
     expect(twice.state.phase).toBe("error");
     expect(twice.state.note).toBe(CALL_COPY.micLost);
+  });
+});
+
+// ── Phase 26 D9: THE AWAITED-ID SET (ASR_PLAN §3.9 ①; closes LIVE_VOICE_PLAN OPEN-2) ───────────────
+
+const seg = (type: "speechStart" | "speechStop", itemId?: string): CallSignal =>
+  itemId === undefined ? { type } : { type, itemId };
+/** Two segments stopped, neither transcript in yet: the ear owes A then B. */
+const owed = run(listening, [
+  seg("speechStart", "A"),
+  seg("speechStop", "A"),
+  seg("speechStart", "B"),
+  seg("speechStop", "B"),
+]).state;
+
+describe("callReduce — the awaited-id set (Phase 26 D9)", () => {
+  it("stop(A) → start(B) → stop(B) → final(A) keeps the mouth shut until B's final (L5 §1.3)", () => {
+    expect(owed.awaiting).toEqual(["A", "B"]);
+    expect(owed.waitingFinal).toBe(true);
+    const afterA = run(owed, [{ type: "final", text: "one", itemId: "A" }]).state;
+    // The one bit this replaces cleared here, and the mouth opened over B's words in flight.
+    expect(afterA.awaiting).toEqual(["B"]);
+    expect(afterA.waitingFinal).toBe(true);
+    expect(mouthMayOpen(afterA)).toBe(false);
+    const afterB = run(afterA, [{ type: "final", text: "two", itemId: "B" }]).state;
+    expect(afterB.awaiting).toEqual([]);
+    expect(afterB.waitingFinal).toBe(false);
+    expect(mouthMayOpen(afterB)).toBe(true);
+  });
+
+  it("stop(A) → start(B) → final(A) → stop(B) → final(B) follows the pre-D9 flags (E-N3's routine order)", () => {
+    const a = run(listening, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+    ]);
+    const afterA = run(a.state, [{ type: "final", text: "one", itemId: "A" }]).state;
+    expect(afterA.waitingFinal).toBe(false);
+    expect(mouthMayOpen(afterA)).toBe(false); // B is open: the segment flag holds it, as ever
+    const stopped = run(afterA, [seg("speechStop", "B")]).state;
+    expect(stopped.awaiting).toEqual(["B"]);
+    expect(mouthMayOpen(stopped)).toBe(false);
+    const done = run(stopped, [{ type: "final", text: "two", itemId: "B" }]).state;
+    expect(done.waitingFinal).toBe(false);
+    expect(mouthMayOpen(done)).toBe(true);
+  });
+
+  it("an id-LESS final clears the whole set — the pre-D9 belt", () => {
+    const { state } = run(owed, [{ type: "final", text: "one" }]);
+    expect(state.awaiting).toEqual([]);
+    expect(mouthMayOpen(state)).toBe(true);
+  });
+
+  it("a final for a KNOWN id settles it AND every id ahead of it — a stranded stop heals (design round Opus M1)", () => {
+    const { state } = run(owed, [{ type: "final", text: "two", itemId: "B" }]);
+    expect(state.awaiting).toEqual([]);
+    expect(mouthMayOpen(state)).toBe(true);
+  });
+
+  it("an UNKNOWN id settles only the id-less placeholders (design round Opus M2 / Maya M1)", () => {
+    // [A, B] awaited by name: a late or evicted final was never one of them, so both stay owed.
+    const late = run(owed, [{ type: "final", text: "old", itemId: "Z" }]).state;
+    expect(late.awaiting).toEqual(["A", "B"]);
+    expect(mouthMayOpen(late)).toBe(false);
+    // An id-less stop leaves a placeholder, which an answer naming a segment nobody named settles.
+    const unnamed = run(listening, [seg("speechStart"), seg("speechStop")]).state;
+    expect(unnamed.awaiting).toEqual([""]);
+    expect(run(unnamed, [{ type: "final", text: "hi", itemId: "X" }]).state.awaiting).toEqual([]);
+    // …and only the placeholders: a named id beside one stays owed.
+    const mixed = run(unnamed, [seg("speechStart", "A"), seg("speechStop", "A")]).state;
+    expect(mixed.awaiting).toEqual(["", "A"]);
+    expect(run(mixed, [{ type: "final", text: "hi", itemId: "X" }]).state.awaiting).toEqual(["A"]);
+  });
+
+  it("a DROPPED final settles its id exactly as a taken one does — muted, held, empty, echo, too quiet", () => {
+    const drops: [string, CallState, CallSignal][] = [
+      ["muted", { ...owed, muted: true }, { type: "final", text: "one", itemId: "A" }],
+      [
+        "held",
+        { ...holdingSpeaking, awaiting: ["A", "B"] },
+        { type: "final", text: "one", itemId: "A" },
+      ],
+      ["empty", owed, { type: "final", text: "  ", itemId: "A" }],
+      ["echo", owed, { type: "final", text: "one", itemId: "A", echo: 1, echoMin: 0.75 }],
+      [
+        "tooQuiet",
+        owed,
+        { type: "final", text: "one", itemId: "A", energyMs: 10, minFinalMs: 200 },
+      ],
+      ["taken", owed, { type: "final", text: "one", itemId: "A" }],
+    ];
+    for (const [why, from, sig] of drops) {
+      const { state } = run(from, [sig]);
+      expect(state.awaiting, why).toEqual(["B"]);
+      expect(state.waitingFinal, why).toBe(true);
+      expect(mouthMayOpen(state), why).toBe(false);
+    }
+  });
+
+  it("`upstream_error` WITH an id settles that segment like its final would; WITHOUT one it clears all (design round Maya H1)", () => {
+    const err = (itemId?: string): CallSignal => ({
+      type: "serverError",
+      code: "upstream_error",
+      message: "the ear hiccuped",
+      ...(itemId === undefined ? {} : { itemId }),
+    });
+    const named = run(owed, [err("A")]).state;
+    expect(named.awaiting).toEqual(["B"]);
+    expect(named.note).toBe("the ear hiccuped");
+    expect(mouthMayOpen(named)).toBe(false);
+    expect(run(owed, [err("B")]).state.awaiting).toEqual([]); // …and every id ahead of it
+    expect(run(owed, [err("Z")]).state.awaiting).toEqual(["A", "B"]); // unknown: never awaited by name
+    const belt = run(owed, [err()]).state;
+    expect(belt.awaiting).toEqual([]);
+    expect(belt.note).toBe("the ear hiccuped");
+    expect(mouthMayOpen(belt)).toBe(true);
+  });
+
+  it("every clear path empties the set — ready, socketLost, mute, a route cycle, a rebuild, a terminal, a hang-up", () => {
+    const routedOwed = run(routed, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+    ]).state;
+    expect(routedOwed.awaiting).toEqual(["A", "B"]);
+    const clears: [string, CallSignal][] = [
+      ["ready", { type: "ready" }],
+      ["socketLost", { type: "socketLost" }],
+      ["mute", { type: "setMuted", on: true }],
+      ["routeChange", { type: "routeChange", route: "media" }],
+      ["earDead", { type: "earDead", reason: "noFrame", heard: false }],
+      ["terminal", { type: "serverEnded" }],
+      ["hangup", { type: "hangup" }],
+      ["unmounted", { type: "unmounted" }],
+    ];
+    for (const [why, sig] of clears) {
+      const { state } = run(routedOwed, [sig]);
+      expect(state.awaiting, why).toEqual([]);
+      expect(state.waitingFinal, why).toBe(false);
+    }
+  });
+
+  it("a HELD stop owes nothing, and an unmute never restores what the mute settled", () => {
+    const reopened = run(holding, [
+      { type: "final", text: "tell me a story" },
+      seg("speechStart", "A"),
+      { type: "playbackStarted" },
+      seg("speechStop", "A"),
+    ]).state;
+    expect(reopened.awaiting).toEqual([]);
+    const back = run(owed, [
+      { type: "setMuted", on: true },
+      { type: "setMuted", on: false },
+    ]).state;
+    expect(back.awaiting).toEqual([]);
+    expect(mouthMayOpen(back)).toBe(true);
   });
 });

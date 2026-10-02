@@ -2234,6 +2234,21 @@ describe("useLiveCall — THE SEGMENT LEDGER (D80 ③: finals judged on their OW
       vi.useRealTimers();
     }
   });
+  it("an `error` frame's `item_id` reaches the reducer — it settles THAT segment; one without clears all (Phase 26 D9)", async () => {
+    // The pass-through is the whole of the with-id branch on the wiring side: dropped there, the
+    // reducer would see an id-less error and clear B's wait along with A's.
+    const { view } = await gated();
+    await down({ type: "speech_started", item_id: "A" });
+    await down({ type: "speech_stopped", item_id: "A" });
+    await down({ type: "speech_started", item_id: "B" });
+    await down({ type: "speech_stopped", item_id: "B" });
+    await down({ type: "error", code: "upstream_error", message: "asr failed", item_id: "A" });
+    expect(view.result.current.waitingFinal).toBe(true); // B is still owed
+    expect(h.mouthGate?.()).toBe(false);
+    await down({ type: "error", code: "upstream_error", message: "asr failed" });
+    expect(view.result.current.waitingFinal).toBe(false); // the belt
+    expect(h.mouthGate?.()).toBe(true);
+  });
 });
 
 describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidence docs/research/R83)", () => {

@@ -20,7 +20,8 @@
 
 /** The downlink union, as the client reads it. The three SEGMENT frames carry the ear's `item_id` when
  *  the relay forwarded one (D80 ③ — one id per VAD segment, on its start, its stop and its transcript),
- *  which is what lets the call judge each final on its OWN segment's evidence. The relay also forwards
+ *  which is what lets the call judge each final on its OWN segment's evidence — and an `error` may carry
+ *  one too (D9), naming the segment it answered instead of a final. The relay also forwards
  *  Speaches' `audio_start_ms`/`audio_end_ms` and, on a gap-cut final, `reason`/`gap_ms` (D80 ④) — those
  *  are the trail's, and nothing here reads them, so they are not parsed. */
 export type LiveDown =
@@ -28,7 +29,7 @@ export type LiveDown =
   | { type: "speech_started"; item_id?: string }
   | { type: "speech_stopped"; item_id?: string }
   | { type: "transcript"; text: string; final: boolean; item_id?: string }
-  | { type: "error"; code: string; message: string };
+  | { type: "error"; code: string; message: string; item_id?: string };
 
 /** The segment id a frame carries, or nothing — never a non-string (the relay drops malformed ids). */
 function itemIdOf(f: Record<string, unknown>): { item_id?: string } {
@@ -103,6 +104,9 @@ export function parseLiveFrame(raw: string): LiveDown | null {
         type: "error",
         code: typeof f.code === "string" ? f.code : "error",
         message: typeof f.message === "string" ? f.message : "",
+        // …and the segment it was raised for, when named (Phase 26 D9: an `upstream_error` arrives
+        // INSTEAD of that segment's final). The relay sends none today; session B's ear will.
+        ...itemIdOf(f),
       };
     default:
       return null;
