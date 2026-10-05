@@ -39,6 +39,7 @@ const makeSettings = () => ({
     failover: true,
     request_timeout_s: 120,
     connect_timeout_s: 5,
+    connect_cooldown_s: 60,
     system_prompt: "",
     system_prompt_append: "",
   },
@@ -310,7 +311,7 @@ describe("ConfTab · Inference picker (A11/D48)", () => {
   });
 });
 
-describe("ConfTab · Inference connect knob (D83)", () => {
+describe("ConfTab · Inference connect knobs (D83)", () => {
   const grp = () => within(document.getElementById("inference")!);
   const savedInference = () => lastPatch().inference as unknown as Record<string, unknown>;
 
@@ -323,15 +324,33 @@ describe("ConfTab · Inference connect knob (D83)", () => {
     expect(savedInference().connect_timeout_s).toBe(2.5);
   });
 
-  it("a doc that predates the knob seeds its default — an unrelated inference save never sends NaN/null", () => {
+  it("the connect cooldown edits and saves as a NUMBER — 0 (off) survives the coercion", () => {
+    render(<ConfTab active />);
+    const input = grp().getByLabelText<HTMLInputElement>("Connect cooldown");
+    expect(input.value).toBe("60");
+    fireEvent.change(input, { target: { value: "0" } });
+    fireEvent.click(saveButton());
+    expect(savedInference().connect_cooldown_s).toBe(0);
+  });
+
+  it("a BLANKED connect cooldown saves as null (the backend 422s) — never a silent 0 = off (C2)", () => {
+    render(<ConfTab active />);
+    fireEvent.change(grp().getByLabelText("Connect cooldown"), { target: { value: "  " } });
+    fireEvent.click(saveButton());
+    expect(savedInference().connect_cooldown_s).toBeNull();
+  });
+
+  it("a doc that predates the knobs seeds their defaults — an unrelated inference save never sends NaN/null", () => {
     const s = makeSettings();
     delete (s.inference as Partial<typeof s.inference>).connect_timeout_s;
+    delete (s.inference as Partial<typeof s.inference>).connect_cooldown_s;
     h.settings = s;
     render(<ConfTab active />);
     fireEvent.change(grp().getByLabelText("Request timeout"), { target: { value: "150" } });
     fireEvent.click(saveButton());
     expect(savedInference().request_timeout_s).toBe(150);
     expect(savedInference().connect_timeout_s).toBe(5);
+    expect(savedInference().connect_cooldown_s).toBe(60);
   });
 });
 

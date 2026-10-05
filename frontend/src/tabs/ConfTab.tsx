@@ -901,11 +901,15 @@ const WAKE_FALLBACK: SettingsDoc["wake"] = {
   quiet_hours: null,
 };
 
-// D83 — the inference connect knob, seeded field-wise for the reason `pickDraft` gives for `monitor`:
-// a doc from a build that predates it omits the key, and a missing number coerces to NaN → JSON null
+// D83 — the inference connect knobs, seeded field-wise for the reason `pickDraft` gives for `monitor`:
+// a doc from a build that predates them omits the keys, and a missing number coerces to NaN → JSON null
 // at save (a 422 on an UNRELATED edit). Values mirror `InferenceCfg`'s field defaults.
-const INFERENCE_CONNECT_FALLBACK: Pick<SettingsDoc["inference"], "connect_timeout_s"> = {
+const INFERENCE_CONNECT_FALLBACK: Pick<
+  SettingsDoc["inference"],
+  "connect_timeout_s" | "connect_cooldown_s"
+> = {
   connect_timeout_s: 5,
+  connect_cooldown_s: 60,
 };
 
 function pickDraft(s: SettingsDoc): Draft {
@@ -1850,6 +1854,10 @@ export function ConfTab({ active }: Props) {
         ...draft.inference,
         request_timeout_s: Number(draft.inference.request_timeout_s),
         connect_timeout_s: Number(draft.inference.connect_timeout_s),
+        // D83/C2 — `numOrNull`, not bare `Number`: 0 is a MEANINGFUL cooldown ("off"), so a blanked
+        // field must earn the backend's visible 422, never silently save as 0 and switch demotion off.
+        // (The connect timeout beside it is floored > 0, so its blank-as-0 already 422s.)
+        connect_cooldown_s: numOrNull(draft.inference.connect_cooldown_s),
       },
       searxng: draft.searxng,
       // A11/D48 Slice 2 — embeddings is a registry ref (provider/model/fallbacks) + enabled + timeout.
@@ -2222,6 +2230,12 @@ export function ConfTab({ active }: Props) {
             desc="seconds — fail-fast to fall over"
             value={String(inf?.connect_timeout_s ?? "")}
             onChange={(v) => setInf("connect_timeout_s", v as unknown as number)}
+          />
+          <Field
+            label="Connect cooldown"
+            desc="seconds an unreachable backend is tried last — 0 = off"
+            value={String(inf?.connect_cooldown_s ?? "")}
+            onChange={(v) => setInf("connect_cooldown_s", v as unknown as number)}
           />
           <PromptRow
             label="System prompt"

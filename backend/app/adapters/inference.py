@@ -45,7 +45,7 @@ from app.core.failover import (
     failover,
     failover_collect,
 )
-from app.core.provider_registry import EndpointGates, Registry
+from app.core.provider_registry import EndpointGates, EndpointHealth, Registry
 from app.domain.provider import ResolvedTarget, SectionPolicy
 
 if TYPE_CHECKING:  # SDK param type — only needed to satisfy the typed `.create()` overload
@@ -118,9 +118,11 @@ class InferenceError(RuntimeError):
 
     `unreachable` (D83) is True when this hop never got a connection — the CAUSE chain of the raw SDK
     exception holds an `httpx.ConnectError`/`httpx.ConnectTimeout` (refused / no route / DNS / the
-    connect budget ran out). Captured pre-flattening like the fields above, and CAUSAL by construction:
-    the SDK's `APITimeoutError` wraps read/write/pool timeouts too, so the SDK type alone can never say
-    "the server is down". `categorize` reads it as the `unreachable` tier."""
+    connect budget ran out, or the TLS handshake failed — httpcore maps `start_tls` errors, a bad
+    certificate or https aimed at an http port included, to the same two). Captured pre-flattening like
+    the fields above, and CAUSAL by construction: the SDK's `APITimeoutError` wraps read/write/pool
+    timeouts too, so the SDK type alone can never say "the server is down". `categorize` reads it as the
+    `unreachable` tier."""
 
     def __init__(
         self,
@@ -881,7 +883,9 @@ class InferenceClient:
     output — `chain_for(mode, model)` yields `tuple[ResolvedTarget, ...]`) + the frozen chat
     `SectionPolicy`; NEVER live `Settings` (D48 C10)."""
 
-    def __init__(self, registry: Registry, gates: EndpointGates | None = None) -> None:
+    def __init__(
+        self, registry: Registry, gates: EndpointGates | None = None, health: EndpointHealth | None = None
+    ) -> None:
         self._registry = registry
         self._policy: SectionPolicy = registry.inference_policy
         #: SDK clients cached by PROVIDER NAME (D48 §Generation publication) — they die with this client
@@ -894,6 +898,11 @@ class InferenceClient:
         #: (the cap can't be split across client generations). `None` (tests / standalone construction)
         #: → a private per-client registry, behaviourally identical to the old per-client dict.
         self._gates = gates if gates is not None else EndpointGates()
+        #: The cross-turn connect-cooldown ledger (D83 Slice B) — app-owned on `app.state.endpoint_health`
+        #: and passed into every generation exactly like `gates`, so a rebuild keeps the demotions it
+        #: learned. `None` (tests / standalone) → a private ledger. Read by `_resolve_chain` (demote an
+        #: unreachable server behind the healthy entries), written by `_note_unreachable`/`_note_reachable`.
+        self._health = health if health is not None else EndpointHealth()
         #: Memoized `/props` window probes, keyed by `(provider name, wire model id)` (D42/A11/R5; per
         #: MODEL since 2026-07-21 — a router-mode llama-server serves different windows per model behind
         #: one URL, probed via `?model=`). Populated on first `probed_context_window` per key — including
@@ -1085,8 +1094,10 @@ class InferenceClient:
     async def effective_window_for(self, mode: str | None = None, model: str | None = None) -> int | None:
         """The effective context window for the target SELECTED by a `{provider, model}` pointer (the D42
         ladder via `effective_window`) — resolves the chain through the CAPTURED registry and prices the
-        FIRST target. Used by the compaction summarizer's overflow guard. `None` ⇒ no target resolvable."""
-        chain = self._registry.chain_for(mode, model)
+        FIRST target the call will actually TRY (D83/R13: the demotion-aware head — an unreachable primary
+        in its cooldown is walked last, so the summarizer is guarded against the window that serves). Used
+        by the compaction summarizer's overflow guard. `None` ⇒ no target resolvable."""
+        chain, _ = self._resolve_chain(mode, model)
         return await self.effective_window(chain[0]) if chain else None
 
     async def min_chain_window(self, mode: str | None = None, model: str | None = None) -> int | None:
@@ -1179,9 +1190,11 @@ class InferenceClient:
         """The `ResolvedTarget` SELECTED by a `{provider, model}` pointer off THIS client's CAPTURED
         registry generation (A11 successor to `endpoint(mode)`) — the session prices the compaction
         trigger through this, so a settings PUT mid-turn cannot swing pricing to a different target than
-        the CAPTURED client is streaming through (the D42 hot-at-NEXT-turn pin). `None` if nothing
-        resolves."""
-        chain = self._registry.chain_for(mode, model)
+        the CAPTURED client is streaming through (the D42 hot-at-NEXT-turn pin). The DEMOTION-AWARE head
+        (D83/R13): while the configured primary sits in its connect cooldown the call tries the next entry
+        first, so iteration-1 pricing + the estimator anchor follow what will actually be tried. `None` if
+        nothing resolves."""
+        chain, _ = self._resolve_chain(mode, model)
         return chain[0] if chain else None
 
     @staticmethod
@@ -1378,11 +1391,61 @@ class InferenceClient:
             out["extra_body"] = extra
         return out
 
-    def _resolve_chain(self, mode: str | None, model_override: str | None) -> list[_ChainEntry]:
+    def _resolve_chain(
+        self, mode: str | None, model_override: str | None
+    ) -> tuple[list[_ChainEntry], _ChainEntry | None]:
         """The failover chain for this request off the CAPTURED registry (A11) — a `{provider, model}`
         pointer resolved to `tuple[ResolvedTarget, ...]` via `Registry.chain_for`. Each target already
-        carries its wire model + resolved knobs, so failover attempts never re-derive them."""
-        return list(self._registry.chain_for(mode, model_override))
+        carries its wire model + resolved knobs, so failover attempts never re-derive them.
+
+        Returns `(attempted, configured_head)` (D83/R15). `attempted` is the order the call WALKS: a stable
+        partition of the EXACT objects `chain_for` produced — entries whose server is inside its connect
+        cooldown (`EndpointHealth`) move behind the healthy ones, each half in configured order. DEMOTE,
+        NEVER SKIP: a marked entry is still tried, last. Never re-resolved from names, so an agent's
+        `ModelRef.model` override stays on its own entry. `attempted` feeds `failover()`, the notice
+        mapping and `served_index`; `configured_head` (`chain_for`'s own first entry, `None` when empty) is
+        what attribution compares against BY IDENTITY. A 1-entry chain (incl. `failover: false`) or a
+        cooldown of 0 (off — even a mark left by an earlier generation is ignored) walks unchanged."""
+        configured = self._registry.chain_for(mode, model_override)
+        if not configured:
+            return [], None
+        head = configured[0]
+        if len(configured) < 2 or self._policy.connect_cooldown_s <= 0:
+            return list(configured), head
+        healthy: list[_ChainEntry] = []
+        marked: list[_ChainEntry] = []
+        for t in configured:  # ONE health read per entry — a window expiring mid-loop can't drop/dup one
+            (marked if self._health.demoted(t.gate_identity) else healthy).append(t)
+        return healthy + marked, head
+
+    def _note_unreachable(self, ep: ResolvedTarget) -> None:
+        """D83: a hop found `ep`'s server UNREACHABLE (`InferenceError.unreachable`, causal) — arm its
+        connect cooldown so the next calls walk it last. Marked whatever this chain's length: the ledger is
+        shared, and another chain (an agent's `[chosen, *rest]`) may hold the same server beside a healthy
+        alternative. WARNING on the healthy→marked transition only — a post-expiry failure is one (C1); a
+        concurrent re-arm inside a live window is quiet. A cooldown of 0 = off: nothing is recorded."""
+        cooldown = self._policy.connect_cooldown_s
+        if cooldown <= 0:
+            return
+        if self._health.mark(ep.gate_identity, cooldown):
+            log.warning(
+                "inference endpoint '%s' (%s) is unreachable — marked for %gs: walked last in any chain "
+                "that has a healthy alternative, never skipped; its first successful answer clears this "
+                "(`inference.connect_cooldown_s`, 0 = off — D83)",
+                ep.provider,
+                ep.gate_identity,
+                cooldown,
+            )
+
+    def _note_reachable(self, ep: ResolvedTarget) -> None:
+        """D83: `ep` just served — its server is reachable, so forget any connect-cooldown entry for it
+        (INFO when there was one)."""
+        if self._health.clear(ep.gate_identity):
+            log.info(
+                "inference endpoint '%s' (%s) answered again — connect cooldown cleared (D83)",
+                ep.provider,
+                ep.gate_identity,
+            )
 
     @staticmethod
     def _chunk_deltas(chunk: Any, pending: dict[int, dict[str, str]]) -> list[ChatDelta]:
@@ -1483,19 +1546,32 @@ class InferenceClient:
             report.served or "?",
         )
 
-    def _record(self, report: StreamReport | None, chain: list[_ChainEntry], result: Any) -> None:
-        if report is not None:
-            served = chain[result.served_index]
-            report.served = served.provider
-            # D42/A11: stamp the ResolvedTarget that actually answered — the session prices iteration 2+'s
-            # window trigger against it (window + anchor from the same serve).
-            report.served_target = served
-            report.degraded = result.degraded
-            report.failures = result.failures
-            # D62: the chain's PRIMARY — the endpoint this call tried FIRST, i.e. what a degraded serve
-            # fell back FROM. Read off the chain here rather than re-resolved by the session: the chain
-            # is what the call actually walked (a per-message `/provider` override moves it).
-            report.primary = chain[0].provider
+    def _record(
+        self,
+        report: StreamReport | None,
+        chain: list[_ChainEntry],
+        configured_head: _ChainEntry,
+        result: Any,
+    ) -> None:
+        served = chain[result.served_index]
+        # D83/R14: a serve proves its server reachable — clear its connect cooldown on EVERY success path,
+        # independent of whether the caller passed a report (it is optional).
+        self._note_reachable(served)
+        if report is None:
+            return
+        report.served = served.provider
+        # D42/A11: stamp the ResolvedTarget that actually answered — the session prices iteration 2+'s
+        # window trigger against it (window + anchor from the same serve).
+        report.served_target = served
+        # D83/R6/R15: "did a fallback save us" means "not the CONFIGURED head", by OBJECT identity — not
+        # `served_index > 0` (a demoted primary walks last, so index 0 can be a fallback) and not provider
+        # names (one provider may sit in the chain twice with different models).
+        report.degraded = served is not configured_head
+        report.failures = result.failures
+        # D62: the chain's PRIMARY — what a degraded serve fell back FROM. The CONFIGURED head off this
+        # call's own `chain_for` (a per-message `/provider` override moves it), never the walked order:
+        # a demoted serve persists "fallback from <primary>" without a per-call notice (D83/R11).
+        report.primary = configured_head.provider
 
     async def _stamp_window(self, report: StreamReport | None) -> None:
         """The D62 window snapshot: the SERVED target's effective context window, resolved through the
@@ -1528,8 +1604,8 @@ class InferenceClient:
         started = time.monotonic()  # D62 — the call's wall clock (see `_stamp_duration`)
         self._inflight += 1
         try:
-            chain = self._resolve_chain(mode, model)
-            if not chain:
+            chain, configured_head = self._resolve_chain(mode, model)
+            if not chain or configured_head is None:
                 raise InferenceError("no inference endpoint configured")
             last_error: InferenceError | None = None
 
@@ -1599,6 +1675,8 @@ class InferenceClient:
                         converted = _as_inference_error(exc, connect_timeout_s=self._policy.connect_timeout_s)
                         if converted is not None:
                             last_error = converted
+                            if converted.unreachable:
+                                self._note_unreachable(ep)  # D83: arm the cross-turn connect cooldown
                             raise converted from exc
                         raise
                 finally:
@@ -1620,7 +1698,7 @@ class InferenceClient:
                     # failure; >1 = infra outage, excluded). Post-flattening this is the only survivor.
                     endpoints_tried=len(exc.failures),
                 ) from exc
-            self._record(report, chain, result)
+            self._record(report, chain, configured_head, result)
             await self._stamp_window(report)
             return result.value
         finally:
@@ -1664,8 +1742,8 @@ class InferenceClient:
         started = time.monotonic()  # D62 — the call's wall clock (see `_stamp_duration`)
         self._inflight += 1
         try:
-            chain = self._resolve_chain(mode, model)
-            if not chain:
+            chain, configured_head = self._resolve_chain(mode, model)
+            if not chain or configured_head is None:
                 raise InferenceError("no inference endpoint configured")
             kwargs: dict[str, Any] = {"messages": messages, "stream": True}
             if tools:
@@ -1681,7 +1759,8 @@ class InferenceClient:
             def _retry_policy(exc: BaseException, done: int) -> FailAction:
                 """D43/A7 — the CHAT-STREAM retry policy handed to `failover()`: `transient` errors retry the
                 SAME endpoint (`base×2ⁿ`, `Retry-After`-floored, capped) while the hop's `retry_attempts`
-                budget lasts; `fatal_for_endpoint`/`overflow`/`other` → straight next-hop (today's walk)."""
+                budget lasts; `fatal_for_endpoint`/`overflow`/`unreachable`/`other` → straight next-hop
+                (today's walk)."""
                 nonlocal last_category
                 last_category = categorize(exc)
                 if last_entry is None or last_category != "transient":
@@ -1808,6 +1887,8 @@ class InferenceClient:
                     converted = _as_inference_error(exc, connect_timeout_s=self._policy.connect_timeout_s)
                     if converted is not None:
                         last_error = converted
+                        if converted.unreachable:
+                            self._note_unreachable(ep)  # D83: arm the cross-turn connect cooldown
                         raise converted from exc
                     raise
                 return first, stream, sem
@@ -1846,7 +1927,7 @@ class InferenceClient:
                     endpoints_tried=len(exc.failures),
                 ) from exc
             assert result is not None, "failover() drained without a FailoverResult and without raising"
-            self._record(report, chain, result)
+            self._record(report, chain, configured_head, result)
 
             first, stream, sem = result.value
             pending: dict[int, dict[str, str]] = {}

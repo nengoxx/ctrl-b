@@ -33,7 +33,6 @@ from fastapi.responses import JSONResponse, Response
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
-from app.adapters.inference import EndpointGates
 from app.adapters.mcp_client import McpClient
 from app.adapters.openapi_tools import OpenApiToolProvider
 from app.api import (
@@ -88,6 +87,7 @@ from app.core.media import (
     ns_dir,
     sweep_part_files,
 )
+from app.core.provider_registry import EndpointGates, EndpointHealth
 from app.core.pwa import (
     PWA_MANIFEST_PATH,
     available_variants,
@@ -201,6 +201,9 @@ async def lifespan(app: FastAPI):
     # provider registry generation feeding inference + voice + embeddings (same construction as
     # `reconfigure`, so boot and hot-apply can't drift). Gates must exist before any `set_*` below.
     app.state.endpoint_gates = EndpointGates()
+    # D83: the app-owned connect-cooldown ledger — the gates' lifetime (created ONCE, handed to every
+    # inference generation), so an unreachable server stays demoted across a settings rebuild.
+    app.state.endpoint_health = EndpointHealth()
     boot_registry = resolve_generation(app, app.state.settings)
     set_embeddings(app, boot_registry)
     # Voice (Phase 6): STT/TTS proxy with failover. App-state only (not consumed by the agent loop);

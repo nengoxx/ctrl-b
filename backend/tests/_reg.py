@@ -60,6 +60,7 @@ def registry(
     request_timeout_s: float = 600.0,
     connect_timeout_s: float = 5.0,
     retry_attempts: int = 2,
+    connect_cooldown_s: float = 60.0,
 ) -> Registry:
     """A `Registry` whose inference chain is exactly `targets` (blank/dedup already applied by the caller).
     Each distinct provider becomes a `ResolvedProvider` catalog of its own targets; the verb target is the
@@ -86,5 +87,6 @@ def registry(
         connect_timeout_s=connect_timeout_s,
         failover=failover,
         retry_attempts=retry_attempts,
+        connect_cooldown_s=connect_cooldown_s,
     )
     return Registry(providers=providers, inference_chain=chain, inference_policy=policy, warnings=())

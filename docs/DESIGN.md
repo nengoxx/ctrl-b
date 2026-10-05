@@ -630,6 +630,17 @@ Loop responsibilities, in order, per iteration:
 >   `notice` is DELETED** — a fallback serve is narrated live by the typed event (no double-narration); a
 >   snapshot-carried `retry_status` (on the `TurnAccumulator`) renders the retry line on a re-attach mid-backoff
 >   instead of a dead spinner; `collect_turn` folds both kinds to `notices` text for buffered parity.
+> - **Fail fast on an unreachable backend (D83).** The SDK client's timeout is SPLIT —
+>   `httpx.Timeout(request_timeout_s, connect=inference.connect_timeout_s)` (5 s; the voice idiom) — so a
+>   host that drops SYNs hops in seconds, not after the kernel's ≈127 s. A hop that never got a connection
+>   (an `httpx.ConnectError`/`ConnectTimeout` in the `__cause__` chain — causal, never the SDK type) wraps as
+>   `InferenceError.unreachable` → `categorize` = `unreachable` (non-transient: straight next-hop, narrated
+>   `// failover → X (unreachable)`). It also arms the app-owned **`EndpointHealth`** connect cooldown
+>   (`app.state.endpoint_health`, keyed by `gate_identity`, `inference.connect_cooldown_s` = 60 s, `0` = off):
+>   while marked, `_resolve_chain` **demotes** that server's entries behind the healthy ones (never skips —
+>   it is still tried last), `target_for`/`effective_window_for` price the demotion-aware head, and any
+>   success clears the mark. Attribution compares against the CONFIGURED head by identity, so a demoted
+>   serve persists `degraded` + "fallback from X" with no per-call notice. Residuals + deferrals live in D83.
 
 ### 5.3 Suspension & resumption (the nuance that makes it robust)
 
@@ -1037,8 +1048,10 @@ class InferenceClient(Protocol):
 # (D43) that yields live retry/failover control items then the winning `FailoverResult` last. `stream_chat`
 # re-yields them as typed RetryNotice/FailoverNotice before the first ChatDelta; buffered callers
 # (complete()/embeddings/voice) drain via `failover_collect()`, unchanged. `categorize()` classifies a
-# failure (transient/overflow/fatal_for_endpoint/other) — only `transient` earns a bounded same-endpoint
-# retry (`inference.retry_attempts`, §5.2); everything else is today's straight next-hop.
+# failure (transient/overflow/fatal_for_endpoint/unreachable/other) — only `transient` earns a bounded
+# same-endpoint retry (`inference.retry_attempts`, §5.2); everything else is today's straight next-hop.
+# D83: the SDK timeout is split (connect budget beside the read window) and an unreachable hop demotes
+# its server for `inference.connect_cooldown_s` (`EndpointHealth`, §5.2).
 
 class McpClient:                       # manages many servers, both transports
     async def connect_all(self, cfgs: list[McpServerCfg]) -> None: ...  # stdio + Streamable HTTP

@@ -303,7 +303,7 @@ def test_record_stamps_served_endpoint_object() -> None:
     report = StreamReport()
     # served_index=1 → the cloud fallback answered after local failed.
     result = SimpleNamespace(served_index=1, degraded=True, failures=["local: boom"])
-    client._record(report, chain, result)  # type: ignore[arg-type]
+    client._record(report, chain, local, result)  # type: ignore[arg-type] — `local` = the configured head
 
     assert report.served == "cloud"
     assert report.served_target is cloud  # the ResolvedTarget, by identity
@@ -317,7 +317,7 @@ def test_record_iteration_one_names_selected_endpoint() -> None:
     client = InferenceClient(registry([local]))
 
     report = StreamReport()
-    client._record(report, chain, SimpleNamespace(served_index=0, degraded=False, failures=[]))  # type: ignore[arg-type]
+    client._record(report, chain, local, SimpleNamespace(served_index=0, degraded=False, failures=[]))  # type: ignore[arg-type]
     assert report.served_target is local and report.degraded is False
 
 

@@ -9,7 +9,8 @@ policies (D48 C2):
 - `resolve_lenient(settings)` — for boot: warn + drop/promote per C5, always returns `(Registry, warnings)`.
 
 It owns the `(gate_identity, limit)` D40 semaphore registry (`EndpointGates`, moved here from the
-adapter, keeping its app-owned lifetime + generation-drain) and the effective-value ladders
+adapter, keeping its app-owned lifetime + generation-drain), the D83 connect-cooldown ledger
+(`EndpointHealth`, same lifetime) and the effective-value ladders
 (`max_tokens_field` C6, min-wins concurrency C4, provider-over-global retry). Adapters below `config.py`
 never see live `Settings` — only `ResolvedTarget` + `SectionPolicy`.
 """
@@ -19,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -38,7 +40,7 @@ from app.domain.provider import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterable
+    from collections.abc import AsyncIterator, Callable, Iterable
 
     from app.config import ProviderCfg, SectionRef, Settings
 
@@ -199,6 +201,50 @@ class EndpointGates:
             yield
         finally:
             sem.release()
+
+
+class EndpointHealth:
+    """The app-owned cross-turn connect-cooldown ledger (D83 Slice B), beside `EndpointGates` and with its
+    lifetime: created ONCE on `app.state.endpoint_health` and passed into every `InferenceClient`
+    generation, so a settings PUT that rebuilds the client keeps what the last generation learned (a
+    CHANGED URL is simply a new key; expiry bounds staleness). A client built without one gets a private
+    instance.
+
+    Keyed by `gate_identity` — the D40 server key (canonical base_url), so one mark demotes every chain
+    entry on that server, whichever provider/model names it. State = `{gate_identity: until}` on an
+    injectable monotonic clock. An entry is armed by an UNREACHABLE hop and DEMOTES only while
+    `clock() < until`; a success on that identity clears it early. Past expiry the chain tries it at its
+    configured position again (routing considers it healthy), and the next `mark` PRUNES every expired
+    entry first — so a post-expiry failure is a fresh healthy→marked transition (≤ one WARNING per window
+    in a sustained outage, D83/C1) and a key orphaned by a URL edit or a removed provider cannot linger.
+
+    Asyncio single-thread: no lock, no half-open probe flag — at expiry every concurrent caller retries
+    the primary once (the accepted herd, D83/R10). Pure bookkeeping: the policy (the cooldown length,
+    0 = off) and the logging live in the adapter that owns the chain walk."""
+
+    def __init__(self, clock: "Callable[[], float]" = time.monotonic) -> None:
+        self._clock = clock
+        self._until: dict[str, float] = {}
+
+    def demoted(self, gate_identity: str) -> bool:
+        """Is this server inside an armed cooldown window right now?"""
+        until = self._until.get(gate_identity)
+        return until is not None and self._clock() < until
+
+    def mark(self, gate_identity: str, cooldown_s: float) -> bool:
+        """Arm (or re-arm) the window to `now + cooldown_s`, pruning every EXPIRED entry first (D83/C1 —
+        bounds the map; expiry bounds staleness). True only on the healthy→marked transition (no LIVE
+        entry before — a post-expiry failure counts) — the caller's WARNING; re-arming a live window
+        (a concurrent caller failing inside it) returns False."""
+        now = self._clock()
+        self._until = {gid: until for gid, until in self._until.items() if now < until}
+        fresh = gate_identity not in self._until
+        self._until[gate_identity] = now + cooldown_s
+        return fresh
+
+    def clear(self, gate_identity: str) -> bool:
+        """Forget the server's entry after a success on it. True when there was one (the caller's INFO)."""
+        return self._until.pop(gate_identity, None) is not None
 
 
 def _target_identity(t: ResolvedTarget) -> tuple[str, str | None, str, str]:
@@ -780,6 +826,7 @@ def _resolve(settings: "Settings", *, strict: bool) -> tuple[Registry, list[Regi
         connect_timeout_s=inf.connect_timeout_s,
         failover=inf.failover,
         retry_attempts=inf.retry_attempts,
+        connect_cooldown_s=inf.connect_cooldown_s,
     )
     stt_policy = SttPolicy(
         language=stt.language,

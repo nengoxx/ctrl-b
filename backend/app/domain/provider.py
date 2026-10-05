@@ -89,7 +89,8 @@ class SectionPolicy(BaseModel):
     Chat scope now: `request_timeout_s` (the SDK client read window), `connect_timeout_s` (the connect
     budget beside it — D83, the voice split), `failover` (walk the chain vs the sole selected target),
     `retry_attempts` (the GLOBAL same-endpoint budget — a target's own override lives on
-    `ResolvedTarget.retry_attempts`)."""
+    `ResolvedTarget.retry_attempts`), `connect_cooldown_s` (D83 — how long an unreachable server stays
+    demoted in the chain; 0 = off)."""
 
     model_config = {"frozen": True}
 
@@ -97,6 +98,7 @@ class SectionPolicy(BaseModel):
     connect_timeout_s: float = 5.0
     failover: bool = True
     retry_attempts: int = 2
+    connect_cooldown_s: float = 60.0
 
 
 class SttPolicy(BaseModel):

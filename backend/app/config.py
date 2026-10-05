@@ -335,6 +335,11 @@ class InferenceCfg(BaseModel):
     #: the openai SDK's own connect default (lost when a bare float was passed) and survives two lost
     #: SYNs. Floored >0 and finite: a blanked Conf field must 422, never wedge every call instantly.
     connect_timeout_s: float = Field(default=5.0, gt=0, allow_inf_nan=False)
+    #: D83 Slice B: after a hop finds its server UNREACHABLE, demote that server (every chain entry on
+    #: its base_url) behind the healthy entries for this long — never skipped, just tried last — so a
+    #: dead primary stops costing the connect budget on every iteration of every turn. Any success
+    #: clears it early. 0 = off. Finite (YAML `.inf` would pin a demotion forever).
+    connect_cooldown_s: float = Field(default=60.0, ge=0, allow_inf_nan=False)
     system_prompt: str = ""  # optional override of the built-in default agent prompt (replace)
     #: Additive guidance appended to whichever base prompt is active (7e-a). Emitted as its own
     #: `system` message after the base. The per-agent equivalent is AgentDef.prompt_append.

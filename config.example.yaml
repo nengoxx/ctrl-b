@@ -202,6 +202,8 @@ inference:                          # request_timeout_s / system_prompt* / failo
   request_timeout_s: 600
   connect_timeout_s: 5   # D83: give up REACHING an endpoint after this (refused/no route/silent host)
                          # and hop to the next — the 600 s above stays the read window once connected
+  connect_cooldown_s: 60 # D83: an endpoint found unreachable is tried LAST for this long (never skipped;
+                         # its first successful answer clears it early). 0 = off
   system_prompt: ""      # optional; blank = the built-in ctrl-b assistant prompt
   failover: true
   retry_attempts: 2      # D43/Slice 7: CHAT-STREAM same-endpoint retry budget for TRANSIENT failures

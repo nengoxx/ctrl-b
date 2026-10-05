@@ -47,6 +47,7 @@ from app.config import (
 from app.core.permissions import exact_arg_pins
 from app.core.provider_registry import (
     EndpointGates,
+    EndpointHealth,
     ProviderResolveError,
     provider_skill_collision_warnings,
     resolve_lenient,
@@ -68,12 +69,16 @@ def resolve_generation(app: "FastAPI", settings: Settings) -> "Registry":
     so inference + voice + embeddings rebuild from the SAME generation (no per-section re-resolve). Boot
     (main.py) calls it the same way. Memoizes the app-owned `EndpointGates` (created once on
     `app.state.endpoint_gates`) so a rebuild keeps the SAME `(gate_identity, limit)` semaphores — the cap
-    is never split across generations (C4). Resolves LENIENTLY (boot policy: warn + drop/promote) and logs
-    the lenient warnings (missing provider / gate conflict / dim mismatch / self-hosted default api_mode)."""
+    is never split across generations (C4) — and, the same way, the app-owned `EndpointHealth` (D83: the
+    connect-cooldown ledger survives a rebuild). Resolves LENIENTLY (boot policy: warn + drop/promote) and
+    logs the lenient warnings (missing provider / gate conflict / dim mismatch / self-hosted default
+    api_mode)."""
     gates = getattr(app.state, "endpoint_gates", None)
     if gates is None:
         gates = EndpointGates()
         app.state.endpoint_gates = gates
+    if getattr(app.state, "endpoint_health", None) is None:
+        app.state.endpoint_health = EndpointHealth()
     registry, warnings = resolve_lenient(settings)
     for w in warnings:
         logger.warning("provider config: %s", w)
@@ -83,12 +88,13 @@ def resolve_generation(app: "FastAPI", settings: Settings) -> "Registry":
 def set_inference(app: "FastAPI", registry: "Registry") -> InferenceClient | None:
     """Build + wire the inference client from a RESOLVED `Registry` generation (A11). The single
     construction site for inference, called by both lifespan and `reconfigure`. Builds the client from the
-    registry + the app-owned `EndpointGates`, PUBLISHES it (setattr on `app.state.inference` + the deps
-    mirror), and RETURNS the previous client so the async caller can `retire()` it (R6 drain: publish new,
-    then drain old — in-flight turns finish on their captured generation)."""
+    registry + the app-owned `EndpointGates` + `EndpointHealth` (D83), PUBLISHES it (setattr on
+    `app.state.inference` + the deps mirror), and RETURNS the previous client so the async caller can
+    `retire()` it (R6 drain: publish new, then drain old — in-flight turns finish on their captured
+    generation)."""
     gates = app.state.endpoint_gates
     old = getattr(app.state, "inference", None)
-    new_client = InferenceClient(registry, gates=gates)
+    new_client = InferenceClient(registry, gates=gates, health=app.state.endpoint_health)
     app.state.inference = new_client
     deps = getattr(app.state, "deps", None)
     if deps is not None:
