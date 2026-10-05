@@ -114,7 +114,13 @@ class InferenceError(RuntimeError):
     drop after a successful serve). The routing machine counts a WORKER failure only for a
     single-endpoint chain failure (`endpoints_tried == 1` — the lead may live on a different
     endpoint): a multi-endpoint total outage (`> 1`) is an infra event, not worker quality, so
-    escalating to an equally-dead lead is pointless (D43 review F12)."""
+    escalating to an equally-dead lead is pointless (D43 review F12).
+
+    `unreachable` (D83) is True when this hop never got a connection — the CAUSE chain of the raw SDK
+    exception holds an `httpx.ConnectError`/`httpx.ConnectTimeout` (refused / no route / DNS / the
+    connect budget ran out). Captured pre-flattening like the fields above, and CAUSAL by construction:
+    the SDK's `APITimeoutError` wraps read/write/pool timeouts too, so the SDK type alone can never say
+    "the server is down". `categorize` reads it as the `unreachable` tier."""
 
     def __init__(
         self,
@@ -124,12 +130,14 @@ class InferenceError(RuntimeError):
         status: int | None = None,
         retry_after: float | None = None,
         endpoints_tried: int | None = None,
+        unreachable: bool = False,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.status = status
         self.retry_after = retry_after
         self.endpoints_tried = endpoints_tried
+        self.unreachable = unreachable
 
 
 def _parse_retry_after(exc: BaseException) -> float | None:
@@ -162,15 +170,51 @@ def _parse_retry_after(exc: BaseException) -> float | None:
     return max((when - datetime.now(timezone.utc)).total_seconds(), 0.0)
 
 
-def _as_inference_error(exc: BaseException) -> InferenceError | None:
+#: How many `__cause__` links `_connect_failure` follows (D83/R16). The real chain is ONE link deep
+#: (the SDK's `APIConnectionError`/`APITimeoutError(...) from err`, where `err` is httpx's own mapped
+#: `ConnectError`/`ConnectTimeout`); the bound only stops a pathological cycle from looping.
+_CAUSE_WALK_DEPTH = 4
+
+
+def _connect_failure(exc: BaseException) -> httpx.ConnectError | httpx.ConnectTimeout | None:
+    """The `httpx.ConnectError`/`httpx.ConnectTimeout` in `exc`'s explicit CAUSE chain, or `None` (D83/
+    R5/R16). Walks `__cause__` ONLY (bounded): the SDK raises `... from err` and httpx `mapped_exc(...)
+    from exc`, so the connect failure IS the cause. Never `__context__` — an unrelated error raised
+    while merely HANDLING a connect error must not count as "the server is down"."""
+    cur: BaseException | None = exc
+    for _ in range(_CAUSE_WALK_DEPTH + 1):
+        if cur is None:
+            return None
+        if isinstance(cur, (httpx.ConnectError, httpx.ConnectTimeout)):
+            return cur
+        cur = cur.__cause__
+    return None
+
+
+def _as_inference_error(
+    exc: BaseException, *, connect_timeout_s: float | None = None
+) -> InferenceError | None:
     """Wrap a LIVE backend exception into a structured `InferenceError`, capturing the OpenAI-SDK
     `status_code` + `code` + `Retry-After` BEFORE `core.failover` flattens each hop to a string (D42 —
     the "pre-flattening" capture). Returns `None` for a cancellation or an already-`InferenceError`
     (nothing to convert — re-raise it raw). Only the OpenAI `APIStatusError` family exposes
     `status_code`/`code`/`response`; a non-HTTP error wraps with all `None`, its message preserved so
-    failover's collected string is unchanged."""
+    failover's collected string is unchanged.
+
+    D83: a hop that never got a connection (`_connect_failure`) wraps as `unreachable=True` with a
+    message that says so — the SDK's own "Request timed out." / "Connection error." name neither the
+    cause nor the budget. A connect TIMEOUT names the budget (`connect_timeout_s`, the caller's frozen
+    policy) — "no connection within 5s"; a refused / no-route / DNS failure carries httpx's own text."""
     if isinstance(exc, (asyncio.CancelledError, InferenceError)):
         return None
+    connect = _connect_failure(exc)
+    if connect is not None:
+        if isinstance(connect, httpx.ConnectTimeout):
+            budget = f" within {connect_timeout_s:g}s" if connect_timeout_s is not None else ""
+            message = f"no connection{budget}"
+        else:
+            message = str(connect) or str(exc) or "connection failed"
+        return InferenceError(message, unreachable=True)
     status = getattr(exc, "status_code", None)
     code = getattr(exc, "code", None)
     return InferenceError(
@@ -400,8 +444,10 @@ def _reasoning_keys_in(call_cfg: dict[str, Any]) -> list[str]:
 #: The retry classifier's tiers (D43/A7). `transient` = alive-but-busy, retry the same endpoint may
 #: work; `overflow` = delegates to `is_context_overflow`; `fatal_for_endpoint` = this endpoint can
 #: never serve this request (auth/model/quota — a different hop has different creds, so hop, never
-#: retry-same); `other` = everything else (connection/timeout/5xx — today's instant next-hop).
-ErrorCategory = Literal["transient", "overflow", "fatal_for_endpoint", "other"]
+#: retry-same); `unreachable` (D83) = the hop never got a connection (`InferenceError.unreachable`,
+#: causal) — non-transient, so the same instant next-hop, but named so the narration says why;
+#: `other` = everything else (read timeout/5xx/a dropped pooled socket — today's instant next-hop).
+ErrorCategory = Literal["transient", "overflow", "fatal_for_endpoint", "unreachable", "other"]
 
 #: HTTP statuses meaning "backend is alive but momentarily can't serve — a retry may work".
 _TRANSIENT_STATUS = frozenset({429, 503})
@@ -451,8 +497,10 @@ def categorize(err: BaseException) -> ErrorCategory:
     endpoint must hop to different credentials, never retry in place. Then a message-substring fallback
     for a failover-FLATTENED error whose structured fields were collapsed to a string, gated on the
     flattened `error code: N` the same way `is_context_overflow` gates on 400 (so an unrelated string
-    can't upgrade a plain error; the busy/auth PHRASES are specific enough to scan ungated).
-    `overflow`/`other` → straight next-hop; only `transient` is retry-worthy."""
+    can't upgrade a plain error; the busy/auth PHRASES are specific enough to scan ungated). The D83
+    `unreachable` field is read after the structured checks and BEFORE that text fallback (a causal fact
+    beats a phrase match; a connect failure carries no status/code anyway).
+    `overflow`/`unreachable`/`other` → straight next-hop; only `transient` is retry-worthy."""
     if is_context_overflow(err):
         return "overflow"
     status = getattr(err, "status", None)
@@ -472,6 +520,9 @@ def categorize(err: BaseException) -> ErrorCategory:
     # ── a bare Retry-After header (no decisive status/code above): the server asked us to wait ──
     if getattr(err, "retry_after", None) is not None:
         return "transient"
+    # ── D83: the causal connect-failure field — structural, so it outranks the text heuristics below ──
+    if getattr(err, "unreachable", False) is True:
+        return "unreachable"
     # ── message fallback: only when the structured fields didn't decide (flattened / body text) ──
     if (
         any(m in text for m in _TRANSIENT_MSG_MARKERS)
@@ -1109,7 +1160,11 @@ class InferenceClient:
             self._clients[ep.provider] = AsyncOpenAI(
                 base_url=ep.base_url,
                 api_key=(ep.api_key.get_secret_value() if ep.api_key else None) or _PLACEHOLDER_KEY,
-                timeout=self._policy.request_timeout_s,
+                # D83: the voice split — `connect` bounds REACHING the server (an offline backend hops in
+                # seconds), the read window stays generous for a thinking model. A bare float would set
+                # all four phases to 600 s (it lost the SDK's own 5 s connect default). The cache key stays
+                # the provider name: the policy is frozen per generation and any edit rebuilds it.
+                timeout=httpx.Timeout(self._policy.request_timeout_s, connect=self._policy.connect_timeout_s),
                 max_retries=0,  # a 10-minute thinking call must not be silently retried
             )
         return self._clients[ep.provider]
@@ -1541,7 +1596,7 @@ class InferenceClient:
                         return await _once(True)
                     except BaseException as exc:
                         # D42: capture the OpenAI-SDK code/status pre-flattening (see `_as_inference_error`).
-                        converted = _as_inference_error(exc)
+                        converted = _as_inference_error(exc, connect_timeout_s=self._policy.connect_timeout_s)
                         if converted is not None:
                             last_error = converted
                             raise converted from exc
@@ -1750,7 +1805,7 @@ class InferenceClient:
                     # here — at `create()`/first-chunk, before any token — so the reactive backstop can see
                     # it once failover collapses the chain). `_as_inference_error` passes a cancellation /
                     # existing InferenceError through unchanged.
-                    converted = _as_inference_error(exc)
+                    converted = _as_inference_error(exc, connect_timeout_s=self._policy.connect_timeout_s)
                     if converted is not None:
                         last_error = converted
                         raise converted from exc

@@ -222,6 +222,7 @@ export interface SettingsDoc {
     model: string | null;
     fallbacks: SectionRef[];
     request_timeout_s: number;
+    connect_timeout_s: number; // D83 — the connect budget beside the read window (fail fast → hop)
     system_prompt: string;
     system_prompt_append: string; // 7e-a additive axis — appended as its own system message
     failover: boolean; // walk the primary→fallbacks chain on failure

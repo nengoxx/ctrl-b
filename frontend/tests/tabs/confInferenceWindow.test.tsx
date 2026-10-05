@@ -38,6 +38,7 @@ const makeSettings = () => ({
     fallbacks: [{ provider: "openrouter", model: "qwen3.5" as string | null }],
     failover: true,
     request_timeout_s: 120,
+    connect_timeout_s: 5,
     system_prompt: "",
     system_prompt_append: "",
   },
@@ -306,6 +307,31 @@ describe("ConfTab · Inference picker (A11/D48)", () => {
     const p = lastPatch();
     expect(p.providers).toBeDefined(); // subtree dirty → map rides
     expect(p.providers_base).toBe("revA"); // the settings-snapshot base, NOT the providers-query "revB"
+  });
+});
+
+describe("ConfTab · Inference connect knob (D83)", () => {
+  const grp = () => within(document.getElementById("inference")!);
+  const savedInference = () => lastPatch().inference as unknown as Record<string, unknown>;
+
+  it("the connect timeout edits beside the request timeout and saves as a NUMBER", () => {
+    render(<ConfTab active />);
+    const input = grp().getByLabelText<HTMLInputElement>("Connect timeout");
+    expect(input.value).toBe("5");
+    fireEvent.change(input, { target: { value: "2.5" } });
+    fireEvent.click(saveButton());
+    expect(savedInference().connect_timeout_s).toBe(2.5);
+  });
+
+  it("a doc that predates the knob seeds its default — an unrelated inference save never sends NaN/null", () => {
+    const s = makeSettings();
+    delete (s.inference as Partial<typeof s.inference>).connect_timeout_s;
+    h.settings = s;
+    render(<ConfTab active />);
+    fireEvent.change(grp().getByLabelText("Request timeout"), { target: { value: "150" } });
+    fireEvent.click(saveButton());
+    expect(savedInference().request_timeout_s).toBe(150);
+    expect(savedInference().connect_timeout_s).toBe(5);
   });
 });
 

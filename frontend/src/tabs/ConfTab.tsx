@@ -901,11 +901,18 @@ const WAKE_FALLBACK: SettingsDoc["wake"] = {
   quiet_hours: null,
 };
 
+// D83 — the inference connect knob, seeded field-wise for the reason `pickDraft` gives for `monitor`:
+// a doc from a build that predates it omits the key, and a missing number coerces to NaN → JSON null
+// at save (a 422 on an UNRELATED edit). Values mirror `InferenceCfg`'s field defaults.
+const INFERENCE_CONNECT_FALLBACK: Pick<SettingsDoc["inference"], "connect_timeout_s"> = {
+  connect_timeout_s: 5,
+};
+
 function pickDraft(s: SettingsDoc): Draft {
   return {
     server: s.server,
     providers: s.providers,
-    inference: s.inference,
+    inference: { ...INFERENCE_CONNECT_FALLBACK, ...s.inference },
     searxng: s.searxng,
     embeddings: s.embeddings,
     open_terminal: s.open_terminal,
@@ -1842,6 +1849,7 @@ export function ConfTab({ active }: Props) {
       inference: {
         ...draft.inference,
         request_timeout_s: Number(draft.inference.request_timeout_s),
+        connect_timeout_s: Number(draft.inference.connect_timeout_s),
       },
       searxng: draft.searxng,
       // A11/D48 Slice 2 — embeddings is a registry ref (provider/model/fallbacks) + enabled + timeout.
@@ -2208,6 +2216,12 @@ export function ConfTab({ active }: Props) {
             desc="seconds — thinking models load slowly"
             value={String(inf?.request_timeout_s ?? "")}
             onChange={(v) => setInf("request_timeout_s", v as unknown as number)}
+          />
+          <Field
+            label="Connect timeout"
+            desc="seconds — fail-fast to fall over"
+            value={String(inf?.connect_timeout_s ?? "")}
+            onChange={(v) => setInf("connect_timeout_s", v as unknown as number)}
           />
           <PromptRow
             label="System prompt"

@@ -320,7 +320,7 @@ class InferenceCfg(BaseModel):
     """Chat inference (A11/D48). The connection details live in the top-level `providers` map; this
     section only POINTS at them: a flat `provider` primary (+ optional `model`) and an ordered
     `fallbacks` list of SectionRef. Keeps the request-shaping knobs that were always section-level -
-    request_timeout_s / system_prompt* / failover / retry_attempts."""
+    request_timeout_s / connect_timeout_s / system_prompt* / failover / retry_attempts."""
 
     provider: str | None = None  # PRIMARY provider name; None -> unconfigured (chat 422s)
     #: The primary's model - omittable iff the provider's catalog has exactly one model (terse-config
@@ -329,6 +329,12 @@ class InferenceCfg(BaseModel):
     #: Ordered N-deep failover chain after the primary (D18). Each {provider, model?}.
     fallbacks: list[SectionRef] = Field(default_factory=list)
     request_timeout_s: float = 600.0  # thinking models load slowly + stream slowly - be generous
+    #: D83: how fast we give up REACHING an endpoint (TCP connect, incl. DNS + every happy-eyeballs
+    #: address, one shared budget) before the chain hops — split from `request_timeout_s` the way the
+    #: voice doors split theirs, so an offline backend costs seconds, not the 600 s read window. 5 s is
+    #: the openai SDK's own connect default (lost when a bare float was passed) and survives two lost
+    #: SYNs. Floored >0 and finite: a blanked Conf field must 422, never wedge every call instantly.
+    connect_timeout_s: float = Field(default=5.0, gt=0, allow_inf_nan=False)
     system_prompt: str = ""  # optional override of the built-in default agent prompt (replace)
     #: Additive guidance appended to whichever base prompt is active (7e-a). Emitted as its own
     #: `system` message after the base. The per-agent equivalent is AgentDef.prompt_append.

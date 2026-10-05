@@ -776,7 +776,10 @@ def _resolve(settings: "Settings", *, strict: bool) -> tuple[Registry, list[Regi
         )
 
     policy = SectionPolicy(
-        request_timeout_s=inf.request_timeout_s, failover=inf.failover, retry_attempts=inf.retry_attempts
+        request_timeout_s=inf.request_timeout_s,
+        connect_timeout_s=inf.connect_timeout_s,
+        failover=inf.failover,
+        retry_attempts=inf.retry_attempts,
     )
     stt_policy = SttPolicy(
         language=stt.language,

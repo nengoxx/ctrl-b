@@ -58,6 +58,7 @@ def registry(
     *,
     failover: bool = True,
     request_timeout_s: float = 600.0,
+    connect_timeout_s: float = 5.0,
     retry_attempts: int = 2,
 ) -> Registry:
     """A `Registry` whose inference chain is exactly `targets` (blank/dedup already applied by the caller).
@@ -81,6 +82,9 @@ def registry(
         for p in first_by_prov
     }
     policy = SectionPolicy(
-        request_timeout_s=request_timeout_s, failover=failover, retry_attempts=retry_attempts
+        request_timeout_s=request_timeout_s,
+        connect_timeout_s=connect_timeout_s,
+        failover=failover,
+        retry_attempts=retry_attempts,
     )
     return Registry(providers=providers, inference_chain=chain, inference_policy=policy, warnings=())

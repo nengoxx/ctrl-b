@@ -147,6 +147,7 @@ export const SETTINGS = {
     model: null,
     fallbacks: [{ provider: "openrouter", model: "qwen3.5" }],
     request_timeout_s: 120,
+    connect_timeout_s: 5,
     system_prompt: "",
     system_prompt_append: "",
     failover: true,

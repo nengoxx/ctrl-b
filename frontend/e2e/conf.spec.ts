@@ -28,6 +28,7 @@ test("Conf · Inference — timeout + prompt controls + primary/fallback pickers
   await expect(timeout).toHaveValue("120");
   await timeout.fill("150");
   await expect(timeout).toHaveValue("150");
+  await expect(inf.getByLabel("Connect timeout")).toHaveValue("5"); // D83 — the connect budget beside it
   await expect(inf.getByText("System prompt", { exact: true })).toBeVisible();
   await expect(inf.getByText("System prompt append", { exact: true })).toBeVisible();
   // dirtying the draft enables this group's Save bar
