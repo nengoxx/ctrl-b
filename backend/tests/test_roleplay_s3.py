@@ -264,6 +264,37 @@ def test_each_entry_renders_exactly_once() -> None:
         assert block.count("The ghostship Veile sails in fog.") == 1
 
 
+def test_feature_macros_render_in_an_entrys_content_and_its_keys() -> None:
+    """ISS-28: an entry's `{{random:…}}` content renders to ONE item; a `{{random:…}}` KEY renders
+    with the turn's salt, so the same key rolls the SAME at every render site of one turn (two
+    entries sharing it activate together or not at all) while another turn may roll again. The salt
+    is pinned per session here so the arm is deterministic."""
+    book = {
+        "name": "Weather",
+        "entries": [
+            {"keys": [], "constant": True, "content": "Today: {{random:rain,sun,fog}}.", "order": 1},
+            {"keys": ["{{random:red,blue}}"], "content": "First twin.", "order": 2},
+            {"keys": ["{{random:red,blue}}"], "content": "Second twin.", "order": 3},
+        ],
+    }
+    with _workspace(), _client() as c:
+        _book(c, "weather", book)
+        _agent(c, "nyx", lorebooks=["weather"])
+        thread = _thread(c)
+        seen: set[bool] = set()
+        for i in range(12):
+            session = _session(c, "nyx")
+            session._macro_salt = f"turn-{i}"
+            run_async(session._activate_lorebooks(thread, "a red sky"))
+            block = _blocks(run_async(session._assemble(thread)))[0]
+            assert sum(f"Today: {w}." in block for w in ("rain", "sun", "fog")) == 1
+            assert "{{" not in block
+            twins = ("First twin." in block, "Second twin." in block)
+            assert twins[0] == twins[1]
+            seen.add(twins[0])
+        assert seen == {True, False}  # the key re-rolls across turns
+
+
 # ── 2. the scan window (§6.3, Emma F11) ───────────────────────────────────────────────────────────
 
 
@@ -796,37 +827,60 @@ def test_the_position_downgrade_is_reported_per_class(home: Path) -> None:
 
 
 def test_the_book_report_names_the_macros_that_will_render_literally(home: Path) -> None:
-    """R87/RP-3, the book half: one line over every entry's content — `{{random:…}}` is the owner's
-    most common unrendered macro (24 book entries) — and none for a book that only uses the
-    vocabulary (in any case) or comments."""
+    """R87/RP-3, the book half: one line over every entry's content, and none for a book that only
+    uses the vocabulary (in any case), the feature macros (ISS-28 — `{{random:…}}` was the owner's
+    most common unrendered macro, 24 book entries) or comments."""
     book = {
         "name": "Flavour",
         "entries": [
-            {"keys": ["a"], "content": "Today: {{random:orgo, elem, tech}}."},
-            {"keys": ["b"], "content": "{{// hidden}}{{Char}} checks the {{time}}."},
+            {"keys": ["a"], "content": "Today: {{outlet::flavour}} or {{random:orgo, elem, tech}}."},
+            {"keys": ["b"], "content": "{{// hidden}}{{Char}} checks the {{lastMessage}} at {{time}}."},
         ],
     }
     with make_client() as c:
         warnings = import_book_ok(c, book)["report"]["warnings"]
         (line,) = [w for w in warnings if "does not render" in w]
-        assert "the lorebook's entries" in line and line.endswith("{{random}}, {{time}}")
+        assert "the lorebook's entries" in line and line.endswith("{{lastmessage}}, {{outlet}}")
 
-        quiet = import_book_ok(c, [{"keys": ["a"], "content": "{{User}} and {{char}} {{// x}}"}])
+        quiet = import_book_ok(c, [{"keys": ["a"], "content": "{{User}} and {{char}} {{// x}} {{pick:a,b}}"}])
         assert not any("does not render" in w for w in quiet["report"]["warnings"])
 
 
+def test_the_book_report_warns_about_a_per_turn_macro_in_a_head_entry(home: Path) -> None:
+    """ISS-28 (owner ruling 2026-10-06): ONE count line for the entries that land at the HEAD (ST
+    positions 0/1, and the 5–7 collapses) and carry a per-turn macro — the tail costs no cache, so
+    an ST position-4 entry is not counted, nor is a stable `{{pick}}`."""
+    book = {
+        "name": "Flavour",
+        "entries": [
+            st_entry(0, position=0, content="Today: {{random:orgo, elem, tech}}."),
+            st_entry(1, position=1, content="It is {{time}}."),
+            st_entry(2, position=4, content="Tail: {{random:a,b}}."),
+            st_entry(3, position=1, content="Stable: {{pick:a,b}}."),
+        ],
+    }
+    with make_client() as c:
+        warnings = import_book_ok(c, book)["report"]["warnings"]
+        assert [w for w in warnings if "per-turn" in w] == [
+            "2 entries use a per-turn macro ({{random}}, {{time}}) — the prompt cache re-prefills every "
+            "turn they are active"
+        ]
+        tail = import_book_ok(c, [st_entry(0, position=4, content="{{random:a,b}}")])["report"]["warnings"]
+        assert not any("per-turn" in w for w in tail)
+
+
 def test_the_book_report_names_a_macro_used_as_a_key(home: Path) -> None:
-    """R89/E-3: keys go through the same limited renderer before the scan, so a primary `{{time}}`
-    (or a secondary `{{random:…}}`) key is scanned for as literal braces and the entry silently
+    """R89/E-3: keys go through the same renderer before the scan, so a primary `{{lastMessage}}`
+    (or a secondary `{{outlet::…}}`) key is scanned for as literal braces and the entry silently
     never activates. The one report line covers keys too, and says what that costs there."""
     book = {
         "name": "Keyed",
-        "entries": [{"keys": ["{{time}}"], "secondary_keys": ["{{random:a,b}}"], "content": "c"}],
+        "entries": [{"keys": ["{{lastMessage}}"], "secondary_keys": ["{{outlet::a}}"], "content": "c"}],
     }
     with make_client() as c:
         warnings = import_book_ok(c, book)["report"]["warnings"]
     (line,) = [w for w in warnings if "does not render" in w]
-    assert "never match as a key" in line and line.endswith("{{random}}, {{time}}")
+    assert "never match as a key" in line and line.endswith("{{lastmessage}}, {{outlet}}")
 
 
 def test_the_ruled_logic_mapping_reports_its_approximation(home: Path) -> None:
@@ -1124,14 +1178,14 @@ def test_an_embedded_books_macro_line_reaches_the_card_report(home: Path) -> Non
     into the card import's report beside the card's (each importer adds its one line)."""
     card = v3(
         name="Nyx",
-        description="It is {{time}}.",
-        character_book={"entries": [{"keys": ["a"], "content": "Pick: {{random:x,y}}"}]},
+        description="It is {{lastMessage}}.",
+        character_book={"entries": [{"keys": ["a"], "content": "Pick: {{outlet::x}}"}]},
     )
     with make_client() as c:
         warnings = imported(c, json.dumps(card).encode("utf-8"))["report"]["warnings"]
     lines = [w for w in warnings if "does not render" in w]
-    assert any("the card's text" in w and w.endswith("{{time}}") for w in lines)
-    assert any("the lorebook's entries" in w and w.endswith("{{random}}") for w in lines)
+    assert any("the card's text" in w and w.endswith("{{lastmessage}}") for w in lines)
+    assert any("the lorebook's entries" in w and w.endswith("{{outlet}}") for w in lines)
 
 
 def test_an_embedded_book_that_will_not_map_is_a_warning_not_a_refusal(home: Path) -> None:

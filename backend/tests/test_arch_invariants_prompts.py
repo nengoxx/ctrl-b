@@ -126,6 +126,8 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         # R87 (RP-6): one more line of those same reports — a Character's Note v1 has no slot for.
         # It tells the OWNER what the import could not honour; it is never sent to a model.
         ("app/services/agent/card_import.py", "_depth_prompt_note"),
+        # ISS-28: the cache-warning count line both importers add (a per-turn macro in head text).
+        ("app/services/agent/macros.py", "per_turn_note"),
         ("app/services/agent/card_import.py", "compose_soul"),  # the lone-surrogate 422 detail
         ("app/services/agent/compaction.py", "_warn_degenerate_trigger"),
         ("app/services/voice_live.py", "LiveRelaySession._note_pre_roll_mismatch"),  # BUG-001 ③ log line

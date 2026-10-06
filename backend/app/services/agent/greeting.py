@@ -46,10 +46,14 @@ async def seed_greeting(
 
     Substituted at SEED time (§4.2): the greeting is stored history from here on, so it carries the
     `{{char}}`/`{{user}}` values that were true when the conversation opened, like every other
-    persisted turn — nothing re-renders it later."""
+    persisted turn — nothing re-renders it later. That holds for the feature macros too (ISS-28): a
+    `{{random}}` rolls ONCE here and the roll is what the thread keeps (ST writes message 0 back
+    the same way), `{{time}}` is the moment the thread opened, and `{{idle_duration}}` has no earlier
+    message to measure from, so it says "just now". No salt: the thread id alone seeds the roll
+    (uuids differ per thread), and the salt is the session's, minted in one place."""
     if not agent.greeting_enabled:
         return None
-    text = macros_for(agent, settings).render(agent.greeting.strip()).strip()
+    text = macros_for(agent, settings, thread=thread.id).render(agent.greeting.strip()).strip()
     if not text:
         return None
     return await messages.add(

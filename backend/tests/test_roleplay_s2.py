@@ -835,25 +835,53 @@ def test_the_full_mapping_lands_on_the_agent(home: Path) -> None:
 def test_the_report_names_the_macros_that_will_render_literally(home: Path) -> None:
     """R87/RP-3: ONE line, naming every macro in the card's prompt-facing text that this build does
     not render — sniffed over every mapped field (the alternate greetings included) — so a card
-    built on `{{time}}` says so at the door instead of in its opening message. The vocabulary in any
-    case and the stripped `{{// …}}` comment are never named, and a card that uses neither kind gets
-    no line at all."""
+    built on `{{lastMessage}}` says so at the door instead of in its opening message. The vocabulary
+    in any case, the feature macros (ISS-28) and the stripped `{{// …}}` comment are never named, and
+    a card that uses neither kind gets no line at all."""
     card = v2(
         name="Meiko",
         system_prompt="{{original}} {{// a note to myself}}",
         description="{{Char}} works nights.",
-        first_mes="It is {{time}} on {{date}}.",
-        alternate_greetings=["Pick one: {{random:tea,coffee}}"],
-        post_history_instructions="{{idle_duration}} have passed.",
+        first_mes="It is {{lastMessage}} on {{datetimeformat YYYY}} ({{time}}).",
+        alternate_greetings=["Pick one: {{persona}} or {{random:tea,coffee}}"],
+        post_history_instructions="{{input}} after {{idle_duration}}.",
     )
     with make_client() as c:
         warnings = imported(c, json.dumps(card).encode("utf-8"))["report"]["warnings"]
         (line,) = [w for w in warnings if "does not render" in w]
         assert "the card's text" in line
-        assert line.endswith("{{date}}, {{idle_duration}}, {{random}}, {{time}}")
+        assert line.endswith("{{datetimeformat}}, {{input}}, {{lastmessage}}, {{persona}}")
 
         clean = imported(c, json.dumps(v2(name="Plain", description="{{User}} meets {{char}}.")).encode())
         assert not any("does not render" in w for w in clean["report"]["warnings"])
+
+
+def test_the_report_warns_about_a_per_turn_macro_in_head_text(home: Path) -> None:
+    """ISS-28 (owner ruling 2026-10-06): a per-turn macro in a field that lands in the CACHED head
+    (the SOUL's three, the scenario, the examples) re-prefills it every turn — accepted, never
+    silent: ONE count line. The tail (`post_history`) and the stored greetings cost no cache, and a
+    stable macro (`pick`) is not per-turn, so neither is counted."""
+    card = v2(
+        name="Meiko",
+        system_prompt="It is {{time}}.",
+        description="{{Char}} works nights.",
+        personality="{{random:calm,wry}} and {{pick:a,b}}",
+        scenario="{{// {{date}} hidden }}A bar.",
+        first_mes="{{roll:d6}}",
+        alternate_greetings=["{{weekday}}"],
+        post_history_instructions="{{idle_duration}}",
+    )
+    with make_client() as c:
+        warnings = imported(c, json.dumps(card).encode("utf-8"))["report"]["warnings"]
+        assert [w for w in warnings if "per-turn" in w] == [
+            "2 fields use a per-turn macro ({{random}}, {{time}}) — the prompt cache re-prefills every "
+            "turn they are active"
+        ]
+        tail_only = v2(
+            name="Tail", description="d", post_history_instructions="{{time}}", first_mes="{{date}}"
+        )
+        clean = imported(c, json.dumps(tail_only).encode("utf-8"))["report"]["warnings"]
+        assert not any("per-turn" in w for w in clean)
 
 
 def test_a_character_note_is_reported_not_silently_dropped(home: Path) -> None:

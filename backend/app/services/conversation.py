@@ -396,6 +396,22 @@ class MessageRepo:
         )
         return int(rows[0]["n"]) if rows else 0
 
+    async def last_user_ts(self, thread_id: str, *, before: datetime | None = None) -> datetime | None:
+        """When the owner last spoke in a thread — the newest `role='user'` row, strictly older than
+        `before` when given — or `None` (ISS-28: `{{idle_duration}}`'s reference point). Compacted
+        rows count: folding a turn into the summary does not change when it was said. One indexed
+        `LIMIT 1` read (`idx_messages_thread(thread_id, ts)`), the `count_user_messages` precedent."""
+        sql = "SELECT ts FROM messages WHERE thread_id = ? AND role = 'user'"
+        params: list[Any] = [thread_id]
+        if before is not None:
+            sql += " AND ts < ?"
+            params.append(_iso(before.astimezone(timezone.utc)))
+        rows = await self._db.query(sql + " ORDER BY ts DESC LIMIT 1", tuple(params))
+        if not rows:
+            return None
+        ts = datetime.fromisoformat(rows[0]["ts"])
+        return ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
+
     async def search(
         self, query: str, *, limit: int = 5, include_archived: bool = False
     ) -> list[dict[str, Any]]:

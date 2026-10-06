@@ -17,7 +17,9 @@ What's exercised:
                     the history); each empty ⇒ absent (ruling 10).
   6. Macros       — `{{char}}`, the two `{{user}}` rungs (D78), `{{original}}`'s once-rule + its
                     configured-prompt-else-empty meaning (R87/RP-1) + its empty post-history meaning;
-                    the case fold and comment strip (RP-2/RP-3); unmatched tokens pass through.
+                    the case fold and comment strip (RP-2/RP-3); unmatched tokens pass through;
+                    the ST/CCv3 feature macros (ISS-28): their list forms, seeds, dice, the fixed
+                    clock, the idle humanizer, the scoped comment, the cache-warning predicate.
   7. Data model   — the new `AgentDef` fields persist + round-trip; the ones S2+ owns stay inert.
   8. Config       — `roleplay:` defaults, round-trip, and validation.
 
@@ -29,8 +31,11 @@ from __future__ import annotations
 import contextlib
 import os
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
+import pytest
 from _async import run_async
 
 _ROSTER_CONFIG = "server:\n  port: 5433\ncomputers:\n  testbox:\n    ip: 192.0.2.1\n"
@@ -491,7 +496,7 @@ def test_vocabulary_names_fold_in_any_ascii_case() -> None:
     assert m.render("{{Char}} greets {{USER}}; {{uSeR}} nods.") == "Nyx greets Emma; Emma nods."
     assert m.render("{{ORIGINAL}}!", original="HEAD") == "HEAD!"
     # Outside the vocabulary a name keeps the case it was typed in — it renders literally anyway.
-    assert m.render("{{Random}} {{Time}}") == "{{Random}} {{Time}}"
+    assert m.render("{{LastMessage}} {{Persona}}") == "{{LastMessage}} {{Persona}}"
 
 
 def test_the_case_fold_cannot_bind_a_unicode_look_alike() -> None:
@@ -527,19 +532,24 @@ def test_the_comment_strip_and_case_fold_reach_the_assembled_head() -> None:
 
 
 def test_unrendered_names_every_macro_this_build_leaves_literal() -> None:
-    """The importers' report source: case-insensitive, deduped, sorted; the vocabulary and the
-    stripped comment are never listed, and ST's arg forms (`{{random:…}}`) are named by their name."""
+    """The importers' report source: case-insensitive, deduped, sorted; the vocabulary, the feature
+    macros (ISS-28) and the stripped comment are never listed, and ST's arg forms
+    (`{{datetimeformat …}}`) are named by their name."""
     from app.services.agent.macros import unrendered, unrendered_note
 
-    texts = ["{{Char}} at {{time}}", "{{random:a,b}} {{RANDOM::c::d}} {{// hidden}} {{ date }}", "{{user}}"]
-    assert unrendered(texts) == ["date", "random", "time"]
+    texts = [
+        "{{Char}} at {{lastMessage}}",
+        "{{datetimeformat YYYY}} {{DATETIMEFORMAT::x}} {{// hidden}} {{ date }} {{random:a,b}}",
+        "{{user}} {{time}} {{Pick::a::b}} {{roll:d6}} {{idleDuration}} {{time_UTC+2}} {{hidden_key:k}}",
+    ]
+    assert unrendered(texts) == ["date", "datetimeformat", "lastmessage"]
     # A vocabulary name renders ONLY as a bare token — padded with whitespace it is literal, so it is
     # named (the R87 review's O-6).
     assert unrendered(["{{ char }}", "{{user }}", "{{original}}"]) == ["char", "user"]
     assert unrendered(["{{char}} {{Original}} {{// x}}", "plain"]) == []
     assert unrendered_note(["{{char}}"], "the card's text") == []
     (line,) = unrendered_note(texts, "the card's text")
-    assert "the card's text" in line and line.endswith("{{date}}, {{random}}, {{time}}")
+    assert "the card's text" in line and line.endswith("{{date}}, {{datetimeformat}}, {{lastmessage}}")
 
 
 def test_original_in_the_post_history_renders_as_nothing() -> None:
@@ -553,6 +563,235 @@ def test_original_in_the_post_history_renders_as_nothing() -> None:
 
         _agent(c, "nyx", post_history="{{original}}")
         assert [m["role"] for m in _assemble(c, _make_thread(c), "nyx")] == ["system", "user"]
+
+
+# ── 5b. the feature macros (ISS-28) ─────────────────────────────────────────────────────────────
+
+#: The fixed clock every time arm reads: Tuesday 2026-10-06, 15:05 in emma's zone (CEST, UTC+2).
+_FIXED = datetime(2026, 10, 6, 15, 5, tzinfo=ZoneInfo("Europe/Madrid"))
+
+
+def _m(*, thread: str = "t1", salt: str = "s1", user: str = "Emma", **kw):
+    from app.services.agent.macros import Macros
+
+    return Macros(char="Nyx", user=user, thread=thread, salt=salt, now=kw.pop("now", _FIXED), **kw)
+
+
+@pytest.mark.parametrize(
+    ("text", "allowed"),
+    [
+        ("{{random:a,b,c}}", {"a", "b", "c"}),  # the corpus's form (every owner `{{random`)
+        ("{{random::a::b}}", {"a", "b"}),  # ST's new-engine form
+        ("{{random:a::b}}", {"a", "b"}),  # one argument: `::` wins over commas
+        ("{{random::a,b}}", {"a", "b"}),  # …and a lone `::` argument splits on commas
+        ("{{random a, b}}", {"a", "b"}),  # the whitespace separator
+        ("{{random: x\\, y , z }}", {"x, y", "z"}),  # `\,` is a literal comma; items trimmed
+        ("{{Random:  spaced  ,  out  }}", {"spaced", "out"}),  # the corpus's `{{Random:` spelling
+        ("{{random:I see {{user}}., I wave at {{User}}.}}", {"I see Emma.", "I wave at Emma."}),
+        ("{{random:{{user}},{{CHAR}}}}", {"Emma", "Nyx"}),  # nested flush against the outer `}}`
+        ("{{random}}", {""}),  # no items → nothing (ST)
+        ("{{random:}}", {""}),
+    ],
+)
+def test_random_reads_every_list_form(text: str, allowed: set[str]) -> None:
+    for salt in ("s1", "s2", "s3", "s4", "s5"):
+        assert _m(salt=salt).render(text) in allowed
+
+
+def test_random_is_stable_within_a_turn_and_rerolls_across_turns() -> None:
+    """D2's seed: the same salt (one turn) renders the same choice at every render site; a new salt
+    (the next turn) can choose again; two occurrences in one field are independent."""
+    text = "{{random:a,b,c,d,e,f,g,h}}"
+    assert {_m(salt="turn").render(text) for _ in range(5)} == {_m(salt="turn").render(text)}
+    assert len({_m(salt=f"s{i}").render(text) for i in range(40)}) > 1
+    pairs = [_m(salt=f"s{i}").render(f"{text}|{text}").split("|") for i in range(40)]
+    assert any(a != b for a, b in pairs)
+
+
+def test_pick_is_stable_per_thread_and_position() -> None:
+    """`pick` takes no salt (ST/Risu parity): every turn of a thread picks the same item, a different
+    thread or a second occurrence can pick another, and a persona rename (a different `{{user}}`
+    elsewhere in the field) does not reshuffle it — the seed is the occurrence, not the offset."""
+    text = "{{pick:a,b,c,d,e,f,g,h}}"
+    assert len({_m(salt=f"s{i}").render(text) for i in range(10)}) == 1
+    assert len({_m(thread=f"t{i}").render(text) for i in range(40)}) > 1
+    assert any(len(set(_m(thread=f"t{i}").render(f"{text}|{text}").split("|"))) == 2 for i in range(40))
+    field = "{{user}} sees " + text
+    for i in range(10):
+        emma = _m(thread=f"t{i}", user="Emma").render(field).removeprefix("Emma sees ")
+        assert _m(thread=f"t{i}", user="Ariadne").render(field).removeprefix("Ariadne sees ") == emma
+
+
+def test_roll_follows_the_droll_grammar_and_a_bad_formula_stays_literal() -> None:
+    from app.services.agent.macros import ROLL_MAX_DICE
+
+    for salt in ("s1", "s2", "s3"):
+        m = _m(salt=salt)
+        assert 1 <= int(m.render("{{roll:6}}")) <= 6  # digits only = 1dN
+        assert 1 <= int(m.render("{{roll:d6}}")) <= 6
+        assert 3 <= int(m.render("{{roll:2d6+1}}")) <= 13
+        assert -2 <= int(m.render("{{ROLL:1D2-3}}")) <= -1
+        assert m.render(f"{{{{roll:{ROLL_MAX_DICE}d1}}}}") == str(ROLL_MAX_DICE)
+    m = _m()
+    for bad in (
+        "{{roll:abc}}",
+        "{{roll:0}}",
+        "{{roll:d0}}",
+        "{{roll:2d}}",
+        "{{roll:1d6*2}}",
+        "{{roll}}",
+        f"{{{{roll:{ROLL_MAX_DICE + 1}d6}}}}",  # the cap: a visible literal, never a stalled turn
+        "{{roll:" + "9" * 5000 + "}}",  # past int()'s digit limit — malformed, not a crash
+    ):
+        assert m.render(bad) == bad, bad
+
+
+def test_reverse_and_the_ccv3_author_notes() -> None:
+    m = _m()
+    assert m.render("{{reverse:stressed}}") == "desserts"
+    assert m.render("{{reverse:{{user}}}}") == "ammE"
+    assert m.render("a{{comment: the author's aside}}b{{hidden_key:dragon}}c{{Comment}}d") == "abcd"
+
+
+@pytest.mark.parametrize(
+    ("text", "want"),
+    [
+        ("A{{//}}hidden\nacross lines{{///}}B", "AB"),  # multi-line scoped span
+        ("A{{// note}}B", "AB"),  # an opener with no closer is the single form
+        ("A{{///}}B", "A{{///}}B"),  # an ORPHAN closer stays literal (ST parity)
+        ("A{{//}}x{{//}}y{{///}}z{{///}}B", "AB"),  # nested pairs, stack-matched
+        ("A{{//}}x{{//}}y{{///}}B", "AxB"),  # an unmatched outer opener falls to the single form
+        ("A{{//}}{{random:a,b}} {{time}}{{///}}B", "AB"),  # the body never renders
+        ("{{//}} SECRET {{// todo}} more {{///}}", ""),  # a note inside a scope never pairs (ST)
+        ("A{{// a note}}x{{///}}B", "Ax{{///}}B"),  # only the bare `{{//}}` opens: orphan closer
+        ("A{{// }}x{{///}}B", "AB"),  # whitespace is no argument — still the bare opener
+    ],
+)
+def test_the_scoped_comment_strips_before_the_single_form(text: str, want: str) -> None:
+    assert _m().render(text) == want
+
+
+def test_the_time_macros_read_the_fixed_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The server-zone clock through the `_now()` monkeypatch point (the default a bare `Macros`
+    captures); moment's `en` formats, with explicit English names."""
+    from app.config import Settings
+    from app.domain.agent import AgentDef
+    from app.services.agent import macros
+
+    monkeypatch.setattr(macros, "_now", lambda: _FIXED)
+    m = macros.Macros(char="Nyx", user="Emma")
+    assert m.render("{{time}}|{{date}}|{{weekday}}|{{isotime}}|{{isodate}}") == (
+        "3:05 PM|October 6, 2026|Tuesday|15:05|2026-10-06"
+    )
+    assert m.render("{{time::UTC+2}}|{{time_UTC-5}}|{{Time_utc+0}}|{{time::utc+9}}") == (
+        "3:05 PM|8:05 AM|1:05 PM|10:05 PM"
+    )
+    for bad in (
+        "{{time::UTC+99}}",
+        "{{time::Madrid}}",
+        "{{date::x}}",
+        "{{isodate:1}}",
+        "{{idle_duration:x}}",
+    ):
+        assert m.render(bad) == bad, bad
+    late = _m(now=datetime(2027, 1, 3, 0, 30, tzinfo=ZoneInfo("Europe/Madrid")))
+    assert late.render("{{time}} {{date}} {{weekday}}") == "12:30 AM January 3, 2027 Sunday"
+    assert _m(now=_FIXED.replace(hour=12, minute=0)).render("{{time}}") == "12:00 PM"
+    assert macros.macros_for(AgentDef(name="nyx"), Settings()).now == _FIXED  # the default read
+
+
+def test_the_legacy_time_rewrite_touches_only_a_valid_offset() -> None:
+    """ISS-28 wave 1 (Opus LOW-1 + LOW-3c): `{{time_UTC±N}}` is rewritten ONLY when the handler would
+    render the offset, and never inside a longer brace run — anything else survives byte-identical.
+    The offset is clamped to real zones' |N| ≤ 14 (moment reads |N| ≥ 16 as minutes)."""
+    from app.services.agent.macros import UTC_OFFSET_MAX
+
+    m = _m()
+    assert UTC_OFFSET_MAX == 14
+    for text in (
+        "{{time_UTC+99}}",
+        "{{time_UTC+15}}",
+        "{{{{time_UTC+2}}",
+        "{{time::UTC+15}}",
+        "{{time::UTC-99}}",
+    ):
+        assert m.render(text) == text, text
+    assert m.render("{{time_UTC-5}}|{{time::UTC+14}}|{{time_utc-14}}") == "8:05 AM|3:05 AM|11:05 PM"
+
+
+@pytest.mark.parametrize(
+    ("seconds", "want"),
+    [
+        (0, "a few seconds"),
+        (44, "a few seconds"),
+        (45, "a minute"),
+        (89, "a minute"),
+        (90, "2 minutes"),
+        (44 * 60, "44 minutes"),
+        (45 * 60, "an hour"),
+        (89 * 60, "an hour"),
+        (90 * 60, "2 hours"),
+        (21 * 3600, "21 hours"),
+        (22 * 3600, "a day"),
+        (36 * 3600, "2 days"),
+        (25 * 86400, "25 days"),
+        (26 * 86400, "a month"),
+        (45 * 86400, "a month"),
+        (46 * 86400, "2 months"),
+        (319 * 86400, "10 months"),
+        (320 * 86400, "a year"),
+        (547 * 86400, "a year"),
+        (548 * 86400, "2 years"),
+    ],
+)
+def test_idle_duration_humanizes_at_moments_thresholds(seconds: int, want: str) -> None:
+    assert _m(idle=timedelta(seconds=seconds)).render("{{idle_duration}}") == want
+    assert _m(idle=timedelta(seconds=seconds)).render("{{idleDuration}}") == want
+
+
+def test_idle_duration_with_no_earlier_message_is_just_now() -> None:
+    assert _m().render("{{idle_duration}}") == "just now"
+
+
+def test_a_unicode_look_alike_never_binds_a_feature_macro() -> None:
+    """`re.A`: without it the Kelvin sign case-folds onto `k` and the long s onto `s`."""
+    m = _m()
+    for text in ("{{weeKday}}", "{{iſodate}}", "{{hidden_Key:x}}", "{{reverſe:ab}}"):
+        assert m.render(text) == text, text
+
+
+def test_text_without_a_feature_macro_is_byte_identical() -> None:
+    m = _m()
+    for text in ("{ random }", "{{randomly}}", "{{timeDiff::a::b}}", "{{{{time}}", "{{ time }}", "{{//"):
+        assert m.render(text) == text, text
+    # Hostile runs a card can carry stay literal in LINEAR time (both were quadratic in review: an
+    # unclosed `{{//` rescanned to the end per opener; a backtracking separator/argument).
+    for text in ("{{//" * 50_000, "{{random" + " " * 200_000 + "x", "{{random:" + "x, " * 100_000):
+        assert m.render(text) == text
+
+
+def test_per_turn_in_is_the_cache_warning_predicate() -> None:
+    """ONE predicate both importers call: the per-turn names, canonical, sorted — never `pick`,
+    `reverse` or a comment, never a macro inside a comment, never a padded (literal) one."""
+    from app.services.agent.macros import PER_TURN, per_turn_in, per_turn_note
+
+    assert {"random", "roll", "time", "date", "weekday", "isotime", "isodate", "idle_duration"} <= PER_TURN
+    assert not {"pick", "reverse", "comment", "hidden_key", "char", "user", "original"} & PER_TURN
+    assert per_turn_in("{{Random:a,b}} {{idleDuration}} {{time_UTC+1}} {{roll:6}}") == [
+        "idle_duration",
+        "random",
+        "roll",
+        "time",
+    ]
+    assert per_turn_in("{{pick:a,b}} {{reverse:x}} {{// {{time}} }} {{//}}{{date}}{{///}} {{ time }}") == []
+    assert per_turn_note(["{{pick:a}}", "plain"], ("entry", "entries")) == []
+    assert per_turn_note(["{{date}}"], ("field", "fields")) == [
+        "1 field uses a per-turn macro ({{date}}) — the prompt cache re-prefills every turn it is active"
+    ]
+    assert per_turn_note(["{{random:a}}", "x", "{{time}} {{random:b}}"], ("entry", "entries")) == [
+        "2 entries use a per-turn macro ({{random}}, {{time}}) — the prompt cache re-prefills every turn "
+        "they are active"
+    ]
 
 
 # ── 6. the data model ───────────────────────────────────────────────────────────────────────────
