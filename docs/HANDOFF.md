@@ -115,6 +115,7 @@ number not evidenced there — a false `noFrame` would end BT calls at ~10 s "th
 flip with the headset; then switch the input device on the call route mid-reply: ~6 s `connecting`, NO note; a reply already playing
 keeps talking; one that starts during the wait begins on a fresh stream afterwards.
 **D. Still owed from the session-56 card:** the 5–10 min dictation · SP's 4a/4b/4c · one Fennec run.
+**E. The AGC A/B on the call route (ISS-58, added 2026-10-06; code-free until it wins):** a DIRECT call-route start in the same room as the 10-06 call, with `autoGainControl` forced OFF for that one call (a dev-only edit of `micConstraints`, NOT committed), the same soft-spoken filler + pauses; the trail's `capture` line must read `agc: false`. Count finals that went out that you never said, versus the 10-06 trail's two. A win = the per-route constraint lands at the chokepoint; a loss = the case stays Phase 26's. Optional: one call at `min_final_ms` 400 to feel the backchannel cost.
 **Tell me one line per item.** The next session reads the trails itself (`~/.ctrl-b-dev/calls/`, the session-56 recipe).
 
 ### After the card

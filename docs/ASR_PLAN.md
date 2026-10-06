@@ -469,6 +469,9 @@ R95 §4) · the echo backstop · the voice learner · the overlay · the idle cl
   walking per chunk. Undecodable → **422**; raw bytes are never forwarded.
 - **Tail pad (R97 P-5a) — ONE rule:** when the audio after the last speech window is shorter than `PREPASS_PAD_MS`, zeros
   are appended up to it before ASR (a `max_segment` cut and a `flush` end mid-air); the crop covers every other case.
+- **Candidate, unruled (ISS-58, 2026-10-06):** a chars-per-voiced-ms ACCEPTANCE after ASR — the one call's genuine finals carried 50–60 ms of
+  above-floor energy per character, the hallucination that went out carried 9. Engine-agnostic, not lexical, not a logprob gate (the hard rules
+  stand); measured on the corpus FIRST (R24), and only if the pass alone leaves such cases through.
 - **Why keep it (R5):** a stateful VAD removes rescan artefacts, not a TV voice, a speech-like thump or an echo residue
   past the hold (R95 §3); the hit rate stays measured (§5 T10).
 
@@ -832,7 +835,7 @@ round — blind Opus 5.5 ∥ blind Emma.**
 the leg clock (R94 §7.3 (i)) — **when it lands, delete the tentative start and its retraction** (R97 §2.2) · future VAD-model
 A/Bs through `vad_replay.py --model` (FireRed-stream, TEN — R98 §5) · streaming ASR / EOU · **Smart Turn v3** (relay-owned audio makes it possible; LIVE_VOICE_PLAN §2.1's shelved
 trigger changes) · a shorter hop-1 read timeout so a HUNG primary still walks to the fallback (R2-3) · dictation reconnect-and-continue · an Opus/WebCodecs uplink (R96 §1) · R94 §8's dropped items: an NS/AGC
-A/B (after T5 exists), a high-pass (measure band energy on the corpus first), RMS DC offset (diagnostic only); EMA smoothing is
+A/B (after T5 exists — **ISS-58 is the field case; the A/B rides the phone card, 2026-10-06**), a high-pass (measure band energy on the corpus first), RMS DC offset (diagnostic only); EMA smoothing is
 now ADOPTED (P-5b). **Hard rules that stand:** no lexical filters, no logprob gate, no threshold raise to 0.9, no
 absolute-dBFS VAD.
 
