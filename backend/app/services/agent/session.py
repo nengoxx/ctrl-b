@@ -724,8 +724,13 @@ class AgentSession:
 
         Only the bounded INDEX rides the head; topic bodies arrive as ordinary tool results (S3). The
         corpus gates on `enabled()` and caches the render behind its scan signature itself, so this is
-        a stat sweep on an unchanged corpus — nothing here re-implements any of that."""
-        if self._core_memory is None:
+        a stat sweep on an unchanged corpus — nothing here re-implements any of that.
+
+        Gated on `_longterm_available()`, like every other surface that names the tool (ISS-67): an
+        agent whose allowlist or active skill leaves `core_memory` out of THIS turn's schema gets no
+        index — the block tells the model to read topics with a tool it would not carry, and the one
+        file reader it does hold (`read_attachment`) is then the thing it reaches for."""
+        if not self._longterm_available():
             return None
         index = self._core_memory.render_index()
         if not index:
