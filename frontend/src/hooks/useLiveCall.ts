@@ -39,6 +39,7 @@ import {
   type NoiseTracker,
   resetNoise,
   rmsToDbfs,
+  seedBinds,
   trackNoise,
   type UtteranceLevels,
 } from "../lib/levelGate";
@@ -65,7 +66,13 @@ import {
 import { appendDraft } from "../store/composer";
 import { endCall } from "../store/liveCall";
 import { releaseMic } from "../store/micRelease";
-import { getVoiceLevel, setVoiceLevel, voiceDeviceKey } from "../store/voiceLevels";
+import {
+  borrowVoiceLevel,
+  type BorrowedVoiceLevel,
+  getVoiceLevel,
+  setVoiceLevel,
+  voiceDeviceKey,
+} from "../store/voiceLevels";
 import { useVoiceStatus } from "./useVoiceStatus";
 
 // THE CALL MACHINE (Phase 24 / D71 §4.2 · §4.3 · §4.5) — one owner for the ear, the brain and the mouth.
@@ -2169,18 +2176,35 @@ interface GateState {
   /** …and the key it is stored under (`voiceDeviceKey`: the device × the granted echo mode), `null`
    *  when the capture names no device. */
   voiceKey: string | null;
+  /** ANOTHER key's level, borrowed when this capture's own key has none (D8, `borrowVoiceLevel`) — a
+   *  provisional floor term until `voiceLevel` is known. Never fed to the learner, never written back:
+   *  `learnVoice` and `persistVoice` read `voiceLevel` alone. */
+  voiceSeed: BorrowedVoiceLevel | null;
   /** The owner's MANUAL floor for this call, dBFS (S1's control sets it; `setFloorPin`), or `null` =
    *  Auto. Per call, never written anywhere — Discord's shape (D76 §C.7). */
   pin: number | null;
 }
 
 function newGateState(): GateState {
-  return { cfg: null, noise: newNoiseTracker(), voiceLevel: null, voiceKey: null, pin: null };
+  return {
+    cfg: null,
+    noise: newNoiseTracker(),
+    voiceLevel: null,
+    voiceKey: null,
+    voiceSeed: null,
+    pin: null,
+  };
 }
 
 /** What the gate's floor is computed from right now (`lib/levelGate`'s `FloorInputs`). */
 function floorInputs(g: GateState, cfg: GateCfg): FloorInputs {
-  return { noise: g.noise.floor, settled: g.noise.settled, voiceLevel: g.voiceLevel, cfg };
+  return {
+    noise: g.noise.floor,
+    settled: g.noise.settled,
+    voiceLevel: g.voiceLevel,
+    voiceSeed: g.voiceSeed?.dbfs ?? null,
+    cfg,
+  };
 }
 
 /** THE effective floor right now under `cfg` (D76 §C.4 — `autoFloor` holds the truth table). The
@@ -2764,6 +2788,11 @@ export function useLiveCall(): CallView {
         trail.current?.push("final", {
           ...meter.current.last,
           floor: g.cfg && gateFloor(g, g.cfg),
+          // …and WHICH borrowed tier set that floor (D8), only when one did — absent under a known
+          // level, a pin, or a base (the ceiling or the room) that already stood higher.
+          ...(g.cfg && g.voiceSeed && seedBinds({ ...floorInputs(g, g.cfg), pin: g.pin })
+            ? { seed: g.voiceSeed.from }
+            : {}),
           ...(sig.text.trim() === "" ? { empty: true } : {}),
         });
       // THE VOICE LEARNER (D76 §C.3) — fed only a final the machine took, and guarded inside
@@ -3027,6 +3056,7 @@ export function useLiveCall(): CallView {
       const g = gate.current;
       g.cfg = knobs;
       resetNoise(g.noise);
+      g.voiceSeed = null; // a borrow is the capture's, like its noise: the fresh ear borrows its own (D8)
       // THE EAR IS TAKEN BEFORE IT IS OPENED (D74 S6 ⑧, evidence docs/research/R78 §2.3): a live
       // dictation capture PINS the echo-cancellation mode of the next one on the same device, so a
       // call opening beside one silently inherits whatever dictation asked for — with a readback that
@@ -3229,10 +3259,14 @@ export function useLiveCall(): CallView {
           capture.current = cap;
           // THE OWNER'S VOICE ON THIS DEVICE (D76 §C.3 / Maya F8): seeded from the store under the
           // device the capture ACTUALLY opened, in the echo mode it was actually GRANTED (S3b) — a
-          // different device, or the same one under a different mode, starts unseeded — so the own-voice
-          // term applies from the first frame (C.4). Written back on release (`persistVoice`).
+          // different device, or the same one under a different mode, has no level of its own — so the
+          // own-voice term applies from the first frame (C.4). Written back on release (`persistVoice`).
           g.voiceKey = voiceDeviceKey(cap.readback);
           g.voiceLevel = g.voiceKey === null ? null : getVoiceLevel(g.voiceKey);
+          // …and with none of its own, ANOTHER key's level as a provisional floor term (D8): the same
+          // device's other mode, else the last route that ended a call knowing one — at twice the
+          // margin, until this key's own level is learned, and never written back under it.
+          g.voiceSeed = g.voiceLevel === null ? borrowVoiceLevel(g.voiceKey) : null;
           // MUTE ACROSS THE ACQUISITION GAP (S2b confirm F1): a Mute tapped while `getUserMedia` was
           // still pending changed the RULE but had no track to change — so the track takes the
           // machine's answer the moment it exists, or audio flows to the relay while the screen says
@@ -3326,6 +3360,7 @@ export function useLiveCall(): CallView {
               baseLatency: cap.context.baseLatency,
               voiceKey: g.voiceKey,
               voiceLevel: g.voiceLevel,
+              voiceSeed: g.voiceSeed, // D8 — the borrowed level and its tier, or null
               cfg: {
                 floor_dbfs: knobs.floor_dbfs,
                 noise_margin_db: knobs.noise_margin_db,

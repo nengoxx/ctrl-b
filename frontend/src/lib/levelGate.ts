@@ -48,6 +48,10 @@ export const NOISE_DISCARD_DBFS = -84;
 /** How far one accepted utterance moves the learned voice level (an EMA weight, C.3): three or four
  *  turns to follow a new posture, never one cough to jump. Owner: estimator policy. */
 export const VOICE_EMA_ALPHA = 0.3;
+/** How many voice margins a BORROWED level sits under (D8): a level learned on another key is a
+ *  prior, not this key's voice — a device's two echo modes read 10–14 dB apart on the owner's phone
+ *  (ISS-58) — so it binds at twice the distance a known level does. Owner: estimator policy. */
+export const SEED_MARGINS = 2;
 
 /** The minimum tracker's state — mutated in place by `trackNoise`, like the ear meter beside it (a
  *  frame arrives 25–50 times a second; allocating a record per frame buys nothing). */
@@ -149,35 +153,62 @@ export interface FloorInputs {
   noise: number | null;
   settled: boolean;
   voiceLevel: number | null;
+  /** A PROVISIONAL own-voice level BORROWED from another key (D8, `store/voiceLevels`'s
+   *  `borrowVoiceLevel`), dBFS — never learned from, never persisted, ignored once `voiceLevel` is known. */
+  voiceSeed: number | null;
   cfg: GateCfg;
 }
 
 /**
  * THE AUTO FLOOR (D76 §C.4), dBFS — the effective floor with no pin standing.
  *
- * Truth table (N = noise floor, V = voice level, nm/vm = the margins, F = `floor_dbfs`,
- * clamp = into [`min_dbfs`, `max_dbfs`]):
+ * Truth table (N = noise floor, V = voice level, S = the borrowed seed, nm/vm = the margins,
+ * F = `floor_dbfs`, k = `SEED_MARGINS`, clamp = into [`min_dbfs`, `max_dbfs`]):
  *
- *   N     | settled | V     | floor
- *   ------+---------+-------+------------------------------------------------
- *   null  | —       | null  | clamp(F)              (no estimate yet: the ceiling)
- *   null  | —       | V     | clamp(max(F, V − vm))
- *   N     | no      | null  | clamp(min(N + nm, F)) (provisional: never stricter than F)
- *   N     | no      | V     | clamp(max(min(N + nm, F), V − vm))
- *   N     | yes     | null  | clamp(N + nm)
- *   N     | yes     | V     | clamp(max(N + nm, V − vm))
+ *   N     | settled | V     | S     | floor
+ *   ------+---------+-------+-------+------------------------------------------------
+ *   null  | —       | null  | null  | clamp(F)              (no estimate yet: the ceiling)
+ *   null  | —       | null  | S     | clamp(max(F, S − k·vm))
+ *   null  | —       | V     | —     | clamp(max(F, V − vm))
+ *   N     | no      | null  | null  | clamp(min(N + nm, F)) (provisional: never stricter than F)
+ *   N     | no      | null  | S     | clamp(max(min(N + nm, F), S − k·vm))
+ *   N     | no      | V     | —     | clamp(max(min(N + nm, F), V − vm))
+ *   N     | yes     | null  | null  | clamp(N + nm)
+ *   N     | yes     | null  | S     | clamp(max(N + nm, S − k·vm))
+ *   N     | yes     | V     | —     | clamp(max(N + nm, V − vm))
  *
  * The own-voice term applies as soon as V is KNOWN — seeded from the device store or learned —
  * including before any noise estimate exists (the micro-confirm fold: "with a seeded voice level it
  * fails V − vm from the first frame"); only LEARNING waits for a settled tracker.
+ *
+ * THE BORROWED SEED (D8) stands in for V while V is unknown — settled or not: in a quiet room the
+ * settled noise term is the −60 clamp, so a seed that let go at settle would hand the floor straight
+ * back to it (the B4 false turn was judged 33 s after settle). Measured noise still wins UP through the
+ * `max`; what takes the floor DOWN is the owner's own level, learned on this key. The seed is never V:
+ * nothing here or in `learnVoice` reads it as the owner's voice.
  */
-export function autoFloor({ noise, settled, voiceLevel, cfg }: FloorInputs): number {
+export function autoFloor({ noise, settled, voiceLevel, voiceSeed, cfg }: FloorInputs): number {
   let base: number;
   if (noise === null) base = cfg.floor_dbfs;
   else if (settled) base = noise + cfg.noise_margin_db;
   else base = Math.min(noise + cfg.noise_margin_db, cfg.floor_dbfs);
   if (voiceLevel !== null) base = Math.max(base, voiceLevel - cfg.voice_margin_db);
+  else if (voiceSeed !== null)
+    base = Math.max(base, voiceSeed - SEED_MARGINS * cfg.voice_margin_db);
   return Math.min(Math.max(base, cfg.min_dbfs), cfg.max_dbfs);
+}
+
+/**
+ * Did the borrowed seed SET this floor (D8)? True only with no pin standing and a floor the seed raised
+ * over what the same inputs give without it — the trail's `seed` marker, read off the one normalize
+ * rather than a second copy of the table.
+ */
+export function seedBinds(args: FloorInputs & { pin: number | null }): boolean {
+  return (
+    args.pin === null &&
+    args.voiceSeed !== null &&
+    effectiveFloor(args) !== effectiveFloor({ ...args, voiceSeed: null })
+  );
 }
 
 /**
@@ -193,8 +224,10 @@ export function autoFloor({ noise, settled, voiceLevel, cfg }: FloorInputs): num
  * would put Auto above the column's top, and the "less sensitive" end would pin MORE sensitive than
  * Auto (the car: V −21, N −38 → Auto −28 against a −31 ceiling). The ceiling therefore only ever lowers
  * the range's top to where Auto already stands, never past it (and so never under `min_dbfs`, which
- * Auto never is). No knob of its own: `voice_margin_db` is the margin. Computed here, in the ONE
- * normalize: `effectiveFloor` clamps the pin with it and the Sensitivity control's range tops out at it.
+ * Auto never is). A borrowed seed (D8) is not V: it moves the top only through `autoFloor`, so the
+ * column never ends under a seeded Auto. No knob of its own: `voice_margin_db` is the margin.
+ * Computed here, in the ONE normalize: `effectiveFloor` clamps the pin with it and the Sensitivity
+ * control's range tops out at it.
  */
 export function pinCeiling(inputs: FloorInputs): number {
   const { voiceLevel, cfg } = inputs;

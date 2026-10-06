@@ -601,6 +601,15 @@ R95 §4) · the echo backstop · the voice learner · the overlay · the idle cl
 2. **D8 — provisional floor.** Starts from the trail (why did that call's floor sit at −60?). Until the tracker settles the
    floor seeds from `V − 2·voice_margin_db` (the exact key, else the device's other EC mode, else the last learned level);
    once settled the measured floor wins in EITHER direction; never learned from. No key.
+   **As built (session 60, the D8 audit + the main seat's rulings — this corrects the premise above):** the −60 is not a
+   5 s window — it is a quiet room's settled `N + noise_margin_db` clamped to `min_dbfs`, and it holds until a voice level
+   is LEARNED (B4's turn was judged 33 s after settle); the exact key was already live at `V − vm` from the first frame. So
+   the seed is the two BORROW tiers only — `store/voiceLevels.borrowVoiceLevel`: the same device's other EC mode(s) (the
+   lower if two), else the last-WRITTEN other key (`setVoiceLevel` re-appends: blob order = recency, shape unchanged; the
+   only tier for an unnamed device) — applied in `levelGate.autoFloor` as `max(base, seed − SEED_MARGINS·vm)`,
+   `SEED_MARGINS` = 2, with **lifetime L2: until THIS key's own V is known** (settled or not — noise still wins UP; only
+   the learned V takes it down); no `floor_dbfs` cap; never learned from, never persisted. The trail: `voiceSeed` on the
+   `capture` line, `seed: "mode"|"last"` on a `final` line only when it set that floor.
 3. **SP — P1 · P2 · P3 (R21).** P1: `dictation_idle_s` 300, 0 = off, OWN threshold `dictation_idle_margin_db` 10 over the
    reused `levelGate` noise tracker (Tier-0 untouched). P2: while Speaches is the ear (its 30-min hard kill), SP ships
    `dictation_max_s` **1790** under `max_session_s` 1800 — the validator `dictation_max_s < max_session_s` holds and the

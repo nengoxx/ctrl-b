@@ -15,6 +15,8 @@ import {
   pinCeiling,
   resetNoise,
   rmsToDbfs,
+  SEED_MARGINS,
+  seedBinds,
   trackNoise,
   VOICE_EMA_ALPHA,
 } from "../../src/lib/levelGate";
@@ -173,7 +175,7 @@ describe("effectiveFloor — the truth table (§C.4)", () => {
     voiceLevel: number | null,
     pin: number | null = null,
     cfg: GateCfg = CFG,
-  ): number => effectiveFloor({ noise, settled, voiceLevel, pin, cfg });
+  ): number => effectiveFloor({ noise, settled, voiceLevel, voiceSeed: null, pin, cfg });
 
   it("a PIN wins over everything below its ceiling — the owner's explicit choice", () => {
     expect(floor(-50, true, -20, -70)).toBe(-70);
@@ -225,10 +227,16 @@ describe("effectiveFloor — the truth table (§C.4)", () => {
 });
 
 describe("autoFloor + pinCeiling — the column's top never under Auto (D80 ⑤ + the code round's O-MED-1)", () => {
-  const inputs = (noise: number | null, settled: boolean, voiceLevel: number | null) => ({
+  const inputs = (
+    noise: number | null,
+    settled: boolean,
+    voiceLevel: number | null,
+    voiceSeed: number | null = null,
+  ) => ({
     noise,
     settled,
     voiceLevel,
+    voiceSeed,
     cfg: CFG,
   });
 
@@ -253,5 +261,74 @@ describe("autoFloor + pinCeiling — the column's top never under Auto (D80 ⑤ 
 
   it("never drops below `min_dbfs` — Auto never does, and the ceiling never drops below Auto", () => {
     expect(pinCeiling(inputs(-90, true, -75))).toBe(-60); // V − vm = −85, Auto clamps to −60
+  });
+
+  it("a BORROWED seed is not V (D8): the top stays `max_dbfs`, never under the seeded Auto", () => {
+    expect(autoFloor(inputs(-74, true, null, -25))).toBe(-45);
+    expect(pinCeiling(inputs(-74, true, null, -25))).toBe(-20); // read as V it would be −35
+    expect(pinCeiling(inputs(null, false, null, 5))).toBe(-20); // Auto clamped at the top: equal, not under
+  });
+});
+
+describe("the BORROWED SEED (D8) — another key's level, at SEED_MARGINS × the voice margin", () => {
+  const seeded = (
+    noise: number | null,
+    settled: boolean,
+    voiceLevel: number | null,
+    voiceSeed: number | null,
+    pin: number | null = null,
+    cfg: GateCfg = CFG,
+  ) => ({ noise, settled, voiceLevel, voiceSeed, pin, cfg });
+  const floor = (...a: Parameters<typeof seeded>): number => effectiveFloor(seeded(...a));
+
+  it("is the policy constant 2 — twice the distance a known level binds at", () => {
+    expect(SEED_MARGINS).toBe(2);
+  });
+
+  it("with V unknown, raises the floor to seed − 2·vm from the FIRST frame (no estimate, provisional)", () => {
+    expect(floor(null, false, null, -20)).toBe(-40); // max(−45 ceiling, −20 − 20)
+    expect(floor(-70, false, null, -25)).toBe(-45); // max(min(−60, −45) = −60, −45)
+    expect(floor(-70, false, null, null)).toBe(-60); // …the same room unseeded: the clamp
+  });
+
+  it("is IGNORED once this key's own V is known — V − vm, never the seed", () => {
+    expect(floor(null, false, -25, -10)).toBe(-35); // V − vm; the seed's −30 would be stricter
+    expect(floor(-55, true, -40, -10)).toBe(-45); // max(N + nm, V − vm): the seed lifts nothing
+  });
+
+  it("SETTLED, measured noise still wins UP — a car over the seed", () => {
+    expect(floor(-40, true, null, -30)).toBe(-30); // max(−30, −50)
+  });
+
+  it("SETTLED in a QUIET room it keeps binding (L2) — the floor goes DOWN only on this key's own V", () => {
+    expect(floor(-74, true, null, -25)).toBe(-45); // max(−64, −45): not the −60 clamp
+    expect(floor(-74, true, null, null)).toBe(-60); // …which is what the room alone gives
+    expect(floor(-74, true, -40, -25)).toBe(-50); // the LEARNED −40 takes it under the seed's −45
+  });
+
+  it("is CLAMPED like every Auto answer, and a quiet seed under the base changes nothing", () => {
+    expect(floor(null, false, null, -5)).toBe(-25); // −5 − 20, inside the range
+    expect(floor(null, false, null, 10)).toBe(-20); // −10 → `max_dbfs`
+    expect(floor(null, false, null, -95)).toBe(-45); // −115: the ceiling wins
+    expect(floor(-90, true, null, -95)).toBe(-60); // …and the clamp under it
+  });
+
+  it("`voice_margin_db` 0 ⇒ the seed itself", () => {
+    expect(floor(null, false, null, -30, null, { ...CFG, voice_margin_db: 0 })).toBe(-30);
+  });
+
+  it("a PIN still wins (the escape from a too-strict borrow), below its ceiling", () => {
+    expect(floor(-74, true, null, -10, -70)).toBe(-70);
+  });
+
+  it("seedBinds: true only when the seed SET the floor", () => {
+    expect(seedBinds(seeded(null, false, null, -10))).toBe(true); // −30 over −45
+    expect(seedBinds(seeded(-74, true, null, -25))).toBe(true); // −45 over the −60 clamp
+    expect(seedBinds(seeded(null, false, null, 10))).toBe(true); // clamped at the top, still over −45
+    expect(seedBinds(seeded(null, false, null, null))).toBe(false); // no seed
+    expect(seedBinds(seeded(null, false, -25, -10))).toBe(false); // V known: the seed is ignored
+    expect(seedBinds(seeded(-40, true, null, -30))).toBe(false); // noise stands higher
+    expect(seedBinds(seeded(null, false, null, -95))).toBe(false); // under the ceiling
+    expect(seedBinds(seeded(null, false, null, -10, -30))).toBe(false); // a pin stands, even at −30
   });
 });

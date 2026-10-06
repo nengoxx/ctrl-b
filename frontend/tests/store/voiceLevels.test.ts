@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getVoiceLevel, setVoiceLevel, voiceDeviceKey } from "../../src/store/voiceLevels";
+import {
+  borrowVoiceLevel,
+  getVoiceLevel,
+  setVoiceLevel,
+  voiceDeviceKey,
+} from "../../src/store/voiceLevels";
 
 // store/voiceLevels — the owner's learned voice level, per microphone × capture mode (D76 §C.3 / Maya
 // F8 / S3b). Device-local by definition (never the synced UIState), keyed by the capture's effective
@@ -106,5 +111,97 @@ describe("getVoiceLevel / setVoiceLevel", () => {
     });
     expect(getVoiceLevel("Speakerphone")).toBeNull();
     expect(() => setVoiceLevel("Speakerphone", -20)).not.toThrow();
+  });
+});
+
+describe("setVoiceLevel keeps the blob in WRITE order (D8 — the `last` tier's recency)", () => {
+  const order = () => Object.keys(JSON.parse(localStorage.getItem(KEY) ?? "{}") as object);
+
+  it("a REWRITE moves the key to the end — no timestamp, the same shape", () => {
+    setVoiceLevel("A|ec=all", -10);
+    setVoiceLevel("B|ec=on", -20);
+    setVoiceLevel("A|ec=all", -15);
+    expect(order()).toEqual(["B|ec=on", "A|ec=all"]);
+    expect(JSON.parse(localStorage.getItem(KEY) ?? "{}")).toEqual({
+      "B|ec=on": -20,
+      "A|ec=all": -15,
+    });
+  });
+
+  it("the legacy purge still holds when the written key was already there", () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ "usb-1|ec=on": -25, Speakerphone: -10, "Speakerphone|ec=all": -18 }),
+    );
+    setVoiceLevel("usb-1|ec=on", -20);
+    expect(order()).toEqual(["Speakerphone|ec=all", "usb-1|ec=on"]);
+    expect(getVoiceLevel("usb-1|ec=on")).toBe(-20);
+  });
+});
+
+describe("borrowVoiceLevel — another key's level for a key with none (D8)", () => {
+  const seed = (blob: Record<string, unknown>) => localStorage.setItem(KEY, JSON.stringify(blob));
+
+  it("tier `mode`: the same device under its other echo mode", () => {
+    seed({ "Speakerphone|ec=all": -10 });
+    expect(borrowVoiceLevel("Speakerphone|ec=on")).toEqual({ dbfs: -10, from: "mode" });
+  });
+
+  it("…the LOWER of two other modes (the more permissive floor), ahead of a later-written key", () => {
+    seed({ "mic|ec=all": -12, "mic|ec=on": -25, "other|ec=off": -5 });
+    expect(borrowVoiceLevel("mic|ec=off")).toEqual({ dbfs: -25, from: "mode" });
+  });
+
+  it("tier `last`: the last-WRITTEN other key, following a rewrite", () => {
+    setVoiceLevel("A|ec=all", -10);
+    setVoiceLevel("B|ec=on", -20);
+    expect(borrowVoiceLevel("C|ec=all")).toEqual({ dbfs: -20, from: "last" });
+    setVoiceLevel("A|ec=all", -15);
+    expect(borrowVoiceLevel("C|ec=all")).toEqual({ dbfs: -15, from: "last" });
+  });
+
+  it("an UNNAMED device (null key) borrows tier `last` only", () => {
+    seed({ "A|ec=all": -10, "B|ec=on": -20 });
+    expect(borrowVoiceLevel(null)).toEqual({ dbfs: -20, from: "last" });
+  });
+
+  it("NEVER returns the exact key's own entry — that is `getVoiceLevel`'s", () => {
+    seed({ "X|ec=all": -10 });
+    expect(borrowVoiceLevel("X|ec=all")).toBeNull();
+    seed({ "A|ec=all": -10, "X|ec=all": -30 }); // X is the last written, and is skipped
+    expect(borrowVoiceLevel("X|ec=all")).toEqual({ dbfs: -10, from: "last" });
+  });
+
+  it("never borrows a LEGACY flat key (unreadable by design since S3b)", () => {
+    seed({ Speakerphone: -10 });
+    expect(borrowVoiceLevel("Speakerphone|ec=on")).toBeNull();
+    expect(borrowVoiceLevel(null)).toBeNull();
+  });
+
+  it("empty or missing storage ⇒ null", () => {
+    expect(borrowVoiceLevel("A|ec=all")).toBeNull();
+    seed({});
+    expect(borrowVoiceLevel(null)).toBeNull();
+  });
+
+  it("GARBAGE is skipped entry by entry, and a garbage blob is null", () => {
+    seed({ "A|ec=all": -10, "B|ec=all": "loud", "A|ec=on": null, "C|ec=off": [1] });
+    expect(borrowVoiceLevel("A|ec=off")).toEqual({ dbfs: -10, from: "mode" });
+    expect(borrowVoiceLevel("D|ec=all")).toEqual({ dbfs: -10, from: "last" });
+    localStorage.setItem(KEY, "not json");
+    expect(borrowVoiceLevel(null)).toBeNull();
+    localStorage.setItem(KEY, JSON.stringify([-10]));
+    expect(borrowVoiceLevel(null)).toBeNull();
+  });
+
+  it("storage that THROWS ⇒ null, never a throw", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: () => undefined,
+    });
+    expect(borrowVoiceLevel("A|ec=all")).toBeNull();
+    expect(borrowVoiceLevel(null)).toBeNull();
   });
 });

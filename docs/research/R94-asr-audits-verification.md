@@ -532,6 +532,7 @@ The wire vocabulary is unchanged. The client reads only `type`, `item_id`, `text
 - or the bootstrap window as the provisional floor.
 
 A small, independent ruling [§11 D8].
+*(Superseded by the D8 as-built — ASR_PLAN §3.9 ②: the −60 held until a voice level was LEARNED, not for the first window.)*
 
 **7.3.5 Deleted with Speaches** (L5 §6):
 - never-commit;

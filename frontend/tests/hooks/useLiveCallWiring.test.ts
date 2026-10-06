@@ -2465,20 +2465,68 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
     expect(view.result.current.note).toBe(CALL_COPY.tooQuiet);
   });
 
-  it("…and a DIFFERENT device starts unseeded", async () => {
-    localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 }));
+  it("…and a DIFFERENT device BORROWS it at twice the margin (D8 tier `last`) — never as its own", async () => {
+    // Maya F8 still holds for the REAL level: the new device's own V is unknown, so the term is the
+    // borrowed −10 − 2·10 = −30 (not −10 − 10 = −20), and hang-up writes nothing under the new key.
+    const blob = JSON.stringify({ "Speakerphone|ec=all": -10 });
+    localStore.set(STORE, blob);
     h.voice.data.live_call.input_device = "usb-mic-1"; // the mock reads it back as the deviceId
     const { view } = await call();
-    expect(view.result.current.readLevel().floor).toBe(-45);
+    expect(view.result.current.readLevel().floor).toBe(-30);
+    view.unmount();
+    expect(localStore.get(STORE)).toBe(blob); // byte-identical: never learned, never persisted
   });
 
-  it("…and the SAME device under a different GRANTED mode starts unseeded too (S3b)", async () => {
+  it("…and the SAME device under a different GRANTED mode borrows its other mode (S3b → D8 tier `mode`)", async () => {
     // The owner's Call/default deafness: a level learned under one echo mode is not the voice the other
-    // mode hears, so a boolean-`true` grant does not read the `"all"` grant's level.
-    localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 }));
+    // mode hears — so a boolean-`true` grant never reads the `"all"` grant's level AS ITS OWN (that
+    // was −20, every final dropped); it borrows it at twice the margin.
+    const blob = JSON.stringify({ "Speakerphone|ec=all": -10 });
+    localStore.set(STORE, blob);
     h.fennec = true; // the track reads back `echoCancellation: true`
     const { view } = await call();
-    expect(view.result.current.readLevel().floor).toBe(-45);
+    expect(view.result.current.readLevel().floor).toBe(-30);
+    view.unmount();
+    expect(localStore.get(STORE)).toBe(blob);
+  });
+
+  it("a borrowed seed KEEPS binding once a quiet room settles (D8 L2) — not the −60 clamp", async () => {
+    localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 }));
+    h.voice.data.live_call.input_device = "usb-mic-1";
+    const { view } = await call();
+    await act(async () => {
+      frames(10 ** (-74 / 20), 300); // 6 s of a −74 dBFS room: settled, N + 10 = −64 → the clamp
+    });
+    expect(view.result.current.readLevel().floor).toBeCloseTo(-30, 6);
+  });
+
+  it("a quiet false turn under the borrow is DROPPED — a −36 dBFS line under a −30 floor (D8, the B4 class)", async () => {
+    localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 }));
+    h.voice.data.live_call.input_device = "usb-mic-1";
+    h.voice.data.live_call.min_final_ms = 200;
+    const { view } = await call();
+    await utterance("Yeah.", 10 ** (-36 / 20), 30); // 600 ms at −36: over −45, under −30
+    expect(texts()).toEqual([]);
+    expect(view.result.current.note).toBe(CALL_COPY.tooQuiet);
+  });
+
+  it("seed → settle → LEARN: V comes from a REAL turn outright, and only V is written, under the new key", async () => {
+    localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -16 }));
+    h.voice.data.live_call.input_device = "usb-mic-1";
+    const { view } = await call();
+    expect(view.result.current.readLevel().floor).toBe(-36); // the borrow: −16 − 20
+    await act(async () => {
+      frames(0.001, 300); // a settled −60 room: N + 10 = −50, under the borrow
+    });
+    expect(view.result.current.readLevel().floor).toBeCloseTo(-36, 6);
+    await utterance("turn on the lights", 0.1, 20); // −20 dBFS: taken, and clear of −60 + 20
+    expect(texts()).toEqual(["turn on the lights"]);
+    // V = −20 OUTRIGHT (the first sample — an EMA from the seed would be −17.2 → −27.2): max(−50, −30)
+    expect(view.result.current.readLevel().floor).toBeCloseTo(-30, 6);
+    view.unmount();
+    const stored = JSON.parse(localStore.get(STORE) ?? "{}") as Record<string, number>;
+    expect(stored["usb-mic-1|ec=all"]).toBeCloseTo(-20, 6);
+    expect(stored["Speakerphone|ec=all"]).toBe(-16); // the lender is untouched
   });
 
   it("LEARNS from a taken final once the room is settled, and writes it back on hang-up (§C.3)", async () => {
@@ -2542,20 +2590,25 @@ describe("useLiveCall — THE RELATIVE GATE (D76 S0b · §B.1/§B.2/§C, evidenc
     await act(async () => {
       frames(0.001, 300);
     });
-    await utterance("hello there", 0.1, 20);
+    // −30 dBFS: clear of the room + both margins (−40), so V = −30 — and the borrow (−30 − 20 = −50)
+    // keeps the three answers below apart: a reset tracker, a stale room, the old ear's V carried over.
+    await utterance("hello there", 10 ** (-30 / 20), 20);
     h.voice.data.live_call.input_device = "usb-mic-1"; // what the next capture will read back
     // A device move ON THE CALL ROUTE waits the output pool out before the fresh ear opens (ISS-54 design round, Maya M2).
     vi.useFakeTimers();
     try {
       await step(() => view.result.current.setInputDevice("usb-mic-1"));
       const stored = JSON.parse(localStore.get(STORE) ?? "{}") as Record<string, number>;
-      expect(stored["Speakerphone|ec=all"]).toBeCloseTo(-20, 6);
+      expect(stored["Speakerphone|ec=all"]).toBeCloseTo(-30, 6);
       await retagWait();
     } finally {
       vi.useRealTimers();
     }
-    // A fresh ear: the noise estimate starts over and this device has no voice level.
-    expect(view.result.current.readLevel().floor).toBe(-45);
+    // A fresh ear: the noise estimate starts over (no estimate ⇒ the −45 ceiling) and this device has no
+    // voice level of its own — it BORROWS the old ear's, just written (D8 tier `last`), at −30 − 20 = −50:
+    // max(−45, −50) = −45. The old ear's settled −60 room carried over would read max(−50, −50) = −50;
+    // its V −30 carried over as this ear's own would read max(−45, −30 − 10) = −40.
+    expect(view.result.current.readLevel().floor).toBeCloseTo(-45, 6);
   });
 });
 
@@ -3704,6 +3757,76 @@ describe("useLiveCall — THE CALL TRAIL (D77)", () => {
     // …right after the signal's own line, which keeps the energy and the knob
     const at = all.indexOf(final!);
     expect(all[at - 1]).toMatchObject({ ev: "sig", type: "final", textLen: 7 });
+  });
+
+  describe("the BORROWED SEED on the trail (D8): `voiceSeed` on the capture line, `seed` on a final it set", () => {
+    const STORE = "ctrlb.voiceLevels";
+    /** One −18 dBFS utterance, straight off the ear — the floor it meets is whatever stands. */
+    const speak = async () => {
+      await act(async () => {
+        h.frame?.({ type: "speech_started" });
+        for (let i = 0; i < 3; i++)
+          h.mic?.({ buf: new ArrayBuffer(8), rms: 10 ** (-18 / 20), uplinked: true });
+        h.frame?.({ type: "speech_stopped" });
+        h.frame?.({ type: "transcript", text: "wake up", final: true });
+        await Promise.resolve();
+      });
+    };
+    const run = async (before?: (c: Awaited<ReturnType<typeof call>>) => void) => {
+      h.voice.data.live_call.debug = true;
+      const c = await call();
+      if (before) await act(async () => before(c));
+      await speak();
+      c.view.unmount();
+      const all = lines();
+      return {
+        capture: all.find((l) => l.ev === "capture"),
+        final: all.find((l) => l.ev === "final"),
+      };
+    };
+
+    it('a different device: tier `last` on the capture line, `seed: "last"` on the final it set', async () => {
+      localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 }));
+      h.voice.data.live_call.input_device = "usb-mic-1";
+      const { capture, final } = await run();
+      expect(capture).toMatchObject({ voiceLevel: null, voiceSeed: { dbfs: -10, from: "last" } });
+      expect(final).toMatchObject({ floor: -30, seed: "last" });
+    });
+
+    it("the same device under another mode: tier `mode`", async () => {
+      localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 }));
+      h.fennec = true;
+      const { capture, final } = await run();
+      expect(capture).toMatchObject({ voiceSeed: { dbfs: -10, from: "mode" } });
+      expect(final).toMatchObject({ floor: -30, seed: "mode" });
+    });
+
+    it("ABSENT with nothing to borrow, or under this key's own level", async () => {
+      const bare = await run();
+      expect(bare.capture).toMatchObject({ voiceSeed: null });
+      expect(bare.final).toMatchObject({ floor: -45 });
+      expect(bare.final).not.toHaveProperty("seed");
+      h.posts.length = 0;
+      localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 })); // the exact key
+      const own = await run();
+      expect(own.capture).toMatchObject({ voiceLevel: -10, voiceSeed: null });
+      expect(own.final).toMatchObject({ floor: -20 });
+      expect(own.final).not.toHaveProperty("seed");
+    });
+
+    it("ABSENT when the seed sits under the floor anyway, or a PIN stands", async () => {
+      localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -40 })); // −60: under the −45 ceiling
+      h.voice.data.live_call.input_device = "usb-mic-1";
+      const under = await run();
+      expect(under.capture).toMatchObject({ voiceSeed: { dbfs: -40, from: "last" } });
+      expect(under.final).toMatchObject({ floor: -45 });
+      expect(under.final).not.toHaveProperty("seed");
+      h.posts.length = 0;
+      localStore.set(STORE, JSON.stringify({ "Speakerphone|ec=all": -10 }));
+      const pinned = await run((c) => c.view.result.current.setFloorPin(-50));
+      expect(pinned.final).toMatchObject({ floor: -50 });
+      expect(pinned.final).not.toHaveProperty("seed");
+    });
   });
 
   it("ON: the page hiding flushes with keepalive; the end flushes the rest and stops the clock", async () => {
