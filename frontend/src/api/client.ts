@@ -128,6 +128,22 @@ export function putJSON<T>(path: string, body: unknown): Promise<T> {
   return sendJSON<T>("PUT", path, body);
 }
 
+/** A picked `File` that reported size 0 and then failed to send (ISS-47 ⓓ) — still a `TypeError`, so
+ *  every catch that classifies a network failure keeps doing so, but its message is the hint the owner
+ *  can act on. Android's GENERIC picker can hand the page a file whose recorded size is 0; XHR sends
+ *  it by path anyway (see `putBytes`), unless Chromium's mtime check refuses it
+ *  (`ERR_UPLOAD_FILE_CHANGED`). That refusal is INVISIBLE to page JS — XHR fires a bare `error` with
+ *  status 0, exactly like a dropped connection — so "a size-0 File, and the upload errored" is the
+ *  only signal there is, and the sentence names the connection too for the rare real drop. */
+export class PickedFileUnsentError extends TypeError {
+  constructor() {
+    super(
+      "your phone's file picker reported this file as empty and the browser refused to send it — pick it through a file manager, or check the connection.",
+    );
+    this.name = "PickedFileUnsentError";
+  }
+}
+
 /** PUT RAW BYTES — EVERY write in this app that is not JSON (D65 / MEDIA_MANAGER_PLAN §3: the media
  *  upload · D68: the attachment mint · D70: both character-card / lorebook imports).
  *
@@ -173,7 +189,9 @@ export function putJSON<T>(path: string, body: unknown): Promise<T> {
  *  normally too, it just was not where this bug lived. So never "simplify" this back to `fetch`,
  *  and never wrap or pre-read the `File` before it gets here (`new Blob([file])`, `await
  *  file.arrayBuffer()`) — both read through the recorded zero size.
- *  The answer is rebuilt as a `Response` so the refusal path stays the shared `refuse`. */
+ *  The answer is rebuilt as a `Response` so the refusal path stays the shared `refuse`.
+ *  A network failure on a picked file that reported size 0 rejects as `PickedFileUnsentError` (below)
+ *  rather than the bare `TypeError` — the one place the mtime refusal can be named. */
 export async function putBytes<T>(
   path: string,
   body: Blob,
@@ -205,7 +223,11 @@ export async function putBytes<T>(
       }
     };
     // `fetch`'s network-failure CLASS (a `TypeError`), so every caller's catch classifies it as before.
-    xhr.onerror = xhr.onabort = xhr.ontimeout = () => reject(new TypeError("Failed to fetch"));
+    // An abort is never the picker's doing, so it stays the plain class.
+    xhr.onabort = () => reject(new TypeError("Failed to fetch"));
+    const pickedEmpty = body instanceof File && body.size === 0;
+    xhr.onerror = xhr.ontimeout = () =>
+      reject(pickedEmpty ? new PickedFileUnsentError() : new TypeError("Failed to fetch"));
     xhr.send(body);
   });
   if (!res.ok) await refuse(res);

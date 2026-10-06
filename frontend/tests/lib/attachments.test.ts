@@ -358,6 +358,54 @@ describe("the delivery", () => {
   });
 });
 
+describe("a picked file that reported size 0 (ISS-47 — Android's generic picker)", () => {
+  // The picker can hand the page a Downloads file whose recorded size is 0. XHR sends a picked File by
+  // path, so the bytes still arrive: a text/PDF row must not be refused in-page for a number the
+  // device never measured. The server's 422/413/415 decide instead.
+  const unmeasured = (name: string, type: string): File => new File([], name, { type });
+
+  it("a size-0 .txt is uploaded, the File itself as the body", async () => {
+    xhr.respond.mockReturnValue(
+      mintOk({ name: "notes.txt", kind: "text", mime: "text/plain", bytes: 5 }),
+    );
+    const file = unmeasured("notes.txt", "text/plain");
+    await offerFiles([file]);
+    expect(xhr.calls).toHaveLength(1);
+    expect(xhr.calls[0].body).toBe(file);
+    expect(stagedFiles()[0]).toMatchObject({ status: "staged", kind: "text" });
+  });
+
+  it("a size-0 .pdf the same", async () => {
+    xhr.respond.mockReturnValue(
+      mintOk({ name: "paper.pdf", kind: "pdf", mime: "application/pdf", bytes: 9 }),
+    );
+    const file = unmeasured("paper.pdf", "application/pdf");
+    await offerFiles([file]);
+    expect(xhr.calls).toHaveLength(1);
+    expect(xhr.calls[0].body).toBe(file);
+    expect(stagedFiles()[0]).toMatchObject({ status: "staged" });
+  });
+
+  it("a size-0 IMAGE is still refused in-page — the re-encode needs bytes; no raw upload", async () => {
+    await offerFiles([unmeasured("photo.png", "image/png")]);
+    expect(xhr.calls).toHaveLength(0);
+    expect(exporter.exportImage).not.toHaveBeenCalled();
+    expect(stagedFiles()[0]).toMatchObject({
+      status: "failed",
+      error:
+        "this device reported that file as empty — if it isn't, pick it again from the photo grid or through a file manager.",
+    });
+  });
+
+  it("size 0 + a failed send puts the PICKER hint on the chip, not the connection sentence", async () => {
+    xhr.respond.mockReturnValue("network-error");
+    await offerFiles([unmeasured("notes.txt", "text/plain")]);
+    const { error } = stagedFiles()[0];
+    expect(error).toContain("file picker reported this file as empty");
+    expect(error).not.toContain("did not reach the server");
+  });
+});
+
 describe("the DataTransfer entrance (paste + drop)", () => {
   it("prefers `files`, and falls back to the `items` walk (§7)", () => {
     const f = note();

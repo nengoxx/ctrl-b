@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, putBytes } from "../../src/api/client";
+import { ApiError, PickedFileUnsentError, putBytes } from "../../src/api/client";
 import { installFakeXhr } from "./fakeXhr";
 
 // The app's raw-body write helper — every non-JSON write goes through it (D65 the media upload, D68
@@ -99,7 +99,32 @@ describe("putBytes", () => {
 
   it("rejects a network failure as fetch's own TypeError", async () => {
     installFakeXhr("network-error");
-    await expect(putBytes("/api/agents/import", card())).rejects.toBeInstanceOf(TypeError);
+    const err = await putBytes("/api/agents/import", card()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TypeError);
+    // A non-empty File is an ordinary network failure — never the picker hint.
+    expect(err).not.toBeInstanceOf(PickedFileUnsentError);
+    expect((err as TypeError).message).toBe("Failed to fetch");
+  });
+
+  it("a size-0 Blob that fails to send is the plain TypeError too — only a picked File is hinted", async () => {
+    installFakeXhr("network-error");
+    const err = await putBytes("/api/x", new Blob([])).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TypeError);
+    expect(err).not.toBeInstanceOf(PickedFileUnsentError);
+    expect((err as TypeError).message).toBe("Failed to fetch");
+  });
+
+  it("a picked File that reported size 0 and failed to send names the picker (ISS-47 ⓓ)", async () => {
+    // Chromium's `ERR_UPLOAD_FILE_CHANGED` reaches page JS as a bare XHR error with status 0 — the
+    // size-0 File is the only signal, so the rejection carries the hint and stays a TypeError (every
+    // caller's catch still classifies it as a network failure; the import toasts show `e.message`).
+    installFakeXhr("network-error");
+    const empty = new File([], "lyra.png", { type: "image/png" });
+    const err = await putBytes("/api/agents/import", empty).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PickedFileUnsentError);
+    expect(err).toBeInstanceOf(TypeError);
+    expect((err as Error).message).toContain("file picker reported this file as empty");
+    expect((err as Error).message).toContain("check the connection");
   });
 
   it("keeps a null-body status from crashing the Response rebuild (a 304)", async () => {

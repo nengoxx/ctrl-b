@@ -144,8 +144,12 @@ describe("guardPick — the ladder, in its ruled order", () => {
     if (verdict.ok) expect(verdict.header).toMatchObject({ format: "png", width: 64, height: 48 });
   });
 
-  it("refuses an empty file", () => {
-    expect(guardPick(0, new Uint8Array(), LIMITS)).toMatchObject({ ok: false });
+  it("refuses an empty file — saying the DEVICE reported it so, and naming the doors out (ISS-47)", () => {
+    expect(guardPick(0, new Uint8Array(), LIMITS)).toMatchObject({
+      ok: false,
+      reason:
+        "this device reported that file as empty — if it isn't, pick it again from the photo grid or through a file manager.",
+    });
   });
 
   it("refuses past the byte cap FIRST, naming both numbers", () => {

@@ -23,7 +23,7 @@
 import { exportImage, ExportError, type ExportOutput } from "./imageExport";
 import { guardPick, readHead, sizeRefusal, type GuardLimits, type ImageHeader } from "./imageProbe";
 import { mintName } from "./uploadName";
-import { putBytes, ApiError } from "../api/client";
+import { putBytes, ApiError, PickedFileUnsentError } from "../api/client";
 import { addStaged, stagedFiles, updateStaged, type AttachKind } from "../store/attachments";
 import { UPLOAD_LIMITS } from "../theme-engine/mediaRegistry";
 
@@ -204,6 +204,7 @@ function uploadRefusal(error: unknown): string {
     if (error.status >= 500) return "the server could not store that file — try again in a moment.";
     return `the server refused that file: ${error.message}`;
   }
+  if (error instanceof PickedFileUnsentError) return error.message;
   return "that file did not reach the server. Check the connection and try again.";
 }
 
@@ -288,6 +289,11 @@ async function inspect(row: Pending): Promise<Pending | null> {
     return null;
   };
   if (kind !== "image") {
+    // ISS-47: Android's generic picker reports size 0 for a Downloads file it never measured. XHR
+    // sends a picked File by path, so the bytes still arrive — the server's 422 ("the request body is
+    // empty") / 413 / 415 decide. Images keep the in-page refusal below: their re-encode needs bytes,
+    // and a raw image must never be uploaded.
+    if (file.size === 0) return row;
     const refusal = sizeRefusal(file.size, policy.maxFileBytes, "file");
     return refusal === null ? row : fail(refusal);
   }

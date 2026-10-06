@@ -106,7 +106,10 @@ export function guardPick(size: number, head: Uint8Array, limits: GuardLimits): 
  *  and the owner must meet the SAME sentence whichever caller refused them. `subject` is the noun the
  *  cap is expressed in ("image" here, "file" for an attachment), because the number is per-that. */
 export function sizeRefusal(size: number, maxBytes: number, subject = "image"): string | null {
-  if (size <= 0) return "that file is empty.";
+  // ISS-47: Android's generic picker reports size 0 for files it never measured — "empty" alone was a
+  // false verdict on a real photo, so the sentence says who reported it and names the two doors out.
+  if (size <= 0)
+    return "this device reported that file as empty — if it isn't, pick it again from the photo grid or through a file manager.";
   if (size <= maxBytes) return null;
   return `that file is ${bytesText(size)} — this app accepts up to ${bytesText(maxBytes)} per ${subject}. Export a smaller copy and try again.`;
 }

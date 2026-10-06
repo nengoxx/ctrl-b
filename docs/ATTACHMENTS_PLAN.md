@@ -263,6 +263,15 @@ answer to "does attribution record the drop": `SourceInfo` stays untouched (O-M8
   20's camera photos arrive as JPEG** (a camera shot admitted + decoded through the media picker;
   a HEIC source refuses by name at the R54 probe) — the refusal copy covers foreign files only,
   the primary device is unaffected (O-sweep closed).
+- **As built 2026-10-06 (ISS-47 ⓓ/ⓔ):** Android's GENERIC picker (any mixed `accept`) reports
+  `size 0` for Downloads files, so a size-0 NON-image pick skips the client size check and uploads —
+  XHR sends the `File` by path (bytes arrive), and the server's 422/413/415 decide; images keep the
+  in-page refusal (the re-encode needs bytes; a raw image is never uploaded). The one signal of
+  Chromium's mtime refusal (`ERR_UPLOAD_FILE_CHANGED`, invisible to page JS) is "a size-0 `File`
+  and the XHR errored": `putBytes` rejects that as `PickedFileUnsentError` (a `TypeError`
+  subclass carrying the file-manager hint), which `uploadRefusal` and the import
+  toasts surface. The photos / files split of the clip (image-only accept → Chrome's own picker)
+  is the pending second half (ISSUES ISS-47).
 
 ## §8 Security (SECURITY_MODEL gets a §2.7-sibling entry)
 
