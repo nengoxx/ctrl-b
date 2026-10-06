@@ -617,6 +617,40 @@ batch's `mode` picks the directory from a fixed two-word vocabulary, never a pat
 secrets** (the bearer canary is test-pinned). The relay's leg-end JOURNAL line (T1) carries counts and
 codes only — never transcript text (test-pinned).
 
+### 2.13 The owner-voice template — a biometric identifier on disk (D85) — RULED, NOT BUILT
+
+*(§2.12 is reserved for S6-ii's captured audio at rest, ASR_PLAN §6.1.)* The live ear's owner verification (D85, ASR_PLAN §3.12)
+compares each call segment against an enrolled per-route template. Design: [`ASR_PLAN.md`](./ASR_PLAN.md) §3.12.3. Rails:
+
+- **A voice print, never audio.** The template is **a biometric identifier**: `$CTRLB_HOME/voice/owner/<sha256(route_key)[:16]>.json`
+  = `{model, dim, centroid[dim], windows, genuine_p10, enrolled_at, route_key}` — a speaker embedding, never a threshold (computed
+  at load), never the recording: the enrolment audio is DISCARDED after embedding (the §2.12 debug capture is a separate,
+  debug-gated path). Dir 0700, file 0600, write-replace via `core/fsutil`. The file name is a hash — no slug grammar, no
+  client-named path.
+- **The write is the §2.7 shape.** `PUT /api/voice/enroll/{key_hash}?route_key=…` — raw-body WAV, **never POST, never
+  multipart**: the VERB is the CORS control (a safelisted POST is a write any page in the owner's browser can fire without a
+  preflight), and the route joins the app-wide no-POST/no-multipart invariant (the `test_media_write_d65.py` /
+  `test_attachments_d68.py` siblings + `test_no_cors_middleware_is_mounted_anywhere`). The server recomputes `key_hash` from
+  `route_key` — a mismatch, or a key outside the grammar, is 422. **Bounded** like the clip door and §2.8's staged writes: PyAV
+  decode on `to_thread`, ≤ 60 s decoded / 60 s wall, 422 undecodable, 413 over `attachments.max_file_mb`, ≥ 20 s voiced or 422
+  `too_short`.
+- **`DELETE /api/voice/enroll/{key_hash}` is the ONLY removal; `GET /api/voice/enroll` is metadata only** (`key_hash, route_key,
+  model, windows, genuine_p10, enrolled_at, valid, threshold, floor_binds`) — **no route ever returns the vector.**
+- **Never exported, never backed up.** `install.sh`'s backup set and the Phase 23 S9 export route (D79) EXCLUDE
+  `$CTRLB_HOME/voice/`. **The pin is a SOURCE SCAN:** no module except the template store reads `voice/owner` (the D65
+  registry-confinement precedent) — a test over the backup and export inventories would pin nothing, since `install.sh`'s backup
+  is the SQLite snapshot and the S9 routes export cards and lorebooks. The template survives an uninstall of the `voice` extra;
+  `DELETE` removes it.
+- **Fail-open — a UX filter, NEVER an auth control** (D74's posture). A missing, unreadable, invalid or mismatched template
+  makes the leg `unscored` (today's behaviour), one warning per process per file, never a raise; the gate decides which sounds
+  become the owner's turns, not who may use ctrl-b — the trust boundary stays the tailnet + the single owner (§1).
+- **E1 is CLIENT-enforced.** Enrolment aborts when the capture fell back off the requested device and recomputes the key from the
+  effective readback, but the server cannot verify that the uploaded audio came from the route `route_key` names — accepted under
+  the single-user posture, because the gate is a UX filter.
+
+*(Ruled, not yet built — the routes, the template store and the source scan land with D85-S3 (ASR_PLAN §7.3); until then no
+template exists and no leg runs the owner check.)*
+
 ---
 
 ## 3. Residual & accepted risks + known gaps

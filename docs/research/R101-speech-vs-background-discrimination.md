@@ -5,6 +5,7 @@
 calls in which music with vocals, a Spanish TV and low-level room sound went out as the owner's turns.
 **Feeds:** [`ASR_PLAN.md`](../ASR_PLAN.md) §3.4 (relay VAD), §3.6 (the pre-ASR pass and its parked chars-per-voiced-ms candidate),
 §3.7 (parakeet-server on emma), §3.9 (the client level gate) · [`ISSUES.md`](../ISSUES.md) ISS-58 / ISS-63 / ISS-64.
+**Drives:** [D85](../DECISIONS.md) (DECISIONS) · [`ASR_PLAN.md`](../ASR_PLAN.md) §3.12 — the owner-voice discriminator, ruled 2026-10-06.
 **Builds on, does not redo:** [R98](./R98-vad-model-landscape.md) (VAD models, Recho's foreground-VAD table, the `VadModel` boundary) ·
 [R92](./R92-live-call-noise-robustness.md) (how live-call peers survive noise; denoisers parked as a seam) ·
 [R76](./R76-noise-hallucination-gating.md) (Whisper filters, energy = a PROXIMITY policy) · [R83](./R83-portable-energy-floor.md) (Chrome

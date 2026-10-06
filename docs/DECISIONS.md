@@ -6280,3 +6280,78 @@ leg clock, then the relay flip. **Release:** D82 is ratified before session A. *
 **Amends.** **D75 — SUPERSEDED in part:** the per-device sticky pick (the 2026-09-24 STICKY ruling, the 2026-09-26 persisted-pick amendment) and the **tandem rule** retire with their residuals; `agent.default_agent` keeps two meanings (the thread-less / fresh-install home; the `/new` fallback); the gallery pill stays. **D70 §4.2:** seam ① UNCHANGED; seam ② now pins the configured default and seeds the HOME agent's greeting. **ISS-49:** the pick-trigger client retires AND the `PUT /threads/{id}/opening` route is DELETED in the same slice with its tests and `ThreadRepo.set_agent` (R27; the `alt_greetings` picker re-adds a route). **A1/D16:** `/privilege` becomes per home agent, persisted per device in `ctrlb.chat` (ON4 — an elevation survives a reload on that device; SECURITY_MODEL §2.2). **A7:** `/agent` = "who answers in THIS conversation". **DESIGN §12/§13:** the `thread` frame; the thread LIST becomes Query server state. **7e-g:** `auto_rotate` retired.
 
 **Recorded, not built (R32, R46):** write-back of the mode (first) and privilege to the AgentDef · a list TAB · search grouped by conversation · `pinned`/`muted`/mark-unread · per-agent `session_search` · cancelling a notification seen elsewhere (R43) · a visible responder chip · group chats (a later thread kind on the `messages.agent` seam).
+
+## D85 — The ear tells the owner's voice from the background: a tagger + owner verification on the pre-ASR pass, enrolled per input route ✏️ RULED 2026-10-06 (owner + main seat Fable 5.1, session 61 — the owner, after three dev calls in which music with vocals, a Spanish TV and low-level room sound went out as the owner's turns: *"there are other ways to filter out background music and sounds like that"* — research first, then design, council, build; the owner ruled BOTH discriminators, the template STORED, enrolment PER INPUT ROUTE; the main seat ruled the learner rule (R5), the chars-per-voiced-ms withdrawal (R6) and every council finding; evidence = [R101](./research/R101-speech-vs-background-discrimination.md) (measured on emma) + the three trails ISS-58 · ISS-63 · ISS-65; design of record = [`ASR_PLAN.md`](./ASR_PLAN.md) §3.12 (+ the §4 rows, §5 T14, the §6.3 amendment; ruling R26); build = TODO Phase 26, the D85 wave (ASR_PLAN §7.3: D85-S1 … D85-S4 + D85-TUNE) after session B → v1.7.13; at rest = [SECURITY_MODEL](./SECURITY_MODEL.md) §2.13; **council = blind Opus 5.5 ∥ blind Emma (Sol), five rounds — round 1 both BUILD WITH CHANGES, round 5 both CONFIRMED WITH NOTES (ASR_PLAN §11 "Council №2 — D85"); NOTHING BUILT**)
+
+**The facts that bind it.** A level gate cannot separate the owner from a background whose peaks sit inside the margin — ISS-58
+at 6–8 dB under, ISS-63 at 0 dB under (14 of 30 finals were the TV), ISS-65 at 3–10 dB under (every music final taken): the same
+defect at three distances. ISS-65's loop: `learnVoice` is an EMA over every TAKEN final, so taken fakes lower the bar for the next
+fake. On the call route the phone mic and a Bluetooth headset BOTH read back `deviceId:"default", label:"Default"`, so they share
+one learned level (ISS-64). R101 measured the two levers: a CED-tiny P(Speech) tagger passes 3 % of post-NS music windows and
+99–100 % of speech (the owner over music included); a TV or another talker IS speech, which only speaker verification separates
+(CAM++, music max cos 0.38). chars-per-voiced-ms does NOT separate lyrics (owner 55–101 vs music 8–197 ms/char, R101 §0.9).
+
+**The owner's rulings (2026-10-06, in conversation):**
+- **R1** the problem is real and ctrl-b's to solve — research first (R101), then design, then council, then build.
+- **R2 BOTH discriminators:** a speech-vs-music TAGGER (no enrolment) AND OWNER VERIFICATION (a speaker embedding vs an enrolled
+  template), composed on the pre-ASR pass — the main seat's recommendation, accepted.
+- **R3** a voice template is STORED on disk (a per-route embedding, never audio) — accepted with a SECURITY_MODEL entry (§2.13).
+- **R4** enrolment is PER INPUT ROUTE (~30 s of natural speech per route: the phone on the call route, the phone on media, each
+  headset) — accepted; a small Conf flow.
+
+**The main seat's rulings:** **R5** (from R101 §5.3) any learner learns ONLY from finals the discriminator accepted; a rejected
+segment never restarts the turn hold. **R6** the parked chars-per-voiced-ms acceptance (ASR_PLAN §3.6) is WITHDRAWN. Plus every
+council finding (F1–F12 · L1–L5 · E1–E4 · N1–N12 · R2-A…R2-H · P1/P2/N-b · new-3), each folded into the plan.
+
+**The design (ASR_PLAN §3.12).**
+- **The stage** — `prepass(pcm16k, gate: GateCtx) → Verdict` on the pre-ASR pass, both doors, in the per-leg ASR worker via
+  `to_thread`, inside the segment's one `timeout_s` deadline: VAD pre-pass → (voiced < `gate_min_ms` 1000 ⇒ both scorers skipped,
+  fail-open) → the tagger (2 s windows at a 1 s step over the VOICED span, MAX; `< speech_act` 0.3 PROVISIONAL ⇒ `not_speech`) →
+  owner verification on CALL legs only (the whole span, then two CONSECUTIVE 2 s windows on spans > 4 s; ⇒ `not_owner`) → ASR.
+  Dictation and the clip door are tagger-only. Fail-open by rule (D74's posture — a UX filter, never an auth control); nothing
+  raises past the stage.
+- **A reject is the ORDINARY empty final** (`outcome:"no_speech"` + an additive `gate:{reason, speech_p, owner_cos, near}`):
+  one-answer-per-stop, STOP order and D9's `settle` hold untouched, so a reject never restarts the hold and never teaches (R5 by
+  construction).
+- **The models** — `SpeechTagger` / `SpeakerModel` Protocols + a dict of constructors (§3.4.1's shape), on the `sherpa-onnx` wheel
+  (the pipeline R101 measured) in the `voice` extra; CED-tiny + CAM++ SHA-pinned; `num_threads = 1`; golden vectors; in-process.
+- **Enrolment** — `PUT /api/voice/enroll/{key_hash}` raw body (the VERB is the CORS control), ≥ 20 s voiced, a leave-one-out
+  `genuine_p10` stored — **never a threshold**: `threshold = clamp(genuine_p10 − 0.12, owner_threshold, 0.70)` at load. The
+  capture must BE the route (abort on `fellBack`, the key recomputed from the readback).
+- **The route key (ISS-64, built first)** — `<device>|ec=<all|on|off>|<call|media>`; on Chrome Android `<device>` = the synthetic
+  row token (`bluetooth` · `wired` · `builtin`) by a readback-first rule; an undetermined row takes the existing unnamed `null`
+  path (`unscored`); labels never; no legacy fold.
+- **The client half** — optional `accept`/`gate` on the final + `owner_check` on `ready` (absent = today, both directions); the
+  learner learns only from `accept:"owner"` when the bit is true; a NEAR-miss `not_owner` is a silent NOTE-slot line, 3 strictly
+  consecutive near misses suggest a re-enrol; a FAR reject is silent.
+- **Config** — seven additive server keys (`speech_model`, `speaker_model`, `speech_gate`, `speech_act`, `owner_gate`,
+  `owner_threshold` 0.42, `gate_min_ms` 1000), none delivered to the client, NO migration. **Acceptance** = the labelled
+  `--discriminate` matrix per route; the numeric gate (background hits ≥ 95 %, owner loss ≤ 2 % on ≥ 1 s voiced, ≥ 100 owner
+  segments per route) is D85-TUNE's, which closes D85. **Known limits** (stated): owner over an equally loud TV; narrowband
+  impostors (p99 ≈ 0.50 > the 0.42 floor); two Bluetooth devices share one key.
+
+**Amends.** **D82 / ASR_PLAN §3.6:** the pass returns a `Verdict` (`ok` · `no_speech` · `not_speech` · `not_owner` + `accept`),
+not `no_speech | chunks[]`, and hands its voiced span + a `GateCtx` to the stage; the chars-per-voiced-ms candidate is
+WITHDRAWN. **D74's learner:** with `owner_check` true, `learnVoice` learns only from `accept === "owner"` finals (today's rule when
+false/absent). **ISS-64:** the voice-level key grammar = D85-S1 (the level store, the trail's `voiceKey`, the D8 borrow tiers and
+the enrolment file share it; the legacy `Default|ec=all` entry purged, never folded). **ASR_PLAN §6.3's corpus rule:** BROADCAST
+media (TV, radio, music) labelled `background` is admitted as a NEGATIVE for `--discriminate`; a private third party's speech is
+still deleted.
+
+**Rejected (with why).**
+- **A `rejected` frame** (v1) — a reject with no final breaks one-answer-per-stop, D9's `settle`, the hold and dictation's §3.8
+  boundary, and an old PWA drops it (F1).
+- **An `unknown` route sentinel** (R2.2-I) — a duplicate of the store's existing unnamed `null` path (council №3, P2); WITHDRAWN.
+- **Per-route threshold knobs** — config bloat; the owner re-enrols a route, or trades leak for loss on the one floor.
+- **parakeet-server v0.6.0's `--sound-model`** — the engine is config (D48) and may be swapped; SV has no server-side home; its
+  `sound_events` arrive WITH the transcription, so they cannot gate ASR.
+- **The max over 1 s sub-windows** (v1) — ~19 tries at a 10 s TV span inflate false accepts and cost (F5); whole span first, then
+  two consecutive 2 s windows, the guard measured by length bucket.
+- **"The candidate that opened" as a key source** (v2.3) — every candidate asks `ideal`, never `exact`, so a successful open is
+  not evidence of which row opened (council №4, Emma new-3).
+- **A threshold stored in the template** — it freezes the floor into the file; the threshold is computed at load (F11).
+
+**Recorded, not built:** a personal VAD on the `VadModel` seam (the frame-level exit for owner-over-TV) when an open one exists ·
+a separate tagger minimum `speech_min_ms` (D85-TUNE's call, R2-E) · the Silero adapter onto sherpa's runtime, only if the two
+onnxruntimes cannot coexist in one process (N8) · an `exact` proof rung on explicit requests, the named exit if D85-S1's four-arm
+card shows explicit requests read back `default`.

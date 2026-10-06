@@ -1859,6 +1859,21 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
 - [ ] **Release v1.7.12** (session B) per `ASR_PLAN` §8.2.2 (local e2e → stop → backup + the one config move →
       `update.sh` → verify). Rollback: a config restore + `update.sh v1.7.11` (§8.3).
 
+**D85 wave (v1.7.13) — the owner-voice discriminator on the pre-ASR pass ([`D85`](./DECISIONS.md), ✏️ RULED 2026-10-06,
+council-closed, NOTHING BUILT; spec = ASR_PLAN §3.12, ladder = ASR_PLAN §7.3; after S7b + S9; each slice = the Opus ∥ Emma round):**
+- [ ] D85-S1 — The route key (ISS-64): the `<device>|ec=…|<call|media>` grammar, the readback-first row token, `route_key` in
+      `start`; the FOUR-ARM phone card first (call default · call pick · media with BT steered · media without BT), and if
+      explicit requests read back `default`, rule (2) is re-ruled before D85-S2 (ASR_PLAN §7.3).
+- [ ] D85-S2 — The stage: the tagger + speaker adapters on `sherpa-onnx`, the pass → `Verdict`, the seven keys, T14,
+      `vad_replay --discriminate` + the label format (the docs half folded 2026-10-06) (ASR_PLAN §7.3).
+- [ ] D85-S3 — Enrolment: `PUT`/`DELETE`/`GET /api/voice/enroll`, the template store, Conf "Your voice", SECURITY_MODEL §2.13;
+      dev keeps `owner_gate: false` until D85-S4 merges (ASR_PLAN §7.3).
+- [ ] D85-S4 — The client half: `accept`/`gate` + `owner_check`, the learner rule, the near-miss note, Conf "Background
+      filter"; accepts on wiring + a printed baseline matrix (ASR_PLAN §7.3).
+- [ ] D85-TUNE — The owner's labelled rounds (music room, TV room, car; each route) → the floor, `speech_act`, `gate_min_ms`;
+      the numeric gate (background hits ≥ 95 %, owner loss ≤ 2 % on ≥ 1 s voiced, ≥ 100 owner segments per route) CLOSES D85
+      (ASR_PLAN §7.3).
+
 - [ ] *Deferred, not this phase:*
   - S6b, the phone VAD probe;
   - NEW-engine ASR fallbacks;
