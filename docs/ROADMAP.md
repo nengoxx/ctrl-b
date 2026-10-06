@@ -385,7 +385,7 @@ back to the analysis.
   call); an Undo toast for delete (the stash can hold a `deleted` variant — an added column, not a
   sibling table).
 
-### A15. Past conversations + conversations per agent — the chat-app model (Telegram / Discord style) — **owner ask 2026-10-01 · "I will definitely want that" · design wanted, NOT scheduled**
+### A15. Past conversations + conversations per agent — the chat-app model (Telegram / Discord style) — **owner ask 2026-10-01 · "I will definitely want that" · ✏️ DESIGN RULED 2026-10-06 → [D84](./DECISIONS.md) / TODO Phase 27 / [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md)**
 
 - **Baseline, wanted REGARDLESS of the per-agent question (owner, 2026-10-01): PAST CONVERSATIONS.**
   *"Ideally, we should think about having past conversations regardless, because every other app like
@@ -423,8 +423,10 @@ back to the analysis.
     D39) that keep running when the view leaves their thread, with a per-thread turn marker (D38) and
     the cross-thread `agent.turns.max_active_turns` cap; opening a thread re-attaches to its live turn
     (`openThread`'s probe → `GET /api/agent/turns/{thread}`, snapshot-primary);
-  - notifications (F1) already emit thread-namespaced `turn_done` / `agent_input` events, and the
-    notification-TAP slice opens a thread;
+  - notifications (F1) emit thread-namespaced `turn_done` / `agent_input` events — **but only from the
+    OPEN view's stream**, and the notification TAP only switches tab (`applyNotificationFocus`,
+    `hooks/useForegroundNotifications.ts:170`); it does NOT open a thread *(corrected 2026-10-06, session-60
+    audit §0.3 — opening the tapped conversation is new work, CONVERSATIONS_PLAN §5)*;
   - the agents gallery (D70 §8.4) has a Talk button per agent — the natural "open this agent's chat"
     door; the backdrop already follows the active agent.
 - **What is genuinely NEW:**
@@ -461,6 +463,9 @@ back to the analysis.
 - **Next step:** a research pass on peer projects (SillyTavern chats + groups, open-webui, LibreChat,
   Character.AI-style apps, messenger list UX) → a `docs/research/` dossier → the design session →
   a D-entry → a TODO phase. Nothing is built for it yet.
+  **→ Done 2026-10-06:** research = [R100](./research/R100-per-agent-conversations.md); design RULED (D84,
+  owner rulings R0–R46) in [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md); build = TODO Phase 27 after the
+  design council's confirm rounds.
 
 ## B. Memory (configurable, pluggable)
 

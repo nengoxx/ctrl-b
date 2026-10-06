@@ -916,3 +916,14 @@ DECISIONS → DESIGN/ARCHITECTURE → TODO (CLAUDE.md's flow), a D-entry before 
 
 Net-new UI follows `VAPOR_PATTERNS.md` (design language) + `THEME_ENGINE.md` (D31 Swappable
 Surfaces routing; per-theme fidelity D7; vapor byte-frozen per D51; cosmos = the default theme).
+
+## ▶ Phase 27 DESIGNED (2026-10-06, session 60 — Fable seat in the `ctrl-b-opus` unit) — POINTER ONLY
+
+**Conversations per agent (the Telegram model) + past conversations = ROADMAP A15 → [`D84`](./DECISIONS.md) → Phase 27.
+The design of record is [`docs/CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) — SELF-CONTAINED (owner directive R33): a
+build session reads the plan + the repo, nothing else.** Evidence = [R100](./research/R100-per-agent-conversations.md).
+Council CLOSED 2026-10-06 (blind Opus 5.5 ∥ Emma, two rounds each, both CONFIRMED WITH NOTES, notes folded). **NOTHING
+BUILT.** Open at writing: the owner's two rulings in plan §12 (F2 · ON4) — answered inline when the plan is next picked up.
+The build is a SEPARATE session after the ASR work (plan §10 = the S0–S13 ladder, backend-first; two-reviewer code rounds).
+Session provenance (not needed to build): `~/.cache/tmp/ctrlb-session60/` (`RULINGS.md` R0–R46 + O/E/F/N rulings, both
+reviews, frozen plan versions v1 → v2.4).
