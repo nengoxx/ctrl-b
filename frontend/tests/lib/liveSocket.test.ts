@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   CLOSE_BACKPRESSURE,
@@ -14,6 +14,20 @@ import {
 // half; these arms pin the client's promises to it: `start` FIRST, the downlink union parsed exactly,
 // an unknown frame tolerated rather than thrown, and the outbound-buffer ceiling closing the leg
 // instead of draining stale speech into an obsolete turn.
+
+/** THE TAB'S IDENTITY (Phase 26 D5) — an in-memory `sessionStorage` seeded with this tab's id, so every
+ *  `start` below carries a KNOWN `client_id` (the module resolves it lazily, at the first `onopen`, so a
+ *  stub installed here is in place before it is read). jsdom's own Storage would also queue a timer per
+ *  write — the `useLiveCallWiring` precedent. The identity's own arms buy a fresh module ("a page load")
+ *  with `vi.resetModules()` and their own storage. */
+const TAB = "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
+const tabStore = new Map<string, string>([["ctrlb-live-client", TAB]]);
+const memoryStorage = (m: Map<string, string>) => ({
+  getItem: (k: string) => m.get(k) ?? null,
+  setItem: (k: string, v: string) => void m.set(k, v),
+  removeItem: (k: string) => void m.delete(k),
+});
+vi.stubGlobal("sessionStorage", memoryStorage(tabStore));
 
 /** A WebSocket stand-in with the two things the module reads: `readyState` and `bufferedAmount`. */
 class FakeSocket {
@@ -82,7 +96,10 @@ describe("liveSocket — the uplink", () => {
     const { ws } = leg({ sampleRate: 44100 });
     expect(ws.sent).toEqual([]); // nothing before the upgrade completes
     ws.open();
-    expect(ws.sent).toEqual([JSON.stringify({ type: "start", sample_rate: 44100 })]);
+    // …but the tab's id (D5), which rides every leg from this one door.
+    expect(ws.sent).toEqual([
+      JSON.stringify({ type: "start", sample_rate: 44100, client_id: TAB }),
+    ]);
     expect(ws.binaryType).toBe("arraybuffer");
   });
 
@@ -90,7 +107,7 @@ describe("liveSocket — the uplink", () => {
     const { ws } = leg({ sampleRate: 48000, trail: { callId: "c-1", leg: 4 } });
     ws.open();
     expect(ws.sent).toEqual([
-      JSON.stringify({ type: "start", sample_rate: 48000, call_id: "c-1", leg: 4 }),
+      JSON.stringify({ type: "start", sample_rate: 48000, call_id: "c-1", leg: 4, client_id: TAB }),
     ]);
   });
 
@@ -98,7 +115,7 @@ describe("liveSocket — the uplink", () => {
     const { ws } = leg({ sampleRate: 48000, mode: "dictation" });
     ws.open();
     expect(ws.sent).toEqual([
-      JSON.stringify({ type: "start", sample_rate: 48000, mode: "dictation" }),
+      JSON.stringify({ type: "start", sample_rate: 48000, mode: "dictation", client_id: TAB }),
     ]);
     const traced = leg({ sampleRate: 48000, mode: "dictation", trail: { callId: "c-2", leg: 1 } });
     traced.ws.open();
@@ -109,6 +126,7 @@ describe("liveSocket — the uplink", () => {
         mode: "dictation",
         call_id: "c-2",
         leg: 1,
+        client_id: TAB,
       }),
     ]);
   });
@@ -130,7 +148,9 @@ describe("liveSocket — the uplink", () => {
     for (let i = 0; i < 5; i++) socket.sendAudio(new ArrayBuffer(8));
     ws.say({ type: "state", state: "degraded" }); // not `ready`: still nothing
     socket.sendAudio(new ArrayBuffer(8));
-    expect(ws.sent).toEqual([JSON.stringify({ type: "start", sample_rate: 48000 })]);
+    expect(ws.sent).toEqual([
+      JSON.stringify({ type: "start", sample_rate: 48000, client_id: TAB }),
+    ]);
     ws.say({ type: "state", state: "ready" });
     expect(frames.at(-1)).toEqual({ type: "state", state: "ready" }); // the caller still hears it
     socket.sendAudio(new ArrayBuffer(8));
@@ -204,6 +224,98 @@ describe("liveSocket — the uplink", () => {
   });
 });
 
+// ── THE TAB'S IDENTITY (Phase 26 D5, ASR_PLAN §3.9 ④) ────────────────────────────────────────────────
+//
+// `liveClientId()` is resolved ONCE per document, so every arm here buys a fresh module — a new page load
+// — over the storage it wants, and reads the `start` the fresh module's door sends.
+describe("liveSocket — the tab's identity (D5)", () => {
+  type Mod = typeof import("../../src/lib/liveSocket");
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  /** A fresh page load over `storage` — and the restore of this file's own stub after it. */
+  const pageLoad = async (storage: unknown): Promise<Mod> => {
+    vi.stubGlobal("sessionStorage", storage);
+    vi.resetModules();
+    return import("../../src/lib/liveSocket");
+  };
+  const startOf = (mod: Mod): Record<string, unknown> => {
+    mod.openLiveSocket({
+      url: "ws://x/api/voice/live",
+      sampleRate: 16000,
+      ceilingMs: 1000,
+      onFrame: () => {},
+      onClose: () => {},
+      make: (url) => new FakeSocket(url) as unknown as WebSocket,
+    });
+    const ws = FakeSocket.last!;
+    ws.open();
+    return JSON.parse(String(ws.sent[0])) as Record<string, unknown>;
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal("sessionStorage", memoryStorage(tabStore));
+  });
+
+  it("a FRESH tab mints a canonical id, stores it, and sends the SAME one on every leg", async () => {
+    const store = new Map<string, string>();
+    const mod = await pageLoad(memoryStorage(store));
+    const first = startOf(mod);
+    expect(first.client_id).toMatch(UUID);
+    expect(store.get("ctrlb-live-client")).toBe(first.client_id);
+    expect(startOf(mod).client_id).toBe(first.client_id); // a reconnect, a dictation: the same tab
+    expect(mod.liveClientId()).toBe(first.client_id);
+  });
+
+  it("…and the same id survives a RELOAD — the new document reads what the old one stored", async () => {
+    const store = new Map<string, string>();
+    const before = startOf(await pageLoad(memoryStorage(store))).client_id;
+    const after = startOf(await pageLoad(memoryStorage(store))).client_id;
+    expect(before).toMatch(UUID);
+    expect(after).toBe(before);
+  });
+
+  it("storage that THROWS ⇒ no id at all — today's exact `start`", async () => {
+    const broken = {
+      getItem: () => {
+        throw new DOMException("blocked", "SecurityError");
+      },
+      setItem: () => {
+        throw new DOMException("blocked", "SecurityError");
+      },
+      removeItem: () => {},
+    };
+    const mod = await pageLoad(broken);
+    expect(startOf(mod)).toEqual({ type: "start", sample_rate: 16000 });
+    expect(mod.liveClientId()).toBeNull();
+  });
+
+  it("…and so does a write that throws (a full quota): an id no reload could keep is never sent", async () => {
+    const full = {
+      getItem: () => null,
+      setItem: () => {
+        throw new DOMException("full", "QuotaExceededError");
+      },
+      removeItem: () => {},
+    };
+    expect(startOf(await pageLoad(full))).toEqual({ type: "start", sample_rate: 16000 });
+  });
+
+  it("no `crypto.randomUUID` (a non-secure context) ⇒ no id", async () => {
+    vi.stubGlobal("crypto", { getRandomValues: (a: Uint8Array) => a }); // no randomUUID
+    const mod = await pageLoad(memoryStorage(new Map()));
+    expect(startOf(mod)).toEqual({ type: "start", sample_rate: 16000 });
+  });
+
+  it("a CORRUPT stored value is re-minted canonical — and never sent as it was", async () => {
+    const store = new Map([["ctrlb-live-client", "6F1C2D3E-4A5B-4C6D-8E7F-9A0B1C2D3E4F"]]);
+    const sent = startOf(await pageLoad(memoryStorage(store))).client_id;
+    expect(sent).toMatch(UUID);
+    expect(sent).not.toBe("6F1C2D3E-4A5B-4C6D-8E7F-9A0B1C2D3E4F");
+    expect(store.get("ctrlb-live-client")).toBe(sent);
+  });
+});
+
 describe("liveSocket — client backpressure (§3.1/F6)", () => {
   it("converts the ceiling to BYTES at the declared rate", () => {
     // 1000 ms of pcm16 mono at 48 kHz = 48000 samples × 2 bytes.
@@ -246,6 +358,12 @@ describe("liveSocket — the downlink parse", () => {
     expect(parseLiveFrame('{"type":"state","state":"ready"}')).toEqual({
       type: "state",
       state: "ready",
+    });
+    // D5 — the relay's takeover end names itself, and the reason survives the parse.
+    expect(parseLiveFrame('{"type":"state","state":"ended","reason":"superseded"}')).toEqual({
+      type: "state",
+      state: "ended",
+      reason: "superseded",
     });
     expect(parseLiveFrame('{"type":"state","state":"degraded","reason":"overflow"}')).toEqual({
       type: "state",

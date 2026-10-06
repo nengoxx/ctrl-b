@@ -137,7 +137,13 @@ and irreversible.
   MEASURES its real `AudioContext.sampleRate` and declares it in `start`; the relay keeps **one
   stateful resampler per session** to Speaches' 24 kHz (both are RealtimeSTT-server's stated
   rules, and the inverse of RVC's hardcoded-ratio defect, R51 §2.2). Frame size = a config-driven
-  duration (default 40 ms). `stop` control message ends the session cleanly.
+  duration (default 40 ms). `stop` control message ends the session cleanly. **Since Phase 26 D5
+  (ASR_PLAN §3.9 ④)** every leg's `start` also carries the tab's `client_id` (a canonical UUID kept in
+  `sessionStorage`, added by `openLiveSocket` itself; absent when the tab cannot mint one) and the
+  relay takes the session slot only AFTER reading `start`: a newer leg of the SAME tab takes the slot
+  over at once and the holder — if still running — gets `state:ended{reason:"superseded"}` + close
+  1000; another client (or an id-less one) gets the unchanged `busy` + 1013. The call renders the
+  superseded end as a terminal (never a redial).
 - **Downlink:** JSON only — `{type: "state"|"speech_started"|"speech_stopped"|"transcript"|"error", …}`.
   **No audio ever rides the WS** (C3 owns reply audio over HTTP, unchanged).
 - **Backpressure, both ends (council F6):** server side, a bounded relay queue; on overflow drop
@@ -1535,6 +1541,10 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > and the close that always follows drives the ONE existing `socketLost`→reconnect arm: no double
   > burn, no second counter, one owner of the ladder. RFC 6455 §7.4.1 is the standing argument R72
   > brought — 1013 *means* "try again later", so a terminal `busy` violated our own close code.
+  > *(Phase 26 D5, 2026-10-06: wherever both ends carry the tab's `client_id` the relay now
+  > SUPERSEDES this phone's own zombie instead of refusing it — the first rung just dials. The ladder
+  > and this busy arm are KEPT as the compat path: a pre-D5 relay (v1.7.10, the rollback skew) and an
+  > id-less tab still land here. ASR_PLAN §3.9 ④.)*
   >
   > **Lanes + close.** W1/W2(FE)/W3(ii) rode the voice lane, W2's backend homes the backend lane;
   > the wave closes on two independent review lenses over the whole diff, the main seat's rulings and
@@ -1788,6 +1798,8 @@ second button (owner ruling: composer space). Every threshold/curve below is R69
   > end — it survives a tab discard's reload, so a first dial that finds `busy` WITH the marker
   > standing is recovering this phone's own ≤10 s zombie and takes the note-only ladder path;
   > without the marker, terminal, today's copy. Ownership is never inferred from `attempts`.
+  > *(Phase 26 D5: the marker's zombie is superseded, not refused, wherever both ends carry the
+  > tab's `client_id`; the marker stays as the compat path with W3's ladder — ASR_PLAN §3.9 ④.)*
   > ⑧ RULED NO-CHANGE (R75 §12.3): the pacer stays on the main thread (MessagePort is pausable,
   > never throttleable — no starve-then-burst exists), the ladder stays (a live track registers
   > `DisableAggressiveThrottling`; 1 s alignment ⇒ ~15 s > the 10 s slot), the mouth needs nothing.

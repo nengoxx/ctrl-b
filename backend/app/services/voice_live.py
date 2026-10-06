@@ -4,7 +4,7 @@
 ingress ONLY (§3.2): the turn machinery, chat text and every non-media channel stay SSE/HTTP. This
 module is the session object behind that route — asyncio only, no threads (RVC's eleven-`Event`
 teardown is the counter-example, R51 §2.6), one object per call, nothing shared but the admission
-counter.
+table (`LiveSessionSlots`).
 
 **What crosses the wire**
 
@@ -15,7 +15,12 @@ counter.
   neither, validated like `sample_rate` — and only then does the relay write its half of the CALL
   TRAIL (`services/call_trail.py`, gated by `voice.live.debug`). A streaming-dictation leg (S11) adds
   `mode: "dictation"` (`"call"` is the absent default; anything else is a protocol close) — the one
-  thing the relay does differently for it is skip the gap cut below.
+  thing the relay does differently for it is skip the gap cut below. THE TAB'S IDENTITY (Phase 26 D5,
+  ASR_PLAN §3.9 ④): every leg from a client that can mint one adds `client_id` (a canonical lowercase
+  UUID, per browser tab, strict once present — the trail id's predicate) — and the slot is taken only
+  AFTER `start`, keyed by it: a newer leg of the SAME client takes the slot over at once and the
+  holder ends `state:ended{reason:"superseded"}`; an id-less `start` (an older PWA) gets the counted
+  cap exactly as before. The id is admission state only: no log line and no trail line carries it.
 * **Uplink (relay → Speaches):** `input_audio_buffer.append` with base64 pcm16 @ **24 kHz**, as TEXT
   frames — one binary frame kills the session (§7-S0 ②), which is why the plan's binary uplink stops
   at the relay and pays ~33 % base64 overhead on the loopback leg.
@@ -85,7 +90,7 @@ import sys
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Protocol
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import anyio
@@ -288,35 +293,62 @@ class _LegStats:
 # ── admission (the D38 no-await check-and-set, process-wide) ──────────────────────────────────────
 
 
+class _Holder(Protocol):
+    """What the admission table holds a slot FOR: something that can be told a newer leg of its own
+    client took the slot over. `LiveRelaySession` is the one implementation; the tests script others."""
+
+    def supersede(self) -> None: ...
+
+
+#: `LiveSessionSlots.acquire`'s three answers.
+Admission = Literal["admitted", "superseded", "busy"]
+
+
 class LiveSessionSlots:
-    """The process-wide live-session cap (`voice.live.max_sessions`, plan §5.2/F9).
+    """The process-wide live-session cap (`voice.live.max_sessions`, plan §5.2/F9) — since Phase 26 D5
+    (ASR_PLAN §3.9 ④) an admission TABLE keyed by the holder, each entry carrying the `client_id` its
+    `start` declared (`None` for a client that sent none).
 
     `acquire` is a **synchronous check-and-set with no `await` anywhere inside**, exactly like
-    `turns.reserve()`: under the single-threaded loop the comparison and the increment are one atomic
-    step, so two simultaneous handshakes cannot both slip past a cap of 1 (the D38 TOCTOU discipline).
-    The cap is passed IN rather than read from a held `Settings` reference, so every acquire sees the
-    live value and this object stays a pure counter (created once in the lifespan, the
-    `endpoint_gates` precedent).
+    `turns.reserve()`: under the single-threaded loop the lookup, the comparison and the insert are one
+    atomic step, so two simultaneous handshakes cannot both slip past a cap of 1 (the D38 TOCTOU
+    discipline). The cap is passed IN rather than read from a held `Settings` reference, so every
+    acquire sees the live value (created once in the lifespan, the `endpoint_gates` precedent).
 
-    `release` floors at zero so a stray extra call cannot mint capacity; the route additionally latches
-    its own release, so the one `finally` can never double-free its slot.
+    THE TAKEOVER (D5): a `client_id` that matches a holder's is a newer leg of the SAME tab — a reload,
+    a reconnect racing a dead link's ≤10 s close (R94 K5), a frozen tab's zombie — so the slot TRANSFERS
+    in that same atomic step, whatever the cap (one leg per client: at the default cap of 1 this is the
+    spec's "full AND matches"; above it, a same-client zombie never keeps a second slot), and the old
+    holder is told to end (`supersede()` — a flag it acts on through its own teardown, never a cancel).
+    `None` matches nothing, so an id-less client gets the plain counted cap it always had.
+
+    `release(holder)` is OWNER-CHECKED and idempotent: an entry leaves the table exactly once — at its
+    holder's own release, or at a transfer — so a superseded leg's later release finds nothing, and a
+    stray release can never mint capacity. "One release per slot" is structural, not a latch.
     """
 
     def __init__(self) -> None:
-        self._held = 0
+        self._holders: dict[_Holder, str | None] = {}
 
     @property
     def held(self) -> int:
-        return self._held
+        return len(self._holders)
 
-    def acquire(self, cap: int) -> bool:
-        if self._held >= cap:
-            return False
-        self._held += 1
-        return True
+    def acquire(self, cap: int, client_id: str | None, holder: _Holder) -> Admission:
+        if client_id is not None:
+            old = next((h for h, cid in self._holders.items() if cid == client_id), None)
+            if old is not None:
+                del self._holders[old]
+                self._holders[holder] = client_id
+                old.supersede()
+                return "superseded"
+        if len(self._holders) >= cap:
+            return "busy"
+        self._holders[holder] = client_id
+        return "admitted"
 
-    def release(self) -> None:
-        self._held = max(self._held - 1, 0)
+    def release(self, holder: _Holder) -> None:
+        self._holders.pop(holder, None)
 
 
 # ── the upstream leg ──────────────────────────────────────────────────────────────────────────────
@@ -405,11 +437,31 @@ class _UplinkIdle(Exception):
     """The phone's socket is open but no audio has crossed it for `uplink_idle_s` (R86 LC-8)."""
 
 
+class _Busy(Exception):
+    """Every live slot is held by ANOTHER client (Phase 26 D5: judged after `start`, by `client_id`)."""
+
+
+class _Superseded(Exception):
+    """A newer leg of this same client took the slot over (Phase 26 D5) — this leg ends cleanly."""
+
+
+class _Start(NamedTuple):
+    """What a `start` declares (`_parse_start`). `call_id`/`leg` are `None` on a leg that writes no
+    trail; `client_id` is `None` from a client that sent none (an older PWA, a tab without storage)."""
+
+    sample_rate: int
+    call_id: str | None
+    leg: int | None
+    mode: LiveMode
+    client_id: str | None
+
+
 class LiveRelaySession:
     """One live call: the phone's WebSocket on one side, a Speaches realtime session on the other.
 
-    The caller (`api/voice.py`) owns the pre-accept gates and the admission slot; this object owns
-    everything after `accept()` and has exactly ONE teardown path.
+    The caller (`api/voice.py`) owns the pre-accept gates and the ONE release of the admission slot;
+    this object owns everything after `accept()` — the slot's acquire included, which needs the
+    `start`'s `client_id` (Phase 26 D5) — and has exactly ONE teardown path.
     """
 
     def __init__(
@@ -419,6 +471,7 @@ class LiveRelaySession:
         cfg: LiveCfg,
         target: ResolvedTarget,
         policy: LivePolicy,
+        slots: LiveSessionSlots,
         connect: LiveConnector = connect_speaches,
         trail: CallTrail | None = None,
     ) -> None:
@@ -427,6 +480,12 @@ class LiveRelaySession:
         self._target = target
         self._policy = policy
         self._connect = connect
+        #: THE ADMISSION TABLE (Phase 26 D5) — acquired in `run()` right after `start` (`_admit`); the
+        #: route's `finally` is the one release. `_client_id` is what `start` declared (admission state
+        #: ONLY — never logged, never trailed), and `_superseded` is the flag `supersede()` raises.
+        self._slots = slots
+        self._client_id: str | None = None
+        self._superseded = asyncio.Event()
         #: THE CALL TRAIL (D77) — the store, and this leg's identity from `start`. The relay writes
         #: only when all three line up: the store exists, `cfg.debug` is on (snapshotted with the rest
         #: of `cfg` at session start), and the client named the call. Lines batch in `_trail_lines`
@@ -503,8 +562,13 @@ class LiveRelaySession:
         try:
             async with asyncio.timeout(self._cfg.max_session_s):
                 await self._handshake_client()
+                self._admit()  # the slot, judged on what `start` said (D5) — before anything dials
                 await self._dial_upstream()
                 await self._configure_upstream()
+                # A leg superseded while it dialled ends here, before it ever says `ready` (D5) — from
+                # here on the pump's own waiter (`_await_superseded`) is the one that notices.
+                if self._superseded.is_set():
+                    raise _Superseded
                 # THE ALLOWANCE'S CLOCK starts HERE, just before `ready` (§3.3) — never at the first
                 # frame, so the backlog a dictation pumps the moment it hears `ready` is paid from the
                 # full bucket, not from refill that has not accrued. Its own stamp, not `started`
@@ -532,6 +596,17 @@ class LiveRelaySession:
             # with its own sentence, so the owner (and the trail) can tell the two apart.
             # The leg summary names it apart (`uplink_idle`); the wire code stays `session_limit`.
             await self._fail("session_limit", str(exc), CLOSE_OK, "uplink idle", summary="uplink_idle")
+        except _Busy as exc:
+            # Wire-identical to the pre-D5 refusal (the frame, its message, 1013 "busy") — only WHEN it
+            # is judged moved (after `start`), and a refused leg now gets its leg-end line like any other.
+            await self._fail("busy", str(exc), CLOSE_BUSY, "busy")
+        except _Superseded:
+            # THE TAKEOVER's old leg (D5): the clean-stop tail with a reason. It reaches only a leg still
+            # RUNNING — one already in its own teardown never looks at the flag again, and just loses
+            # the slot. Never a cancel: the pumps were wound down by `_pump`'s own single teardown.
+            self._stats.reason = "superseded"
+            await self._send_down({"type": "state", "state": "ended", "reason": "superseded"})
+            await self._close(CLOSE_OK, "superseded")
         except _ClientGone as exc:
             # The phone hung up: nothing to tell it, nothing to close — but HOW it hung up is the one
             # fact the relay has about its end (T3: the client's own 4000/4001, a clean 1000, or a
@@ -578,13 +653,33 @@ class LiveRelaySession:
                 msg = await self._recv_client()
         except TimeoutError:
             raise _ProtocolError(f"no start message within {self._cfg.start_timeout_s}s") from None
-        rate, self._call_id, self._leg, self._mode = self._parse_start(msg)
-        self._client_rate = rate
-        self._resampler = Pcm16Resampler(rate, SPEACHES_WIRE_RATE)
+        start = self._parse_start(msg)
+        self._call_id, self._leg, self._mode = start.call_id, start.leg, start.mode
+        self._client_id = start.client_id
+        self._client_rate = start.sample_rate
+        self._resampler = Pcm16Resampler(start.sample_rate, SPEACHES_WIRE_RATE)
 
-    def _parse_start(self, msg: dict[str, Any]) -> tuple[int, str | None, int | None, LiveMode]:
-        """`(sample_rate, call_id, leg, mode)` — `call_id`/`leg` `None` on a leg that writes no trail,
-        `mode` `"call"` when the client sent none."""
+    def _admit(self) -> None:
+        """Take the slot (Phase 26 D5, ASR_PLAN §3.9 ④) — synchronous, the table's own check-and-set.
+        Another client's leg holding the cap ⇒ `_Busy`; a newer leg of THIS client ⇒ the slot is ours at
+        once and the old leg was told to end (its own teardown, in the background on its own task)."""
+        verdict = self._slots.acquire(self._cfg.max_sessions, self._client_id, self)
+        if verdict == "busy":
+            raise _Busy(f"a live call is already running (max_sessions {self._cfg.max_sessions})")
+        if verdict == "superseded":
+            # The MODE only — the id is admission state and never reaches a log line.
+            log.info("live voice: a newer leg of the same client took the slot (mode=%s)", self._mode)
+
+    def supersede(self) -> None:
+        """A newer leg of this client took the slot (the admission table calls this, D5). A FLAG, set and
+        nothing else: a running leg ends through its own teardown (the pre-`ready` check or the pump's
+        waiter → `_Superseded`), and a leg already ending never reads it — no cancel, ever (an anyio
+        shield does not stop a native `Task.cancel()`, and a teardown must not be interrupted)."""
+        self._superseded.set()
+
+    def _parse_start(self, msg: dict[str, Any]) -> _Start:
+        """What `start` declares — `call_id`/`leg` `None` on a leg that writes no trail, `mode` `"call"`
+        when the client sent none, `client_id` `None` when it sent none."""
         text = msg.get("text")
         if text is None:
             raise _ProtocolError("the first frame must be a text `start` message, not binary audio")
@@ -606,17 +701,23 @@ class LiveRelaySession:
         # THE TRAIL'S IDENTITY (D77) — optional, but with `sample_rate`'s strictness once present: the
         # id becomes a FILENAME, so a malformed one is a protocol error here rather than a path later.
         # The pair travels together (a leg with no call, or a call with no leg, is a client bug).
+        # THE TAB'S IDENTITY (Phase 26 D5) — optional, strict once present, and the SAME predicate as the
+        # trail's id (one spelling of "a canonical lowercase UUID"). It decides who may END a leg, so a
+        # malformed one is refused rather than ignored.
+        client_id = data.get("client_id")
+        if "client_id" in data and not valid_call_id(client_id):
+            raise _ProtocolError("start.client_id must be a canonical lowercase UUID")
         if ("call_id" in data) != ("leg" in data):
             raise _ProtocolError("start.call_id and start.leg must be sent together")
         if "call_id" not in data:
-            return rate, None, None, mode
+            return _Start(rate, None, None, mode, client_id)
         call_id = data["call_id"]
         if not valid_call_id(call_id):
             raise _ProtocolError("start.call_id must be a canonical lowercase UUID")
         leg = data["leg"]
         if not isinstance(leg, int) or isinstance(leg, bool) or not 0 <= leg <= MAX_LEG:
             raise _ProtocolError(f"start.leg must be an integer 0–{MAX_LEG}")
-        return rate, call_id, leg, mode
+        return _Start(rate, call_id, leg, mode, client_id)
 
     @staticmethod
     def _parse_json(text: str) -> dict[str, Any]:
@@ -737,8 +838,13 @@ class LiveRelaySession:
 
         `FIRST_COMPLETED` (not `FIRST_EXCEPTION`): a clean `stop` is the client reader RETURNING, and
         that must end the session exactly as an exception does. `asyncio.create_task` + a single
-        cancel-and-gather teardown, shielded so a `max_session_s` cancellation still cleans up —
-        deliberately not `asyncio.TaskGroup` (house idiom).
+        cancel-and-gather teardown — deliberately not `asyncio.TaskGroup` (house idiom). The anyio shield
+        does NOT stop a native `Task.cancel()`: a `max_session_s` expiry is consumed at the `wait`, which
+        is what lets the gather run, and a second native cancel (a server shutdown) can still cut it short.
+
+        A FOURTH task, the supersede waiter (Phase 26 D5): a newer leg of this client took the slot, and
+        `_Superseded` re-raises through the same `task.result()` as every leg's typed failure — the
+        `_UplinkIdle` shape, so the takeover ends this leg through this one teardown, never a cancel.
         """
         depth = max(1, self._cfg.relay_queue_ms // self._cfg.frame_ms)
         self._queue = asyncio.Queue(maxsize=depth)
@@ -746,6 +852,7 @@ class LiveRelaySession:
             asyncio.create_task(self._pump_client(), name="voice-live-client"),
             asyncio.create_task(self._pump_uplink(), name="voice-live-uplink"),
             asyncio.create_task(self._pump_downlink(), name="voice-live-downlink"),
+            asyncio.create_task(self._await_superseded(), name="voice-live-superseded"),
         ]
         try:
             done, _pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -756,6 +863,11 @@ class LiveRelaySession:
                 await asyncio.gather(*tasks, return_exceptions=True)
         for task in done:
             task.result()  # re-raise the leg's typed failure, if it had one
+
+    async def _await_superseded(self) -> None:
+        """The pump's supersede waiter (D5): parks until `supersede()` raises the flag."""
+        await self._superseded.wait()
+        raise _Superseded
 
     async def _pump_client(self) -> None:
         """Phone → (validate, resample, enqueue) → the relay queue. Returns on a clean `stop`.

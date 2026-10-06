@@ -521,19 +521,41 @@ of CORS middleware, which is the entire defence for the §2.7/§2.8/§2.9 write 
   `voice.enabled` (the master) outranks both. Do not reason about this route's off-state from
   `enabled` alone.
 - **Admission is capped, and the cap is renderable.** `voice.live.max_sessions` is taken
-  post-`accept()` so the client gets a **typed** `{"type":"error","code":"busy"}` plus close **1013**
-  ("try again later") it can render, rather than an opaque handshake failure indistinguishable from
-  a misconfiguration. The slot has exactly ONE release, latched as the single `finally` on the
-  single acquire, so a failing upstream close cannot leak it. **Nor can a frozen client hold it:**
+  post-`accept()` — since Phase 26 D5 (ASR_PLAN §3.9 ④) post-**`start`**, because the slot is keyed by
+  the tab's `client_id` — so the client gets a **typed** `{"type":"error","code":"busy"}` plus close
+  **1013** ("try again later") it can render, rather than an opaque handshake failure
+  indistinguishable from a misconfiguration. The slot has exactly ONE release — the route's single
+  `finally`, owner-checked against the admission table — so a failing upstream close cannot leak it,
+  and a refused or superseded leg's release frees nothing. **The cost of admitting after `start`:**
+  a socket past the Origin rail and the feature gate holds no slot until its `start` arrives, so
+  pre-admission sockets are UNCAPPED. Each one's life is bounded by `voice.live.start_timeout_s`
+  (5 s) PLUS the close handshake its 1008 then waits on — the server-side WebSocket's
+  `close_timeout` (the `websockets` library default, 10 s, under uvicorn's legacy protocol; no
+  uvicorn knob, R94 §7.1.5) — so an uncooperative pre-`start` peer holds an unadmitted route task
+  for up to ≈ `start_timeout_s` + `close_timeout` ≈ 15 s. Accepted (LOW): the rails in front of it
+  are the boundary, the tailnet is the only network that reaches it, and an idle pre-`start` socket
+  costs a coroutine, not an upstream session (nothing dials before admission). **Nor can a frozen
+  client hold it:**
   the client ships a frame every `frame_ms` for the whole leg (held/muted ones as silence), so a leg
   with no binary frame for `voice.live.uplink_idle_s` (15 s, bounded 5–120, a server knob) is ended
   as a `session_limit`-class terminal (R86 LC-8) — before this only `max_session_s` (30 min) reaped
   it, and the browser answers WS pings even with its renderer frozen.
 - **The relay bounds what it will relay.** Malformed/unknown control frames, binary before `start`,
-  a second `start`, or an oversized frame close 1008. The client supplies NO session parameter
-  beyond `start.sample_rate` (bounds-validated at the same boundary): the server-VAD knobs in the
-  relay's one `session.update` come from config alone (D76 §D deleted the in-call
-  `start.vad_threshold` override; an unknown `start` key is ignored). The uplink is bounded against
+  a second `start`, or an oversized frame close 1008. What the client may put in `start` is a
+  closed, validated set — `sample_rate` (bounds-checked), `mode` (`call`/`dictation`), the debug
+  trail pair `call_id` + `leg`, and the tab's `client_id` (D5) — each strict once present (a
+  malformed one closes 1008; an unknown key is ignored). None of them reaches the upstream session:
+  the server-VAD knobs in the relay's one `session.update` come from config alone (D76 §D deleted
+  the in-call `start.vad_threshold` override). **`client_id` is an identity that can END a leg:** a
+  newer leg carrying the same id takes the slot over and the holder ends `ended{superseded}`. It is
+  a canonical UUID minted per tab (`sessionStorage`), never logged or trailed, and it authorizes
+  nothing else; anything that can open this socket (past the rails above) could already hold the
+  slot and refuse the owner `busy`, so the id adds no reach — a guessed id only ends a leg the
+  guesser could have blocked anyway. **The duplicated-tab residual (accepted, the live-call marker's
+  precedent):** "Duplicate tab" and a same-origin `window.open` COPY `sessionStorage`, id included,
+  so the copy's leg supersedes the original tab's call or dictation leg; the superseded call ends on
+  a terminal note (never a redial, so two copies cannot ping-pong). A BroadcastChannel "is this id
+  live elsewhere?" probe is the named exit if it is ever seen. The uplink is bounded against
   the WALL CLOCK (Phase 26 S2, ASR_PLAN §3.3): an **audio-ms token bucket** plus a **frame-count
   twin**, refilled at wall rate, started full just before `ready`, capacity 30 s
   (`UPLINK_ALLOWANCE_MS`; the twin 30 s / `frame_ms` frames) — two budgets because they bound two

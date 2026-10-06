@@ -48,7 +48,6 @@ from app.services.call_trail import (
     LiveMode,
 )
 from app.services.voice_live import (
-    CLOSE_BUSY,
     CLOSE_PROTOCOL,
     LiveRelaySession,
     LiveSessionSlots,
@@ -242,8 +241,8 @@ async def voice_live(websocket: WebSocket) -> None:
     """`WS /api/voice/live` — the live-voice relay (D71 §3; the FIRST WebSocket in this codebase,
     admitted for continuous media ingress only, §3.2).
 
-    Thin by design, like every other handler here: the pre-accept rails, the admission slot, then
-    delegate to `LiveRelaySession`. The three refusals, in order and for a reason:
+    Thin by design, like every other handler here: the pre-accept rails, then delegate to
+    `LiveRelaySession`, and release its admission slot. The three refusals, in order and for a reason:
 
     1. **Origin** first — it is the security rail, and a rejected origin must learn nothing about
        whether the feature exists.
@@ -251,9 +250,12 @@ async def voice_live(websocket: WebSocket) -> None:
        `voice.live.dictation` for the streaming mic (S3.5) — plus a resolvable realtime target) —
        refused pre-`accept()`, which a browser sees as a failed handshake (HTTP 403), matching how
        the mic simply is not offered when `stt` is unconfigured.
-    3. **Busy** — post-`accept()`, deliberately: the cap is a transient condition, so the client gets
-       a TYPED `{"error","busy"}` + close 1013 ("try again later") it can render, not an opaque
-       handshake failure indistinguishable from a misconfiguration.
+    3. **Busy** — post-`start` (Phase 26 D5; post-`accept()` before it), deliberately: the cap is a
+       transient condition, so the client gets a TYPED `{"error","busy"}` + close 1013 ("try again
+       later") it can render, not an opaque handshake failure indistinguishable from a misconfiguration.
+       It waits for `start` because the slot is keyed by the tab's `client_id`: a newer leg of the SAME
+       client takes the slot over instead of being refused (ASR_PLAN §3.9 ④). The session takes it
+       (`LiveRelaySession._admit`); this route keeps the ONE release.
 
     The upstream connector is injectable through `app.state.voice_live_connect` — the one test seam,
     the same shape as `app.state.voice` being a stub in the voice-API tests. Absent in production.
@@ -277,32 +279,25 @@ async def voice_live(websocket: WebSocket) -> None:
 
     slots: LiveSessionSlots = app.state.voice_live_slots
     await websocket.accept()
-    if not slots.acquire(cfg.max_sessions):
-        await websocket.send_json(
-            {
-                "type": "error",
-                "code": "busy",
-                "message": f"a live call is already running (max_sessions {cfg.max_sessions})",
-            }
-        )
-        await websocket.close(code=CLOSE_BUSY, reason="busy")
-        return
+    session = LiveRelaySession(
+        websocket,
+        cfg=cfg,
+        target=target,
+        policy=policy,
+        slots=slots,
+        connect=getattr(app.state, "voice_live_connect", None) or connect_speaches,
+        # D77 — the relay's half of the call trail. Optional on `app.state` for the same reason the
+        # connector seam is: a hand-built test app that never mounts the store writes no trail.
+        trail=getattr(app.state, "call_trail", None),
+    )
     try:
-        await LiveRelaySession(
-            websocket,
-            cfg=cfg,
-            target=target,
-            policy=policy,
-            connect=getattr(app.state, "voice_live_connect", None) or connect_speaches,
-            # D77 — the relay's half of the call trail. Optional on `app.state` for the same reason the
-            # connector seam is: a hand-built test app that never mounts the store writes no trail.
-            trail=getattr(app.state, "call_trail", None),
-        ).run()
+        await session.run()
     finally:
-        # The ONE release. Latched by being the single `finally` on the single acquire — a failing
-        # upstream close inside the session can never leak the slot, because the session swallows its
+        # The ONE release, of THIS session's entry — owner-checked, so it is a no-op for a leg that was
+        # refused (it never held one) or superseded (its entry already moved to the newer leg, D5). A
+        # failing upstream close inside the session can never leak the slot: the session swallows its
         # own teardown failures and this block runs regardless.
-        slots.release()
+        slots.release(session)
 
 
 class TrailEntry(BaseModel):

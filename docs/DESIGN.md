@@ -1358,7 +1358,10 @@ relay's own arrival clock is under `silence_ms / 2` (a Silero flap) — unless S
 ≥ `silence_ms` (a veto: a real stop) — has its transcript sent EMPTY with a reason —
 `{type:"transcript", text:"", final:true, item_id, reason:"short", gap_ms}` — which the phone disposes
 of like any empty final; `short` is the only `reason` today. Three refusals, in order: origin, then the feature gate — both
-pre-`accept()` — then `busy` as a typed frame + close 1013 post-`accept()`; with `server.trusted_hosts`
+pre-`accept()` — then `busy` as a typed frame + close 1013 post-`start` (Phase 26 D5: `LiveSessionSlots` is an admission
+table keyed by the `start`'s optional `client_id` — a newer leg of the same tab takes the slot over and a still-running
+holder ends `state:ended{reason:"superseded"}`; another client or an id-less one gets the counted cap; the route keeps the
+ONE owner-checked release — ASR_PLAN §3.9 ④); with `server.trusted_hosts`
 set, a `Host`-mismatch 400 precedes all three (the middleware answers the handshake before routing —
 SECURITY_MODEL §2.9). Authority:
 [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §3 (the relay + the admission) · §4 (the turn protocol).

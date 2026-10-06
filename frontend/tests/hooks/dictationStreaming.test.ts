@@ -121,7 +121,7 @@ import { newWakeLockState, releaseWakeLock, takeWakeLock } from "../../src/lib/w
 import { FakeMediaRecorder, gateMediaDevices, mockStt, setMediaDevices } from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
-import { releaseMic } from "../../src/store/micRelease";
+import { releaseMic, resetLegHold } from "../../src/store/micRelease";
 import { pushToast } from "../../src/store/toast";
 
 // ── the Web Audio stand-in (the mic suite's, trimmed to what the streaming branch needs) ───────────
@@ -331,6 +331,7 @@ async function runOutTail(): Promise<void> {
 }
 
 beforeEach(() => {
+  resetLegHold(); // D5 — a case that ended mid-release leaves the TAB-wide hold up; the next starts clean
   vi.useFakeTimers();
   vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
   vi.stubGlobal("AudioContext", FakeAudioContext);
@@ -1427,7 +1428,9 @@ describe("useDictation · streaming ⑩ every exit tears the leg down", () => {
     // from the one terminal that owns it, so this upload is still THIS recording's.
     //
     // The window is not reachable through the UI — every variant disables the mic button while the
-    // status is `sending` — which is exactly why it wants an arm rather than a shrug.
+    // status is `sending` — which is exactly why it wants an arm rather than a shrug. Since Phase 26 D5
+    // the hook closes it too: the next `start()` inside the wait is REFUSED (its leg would supersede
+    // this one mid-tail), and the parked clip is still this recording's.
     const { result } = renderHook(() => useDictation(opts()));
     await hold(result);
     ready();
@@ -1437,11 +1440,13 @@ describe("useDictation · streaming ⑩ every exit tears the leg down", () => {
       await Promise.resolve();
     });
     expect(h.sent).toEqual(["flush"]); // the wait is open
+    let armed: boolean | undefined;
     await act(async () => {
-      await result.current.start(); // …and a NEXT recording arms inside it
+      armed = await result.current.start(); // …and a NEXT recording tries to arm inside it
       await Promise.resolve();
       await Promise.resolve();
     });
+    expect(armed).toBe(false); // D5 — refused while this recording's leg is still closing out
     await act(async () => {
       vi.advanceTimersByTime(KNOBS.tail_wait_ms);
       await Promise.resolve();
@@ -1489,6 +1494,185 @@ describe("useDictation · streaming appends through the EXISTING draft seam", ()
     expect(getDraft()).toBe(
       "already typed Okay, so I need you to wake up. Course air and then check its uptime.",
     );
+  });
+});
+
+// ── Phase 26 D5 — ONE WANTED LEG PER TAB (the slot takeover's client half) ─────────────────────────
+//
+// The relay now keys its slot by the TAB (`client_id`) and a newer leg of the same tab SUPERSEDES the
+// holder. That is only safe while this tab never opens a leg beside one of its own that is still wanted
+// — so the hook's two doors wait out a release that is closing its leg: `start()` refuses, `yieldMic`
+// resolves only after the close. And a leg the relay does end (`ended`, a duplicated tab's takeover)
+// meets the ordinary death rule — the dictation has no `superseded` arm of its own.
+
+describe("useDictation · Phase 26 D5 — one wanted leg per tab", () => {
+  it("`start()` is REFUSED while the last recording's leg is closing out — and armed again after its close", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("the last words");
+    await tick(1200);
+    act(() => result.current.stop("user"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush"]); // the release is in its tail wait — the leg is still WANTED
+    let armed: boolean | undefined;
+    await act(async () => {
+      armed = await result.current.start();
+    });
+    expect(armed).toBe(false);
+    expect(h.opens).toHaveLength(1); // no second leg ever opened beside it
+    await runOutTail();
+    expect(h.sent).toEqual(["flush", "stop", "close"]); // closed — the guard is down
+    await act(async () => {
+      armed = await result.current.start();
+    });
+    expect(armed).toBe(true);
+    act(() => result.current.cancel());
+  });
+
+  it("a CALL taking the ear waits for the dictation's LEG to close, not just its tracks", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("then the call");
+    let freed = false;
+    await act(async () => {
+      void releaseMic().then(() => {
+        freed = true;
+      });
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+    expect(result.current.status).not.toBe("recording"); // the MICROPHONE is back (D74 ⑧)…
+    expect(h.sent).toEqual(["flush"]); // …but the leg is in its tail, and holds the tab's slot
+    expect(freed).toBe(false);
+    await act(async () => {
+      vi.advanceTimersByTime(KNOBS.tail_wait_ms);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(freed).toBe(true); // only now may the call's first leg take the slot
+  });
+
+  it("…and the same wait holds when the CALL arrives after the stop, inside the tail", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("stopped first");
+    await tick(1200);
+    act(() => result.current.stop("user"));
+    let freed = false;
+    await act(async () => {
+      void releaseMic().then(() => {
+        freed = true;
+      });
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+    expect(freed).toBe(false); // nothing records, but a leg is still closing out
+    await act(async () => {
+      vi.advanceTimersByTime(KNOBS.tail_wait_ms);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(freed).toBe(true);
+  });
+
+  it("the hold is TAB-wide: a REMOUNTED composer refuses `start()` and a call waits, until the old leg closes", async () => {
+    // The release survives its composer's unmount (Conf/Utils unmount it) and the id is per TAB, so a
+    // fresh hook instance must see its predecessor's closing leg (the D5 code round, both reviewers).
+    const first = renderHook(() => useDictation(opts()));
+    await hold(first.result);
+    ready();
+    phrase("said before the tab switch");
+    await tick(1200);
+    act(() => first.result.current.stop("user"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush"]); // the old leg is in its tail wait
+    first.unmount(); // …and the owner switches to Conf and back
+    const second = renderHook(() => useDictation(opts()));
+    let armed: boolean | undefined;
+    await act(async () => {
+      armed = await second.result.current.start();
+    });
+    expect(armed).toBe(false);
+    expect(h.opens).toHaveLength(1); // no leg opened beside the closing one
+    let freed = false;
+    await act(async () => {
+      void releaseMic().then(() => {
+        freed = true;
+      });
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+    expect(freed).toBe(false); // a call waits for the old leg too — with a fresh publisher mounted
+    await act(async () => {
+      vi.advanceTimersByTime(KNOBS.tail_wait_ms);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(freed).toBe(true);
+    await act(async () => {
+      armed = await second.result.current.start();
+    });
+    expect(armed).toBe(true);
+    act(() => second.result.current.cancel());
+  });
+
+  it("…and with NO composer mounted at all, a call still waits for the closing leg", async () => {
+    const first = renderHook(() => useDictation(opts()));
+    await hold(first.result);
+    ready();
+    phrase("then the call, from another tab of the app");
+    await tick(1200);
+    act(() => first.result.current.stop("user"));
+    first.unmount(); // the publisher withdraws — `releaseMic` has no `release` to call
+    let freed = false;
+    await act(async () => {
+      void releaseMic().then(() => {
+        freed = true;
+      });
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+    expect(freed).toBe(false);
+    await runOutTail();
+    await act(async () => {
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+    expect(freed).toBe(true);
+  });
+
+  it("a relay `ended` on a live leg with NOTHING appended degrades silently — the clip carries it", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    act(() => {
+      h.frame?.({ type: "state", state: "ended", reason: "superseded" });
+      h.closeWith?.(1000, "superseded");
+    });
+    expect(h.sent).toContain("close");
+    expect(h.sent).not.toContain("flush"); // a dead leg is dropped, never released
+    expect(result.current.status).toBe("recording"); // the recording runs on, on the clip path
+    expect(pushToast).not.toHaveBeenCalledWith(
+      expect.stringContaining("Voice connection lost"),
+      "err",
+    );
+    act(() => result.current.cancel());
+  });
+
+  it("…and with words already in the draft it ends the recording and SAYS the tail is lost", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready();
+    phrase("half of it");
+    await act(async () => {
+      h.frame?.({ type: "state", state: "ended", reason: "superseded" });
+      h.closeWith?.(1000, "superseded");
+      await Promise.resolve();
+    });
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Voice connection lost"), "err");
+    expect(result.current.status).not.toBe("recording");
+    expect(getDraft()).toBe("half of it");
   });
 });
 
@@ -1951,7 +2135,10 @@ describe("useDictation · Phase 26 S1 — the `end` line names the stop (STOP-1�
     ready();
     phrase("then the call");
     await act(async () => {
-      await releaseMic(); // what the call machine asks before it opens its own capture (D74 S6 ⑧)
+      // What the call machine asks before it opens its own capture (D74 S6 ⑧) — NOT awaited here: since
+      // Phase 26 D5 it resolves only once this leg has closed, i.e. after the tail wait below.
+      void releaseMic();
+      await Promise.resolve();
     });
     await runOutTail();
     expect(theEnd()).toMatchObject({ reason: "call_handover" });
@@ -2357,7 +2544,8 @@ describe("useDictation · Phase 26 SP — P3 the screen stays on (the lifted wak
       "hold",
       async () => {
         await act(async () => {
-          await releaseMic();
+          void releaseMic(); // resolves at the leg's close (D5) — the lock goes at the stop itself
+          await Promise.resolve();
         });
       },
     ],
@@ -2461,7 +2649,8 @@ describe("useDictation · Phase 26 SP — P3 the screen stays on (the lifted wak
     const callLock = locks[1];
     expect([dictation.released, callLock.released]).toEqual([false, false]);
     await act(async () => {
-      await releaseMic(); // the handover: dictation stops with `call_handover`
+      void releaseMic(); // the handover: dictation stops with `call_handover` (resolves at its close, D5)
+      await Promise.resolve();
     });
     expect(dictation.released).toBe(true);
     expect(callLock.released).toBe(false); // the call's screen stays on through the handover

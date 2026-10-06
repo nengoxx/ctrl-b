@@ -210,11 +210,12 @@ async def lifespan(app: FastAPI):
     # the /api/voice endpoints read it per request, so a Conf edit hot-applies via `reconfigure`.
     set_voice(app, boot_registry)
     # Live voice (Phase 24 / D71): the process-wide live-session cap, created ONCE here — the
-    # `endpoint_gates` precedent. A pure counter (no settings held: the cap is read live at every
-    # acquire), so it needs no rebuild on a Conf edit and nothing to close at shutdown. A live relay
-    # session is a request-scoped task like any other handler, so uvicorn's graceful shutdown cancels
-    # it; the session's own one `finally` closes both legs and the route's releases the slot. No
-    # session registry beyond this counter, deliberately.
+    # `endpoint_gates` precedent. An admission table (since Phase 26 D5: each held slot keyed by its
+    # session, with the tab's `client_id` so a newer leg of the same tab takes the slot over), holding
+    # no settings (the cap is read live at every acquire), so it needs no rebuild on a Conf edit and
+    # nothing to close at shutdown. A live relay session is a request-scoped task like any other
+    # handler, so uvicorn's graceful shutdown cancels it; the session's own one `finally` closes both
+    # legs and the route's releases the slot. No session registry beyond this table, deliberately.
     app.state.voice_live_slots = LiveSessionSlots()
     # …and THE CALL TRAIL's store (D77), created ONCE beside it and for the same reasons: it holds no
     # settings (`voice.live.debug` gates every write and `trail_keep` rides each append, both read

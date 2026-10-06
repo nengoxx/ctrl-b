@@ -15,6 +15,10 @@ The arms, by what they defend:
   review's F4 — a byte cap alone lets a compliant client ship ~100x realtime).
 * **origin** — the ONLY defence a WebSocket has in a CORS-less app (SECURITY_MODEL §2.7).
 * **gates** — `enabled` / no chain / no TTS / busy, and the `live` capability bit's truth table.
+* **D5 admission** (Phase 26, §15) — the slot judged after `start` and keyed by `client_id`: a newer leg
+  of the same tab takes it over (the old one ends `superseded` if still running, or just loses the slot),
+  another client or an id-less one gets the byte-identical busy; one release per slot; the id in no log
+  or trail line.
 * **wire** — the five-field `turn_detection`, the language rule, TEXT-framed base64 appends whose
   bytes are the resampled 24 kHz audio, and every upstream error forwards (S11 retired the one
   spurious error the relay used to swallow — the owned fork now honours `prefix_padding_ms`).
@@ -37,11 +41,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
+import inspect
 import itertools
 import json
 import logging
 import re
 import struct
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -489,6 +496,7 @@ def _bucket(**cfg: Any) -> LiveRelaySession:
         cfg=LiveCfg(**cfg),
         target=target("speaches", "http://ear:9000/v1", model="parakeet"),
         policy=LivePolicy(language="en"),
+        slots=LiveSessionSlots(),
     )
     session._arm_allowance()
     return session
@@ -736,7 +744,16 @@ def test_tts_unconfigured_drops_the_status_bit_but_not_the_route() -> None:
         _ready(ws)  # the route still admits it
 
 
+#: The busy refusal's EXACT downlink text at the default cap — the pre-D5 route's
+#: `websocket.send_json({...})` frame, byte for byte (starlette's compact separators), which an older
+#: PWA's reducer reads. Phase 26 D5 moved WHEN it is judged (after `start`), never what it says.
+BUSY_TEXT = '{"type":"error","code":"busy","message":"a live call is already running (max_sessions 1)"}'
+
+
 def test_busy_gets_a_typed_error_and_the_slot_is_returned() -> None:
+    """THE LEGACY PATH (Phase 26 D5): two id-less clients get the counted cap they always had — the
+    refusal now follows the newcomer's `start` (the slot is keyed by what `start` says), and its frame
+    and close are byte-identical to the pre-D5 ones."""
     slots = LiveSessionSlots()
     first = _fake_app(FakeSpeaches([created()]), slots=slots)
     second = _fake_app(FakeSpeaches([created()]), slots=slots)
@@ -744,9 +761,9 @@ def test_busy_gets_a_typed_error_and_the_slot_is_returned() -> None:
         _ready(held)
         assert slots.held == 1
         with second.websocket_connect("/api/voice/live", headers=ORIGIN) as busy:
-            frame = _json(busy)
-            assert (frame["type"], frame["code"]) == ("error", "busy")
-            assert _closed(busy)[0] == 1013
+            busy.send_json({"type": "start", "sample_rate": 48000})
+            assert _recv(busy)["text"] == BUSY_TEXT
+            assert _closed(busy) == (1013, "busy")
         assert slots.held == 1  # the refused connection never took one
         held.send_json({"type": "stop"})
         assert _drain_until(held, "state")["state"] == "ended"
@@ -757,19 +774,34 @@ def test_busy_gets_a_typed_error_and_the_slot_is_returned() -> None:
     assert slots.held == 0
 
 
+class _Holder:
+    """A scripted admission-table holder: counts how often it was told it lost the slot (D5)."""
+
+    def __init__(self) -> None:
+        self.superseded = 0
+
+    def supersede(self) -> None:
+        self.superseded += 1
+
+
 def test_slots_are_a_synchronous_check_and_set() -> None:
-    """The D38 discipline, asserted on the primitive: `acquire` reads the cap passed at call time (so a
-    Conf edit applies to the next call) and floors its release at zero."""
+    """The D38 discipline, asserted on the primitive: `acquire` is synchronous, reads the cap passed at
+    call time (so a Conf edit applies to the next call), and a release is owner-checked — a stray or
+    repeated one cannot mint capacity."""
     slots = LiveSessionSlots()
-    assert slots.acquire(2) and slots.acquire(2)
-    assert slots.acquire(2) is False
-    slots.release()
-    assert slots.acquire(2) is True
-    slots.release()
-    slots.release()
-    slots.release()  # a stray extra release cannot mint capacity
+    assert not inspect.iscoroutinefunction(slots.acquire)
+    a, b, c, d, e = (_Holder() for _ in range(5))
+    assert slots.acquire(2, None, a) == "admitted" and slots.acquire(2, None, b) == "admitted"
+    assert slots.acquire(2, None, c) == "busy"
+    slots.release(a)
+    assert slots.acquire(2, None, c) == "admitted"
+    slots.release(b)
+    slots.release(c)
+    slots.release(c)  # a repeated release…
+    slots.release(a)  # …and a stray one (a was already released) cannot mint capacity
     assert slots.held == 0
-    assert slots.acquire(1) and slots.acquire(1) is False
+    assert slots.acquire(1, None, d) == "admitted" and slots.acquire(1, None, e) == "busy"
+    assert (a.superseded, b.superseded, c.superseded, d.superseded) == (0, 0, 0, 0)
 
 
 # ── 4. the Speaches wire ──────────────────────────────────────────────────────────────────────────
@@ -2633,6 +2665,7 @@ def test_an_outer_cancellation_is_a_leg_end_too(journal: pytest.LogCaptureFixtur
             cfg=LiveCfg(),
             target=target("speaches", "http://ear:9000/v1", model="parakeet"),
             policy=LivePolicy(language="en"),
+            slots=LiveSessionSlots(),
         )
         task = asyncio.create_task(session.run())
         await asyncio.sleep(0)
@@ -2666,6 +2699,7 @@ def test_the_leg_end_line_survives_a_second_cancellation_in_the_teardown(
             cfg=LiveCfg(),
             target=target("speaches", "http://ear:9000/v1", model="parakeet"),
             policy=LivePolicy(language="en"),
+            slots=LiveSessionSlots(),
         )
         session._up = SlowClose()  # type: ignore[assignment]  # noqa: SLF001 — the teardown's await
         task = asyncio.create_task(session.run())
@@ -2790,3 +2824,291 @@ def test_the_trails_client_gone_end_carries_the_peers_code(tmp_path: Any) -> Non
         "client gone",
         4001,
     )
+
+
+# ── 15. § D5 admission — the slot taken over by the tab's identity (Phase 26, ASR_PLAN §3.9 ④) ────────
+#
+# The slot is judged AFTER `start`, keyed by its optional `client_id`: a newer leg of the SAME client takes
+# the slot over at once and the holder — if it is still RUNNING — ends `state:ended{reason:"superseded"}`
+# through its own teardown (a holder already ending just loses the slot); another client, or an id-less
+# one, gets the counted cap and the byte-identical busy refusal. ONE release per slot, owner-checked.
+# Every two-leg arm runs both sockets on ONE TestClient portal (`with client:`) — one event loop, like the
+# server: the supersede flag is an `asyncio.Event`, which only wakes a waiter on its own loop.
+
+TAB = "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+OTHER_TAB = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+SUPERSEDED = {"type": "state", "state": "ended", "reason": "superseded"}
+
+
+def _fakes_app(*fakes: FakeSpeaches, **kw: Any) -> TestClient:
+    """`_fake_app` for several legs on ONE app: each dial takes the next scripted ear, in order."""
+    queue = list(fakes)
+
+    async def connect(*_a: Any, **_kw: Any) -> FakeSpeaches:
+        return queue.pop(0)
+
+    return _app(connector=connect, **kw)
+
+
+def _start(ws: Any, client_id: str | None, **extra: Any) -> None:
+    """Send a `start` carrying `client_id` (none when `None` — the legacy, id-less client)."""
+    ident = {} if client_id is None else {"client_id": client_id}
+    ws.send_json({"type": "start", "sample_rate": 48000, **ident, **extra})
+
+
+def _admitted(ws: Any, client_id: str | None, **extra: Any) -> None:
+    _start(ws, client_id, **extra)
+    assert _json(ws) == {"type": "state", "state": "ready"}
+
+
+class _GatedSpeaches(FakeSpeaches):
+    """An ear whose `session.created` waits for the TEST to open a gate — a leg held mid-dial."""
+
+    def __init__(self, script: list[Say], gate: threading.Event) -> None:
+        super().__init__(script)
+        self.gate = gate
+
+    async def recv(self) -> str:
+        await asyncio.to_thread(self.gate.wait, 5.0)  # a thread hop: the gate is the TEST thread's
+        return await super().recv()
+
+
+class _SlowCloseSpeaches(FakeSpeaches):
+    """An ear whose close parks until the test lets it go — a leg held in its own TEARDOWN (the K5
+    shape: the slot is held until `run()` returns, and the old leg is already past its pump)."""
+
+    def __init__(self, script: list[Say], gate: threading.Event) -> None:
+        super().__init__(script)
+        self.gate = gate
+
+    async def close(self) -> None:
+        await asyncio.to_thread(self.gate.wait, 5.0)
+        await super().close()
+
+
+def _wait_for(predicate: Any, timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not predicate() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert predicate(), "condition never held"
+
+
+def test_d5_the_table_transfers_a_same_id_slot_and_tells_the_old_holder_once() -> None:
+    slots = LiveSessionSlots()
+    old, new, newer, other, anon_a, anon_b = (_Holder() for _ in range(6))
+    assert slots.acquire(1, TAB, old) == "admitted"
+    assert slots.acquire(1, TAB, new) == "superseded"
+    assert slots.held == 1 and (old.superseded, new.superseded) == (1, 0)
+    # …and it CHAINS: a third same-id leg supersedes the second, never the long-gone first.
+    assert slots.acquire(1, TAB, newer) == "superseded"
+    assert (old.superseded, new.superseded, newer.superseded) == (1, 1, 0)
+    # A different id, or none, never matches — the counted cap answers.
+    assert slots.acquire(1, OTHER_TAB, other) == "busy"
+    assert slots.acquire(1, None, anon_a) == "busy"
+    # The superseded holders' own releases are no-ops (their entries moved), so they cannot free the
+    # slot the newest leg now holds — ONE release per slot, structurally.
+    slots.release(old)
+    slots.release(new)
+    assert slots.held == 1
+    slots.release(newer)
+    assert slots.held == 0
+    # `None` never matches `None`: two id-less clients are two clients.
+    assert slots.acquire(1, None, anon_a) == "admitted"
+    assert slots.acquire(1, None, anon_b) == "busy"
+    assert (anon_a.superseded, anon_b.superseded) == (0, 0)
+
+
+def test_d5_a_same_id_holder_is_superseded_at_any_cap() -> None:
+    """Q1 (ruled): match FIRST, whatever the fullness — at cap 2 with a slot free, a same-client zombie
+    still loses its slot to the newer leg rather than keeping a second one."""
+    slots = LiveSessionSlots()
+    zombie, fresh, other = _Holder(), _Holder(), _Holder()
+    assert slots.acquire(2, TAB, zombie) == "admitted"
+    assert slots.acquire(2, TAB, fresh) == "superseded"
+    assert slots.held == 1 and zombie.superseded == 1
+    assert slots.acquire(2, OTHER_TAB, other) == "admitted"  # the second slot is still free for another
+    assert slots.held == 2
+
+
+def test_d5_a_newer_leg_of_the_same_tab_takes_the_slot_and_the_old_one_ends_superseded() -> None:
+    slots = LiveSessionSlots()
+    fake_a, fake_b = FakeSpeaches([created()]), FakeSpeaches([created()])
+    client = _fakes_app(fake_a, fake_b, slots=slots)
+    with client, contextlib.ExitStack() as a_scope:
+        a = a_scope.enter_context(client.websocket_connect("/api/voice/live", headers=ORIGIN))
+        _admitted(a, TAB)
+        assert slots.held == 1
+        with client.websocket_connect("/api/voice/live", headers=ORIGIN) as b:
+            _admitted(b, TAB)  # at once — no busy, no waiting out the old leg
+            assert slots.held == 1
+            assert _json(a) == SUPERSEDED
+            assert _closed(a) == (1000, "superseded")
+            a_scope.close()  # the old leg's task has finished: its release ran, and was a no-op
+            assert slots.held == 1
+            assert fake_a.closed  # no leaked upstream — the old leg closed its own ear
+            assert not fake_b.closed
+            b.send_json({"type": "stop"})
+            assert _drain_until(b, "state") == {"type": "state", "state": "ended"}  # plain, no reason
+            assert _closed(b) == (1000, "ended")
+    assert slots.held == 0  # ONE release per slot: the newer leg's own
+
+
+@pytest.mark.parametrize(("old_mode", "new_mode"), [("dictation", "call"), ("call", "dictation")])
+def test_d5_the_takeover_is_mode_agnostic_and_never_waits_for_a_zombie(
+    old_mode: str, new_mode: str, journal: pytest.LogCaptureFixture
+) -> None:
+    """A frozen tab's leg — never read from again — does not hold the slot against its own reload, and a
+    dictation's leg and a call's are the same tab's legs (Q2: the id alone)."""
+    slots = LiveSessionSlots()
+    client = _fakes_app(FakeSpeaches([created()]), FakeSpeaches([created()]), slots=slots)
+    with client:
+        with client.websocket_connect("/api/voice/live", headers=ORIGIN) as zombie:
+            _admitted(zombie, TAB, mode=old_mode)
+            with client.websocket_connect("/api/voice/live", headers=ORIGIN) as fresh:
+                _admitted(fresh, TAB, mode=new_mode)
+                assert slots.held == 1
+                _wait_for(lambda: any(e["reason"] == "superseded" for e in _leg_ends(journal)))
+                fresh.send_json({"type": "stop"})
+                assert _drain_until(fresh, "state")["state"] == "ended"
+    took = [r.getMessage() for r in journal.records if "took the slot" in r.getMessage()]
+    assert took == [f"live voice: a newer leg of the same client took the slot (mode={new_mode})"]
+    ends = {e["mode"]: e for e in _leg_ends(journal)}
+    assert (ends[old_mode]["reason"], ends[old_mode]["close_code"]) == ("superseded", "1000")
+    assert ends[new_mode]["reason"] == "stop"
+    assert slots.held == 0
+
+
+def test_d5_a_leg_superseded_while_it_dials_ends_before_it_ever_says_ready() -> None:
+    """The pre-`ready` check: the old leg is still waiting for its ear's `session.created` when the newer
+    leg takes the slot, so it finishes the dial it is in and then ends `superseded` — no `ready`."""
+    slots = LiveSessionSlots()
+    gate = threading.Event()
+    slow = _GatedSpeaches([created()], gate)
+    client = _fakes_app(slow, FakeSpeaches([created()]), slots=slots)
+    with client:
+        with client.websocket_connect("/api/voice/live", headers=ORIGIN) as dialling:
+            _start(dialling, TAB)
+            _wait_for(lambda: slots.held == 1)  # admitted — and parked in its dial
+            with client.websocket_connect("/api/voice/live", headers=ORIGIN) as fresh:
+                _admitted(fresh, TAB)
+                gate.set()  # the old leg's ear finally answers
+                assert _json(dialling) == SUPERSEDED  # the FIRST frame it ever gets: never `ready`
+                assert _closed(dialling) == (1000, "superseded")
+                fresh.send_json({"type": "stop"})
+                assert _drain_until(fresh, "state")["state"] == "ended"
+    assert slow.closed
+    assert slots.held == 0
+
+
+def test_d5_a_holder_already_ending_just_loses_the_slot(journal: pytest.LogCaptureFixture) -> None:
+    """`ended{superseded}` reaches only a RUNNING leg. A holder already past its pump (here a clean `stop`
+    whose ear close is slow — the slot is held until `run()` returns, R94 K5's shape) never reads the
+    flag again: it gets exactly the ONE plain `ended` it was already sending, and only the slot moves."""
+    slots = LiveSessionSlots()
+    gate = threading.Event()
+    ending = _SlowCloseSpeaches([created()], gate)
+    client = _fakes_app(ending, FakeSpeaches([created()]), slots=slots)
+    with client, contextlib.ExitStack() as a_scope:
+        a = a_scope.enter_context(client.websocket_connect("/api/voice/live", headers=ORIGIN))
+        _admitted(a, TAB)
+        a.send_json({"type": "stop"})
+        assert _json(a) == {"type": "state", "state": "ended"}
+        assert _closed(a) == (1000, "ended")
+        _wait_for(lambda: len(_leg_ends(journal)) == 1)  # in its teardown — and still holding the slot
+        assert slots.held == 1
+        with client.websocket_connect("/api/voice/live", headers=ORIGIN) as b:
+            _admitted(b, TAB)
+            assert slots.held == 1
+            assert any("took the slot" in r.getMessage() for r in journal.records)  # the TAKEOVER path
+            gate.set()
+            a_scope.close()  # the old leg's run returns; its release is a no-op
+            assert slots.held == 1
+            b.send_json({"type": "stop"})
+            assert _drain_until(b, "state")["state"] == "ended"
+    assert slots.held == 0
+    reasons = sorted(e["reason"] for e in _leg_ends(journal))
+    assert reasons == ["stop", "stop"]  # the ending leg was never re-labelled `superseded`
+
+
+@pytest.mark.parametrize(
+    ("holder", "newcomer"),
+    [(TAB, OTHER_TAB), (TAB, None), (None, TAB)],
+    ids=["another-tab", "an-id-less-newcomer", "an-id-less-holder"],
+)
+def test_d5_another_client_is_refused_busy_byte_identically(
+    holder: str | None, newcomer: str | None, journal: pytest.LogCaptureFixture
+) -> None:
+    slots = LiveSessionSlots()
+    client = _fakes_app(FakeSpeaches([created()]), FakeSpeaches([created()]), slots=slots)
+    with client:
+        with client.websocket_connect("/api/voice/live", headers=ORIGIN) as held:
+            _admitted(held, holder)
+            with client.websocket_connect("/api/voice/live", headers=ORIGIN) as refused:
+                _start(refused, newcomer)
+                assert _recv(refused)["text"] == BUSY_TEXT
+                assert _closed(refused) == (1013, "busy")
+            assert slots.held == 1
+            # …and the holder was never touched: it ends the ordinary way, on its own `stop`.
+            held.send_json({"type": "stop"})
+            assert _drain_until(held, "state") == {"type": "state", "state": "ended"}
+    assert slots.held == 0
+    assert not any("took the slot" in r.getMessage() for r in journal.records)
+    # Q9: the refused leg gets its leg-end line like every other leg end.
+    reasons = sorted((e["reason"], e["close_code"]) for e in _leg_ends(journal))
+    assert reasons == [("busy", "1013"), ("stop", "1000")]
+
+
+@pytest.mark.parametrize("bad", [TAB.upper(), "not-a-uuid", TAB + "\n", "", 42, True, None])
+def test_d5_a_malformed_client_id_is_a_protocol_close(bad: Any) -> None:
+    """Strict once present, with the trail id's own predicate (`valid_call_id`, reused) — the id decides
+    who may END a leg, so a malformed one is refused, never ignored. It never takes a slot."""
+    slots = LiveSessionSlots()
+    app = _fake_app(FakeSpeaches([created()]), slots=slots)
+    with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:
+        ws.send_json({"type": "start", "sample_rate": 48000, "client_id": bad})
+        frame = _json(ws)
+        assert (frame["code"], frame["message"]) == (
+            "protocol",
+            "start.client_id must be a canonical lowercase UUID",
+        )
+        assert _closed(ws)[0] == 1008
+    assert slots.held == 0
+
+
+def test_d5_the_id_reaches_no_log_line_and_no_trail_line(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
+    """The id is admission state ONLY. A debug call superseded by its own next leg: both legs' trail
+    lines land in the one call file, each carrying its own `leg`, the old one ending `superseded` — and
+    neither the journal (every logger, every level) nor the trail ever spells the tab's id."""
+    caplog.set_level(logging.DEBUG)
+    trail = CallTrail(tmp_path / "calls")
+    slots = LiveSessionSlots()
+    client = _fakes_app(
+        FakeSpeaches([created()]),
+        FakeSpeaches([created()]),
+        slots=slots,
+        live_cfg={"debug": True},
+        trail=trail,
+    )
+    with client:
+        with client.websocket_connect("/api/voice/live", headers=ORIGIN) as a:
+            _admitted(a, TAB, call_id=CALL, leg=1)
+            with client.websocket_connect("/api/voice/live", headers=ORIGIN) as b:
+                _admitted(b, TAB, call_id=CALL, leg=2)
+                assert _json(a) == SUPERSEDED
+                _closed(a)
+                b.send_json({"type": "stop"})
+                assert _drain_until(b, "state")["state"] == "ended"
+                _closed(b)
+    path = tmp_path / "calls" / f"{CALL}.jsonl"
+    _wait_for(lambda: path.read_text().count('"leg_end"') == 2)
+    lines = _trail_lines(tmp_path / "calls")
+    ends = {line["leg"]: line for line in lines if line["ev"] == "leg_end"}
+    assert (ends[1]["reason"], ends[1]["code"]) == ("superseded", 1000)
+    assert (ends[2]["reason"], ends[2]["code"]) == ("ended", 1000)
+    assert {line["leg"] for line in lines} == {1, 2}
+    assert TAB not in path.read_text()
+    journal = "\n".join(r.getMessage() + (r.exc_text or "") for r in caplog.records)
+    assert "leg end" in journal and "took the slot" in journal  # the lines exist…
+    assert TAB not in journal  # …and not one of them carries the id

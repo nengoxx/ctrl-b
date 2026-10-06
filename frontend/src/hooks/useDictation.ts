@@ -32,7 +32,7 @@ import {
   type WakeLockState,
 } from "../lib/wakeLock";
 import { appendDraft, clearDraft, getDraft } from "../store/composer";
-import { setMicRelease } from "../store/micRelease";
+import { holdLeg, legClosing, setMicRelease } from "../store/micRelease";
 import { pushToast } from "../store/toast";
 
 // Phase 6b-1 — push-to-talk dictation (tap to start, tap to stop). The idiomatic React home for the
@@ -862,7 +862,9 @@ export function useDictation({
    *
    * Resolves when nothing here holds a stream any more — immediately when nothing did. The one window
    * it cannot bound is a `getUserMedia` sitting on an unanswered permission prompt; that is the
-   * owner's dialog, and it ends when they answer it.
+   * owner's dialog, and it ends when they answer it. (Since Phase 26 D5 the CALLER — `releaseMic` —
+   * additionally waits for the stopped recording's LEG to close, through the tab-wide `holdLeg` latch:
+   * the microphone is back at `onstop`, the relay's slot only at the close.)
    */
   const yieldMic = useCallback((): Promise<void> => {
     if (!armRef.current && !recRef.current) return Promise.resolve();
@@ -932,9 +934,11 @@ export function useDictation({
    * @param s    the session, already detached from `streamRef` by the caller: it is closing out, and no
    *             later `stop()`/sweep may adopt it.
    * @param mime the recorder's ACTUAL container, for the clip this may still have to upload.
+   * @param released D5 — `holdLeg`'s settle, called the moment the leg is closed: from there this
+   *             tab may open its next leg (a recording, a call) without superseding this one.
    */
   const finishStream = useCallback(
-    async (s: StreamSession, mime: string, clip: Clip): Promise<void> => {
+    async (s: StreamSession, mime: string, clip: Clip, released: () => void): Promise<void> => {
       // The existing `sending` phase, deliberately — the mic is inert and spinning while a phrase
       // lands, which is exactly what it already means. No new `MicStatus` value is owed.
       setPhase("sending");
@@ -1048,6 +1052,7 @@ export function useDictation({
       }
       s.socket.close();
       s.closed = true; // …and from here its own late callbacks are ghosts
+      released(); // D5 — the leg is no longer wanted: the next one may open (the upload below has none)
       endTrail(s, {
         finals: s.finals,
         clip: s.finals > 0 ? "discarded" : "uploaded",
@@ -1569,7 +1574,10 @@ export function useDictation({
     // that window would overwrite the chunks, the discard flag and the stamp the late callback is
     // about to read. A too-early re-press gets `false` here and closes its own chrome, as it does for
     // every other reason a recorder does not arm.
-    if (armRef.current || recRef.current) return false;
+    // …and so does a press while ANY recording's leg in this tab is still closing out (Phase 26 D5,
+    // `store/micRelease.legClosing` — tab-wide, so a REMOUNTED composer sees its predecessor's release):
+    // its leg would carry this tab's id and supersede that one mid-tail.
+    if (armRef.current || recRef.current || legClosing()) return false;
     if (!preflight()) return false;
     activateAtRef.current = Date.now(); // the trail's `t_activate` (S11)
     // A fresh recording starts HAND-ON by default: `start()` is what the gesture calls from a press,
@@ -1647,8 +1655,9 @@ export function useDictation({
         teardownDetector(); // BEFORE the upload enters `sending` — the watcher dies with the recording
         stream.getTracks().forEach((t) => t.stop()); // release the mic indicator
         // …and the ear is free from THIS line, not from the end of the release choreography (D74 S6
-        // ⑧): the flush and its tail wait are the RELAY's business, and a call held behind them
-        // would wait seconds for a microphone that is already back.
+        // ⑧): the flush and its tail wait are the RELAY's business. (Since Phase 26 D5 a waiting call
+        // still waits for this recording's LEG to close — `yieldMic` — because its own first leg would
+        // take the relay's slot from it mid-tail; the microphone itself is back here.)
         earFreed();
         // THE CLIP LEAVES THE REFS HERE, once, before anything decides what becomes of it — the F2
         // ownership rule applied to the recording itself now that S2.5 can hold the decision open for
@@ -1686,7 +1695,10 @@ export function useDictation({
         const live = streamRef.current;
         if (live) {
           streamRef.current = null;
-          void finishStream(live, rec.mimeType || "audio/webm", clip);
+          // D5 — the leg stays WANTED until the release closes it, so the tab-wide hold goes up HERE,
+          // in the same synchronous step that freed the ear above (a waiting `releaseMic` reads it next).
+          const released = holdLeg();
+          void finishStream(live, rec.mimeType || "audio/webm", clip, released).finally(released);
           return;
         }
         void upload(rec.mimeType || "audio/webm", clip);

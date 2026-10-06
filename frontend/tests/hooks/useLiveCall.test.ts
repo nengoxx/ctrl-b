@@ -516,6 +516,47 @@ describe("callReduce — terminals (§4.3/§4.5)", () => {
   });
 });
 
+describe("callReduce — the slot takeover's old leg (Phase 26 D5)", () => {
+  it("`ended{superseded}` is a TERMINAL that says why — and never redials", () => {
+    const queued = run(listening, [{ type: "final", text: "said before the takeover" }]).state;
+    const { state, out } = run(queued, [{ type: "serverEnded", reason: "superseded" }]);
+    expect(state.phase).toBe("ended");
+    expect(state.note).toBe(CALL_COPY.superseded);
+    // NEUTRAL copy (the D5 code round): the newer leg may be a duplicated tab's DICTATION, so the words
+    // claim no continuity — only that the call was taken over.
+    expect(CALL_COPY.superseded).toBe("the call was taken over by another ctrl-b session");
+    // The ordinary terminal tail (ISS-61's harvest included) — and no `reconnect`: a duplicated tab
+    // redialling would supersede the copy that superseded it, back and forth.
+    expect(out.some((e) => e.type === "reconnect")).toBe(false);
+    expect(out.at(-1)).toEqual({ type: "teardown", close: false });
+    // …and the 1000 close that follows the frame is swallowed by the terminal guard, not a ladder rung.
+    const after = callReduce(state, { type: "socketLost" });
+    expect(after.state).toBe(state);
+    expect(after.out).toEqual([]);
+  });
+
+  it("…while a plain `ended` (the relay's `stop` tail) is unchanged: the standing note, or none", () => {
+    expect(run(listening, [{ type: "serverEnded" }]).state.note).toBe("");
+    const strained = run(listening, [{ type: "degraded" }]).state;
+    const ended = run(strained, [{ type: "serverEnded" }]).state;
+    expect([ended.phase, ended.note]).toEqual(["ended", CALL_COPY.strained]);
+    // An unknown reason is not the takeover: the same plain terminal.
+    expect(run(listening, [{ type: "serverEnded", reason: "whatever" }]).state.note).toBe("");
+  });
+
+  it("the busy arms stay the COMPAT path, untouched (a pre-D5 relay, an id-less tab)", () => {
+    expect(
+      run(CALL_INITIAL, [{ type: "serverError", code: "busy", message: "taken" }]).state.note,
+    ).toBe(CALL_COPY.busy);
+    const redial = run(listening, [{ type: "socketLost" }]).state;
+    const refused = run(redial, [{ type: "serverError", code: "busy", message: "taken" }]);
+    expect([refused.state.phase, refused.state.note]).toEqual([
+      "connecting",
+      CALL_COPY.busyRetrying,
+    ]);
+  });
+});
+
 describe("callReduce — reconnect (§4.5)", () => {
   it("retries with backoff, loses the utterance in flight, and gives up bounded", () => {
     let s = listening;

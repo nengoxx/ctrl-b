@@ -21,6 +21,48 @@
 
 let release: (() => Promise<void>) | null = null;
 
+// THE TAB'S ONE WANTED LEG (Phase 26 D5, ASR_PLAN §3.9 ④) — beside the ear's slot, because it is the
+// same handover one step later. Since D5 the relay keys its session slot by the TAB (`liveClientId`):
+// a newer leg from this tab SUPERSEDES the holder, so a dictation leg still in its release (flush → tail
+// wait → close) would lose its tail phrase to the next leg this tab opens — a recording or a call. The
+// relay can only trust "same id ⇒ the holder is stale" while this tab never opens a leg beside one of
+// its own that is still wanted, and THIS is where that is kept: a promise that settles at the closing
+// leg's `close()`, or null.
+//
+// MODULE SCOPE ON PURPOSE: the release survives its composer's unmount (`useDictation`'s `finishStream`
+// runs to completion — Conf/Utils unmount the composer), and the id is per TAB, so the latch must
+// outlive the hook instance that set it. A remounted hook's `start()` reads it here (`legClosing`), and
+// `releaseMic` waits it out whether or not any composer is mounted to publish a `release`.
+let closing: Promise<void> | null = null;
+
+/** A dictation leg has started closing out (its recorder stopped, its release running): hold the tab's
+ *  next leg until it has. Returns the ONE idempotent settle — call it the moment that leg is closed (and
+ *  again as a belt when the release returns or throws: a latch left standing would refuse every
+ *  recording and park every call on this page). A newer hold replaces an older one; an older settle
+ *  never clears a newer hold. */
+export function holdLeg(): () => void {
+  let settle = (): void => {};
+  const p = new Promise<void>((res) => {
+    settle = res;
+  });
+  closing = p;
+  return () => {
+    if (closing === p) closing = null;
+    settle();
+  };
+}
+
+/** Is a leg of this tab still closing out? `useDictation.start()` refuses while it is. */
+export function legClosing(): boolean {
+  return closing !== null;
+}
+
+/** TESTS ONLY — drop a hold a finished case left standing (a release parked on a fake clock that the
+ *  case never ran out), so the next case starts with no leg closing. Never called by the app. */
+export function resetLegHold(): void {
+  closing = null;
+}
+
 /** Offer `fn` as the way to make the microphone free again, or `null` to withdraw the offer. The
  *  publisher withdraws on unmount, so a dead composer can never leave a live handover behind. */
 export function setMicRelease(fn: (() => Promise<void>) | null): void {
@@ -34,6 +76,12 @@ export function setMicRelease(fn: (() => Promise<void>) | null): void {
  * not fail to start because the thing it was taking the ear from had a bad day — and the acquisition
  * on the other side of this await is what reports a microphone that will not open, in the owner's
  * own words.
+ *
+ * …AND (Phase 26 D5) only once no leg of this tab is closing out (`holdLeg`): the call's first leg
+ * carries the tab's `client_id` and would supersede a dictation leg still waiting for its tail. The
+ * microphone itself is back at the recorder's `onstop`; the relay's slot is back at the leg's close —
+ * ≤ `tail_wait_ms` + the drain bound later. Read AFTER the release resolves: `onstop` frees the ear and
+ * raises the hold in the same synchronous callback, so the hold is up by the time this continues.
  */
 export async function releaseMic(): Promise<void> {
   try {
@@ -41,4 +89,6 @@ export async function releaseMic(): Promise<void> {
   } catch {
     // See above: the caller's own failure path is the one that speaks.
   }
+  const leg = closing;
+  if (leg) await leg;
 }

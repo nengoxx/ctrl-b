@@ -191,7 +191,13 @@ import { useVoiceStatus } from "./useVoiceStatus";
  *  which puts the worst-case slot release at 10.0 s — so the ladder spans ≈14.1 s, with margin, instead of
  *  the 6.1 s that could not reach it. Longer rungs, not more of them: six dials is already generous for a
  *  single-user install, and the last two repeat because a link that has not returned in 10 s is not coming
- *  back in a hurry. */
+ *  back in a hurry.
+ *
+ *  …THE COMPAT PATH since Phase 26 D5. Wherever BOTH ends carry the tab's `client_id` (`liveClientId`),
+ *  this phone's own zombie is SUPERSEDED, not refused — the relay hands the newer leg the slot at once, so
+ *  the first rung just dials. The ≈14 s span is kept for the two cases where it is still the only correct
+ *  behaviour: a relay older than D5 (v1.7.10 — the rollback skew), and a tab with no id (no storage, no
+ *  secure context). Not a legacy seam: the live path there. */
 const RECONNECT_BACKOFF_MS = [400, 900, 1800, 3000, 4000, 4000] as const;
 
 /** How long the "connection strained" note stands after a `degraded` frame, unless another one re-arms
@@ -360,7 +366,11 @@ const PEAK_HOLD_MS = 2000;
  *  It is a HEURISTIC and the council ruled its hole bounded and acceptable: a tab killed without
  *  running its teardown leaves the marker standing, so the next first dial reads a genuine
  *  other-device refusal as its own zombie and spends the ladder (~14 s) before saying so — on a
- *  single-user install, a slower answer to a question that is nearly always the other way round. */
+ *  single-user install, a slower answer to a question that is nearly always the other way round.
+ *
+ *  …THE COMPAT PATH since Phase 26 D5, with the ladder above: where both ends carry the tab's
+ *  `client_id`, the zombie this marker infers is superseded by the relay and no `busy` ever reaches the
+ *  reducer. It still answers for a pre-D5 relay (v1.7.10) and for an id-less tab. */
 const BUSY_MARKER = "ctrlb-live-call";
 
 /** Write/clear the marker. Wrapped like any storage access: a private window, blocked site data or a
@@ -443,6 +453,12 @@ export const CALL_COPY = {
   /** D73 S6 ④ — the background idle end. The terminal face already says "Call ended", so the note is
    *  the REASON, which is the one thing a call that ended on its own owes the owner. */
   idleBackground: "the call sat idle in the background",
+  /** Phase 26 D5 — the relay ended this leg because a NEWER leg of this same tab took its slot
+   *  (`ended{reason:"superseded"}`). Inside one tab the old leg is already fenced out, so in practice
+   *  this is a DUPLICATED tab (a copied `sessionStorage`, same id) — whose newer leg may be a call OR a
+   *  dictation, so the words claim no continuity, only what happened. Terminal, never a redial: two
+   *  copies redialling would supersede each other until a ladder ran out. */
+  superseded: "the call was taken over by another ctrl-b session",
 } as const;
 
 /** The notes a FRESH LEG retracts — connection news, which a live connection has just made false.
@@ -697,7 +713,8 @@ export type CallSignal = { gen?: number } & (
    *  arrives INSTEAD of that segment's final). The relay forwards none today, so only the id-less branch
    *  runs until session B's ear carries one. */
   | { type: "serverError"; code: string; message: string; itemId?: string }
-  | { type: "serverEnded" } //                 the relay said `state: ended`
+  /** The relay said `state: ended` — with the frame's `reason` when it named one (D5: `superseded`). */
+  | { type: "serverEnded"; reason?: string }
   /** Trigger A — VOICE over an AUDIBLE reply (the wiring's sustained-energy window). Interrupts the
    *  mouth and nothing else: inert while it is silent, so speech during `thinking` steers (D41). */
   | { type: "barge" }
@@ -1582,6 +1599,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
           // `socketLost` arm reconnects from, so a dial that gets `busy` consumes exactly ONE attempt:
           // reconnecting from here as well would burn two rungs per refusal and need a second counter
           // to notice.
+          // (Since Phase 26 D5 this whole arm is the COMPAT path: a relay that knows this tab's
+          // `client_id` supersedes its own zombie instead of refusing it, so only a pre-D5 relay or an
+          // id-less tab still lands here with this phone's own slot — see `RECONNECT_BACKOFF_MS`.)
           return { state: { ...s, note: CALL_COPY.busyRetrying }, out: [] };
         case "session_limit":
           // The relay's sentence IS the note here (unlike `protocol`'s diagnostics): the class now has
@@ -1613,6 +1633,10 @@ function reduce(s: CallState, sig: CallSignal): Step {
       }
 
     case "serverEnded":
+      // D5 — a newer leg of this tab took the relay's slot. A TERMINAL like every `ended` (never a
+      // reconnect: a duplicated tab redialling would supersede the copy that superseded it, back and
+      // forth until a ladder ran out), but it says why, because the owner did not hang up.
+      if (sig.reason === "superseded") return terminal(s, "ended", CALL_COPY.superseded);
       return terminal(s, "ended", s.note ?? "");
 
     case "captureLost":
@@ -2869,7 +2893,7 @@ export function useLiveCall(): CallView {
           case "state":
             if (frame.state === "ready") send({ type: "ready", gen });
             else if (frame.state === "degraded") send({ type: "degraded", gen });
-            else send({ type: "serverEnded", gen });
+            else send({ type: "serverEnded", reason: frame.reason, gen });
             break;
           case "speech_started": {
             // T6 — the pacer's unreported drops ride THIS turn's start as one line: a turn that begins
@@ -3061,6 +3085,11 @@ export function useLiveCall(): CallView {
       // nothing was recording, which is every ordinary call.
       void releaseMic()
         .then(async () => {
+          // A CALL THAT ENDED WHILE IT WAITED opens nothing (Phase 26 D5 code round): since D5 the wait
+          // can last a dictation leg's whole release (≤ `tail_wait_ms`), and a `getUserMedia` after a
+          // hang-up — even one stopped at once below — is, on the call route, a Bluetooth audio-mode
+          // switch in the car. Checked FIRST, before the pool's wait and before the capture.
+          if (!alive()) return null;
           // THE POOL'S WAIT (ISS-54 ②) sits BEFORE `getUserMedia`: the fresh context opens after comm
           // mode is on and after the old stream has aged out of the pool — exactly what a direct
           // call-route start gets — and a call that ended during the wait never opens a mic at all.

@@ -382,7 +382,7 @@ import { CALL_COPY, useLiveCall } from "../../src/hooks/useLiveCall";
 import { STREAM_RETAG_MS } from "../../src/lib/audioController";
 // REAL, deliberately (D74 S6 ⑧): the handover is the seam under test, and a mocked one would pin the
 // harness's opinion of it rather than the module both sides actually share.
-import { setMicRelease } from "../../src/store/micRelease";
+import { resetLegHold, setMicRelease } from "../../src/store/micRelease";
 
 /** Move the playback status the way the real store does: write, then tell the listeners — in the same
  *  task, which is the whole S3 contract the wiring now rides (see the sync-hold suite). */
@@ -476,6 +476,7 @@ beforeEach(() => {
   h.chirpVerdict = { lagMs: 2301, peak: 0.87, second: 0.1 };
   h.voice.data.live_call.chirp = false;
   setMicRelease(null); // nobody holds the ear unless a case says so
+  resetLegHold(); // …and no dictation leg is closing out (Phase 26 D5)
   h.voice.data.stt_auto_stop.threshold = 0;
   h.capGate = Promise.resolve();
   h.starts = [];
@@ -1826,6 +1827,29 @@ describe("useLiveCall — the ear is TAKEN before it is opened (D74 S6 ⑧)", ()
     expect(order).toEqual(["dictation-stop", "dictation-free"]);
     expect(h.capOpts).not.toBeNull();
     view.unmount();
+  });
+
+  it("a call that ENDS while it waits for the ear never opens a microphone (Phase 26 D5 code round)", async () => {
+    // Since D5 the wait can last a dictation leg's whole release (≤ `tail_wait_ms`). A hang-up inside it
+    // must not reach `getUserMedia` at all — on the call route that is a Bluetooth audio-mode switch.
+    let free!: () => void;
+    setMicRelease(
+      () =>
+        new Promise<void>((res) => {
+          free = res;
+        }),
+    );
+    const view = renderHook(() => useLiveCall());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    view.unmount(); // the owner hangs up while the dictation is still letting go
+    await act(async () => {
+      free();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+    expect(h.capStarts).toBe(0);
+    expect(h.capOpts).toBeNull();
   });
 });
 
@@ -4124,5 +4148,53 @@ describe("useLiveCall — THE TURN HOLD, wired (ISS-55)", () => {
     const all = lines();
     expect(all.filter((l) => l.ev === "turn")).toEqual([]);
     expect(all.find((l) => l.ev === "sig" && l.type === "final")).not.toHaveProperty("turnHoldMs");
+  });
+});
+
+describe("useLiveCall — the slot takeover's old leg (Phase 26 D5)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const advance = async (ms: number): Promise<void> => {
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(ms);
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+  };
+
+  it("`ended{superseded}` on the CURRENT leg reaches the machine WITH its reason — a named end, no redial", async () => {
+    const { view } = await call();
+    const legs = h.starts.length;
+    await act(async () => {
+      h.frame?.({ type: "state", state: "ended", reason: "superseded" });
+      h.close?.(); // …and the relay's close behind it: swallowed by the terminal, never a ladder rung
+    });
+    expect(view.result.current.phase).toBe("ended");
+    expect(view.result.current.note).toBe(CALL_COPY.superseded);
+    await advance(20_000); // past the whole ladder's span
+    expect(h.starts.length).toBe(legs);
+  });
+
+  it("…and the same frame from an OLDER leg is fenced (`legSeq`): the live leg keeps the call", async () => {
+    const { view } = await call();
+    const oldLeg = h.frame!;
+    await act(async () => {
+      h.close?.(); // the link dropped — the ladder's first rung opens a NEW leg
+    });
+    await advance(400);
+    expect(h.starts.length).toBe(2);
+    await act(async () => {
+      h.frame?.({ type: "state", state: "ready" });
+    });
+    expect(view.result.current.phase).toBe("listening");
+    await act(async () => {
+      oldLeg({ type: "state", state: "ended", reason: "superseded" }); // a ghost of the dead leg
+    });
+    expect(view.result.current.phase).toBe("listening");
+    expect(view.result.current.note).not.toBe(CALL_COPY.superseded);
   });
 });

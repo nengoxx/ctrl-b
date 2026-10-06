@@ -8,8 +8,9 @@
 // machine is what knows whether the call is still wanted.
 //
 // THE WIRE IS LAW (`services/voice_live.py`, the §7-S1 as-built record). Uplink: one TEXT
-// `{"type":"start","sample_rate":<Hz>}` FIRST (plus `mode: "dictation"` on a dictation leg, S11, and the
-// D77 trail pair on a debug leg), then binary pcm16 LE mono frames at that declared rate,
+// `{"type":"start","sample_rate":<Hz>}` FIRST (plus `mode: "dictation"` on a dictation leg, S11, the
+// D77 trail pair on a debug leg, and — on EVERY leg of a tab that can mint one — the tab's `client_id`,
+// Phase 26 D5, added HERE so no caller can forget it), then binary pcm16 LE mono frames at that declared rate,
 // plus the TEXT controls `{"type":"flush"}` and `{"type":"stop"}`. Anything else is a protocol close
 // (1008). Two properties of those controls bind every caller:
 //   · **`flush` has NO ack** — the endpoint's own `speech_stopped` + `transcript` are the only response;
@@ -23,7 +24,9 @@
  *  which is what lets the call judge each final on its OWN segment's evidence — and an `error` may carry
  *  one too (D9), naming the segment it answered instead of a final. The relay also forwards
  *  Speaches' `audio_start_ms`/`audio_end_ms` and, on a gap-cut final, `reason`/`gap_ms` (D80 ④) — those
- *  are the trail's, and nothing here reads them, so they are not parsed. */
+ *  are the trail's, and nothing here reads them, so they are not parsed. A `state` frame's `reason` IS
+ *  parsed: `degraded{reason:"overflow"}`, and `ended{reason:"superseded"}` (Phase 26 D5 — a newer leg of
+ *  this same tab took the relay's slot; the plain `stop` end carries none). */
 export type LiveDown =
   | { type: "state"; state: "ready" | "ended" | "degraded"; reason?: string }
   | { type: "speech_started"; item_id?: string }
@@ -54,6 +57,51 @@ export const CLOSE_BACKPRESSURE = 4000;
 /** …the dictation leg thrown away over its own PACER backlog (K2) — before `ready` (a handshake that is
  *  not coming) or after it (stale speech). Distinct from 4000, which is the SOCKET's buffer. */
 export const CLOSE_CLIENT_BACKLOG = 4001;
+
+/** THE TAB'S IDENTITY (Phase 26 D5, ASR_PLAN §3.9 ④) — `sessionStorage`, because the key is exactly
+ *  per-tab and SURVIVES the reload a discarded tab comes back through (the `ctrlb-live-call` marker's
+ *  reasoning, `useLiveCall`). The relay keys its slot by it: a newer leg of the SAME tab takes the slot
+ *  over at once — the reload, the reconnect racing a dead link's ≤10 s close (R94 K5) — instead of being
+ *  refused `busy` by its own zombie. ONE per tab and mode-agnostic: a call and a dictation in one tab are
+ *  the same client, which is safe because a tab never opens a leg while one of its own is still wanted
+ *  (the tab-wide leg hold in `store/micRelease` keeps that line — `holdLeg`).
+ *
+ *  THE ACCEPTED RESIDUAL (SECURITY_MODEL §2.10): "Duplicate tab" and a same-origin `window.open` COPY
+ *  `sessionStorage`, id included, so the copy's leg supersedes the original's — the marker's own hole,
+ *  bounded the same way. A BroadcastChannel "is this id live elsewhere?" probe is the exit if it is ever
+ *  seen. */
+const CLIENT_ID_KEY = "ctrlb-live-client";
+/** The relay's own predicate for it (`call_trail.valid_call_id`): a canonical LOWERCASE UUID, which is
+ *  what `crypto.randomUUID()` mints. A stored value that is anything else is re-minted, never sent. */
+const CLIENT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** Resolved ONCE per document (`undefined` = not yet): one id per page, and one storage write — jsdom's
+ *  Storage schedules a timer per write, and a browser's is a synchronous disk-backed call besides. */
+let clientId: string | null | undefined;
+
+/**
+ * This tab's `client_id`, or `null` — and `null` means NO FIELD: today's exact `start`, the plain
+ * counted cap, and the busy ladder + marker as the compat path. Every storage access is wrapped like the
+ * marker's (`markLeg`): a private window, blocked site data or a full quota all throw, and none of them
+ * is a reason a leg cannot open. No `randomUUID` (a non-secure context, where the mic cannot open either)
+ * is the same `null`. Exported for S8b, whose IndexedDB `owner` is this same id.
+ */
+export function liveClientId(): string | null {
+  if (clientId !== undefined) return clientId;
+  clientId = null;
+  try {
+    const stored = sessionStorage.getItem(CLIENT_ID_KEY);
+    if (stored !== null && CLIENT_ID_RE.test(stored)) {
+      clientId = stored;
+    } else if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      const minted = crypto.randomUUID();
+      sessionStorage.setItem(CLIENT_ID_KEY, minted);
+      clientId = minted;
+    }
+  } catch {
+    clientId = null; // a write that threw leaves no id this document could keep across a reload
+  }
+  return clientId;
+}
 
 /** The relay's URL on this origin. `wss:` under Tailscale Serve, `ws:` on plain-HTTP dev — derived from
  *  the page rather than configured, because the route is same-origin by construction (the server's
@@ -149,10 +197,10 @@ export interface LiveSocketOpts {
   onClose: (code: number, reason: string) => void;
   /** THE LEG'S FEATURE (S11) — sent in `start` as `mode` ONLY when present. Dictation passes
    *  `"dictation"`, and the relay skips the D80 ④ gap cut on that leg; a call passes nothing (the relay's
-   *  absent default is `call`), so the call's `start` stays byte-identical. */
+   *  absent default is `call`). */
   mode?: "dictation";
   /** THE CALL TRAIL's identity (D77) — sent in `start` as `call_id` + `leg` ONLY when present, which is
-   *  only with `voice.live.debug` on: the shipped default's `start` stays byte-identical. A call names
+   *  only with `voice.live.debug` on. A call names
    *  itself; a dictation recording names its own trail (S11, `leg: 1`). ONE optional object rather than
    *  two optional fields because the relay
    *  takes them together or not at all (a protocol close otherwise) — the type makes half a pair
@@ -204,13 +252,16 @@ export function openLiveSocket(opts: LiveSocketOpts): LiveSocket {
 
   ws.onopen = () => {
     // The handshake, and it must be FIRST: the relay builds its resampler from this rate and treats a
-    // leading binary frame as a protocol error.
+    // leading binary frame as a protocol error. The tab's id rides EVERY leg from this one door (D5), so
+    // neither hook can forget it; a tab without one sends today's exact frame.
+    const client = liveClientId();
     ws.send(
       JSON.stringify({
         type: "start",
         sample_rate: Math.round(opts.sampleRate),
         ...(opts.mode ? { mode: opts.mode } : {}),
         ...(opts.trail ? { call_id: opts.trail.callId, leg: opts.trail.leg } : {}),
+        ...(client === null ? {} : { client_id: client }),
       }),
     );
   };

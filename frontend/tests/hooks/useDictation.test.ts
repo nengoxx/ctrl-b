@@ -18,12 +18,13 @@ import { FakeMediaRecorder, mockStt, recordOnce, setMediaDevices } from "./dicta
 import { runComposer } from "../../src/lib/composer";
 import { getChatStatus } from "../../src/store/chat";
 import { clearDraft, getDraft } from "../../src/store/composer";
-import { releaseMic } from "../../src/store/micRelease";
+import { releaseMic, resetLegHold } from "../../src/store/micRelease";
 import { pushToast } from "../../src/store/toast";
 
 const opts = (autoSend = false) => ({ sttReady: true, statusStamp: 1, autoSend });
 
 beforeEach(() => {
+  resetLegHold(); // D5 — no leg of the tab is closing out at the start of a case
   vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
   FakeMediaRecorder.deferStop = false; // the queued-events window is opt-in, per case
   setMediaDevices(true);

@@ -620,6 +620,33 @@ R95 §4) · the echo backstop · the voice learner · the overlay · the idle cl
    live-call marker's precedent), sent in `start` on every leg; the relay acquires the slot AFTER reading `start`. Full and
    the holder's `client_id` matches ⇒ the slot transfers at once, the old leg gets `state:ended{reason:"superseded"}` and
    closes in the background; another client gets `busy`; one release per slot.
+   **As built (session 60, the D5 audit + the main seat's rulings):** `LiveSessionSlots` is an admission TABLE —
+   `{holder → client_id | None}`, `acquire(cap, client_id, holder) → "admitted" | "superseded" | "busy"` (synchronous, D38),
+   `release(holder)` owner-checked and idempotent (an entry leaves exactly once — the ONE release is still the route's
+   `finally`). A same id is matched FIRST, at any cap (Q1: one leg per client — identical to "full AND matches" at the
+   default cap 1); `None` matches nothing, so an id-less `start` (a v1.7.10 PWA, a tab without storage) gets the counted cap
+   and the byte-identical busy frame + 1013 it always had. The session takes the slot itself, right after `start`
+   (`_admit`); a refusal is `_fail("busy")` inside `run()` — so a busy leg now logs its leg-end line (`reason=busy`, Q9).
+   The old leg ends through its OWN teardown, never a cancel: `supersede()` sets a flag that a pre-`ready` check (a leg
+   superseded mid-dial finishes that dial, then ends) and `_pump`'s fourth waiter task turn into `_Superseded` →
+   `ended{reason:"superseded"}` + close 1000 "superseded" (the clean-stop tail; the `stop` end stays reason-less).
+   **`ended{superseded}` reaches only a running leg; a leg already closing just loses the slot.** `client_id` is validated
+   with the trail id's own predicate (`valid_call_id` → 1008), is mode-agnostic (Q2), and appears in no log or trail line.
+   The client: `liveClientId()` in `lib/liveSocket.ts` (`sessionStorage["ctrlb-live-client"]`, memoized per document,
+   every storage access try/catch'd, no storage or no `randomUUID` ⇒ no field) and `openLiveSocket` adds it to EVERY
+   `start` (Q4). The call: `ended{superseded}` ⇒ a terminal with `CALL_COPY.superseded`, never a redial (Q6); the busy arm,
+   the `ctrlb-live-call` marker and the ≈14 s ladder are KEPT as the compat path (a pre-D5 relay, an id-less tab — Q5).
+   Dictation: no new arm (the death rule stands; S8's recovery ships in v1.7.12, so in v1.7.11 a superseded live dictation
+   leg loses its tail); "one wanted leg per tab" (Q3) is enforced by a TAB-WIDE hold in `store/micRelease.ts` (`holdLeg`,
+   raised at `onstop` when a release takes the leg, settled at that leg's `close()` + a `.finally` belt): `start()`
+   refuses while `legClosing()`, and `releaseMic` waits it out after the ear's own release — so a call's first leg waits
+   ≤ `tail_wait_ms` (the microphone itself is still back at `onstop`), and a REMOUNTED composer or none at all sees it
+   too (the release survives the composer's unmount; the id is per tab). For v1.7.11 this hold is the ONLY protection of
+   a closing leg's tail — nothing recovers it. The call's `acquire` checks `alive()` the moment that wait resolves, so a
+   hang-up inside it opens no microphone. Residuals: the duplicated tab (a copied `sessionStorage` carries the same id —
+   SECURITY_MODEL §2.10, Q8; the call's note claims no continuity, "the call was taken over by another ctrl-b
+   session"); ~10 s of two Speaches sessions while a superseded leg's close waits out a dead peer; the "old finish runs
+   `maybeAutoSend` over the next recording" defect is ISS-60, not D5.
 5. **K6 — 16 kHz capture (R11).** `new AudioContext({ sampleRate: 16000 })` through ONE synchronous helper,
    `openCaptureContext` in `pcmCapture.ts`, called at both context sites (`startPcmCapture` and `useDictation.ts`'s
    `armDetector`); on `NotSupportedError` from `createMediaStreamSource`, close and rebuild at the native rate
@@ -823,7 +850,7 @@ round — blind Opus 5.5 ∥ blind Emma.**
 | **K6** 16 kHz | the two context sites + the native-rate fallback via the caller's own resume path (council 25) · comment/test updates · optional `fftSize` | 16 kHz path · fallback on a thrown `createMediaStreamSource` · **fallback context reaches running** · frame size | **phone card:** trail rate 16000 · one call + one 5–10 min dictation transcribe normally · chirp lag + latency readout unchanged · level gates self-adjust · **EC-call and EC-media arms** · **one Fennec run** (the fallback) |
 | **D9** | reducer awaited set · `liveSocket.ts` (`error.item_id`) · overlay selector (closes LIVE_VOICE_PLAN OPEN-2, T-11) | L5 §1.3's `stop(A)→start(B)→stop(B)→transcript(A)→transcript(B)` keeps the mouth shut until B's final · the id-less belt | — |
 | **D8** | `levelGate.ts`, `useLiveCall.ts` | seed tiers · settled overrides up AND down · never learned | a call's first 5 s on a fresh route |
-| **D5** (A's tail) | `LiveSessionSlots` holder map + supersede · slot acquired after `start` (`api/voice.py`) · `client_id` in `sessionStorage` · both hooks | same-tab supersede incl. after a reload · another client `busy` · `ended{superseded}` · one release per slot | — |
+| **D5** (A's tail) — **BUILT 2026-10-06 (session 60), review pending** | `LiveSessionSlots` holder map + supersede · slot acquired after `start` (`LiveRelaySession._admit`; `api/voice.py` keeps the one release) · `client_id` in `sessionStorage` (`liveSocket.liveClientId`, added at the one door) · both hooks (the call's `superseded` terminal; dictation's one-wanted-leg guards) | same-tab supersede incl. after a reload · another client `busy` · `ended{superseded}` · one release per slot · as built: the table primitive (sync · transfer · owner-checked release · cap-2 match-first) · superseded mid-dial (no `ready`) · an already-ending holder just loses the slot · byte-identical busy on the legacy path · malformed id → 1008 · the id in no log/trail line · FE: id stable across opens + a reload, storage/`randomUUID` absent ⇒ today's bytes · `superseded` terminal, no redial, stale leg fenced · `start()` refused + `yieldMic` waits while a leg closes | — (the v1.7.11 prod card's "a re-dial right after a dropped leg is not busy" rides it) |
 
 ### 7.2 Session B — engine, capture, the host, hand tuning, THE FLIP, recovery
 
