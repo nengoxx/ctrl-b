@@ -2599,6 +2599,10 @@ class Settings(BaseModel):
             # `agent.defaults` (its form saves there), but a specialist never inherits it, or switching the
             # root off would silently mute every key-less specialist (every card import).
             defaults.pop("greeting_enabled", None)
+            # ISS-37 (owner ruling 2026-10-06): the greeting TEXT is per-agent identity too — "no greeting"
+            # is a valid choice for a specialist, and nothing may bleed into it from the root's form.
+            defaults.pop("greeting", None)
+            defaults.pop("alt_greetings", None)
         override = dict(agent_yaml or {})
         merged = deep_merge(defaults, override)
         # D48 C7 (audit L2): a `ModelRef.model` clean name is PROVIDER-RELATIVE — never carried across

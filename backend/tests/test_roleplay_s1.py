@@ -170,6 +170,30 @@ def test_the_greeting_switch_is_per_agent_never_inherited_from_the_root() -> Non
         assert settings.resolve_agent("mute").greeting_enabled is False
 
 
+def test_the_greeting_text_is_per_agent_never_inherited_from_the_root() -> None:
+    """ISS-37 (owner ruling 2026-10-06): a specialist with no greeting of its own has NONE — that is a
+    valid choice, and the root's greeting text (saved into `agent.defaults` by its form) must not bleed
+    into it. The root still reads its own text; a specialist's explicit text still wins; the same holds for
+    `alt_greetings`, which rides the same identity slot."""
+    config = (
+        "server:\n  port: 5433\nagent:\n  defaults:\n    greeting: Root says hello.\n"
+        "    alt_greetings: [Root alt.]\n"
+    )
+    with _workspace(config) as (tmp, _cfg), _client() as c:
+        folder = tmp / "agents" / "nyx"
+        folder.mkdir(parents=True)
+        (folder / "agent.yaml").write_text("description: a quiet one\n", encoding="utf-8")  # no greeting
+        settings = c.app.state.settings
+        root = settings.default_agent_def()
+        assert root.greeting == "Root says hello." and root.alt_greetings == ["Root alt."]
+        nyx = c.get("/api/agents/nyx").json()["agent"]
+        assert nyx["greeting"] == "" and nyx["alt_greetings"] == []
+        assert _messages(c, _new_thread(c, "nyx")["id"]) == []  # no greeting → an empty opening
+
+        _agent(c, "loud", greeting="Hi.")
+        assert settings.resolve_agent("loud").greeting == "Hi."
+
+
 def test_the_greeting_is_macro_substituted_at_seed_time() -> None:
     """§4.3's vocabulary, resolved when the conversation opens — the stored row carries the values
     that were true then, like every other persisted turn."""
