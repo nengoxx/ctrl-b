@@ -60,3 +60,14 @@ export function PencilIcon({ size }: { size?: number } = {}) {
     </Glyph>
   );
 }
+
+/** lucide `arrow-down` — the chat's JUMP TO LATEST (`.kit-jump`, ISS-66): the pill that floats above the
+ *  composer while the owner has scrolled up out of a following thread. */
+export function ArrowDownIcon({ size }: { size?: number } = {}) {
+  return (
+    <Glyph size={size}>
+      <path d="M12 5v14" />
+      <path d="m19 12-7 7-7-7" />
+    </Glyph>
+  );
+}

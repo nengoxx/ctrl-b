@@ -18,6 +18,7 @@ import {
 } from "../../hooks/useLiveCall";
 import { useVoiceStatus } from "../../hooks/useVoiceStatus";
 import { modalKeyDown } from "../../lib/focusTrap";
+import { createStickLatch } from "../../lib/stickToBottom";
 import { listAudioInputs, ROUTE_CALL, ROUTE_MEDIA, type MicDevice } from "../../lib/pcmCapture";
 import {
   confirmAwaiting,
@@ -657,9 +658,10 @@ function SensitivityControl({ call, min, max }: { call: CallView; min: number; m
   );
 }
 
-/** How close to the bottom counts as "still following", in px. The chat log's own stick rule, at the
- *  scale of a three-line box: 140px of slack there is most of this block. */
-const FOLLOW_SLACK_PX = 8;
+/** The re-stick band for the caption box, in px (ISS-66). The chat log's 150px `ATTACH_PX` is more than
+ *  this box's whole height (six 13px lines at 1.45 ≈ 113px), so a scroll back DOWN there would always
+ *  re-stick; this is a line and two-thirds. The escape threshold is the shared default. */
+const CAPTION_ATTACH_PX = 32;
 
 /**
  * THE CAPTIONS (owner ask 2026-09-22) — the agent's reply as text on the call screen, three lines of
@@ -720,30 +722,37 @@ function CallCaptions() {
   });
 
   // AUTO-FOLLOW, and only while the owner has not scrolled away: growth pins to the bottom, a scroll
-  // up parks it. The chat log's rule and its shape (a ref + a scroll handler), NOT its code — that one
-  // is bound to `#app-scroll`, the shell's single content pane, which this overlay covers.
+  // UP parks it, a scroll back down to the end re-follows. The chat log's controller, shared
+  // (`lib/stickToBottom.ts`, ISS-66) — a direction latch with our own writes marked — on this box's
+  // own element; the chat's instance is bound to `#app-scroll`, which this overlay covers.
   const boxRef = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
+  const [latch] = useState(() => createStickLatch({ attachPx: CAPTION_ATTACH_PX }));
   // Which edge is hiding something — what the stylesheet fades (and nothing else may decide: CSS
-  // cannot ask whether a box overflows). Measured from the same reads the follow rule uses, so the
-  // fade and the pin can never disagree about where the box is.
+  // cannot ask whether a box overflows). A separate concern from the follow: it is measured after
+  // every pin and every scroll, from the box as it then stands.
   const [edges, setEdges] = useState({ above: false, below: false });
   const measure = (el: HTMLElement): void => {
     const slack = el.scrollHeight - el.scrollTop - el.clientHeight;
-    stick.current = slack <= FOLLOW_SLACK_PX;
     const above = el.scrollTop > 0;
     const below = slack > 0;
     setEdges((e) => (e.above === above && e.below === below ? e : { above, below }));
   };
+  // The box UNMOUNTS between replies (an empty `said` renders nothing), so a fresh box is a new element
+  // and starts following — an escape parked the reply it was made on, not the next one.
+  const boxSeen = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const el = boxRef.current;
     if (!el) return;
-    if (stick.current) el.scrollTop = el.scrollHeight;
-    // Measured HERE rather than left to the scroll event the line above fires: growth alone moves no
+    if (el !== boxSeen.current) {
+      boxSeen.current = el;
+      latch.reset();
+    }
+    latch.pin(el);
+    // Measured HERE rather than left to the scroll event the pin fires: growth alone moves no
     // scrollbar, so a box that just became scrollable while already at its end would keep the edges it
     // was painted with.
     measure(el);
-  }, [said]);
+  }, [said, latch]);
 
   if (said === "") return null; // nothing said yet, or a tool-only turn: no empty box
   return (
@@ -761,11 +770,14 @@ function CallCaptions() {
       // likely to be looking at when they want to interrupt. The bargain, stated: a SHORT reply is a
       // live interrupt target like the rest of the surface, a LONG one is a reading surface a drag can
       // be started on, and everywhere else on the overlay always interrupts. The same two edge reads
-      // the fade and the follow rule take answer it, so the three can never disagree about the box.
+      // the fade takes answer it, so the two can never disagree about the box.
       onClick={(e) => {
         if (edges.above || edges.below) e.stopPropagation();
       }}
-      onScroll={(e) => measure(e.currentTarget)}
+      onScroll={(e) => {
+        latch.onScroll(e.currentTarget);
+        measure(e.currentTarget);
+      }}
     >
       {said}
     </div>

@@ -4344,6 +4344,12 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
  * text on the page (left) so its prose/markdown reads as the main flow (boxed code/command bubbles land in
  * A.3b/c); SYS is a muted dashed caption. Semantic tokens; distinct `kit-*` keyframes (vapor's are global);
  * ambient anims motion-gated (§14.11). vapor untouched. */
+/* The log is the ↓ pill's focus landing (`tabIndex={-1}`, ISS-66), not a control: Chromium paints
+   `:focus-visible` on a programmatic focus after a keyboard activation, which would ring the whole
+   transcript (confirm round №1, Opus N2). */
+.kit .chat-log:focus {
+  outline: none;
+}
 .kit .chat-log {
   padding: 6px 18px 12px;
   display: flex;
@@ -4371,6 +4377,57 @@ body[data-motion="full"] .kit .b-wrap.arrive > .b {
     transform: none;
     opacity: 1;
   }
+}
+/* JUMP TO LATEST (ISS-66) — ChatThread's ↓ pill, mounted only while the owner has scrolled UP out of a
+ * following thread (the direction latch, `lib/stickToBottom.ts`); a tap re-sticks and jumps to the end.
+ *
+ * THE PIN is the `.kit-backdrop-pin` recipe turned upside down: a ZERO-HEIGHT sticky box after `.chat-log`,
+ * so it takes no flow space and never resizes the log (whose ResizeObserver drives the follow). Engines
+ * rest a sticky box against the scroller's CONTENT box (measured in Chromium — the backdrop pin's note),
+ * i.e. on top of `.kit-scroll`'s bottom PAD, which is already `--composer-h + 24px` here and more where a
+ * theme floats more chrome (gacha's nav zone) — so ONE offset clears every theme's composer: `bottom: 0`
+ * seats it on the content-box edge, 12px above the composer's top edge (the composer floats at `bottom:
+ * 12px`, the pad is 24px over its height). When the keyboard opens the pane shrinks and the pin rides it.
+ * z 4: over the log (and the edge scrims at 3), under the composer's own popovers (5).
+ *
+ * THE BUTTON: a 40px round surface chip (the `.pm-x` recipe at a thumb's size), tokens only, centred
+ * without a transform so the appear pop owns `transform`. Appear = the kit's one pop (`kit-btn-pop`,
+ * transform/opacity, motion-gated to `full`; nothing under reduced — it simply appears). It leaves by
+ * unmounting: the latch re-stuck, there is nothing left to point at. */
+.kit .kit-jump-pin {
+  position: sticky;
+  bottom: 0;
+  height: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.kit .kit-jump {
+  all: unset;
+  box-sizing: border-box;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
+}
+.kit .kit-jump:active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+body[data-motion="full"] .kit .kit-jump {
+  animation: kit-btn-pop var(--dur-fast) var(--ease-out);
 }
 .kit .b .who {
   /* 10 → 11 and regular → 600 on the owner's phone round, 2026-09-24 ("the text seems small") */

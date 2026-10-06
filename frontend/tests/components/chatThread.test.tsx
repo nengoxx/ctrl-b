@@ -1,4 +1,4 @@
-import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // ChatThread (F4) — the reusable chat LOG extracted from AgentTab. Two things this file locks in:
@@ -944,5 +944,233 @@ describe("session-51 #1 · the who-line names the character", () => {
     await act(async () => {
       await sent;
     });
+  });
+});
+
+// ── ISS-66 — stick-to-bottom while streaming: the direction latch, the re-stick on a fresh user
+// message, the ↓ pill. Mounted INSIDE a stand-in `#app-scroll` (the gachaAgent fake-scroller shape),
+// because ChatThread reaches the shell's one content pane BY ID. jsdom lays nothing out, so the pane's
+// three numbers are modelled: `scrollHeight` is driven by the test (the log "grows"), `clientHeight` is
+// fixed, and `scrollTop` CLAMPS to [0, max] like a real pane — the latch reads its write back. A user
+// scroll is a position change + a dispatched `scroll` event (jsdom fires none for a write). The pure
+// controller's arms live in tests/lib/stickToBottom.test.ts; these pin the WIRING.
+describe("ChatThread — stick to bottom (ISS-66)", () => {
+  const VIEW = 400;
+
+  function makePane(height: number) {
+    const pane = document.createElement("div");
+    pane.id = "app-scroll";
+    let top = 0;
+    let h = height;
+    const clamp = (v: number) => Math.max(0, Math.min(v, h - VIEW));
+    Object.defineProperty(pane, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (v: number) => (top = clamp(v)),
+    });
+    Object.defineProperty(pane, "scrollHeight", { configurable: true, get: () => h });
+    Object.defineProperty(pane, "clientHeight", { configurable: true, get: () => VIEW });
+    document.body.appendChild(pane);
+    return {
+      pane,
+      max: () => h - VIEW,
+      grow: (to: number) => (h = to),
+      /** The owner's finger: move, then the event the browser would fire. */
+      userScroll: (v: number) => {
+        top = clamp(v);
+        act(() => {
+          pane.dispatchEvent(new Event("scroll"));
+        });
+      },
+    };
+  }
+
+  const msg = (
+    id: string,
+    role: "user" | "assistant",
+    text: string,
+    fresh?: true,
+  ): ChatMessage => ({
+    id,
+    thread_id: "t1",
+    role,
+    actor: role === "user" ? "user" : "agent",
+    ts: new Date().toISOString(),
+    tokens: null,
+    compacted: false,
+    parts: [{ type: "text", text }],
+    ...(fresh ? { fresh } : {}),
+  });
+  const chatOf = (messages: ChatMessage[], streaming?: string): AgentChat => ({
+    ...emptyChat(),
+    messages,
+    status: streaming ? "streaming" : "idle",
+    streamingId: streaming ?? null,
+  });
+  const pill = () => screen.queryByRole("button", { name: "Jump to latest" });
+
+  /** Mount a thread in the pane and let the tab-entry frame land (the owner rule: entry jumps to the end). */
+  async function mount(messages: ChatMessage[], height = 2000, streaming?: string) {
+    const p = makePane(height);
+    const view = render(<ChatThread active chat={chatOf(messages, streaming)} />, {
+      container: p.pane,
+    });
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+    // The entry pin's own scroll event — an echo, which must not count.
+    act(() => {
+      p.pane.dispatchEvent(new Event("scroll"));
+    });
+    return { ...p, view };
+  }
+
+  afterEach(() => {
+    document.getElementById("app-scroll")?.remove();
+  });
+
+  it("(c) a streamed delta while escaped does not move the pane — and a small drag is enough to escape", async () => {
+    const a1 = msg("a1", "assistant", "Waking");
+    const p = await mount([msg("u0", "user", "hi"), a1], 2000, "a1");
+    expect(p.pane.scrollTop).toBe(p.max());
+    // A 30px drag: inside the old 140px band, which the next chunk's pin would have yanked back.
+    p.userScroll(p.max() - 30);
+    const parked = p.pane.scrollTop;
+    p.grow(2300);
+    p.view.rerender(
+      <ChatThread
+        active
+        chat={chatOf(
+          [
+            msg("u0", "user", "hi"),
+            { ...a1, parts: [{ type: "text", text: "Waking corsair now…" }] },
+          ],
+          "a1",
+        )}
+      />,
+    );
+    expect(p.pane.scrollTop).toBe(parked);
+  });
+
+  it("…while a STUCK thread follows the same delta to the new end", async () => {
+    const a1 = msg("a1", "assistant", "Waking");
+    const p = await mount([msg("u0", "user", "hi"), a1], 2000, "a1");
+    p.grow(2300);
+    p.view.rerender(
+      <ChatThread
+        active
+        chat={chatOf(
+          [
+            msg("u0", "user", "hi"),
+            { ...a1, parts: [{ type: "text", text: "Waking corsair now…" }] },
+          ],
+          "a1",
+        )}
+      />,
+    );
+    expect(p.pane.scrollTop).toBe(p.max());
+  });
+
+  it("(b) the ↓ pill is absent while stuck, shows while escaped, and its tap re-sticks + hides it", async () => {
+    const p = await mount([msg("u0", "user", "hi"), msg("a1", "assistant", "hello")]);
+    expect(pill()).toBeNull();
+    p.userScroll(200);
+    expect(pill()).not.toBeNull();
+    p.grow(2600); // the reply kept growing out of view
+    fireEvent.click(pill()!);
+    expect(p.pane.scrollTop).toBe(p.max());
+    expect(pill()).toBeNull();
+    // …and scrolling back DOWN into the band re-sticks on its own, the pill leaving with it.
+    p.userScroll(300);
+    expect(pill()).not.toBeNull();
+    p.userScroll(p.max() - 100);
+    expect(pill()).toBeNull();
+  });
+
+  it("(a) a SEND re-sticks after an escape — the store's real shape: [fresh user, assistant placeholder] in ONE set", async () => {
+    const base = [msg("u0", "user", "hi"), msg("a1", "assistant", "hello")];
+    const p = await mount(base);
+    p.userScroll(100);
+    expect(pill()).not.toBeNull();
+    p.grow(2200);
+    // `sendMessage` (idle) appends the optimistic user row AND the streaming placeholder together
+    // (store/chat.ts) — the newest row is the ASSISTANT's, which is what round №1's F1 caught.
+    const placeholder = msg("assist-1", "assistant", "");
+    p.view.rerender(
+      <ChatThread
+        active
+        chat={chatOf([...base, msg("u1", "user", "and now?", true), placeholder], "assist-1")}
+      />,
+    );
+    expect(p.pane.scrollTop).toBe(p.max());
+    expect(pill()).toBeNull();
+  });
+
+  it("…and a mid-stream STEER (a lone fresh user row) re-sticks too", async () => {
+    const base = [msg("u0", "user", "hi"), msg("a1", "assistant", "hello")];
+    const p = await mount(base, 2000, "a1");
+    p.userScroll(100);
+    p.grow(2200);
+    p.view.rerender(
+      <ChatThread active chat={chatOf([...base, msg("u1", "user", "also this", true)], "a1")} />,
+    );
+    expect(p.pane.scrollTop).toBe(p.max());
+    expect(pill()).toBeNull();
+  });
+
+  it("…but a user message that is not FRESH (a reload, a thread switch) does not", async () => {
+    const base = [msg("u0", "user", "hi"), msg("a1", "assistant", "hello")];
+    const p = await mount(base);
+    p.userScroll(100);
+    p.grow(2200);
+    p.view.rerender(<ChatThread active chat={chatOf([...base, msg("u1", "user", "loaded")])} />);
+    expect(p.pane.scrollTop).toBe(100);
+    expect(pill()).not.toBeNull();
+  });
+
+  it("the pane's scroll + wheel listeners exist ONLY while the tab is active (the pane is shared)", async () => {
+    const thread = [msg("u0", "user", "hi"), msg("a1", "assistant", "hello")];
+    const p = await mount(thread);
+    const add = vi.spyOn(p.pane, "addEventListener");
+    const remove = vi.spyOn(p.pane, "removeEventListener");
+    const kinds = (spy: typeof add) => spy.mock.calls.map((c) => c[0]).sort();
+    p.view.rerender(<ChatThread active={false} chat={chatOf(thread)} />);
+    expect(kinds(remove)).toEqual(["scroll", "wheel"]); // detached on leaving…
+    expect(add).not.toHaveBeenCalled(); // …and nothing re-attached while another section shows
+    p.view.rerender(<ChatThread active chat={chatOf(thread)} />);
+    expect(kinds(add)).toEqual(["scroll", "wheel"]); // re-attached on entry
+  });
+
+  it("a wheel from inside a SCROLLED nested element (a command's output) does not escape; a pane wheel does", async () => {
+    const p = await mount([msg("u0", "user", "hi"), msg("a1", "assistant", "hello")]);
+    const nested = document.createElement("pre");
+    Object.defineProperty(nested, "scrollHeight", { configurable: true, get: () => 900 });
+    Object.defineProperty(nested, "clientHeight", { configurable: true, get: () => 320 });
+    nested.scrollTop = 200; // it still has room above: it takes the wheel
+    document.getElementById("chatlog")!.appendChild(nested);
+    act(() => {
+      nested.dispatchEvent(new WheelEvent("wheel", { deltaY: -60, bubbles: true }));
+    });
+    expect(pill()).toBeNull();
+    // a ctrl+wheel is a zoom, never an escape
+    act(() => {
+      p.pane.dispatchEvent(new WheelEvent("wheel", { deltaY: -60, ctrlKey: true, bubbles: true }));
+    });
+    expect(pill()).toBeNull();
+    // …while a plain wheel up on the pane itself escapes at once
+    act(() => {
+      p.pane.dispatchEvent(new WheelEvent("wheel", { deltaY: -60, bubbles: true }));
+    });
+    expect(pill()).not.toBeNull();
+  });
+
+  it("the pill's tap hands focus to the log (never the composer) before it unmounts", async () => {
+    const p = await mount([msg("u0", "user", "hi"), msg("a1", "assistant", "hello")]);
+    p.userScroll(200);
+    const btn = pill()!;
+    btn.focus();
+    fireEvent.click(btn);
+    expect(pill()).toBeNull();
+    expect(document.activeElement).toBe(document.getElementById("chatlog"));
   });
 });

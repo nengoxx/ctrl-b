@@ -2202,6 +2202,7 @@ this table is the pin.
 | Region | Hooks |
 |---|---|
 | Log container | `.chat-log` (`#chatlog`) |
+| Jump to latest | `.kit-jump-pin` (zero-height sticky pin after the log) → `.kit-jump` (the ↓ pill, mounted only while the owner has scrolled up out of a following thread — ISS-66, `lib/stickToBottom.ts`) |
 | Bubble kinds | `.b` × `.user` / `.bot` / `.sys` / `.cmd` — modifiers `.cmd-resolved` · `.question` · `.plan-note` |
 | Bubble anatomy | `.who` (+ `.status-tag` · `.tts-play`[`.playing`/`.loading`]) · `.body` |
 | Streaming | `.dots` (+ `i` children) · `.caret` |

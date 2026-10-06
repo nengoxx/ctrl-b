@@ -10,6 +10,7 @@ import { fillComposer } from "../lib/composer";
 import { modalKeyDown } from "../lib/focusTrap";
 import { Markdown } from "../lib/markdown";
 import { planFrom } from "../lib/plan";
+import { createStickLatch } from "../lib/stickToBottom";
 import {
   alwaysEligibleFor,
   answerQuestion,
@@ -39,7 +40,7 @@ import type {
   WebSearchHit,
 } from "../types";
 import { BotWhoLine, type VariantNav, type WhoAction } from "./chatAttribution";
-import { PencilIcon, XIcon } from "./icons";
+import { ArrowDownIcon, PencilIcon, XIcon } from "./icons";
 
 // The agent-chat LOG (F4) — the reusable `.chat-log` transcript, split out of AgentTab so a bespoke theme
 // body can render the same thread without duplicating the bubble tree (D36: the chat class names are a
@@ -904,6 +905,15 @@ interface Props {
 
 const SCROLLER_ID = "app-scroll";
 
+/** Did a scroller NESTED inside the pane take this wheel? True when any element between the event's
+ *  target and the pane can still scroll up — it moved, the pane did not, so the wheel is no intent to
+ *  leave the bottom (ISS-66 review F2; use-stick-to-bottom's `handleWheel` asks the same question). */
+function nestedScrollerTookIt(target: EventTarget | null, pane: HTMLElement): boolean {
+  for (let n = target instanceof Element ? target : null; n && n !== pane; n = n.parentElement)
+    if (n.scrollTop > 0 && n.scrollHeight > n.clientHeight) return true;
+  return false;
+}
+
 // ── the bubble-arrival animation (owner ask 2026-09-21: the WhatsApp-class appear) ───────────────
 // The store marks LIVE appends with the client-only `fresh` flag (types.ts — the `queued` class), so
 // bulk loads/reloads never animate. What this layer adds is the once-and-only-once discipline:
@@ -966,28 +976,72 @@ export function ChatThread({ active, chat, emptyState }: Props) {
     },
     [actionSpecs],
   );
-  // The scroller is the app-shell content pane (`#app-scroll`), not the window — the composer/tab
-  // bar are in-flow at the bottom of the shell. "Stick to bottom" only while the user is already
-  // near the bottom, so streaming follows the bot without yanking them down if they scrolled up.
-  const stick = useRef(true);
+  // STICK TO BOTTOM (ISS-66) — the scroller is the app-shell content pane (`#app-scroll`), not the window;
+  // the composer/tab bar float over its bottom. Streaming follows the reply until the owner scrolls UP,
+  // and from then on nothing moves until they come back down to the end, send, or tap the ↓ pill. The
+  // rule is ONE direction-latched controller (`lib/stickToBottom.ts`, R102 §7) — never a position band
+  // re-read per scroll event, which the per-chunk pins below swallowed (the old 140 px rule: a drag had
+  // to clear the whole band between two chunks or be yanked back). The call overlay's captions are its
+  // second consumer.
+  const [latch] = useState(createStickLatch);
+  // The pill's visibility, MIRRORED from the latch — set only when it changes, never per scroll event.
+  const [escaped, setEscaped] = useState(false);
+  const shownEscaped = useRef(false);
+  const mirror = () => {
+    const e = latch.isEscaped();
+    if (e === shownEscaped.current) return;
+    shownEscaped.current = e;
+    setEscaped(e);
+  };
 
   const pin = () => {
     const el = document.getElementById(SCROLLER_ID);
-    if (el && active && stick.current) el.scrollTop = el.scrollHeight;
+    if (el && active) latch.pin(el);
+  };
+
+  // The re-stick, deliberate: the ↓ pill's tap (and the two triggers below, which share it).
+  const stickNow = () => {
+    const el = document.getElementById(SCROLLER_ID);
+    if (!el) return;
+    latch.stick(el);
+    mirror();
+  };
+  // The pill's tap: re-stick, but first hand focus to the LOG (`tabIndex={-1}`) — the pill unmounts on
+  // this very tap, and a keyboard activation would otherwise drop focus to <body> (review round №1, F7).
+  // Never the composer: focusing it opens the keyboard on Android. `preventScroll` because the stick
+  // below owns the scroll position.
+  const jump = () => {
+    document.getElementById("chatlog")?.focus({ preventScroll: true });
+    stickNow();
   };
 
   useEffect(() => {
+    // ONLY while this tab shows: the scroller is SHARED with every other section, and another section's
+    // scrolling must never move the latch (it is re-born on the next tab entry anyway).
+    if (!active) return;
     const el = document.getElementById(SCROLLER_ID);
     if (!el) return;
     const onScroll = () => {
-      stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+      latch.onScroll(el);
+      mirror();
+    };
+    // Desktop intent: a wheel turned up escapes before its scroll lands (touch has no wheel — on the
+    // phone the escape comes from the scroll direction alone). Only a wheel that can move THIS pane
+    // (review round №1, F2): a ctrl+wheel is a zoom, and a wheel bubbling out of a nested scroller that
+    // still had room above (a command's `.cmd-output > pre`) was consumed there — the pane never moved.
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || nestedScrollerTookIt(e.target, el)) return;
+      latch.onWheel(e.deltaY, el);
+      mirror();
     };
     el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: true });
     // Re-pin when the pane resizes (keyboard/toolbar via 100dvh) or the composer grows (typing) — and
     // when the LOG itself grows after a pin (owner report 2026-09-23: "back on the agent tab it sits
     // slightly scrolled up"). The tab-entry jump below measures `scrollHeight` one frame after the
     // switch, but bubble images, lazy art and late layout keep adding height after that frame, and a
-    // scroller's own box does not change when its content does — only the log's box does.
+    // scroller's own box does not change when its content does — only the log's box does. Each pin is
+    // a no-op while the owner has escaped.
     const ro = new ResizeObserver(pin);
     ro.observe(el);
     const comp = document.getElementById("composer");
@@ -996,64 +1050,96 @@ export function ChatThread({ active, chat, emptyState }: Props) {
     if (log) ro.observe(log);
     return () => {
       el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onWheel);
       ro.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
+  // Every change of the log follows (a no-op while escaped) — EXCEPT a SEND, which re-sticks: typed,
+  // dictated (the auto-send skips `useComposer().send`, so this keys on the LOG, not the send seam: audit
+  // §9) or a mid-stream steer. A send is a fresh USER row among the rows APPENDED since the last run —
+  // never just the newest row: an idle `sendMessage` appends `[tempUser, placeholder]` in ONE set
+  // (`store/chat.ts`), so the newest row is the assistant's (review round №1, F1). "Fresh" is the store's
+  // live-append mark (a reload or a thread switch never carries it), and only GROWTH counts: a queued
+  // steer that drains is RENAMED in place (`resolveSteerBubble` adopts the server id) — same length,
+  // nothing appended, nobody sent anything.
+  const seenLen = useRef(0);
   useEffect(() => {
-    pin();
+    const prevLen = seenLen.current;
+    seenLen.current = messages.length;
+    const sent = messages.slice(prevLen).some((m) => m.role === "user" && m.fresh === true);
+    if (sent && active) stickNow();
+    else pin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, active]);
 
-  // Entering the tab always jumps to the newest message (rAF so the now-visible pane has laid out).
+  // Entering the tab always jumps to the newest message (rAF so the now-visible pane has laid out) — and
+  // re-births the latch: whatever it last sampled belongs to the scroller's other owners since.
   useEffect(() => {
     if (!active) return;
-    stick.current = true;
-    const id = requestAnimationFrame(() => {
-      const el = document.getElementById(SCROLLER_ID);
-      if (el) el.scrollTop = el.scrollHeight;
-    });
+    latch.reset();
+    mirror();
+    const id = requestAnimationFrame(stickNow);
     return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   return (
-    // A11y (F5 Gate A4) — the transcript is a live log region. `role="log"` marks it as a sequential
-    // record (implicit aria-live=polite; set explicitly for Firefox/older AT), and `aria-busy` is TRUE
-    // while a reply streams so AT holds off announcing until the turn settles — the completed reply is
-    // announced ONCE when busy flips false, never per token (the MITRE/APG chatbot live-region pattern).
-    <div
-      className="chat-log"
-      id="chatlog"
-      role="log"
-      aria-live="polite"
-      aria-busy={status === "streaming"}
-    >
-      {!messages.length &&
-        (emptyState ?? (
-          <div className="b sys">
-            <div className="body">// new thread · ask me about the fleet</div>
-          </div>
+    <>
+      {/* A11y (F5 Gate A4) — the transcript is a live log region. `role="log"` marks it as a sequential
+          record (implicit aria-live=polite; set explicitly for Firefox/older AT), and `aria-busy` is TRUE
+          while a reply streams so AT holds off announcing until the turn settles — the completed reply is
+          announced ONCE when busy flips false, never per token (the MITRE/APG chatbot live-region
+          pattern). */}
+      <div
+        className="chat-log"
+        id="chatlog"
+        role="log"
+        aria-live="polite"
+        aria-busy={status === "streaming"}
+        // Programmatically focusable only (never in the tab order): the ↓ pill hands focus here.
+        tabIndex={-1}
+      >
+        {!messages.length &&
+          (emptyState ?? (
+            <div className="b sys">
+              <div className="body">// new thread · ask me about the fleet</div>
+            </div>
+          ))}
+        {messages.map((m, i) => (
+          <ArriveWrap key={m.id} id={m.id} fresh={m.fresh}>
+            <Bubbles
+              m={m}
+              streaming={status === "streaming" && m.id === streamingId}
+              idle={status !== "streaming"}
+              locked={i < lastUnsent}
+              resultFor={resultFor}
+              // F20 — only the latest message (notes aside) is eligible for retry, and only when chat
+              // is in error state. Historical errors elsewhere in the log stay quiet.
+              canRetry={i === lastRow && status === "error"}
+              onRegenerate={onRegenerate}
+              resolvedDefault={resolvedDefault}
+              ttsOn={ttsOn}
+              agentArt={agentArt}
+              avatars={chatAvatars}
+            />
+          </ArriveWrap>
         ))}
-      {messages.map((m, i) => (
-        <ArriveWrap key={m.id} id={m.id} fresh={m.fresh}>
-          <Bubbles
-            m={m}
-            streaming={status === "streaming" && m.id === streamingId}
-            idle={status !== "streaming"}
-            locked={i < lastUnsent}
-            resultFor={resultFor}
-            // F20 — only the latest message (notes aside) is eligible for retry, and only when chat
-            // is in error state. Historical errors elsewhere in the log stay quiet.
-            canRetry={i === lastRow && status === "error"}
-            onRegenerate={onRegenerate}
-            resolvedDefault={resolvedDefault}
-            ttsOn={ttsOn}
-            agentArt={agentArt}
-            avatars={chatAvatars}
-          />
-        </ArriveWrap>
-      ))}
-    </div>
+      </div>
+      {/* JUMP TO LATEST (ISS-66) — only while the owner has scrolled away from a following thread. A
+          ZERO-HEIGHT sticky pin after the log (the `.kit-backdrop-pin` precedent), so it takes no flow
+          space and never changes `#chatlog`'s box — the log's ResizeObserver must not see it toggle. It
+          rests on the scroller's content-box edge (`bottom: 0`), i.e. on top of the pane's bottom PAD,
+          which every theme already sizes to clear its own composer with 12 px to spare (gacha's includes
+          its floating nav), and it rides the pane when the keyboard shrinks it. The tab wrapper's display:none hides it off this section. */}
+      {active && escaped && (
+        <div className="kit-jump-pin">
+          <button type="button" className="kit-jump" aria-label="Jump to latest" onClick={jump}>
+            <ArrowDownIcon />
+          </button>
+        </div>
+      )}
+    </>
   );
 }

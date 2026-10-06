@@ -504,7 +504,7 @@ describe("CallOverlay — the captions (owner ask 2026-09-22)", () => {
 
   it("…and a SCROLLING one is a reading surface: the drag is never an interrupt", () => {
     // The other side of the same bargain. jsdom builds no boxes, so the two reads the component's own
-    // measure takes are stubbed — which is precisely the pair the fade and the follow rule read too,
+    // measure takes are stubbed — which is precisely the pair the fade and the follow latch read too,
     // so this arm exercises the real branch rather than a parallel one.
     const tall = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(200);
     const short = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(60);
@@ -519,6 +519,47 @@ describe("CallOverlay — the captions (owner ask 2026-09-22)", () => {
       expect(said()!.className).toContain("more-above");
       fireEvent.click(said()!);
       expect(h.call.stop).not.toHaveBeenCalled();
+    } finally {
+      tall.mockRestore();
+      short.mockRestore();
+    }
+  });
+
+  it("an UP scroll in the box parks it (growth no longer pins); a scroll back to the end re-follows (ISS-66)", () => {
+    // The shared direction latch on the caption box. jsdom lays nothing out, so the box's numbers are
+    // modelled: the content height is driven here, the view is a fixed 60px, and — once the box exists
+    // — its `scrollTop` CLAMPS like a real one's.
+    let tallPx = 200;
+    const tall = vi
+      .spyOn(HTMLElement.prototype, "scrollHeight", "get")
+      .mockImplementation(() => tallPx);
+    const short = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(60);
+    try {
+      const view = render(<Host open={true} />);
+      turn(view);
+      h.reply = { id: "m1", text: "a long reply" };
+      view.rerender(<Host open={true} />);
+      const box = said() as HTMLElement;
+      let top = box.scrollTop; // where the first pin left it
+      Object.defineProperty(box, "scrollTop", {
+        configurable: true,
+        get: () => top,
+        set: (v: number) => (top = Math.max(0, Math.min(v, tallPx - 60))),
+      });
+      // The owner drags up 40px — past the escape threshold, far inside the old 8px band's reach.
+      top = tallPx - 60 - 40;
+      fireEvent.scroll(box);
+      tallPx = 300;
+      h.reply = { id: "m1", text: "a long reply, still streaming" };
+      view.rerender(<Host open={true} />);
+      expect(box.scrollTop).toBe(100); // parked: the growth did not pin
+      // …back down to the end: following again, so the next growth lands on the new end.
+      top = tallPx - 60;
+      fireEvent.scroll(box);
+      tallPx = 360;
+      h.reply = { id: "m1", text: "a long reply, still streaming, and done" };
+      view.rerender(<Host open={true} />);
+      expect(box.scrollTop).toBe(300);
     } finally {
       tall.mockRestore();
       short.mockRestore();
