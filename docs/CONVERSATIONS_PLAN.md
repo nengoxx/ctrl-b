@@ -1,7 +1,7 @@
 # CONVERSATIONS_PLAN — conversations per agent + past conversations (ROADMAP A15)
 
-**Status: ✏️ DESIGN RULED 2026-10-06 (main seat Fable 5.1 + owner, session 60) — plan v2.4; owner Q&A closed
-2026-10-06 (R0–R46 + the main seat's F1–F7, N1–N4, ON1–ON7 and the privilege-cap RETRACTION, M1; council CLOSED; TWO owner rulings pending: F2 §2, ON4 §12); council round 1 folded; confirm rounds PENDING; NOTHING
+**Status: ✏️ DESIGN RULED 2026-10-06 (main seat Fable 5.1 + owner, session 60) — plan v2.5; owner Q&A closed
+2026-10-06 (R0–R46 + the main seat's F1–F7, N1–N4, ON1–ON7 and the privilege-cap RETRACTION, M1; council CLOSED; owner rulings F2 + ON4 RULED 2026-10-06 (A · a): F2 §2, ON4 §6); council rounds 1–2 + the confirms folded; NOTHING
 BUILT.** Decision of record = [`D84`](./DECISIONS.md) (the locked summary); build = TODO **Phase 27** (§10 is the
 ladder — build against this plan, NOT the TODO list); ROADMAP [§A15](./ROADMAP.md); evidence =
 [`R100`](./research/R100-per-agent-conversations.md) (the peer field pass — SillyTavern, open-webui, LibreChat,
@@ -26,8 +26,8 @@ function name is authoritative — re-grep it.
 
 | | |
 |---|---|
-| Design | ✏️ RULED 2026-10-06 — owner Q&A closed (R0–R46, §1) + F1–F7 (§13), owner + main seat, session 60 — plan v2.4; TWO owner rulings pending: **F2** (§2: whose AgentDef model/privilege a responder uses when no override is set) and **ON4** (§12: do the overrides survive a reload) |
-| Council | **CLOSED 2026-10-06 — Opus CONFIRMED WITH NOTES ∥ Emma CONFIRMED WITH NOTES (both on v2.2; notes folded v2.3–v2.4); OPEN = owner rulings F2 + ON4** (history: round 1 both NOT CONFIRMED, all folded → v2; round 2 confirms → v2.2; micro-confirms → v2.3/v2.4 — §13) |
+| Design | ✏️ RULED 2026-10-06 — owner Q&A closed (R0–R46, §1) + F1–F7 (§13), owner + main seat, session 60 — plan v2.5; owner rulings **F2** + **ON4** RULED 2026-10-06 (A · a): **F2** = reading A (§2: with no override set, a responder runs on the HOME agent's AgentDef model + privilege) · **ON4** = (a) (§6: the per-home-agent overrides persist per device and survive a reload); nothing pending |
+| Council | **CLOSED 2026-10-06 — Opus CONFIRMED WITH NOTES ∥ Emma CONFIRMED WITH NOTES (both on v2.2; notes folded v2.3–v2.4); the owner's F2 + ON4 rulings folded → v2.5; NO open rulings** (history: round 1 both NOT CONFIRMED, all folded → v2; round 2 confirms → v2.2; micro-confirms → v2.3/v2.4 — §13) |
 | Build | NOTHING BUILT — slice ladder §10 (S0–S13), seam map Appendix §A |
 | DB schema | 7 → **8** (additive column + index + idempotent NULL repairs; §3, §11) |
 | Config | **no new key**, no config-shape bump; the `auto_rotate` retirement drops two keys from the schema (§9, R24) |
@@ -132,13 +132,14 @@ mechanical findings ruled by the main seat (O-/E-rulings) are folded into §2–
 - **R39** (owner) — NO in-app toast for a background reply (*"toasts are intrusive"*): while the page is visible a
   background reply shows ONLY the dots; the OS notification stays for the hidden page. (R29's deleted toast stands — a
   one-off error notice, not a reply signal.)
-- **R40** (owner, REVISED) — privilege and local/cloud mode are CONVERSATION settings INHERITED FROM THE HOME AGENT,
-  untouched by the responder: per-HOME-AGENT session overrides (in memory, keyed by the home agent's slug) over the
-  AgentDef's own `privilege`/`model`; shared by every conversation of that agent this session; the turn runs at the
-  HOME agent's effective values even when a responder answers; reload clears. *Why (owner):* *"which agent is
+- **R40** (owner, REVISED; amended by F2 + ON4, owner 2026-10-06) — privilege and local/cloud mode are CONVERSATION
+  settings INHERITED FROM THE HOME AGENT, untouched by the responder: per-HOME-AGENT session overrides (~~in memory~~ →
+  persisted per device, **ON4**; keyed by the home agent's slug) over the AgentDef's own `privilege`/`model`; shared by
+  every conversation of that agent ~~this session~~ on this device; the turn runs at the HOME agent's effective values
+  even when a responder answers; ~~reload clears~~ → a reload keeps them (**ON4**). *Why (owner):* *"which agent is
   answering shouldn't change any of that"* — the responder is an exception that must not change how the session
-  behaves. Write-back to the AgentDef → **R46**. What applies to a responder when NO override is set → **F2, owner
-  ruling pending** (§2).
+  behaves. Write-back to the AgentDef → **R46**. What applies to a responder when NO override is set → **F2**: the HOME
+  agent's AgentDef `model` + `privilege` (reading A, §2).
 - **R41** (owner) — deleting an agent OFFERS to delete its conversations (a confirm with the count); declined → the rows
   stay in the DB, unlisted (*"the list itself disappears"*); `session_search` still finds them; re-creating the slug
   re-adopts them. NO orphan listing in the root's sheet. *Why:* per-agent lists only; nothing is deleted unasked.
@@ -153,9 +154,20 @@ mechanical findings ruled by the main seat (O-/E-rulings) are folded into §2–
   Another device entering the conversation starts at the home agent. *Why (owner):* lock/unlock may force a reload and a
   notification tap re-enters the same conversation — *"one mechanism, not two … exactly the kind of nuance that could
   make us have different directions in the code."*
-- **R46** (owner) — NO write-back of `/privilege` or the local/cloud mode to the AgentDef in v1. *Why:* a persisted
+- **R46** (owner) — NO write-back of `/privilege` or the local/cloud mode to the AgentDef in v1. *Why:* ~~a persisted
   `/privilege` elevation is a durable escalation the security model deliberately avoids (today's override dies with the
-  session), and the agent's own defaults are already editable in Conf → Agents. Write-back (mode first) is recorded.
+  session)~~ → after ON4 an override persists on its own device, but a write-back would make it the agent's default on
+  EVERY device and in every conversation — a wider durable escalation; and the agent's own defaults are already editable
+  in Conf → Agents. Write-back (mode first) is recorded.
+- **F2** (owner, 2026-10-06) — **reading A:** with NO session override set, a responder's turn runs on the HOME agent's
+  AgentDef `model` + `privilege` (`_build_session` copies the responder with them). *Why (owner):* *"they run on the home
+  agent's model and privilege, from the original session agent, because that's what I want"* — the home agent IS the
+  conversation; a responder is a guest voice inside it and inherits the room's model and privilege, so a hop never
+  changes what the conversation costs or may do. Reading B (the reviewers' recommendation) was heard and overruled (§2).
+- **ON4** (owner, 2026-10-06) — **option (a): persist BOTH** per-home-agent overrides (`/privilege` and `/local`·`/cloud`)
+  per device in `ctrlb.chat`; they survive a reload. *Why (owner):* *"both of them should be survivable for a reload"* —
+  one lifetime for the conversation's exceptions, like the responder's (R45). (b) and (c) were offered; the main seat
+  recommended (c) (§12). An elevation now survives reloads on that device, uncapped (§6, SECURITY_MODEL §2.2).
 
 ## §2 The model, the principles, the behaviour spec
 
@@ -168,20 +180,24 @@ just agents (R13/R15).
 - **Home agent** = `threads.agent`, written once at mint (seam ① `POST /api/threads {agent}`, seam ② the lazy mint on
   a first send, the `!cmd` mint, or the migration-8 repair) and **never moved** (R17). It decides which sheet lists the
   conversation, the checked roster row, the header button's sheet, notification names, and the `/privilege` + local/cloud
-  session OVERRIDES every turn runs with (R40; what applies when none is set = F2 below).
+  session OVERRIDES every turn runs with (R40; with none set, the home agent's own AgentDef `model`/`privilege` — F2 below).
 - **Responder** = a per-device override set by `/agent <name>`, persisted with the open conversation in `ctrlb.chat`
   (R45). It decides WHO ANSWERS (persona, prompt, memory) and the caption/backdrop/who-line of its replies.
 
-> **F2 — owner ruling pending.** With NO session override set, whose AgentDef `model`/`privilege` does a responder's turn
-> use? **Reading A (R40 as revised, the v2 text):** the HOME agent's — `_build_session` copies the responder with the home
-> agent's `model` and `privilege` (so Emma, configured for cloud, answers on Lynette's local model). **Reading B (the main
-> seat's recommendation):** the session OVERRIDES (`/privilege`, `/local`·`/cloud`) are the conversation's — per home
-> agent — and win whenever set; with none set each answering agent uses its OWN AgentDef values (today's behaviour — a
-> cloud character stays cloud). There is NO privilege cap under either reading: `ChatRequest.privilege` is
-> "most-specific-wins, no clamp" (`be/api/agent.py:165-170`); the only clamp is `agent.subagent_clamp_privilege`
-> (subagent ≤ parent, `be/config.py:425-428`). Everything else in R40 holds under both
-> readings (overrides keyed by the home agent, shared by its conversations, sent on every turn, cleared by a reload).
-> **Build impact:** only the `_build_session` copy in S2 (§4 "R40") differs — S2 builds it per the ruling, never before.
+> **F2 — RULED by the owner 2026-10-06: reading A.** With NO session override set, a responder's turn uses the HOME
+> agent's AgentDef `model` and `privilege` — `_build_session` copies the responder with the home agent's `model` and
+> `privilege` (so Emma, configured for cloud, answers on Lynette's local model; an Emma defined `readonly` answers at
+> Lynette's `auto_low`). *Why (owner):* *"they run on the home agent's model and privilege, from the original session
+> agent, because that's what I want"* — the home agent IS the conversation; a responder is a guest voice inside it and
+> inherits the room's model and privilege, so a hop never changes what the conversation costs or may do. **Rejected —
+> reading B** (the reviewers' recommendation — the main seat, Emma and Opus: with none set each answering agent keeps its
+> OWN AgentDef values, today's behaviour, so a cloud character stays cloud and a `readonly` agent stays `readonly`); the
+> owner heard it and overruled it: the CONVERSATION's stance (its home agent's) governs every turn in it, whoever
+> answers. There is NO privilege cap: `ChatRequest.privilege` is "most-specific-wins, no clamp"
+> (`be/api/agent.py:165-170`); the only clamp is `agent.subagent_clamp_privilege` (subagent ≤ parent,
+> `be/config.py:425-428`). An explicit session override (R40 — keyed by the home agent, shared by its conversations,
+> sent on every turn, persisted per device by ON4, §6) still wins over the home AgentDef values.
+> **Build impact:** S2's `_build_session` copy (§4 "R40").
   `effectiveAgent = responder ?? threadAgent ?? defaultAgent`.
 
 > **THE PRINCIPLE (owner):** *the home agent is the rule; the responder is the exception.* Everything about a
@@ -234,7 +250,7 @@ newest is E1. The owner is on the phone in L2, nothing streaming, no call, chat 
   → The §2 note. The tools-menu caption and the backdrop show Emma; the menu's CHECKED row stays Lynette (R38). The next
   send is answered by Emma (her who-line reads Emma; Lynette's earlier bubbles still read Lynette). L2 stays in
   Lynette's sheet with her name; its preview reads `Emma: …`. The header button opens LYNETTE's sheet (R36). The
-  privilege chip shows Lynette's session value and Lynette's overrides apply to the turn (R40; without one, F2). Emma's model reads
+  privilege chip shows Lynette's session value and Lynette's overrides apply to the turn (R40; without one, Lynette's AgentDef `model` + `privilege` — F2). Emma's model reads
   Lynette's earlier lines as `Lynette: …` dialogue, not as her own turns (§8).
 - **B2 — `/new` while switched.** From B1 the owner types `/new`.
   → A fresh LYNETTE conversation L3 opens with Lynette's greeting; the responder is gone (leaving). Emma's conversations
@@ -267,7 +283,7 @@ newest is E1. The owner is on the phone in L2, nothing streaming, no call, chat 
   greeted one) and carries its unsent draft + staged files into it (E6). A conversation whose turn is still running
   cannot be deleted — the server's busy answer is the note.
 - **B9 — reload, and the other device.** In B1's state the owner reloads the PWA (or Android kills it in the background).
-  → L2 reopens and EMMA still answers (R45 — the device never left). The desktop opens L2 from Lynette's sheet → LYNETTE
+  → L2 reopens and EMMA still answers, at Lynette's persisted overrides (R45 — the device never left; ON4). The desktop opens L2 from Lynette's sheet → LYNETTE
   talks there (its own `ctrlb.chat`). Reading L2 on either device clears its unread dot on both (the `seen` frame).
 - **B10 — in a live call.** During a call in L2 the owner types `/agent emma`, taps Emma in the roster, or types `/new`.
   → Each is refused with its note; the call continues in L2 with whoever answered when it started. A notification tap
@@ -289,13 +305,14 @@ newest is E1. The owner is on the phone in L2, nothing streaming, no call, chat 
   → The transcript appends to L2's draft (where it started, R35); E1's composer is untouched.
 - **B15 — lock, unlock, tap.** In B1's state the owner sends, locks the phone; the reply finishes; they tap the
   notification (or just unlock).
-  → L2 is open, EMMA still answers (R45); L2 is marked seen once the chat tab is visible. While the phone was locked,
+  → L2 is open, EMMA still answers, at Lynette's persisted overrides (R45, ON4); L2 is marked seen once the chat tab is visible. While the phone was locked,
   L2 stayed unread on the desktop too (R30).
 - **B16 — privilege and mode per home agent.** In L2 the owner types `/privilege full` and `/local`; then taps Emma (E1).
   → E1 runs at Emma's own AgentDef privilege and model; the chip shows "Default". Back in L2 (or any other Lynette
   conversation, L1 or L3) → full + local again. In L2 with Emma answering (`/agent emma`) → the turn still runs at full
-  + local (Lynette's overrides). With NO override set, Emma's turn in L2 uses Lynette's AgentDef values (F2 reading A) or
-  Emma's own (reading B) — pending. A reload clears both overrides — or, per the ON4 ruling (§12, §6 "ON4 switch"), (a) keeps both on this device, (c) keeps the mode only.
+  + local (Lynette's overrides). With NO override set, Emma's turn in L2 uses Lynette's AgentDef values (F2, reading A). A reload
+  keeps both overrides on this device (ON4, §6 "Overrides persist per device"); the desktop holds its own (none until set
+  there).
 - **B17 — no conversation open.** Fresh install (or a failed `/new` mint): the owner types `/agent emma`, then "hi".
   → The thread-less note; the send mints a conversation whose HOME is Lynette (the roster default) with Lynette's
   greeting, and Emma answers it (the responder stays — the device never left). It lists in Lynette's sheet.
@@ -326,7 +343,7 @@ per-server gate (DESIGN §10).
 **What does not change.** A steer carries `body.agent` into `SteerEntry` (`chat` `be/api/agent.py:1348`) and drain-B
 re-routes from it (`start_steer_turn` `:787`/`:802`). Regenerate speaks as the reply's own speaker (D81 ruling ④);
 resume continues as the last assistant row's agent (`resume` `:2795`). All three build through `_build_session`, so
-R40's rule (§4, F2 pending) applies to them too. Nothing re-pins a thread, so drain-B's closure over the
+R40's rule (§4, F2 reading A) applies to them too. Nothing re-pins a thread, so drain-B's closure over the
 original `Thread` (`_spawn_drain_task` `:593` → `_maybe_spawn_drain_b` `:641`) can never hold a stale pin.
 
 ## §3 Data — migration 8 (DB schema 7 → 8) + the NULL repairs
@@ -418,13 +435,13 @@ release in `finally`. Answers `{deleted: true}`.
 `thread_id` like an absent one and lazily mint a NEW thread. Both now answer `404 unknown thread '<id>'` when `thread_id`
 is supplied but unknown; the lazy mint stays for an ABSENT `thread_id`.
 
-**R40 — the home agent's overrides (F2 pending).** The client always sends the HOME agent's session overrides (§6) —
-`privilege` and `mode` — never the responder's; `resolve_session_agent` (`be/api/agent.py:309`) applies an explicit
-`privilege` as today. `_build_session` (`:321`, ladder `:350`) resolves the answering agent as today (`name = agent_name or
-thread.agent`). **Reading A:** when a thread exists and the resolved agent differs from `thread.agent`, it is copied with
-the HOME agent's `model` (`AgentDef.model`, `be/domain/agent.py:250`) and, absent an override, its `privilege`
-(`AgentDef.privilege`, `:258`). **Reading B:** no copy — the responder keeps its own AgentDef values when no override is
-sent. S2 builds the one the owner rules. `mode` (a `/<provider>` name, `ChatRequest.mode` `:162`) is sent from the home agent's slot. One place, so
+**R40 — the home agent's overrides (F2 = reading A, owner 2026-10-06).** The client always sends the HOME agent's session
+overrides (§6, persisted per device — ON4) — `privilege` and `mode` — never the responder's; `resolve_session_agent`
+(`be/api/agent.py:309`) applies an explicit `privilege` as today. `_build_session` (`:321`, ladder `:350`) resolves the
+answering agent as today (`name = agent_name or thread.agent`); when a thread exists and the resolved agent differs from
+`thread.agent`, it is copied with the HOME agent's `model` (`AgentDef.model`, `be/domain/agent.py:250`) and, absent an
+override, its `privilege` (`AgentDef.privilege`, `:258`). (Reading B — no copy, the responder keeping its own values —
+was rejected by the owner, §2.) `mode` (a `/<provider>` name, `ChatRequest.mode` `:162`) is sent from the home agent's slot. One place, so
 chat, resume, regenerate and drain-B steers all obey it.
 
 **Guard invariants.** `backend/tests/test_turn_guard_invariant.py`: `_EXPECTED` (`:93`) gains `delete_thread` and `delete_agent`
@@ -526,13 +543,15 @@ toast), which clears the responder, and carries the open conversation's draft + 
 
 **`ChatState`** (`interface ChatState` `fe/store/chat.ts:35`): `stickyAgent` → **`responder: string | null`**, beside
 `threadAgent` (the home agent). `sessionPrivilege` (`:42`) → **`overrides: Record<string, {privilege?: Privilege; mode?:
-ChatMode}>`** keyed by HOME agent slug, in memory only (never persisted — a privilege is never persisted, SECURITY_MODEL);
-the module-level `sessionMode` (`:483-491`) folds into it.
+ChatMode}>`** keyed by HOME agent slug, persisted per device in `ctrlb.chat` (ON4 — "Overrides persist per device"
+below; this supersedes the pre-ruling "never persisted" contract for privilege, SECURITY_MODEL §2.2 records it); the
+module-level `sessionMode` (`:483-491`) folds into it.
 
-**`ctrlb.chat` = `{thread: string | null, responder: string | null}`** (`KEY` `:71`, today `{agent}`; R45). One
-load-boundary fold: a blob without a string `thread` loads as `{thread: null, responder: null}`; the old `agent` key is
-never written again. Written by every view change — `swapView` (`:783`) AND `setWireThread` (`:558`, the lazy-mint path,
-O23) — and by `setResponder`. **Boot — ONE rule (`initChat` `:943`, N1):** load the stored `{thread, responder}` pair
+**`ctrlb.chat` = `{thread: string | null, responder: string | null, overrides: {<home slug>: {privilege?, mode?}}}`**
+(`KEY` `:71`, today `{agent}`; R45 + ON4). One load-boundary fold: a blob without a string `thread` loads as `{thread:
+null, responder: null}` (the `overrides` map is type-guarded entry by entry, below); the old `agent` key is never written
+again. Written by every view change — `swapView` (`:783`) AND `setWireThread` (`:558`, the lazy-mint path, O23) — by
+`setResponder`, and by every override writer. **Boot — ONE rule (`initChat` `:943`, N1):** load the stored `{thread, responder}` pair
 first; the TARGET = a validated `?thread=` (§5) if present, else the stored `thread`. If the target lists in
 `GET /api/threads`: open it, and keep the stored `responder` ONLY when target === stored `thread` AND the responder is on
 the roster (a notification tap on the conversation this device was in = the device never left); a different target =
@@ -580,26 +599,15 @@ shows `overrides[home].privilege` (else "Default" = the home AgentDef's own). Re
 home privilege (today's carry rule). A one-shot `/<provider> msg` stays per message. `/privilege` is uncapped
 ("most-specific-wins, no clamp", `be/api/agent.py:165-170`; the only clamp is `agent.subagent_clamp_privilege`, subagents).
 
-**ON4 switch (pending — the ruling selects ONE block; everything above is shared):**
-- **(a) persist both:** `ctrlb.chat` = `{thread, responder, overrides: {<home slug>: {privilege?, mode?}}}`, type-guarded on
-  load (a non-object, or an unknown privilege/mode value, drops that entry — never the blob). Overrides stay keyed by the
-  HOME agent and survive navigation; they are cleared ONLY by `/privilege` bare / `default`, the chip's "Default", bare
-  `/<provider>` back to the default chain, and the HOME agent leaving the roster (its slot pruned in the N2 sweep, so a
-  re-created slug never inherits an old elevation). Clearing a deleted RESPONDER never touches the home agent's slot.
-  Choosing (a) supersedes §6's "never persisted" contract for privilege: D84, SECURITY_MODEL (an elevation survives reloads
-  on that device, uncapped) and §11's rollback text change in the same commit. B9/B15: "Emma still answers, at Lynette's
-  persisted overrides."
-- **(b) session-only + visible mode:** overrides stay in memory (the current security/lifetime invariant; the chip already
-  exposes a privilege reset). A caption beside the chip in `ChatHeaderActions` shows the EFFECTIVE provider for the NEXT
-  turn — the home agent's mode override when set, else the answering agent's own model (the responder's under F2-B) —
-  not merely the override. B9/B15: "Emma still answers; any `/privilege` or `/local`·`/cloud` override reset with the
-  reload — the chip shows Default and the caption the provider the next turn will use."
-- **(c) persist mode, privilege session-only (recommended):** `ctrlb.chat` = `{thread, responder, modes: {<home slug>:
-  mode}}`, type-guarded on load (an unknown provider drops that entry); the privilege half stays in memory. Mode entries are
-  keyed by the HOME agent, cleared only by bare `/<provider>` back to the default chain and the home agent leaving the
-  roster (pruned in the N2 sweep); clearing a deleted responder never touches them. The caption beside the chip in
-  `ChatHeaderActions` shows the EFFECTIVE provider for the NEXT turn (as (b)). B9/B15: "Emma still answers, still on
-  Lynette's local mode; a `/privilege` elevation reset with the reload (the chip shows Default)."
+**Overrides persist per device (ON4, owner, 2026-10-06).** *"Both of them should be survivable for a reload."* The
+`overrides` map rides in `ctrlb.chat` beside the responder, type-guarded on load (a non-object, or an unknown
+privilege/mode value, drops that entry — never the blob). Overrides stay keyed by the HOME agent and survive navigation
+and reloads; they are cleared ONLY by `/privilege` bare / `default`, the chip's "Default", bare `/<provider>` back to the
+default chain, and the HOME agent leaving the roster (its slot pruned in the N2 sweep, so a re-created slug never
+inherits an old elevation). Clearing a deleted RESPONDER never touches the home agent's slot. This supersedes the
+pre-ruling "never persisted" contract for privilege: an elevation survives reloads on that device, uncapped (no clamp
+exists, above) — D84 and SECURITY_MODEL §2.2 record it, and §11 states the rollback behaviour. The chip shows the live
+(persisted) value. B9/B15: "Emma still answers, at Lynette's persisted overrides."
 
 **`effectiveAgent`** (`composer.ts:189`) = `responder ?? threadAgent ?? defaultAgent`, a home not on the roster shown as
 the root (ISS-51). Readers: `useActiveAgent` (`fe/hooks/useActiveAgent.ts:31`), `useActiveBackdrop`,
@@ -727,7 +735,8 @@ each owned by ONE slice at a time, in ladder order. File:line per slice → Appe
 ruled.**
 
 - **S0 — docs.** D84 confirm-closed (§13); DESIGN §12 (the `thread` frame) + §13 (the list is Query); SECURITY_MODEL (the
-  delete route; the per-home-agent privilege override, in memory only); ISSUES ISS-49's "the route survives" line
+  delete route; the per-home-agent privilege override persisted per device — its ON4 paragraph in §2.2 landed with the
+  ruling fold, 2026-10-06); ISSUES ISS-49's "the route survives" line
   corrected (O31); *(R100 §1's per-account note landed with the plan, F7.)* *Verify:* a doc-truth pass over the
   A15/A7/D75/ISS-49 cross-links.
 - **S1 — data + repo.** Migration 8; `_REPAIRS` on every connect; `Thread.seen_at`; `ThreadRepo.create` seeds `seen_at`;
@@ -739,11 +748,11 @@ ruled.**
   `set_seen`.
 - **S2 — routes.** `GET /api/threads` (summaries only with `agent=`); `PATCH` (+ the `seen` publish hook, no-op until S3);
   `DELETE`; 404-not-mint; seam ② + `!cmd` pin the default + the home greeting; `touch` on the owner send / exec pair;
-  `summaries[name].status`; R40 in `_build_session` (per the F2 ruling); the ISS-52 slug check; `DELETE /api/agents/{name}?conversations=true` + `ThreadRepo.delete_many` (F6). *Verify:* `test_threads_a15_routes.py` —
+  `summaries[name].status`; R40 in `_build_session` (F2 reading A: a responder copied with the home agent's `model` + `privilege`); the ISS-52 slug check; `DELETE /api/agents/{name}?conversations=true` + `ThreadRepo.delete_many` (F6). *Verify:* `test_threads_a15_routes.py` —
   filter/cursor/flags · rename round-trip + clear · seen monotonic + clamped to now · delete 409 mid-turn · 403 rolling
   automation · 404 archived non-rolling (E10) · cascades attachments · chat/exec 404 on an unknown id, mint on an absent one
   · seam ② pins the default even with `body.agent` set, seeds the HOME greeting, and the turn answers as `body.agent` ·
-  per-agent status · R40: an explicit override wins on a responder turn, and the no-override case per the F2 ruling · `..`/`/etc`
+  per-agent status · R40: an explicit override wins on a responder turn, and with no override a responder's turn runs on the HOME agent's AgentDef `model` + `privilege` (F2 reading A) · `..`/`/etc`
   resolve as unknown · agent delete with the flag: the conversations go in one DB transaction, then the folder; one running
   turn → 409 with `busy`, nothing deleted, every marker released; a forced folder-removal failure → 200 with `folder:
   "<error>"`, conversations gone, and a re-run removes the folder (`folder: "ok"`), a third run answers `folder: "absent"`;
@@ -769,11 +778,11 @@ ruled.**
   steer lines survive a swap.
 - **S7 — the responder model, the doors, the overrides, the `/opening` deletion.** `responder` + R45 lifetime; `{thread,
   responder}` persistence + fold; `mintAndOpen` + the new fence (O7)/`openAgentConversation`; `/new` = home; `/agent` + notes
-  (incl. B17's); the roster door on `onPick` (O4); `overrides` per home agent (R40) + the chip; the §6 retire list; the
+  (incl. B17's); the roster door on `onPick` (O4); `overrides` per home agent (R40), persisted per device in `ctrlb.chat` (ON4 (a): type-guarded, pruned with the home agent) + the chip; the §6 retire list; the
   `/opening` route deleted with `set_agent` + `test_iss49_reopen.py` + its pins (R27); the call refusals; the seen write (R30,
   O11, O10); the 404 → toast → home's latest, latched in a call (R29, R42); the agent-delete second confirm with the count → the F6 flag (R41); the open-home transition after an agent delete (N3, and the no-flag reading in §12); the roster-drop responder clear (N2); the one boot rule (N1). *Verify:*
   store tests for B1–B5, B9, B10, B11, B12, B15 (incl. its dead-page arm, N1), B16, B17, B18 (both sub-cases: the open home deleted with the flag → the default's latest with draft + rail carried, no toast; a deleted responder cleared with its note — local delete AND a remote delete seen through a roster refresh); the invariant (no door writes another agent's conversation);
-  the `ctrlb.chat` fold; `mintAndOpen` while another view streams still swaps (O7); the seen write skipped off the chat tab;
+  the `ctrlb.chat` fold + the overrides' per-entry type guard and reload survival (ON4); `mintAndOpen` while another view streams still swaps (O7); the seen write skipped off the chat tab;
   the BE suite green without the route; e2e — B1 → B2 → B3 → B4 → B5 through the tools menu (the checked row included), and
   B6's "open B mid-stream, back to A, the reply is whole" (moved from S6).
 - **S8 — drafts + staged rail per conversation** (`fe/store/composer.ts`, `fe/store/attachments.ts`, `fe/hooks/useDictation.ts`,
@@ -800,8 +809,11 @@ ruled.**
 - **DB schema 7 → 8, additive** — an older build ignores `seen_at` + the index and applies only migrations above its own
   version (`Database._migrate`). Rollback by tag is safe; rolling FORWARD again repairs whatever the older build inserted
   (the §3 `_REPAIRS`, O13).
-- **`ctrlb.chat`** — the new build folds `{agent}` → `{thread, responder}`; an older build reads it as "no sticky pick"
-  (its `readStickyAgent` type guard, `chat.ts:79`).
+- **`ctrlb.chat`** — the new build folds `{agent}` → `{thread, responder, overrides}`; an older build reads it as "no
+  sticky pick" (its `readStickyAgent` type guard, `chat.ts:79`) and ignores `overrides` — its `/privilege` and mode are
+  session-only, so a persisted elevation does NOT carry into the older build (every turn runs at the AgentDef defaults
+  until set again). Rolling forward again restores the persisted overrides unless the older build rewrote the blob (any
+  pick does, dropping them) — ON4.
 - **`ctrlb.composer` / `ctrlb.attachments`** — the new build folds the single value into `""`; an older build reading the
   keyed shape finds no `draft`/`files` and starts empty — rollback loses unsent drafts and staged chips, nothing else.
 - **Config** — no new key, no config-shape bump (R24); rollback = plain `update.sh <previous tag>`.
@@ -811,24 +823,21 @@ ruled.**
 
 ## §12 Still open
 
-**Two owner rulings pending.**
-1. **F2** (stated in full in §2): with no session override set, does a responder's turn use the HOME agent's AgentDef
-   `model`/`privilege` (reading A) or its OWN (reading B)? The main seat, Emma and Opus all recommend **B** (Opus: under A,
-   Emma defined `readonly` would silently run at Lynette's `auto_low`). Only S2's `_build_session` copy waits on it.
-2. **ON4 — do the overrides survive a reload?** After a reload the responder survives (R45) but the per-home-agent
-   `/privilege` and `/local`·`/cloud` overrides reset (R40, session-only) — and the mode has NO UI, so a reply can silently
-   move local → cloud (B9/B15's invisible reload). There is NO privilege cap: `ChatRequest.privilege` is "most-specific-wins,
-   no clamp — an interactive owner may raise or lower it" (`be/api/agent.py:165-170`); the only clamp is
-   `agent.subagent_clamp_privilege` (`be/config.py:425-428`). The code already gives the two different lifetimes: privilege
-   is "carried across the confirm resume too … it's a security stance, unlike `mode`" (`:168-169`).
-   **(a)** persist BOTH per device in `ctrlb.chat` beside the responder — a `/privilege full` then survives reloads on that
-   device, uncapped. **(b)** keep both session-only and make the MODE visible (a caption beside the chip) so a reset is seen.
-   **(c)** persist the MODE per device beside the responder; keep PRIVILEGE session-only (the code's own stance; the chip
-   shows it; a reload dropping an elevation is the safety). **Main-seat recommendation: (c).** Until ruled, S7 builds the
-   in-memory overrides every option shares; the per-option folds are pre-written in §6 ("ON4 switch").
-R0–R46 are otherwise all ruled.
+**Ruled by the owner 2026-10-06 (the two items open at v2.4).**
+1. **F2 → reading A** (§2): with no session override set, a responder's turn runs on the HOME agent's AgentDef
+   `model` + `privilege`. The main seat, Emma and Opus had all recommended **B** (Opus: under A, an Emma defined
+   `readonly` silently runs at Lynette's `auto_low`); the owner heard it and overruled it — the home agent is the
+   conversation, a responder inherits the room's model and privilege. S2 builds A.
+2. **ON4 → (a), persist both** (§6 "Overrides persist per device"): the per-home-agent `/privilege` and `/local`·`/cloud`
+   overrides persist per device in `ctrlb.chat` and survive a reload, so a reload can no longer silently move a reply
+   local → cloud. (b) both session-only + a visible mode and (c) persist the mode only were offered; the main seat
+   recommended (c) (privilege's code-stated stance: "carried across the confirm resume too … it's a security stance,
+   unlike `mode`", `be/api/agent.py:168-169`); the owner chose (a). An elevation now survives reloads on that device,
+   uncapped — there is NO privilege cap (`ChatRequest.privilege` "most-specific-wins, no clamp", `:165-170`; the only clamp
+   is `agent.subagent_clamp_privilege`, `be/config.py:425-428`); D84 and SECURITY_MODEL §2.2 record it. S7 builds (a).
+R0–R46 + F2 + ON4 are all ruled; nothing is open.
 
-**Main-seat reading to confirm (round 2):** deleting the agent whose conversation is OPEN on this device WITHOUT the flag
+**Confirmed by the main seat (round 2 — F8 in the session-60 rulings; both v2.2 micro-confirms passed over it):** deleting the agent whose conversation is OPEN on this device WITHOUT the flag
 (the owner chose to keep the conversations) — the plan moves this device to the configured default's latest the same way
 (N3's transition, draft + rail carried), since R41 makes the kept conversations "listed nowhere" and the header button
 would otherwise open the deleted agent's sheet. The kept conversations stay in the database.
@@ -839,7 +848,7 @@ same-conversation landing keeps it (R45).
 
 **Ruled 2026-10-06 (kept for the trail):** Q1 → R24 · Q2 → R25 · Q3 → R26 · Q4 → R29 · Q5 → R30 · Q6 → R27 · Q7 → R28 ·
 Q8 → R32 · the AgentDef write-back → R46 · the v2 fold's flagged readings → F1–F7 · Emma's confirm → N1–N4 · Opus's confirm → ON1–ON7 · Q-I → R34 · Q-J → R35 · Q-K → R36 · Q-L → R37 · Q-M → R38 · O1 → R39 · O3 → R45 · O5 → R40 · O12 → R41 ·
-O15 → R42 · O17 → R43.
+O15 → R42 · O17 → R43 · F2 → reading A (owner) · ON4 → (a) (owner).
 
 **Recorded, not built (R32, R46):** write-back of the local/cloud mode (first) and privilege to the AgentDef · a list TAB via the satellite
 lever (R14) · search grouped by conversation (`MessageRepo.search`, `be/services/conversation.py:399`) ·
@@ -868,7 +877,7 @@ elsewhere fail until hang-up (R42) · the stray-`auto_rotate`-key residual (§9)
   propagation (→ O10), E8 the Android tap (→ O2). E2 → R34 · E3 → R35 · E4 → R45 · E5 → R41 · E9 → R37 · E6 (a remote
   delete lost the draft) accepted · E10 (archived 404 test) accepted · E11 (the Telegram attribution) accepted (§2, R19).
 - **All folded 2026-10-06 → plan v2.** Then the main seat ruled the readings the fold flagged (→ v2.1): **F1** B5 clears the
-  responder (confirmed) · **F2** the no-override model/privilege of a responder → OWNER, pending (§2) · **F3** the `_REPAIRS`
+  responder (confirmed) · **F2** the no-override model/privilege of a responder → OWNER; ruled A by the owner 2026-10-06 (the reviewers recommended B) (§2) · **F3** the `_REPAIRS`
   list on every connect (accepted) · **F4** a thread-less send mints with home = the default + the home greeting (accepted)
   · **F5** utterances fail until hang-up on a conversation deleted elsewhere (recorded) · **F6** agent delete with its
   conversations is ONE server-side route (§4; round 2 dropped the "atomic" claim, N4) · **F7** ROADMAP A15's "Done" line + R100 §1's per-account caveat.
@@ -879,26 +888,33 @@ elsewhere fail until hang-up (R42) · the stray-`auto_rotate`-key residual (§9)
   with its conversations had no fallback → the delete's success handler opens the default's latest and carries draft +
   rail (§4, B18) · **N4** (HIGH) the "atomic" agent+conversations delete could not be atomic across the DB and the
   filesystem → the truthful sequence, per-step results, idempotent retry (§4). N2/N3 are behavioural least-surprise
-  defaults reported to the owner. Emma's F2 view = reading B.
+  defaults reported to the owner. Emma's F2 view = reading B (the owner ruled A, 2026-10-06).
 - **Round 2 — Opus confirm, on v2.1: CONFIRMED WITH NOTES** — round-1 #1–#31 resolved or owner-overruled except #20; new
   N1–N7 → ON1–ON7: ON1 = Emma's N1 · **ON2** the §8 fold produced user/user runs in the ordinary case → each run of owner +
   foreign rows is ONE user message (§8, S4) · **ON3** `awaiting` = a parked call after the last owner row, no TTL
-  (supersedes O20) · **ON4** overrides vs reload → OWNER (§12) · ON5 = Emma's N3 (+ resolve the folder before the guard
-  pass) · ON6 = Emma's N4 · **ON7** two drifted `useDictation` citations re-grepped. Opus's F2 view = reading B.
+  (supersedes O20) · **ON4** overrides vs reload → OWNER (§12); ruled (a) by the owner 2026-10-06 (the main seat recommended (c)) · ON5 = Emma's N3 (+ resolve the folder before the guard
+  pass) · ON6 = Emma's N4 · **ON7** two drifted `useDictation` citations re-grepped. Opus's F2 view = reading B (the owner ruled A, 2026-10-06).
 - **All round-2 notes folded 2026-10-06 → plan v2.2.**
 - **Opus micro-confirm on v2.2: CONFIRMED WITH NOTES** — it caught that NO privilege cap exists (the plan's "capped by
   config" in F2 and ON4(a) was wrong; `be/api/agent.py:165-170` "no clamp"; only `agent.subagent_clamp_privilege`) → the
   main seat's RETRACTION; ON4 restated with three options, recommendation now (c); notes folded → v2.3: the §8 mid-history
-  system-row caveat, the other-device stale list after a declined cascade (residual), the per-option ON4 folds (§6).
+  system-row caveat, the other-device stale list after a declined cascade (residual), the per-option ON4 folds (§6; the
+  owner later chose (a) — only its fold survives).
 - **Emma micro-confirm on v2.2: CONFIRMED WITH NOTES** — N1–N3 RESOLVED, N4 RESOLVED WITH NOTE; one new MED **M1**: a request
   retry cannot rediscover a deleted conversation's attachment dir (its row is gone), nor finish the default memory dir
   once the folder is absent → §4 step 4 made truthful (the retry completes the agent side, removing the default memory dir
   explicitly; the boot sweep's rowless-dir arm reclaims attachment dirs); her ON4 clauses folded into the §6 blocks
   (type-guarded blob, home-keyed, pruned on home delete, a responder clear never touches the home slot, (a) changes D84 +
-  SECURITY_MODEL + rollback together; (b)/(c) caption = the EFFECTIVE provider for the next turn) → v2.4.
+  SECURITY_MODEL + rollback together; (b)/(c) caption = the EFFECTIVE provider for the next turn) → v2.4 (only
+  (a)'s block survives the owner's ON4 ruling).
 - **COUNCIL CLOSED 2026-10-06** — Opus CONFIRMED WITH NOTES ∥ Emma CONFIRMED WITH NOTES (both on v2.2; notes folded in
-  v2.3–v2.4). **OPEN = the owner's F2 and ON4 rulings only** (§12); each is a one-block switch (§2 F2 box, §6 ON4 switch). Confirm rounds PENDING (Opus by message; Emma by a fresh self-contained run with her
+  v2.3–v2.4). The owner's F2 and ON4 rulings were the only open items (§12) — **both RULED 2026-10-06** (below). The confirm rounds closed on v2.2 (Opus by message; Emma by a fresh self-contained run with her
   review attached).
+- **Owner rulings 2026-10-06 (session 61) → plan v2.5:** **F2 = reading A** (the reviewers — main seat, Emma, Opus —
+  recommended B; the owner overruled: the home agent's model + privilege govern every turn in its conversation) ·
+  **ON4 = (a)** (the main seat recommended (c); the owner chose to persist both). Folded into §1, §2's F2 box, §4, §6
+  ("Overrides persist per device" — blocks (b)/(c) deleted), §10, §11, §12; D84, SECURITY_MODEL §2.2, TODO Phase 27 in
+  the same change.
 
 Session-60 working files (provenance only; nothing here depends on them): `~/.cache/tmp/ctrlb-session60/`
 (`RULINGS.md`, `audit-A15.md`, `review-A15-opus.md`, `review-A15-emma.md`, the frozen plan/D84 copies per round).
@@ -910,7 +926,7 @@ the sticky rung of `effectiveAgent`) and the D75 **tandem rule**; **ISS-49** —
 /threads/{id}/opening` route itself, deleted with its tests and `ThreadRepo.set_agent` in S7 (R27; the `alt_greetings` picker
 re-adds a route when built); **ISS-50** (§8); **ISS-51** + **ISS-52** at the boundary (§4); the single global composer draft
 and staged rail (→ per conversation, R31/R34); the global `/privilege` and `/local`·`/cloud` session values (→ per home agent,
-R40); **`auto_rotate`** / 7e-g (§9); the hop-while-streaming refusals; the silent mint on an unknown `thread_id`; the
+persisted per device, R40 + ON4); **`auto_rotate`** / 7e-g (§9); the hop-while-streaming refusals; the silent mint on an unknown `thread_id`; the
 unpinned-thread class (seam ② + the repairs). The D75 sticky residuals ①–⑥ go with the machinery.
 
 **Does NOT do:** group chats (R13); a global all-agents list or an orphan listing (R19, R41); a behaviour toggle (R2); a
@@ -944,8 +960,8 @@ Function name first (authoritative), then the line at `1bd2d3f`. `be/` = `backen
 |---|---|---|
 | `ChatRequest.mode` / `.agent` / `.privilege` | `be/api/agent.py:162` / `:164` / `:170` | doc (responder rung; home values) |
 | `resolve_session_agent` | `be/api/agent.py:309` | home privilege when no override |
-| `_build_session` | `be/api/agent.py:321` (ladder `:350`) | R40 / F2: the no-override case per the owner's ruling |
-| `AgentDef.model` / `.privilege` | `be/domain/agent.py:250` / `:258` | read under F2 reading A |
+| `_build_session` | `be/api/agent.py:321` (ladder `:350`) | R40 / F2 (reading A): copy a responder with the home agent's `model` + `privilege` when no override is set |
+| `AgentDef.model` / `.privilege` | `be/domain/agent.py:250` / `:258` | read for the F2 copy (reading A, ruled) |
 | `_reject_automation_thread` / `_revalidate_thread` | `be/api/agent.py:451` / `:473` | reused by DELETE |
 | `_reserve_or_busy` / `_reserve_turn` | `be/api/agent.py:501` / `:516` | reused by DELETE |
 | `turn_status` | `be/api/agent.py:904` (predicate `:928`) | `running` |
@@ -1007,7 +1023,7 @@ Function name first (authoritative), then the line at `1bd2d3f`. `be/` = `backen
 | Seam | Where | Change |
 |---|---|---|
 | `ChatState` | `fe/store/chat.ts:35` (`sessionPrivilege` `:42`) | `responder`, `overrides` |
-| `KEY` / `readStickyAgent` | `fe/store/chat.ts:71` / `:79` | `{thread, responder}` + fold |
+| `KEY` / `readStickyAgent` | `fe/store/chat.ts:71` / `:79` | `{thread, responder, overrides}` + fold + the overrides' type guard (ON4) |
 | `sessionMode` / `setSessionMode` | `fe/store/chat.ts:483` / `:484` | → `overrides[home].mode` |
 | `setStickyAgent` / `writeSticky` / `setSessionPrivilege` | `fe/store/chat.ts:510` / `:516` / `:572` | delete / → overrides |
 | `resetToThreadless` / `fetchThreadAgent` / `initChat` | `fe/store/chat.ts:802` / `:832` / `:943` | sticky param out / cache read / boot order |

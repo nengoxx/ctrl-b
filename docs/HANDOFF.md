@@ -948,7 +948,8 @@ Surfaces routing; per-theme fidelity D7; vapor byte-frozen per D51; cosmos = the
 The design of record is [`docs/CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) — SELF-CONTAINED (owner directive R33): a
 build session reads the plan + the repo, nothing else.** Evidence = [R100](./research/R100-per-agent-conversations.md).
 Council CLOSED 2026-10-06 (blind Opus 5.5 ∥ Emma, two rounds each, both CONFIRMED WITH NOTES, notes folded). **NOTHING
-BUILT.** Open at writing: the owner's two rulings in plan §12 (F2 · ON4) — answered inline when the plan is next picked up.
+BUILT.** The owner's two rulings (plan §12) are IN — **ruled 2026-10-06 (session 61): F2 = reading A** (a responder runs on the
+HOME agent's model + privilege) **· ON4 = (a)** (both overrides persist per device across a reload) — folded → plan v2.5; nothing open.
 The build is a SEPARATE session after the ASR work (plan §10 = the S0–S13 ladder, backend-first; two-reviewer code rounds).
 Session provenance (not needed to build): `~/.cache/tmp/ctrlb-session60/` (`RULINGS.md` R0–R46 + O/E/F/N rulings, both
 reviews, frozen plan versions v1 → v2.4).

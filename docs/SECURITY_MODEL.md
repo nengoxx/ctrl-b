@@ -101,6 +101,16 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
   Conf → Access buys nothing. The path is itself gated: the endpoint 403s unless `tailscale.enabled`
   (D20), the actions are `ui_exposed=False`/`agent_exposed=False` (unreachable from the generic action
   API and from the agent), and both are `idempotent`.
+- **The owner's `/privilege` override persists per DEVICE (Phase 27, D84 ON4 — owner, 2026-10-06).** An
+  interactive owner may raise or lower a chat turn's privilege: `ChatRequest.privilege` is most-specific-wins,
+  **no clamp** (the only clamp is `agent.subagent_clamp_privilege`, subagent ≤ parent). The `/privilege` and
+  `/local`·`/cloud` overrides are kept per HOME agent and persisted per device in browser `localStorage`
+  (`ctrlb.chat`), so **a reload no longer drops an elevation** — it is uncapped and lasts until cleared by bare
+  `/privilege` / `default`, the chip's "Default", or the home agent leaving the roster. With no override set, a
+  turn (a responder's included) runs at the HOME agent's AgentDef privilege (F2). The trust boundary is unchanged
+  — the tailnet + the single owner; no server state, no write-back to the AgentDef (R46) — and the privilege chip
+  always shows the live value. *(Ruled, not yet built — F2 lands with Phase 27 S2, the persistence with S7; until
+  then today's global override is session-only.)*
 - **Risk levels** (`Risk`): `LOW` · `MED` · `HIGH`. Risk + the `confirm` flag are declared per action on its
   `ToolSpec` — the gate is data, not scattered `if`s.
 - A suspended call becomes `RunState.AWAITING_CONFIRM` and renders as the confirm bubble.
