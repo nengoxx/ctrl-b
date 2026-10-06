@@ -606,9 +606,10 @@ function QuestionBubble({
 // The store owns every route; these are the two view-side pieces with no state of their own, so they
 // are module-level (a stable identity for `Bubbles`' memo without a `useCallback`).
 
-/** EDIT — the house full-page editor (`requestPrompt`: back-guard, focus trap, phone-safe; no new
- *  overlay). A user message's editor also carries its DELETE (owner ruling ③: one control on the user's
- *  name line), which cancels the edit and hands over to the store's own confirm. An unchanged text saves
+/** EDIT — the house full-page editor (`requestPrompt`: back-guard since ISS-53, focus trap, phone-safe;
+ *  no new overlay). A user message's editor also carries its DELETE (owner ruling ③: one control on the
+ *  user's name line), which cancels the edit and — once the editor's history entry is spent, never in
+ *  the same task (PromptModal's header) — hands over to the store's own confirm. An unchanged text saves
  *  nothing. A save the server did NOT take (busy, folded, blank, a turn started) re-opens the editor on
  *  the words the owner typed, with a toast — the store's note says why (D81 fix wave 1). */
 function openEditor(m: ChatMessage, draft?: string): void {

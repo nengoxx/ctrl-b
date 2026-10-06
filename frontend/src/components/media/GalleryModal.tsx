@@ -85,6 +85,35 @@ export function GalleryModal({
   const triggerRef = useRef<HTMLElement | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const close = useOverlayBackGuard(true, onClose);
+  // The ITEM DETAIL replaces the grid inside this full-screen dialog, so Back from it returns to "All
+  // images" rather than closing the gallery (ISS-53, owner-ruled): its own entry, pushed over the
+  // gallery's, and the LIFO stack pops it first. "‹ All images" and a delete both spend it through
+  // the closer (a delete runs in the confirm's `.then`, after that dialog's own pop has landed) — so a
+  // second traversal is never asked for while this one is in flight.
+  //
+  // The gallery's ✕ and Escape stay reachable FROM the detail (it is inline, not a modal over them),
+  // and the gallery's own `close()` cannot spend its entry while the detail's sits on top — the pop
+  // would reach the detail. So `exit` walks the two down IN ORDER: it spends the detail's entry with
+  // the intent recorded, and the detail's `onClose` — inside `popstate`, the traversal landed — asks
+  // the gallery to close. Never two traversals in one task.
+  const exitAfterDetail = useRef(false);
+  const closeDetail = useOverlayBackGuard(selectedId !== null, () => {
+    setSelectedId(null);
+    if (!exitAfterDetail.current) return;
+    exitAfterDetail.current = false;
+    close();
+  });
+  const exit = () => {
+    if (selectedId === null) {
+      close();
+      return;
+    }
+    // Recorded FIRST, and kept whatever `closeDetail` answers: the detail's close may run synchronously
+    // (no entry pushed yet) or may already be in flight from "‹ All images" — either way its `onClose`
+    // is the one that reads the intent.
+    exitAfterDetail.current = true;
+    closeDetail();
+  };
   /** The tile the detail panel was opened from, so leaving it lands back where the owner was. */
   const cameFrom = useRef<string | null>(null);
 
@@ -176,10 +205,7 @@ export function GalleryModal({
     defaultsRestorable(rows);
 
   return (
-    <div
-      className="pm-backdrop mgal-pm"
-      onKeyDown={(e) => modalKeyDown(e, panelRef.current, close)}
-    >
+    <div className="pm-backdrop mgal-pm" onKeyDown={(e) => modalKeyDown(e, panelRef.current, exit)}>
       <div
         className="pm mgal-modal"
         ref={panelRef}
@@ -210,7 +236,7 @@ export function GalleryModal({
               {busy && " · saving…"}
             </p>
           </div>
-          <button className="pm-x" aria-label="Close" onClick={close}>
+          <button className="pm-x" aria-label="Close" onClick={exit}>
             <XIcon />
           </button>
         </div>
@@ -292,7 +318,7 @@ export function GalleryModal({
               canPromote={section.caps.promote && items.length > 1}
               first={items[0]?.id === selected.id}
               last={items[items.length - 1]?.id === selected.id}
-              onBack={() => setSelectedId(null)}
+              onBack={closeDetail}
               onPin={() => write.pin(section, selected)}
               onUnpin={() => write.unpin(section)}
               onMove={(delta) => void write.move(section, selected, delta)}
@@ -303,7 +329,7 @@ export function GalleryModal({
               jobBusy={upload.busy}
               onDelete={() => {
                 void write.remove(section, selected);
-                setSelectedId(null);
+                closeDetail();
               }}
             />
           ) : (

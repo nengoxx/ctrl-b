@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The gacha bespoke Fleet, rendered (D52 / GACHA_PLAN §6). `useFleet` is mocked to a fixed FleetView (the
@@ -129,7 +129,7 @@ beforeEach(() => {
   setFleet();
   media.data = undefined;
 });
-afterEach(() => {
+afterEach(async () => {
   try {
     cleanup();
   } finally {
@@ -138,6 +138,10 @@ afterEach(() => {
     // reset: every entry's host is gone, so every entry clears and every timer is disarmed.
     reconcilePending([]);
   }
+  // The art showcase wears the back guard since ISS-53: an unmount with the art up reclaims its history
+  // entry with an asynchronous `history.back()` — two queued tasks in jsdom, CANCELLED by a `pushState`
+  // in between (as in a browser) — so let it land before the next case can push.
+  for (let i = 0; i < 2; i++) await new Promise((r) => setTimeout(r, 0));
 });
 
 describe("the slide set (§6.4)", () => {
@@ -1417,6 +1421,21 @@ describe("the art showcase", () => {
     openArt(container);
     rerender(<GachaFleet active={false} />);
     expect(view()).toBeNull();
+  });
+
+  it("the Android BACK gesture closes the ART — and leaves the dossier standing (ISS-53)", async () => {
+    // Full screen, so Back is its own dismissal rather than a navigation out of the PWA.
+    const { container } = render(<GachaFleet active />);
+    openArt(container);
+    const ours = () => (history.state as { ctrlbOverlay?: boolean } | null)?.ctrlbOverlay === true;
+    await waitFor(() => expect(ours()).toBe(true));
+    const entry = (history.state as { id: number }).id;
+
+    history.back();
+    await waitFor(() => expect(view()).toBeNull());
+    expect(document.body.dataset.sheet).toBe("open"); // the dossier is still up under it
+    expect(dossierName()).toBe("pegasus");
+    expect((history.state as { id?: number } | null)?.id).not.toBe(entry); // its entry was spent
   });
 
   it("opens with the CSS fade when no transition can carry it", () => {

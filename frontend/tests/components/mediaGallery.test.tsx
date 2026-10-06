@@ -168,8 +168,10 @@ afterEach(async () => {
   // Let the back guard's unmount finish. It reclaims its history entry with an asynchronous
   // `history.back()`, and jsdom delivers that pop on a later task — which, without this, is a task
   // inside the NEXT test, where the guard swallows it as its own unwind and the next Escape appears
-  // to do nothing. A real browser has no test boundary to leak across; the suite does.
-  await new Promise((r) => setTimeout(r, 0));
+  // to do nothing. A real browser has no test boundary to leak across; the suite does. TWO ticks: jsdom
+  // runs a traversal as two queued tasks, and a `pushState` landing between them cancels it — and since
+  // ISS-53 a case can end with the item detail's entry on top of the gallery's.
+  for (let i = 0; i < 2; i++) await new Promise((r) => setTimeout(r, 0));
 });
 
 describe("the entry cards (§6.1)", () => {
@@ -2258,7 +2260,56 @@ describe("the overlay STACK: a confirm over the gallery (review #5)", () => {
     expect(screen.getByRole("dialog")).toBeTruthy(); // the gallery is still open behind it
     expect(api.del).not.toHaveBeenCalled(); // …and Back CANCELLED, it did not confirm
 
+    // The confirm was opened from the item DETAIL, which holds its own entry (ISS-53): the next Back
+    // returns to "All images" with the gallery still open…
+    history.back();
+    await waitFor(() =>
+      expect(within(dialog).queryByRole("button", { name: "‹ All images" })).toBeNull(),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    // …and the one after that closes the gallery.
     history.back();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+});
+
+describe("the item DETAIL holds its own Back entry (ISS-53, owner-ruled)", () => {
+  it("Back from an item returns to the grid, the gallery still open", async () => {
+    renderGallery();
+    const dialog = await openSection("Characters");
+    openItem(dialog, "a.webp");
+    await within(dialog).findByRole("button", { name: "‹ All images" });
+    // Both entries pushed: the gallery's, and the detail's over it.
+    await waitFor(() =>
+      expect((history.state as { ctrlbOverlay?: boolean } | null)?.ctrlbOverlay).toBe(true),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+
+    history.back();
+    await waitFor(() =>
+      expect(within(dialog).queryByRole("button", { name: "‹ All images" })).toBeNull(),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "a.webp" })).toBeTruthy(); // the grid is back
+
+    history.back();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("the gallery's ✕ FROM the detail walks both entries down, in order — and closes the gallery", async () => {
+    // The ✕ stays reachable from the inline detail, but the gallery's own `close()` would pop the
+    // DETAIL's entry (it sits on top). The exit spends the detail's first, then the gallery's.
+    const back = vi.spyOn(history, "back");
+    renderGallery();
+    const dialog = await openSection("Characters");
+    openItem(dialog, "a.webp");
+    await within(dialog).findByRole("button", { name: "‹ All images" });
+    await new Promise((r) => setTimeout(r, 0));
+    back.mockClear();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(back).toHaveBeenCalledTimes(2); // one per entry, the second only after the first landed
+    back.mockRestore();
   });
 });

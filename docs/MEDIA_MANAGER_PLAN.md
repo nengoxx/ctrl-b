@@ -414,6 +414,30 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
   **one close primitive** (Emma #5): UI close (✕/Escape) calls `history.back()` and the
   `popstate` handler is the ONLY closer — no orphaned history entries, re-entry guarded.
   Chrome: ✕ + section title; the labeled `Add an image` row (≥56 px).
+  > **WHO WEARS THE GUARD (ISS-53, owner-ruled 2026-10-06 — every FULL-SCREEN surface).** One call per
+  > surface on this one hook — no shared modal wrapper (the house has none by ruling, and two of them are
+  > not `.pm` at all). Already: this gallery · `LibraryPicker` · `CropModal` · `FramingSheet` · the chat's
+  > picture viewer · the call screen · `ConfirmDialog`. ISS-53 adds: `PromptModal` (every prompt/SKILL/
+  > SOUL/MEMORY field, the D81 message editor) · the agent DETAIL over the agents gallery (gated on the
+  > gallery being ON SCREEN — `useSections` `active`/`hosted` — so a hidden tab never keeps an entry) ·
+  > the automation editor sheet · gacha's art showcase (gated on its dossier) · this gallery's item
+  > DETAIL (Back returns to "All images"; the gallery's ✕/Escape from the detail spend the detail's entry
+  > first and close the gallery from its `onClose`). Back = that surface's OWN close. Sheets, popovers,
+  > menus, section switches and the Conf accordions are OUT; Back at the app root still leaves the PWA.
+  > **The `onBack` veto** (optional third argument, the `OnBackPressedCallback` shape): a Back that
+  > reaches an entry whose owner gave `onBack`, with no close in flight, RE-PUSHES the entry and calls
+  > `onBack` instead of closing; `onBack` leaves through the returned `close()` when it decides to. A
+  > `close()` never reaches `onBack`; an inner entry on top shields the outer's veto. Only the automation
+  > sheet uses it (its close asks "Discard changes?" when dirty, so Back asks too). Without it the path
+  > is unchanged.
+  > **NEVER CLOSE ONE GUARD AND OPEN ANOTHER IN THE SAME TASK — record the outcome, act in `onClose`.**
+  > A close's `history.back()` is still in flight when the next overlay's `pushState` lands, and the
+  > browser cancels the traversal: the new entry is lost and the next Back leaves the app (measured in
+  > Chromium, `DefaultRoot`'s call-screen note). ConfirmDialog's idiom is the rule: every exit records its
+  > outcome in a ref and calls the ONE closer; the outcome runs in the guard's `onClose`, inside
+  > `popstate`, after the traversal landed. `PromptModal`'s D81 Delete door is the case it was built for
+  > (resolve, then `danger.run()` → `requestConfirm`). The same holds for a SECOND `history.back()` while
+  > one is in flight — walk nested entries down one pop at a time, never two backs in one task.
 - **6.3 Grid:** 3 columns; tiles at the role aspect (square unknown); gap/gutter 12–16 px; kit
   radius. Corners: bottom-end = in use (24 px check + 2 px accent ring) · top-end = problem ·
   bottom-start = origin (bundled glyph). **Decode budget stated** (Opus M3): `loading="lazy"`,

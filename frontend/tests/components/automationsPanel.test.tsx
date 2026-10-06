@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -58,6 +58,7 @@ vi.mock("../../src/hooks/useAgents", () => ({
 
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { AutomationsPanel } from "../../src/components/AutomationsPanel";
+import { resolveConfirm } from "../../src/store/confirm";
 
 function mkAutomation(over: Partial<Automation> = {}): Automation {
   return {
@@ -121,13 +122,24 @@ function setDoc(views: AutomationView[], over: Partial<AutomationsDoc> = {}) {
   };
 }
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  act(() => resolveConfirm(false));
   for (const fn of [h.create, h.update, h.remove, h.setEnabled, h.runNow, h.markRead])
     fn.mockReset();
   h.runs = [];
   h.preview = undefined;
+  // The sheet wears the back guard since ISS-53: an unmount reclaims its history entry with an
+  // asynchronous `history.back()` — two queued tasks in jsdom, cancelled by a `pushState` in between —
+  // so let it land before the next case pushes.
+  for (let i = 0; i < 2; i++) await new Promise((r) => setTimeout(r, 0));
 });
+
+/** The back-guard entry the browser is sitting on, if any. */
+const overlayId = () =>
+  (history.state as { ctrlbOverlay?: boolean; id?: number } | null)?.ctrlbOverlay === true
+    ? (history.state as { id: number }).id
+    : undefined;
 
 describe("the list", () => {
   it("a MALFORMED doc renders the loading placeholder, never a crash (v1.4.2 release-gate catch)", () => {
@@ -343,6 +355,39 @@ describe("the sheet's overlay layering + close guard (post-14c review)", () => {
     fireEvent.change(within(sheet).getByLabelText("Name"), { target: { value: "renamed" } });
     fireEvent.keyDown(sheet.parentElement as HTMLElement, { key: "Escape" });
     expect(await screen.findByText("Discard changes?")).toBeTruthy();
+  });
+
+  it("Android BACK on a CLEAN sheet closes it (ISS-53)", async () => {
+    openEditor();
+    await waitFor(() => expect(overlayId()).toBeDefined());
+    const entry = overlayId();
+    history.back();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText("Discard changes?")).toBeNull(); // nothing to lose → no prompt
+    expect(overlayId()).not.toBe(entry);
+  });
+
+  it("Android BACK on a DIRTY sheet asks — on decline the sheet stays and its entry is still ours", async () => {
+    // Back is the sheet's OWN close (owner ruling), and its close asks first: the guard's `onBack`
+    // veto re-arms the entry and hands the gesture to `tryClose`.
+    const sheet = openEditor();
+    fireEvent.change(within(sheet).getByLabelText("Prompt"), { target: { value: "edited" } });
+    await waitFor(() => expect(overlayId()).toBeDefined());
+    const entry = overlayId();
+
+    history.back();
+    expect(await screen.findByText("Discard changes?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByText("Discard changes?")).toBeNull());
+    expect(within(sheet).getByLabelText("Prompt")).toHaveProperty("value", "edited");
+    await waitFor(() => expect(overlayId()).toBe(entry)); // ONE entry, still the sheet's
+
+    // …so the NEXT Back asks again rather than leaving — and "discard" then closes, spending it.
+    history.back();
+    expect(await screen.findByText("Discard changes?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "discard" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(overlayId()).not.toBe(entry);
   });
 
   it("Tab is trapped inside the sheet (the shared modal keydown)", () => {

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { WarnRow } from "./WarnRow";
 import { XIcon } from "./icons";
+import { useOverlayBackGuard } from "../hooks/useOverlayBackGuard";
 import { modalKeyDown } from "../lib/focusTrap";
 import { resolvePrompt, resolvePromptPair, usePrompt } from "../store/prompt";
 import type { PromptPair } from "../types";
@@ -28,6 +29,20 @@ import type { PromptPair } from "../types";
 //
 // Save semantics are the caller's (see store/prompt.ts): Save resolves with the edited text (or the
 // edited pair), Cancel resolves with null. The modal never hits the backend.
+//
+// THE ANDROID BACK GESTURE (ISS-53). The editor is full-screen, so it wears `useOverlayBackGuard`:
+// Back is its own Cancel. Every exit — Save, Cancel, ✕, Escape, the D81 danger door — goes through
+// the guard's ONE close primitive, ConfirmDialog's idiom: the gesture RECORDS its outcome in
+// `pending`, calls `close()`, and the outcome runs in the guard's `onClose`, i.e. inside `popstate`,
+// after the traversal has landed. That ordering is load-bearing for the danger door, whose caller
+// opens a ConfirmDialog SYNCHRONOUSLY (`deleteMessage` → `requestConfirm`): resolving the editor and
+// running `danger.run()` in the same task would close one guard and open another while the first
+// one's `history.back()` is still in flight — the race DefaultRoot's call-screen comment measured, in
+// which the confirm's entry is lost and the next Back leaves the app. Every caller's `.then` thereby
+// lands after the pop too.
+
+/** The cancel outcome — `resolvePrompt(null)` settles EITHER kind with `null` (store/prompt.ts). */
+const cancelPrompt = () => resolvePrompt(null);
 
 /** A registry prompt's description, split into normal description text and the COUPLING note the
  *  editor must show as a warning. The convention is the registry's (`services/agent/prompts.py`): a
@@ -54,6 +69,10 @@ export function PromptModal() {
   // one, deliberately — the owner may retype the default word for word, and the storage rule must
   // still refuse to pin it, while the field must still read as edited.
   const [baseUntouched, setBaseUntouched] = useState(false);
+  /** What the pending close MEANS — the outcome the exit gesture recorded, run by the guard's
+   *  `onClose`. Back (and any close nobody chose) leaves it at the cancel it is reset to per request. */
+  const pending = useRef<() => void>(cancelPrompt);
+  const close = useOverlayBackGuard(req !== null, () => pending.current());
 
   // Seed the local draft synchronously the first render a new request opens — setting state during
   // render (React's "adjust state when a prop changes" pattern) re-runs before paint, so there's no
@@ -78,6 +97,9 @@ export function PromptModal() {
   // panel rather than a second ref, which pair mode would have to thread through a child.
   useEffect(() => {
     if (!req) return;
+    // Reset per request (ConfirmDialog resets `answer` the same way): a request that replaced another
+    // must never settle with the outcome a gesture recorded for its predecessor.
+    pending.current = cancelPrompt;
     triggerRef.current = document.activeElement as HTMLElement | null;
     queueMicrotask(() => panelRef.current?.querySelector("textarea")?.focus());
     return () => {
@@ -100,18 +122,27 @@ export function PromptModal() {
   const overCap = cap != null && count > cap;
   const danger = req.kind === "text" ? req.danger : undefined;
 
+  /** The ONE way out, carrying its outcome (ConfirmDialog's `finish`). The guard's close is the latch:
+   *  only the gesture that actually takes the exit records what the exit means — a second gesture
+   *  inside the in-flight window (Save then Escape) must not rewrite the first one's answer. */
+  const finish = (outcome: () => void) => {
+    const previous = pending.current;
+    pending.current = outcome;
+    if (!close()) pending.current = previous;
+  };
+
   // Escape closes, Tab cycles the panel's LIVE focusable set — both from `lib/focusTrap`, which the
   // automations editor sheet shares (A3 slice 3). The behaviour is the one this modal has always had;
   // it just no longer lives here alone. `resolvePrompt(null)` cancels EITHER kind (store/prompt.ts).
   return (
     <div
       className="pm-backdrop"
-      onKeyDown={(e) => modalKeyDown(e, panelRef.current, () => resolvePrompt(null))}
+      onKeyDown={(e) => modalKeyDown(e, panelRef.current, () => finish(cancelPrompt))}
     >
       <div className="pm" ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={labelId}>
         <div className="pm-head">
           <h3 id={labelId}>{req.title}</h3>
-          <button className="pm-x" aria-label="Close" onClick={() => resolvePrompt(null)}>
+          <button className="pm-x" aria-label="Close" onClick={() => finish(cancelPrompt)}>
             <XIcon />
           </button>
         </div>
@@ -169,14 +200,17 @@ export function PromptModal() {
                 )}
                 {/* D81 — the optional destructive action, in the same quiet LEFT slot as the defaults
                     (secondary to Cancel/Save), danger-coloured. Cancels the edit first, then hands over
-                    to the caller, whose own confirm decides (store/prompt.ts `danger`). */}
+                    to the caller, whose own confirm decides (store/prompt.ts `danger`) — both AFTER
+                    the editor's history entry is spent (ISS-53: see the header). */}
                 {danger && (
                   <button
                     className="pm-alt danger"
-                    onClick={() => {
-                      resolvePrompt(null);
-                      danger.run();
-                    }}
+                    onClick={() =>
+                      finish(() => {
+                        resolvePrompt(null);
+                        danger.run();
+                      })
+                    }
                   >
                     {danger.label}
                   </button>
@@ -185,12 +219,14 @@ export function PromptModal() {
             )
           )}
           <div className="pm-actions">
-            <button className="pm-alt" onClick={() => resolvePrompt(null)}>
+            <button className="pm-alt" onClick={() => finish(cancelPrompt)}>
               Cancel
             </button>
             <button
               className="pm-save"
-              onClick={() => (isPair ? resolvePromptPair(pair) : resolvePrompt(text))}
+              onClick={() =>
+                finish(isPair ? () => resolvePromptPair(pair) : () => resolvePrompt(text))
+              }
             >
               {req.saveLabel ?? "Save"}
             </button>

@@ -24,6 +24,7 @@ import {
   type AutomationView,
   type RunStatus,
 } from "../hooks/useAutomations";
+import { useOverlayBackGuard } from "../hooks/useOverlayBackGuard";
 import {
   DEFAULT_PRESET,
   WEEKDAYS,
@@ -392,10 +393,12 @@ function AutomationSheet({ doc, automation, onClose }: SheetProps) {
   }, []);
 
   /** Close, asking first when there are unsaved edits (known-LOW: the sheet is the only editor here,
-   *  so a stray Escape used to discard a half-written prompt silently). Clean → closes immediately. */
-  const tryClose = async () => {
+   *  so a stray Escape used to discard a half-written prompt silently). Clean → closes immediately.
+   *  `leave` is the back guard's closer (below) — passed in rather than closed over, because the guard
+   *  needs this function too (its `onBack`), and one of the two has to be declared first. */
+  const tryClose = async (leave: () => unknown) => {
     if (!dirty) {
-      onClose();
+      leave();
       return;
     }
     const ok = await requestConfirm({
@@ -404,8 +407,17 @@ function AutomationSheet({ doc, automation, onClose }: SheetProps) {
       confirmLabel: "discard",
       danger: true,
     });
-    if (ok) onClose();
+    if (ok) leave();
   };
+
+  // THE ANDROID BACK GESTURE (ISS-53). The sheet is full-screen, so Back is its own close — and its
+  // close ASKS when the draft is dirty, so Back must too: the guard's `onBack` VETO re-arms the entry
+  // and hands the gesture to `tryClose`, which leaves through the guard's `close()` once it decides
+  // to (a clean sheet at once; a dirty one on "discard"; on decline the sheet stays, entry still ours).
+  // The confirm's `.then` lands after its own pop, so this close never shares a task with that one.
+  // `save`/`onDelete` keep `onSuccess: onClose`: the network gap separates them from any traversal, and
+  // the guard's cleanup reclaims the entry.
+  const close = useOverlayBackGuard(true, onClose, (leave) => void tryClose(leave));
 
   const save = () => {
     const payload: AutomationDraft = {
@@ -441,12 +453,12 @@ function AutomationSheet({ doc, automation, onClose }: SheetProps) {
       // Escape + the Tab cycle are the SHARED `modalKeyDown` (PromptModal's, extracted): scoped to this
       // BACKDROP rather than the document, so a ConfirmDialog opened on top of the sheet consumes its
       // own Escape without this one firing underneath it as well.
-      onKeyDown={(e) => modalKeyDown(e, panelRef.current, () => void tryClose())}
+      onKeyDown={(e) => modalKeyDown(e, panelRef.current, () => void tryClose(close))}
     >
       <div className="pm" ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={labelId}>
         <div className="pm-head">
           <h3 id={labelId}>{automation ? automation.name : "New automation"}</h3>
-          <button className="pm-x" aria-label="Close" onClick={() => void tryClose()}>
+          <button className="pm-x" aria-label="Close" onClick={() => void tryClose(close)}>
             <XIcon />
           </button>
         </div>
@@ -594,7 +606,7 @@ function AutomationSheet({ doc, automation, onClose }: SheetProps) {
                   </button>
                 </>
               ) : (
-                <button type="button" onClick={() => void tryClose()}>
+                <button type="button" onClick={() => void tryClose(close)}>
                   cancel
                 </button>
               )}

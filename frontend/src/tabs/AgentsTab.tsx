@@ -11,6 +11,7 @@ import {
 } from "../hooks/useAgents";
 import { useAgentToolGrid } from "../hooks/useActions";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
+import { useOverlayBackGuard } from "../hooks/useOverlayBackGuard";
 import { useSections } from "../hooks/useSections";
 import { pickRoleplay } from "../hooks/useRoleplay";
 import { useSaveSettings, useSettings } from "../hooks/useSettings";
@@ -185,11 +186,23 @@ function ImportReportCard({
 export function AgentsContent() {
   const { data: list } = useAgentRoster();
   const art = useAgentArt();
-  const { navigate } = useSections();
+  const { navigate, active, hosted } = useSections();
   const { toolNames, toolModes } = useAgentToolGrid();
   const { data: skillList = [] } = useSkills();
   const { data: defaultPrompt = "" } = useDefaultPrompt();
   const [open, setOpen] = useState<string | null>(null);
+  // THE ANDROID BACK GESTURE (ISS-53, the owner's example). The open agent's editor REPLACES the grid,
+  // so on a phone it is a full-screen sub-view and Back must return to the grid — "‹ all agents" —
+  // instead of leaving the app. It discards exactly as that button does today (an unsaved draft still
+  // has the unload warning, `useRegisterDirty`). The guard lives HERE, in the content, so the tab and
+  // the Conf placements are covered alike.
+  //
+  // It holds its history entry only while the gallery is ON SCREEN: sections stay mounted once
+  // latched and an inactive one is `display:none`, so an editor left open across a tab switch would
+  // otherwise keep its entry — and Back on the chat tab would silently close an invisible editor.
+  // Leaving releases the entry (the guard's cleanup reclaims it); coming back re-arms it.
+  const visible = active === "agents" || hosted.agents === active;
+  const closeDetail = useOverlayBackGuard(open !== null && visible, () => setOpen(null));
   const importAgent = useImportAgent();
   const fileRef = useRef<HTMLInputElement>(null);
   /** Open the ONE import picker with the door's filter (the comment at the input says why two). */
@@ -238,7 +251,7 @@ export function AgentsContent() {
     <>
       {open !== null ? (
         <div className="conf-card agal-detail">
-          <button type="button" className="agal-back" onClick={() => setOpen(null)}>
+          <button type="button" className="agal-back" onClick={closeDetail}>
             ‹ all agents
           </button>
           {/* The very row the list has always opened — one form, not a second one to keep in step. */}
@@ -247,7 +260,7 @@ export function AgentsContent() {
             isDefault={open === DEFAULT_AGENT}
             isSetDefault={isSetDefault(open)}
             open
-            onToggle={() => setOpen(null)}
+            onToggle={closeDetail}
             toolNames={toolNames}
             toolModes={toolModes}
             skillNames={skillNames}

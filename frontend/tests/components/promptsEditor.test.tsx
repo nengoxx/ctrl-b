@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PromptInfo, PromptsDoc } from "../../src/types";
@@ -35,11 +35,19 @@ vi.mock("../../src/hooks/usePrompts", () => ({
 
 import { PromptModal } from "../../src/components/PromptModal";
 import { PromptsEditor } from "../../src/components/PromptsEditor";
+import { resolvePrompt } from "../../src/store/prompt";
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // The prompt store is module-level: a request still open when a test ends would open the NEXT test's
+  // modal on mount. And the editor's back guard reclaims its history entry with an asynchronous
+  // `history.back()` (ISS-53), whose pop must land before the next test pushes: jsdom runs a traversal
+  // as TWO queued tasks, and a `pushState` in between cancels it outright (as a browser does) — the
+  // guard would then wait forever for a pop that never comes and swallow the next real one instead.
+  resolvePrompt(null);
   h.save.mockReset();
   doc = { prompts: [], warnings: [] };
+  for (let i = 0; i < 2; i++) await new Promise((r) => setTimeout(r, 0));
 });
 
 const renderEditor = () =>
@@ -58,6 +66,13 @@ async function openRow(label: string) {
       screen.getByText(new RegExp(label)).closest(".prow")!.querySelector(".prow-preview")!,
     );
   });
+}
+
+/** Take one of the modal's exits and wait for it to CLOSE. Since ISS-53 every exit spends the editor's
+ *  history entry first and the outcome runs in the guard's `popstate` — a task later, not in the click. */
+async function exitModal(name: string) {
+  fireEvent.click(screen.getByRole("button", { name }));
+  await waitFor(() => expect(document.querySelector(".pm")).toBeNull());
 }
 
 const saveBtn = () => screen.getByRole("button", { name: /Save|Saved/ });
@@ -151,9 +166,7 @@ describe("PromptsEditor · the prompt registry section", () => {
     await openRow("Memory Intro");
     fireEvent.change(screen.getByLabelText("Override"), { target: { value: "my framing" } });
     fireEvent.change(screen.getByLabelText("Append"), { target: { value: "  " } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Set" }));
-    });
+    await exitModal("Set");
     fireEvent.click(saveBtn());
     expect(h.save).toHaveBeenCalledTimes(1);
     // raw textarea values, whole entry, untouched rows absent — the server normalizes the blank away
@@ -166,9 +179,7 @@ describe("PromptsEditor · the prompt registry section", () => {
     doc = { prompts: [row()], warnings: [] };
     renderEditor();
     await openRow("Memory Intro");
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Set" }));
-    });
+    await exitModal("Set");
     expect((saveBtn() as HTMLButtonElement).disabled).toBe(true); // nothing staged, nothing to save
     expect(saveBtn().textContent).toBe("Saved");
   });
@@ -179,9 +190,7 @@ describe("PromptsEditor · the prompt registry section", () => {
     await openRow("Memory Intro");
     fireEvent.change(screen.getByLabelText("Override"), { target: { value: "my own words" } });
     fireEvent.click(screen.getByRole("button", { name: "Load default" }));
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Set" }));
-    });
+    await exitModal("Set");
     expect((saveBtn() as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -194,9 +203,7 @@ describe("PromptsEditor · the prompt registry section", () => {
     fireEvent.change(screen.getByLabelText("Override"), {
       target: { value: "Context you carry across sessions. " },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Set" }));
-    });
+    await exitModal("Set");
     fireEvent.click(saveBtn());
     expect(savedPayload()).toEqual({
       memory_intro: { override: "Context you carry across sessions. ", append: "" },
@@ -208,9 +215,7 @@ describe("PromptsEditor · the prompt registry section", () => {
     renderEditor();
     await openRow("Memory Intro");
     fireEvent.change(screen.getByLabelText("Append"), { target: { value: "and be brief" } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Set" }));
-    });
+    await exitModal("Set");
     fireEvent.click(saveBtn());
     expect(savedPayload()).toEqual({ memory_intro: { override: "", append: "and be brief" } });
   });
@@ -267,9 +272,7 @@ describe("PromptsEditor · the prompt registry section", () => {
     renderEditor();
     await openRow("Memory Intro");
     fireEvent.change(screen.getByLabelText("Override"), { target: { value: "typed" } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    });
+    await exitModal("Cancel");
     expect((saveBtn() as HTMLButtonElement).disabled).toBe(true);
     expect(saveBtn().textContent).toBe("Saved");
   });
@@ -279,9 +282,7 @@ describe("PromptsEditor · the prompt registry section", () => {
     renderEditor();
     await openRow("Memory Intro");
     fireEvent.change(screen.getByLabelText("Append"), { target: { value: "   " } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Set" }));
-    });
+    await exitModal("Set");
     expect((saveBtn() as HTMLButtonElement).disabled).toBe(true);
   });
 });

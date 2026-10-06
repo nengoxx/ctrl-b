@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 
 import { BottomSheet, type SheetDetent } from "../../components/BottomSheet";
 import { useFleet } from "../../hooks/useFleet";
+import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
 import {
   runViewTransition,
   skipActiveViewTransition,
@@ -652,6 +653,12 @@ export function GachaFleet({ active }: { active: boolean }) {
       setShowArt(null);
     }, "showcase");
   }, [showArt, releaseArtName]);
+  // THE ANDROID BACK GESTURE (ISS-53). The showcase is full-screen, so Back is its own dismissal — the
+  // overlay's ✕ / tap / Escape all call the guard's closer, and `closeShowcase` runs in the guard's
+  // `onClose` (the reverse morph starts after the history traversal has landed). Gated on the same
+  // `sheetOpen` the render is: the art never outlives its dossier, and neither does its entry. The
+  // teardown paths (`dropShowcase`) stay direct — the guard's cleanup reclaims the entry.
+  const closeArt = useOverlayBackGuard(showArt !== null && sheetOpen, closeShowcase);
   /** Hand focus back to the portrait — called by the overlay as it unmounts, and honoured only for the
    *  art's OWN dismissal (see `artReturnFocus`). Stable, and reads refs + live DOM, because the caller is
    *  a cleanup function holding the previous render's closure. */
@@ -874,7 +881,7 @@ export function GachaFleet({ active }: { active: boolean }) {
           hostName={detail.host.name}
           art={detailArt}
           fade={showArt === "fade"}
-          onClose={closeShowcase}
+          onClose={closeArt}
           onClosed={restoreArtFocus}
         />
       )}

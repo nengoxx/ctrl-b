@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // D81 — the owner's message actions in the TRANSCRIPT (`ChatThread` + `chatAttribution.BotWhoLine`):
@@ -35,8 +35,10 @@ vi.mock("../../src/hooks/useAgentArt", () => ({
 }));
 
 import { ChatThread } from "../../src/components/ChatThread";
+import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { PromptModal } from "../../src/components/PromptModal";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
+import { requestConfirm, resolveConfirm } from "../../src/store/confirm";
 import { resolvePrompt } from "../../src/store/prompt";
 import type { ChatMessage } from "../../src/types";
 
@@ -50,11 +52,25 @@ beforeAll(() => {
   globalThis.ResizeObserver = ResizeObserverStub;
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   act(() => resolvePrompt(null));
+  act(() => resolveConfirm(false));
   for (const f of Object.values(h)) f.mockClear();
+  // The editor wears the back guard since ISS-53: an unmount reclaims its history entry with an
+  // asynchronous `history.back()`, which jsdom runs as TWO queued tasks and a `pushState` in between
+  // would cancel — so let it land before the next case pushes.
+  for (let i = 0; i < 2; i++) await new Promise((r) => setTimeout(r, 0));
 });
+
+/** The overlay entry the browser is sitting on, if it is one of the back guard's. */
+const overlayId = () => (history.state as { ctrlbOverlay?: boolean; id?: number } | null)?.id;
+/** Wait for the open editor's guard to have pushed its entry — Save/Cancel/Delete then go through a
+ *  real `history.back()`, as on the phone, rather than the no-entry-yet direct close. */
+const editorArmed = () =>
+  waitFor(() =>
+    expect((history.state as { ctrlbOverlay?: boolean } | null)?.ctrlbOverlay).toBe(true),
+  );
 
 const msg = (over: Partial<ChatMessage> & Pick<ChatMessage, "id" | "role">): ChatMessage => ({
   thread_id: "t1",
@@ -221,17 +237,18 @@ describe("D81 · the user's pencil (edit, with delete inside)", () => {
     fireEvent.click(screen.getByRole("button", { name: "edit your message" }));
     const field = container.querySelector(".pm-text") as HTMLTextAreaElement;
     expect(field.value).toBe("hello");
+    await editorArmed();
     fireEvent.click(screen.getByRole("button", { name: "Save" })); // unchanged → nothing sent
-    await act(async () => {});
+    await waitFor(() => expect(container.querySelector(".pm")).toBeNull());
     expect(h.editMessage).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "edit your message" }));
     fireEvent.change(container.querySelector(".pm-text") as HTMLTextAreaElement, {
       target: { value: "hello there" },
     });
+    await editorArmed();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await act(async () => {});
-    expect(h.editMessage).toHaveBeenCalledWith("u1", "hello there");
+    await waitFor(() => expect(h.editMessage).toHaveBeenCalledWith("u1", "hello there"));
   });
 
   it("a save the server did NOT take re-opens the editor on the typed text, with a toast", async () => {
@@ -246,17 +263,18 @@ describe("D81 · the user's pencil (edit, with delete inside)", () => {
     fireEvent.change(container.querySelector(".pm-text") as HTMLTextAreaElement, {
       target: { value: "typed words" },
     });
+    await editorArmed();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await act(async () => {});
+    await waitFor(() => expect(h.toast).toHaveBeenCalled());
     expect(h.editMessage).toHaveBeenCalledWith("u1", "typed words");
     expect((container.querySelector(".pm-text") as HTMLTextAreaElement).value).toBe("typed words");
     expect(h.toast).toHaveBeenCalledWith(
       "The edit wasn't saved — your text is back in the editor",
       "err",
     );
+    await editorArmed(); // the RE-OPENED editor holds an entry of its own
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await act(async () => {});
-    expect(container.querySelector(".pm")).toBeNull(); // the second save took it
+    await waitFor(() => expect(container.querySelector(".pm")).toBeNull()); // the second save took it
   });
 
   it("the editor's Delete message closes it and hands over to the store's delete (its confirm)", async () => {
@@ -268,10 +286,47 @@ describe("D81 · the user's pencil (edit, with delete inside)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "edit your message" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete message" }));
-    await act(async () => {});
-    expect(container.querySelector(".pm")).toBeNull();
+    await waitFor(() => expect(container.querySelector(".pm")).toBeNull());
     expect(h.deleteMessage).toHaveBeenCalledWith("u1");
     expect(h.editMessage).not.toHaveBeenCalled();
+  });
+
+  it("…and the hand-over runs only AFTER the editor's entry is spent — the confirm then owns the top entry (ISS-53)", async () => {
+    // THE RACE (DefaultRoot's call-screen note, measured in Chromium): resolving the editor and opening
+    // the delete confirm in ONE task put the editor's reclaiming `history.back()` in flight under the
+    // confirm's `pushState` — the browser cancels the one or loses the other, and the next Back left
+    // the app. The danger door now records its outcome and runs it in the guard's `popstate`.
+    h.deleteMessage.mockImplementationOnce(() => {
+      void requestConfirm({ title: "Delete this message?", confirmLabel: "delete", danger: true });
+    });
+    const { container } = render(
+      <>
+        <ChatThread active chat={chat([msg({ id: "u1", role: "user" })])} />
+        <PromptModal />
+        <ConfirmDialog />
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "edit your message" }));
+    await editorArmed();
+    const editorEntry = overlayId();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete message" }));
+    // Not in the click: the editor's own pop has to land first.
+    expect(h.deleteMessage).not.toHaveBeenCalled();
+    await screen.findByRole("alertdialog");
+    expect(h.deleteMessage).toHaveBeenCalledWith("u1");
+    expect(container.querySelector(".pm")).toBeNull();
+    // The CONFIRM's entry is the one the browser sits on — pushed after the editor's was spent.
+    await waitFor(() => {
+      expect(overlayId()).toBeDefined();
+      expect(overlayId()).not.toBe(editorEntry);
+    });
+
+    // …so Back cancels the confirm, and the chat is still there under it.
+    history.back();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(container.querySelector(".b.user")).toBeTruthy();
+    expect(overlayId()).toBeUndefined();
   });
 
   it("an edited message says so; a client-only or queued bubble has no pencil", () => {

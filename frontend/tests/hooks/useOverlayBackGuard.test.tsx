@@ -19,6 +19,9 @@ import { useOverlayBackGuard } from "../../src/hooks/useOverlayBackGuard";
 //     the overlay stays mounted until the pop lands, so a second gesture in that window used to spend
 //     a SECOND history entry — the first pop closed the overlay and the second was a real navigation
 //     out of the app. The first exit wins, and `close()` says so to its caller.
+//  ⑤ The optional `onBack` VETO (ISS-53 — Android's `OnBackPressedCallback` shape): a Back that reaches
+//     an entry whose owner gave `onBack` RE-ARMS the entry and asks the owner, who leaves through its
+//     own `close()` or stays. A `close()` is already a decision and never reaches `onBack`.
 
 /** A minimal host: renders while `open`, and reports every close the hook delivers. */
 function Host({ onClose }: { onClose: () => void }) {
@@ -32,6 +35,29 @@ function Host({ onClose }: { onClose: () => void }) {
       {open && (
         <button type="button" onClick={close}>
           close
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A host whose owner VETOES Back (the automation sheet's shape): every Back is reported to `onBack`,
+ *  which may then call the guard's closer through the `leave` button — or not. */
+function VetoHost({ onClose, onBack }: { onClose: () => void; onBack: () => void }) {
+  const [open, setOpen] = useState(true);
+  const close = useOverlayBackGuard(
+    open,
+    () => {
+      setOpen(false);
+      onClose();
+    },
+    onBack,
+  );
+  return (
+    <div>
+      {open && (
+        <button type="button" onClick={close}>
+          leave
         </button>
       )}
     </div>
@@ -222,5 +248,89 @@ describe("useOverlayBackGuard", () => {
     await waitFor(() => expect(ours()).toBe(true)); // back on the outer overlay's own entry
     await new Promise((r) => setTimeout(r, 10));
     expect(outer).not.toHaveBeenCalled();
+  });
+
+  it("onBack VETOES: Back re-arms the entry, the overlay stays, and the owner is asked", async () => {
+    const onClose = vi.fn();
+    const onBack = vi.fn();
+    const view = render(<VetoHost onClose={onClose} onBack={onBack} />);
+    await waitFor(() => expect(ours()).toBe(true));
+    const id = (history.state as { id: number }).id;
+
+    history.back();
+    await waitFor(() => expect(onBack).toHaveBeenCalledTimes(1));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(within(view.container).getByText("leave")).toBeTruthy(); // still mounted
+    // …and the entry is OURS again — same id — so the NEXT Back is still the overlay's to judge.
+    expect((history.state as { id?: number } | null)?.id).toBe(id);
+    history.back();
+    await waitFor(() => expect(onBack).toHaveBeenCalledTimes(2));
+    expect(onClose).not.toHaveBeenCalled();
+    expect((history.state as { id?: number } | null)?.id).toBe(id);
+    view.unmount();
+    await waitFor(() => expect((history.state as { id?: number } | null)?.id).not.toBe(id));
+  });
+
+  it("onBack → close() spends exactly ONE entry", async () => {
+    // The owner decides to leave (a clean sheet, or "discard"): its own closer is the way out.
+    const onClose = vi.fn();
+    function Leaver() {
+      const [open, setOpen] = useState(true);
+      // `onBack` is handed the guard's own closer — the same function the hook returns.
+      useOverlayBackGuard(
+        open,
+        () => {
+          setOpen(false);
+          onClose();
+        },
+        (close) => close(),
+      );
+      return <div>{open && <span>up</span>}</div>;
+    }
+    const before = history.length;
+    const view = render(<Leaver />);
+    await waitFor(() => expect(ours()).toBe(true));
+    const id = (history.state as { id: number }).id;
+
+    history.back();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(within(view.container).queryByText("up")).toBeNull();
+    // The re-push was spent by the owner's close, and nothing else: the browser is back BELOW the
+    // overlay's entry, and the stack did not grow past the one slot the overlay held.
+    expect((history.state as { id?: number } | null)?.id).not.toBe(id);
+    expect(history.length).toBeLessThanOrEqual(before + 1);
+  });
+
+  it("a close() call NEVER reaches onBack — a close is already a decision", async () => {
+    const onClose = vi.fn();
+    const onBack = vi.fn();
+    const view = render(<VetoHost onClose={onClose} onBack={onBack} />);
+    await waitFor(() => expect(ours()).toBe(true));
+
+    within(view.container).getByText("leave").click();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(onBack).not.toHaveBeenCalled();
+  });
+
+  it("NESTED: the outer onBack is never consulted while an inner entry sits on top", async () => {
+    const outerBack = vi.fn();
+    const outerClose = vi.fn();
+    const inner = vi.fn();
+    const outer = render(<VetoHost onClose={outerClose} onBack={outerBack} />);
+    await waitFor(() => expect(ours()).toBe(true));
+    const nested = render(<Host onClose={inner} />);
+    await waitFor(() => expect(closer(nested)).not.toBeNull());
+    await new Promise((r) => setTimeout(r, 0));
+
+    history.back();
+    await waitFor(() => expect(inner).toHaveBeenCalledTimes(1));
+    expect(outerBack).not.toHaveBeenCalled(); // the pop was the INNER entry's
+    expect(outerClose).not.toHaveBeenCalled();
+
+    // …and once the inner is gone, the outer's veto is what the next Back reaches.
+    history.back();
+    await waitFor(() => expect(outerBack).toHaveBeenCalledTimes(1));
+    expect(outerClose).not.toHaveBeenCalled();
+    outer.unmount();
   });
 });

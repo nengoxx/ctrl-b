@@ -34,6 +34,11 @@ interface OverlayEntry {
   id: number;
   /** Close it — the hook's own `onClose`, plus forgetting the entry. */
   close: () => void;
+  /** The owner's VETO (ISS-53, the `OnBackPressedCallback` / CloseWatcher-`cancel` shape): when the
+   *  guard was given an `onBack` and no close is already in flight, returns that handler bound to the
+   *  guard's own closer — the Back gesture is then the overlay's to judge rather than a close — else
+   *  `null`. */
+  veto: () => (() => void) | null;
 }
 
 /** The guarded overlays with an entry on the history stack, outermost FIRST. */
@@ -55,6 +60,18 @@ function onPop(): void {
     unwinding--;
     return;
   }
+  const top = stack.at(-1);
+  const onBack = top?.veto();
+  if (top && onBack) {
+    // VETOED (ISS-53): the traversal has already landed one entry below ours, so the entry is put
+    // straight back — same id, still on the stack, the overlay never noticed — and the owner's
+    // handler decides. It leaves through the ordinary `close()` when it wants to (one entry spent),
+    // or stays (one entry still ours). Only the TOP entry is ever consulted: a veto under an open
+    // inner overlay is unreachable, exactly like a close is.
+    history.pushState({ ...OVERLAY_STATE, id: top.id }, "");
+    onBack();
+    return;
+  }
   stack.pop()?.close();
 }
 
@@ -69,14 +86,28 @@ function listen(): void {
  *  the exit — see `closing` below; a caller that records something about the way it closed (which
  *  answer a confirm is resolving with) must only record it when the answer is `true`.
  *
- *  `onClose` is read through a ref, so a handler recreated every render (the ordinary case for a
- *  closure over component state) never re-pushes the history entry. */
-export function useOverlayBackGuard(open: boolean, onClose: () => void): () => boolean {
+ *  `onBack` (optional, ISS-53) lets the overlay VETO the Back gesture — the shape Android's
+ *  `OnBackPressedCallback` and CloseWatcher's `cancel` give it. Without it, Back closes (every existing
+ *  consumer, byte-identical). With it, a Back that reaches this entry while no close is in flight
+ *  RE-PUSHES the entry and calls `onBack` instead of closing; `onBack` calls the guard's `close()` —
+ *  handed to it as its argument, the same function this hook returns — when it decides to leave (an
+ *  editor asking "Discard changes?" first). `close()` itself never reaches `onBack`: a close is already
+ *  a decision.
+ *
+ *  `onClose` and `onBack` are read through refs, so handlers recreated every render (the ordinary
+ *  case for a closure over component state) never re-push the history entry. */
+export function useOverlayBackGuard(
+  open: boolean,
+  onClose: () => void,
+  onBack?: (close: () => boolean) => void,
+): () => boolean {
   const onCloseRef = useRef(onClose);
+  const onBackRef = useRef(onBack);
   // Written in an effect rather than during render (the React-Compiler rule the repo lints for): the
   // only reader is a `popstate` handler, which cannot fire before this commit anyway.
   useEffect(() => {
     onCloseRef.current = onClose;
+    onBackRef.current = onBack;
   });
   /** Our entry's id while it is on the stack, else `null`. */
   const mine = useRef<number | null>(null);
@@ -87,6 +118,25 @@ export function useOverlayBackGuard(open: boolean, onClose: () => void): () => b
    *  Enter — used to spend a SECOND history entry: the first pop closed the overlay and the second was
    *  a real navigation out of the app. The first exit wins; the rest are no-ops. */
   const closing = useRef(false);
+
+  // `history.back()` is the whole of it: the popstate handler above is what actually closes, so there
+  // is exactly one path out and no way to leave an entry behind. Without an entry of our own (the
+  // guard is disabled, the environment has no history, or the overlay is being closed inside the very
+  // task it opened in — before the deferred push) close directly rather than stealing the caller's
+  // real back.
+  //
+  // Returns whether THIS call is the one taking the exit — `false` means a close is already in flight
+  // and the caller's gesture came too late to decide anything.
+  const close = useCallback((): boolean => {
+    if (closing.current) return false;
+    if (mine.current !== null) {
+      closing.current = true;
+      history.back();
+    } else {
+      onCloseRef.current();
+    }
+    return true;
+  }, []);
 
   useEffect(() => {
     if (!open || typeof history === "undefined") return;
@@ -122,6 +172,10 @@ export function useOverlayBackGuard(open: boolean, onClose: () => void): () => b
           closing.current = false;
           onCloseRef.current();
         },
+        veto: () => {
+          const handler = onBackRef.current;
+          return closing.current || !handler ? null : () => handler(close);
+        },
       });
       listen();
       history.pushState({ ...OVERLAY_STATE, id }, "");
@@ -148,24 +202,7 @@ export function useOverlayBackGuard(open: boolean, onClose: () => void): () => b
       unwinding++;
       history.back();
     };
-  }, [open]);
+  }, [open, close]); // `close` is stable (no deps): listed for the linter, it never re-runs this
 
-  // `history.back()` is the whole of it: the popstate handler above is what actually closes, so there
-  // is exactly one path out and no way to leave an entry behind. Without an entry of our own (the
-  // guard is disabled, the environment has no history, or the overlay is being closed inside the very
-  // task it opened in — before the deferred push) close directly rather than stealing the caller's
-  // real back.
-  //
-  // Returns whether THIS call is the one taking the exit — `false` means a close is already in flight
-  // and the caller's gesture came too late to decide anything.
-  return useCallback((): boolean => {
-    if (closing.current) return false;
-    if (mine.current !== null) {
-      closing.current = true;
-      history.back();
-    } else {
-      onCloseRef.current();
-    }
-    return true;
-  }, []);
+  return close;
 }

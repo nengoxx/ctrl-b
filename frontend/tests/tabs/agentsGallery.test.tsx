@@ -6,6 +6,7 @@ import {
   render as rtlRender,
   renderHook,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -109,8 +110,10 @@ vi.mock("../../src/store/chat", async (importActual) => ({
   useThreadAgent: () => h.threadAgent,
 }));
 
+import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { AgentsTab } from "../../src/tabs/AgentsTab";
 import { setStickyAgent, useStickyAgent } from "../../src/store/chat";
+import { requestConfirm, resolveConfirm } from "../../src/store/confirm";
 import { getUI, setUI } from "../../src/store/ui";
 
 const cards = () => screen.getAllByRole("button", { name: /Talk to/ });
@@ -132,7 +135,21 @@ beforeEach(() => {
   h.threadAgent = null;
   setUI({ theme: "minimal", tab: "agents", layout: "auto", appbarMode: "visible" });
 });
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  act(() => resolveConfirm(false));
+  // The open detail's back guard (ISS-53) reclaims its history entry on unmount with an asynchronous
+  // `history.back()`; jsdom runs it as TWO queued tasks and a `pushState` in between cancels it, so let
+  // it land before the next case can push.
+  for (let i = 0; i < 2; i++) await new Promise((r) => setTimeout(r, 0));
+});
+
+/** Whether the browser sits on a back-guard entry, and which. */
+const overlayId = () =>
+  (history.state as { ctrlbOverlay?: boolean; id?: number } | null)?.ctrlbOverlay === true
+    ? (history.state as { id: number }).id
+    : undefined;
+const detailUp = () => screen.queryByLabelText("Max output tokens") !== null;
 
 describe("AgentsTab · the card grid", () => {
   it("a fresh install shows the default agent's card — never an empty grid", () => {
@@ -368,5 +385,67 @@ describe("AgentsTab · card import (§5)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "dismiss" }));
     expect(screen.queryByText(/imported lyra/)).toBeNull();
+  });
+});
+
+describe("AgentsTab · the Android BACK gesture over the open agent (ISS-53)", () => {
+  it("Back from the detail returns to the grid — not out of the app", async () => {
+    render(<AgentsTab active />);
+    fireEvent.click(screen.getByText("workspace root"));
+    expect(detailUp()).toBe(true);
+    await waitFor(() => expect(overlayId()).toBeDefined());
+    const entry = overlayId();
+
+    history.back();
+    await waitFor(() => expect(detailUp()).toBe(false));
+    expect(cards()).toHaveLength(1); // the grid is back
+    expect(overlayId()).not.toBe(entry); // …and the detail's entry was the one spent
+  });
+
+  it("leaving the section RELEASES the entry; coming back re-arms it", async () => {
+    // Sections stay mounted once latched and an inactive one is `display:none`: an entry kept across a
+    // tab switch would make Back on the chat tab silently close an editor nobody can see.
+    render(<AgentsTab active />);
+    fireEvent.click(screen.getByText("workspace root"));
+    await waitFor(() => expect(overlayId()).toBeDefined());
+    const entry = overlayId();
+
+    act(() => setUI({ tab: "agent" }));
+    await waitFor(() => expect(overlayId()).not.toBe(entry)); // reclaimed
+    expect(detailUp()).toBe(true); // …while the editor itself (and its draft) stays where it was
+
+    act(() => setUI({ tab: "agents" }));
+    await waitFor(() => expect(overlayId()).toBeDefined()); // re-armed on return
+    history.back();
+    await waitFor(() => expect(detailUp()).toBe(false));
+  });
+
+  it("a confirm over the detail closes ALONE; the next Back closes the detail", async () => {
+    render(
+      <>
+        <AgentsTab active />
+        <ConfirmDialog />
+      </>,
+    );
+    fireEvent.click(screen.getByText("workspace root"));
+    await waitFor(() => expect(overlayId()).toBeDefined());
+    const detailEntry = overlayId();
+    let answer: boolean | undefined;
+    act(() => {
+      void requestConfirm({ title: "Remove agent?", confirmLabel: "remove", danger: true }).then(
+        (ok) => (answer = ok),
+      );
+    });
+    await screen.findByRole("alertdialog");
+    await waitFor(() => expect(overlayId()).not.toBe(detailEntry)); // the confirm's own entry on top
+
+    history.back();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(answer).toBe(false); // Back CANCELLED it
+    expect(detailUp()).toBe(true); // …and the detail under it stayed
+    expect(overlayId()).toBe(detailEntry);
+
+    history.back();
+    await waitFor(() => expect(detailUp()).toBe(false));
   });
 });
