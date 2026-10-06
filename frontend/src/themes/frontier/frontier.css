@@ -1132,10 +1132,12 @@
       border-color: transparent;
     }
     /* secondary/outline buttons → border off; give the fill-less ones a `--surface-2` chip so they still read
-     * as buttons (the already-filled `.conf-save.alt` just drops its outline). */
+     * as buttons (the already-filled `.conf-save.alt` just drops its outline). The modal footer's SAVE is
+     * excluded (ISS-12): it is already filled by the kit's `--accent-fill` — frontier's own gradient — and
+     * this `@layer theme` rule would otherwise flatten it into a chip identical to Cancel. */
     .mconf .mform .split button,
     .mconf .mform .pw button.reveal,
-    .mconf .mfoot button,
+    .mconf .mfoot button:not(.save),
     .conf-card .conf-copy {
       border-color: transparent;
       background: var(--surface-2);
