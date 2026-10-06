@@ -197,7 +197,9 @@ both lines itself and needs nothing.)
   note** (`session.py:633–646` order becomes: system → appends → roster → memory → **core index** →
   skills). Same cache class as the memory block: it changes only on corpus writes, and
   memory-adjacent placement means a write re-prefills from that point only (D15 #4 logic extended —
-  fit audit §C). **The head is frozen per turn** (`_static_prefix` builds once and is reused
+  fit audit §C). **Gated on `_longterm_available()` since ISS-67 (2026-10-06):** a turn whose
+  effective schema lacks `core_memory` (an agent allowlist, a narrowing skill) gets no index at all —
+  the block names the tool, so it rides only where the tool does. **The head is frozen per turn** (`_static_prefix` builds once and is reused
   byte-identically within an uninterrupted turn — ACA-15e): a mid-turn corpus write is visible to
   the model via its tool result and enters the head on the next turn or a resume-built session
   (council Codex-5/Opus-H2 — both reviewers independently corrected the draft's contrary claim).

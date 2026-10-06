@@ -676,6 +676,25 @@ def test_an_enabled_but_empty_corpus_injects_nothing(tmp_path):
     assert "core_memory_policy" not in session._stamps
 
 
+def test_a_turn_without_the_tool_gets_no_index(tmp_path):
+    """ISS-67: the index block rides `_longterm_available()` like every other surface that names the
+    tool — a seeded, enabled corpus injects NOTHING (no block, no policy stamp) when the agent's
+    allowlist leaves `core_memory` out of this turn's schema; the same session with the tool allowed
+    injects the block. The misfire this pins: a character with `tools: [web_search]` was handed the
+    index and read a topic name with the one file reader it did hold, `read_attachment`."""
+    corpus = _seeded(tmp_path)
+    settings = corpus._settings
+    narrowed = _session(corpus, settings, memory=_tier1(settings))
+    narrowed._tool_allow = ["web_search"]
+    assert narrowed._static_prefix() == _session(None, settings, memory=_tier1(settings))._static_prefix()
+    assert "core_memory_policy" not in narrowed._stamps
+
+    allowed = _session(corpus, settings, memory=_tier1(settings))
+    allowed._tool_allow = ["web_search", "core_memory"]
+    assert any("Wake ritual" in m["content"] for m in allowed._static_prefix())
+    assert "core_memory_policy" in allowed._stamps
+
+
 def test_the_lifespan_wires_one_corpus_into_the_state_and_the_deps(tmp_path, monkeypatch):
     """The other end of the wiring: `main.py` builds ONE singleton beside the memory provider (one
     scan cache, shared by every session), back-fills it onto `Deps` for the subagent path, and the
