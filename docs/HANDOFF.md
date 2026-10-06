@@ -72,8 +72,8 @@
 ### ▶▶ NEXT SESSION (in order)
 1. **The owner's dictation check** (5–10 min, 30 s pauses, dev; trail `~/.ctrl-b-dev/calls/dictation/`) — STILL OWED; the v1.7.11 gate. Plus the ISS-66 phone card (HANDOFF of session 61's summary: drag up while streaming / scroll back / fling / send while scrolled up / keyboard close then drag).
 2. **Push + v1.7.11** from `~/.cache/tmp/ctrlb-session60/release-card-v1711-draft.md` (ISS-66 + the docs ride it; verify prod stores no limit-sensitive key) → ASR_PLAN §8.2.1 → `deploy/linux/README.md` §Release.
-3. **ISS-67** (prompt-side, PROMPTS_PLAN-governed: the memory index says topics are read with `core_memory`; the attachment tool says it reads only composer attachments) — a one-line registry edit; then ISS-59's design (the spoken cue + voice answers) and ISS-62.
-4. **Session B** (ASR_PLAN §7.2) → **the D85 wave** (§7.3; D85-S1 FIRST = the four-arm route-key trail).
+3. **Session B** (ASR_PLAN §7.2 — the engine, capture, the host, hand tuning, THE FLIP, recovery; two reviewer rounds per slice) — the owner's order (2026-10-06 close): "finish anything gating the dictation check, push, then session B". ISS-67 is a one-line registry edit that may ride any slice; ISS-59's design (the spoken cue + voice answers) and ISS-62 come AFTER B.
+4. **The D85 wave** (§7.3; v1.7.13; D85-S1 FIRST = the four-arm route-key trail, which decides rule (2) before D85-S2).
 
 ### Standing facts from this session (verified)
 - A hermes `-z` review reads its inputs at its own pace: an edit to the frozen artifact seconds after launch can be missed (Emma's round-3 "misplaced" finding was a §9→§5 move racing her read) — freeze, then launch, then never touch.
