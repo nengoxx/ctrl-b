@@ -326,6 +326,9 @@ different one — a hang-up's own C3 kill must not fire a stale "drain" submit, 
 session must not inherit the old call's callbacks. Terminal disposition: a deliberate hang-up
 DISCARDS pending utterances (the user chose to leave); `error`/`ended` terminals harvest them
 to the composer draft (never-lose applies to failures, not to the user's own exit).
+**AMENDED 2026-10-06, ISS-61: every exit harvests** — a hang-up, a page going away and an unmount
+each harvest a non-empty pending queue to the draft (never a send); the owner's ruling: "I'd rather
+manually delete the text in the composer than lose part of the conversation."
 
 **The turn commonly ends before the mouth does** (council F1): generation outruns synthesis, so
 by the time the owner interrupts, the cancellable turn may already be terminal. Barge-in

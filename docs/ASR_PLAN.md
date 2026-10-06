@@ -413,7 +413,7 @@ check · FireRed-stream · non-causal models for the pre-pass only).
    is replaced — EVERY taken final (re)starts the hold, so serial pauses stay ONE turn; the turn is submitted when the hold
    expires with the ear settled (`earUnsettled` false — D9's set + no open segment), or on `socketLost`/leg end (the held
    text drains at `ready`), or a terminal/`hidden` HARVEST; `routeChange` clears the hold and keeps the queue; `unmounted`
-   (hang-up) discards as today; MUTE keeps the already-held text (only the half-utterance in flight is condemned — a
+   (hang-up) ~~discards as today~~ **AMENDED 2026-10-06 (ISS-61, owner ruling): EVERY exit — hang-up, hidden, unmounted — HARVESTS the queue to the composer draft; nothing is discarded**; MUTE keeps the already-held text (only the half-utterance in flight is condemned — a
    cough-mute must not throw away a finished monologue); a DROPPED final never extends a hold but does release a DUE one;
    the mouth never opens while a hold stands (`mouthMayOpen` gains `!turnHold`). The bound is 0–10000 (owner: "I like the
    ten seconds cap"). The `max_segment` join below stays an ADDITIVE session-B flag. The rest of this paragraph is the

@@ -735,7 +735,7 @@ export type CallSignal = { gen?: number } & (
    *  dispatched (`close()` only starts the handshake), a `cancelTurn` settlement, a send outcome —
    *  can land AFTER the unmount, and before S2b every user exit moved the generation through the
    *  `hangup` arm so those became ghosts. The shell exit must too, or a `final` in that gap still
-   *  SUBMITS after the owner closed the call (§4.3's hang-up-discards, violated one task late).
+   *  SUBMITS after the owner closed the call (every exit HARVESTS to the draft, never sends — ISS-61).
    *  Deliberately NOT `hangup` itself: its `close: true` would `endCall()`, and on a redial's
    *  remount that would kill the fresh call the owner just asked for. */
   | { type: "unmounted" }
@@ -1095,21 +1095,18 @@ function reduce(s: CallState, sig: CallSignal): Step {
   // `unmounted` shares it: the generation MUST move on every exit, terminal or not, or a callback
   // still in flight (a dispatched socket frame, a cancel settlement) outlives the call it belonged to.
   if (sig.type === "hangup" || sig.type === "hidden" || sig.type === "unmounted") {
-    // A deliberate exit DISCARDS the pending queue: the owner chose to leave, and never-lose-speech is
-    // about failures, not about the user's own decision (§4.3's terminal disposition). `unmounted`
-    // alone does not `close` — its component is ALREADY unmounting, and an `endCall()` here would end
-    // the fresh call a redial's key bump is mounting in the same commit.
-    // …except where the queue holds FINISHED words. A page that WENT AWAY (`hidden` — background off, or
-    // the document dying) is not a decision about words already said (TH design round, Opus L2), and a
-    // TURN HOLD standing is words the pre-hold call would already have sent — "remind me to …", then the
-    // hang-up two seconds later (TH code round, Opus M1). Both are HARVESTED to the draft, exactly as a
-    // terminal harvests, never submitted. Anything else queued (words held behind a reply) keeps the
-    // hang-up's discard. Never twice: this arm consumes `pending` (CALL_INITIAL), so a second exit on the
-    // same instance finds it empty — and StrictMode's simulated cleanup runs only at mount (nothing
-    // queued), while a redial's key bump unmounts the old instance once, from its own state.
+    // EVERY exit HARVESTS the pending queue to the draft — never a send (ISS-61, the owner's ruling of
+    // 2026-10-06: "I'd rather manually delete the text in the composer than lose part of the
+    // conversation"). A draft costs one delete; lost words cost the conversation. This reverses the old
+    // "a deliberate exit discards" rule (§4.3, amended): its `(hidden || turnHold)` predicate threw away
+    // 13 utterances held behind a confirm gate at an `unmounted` exit in the owner's 13:02 call. It
+    // harvests exactly as a terminal does. `unmounted` alone does not `close` — its component is ALREADY
+    // unmounting, and an `endCall()` here would end the fresh call a redial's key bump is mounting in the
+    // same commit. Never twice: this arm consumes `pending` (CALL_INITIAL), so a second exit on the same
+    // instance finds it empty — and StrictMode's simulated cleanup runs only at mount (nothing queued),
+    // while a redial's key bump unmounts the old instance once, from its own state.
     const out: CallEffect[] = [];
-    if ((sig.type === "hidden" || s.turnHold) && s.pending.length)
-      out.push({ type: "harvest", lines: s.pending });
+    if (s.pending.length) out.push({ type: "harvest", lines: s.pending });
     out.push({ type: "teardown", close: sig.type !== "unmounted" });
     return {
       // `priorLeg` survives the reset (S6 code-review F3, reshaped): StrictMode's simulated cleanup

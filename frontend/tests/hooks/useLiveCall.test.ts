@@ -348,12 +348,18 @@ describe("callReduce — the generation fence (F7)", () => {
 });
 
 describe("callReduce — terminals (§4.3/§4.5)", () => {
-  it("a HANG-UP discards pending speech; an ERROR harvests it", () => {
+  it("a HANG-UP harvests pending speech to the draft, exactly as an ERROR does (ISS-61)", () => {
     const queued = run(speaking, [{ type: "final", text: "unsent words" }]).state;
 
+    // The owner's ruling (2026-10-06): a draft costs a delete, lost words cost the conversation.
     const bye = run(queued, [{ type: "hangup" }]);
-    expect(bye.out).toEqual([{ type: "teardown", close: true }]);
+    expect(bye.out).toEqual([
+      { type: "harvest", lines: ["unsent words"] },
+      { type: "teardown", close: true },
+    ]);
     expect(bye.state.pending).toEqual([]);
+    // Never twice: the arm consumed the queue, so a second exit on the same instance harvests nothing.
+    expect(run(bye.state, [{ type: "hangup" }]).out).toEqual([{ type: "teardown", close: true }]);
 
     const lost = run(queued, [{ type: "captureLost" }]);
     expect(lost.out).toEqual([
@@ -1314,16 +1320,42 @@ describe("callReduce — the page going away (§5.3)", () => {
     expect(out).toEqual([{ type: "teardown", close: true }]);
   });
 
-  it("…but HARVESTS what was queued, where a hang-up discards it (TH design round, Opus L2)", () => {
-    // A page going away is not a decision about words already said — the owner's own exit is.
-    const queued = run(speaking, [{ type: "final", text: "wait" }]).state;
-    expect(queued.pending).toEqual(["wait"]);
-    expect(run(queued, [{ type: "hidden" }]).out).toEqual([
-      { type: "harvest", lines: ["wait"] },
-      { type: "teardown", close: true },
-    ]);
-    expect(run(queued, [{ type: "hangup" }]).out).toEqual([{ type: "teardown", close: true }]);
-    expect(run(queued, [{ type: "unmounted" }]).out).toEqual([{ type: "teardown", close: false }]);
+  it("…and HARVESTS what was queued — as a hang-up and an unmount do, on EVERY exit (ISS-61)", () => {
+    // Words queued behind a reply, and words held behind a confirm gate (the owner's 13:02 call: 13
+    // utterances lost at an `unmounted` exit), all land in the draft — never a send, never twice.
+    const behindReply = run(speaking, [{ type: "final", text: "wait" }]).state;
+    expect(behindReply.pending).toEqual(["wait"]);
+    const confirmHeld = run(listening, [
+      { type: "confirmHold", on: true },
+      { type: "final", text: "held one" },
+      { type: "final", text: "held two" },
+    ]).state;
+    expect(confirmHeld.pending).toEqual(["held one", "held two"]);
+    for (const queued of [behindReply, confirmHeld]) {
+      for (const exit of [
+        { type: "hidden" },
+        { type: "hangup" },
+        { type: "unmounted" },
+      ] as CallSignal[]) {
+        const first = run(queued, [exit]);
+        expect(first.out).toEqual([
+          { type: "harvest", lines: queued.pending },
+          { type: "teardown", close: exit.type !== "unmounted" },
+        ]);
+        expect(run(first.state, [exit]).out).toEqual([
+          { type: "teardown", close: exit.type !== "unmounted" },
+        ]);
+      }
+    }
+    // An EMPTY queue harvests nothing — no blank draft on a plain hang-up.
+    for (const exit of [
+      { type: "hidden" },
+      { type: "hangup" },
+      { type: "unmounted" },
+    ] as CallSignal[])
+      expect(run(listening, [exit]).out).toEqual([
+        { type: "teardown", close: exit.type !== "unmounted" },
+      ]);
   });
 });
 
@@ -1484,16 +1516,17 @@ describe("callReduce — THE BACKGROUND WAVE (D73 S6, evidence docs/research/R75
   });
 });
 
-describe("callReduce — the unmount fence (S2b audit — §4.3 hang-up-discards, one task late)", () => {
-  it("moves the generation and discards the queue, so an in-flight callback is a ghost", () => {
+describe("callReduce — the unmount fence (S2b audit; the queue's disposition amended by ISS-61)", () => {
+  it("moves the generation and harvests the queue, so an in-flight callback is a ghost", () => {
     const queued = run(listening, [
       { type: "confirmHold", on: true }, // hold the queue open so a `final` stays pending
       { type: "final", text: "left unsaid" },
     ]).state;
-    const { state } = run(queued, [{ type: "unmounted" }]);
+    const { state, out } = run(queued, [{ type: "unmounted" }]);
     expect(state.gen).toBe(queued.gen + 1);
-    expect(state.pending).toEqual([]); // a deliberate exit DISCARDS — never a harvest
-    // …and the discarded final's own signals, armed under the old generation, no longer land.
+    expect(out[0]).toEqual({ type: "harvest", lines: ["left unsaid"] }); // every exit HARVESTS (ISS-61)
+    expect(state.pending).toEqual([]);
+    // …and the harvested final's own signals, armed under the old generation, no longer land.
     const late = callReduce(state, { type: "final", text: "too late", gen: queued.gen });
     expect(late.out).toEqual([]);
     expect(late.state).toBe(state);
@@ -2569,14 +2602,18 @@ describe("callReduce — THE TURN HOLD (ISS-55, `turn_hold_ms`)", () => {
         { type: "teardown", close: false },
       ]);
     }
-    // …and with the knob at 0 it is today's hang-up: words queued behind a reply are discarded.
+    // …and with the knob at 0 (no hold standing) words queued behind a reply are harvested
+    // too (ISS-61 — every exit harvests).
     const queued = run(routed, [
       { type: "final", text: "hello" },
       { type: "playbackStarted" },
       { type: "final", text: "wait" },
     ]).state;
     expect(queued.pending).toEqual(["wait"]);
-    expect(run(queued, [{ type: "unmounted" }]).out).toEqual([{ type: "teardown", close: false }]);
+    expect(run(queued, [{ type: "unmounted" }]).out).toEqual([
+      { type: "harvest", lines: ["wait"] },
+      { type: "teardown", close: false },
+    ]);
   });
 
   it("an ear outage mid-hold: the expiry in `connecting` lets go, the lost leg redials, `ready` sends ONCE", () => {
