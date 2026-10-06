@@ -26,6 +26,7 @@ vi.mock("../../src/lib/imageExport", async (importOriginal) => ({
 
 import {
   ATTACH_ACCEPT,
+  ATTACH_PHOTO_ACCEPT,
   attachmentPolicy,
   filesFrom,
   offerFiles,
@@ -136,6 +137,24 @@ describe("the server owns the numbers (§6)", () => {
       ".json",
       ".pdf",
     ]);
+  });
+
+  // ISS-47 ⓔ-images — the PHOTOS door. Chrome on Android opens its own image grid (real file sizes)
+  // only when EVERY accept entry is an `image/` MIME type; one extension or non-image entry and it is
+  // the generic picker again, whose size-0 Downloads files no in-page decode can read.
+  it("the photos door asks for image MIME types only — every one, and nothing else", () => {
+    const types = ATTACH_PHOTO_ACCEPT.split(",");
+    expect(types).toEqual(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+    expect(types.every((t) => t.startsWith("image/"))).toBe(true);
+  });
+
+  it("…and stays in step with the image kinds the admission tier takes", () => {
+    // Derived from ONE table in the module, so the two cannot drift; this pins the correspondence from
+    // the outside: each admitted image extension's MIME type is asked for, and no other type is.
+    const nonImage = [".txt", ".md", ".csv", ".json", ".pdf"];
+    const imageExt = ATTACH_ACCEPT.split(",").filter((e) => !nonImage.includes(e));
+    const mimeOf = (ext: string) => `image/${ext === ".jpg" ? "jpeg" : ext.slice(1)}`;
+    expect(new Set(imageExt.map(mimeOf))).toEqual(new Set(ATTACH_PHOTO_ACCEPT.split(",")));
   });
 });
 

@@ -1,8 +1,9 @@
-// ONE composer overlay at a time (A6). Three surfaces hover over the composer's top edge, all anchored off
-// the same measured `--composer-h`: the PLAN sheet (the D30 `overlay` slot), the slash-SUGGEST popover (A2)
-// and the tools/skills MENU (A6). Two of them showing at once overlaps — and the pairwise "opening X closes
-// Y" rule A2 shipped (useComposerSuggest → setPlanSheetOpen(false)) needs a new edit in every surface for
-// every surface added, so the third one is where that stops paying. The open state is CENTRALIZED here as a
+// ONE composer overlay at a time (A6). Four surfaces hover over the composer's top edge, all anchored off
+// the same measured `--composer-h`: the PLAN sheet (the D30 `overlay` slot), the slash-SUGGEST popover (A2),
+// the tools/skills MENU (A6) and the clip's ATTACH menu (ISS-47 — photos / files). Two of them showing at
+// once overlaps — and the pairwise "opening X closes Y" rule A2 shipped (useComposerSuggest →
+// setPlanSheetOpen(false)) needs a new edit in every surface for every surface added, so the third one is
+// where that stops paying. The open state is CENTRALIZED here as a
 // single OWNER slot: claiming it closes whoever held it, no surface knows about any other.
 //
 // Deliberately just a slot — no registry, no priorities, no focus management. Dep-free `createStore` (D23),
@@ -11,7 +12,7 @@
 import { createStore } from "./createStore";
 
 /** The composer surfaces that compete for the overlay space above the composer. */
-export type ComposerOverlay = "plan" | "suggest" | "menu";
+export type ComposerOverlay = "plan" | "suggest" | "menu" | "attach";
 
 const { emit, useStore } = createStore();
 let owner: ComposerOverlay | null = null;

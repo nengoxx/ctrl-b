@@ -6,6 +6,7 @@ import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
 import { useUISlice } from "../../../store/ui";
 import { useComposerSkin } from "../axes";
+import { AttachMenu } from "./AttachMenu";
 import { AttachClip, AttachRail } from "./AttachRail";
 import { ExpandToggle } from "./ExpandToggle";
 import { PhoneIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
@@ -72,6 +73,7 @@ export function KitComposer({
           the bar so, at equal stacking, the composer paints over the overlay's tucked bottom edge. */}
       {overlay}
       <SuggestPopover suggest={suggest} />
+      <AttachMenu attach={attach} />
       <div
         className={"kit-composer stacked" + (rootClass ? " " + rootClass : "")}
         id="composer"

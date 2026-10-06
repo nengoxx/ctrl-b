@@ -10,23 +10,20 @@ import {
 } from "../../src/store/composerOverlay";
 import { setPlanSheetOpen, usePlanSheetOpen } from "../../src/store/planSheet";
 
-// A6 — the "one composer overlay at a time" coordinator that replaced A2's pairwise close rule. Three
-// surfaces hover over the composer's top edge (plan sheet · suggest popover · tools menu) and exactly one
-// may own the slot. The suggest half of the wiring is covered in tests/hooks/useComposerSuggest.test.ts;
-// here we pin the slot mechanics and that `store/planSheet`'s public API still behaves as it always did.
+// A6 — the "one composer overlay at a time" coordinator that replaced A2's pairwise close rule. Four
+// surfaces hover over the composer's top edge (plan sheet · suggest popover · tools menu · the clip's
+// attach menu) and exactly one may own the slot. The suggest half of the wiring is covered in
+// tests/hooks/useComposerSuggest.test.ts; here we pin the slot mechanics and that `store/planSheet`'s
+// public API still behaves as it always did.
 
 beforeEach(() => setComposerOverlay(null));
 
 describe("composerOverlay — the single owner slot", () => {
   it("claiming displaces the previous owner (every pairing)", () => {
-    const pairs = [
-      ["plan", "suggest"],
-      ["plan", "menu"],
-      ["suggest", "menu"],
-      ["menu", "plan"],
-      ["suggest", "plan"],
-      ["menu", "suggest"],
-    ] as const;
+    // Every ordered pair of the FOUR surfaces — the clip's attach menu (ISS-47) is the fourth.
+    const all = ["plan", "suggest", "menu", "attach"] as const;
+    const pairs = all.flatMap((a) => all.filter((b) => b !== a).map((b) => [a, b] as const));
+    expect(pairs).toHaveLength(12);
     for (const [first, second] of pairs) {
       setComposerOverlay(first);
       expect(getComposerOverlay()).toBe(first);

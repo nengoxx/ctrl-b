@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // THE COMPOSER'S ATTACHMENT CHROME (D68 S3 / ATTACHMENTS_PLAN §7) — driven through the REAL variants,
@@ -27,8 +27,10 @@ vi.mock("../../src/store/chat", async (importActual) => {
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
+import { ATTACH_ACCEPT, ATTACH_PHOTO_ACCEPT } from "../../src/lib/attachments";
 import { addStaged, clearStaged, type AttachStatus } from "../../src/store/attachments";
 import { clearDraft, setDraft } from "../../src/store/composer";
+import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
 
 const VARIANTS = [
   ["stacked", KitComposer],
@@ -69,11 +71,13 @@ function orderOf(...nodes: Element[]): number[] {
 beforeEach(() => {
   clearStaged();
   clearDraft();
+  setComposerOverlay(null); // the overlay slot is module state — a case must not inherit one
 });
 afterEach(() => {
   cleanup();
   clearStaged();
   clearDraft();
+  setComposerOverlay(null);
 });
 
 describe.each(VARIANTS)("%s composer — the attachment chrome", (name, Variant) => {
@@ -288,3 +292,122 @@ describe("the layouts' own geometry", () => {
     expect(grow).toBeLessThan(at);
   });
 });
+
+// ISS-47 ⓔ-images (owner-ruled 2026-10-06) — THE CLIP OPENS TWO DOORS. On Android an image-only MIME
+// `accept` is Chrome's own grid picker (real sizes, multi-select); the mixed list is the generic picker,
+// whose size-0 Downloads files no in-page re-encode can read. So the clip opens a photos / files menu, and
+// each door sets the ONE input's `accept` AT THE MOMENT it opens (the card import's `pickCard` precedent,
+// pinned the same way in `tests/tabs/agentsGallery.test.tsx`). Same menu on desktop — one code path.
+describe.each(VARIANTS)(
+  "%s composer — the clip's photos / files menu (ISS-47)",
+  (name, Variant) => {
+    const panel = () => document.querySelector<HTMLElement>("#composer-attach")!;
+    const isOpen = () => panel().classList.contains("open");
+    const door = (label: "photos" | "files") => screen.getByRole("button", { name: label });
+
+    /** Spy the ONE input's `click` — what each door must have set is `accept` when the chooser opens. */
+    function spyPicker(): { opened: string[]; restore: () => void } {
+      const opened: string[] = [];
+      const spy = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (
+        this: HTMLInputElement,
+      ) {
+        opened.push(this.accept);
+      });
+      return { opened, restore: () => spy.mockRestore() };
+    }
+
+    it("the clip opens (and closes) the menu, claiming the overlay slot", () => {
+      render(<Variant />);
+      expect(isOpen()).toBe(false);
+      expect(panel().hasAttribute("inert")).toBe(true); // closed: out of tab order AND the a11y tree
+      expect(clip().getAttribute("aria-expanded")).toBe("false");
+      expect(clip().getAttribute("aria-controls")).toBe(null);
+      fireEvent.click(clip());
+      expect(isOpen()).toBe(true);
+      expect(panel().hasAttribute("inert")).toBe(false);
+      expect(getComposerOverlay()).toBe("attach");
+      expect(clip().getAttribute("aria-expanded")).toBe("true");
+      expect(clip().getAttribute("aria-controls")).toBe("composer-attach");
+      fireEvent.click(clip());
+      expect(isOpen()).toBe(false);
+      expect(getComposerOverlay()).toBe(null);
+    });
+
+    it("the menu is the house popover: a sibling of the bar, wearing the shared shell, two lowercase doors", () => {
+      render(<Variant />);
+      // A positioned SIBLING of `.kit-composer`, never a child (the bars clip their children).
+      expect(composer().contains(panel())).toBe(false);
+      expect(panel().classList.contains("tools-sheet")).toBe(true);
+      expect([...panel().querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+        "photos",
+        "files",
+      ]);
+    });
+
+    it("photos and files each set `accept` at click time — through ONE input", () => {
+      render(<Variant />);
+      // No static `accept`: React must never re-assert one over the door's.
+      expect(document.querySelector("input[type=file]")!.hasAttribute("accept")).toBe(false);
+      const picker = spyPicker();
+      fireEvent.click(clip());
+      fireEvent.click(door("photos"));
+      expect(isOpen()).toBe(false); // a door closes the menu
+      fireEvent.click(clip());
+      fireEvent.click(door("files"));
+      fireEvent.click(clip());
+      fireEvent.click(door("photos"));
+      picker.restore();
+      expect(picker.opened).toEqual([ATTACH_PHOTO_ACCEPT, ATTACH_ACCEPT, ATTACH_PHOTO_ACCEPT]);
+      expect(document.querySelectorAll("input[type=file]")).toHaveLength(1);
+    });
+
+    it("…and from the rail's tail too, where the staged clip lives (S6/F1)", () => {
+      stage();
+      render(<Variant />);
+      const picker = spyPicker();
+      fireEvent.click(clip());
+      fireEvent.click(door("photos"));
+      picker.restore();
+      expect(picker.opened).toEqual([ATTACH_PHOTO_ACCEPT]);
+      expect(document.querySelectorAll("input[type=file]")).toHaveLength(1);
+    });
+
+    it("yields to the other composer overlays — and takes the slot from them", () => {
+      render(<Variant />);
+      fireEvent.click(clip());
+      act(() => setComposerOverlay("menu")); // the tools menu opened
+      expect(isOpen()).toBe(false);
+      expect(clip().getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(clip()); // …and the clip claims it back
+      expect(getComposerOverlay()).toBe("attach");
+      expect(isOpen()).toBe(true);
+    });
+
+    it("a pointer going down outside dismisses it; the clip's own press does not", () => {
+      render(<Variant />);
+      fireEvent.click(clip());
+      fireEvent.pointerDown(clip()); // the clip counts as inside — its click is what toggles
+      expect(isOpen()).toBe(true);
+      fireEvent.pointerDown(panel());
+      expect(isOpen()).toBe(true);
+      fireEvent.pointerDown(document.body);
+      expect(isOpen()).toBe(false);
+    });
+
+    it("Escape closes it and puts focus back on the clip", () => {
+      render(<Variant />);
+      fireEvent.click(clip());
+      expect(document.activeElement).toBe(door("photos")); // focus moves into the panel on open
+      fireEvent.keyDown(door("photos"), { key: "Escape" });
+      expect(isOpen()).toBe(false);
+      expect(document.activeElement).toBe(clip());
+    });
+
+    it("unmounting the composer hands the slot back", () => {
+      const { unmount } = render(<Variant />);
+      fireEvent.click(clip());
+      unmount();
+      expect(getComposerOverlay()).toBe(null);
+    });
+  },
+);

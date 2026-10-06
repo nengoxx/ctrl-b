@@ -1,6 +1,8 @@
 import { XIcon } from "../../../components/icons";
 import type { AttachController } from "../../../hooks/useAttachments";
 import type { StagedAttachment } from "../../../store/attachments";
+import { toggleComposerOverlay, useComposerOverlayOpen } from "../../../store/composerOverlay";
+import { ATTACH_MENU_ID, ATTACH_TRIGGER_ID } from "./AttachMenu";
 import { ExpandToggle } from "./ExpandToggle";
 import { NoVisionIcon, PaperclipIcon, SpinnerIcon } from "./icons";
 import type { ExpandControl } from "./useComposerChrome";
@@ -34,17 +36,28 @@ import type { ExpandControl } from "./useComposerChrome";
  *  instance either way, never both.
  *
  *  The hidden input travels WITH the button rather than living in the variant, so a layout can never
- *  render one without the other. */
+ *  render one without the other.
+ *
+ *  Since ISS-47 (owner-ruled 2026-10-06) the clip opens the PHOTOS / FILES menu (`AttachMenu`, mounted
+ *  by the variant beside its other composer overlays) rather than the picker itself; each door sets the
+ *  ONE input's `accept` and opens it. The trigger's a11y contract is the tools menu's trigger, verbatim
+ *  in shape: `aria-haspopup="dialog"` (the panel is a labelled region of buttons, not a `menu`),
+ *  `aria-expanded`, and `aria-controls` only while the panel is open — closed, it is `inert`. */
 export function AttachClip({ attach, size = 16 }: { attach: AttachController; size?: number }) {
+  const open = useComposerOverlayOpen("attach");
   return (
     <>
       <input {...attach.inputProps} className="kit-attach-input" tabIndex={-1} aria-hidden />
       <button
         type="button"
-        className="kit-cbtn attach"
+        id={ATTACH_TRIGGER_ID}
+        className={"kit-cbtn attach" + (open ? " open" : "")}
         aria-label="attach files"
         title="attach files"
-        onClick={attach.pick}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? ATTACH_MENU_ID : undefined}
+        onClick={() => toggleComposerOverlay("attach")}
       >
         <PaperclipIcon size={size} />
       </button>

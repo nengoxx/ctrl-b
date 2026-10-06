@@ -4,6 +4,7 @@ import { useAttachments } from "../../../hooks/useAttachments";
 import { useComposer } from "../../../hooks/useComposer";
 import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
+import { AttachMenu } from "./AttachMenu";
 import { AttachClip, AttachRail } from "./AttachRail";
 import { ExpandToggle } from "./ExpandToggle";
 import { MicIcon, PhoneIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
@@ -46,6 +47,7 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
           the bar so, at equal stacking, the docked composer paints over the overlay's tucked bottom edge. */}
       {overlay}
       <SuggestPopover suggest={suggest} />
+      <AttachMenu attach={attach} />
       <div
         className="kit-composer sheet"
         id="composer"

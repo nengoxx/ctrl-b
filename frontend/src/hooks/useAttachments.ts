@@ -1,6 +1,12 @@
 import { useCallback, useRef, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
 
-import { filesFrom, offerFiles, primaryAcceptsImages, ATTACH_ACCEPT } from "../lib/attachments";
+import {
+  filesFrom,
+  offerFiles,
+  primaryAcceptsImages,
+  ATTACH_ACCEPT,
+  ATTACH_PHOTO_ACCEPT,
+} from "../lib/attachments";
 import { useVerbsVersion } from "../lib/composer";
 import { removeStaged, useStagedFiles, type StagedAttachment } from "../store/attachments";
 import { getSessionMode } from "../store/chat";
@@ -18,17 +24,29 @@ import { getSessionMode } from "../store/chat";
 // crop step, a retryable two-phase delivery — is the opposite lifecycle from this one. Attachments
 // are many files at once, each with its own outcome, and none of them is retried by a row.
 
+/** The clip's two doors (ISS-47 ⓔ-images, owner-ruled 2026-10-06): PHOTOS asks for image types only,
+ *  which on Android is Chrome's own grid picker (real file sizes, multi-select); FILES keeps the mixed
+ *  list — the file-manager escape, and images MediaStore does not index. */
+export type AttachDoor = "photos" | "files";
+
+/** What each door sets on the ONE input before it opens it. */
+const DOOR_ACCEPT: Record<AttachDoor, string> = {
+  photos: ATTACH_PHOTO_ACCEPT,
+  files: ATTACH_ACCEPT,
+};
+
 export interface AttachController {
   files: readonly StagedAttachment[];
-  /** The picker — opens the hidden input the variant renders through `inputProps`. */
-  pick: () => void;
+  /** The picker — sets the door's `accept` on the hidden input the variant renders through
+   *  `inputProps`, then opens it. */
+  pick: (door: AttachDoor) => void;
   remove: (localId: string) => void;
-  /** Spread onto the hidden `<input type="file">` the clip owns. */
+  /** Spread onto the hidden `<input type="file">` the clip owns. NO `accept` here: `pick` sets it
+   *  imperatively per door, and a static prop would have React re-assert one value over it. */
   inputProps: {
     ref: React.RefObject<HTMLInputElement | null>;
     type: "file";
     multiple: true;
-    accept: string;
     onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   };
   /** Spread onto the composer ROOT (drop) and the textarea (paste) — the same entrance either way. */
@@ -81,9 +99,16 @@ export function useAttachments(): AttachController {
 
   return {
     files,
-    pick: () => inputRef.current?.click(),
+    // ONE input, two filters — the card import's `pickCard(accept)` precedent (AgentsTab): what a door
+    // must decide is `accept` AT THE MOMENT the chooser opens, so it is written then, never rendered.
+    pick: (door) => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.accept = DOOR_ACCEPT[door];
+      input.click();
+    },
     remove: removeStaged,
-    inputProps: { ref: inputRef, type: "file", multiple: true, accept: ATTACH_ACCEPT, onChange },
+    inputProps: { ref: inputRef, type: "file", multiple: true, onChange },
     dropProps: { onDragOver, onDrop, onPaste },
     // Only ever claimed about the CONFIGURED chain: with a sticky `/<provider>` in force the model
     // that will serve is resolved server-side and is not in this payload, so the honest answer is to

@@ -35,9 +35,18 @@ import { UPLOAD_LIMITS } from "../theme-engine/mediaRegistry";
 // CONSTANT, not of a tunable: the tunables (`§6`) arrive from the server below. The server stays the
 // authority — anything that gets past this list meets `admission_reason` and a 422.
 
-/** Extensions whose bytes are (or may be) an image. `.gif` is here and is NOT in the media surface's
- *  allowlist: the media mount does not serve GIFs, an attachment may be one. */
-const IMAGE_EXT = [".png", ".jpg", ".jpeg", ".webp", ".gif"] as const;
+/** Extensions whose bytes are (or may be) an image, each with the MIME type the PHOTOS door asks the
+ *  chooser for. `.gif` is here and is NOT in the media surface's allowlist: the media mount does not
+ *  serve GIFs, an attachment may be one. ONE table so the two lists cannot drift: `IMAGE_EXT` is its
+ *  keys, `ATTACH_PHOTO_ACCEPT` its (deduplicated) values. */
+const IMAGE_TYPES = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+} as const;
+const IMAGE_EXT = Object.keys(IMAGE_TYPES) as (keyof typeof IMAGE_TYPES)[];
 /** The one kind bytes cannot authenticate — the extension IS the rule (plus the server's strict
  *  UTF-8 decode). Deliberately narrow: the owner ruled configs and logs out of scope (§0a-1). */
 const TEXT_EXT = [".txt", ".md", ".csv", ".json"] as const;
@@ -48,6 +57,15 @@ const PDF_EXT = ".pdf";
  *  a `text/markdown` accept entry hides `.md` files in several choosers. A HINT either way — the
  *  ladder below is what actually decides. */
 export const ATTACH_ACCEPT = [...IMAGE_EXT, ...TEXT_EXT, PDF_EXT].join(",");
+
+/** What the PHOTOS door asks for (ISS-47 ⓔ-images, owner-ruled 2026-10-06) — the image kinds above as
+ *  MIME TYPES, the opposite choice from `ATTACH_ACCEPT` and for the media picker's reason
+ *  (`UPLOAD_ACCEPT`): Chrome on Android opens its OWN image grid only when EVERY accept entry is an
+ *  `image/` type (`SelectFileDialog.java#isSupportedPhotoPickerTypes`), and that grid reports a picked
+ *  file's real size — the generic picker a mixed list gets reports 0 for a Downloads file, which no
+ *  in-page decode can read. An extension list would leave the mapping to Android's `MimeTypeMap`, where
+ *  one `octet-stream` miss silently falls back to the generic picker. */
+export const ATTACH_PHOTO_ACCEPT = [...new Set(Object.values(IMAGE_TYPES))].join(",");
 
 // ── the policy the server owns (§6) ──────────────────────────────────────────────────────────────
 

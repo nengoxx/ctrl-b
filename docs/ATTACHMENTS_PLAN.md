@@ -270,8 +270,13 @@ answer to "does attribution record the drop": `SourceInfo` stays untouched (O-M8
   Chromium's mtime refusal (`ERR_UPLOAD_FILE_CHANGED`, invisible to page JS) is "a size-0 `File`
   and the XHR errored": `putBytes` rejects that as `PickedFileUnsentError` (a `TypeError`
   subclass carrying the file-manager hint), which `uploadRefusal` and the import
-  toasts surface. The photos / files split of the clip (image-only accept → Chrome's own picker)
-  is the pending second half (ISSUES ISS-47).
+  toasts surface. **The clip's photos / files split (same day):** the clip opens a two-row menu
+  (`AttachMenu`, the 4th `composerOverlay` occupant, riding the tools menu's `.tools-sheet` shell);
+  PHOTOS sets an image-only MIME `accept` (`ATTACH_PHOTO_ACCEPT`, derived from the one
+  extension→MIME table so it cannot drift) → Chrome's own grid picker; FILES keeps the mixed list;
+  ONE hidden input, `accept` written at click time (`pick(door)`); desktop the same, no UA branch
+  (owner: one code path). Phone card owed: the grid opens with multi-select · a size-0 `.txt` from
+  Downloads stages · a camera-tile capture keeps its extension.
 
 ## §8 Security (SECURITY_MODEL gets a §2.7-sibling entry)
 
