@@ -48,7 +48,7 @@ from typing import Any
 
 from app.services.agent.card_import import CardImportError, _string_list, _text
 from app.services.agent.lorebooks import Lorebook, LorebookEntry
-from app.services.agent.macros import LITERAL_TEXT_OR_KEY, unrendered_note
+from app.services.agent.macros import LITERAL_TEXT_OR_KEY, per_turn_note, unrendered_note
 
 #: The V3 standalone-book discriminator, exactly (the `spec` field says what these bytes ARE — a
 #: value we do not know names a format we cannot claim to have read, `card_import.normalize`'s rule).
@@ -222,6 +222,10 @@ def import_book(raw: Any, *, default_name: str = "") -> ImportedBook:
     # so a literal `{{time}}` key is an entry that silently never activates.
     texts = (t for e in entries for t in (*e.keys, *e.secondary_keys, e.content))
     warnings = report.render() + unrendered_note(texts, "the lorebook's entries", LITERAL_TEXT_OR_KEY)
+    # ISS-28 (owner ruling 2026-10-06): a per-turn macro in a HEAD entry's content re-prefills the
+    # cached head every turn the entry is active — accepted, never silent. The landing is the mapped
+    # `position` (ST 0/1 and the 5–7 collapses → head; 2–4 → tail, which costs no cache).
+    warnings += per_turn_note((e.content for e in entries if e.position == "head"), ("entry", "entries"))
     return ImportedBook(
         book=book,
         mapped=sorted({k for k in book_read if k in body} | {k for k in entry_read if _seen(items, k)}),

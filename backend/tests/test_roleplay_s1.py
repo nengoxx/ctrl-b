@@ -211,6 +211,35 @@ def test_the_greeting_is_macro_substituted_at_seed_time() -> None:
         assert _messages(c, thread["id"])[0]["parts"][0]["text"] == "I am Nyx the Archivist. Welcome, Emma."
 
 
+def test_the_greeting_rolls_its_feature_macros_once_and_stores_the_roll(monkeypatch) -> None:
+    """ISS-28: the greeting renders at SEED time like the vocabulary does — `{{time}}` is the moment
+    the thread opened, `{{random}}` rolls ONCE (ST writes message 0 back the same way), and
+    `{{idle_duration}}` has nothing earlier to measure from. Later turns read the stored row; nothing
+    re-rolls it."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.services.agent import macros
+
+    monkeypatch.setattr(
+        macros, "_now", lambda: datetime(2026, 10, 6, 15, 5, tzinfo=ZoneInfo("Europe/Madrid"))
+    )
+    with _workspace(), _client() as c:
+        _agent(
+            c,
+            "nyx",
+            greeting="It is {{time}} on {{weekday}}. {{random:Tea,Coffee,Cocoa}}? ({{idle_duration}})",
+        )
+        thread = _new_thread(c, "nyx")
+        text = _messages(c, thread["id"])[0]["parts"][0]["text"]
+        head_, choice = text.split(". ", 1)
+        assert head_ == "It is 3:05 PM on Tuesday"
+        assert choice in ("Tea? (just now)", "Coffee? (just now)", "Cocoa? (just now)")
+        thread_obj = run_async(c.app.state.threads.get(thread["id"]))
+        for _ in range(3):  # every later assembly carries the stored roll, byte-identical
+            assert any(m.get("content") == text for m in run_async(_session(c, "nyx")._assemble(thread_obj)))
+
+
 def test_an_unknown_selected_agent_resolves_gracefully() -> None:
     """The house rule for every agent lookup: a since-deleted name lands on the default agent
     rather than 500ing or pinning the thread to something that isn't there."""

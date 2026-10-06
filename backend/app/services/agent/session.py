@@ -35,9 +35,11 @@ import asyncio
 import hashlib
 import json
 import logging
+import secrets
 import sys
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, AsyncIterator, Awaitable, Callable, Literal
 
 import anyio
@@ -107,7 +109,7 @@ from app.services.agent.core_memory_tool import RECALL_RECEIPT, is_recall_call
 from app.services.agent.examples import example_messages
 from app.services.agent.exec import run_user_exec
 from app.services.agent.lorebooks import Haystack, active_slugs, block, load_books, scan, spoken
-from app.services.agent.macros import Macros, macros_for
+from app.services.agent.macros import Macros, clock, macros_for
 from app.services.agent.persona import resolve_persona
 from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
@@ -586,11 +588,53 @@ class AgentSession:
         #: call. Plain and strong (no revision key) because a claimed attachment is IMMUTABLE — see
         #: `_attachment_wire` — and per-turn like the caches above, so it needs no eviction.
         self._attachment_cache: dict[str, str] = {}
+        #: The turn's MACRO CONTEXT (ISS-28, ROLEPLAY_PLAN §4.3). The salt seeds `{{random}}`/`{{roll}}`
+        #: and this is the ONE place it is minted: per session = PER TURN, so they re-roll every turn
+        #: (ST parity) and stay byte-stable across every loop iteration and render site within it. The
+        #: re-prefill a per-turn macro in head text causes is ACCEPTED (owner ruling 2026-10-06 — the
+        #: card author's choice; the importers warn) — a per-thread salt is deliberately NOT wanted. The
+        #: clock is read once here for the same reason: a per-render read would let the head's `{{time}}`
+        #: and `post_history`'s disagree inside one turn. A resume and a regenerate build a fresh session,
+        #: so both re-roll (the ACA-15e class; ST's swipe). Thread + idle are bound per entry point
+        #: (`_bind_macros`), before the lorebook scan renders its keys.
+        self._macro_salt = secrets.token_hex(8)
+        self._macro_now = clock()
+        self._macro_thread = ""
+        self._macro_idle: timedelta | None = None
 
     def _macros(self) -> Macros:
-        """This agent's `{{char}}`/`{{user}}` vocabulary (§4.3). Projected from the AgentDef +
-        settings the turn already holds fixed, so it is rebuilt rather than cached."""
-        return macros_for(self._agent, self._settings)
+        """This agent's macro context (§4.3): the `{{char}}`/`{{user}}` vocabulary projected from the
+        AgentDef + settings the turn already holds fixed, plus the turn's thread, salt, clock and idle
+        gap — so it is rebuilt rather than cached, and every rebuild renders identically."""
+        return macros_for(
+            self._agent,
+            self._settings,
+            thread=self._macro_thread,
+            salt=self._macro_salt,
+            now=self._macro_now,
+            idle=self._macro_idle,
+        )
+
+    async def _bind_macros(
+        self, thread: Thread, *, anchored: bool, anchor_ts: datetime | None = None
+    ) -> None:
+        """Bind the turn's thread and `{{idle_duration}}` gap — once, at each entry point, BEFORE
+        `_activate_lorebooks` (its scan renders keys). Idle = the turn's clock − the owner's PREVIOUS
+        message: the newest user row older than the turn's anchor (ST skips the newest message and
+        measures from the user message before it). `run_turn` has not persisted its anchor yet, so the
+        newest user row qualifies (`anchored=False`); `regenerate` names its anchor (`anchor_ts`); a
+        `resume`'s anchor is the newest user row, already persisted (`anchored=True`). No earlier user
+        row ⇒ `None` ⇒ "just now"."""
+        self._macro_thread = thread.id
+        self._macro_idle = None
+        before = anchor_ts
+        if anchored and before is None:
+            before = await self._messages.last_user_ts(thread.id)
+            if before is None:
+                return
+        ref = await self._messages.last_user_ts(thread.id, before=before)
+        if ref is not None:
+            self._macro_idle = max(self._macro_now - ref, timedelta(0))
 
     def _section(self, heading_id: str, body: str) -> str:
         """One `## `-labelled head section: the registry-owned heading, then the body (L-8 — an
@@ -730,7 +774,7 @@ class AgentSession:
         agent whose allowlist or active skill leaves `core_memory` out of THIS turn's schema gets no
         index — the block tells the model to read topics with a tool it would not carry, and the one
         file reader it does hold (`read_attachment`) is then the thing it reaches for."""
-        if not self._longterm_available():
+        if self._core_memory is None or not self._longterm_available():
             return None
         index = self._core_memory.render_index()
         if not index:
@@ -1395,6 +1439,7 @@ class AgentSession:
         ARE part of what the owner said; an attachment-only send therefore persists a message with no
         `TextPart` at all (the model-facing wire text for that case is S2's)."""
         self._activate_skills(user_text, skills)
+        await self._bind_macros(thread, anchored=False)  # ISS-28 — before the scan renders keys
         # …and the lorebook scan, which must run BEFORE the persist below (§6.3, Emma F11): the
         # haystack is the incoming text plus the last `scan_depth` PRIOR messages, and reading the
         # history after the write would need an exclusion rule to say the same thing.
@@ -1439,6 +1484,7 @@ class AgentSession:
         if anchor is None:  # the endpoint refuses an anchorless tail; nothing to redo
             return
         self._activate_skills(anchor.text(), anchor.skills)
+        await self._bind_macros(thread, anchored=True, anchor_ts=anchor.ts)
         await self._activate_lorebooks(thread, anchor.text(), resume=True, anchor_id=anchor.id)
         alternates = AlternatesRepo(self._messages)
         displaced: str | None = None
@@ -1536,7 +1582,13 @@ class AgentSession:
         D42 thrash RESET: a manual compact that leaves the thread UNDER threshold clears the breaker
         (the owner's escape hatch worked — failures=0, unlatched, notice re-armed). A rejected /
         still-over manual leaves the machine as-is; the breaker governs AUTO attempts only, and a manual
-        run never itself latches it."""
+        run never itself latches it.
+
+        The macro context is bound FIRST (ISS-28), like every other public entry: the post-fold
+        estimate builds the static head, and a `{{pick}}`/`{{random}}`/`{{idle_duration}}` in it must
+        price under this thread's context, not the unbound default. The anchor is the newest user row,
+        already persisted — `resume`'s rule."""
+        await self._bind_macros(thread, anchored=True)
         res = await self._compactor.compact(thread, force=True, instructions=instructions)
         cs = self._compaction_state
         if cs is not None and not (res is not None and res.rejected):
@@ -1596,6 +1648,7 @@ class AgentSession:
         # carry (ACA-15e): a resume builds a FRESH session, so the head would otherwise carry no book
         # at all. There is no incoming user text here — the turn's message is already history — so the
         # haystack is the last `scan_depth` messages, which is where that text now lives.
+        await self._bind_macros(thread, anchored=True)  # ISS-28 — the macro context, scan first
         await self._activate_lorebooks(thread, "", resume=True)
         # …and re-seed the recall budget for the same reason: the resumed half belongs to the LOGICAL
         # turn that suspended, so it must inherit what that turn already spent (D57 §4).

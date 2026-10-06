@@ -61,7 +61,7 @@ from app.core.media import (
     signature_format,
     suffix_for_format,
 )
-from app.services.agent.macros import unrendered_note
+from app.services.agent.macros import per_turn_note, unrendered_note
 from app.services.agent.skills import valid_skill_slug
 
 if TYPE_CHECKING:
@@ -499,6 +499,11 @@ MAPPED_FIELDS = (
     "post_history_instructions",
 )
 
+#: The mapped fields whose text lands in the CACHED HEAD — the SOUL's three (`compose_soul`), the
+#: scenario and the example dialogue — and so the only ones where a per-turn macro costs a re-prefill
+#: (ISS-28). `post_history` rides the tail; the greetings render once and are stored.
+_HEAD_FIELDS = ("system_prompt", "description", "personality", "scenario", "mes_example")
+
 #: The V1 sniff: a flat object SHAPED like a card (R66 §1.6 — Risu's content-shaped test, which is
 #: the tolerant one). `name` plus at least one of these. `scenario`/`mes_example` are in it because a
 #: card really does ship with only those two set beside the name (the Emma round's MED-8): a card is
@@ -778,6 +783,8 @@ def import_card(
         *card.notes,
         *_depth_prompt_note(fields_map),
         *unrendered_note(prompt_facing, "the card's text"),
+        # ISS-28 (owner ruling 2026-10-06): the per-turn re-prefill is accepted, never silent.
+        *per_turn_note((_text(fields_map.get(k)) for k in _HEAD_FIELDS), ("field", "fields")),
     ]
     return ImportedCard(
         container=container.kind,

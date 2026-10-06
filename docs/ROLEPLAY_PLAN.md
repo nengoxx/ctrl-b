@@ -401,6 +401,53 @@ importers now add ONE report line naming those macros (`{{random}}`, `{{time}}`,
 built on them says so at the door. The feature macros themselves (`random`/`pick`/`time`/`date`)
 are NOT built (a feature, not a fix → ISSUES).
 
+**Amended 2026-10-06 (ISS-28, D2 as ruled; research [R103](./research/R103-st-macro-semantics.md)) —
+the ST/CCv3 feature macros are BUILT.** `macros.py`'s module docstring is the authority; in short:
+
+- **Vocabulary** — ONE `SUPPORTED` table (the renderer dispatches on it, `unrendered` reads it):
+  `random` (`:` comma list with `\,` escapes · `::` list · whitespace form; trimmed; no items →
+  nothing) · `pick` · `roll` (droll's `[N]dS[±M]`, a bare number = `1dN`, at most `ROLL_MAX_DICE`
+  = 1000 dice) · `reverse` · `comment:` / `hidden_key:` (→ nothing) · the scoped `{{//}}…{{///}}` ·
+  `time` (`h:mm A`) + `time::UTC±N` + the legacy `time_UTC±N` · `date` (`MMMM D, YYYY`) · `weekday`
+  · `isotime` (`HH:mm`) · `isodate` · `idle_duration`/`idleDuration` (moment's `humanize()`
+  thresholds, no suffix; no earlier owner message → "just now"). Names case-insensitive under
+  `re.I | re.A` (without `re.A` a Kelvin-sign look-alike binds). English month/weekday tables.
+- **Order, per `render`** — scoped comments (stack-paired; an orphan `{{///}}` stays literal, ST
+  parity) BEFORE the single `{{// …}}` form → the case fold → `{{original}}`'s once-rule + the
+  vocabulary values (ST's env-first order: `{{random:{{user}},x}}` sees the name) → the
+  `time_UTC±N` rewrite → the feature pass, innermost first to a bounded fixpoint (an argument
+  admits no brace but a nested `{{char}}`/`{{user}}`).
+- **Seeds** — `random.Random(str)` keyed by (thread, raw field text, the macro's raw text, its
+  occurrence index among identical macros in the field). `random`/`roll` add the turn's SALT,
+  minted ONCE in `AgentSession.__init__` (`secrets.token_hex(8)`) — re-roll per turn (ST parity),
+  byte-stable across every iteration and render site within it; resume and regenerate (D81) build a
+  fresh session and re-roll (ST's swipe). `pick` takes no salt — stable for the thread's life. The
+  greeting renders once at seed with `thread=` and no salt, and is stored (nothing re-rolls it).
+- **Clock + idle** — the server's zone (`server_tz_key`), read ONCE per session (`macros.clock()`);
+  idle = that clock − the owner's PREVIOUS message (`MessageRepo.last_user_ts`, one indexed
+  `LIMIT 1`), bound by `AgentSession._bind_macros` at `run_turn` / `regenerate` / `resume`, before
+  the lorebook scan renders keys.
+- **The cache note (owner ruling 2026-10-06 — ACCEPTED, the card author's choice)** — a `PER_TURN`
+  macro (`random`, `roll`, `time`, `date`, `weekday`, `isotime`, `isodate`, `idle_duration`; NOT
+  `pick`/`reverse`/the comments) in HEAD text re-prefills the cached prefix, history included, every
+  turn. A per-thread salt is deliberately not used. The app WARNS: both importers add ONE count line
+  (`macros.per_turn_note`, over the `per_turn_in` predicate) — the card for its head-landing fields
+  (`system_prompt`, `description`, `personality`, `scenario`, `mes_example`), a book for its
+  head-landing entries' content. The editors' matching hint is a FE follow-up (not built).
+- **Divergences** — a malformed argument stays LITERAL (ST: `''`; for `time`, ST answers a bad
+  argument with the plain local time — ours stays literal there too); `{{ time }}` (padded) is not a
+  macro, like `{{ char }}`; `time::UTC±N` takes whole hours with |N| ≤ 14 and is literal past it
+  (moment reads |N| ≥ 16 as minutes; the clamp keeps us where both agree), and the legacy
+  `time_UTC±N` is rewritten only when that offset is valid; ST's `UTC` is case-sensitive, ours also
+  accepts `utc`; `idle_duration` on a regenerate measures from the user message BEFORE the anchor
+  (an ST swipe: from the newest user message); a nested `{{original}}` is substituted first, so
+  `{{random:{{original}},x}}` splits the whole original prompt into items at its commas — it stays
+  unresolved (the call literal) only when it sits right against the closing `}}`. Scoped comments:
+  only an argument-less `{{//}}` opens a scope; `{{// note}}` is a single-form comment wherever it
+  sits (inside a scope too), and `{{///}}` closes.
+- **Non-goals** (the import report keeps naming them) — `datetimeformat`, `timeDiff`, `newline`,
+  `trim`, `space`, `noop`, `lastMessage`, `input`, `outlet`, `persona`, variables, `if`.
+
 ## 5. Card import
 
 ### 5.1 Surface

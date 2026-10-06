@@ -21,6 +21,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from _async import run_async
@@ -361,6 +362,141 @@ def test_static_head_byte_stable_across_drain() -> None:
         after = json.dumps(session._static_prefix(), sort_keys=True)
 
         assert before == after  # the drain appends history; it never rebuilds the cached head
+
+
+# ── 7b: ISS-28 — the turn's per-turn macros hold still across its iterations ───────────────────
+def _macro_session(c, fake, **agent_fields):
+    """`_session`, with the agent's SOUL/post-history set to macro-bearing text (no steer source)."""
+    from app.domain.conversation import Thread
+    from app.services.agent.session import AgentSession
+
+    s = c.app.state
+    agent = s.settings.resolve_agent(None).model_copy(update={"max_parallel_tools": 1, **agent_fields})
+    thread = run_async(s.threads.create(Thread()))
+    session = AgentSession(s.threads, s.messages, s.inference, s.settings, s.actions, agent, interactive=True)
+    session._inference = fake
+    _no_compact(session)
+    return session, thread
+
+
+def test_per_turn_macros_are_byte_stable_across_a_turns_iterations() -> None:
+    """The salt and the clock are the SESSION's (minted once per turn), so the head a `{{random}}`/
+    `{{time}}` SOUL renders is byte-identical on every model call of the turn — even re-rendered
+    from scratch — and `post_history` (re-rendered per `_assemble`) agrees across iterations."""
+    with _workspace(), _client() as c:
+        fake = _Fake([[_tool("ping_host", {"host_id": "a"})], [_text("done")]])
+        session, thread = _macro_session(
+            c,
+            fake,
+            prompt="Mood: {{random:a,b,c,d,e,f,g,h}} at {{time}} ({{roll:1d1000}}).",
+            post_history="Tail {{random:p,q,r,s,t,u}} on {{isodate}} at {{isotime}}.",
+        )
+        session._actions.invoke = _ok_invoke_factory()
+        _run(session, thread)
+
+        first, second = fake.seen
+        assert first[0] == second[0] and "Mood: " in first[0]["content"]
+        assert "{{" not in first[0]["content"]
+        tails = [[m for m in call if str(m.get("content", "")).startswith("Tail ")] for call in fake.seen]
+        assert len(tails[0]) == 1 and tails[0] == tails[1] and "{{" not in tails[0][0]["content"]
+
+        before = json.dumps(session._static_prefix(), sort_keys=True)
+        session._static_head = None  # drop the cache: a full re-render must still agree byte-for-byte
+        assert json.dumps(session._static_prefix(), sort_keys=True) == before
+
+
+def test_idle_duration_measures_from_the_owners_previous_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_bind_macros`, at all three entry points: `run_turn` (anchor not yet persisted → the newest
+    user row), a resume (the newest user row IS the anchor → the one before it), a regenerate (the
+    named anchor → the user row before it). No earlier user row → "just now"."""
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+
+    from app.domain.conversation import Message, TextPart
+    from app.domain.enums import Actor
+    from app.services.agent import macros
+
+    now = datetime(2026, 10, 6, 15, 5, tzinfo=ZoneInfo("Europe/Madrid"))
+    monkeypatch.setattr(macros, "_now", lambda: now)
+
+    def at(hours_ago: float, role: Literal["user", "assistant"] = "user") -> Message:
+        actor = Actor.USER if role == "user" else Actor.AGENT
+        ts = (now - timedelta(hours=hours_ago)).astimezone(timezone.utc)
+        return Message(thread_id=thread.id, role=role, actor=actor, parts=[TextPart(text="x")], ts=ts)
+
+    with _workspace(), _client() as c:
+        s = c.app.state
+        fake = _Fake([[_text("done")]])
+        session, thread = _macro_session(c, fake, post_history="Away {{idle_duration}}.")
+        first_turn = [
+            m["content"] for m in _fake_turn(session, thread, fake) if m.get("content", "").startswith("Away")
+        ]
+        assert first_turn == ["Away just now."]  # no earlier user row
+
+        fake = _Fake([[_text("done")]])
+        session, thread = _macro_session(c, fake, post_history="Away {{idle_duration}}.")
+        old, mid, last = at(5), at(3, "assistant"), at(1)
+        for m in (old, mid, last):
+            run_async(s.messages.add(m))
+        seen = [
+            m["content"] for m in _fake_turn(session, thread, fake) if m.get("content", "").startswith("Away")
+        ]
+        assert seen == ["Away an hour."]  # run_turn: the newest user row (1 h ago)
+
+        # A thread whose every row the test controls (the run above persisted "hi" at the REAL clock).
+        resumed, thread = _macro_session(c, fake, post_history="Away {{idle_duration}}.")
+        old, last, steer = at(5), at(1), at(0.5)
+        for m in (old, at(3, "assistant"), last, steer):
+            run_async(s.messages.add(m))
+        run_async(resumed._bind_macros(thread, anchored=True))
+        # a resume's anchor is the newest user row (the steer) — idle runs from the one before it
+        assert resumed._macros().render("{{idle_duration}}") == "an hour"
+        assert resumed._macro_thread == thread.id
+
+        regen, _ = _macro_session(c, fake, post_history="Away {{idle_duration}}.")
+        run_async(regen._bind_macros(thread, anchored=True, anchor_ts=last.ts))
+        assert regen._macros().render("{{idle_duration}}") == "5 hours"  # the NAMED anchor, not the steer
+        run_async(regen._bind_macros(thread, anchored=True, anchor_ts=old.ts))
+        assert regen._macros().render("{{idle_duration}}") == "just now"  # nothing before the first
+
+
+def test_manual_compact_binds_the_macro_context_before_its_estimate() -> None:
+    """ISS-28 wave 1 (Emma MED): `/compact` is a public entry with no turn, and its post-fold estimate
+    builds the static head — so it binds the macro context FIRST (`resume`'s anchor rule), and a
+    `{{pick}}` head is priced under THIS thread's pick, not the unbound default (thread "")."""
+    from app.domain.conversation import Message, TextPart
+    from app.domain.enums import Actor
+    from app.services.agent.compaction import CompactionState
+
+    with _workspace(), _client() as c:
+        s = c.app.state
+        session, thread = _macro_session(c, _Fake([[_text("done")]]), prompt="Pick {{pick:a,b,c,d,e,f,g,h}}.")
+        for text in ("first", "second"):
+            msg = Message(thread_id=thread.id, role="user", actor=Actor.USER, parts=[TextPart(text=text)])
+            run_async(s.messages.add(msg))
+        session._compaction_state = CompactionState()  # so the post-fold `_over_threshold_now` runs
+
+        async def _no_fold(_thread, **_kw):
+            return None
+
+        session._compactor.compact = _no_fold
+        seen: list[tuple[str, bool]] = []
+        real_prefix = session._static_prefix
+
+        def _spy():
+            seen.append((session._macro_thread, session._macro_idle is not None))
+            return real_prefix()
+
+        session._static_prefix = _spy
+        assert run_async(session.compact(thread))["noop"] is True
+        assert seen and all(bound == (thread.id, True) for bound in seen)
+        head = real_prefix()[0]["content"]
+        assert session._macros().render("Pick {{pick:a,b,c,d,e,f,g,h}}.") in head
+
+
+def _fake_turn(session, thread, fake) -> list[dict]:
+    _run(session, thread)
+    return fake.seen[0]
 
 
 # ── 8: count_user_messages bumps for message steers, NOT exec steers ──────────────────────────────
