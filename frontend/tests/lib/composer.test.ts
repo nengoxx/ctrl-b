@@ -27,6 +27,7 @@ vi.mock("../../src/store/chat", () => ({
   reseatOpening: vi.fn(() => Promise.resolve()),
 }));
 vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
+vi.mock("../../src/store/toast", () => ({ pushToast: vi.fn() }));
 vi.mock("../../src/store/confirm", () => ({ requestConfirm: vi.fn(() => Promise.resolve(true)) }));
 
 import {
@@ -46,6 +47,7 @@ import {
 import { PRIVILEGE_LEVELS } from "../../src/lib/privilege";
 import { addStaged, clearStaged, stagedFiles, stagedIds } from "../../src/store/attachments";
 import * as chat from "../../src/store/chat";
+import * as toast from "../../src/store/toast";
 import { clearDraft, getDraft, setDraft, useDraft } from "../../src/store/composer";
 import {
   clearComposerSkills,
@@ -444,18 +446,23 @@ describe("pinStickyAgent — the sticky switch", () => {
     expect(lastNote()).toBe("// agent → maya (default)");
   });
 
-  it("a specialist pins; an unknown name still pins, and the note says it will fall back", () => {
+  // ISS-51 (owner-ruled 2026-10-07): a typo is a NO-OP — nothing pins, no note in the chat, one toast.
+  it("a specialist pins; an unknown name pins NOTHING and only toasts", () => {
     void pinStickyAgent("ops");
     expect(chat.setStickyAgent).toHaveBeenLastCalledWith("ops");
     expect(lastNote()).toBe("// agent → ops");
+    vi.mocked(chat.setStickyAgent).mockClear();
+    vi.mocked(chat.pushSystemNote).mockClear();
     void pinStickyAgent("typo");
-    expect(chat.setStickyAgent).toHaveBeenLastCalledWith("typo");
-    expect(lastNote()).toBe("// agent → typo (not configured — will fall back to default)");
+    expect(chat.setStickyAgent).not.toHaveBeenCalled();
+    expect(chat.pushSystemNote).not.toHaveBeenCalled();
+    expect(chat.reseatOpening).not.toHaveBeenCalledWith("typo", expect.anything());
+    expect(toast.pushToast).toHaveBeenLastCalledWith('No agent named "typo"', "err");
   });
 
-  // Owner nit 2026-10-01: before the first turn the chat holds only the opening — no pick note in it,
-  // except the typo's, which is the only word an unknown name gets.
-  it("before the owner's first turn: no note — the pin still lands; a typo still says so", () => {
+  // Owner nit 2026-10-01: before the first turn the chat holds only the opening — no pick note in it.
+  // A typo is a toast whether or not the conversation started (ISS-51).
+  it("before the owner's first turn: no note — the pin still lands; a typo is still only a toast", () => {
     vi.mocked(chat.pushSystemNote).mockClear();
     vi.mocked(chat.conversationStarted).mockReturnValue(false);
     void pinStickyAgent("ops");
@@ -464,8 +471,9 @@ describe("pinStickyAgent — the sticky switch", () => {
     expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
     expect(chat.pushSystemNote).not.toHaveBeenCalled();
     void pinStickyAgent("typo");
-    expect(chat.setStickyAgent).toHaveBeenLastCalledWith("typo");
-    expect(lastNote()).toBe("// agent → typo (not configured — will fall back to default)");
+    expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null); // unchanged by the typo
+    expect(chat.pushSystemNote).not.toHaveBeenCalled();
+    expect(toast.pushToast).toHaveBeenLastCalledWith('No agent named "typo"', "err");
   });
 
   // O-LOW-3 (ISS-31 code round): every `/new` thread is pinned now, so a bare `/agent` inside one falls

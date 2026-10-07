@@ -20,6 +20,7 @@ import { DEFAULT_AGENT } from "./agentSlug";
 import { setAttachmentInfo, type AttachmentInfoWire } from "./attachments";
 import { getJSON } from "../api/client";
 import { isUploading, reserveStaged, stagedIds } from "../store/attachments";
+import { pushToast } from "../store/toast";
 import {
   compactThread,
   conversationStarted,
@@ -144,11 +145,15 @@ let defaultAgent = DEFAULT_AGENT;
  *  while the roster is still unknown (a failed first load keeps the owner on the agent they had). */
 let defaultSet = false;
 let agentsGen = 0;
+/** Whether a roster has ever LANDED (`installAgents` ran) — until then `knownAgents` is empty and cannot
+ *  judge a name, so `pinStickyAgent` pins unjudged rather than refusing every pick on a cold start. */
+let agentsLanded = false;
 
 /** The sticky `/agent` pick REDUCED TO A CONFIGURED AGENT, or `null` for "the resolved default".
  *
- *  `/agent typo` stays sticky on purpose — the backend falls back to the default agent and `routeSlash`
- *  already warned — so the pin itself can name an agent that does not exist. Every surface that has to
+ *  A typed `/agent typo` no longer pins (ISS-51, owner-ruled 2026-10-07: a typo is a NO-OP + a toast), but
+ *  the pin can still name an agent that does not exist — a since-deleted one, or a pick made before the
+ *  roster landed — and the backend falls such a name to the configured default. Every surface that has to
  *  say WHICH agent the next message actually runs as therefore has to fold the unknown name back to the
  *  default: the tools menu's radio group (which would otherwise leave the whole group unchecked, i.e.
  *  claim the message goes nowhere) and, since D70 §8.3a, the agent backdrop (which would otherwise paint
@@ -241,6 +246,7 @@ export function beginAgentsLoad(): number {
  *  over the same module values, and a slow older response must not overwrite a fresher `defaultSet`. */
 export function installAgents(data: AgentsWire, gen: number): void {
   if (gen !== agentsGen) return; // a newer load started → it owns the set
+  agentsLanded = true;
   knownAgents.clear();
   for (const n of data.agents) knownAgents.add(n);
   defaultAgent = data.default || DEFAULT_AGENT;
@@ -316,9 +322,11 @@ interface BuiltinVerb {
  *  `name` is a slug, or `""` for "back to the configured default" — the bare-`/agent` case, which is a
  *  sticky-pick CLEAR rather than a pin at the default's name. A pin AT the default's name is a real
  *  pin too (it outranks a thread's own pin, which a clear would let resurface — the tools menu's
- *  default row inside a pinned thread) and gets the default's note, not the typo's. Any other name is
- *  validated against the configured set (best-effort): an unknown one still pins, the backend resolves
- *  it gracefully, and the note says so, so a typo is visible.
+ *  default row inside a pinned thread) and gets the default's note. Any other name is validated against
+ *  the roster: an UNKNOWN one is a NO-OP — nothing pins, nothing changes, one toast says there is no such
+ *  agent (ISS-51, owner-ruled 2026-10-07: "it seems unintuitive that the agent changes to another agent
+ *  just because of a typo"). Judged only once a roster has landed (`agentsLanded`); before that a pick
+ *  pins unjudged and the server's own one-rung fallback covers it.
  *
  *  The CLEAR's note names who will actually answer: inside a thread carrying its own D70 §4.2 pin (every
  *  `/new` thread since ISS-31 is one), the server's ladder falls through to that pin, not the default —
@@ -332,8 +340,20 @@ interface BuiltinVerb {
  *  nothing is awaited before the pin, so the pin and the note stay synchronous.
  *
  *  The note is MID-CHAT only (`conversationStarted`): before the owner's first turn it would be the sole
- *  line in an otherwise empty chat — except the unknown-name note, the one a typo has. */
+ *  line in an otherwise empty chat. */
 export async function pinStickyAgent(name: string): Promise<void> {
+  // THE TYPO DOOR — before anything is asked or written: a name the landed roster does not know (and
+  // that is not the default's or the root's own slug) changes nothing; the toast is the whole response.
+  if (
+    agentsLanded &&
+    name &&
+    name !== defaultAgent &&
+    name !== DEFAULT_AGENT &&
+    !knownAgents.has(name)
+  ) {
+    pushToast(`No agent named "${name}"`, "err");
+    return;
+  }
   const discard = wouldReseat(name) && openingEdited();
   const askedFor = discard ? getThreadId() : null;
   if (discard) {
@@ -348,18 +368,15 @@ export async function pinStickyAgent(name: string): Promise<void> {
   }
   setStickyAgent(name || null);
   const threadAgent = getThreadAgent();
-  const unknown = !!name && name !== defaultAgent && !knownAgents.has(name);
   // Nothing said yet → no note: the chat should hold only the opening (or nothing), and the re-seat's
-  // greeting + who-line already show who answers (owner nit 2026-10-01). A typo still says so.
-  if (conversationStarted() || unknown)
+  // greeting + who-line already show who answers (owner nit 2026-10-01).
+  if (conversationStarted())
     pushSystemNote(
       !name && threadAgent !== null && threadAgent !== defaultAgent
         ? `// agent → ${threadAgent} (this thread's)`
         : !name || name === defaultAgent
           ? `// agent → ${defaultAgent} (default)`
-          : unknown
-            ? `// agent → ${name} (not configured — will fall back to default)`
-            : `// agent → ${name}`,
+          : `// agent → ${name}`,
     );
   void reseatOpening(name, askedFor);
 }
