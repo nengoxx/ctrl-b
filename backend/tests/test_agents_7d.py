@@ -213,3 +213,19 @@ if __name__ == "__main__":
         fn()
         print(f"ok  {fn.__name__}")
     print(f"\n{len(fns)} passed")
+
+
+def test_path_shaped_agent_names_never_leave_agents_dir() -> None:
+    """ISS-52: a name that is not a valid agent slug is NOT a folder — `".."` (the workspace home,
+    which has an `agent.yaml`-less `config.yaml` but is a real directory) and an absolute path both
+    resolve to the ROOT fallback and `load_agent` says `None`, instead of loading the target directory
+    as an agent named after the input. The guard sits in `_load_agent_folder`, so every resolver path
+    (`body.agent` on a turn, `POST /threads`, the opening route) is covered at once."""
+    with _workspace() as (tmp, cfg):
+        (tmp / "agents" / "ops").mkdir(parents=True)
+        (tmp / "agents" / "ops" / "SOUL.md").write_text("ops persona", encoding="utf-8")
+        settings = load_settings(cfg)
+        assert settings.resolve_agent("ops").name == "ops"  # a valid slug still resolves
+        for bad in ("..", "/etc", "../..", "ops/../ops", "a b", ""):
+            assert settings.load_agent(bad) is None, bad
+            assert settings.resolve_agent(bad).name == "default", bad

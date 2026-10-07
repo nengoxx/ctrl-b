@@ -2638,7 +2638,16 @@ class Settings(BaseModel):
 
     def _load_agent_folder(self, name: str) -> AgentDef | None:
         """Load `agents/<name>/` (agent.yaml + SOUL.md) or `None` if the folder is absent. Loaded
-        fresh per call so an edit is live with no restart (D14)."""
+        fresh per call so an edit is live with no restart (D14).
+
+        THE ONE NAME BOUNDARY (ISS-52): a name is a folder only if it is a valid agent slug — the
+        grammar folders are minted and listed under (`valid_skill_slug`, as `list_agent_names`). Without
+        this, `".."` resolved the workspace home and `"/etc"` that directory, each loaded as an agent
+        NAMED after the input; every caller (`load_agent`, `resolve_agent`, hence `body.agent` on a
+        turn, `POST /threads`, the opening route) passes through here, so the check lives here once.
+        The root's own slug never reaches this method (both callers branch on it first)."""
+        if not valid_skill_slug(name):
+            return None
         folder = self.agents_dir_path() / name
         if not folder.is_dir():
             return None
