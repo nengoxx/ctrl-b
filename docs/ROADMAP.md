@@ -1164,6 +1164,20 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
   CHANGED URL does (and it surfaces as a "Review app update" suggestion under the app's ⋮ menu).
   That is why the manifest is served dynamically rather than rebuilt. See R28 §12.
 
+### H4. Gallery tiles at scale — avatar weight + findability (**the seam ISS-68 left; owner 2026-10-07: "real concerns"**)
+
+- **The issue, precisely:** the agent gallery renders every card at once (a handful of agents, no virtualization — by
+  design, and NOT the problem: a two-column grid of list items is cheap into the hundreds; the 2026-10-07 first-paint flash
+  was a grid-track rule, fixed in `7b13b85`). What DOES grow with every imported card is ① **image weight** — a tile loads
+  the avatar at its STORED size (there is no thumbnail variant in the media system; `loading="lazy"` only bounds it to what
+  scrolls into view, so a long scroll past fifty large avatars is real phone bandwidth), and ② **findability** — the gallery
+  has no search, filter or sort, so past ~20 cards the owner scrolls to find someone. The same two apply to the image
+  galleries (backgrounds / theme art), which share the tile recipe.
+- **The seams:** a served thumbnail variant for tiles (a media-serving concern — MEDIA_PLAN's namespaces/roles already
+  resolve "which image"; the variant is a size axis on the serving path, not a new store) · a search/filter row on the
+  gallery header (the media gallery's filter chips are the in-house precedent). Both belong to J1 below — do not build
+  them piecemeal.
+
 ## Settings tab — organized by functionality (informs v1 Conf layout)
 
 Even pre-implementation, lay out the Conf tab in **functional groups** so these land in obvious
@@ -1313,6 +1327,42 @@ its own capability without per-field provenance, it makes an env-addressed provi
 6 of 8 peer projects abandoned the pattern ([R6](./research/R6-env-overrides-and-secret-provenance.md)).
 
 ---
+
+## J. UX consolidation — TWO DEDICATED SESSIONS (owner ask 2026-10-07)
+
+> The owner, on the day the gallery flash was fixed: *"we added so many features that it's bloating a little bit of the
+> configuration options, and we need to make the app more clean and easy to use and intuitive."* Two separate sessions,
+> each ONLY about its subject, each **research-first** (field dossiers in `docs/research/` before a design) and then a
+> design council before any build. Neither is a feature; both are the kind of pass the ROADMAP's seams were kept cheap for.
+
+### J1. The galleries' UI/UX refinement — agent gallery · image galleries (backgrounds, theme art) · the dense editors — **plan stub = [`GALLERY_UX_PLAN.md`](./GALLERY_UX_PLAN.md) (resume from it alone)**
+
+- **Scope:** every gallery surface — the agent gallery (`AgentsTab`), the media galleries (backgrounds / theme art / the
+  per-destination libraries, MEDIA_MANAGER_PLAN) — plus the DENSE forms around them, first the agent editor
+  (`AgentsEditor`: "very dense configurations and controls"). The owner: *"they're not bad, but we could refine them a
+  little bit more … there's a lot of small things that I would like to tweak here and there."*
+- **Method:** a couple of research passes FIRST — how the peer class designs gallery/picker UX (card density, selection
+  and primary marks, empty/loading states, search + filter + sort, tile sizing/thumbnails, progressive disclosure for
+  dense forms); then one inventory of every gallery surface against those findings (the 2026-10-07 audit
+  `~/.cache/tmp/ctrlb-session63/audit-gallery.md` §B is the agent gallery's starting inventory); then the owner's tweak
+  list folded in; then a design council; then slices. H4's two seams (thumbnails, findability) land inside this session.
+
+### J2. Configuration de-bloat + knob-scope revision — "exactly what is the scope of each option" — **plan stub = [`CONFIG_DEBLOAT_PLAN.md`](./CONFIG_DEBLOAT_PLAN.md) (resume from it alone)**
+
+- **The problem, in the owner's words:** redundant configuration knobs or fields, and knobs that *fight for the same
+  behaviour* from different sections. The example given: a selector for the theme's **background** in the general theme
+  settings and another called **backdrop** in the gacha theme-art section — two controls the owner cannot use at the same
+  time, so *"that is more like bloat than configuration options."* (The owner: that particular one *may* already be fixed by the D65 libraries — it is the CLASS of problem; the session establishes the example's current state first, then finds every other instance.) The ask: *"a very clean clean-up and revision of the
+  design of the configurations"* — thorough, in a session dedicated ONLY to this.
+- **Scope:** every Conf group, the agent editor's fields, the theme/appearance controls, the media-manager destinations —
+  the full inventory of knobs, each with its SCOPE written down (what it governs, where it applies, which other knob it
+  overlaps or overrides, and what happens when two are set). Outcomes, in order of preference: **merge** (one knob where
+  two governed one behaviour), **gate** (one knob only shows when the other makes it meaningful), **rename + explain** (at
+  the very least each knob says what it does and how it differs from its neighbour — the owner's floor).
+- **Method:** research-first (how the peer class structures dense settings — progressive disclosure, advanced sections,
+  per-feature pages vs one long form); the inventory as a table (knob · section · scope · overlaps · verdict); the
+  no-migration rule applies to anything that changes config SHAPE (UPDATE_PLAN's load-boundary fold + write-back —
+  **no legacy seams**); design council; then slices. Pairs with J1 but is NOT the same session.
 
 ## P. Parked — not planned
 
