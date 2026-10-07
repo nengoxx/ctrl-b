@@ -43,7 +43,13 @@ import {
   trackNoise,
   type UtteranceLevels,
 } from "../lib/levelGate";
-import { liveSocketUrl, openLiveSocket, type LiveSocket } from "../lib/liveSocket";
+import {
+  liveSocketUrl,
+  openLiveSocket,
+  type LiveOutcome,
+  type LiveReason,
+  type LiveSocket,
+} from "../lib/liveSocket";
 import {
   ecEngaged,
   type EarDeath,
@@ -459,6 +465,13 @@ export const CALL_COPY = {
    *  dictation, so the words claim no continuity, only what happened. Terminal, never a redial: two
    *  copies redialling would supersede each other until a ladder ran out. */
   superseded: "the call was taken over by another ctrl-b session",
+  /** S7a (R2-1, N-6, H7) — the new ear's worker failed (`error{ear_failed}`) and the 1011 close that
+   *  always follows redials through the ladder. Connection news — the fresh leg retracts it — that owns up
+   *  to the one thing it may have cost: the segment that was in flight. */
+  earFailed: "the ear restarted — the last thing you said may not have been heard",
+  /** S7a (§3.5 ⑨, H8) — an awaited segment's answer outran the relay's own deadline (`answer_ttl_ms`), so
+   *  its id was dropped and the mouth may open. A QUIET note, no cue: cues echo back in a car (D80 ⑥). */
+  answerLate: "the ear didn't answer in time — that may not have been heard",
 } as const;
 
 /** The notes a FRESH LEG retracts — connection news, which a live connection has just made false.
@@ -470,6 +483,7 @@ const CONNECTION_NOTES: readonly string[] = [
   CALL_COPY.strained,
   CALL_COPY.busyRetrying,
   CALL_COPY.switchingRoute,
+  CALL_COPY.earFailed,
 ];
 
 // ── the machine ──────────────────────────────────────────────────────────────────────────────────
@@ -596,6 +610,18 @@ export interface CallState {
   /** …and the pause has RUN OUT while the ear still owed something (a segment open, a transcript in
    *  flight): the release waits for the ear to settle — a taken final starts the hold over instead. */
   turnHoldDue: boolean;
+  /** THE CAP JOIN (S7a, ASR_PLAN §3.5 ⑤ — G-2): the hold stands because a `max_segment` final cut the
+   *  owner mid-sentence, and a cap cut is not a pause (R20). ONE flag ON `turnHold`, never a second hold or
+   *  queue: a TAKEN cap final opens it (H4), any cap final while a hold stands continues it (EM-1), any
+   *  other final clears it (and the ordinary hold rule then applies). While it stands `turnHoldDue` does not
+   *  release — the joined id's TTL does (`answerExpired`). Cleared wherever `turnHold` is, and by mute
+   *  (the continuation is condemned). Never set on a leg without the clock (H10). */
+  capJoin: boolean;
+  /** THE LEG CLOCK (S7a, ASR_PLAN §3.2/§3.5 ⑨): this leg's `ready.answer_ttl_ms` — the relay declared the
+   *  new ear — or `null` on a leg without the capability, where every S7a rule is inert. ONE field rather
+   *  than a bit + a number, so the two can never disagree; written by every `ready` (a rolled-back relay's
+   *  next leg turns it off mid-call). */
+  answerTtlMs: number | null;
 }
 
 export const CALL_INITIAL: CallState = {
@@ -630,12 +656,22 @@ export const CALL_INITIAL: CallState = {
   turnHoldSeq: 0,
   turnHoldMs: 0,
   turnHoldDue: false,
+  capJoin: false,
+  answerTtlMs: null,
 };
 
 export type SendResult = "accepted" | "refused" | "unknown" | "held";
 
 export type CallSignal = { gen?: number } & (
-  | { type: "ready" } //                       the relay said `state: ready`
+  | {
+      type: "ready"; //                         the relay said `state: ready`
+      /** S7a — the leg clock's pair (§3.2), when the relay declared one: the parser admits both or
+       *  neither. */
+      clock?: "leg";
+      answerTtlMs?: number;
+      /** …and the parser's verdict on HALF a pair (H5): the leg runs without the clock — trail only. */
+      anomaly?: string;
+    }
   | { type: "socketLost" } //                  the leg closed while the call was still wanted
   /** The three SEGMENT signals carry the ear's `item_id` (D80 ③ — the relay forwards Speaches' one id
    *  per VAD segment) as `itemId`; absent when the relay named none, which is the unmeasured case. */
@@ -668,6 +704,14 @@ export type CallSignal = { gen?: number } & (
       echoMin?: number;
       inEchoWindow?: true;
       turnHoldMs?: number;
+      /** S7a — a capability leg's final (§3.5 ②): why its segment ended, what the ASR said, the parser's
+       *  `anomaly` when it failed validation (H1: settled, no text taken), and `late` when its id already
+       *  expired (R3-2 — the trail's `late_finals`; the reducer treats it like any other final). All
+       *  absent on a leg without the clock, so the signal and its trail line stay today's. */
+      reason?: LiveReason;
+      outcome?: LiveOutcome;
+      anomaly?: string;
+      late?: true;
     }
   /** The uplink is losing audio — the relay's own overflow state, or (A-F2) our own bounded queue
    *  dropping its oldest frames. ONE signal for both, deliberately: it is one loss chain, and two notes
@@ -709,9 +753,10 @@ export type CallSignal = { gen?: number } & (
     }
   /** D73 S6 ④ — a BACKGROUNDED call sat past `background_idle_s` with no speech and no reply. */
   | { type: "idleExpired" }
-  /** `itemId` — the segment an `upstream_error` was raised for, when the relay names one (D9: the error
-   *  arrives INSTEAD of that segment's final). The relay forwards none today, so only the id-less branch
-   *  runs until session B's ear carries one. */
+  /** `itemId` — the segment an `upstream_error` was raised for, when the relay names one (D9). Speaches
+   *  sends the error INSTEAD of that segment's final and names none, so only the id-less branch runs
+   *  there; the new ear (a leg with the clock) sends the typed `asr_error` final FIRST and then this
+   *  error with its id (H6, ASR_PLAN §3.9 ①) — the final settles, the error sets the note. */
   | { type: "serverError"; code: string; message: string; itemId?: string }
   /** The relay said `state: ended` — with the frame's `reason` when it named one (D5: `superseded`). */
   | { type: "serverEnded"; reason?: string }
@@ -733,6 +778,10 @@ export type CallSignal = { gen?: number } & (
   | { type: "tailOver"; seq: number; reason: TailReason }
   /** THE TURN HOLD'S CLOCK ran out (ISS-55) — for the arming `seq` only, like `tailOver`. */
   | { type: "turnHoldOver"; seq: number }
+  /** THE AWAITED HEAD'S TTL ran out (S7a, §3.5 ⑨ — N-1): `itemId` reached the head of the D9 set
+   *  `answerTtlMs` ago and is still unanswered. Fenced by the head itself: a TTL for an id that is no
+   *  longer the head is a ghost. */
+  | { type: "answerExpired"; itemId: string }
   | { type: "playbackFailed" }
   | { type: "turnSettled" } //                 chat status left `streaming`
   | { type: "confirmHold"; on: boolean }
@@ -899,6 +948,15 @@ function settle(s: CallState, itemId: string | undefined): CallState {
   return { ...s, awaiting: s.awaiting.filter((id) => id !== "") };
 }
 
+/** THE CAP JOIN LETS GO (S7a, §3.5 ⑤) — a final of another reason, the joined id's TTL, or a mute. The
+ *  hold itself stays and falls back to the ordinary rule: with the knob on, its `turn_hold_ms` clock
+ *  (already counting since the cap final, or already due); at 0 there is no clock, so it is due at once —
+ *  and `callReduce` releases it the moment the ear settles. Returns `s` itself when no join stood. */
+function dropJoin(s: CallState): CallState {
+  if (!s.capJoin) return s;
+  return { ...s, capJoin: false, turnHoldDue: s.turnHoldDue || s.turnHoldMs === 0 };
+}
+
 /** Start the §4.3 ORDERED kill. Both triggers land here — the voice barge and the owner's stop (which
  *  also takes it from `thinking`, with no mouth to fall) — so the state the kill leaves behind is written
  *  once.
@@ -950,6 +1008,7 @@ function freshEar(s: CallState): CallState {
     // fresh leg's `ready` (`connecting` holds it until then), like every other queued utterance.
     turnHold: false,
     turnHoldDue: false,
+    capJoin: false,
     // THE FENCE (F7). The old leg's frames, its close, this capture's `onEnded` and any send
     // outcome armed under it all become ghosts — which is the point: the redial is driven by the
     // acquisition, not by the close, so a `socketLost` from the leg being closed must not spend a
@@ -992,6 +1051,7 @@ function terminal(s: CallState, phase: "error" | "ended", note: string): Step {
       // …nor a turn hold to release (ISS-55): its words are in the harvest above.
       turnHold: false,
       turnHoldDue: false,
+      capJoin: false,
       gen: s.gen + 1,
     },
     out,
@@ -1078,8 +1138,10 @@ export function callReduce(s: CallState, sig: CallSignal): Step {
   // re-derived (TH design round, Opus H1 / Maya H2). A TAKEN final never lands here: it starts the hold
   // over. `drain` still honours every other hold (`speaking`, `connecting`, a kill, a confirm, an
   // upload), and the queue then waits for THAT release, as any queued utterance does.
+  // …and a CAP JOIN never releases on the pause (S7a, §3.5 ⑤): the owner was cut mid-sentence, so the
+  // hold waits for the continuation's final — or the joined id's TTL, which clears the flag.
   const ns = normalized.state;
-  if (!ns.turnHold || !ns.turnHoldDue || earUnsettled(ns)) return normalized;
+  if (!ns.turnHold || !ns.turnHoldDue || ns.capJoin || earUnsettled(ns)) return normalized;
   const released = drain({ ...ns, turnHold: false, turnHoldDue: false });
   return { state: released.state, out: [...normalized.out, ...released.out] };
 }
@@ -1166,6 +1228,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
         userSpeechActive: false,
         awaiting: [],
         note: s.note !== null && CONNECTION_NOTES.includes(s.note) ? null : s.note,
+        // THE LEG CLOCK (S7a, §3.2) is this leg's declaration, re-read on every `ready` — a relay rolled
+        // back between two legs of one call turns every S7a rule off again (H10).
+        answerTtlMs: sig.clock === "leg" ? (sig.answerTtlMs ?? null) : null,
       });
 
     case "socketLost": {
@@ -1196,6 +1261,7 @@ function reduce(s: CallState, sig: CallSignal): Step {
           awaiting: [],
           turnHold: false,
           turnHoldDue: false,
+          capJoin: false,
         },
         out: [{ type: "reconnect", delayMs: RECONNECT_BACKOFF_MS[attempt - 1] }],
       };
@@ -1251,9 +1317,12 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // A TURN HOLD standing is NOT condemned (ISS-55, the main seat's Q1): its words were taken before
       // the tap — only the half-utterance in flight is — so a cough-mute cannot throw a finished
       // monologue away. It runs on; one already due is released by the ear this settles (`callReduce`).
+      // …but a CAP JOIN is (S7a, audit §C.6): the continuation it waits for is the half-utterance this
+      // condemns, and its final lands muted and is dropped before any hold logic — so the flag lets go
+      // here, the held words stay, and the hold falls back to its own clock (`dropJoin`).
       if (sig.on) {
         return {
-          state: { ...s, muted: true, userSpeechActive: false, awaiting: [] },
+          state: dropJoin({ ...s, muted: true, userSpeechActive: false, awaiting: [] }),
           out: [],
         };
       }
@@ -1278,18 +1347,39 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // Either drop still SETTLES the wait (R86 LC-1's knock-on, as at `speechStop`): the final has
       // arrived, so its segment is no longer in flight — an id stranded here holds the mouth for nothing.
       // EVERY exit below runs on `settled` for the same reason (D9): an answer is an answer, taken or not.
-      const settled = settle(s, sig.itemId);
-      if (s.muted || s.earHeld) return { state: settled, out: [] };
-      const text = sig.text.trim();
+      // …except an ID-LESS final on a leg with the clock (S7a review, Opus LOW-3): every final there
+      // names its segment, so one that does not is an anomaly (H1) that answers NOTHING — the legacy
+      // id-less belt would clear the whole set and open the mouth over segments still owed. The id it
+      // failed to name stays awaited and is the TTL's to expire (§3.5 ⑨). A leg without the clock keeps
+      // the belt, byte for byte.
+      const settled =
+        s.answerTtlMs !== null && sig.itemId === undefined ? s : settle(s, sig.itemId);
+      // THE CAP JOIN (S7a, §3.5 ⑤ — inert without the leg clock, H10): is this final a `max_segment` cut?
+      // An anomalous final's reason is not evidence (H1), so it counts as any other final.
+      const capCut =
+        s.answerTtlMs !== null && sig.reason === "max_segment" && sig.anomaly === undefined;
+      // …and what a final that is NOT taken does to it (EM-1, H4): a cap final while a hold stands
+      // CONTINUES the join whatever its fate (the owner is still mid-sentence in the next segment); any
+      // other final ENDS it — the N-2 release on the last absorbed non-`max_segment` final of every reason
+      // and outcome, a gate-dropped one included (R3-1).
+      const unTaken = (st: CallState): CallState =>
+        !capCut ? dropJoin(st) : s.turnHold && !st.capJoin ? { ...st, capJoin: true } : st;
+      // Mute and the held ear only ever END a join (mute already cleared it; a cap final there continues
+      // nothing the machine is listening to).
+      if (s.muted || s.earHeld) return { state: capCut ? settled : dropJoin(settled), out: [] };
+      // An `asr_error` final settles SILENTLY and takes no text even if it carries some (§3.5 ⑨, R3-2) —
+      // its companion `error{upstream_error}` sets the one note (H6). An anomalous final likewise (H1):
+      // its id is settled so the mouth is not stranded, and its `sig` line is the trail's record.
+      const text = sig.anomaly !== undefined || sig.outcome === "asr_error" ? "" : sig.text.trim();
       // Empty finals are discarded (§4.5's no-speech path): nothing submits, the wait settles.
-      if (!text) return { state: settled, out: [] };
+      if (!text) return { state: unTaken(settled), out: [] };
       // THE TEXT BACKSTOP (D80 ②): the reply's own words, heard back after the element finished — the
       // tail hold's residue (a pause inside the not-yet-heard tail, a tail past the cap). Dropped
       // VISIBLY on the heard line, and SILENTLY to the ear: a cue here would be one more sound for the
       // car to play back. BEFORE the transcript gate, because it is the more specific diagnosis — an echo
       // that is also quiet is still an echo, and a cue for it would be wrong twice.
       if (sig.echo !== undefined && sig.echoMin !== undefined && sig.echo >= sig.echoMin)
-        return { state: { ...settled, heard: CALL_COPY.ownWords }, out: [] };
+        return { state: unTaken({ ...settled, heard: CALL_COPY.ownWords }), out: [] };
       // THE TRANSCRIPT GATE (D74 S5 ③). A Whisper-family endpoint does not answer noise with nothing
       // — it answers with a PLAUSIBLE SENTENCE (R76), and on a call that sentence is submitted to the
       // agent as if the owner had said it. The relay cannot tell; the client can, because it already
@@ -1309,18 +1399,19 @@ function reduce(s: CallState, sig: CallSignal): Step {
         // hear — and in the car the cue's own echo came back 2.3 s later as the next flap, which dropped,
         // which cued (12 beeps in 5 minutes). Nothing heard, nothing said.
         return {
-          state: { ...settled, note: CALL_COPY.tooQuiet },
+          state: unTaken({ ...settled, note: CALL_COPY.tooQuiet }),
           out: (sig.energyMs ?? 0) > 0 ? [{ type: "dropCue" }] : [],
         };
       }
       // A TAKEN final retracts the "too quiet" note (D80's W6): it was about the last drop, and it stood
       // for the rest of the call. Only ITS OWN note — the `degradedOver` rule: anything else there is
-      // news of its own that the owner has not read yet.
+      // news of its own that the owner has not read yet. The TTL's `answerLate` is the same kind of
+      // note (S7a review, Opus LOW-2): about one segment, and an ear that just answered disproves it.
       const taken: CallState = {
         ...settled,
         heard: text,
         pending: [...s.pending, text],
-        note: s.note === CALL_COPY.tooQuiet ? null : s.note,
+        note: s.note === CALL_COPY.tooQuiet || s.note === CALL_COPY.answerLate ? null : s.note,
         // …and a rebuilt ear that heard speech end-to-end earns its one rebuild back (ISS-54 code round,
         // Opus 2): a long call's second, unrelated render error is not a loop — a flapping headset
         // yields no taken finals between flaps, so it stays bounded.
@@ -1332,10 +1423,28 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // is `callReduce`'s, once the hold is due over a settled ear. A DROPPED final above never reaches
       // this: echo, noise or a TV must not hold the owner's turn open — it only answers its segment.
       const holdMs = sig.turnHoldMs ?? 0;
-      if (holdMs > 0)
+      // THE CAP JOIN OPENS (S7a, H4) on a TAKEN cap final — at ANY knob, 0 included: the hold is the
+      // owner's sentence, not their pause, so it stands until the continuation's final (or its TTL). With
+      // the knob on, the ordinary restart runs beside it; at 0 no clock is armed (no 0-ms timer — the seq
+      // does not move).
+      if (capCut)
         return {
           state: {
             ...taken,
+            turnHold: true,
+            capJoin: true,
+            turnHoldDue: false,
+            turnHoldMs: holdMs,
+            turnHoldSeq: holdMs > 0 ? s.turnHoldSeq + 1 : s.turnHoldSeq,
+          },
+          out: [],
+        };
+      // Any other taken final ends a join (N-2) and the ordinary rule applies.
+      const unjoined: CallState = taken.capJoin ? { ...taken, capJoin: false } : taken;
+      if (holdMs > 0)
+        return {
+          state: {
+            ...unjoined,
             turnHold: true,
             turnHoldDue: false,
             turnHoldSeq: s.turnHoldSeq + 1,
@@ -1343,7 +1452,10 @@ function reduce(s: CallState, sig: CallSignal): Step {
           },
           out: [],
         };
-      return drain(taken);
+      // At 0 a hold still standing is a join's (the knob opens none): this final ends the sentence, so the
+      // hold is due — `callReduce` releases it once the ear settles (E-N3, R3-1: the LAST absorbed one).
+      if (s.turnHold) return { state: { ...unjoined, turnHoldDue: true }, out: [] };
+      return drain(unjoined);
     }
 
     case "barge":
@@ -1398,6 +1510,25 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // reads the settled ear — a segment still open or owed holds it until that segment is answered.
       if (!s.turnHold || s.turnHoldDue || sig.seq !== s.turnHoldSeq) return { state: s, out: [] };
       return { state: { ...s, turnHoldDue: true }, out: [] };
+
+    case "answerExpired": {
+      // THE AWAITED HEAD OUTRAN ITS DEADLINE (S7a, §3.5 ⑨ — N-1). The relay answers every segment within
+      // `timeout_s` of it reaching its serial worker, so an id still owed `answer_ttl_ms` after reaching the
+      // head is an answer that is not coming: it leaves the set — the mouth may open — with a quiet note
+      // (H8). Fenced by the head (a TTL for an id already answered, or behind a newer head, is a ghost) and
+      // inert on a leg without the clock. A final that turns up later is a LATE final (R3-2): taken the
+      // normal way if it carries text, its id settling nothing.
+      if (s.answerTtlMs === null || s.awaiting[0] !== sig.itemId) return { state: s, out: [] };
+      const expired: CallState = {
+        ...s,
+        awaiting: s.awaiting.slice(1),
+        note: CALL_COPY.answerLate,
+      };
+      // …and a CAP JOIN waiting on it ends once nothing else is owed — no id left, no segment open (the
+      // joined id's TTL is the cap hold's expiry, §3.5 ⑤). With a segment still open its own final ends it.
+      const settledEar = expired.awaiting.length === 0 && !expired.userSpeechActive;
+      return { state: settledEar ? dropJoin(expired) : expired, out: [] };
+    }
 
     case "playbackDrained": {
       // The mouth stopped: the flag goes down even where the arm declines to move the phase, because a
@@ -1603,6 +1734,14 @@ function reduce(s: CallState, sig: CallSignal): Step {
           // `client_id` supersedes its own zombie instead of refusing it, so only a pre-D5 relay or an
           // id-less tab still lands here with this phone's own slot — see `RECONNECT_BACKOFF_MS`.)
           return { state: { ...s, note: CALL_COPY.busyRetrying }, out: [] };
+        case "ear_failed":
+          // THE NEW EAR'S WORKER FAILED (S7a — R2-1, N-6; §3.4 "behind is a failure"): the relay sends
+          // this typed frame and then closes 1011, never a bare 1011. A NOTE-ONLY no-op, shaped like the
+          // mid-ladder `busy` above and for its reason: the close is what the ONE `socketLost` arm
+          // reconnects from (a fresh leg, the VAD reset), so one failure spends one rung — and falling to
+          // the default here would land a TERMINAL before that close could redial. No gate: today's
+          // relay never sends it.
+          return { state: { ...s, note: CALL_COPY.earFailed }, out: [] };
         case "session_limit":
           // The relay's sentence IS the note here (unlike `protocol`'s diagnostics): the class now has
           // two causes — the hard session cap, and the uplink-idle reaper (R86 LC-8) — and both
@@ -1617,6 +1756,8 @@ function reduce(s: CallState, sig: CallSignal): Step {
           // ahead of it); with none — the relay forwards none today — the whole set, the belt.
           // Only the wait: `userSpeechActive` may be a NEW segment, genuinely live. A final that does
           // turn up later is taken by its own arm regardless of the set, so the clear loses nothing.
+          // On a leg with the clock the typed `asr_error` final came FIRST and already settled its id
+          // (H6), so this settle finds nothing to move and the NOTE is the arm's whole effect.
           return {
             state: { ...settle(s, sig.itemId), note: sig.message || CALL_COPY.lost },
             out: [],
@@ -1880,6 +2021,19 @@ function clearSegments(m: EarMeter): void {
   m.open = null;
 }
 
+/** DID THIS STEP TAKE ITS FINAL — the accepted transition, read off the state diff and the effects,
+ *  never a re-derivation of the arm's rules. Taken words either still sit in the queue (it grew — a hold
+ *  standing, or a `speaking` reply holding it) or went out IN this step's submit, which then says MORE
+ *  than the queue held before it: a DROPPED final's step can carry a submit too — a due hold's release
+ *  (ISS-55), words judged long ago — and that one says exactly the old queue. The second half is what
+ *  keeps a hold-0 CAP JOIN honest (S7a, G-8): the final that ends the join is taken AND releases in the
+ *  same step, so the queue does not grow. Read by the voice learner (`meterEdge`) and the `turn` line. */
+function queueTook(prev: CallState, next: CallState, out: readonly CallEffect[]): boolean {
+  if (next.pending.length > prev.pending.length) return true;
+  const before = prev.pending.join(PENDING_JOIN);
+  return out.some((e) => e.type === "submit" && e.text !== before);
+}
+
 /**
  * THE METER'S EDGES, decided in ONE place — the `IDLE_EDGES` precedent, for the same reason: every
  * rule about what voids the ear's evidence is a rule about the SIGNAL that arrived, and a copy of it
@@ -1938,13 +2092,7 @@ function meterEdge(
       };
       if (key !== null) m.segments.delete(key);
       if (seg !== undefined && m.open === seg) m.open = null;
-      // A submit in the same step is THIS final's own only when no turn hold stood before it (ISS-55):
-      // with one standing, a taken final always grows the queue (it restarts the hold), and the submit
-      // a DROPPED final's step can carry is the hold's release — words that were judged long ago.
-      const taken =
-        next.pending.length > prev.pending.length ||
-        (!prev.turnHold && out.some((e) => e.type === "submit"));
-      return taken && seg !== undefined ? seg.utterance : null;
+      return queueTook(prev, next, out) && seg !== undefined ? seg.utterance : null;
     }
     case "playbackStarted":
       clearBarge(m);
@@ -2158,14 +2306,34 @@ function holdWhy(sig: CallSignal, next: CallState): "mouth" | "tail" | "policy" 
 /** Why the TURN HOLD just moved, for the trail's `turn` line (ISS-55): a taken final opened or
  *  restarted it; its clock ran out over an ear still owed (`due`); or it let go — at its clock's
  *  `expiry` over a settled ear, once a due hold's ear `settle`d, on a lost `leg`, on a fresh ear (a
- *  `route` cycle or an `earDead` rebuild — both move the generation) or at a `terminal`. */
+ *  `route` cycle or an `earDead` rebuild — both move the generation) or at a `terminal`. S7a adds two:
+ *  a `max_segment` final opened or continued a CAP JOIN (`join`), an awaited head's TTL moved it
+ *  (`ttl` — the join let go, or the hold released over the ear the expiry settled), and — the review's
+ *  LOW-1 — a join let go while the hold STILL STANDS (`unjoin`: a mute or a dropped final mid-join; with
+ *  the knob on, the hold's own clock decides from there). */
 function turnWhy(
   sig: CallSignal,
   prev: CallState,
   next: CallState,
-): "open" | "restart" | "due" | "expiry" | "settle" | "leg" | "route" | "terminal" {
+):
+  | "open"
+  | "restart"
+  | "due"
+  | "expiry"
+  | "settle"
+  | "leg"
+  | "route"
+  | "terminal"
+  | "join"
+  | "ttl"
+  | "unjoin" {
+  if (sig.type === "final" && next.capJoin) return "join";
+  if (sig.type === "answerExpired") return "ttl";
   if (!prev.turnHold) return "open";
-  if (next.turnHold) return next.turnHoldSeq !== prev.turnHoldSeq ? "restart" : "due";
+  if (next.turnHold) {
+    if (next.turnHoldSeq !== prev.turnHoldSeq) return "restart";
+    return prev.capJoin && !next.capJoin ? "unjoin" : "due";
+  }
   if (isTerminal(next.phase)) return "terminal";
   if (sig.type === "turnHoldOver") return "expiry";
   if (sig.type === "socketLost") return "leg";
@@ -2307,7 +2475,8 @@ export interface CallDebug {
   } | null;
   /** THE TURN HOLD standing right now (ISS-55): which arming, and whether its pause has run out over an
    *  ear still owed something. `null` when none stands (always, with `turn_hold_ms` at 0). */
-  turnHold: { seq: number; due: boolean } | null;
+  /** …`join` while a CAP JOIN stands (S7a, §3.5 ⑤) — absent otherwise. */
+  turnHold: { seq: number; due: boolean; join?: true } | null;
 }
 
 /** What the overlay renders + the things it can do. */
@@ -2454,6 +2623,14 @@ export function useLiveCall(): CallView {
    *  under the NEW one — a hold whose length moved between two pauses of one call would be a hold the
    *  owner cannot reason about. 0 = off, and it stays 0 until the knobs arrive. */
   const holdKnob = useRef(0);
+  /** THE AWAITED HEAD'S TTL (S7a, §3.5 ⑨ — G-3) — ONE timer, armed by `send` on the reducer's edge where
+   *  the head of the D9 set changes on a leg with the clock, for `answerTtlMs`; replaced by the next head,
+   *  dropped when the set empties or the call tears down. The turn-hold clock's state-edge pattern. */
+  const answerTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** …and the ids it EXPIRED, by `segmentKey(leg, id)`, so a final that turns up for one later is
+   *  stamped `late` (R3-2 — the trail's `late_finals`). Bounded like the segment ledger (`SEGMENT_CAP`,
+   *  oldest evicted): a healthy relay expires none, and a sick one must not grow it for a whole call. */
+  const expiredIds = useRef(new Set<string>());
 
   /** THE LEG'S DROP TOTALS (T6), written once where the leg ends — a fresh leg (`openLeg`, BEFORE the
    *  leg number moves, so the line is stamped with the leg it describes), a route cycle, the trail's own
@@ -2506,7 +2683,9 @@ export function useLiveCall(): CallView {
       lastFinal: m.last,
       chirp: lastChirp.current,
       lastTail: lastTail.current,
-      turnHold: s.turnHold ? { seq: s.turnHoldSeq, due: s.turnHoldDue } : null,
+      turnHold: s.turnHold
+        ? { seq: s.turnHoldSeq, due: s.turnHoldDue, ...(s.capJoin ? { join: true as const } : {}) }
+        : null,
     };
   }, [knobs]);
 
@@ -2518,6 +2697,8 @@ export function useLiveCall(): CallView {
     clearTimeout(noiseTimer.current);
     clearTimeout(rechirpTimer.current);
     clearTimeout(turnHoldTimer.current);
+    clearTimeout(answerTimer.current);
+    expiredIds.current.clear();
     // THE CLEAN END CLEARS THE MARKER (S6 ⑦). This is the one release path every exit funnels through
     // — a terminal, a hang-up, the unmount — so it is the one place that can honestly say "this tab is
     // not in a call any more". What does NOT reach here (a killed tab, a crash) is exactly the case
@@ -2578,16 +2759,25 @@ export function useLiveCall(): CallView {
       // that fell — `hidden`'s reset would otherwise read 0), `n` the queued segments it carries (a
       // fall: the ones it let go — whether they went out is the `sig` line's phase move beside it).
       // A hold that was never up moves nothing worth a line (`hidden`/`unmounted` reset the seq).
+      // …and a CAP JOIN's edges (S7a): `join` rides the line while one stands — absent otherwise, so a
+      // leg without the clock writes today's line byte for byte.
       if (
         prev.turnHold !== next.turnHold ||
         (next.turnHold &&
-          (prev.turnHoldSeq !== next.turnHoldSeq || prev.turnHoldDue !== next.turnHoldDue))
+          (prev.turnHoldSeq !== next.turnHoldSeq ||
+            prev.turnHoldDue !== next.turnHoldDue ||
+            prev.capJoin !== next.capJoin))
       )
         trail.current?.push("turn", {
           held: next.turnHold,
           why: turnWhy(sig, prev, next),
           seq: next.turnHold ? next.turnHoldSeq : prev.turnHoldSeq,
-          n: next.turnHold ? next.pending.length : prev.pending.length,
+          // a fall counts the words it let go — the releasing final's own too, when it was taken in the
+          // same step (a hold-0 cap join's end, S7a)
+          n: next.turnHold
+            ? next.pending.length
+            : prev.pending.length + (sig.type === "final" && queueTook(prev, next, out) ? 1 : 0),
+          ...(next.capJoin ? { join: true } : {}),
         });
       // THE TURN HOLD'S CLOCK (ISS-55) arms on the reducer's arming — a new `turnHoldSeq` with the
       // hold up, an open or a taken final's restart — replacing whatever was counting, and dies the
@@ -2607,6 +2797,30 @@ export function useLiveCall(): CallView {
           next.turnHoldMs,
         );
       } else if (!next.turnHold) clearTimeout(turnHoldTimer.current);
+      // THE AWAITED HEAD'S TTL (S7a, §3.5 ⑨) — timed from the id reaching the HEAD of the D9 set (the
+      // relay's serial worker only starts it then), so it arms on every edge where the head changes and
+      // dies with the set; on a leg without the clock there is no head to time (`answerTtlMs` null —
+      // inert). Plain `setTimeout`, for the turn-hold clock's reasons: armed from a socket message, never
+      // chained, and a frozen ear goes `earOutage` → `socketLost`, which clears the set on its own.
+      const head = next.answerTtlMs === null ? undefined : next.awaiting[0];
+      const prevHead = prev.answerTtlMs === null ? undefined : prev.awaiting[0];
+      if (head !== prevHead) {
+        clearTimeout(answerTimer.current);
+        if (head !== undefined && next.answerTtlMs !== null) {
+          const gen = next.gen;
+          const key = segmentKey(legSeq.current, head);
+          answerTimer.current = setTimeout(() => {
+            const before = ref.current.awaiting;
+            send({ type: "answerExpired", itemId: head, gen });
+            // Remembered only when the reducer TOOK it (the head still was this id), bounded.
+            if (ref.current.awaiting !== before) {
+              const ids = expiredIds.current;
+              if (ids.size >= SEGMENT_CAP) ids.delete(ids.values().next().value as string);
+              ids.add(key);
+            }
+          }, next.answerTtlMs);
+        }
+      }
       // THE TAIL'S RELEASE ARMS on the reducer's arming (a new `tailSeq` with the tail up), and dies the
       // moment the machine says the tail is over — a rising mouth, a route cycle, a terminal, its own
       // `tailOver`. One run at a time: a fresh arming replaces whatever was still counting.
@@ -2891,8 +3105,21 @@ export function useLiveCall(): CallView {
         if (!mine()) return;
         switch (frame.type) {
           case "state":
-            if (frame.state === "ready") send({ type: "ready", gen });
+            if (frame.state === "ready")
+              send({
+                type: "ready",
+                // THE LEG CLOCK (S7a, §3.2) — only when declared, so a bare `ready`'s signal and its
+                // trail line stay today's; a half pair arrives as the parser's `anomaly` (H5).
+                ...(frame.clock === "leg"
+                  ? { clock: frame.clock, answerTtlMs: frame.answer_ttl_ms }
+                  : {}),
+                ...(frame.anomaly === undefined ? {} : { anomaly: frame.anomaly }),
+                gen,
+              });
             else if (frame.state === "degraded") send({ type: "degraded", gen });
+            // A call never flushes (only dictation's release does), so `flushed` answers nothing here —
+            // and it must not fall through to the `ended` terminal below (S7a, audit §C.9).
+            else if (frame.state === "flushed") break;
             else send({ type: "serverEnded", reason: frame.reason, gen });
             break;
           case "speech_started": {
@@ -2961,6 +3188,13 @@ export function useLiveCall(): CallView {
               ...(holdKnob.current > 0 ? { turnHoldMs: holdKnob.current } : {}),
               ...(inWindow ? { echo: echoOf(frame.text), inEchoWindow: true } : {}),
               echoMin: knobs.echo_similarity,
+              // S7a — a capability leg's final carries its reason/outcome (§3.5 ②) and the parser's
+              // verdict (H1); `late` when its id already expired (R3-2). None of it exists on a leg
+              // without the clock, so there the signal — and its `sig` line — is today's.
+              ...(frame.reason === undefined ? {} : { reason: frame.reason }),
+              ...(frame.outcome === undefined ? {} : { outcome: frame.outcome }),
+              ...(frame.anomaly === undefined ? {} : { anomaly: frame.anomaly }),
+              ...(key !== null && expiredIds.current.delete(key) ? { late: true as const } : {}),
               gen,
             });
             break;

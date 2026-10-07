@@ -2781,3 +2781,396 @@ describe("callReduce — THE TURN HOLD (ISS-55, `turn_hold_ms`)", () => {
     expect(absent.state.turnHoldSeq).toBe(routed.turnHoldSeq);
   });
 });
+
+// ── S7a: THE CLIENT HALF OF THE NEW WIRE (ASR_PLAN §3.5 ⑤ ⑨ · §7.2 S7a) ────────────────────────────
+
+describe("callReduce — the leg clock, the cap join and the awaited-id TTL (S7a)", () => {
+  const TTL = 21000;
+  const HOLD = 5000;
+  /** A leg whose relay declared the clock (§3.2), on the call route like `routed`. */
+  const clocked = run(CALL_INITIAL, [
+    { type: "captureReady", holdMode: "auto", ecAll: true, route: "call", deviceId: "" },
+    { type: "ready", clock: "leg", answerTtlMs: TTL },
+  ]).state;
+  type Fin = Extract<CallSignal, { type: "final" }>;
+  /** A capability final: `reason`/`outcome` as the relay stamps them, the knob as the wiring does. */
+  const fin = (
+    text: string,
+    itemId: string,
+    reason: Fin["reason"] = "endpoint",
+    outcome: Fin["outcome"] = text ? "ok" : "no_speech",
+    holdMs = 0,
+  ): Fin => ({
+    type: "final",
+    text,
+    itemId,
+    reason,
+    outcome,
+    ...(holdMs > 0 ? { turnHoldMs: holdMs } : {}),
+  });
+  const cut = (text: string, itemId: string, holdMs = 0): Fin =>
+    fin(text, itemId, "max_segment", "ok", holdMs);
+  const ttl = (itemId: string, gen?: number): CallSignal => ({
+    type: "answerExpired",
+    itemId,
+    ...(gen === undefined ? {} : { gen }),
+  });
+
+  it("`ready` carries the capability per leg — and a later bare `ready` turns it OFF (a rolled-back relay)", () => {
+    expect(clocked.answerTtlMs).toBe(TTL);
+    expect(routed.answerTtlMs).toBeNull();
+    const rolled = run(clocked, [{ type: "socketLost" }, { type: "ready" }]).state;
+    expect(rolled.answerTtlMs).toBeNull();
+  });
+
+  it("INERT without the clock: a `max_segment` final drains at hold 0, opens no join, and a TTL is a ghost", () => {
+    const { state, out } = run(routed, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      { type: "final", text: "a", itemId: "A", reason: "max_segment", outcome: "ok" },
+    ]);
+    expect(submits(out)).toEqual(["a"]);
+    expect(state.capJoin).toBe(false);
+    expect(state.turnHold).toBe(false);
+    const owedA = run(routed, [seg("speechStart", "A"), seg("speechStop", "A")]).state;
+    expect(run(owedA, [ttl("A")]).state).toBe(owedA);
+  });
+
+  it("a 25 s turn — cut at the cap, continued — submits ONE turn (hold 0)", () => {
+    const cutA = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"), // the cap cut: stop(A) …
+      seg("speechStart", "B"), // … and B starts AT the cut
+      cut("the first twenty seconds", "A"),
+    ]);
+    expect(submits(cutA.out)).toEqual([]);
+    expect(cutA.state.turnHold).toBe(true);
+    expect(cutA.state.capJoin).toBe(true);
+    expect(cutA.state.turnHoldSeq).toBe(clocked.turnHoldSeq); // no 0-ms clock
+    expect(mouthMayOpen(cutA.state)).toBe(false);
+    const { state, out } = run(cutA.state, [seg("speechStop", "B"), fin("and the rest", "B")]);
+    expect(submits(out)).toEqual(["the first twenty seconds and the rest"]);
+    expect(state.turnHold).toBe(false);
+    expect(state.capJoin).toBe(false);
+  });
+
+  it("E-N3, the cap variant at hold 0, both orders ⇒ ONE turn", () => {
+    const routine = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      cut("a", "A"),
+      seg("speechStop", "B"),
+      fin("b", "B"),
+    ]);
+    expect(submits(routine.out)).toEqual(["a b"]);
+    const owedFirst = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+      cut("a", "A"),
+      fin("b", "B"),
+    ]);
+    expect(submits(owedFirst.out)).toEqual(["a b"]);
+  });
+
+  it("EM-1: a three-segment capped turn (`max_segment → max_segment → endpoint`) ⇒ ONE turn", () => {
+    const { out, steps } = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      cut("a", "A"),
+      seg("speechStop", "B"),
+      seg("speechStart", "C"),
+      cut("b", "B"),
+      seg("speechStop", "C"),
+      fin("c", "C"),
+    ]);
+    expect(submits(out)).toEqual(["a b c"]);
+    expect(submits(steps[steps.length - 1])).toEqual(["a b c"]); // on C's final, not before
+  });
+
+  it("EM-1: an absorbed cap final CONTINUES the join whatever its fate (empty, too quiet) — H4: a dropped one opens none", () => {
+    const a = run(clocked, [seg("speechStart", "A"), seg("speechStop", "A"), cut("a", "A")]).state;
+    const quietB = run(a, [
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+      { ...cut("um", "B"), energyMs: 5, minFinalMs: 200 },
+    ]);
+    expect(submits(quietB.out)).toEqual([]);
+    expect(quietB.state.capJoin).toBe(true);
+    const emptyC = run(quietB.state, [
+      seg("speechStart", "C"),
+      seg("speechStop", "C"),
+      fin("", "C", "max_segment", "no_speech"),
+    ]).state;
+    expect(emptyC.capJoin).toBe(true);
+    expect(
+      submits(run(emptyC, [seg("speechStart", "D"), seg("speechStop", "D"), fin("d", "D")]).out),
+    ).toEqual(["a d"]);
+    // H4 — a DROPPED cap final with no hold standing has nothing to join
+    const lone = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      fin("", "A", "max_segment", "no_speech"),
+    ]).state;
+    expect(lone.capJoin).toBe(false);
+    expect(lone.turnHold).toBe(false);
+  });
+
+  it("R3-1: several absorbed segments release on the LAST absorbed non-`max_segment` final", () => {
+    // A is cut; B ends at an endpoint while C is already open — the release waits for C's answer.
+    const b = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      cut("a", "A"),
+      seg("speechStop", "B"),
+      seg("speechStart", "C"),
+      fin("b", "B"),
+    ]);
+    expect(submits(b.out)).toEqual([]);
+    expect(b.state.capJoin).toBe(false);
+    expect(b.state.turnHoldDue).toBe(true);
+    const { out } = run(b.state, [seg("speechStop", "C"), fin("", "C", "short", "skipped")]);
+    expect(submits(out)).toEqual(["a b"]); // the retraction released it — its own text was none
+  });
+
+  // N-2 — every other reason and outcome ends the join, a gate-dropped or echo-dropped one included.
+  const releases: [string, Fin][] = [
+    ["endpoint/ok", fin("b", "B", "endpoint", "ok")],
+    ["endpoint/no_speech", fin("", "B", "endpoint", "no_speech")],
+    ["endpoint/asr_error", fin("", "B", "endpoint", "asr_error")],
+    ["flush/ok", fin("b", "B", "flush", "ok")],
+    ["flush/no_speech", fin("", "B", "flush", "no_speech")],
+    ["flush/asr_error", fin("", "B", "flush", "asr_error")],
+    ["short/skipped", fin("", "B", "short", "skipped")],
+    ["D74 too quiet", { ...fin("b", "B"), energyMs: 5, minFinalMs: 200 }],
+    ["the echo backstop", { ...fin("b", "B"), echo: 0.95, echoMin: 0.8 }],
+  ];
+  for (const [name, last] of releases)
+    it(`N-2: the join is released by a ${name} final`, () => {
+      const a = run(clocked, [
+        seg("speechStart", "A"),
+        seg("speechStop", "A"),
+        cut("a", "A"),
+        seg("speechStart", "B"),
+        seg("speechStop", "B"),
+      ]).state;
+      const { state, out } = run(a, [last]);
+      const taken = last.outcome === "ok" && last.energyMs === undefined && last.echo === undefined;
+      expect(submits(out)).toEqual([taken ? "a b" : "a"]);
+      expect(state.turnHold).toBe(false);
+      expect(state.capJoin).toBe(false);
+    });
+
+  it("an `asr_error` final settles SILENTLY and takes no text even with some (H6) — its `upstream_error` sets the one note", () => {
+    const owedA = run(clocked, [seg("speechStart", "A"), seg("speechStop", "A")]).state;
+    const errored = run(owedA, [fin("ghost words", "A", "endpoint", "asr_error")]);
+    expect(errored.state.awaiting).toEqual([]);
+    expect(errored.state.pending).toEqual([]);
+    expect(errored.state.note).toBeNull();
+    expect(errored.out).toEqual([]);
+    const noted = run(errored.state, [
+      { type: "serverError", code: "upstream_error", message: "asr failed", itemId: "A" },
+    ]).state;
+    expect(noted.note).toBe("asr failed");
+    expect(noted.phase).toBe("listening");
+  });
+
+  it("H1: an ANOMALOUS final settles its id, takes no text, and its reason is no evidence (no join)", () => {
+    const owedA = run(clocked, [seg("speechStart", "A"), seg("speechStop", "A")]).state;
+    const { state, out } = run(owedA, [{ ...cut("words", "A"), anomaly: "order" }]);
+    expect(state.awaiting).toEqual([]);
+    expect(state.pending).toEqual([]);
+    expect(state.capJoin).toBe(false);
+    expect(state.turnHold).toBe(false);
+    expect(out).toEqual([]);
+    expect(mouthMayOpen(state)).toBe(true);
+  });
+
+  it("socket loss with a join standing submits ONCE, at the fresh leg's `ready`", () => {
+    const a = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      cut("a", "A"),
+    ]).state;
+    const lost = run(a, [{ type: "socketLost" }]);
+    expect(lost.state.capJoin).toBe(false);
+    expect(lost.state.turnHold).toBe(false);
+    expect(submits(lost.out)).toEqual([]);
+    // B's segment died with the old socket (§4.5): `ready` sends the held words ONCE, and nothing waits
+    // on a continuation that cannot come
+    const back = run(lost.state, [{ type: "ready", clock: "leg", answerTtlMs: TTL }]);
+    expect(submits(back.out)).toEqual(["a"]);
+    expect(back.state.turnHold).toBe(false);
+  });
+
+  it("mute KEEPS the held words and CLEARS the join (audit §C.6) — at 0 they go out at once, with the knob on the clock decides", () => {
+    const a = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      cut("a", "A"),
+    ]).state;
+    const muted = run(a, [{ type: "setMuted", on: true }]);
+    expect(muted.state.capJoin).toBe(false);
+    expect(submits(muted.out)).toEqual(["a"]); // hold 0: due at once over the ear mute settled
+    const timed = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      cut("a", "A", HOLD),
+    ]).state;
+    const mutedTimed = run(timed, [{ type: "setMuted", on: true }]);
+    expect(mutedTimed.state.capJoin).toBe(false);
+    expect(mutedTimed.state.pending).toEqual(["a"]);
+    expect(submits(mutedTimed.out)).toEqual([]);
+    expect(
+      submits(run(mutedTimed.state, [{ type: "turnHoldOver", seq: timed.turnHoldSeq }]).out),
+    ).toEqual(["a"]);
+  });
+
+  it("the pause CANNOT release a join — the joined id's TTL can (§3.5 ⑤)", () => {
+    const a = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      cut("a", "A", HOLD),
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+    ]).state;
+    expect(a.turnHoldSeq).toBe(clocked.turnHoldSeq + 1); // the ordinary clock runs beside the join
+    const over = run(a, [{ type: "turnHoldOver", seq: a.turnHoldSeq }]);
+    expect(over.state.turnHoldDue).toBe(true);
+    expect(submits(over.out)).toEqual([]); // the pause ran out — the sentence did not
+    const expired = run(over.state, [ttl("B")]);
+    expect(expired.state.awaiting).toEqual([]);
+    expect(expired.state.note).toBe(CALL_COPY.answerLate);
+    expect(submits(expired.out)).toEqual(["a"]);
+    // …and at hold 0 (no clock at all) the TTL is the only expiry the join has
+    const zero = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      cut("a", "A"),
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+    ]).state;
+    expect(submits(run(zero, [ttl("B")]).out)).toEqual(["a"]);
+  });
+
+  it("the TTL drops the HEAD only, notes it quietly (H8 — no cue), and is a ghost for any other id or generation", () => {
+    const both = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+    ]).state;
+    expect(run(both, [ttl("B")]).state).toBe(both); // B is not the head
+    expect(run(both, [ttl("A", both.gen + 1)]).state).toBe(both); // a stale generation
+    const { state, out } = run(both, [ttl("A")]);
+    expect(state.awaiting).toEqual(["B"]);
+    expect(state.note).toBe(CALL_COPY.answerLate);
+    expect(out).toEqual([]);
+    expect(mouthMayOpen(state)).toBe(false); // B is still owed
+    expect(mouthMayOpen(run(state, [ttl("B")]).state)).toBe(true);
+  });
+
+  it("a join waiting on an expired id with a segment still OPEN keeps waiting for that segment's final", () => {
+    const a = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      cut("a", "A"),
+      seg("speechStop", "B"),
+      seg("speechStart", "C"),
+    ]).state;
+    const expired = run(a, [ttl("B")]);
+    expect(expired.state.capJoin).toBe(true); // C is open — its final ends the join
+    expect(submits(expired.out)).toEqual([]);
+    expect(submits(run(expired.state, [seg("speechStop", "C"), fin("c", "C")]).out)).toEqual([
+      "a c",
+    ]);
+  });
+
+  it("R3-2: a LATE final with text is taken; an empty one, or an `asr_error` one carrying text, is dropped", () => {
+    const owedA = run(clocked, [seg("speechStart", "A"), seg("speechStop", "A")]).state;
+    const expired = run(owedA, [ttl("A")]).state;
+    const late = (f: Fin): Fin => ({ ...f, late: true });
+    const taken = run(expired, [late(fin("there you are", "A"))]);
+    expect(submits(taken.out)).toEqual(["there you are"]);
+    expect(run(expired, [late(fin("", "A"))]).out).toEqual([]);
+    const err = run(expired, [late(fin("garbled", "A", "endpoint", "asr_error"))]);
+    expect(err.out).toEqual([]);
+    expect(err.state.pending).toEqual([]);
+  });
+
+  it("`ear_failed` is note-only; the 1011 close's `socketLost` RECONNECTS — not a terminal (R2-1) — and the fresh leg retracts the note (H7)", () => {
+    const failed = run(clocked, [
+      { type: "serverError", code: "ear_failed", message: "vad behind" },
+    ]);
+    expect(failed.state.phase).toBe("listening");
+    expect(failed.state.note).toBe(CALL_COPY.earFailed);
+    expect(failed.out).toEqual([]);
+    const lost = run(failed.state, [{ type: "socketLost" }]);
+    expect(lost.state.phase).toBe("connecting");
+    expect(lost.out).toEqual([{ type: "reconnect", delayMs: 400 }]);
+    const back = run(lost.state, [{ type: "ready", clock: "leg", answerTtlMs: TTL }]).state;
+    expect(back.phase).toBe("listening");
+    expect(back.note).toBeNull();
+  });
+
+  it("review LOW-2: the TTL's `answerLate` note is retracted by the next TAKEN final (the D80 W6 `tooQuiet` pattern)", () => {
+    const owedA = run(clocked, [seg("speechStart", "A"), seg("speechStop", "A")]).state;
+    const late = run(owedA, [ttl("A")]).state;
+    expect(late.note).toBe(CALL_COPY.answerLate);
+    // a DROPPED final leaves it standing — only words the ear took disprove it
+    expect(
+      run(late, [seg("speechStart", "B"), seg("speechStop", "B"), fin("", "B")]).state.note,
+    ).toBe(CALL_COPY.answerLate);
+    const back = run(late, [seg("speechStart", "B"), seg("speechStop", "B"), fin("hello", "B")]);
+    expect(back.state.note).toBeNull();
+    expect(submits(back.out)).toEqual(["hello"]);
+  });
+
+  it("review LOW-3: on a clock leg an ID-LESS anomalous final settles NOTHING — the owed ids wait for their TTL", () => {
+    const both = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+    ]).state;
+    const idless: Fin = { type: "final", text: "words", anomaly: "item_id" };
+    const { state, out } = run(both, [idless]);
+    expect(state.awaiting).toEqual(["A", "B"]);
+    expect(mouthMayOpen(state)).toBe(false);
+    expect(out).toEqual([]);
+    expect(run(state, [ttl("A"), ttl("B")]).state.awaiting).toEqual([]); // the TTL's to expire
+    // …while a leg WITHOUT the clock keeps today's id-less belt: the whole set clears
+    const legacy = run(routed, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+      { type: "final", text: "" },
+    ]).state;
+    expect(legacy.awaiting).toEqual([]);
+  });
+
+  it("every clear path takes the join with it — a route cycle and a terminal", () => {
+    const a = run(clocked, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      seg("speechStart", "B"),
+      cut("a", "A"),
+    ]).state;
+    const cycled = run(a, [{ type: "routeChange", route: "media" }]).state;
+    expect(cycled.capJoin).toBe(false);
+    expect(cycled.turnHold).toBe(false);
+    expect(cycled.pending).toEqual(["a"]);
+    const ended = run(a, [{ type: "captureLost" }]);
+    expect(ended.state.capJoin).toBe(false);
+    expect(ended.out).toContainEqual({ type: "harvest", lines: ["a"] });
+  });
+});

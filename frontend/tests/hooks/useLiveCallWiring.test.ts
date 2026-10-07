@@ -289,6 +289,7 @@ vi.mock("../../src/lib/liveSocket", () => ({
         h.closes += 1;
       },
       unknown: () => 0,
+      anomalies: () => 0,
     };
   },
 }));
@@ -4148,6 +4149,214 @@ describe("useLiveCall — THE TURN HOLD, wired (ISS-55)", () => {
     const all = lines();
     expect(all.filter((l) => l.ev === "turn")).toEqual([]);
     expect(all.find((l) => l.ev === "sig" && l.type === "final")).not.toHaveProperty("turnHoldMs");
+  });
+});
+
+describe("useLiveCall — the leg clock, wired (S7a: the awaited-id TTL, late finals, the cap join)", () => {
+  const TTL = 21000;
+  const lines = () => h.posts.flatMap((p) => p.body.entries);
+  const sigs = (type: string) => lines().filter((l) => l.ev === "sig" && l.type === type);
+  const wait = async (ms: number): Promise<void> => {
+    await act(async () => {
+      vi.advanceTimersByTime(ms);
+      await Promise.resolve();
+    });
+  };
+  const frame = async (...fs: LiveDown[]): Promise<void> => {
+    await act(async () => {
+      for (const f of fs) h.frame?.(f);
+      await Promise.resolve();
+    });
+  };
+  /** A debug call whose relay declared the leg clock (the harness's own bare `ready`, then the
+   *  declaring one — the machine re-reads the capability on every `ready`). */
+  const clockCall = async () => {
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await frame({ type: "state", state: "ready", clock: "leg", answer_ttl_ms: TTL });
+    return c;
+  };
+  const stop = (id: string): LiveDown[] => [
+    { type: "speech_started", item_id: id },
+    { type: "speech_stopped", item_id: id },
+  ];
+  const fin = (
+    id: string,
+    text: string,
+    reason: "endpoint" | "max_segment" = "endpoint",
+  ): LiveDown => ({
+    type: "transcript",
+    text,
+    final: true,
+    item_id: id,
+    audio_start_ms: 0,
+    audio_end_ms: 100,
+    reason,
+    outcome: text ? "ok" : "no_speech",
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("INERT without the clock: an owed segment arms NO TTL — nothing expires, the mouth keeps waiting", async () => {
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await frame(...stop("A"));
+    await wait(10 * TTL);
+    expect(h.mouthGate?.()).toBe(false); // still owed — today's wait, no deadline
+    c.view.unmount();
+    expect(sigs("answerExpired")).toEqual([]);
+    expect(sigs("ready").every((l) => !("clock" in l) && !("answerTtlMs" in l))).toBe(true);
+  });
+
+  it("the TTL arms at the HEAD, re-arms for the next head, and each expiry is one `sig` line + the quiet note", async () => {
+    const c = await clockCall();
+    await frame(...stop("A"));
+    await wait(5000);
+    await frame(...stop("B")); // B is owed BEHIND A: its clock has not started
+    await wait(TTL - 5000 - 1);
+    expect(c.view.result.current.note).toBeNull();
+    await wait(1); // A's TTL, from its stop
+    expect(c.view.result.current.note).toBe(CALL_COPY.answerLate);
+    expect(c.view.result.current.waitingFinal).toBe(true); // B is still owed
+    expect(h.mouthGate?.()).toBe(false);
+    await wait(TTL - 1); // B's clock started when it became the head, not at its stop
+    expect(c.view.result.current.waitingFinal).toBe(true);
+    await wait(1);
+    expect(c.view.result.current.waitingFinal).toBe(false);
+    expect(h.mouthGate?.()).toBe(true);
+    expect(h.cue).not.toHaveBeenCalled(); // H8 — no cue
+    c.view.unmount();
+    expect(sigs("answerExpired").map((l) => l.itemId)).toEqual(["A", "B"]);
+    expect(sigs("ready").at(-1)).toMatchObject({ clock: "leg", answerTtlMs: TTL });
+  });
+
+  it("an answer before the TTL disarms it — nothing expires later", async () => {
+    const c = await clockCall();
+    await frame(...stop("A"));
+    await wait(TTL - 1);
+    await frame(fin("A", "just in time"));
+    await wait(10 * TTL);
+    c.view.unmount();
+    expect(sigs("answerExpired")).toEqual([]);
+    expect(texts()).toEqual(["just in time"]);
+  });
+
+  it("R3-2: a final for an EXPIRED id is stamped `late` on its trail line (and only that one), its text taken", async () => {
+    const c = await clockCall();
+    await frame(...stop("A"));
+    await wait(TTL);
+    await frame(fin("A", "sorry I'm late"), ...stop("B"), fin("B", "on time"));
+    c.view.unmount();
+    const finals = sigs("final");
+    expect(finals.map((l) => [l.itemId, l.late])).toEqual([
+      ["A", true],
+      ["B", undefined],
+    ]);
+    expect(finals[0]).toMatchObject({ reason: "endpoint", outcome: "ok" });
+    expect(texts()).toEqual(["sorry I'm late", "on time"]);
+  });
+
+  it("a 25 s turn — cut at the cap — goes out as ONE message (hold 0), and the trail says `join`", async () => {
+    const c = await clockCall();
+    await frame(
+      { type: "speech_started", item_id: "A" },
+      { type: "speech_stopped", item_id: "A" },
+      { type: "speech_started", item_id: "B" },
+      fin("A", "twenty seconds of", "max_segment"),
+    );
+    expect(h.sendCall).not.toHaveBeenCalled();
+    expect(h.mouthGate?.()).toBe(false);
+    await frame({ type: "speech_stopped", item_id: "B" }, fin("B", "talking"));
+    expect(texts()).toEqual(["twenty seconds of talking"]);
+    c.view.unmount();
+    // the fall counts BOTH segments: B was taken and let go in the same step
+    expect(lines().filter((l) => l.ev === "turn")).toEqual([
+      expect.objectContaining({ held: true, why: "join", join: true, n: 1 }),
+      expect.objectContaining({ held: false, why: "settle", n: 2 }),
+    ]);
+  });
+
+  it("review LOW-1: a mute mid-join at knob > 0 says `unjoin` — the join let go, the hold still stands (not `due`)", async () => {
+    h.voice.data.live_call.turn_hold_ms = 5000;
+    const c = await clockCall();
+    await frame(
+      { type: "speech_started", item_id: "A" },
+      { type: "speech_stopped", item_id: "A" },
+      { type: "speech_started", item_id: "B" },
+      fin("A", "cut off mid", "max_segment"),
+    );
+    await act(async () => {
+      c.view.result.current.toggleMute();
+      await Promise.resolve();
+    });
+    expect(h.sendCall).not.toHaveBeenCalled(); // the hold's own clock still runs
+    await wait(5000);
+    expect(texts()).toEqual(["cut off mid"]);
+    c.view.unmount();
+    expect(lines().filter((l) => l.ev === "turn")).toEqual([
+      expect.objectContaining({ held: true, why: "join", join: true }),
+      expect.objectContaining({ held: true, why: "unjoin" }),
+      expect.objectContaining({ held: false, why: "expiry" }),
+    ]);
+  });
+
+  it("G-8: the final that ENDS a hold-0 join is taken and released in one step — the voice learner still learns from it", async () => {
+    const c = await clockCall();
+    const mic = (rms: number, n: number) => {
+      for (let i = 0; i < n; i++) h.mic?.({ buf: new ArrayBuffer(8), rms, uplinked: true });
+    };
+    await act(async () => {
+      mic(0.001, 300); // a settled room at −60 dBFS
+    });
+    // A — cut at the cap, and too quiet to teach anything (no margin over the room): the join opens
+    await frame({ type: "speech_started", item_id: "A" });
+    await act(async () => {
+      mic(0.001, 20);
+    });
+    await frame({ type: "speech_stopped", item_id: "A" }, fin("A", "um so", "max_segment"));
+    expect(h.sendCall).not.toHaveBeenCalled();
+    // B — the owner's level, and its final ends the join: taken + released, the queue never grows
+    await frame({ type: "speech_started", item_id: "B" });
+    await act(async () => {
+      mic(0.1, 20);
+    });
+    await frame({ type: "speech_stopped", item_id: "B" }, fin("B", "the real sentence"));
+    expect(texts()).toEqual(["um so the real sentence"]);
+    c.view.unmount();
+    expect(localStore.has("ctrlb.voiceLevels")).toBe(true);
+  });
+
+  it("`flushed` is a no-op on a call — never the `ended` terminal (calls never flush)", async () => {
+    const c = await clockCall();
+    await frame({ type: "state", state: "flushed" });
+    expect(c.view.result.current.phase).toBe("listening");
+    expect(c.view.result.current.note).toBeNull();
+  });
+
+  it("H5: half a `ready` pair runs the leg WITHOUT the clock, and its `sig` line carries the anomaly", async () => {
+    h.voice.data.live_call.debug = true;
+    const c = await call();
+    await frame({ type: "state", state: "ready", anomaly: "ready_pair" });
+    await frame(...stop("A"));
+    await wait(10 * TTL);
+    expect(c.view.result.current.waitingFinal).toBe(true); // no clock, no TTL
+    c.view.unmount();
+    expect(sigs("ready").at(-1)).toMatchObject({ anomaly: "ready_pair" });
+    expect(sigs("answerExpired")).toEqual([]);
+  });
+
+  it("H1: an anomalous final settles its id (the mouth may open), takes no text, and its trail line names why", async () => {
+    const c = await clockCall();
+    await frame(...stop("A"), { ...fin("A", "words"), anomaly: "order" } as LiveDown);
+    expect(h.mouthGate?.()).toBe(true);
+    expect(h.sendCall).not.toHaveBeenCalled();
+    c.view.unmount();
+    expect(sigs("final")[0]).toMatchObject({ itemId: "A", anomaly: "order" });
   });
 });
 

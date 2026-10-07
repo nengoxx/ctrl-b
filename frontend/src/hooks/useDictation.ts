@@ -32,7 +32,7 @@ import {
   takeWakeLock,
   type WakeLockState,
 } from "../lib/wakeLock";
-import { appendDraft, clearDraft, getDraft } from "../store/composer";
+import { PHRASE_JOIN, appendDraft, clearDraft, getDraft } from "../store/composer";
 import { holdLeg, legClosing, setMicRelease } from "../store/micRelease";
 import { pushToast } from "../store/toast";
 
@@ -232,6 +232,30 @@ export function dictationAppends(): number {
   return streamAppends;
 }
 
+/** Held words + a final's words, as the ONE phrase they are (`PHRASE_JOIN` — the draft's own rule). */
+function joinHeld(held: string | null, text: string): string {
+  if (held === null) return text;
+  return text ? `${held}${PHRASE_JOIN}${text}` : held;
+}
+
+/** A PHRASE LANDS — the ONE append path: a final's `text`, joined behind any held `max_segment` text
+ *  (S7a, §3.5 ⑤), as ONE `appendDraft`, one caret cue and one count toward rule ③. On a leg without the
+ *  clock nothing is ever held, so this is exactly the pre-S7a append.
+ *
+ *  Called with no text it RELEASES the held text alone (H2 — the owner's ISS-62 ruling: never lose
+ *  speech): `flushed`, the wait's end, a socket death, an `asr_error` final, a dropped leg — and the
+ *  release does so BEFORE the either/or (G-10), so the clip that also carries those words is discarded
+ *  rather than said twice. S8 flips `asr_error`/degrade to DISCARD when its suffix recovery re-transcribes
+ *  that span (EH-1); until then appending is the only path that loses nothing. */
+function appendPhrase(s: StreamSession, text = ""): void {
+  const joined = joinHeld(s.capText, text);
+  s.capText = null;
+  if (!joined) return;
+  appendDraft(joined); // THE join rule — `store/composer` owns it
+  streamAppends += 1; // …and the caret seam's cue that THIS commit is a phrase landing
+  s.finals += 1;
+}
+
 /** WHY A RECORDING STOPPED (Phase 26 S1, ASR_PLAN §5 T4 — R94 §7.1.7), threaded into `stop()` by every
  *  caller and written on the dictation trail's `end` line, so a stopped mic is classified from the trail
  *  instead of from the owner's memory. One member per SITE, nothing speculative:
@@ -316,8 +340,9 @@ interface StreamSession extends PacerState {
   finishing: boolean;
   uplink: PcmUplink | null;
   /** The release's tail wait while it is OPEN — the WAKE that ends it early, null before it is armed
-   *  and after it ends. Exactly ONE thing may end the wait before its bound: a DELIVERED close
-   *  (`finishStream` has the whole argument for why nothing else soundly can). */
+   *  and after it ends. On a leg without the clock exactly ONE thing may end the wait before its bound:
+   *  a DELIVERED close (`finishStream` has the whole argument for why nothing else soundly can); on a
+   *  leg WITH it, the relay's `flushed` too — the completeness marker that argument found missing (S7a). */
   tail: (() => void) | null;
   /** The two §9.3 clocks, both ticked by the ONE 100 ms detector poll — no timers of their own. */
   elapsedMs: number;
@@ -342,7 +367,23 @@ interface StreamSession extends PacerState {
   /** The last typed `error` frame the relay sent (T4 — STOP-7/STOP-8: `upstream_lost`, the
    *  `session_limit` sentence), kept to the end line. */
   lastError: { code: string; message: string } | null;
+  /** THE LEG CLOCK (S7a, ASR_PLAN §3.2): this leg's `ready.answer_ttl_ms` when the relay declared the
+   *  new ear, else `null` — and `null` means every S7a rule below is inert (today's leg, byte for byte).
+   *  ONE field for the bit and its number (the call's `answerTtlMs`); set at `ready`, the `s.ready`
+   *  precedent (G-7). */
+  ttlMs: number | null;
+  /** THE `max_segment` JOIN's held words (S7a, §3.5 ⑤ — "Dictation: phrases append; only the
+   *  `max_segment` join applies"): a cap cut is not a pause, so the cut segment's text waits here and the
+   *  next segment's final appends ONCE as one phrase. The join defers WHEN words land, never WHETHER:
+   *  every way the leg ends appends it (H2 — `appendPhrase`). Always null on a leg without the clock. */
+  capText: string | null;
 }
+
+/** Did the draft get — or is it about to get — words from this leg? The mid-death rule's question
+ *  ("words in the draft mean the clip is about to be discarded"): the held `max_segment` text counts,
+ *  because every release appends it before the either/or (S7a, H2). Nothing is ever held on a leg without
+ *  the clock, so there this is exactly today's `finals > 0`. */
+const heardWords = (s: StreamSession): boolean => s.finals > 0 || s.capText !== null;
 
 /** End a session's trail, once: its last line, the `keepalive` flush, then nothing more. The line says
  *  how the recording ended (T4): the stop reason, the leg's close, and the relay's last typed error. */
@@ -613,6 +654,10 @@ export function useDictation({
       if (s.closed) return;
       s.closed = true;
       s.dead = true;
+      // S7a (H2): held `max_segment` words land with the leg that heard them, exactly as an unjoined
+      // phrase would already have (rule ⑤ — what landed stays). No clip-carrying path reaches here
+      // holding any: the death rule appends before it drops, and nothing is held before `ready`.
+      appendPhrase(s);
       s.uplink?.stop();
       s.uplink = null;
       const tail = s.tail;
@@ -975,13 +1020,15 @@ export function useDictation({
           // that is exactly when the clip is about to be discarded. (The socket's `close()` is the
           // unconditional one below; nothing awaits between here and it.)
           s.dead = true;
-          if (s.finals > 0) pushToast(LIVE_LOST_MSG, "err");
+          if (heardWords(s)) pushToast(LIVE_LOST_MSG, "err");
         }
       }
       if (!s.dead) {
-        // ① THE TAIL WAIT IS THE BOUND — `tail_wait_ms` FLAT, and nothing but a DELIVERED close may
-        // end it early. Three review rounds each killed one attempt to resolve sooner, and their sum
-        // is a theorem about this wire, recorded here so nobody re-attempts a fourth:
+        // ① THE TAIL WAIT — and what may end it early depends on what the relay DECLARED (S7a, H3):
+        //
+        // ON A LEG WITHOUT THE CLOCK (today's Speaches relay, a rolled-back one) the wait is the BOUND —
+        // `tail_wait_ms` FLAT, and nothing but a DELIVERED close may end it early. Three review rounds
+        // each killed one attempt to resolve sooner, and their sum is a theorem about THAT wire:
         //   · "the first final" — a final still in transit at the release satisfies it and the `stop`
         //     that follows DISCARDS the phrase the flush was busy minting;
         //   · a COUNT snapshotted at the release — the ledger GROWS afterwards (VAD lags the words),
@@ -990,24 +1037,28 @@ export function useDictation({
         //     `speech_started` queued behind a stalled main thread, or simply in the ear's future)
         //     while the ledger reads square and quiet; timers and socket messages are separate task
         //     sources with no ordering guarantee, so every finite window has a losing boundary.
-        // The root fact: `flush` has NO ack and the wire carries no completeness marker (the relay
-        // could only ever say "burst handed upstream", never "upstream processed it" — and the server
-        // stays untouched, §5.2). An early resolve is an optimization that needs state the protocol
-        // cannot give, and the S1 lesson already names the move: DELETE the optimization. Finals
-        // append the moment they land — the wait costs nothing mid-session; the flat bound is the
-        // RELEASE's price, it IS the declared loss horizon (R70 §4: on expiry keep everything
-        // appended), and `tail_wait_ms` is the owner's knob for it (the S4 sitting tunes it against
-        // the measured 530–830 ms release→final).
+        // The root fact there: `flush` has NO ack and that wire carries no completeness marker. So no
+        // ledger event may end the wait; finals append the moment they land, the flat bound is the
+        // RELEASE's price and the declared loss horizon (R70 §4: on expiry keep everything appended),
+        // and `tail_wait_ms` is the owner's knob for it.
         //
-        // The ONE sound early exit: a close the socket actually DELIVERED. WebSocket delivery is
-        // in-order, so a delivered close proves nothing more can ever arrive — parking on the bound
-        // past it helps nobody. The ⑦ branch owns that wake (and its honesty toast).
+        // ON A LEG WITH THE CLOCK (`ready{clock:"leg"}`, ASR_PLAN §3.2) the wire HAS the marker the
+        // theorem said was missing: the relay force-endpoints the open segment (a tentative onset
+        // included), runs its pass + ASR, sends that `reason:"flush"` final, and only THEN sends
+        // `state:"flushed"` (§3.5 ⑥) — in-order delivery makes it proof that the flush's answer has
+        // landed. So `flushed` WAKES the wait (the `transcript`/`state` arms), and the bound becomes
+        // `answer_ttl_ms`, the relay's own answer deadline + 1 s (§3.5 ⑨): past it the marker is not
+        // coming, and the release falls to today's either/or with everything appended kept (S8 turns
+        // that expiry into suffix recovery). No ledger counting on either leg — one event, one bound.
+        //
+        // On both, the other sound early exit: a close the socket actually DELIVERED — nothing more can
+        // ever arrive past it. The ⑦ branch owns that wake (and its honesty toast).
         //
         // …and ONE abandonment, which is a different kind of thing entirely (S3): the page going HIDDEN
         // under the wait is the user LEAVING, not evidence that the tail arrived. It ends the wait the
         // way branch ② ends it — the leg is thrown away, not completed — because a hidden page is where
         // this timer is throttled (Android), and the residual it closes is a SOCKET held open long past
-        // the tap. Nothing about completeness is claimed or inferred: the theorem above still stands.
+        // the tap. Nothing about completeness is claimed or inferred.
         if (s.socket.flush()) {
           setPending(true);
           await new Promise<void>((resolve) => {
@@ -1017,7 +1068,7 @@ export function useDictation({
               s.tail = null;
               resolve();
             };
-            const timer = setTimeout(end, tailWaitMs);
+            const timer = setTimeout(end, s.ttlMs ?? tailWaitMs);
             const onHidden = (): void => {
               if (document.visibilityState !== "hidden") return;
               // The same disposition as every other death mid-release: mark it dead so no `stop` is
@@ -1026,7 +1077,7 @@ export function useDictation({
               // be discarded, so a tail that never landed really is gone; none means the clip carries
               // everything and there is nothing to say.
               s.dead = true;
-              if (s.finals > 0) pushToast(LIVE_LOST_MSG, "err");
+              if (heardWords(s)) pushToast(LIVE_LOST_MSG, "err");
               end();
             };
             document.addEventListener("visibilitychange", onHidden);
@@ -1045,7 +1096,7 @@ export function useDictation({
           // to be discarded, so the tail after the drop really is gone; none means the clip carries
           // everything and there is nothing to say.
           s.dead = true;
-          if (s.finals > 0) pushToast(LIVE_LOST_MSG, "err");
+          if (heardWords(s)) pushToast(LIVE_LOST_MSG, "err");
         }
         // THE ACCEPTED RESIDUAL (F2, and it is bounded): an `onclose` delayed beyond `tail_wait_ms`
         // after a flush that DID go out still ends as a plain timeout with no toast. By construction the
@@ -1055,6 +1106,10 @@ export function useDictation({
       s.socket.close();
       s.closed = true; // …and from here its own late callbacks are ghosts
       released(); // D5 — the leg is no longer wanted: the next one may open (the upload below has none)
+      // S7a (H2, G-10): the held `max_segment` words land HERE, before the either/or reads `finals` —
+      // whichever way the wait ended (`flushed`, its bound, a death, the hidden page) — so the clip that
+      // also carries them is discarded instead of saying them a second time.
+      appendPhrase(s);
       endTrail(s, {
         finals: s.finals,
         clip: s.finals > 0 ? "discarded" : "uploaded",
@@ -1131,6 +1186,8 @@ export function useDictation({
             case "state":
               if (frame.state === "ready") {
                 s.ready = true; // …and the backlog starts draining on the next live frame
+                // THE LEG CLOCK (S7a, §3.2): only a relay that declares it gets the S7a rules.
+                s.ttlMs = frame.clock === "leg" ? (frame.answer_ttl_ms ?? null) : null;
                 // The pacer's clock starts HERE, and EMPTY: a slow handshake must bank nothing, or
                 // its whole duration would be spent in one dispatch the moment audio is allowed.
                 s.budgetMs = 0;
@@ -1138,6 +1195,11 @@ export function useDictation({
               } else if (frame.state === "ended") {
                 // The relay said its piece. Whether that costs the clip is the ordinary death rule.
                 socket.close();
+              } else if (frame.state === "flushed" && s.ttlMs !== null) {
+                // THE COMPLETENESS MARKER (S7a, H3 — §3.5 ⑥): the flush's own answer is already out
+                // (in-order delivery), so the release's wait may end NOW. Only on a leg with the clock;
+                // a stray one with no wait open wakes nothing.
+                s.tail?.();
               }
               // `degraded` is the relay's overflow note; a dictation leg has nothing to show for it
               // and nothing to decide — the words it dropped are already gone.
@@ -1153,15 +1215,26 @@ export function useDictation({
             case "transcript": {
               if (!frame.final) break; // we have no partials (§9.4); a future one is data, not text
               s.finalsSeen += 1; // ANY final discharges an endpoint, empty or not
-              const text = frame.text.trim();
-              if (text) {
-                appendDraft(text); // THE join rule, unchanged — `store/composer` already owns it
-                streamAppends += 1; // …and the caret seam's cue that THIS commit is a phrase landing
-                s.finals += 1;
-              }
+              // S7a, a leg with the clock only: an `asr_error` final carries no words the client may
+              // take (§3.5 ⑨), nor does one that failed validation (H1) — and neither's reason is
+              // evidence of a cap cut.
+              const clocked = s.ttlMs !== null;
+              const trusted =
+                !clocked || (frame.anomaly === undefined && frame.outcome !== "asr_error");
+              const text = trusted ? frame.text.trim() : "";
+              if (clocked && frame.reason === "max_segment" && frame.anomaly === undefined) {
+                // THE `max_segment` JOIN (§3.5 ⑤): a cap cut is not a pause — the words wait for the
+                // next segment's final and land with it as ONE phrase (no append yet).
+                // …WHATEVER ITS OUTCOME — `asr_error` included (EM-1, §3.5 ⑤ "an absorbed `max_segment`
+                // final CONTINUES the hold"; the call does the same): the next final is this sentence's
+                // continuation, and every release path appends the held words, so nothing is lost. S8
+                // makes the pair a degrade trigger (the S7a review's MED, ruled the EM-1 behaviour).
+                if (text) s.capText = joinHeld(s.capText, text);
+              } else appendPhrase(s, text); // …any other final ends the join (an empty one included)
               // The pulse says what is still OWED rather than "the last one landed": a second endpoint
               // the ear has not answered yet keeps it lit instead of blinking off between two phrases.
-              // Deliberately NOT a wake for the release's wait — the flat bound is the rule (① above).
+              // Deliberately NOT a wake for the release's wait — a final is a ledger event, and only
+              // `flushed` (a leg with the clock) or a delivered close may end it (① in `finishStream`).
               setPending(s.stops > s.finalsSeen);
               break;
             }
@@ -1197,7 +1270,7 @@ export function useDictation({
             // arrive, so the wake is the one sound early exit (① in `finishStream`). The loss is named
             // only when there IS one: words in the draft mean the clip is about to be discarded, so a
             // tail the ear never got to report is honestly gone.
-            if (s.finals > 0) pushToast(LIVE_LOST_MSG, "err");
+            if (heardWords(s)) pushToast(LIVE_LOST_MSG, "err");
             return;
           }
           if (!s.ready) {
@@ -1206,6 +1279,9 @@ export function useDictation({
             degradeStream(s);
             return;
           }
+          // S7a (H2): held `max_segment` words land FIRST — they are words the draft was owed, so the
+          // rule below sees them (and the clip, which carries them too, is not uploaded beside them).
+          appendPhrase(s);
           if (s.finals === 0) {
             // Nothing was appended, so the clip still carries every word — degrade SILENTLY and let
             // the recording run on exactly as it would have without the feature. The clip fallback IS
@@ -1250,6 +1326,8 @@ export function useDictation({
         closeCode: null,
         closeReason: null,
         lastError: null,
+        ttlMs: null,
+        capText: null,
       };
       streamRef.current = session;
       if (trail) {

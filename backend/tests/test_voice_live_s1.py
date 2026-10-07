@@ -1752,6 +1752,9 @@ _LIVE_CALL_READERS = (
 # config document, `GET /settings`, never from `/voice/status`).
 #: `LiveCfg`'s SERVER-only knobs (its docstring's split): the relay's caps and the three that ride
 #: `session.update`. `frame_ms` is a server cap the client ALSO paces by, so it is not listed.
+#: …and the pointer + transport fields `LiveCfg` inherits from `VoiceServiceCfg` (S7a, audit §D):
+#: `timeout_s` became load-bearing for the client — its awaited-id TTL is that cap + 1 s — and must reach
+#: it ONLY as `ready.answer_ttl_ms`, per leg (ASR_PLAN §3.5 ⑨), never through `/voice/status`.
 _SERVER_ONLY = {
     "vad_threshold",
     "silence_ms",
@@ -1765,6 +1768,12 @@ _SERVER_ONLY = {
     "allowed_origins",
     "trail_keep",
     "vad_model",
+    "provider",
+    "model",
+    "fallbacks",
+    "connect_timeout_s",
+    "timeout_s",
+    "extra_body",
 }
 
 

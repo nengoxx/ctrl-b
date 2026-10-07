@@ -833,8 +833,11 @@ final ${
       }
 turn  ${
         // ISS-55 — the turn hold standing now: its arming, and whether its pause has run out while the
-        // ear still owes something (`due` — it goes the moment that segment is answered).
-        d.turnHold === null ? "—" : `#${d.turnHold.seq}   ${d.turnHold.due ? "due" : "holding"}`
+        // ear still owes something (`due` — it goes the moment that segment is answered). S7a: `join`
+        // while a `max_segment` cut holds it — the pause does not release that one, the next final does.
+        d.turnHold === null
+          ? "—"
+          : `#${d.turnHold.seq}   ${d.turnHold.due ? "due" : "holding"}${d.turnHold.join ? "   join" : ""}`
       }
 tail  ${
         // D80 ⑦ as-built — the last tail's rule and deadline (ms after the reply ended; the quiet rule has

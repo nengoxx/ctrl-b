@@ -214,7 +214,14 @@ describe("liveSocket — the uplink", () => {
     // is the relay-side `flush` burst. Two arms, because either alone is evadable: the wrapper's
     // SURFACE carries no commit door, and its whole vocabulary — every method, called — emits none.
     const { socket, ws } = leg();
-    expect(Object.keys(socket).sort()).toEqual(["close", "flush", "sendAudio", "stop", "unknown"]);
+    expect(Object.keys(socket).sort()).toEqual([
+      "anomalies",
+      "close",
+      "flush",
+      "sendAudio",
+      "stop",
+      "unknown",
+    ]);
     ws.ready();
     socket.sendAudio(new ArrayBuffer(8));
     socket.flush();
@@ -443,6 +450,199 @@ describe("liveSocket — the downlink parse", () => {
     ws.open();
     ws.onmessage?.({ data: new ArrayBuffer(4) } as MessageEvent);
     expect(frames).toEqual([]);
+  });
+});
+
+describe("liveSocket — the leg clock (S7a, ASR_PLAN §3.2 · §3.5 ② — S7b's contract)", () => {
+  /** A capability final, valid unless a field is overridden. */
+  const cap = (over: Record<string, unknown> = {}) => ({
+    type: "transcript",
+    text: "hello",
+    final: true,
+    item_id: "seg_1",
+    audio_start_ms: 100,
+    audio_end_ms: 900,
+    reason: "endpoint",
+    outcome: "ok",
+    ...over,
+  });
+  /** A leg whose relay declared the clock. */
+  function clockLeg() {
+    const l = leg();
+    l.ws.open();
+    l.ws.say({ type: "state", state: "ready", clock: "leg", answer_ttl_ms: 21000 });
+    return l;
+  }
+
+  it("INERT without the capability: today's frames parse exactly as today, no anomaly — incl. the gap cut's `short` + `gap_ms`", () => {
+    const { socket, frames, ws } = leg();
+    ws.ready(); // a bare `ready` — today's relay
+    ws.say({ type: "speech_started", item_id: "item_A", audio_start_ms: 40 });
+    ws.say({ type: "speech_stopped", item_id: "item_A", audio_end_ms: 900 });
+    ws.say({
+      type: "transcript",
+      text: "",
+      final: true,
+      item_id: "item_A",
+      audio_start_ms: 40,
+      audio_end_ms: 900,
+      reason: "short",
+      gap_ms: 80,
+    });
+    // no item_id, no bounds, an invalid pair — none of it is judged without the clock
+    ws.say({
+      type: "transcript",
+      text: "hi",
+      final: true,
+      reason: "max_segment",
+      outcome: "skipped",
+    });
+    expect(frames).toEqual([
+      { type: "state", state: "ready" },
+      { type: "speech_started", item_id: "item_A" },
+      { type: "speech_stopped", item_id: "item_A" },
+      { type: "transcript", text: "", final: true, item_id: "item_A" },
+      { type: "transcript", text: "hi", final: true },
+    ]);
+    expect(socket.anomalies()).toBe(0);
+    expect(socket.unknown()).toBe(0);
+  });
+
+  it("`ready` carries the pair — both or neither (H5/H9); half a pair or a bad TTL ⇒ no capability + an anomaly", () => {
+    expect(
+      parseLiveFrame('{"type":"state","state":"ready","clock":"leg","answer_ttl_ms":21000}'),
+    ).toEqual({ type: "state", state: "ready", clock: "leg", answer_ttl_ms: 21000 });
+    const half = [
+      '{"type":"state","state":"ready","clock":"leg"}',
+      '{"type":"state","state":"ready","answer_ttl_ms":21000}',
+      '{"type":"state","state":"ready","clock":"wall","answer_ttl_ms":21000}',
+      '{"type":"state","state":"ready","clock":"leg","answer_ttl_ms":0}',
+      '{"type":"state","state":"ready","clock":"leg","answer_ttl_ms":1.5}',
+      '{"type":"state","state":"ready","clock":"leg","answer_ttl_ms":"21000"}',
+      '{"type":"state","state":"ready","clock":"leg","answer_ttl_ms":2147483648}',
+    ];
+    for (const raw of half)
+      expect(parseLiveFrame(raw)).toEqual({ type: "state", state: "ready", anomaly: "ready_pair" });
+    // the bounds themselves are admitted: 1 ms and setTimeout's ceiling
+    expect(
+      parseLiveFrame('{"type":"state","state":"ready","clock":"leg","answer_ttl_ms":2147483647}'),
+    ).toMatchObject({ clock: "leg", answer_ttl_ms: 2147483647 });
+    // D85 forward-compat: unknown fields are ignored, never counted toward the capability
+    expect(
+      parseLiveFrame(
+        '{"type":"state","state":"ready","clock":"leg","answer_ttl_ms":1,"owner":true}',
+      ),
+    ).toEqual({ type: "state", state: "ready", clock: "leg", answer_ttl_ms: 1 });
+  });
+
+  it("a half pair on the wire leaves the leg WITHOUT the clock (its finals are not judged) and counts once", () => {
+    const { socket, frames, ws } = leg();
+    ws.open();
+    ws.say({ type: "state", state: "ready", clock: "leg" });
+    ws.say({ type: "transcript", text: "hi", final: true, reason: "max_segment" });
+    expect(frames[1]).toEqual({ type: "transcript", text: "hi", final: true });
+    expect(socket.anomalies()).toBe(1);
+  });
+
+  it("`state: flushed` parses (§3.5 ⑥) — it was an unknown frame before S7a", () => {
+    expect(parseLiveFrame('{"type":"state","state":"flushed"}')).toEqual({
+      type: "state",
+      state: "flushed",
+    });
+  });
+
+  it("a valid capability final carries its bounds, reason and outcome — extra fields ignored (D85)", () => {
+    const { socket, frames } = clockLeg();
+    const ws = FakeSocket.last!;
+    ws.say(cap({ accept: true, owner_check: "pass" }));
+    expect(frames[1]).toEqual({
+      type: "transcript",
+      text: "hello",
+      final: true,
+      item_id: "seg_1",
+      audio_start_ms: 100,
+      audio_end_ms: 900,
+      reason: "endpoint",
+      outcome: "ok",
+    });
+    expect(socket.anomalies()).toBe(0);
+  });
+
+  it("all 10 valid (reason, outcome) pairs pass; all 6 invalid ones are anomalies (EL-1)", () => {
+    const reasons = ["endpoint", "flush", "max_segment", "short"];
+    const outcomes = ["ok", "no_speech", "asr_error", "skipped"];
+    const bad: string[] = [];
+    for (const reason of reasons)
+      for (const outcome of outcomes) {
+        const f = parseLiveFrame(JSON.stringify(cap({ reason, outcome })), { lastEndMs: 0 });
+        if (f?.type === "transcript" && f.anomaly === "pair") bad.push(`${reason}/${outcome}`);
+        else expect(f).not.toHaveProperty("anomaly");
+      }
+    expect(bad).toEqual([
+      "endpoint/skipped",
+      "flush/skipped",
+      "max_segment/skipped",
+      "short/ok",
+      "short/no_speech",
+      "short/asr_error",
+    ]);
+    // `quiet` is not wire-valid in this phase, and an unknown reason is no reason
+    for (const over of [{ outcome: "quiet" }, { reason: "timeout" }, { reason: undefined }])
+      expect(parseLiveFrame(JSON.stringify(cap(over)), { lastEndMs: 0 })).toMatchObject({
+        anomaly: "pair",
+      });
+  });
+
+  it("missing fields, non-finite or inverted bounds and a decreasing `audio_end_ms` are anomalies — DELIVERED, never dropped (H1)", () => {
+    const judge = (over: Record<string, unknown>, lastEndMs = 0) =>
+      parseLiveFrame(JSON.stringify(cap(over)), { lastEndMs });
+    expect(judge({ item_id: undefined })).toMatchObject({ anomaly: "item_id", text: "hello" });
+    expect(judge({ audio_start_ms: undefined })).toMatchObject({ anomaly: "bounds" });
+    expect(judge({ audio_end_ms: "900" })).toMatchObject({ anomaly: "bounds" });
+    expect(judge({ audio_start_ms: -1 })).toMatchObject({ anomaly: "bounds" });
+    expect(judge({ audio_start_ms: 901 })).toMatchObject({ anomaly: "bounds" });
+    // JSON has no Infinity: a relay that tried would send null, which is not a number either
+    expect(judge({ audio_end_ms: null })).toMatchObject({ anomaly: "bounds" });
+    expect(judge({}, 901)).toMatchObject({ anomaly: "order" });
+    // the pre-roll CROSSES the previous end (§3.4) — a start before the last end is valid
+    expect(judge({ audio_start_ms: 50 }, 600)).not.toHaveProperty("anomaly");
+    // a non-final is never judged (we have no partials; a future one is data)
+    expect(
+      parseLiveFrame('{"type":"transcript","text":"x","final":false}', { lastEndMs: 0 }),
+    ).toEqual({ type: "transcript", text: "x", final: false });
+  });
+
+  it("the leg's latch: END is monotonic across finals; only a VALID final moves the floor; a fresh leg latches afresh", () => {
+    const { socket, frames, ws } = clockLeg();
+    ws.say(cap({ item_id: "seg_1", audio_start_ms: 0, audio_end_ms: 900 }));
+    // seg_2's pre-roll starts before seg_1's end, and its end is later — valid
+    ws.say(cap({ item_id: "seg_2", audio_start_ms: 600, audio_end_ms: 2000 }));
+    // seg_3 claims an end BEFORE seg_2's — an anomaly, delivered
+    ws.say(cap({ item_id: "seg_3", audio_start_ms: 100, audio_end_ms: 1500 }));
+    // an anomaly does not lower the floor: 1600 is still behind seg_2's 2000
+    ws.say(cap({ item_id: "seg_4", audio_start_ms: 100, audio_end_ms: 1600 }));
+    ws.say(cap({ item_id: "seg_5", audio_start_ms: 1900, audio_end_ms: 2000 }));
+    expect(frames.slice(1).map((f) => (f.type === "transcript" ? f.anomaly : "?"))).toEqual([
+      undefined,
+      undefined,
+      "order",
+      "order",
+      undefined,
+    ]);
+    expect(socket.anomalies()).toBe(2);
+    // a fresh leg (its own `openLiveSocket`) starts at 0, and a bare `ready` is a leg without the clock
+    const bare = leg();
+    bare.ws.ready();
+    bare.ws.say(cap({ audio_end_ms: 5, item_id: undefined }));
+    expect(bare.frames[1]).toEqual({ type: "transcript", text: "hello", final: true });
+  });
+
+  it("a later `ready` WITHOUT the pair turns the clock off for what follows (a rolled-back relay)", () => {
+    const { socket, frames, ws } = clockLeg();
+    ws.say({ type: "state", state: "ready" });
+    ws.say(cap({ reason: "short", outcome: "ok" }));
+    expect(frames[2]).toEqual({ type: "transcript", text: "hello", final: true, item_id: "seg_1" });
+    expect(socket.anomalies()).toBe(0);
   });
 });
 

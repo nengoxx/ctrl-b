@@ -417,6 +417,91 @@ test("a backpressure-style unannounced close takes the same reconnect path", asy
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 
+// S7a — THE CLIENT HALF OF THE NEW WIRE (ASR_PLAN §7.2), through the REAL parser + wiring + reducer: the
+// one seam the unit suites cannot reach (their socket is mocked above the parser — audit G-9). The relay
+// declares the leg clock on `ready` (§3.2); without it every case above is today's call, unchanged.
+const CLOCK_READY = { type: "state", state: "ready", clock: "leg", answer_ttl_ms: 21_000 };
+
+test("S7a — a 25 s turn cut at the cap submits ONE turn (the `max_segment` join, hold 0)", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay, sends } = await boot(page);
+  await startCall(page);
+  await relay.say(CLOCK_READY);
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Listening");
+
+  // The cap cuts A at 20 s and B starts AT the cut (§3.4); A's final lands while B is open.
+  await relay.say({ type: "speech_started", item_id: "seg_1" });
+  await relay.say({ type: "speech_stopped", item_id: "seg_1" });
+  await relay.say({ type: "speech_started", item_id: "seg_2" });
+  await relay.say({
+    type: "transcript",
+    text: "the first twenty seconds",
+    final: true,
+    item_id: "seg_1",
+    audio_start_ms: 0,
+    audio_end_ms: 20_000,
+    reason: "max_segment",
+    outcome: "ok",
+  });
+  // (the heard line shows `…` while B is open — the ear is still listening)
+  await page.waitForTimeout(300);
+  expect(sends).toHaveLength(0); // a cap cut is not a pause: the turn waits for the continuation
+
+  await relay.say({ type: "speech_stopped", item_id: "seg_2" });
+  await relay.say({
+    type: "transcript",
+    text: "and the rest",
+    final: true,
+    item_id: "seg_2",
+    audio_start_ms: 20_000,
+    audio_end_ms: 25_000,
+    reason: "endpoint",
+    outcome: "ok",
+  });
+  await expect.poll(() => sends.length).toBe(1);
+  expect(sends[0].text).toBe("the first twenty seconds and the rest");
+  await expect(page.locator(`${overlay} .kit-call-heard`)).toHaveText("and the rest");
+  await page.waitForTimeout(300);
+  expect(sends).toHaveLength(1);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("S7a — `ear_failed` then a 1011 close RECONNECTS (R2-1), it is not a terminal", async ({
+  page,
+  pageErrors,
+}) => {
+  const { relay, sends } = await boot(page);
+  await startCall(page);
+  await relay.say(CLOCK_READY);
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Listening");
+
+  // The new ear's worker failed: the typed frame, then the 1011 close that always follows it (§3.4).
+  await relay.say({ type: "error", code: "ear_failed", message: "vad behind" });
+  await relay.drop(1011);
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Connecting");
+  await expect.poll(() => relay.starts()).toBe(2);
+  await relay.say(CLOCK_READY);
+  await expect(page.locator(`${overlay} .kit-call-phase`)).toContainText("Listening");
+
+  await relay.say({
+    type: "transcript",
+    text: "still here",
+    final: true,
+    item_id: "seg_1",
+    audio_start_ms: 0,
+    audio_end_ms: 900,
+    reason: "endpoint",
+    outcome: "ok",
+  });
+  await expect.poll(() => sends.length).toBe(1);
+  expect(sends[0].text).toBe("still here");
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
 test("the BACK gesture hangs up instead of navigating the app out from under the call", async ({
   page,
   pageErrors,

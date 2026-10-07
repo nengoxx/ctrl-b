@@ -89,6 +89,7 @@ vi.mock("../../src/lib/liveSocket", async (importActual) => ({
         if (code !== undefined) h.closeCodes.push([code, reason]);
       },
       unknown: () => 0,
+      anomalies: () => 0,
     };
   },
 }));
@@ -114,7 +115,7 @@ vi.mock("../../src/lib/pcmCapture", async (importActual) => ({
 }));
 
 import { postJSON } from "../../src/api/client";
-import { RECORDER_BITRATE, useDictation } from "../../src/hooks/useDictation";
+import { RECORDER_BITRATE, dictationAppends, useDictation } from "../../src/hooks/useDictation";
 import { rmsToDbfs } from "../../src/lib/levelGate";
 import { BUCKET_CAP_MS } from "../../src/lib/uplinkPacer";
 import { newWakeLockState, releaseWakeLock, takeWakeLock } from "../../src/lib/wakeLock";
@@ -2658,5 +2659,220 @@ describe("useDictation · Phase 26 SP — P3 the screen stays on (the lifted wak
     expect(callLock.released).toBe(false); // …and through the dictation's release choreography
     releaseWakeLock(call);
     expect(callLock.released).toBe(true);
+  });
+});
+
+// ── S7a · THE LEG CLOCK (ASR_PLAN §3.2 · §3.5 ⑤ ⑥ — H2, H3): the `max_segment` join and the `flushed`
+// wake, INERT until the relay declares `ready{clock:"leg"}` ─────────────────────────────────────────
+
+describe("useDictation · streaming S7a the leg clock: the cap join and the `flushed` wake", () => {
+  const TTL = 5000; // > `tail_wait_ms` (2000), so a release that waits it out is visibly not the old bound
+  function readyClock(): void {
+    act(() => h.frame?.({ type: "state", state: "ready", clock: "leg", answer_ttl_ms: TTL }));
+  }
+  /** One endpointed segment answered with a capability final. */
+  function final(
+    text: string,
+    reason: "endpoint" | "flush" | "max_segment" = "endpoint",
+    outcome: "ok" | "no_speech" | "asr_error" = text ? "ok" : "no_speech",
+    extra: Record<string, unknown> = {},
+  ): void {
+    act(() => {
+      h.frame?.({ type: "speech_stopped" });
+      h.frame?.({
+        type: "transcript",
+        text,
+        final: true,
+        reason,
+        outcome,
+        audio_start_ms: 0,
+        audio_end_ms: 100,
+        ...extra,
+      });
+    });
+  }
+  const settle = async (): Promise<void> => {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  /** Release and let the choreography reach its wait (the flush is out, nothing has ended it). */
+  async function releaseToWait(result: Mic): Promise<void> {
+    await tick(1200); // past the clip floor
+    act(() => result.current.stop("user"));
+    await settle();
+    expect(h.sent).toEqual(["flush"]);
+  }
+
+  it("INERT without the clock: a `max_segment` final appends AT ONCE, and `flushed` wakes nothing — the flat bound holds", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    ready(); // a bare `ready` — today's relay
+    final("cut here", "max_segment");
+    expect(getDraft()).toBe("cut here");
+    await releaseToWait(result);
+    act(() => h.frame?.({ type: "state", state: "flushed" }));
+    await settle();
+    expect(h.sent).toEqual(["flush"]); // not a wake on this leg
+    await act(async () => {
+      vi.advanceTimersByTime(KNOBS.tail_wait_ms);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("the join appends ONCE: the cut segment's words wait, and land with the next final as one phrase", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    const before = dictationAppends();
+    final("a twenty second", "max_segment");
+    final("sentence", "max_segment"); // EM-1 — a second cut continues the join
+    expect(getDraft()).toBe("");
+    expect(dictationAppends()).toBe(before);
+    final("ends here");
+    expect(getDraft()).toBe("a twenty second sentence ends here");
+    expect(dictationAppends()).toBe(before + 1); // ONE append — and one caret cue
+    await releaseToWait(result);
+    act(() => h.frame?.({ type: "state", state: "flushed" }));
+    await settle();
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // `finals` counted it: the clip is discarded
+  });
+
+  it("H3 — `flushed` WAKES the wait at once, and held words land BEFORE the either/or (the clip is not said twice)", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    final("held by the cap", "max_segment");
+    await releaseToWait(result);
+    act(() => h.frame?.({ type: "state", state: "flushed" })); // nothing was open: flushed at once
+    await settle();
+    // NOT ONE TIMER WAS ADVANCED: the marker ended the wait
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(getDraft()).toBe("held by the cap");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("…the flush's own final joins the held words first, then `flushed` ends it", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    final("one long", "max_segment");
+    await releaseToWait(result);
+    final("tail", "flush");
+    act(() => h.frame?.({ type: "state", state: "flushed" }));
+    await settle();
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(getDraft()).toBe("one long tail");
+  });
+
+  it("the wake is BOUNDED by `answer_ttl_ms` (not `tail_wait_ms`): on expiry today's either/or, held words appended", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    final("still held", "max_segment");
+    await releaseToWait(result);
+    await act(async () => {
+      vi.advanceTimersByTime(KNOBS.tail_wait_ms);
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush"]); // the old bound is not this leg's
+    await act(async () => {
+      vi.advanceTimersByTime(TTL - KNOBS.tail_wait_ms);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(getDraft()).toBe("still held");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("…and a clock leg with NOTHING appended still uploads the clip at the bound", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    await releaseToWait(result);
+    act(() => h.frame?.({ type: "state", state: "flushed" }));
+    await settle();
+    expect(h.sent).toEqual(["flush", "stop", "close"]);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(getDraft()).toBe("the whole clip");
+  });
+
+  it("H2 — an `asr_error` final ends the join by APPENDING the held words, and its own text is never taken", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    final("what I really said", "max_segment");
+    final("garbled", "endpoint", "asr_error");
+    expect(getDraft()).toBe("what I really said");
+  });
+
+  it("review MED, PINNED — a `(max_segment, asr_error)` final CONTINUES the join (EM-1): still held, no append; the next `endpoint` joins ONCE", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    const before = dictationAppends();
+    final("the first part", "max_segment");
+    final("garbled", "max_segment", "asr_error");
+    expect(getDraft()).toBe(""); // still held — the outcome does not end a cap join
+    expect(dictationAppends()).toBe(before);
+    final("and the end");
+    expect(getDraft()).toBe("the first part and the end");
+    expect(dictationAppends()).toBe(before + 1);
+  });
+
+  it("H1 — an anomalous final takes no text, and its reason is no evidence of a cut (the held words land)", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    final("held", "max_segment");
+    final("untrusted", "max_segment", "ok", { anomaly: "order" });
+    expect(getDraft()).toBe("held");
+  });
+
+  it("H2 — a death mid-recording appends the held words and ends the recording, the clip discarded and the loss named", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    final("held before the drop", "max_segment");
+    await act(async () => {
+      h.close?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.status).toBe("idle");
+    expect(getDraft()).toBe("held before the drop");
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // the clip would say them twice
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Voice connection lost"), "err");
+  });
+
+  it("H2 — a death UNDER the release wait appends the held words before the either/or, and names the loss", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    final("held", "max_segment");
+    await releaseToWait(result);
+    await act(async () => {
+      h.close?.();
+    });
+    await settle();
+    expect(result.current.status).toBe("idle");
+    expect(getDraft()).toBe("held");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Voice connection lost"), "err");
+  });
+
+  it("a later bare `ready` turns the clock off — the next cut appends at once", async () => {
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    readyClock();
+    ready();
+    final("not held", "max_segment");
+    expect(getDraft()).toBe("not held");
   });
 });

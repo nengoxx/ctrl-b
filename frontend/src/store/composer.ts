@@ -41,11 +41,15 @@ export function clearDraft(): void {
   setDraft("");
 }
 
+/** How dictated phrases join — the ONE rule, read by `appendDraft`'s default and by dictation's held
+ *  `max_segment` text (S7a), which joins its parts before the single append. */
+export const PHRASE_JOIN = " ";
+
 /** Append text to the current draft, separated from existing content by `separator` (Phase 6b dictation
  *  hand-off; the D41 Stop-harvest passes `"\n"` to newline-join restored steer lines). Defaults to a
  *  space so a dictated transcript lands after whatever the user already typed rather than clobbering it.
  *  Reads state imperatively (no stale closure), then routes through `setDraft`. Empty input → no-op. */
-export function appendDraft(text: string, separator = " "): void {
+export function appendDraft(text: string, separator = PHRASE_JOIN): void {
   const add = text.trim();
   if (!add) return;
   const cur = state.draft.trimEnd();

@@ -145,7 +145,13 @@ and irreversible.
   1000; another client (or an id-less one) gets the unchanged `busy` + 1013. The call renders the
   superseded end as a terminal (never a redial).
 - **Downlink:** JSON only — `{type: "state"|"speech_started"|"speech_stopped"|"transcript"|"error", …}`.
-  **No audio ever rides the WS** (C3 owns reply audio over HTTP, unchanged).
+  **No audio ever rides the WS** (C3 owns reply audio over HTTP, unchanged). **Since Phase 26 S7a
+  (the client half, ✅ built 2026-10-07; inert until the relay declares it)** a relay running the new ear
+  declares the leg clock on `ready` (`clock:"leg"` + `answer_ttl_ms`, both or neither), and on such a
+  leg every final carries `item_id` · `audio_start_ms` · `audio_end_ms` · `reason` · `outcome` and a
+  dictation flush is answered by `state:"flushed"`; `error{code:"ear_failed"}` precedes a 1011 close.
+  **The authority on those shapes and their validation is ASR_PLAN §3.5 ②/⑥/⑨ (the contract) + the
+  `LiveDown` union in `lib/liveSocket.ts` (the parser = S7b's contract)** — not repeated here.
 - **Backpressure, both ends (council F6):** server side, a bounded relay queue; on overflow drop
   the OLDEST audio frames and surface a `state` warning — never silently stall
   (RealtimeSTT-server's contract beats RVC's silent drop). Client side, `WebSocket.send()` has no
