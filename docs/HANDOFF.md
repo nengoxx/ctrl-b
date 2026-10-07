@@ -57,6 +57,22 @@
   handoff. Push on the owner's word. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
 
+## ▶▶ NEW (2026-10-07 afternoon, Fable seat, session 64 — THE CLEAN SESSION B START) — the owner's rulings on the open rows FOLDED · session B OPENS
+
+**The owner's rulings (the session-63 open list, taken one by one — each folded into its ISS row in [`ISSUES.md`](./ISSUES.md), 2026-10-07):**
+- **The dictation check** — done (the v1.7.11 gate; trail `bec301ce`). Nothing owed.
+- **ISS-12** — LOW PRIORITY: the owner does not care about frontier for now (gacha = their default theme now; older themes get revised later); eyeballed whenever.
+- **ISS-28** — the editor hint CONFIRMED WANTED (the owner saved per-turn macros in the editors, no warning). A small FE leaf (`WarnRow`), off session B's files — build between slices.
+- **ISS-44** — the three asks CLARIFIED (timing unchanged, after the ASR work): ① pin to the bottom · ② the send button's accent block grows with the field; the send icon pins to the bottom; mic + attach move INTO the block, stacking upward into the opened room, in the send style — ONE accent column, never empty blue · ③ lower the composer's bottom edge to just below the tab bar's top, past its corner radius.
+- **ISS-45 + ISS-46** — **PULLED FORWARD into v1.7.12, beside session B** (lorebook entry probability; off session B's files). The four design questions still need the owner's word — **main-seat recommendations:** ① prompt cache = accept the per-turn roll (ST parity, the ISS-28 ruling; the import report's inert-probability count line becomes a per-turn-cost line) · ② regenerate/resume re-roll like a swipe (the ISS-28 salt) · ③ a `constant` entry WITH a probability rolls too ("fires X% of turns") · ④ a per-entry % field in the lorebook editor + export round-trip from `extensions`.
+- **ISS-59** — CLARIFIED: the agent ASKS THE QUESTION ITSELF by TTS on the call (not a cue), the chat still shows it with its options, voice OR tap resolves it the same way; non-critical questions by voice, critical ones (removing stuff, anything needing review) stay tap. A question-tool design after session B.
+- **ISS-62** — FIX BOTH (never lose speech, especially long speech); designed in S8's neighbourhood.
+
+**Session B opens in this session** (ASR_PLAN §7.2: S6-i → S6-ii → S9 → TUNE → S7a → S7b → field rounds → S8 → S8b → S10; every slice = Opus ∥ Emma). Scratch: `~/.cache/tmp/ctrlb-session64/`. Two sessions, one tree (the J1/J2 seat): commit by path; this seat owns `voice_live.py` / the voice adapter / `useDictation` / `pcmCapture` / ASR_PLAN.
+
+---
+
+
 ## ▶▶ NEW (2026-10-07 midday, Fable seat, session 63) — THE DICTATION CHECK PASSED · the phone round READ · two look tweaks · ISS-68 the gallery flash FIXED + the consistency slice · ROADMAP H4 + J1/J2 · **NEXT = push + v1.7.11**
 
 **Read first:** [`ISSUES.md`](./ISSUES.md) **ISS-68** (the gallery flash: cause · fix · the D2 slice · the review record) and the 2026-10-07 owner-round notes on ISS-66/47/53 · [`ROADMAP.md`](./ROADMAP.md) **H4** (gallery tiles at scale — the issue stated precisely) + **§J** (J1 the galleries' UX session · J2 the configuration de-bloat session — both owner-asked, research-first, their OWN sessions) · the v1.7.11 release card `~/.cache/tmp/ctrlb-session60/release-card-v1711-draft.md` (session 60's lane draft; this session verified its open checks — see ③). Session record: `~/.cache/tmp/ctrlb-session63/` (`brief-audit-gallery.md` → **`audit-gallery.md`** (Opus, the reproduced root cause + the §B inventory) · `brief-build-gallery-D1.md` / `lane-gallery-D1-report.md` · `brief-build-gallery-D2.md` / `lane-gallery-D2-report.md` · `frozen-gallery-D2-v1.diff` · `review-emma-gallery-prompt.txt` → `review-emma-gallery.md` (SHIP, no findings, file:line per question) · `check-all-final.log`).
