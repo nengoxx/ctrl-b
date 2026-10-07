@@ -1171,6 +1171,70 @@ The hand-authored golden vectors (§3.4) are the unit tests. The tool is the ear
 | **TUNE → the flip (S7b)** | • the golden vectors are green<br>• the owner's hand judgement of the replayed reference set (edges + transcripts, with the chosen `VadParams`) finds: no phantom segments on the negatives, every short answer present, no clipped onset |
 | **Release v1.7.12** (R94 §9 field acceptance, on the flipped dev) | • 5 min of no-owner-speech car audio → 0 false turns<br>• 20× each short answer, **English and Spanish** → recall ≥ 95%, no first-phoneme clipping, **no answer transcribed in the other language**<br>• no perceptible added lag<br>• ASR p95 < 1 s<br>• the §3.4 VAD budget met<br>• **a ≥ 10-min 4G dictation with induced stalls → zero stops, the suffix recovered, no duplicated text**<br>• the kill-clip-engine arm (§3.8)<br>• a > 20 s call turn arrives as ONE turn (R20)<br>• a reload mid-dictation recovers (S8b) |
 
+### 6.4.1 S9 bake-off (session 64 lane, relaunched + run in session 65) — the no-owner-audio rows
+
+**Run:** 2026-10-07, 21:05–21:30 CEST, emma, repo `76f5db5`. **Engine:** parakeet.cpp `v0.5.0` = `1bfbebfa`, the SOURCE
+build (`GGML_NATIVE=ON`, binary sha256 `68176570…1aa1`), model `tdt-0.6b-v3-f16.gguf` sha256 `8ba47343…bb22`, the two
+units at 4 threads each. Box state: governor `powersave`, swap 8/8 GiB full, Speaches, PocketTTS and both ctrl-b
+instances up. **Inputs, all synthetic (ruling H11, no owner audio):** English from PocketTTS (`nova`/`fable`/`echo`
+in turn); Spanish from Kokoro `ef_dora`/`em_alex` through dev's `/api/voice/tts` with `prefer`, because PocketTTS is
+English-only (one PocketTTS-read Spanish clip is kept as a curiosity). Sentences come from a fixed script and are joined
+by seeded 0.5–1.5 s silences. The files are 16 kHz mono pcm16, except the 30-min clip and one 5-min clip, which are
+Opus webm at 32 kbps (the recorder's bitrate). The noisy variants mix R98's DEMAND `TCAR` in at 0 dB SNR. Every
+"door" row is `POST /api/voice/stt` on dev (:5434), which is the real `VoiceClient.transcribe(door="stt")` request
+with `language`, `vad_filter` and `hotwords` (accepted, so T-5 holds); `X-Voice-Served-By` read `parakeet-clip` on
+every request. Rows marked "direct" post the same fields straight to an engine. Wall time is curl's `time_total`;
+`asr` is T9's `asr_ms` from the dev clip trail. Scripts, clips, raw JSONL and the full report are in the session-64
+scratch `bakeoff/`.
+
+| Input (s) | Engine · path | p50 / p95 wall (s) | RSS | Text vs script | Notes |
+|---|---|---|---|---|---|
+| EN 1.8–2.8 (yes/no/okay/3 s) | clip · door ×5 | 0.11–0.19 / 0.11–0.20 | — | exact | asr 86–153 ms |
+| EN 8.7 · ES 10.1 | clip · door ×5 | 0.51 / 0.52 · 0.59 / 0.60 | — | exact · exact | |
+| EN 16.2 | clip · door ×5 | 0.98 / 1.40 | — | exact | one 1.49 s outlier (app side; asr 868 ms) |
+| EN 21.0 | clip · door ×5 | 1.21 / 1.24 | — | exact | asr 1.13 s |
+| EN 59.7 · ES 62.2 | clip · door ×5 | 3.55 / 3.64 · 3.75 / 3.77 | — | exact · WER 3.7 % | the ES "errors" are mostly digits (`doce`→`12`), plus `bajar`→`vacar` |
+| EN 59.7 + TCAR 0 dB | clip · door ×5 | 3.72 / 3.79 | — | WER 1.9 % (digits only) | |
+| EN 299 · ES 300 · EN 299 Opus | clip · door ×5/×5/×2 | 18.0 / 18.1 · 18.2 / 18.3 · 18.4 | clip 2.09 GB after | WER 1.3 % · 3.9 % | real-time factor ≈ 0.06 |
+| **EN 1802 Opus (5.9 MB) THROUGH SERVE** (:8443 from emma) | clip · door ×1 | **116.1** | clip 2.15 GB after | WER 1.4 % | decode 2.8 s · pass 5.2 s · 63 chunks, asr 106.7 s (per chunk p50 1.69 s, max 3.15 s) · the decoded bound is 1790 + 60 s, so 30 min is admitted; a 30-min WAV (57.6 MB) would hit the 25 MiB byte cap first |
+| live-sized 1.4 / 1.8 / 2.8 / 8.7 / 10.1 / 16.2 / 21.0 | live · direct ×5 | p95 0.11 / 0.12 / 0.18 / 0.49 / 0.57 / 0.89 / **1.20** | live 2.17 GB after | exact | uncontended |
+| **CONTENDED** (§6.4): the 30-min clip on the clip unit + PocketTTS synthesizing back to back (8 threads, ~840 % CPU) + live-sized requests back to back on :9010 | live · direct ×29 each | p95 0.50 / 0.64 / 0.86 / **2.26 / 2.23 / 2.51 / 3.85** | live 2.27 · clip 2.19 GB | exact | 30-min clip **278.7 s** (asr 252 s, decode 6.2 s, pass 18.5 s) · PocketTTS p50 1.07 s against 0.86 s idle · no errors, no walks · a saturating load, worse than any real moment |
+| two concurrent 60 s door POSTs | clip · door | 6.85 · 7.42 | — | exact | the per-process gate serialises per CHUNK (queue 0–1.66 s per chunk, under `connect_timeout_s` 3 s, so no walk) |
+| 60 s door POST ∥ live 21/8.7/2.8 s direct, ×3 | clip + live | clip 3.95 / 4.07 · live 1.41 / 0.61 / 0.20 | — | exact | separate units: no queueing, but a 10–30 % CPU-share slowdown each way |
+| **H8:** EN 59.7 / 21.0 / 8.7, interleaved ×5 | SOURCE :9011 vs RELEASE tarball on :9019 (direct) | **source 4.10 / 1.18 / 0.49 · release 6.42 / 2.06 / 0.85** (p50) | release 2.55 GB after | identical text | the source build is 1.57–1.74× faster, so it is **kept** (H8 rule) |
+| language: ES 60 s · mixed ES+EN 5 s | clip · door | — | — | Spanish · Spanish (`Tailscale`→`Tilescale`, `dashboard` kept) | no crossing on sentences |
+| language: bare ES `Sí.` / `No.` (Kokoro ×2 voices) | clip · door + direct | — | — | **CROSSES:** `Sí.`→"Saying that's a very good thing." · `Sí.` (em_alex)→"Саїра." (Cyrillic) · `No.`→"No it's not a good one." · `Sí.`+TCAR→"So you're not going to be able to do that" | `Vale.` `Claro.` `Sí, claro.` `No, gracias.` are correct; `No lo sé.`→"Non lo sé." · the same weights in ONNX (onnx-asr, Speaches' runtime) give the same output, so this is the model, not the port · whisper-turbo hears "See," / "Nodes" (the synthetic monosyllables are ambiguous to it too, but it does not invent a sentence) |
+| noise only, 10 s × 6 (TCAR/DKITCHEN/PCAFETER) | clip · door | 0.04 | — | 5 × `""` (no_speech, no ASR call) · **1 × "Okay."** | TCAR 30–40 s: the pass let 64 ms "voiced" through, and the engine answered with a phantom word |
+
+**RSS:** before the run, live 1.49 / clip 1.70 GB. At the end, live 2.27 / clip 2.55 GB (`MemoryPeak` 2.33 / 2.72
+GB). RSS is a high-water mark that follows the longest input the process has seen (live passed 2.1 GB after ≤ 21 s
+requests). It does not come back down when idle, and it did not grow across two 30-min runs (2.15 → 2.19 GB). The clip
+unit's 2.55 GB came from the H8 rows, which sent 60 s whole files straight to the engine; through the door, the clip
+unit never gets more than 30 s at a time. `NRestarts` stayed 0, the engine journals logged nothing besides their listen
+lines, and the dev journal showed no warnings.
+
+**Verdicts per criterion:**
+- **Latency budget: PARTLY MET.**
+  - Uncontended p95 is under 1 s up to about 16 s (0.89 s direct). It is 1.20 s at the 20 s `max_segment_s` ceiling.
+  - Contended p95 is under 2 s only up to about 3 s; it is 2.2–3.9 s for 10–21 s. That was under a deliberately
+    saturating load (16 busy threads on 8C/16T, `powersave`).
+  - Clip-door throughput is fine: 30 min took 116 s through Serve (≈ the 2-min estimate) and 279 s contended (over
+    the ≈ 4-min estimate).
+- **RAM: FAILS "< 2 GB per instance".** Steady state through the door is 2.2–2.3 GB per unit. It is a bounded high-water
+  mark, not a leak.
+- **Contention: OK functionally.** Requests serialise per chunk, nothing walks, there are no errors, and the two units
+  never queue on each other. The cost is CPU share only.
+- **Language: SENTENCES OK; BARE MONOSYLLABLES CROSS.** This is the §10.2 watch item firing on synthetic audio.
+  Multi-word Spanish stays Spanish, but a bare `sí`/`no` can come back as an invented English sentence or as Cyrillic.
+  It has to be re-run on the owner's own short answers before it is treated as an engine question.
+- **H8: keep the source build** (≥ the release on every bin).
+
+**OPEN — rows that need the owner's audio (the S9 gate stays OPEN):** the pre-pass sweep (§3.4.1 ⑤, `prepass_act`
+over the corpus positives and the push-to-talk clips) · the hand-read of the push-to-talk clips and the replayed
+reference transcripts, Spanish included · the language rows on the owner's own EN/ES short answers and real car
+negatives · the car and home rows · the 30-min row from a phone over 4G (only the from-emma leg ran) · the R10 (a)
+idle-hour RSS re-check · the optional Vulkan row (not run).
+
 ---
 
 ## 7. The slice ladder
