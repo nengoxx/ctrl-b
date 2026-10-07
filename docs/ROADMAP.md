@@ -1328,12 +1328,18 @@ its own capability without per-field provenance, it makes an env-addressed provi
 
 ---
 
-## J. UX consolidation — TWO DEDICATED SESSIONS (owner ask 2026-10-07)
+## J. UX consolidation + prompt design — FOUR DEDICATED SESSIONS (owner asks 2026-10-07)
 
 > The owner, on the day the gallery flash was fixed: *"we added so many features that it's bloating a little bit of the
 > configuration options, and we need to make the app more clean and easy to use and intuitive."* Two separate sessions,
 > each ONLY about its subject, each **research-first** (field dossiers in `docs/research/` before a design) and then a
 > design council before any build. Neither is a feature; both are the kind of pass the ROADMAP's seams were kept cheap for.
+> **J3 + J4 joined the same afternoon** (the owner's answer to ISS-28/ISS-45's prompt-cache question): two more
+> design-driven sessions — *"I didn't want you to start building this feature. This is a very design-driven thing."* —
+> separate from each other (*"They're both tangential issues"*), from J1/J2, and from the ASR session (Phase 26 /
+> session B). **Timeline (owner):** *"I want to do it before we update production after session B"* → the v1.7.12 prod
+> update WAITS for J3 + J4 unless the owner re-rules at release time. J1/J2 keep their own "designed + planned for later"
+> timeline.
 
 ### J1. The galleries' UI/UX refinement — agent gallery · image galleries (backgrounds, theme art) · the dense editors — **plan stub = [`GALLERY_UX_PLAN.md`](./GALLERY_UX_PLAN.md) (resume from it alone)**
 
@@ -1363,6 +1369,35 @@ its own capability without per-field provenance, it makes an env-addressed provi
   per-feature pages vs one long form); the inventory as a table (knob · section · scope · overlaps · verdict); the
   no-migration rule applies to anything that changes config SHAPE (UPDATE_PLAN's load-boundary fold + write-back —
   **no legacy seams**); design council; then slices. Pairs with J1 but is NOT the same session.
+
+### J3. Prompt order — where each part of the prompt lands, cache-aware (drag and drop) — **plan stub = [`PROMPT_ORDER_PLAN.md`](./PROMPT_ORDER_PLAN.md) (resume from it alone)**
+
+- **The ask, in the owner's words:** *"SillyTavern lets you select where to put the prompts, right? So ideally we could
+  have some sort of prompt editor where you can drag and drop where each part of the prompt lands. So parts of the
+  prompt like this that have macros or things that could break the prompt cache could be in the tail, you know like the
+  post history instructions kind of thing, so it doesn't break the whole prompt cache, it just breaks the tail of the
+  prompt."* — *"maybe in tandem with the prompt formatting and the ability to change the ordering of the different
+  fields in the prompt. SillyTavern does that, but I don't want to overcomplicate it either."*
+- **Scope:** the prompt order fixed in code today (`session.py` `_static_prefix` + `_assemble`: Voice/Duties → scenario
+  → appends → roster → persona → memory → Core index → skills → head lorebook → examples → history → tail lorebook →
+  post-history → nudge), the normalizer's role rule (a tail part rides as a `user` `<system-update>`), the registry's
+  headings/framings (Phase 18 owns text), the cache contract per part.
+- **Method:** research-first (ST's Prompt Manager + Risu/open-webui/LibreChat at source; what breaks the llama.cpp
+  prefix and what a "tail" costs, measured with the `cached_tokens` telemetry; persistence + migration shape; a phone
+  reorder UI on the D65/R56 precedent; auto vs manual placement); design; council; slices. Its OWN session.
+
+### J4. Lorebook entry probability + a firing cadence — ISS-45 + ISS-46 — **plan stub = [`LOREBOOK_PROBABILITY_PLAN.md`](./LOREBOOK_PROBABILITY_PLAN.md) (resume from it alone)**
+
+- **The ask, in the owner's words:** *"A constant entry with a probability rolls too — yes, definitely, that's the
+  idea."* — *"Maybe we could also think about it in the way of firing it after several turns, not rolling every turn.
+  That could be a different knob, so we also make sure we don't break the prompt cache every turn and also make it more
+  real — because if you fire it based on a percentage only, you could literally fire it back to back. This needs its
+  own session."* — a per-entry percent field exported back into the card extensions: *"I'm guessing yes."*
+- **Scope:** `lorebooks.py` `activate`/`scan` (the roll), the cadence knob and whether it needs state (entries have no
+  stable id), regenerate/resume/alternates (the ISS-28 salt precedent), the importer's `_INERT_PROBABILITY` line and
+  the exporter's round-trip, the lorebook editor's fields; ISS-46's Frieren entry fires as its author meant.
+- **Relationship to J3:** tangential. J3's outcome (a fired entry placed in the tail breaks only the tail) is an INPUT
+  to J4's placement question, not a blocker for J4's roll/cadence design.
 
 ## P. Parked — not planned
 
