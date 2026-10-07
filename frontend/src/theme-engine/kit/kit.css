@@ -8682,8 +8682,11 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
  * moved out of Conf into. Two columns at phone width, each card a portrait through its framing point
  * over a name plate, with TALK as its own visible affordance beside the card.
  *
- * Built from the recipes already here — the `.conf-card` frame, the `.mgal-grid` tile geometry, the
- * `.badge` pill — on the semantic tokens only. gacha's `.gc-track` is the STRUCTURAL precedent for a
+ * Built from the recipes already here — the `.conf-card` frame and the `.mgal-grid` tile geometry — on
+ * the semantic tokens only. The two card PILLS are NOT the `.badge` recipe: they declare their own,
+ * smaller geometry (9.5px / 3px 7px / 0.05em against the badge's 10px / 3px 8px / 0.02em — a pill laid
+ * over a portrait, not a row's trailing marker) and their own translucent veil; what they share is the
+ * pressed fill pair, worn by the open editor's `.badge.chosen` too (the "default" marker, one look). gacha's `.gc-track` is the STRUCTURAL precedent for a
  * showcase grid and nothing of its CSS is copied (D31): a theme that wants its own look overrides
  * these hooks in `@layer theme`. §14.11: transform/opacity only. ── */
 .kit .agal-grid {
@@ -8700,15 +8703,21 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
 }
 /* The positioning context for Talk, which is the card's SIBLING rather than its child: a button
  * inside a button is invalid HTML (the media grid's own lesson), and the card has to stay the plain
- * editor-opening button. */
+ * editor-opening button.
+ * ONE HEIGHT PER ROW: the `li` is stretched to its row by the outer grid, and `display: grid` hands that
+ * height to the card (its one in-flow child; the pills are absolute, so out of flow and still pinned to
+ * this box) — a two-line name beside a one-line one no longer leaves the shorter card ragged. Nothing
+ * truncates: the extra height is the card's own surface under the plate. */
 .kit .agal-cell {
   position: relative;
+  display: grid;
 }
 .kit .agal-card {
   all: unset;
   box-sizing: border-box;
   display: block;
   width: 100%;
+  height: 100%; /* the row's height, through the grid cell above */
   cursor: pointer;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -8791,8 +8800,10 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   /* TRANSLUCENT, not transparent (owner round 2026-09-26: "less solid"): the portrait ghosts through a
    * `--bg` veil, the same `color-mix` recipe the chat fades and the appbar veils are built from, so it
    * follows the theme's light/dark `--bg` like they do. 76% = the backdrop veil's top stop (the one under
-   * the app bar, `--kit-backdrop-veil`): legible over a bright portrait (confirm round). No backdrop-filter
-   * — a ~19px pill is not worth the heaviest effect the perf gate guards. */
+   * the app bar): legible over a bright portrait (confirm round). A LITERAL on purpose — there is no stop
+   * token to read: `--kit-backdrop-veil` is one whole gradient, scoped to `.kit-backdrop-pin` (a theme
+   * retunes it as a single value), so the pill restates the number and does not follow such a retune.
+   * No backdrop-filter — a ~19px pill is not worth the heaviest effect the perf gate guards. */
   background: color-mix(in oklch, var(--bg) 76%, transparent);
   color: var(--text-2);
   font-size: 9.5px;
@@ -8830,8 +8841,12 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   }
 }
 /* PRESSED = the owner's configured default — the `.seg button.active` fill pair, so "selected" reads
- * the same here as in every segmented control. No hover shift while pressed (tapping it deselects). */
-.kit .agal-default[aria-pressed="true"] {
+ * the same here as in every segmented control. No hover shift while pressed (tapping it deselects).
+ * `.badge.chosen` is the SAME fact in the open agent's editor header (`AgentsEditor`, a static marker on
+ * the `.badge` geometry): it wears these declarations rather than the badge's green `ok` pair, so
+ * "default" has one look in both places (and gacha's fill window lists both). */
+.kit .agal-default[aria-pressed="true"],
+.kit .confrow .badge.chosen {
   background: var(--accent-fill);
   color: var(--accent-ink);
   border-color: transparent;
@@ -8864,9 +8879,11 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
 .kit .agrep {
   margin-inline: 16px;
 }
-/* Hosted inside Conf, the group owns the inline inset (`.confgroup`'s 18px) — same as `.confgroup .util`. */
+/* Hosted inside Conf, the group owns the inline inset (`.confgroup`'s 18px) — same as `.confgroup .util`.
+ * The grid too: its own 16px inset stacked on the group's and sat it 16px right of the cards above it. */
 .kit .confgroup .agal-actions,
 .kit .confgroup .agal-detail,
+.kit .confgroup .agal-grid,
 .kit .confgroup .agrep {
   margin-inline: 0;
 }

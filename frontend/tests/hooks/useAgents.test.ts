@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { deleteToast, pickFields, type AgentDef } from "../../src/hooks/useAgents";
+import { deleteToast, pickFields, rosterNames, type AgentDef } from "../../src/hooks/useAgents";
 
 // useAgents — the managed-fields projection. `pickFields` is exactly what the AgentsEditor sends as the
 // PUT payload (`agent: pickFields(draft)`) and what its dirty-check compares, so anything it DROPS is
@@ -106,5 +106,19 @@ describe("deleteToast — the ISS-24 report, as the owner reads it", () => {
       text: "Agent removed · automations left without an agent (repoint them): morning",
       sticky: true,
     });
+  });
+});
+
+// The roster's ONE derivation (D2 L3) — the gallery's grid and both header counts read it.
+describe("rosterNames", () => {
+  it("is the root first, then the route's order — the root even before the listing loads", () => {
+    expect(rosterNames(undefined)).toEqual(["default"]);
+    expect(rosterNames({ agents: ["lynette", "emma"], default: "default" })).toEqual([
+      "default",
+      "lynette",
+      "emma",
+    ]);
+    // a route that ever listed the root would not double-count it
+    expect(rosterNames({ agents: ["default", "emma"], default: "default" })).toHaveLength(2);
   });
 });

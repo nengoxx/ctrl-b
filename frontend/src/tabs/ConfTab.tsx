@@ -29,8 +29,8 @@ import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearanc
 import { disclosureToggle } from "../lib/disclosure";
 import { listAudioInputs, type MicDevice } from "../lib/pcmCapture";
 import {
-  DEFAULT_AGENT,
   pickAgentSection,
+  rosterNames,
   useAgentRoster,
   type AgentSectionCfg,
 } from "../hooks/useAgents";
@@ -1253,10 +1253,10 @@ export function ConfTab({ active }: Props) {
   // The Roleplay group's header summary — the one fact worth reading off a collapsed group.
   const roleplayRight = pickRoleplay(settings?.roleplay).enabled ? "on" : "off";
   // The hosted gallery's header count — the SAME `["agents"]` query the gallery itself reads (TanStack
-  // dedupes it), so the collapsed group can't disagree with the grid inside it. The default agent always
-  // exists and is not in the list route's array, hence the +1 (the gallery's own rule).
+  // dedupes it) through the SAME `rosterNames` derivation, so the collapsed group can't disagree with the
+  // grid inside it (the default agent always exists and is not in the list route's array).
   const { data: agentList } = useAgentRoster();
-  const agentCount = 1 + (agentList?.agents ?? []).filter((n) => n !== DEFAULT_AGENT).length;
+  const agentCount = rosterNames(agentList).length;
   const skillNames = skillList.map((s) => s.name);
 
   // Memory caps/toggles come off the settings doc (config.yaml `memory.*`); the MemoryEditor edits

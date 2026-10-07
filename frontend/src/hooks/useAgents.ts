@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { del, getJSON, putBytes, putJSON } from "../api/client";
+import { DEFAULT_AGENT } from "../lib/agentSlug";
 import { beginAgentsLoad, installAgents, loadAgents } from "../lib/composer";
 import type { Privilege } from "../lib/privilege";
 import { pushToast } from "../store/toast";
@@ -182,6 +183,14 @@ export interface AgentListing {
   default: string;
   default_set?: boolean; // optional for the `summaries` reason above: absent reads as "none set"
   summaries?: Record<string, AgentSummary>;
+}
+
+/** EVERY agent the roster names, the root first and then the list route's own order — the one derivation
+ *  the gallery's grid and both of its header counts (the standalone `.sec`, the Conf group) read, so a
+ *  count can never disagree with the cards under it. The root is not in the route's `agents` (only
+ *  specialist folders are) yet always exists, so it is here even before the listing has loaded. */
+export function rosterNames(list: AgentListing | undefined): string[] {
+  return [DEFAULT_AGENT, ...(list?.agents ?? []).filter((n) => n !== DEFAULT_AGENT)];
 }
 
 /** THE agent roster — the resolved default slug, the specialist names, the showcase summaries —

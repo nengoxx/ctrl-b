@@ -5,6 +5,7 @@ import { FocalImg } from "../components/FocalImg";
 import { useAgentArt, type AgentArt } from "../hooks/useAgentArt";
 import {
   DEFAULT_AGENT,
+  rosterNames,
   useAgentRoster,
   useImportAgent,
   type ImportReport,
@@ -16,6 +17,7 @@ import { useSections } from "../hooks/useSections";
 import { pickRoleplay } from "../hooks/useRoleplay";
 import { useSaveSettings, useSettings } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
+import { agentSubtitle } from "../lib/agentSubtitle";
 import { agentPin, pinStickyAgent } from "../lib/composer";
 import { tileInitial } from "../lib/fallbackTile";
 import { useThreadAgent } from "../store/chat";
@@ -51,14 +53,6 @@ import { useThreadAgent } from "../store/chat";
 // line of theme CSS is copied (the D31 rule). Everything it renders about an agent comes from the ONE
 // summary+media join (`hooks/useAgentArt`), so the gallery, the composer's picker and the who-line
 // avatar can never disagree about what an agent looks like.
-
-/** The card's second line: what this agent IS, in the words the old list row used. A description is
- *  the agent's own sentence and wins; without one, the row says which agent it is. */
-function subtitle(name: string, description: string, isDefault: boolean): string {
-  if (description.trim()) return description;
-  // "workspace root", not "default agent": whether the root IS the default is the pill's to say now.
-  return isDefault ? "workspace root" : `/agent ${name}`;
-}
 
 /** One agent's card: the portrait (or the quiet initial tile that stands in for one) + the plate. */
 function AgentCard(props: {
@@ -97,7 +91,7 @@ function AgentCard(props: {
         <span className="agal-plate">
           <b className="agal-name">{art.title}</b>
           <small className="agal-sub">
-            {subtitle(art.name, props.description, props.isDefault)}
+            {agentSubtitle(art.name, props.description, props.isDefault)}
           </small>
         </span>
       </button>
@@ -218,7 +212,11 @@ export function AgentsContent() {
   // mode says, but the button that creates a character only shows when the owner is in that mode.
   const roleplayOn = pickRoleplay(settings?.roleplay).enabled;
 
-  const specialists = (list?.agents ?? []).filter((n) => n !== DEFAULT_AGENT);
+  // The root/default agent first, then the list route's own order (`rosterNames` — the one derivation the
+  // headers' counts read too). The default ALWAYS exists (it is the workspace itself), which is why a fresh
+  // install shows one card rather than an empty state.
+  const names = rosterNames(list);
+  const specialists = names.slice(1); // everything after the root
   const resolvedDefault = list?.default ?? DEFAULT_AGENT;
   // The CONFIGURED default (the pill's pressed state + the open card's badge) — `default_set` gates it,
   // because with nothing set the resolved `default` is still the root, and the pill must not claim a
@@ -231,9 +229,6 @@ export function AgentsContent() {
     saveSettings.mutate({ agent: { default_agent: isSetDefault(name) ? "" : name } });
   // The OPEN thread's own pin — what "Talk to the default" has to mean depends on it (see `talk`).
   const threadAgent = useThreadAgent();
-  // The root/default agent first, then the list route's own order. The default ALWAYS exists (it is
-  // the workspace itself), which is why a fresh install shows one card rather than an empty state.
-  const names = [DEFAULT_AGENT, ...specialists];
   const skillNames = skillList.map((s) => s.name);
 
   const talk = (name: string) => {
@@ -361,7 +356,7 @@ export function AgentsTab({ active }: { active: boolean }) {
   // The `.sec` header's count — the standalone shell's own line, so `AgentsContent` stays exactly the
   // hostable body (the hosted group's header carries the same count from ConfTab's own read).
   const { data: list } = useAgentRoster();
-  const count = 1 + (list?.agents ?? []).filter((n) => n !== DEFAULT_AGENT).length;
+  const count = rosterNames(list).length;
   // D70 §8.4a MED-3 (a latent S4 defect): `aria-labelledby="tabbtn-agents"` named an element that has
   // NEVER existed — the gallery was off-bar in every layout, and it still is under `conf`/`button`. The
   // panel takes a stable `aria-label` from the section's own label, and defers to the tab button only

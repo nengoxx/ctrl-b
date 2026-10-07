@@ -833,7 +833,8 @@ Conf home (settings, not agents; council refines the cut).
 - **Layout: a card grid IS our default — a stated, priced divergence.** The field defaults to
   LIST everywhere and treats grids as info-shedding density modes (R67 §1) — but that serves
   catalogs of hundreds; ctrl-b is single-user with a handful of agents, and the owner asked
-  for a showcase. So: a 2-column grid of 3/4 cards at phone width (gacha's `.gc-track` is the
+  for a showcase. So: a 2-column grid of SQUARE cards at phone width (*as-built: 1:1, an avatar's
+  own shape — the draft said 3/4*) (gacha's `.gc-track` is the
   structural precedent, rebuilt kit-level with tokens per VAPOR_PATTERNS §5–§7/§11–§13 —
   never copied from the theme), each card = `FocalImg` + `art.focus` (D65's real framing —
   the field hand-tunes `object-position` hacks for lack of it) + a name/sub plate. No
@@ -2869,9 +2870,10 @@ owns (`lib/uploadName.ts` on the FE side — the server returns bytes only, the 
   own `FULL_ART` (4 MP; PNG takes no quality step-down, so `overBudget` is advisory); the Blob →
   `createImageBitmap` path is same-origin, no tainting; `probe()`/`checkEncoded` already catch the
   silent-canvas case.
-- **No avatar:** the FE paints the same fallback the gallery shows (the initial on the accent) onto a
-  512×512 canvas ON THE MAIN THREAD (a worker's OffscreenCanvas has no document fonts) — one small
-  `lib/` function; ST needs an image, and a 1×1 would be a broken card.
+- **No avatar:** the FE paints the agent's initial on a flat tile (*as-built: the accent pair, glyph 0.5
+  of the side — deliberately NOT the gallery's grey 34px `.agal-mono`, §15.12*) onto a 512×512 canvas
+  ON THE MAIN THREAD (a worker's OffscreenCanvas has no document fonts) — one small `lib/` function;
+  ST needs an image, and a 1×1 would be a broken card.
 - **Export exports the SAVED character** (the server composes from disk): the control is disabled
   while the form is dirty, labelled "save first" (Opus F7).
 - **FE:** `hooks/useAgents.ts` gains `useExportCard(name)` → (avatar blob via the art hook's URL →

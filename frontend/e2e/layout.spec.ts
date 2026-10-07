@@ -2043,6 +2043,17 @@ test("minimal · 4-tab: the gallery's DEFAULT home is a group inside Conf, and n
   await expect(page.locator("#tab-agents")).toHaveCount(0);
   await expect(page.locator(".agal-grid")).toHaveCount(1);
   await expect(page.locator("#agents-hosted .agal-grid .agal-cell")).toHaveCount(1);
+
+  // Hosted, the GROUP owns the inline inset: the grid shares the actions card's left edge instead of
+  // stacking its own 16px on the group's 18px (it sat at x 34 under cards at x 18 — D2 M2).
+  await page.locator("#agents-hosted .conftitle").click();
+  await expect(page.locator("#agents-hosted .agal-grid")).toBeVisible();
+  const [hostedGrid, hostedActions] = await Promise.all([
+    page.locator("#agents-hosted .agal-grid").boundingBox(),
+    page.locator("#agents-hosted .agal-actions").boundingBox(),
+  ]);
+  expect(hostedGrid!.x).toBe(hostedActions!.x);
+  expect(hostedGrid!.width).toBe(hostedActions!.width);
 });
 
 // …and the `button` placement is the S4 as-built state, now reached by a flip: the menu holds exactly
@@ -2207,7 +2218,10 @@ test("placement=button restores the docked action's geometry (gacha bar height �
 // until a scroll brought the card on screen. Five cards so a column holds an off-screen one, with the grid
 // started low enough for that (the actions card above it is what puts it there); measured BEFORE any
 // scroll, because the scroll is what used to hide the defect. The rule it pins: `.agal-grid`'s columns.
-test("agent gallery — equal columns before any scroll (360px, five agents)", async ({ page }) => {
+// The same arm pins ONE HEIGHT PER ROW (D2 M3, `.agal-cell`'s grid): every name above fits one line at
+// 360px, so a sixth agent whose title wraps sits beside "Seraphina of the Glade" and that row's plates
+// differ for certain.
+test("agent gallery — equal columns before any scroll (360px, six agents)", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 });
   await seedUI(page, {
     theme: "minimal",
@@ -2229,7 +2243,7 @@ test("agent gallery — equal columns before any scroll (360px, five agents)", a
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        agents: ["emma", "frieren", "lynette", "seraphina"],
+        agents: ["emma", "frieren", "lynette", "seraphina", "ai"],
         default: "default",
         summaries: {
           default: card(""),
@@ -2237,6 +2251,7 @@ test("agent gallery — equal columns before any scroll (360px, five agents)", a
           frieren: card("Frieren the Slayer"),
           lynette: card("Lynette"),
           seraphina: card("Seraphina of the Glade"),
+          ai: card("Ai of the Eastern Lighthouse Watch"),
         },
       }),
     }),
@@ -2255,7 +2270,7 @@ test("agent gallery — equal columns before any scroll (360px, five agents)", a
   await page.goto("/");
   await page.locator(".kit-appbar .navmenu-launch").click();
   await expect(page.locator("#tab-agents")).toBeVisible();
-  await expect(page.locator(".agal-grid .agal-cell")).toHaveCount(5);
+  await expect(page.locator(".agal-grid .agal-cell")).toHaveCount(6);
   await expect(page.locator(".agal-import")).toBeVisible();
   expect(await page.locator("#app-scroll").evaluate((el) => el.scrollTop)).toBe(0);
 
@@ -2270,6 +2285,32 @@ test("agent gallery — equal columns before any scroll (360px, five agents)", a
     return {
       widths: [...grid.querySelectorAll<HTMLElement>(".agal-cell")].map((c) => c.offsetWidth),
       overflow: grid.scrollWidth - grid.clientWidth,
+      // Per grid ROW (cells sharing an offsetTop): each card's height and its name's.
+      rows: Object.values(
+        [...grid.querySelectorAll<HTMLElement>(".agal-cell")].reduce<
+          Record<number, { card: number; name: number }[]>
+        >((acc, cell) => {
+          (acc[cell.offsetTop] ??= []).push({
+            card: cell.querySelector<HTMLElement>(".agal-card")!.offsetHeight,
+            name: cell.querySelector<HTMLElement>(".agal-name")!.offsetHeight,
+          });
+          return acc;
+        }, {}),
+      ),
+      // The card's two SIBLING pills, measured against the cell: still pinned 6px into its top corners.
+      pills: [...grid.querySelectorAll<HTMLElement>(".agal-cell")].flatMap((cell) =>
+        [".agal-default", ".agal-talk"].map((sel) => {
+          const p = cell.querySelector<HTMLElement>(sel)!;
+          return {
+            parent: p.offsetParent === cell,
+            top: p.offsetTop,
+            side:
+              sel === ".agal-default"
+                ? p.offsetLeft
+                : cell.clientWidth - p.offsetLeft - p.offsetWidth,
+          };
+        }),
+      ),
     };
   });
   const [min, max] = [Math.min(...geo.widths), Math.max(...geo.widths)];
@@ -2278,4 +2319,16 @@ test("agent gallery — equal columns before any scroll (360px, five agents)", a
     `unequal columns before any scroll: ${geo.widths.join(" ")}`,
   ).toBeLessThanOrEqual(1);
   expect(geo.overflow, "the grid scrolls sideways").toBeLessThanOrEqual(0);
+
+  // ONE HEIGHT PER ROW — the premise first (some row's names really differ), then every row's cards.
+  expect(
+    geo.rows.some((r) => new Set(r.map((c) => c.name)).size > 1),
+    `no row's names differ — the fixture no longer tests M3: ${JSON.stringify(geo.rows)}`,
+  ).toBe(true);
+  for (const row of geo.rows) {
+    const hs = row.map((c) => c.card);
+    expect(Math.max(...hs) - Math.min(...hs), `ragged row: ${hs.join(" ")}`).toBeLessThanOrEqual(1);
+  }
+  // …and the cell's `display: grid` left its out-of-flow pills where they were.
+  for (const p of geo.pills) expect(p).toEqual({ parent: true, top: 6, side: 6 });
 });

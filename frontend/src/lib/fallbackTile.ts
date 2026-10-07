@@ -1,10 +1,13 @@
-// THE NO-AVATAR CARD PICTURE (D79 / ROLEPLAY_PLAN §15.3) — the gallery's letter tile, painted into a
-// PNG so a character with no bound avatar still exports as a real card.
+// THE NO-AVATAR CARD PICTURE (D79 / ROLEPLAY_PLAN §15.3) — an agent's initial on a flat tile, painted
+// into a PNG so a character with no bound avatar still exports as a real card.
 //
 // SillyTavern needs an IMAGE to carry a card, and a 1×1 would be a broken one; the honest picture of an
-// agent with no art is the one the gallery already shows for it — its initial on a flat tile. So this
-// paints exactly that, on the theme's own ACCENT pair (the accent as the fill, the accent's ink as the
-// letter — one source for both halves of the colour pair, the crash-screen rule).
+// agent with no art is its initial on a flat tile — the gallery's IDEA, deliberately not its look (the
+// ruled divergence, ROLEPLAY_PLAN §15.12: an export artefact, not a clone of the gallery's CSS
+// tile). The gallery's `.agal-mono` is a quiet grey letter (`--text-3` on `--surface-2`, a fixed 34px);
+// this paints the theme's ACCENT pair (the accent as the fill, the accent's ink as the letter — one
+// source for both halves of the colour pair, the crash-screen rule) with the glyph at half the side.
+// Only the LETTER is shared (`tileInitial`, below).
 //
 // ON THE MAIN THREAD, deliberately: the export pipeline's worker draws on an `OffscreenCanvas`, and a
 // worker has no access to the document's loaded fonts, so the letter would silently fall back to a
@@ -16,7 +19,8 @@ import { ExportError } from "./imageExport";
  *  a portrait in any card browser without being a heavy file. */
 export const FALLBACK_TILE_PX = 512;
 
-/** The glyph's size as a fraction of the tile: the gallery's `.agal-mono` letter, scaled to the canvas. */
+/** The glyph's size as a fraction of the tile — the export's own (the gallery's `.agal-mono` is a fixed
+ *  34px, ≈0.2 of a phone-width card): a card browser shows this picture alone, so the letter fills it. */
 const GLYPH_SCALE = 0.5;
 
 /** What the tile is painted with. Read off the live theme by `readTilePaint`, or stated by a test. */

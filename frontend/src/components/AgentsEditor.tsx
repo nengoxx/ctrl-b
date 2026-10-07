@@ -29,6 +29,7 @@ import { ProviderModelPicker, type PickerCatalog } from "./ProviderModelPicker";
 import { Seg } from "./Seg";
 import { Switch } from "./Switch";
 import { TickGrid } from "./TickGrid";
+import { agentSubtitle } from "../lib/agentSubtitle";
 import { disclosureToggle } from "../lib/disclosure";
 import { numOrNull } from "../lib/num";
 import { PRIVILEGE_LEVELS } from "../lib/privilege";
@@ -699,9 +700,13 @@ export function AgentRow(props: {
             {titleLabel}
             {titleLabel !== name ? <span className="agent-slug"> · {name}</span> : ""}
           </div>
-          <div className="desc">{isDefault ? "workspace root" : `specialist · /agent ${name}`}</div>
+          {/* The card's own second line (`lib/agentSubtitle`), off the draft like the title above. */}
+          <div className="desc">
+            {agentSubtitle(name, (draft ?? detail?.agent)?.description ?? "", isDefault)}
+          </div>
         </div>
-        {props.isSetDefault && <span className="badge">default</span>}
+        {/* The card pill's PRESSED look (`.badge.chosen`, kit.css) — a static marker, not a toggle. */}
+        {props.isSetDefault && <span className="badge chosen">default</span>}
         <span className="chev" aria-hidden>
           ›
         </span>

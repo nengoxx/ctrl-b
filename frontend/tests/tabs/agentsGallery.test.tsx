@@ -239,6 +239,8 @@ describe("AgentsTab · the default pill", () => {
     render(<AgentsTab active />);
     fireEvent.click(screen.getByText("workspace root"));
     expect(document.querySelector(".agal-detail .badge")?.textContent).toBe("default");
+    // ONE "default" look (D2 M4): the header marker wears the card pill's pressed fill, not the `ok` badge.
+    expect(document.querySelector(".agal-detail .badge")?.classList.contains("chosen")).toBe(true);
   });
 
   it("every pill is disabled while a save is in flight — one write at a time", () => {
