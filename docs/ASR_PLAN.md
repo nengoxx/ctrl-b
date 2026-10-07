@@ -4,7 +4,7 @@
 > (session 53); council №1 (blind Opus 5.5 ∥ Emma, both BUILD WITH CHANGES) folded in full over six waves; **Opus CONFIRMED BUILD · Emma closed on the last wording line (§11)**. NOTHING BUILT.**
 > Order: **S5 — D82 ratified THIS session, before session A** → session **A** on dev (transport, the dictation
 > rulings, 16 kHz capture) → session **B** on dev (the host on the clip door, raw-audio capture and hand tuning, then THE FLIP — ctrl-b off Speaches in one config move) → **TWO releases (owner,
-> ruled at close): v1.7.11 = the six polish fixes + session A** once A's field checks pass (Speaches still the ear) · **v1.7.12
+> ruled at close): v1.7.11 = the six polish fixes + session A** once A's field checks pass (Speaches still the ear) — **✅ v1.7.11 LIVE 2026-10-07 (§8.1.1)** · **v1.7.12
 > = session B** once B's criteria (§6.4) pass. This file owns the ASR/VAD design;
 > [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) keeps the call loop, the mouth and the client admission layer. Evidence:
 > [R94](./research/R94-asr-audits-verification.md) · [R95](./research/R95-vad-placement.md) · [R96](./research/R96-16khz-capture.md) ·
@@ -1220,7 +1220,7 @@ After S7b + S9 (the pass must exist); **v1.7.13 = this wave**, after v1.7.12 = s
 
 ### 8.1 What each release carries
 
-#### 8.1.1 v1.7.11 = the six polish fixes + session A
+#### 8.1.1 v1.7.11 = the six polish fixes + session A — **✅ RELEASED 2026-10-07 10:40Z @ `bad0c99` (session 63): CI `37606193644` + release gate `37607523443` green · `update.sh v1.7.11` exit 0 · health 1.7.11 · DB snapshot `~/.ctrl-b/backups/ctrlb-20261007-124010.db.gz` · config 5, no migration · rollback = `update.sh v1.7.10`. The gate was the owner's dictation check (§7.1), passed the same morning (trail `~/.ctrl-b-dev/calls/dictation/bec301ce-….jsonl`: 419.6 s, 57 finals, 0 drops, three pauses ≥ 21 s).**
 
 The session-52 polish (five fixes) + polish #6 `e249f12` + the R94–R97 and plan docs + session A (S1, S2, S3, SP, K6, D9, D8,
 D5). **Speaches is still the ear** — the relay still dials its realtime WebSocket. **Config migration: NONE** (session A's

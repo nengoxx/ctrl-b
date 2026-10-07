@@ -1789,8 +1789,8 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
 - [ ] D9 — The client's awaited-id set (closes LIVE_VOICE_PLAN OPEN-2).
 - [ ] D8 — The provisional early-call floor.
 - [ ] D5 — Slot takeover by the per-tab `sessionStorage` `client_id`; the slot is acquired after `start`.
-- [ ] **Release v1.7.11** (the six polish fixes + session A) per `ASR_PLAN` §8.2.1 — the standard runbook §Release, no
-      config step. Rollback: plain `update.sh v1.7.10`.
+- [x] **Release v1.7.11** (the six polish fixes + session A) per `ASR_PLAN` §8.2.1 — the standard runbook §Release, no
+      config step. Rollback: plain `update.sh v1.7.10`. **✅ LIVE 2026-10-07 10:40Z @ `bad0c99` (session 63; the dictation check passed first — trail `bec301ce`).**
 
 **Session B — engine, capture, the host, hand tuning, the client half, THE FLIP, recovery (no shadow, no Speaches baseline):**
 - [ ] S6-i — The pure engine/DSP:
