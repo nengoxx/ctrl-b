@@ -58,6 +58,7 @@ backend/                FastAPI + Uvicorn service (port 5433). Layered:
   app/config_migration/ config-shape migrations (UPDATE_PLAN.md) — load-boundary fold + write-back
   app/runtime.py        the process-wide chokepoint: settings writes / reconfigure() / grant_approval
   app/db.py             SQLite schema + migrations + connection handling (chat · memory · events)
+  app/assets/silero/    the vendored Silero VAD ONNX files (v6.2 + v5.1.2, SHA-pinned by a test) + LICENSE/provenance
   app/main.py           lifespan (db) + app.frontend() SPA serving of frontend/dist (D55; StaticFiles = media mounts only)
   tests/                pytest (count: QUALITY.md) — conftest auto-isolates CTRLB_HOME; temp configs via CTRLB_CONFIG/CTRLB_DB
   pyproject.toml        editable install (pip install -e .)
@@ -91,12 +92,13 @@ archive/                v0.1-flask/ (the old Flask app + scripts) · v0.1-infere
 # Linux (the primary environment — emma) — --reload is safe here. Or just: deploy/linux/run.sh dev
 # On emma the dev instance already runs as systemd units (:5434 + Vite :5173) — restart those instead
 # of spawning duplicates:  systemctl --user restart ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web
-cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev,voice]"
 .venv/bin/uvicorn app.main:app --reload --port 5433
 ```
 ```powershell
 # Windows (the frozen corsair clone; do NOT pass --reload — see §8 gotcha). [dev] = ruff/pyright/pytest
-cd backend; py -3 -m venv .venv; .venv\Scripts\python.exe -m pip install -e ".[dev]"
+# [voice] = onnxruntime/numpy/av (the Phase 26 ear) — gate-mandatory, check.py's preflight probes both extras
+cd backend; py -3 -m venv .venv; .venv\Scripts\python.exe -m pip install -e ".[dev,voice]"
 .venv\Scripts\python.exe -m uvicorn app.main:app --port 5433        # http://127.0.0.1:5433
 .venv\Scripts\python.exe -m pytest -q                               # tests, the Windows spelling
 cd ..\frontend; npm install; npm run dev                            # http://localhost:5173 (proxies /api → 5433)
@@ -112,7 +114,7 @@ cd ..\frontend; npm install; npm run dev                            # http://loc
   check-all` = `tsc` + ESLint + stylelint + Prettier + `vitest`). Flags: `--backend`/`--frontend`/`--fast`. The
   layered standard + conventions live in [`docs/QUALITY.md`](./docs/QUALITY.md); the sliced rollout is
   [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) §1 (1a–1d shipped). Backend pyright deps:
-  `pip install -e "backend/.[dev]"` (installs `pyright[nodejs]`).
+  `pip install -e "backend/.[dev,voice]"` (installs `pyright[nodejs]` + the voice ear the gate also needs).
 - **Git-hook gate (1d):** tracked `.githooks/` via `core.hooksPath` — **pre-commit** runs `check.py --fast`
   (ruff + FE prettier, instant), **pre-push** runs the full `check.py`. `deploy/linux/install.sh` enables it
   on emma; **on Windows enable once per clone:** `git config core.hooksPath .githooks`. Bypass an emergency

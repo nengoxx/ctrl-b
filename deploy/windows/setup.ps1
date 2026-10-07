@@ -53,9 +53,10 @@ if (Test-Path $VPY) {
 }
 # [dev] = the tools/check.py toolchain (ruff/pyright/pytest) — this box is the dev machine, and the
 # git-hook gate (AGENTS.md §3) runs check.py on every commit/push, so the venv must carry it.
-Write-Host "-- installing backend deps (pip install -e backend[dev])"
+# [voice] = onnxruntime/numpy/av, the relay-owned ear (Phase 26) — gate-mandatory like [dev].
+Write-Host "-- installing backend deps (pip install -e backend[dev,voice])"
 & $VPY -m pip install --upgrade pip --quiet
-& $VPY -m pip install -e "$(Join-Path $ROOT 'backend')[dev]" --quiet
+& $VPY -m pip install -e "$(Join-Path $ROOT 'backend')[dev,voice]" --quiet
 
 # Config preflight + migration (UPDATE_PLAN slice 6 — the Windows half of §4). Placed BEFORE the frontend
 # build for the same reason as install.sh step 2.6: the build is the slowest thing here, and a config this

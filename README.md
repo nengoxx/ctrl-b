@@ -161,8 +161,9 @@ deploy/linux/run.sh dev      # uvicorn :5433 (--reload) + Vite :5173 HMR
 
 **From source, by hand:**
 ```bash
-cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # Windows: .venv\Scripts\python.exe
-# [dev] = the tools/check.py toolchain (ruff/pyright/pytest) — needed to commit; drop it to only run the app
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev,voice]"   # Windows: .venv\Scripts\python.exe
+# [dev] = the tools/check.py toolchain (ruff/pyright/pytest) — needed to commit; [voice] = onnxruntime/numpy/av,
+# the live ear (the gate needs it too); `pip install -e .` alone still boots the app, without the ear
 cd ../frontend && npm install
 # backend first (Windows: do NOT pass --reload — see note), then frontend:
 .venv/bin/uvicorn app.main:app --port 5433        # http://127.0.0.1:5433

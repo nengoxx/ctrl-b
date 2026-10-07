@@ -80,22 +80,25 @@ def preflight() -> list[str]:
     if not venv_python().exists():
         problems.append(
             f"backend venv missing at {venv_python()}\n"
-            f"      fix: cd backend && py -3 -m venv .venv && "
-            f'.venv/Scripts/python.exe -m pip install -e ".[dev]"'
+            f"      fix: cd backend && {'py -3' if os.name == 'nt' else 'python3'} -m venv .venv && "
+            f'{venv_python().relative_to(BACKEND)} -m pip install -e ".[dev,voice]"'
         )
     else:
-        # The venv can exist without the [dev] toolchain (e.g. installed with a bare `pip install -e .`,
+        # The venv can exist without the [dev] toolchain (e.g. installed with `pip install -e ".[voice]"`,
         # the deploy-prod path) — probe it so a missing ruff/pyright/pytest is an actionable env error
-        # (exit 2), not a cryptic "No module named ..." check failure.
+        # (exit 2), not a cryptic "No module named ..." check failure. The [voice] extra (onnxruntime/
+        # numpy/av, Phase 26's relay-owned ear) is GATE-MANDATORY too: pyright resolves its imports and the
+        # VAD/decode tests run them — there is deliberately no skip marker.
         probe = subprocess.run(
-            [str(venv_python()), "-c", "import ruff, pytest, pyright"],
+            [str(venv_python()), "-c", "import ruff, pytest, pyright, numpy, onnxruntime, av"],
             capture_output=True,
             text=True,
         )
         if probe.returncode != 0:
             problems.append(
-                "backend dev toolchain missing from the venv (ruff/pyright/pytest — the [dev] extra)\n"
-                f'      fix: {venv_python()} -m pip install -e "{BACKEND}[dev]"'
+                "backend dev toolchain missing from the venv (ruff/pyright/pytest — the [dev] extra; "
+                "numpy/onnxruntime/av — the [voice] extra)\n"
+                f'      fix: {venv_python()} -m pip install -e "{BACKEND}[dev,voice]"'
             )
     if shutil.which("npm") is None:
         problems.append("npm not on PATH\n      fix: install Node.js (https://nodejs.org)")

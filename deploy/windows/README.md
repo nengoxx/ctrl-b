@@ -7,7 +7,7 @@ landed with the 2026-06-30 repo reorg. The always-on Linux/systemd path is [`../
 ## One-time setup
 **Double-click `setup.cmd`** (or `start.cmd` will tell you if it's needed). It:
 - creates the backend venv (`backend\.venv`, Python 3.14+),
-- installs backend deps (`pip install -e backend`),
+- installs backend deps (`pip install -e backend[dev,voice]` — the check.py toolchain + the voice ear),
 - installs frontend deps + builds the production bundle (`frontend\dist`).
 
 Prereqs it checks for: **Node 20+** (`npm`) and **Python 3.14+** (with the `py` launcher). It

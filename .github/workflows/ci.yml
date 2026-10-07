@@ -70,14 +70,17 @@ jobs:
       # Linux (venv_python(), check.py:48-52) and preflight() hard-fails if it is
       # missing. Create the venv exactly there and install the project editable with the
       # dev extra (pyright[nodejs]==1.1.409 — bundles its own Node via nodejs-wheel, so
-      # pyright does not depend on the setup-node install). "-e ." needs cwd=backend
-      # where pyproject.toml lives, which also makes ".venv" == backend/.venv.
-      - name: Create backend venv and install (editable + dev)
+      # pyright does not depend on the setup-node install) AND the voice extra
+      # (onnxruntime/numpy/av — the relay-owned ear; gate-mandatory: pyright resolves its
+      # imports and the VAD/decode tests run them, and check.py's preflight probes it).
+      # "-e ." needs cwd=backend where pyproject.toml lives, which also makes ".venv" ==
+      # backend/.venv.
+      - name: Create backend venv and install (editable + dev + voice)
         working-directory: backend
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install -e ".[dev]"
+          .venv/bin/python -m pip install -e ".[dev,voice]"
 
       # check.py preflight() also requires frontend/node_modules to exist; npm ci
       # creates it deterministically from package-lock.json.

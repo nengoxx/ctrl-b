@@ -10,7 +10,7 @@ ROLE="${1:-prod}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VENV="$ROOT/backend/.venv"
 [ -d "$VENV" ] || { echo "✗ no backend venv at $VENV — create it first:"; \
-  echo "    cd $ROOT/backend && python3 -m venv .venv && .venv/bin/pip install -e ."; exit 1; }
+  echo "    cd $ROOT/backend && python3 -m venv .venv && .venv/bin/pip install -e \".[voice]\"   # dev: \".[dev,voice]\""; exit 1; }
 [ -f "$ROOT/config.yaml" ] || echo "⚠ $ROOT/config.yaml not found — fleet/secrets live there; add it before relying on the app."
 
 # THE LIVE-VOICE KEEPALIVES, identical to both systemd units (D71 / A-F3, evidence docs/research/R72 §4):

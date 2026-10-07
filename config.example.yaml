@@ -527,6 +527,9 @@ voice:
                            # ear — ended rather than held to max_session_s; must outlast tail_wait_ms
     allowed_origins: []    # EXTRA exact `scheme://host[:port]` strings the WS Origin check admits
                            # (empty = same-host only; browser CORS does not protect WebSockets)
+    vad_model: silero-v6.2 # Phase 26: the relay-owned VAD model (silero-v6.2 | silero-v5.1.2). Config-only;
+                           # a swap is a RE-CALIBRATION — set vad_threshold to the replay's recommendation
+                           # and re-run the pre-pass sweep (docs/ASR_PLAN.md §3.4.1)
     connect_timeout_s: 3   # realtime handshake budget (no next hop — there is no live failover)
     timeout_s: 30          # read window once established
 

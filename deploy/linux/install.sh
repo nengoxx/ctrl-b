@@ -109,11 +109,13 @@ fi
 # the real operation is the reliable check, so make ITS failure actionable instead.
 [ -d "$VENV" ] || { echo "-- creating backend venv with $PY (Python $WANT)"; "$PY" -m venv "$VENV" \
   || { echo "✗ venv creation failed — Debian/Ubuntu ships python3 without ensurepip: sudo apt install -y python3-venv"; exit 1; }; }
-# DEV also needs the check.py toolchain ([dev] = ruff/pyright/pytest) — step 4.5 enables the git
-# hooks, which run tools/check.py on every commit/push in the tree where agents commit. PROD stays
-# lean (sparse, tag-pinned, never commits; check.py's preflight reports the missing toolchain
-# actionably if it's ever invoked there).
-EXTRA=""; [ "$ROLE" = dev ] && EXTRA="[dev]"
+# BOTH roles take [voice] (onnxruntime/numpy/av — the relay-owned ear: the streaming VAD, its resampler
+# and the pre-ASR pass's decode, Phase 26 / ASR_PLAN §3.4); the app still BOOTS without it (nothing it
+# imports at start-up touches the three), but the ear needs it. DEV also needs the check.py toolchain
+# ([dev] = ruff/pyright/pytest) — step 4.5 enables the git hooks, which run tools/check.py on every
+# commit/push in the tree where agents commit. PROD otherwise stays lean (sparse, tag-pinned, never
+# commits; check.py's preflight reports the missing toolchain actionably if it's ever invoked there).
+EXTRA="[voice]"; [ "$ROLE" = dev ] && EXTRA="[dev,voice]"
 echo "-- ensuring backend deps (pip install -e .$EXTRA)"
 "$VENV/bin/pip" install -e "$APP/backend$EXTRA" --quiet
 

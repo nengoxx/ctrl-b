@@ -1763,6 +1763,7 @@ _SERVER_ONLY = {
     "uplink_idle_s",
     "allowed_origins",
     "trail_keep",
+    "vad_model",
 }
 
 

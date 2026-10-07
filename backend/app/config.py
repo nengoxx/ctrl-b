@@ -691,6 +691,14 @@ KEEPALIVE_HORIZON_MS = 10_000
 BUCKET_CAP_MS = 500
 
 
+#: The registered VAD models (Phase 26 / D82, ASR_PLAN §3.4.1 ⑤): the closed vocabulary of
+#: `voice.live.vad_model`, owned HERE because config never imports a service (services import config, never
+#: the reverse). `services/voice_vad.py` imports it and keys `VAD_MODELS` by it; a test pins
+#: `get_args(VadModelName) == set(VAD_MODELS)` and every entry's causality — the registry invariant that
+#: replaces any load-time check (building a model in a validator would import ORT at boot, council 11).
+VadModelName = Literal["silero-v6.2", "silero-v5.1.2"]
+
+
 class LiveCfg(VoiceServiceCfg):
     """LIVE VOICE / call mode (Phase 24 / D71, `docs/LIVE_VOICE_PLAN.md` §5.1) — the realtime EAR behind
     `WS /api/voice/live`. Inherits the house target shape from `VoiceServiceCfg`
@@ -709,7 +717,8 @@ class LiveCfg(VoiceServiceCfg):
       Speaches; `frame_ms`,
       `max_frame_bytes`, `max_session_s`, `max_sessions`, `relay_queue_ms`, `start_timeout_s`,
       `uplink_idle_s`, `allowed_origins` are the relay's own caps; `trail_keep` is the D77 call trail's
-      retention (per mode directory since Phase 26 S1 — calls and dictations each keep their own).
+      retention (per mode directory since Phase 26 S1 — calls and dictations each keep their own);
+      `vad_model` (Phase 26 S6-i) names the relay-owned VAD model both doors run.
     * CLIENT knobs — `turn_hold_ms` (ISS-55), `min_speech_ms`, `buffered_ceiling_ms`, `call_backlog_ms`,
       `barge_in`, `ring`, `captions`, `mic_hold`, the D76 GATE six (`floor_dbfs`, the three
       margins, `min_dbfs`/`max_dbfs`), the D80 TAIL five (`hold_tail_min_ms`, `tail_quiet_ms`,
@@ -733,7 +742,7 @@ class LiveCfg(VoiceServiceCfg):
     # ── whole-feature toggle (the standing pluggability requirement; ON since v1.7.8, S4 closed) ──
     enabled: bool = True
 
-    # ── the three knobs that ride `session.update` verbatim (§4.1; the ONLY server-side VAD knobs) ──
+    # ── the three knobs that ride `session.update` verbatim (§4.1; `vad_model` sits with the caps below) ──
     #: Silero speech probability floor (D76 §D, evidence R84). Silero's END threshold is
     #: `threshold − 0.15`, and THAT is what cuts quiet or narrowband speech mid-phrase — the start
     #: threshold is not the noise lever (the relative floor, `floor_dbfs` and friends below, is). 0.6
@@ -1135,6 +1144,15 @@ class LiveCfg(VoiceServiceCfg):
     #: in `api/voice.py` is the only defence — this list is its one escape hatch (e.g. a second
     #: Tailscale Serve name). Exact `scheme://host[:port]` strings, never patterns.
     allowed_origins: list[str] = Field(default_factory=list)
+    #: WHICH registered VAD model the relay-owned ear runs (Phase 26 / D82, ASR_PLAN §3.4.1 ⑤ + §4): the
+    #: live door's `VadSegmenter` and the pre-ASR pass on both doors, one model per process. Config-only —
+    #: no Conf row, never delivered (the `max_segment_s` precedent) — because a swap is a RE-CALIBRATION
+    #: the owner performs (set `vad_threshold` to the replay's recommendation and re-run the pre-pass
+    #: sweep), not a casual toggle. Default `silero-v6.2` (R98 §2.3, measured on emma: AUC 0.957 vs 0.925
+    #: clean, 0 phantom segments/min in car and babble noise at act 0.6 where v5 produced 7–9);
+    #: `silero-v5.1.2` stays registered as the replay A/B. No validator: causality is the registry-
+    #: invariant test, and an unknown value fails the `Literal` at load (the house behaviour).
+    vad_model: VadModelName = "silero-v6.2"
 
 
 class TtsServiceCfg(VoiceServiceCfg):

@@ -49,6 +49,18 @@ dev = [
     "pyright[nodejs]==1.1.409",
     "pytest==9.1.1",
 ]
+# The relay-owned ear (Phase 26 / D82, ASR_PLAN §3.4 + §3.4.1): the streaming VAD, its resampler and the
+# pre-ASR pass's bounded decode. OPTIONAL so a wheel-less profile (Termux) still installs and boots — no
+# module `app.main` reaches imports any of the three at import time (the import-blocked test pins it). It is
+# GATE-MANDATORY: install.sh (prod `[voice]`, dev `[dev,voice]`), CI and setup.ps1 install it, and
+# tools/check.py's preflight refuses a venv without it. All three ship cp314 (or abi3) wheels for
+# linux x86_64/aarch64 + win_amd64 (verified 2026-10-07). Exact pins: the conformance + alias tests were
+# measured on exactly these.
+voice = [
+    "onnxruntime==1.30.0",         # runs the vendored Silero ONNX files (app/assets/silero/) on CPU, one single-thread session per model per process — never the torch `silero-vad` package; R98 measured 83 µs/hop on this exact version. MIT.
+    "numpy==2.5.3",                # the tensors ORT takes and returns + the pass's per-hop arrays; R98's measured venv pin (onnxruntime's own runtime dep, made direct because ctrl-b code uses it). BSD-3.
+    "av==19.0.1",                  # PyAV = libswresample (the stateful anti-aliased resampler, R17: the 9 kHz alias −67 dBFS, chunked == whole bit-identical) + the clip door's container decode (webm/ogg/mp4/wav); the wheel BUNDLES its own FFmpeg (LGPL build), so no system ffmpeg. BSD-3.
+]
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]

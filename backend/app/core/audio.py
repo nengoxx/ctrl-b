@@ -97,6 +97,9 @@ class Pcm16Resampler:
     honest choice for a stream with no known end, and the reason the whole-clip comparison in the
     tests is a tolerance rather than an equality.
 
+    Phase 26: `services/voice_audio.PcmResampler` (PyAV, anti-aliased) replaces it at the flip; this one
+    keeps only the Speaches 24 kHz hop and is deleted in S10.
+
     Identity (`src_rate == dst_rate`, the common Chrome-at-24 kHz… case) is a pass-through fast path.
     An odd-length frame is a caller bug — half a sample means the stream is misframed and every later
     frame would be off by a byte — so it raises rather than guessing.
