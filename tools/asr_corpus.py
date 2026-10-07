@@ -22,13 +22,20 @@ written with the ONE WAV header helper (`core/audio.pcm16_wav_header`).
 CONSENT (ruling H11, ASR_PLAN §6.3): the owner's own voice only — a clip that carries another person's
 voice is deleted, never promoted. The tool cannot check that, so `promote` prints the rule and refuses to
 run without `--owner-only`, the owner's acknowledgement. (D85-S2 adds `--broadcast` for the one admitted
-class, broadcast media labelled `background` as a negative.) Push-to-talk clips are out of scope here
-(ruling H13 — S9's `promote --file`).
+class, broadcast media labelled `background` as a negative.)
+
+Push-to-talk (Phase 26 S9): under `voice.live.debug` the clip door captures every upload into
+`calls/clip/<id>-1.wav` (a whole-clip dictation fallback into its dictation's trail as `<id>-0.wav`), so
+`promote <id>-<leg>` takes them like any capture. `promote --file <path>` (S6-ii ruling H13) imports ANY
+decodable file — a clip exported from the phone, a synthesized bake-off clip — named
+`<mtime>-file-unknown-<lang>-<sha8>-0.wav` (`<sha8>` = the source's first 8 sha256 hex; `--lang` required).
 
 Usage (the venv's python):
 
     backend/.venv/bin/python tools/asr_corpus.py [--home H] promote <call_id>-<leg> --owner-only
         [--label TAG]... [--kind positive|negative] [--from ROOT] [--lang xx]
+    backend/.venv/bin/python tools/asr_corpus.py [--home H] promote --file PATH --owner-only --lang xx
+        [--label TAG]... [--kind positive|negative]
     backend/.venv/bin/python tools/asr_corpus.py [--home H] label <clip> [--kind K] [--label TAG]...
     backend/.venv/bin/python tools/asr_corpus.py [--home H] list
     backend/.venv/bin/python tools/asr_corpus.py [--home H] prune --older-than DAYS
@@ -58,7 +65,12 @@ if str(_BACKEND) not in sys.path:
 
 from app.core.audio import WAV_HEADER_BYTES, pcm16_wav_header  # noqa: E402
 from app.core.fsutil import atomic_write_text, fsync_dir  # noqa: E402
-from app.services.call_trail import CAPTURE_PART_SUFFIX, capture_name, valid_call_id  # noqa: E402
+from app.services.call_trail import (  # noqa: E402
+    CAPTURE_PART_SUFFIX,
+    LIVE_MODES,
+    capture_name,
+    valid_call_id,
+)
 from app.services.voice_audio import MODEL_RATE, float32_to_pcm16  # noqa: E402
 
 CORPUS_DIR = "asr-corpus"
@@ -172,8 +184,12 @@ def _trail_meta(trail: Path, leg: int) -> dict[str, Any]:
 
 
 def find_capture(source: Path, call_id: str, leg: int) -> tuple[Path, str]:
-    """`<source>/calls/[dictation/]<call>-<leg>.wav`, else its `.part` — and the mode its directory says."""
-    for mode, directory in (("call", source / "calls"), ("dictation", source / "calls" / "dictation")):
+    """`<source>/calls/[<mode>/]<call>-<leg>.wav`, else its `.part` — and the mode its directory says. Every
+    store mode is searched (`call` = the root; `dictation`, `clip` = their subdirectories), read from the
+    store's own vocabulary so a new mode is never missed."""
+    calls = source / "calls"
+    for mode in LIVE_MODES:
+        directory = calls if mode == "call" else calls / mode
         final = directory / capture_name(call_id, leg)
         for candidate in (final, final.with_name(final.name + CAPTURE_PART_SUFFIX)):
             if candidate.is_file():
@@ -214,10 +230,65 @@ def _write_label(path: Path, label: dict[str, Any]) -> None:
     atomic_write_text(path, json.dumps(label, indent=2, ensure_ascii=False) + "\n")
 
 
+def _decode(name: str, data: bytes) -> bytes:
+    """A source file's bytes → a 16 kHz pcm16 mono WAV body, through the shipped decode and the ONE
+    header helper."""
+    # Imported here, not at the top: the decode pulls PyAV, which `list`/`label`/`prune` never need.
+    from app.services.voice_prepass import DecodeAborted, UndecodableAudio, decode_to_pcm16k
+
+    try:
+        pcm = decode_to_pcm16k(data, max_decoded_s=MAX_DECODED_S, max_wall_s=MAX_WALL_S)
+    except (UndecodableAudio, DecodeAborted) as exc:
+        raise Refused(f"{name}: cannot decode ({type(exc).__name__})") from None
+    body = float32_to_pcm16(pcm)
+    return pcm16_wav_header(len(body) // 2, MODEL_RATE) + body
+
+
+def _admit(
+    corpus: Path, clip: str, wav: bytes, *, args: argparse.Namespace, lang: str, route: str, source: dict
+) -> Path:
+    """Write the clip (no-clobber), its label and its manifest line — the one tail of both promotions."""
+    _mkdirs(corpus)
+    dest = corpus / RAW_DIR / clip
+    _write_no_clobber(dest, wav)
+    lp = label_path(dest)
+    assert lp is not None
+    label = {
+        "kind": args.kind,
+        "tags": args.label,
+        "lang": lang,
+        "route": route,
+        "route_key": None,
+        "intervals": [],
+    }
+    _write_label(lp, label)
+    samples = (len(wav) - WAV_HEADER_BYTES) // 2
+    _append_manifest(
+        corpus,
+        {
+            "clip": clip,
+            "promoted_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+            "source": source,
+            "sha256": hashlib.sha256(wav).hexdigest(),
+            "duration_ms": samples * 1000 // MODEL_RATE,
+            "rate": MODEL_RATE,
+            "label": args.label,
+            "kind": args.kind,
+            "route": route,
+            "lang": lang,
+        },
+    )
+    return dest
+
+
 def cmd_promote(home: Path, args: argparse.Namespace) -> int:
     print(CONSENT)
     if not args.owner_only:
         raise UsageError("promote needs --owner-only (the consent rule above)")
+    if (args.capture is None) == (args.file is None):
+        raise UsageError("promote takes ONE of <call_id>-<leg> or --file PATH")
+    if args.file is not None:
+        return _promote_file(home, args)
     stem, _, leg_s = args.capture.rpartition("-")
     if not valid_call_id(stem) or not leg_s.isdigit():
         raise UsageError(f"not a <call_id>-<leg>: {args.capture!r}")
@@ -238,47 +309,35 @@ def cmd_promote(home: Path, args: argparse.Namespace) -> int:
         else dt.datetime.fromtimestamp(src.stat().st_mtime, dt.UTC)
     )
     clip = f"{when:%Y%m%d-%H%M%S}-{mode}-{route}-{lang}-{stem[:8]}-{leg}.wav"
-    _mkdirs(corpus)
-    dest = corpus / RAW_DIR / clip
-    if dest.exists():
+    if (corpus / RAW_DIR / clip).exists():
         raise Refused(f"{clip} already exists — never overwritten")
+    source_meta = {"root": str(source), "mode": mode, "call_id": stem, "leg": leg, "file": src.name}
+    wav = _decode(src.name, src.read_bytes())
+    dest = _admit(corpus, clip, wav, args=args, lang=lang, route=route, source=source_meta)
+    print(f"promoted {src.name} → {dest}")
+    return EXIT_OK
 
-    # Imported here, not at the top: the decode pulls PyAV, which `list`/`label`/`prune` never need.
-    from app.services.voice_prepass import DecodeAborted, UndecodableAudio, decode_to_pcm16k
 
-    try:
-        pcm = decode_to_pcm16k(src.read_bytes(), max_decoded_s=MAX_DECODED_S, max_wall_s=MAX_WALL_S)
-    except (UndecodableAudio, DecodeAborted) as exc:
-        raise Refused(f"{src.name}: cannot decode ({type(exc).__name__})") from None
-    body = float32_to_pcm16(pcm)
-    wav = pcm16_wav_header(len(body) // 2, MODEL_RATE) + body
-    _write_no_clobber(dest, wav)
-    lp = label_path(dest)
-    assert lp is not None
-    label = {
-        "kind": args.kind,
-        "tags": args.label,
-        "lang": lang,
-        "route": route,
-        "route_key": None,
-        "intervals": [],
-    }
-    _write_label(lp, label)
-    _append_manifest(
-        corpus,
-        {
-            "clip": clip,
-            "promoted_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
-            "source": {"root": str(source), "mode": mode, "call_id": stem, "leg": leg, "file": src.name},
-            "sha256": hashlib.sha256(wav).hexdigest(),
-            "duration_ms": len(body) // 2 * 1000 // MODEL_RATE,
-            "rate": MODEL_RATE,
-            "label": args.label,
-            "kind": args.kind,
-            "route": route,
-            "lang": lang,
-        },
-    )
+def _promote_file(home: Path, args: argparse.Namespace) -> int:
+    """`promote --file PATH` (S6-ii ruling H13, built in S9): any decodable file, no trail to read — so the
+    language is the owner's word (`--lang`), the route is `unknown`, the time is the file's mtime and the
+    identity is its content's sha256 (the H5 name's `<call8>` slot), leg 0. Same no-clobber, label and
+    manifest as a capture's promotion (`_admit`)."""
+    src = Path(args.file).expanduser().resolve()
+    if not src.is_file():
+        raise Refused(f"no file {src}")
+    lang = args.lang or ""
+    if not _LANG.fullmatch(lang):
+        raise UsageError("--file needs --lang xx (there is no trail to read it from)")
+    data = src.read_bytes()
+    when = dt.datetime.fromtimestamp(src.stat().st_mtime, dt.UTC)
+    clip = f"{when:%Y%m%d-%H%M%S}-file-unknown-{lang}-{hashlib.sha256(data).hexdigest()[:8]}-0.wav"
+    corpus = home / CORPUS_DIR
+    if (corpus / RAW_DIR / clip).exists():
+        raise Refused(f"{clip} already exists — never overwritten")
+    source_meta = {"mode": "file", "file": str(src)}
+    wav = _decode(src.name, data)
+    dest = _admit(corpus, clip, wav, args=args, lang=lang, route="unknown", source=source_meta)
     print(f"promoted {src.name} → {dest}")
     return EXIT_OK
 
@@ -365,7 +424,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--home", help="the corpus root's CTRLB_HOME (else env CTRLB_HOME; required)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("promote", help="copy a debug capture into the corpus")
-    p.add_argument("capture", help="<call_id>-<leg>")
+    p.add_argument("capture", nargs="?", help="<call_id>-<leg> (or --file)")
+    p.add_argument("--file", metavar="PATH", help="any decodable audio file instead of a capture")
     p.add_argument("--owner-only", action="store_true", help="confirm: the owner's own voice only")
     p.add_argument("--label", action="append", default=[], metavar="TAG", help="a free tag (repeatable)")
     p.add_argument("--kind", choices=KINDS, default="positive")

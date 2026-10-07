@@ -714,8 +714,10 @@ def test_the_media_surface_accepts_no_post_and_no_multipart(home: Path) -> None:
 
 
 #: Every `(method, path)` in the LIVE app that may declare a form/multipart body. One entry, and it
-#: is pre-existing: `POST /api/voice/stt` spends an STT call and writes no owner file — the residual
-#: SECURITY_MODEL §2.7 already enumerates. A row added here is a SECURITY DECISION (it admits a
+#: is pre-existing: `POST /api/voice/stt` spends an STT call and writes no owner file (under
+#: `voice.live.debug`, since Phase 26 S9, only the count-bounded debug trail + capture, §2.12) — the
+#: residual SECURITY_MODEL §2.7 already enumerates, CLOSED since S9 by the required CSRF header (every row
+#: here must depend on `api/csrf.require_csrf_header` — the next test). A row added here is a SECURITY DECISION (it admits a
 #: route a cross-origin page can reach with no preflight), never a refactor's tidy-up.
 MULTIPART_ALLOWLIST = {("POST", "/api/voice/stt")}
 
@@ -753,3 +755,31 @@ def test_no_route_in_the_whole_app_declares_a_form_body_outside_the_allowlist(ho
     # …and the allowlist itself is live, not a stale name: every entry must still be a real route.
     live = {(method, path) for path, methods, _ in walked for method in methods}
     assert MULTIPART_ALLOWLIST <= live, sorted(MULTIPART_ALLOWLIST - live)
+
+
+def test_every_allowlisted_form_route_requires_the_csrf_header(home: Path) -> None:
+    """The gate that makes an allowlisted form route safe (Phase 26 S9, SECURITY_MODEL §2.7): a form POST
+    is CORS-simple, so each one REQUIRES `X-Requested-With: ctrl-b` (`api/csrf.py`) — a custom header turns
+    the cross-origin send into a preflight this app never answers. Pinned by SHAPE (every allowlisted route
+    depends on the one gate, so a new form route cannot join the allowlist without it) and by BEHAVIOUR (a
+    cross-origin-shaped send with no header is a 403 that writes nothing; the same send with it takes the
+    route's ordinary path)."""
+    from app.api.csrf import CSRF_HEADER, CSRF_HEADER_VALUE, require_csrf_header
+
+    with make_client() as c:
+        routes = {
+            (method, path): route
+            for path, methods, route in iter_live_routes(c.app.router)
+            for method in methods
+            if (method, path) in MULTIPART_ALLOWLIST
+        }
+        assert set(routes) == MULTIPART_ALLOWLIST
+        for key, route in routes.items():
+            calls = [d.call for d in route.dependant.dependencies]
+            assert require_csrf_header in calls, f"{key} takes a form body without the CSRF header gate"
+        form = {"file": ("clip.webm", b"\x1a\x45\xdf\xa3 not much of a clip", "audio/webm")}
+        hostile = c.post("/api/voice/stt", files=form, headers={"Origin": "https://evil.example"})
+        assert hostile.status_code == 403 and CSRF_HEADER in hostile.json()["detail"]
+        assert not (home / "calls").exists()
+        ours = c.post("/api/voice/stt", files=form, headers={CSRF_HEADER: CSRF_HEADER_VALUE})
+        assert ours.status_code != 403  # the route's own answer (unconfigured / undecodable here)

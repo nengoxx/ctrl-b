@@ -109,12 +109,20 @@ def decode_to_pcm16k(
 @dataclass(frozen=True, slots=True)
 class PrepassResult:
     """What the pass decided. `spans` are the merged speech spans in 16 kHz samples of the INPUT;
-    `chunks` the audio to transcribe, in order (empty on `no_speech`); `hop` the model's."""
+    `chunks` the audio to transcribe, in order (empty on `no_speech`); `hop` the model's.
+
+    Widened additively in S9 for T10 (ASR_PLAN §5), so no caller re-derives the pass's own geometry:
+    `crop` = `[first − pad, last + pad)` in input samples (its end may pass the buffer: the tail pad);
+    `padded` = zeros were appended (R97 P-5a); `bounds` = each chunk's `[start, end)` in the same samples,
+    in order. All empty / `False` on `no_speech`."""
 
     outcome: Literal["ok", "no_speech"]
     chunks: list[NDArray[np.float32]]
     spans: list[tuple[int, int]]
     hop: int
+    crop: tuple[int, int] = (0, 0)
+    padded: bool = False
+    bounds: tuple[tuple[int, int], ...] = ()
 
 
 def scan(
@@ -178,6 +186,7 @@ def prepass(pcm16k: NDArray[np.float32], model: VadModel, *, act: float | None =
     ends = [min(e + pad, mid) for (_, e), mid in zip(spans, mids, strict=False)] + [crop_end]
     starts = [crop_start] + [max(s - pad, mid) for (s, _), mid in zip(spans[1:], mids, strict=True)]
     chunks: list[NDArray[np.float32]] = []
+    bounds: list[tuple[int, int]] = []
     lo, k = crop_start, 0
     while k < len(spans):
         hi = None
@@ -185,9 +194,19 @@ def prepass(pcm16k: NDArray[np.float32], model: VadModel, *, act: float | None =
             hi, k = ends[k], k + 1
         if hi is None:  # one span (with its pads) longer than the cap: a hard cut AT the cap (H7)
             chunks.append(audio[lo : lo + cap])
+            bounds.append((lo, lo + len(chunks[-1])))
             lo += cap
             continue
         chunks.append(audio[lo:hi])
+        bounds.append((lo, hi))
         if k < len(spans):
             lo = starts[k]
-    return PrepassResult("ok", chunks, spans, model.hop)
+    return PrepassResult(
+        "ok",
+        chunks,
+        spans,
+        model.hop,
+        crop=(crop_start, crop_end),
+        padded=shortfall > 0,
+        bounds=tuple(bounds),
+    )

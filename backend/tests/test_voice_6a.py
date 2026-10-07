@@ -28,6 +28,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+from _audio import FIXTURE, encode
 from _reg import target
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -355,8 +356,17 @@ class _StubVoice:
     def status(self) -> dict:
         return {"stt": self._stt, "tts": self._tts}
 
-    async def transcribe(self, *, content, filename, content_type):
-        return "transcribed text", SimpleNamespace(served=self._served, degraded=self._served != "speaches")
+    async def transcribe(self, *, content, filename, content_type, door="stt", prefer=None):
+        # Since S9 the route posts the clip door's chunk WAVs (decode → pass → chunks), never the upload.
+        assert (filename, content_type, door) == ("chunk.wav", "audio/wav", "stt")
+        assert content.startswith(b"RIFF")
+        return "transcribed text", SimpleNamespace(
+            served=self._served,
+            degraded=self._served != "speaches",
+            target=f"{self._served}/parakeet",  # the clip door pins the rest of a clip on it (S9 wave 1)
+            queue_ms=0,
+            asr_ms=0,
+        )
 
     async def synthesize(self, *, text, voice=None, audio_format=None, prefer=None):
         self.calls.append({"text": text, "voice": voice, "format": audio_format, "prefer": prefer})
@@ -385,7 +395,8 @@ def _app(
         voice_cfg["tts"] = tts_cfg
     app.state.settings = Settings.model_validate({"voice": voice_cfg})
     app.include_router(voice_api.router, prefix="/api")
-    return TestClient(app)
+    # The clip door's CSRF header (S9, `api/csrf.py`) — what the FE's `postForm` sends on every upload.
+    return TestClient(app, headers={"X-Requested-With": "ctrl-b"})
 
 
 def test_api_status_composes_auto_send_and_stt() -> None:
@@ -393,7 +404,8 @@ def test_api_status_composes_auto_send_and_stt() -> None:
     # the API composes stt_auto_send from live settings (the client's status() no longer carries it)
     body = c.get("/api/voice/status").json()
     assert (body["stt"], body["tts"], body["stt_auto_send"]) == (True, True, True)
-    r = c.post("/api/voice/stt", files={"file": ("clip.webm", b"abc", "audio/webm")})
+    # REAL audio (S9: the route decodes; a non-audio body is a 422 now) — the conformance speech clip.
+    r = c.post("/api/voice/stt", files={"file": ("clip.wav", FIXTURE.read_bytes(), "audio/wav")})
     assert r.status_code == 200
     assert r.json() == {"text": "transcribed text"}
     assert r.headers["X-Voice-Served-By"] == "vault-whisper"  # provider name
@@ -402,7 +414,8 @@ def test_api_status_composes_auto_send_and_stt() -> None:
 
 def test_api_stt_unconfigured_503() -> None:
     c = _app(_StubVoice(stt=False))
-    r = c.post("/api/voice/stt", files={"file": ("clip.webm", b"abc", "audio/webm")})
+    clip = encode("webm", "libopus", 48000)
+    r = c.post("/api/voice/stt", files={"file": ("clip.webm", clip, "audio/webm")})
     assert r.status_code == 503
 
 
@@ -420,11 +433,13 @@ def test_api_tts() -> None:
 
 def test_api_stt_rejects_oversized_upload() -> None:
     # SYS-17b: an upload over the configured byte cap is rejected (413); at the cap it still serves.
-    c = _app(_StubVoice(), stt_max_bytes=8)
-    at_cap = c.post("/api/voice/stt", files={"file": ("clip.webm", b"12345678", "audio/webm")})
+    clip = FIXTURE.read_bytes()  # real speech, so "serves" means decoded, passed and transcribed (S9)
+    c = _app(_StubVoice(), stt_max_bytes=len(clip))
+    at_cap = c.post("/api/voice/stt", files={"file": ("clip.wav", clip, "audio/wav")})
     assert at_cap.status_code == 200  # exactly at the cap → allowed
-    over = c.post("/api/voice/stt", files={"file": ("clip.webm", b"123456789", "audio/webm")})
-    assert over.status_code == 413
+    assert at_cap.json() == {"text": "transcribed text"}
+    over = _app(_StubVoice(), stt_max_bytes=len(clip) - 1)
+    assert over.post("/api/voice/stt", files={"file": ("clip.wav", clip, "audio/wav")}).status_code == 413
 
 
 def test_api_tts_rejects_overlong_text() -> None:

@@ -32,7 +32,7 @@ from fastapi.testclient import TestClient
 
 from app.api import voice as voice_api
 from app.config import Settings
-from app.services.call_trail import LIVE_MODES, TRAIL_MAX_BODY_BYTES, CallTrail
+from app.services.call_trail import LEG_MODES, LIVE_MODES, TRAIL_MAX_BODY_BYTES, CallTrail
 
 CALL = "0f8e2c4a-1b3d-4e5f-8a9b-0c1d2e3f4a5b"
 URL = "/api/voice/live/trail"
@@ -142,11 +142,22 @@ def test_append_rejects_an_unknown_mode(tmp_path: Path, bad: str) -> None:
 
 
 def test_the_mode_vocabulary_is_the_relays() -> None:
-    """ONE vocabulary (Phase 26 S1): the store owns it, the relay and the route import it."""
+    """ONE vocabulary (Phase 26 S1): the store owns it, the relay and the route import it. S9 adds the
+    clip door's `clip` to the STORE only — its ids are server-minted, so the wire (`LEG_MODES`: the
+    relay's `start.mode`, the browser's batch `mode`) never names it."""
     from app.api import voice as api_voice
+    from app.services import voice_live
 
-    assert LIVE_MODES == ("call", "dictation")
+    assert LIVE_MODES == ("call", "dictation", "clip")
+    assert LEG_MODES == ("call", "dictation")
+    assert voice_live.LEG_MODES is LEG_MODES
     assert api_voice.TrailBatch.model_fields["mode"].default == "call"
+
+
+def test_the_browser_route_refuses_the_server_minted_clip_mode(tmp_path: Path) -> None:
+    r = _app(tmp_path).post("/api/voice/live/trail", json=_batch([{"t": 1, "ev": "x"}], mode="clip"))
+    assert r.status_code == 422
+    assert not (tmp_path / "calls").exists()
 
 
 def test_a_write_error_is_swallowed_and_logged_once(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

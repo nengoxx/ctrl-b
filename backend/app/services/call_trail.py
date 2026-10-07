@@ -74,12 +74,19 @@ TRAIL_MAX_BODY_BYTES = 64 * 1024
 TRAIL_MAX_ENTRY_BYTES = 2048
 TRAIL_MAX_ENTRIES = 200
 
-#: What a live leg serves — `start.mode` on the relay's wire (S11) and `mode` on the trail route's body
-#: (Phase 26 S1). ONE vocabulary, owned HERE because the store turns it into a directory: `call` is the
-#: root (every pre-S1 trail stays where it is), any other mode is the subdirectory of that name. The
-#: relay and the route import it; neither re-spells it.
-LiveMode = Literal["call", "dictation"]
+#: The store's modes — one directory each, with its own `trail_keep` retention. ONE vocabulary, owned
+#: HERE because the store turns it into a directory: `call` is the root (every pre-S1 trail stays where it
+#: is), any other mode is the subdirectory of that name. `clip` (Phase 26 S9, session-64 rulings H6/H7) is
+#: the CLIP DOOR's: every push-to-talk upload under `voice.live.debug` gets a SERVER-minted id and its own
+#: trail + capture there, so all three doors share one trail/capture seam instead of a per-door special case.
+LiveMode = Literal["call", "dictation", "clip"]
 LIVE_MODES: tuple[LiveMode, ...] = get_args(LiveMode)
+
+#: What a live LEG serves — `start.mode` on the relay's wire (S11) and `mode` on the browser's trail route
+#: (Phase 26 S1): the store's modes a CLIENT may name. `clip` is not one — its ids are minted by the server,
+#: so a socket or a browser batch naming it is refused at the edge exactly like an unknown mode.
+LegMode = Literal["call", "dictation"]
+LEG_MODES: tuple[LegMode, ...] = get_args(LegMode)
 
 
 #: `start.leg`'s accepted range — the client's per-call reconnect ordinal (D77). Bounded like every
@@ -149,6 +156,13 @@ class CallTrail:
         self._root.mkdir(mode=0o700, parents=True, exist_ok=True)
         if directory != self._root:
             directory.mkdir(mode=0o700, exist_ok=True)
+
+    def has_trail(self, call_id: str, mode: LiveMode) -> bool:
+        """Does `<dir>/<call_id>.jsonl` exist in `mode`'s directory? Sync (a stat) — callers on the loop
+        hop through `to_thread`. The clip door asks it before joining a dictation's trail (S9 wave 1): a
+        client-named id joins only a trail that is already there, never mints one. Raises `ValueError` for
+        a malformed id or mode, like every path this store builds."""
+        return (self._directory(call_id, mode) / f"{call_id}.jsonl").is_file()
 
     def warn_once(self, what: str) -> None:
         """Log ONE warning per process for a failing disk (with the traceback), then stay silent."""

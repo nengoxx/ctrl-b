@@ -54,6 +54,7 @@ from app.core.provider_registry import (
     resolve_strict,
 )
 from app.core.tool import UnknownTool
+from app.services.voice_audio import voice_extra_installed
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -136,6 +137,29 @@ async def set_open_terminal(app: "FastAPI", settings: Settings) -> None:
     await _swap_client(app, "open_terminal", OpenTerminalClient(settings.open_terminal))
 
 
+def build_voice_client(registry: "Registry", settings: Settings, gates: EndpointGates | None) -> VoiceClient:
+    """THE one construction of a `VoiceClient` from a resolved `Registry` generation + live settings.
+    `set_voice` publishes it; `tools/vad_replay.py --asr` builds its client here too, so the bake-off's
+    requests are the app's real ones (ASR_PLAN §3.7 T-5) and never a hand-assembled policy."""
+    return VoiceClient(
+        registry.stt_chain,
+        registry.stt_policy,
+        registry.tts_chain,
+        registry.tts_policy,
+        gates,
+        enabled=settings.voice.enabled,
+        trim_silence=settings.voice.tts.trim_silence,
+        # D71: the live-voice ear rides this same rebuild, so a `voice.*` Conf edit re-resolves the
+        # realtime chain for free — the NEXT call picks it up (an in-flight relay session keeps the
+        # generation it captured, exactly like an in-flight STT clip).
+        live=registry.live_chain,
+        live_policy=registry.live_policy,
+        # Phase 26 S9 (the S6-i ruling H1 status-bit degrade): the clip door decodes every upload, so
+        # without the `voice` extra STT reports unconfigured rather than failing each clip.
+        decode_ready=voice_extra_installed(),
+    )
+
+
 def set_voice(app: "FastAPI", registry: "Registry") -> VoiceClient | None:
     """Build + wire the voice client from a RESOLVED `Registry` generation (A11/R5). Consumes the
     stt/tts chains + frozen policies + the app-owned `EndpointGates`; publishes onto `app.state.voice`
@@ -143,20 +167,7 @@ def set_voice(app: "FastAPI", registry: "Registry") -> VoiceClient | None:
     can `retire()` it (publish new, then drain old — in-flight STT/TTS finishes on its captured
     generation). `enabled` rides live settings, frozen into the client per generation."""
     old = getattr(app.state, "voice", None)
-    new_client = VoiceClient(
-        registry.stt_chain,
-        registry.stt_policy,
-        registry.tts_chain,
-        registry.tts_policy,
-        app.state.endpoint_gates,
-        enabled=app.state.settings.voice.enabled,
-        trim_silence=app.state.settings.voice.tts.trim_silence,
-        # D71: the live-voice ear rides this same rebuild, so a `voice.*` Conf edit re-resolves the
-        # realtime chain for free — the NEXT call picks it up (an in-flight relay session keeps the
-        # generation it captured, exactly like an in-flight STT clip).
-        live=registry.live_chain,
-        live_policy=registry.live_policy,
-    )
+    new_client = build_voice_client(registry, app.state.settings, app.state.endpoint_gates)
     app.state.voice = new_client
     return old if isinstance(old, VoiceClient) else None
 

@@ -28,8 +28,9 @@ old generation's refcount empties.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import httpx
 from openai import AsyncOpenAI
@@ -56,6 +57,14 @@ _MEDIA_TYPES = {
     "pcm": "audio/pcm",
 }
 
+#: Which transcription door a call serves (Phase 26 / D82, ASR_PLAN §3.7): `stt` = the clip door
+#: (push-to-talk + the whole-clip dictation fallback) on the `voice.stt` chain and `SttPolicy`; `live` = the
+#: live ear's batch requests (S7b) on the `voice.live` chain and `LivePolicy`. ONE `transcribe` selects
+#: between the two chains `Registry` already resolves — no third map.
+Door = Literal["stt", "live"]
+DOORS: tuple[Door, ...] = ("stt", "live")
+
+
 #: The CLOSED container allowlist (D63) — the keys of the media-type map above, which is the only place
 #: a container is turned into something the browser can play. The API validates a request-level
 #: `format` override against this so an arbitrary string never reaches a provider.
@@ -76,6 +85,12 @@ class VoiceReply:
     served: str
     degraded: bool
     target: str = ""
+    #: Phase 26 S9 (T9) — where a transcription's time went, summed over EVERY hop the walk tried: the
+    #: D40 permit wait (`queue_ms`) and the request itself (`asr_ms`). Summed because a hop that timed
+    #: out on its gate before the fallback served is time the caller paid. A wait on ANOTHER process's
+    #: work parks on the engine, not the gate, so it lands in `asr_ms` (§3.7, T-3). 0 for TTS.
+    queue_ms: int = 0
+    asr_ms: int = 0
 
 
 def target_id(t: "ResolvedTarget") -> str:
@@ -122,6 +137,7 @@ class VoiceClient:
         live: "tuple[ResolvedTarget, ...]" = (),
         live_policy: "LivePolicy | None" = None,
         trim_silence: bool = True,
+        decode_ready: bool = True,
     ) -> None:
         self._stt = stt
         self._stt_policy = stt_policy
@@ -135,6 +151,12 @@ class VoiceClient:
         self._live = live
         self._live_policy = live_policy
         self._enabled = enabled
+        #: Can the clip door decode on this install? (Phase 26 S9, the S6-i ruling H1 status-bit degrade.)
+        #: The door decodes every upload with the `voice` extra (PyAV + numpy + onnxruntime) before ASR
+        #: and never forwards raw bytes, so without the extra STT reports UNCONFIGURED — the mic hides
+        #: instead of failing every clip. Only `stt` degrades here: nothing on the live door needs the
+        #: stack until S7b. Frozen per generation (`runtime.set_voice` probes it once).
+        self._decode_ready = decode_ready
         #: `voice.tts.trim_silence` (D76 S3a), frozen per generation like `enabled`.
         self._trim_silence = trim_silence
         self._gates = gates if gates is not None else EndpointGates()
@@ -151,7 +173,11 @@ class VoiceClient:
         """Whether `service` ("stt"/"tts"/"live") has at least one usable target (and voice is enabled).
         Drives `GET /api/voice/status` so the PWA shows/hides the mic + auto-TTS + the call button.
         An unknown service name reads as unconfigured rather than silently aliasing to tts."""
-        chain = {"stt": self._stt, "tts": self._tts, "live": self._live}.get(service, ())
+        chain = {
+            "stt": self._stt if self._decode_ready else (),
+            "tts": self._tts,
+            "live": self._live,
+        }.get(service, ())
         return bool(self._enabled and chain)
 
     def status(self) -> dict[str, bool]:
@@ -189,7 +215,7 @@ class VoiceClient:
     def _gate(
         self,
         target: "ResolvedTarget",
-        policy: "SttPolicy | TtsPolicy",
+        policy: "SttPolicy | TtsPolicy | LivePolicy",
         chain: "tuple[ResolvedTarget, ...]",
     ) -> "AbstractAsyncContextManager[None]":
         """The shared request gate for this target — `EndpointGates.hold`, keyed `(gate_identity, limit)`
@@ -212,58 +238,106 @@ class VoiceClient:
         return self._gates.hold(target, wait_s=wait_s)
 
     async def transcribe(
-        self, *, content: bytes, filename: str, content_type: str | None
+        self,
+        *,
+        content: bytes,
+        filename: str,
+        content_type: str | None,
+        door: Door = "stt",
+        prefer: str | None = None,
     ) -> tuple[str, VoiceReply]:
-        """Push-to-talk STT: forward the recorded clip (filename + content-type preserved, since many
-        Whisper servers route by extension) to each target's `/v1/audio/transcriptions` until one
-        answers. `language` = target model > service policy (C8), omitted when blank; `vad_filter` /
-        `hotwords` / service `extra_body` ride the SDK escape hatch. Returns the transcript + which
-        provider served. Raises `VoiceError`."""
-        if not self.configured("stt"):
-            raise VoiceError("speech-to-text is not configured")
+        """Batch STT: post one audio body (filename + content-type preserved, since many Whisper servers
+        route by extension) to each target's `/v1/audio/transcriptions` until one answers. Returns the
+        transcript + which provider served (with the T9 timings). Raises `VoiceError`.
+
+        `door` (Phase 26 / D82, ASR_PLAN §3.7) picks the chain, the policy and so the timeouts:
+        `"stt"` (the default — every pre-S9 caller) walks `voice.stt` under `SttPolicy`; `"live"` walks
+        `voice.live` under `LivePolicy` (the live ear's per-segment requests, S7b). The D40 gate rule is
+        the SAME on both and reads the door's OWN chain: a capped hop with a next hop waits only
+        `connect_timeout_s` for its permit and then walks (a busy primary does not park the request on
+        the engine's lock); the last hop waits `timeout_s`.
+
+        `prefer` (`provider/model`, a `VoiceReply.target`) moves that hop to the front of THIS request's
+        chain — the D63 pin `synthesize` uses, so a chunked clip (S9) stays on the hop that served its
+        previous chunk instead of re-walking a busy or dead primary per chunk (the S9 review's M1); an
+        unknown one is a silent miss.
+
+        `language` = target model > the door's policy (C8), omitted when blank. Only the stt door
+        carries the faster-whisper extras (`vad_filter` / `hotwords` / service `extra_body`); the live
+        door sends `language` alone until S7b gives `LivePolicy` its own `extra_body` (session-64 S9
+        ruling H3)."""
+        if door not in DOORS:
+            raise ValueError(f"door must be one of {', '.join(DOORS)}")
+        if not self.configured(door):
+            raise VoiceError(
+                "speech-to-text is not configured" if door == "stt" else "the live ear is not configured"
+            )
         self._inflight += 1
         try:
-            policy = self._stt_policy
-            # vad_filter/hotwords are faster-whisper/Speaches extras (not standard OpenAI params), so they
-            # ride `extra_body`; a service `extra_body` merges on top (wins). Model `extra_body` stays
-            # chat-only (D48 homes it as chat passthrough).
-            #
-            # WHAT THESE TWO ACTUALLY REACH (R76 §1.3, source-read + probed on emma 2026-09-21): this
-            # whole-clip door is the ONLY one that carries them — the live/realtime ear sends four
-            # fixed parameters and never a bias list, so `hotwords` was never wired there and nothing
-            # is being removed here. `hotwords` is honored per EXECUTOR: faster-whisper takes it,
-            # Parakeet ignores it by design (`executors/parakeet.py`), so on a Parakeet STT model it
-            # is inert — it stays wired because the target model is configuration, not a constant, and
-            # the knob is exactly what a whisper target needs. `vad_filter` is a LOST parameter on the
-            # owner's Speaches build (no such form field any more; FastAPI discards it) and is kept
-            # for the same reason: it is still the contract of the faster-whisper HTTP door this
-            # adapter is written against, and an OpenAI-compatible endpoint that does not know either
-            # extra simply ignores it (the failover-chain posture stated above).
-            extra: dict = {"vad_filter": policy.vad_filter}
-            if policy.hotwords.strip():
-                extra["hotwords"] = policy.hotwords.strip()
-            extra.update(policy.extra_body or {})
+            policy: SttPolicy | LivePolicy
+            if door == "stt":
+                configured, policy = self._stt, self._stt_policy
+            elif self._live_policy is not None:
+                configured, policy = self._live, self._live_policy
+            else:  # a live chain always resolves WITH its policy — only a hand-built client lacks one
+                raise VoiceError("the live ear has no resolved policy")
+            # The per-request chain: one reorder, then the ordinary walk. The gate's "is this the LAST hop"
+            # read and `_reply`'s served_index both index THIS chain (the `synthesize` rule).
+            chain = _preferred_first(configured, prefer)
+            extra: dict = {}
+            if door == "stt":
+                stt_policy = self._stt_policy
+                # vad_filter/hotwords are faster-whisper/Speaches extras (not standard OpenAI params), so
+                # they ride `extra_body`; a service `extra_body` merges on top (wins). Model `extra_body`
+                # stays chat-only (D48 homes it as chat passthrough).
+                #
+                # WHAT THESE TWO ACTUALLY REACH (R76 §1.3, source-read + probed on emma 2026-09-21): the
+                # realtime ear sends four fixed parameters and never a bias list, so `hotwords` was never
+                # wired there. `hotwords` is honored per EXECUTOR: faster-whisper takes it, Parakeet
+                # ignores it by design, so on a Parakeet STT model it is inert — it stays wired because
+                # the target model is configuration, not a constant, and the knob is exactly what a
+                # whisper target needs (the `vault-speaches` fallback). `vad_filter` is a LOST parameter
+                # on the owner's Speaches build and parakeet-server never reads it (S9 audit §A: the
+                # server reads `file` + `response_format` only) — kept for the same reason: it is the
+                # contract of the faster-whisper HTTP door this adapter is written against, and an
+                # endpoint that does not know an extra ignores it (T-5, re-proven in the S9 bake-off).
+                extra = {"vad_filter": stt_policy.vad_filter}
+                if stt_policy.hotwords.strip():
+                    extra["hotwords"] = stt_policy.hotwords.strip()
+                extra.update(stt_policy.extra_body or {})
+            spent = {"queue": 0.0, "asr": 0.0}
 
             async def attempt(target: "ResolvedTarget") -> str:
-                kwargs: dict = {"extra_body": extra}
+                kwargs: dict = {"extra_body": extra} if extra else {}
                 language = (target.language or policy.language or "").strip()
                 if language:  # blank → omit so the server auto-detects
                     kwargs["language"] = language
-                async with self._gate(target, policy, self._stt):
-                    resp = await self._client(
-                        target, policy.connect_timeout_s, policy.timeout_s
-                    ).audio.transcriptions.create(
-                        model=target.model,
-                        file=(filename, content, content_type or "application/octet-stream"),
-                        **kwargs,
-                    )
+                asked = time.perf_counter()
+                entered: float | None = None
+                try:
+                    async with self._gate(target, policy, chain):
+                        entered = time.perf_counter()
+                        resp = await self._client(
+                            target, policy.connect_timeout_s, policy.timeout_s
+                        ).audio.transcriptions.create(
+                            model=target.model,
+                            file=(filename, content, content_type or "application/octet-stream"),
+                            **kwargs,
+                        )
+                finally:
+                    done = time.perf_counter()
+                    spent["queue"] += (entered if entered is not None else done) - asked
+                    spent["asr"] += done - entered if entered is not None else 0.0
                 return getattr(resp, "text", "") or ""
 
             try:
-                result = await failover_collect(self._stt, attempt, label=lambda t: t.provider)
+                result = await failover_collect(chain, attempt, label=lambda t: t.provider)
             except FailoverError as exc:
                 raise VoiceError(str(exc)) from exc
-            return result.value, _reply(self._stt, result)
+            reply = _reply(chain, result)
+            reply.queue_ms = round(spent["queue"] * 1000)
+            reply.asr_ms = round(spent["asr"] * 1000)
+            return result.value, reply
         finally:
             await self._release_inflight()
 

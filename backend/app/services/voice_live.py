@@ -101,7 +101,7 @@ import anyio
 
 from app.config import UPLINK_ALLOWANCE_MS
 from app.core.audio import SPEACHES_WIRE_RATE, Pcm16Resampler, silence
-from app.services.call_trail import LIVE_MODES, MAX_LEG, LiveMode, valid_call_id
+from app.services.call_trail import LEG_MODES, MAX_LEG, LegMode, valid_call_id
 from app.services.voice_audio import MODEL_RATE, PcmResampler
 from app.services.voice_vad import StampedFrame
 
@@ -472,7 +472,7 @@ class _Start(NamedTuple):
     sample_rate: int
     call_id: str | None
     leg: int | None
-    mode: LiveMode
+    mode: LegMode
     client_id: str | None
 
 
@@ -527,7 +527,7 @@ class LiveRelaySession:
         self._leg: int | None = None
         #: Which feature this leg serves (`start.mode`, S11) — `call` unless the client said otherwise.
         #: Also the trail's DIRECTORY (Phase 26 S1): a dictation's trail lives under `calls/dictation/`.
-        self._mode: LiveMode = "call"
+        self._mode: LegMode = "call"
         #: THE LEG'S SUMMARY (Phase 26 S1, T1) — accumulated as the leg runs, logged once at its end.
         self._stats = _LegStats()
         self._trail_lines: list[dict[str, Any]] = []
@@ -751,8 +751,8 @@ class LiveRelaySession:
             )
         # THE LEG'S FEATURE (S11) — optional, strict once present like every other `start` field.
         mode = data.get("mode", "call")
-        if mode not in LIVE_MODES:
-            raise _ProtocolError(f"start.mode must be one of {', '.join(LIVE_MODES)}")
+        if mode not in LEG_MODES:
+            raise _ProtocolError(f"start.mode must be one of {', '.join(LEG_MODES)}")
         # THE TRAIL'S IDENTITY (D77) — optional, but with `sample_rate`'s strictness once present: the
         # id becomes a FILENAME, so a malformed one is a protocol error here rather than a path later.
         # The pair travels together (a leg with no call, or a call with no leg, is a client bug).

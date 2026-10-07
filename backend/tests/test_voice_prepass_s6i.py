@@ -12,11 +12,9 @@
 
 from __future__ import annotations
 
-import io
-
-import av
 import numpy as np
 import pytest
+from _audio import encode as _encode
 
 from app.services.voice_prepass import (
     PREPASS_MAX_CHUNK_S,
@@ -179,25 +177,6 @@ def test_the_pass_runs_a_real_model_on_real_speech() -> None:
 
 
 # ── the decode ──
-
-
-def _encode(fmt: str, codec: str, rate: int, seconds: float = 1.0) -> bytes:
-    """A 440 Hz tone encoded IN-TEST by PyAV's own encoder (no committed binaries)."""
-    buf = io.BytesIO()
-    with av.open(buf, mode="w", format=fmt) as container:
-        stream = container.add_stream(codec, rate=rate, layout="mono")
-        t = np.arange(int(rate * seconds)) / rate
-        x = (0.3 * np.sin(2 * np.pi * 440 * t) * 32767).astype(np.int16)
-        size = 960 if codec == "libopus" else 1024
-        for at in range(0, len(x), size):
-            chunk = x[at : at + size].reshape(1, -1)
-            frame = av.AudioFrame.from_ndarray(chunk, format="s16", layout="mono")
-            frame.sample_rate, frame.pts = rate, at
-            for packet in stream.encode(frame):  # type: ignore[attr-defined]
-                container.mux(packet)
-        for packet in stream.encode(None):  # type: ignore[attr-defined]
-            container.mux(packet)
-    return buf.getvalue()
 
 
 CONTAINERS = [

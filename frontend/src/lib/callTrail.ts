@@ -54,7 +54,7 @@ export const TRAIL_MAX_ENTRY_BYTES = 2048;
 export type TrailFlushReason = "interval" | "count" | "hidden" | "end";
 
 /** WHICH FEATURE a trail belongs to (Phase 26 S1) — the relay's `start.mode` vocabulary, and the
- *  directory the server files the batch under (`services/call_trail.py::LIVE_MODES`, mirrored here: a
+ *  directory the server files the batch under (`services/call_trail.py::LEG_MODES`, mirrored here: a
  *  call at the root, a dictation in its own directory with its own retention, ISS-41). Typed ONCE, here;
  *  the two trail writers import it. */
 export type TrailMode = "call" | "dictation";

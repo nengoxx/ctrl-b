@@ -829,7 +829,10 @@ class LiveCfg(VoiceServiceCfg):
     #: `POST /api/voice/live/trail` answers 404 while it is off. Since Phase 26 S6-ii it ALSO RECORDS THE
     #: LEG'S AUDIO beside its trail — `<call_id>-<leg>.wav`, what the ear hears (16 kHz pcm16 mono,
     #: ~1.9 MB a minute, anyone audible included), under the trail's own gate and retention
-    #: (ASR_PLAN §6.1, SECURITY_MODEL §2.12). Snapshotted at leg start, like every live knob.
+    #: (ASR_PLAN §6.1, SECURITY_MODEL §2.12). Snapshotted at leg start, like every live knob. Since
+    #: Phase 26 S9 the CLIP DOOR (`POST /api/voice/stt`) rides the same gate, read per upload: a
+    #: push-to-talk clip gets a server-minted trail + its decoded audio under `calls/clip/` (a dictation's
+    #: whole-clip fallback joins that dictation's trail) — counts and timings, never transcript text.
     debug: bool = False
     #: D77 — how many call trails `$CTRLB_HOME/calls/` keeps: when a NEW call's first line lands, the
     #: oldest past this count are deleted (by mtime). A SERVER knob (read at each write, never

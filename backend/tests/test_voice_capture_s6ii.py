@@ -763,7 +763,7 @@ def test_replay_model_variant_and_the_dictation_baseline(
         (["--set", "act=x"], 2),
         (["--set", "max_segment_s=1"], 2),  # `derive` refuses the cap — before any audio is read
         (["--prepass-sweep", "0:2:1"], 2),
-        (["--asr", "http://ear/v1"], 2),  # needs --asr-model
+        (["--asr", "/nonexistent/config.yaml"], 2),  # S9: --asr names a config — a missing one refused
         (["--model", "nope"], 2),
     ],
 )
@@ -800,33 +800,40 @@ def test_replay_prepass_sweep_counts_labelled_speech(
     ]
 
 
-def test_replay_asr_goes_through_the_existing_voice_client(
-    replay_tool: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: Any
+def test_replay_asr_goes_through_the_app_built_voice_client(
+    replay_tool: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
 ) -> None:
-    """`--asr`: each segment through the pass, one 16 kHz WAV per pass chunk into the REAL
-    `VoiceClient.transcribe` (patched at the class — the request shape is its, not the tool's)."""
-    from app.adapters.voice import VoiceClient
+    """`--asr CONFIG` (S9, T-5): the client is the app's own (`runtime.build_voice_client` over the
+    config's resolved registry), and each segment's pass chunks ride the clip door's ONE chunk helper —
+    so a fake parakeet-server sees the REAL request: one 16 kHz WAV per chunk, the stt door's language
+    and faster-whisper extras, the configured model id."""
+    from _audio import FakeEngine
 
-    sent: list[bytes] = []
-
-    async def fake_transcribe(
-        self: VoiceClient, *, content: bytes, filename: str, content_type: str | None
-    ) -> Any:
-        assert (filename, content_type) == ("seg.wav", "audio/wav")
-        sent.append(content)
-        return f"words{len(sent)}", None
-
-    monkeypatch.setattr(VoiceClient, "transcribe", fake_transcribe)
-    rc = replay_tool.main(
-        [str(FIXTURE), "--asr", "http://ear:9000/v1", "--asr-model", "parakeet", "--lang", "en"]
+    engine = FakeEngine({"ear": lambda req: f"words{len(engine.requests)}"})
+    engine.install(monkeypatch)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "providers:\n"
+        "  parakeet-clip:\n"
+        "    base_url: http://ear:9011/v1\n"
+        "    max_concurrent_requests: 1\n"
+        "    models: {parakeet-tdt-0.6b-v3: {}}\n"
+        "voice:\n"
+        "  stt: {provider: parakeet-clip, language: en, hotwords: vault minig}\n"
     )
+    rc = replay_tool.main([str(FIXTURE), "--asr", str(config)])
     out = capsys.readouterr().out
     assert rc == 0
     pcm = decode_to_pcm16k(FIXTURE.read_bytes(), max_decoded_s=60)
     expected = prepass(pcm, get_model("silero-v6.2")).chunks  # the one segment spans the whole clip
-    assert len(sent) == len(expected) == 1
-    with wave.open(io.BytesIO(sent[0]), "rb") as w:
+    (req,) = engine.requests
+    assert len(expected) == 1
+    with wave.open(io.BytesIO(req.body), "rb") as w:
         assert (w.getnchannels(), w.getframerate(), w.getnframes()) == (1, 16000, len(expected[0]))
+    assert (req.filename, req.content_type) == ("chunk.wav", "audio/wav")
+    assert req.fields["model"] == b"parakeet-tdt-0.6b-v3"
+    assert req.fields["language"] == b"en"
+    assert (req.fields["vad_filter"], req.fields["hotwords"]) == (b"true", b"vault minig")
     assert "flush       1.000  words1" in out
 
 
@@ -834,16 +841,16 @@ def test_replay_a_no_speech_segment_makes_no_asr_call(
     replay_tool: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.adapters.voice import VoiceClient
+    from app.domain.provider import SttPolicy, TtsPolicy
 
     async def boom(*_a: Any, **_kw: Any) -> Any:
         raise AssertionError("a no_speech segment must not reach ASR")
 
     monkeypatch.setattr(VoiceClient, "transcribe", boom)
     segment = replay_tool.Segment(start_ms=0)
+    client = VoiceClient((), SttPolicy(), (), TtsPolicy())
     failed = asyncio.run(
-        replay_tool.transcribe_all(
-            "http://ear/v1", "m", "", [(segment, PrepassResult("no_speech", [], [], 512))]
-        )
+        replay_tool.transcribe_all(client, "stt", [(segment, PrepassResult("no_speech", [], [], 512))])
     )
     assert failed == 0 and segment.transcript == "<no_speech>"
 

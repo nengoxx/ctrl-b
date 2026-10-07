@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 
+import { postForm } from "../api/client";
 import type { LiveCallWire, SttAutoStopWire } from "./useVoiceStatus";
 import { type CallTrail, createCallTrail, postTrail } from "../lib/callTrail";
 import { runComposer } from "../lib/composer";
@@ -721,7 +722,8 @@ export function useDictation({
       const form = new FormData();
       form.append("file", blob, `dictation.${extFromMime(mime)}`);
       try {
-        const res = await fetch("/api/voice/stt", { method: "POST", body: form });
+        // Through `postForm`: it carries the CSRF header the clip door requires (S9, SECURITY_MODEL §2.7).
+        const res = await postForm("/api/voice/stt", form);
         if (res.status === 502) {
           // The whole STT chain (primary + fallback) failed → the reactive "unavailable" state.
           setUnavailable(true);

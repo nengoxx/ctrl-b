@@ -20,7 +20,7 @@ row). Note `prefix_padding_ms` is 300 today — the plan's 500 is S7b's move; sw
 Usage (the venv's python; positionals FIRST — `--set` takes every following `k=v`):
 
     backend/.venv/bin/python tools/vad_replay.py FILE... [--model KEY] [--set k=v ...]... [--variant m1]
-        [--prepass-sweep 0.3,0.5 | LO:HI:STEP] [--asr URL --asr-model M [--lang xx]]
+        [--prepass-sweep 0.3,0.5 | LO:HI:STEP] [--asr CONFIG [--door stt|live]]
 
 * `--model` — a `VAD_MODELS` key; the header prints its name, sha256, hop, `default_act` and
   `prepass_act`, and each column its EFFECTIVE act. A model A/B = two runs side by side (§3.4.1 ⑦).
@@ -28,10 +28,15 @@ Usage (the venv's python; positionals FIRST — `--set` takes every following `k
   (ruling H8). `--variant m1` adds the M1-confirmation twin of every column.
 * `--prepass-sweep` — the §6.4 S9-gate row (§3.4.1 ⑤): per act, each FILE's pass verdict and each
   replayed segment's (first column), with the labelled-speech `no_speech` count that must stay 0.
-* `--asr URL` — each segment's transcript through the pass and the EXISTING `VoiceClient.transcribe`
-  (`/v1/audio/transcriptions` — today's only door; S9 adds `door=` to this one call). One 16 kHz WAV per
-  pass chunk; a `no_speech` segment makes no call. The key, if any, comes from env `ASR_API_KEY` and is
-  never printed.
+* `--asr CONFIG` — each segment's transcript through the pass and the clip door's own chunk helper
+  (`services/voice_clip.transcribe_wavs`: one 16 kHz WAV per pass chunk, in order, joined), on a
+  `VoiceClient` built from that config file (e.g. `~/.ctrl-b-dev/config.yaml`) exactly as the app builds
+  it (`runtime.build_voice_client` over the resolved registry) — so `language`, the stt door's
+  `vad_filter`/`hotwords`/`extra_body`, the chain, its fallbacks and the D40 caps are the REAL request
+  (ASR_PLAN §3.7 T-5; S9). `--door` picks the chain (`stt` = `voice.stt`, `live` = `voice.live`); to aim at
+  one engine, point a COPY of the config at it. A `no_speech` segment makes no call. Keys come from the
+  config (plus the app's own `.env` rule: `CTRLB_ENV`, else the project root's — never a file beside the
+  config) and are never printed; the resolver's warnings (a provider it dropped) go to stderr.
 
 Exit codes: 0 = done · 1 = an input could not be read/decoded, or an ASR call failed · 2 = usage (a bad
 flag, an unknown `--set` key, a value `derive` refuses).
@@ -43,10 +48,9 @@ import argparse
 import asyncio
 import dataclasses
 import json
-import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 # The checkout's OWN backend (and this directory, for `asr_corpus`'s layout) first: the replay must run
 # the code that sits beside it, not whatever `app` an editable venv happens to point at.
@@ -56,7 +60,6 @@ for _p in (str(_HERE.parent / "backend"), str(_HERE)):
         sys.path.insert(0, _p)
 
 from app.config import LiveCfg  # noqa: E402
-from app.core.audio import pcm16_wav_header  # noqa: E402
 from app.services.voice_audio import MODEL_RATE, float32_to_pcm16  # noqa: E402
 from app.services.voice_prepass import (  # noqa: E402
     DecodeAborted,
@@ -74,6 +77,9 @@ from app.services.voice_vad import (  # noqa: E402
     get_model,
 )
 from asr_corpus import label_path  # noqa: E402
+
+if TYPE_CHECKING:
+    from app.adapters.voice import Door
 
 #: The pre-S7b half of the baseline (ruling H6): ASR_PLAN §4's `onset_ms` (200) and `max_segment_s`
 #: (20) defaults, which are not config keys until S7b — S7b swaps this dict for its `from_live_cfg`.
@@ -220,43 +226,40 @@ def replay(pcm16: bytes, model: VadModel, params: VadParams) -> tuple[VadSegment
     return seg, segments_of(edges)
 
 
-async def transcribe_all(url: str, model_id: str, lang: str, jobs: list[tuple[Segment, Any]]) -> int:
-    """Each segment through the pass and the EXISTING `VoiceClient.transcribe` (T-5's real request
-    shape); returns how many calls failed."""
-    from app.adapters.voice import VoiceClient, VoiceError
-    from app.core.provider_registry import canonical_base_url
-    from app.domain.provider import ResolvedTarget, SttPolicy, TtsPolicy
-    from pydantic import SecretStr
+def asr_client(config: Path) -> Any:
+    """The app's own `VoiceClient` for `config` (T-5): load → resolve → `runtime.build_voice_client`."""
+    from app.config import load_settings
+    from app.core.provider_registry import resolve_lenient
+    from app.runtime import build_voice_client
 
-    key = os.environ.get("ASR_API_KEY") or None
-    target = ResolvedTarget(
-        provider="replay",
-        base_url=url,
-        model=model_id,
-        api_key=SecretStr(key) if key else None,
-        gate_identity=canonical_base_url(url),
-    )
-    # `vad_filter` off: the pass above already did the speech selection the door would repeat.
-    client = VoiceClient((target,), SttPolicy(language=lang, vad_filter=False), (), TtsPolicy())
+    if not config.is_file():  # `load_settings` reads a missing file as all-defaults — refuse it instead
+        raise UsageError(f"--asr: no config file {config}")
+    settings = load_settings(config)
+    registry, warnings = resolve_lenient(settings)
+    # A broken provider in a bake-off copy would otherwise surface only as `<asr error: VoiceError>` on
+    # every segment — say why, once (the S9 review's L5).
+    for warning in warnings:
+        print(f"vad_replay: config: {warning}", file=sys.stderr)
+    return build_voice_client(registry, settings, None)
+
+
+async def transcribe_all(client: Any, door: Door, jobs: list[tuple[Segment, Any]]) -> int:
+    """Each segment's pass chunks through the ONE shared chunk helper (the clip door's); returns how many
+    segments failed. The client is closed here."""
+    from app.adapters.voice import VoiceError
+    from app.services.voice_clip import chunk_wavs, transcribe_wavs
+
     failed = 0
     try:
         for segment, result in jobs:
             if result.outcome == "no_speech":
                 segment.transcript = "<no_speech>"
                 continue
-            texts: list[str] = []
-            for chunk in result.chunks:
-                pcm = float32_to_pcm16(chunk)
-                wav = pcm16_wav_header(len(pcm) // 2, MODEL_RATE) + pcm
-                try:
-                    text, _reply = await client.transcribe(
-                        content=wav, filename="seg.wav", content_type="audio/wav"
-                    )
-                except VoiceError as exc:
-                    failed += 1
-                    text = f"<asr error: {type(exc).__name__}>"
-                texts.append(text.strip())
-            segment.transcript = " ".join(t for t in texts if t)
+            try:
+                segment.transcript = (await transcribe_wavs(client, chunk_wavs(result), door=door)).text
+            except VoiceError as exc:
+                failed += 1
+                segment.transcript = f"<asr error: {type(exc).__name__}>"
     finally:
         await client.aclose()
     return failed
@@ -277,9 +280,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--set", dest="groups", nargs="+", action="append", default=[], metavar="K=V")
     ap.add_argument("--variant", choices=["m1"], help="add the M1-confirmation twin of every column")
     ap.add_argument("--prepass-sweep", metavar="ACTS", help="'0.3,0.5' or 'LO:HI:STEP'")
-    ap.add_argument("--asr", metavar="URL", help="an OpenAI-compatible STT base URL (…/v1)")
-    ap.add_argument("--asr-model", metavar="M", help="the STT model id (required with --asr)")
-    ap.add_argument("--lang", default="", help="the STT language (blank = autodetect)")
+    ap.add_argument("--asr", metavar="CONFIG", type=Path, help="a config.yaml whose voice chains to call")
+    ap.add_argument("--door", choices=["stt", "live"], default="stt", help="which chain (with --asr)")
     return ap
 
 
@@ -296,14 +298,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.variant:
             columns += [Column(f"{c.name}+m1", c.overrides, "m1") for c in list(columns)]
         acts = parse_acts(args.prepass_sweep) if args.prepass_sweep else []
-        if args.asr and not args.asr_model:
-            raise UsageError("--asr needs --asr-model")
+        client = asr_client(args.asr) if args.asr else None
         # `derive` refuses an impossible cap here, before any audio is read (exit 2, not 1).
         model = get_model(args.model)
         for c in columns:
             for dictation in (False, True):
                 VadSegmenter(model, params_for(c, dictation=dictation), client_rate=MODEL_RATE)
-    except (UsageError, ValueError, TypeError) as exc:
+    except (UsageError, ValueError, TypeError, OSError) as exc:
+        # A config that will not load (`ConfigValidationError` is a `ValueError`) is a usage error too —
+        # caught before any audio is read.
         print(f"vad_replay: {exc}", file=sys.stderr)
         return EXIT_USAGE
 
@@ -338,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
             per_min = len(segs) / duration * 60 if duration else 0.0
             summary.append((path.name, c.name, len(segs), confirmed, retracted, per_min, kind))
         reports.append((path, duration, "dictation" if dictation else "call", runs))
-        if args.asr:
+        if client is not None:
             for s in runs[0][3]:
                 asr_jobs.append((s, prepass(pcm[s.start : max(s.end, s.start)], model)))
         for act in acts:
@@ -350,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
                 (act, path.name, kind, file_verdict, outcomes.count("ok"), outcomes.count("no_speech"))
             )
 
-    if asr_jobs and asyncio.run(transcribe_all(args.asr, args.asr_model, args.lang, asr_jobs)):
+    if client is not None and asyncio.run(transcribe_all(client, args.door, asr_jobs)):
         status = EXIT_INPUT
 
     for path, duration, mode, runs in reports:

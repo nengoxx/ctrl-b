@@ -196,6 +196,22 @@ providers:
         voice: bf_isabella          # TTS: server voice id (voice ids are model-specific)
         format: mp3                 # TTS: response container (mp3|opus|aac|flac|wav|pcm)
         # speed: 1.0                # TTS: playback-speed multiplier (>0; a per-request param)
+  # Phase 26 (ASR_PLAN §3.7, §4): parakeet.cpp's `parakeet-server` v0.5.0 — one machine-wide instance per
+  # door (deploy/linux/README.md "The ASR engines"). It serializes inference on one mutex, so each
+  # provider declares `max_concurrent_requests: 1`: a request behind a long clip waits connect_timeout_s
+  # for the D40 permit, then WALKS to the next hop instead of parking on the engine. It reads only the
+  # WAV `file` (the clip door always sends 16 kHz WAV chunks) and ignores the model id + every other
+  # field; one catalog model each, so a section may omit `model`.
+  # parakeet-clip:                  # the clip door: voice.stt → [parakeet-clip, <a whisper fallback>]
+  #   base_url: http://127.0.0.1:9011/v1
+  #   max_concurrent_requests: 1
+  #   models:
+  #     parakeet-tdt-0.6b-v3: {}
+  # parakeet-live:                  # the live ear's batch door (S7b): voice.live.provider
+  #   base_url: http://127.0.0.1:9010/v1
+  #   max_concurrent_requests: 1
+  #   models:
+  #     parakeet-tdt-0.6b-v3: {}
 
 inference:                          # request_timeout_s / system_prompt* / failover / retry_attempts STAY
   provider: local                   # PRIMARY (flat); model omittable iff the catalog has exactly one model
@@ -464,7 +480,10 @@ voice:
                            # D77: ALSO writes a per-call trail to <CTRLB_HOME>/calls/<call>.jsonl
                            # Phase 26 S6-ii: AND RECORDS each leg's audio beside it, <call>-<leg>.wav
                            # (16 kHz, ~1.9 MB/min, anyone audible included; SECURITY_MODEL §2.12)
-    trail_keep: 20         # D77: how many trails to keep (1–500) PER KIND — calls in calls/, dictations in calls/dictation/ (Phase 26 S1); the oldest go when a new one starts
+                           # Phase 26 S9: AND each push-to-talk upload (the clip door) — a trail + its
+                           # decoded audio in calls/clip/<id>.jsonl + <id>-1.wav (a dictation's whole-clip
+                           # fallback joins that dictation's trail as <call>-0.wav); no transcript text
+    trail_keep: 20         # D77: how many trails to keep (1–500) PER KIND — calls in calls/, dictations in calls/dictation/ (Phase 26 S1), clips in calls/clip/ (S9); the oldest go when a new one starts
                            # — and take their recordings with them (worst case ≈ keep × legs × 1.9 MB/min)
     max_sessions: 1        # process-wide concurrent live sessions (a second connect gets `busy`)
     mic_hold: auto         # CLIENT: mic off while the reply speaks (and through its tail) — auto | on | off.

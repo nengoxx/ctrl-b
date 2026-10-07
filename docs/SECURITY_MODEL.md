@@ -303,7 +303,9 @@ any future unauthenticated write path.
   now APP-WIDE** (R73 §8.2, 2026-09-15): this section's own walk is scoped to `/api/media`, which made
   it blind to D70's two multipart import routes on another router — so every live route is asserted
   against one allowlist, `{POST /api/voice/stt}`, in
-  `test_media_write_d65.py::test_no_route_in_the_whole_app_declares_a_form_body_outside_the_allowlist`.
+  `test_media_write_d65.py::test_no_route_in_the_whole_app_declares_a_form_body_outside_the_allowlist`
+  — and since Phase 26 S9 every allowlisted form route must also REQUIRE the CSRF header
+  (`X-Requested-With: ctrl-b`, `api/csrf.py`; pinned by `…::test_every_allowlisted_form_route_requires_the_csrf_header`).
   The path-scoped walks stay as the per-surface half; the app-wide one is what cannot go blind again.
 - **ONE URL SPACE, ONE "not there" (S4 rider, ruled 2026-08-25).** A READ of a file path whose
   namespace is not mounted — a tree that failed the boot shape check, or one the registry never had —
@@ -362,7 +364,9 @@ any future unauthenticated write path.
 - **Safelisted-reachable POST mutations — a CLASS, and a pre-existing one.** A cross-origin page
   can *send* a CORS-safelisted `POST` (CORS withholds the read-back, not the send), so any POST route
   that executes without needing a JSON content type is reachable that way. Two shapes exist here:
-  **multipart** (`POST /api/voice/stt` — writes no owner file, spends an STT call) and
+  **multipart** (`POST /api/voice/stt` — writes no owner file, spends an STT call; since Phase 26 S9,
+  under `voice.live.debug`, it also writes a count-bounded debug trail + capture, §2.12 — **CLOSED for
+  this route in S9**, below) and
   **bodyless / path-param** routes, which run regardless of what content type a form sends — e.g.
   `POST /api/automations/{id}/run-now`, `POST /api/integrations/rediscover`,
   `POST /api/agent/turns/{thread_id}/cancel`. (JSON-body POSTs are effectively content-type-guarded:
@@ -371,6 +375,21 @@ any future unauthenticated write path.
   owner FILES. Listed so the class is enumerated rather than forgotten; **the enumeration and the
   disposition belong to Phase 19 Packet ③** (HARDENING §8.2), and the three routes above are
   examples, not the list.
+- **The multipart gate — CLOSED for `POST /api/voice/stt` (Phase 26 S9, ruled 2026-10-07).** The clip
+  door started WRITING in S9 (the §2.12 debug trail + capture), so the route now REQUIRES a custom request
+  header, `X-Requested-With: ctrl-b` (`app/api/csrf.py::require_csrf_header`, a route dependency): a
+  missing or wrong header is a **403 before any handler code** — no decode, no ASR call, no trail, no
+  capture. The gate's value is the DENIED PREFLIGHT: a request carrying a custom header is never
+  CORS-"simple", so a hostile page that adds it gets a preflight this app never answers (no CORS
+  middleware) and its send never leaves the browser; a page that OMITS it sends a simple request that does
+  arrive — FastAPI still parses (spools) the multipart body before any dependency, the body-parse order is
+  unchanged — and it is refused 403 before the handler. A page whose request carries the header is
+  same-origin by construction.
+  The FE sends every form through the one helper that sets it (`frontend/src/api/client.ts::postForm`).
+  **This gate is THE pattern for any future multipart write**: `dependencies=[Depends(require_csrf_header)]`,
+  and the app-wide walk refuses an allowlisted form route without it. (Converting the route to a raw-body
+  PUT — the owner-file shape — is a bigger wire change S8 may revisit.) The bodyless / path-param members
+  of the class above stay Phase 19's.
 
 **Safe-defaults fit:** nothing here is a toggle, so nothing here is a checklist item to *set*. The
 checklist gains one line (§6) because the property that must survive is a **negative**: no CORS
@@ -444,7 +463,9 @@ design of record [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) §5/§6):
   blind to a new router by construction — which is exactly how D70 landed two multipart POSTs with
   every existing guard green. Every live route is now walked against one explicit allowlist:
   **`{POST /api/voice/stt}`**, the pre-existing residual §2.7 enumerates (it spends an STT call and
-  writes no owner file). Adding a row there is a security decision, not a refactor.
+  writes no owner file — only, under `voice.live.debug`, the §2.12 debug trail + capture), and since S9
+  gated by the required CSRF header (§2.7's multipart gate), which every allowlisted route must carry.
+  Adding a row there is a security decision, not a refactor.
 - **Card content is accepted as UNTRUSTED PROSE, deliberately.** A character card is prompt text by
   definition, so importing one is consenting to model-facing text the owner did not write; what is
   refused is text with *side effects*. `strip_executable` is a recursive key denylist (Risu's
@@ -617,20 +638,34 @@ batch's `mode` picks the directory from a fixed two-word vocabulary, never a pat
 secrets** (the bearer canary is test-pinned). The relay's leg-end JOURNAL line (T1) carries counts and
 codes only — never transcript text (test-pinned).
 
-### 2.12 Captured audio at rest — the debug capture (Phase 26 S6-ii, ASR_PLAN §6.1)
+### 2.12 Captured audio at rest — the debug capture (Phase 26 S6-ii, ASR_PLAN §6.1; the clip door S9)
 
 The relay records what the live ear hears, beside the §2.11 trail, so a bad call can be diagnosed from
 what was HEARD and not only from what was decided — and so the owner's own calls become the ASR reference
-corpus (ASR_PLAN §6.3). Writer: `CallTrail.open_capture` (`services/call_trail.py`); producer: the relay's
-`_accept_audio` (`services/voice_live.py`). Rails:
+corpus (ASR_PLAN §6.3). Writer: `CallTrail.open_capture` (`services/call_trail.py`); producers: the relay's
+`_accept_audio` (`services/voice_live.py`) for calls and streaming dictations, and — **the third capture
+source, Phase 26 S9** — the CLIP DOOR (`services/voice_clip.py`, `POST /api/voice/stt`: push-to-talk and
+a dictation's whole-clip fallback). Every rail below applies to all three. Rails:
 
 - **Off means absent.** Recorded only under the trail's own predicate, snapshotted at leg start:
   `voice.live.debug` on (default **off**) AND the trail store mounted AND a client-named call
   (`start.call_id`, which the client sends only under debug). A Conf flip mid-leg starts or stops
   nothing. No route reads, lists or uploads a capture; nothing about it reaches the journal but counts.
+  The clip door reads the same `debug` per upload; its trail id is SERVER-minted (a UUID — the `clip`
+  mode is refused on every client-written wire), unless the upload names a dictation's validated
+  `call_id` whose trail ALREADY EXISTS, which it then joins. Its trail lines carry counts and timings, never transcript text.
+  **Cross-origin reach — CLOSED in S9:** the clip door is a multipart route (§2.7's class), and under
+  `debug` a send WRITES (a `clip` trail + capture, or lines + a leg-0 capture in a named dictation's
+  trail), so a hostile page's form POST could have churned `trail_keep` slots and planted audio. The
+  route therefore REQUIRES `X-Requested-With: ctrl-b` (§2.7's multipart gate): a hostile page that adds
+  the header is preflighted and its send never leaves the browser; one that omits it is parsed and refused
+  403 before any decode, trail or capture. A client-named dictation `call_id` joins only a dictation trail
+  that already exists (S9 wave 1) — an unknown id, or a call's, gets a fresh server-minted `clip` trail.
 - **What.** `$CTRLB_HOME/calls/<call_id>-<leg>.wav` (a dictation's under `calls/dictation/`) — the
   relay's RECEIVED stream after its anti-aliased resampler, 16 kHz pcm16 mono: **the owner's voice AND
-  anything else the microphone heard** (a radio, a passenger, a call on speaker). `.wav.part` while the
+  anything else the microphone heard** (a radio, a passenger, a call on speaker). The clip door's is the
+  WHOLE decoded upload at 16 kHz (`calls/clip/<id>-1.wav`; a dictation fallback's
+  `calls/dictation/<call_id>-0.wav`) — every clip, a no-speech one included. `.wav.part` while the
   leg runs, or after a crash (header-first, sizes all-ones — still importable).
 - **Rails.** Dirs 0700, files 0600, created **exclusive** (`O_EXCL`; a reused call id + leg records
   nothing rather than overwrite). The name is the canonical-UUID call id + an integer leg — never a
@@ -650,11 +685,12 @@ corpus (ASR_PLAN §6.3). Writer: `CallTrail.open_capture` (`services/call_trail.
   ends or slows a call. No fsync (debug data).
 - **How to delete.** Turn `debug` off (nothing new is recorded), then delete each call's files
   TOGETHER — its stem: `rm $CTRLB_HOME/calls/<call_id>.jsonl $CTRLB_HOME/calls/<call_id>-*.wav*` (and the
-  same under `calls/dictation/`), or `rm -r` the `calls/` directory. **Deleting only a trail (`.jsonl`)
+  same under `calls/dictation/` and `calls/clip/`), or `rm -r` the `calls/` directory. **Deleting only a trail (`.jsonl`)
   orphans its audio: no prune ever selects a stem without a trail.** Lowering `trail_keep` takes effect
   only at the next debug call.
 - **The corpus** (`tools/asr_corpus.py`, offline, never runtime) copies a capture into
-  `$CTRLB_HOME/asr-corpus/` (0700/0600) on the owner's explicit `promote … --owner-only` — it requires an
+  `$CTRLB_HOME/asr-corpus/` (0700/0600) on the owner's explicit `promote … --owner-only` (or any
+  decodable FILE with `promote --file PATH --owner-only --lang xx`, S9 — same rails) — it requires an
   explicit root (`--home`/`CTRLB_HOME`) and **refuses a destination inside a git work tree**; the corpus
   is never committed. Consent at promotion: the owner's own voice only (+ D85's broadcast `background`
   negatives, D85-S2); a clip carrying another person's voice is deleted, never promoted. Removal =
@@ -718,8 +754,8 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | **The media write API will have no kill switch (D65)** | **accepted, owner waiver 2026-08-24** | The whole-feature-toggle rule is knowingly waived: `PUT`/`DELETE /api/media/…` is specified unconditional. A toggle over one typed, allowlisted, registry-confined path buys nothing a rollback does not, and stays trivially additive (§2.7). *Ruled at S0; the routes land at S1.* |
 | **DNS rebinding reaches the whole API** (an attacker-controlled name re-resolving to the LAN/tailnet address is same-origin, so CORS never applies — and it removes the premise of the §2.10 WS `Origin` rail the same way) | **open BY OWNER CHOICE — the rail is BUILT** | Pre-existing, whole-API. **`server.trusted_hosts` closes it (§2.9, R73/D72 ⑥) and is shipped** — but it ships **EMPTY = not mounted**, and the owner ruled 2026-09-16 that it stays empty until they opt in (the rail costs every name and address they browse by; a missing name answers 400 everywhere with a hand-edit of `config.yaml` as the only recovery). So the residual stands on this deploy, by decision rather than by omission. Scoped to the cleartext bind either way — TLS makes the Serve front door unrebindable. *(No longer a Phase 19 item: D72 closed the design question.)* |
 | **The one WebSocket is an ingress CORS cannot reach** (`WS /api/voice/live`, D71) | **accepted, gated (the call ON by default since v1.7.8)** | §2.10. No preflight exists on an upgrade, so the absence of CORS middleware protects nothing here and the pre-`accept()` `Origin` rail is the boundary instead. Bounded by: the feature gate (a configured realtime chain; `voice.enabled` outranks; the call toggle ON by default since v1.7.8, dictation OFF), a `max_sessions` slot reaped by the uplink-idle bound (`uplink_idle_s`, R86), the relay's wall-clock uplink allowance (an audio-ms token bucket + a frame-count twin, capacity 30 s, its covering inequality validated at load, a violation = 1008), and the bearer never reaching a log or the downlink. Media ingress ONLY — a spoken turn still rides `POST /api/agent/chat` + SSE. |
-| **Safelisted-reachable POST mutations are a CLASS** — multipart (`POST /api/voice/stt`) plus the bodyless / path-param routes that run whatever content type a cross-origin form sends | **pre-existing, open → Phase 19** | CORS withholds a cross-origin read-back, never the send. Not introduced by D65 — surfaced by it, which is why §1's correction scopes the "first surface" claim to owner FILES. Enumeration + disposition = Packet ③ (HARDENING §8.2); §2.7 names three examples. |
-| **Raw call audio at rest — the debug capture (Phase 26 S6-ii)** | **accepted, off by default** | §2.12. With `voice.live.debug` on, every live leg's audio — bystanders included — sits on disk beside its trail (0700/0600, `O_EXCL`, no read route, outside backups), bounded by `trail_keep`'s count (worst case ≈ 1.1 GB per mode per instance at the default). Consent applies at promotion into the corpus (owner's voice only). Unpromoted captures are pruned with their trail only when the NEXT debug call starts — with debug turned off they stay on disk until deleted by hand (the stem's files together, §2.12). |
+| **Safelisted-reachable POST mutations are a CLASS** — multipart (`POST /api/voice/stt` — **closed in Phase 26 S9** by the required `X-Requested-With: ctrl-b` header, §2.7's multipart gate) plus the bodyless / path-param routes that run whatever content type a cross-origin form sends | **pre-existing, open → Phase 19** (the bodyless / path-param members) | CORS withholds a cross-origin read-back, never the send. Not introduced by D65 — surfaced by it, which is why §1's correction scopes the "first surface" claim to owner FILES. Enumeration + disposition = Packet ③ (HARDENING §8.2); §2.7 names three examples. |
+| **Raw call audio at rest — the debug capture (Phase 26 S6-ii)** | **accepted, off by default** | §2.12. With `voice.live.debug` on, every live leg's audio — and, since Phase 26 S9, every push-to-talk upload's (the clip door) — bystanders included — sits on disk beside its trail (0700/0600, `O_EXCL`, no read route, outside backups), bounded by `trail_keep`'s count (worst case ≈ 1.1 GB per mode per instance at the default). Consent applies at promotion into the corpus (owner's voice only). Unpromoted captures are pruned with their trail only when the NEXT debug call starts — with debug turned off they stay on disk until deleted by hand (the stem's files together, §2.12). |
 | **The steer queue is in-memory (D41)** | **accepted** | A backend restart loses queued-but-undrained steers — no durability is promised (mirrors the in-memory confirm-token stance). Single-user, the queue is seconds-lived; accepted. |
 
 ---
@@ -794,7 +830,8 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
       files into — the confinement rails refuse a bad root, but they can't tell a *valid* wrong one from
       a right one. Remember the write-side secret gate is best-effort, not a boundary.
 - [ ] **No CORS middleware is mounted, and NO route anywhere in the app accepts `multipart/form-data`
-      or a form POST except `POST /api/voice/stt`** (§2.7/§2.9, D65 + R73) — every owner-file write
+      or a form POST except `POST /api/voice/stt`, which REQUIRES the `X-Requested-With: ctrl-b`
+      header** (§2.7/§2.9, D65 + R73, the S9 multipart gate) — every owner-file write
       path's whole defence is that a cross-origin write is forced into a preflight nobody answers.
       This is a negative to preserve, not a setting to choose; the app-wide walk in
       `test_media_write_d65.py` is what enforces it, and its allowlist is the only place to change.
@@ -805,7 +842,8 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
       same-host rule insufficient for your ingress (each entry is an exact origin string that
       bypasses the rail — never a pattern).
 - [ ] **`voice.live.debug` is what you intend** (§2.11/§2.12) — ON writes a per-call trail AND records
-      every live leg's audio (16 kHz, ~1.9 MB/min, anyone audible) under `$CTRLB_HOME/calls/`.
+      every live leg's audio — and every push-to-talk upload's (S9) — (16 kHz, ~1.9 MB/min, anyone
+      audible) under `$CTRLB_HOME/calls/`.
 - [ ] **`server.trusted_hosts` reviewed** (§2.9) — empty means the DNS-rebinding residual stands;
       non-empty means every name NOT listed answers 400 on every route, the Conf UI included. If you
       fill it in, list every name and address you actually browse by (ts.net name · bare hostname ·

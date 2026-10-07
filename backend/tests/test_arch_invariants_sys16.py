@@ -25,6 +25,7 @@ added to `_ALLOWED` below with a reason.
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -202,15 +203,16 @@ def test_the_waiver_is_keyed_to_the_function_not_the_line():
     assert _unwaived(["app/db.py:9: query: mkdir"]) == ["app/db.py:9: query: mkdir"]
 
 
-def _blocking_helpers(tree: ast.Module) -> set[str]:
-    """Module-level sync `def`s that perform blocking fs work, directly or by calling another such
+def _blocking_helpers(tree: ast.Module, seed: Callable[[ast.Call], object] | None = None) -> set[str]:
+    """Module-level sync `def`s that perform blocking work, directly or by calling another such
     helper in the same file (transitive closure). These are exactly the functions that must only be
-    reached via `asyncio.to_thread`, never called straight from an `async def`."""
+    reached via `asyncio.to_thread`, never called straight from an `async def`. `seed` says what a
+    blocking CALL is — blocking fs (`_blocking_label`) by default; the voice ratchet below passes
+    `_cpu_label`."""
+    seed = seed or _blocking_label
     defs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
     blocking = {
-        name
-        for name, fn in defs.items()
-        if any(isinstance(x, ast.Call) and _blocking_label(x) for x in _own_body(fn))
+        name for name, fn in defs.items() if any(isinstance(x, ast.Call) and seed(x) for x in _own_body(fn))
     }
     changed = True
     while changed:  # propagate: a helper calling a blocking helper is itself blocking
@@ -226,7 +228,9 @@ def _blocking_helpers(tree: ast.Module) -> set[str]:
     return blocking
 
 
-def _sync_helper_calls_in_async(src: str, rel: str) -> list[str]:
+def _sync_helper_calls_in_async(
+    src: str, rel: str, seed: Callable[[ast.Call], object] | None = None
+) -> list[str]:
     """`<rel>:<line>: <helper>()` for every direct call to a blocking sync helper from an `async def`.
 
     This closes the ratchet's other blind spot (shared with ASYNC240): moving the blocking calls into
@@ -235,7 +239,7 @@ def _sync_helper_calls_in_async(src: str, rel: str) -> list[str]:
     never trips this — only dropping the `to_thread` does.
     """
     tree = ast.parse(src)
-    helpers = _blocking_helpers(tree)
+    helpers = _blocking_helpers(tree, seed)
     if not helpers:
         return []
     awaited = {
@@ -362,3 +366,108 @@ def test_the_auto_router_is_reached_only_through_to_thread():
         "on disk, so both call sites must be `await asyncio.to_thread(_auto_route_agent, ...)`"
     )
     assert "_auto_route_agent" in _to_thread_targets(tree), "the router is no longer hopped at all"
+
+
+# ── Phase 26 S9: the voice pipeline's CPU-bound work never runs on the loop ────────────────────────────
+
+#: The ear's CPU-bound (or cold-file) sync work, by function name: the bounded decode (PyAV), the pre-ASR
+#: pass and its scan (a VAD run over a whole clip — ~5 s on a 30-min upload), the model cache (builds an
+#: ORT session from disk on first use), and the clip door's WAV wrap. Each must be reached through
+#: `asyncio.to_thread` (as a REFERENCE, or inside a sync helper that is) — a direct call from an
+#: `async def` stalls every other request for the length of the clip (ASR_PLAN §3.6; the S9 audit §C).
+#: `float32_to_pcm16` (a whole clip's quantisation) joined in S9 wave 1: it seeds the closure, so a
+#: module's OWN `chunk_wavs`/`_record` called straight from its `async def` is caught too.
+_CPU_BOUND = {"decode_to_pcm16k", "prepass", "scan", "get_model", "chunk_wavs", "float32_to_pcm16"}
+#: …matched only when the name is IMPORTED from the module that defines it (`scan` is also a lorebook
+#: verb): `from <module> import name [as alias]`, or `<module alias>.name`.
+_CPU_MODULES = {
+    "app.services.voice_prepass",
+    "app.services.voice_vad",
+    "app.services.voice_clip",
+    "app.services.voice_audio",
+}
+
+
+def _cpu_label_for(tree: ast.Module) -> Callable[[ast.Call], str | None]:
+    """The CPU-call predicate for ONE file — its imports decide which names are the ear's."""
+    names: dict[str, str] = {}
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module in _CPU_MODULES:
+            names |= {a.asname or a.name: a.name for a in node.names if a.name in _CPU_BOUND}
+        elif isinstance(node, ast.ImportFrom) and node.module == "app.services":
+            modules |= {a.asname or a.name for a in node.names if f"app.services.{a.name}" in _CPU_MODULES}
+        elif isinstance(node, ast.Import):
+            modules |= {a.asname for a in node.names if a.name in _CPU_MODULES and a.asname}
+
+    def label(call: ast.Call) -> str | None:
+        func = call.func
+        if isinstance(func, ast.Name):
+            return names.get(func.id)
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id in modules:
+            return func.attr if func.attr in _CPU_BOUND else None
+        return None
+
+    return label
+
+
+def _cpu_in_async(src: str, rel: str) -> list[str]:
+    """Direct `_CPU_BOUND` calls inside an `async def` (awaited calls skipped, like `_scan`), plus direct
+    calls to a same-file sync helper that reaches one (the `_blocking_helpers` closure)."""
+    tree = ast.parse(src)
+    label = _cpu_label_for(tree)
+    awaited = {
+        id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Await) and isinstance(n.value, ast.Call)
+    }
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncFunctionDef):
+            for x in _own_body(node):
+                if isinstance(x, ast.Call) and id(x) not in awaited and (hit := label(x)):
+                    found.append(f"{rel}:{x.lineno}: {node.name}: {hit}")
+    return found + _sync_helper_calls_in_async(src, rel, label)
+
+
+def test_the_voice_pipelines_cpu_work_never_runs_on_the_loop():
+    hits: list[str] = []
+    for py in sorted((BACKEND / "app").rglob("*.py")):
+        hits += _cpu_in_async(py.read_text(encoding="utf-8"), py.relative_to(BACKEND).as_posix())
+    assert not hits, (
+        "CPU-bound voice work called straight from an `async def` (Phase 26 S9) — pass it to "
+        f"`asyncio.to_thread` as a reference, or wrap it in a sync helper that is: {hits}"
+    )
+
+
+def test_the_cpu_ratchet_detects_a_planted_violation():
+    tmpl = """
+import asyncio
+from app.services.voice_prepass import decode_to_pcm16k, prepass
+
+def _pass(pcm, model):
+    return prepass(pcm, model)
+
+async def door(data, model):
+    {body}
+"""
+    good = "pcm = await asyncio.to_thread(decode_to_pcm16k, data, max_decoded_s=10)\n    return await asyncio.to_thread(_pass, pcm, model)"
+    assert _cpu_in_async(tmpl.format(body=good), "s.py") == []
+    direct = _cpu_in_async(tmpl.format(body="return decode_to_pcm16k(data, max_decoded_s=10)"), "s.py")
+    assert [h.split(": ", 1)[1] for h in direct] == ["door: decode_to_pcm16k"]
+    helper = _cpu_in_async(tmpl.format(body="return _pass(data, model)"), "s.py")
+    assert [h.split(": ", 1)[1] for h in helper] == ["door: _pass()"]
+    # the in-module hole (the S9 review's L4): a helper DEFINED beside its async caller is caught through
+    # the closure once its body reaches a guarded import
+    local = (
+        "from app.services.voice_audio import float32_to_pcm16\n\n"
+        "def chunk_wavs(r):\n    return [float32_to_pcm16(c) for c in r]\n\n"
+        "async def transcribe_clip(r):\n    return chunk_wavs(r)\n"
+    )
+    assert [h.split(": ", 1)[1] for h in _cpu_in_async(local, "s.py")] == ["transcribe_clip: chunk_wavs()"]
+    # a `scan` that is NOT the ear's (the lorebook verb) is not this ratchet's business
+    other = "from app.services.agent.lorebooks import scan\n\nasync def turn(x):\n    return scan(x)\n"
+    assert _cpu_in_async(other, "s.py") == []
+    # …and the module-alias spelling is caught
+    alias = (
+        "from app.services import voice_prepass as vp\n\nasync def door(d):\n    return vp.prepass(d, 1)\n"
+    )
+    assert [h.split(": ", 1)[1] for h in _cpu_in_async(alias, "s.py")] == ["door: prepass"]

@@ -20,12 +20,31 @@ wheel-less install (Termux) still boots — the `voice` extra is only needed onc
 
 from __future__ import annotations
 
+import functools
+import importlib.util
 from fractions import Fraction
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
+
+#: What the `voice` extra brings (backend/pyproject.toml) — the three packages the clip door's decode,
+#: resample and pass need at runtime.
+VOICE_EXTRA = ("numpy", "onnxruntime", "av")
+
+
+@functools.cache
+def voice_extra_installed() -> bool:
+    """Whether the `voice` extra is importable — probed by SPEC, never by import (onnxruntime costs tens
+    of MB to load, and the boot must stay import-safe, ruling H1). Cached: the answer cannot change under
+    a running process. A name blocked in `sys.modules` (`= None`, the wheel-less boot test) reads as
+    missing — `find_spec` raises `ValueError` for it."""
+    try:
+        return all(importlib.util.find_spec(name) is not None for name in VOICE_EXTRA)
+    except ValueError, ImportError:
+        return False
+
 
 #: The VAD's sample rate — every registered model runs at 16 kHz (§3.4.1 ①), and so does the pass.
 MODEL_RATE = 16000

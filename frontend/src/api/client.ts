@@ -260,6 +260,22 @@ export async function postBlob(path: string, body: Blob | ArrayBuffer): Promise<
   return res.blob();
 }
 
+/** The header a MULTIPART write carries (Phase 26 S9; SECURITY_MODEL §2.7) — the backend's
+ *  `app/api/csrf.py::require_csrf_header` mirrors this pair. A form POST is a CORS "simple" request, so a hostile
+ *  page in the owner's browser could otherwise SEND one cross-origin with no preflight; a custom header
+ *  makes the browser preflight it, and this app answers no preflight (no CORS middleware), so the send
+ *  never happens. Any value works for that — the fixed one keeps it greppable. */
+export const CSRF_HEADER = "X-Requested-With";
+export const CSRF_HEADER_VALUE = "ctrl-b";
+
+/** POST a multipart FORM, carrying `CSRF_HEADER` — the ONE way the app sends a form (today: the clip
+ *  door, `POST /api/voice/stt`, push-to-talk and the dictation whole-clip fallback alike). Answers the
+ *  raw `Response`: the caller reads its own statuses (the clip door's 502 = "voice servers unreachable"
+ *  is a state, not an error toast). No `Content-Type` is set — the browser writes the multipart boundary. */
+export function postForm(path: string, form: FormData): Promise<Response> {
+  return fetch(path, { method: "POST", headers: { [CSRF_HEADER]: CSRF_HEADER_VALUE }, body: form });
+}
+
 /** DELETE a resource. Surfaces FastAPI `detail` on error; tolerates an empty 204 body. A route that
  *  REPORTS what the delete did (D79 / ISS-24: the agent delete's `{removed, kept, broken}`) is read
  *  back as `T`; an empty body resolves `undefined`, so every caller that ignores the answer is unchanged. */

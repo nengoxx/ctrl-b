@@ -15,13 +15,22 @@ JSON append into `$CTRLB_HOME/calls/<call_id>.jsonl` (a call) or `$CTRLB_HOME/ca
 dictation — the body's `mode`, Phase 26 S1) (`services/call_trail.py`); 404 while `voice.live.debug` is
 off, 204 on success, and no read path anywhere.
 
-HTTP contract: a success always returns 200 with `X-Voice-Served-By: <provider>` — the NAME of the
-registry provider that actually served (A11/D48; a fallback serve carries that fallback's provider name,
-a single-user diagnostic surface); TTS additionally carries `X-Voice-Target: <provider>/<model>`, the
-machine-readable identity a chunked reply pins with `prefer` (D63), plus `X-Voice-Degraded: 1` ONLY
-when a hop failed before the serving one answered (the client's serve flash is exception-only, so the
-header exists exactly where it says something); every endpoint failing → 502 (the aggregated upstream
-error); voice/service unconfigured → 503; STT with no file → 422.
+`POST /api/voice/stt` is the CLIP DOOR (Phase 26 S9, ASR_PLAN §3.6): the upload is decoded, run
+through the pre-ASR pass and transcribed chunk by chunk as WAV (`services/voice_clip.py`) — never
+forwarded as-is.
+
+HTTP contract: a success returns 200 with `X-Voice-Served-By: <provider>` — the NAME of the registry
+provider that actually served (A11/D48; a fallback serve carries that fallback's provider name, a
+single-user diagnostic surface). On STT a clip is transcribed in chunks, each walking the chain on its
+own, so the header lists the DISTINCT providers in serve order, ", "-joined (S9 ruling H5); a clip the
+pass finds no speech in answers `{"text": ""}` WITHOUT the header (nothing served it). TTS additionally
+carries `X-Voice-Target: <provider>/<model>`, the machine-readable identity a chunked reply pins with
+`prefer` (D63). Both add `X-Voice-Degraded: 1` ONLY when a hop failed before the serving one answered
+(the client's serve flash is exception-only, so the header exists exactly where it says something);
+every endpoint failing → 502 (the aggregated upstream error); voice/service unconfigured → 503; STT
+without the `X-Requested-With: ctrl-b` header → 403 (the multipart CSRF gate, `api/csrf.py`); STT
+with no file, undecodable audio, or a decode past its wall bound → 422; audio longer than the decoded
+bound → 413.
 """
 
 from __future__ import annotations
@@ -30,14 +39,15 @@ import asyncio
 import json
 import logging
 from email.message import Message
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, WebSocket
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.adapters.voice import AUDIO_FORMATS, VoiceClient, VoiceError
+from app.api.csrf import require_csrf_header
 from app.config import validation_detail
 from app.services.call_trail import (
     CALL_ID_PATTERN,
@@ -45,14 +55,16 @@ from app.services.call_trail import (
     TRAIL_MAX_ENTRIES,
     TRAIL_MAX_ENTRY_BYTES,
     CallTrail,
-    LiveMode,
+    LegMode,
 )
+from app.services.voice_clip import CLIP_DECODE_HEADROOM_S, clip_trail, transcribe_clip
 from app.services.voice_live import (
     CLOSE_PROTOCOL,
     LiveRelaySession,
     LiveSessionSlots,
     connect_speaches,
 )
+from app.services.voice_prepass import DecodeAborted, UndecodableAudio
 
 log = logging.getLogger(__name__)
 
@@ -313,9 +325,10 @@ class TrailEntry(BaseModel):
 
 class TrailBatch(BaseModel):
     call_id: str = Field(pattern=CALL_ID_PATTERN)
-    #: Which feature wrote the batch (Phase 26 S1) — the store's `LiveMode`, so the route and the relay
-    #: share one vocabulary. Absent = `call`: a pre-S1 client's batches land exactly where they did.
-    mode: LiveMode = "call"
+    #: Which feature wrote the batch (Phase 26 S1) — the store's `LegMode`, so the route and the relay
+    #: share one vocabulary (`clip` is server-minted, never a client's). Absent = `call`: a pre-S1
+    #: client's batches land exactly where they did.
+    mode: LegMode = "call"
     entries: list[TrailEntry] = Field(min_length=1, max_length=TRAIL_MAX_ENTRIES)
 
 
@@ -383,14 +396,34 @@ async def live_trail(request: Request) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/stt")
-async def stt(request: Request, file: UploadFile) -> Response:
-    """Transcribe an uploaded audio clip → `{text}`. The clip's filename + content-type are forwarded
-    as-is (Whisper servers often route by extension)."""
+# The CSRF header gate (S9, SECURITY_MODEL §2.7): a form POST is a CORS-simple request, so without it a
+# hostile page could make this route decode, spend ASR and (under debug) write a trail + capture.
+@router.post("/stt", dependencies=[Depends(require_csrf_header)])
+async def stt(
+    request: Request,
+    file: UploadFile,
+    call_id: Annotated[str | None, Query(pattern=CALL_ID_PATTERN)] = None,
+    from_ms: Annotated[int, Query(ge=0)] = 0,
+) -> Response:
+    """Transcribe an uploaded audio clip → `{text}` through the clip door (module docstring): decode →
+    the pre-ASR pass → each chunk as WAV to the `voice.stt` chain. `""` (no header) when the pass finds
+    no speech — no ASR call is made.
+
+    `call_id` (optional, a canonical UUID) names the STREAMING DICTATION this clip is the whole-clip
+    fallback of: under `voice.live.debug` the door's trail lines and capture then join THAT dictation's
+    trail — only when that trail already exists; otherwise (and without it) a debug upload gets a
+    server-minted `clip` trail of its own (rulings H6/H7; S9 wave 1).
+
+    `from_ms` (optional, ms, ≥ 0 and at most the decoded bound) trims the decoded head: the S8 recovery
+    re-uploads the whole recording and asks only for its untranscribed suffix (§3.8). It counts toward the
+    decoded bound (the head is still decoded), and T10 records it.
+
+    403 without `X-Requested-With: ctrl-b` (`api/csrf.py`), before anything here runs."""
     voice = _client(request)
     if not voice.configured("stt"):
         raise HTTPException(status_code=503, detail="speech-to-text is not configured")
-    max_bytes = request.app.state.settings.voice.stt.max_upload_bytes
+    settings = request.app.state.settings
+    max_bytes = settings.voice.stt.max_upload_bytes
     # Read at most cap+1 bytes: that is the least that still proves "over the cap", so an oversized
     # clip is refused without ever materializing more than the cap in memory (v1.3.1 Codex review).
     content = await file.read(max_bytes + 1)
@@ -402,18 +435,47 @@ async def stt(request: Request, file: UploadFile) -> Response:
             status_code=413,
             detail=f"audio upload too large (limit {max_bytes} bytes)",
         )
+    live = settings.voice.live
+    # §3.6, council 15: the longest recording the client can make, plus a minute.
+    max_decoded_s = live.dictation_max_s + CLIP_DECODE_HEADROOM_S
+    if from_ms > max_decoded_s * 1000:
+        raise HTTPException(status_code=422, detail=f"from_ms is past the decoded bound ({max_decoded_s} s)")
+    store: CallTrail | None = getattr(request.app.state, "call_trail", None)
+    trail = (
+        await asyncio.to_thread(clip_trail, store, keep=live.trail_keep, dictation_call_id=call_id)
+        if live.debug and store is not None
+        else None
+    )
     try:
-        text, served = await voice.transcribe(
-            content=content,
-            filename=file.filename or "audio.webm",
-            content_type=file.content_type,
+        result = await transcribe_clip(
+            voice,
+            content,
+            vad_model=live.vad_model,
+            max_decoded_s=max_decoded_s,
+            from_ms=from_ms,
+            trail=trail,
         )
+    except UndecodableAudio as exc:
+        log.info("voice stt: an undecodable upload refused (%s)", exc)
+        raise HTTPException(status_code=422, detail="the upload is not decodable audio") from None
+    except DecodeAborted as exc:
+        log.info("voice stt: an upload refused past the %s bound (%g s)", exc.bound, exc.limit_s)
+        if exc.bound == "decoded":
+            raise HTTPException(status_code=413, detail=f"audio longer than {exc.limit_s:g} s") from None
+        raise HTTPException(
+            status_code=422, detail=f"audio could not be decoded within {exc.limit_s:g} s"
+        ) from None
     except VoiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    headers: dict[str, str] = {}
+    if result.transcript is not None:  # ruling H5: absent on no speech — nothing served it
+        headers["X-Voice-Served-By"] = result.transcript.served_by
+        if result.transcript.degraded:
+            headers["X-Voice-Degraded"] = "1"
     return Response(
-        content=json.dumps({"text": text}),
+        content=json.dumps({"text": result.text}),
         media_type="application/json",
-        headers={"X-Voice-Served-By": served.served},
+        headers=headers,
     )
 
 
