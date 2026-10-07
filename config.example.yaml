@@ -462,7 +462,10 @@ voice:
                            # judge — the reply always waits for the sound to stop)
     debug: false           # CLIENT: show the live gate numbers on the call overlay (calibration aid);
                            # D77: ALSO writes a per-call trail to <CTRLB_HOME>/calls/<call>.jsonl
+                           # Phase 26 S6-ii: AND RECORDS each leg's audio beside it, <call>-<leg>.wav
+                           # (16 kHz, ~1.9 MB/min, anyone audible included; SECURITY_MODEL §2.12)
     trail_keep: 20         # D77: how many trails to keep (1–500) PER KIND — calls in calls/, dictations in calls/dictation/ (Phase 26 S1); the oldest go when a new one starts
+                           # — and take their recordings with them (worst case ≈ keep × legs × 1.9 MB/min)
     max_sessions: 1        # process-wide concurrent live sessions (a second connect gets `busy`)
     mic_hold: auto         # CLIENT: mic off while the reply speaks (and through its tail) — auto | on | off.
                            # auto = held unless the track's echo cancellation reads "all" (the D73 rule, D80);

@@ -14,6 +14,11 @@ this backend and would be a large one to add for linear interpolation.
 
 `trim_wav_silence` (D76 S3a) is the other resident: synthesized clips arrive padded with hundreds of
 milliseconds of digital silence, and the one TTS chokepoint (`VoiceClient.synthesize`) cuts it here.
+
+`pcm16_wav_header` (Phase 26 S6-ii, session-64 placement ruling) is THE one WAV writer: the 44-byte
+canonical header every producer of a pcm16 WAV in this codebase prepends — the relay's debug capture
+(`services/call_trail.py`), the corpus tool's import, the replay's `--asr` chunks, and later S9/S7b's
+"pass → WAV → transcribe". Never a second `wave`/`struct` spelling of it.
 """
 
 from __future__ import annotations
@@ -62,6 +67,54 @@ _SUBFORMAT_AT = 24  # SubFormat's offset inside an EXTENSIBLE fmt body
 _UNKNOWN_SIZES = (0, 0xFFFFFFFF)
 #: (typecode, full scale) per accepted (tag, bits): the ONLY two shapes trimmed — pcm16 and float32.
 _SAMPLE_KINDS = {(_WAVE_PCM, 16): ("h", 32768.0), (_WAVE_FLOAT, 32): ("f", 1.0)}
+
+
+#: The canonical PCM header's length: RIFF head (12) + `fmt ` chunk (8 + 16) + `data` chunk head (8).
+WAV_HEADER_BYTES = _RIFF_HEAD + _CHUNK_HEAD + _FMT_BASE_LEN + _CHUNK_HEAD
+#: The placeholder a streaming writer leaves in BOTH size fields until it knows them (ruling H1). All-ones,
+#: never 0: stdlib `wave` refuses a 0-size `data` chunk, while PyAV and `wave` both read all-ones as
+#: "to the end of the file" — so a crashed capture's `.part` stays importable as it lies.
+WAV_UNKNOWN_SIZE = _UNKNOWN_SIZES[1]
+
+
+def pcm16_wav_header(n_samples: int | None, rate: int, channels: int = 1) -> bytes:
+    """The 44-byte canonical RIFF/WAVE header for `n_samples` pcm16 sample FRAMES (per channel) at `rate`.
+
+    `n_samples=None` is the streaming placeholder: both the RIFF and the `data` size are
+    `WAV_UNKNOWN_SIZE` (ruling H1 — a `.part` is self-describing after a crash, and finalizing it is a
+    patch of these 44 bytes, never a copy). A size the 32-bit fields cannot hold is a `ValueError`."""
+    if rate <= 0 or channels <= 0:
+        raise ValueError(f"rate and channels must be positive (got {rate}, {channels})")
+    block_align = channels * _SAMPLE_BYTES
+    if n_samples is None:
+        riff_size = data_size = WAV_UNKNOWN_SIZE
+    else:
+        if n_samples < 0:
+            raise ValueError(f"n_samples must be >= 0 (got {n_samples})")
+        data_size = n_samples * block_align
+        riff_size = WAV_HEADER_BYTES - _CHUNK_HEAD + data_size
+        if riff_size >= WAV_UNKNOWN_SIZE:
+            raise ValueError("pcm16 payload too large for a RIFF header")
+    return b"".join(
+        (
+            b"RIFF",
+            struct.pack("<I", riff_size),
+            b"WAVE",
+            b"fmt ",
+            struct.pack(
+                "<IHHIIHH",
+                _FMT_BASE_LEN,
+                _WAVE_PCM,
+                channels,
+                rate,
+                rate * block_align,
+                block_align,
+                _SAMPLE_BYTES * 8,
+            ),
+            b"data",
+            struct.pack("<I", data_size),
+        )
+    )
 
 
 def silence(ms: int, rate: int) -> bytes:

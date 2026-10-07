@@ -603,7 +603,7 @@ defaults **empty** (the same-host rule alone). §6 carries the row.
 half of a live call's diagnostic record; the relay writes its half in-process. Four rails:
 
 - **Off means absent.** With `voice.live.debug` off (the default) the route is a **404**, the relay
-  writes nothing, and the client sends no `call_id` in `start`.
+  writes nothing — and records no audio (§2.12) — and the client sends no `call_id` in `start`.
 - **JSON only — the preflight is the CSRF control** (§2.7's rule). The handler parses its own body
   and **415s anything but `application/json`** (a form, `text/plain`, a typeless body — every shape a
   cross-origin page can send unpreflighted). The `keepalive` flush keeps that type; no `sendBeacon`.
@@ -617,9 +617,52 @@ batch's `mode` picks the directory from a fixed two-word vocabulary, never a pat
 secrets** (the bearer canary is test-pinned). The relay's leg-end JOURNAL line (T1) carries counts and
 codes only — never transcript text (test-pinned).
 
+### 2.12 Captured audio at rest — the debug capture (Phase 26 S6-ii, ASR_PLAN §6.1)
+
+The relay records what the live ear hears, beside the §2.11 trail, so a bad call can be diagnosed from
+what was HEARD and not only from what was decided — and so the owner's own calls become the ASR reference
+corpus (ASR_PLAN §6.3). Writer: `CallTrail.open_capture` (`services/call_trail.py`); producer: the relay's
+`_accept_audio` (`services/voice_live.py`). Rails:
+
+- **Off means absent.** Recorded only under the trail's own predicate, snapshotted at leg start:
+  `voice.live.debug` on (default **off**) AND the trail store mounted AND a client-named call
+  (`start.call_id`, which the client sends only under debug). A Conf flip mid-leg starts or stops
+  nothing. No route reads, lists or uploads a capture; nothing about it reaches the journal but counts.
+- **What.** `$CTRLB_HOME/calls/<call_id>-<leg>.wav` (a dictation's under `calls/dictation/`) — the
+  relay's RECEIVED stream after its anti-aliased resampler, 16 kHz pcm16 mono: **the owner's voice AND
+  anything else the microphone heard** (a radio, a passenger, a call on speaker). `.wav.part` while the
+  leg runs, or after a crash (header-first, sizes all-ones — still importable).
+- **Rails.** Dirs 0700, files 0600, created **exclusive** (`O_EXCL`; a reused call id + leg records
+  nothing rather than overwrite). The name is the canonical-UUID call id + an integer leg — never a
+  client path. Outside `install.sh`'s backup set (the DB snapshot) and every export route. The repo's
+  `.gitignore` carries `/calls/` + `/asr-corpus/` as a belt: with `CTRLB_HOME` unset, `home_path()`
+  falls back to the project root.
+- **Bounded by count, with its trail — WHEN the next debug call starts.** `voice.live.trail_keep`
+  (default 20, ≤ 500) per mode directory; a pruned trail takes its captures (they never count toward it,
+  and a call whose capture is still being written is never pruned). The prune runs only when a NEW
+  call's trail is created — i.e. when the next debug leg starts. **With `debug` turned OFF nothing is
+  pruned: the last kept trails and their audio stay on disk until you delete them.** ≈ 1.9 MB per
+  recorded minute, so the worst case is keep × legs per call × minutes: 20 kept 30-min single-leg calls ≈
+  **1.1 GB per mode per instance**, scaling linearly with `trail_keep`. No size knob (ruling H14).
+- **Fail-safe.** A write error, or a disk too slow to keep up (more than one batch queued behind the
+  one being written), is logged ONCE (shared with the trail's warning) and the capture DEGRADES — it
+  stops recording, keeps what reached the file, and `leg_end.capture` says `"degraded"`; a capture never
+  ends or slows a call. No fsync (debug data).
+- **How to delete.** Turn `debug` off (nothing new is recorded), then delete each call's files
+  TOGETHER — its stem: `rm $CTRLB_HOME/calls/<call_id>.jsonl $CTRLB_HOME/calls/<call_id>-*.wav*` (and the
+  same under `calls/dictation/`), or `rm -r` the `calls/` directory. **Deleting only a trail (`.jsonl`)
+  orphans its audio: no prune ever selects a stem without a trail.** Lowering `trail_keep` takes effect
+  only at the next debug call.
+- **The corpus** (`tools/asr_corpus.py`, offline, never runtime) copies a capture into
+  `$CTRLB_HOME/asr-corpus/` (0700/0600) on the owner's explicit `promote … --owner-only` — it requires an
+  explicit root (`--home`/`CTRLB_HOME`) and **refuses a destination inside a git work tree**; the corpus
+  is never committed. Consent at promotion: the owner's own voice only (+ D85's broadcast `background`
+  negatives, D85-S2); a clip carrying another person's voice is deleted, never promoted. Removal =
+  `asr_corpus.py prune --older-than DAYS` or `rm -r` of the directory.
+
 ### 2.13 The owner-voice template — a biometric identifier on disk (D85) — RULED, NOT BUILT
 
-*(§2.12 is reserved for S6-ii's captured audio at rest, ASR_PLAN §6.1.)* The live ear's owner verification (D85, ASR_PLAN §3.12)
+The live ear's owner verification (D85, ASR_PLAN §3.12)
 compares each call segment against an enrolled per-route template. Design: [`ASR_PLAN.md`](./ASR_PLAN.md) §3.12.3. Rails:
 
 - **A voice print, never audio.** The template is **a biometric identifier**: `$CTRLB_HOME/voice/owner/<sha256(route_key)[:16]>.json`
@@ -676,6 +719,7 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | **DNS rebinding reaches the whole API** (an attacker-controlled name re-resolving to the LAN/tailnet address is same-origin, so CORS never applies — and it removes the premise of the §2.10 WS `Origin` rail the same way) | **open BY OWNER CHOICE — the rail is BUILT** | Pre-existing, whole-API. **`server.trusted_hosts` closes it (§2.9, R73/D72 ⑥) and is shipped** — but it ships **EMPTY = not mounted**, and the owner ruled 2026-09-16 that it stays empty until they opt in (the rail costs every name and address they browse by; a missing name answers 400 everywhere with a hand-edit of `config.yaml` as the only recovery). So the residual stands on this deploy, by decision rather than by omission. Scoped to the cleartext bind either way — TLS makes the Serve front door unrebindable. *(No longer a Phase 19 item: D72 closed the design question.)* |
 | **The one WebSocket is an ingress CORS cannot reach** (`WS /api/voice/live`, D71) | **accepted, gated (the call ON by default since v1.7.8)** | §2.10. No preflight exists on an upgrade, so the absence of CORS middleware protects nothing here and the pre-`accept()` `Origin` rail is the boundary instead. Bounded by: the feature gate (a configured realtime chain; `voice.enabled` outranks; the call toggle ON by default since v1.7.8, dictation OFF), a `max_sessions` slot reaped by the uplink-idle bound (`uplink_idle_s`, R86), the relay's wall-clock uplink allowance (an audio-ms token bucket + a frame-count twin, capacity 30 s, its covering inequality validated at load, a violation = 1008), and the bearer never reaching a log or the downlink. Media ingress ONLY — a spoken turn still rides `POST /api/agent/chat` + SSE. |
 | **Safelisted-reachable POST mutations are a CLASS** — multipart (`POST /api/voice/stt`) plus the bodyless / path-param routes that run whatever content type a cross-origin form sends | **pre-existing, open → Phase 19** | CORS withholds a cross-origin read-back, never the send. Not introduced by D65 — surfaced by it, which is why §1's correction scopes the "first surface" claim to owner FILES. Enumeration + disposition = Packet ③ (HARDENING §8.2); §2.7 names three examples. |
+| **Raw call audio at rest — the debug capture (Phase 26 S6-ii)** | **accepted, off by default** | §2.12. With `voice.live.debug` on, every live leg's audio — bystanders included — sits on disk beside its trail (0700/0600, `O_EXCL`, no read route, outside backups), bounded by `trail_keep`'s count (worst case ≈ 1.1 GB per mode per instance at the default). Consent applies at promotion into the corpus (owner's voice only). Unpromoted captures are pruned with their trail only when the NEXT debug call starts — with debug turned off they stay on disk until deleted by hand (the stem's files together, §2.12). |
 | **The steer queue is in-memory (D41)** | **accepted** | A backend restart loses queued-but-undrained steers — no durability is promised (mirrors the in-memory confirm-token stance). Single-user, the queue is seconds-lived; accepted. |
 
 ---
@@ -760,6 +804,8 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
       to keep the socket shut); `voice.live.allowed_origins` should stay **empty** unless a measurement proved the
       same-host rule insufficient for your ingress (each entry is an exact origin string that
       bypasses the rail — never a pattern).
+- [ ] **`voice.live.debug` is what you intend** (§2.11/§2.12) — ON writes a per-call trail AND records
+      every live leg's audio (16 kHz, ~1.9 MB/min, anyone audible) under `$CTRLB_HOME/calls/`.
 - [ ] **`server.trusted_hosts` reviewed** (§2.9) — empty means the DNS-rebinding residual stands;
       non-empty means every name NOT listed answers 400 on every route, the Conf UI included. If you
       fill it in, list every name and address you actually browse by (ts.net name · bare hostname ·

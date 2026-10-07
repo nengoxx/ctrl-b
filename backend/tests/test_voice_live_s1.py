@@ -2566,6 +2566,7 @@ def test_a_clean_stop_logs_one_leg_end_with_its_counters(journal: pytest.LogCapt
         # wall clock refilled between the frames) and no budget tripped
         "credit_min_ms": end["credit_min_ms"],
         "budget": "-",
+        "gap_ms": "0",  # Phase 26 S6-ii (T7) — the audio the queue evicted, on the leg clock
     }
     assert float(end["duration_s"]) >= 0
     assert UPLINK_ALLOWANCE_MS - 120 <= int(end["credit_min_ms"]) <= UPLINK_ALLOWANCE_MS
@@ -2582,6 +2583,7 @@ def test_a_clean_stop_logs_one_leg_end_with_its_counters(journal: pytest.LogCapt
         "last_err",
         "credit_min_ms",  # …and the allowance pair LAST (S2), so the S1 order above never moved
         "budget",
+        "gap_ms",  # …and S6-ii's index gap after it, by the same rule
     ]
 
 
@@ -2768,8 +2770,9 @@ def test_the_relay_queues_drops_are_counted_beside_the_burst_flag(journal: pytes
             ws.send_json({"type": "stop"})
             assert _drain_until(ws, "state")["state"] == "ended"
     end = _leg_end(journal)
-    # 20 frames into a depth-5 queue nothing drains: 5 wait, the other 15 were evicted
-    assert (end["frames"], end["drops"]) == ("20", "15")
+    # 20 frames into a depth-5 queue nothing drains: 5 wait, the other 15 were evicted — and the audio
+    # they carried is the leg clock's GAP (S6-ii ruling H4): 15 × 40 ms
+    assert (end["frames"], end["drops"], end["gap_ms"]) == ("20", "15", "600")
 
 
 def test_the_leg_end_never_carries_the_owners_words(journal: pytest.LogCaptureFixture, tmp_path: Any) -> None:
@@ -2795,14 +2798,26 @@ def test_the_leg_end_never_carries_the_owners_words(journal: pytest.LogCaptureFi
     leg_end = lines[-1]
     assert leg_end["ev"] == "leg_end"
     assert {
-        k: leg_end[k] for k in ("frames", "finals", "finals_text", "drops", "close_code", "last_err")
+        k: leg_end[k]
+        for k in (
+            "frames",
+            "finals",
+            "finals_text",
+            "drops",
+            "gap_ms",
+            "close_code",
+            "last_err",
+            "capture_ms",
+        )
     } == {
         "frames": 1,
         "finals": 1,
         "finals_text": 1,
         "drops": 0,
+        "gap_ms": 0,  # Phase 26 S6-ii (T7) — no eviction, no gap
         "close_code": 1000,
         "last_err": None,
+        "capture_ms": 20,  # S6-ii — the debug leg recorded its one 20 ms frame (counts only, never audio)
     }
 
 

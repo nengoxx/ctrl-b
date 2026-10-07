@@ -849,7 +849,8 @@ prod's `mic_hold` is `on` (your flip), not `auto` — item 1's "`auto`" means wh
 schema 6 → 7** (migration 7 = the `message_alternates` table + two indexes, additive) — **rollback by tag
 is safe: `update.sh v1.7.9`** · **NO config migration** (shape stays 5; the new knobs `release_tail_ms` /
 `prefix_padding_ms` default in) · the Speaches fork `fd4b956` is ALREADY live (nothing to deploy for it)
-· **prod `voice.live.debug` stays ON** (for the car card and the dictation trail). Pre-tag standing move:
+· prod `voice.live.debug` was ON then (for the car card and the dictation trail) — **it is OFF on prod now**
+(verified `~/.ctrl-b/config.yaml`, 2026-10-07; since S6-ii, ON would also record every leg's audio, SECURITY_MODEL §2.12). Pre-tag standing move:
 `check.py --e2e` locally (the contrast matrix and the new `chat-alternates.spec.ts` ride it).
 
 **⚖ Your veto window (main-seat calls made under your directive — say so in the clean session if any is

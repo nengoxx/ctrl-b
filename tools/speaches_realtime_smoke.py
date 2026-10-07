@@ -64,6 +64,14 @@ import httpx
 import websockets
 from websockets.asyncio.client import connect
 
+# The checkout's OWN backend first (the `vad_replay.py` rule): this tool borrows ONE thing from it, the
+# canonical WAV header (Phase 26 S6-ii — one WAV writer in the tree, `core/audio.pcm16_wav_header`).
+_BACKEND = Path(__file__).resolve().parents[1] / "backend"
+if str(_BACKEND) not in sys.path:
+    sys.path.insert(0, str(_BACKEND))
+
+from app.core.audio import pcm16_wav_header  # noqa: E402
+
 #: The fork hardcodes 24 kHz as the wire rate of `input_audio_buffer.append`
 #: (`realtime/input_audio_buffer_event_router.py:handle_input_audio_buffer_append`).
 SPEACHES_WIRE_RATE = 24000
@@ -177,23 +185,7 @@ def silence_frames(ms: int, frame_ms: int) -> list[bytes]:
 def wav_bytes(pcm: Pcm) -> bytes:
     """Wrap PCM16 mono in a canonical RIFF header (used by the out-of-band isolation leg)."""
     data = struct.pack(f"<{len(pcm.samples)}h", *pcm.samples)
-    header = struct.pack(
-        "<4sI4s4sIHHIIHH4sI",
-        b"RIFF",
-        36 + len(data),
-        b"WAVE",
-        b"fmt ",
-        16,
-        1,
-        1,
-        pcm.rate,
-        pcm.rate * 2,
-        2,
-        16,
-        b"data",
-        len(data),
-    )
-    return header + data
+    return pcm16_wav_header(len(pcm.samples), pcm.rate) + data
 
 
 # ------------------------------------------------------------------------------------ clip source

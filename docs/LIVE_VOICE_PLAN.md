@@ -220,8 +220,8 @@ exactly as for stt/tts (§5.1):
 | `input_device` | "" | client | D73 pinned mic (`""` = the browser default), fallback-and-say-so |
 | `background` · `background_keepalive` · `background_idle_s` | true · true · 600 | client | D73 S6: survive the screen-off/app-switch freeze; the idle hang-up |
 | `ring` · `captions` | true · true | client | The overlay: the face ring (one fixed anchor since ISS-32); the reply as captions |
-| `debug` | false | both | The in-call readout AND the D77 call trail (`$CTRLB_HOME/calls/`) |
-| `trail_keep` | 20 | server | D77 retention (bounded 1–500) |
+| `debug` | false | both | The in-call readout AND the D77 call trail (`$CTRLB_HOME/calls/`) — since Phase 26 S6-ii also each leg's AUDIO capture beside it (ASR_PLAN §6.1, SECURITY_MODEL §2.12) |
+| `trail_keep` | 20 | server | D77 retention (bounded 1–500); a pruned trail takes its captures |
 | `uplink_idle_s` | 15 | server | R86 LC-8: a leg with NO uplink audio this long (a frozen page, a dead ear — the client ships a frame every `frame_ms`, held/muted ones as silence) ends as a `session_limit`-class terminal instead of holding the slot to `max_session_s`; bounded 5–120, load-validated to outlast `tail_wait_ms` |
 | `dictation` · `tail_wait_ms` · `dictation_idle_s` · `dictation_max_s` | false · 2000 · 300 (0 = off) · 1790 | client | S2.5 streaming dictation on the same ear; the idle stop and the cap re-ruled by Phase 26 SP (R21 P1/P2): the cap is load-validated `< max_session_s` (the interim under Speaches' kill; S10 raises the pair to 1800 / 2100) |
 | `dictation_idle_margin_db` | 10.0 | client | Phase 26 SP (R21 P1): the hands-free idle stop's threshold, dB over the browser's own tracked noise floor (`levelGate`); a dead/digital-zero input counts as silence. Bounded 0–40 |
@@ -486,7 +486,7 @@ voice:
     background_idle_s: 600
     ring: true              # §6 overlay mode: true = the face ring (one fixed anchor — ISS-32); false = art-only + transcript accent
     captions: true          # the reply as fading captions on the call screen
-    debug: false            # the in-call readout AND the D77 call trail
+    debug: false            # the in-call readout AND the D77 call trail (+ the S6-ii audio capture)
     trail_keep: 20          # server: D77 retention
     dictation: false        # S2.5 streaming dictation on the same ear, and its knobs
     tail_wait_ms: 2000

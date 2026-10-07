@@ -125,7 +125,8 @@ export interface VoiceLive extends VoiceServiceCommon {
   noise_verdict_ms: number; // ms an open segment runs before it may be judged noise (stops holding
   //                          the reply); 0 = never judge — the reply waits for the stop (2026-09-26)
   debug: boolean; //          show the call's live gate numbers on the overlay (calibration aid) — and
-  //                          write the per-call trail to `<home>/calls/` (D77)
+  //                          write the per-call trail to `<home>/calls/` (D77) AND record each leg's
+  //                          audio beside it (Phase 26 S6-ii, SECURITY_MODEL §2.12)
   trail_keep: number; //      D77: how many call trails the server keeps, 1..500 (a SERVER knob)
   ring: boolean; //           §6 overlay mode: the face ring (at a fixed anchor, ISS-32), or art-only
   captions: boolean; //       the reply as fading text on the call screen (owner ask 2026-09-22)

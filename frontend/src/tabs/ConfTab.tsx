@@ -3236,7 +3236,7 @@ export function ConfTab({ active }: Props) {
           />
           <SettingRow
             label="Call debug readout"
-            desc="show the live microphone and gate numbers on the call screen — for calibrating the gate above · also writes a per-call trail to <home>/calls/ for diagnosis"
+            desc="show the live microphone and gate numbers on the call screen — for calibrating the gate above · also writes a per-call trail AND records what the ear hears (16 kHz audio, ~2 MB a minute, anyone audible included) to <home>/calls/ — on this machine only, deleted with its trail"
           >
             <Switch
               on={!!vlive?.debug}

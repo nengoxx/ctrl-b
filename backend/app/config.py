@@ -826,12 +826,19 @@ class LiveCfg(VoiceServiceCfg):
     #: calibration aid for the S4 sitting, not a feature, and the phone is where it has to be read.
     #: Since D77 it ALSO turns the CALL TRAIL on (read server-side too): the relay and the browser
     #: each append a per-call JSONL under `$CTRLB_HOME/calls/` (`services/call_trail.py`), and
-    #: `POST /api/voice/live/trail` answers 404 while it is off.
+    #: `POST /api/voice/live/trail` answers 404 while it is off. Since Phase 26 S6-ii it ALSO RECORDS THE
+    #: LEG'S AUDIO beside its trail — `<call_id>-<leg>.wav`, what the ear hears (16 kHz pcm16 mono,
+    #: ~1.9 MB a minute, anyone audible included), under the trail's own gate and retention
+    #: (ASR_PLAN §6.1, SECURITY_MODEL §2.12). Snapshotted at leg start, like every live knob.
     debug: bool = False
     #: D77 — how many call trails `$CTRLB_HOME/calls/` keeps: when a NEW call's first line lands, the
     #: oldest past this count are deleted (by mtime). A SERVER knob (read at each write, never
     #: delivered to the client). 20 is a few sittings of calls; bounded 1–500 so the directory stays
-    #: bounded whatever is typed — a trail is diagnosis, not an archive.
+    #: bounded whatever is typed — a trail is diagnosis, not an archive. A trail's CAPTURES go with it
+    #: (Phase 26 S6-ii) and never count toward it, so the audio is bounded by this count too: worst case
+    #: ≈ keep × legs per call × 1.9 MB per recorded minute, per mode — at 20 kept 30-min single-leg
+    #: calls ≈ 1.1 GB per mode per instance (SECURITY_MODEL §2.12). No size knob (ruling H14). Applied
+    #: only when the next debug call starts: with `debug` off, the kept trails and audio stay until deleted.
     trail_keep: int = Field(default=20, ge=1, le=500)
     #: §6 overlay mode: true = the face ring over the art, false = art-only + transcript accent. The
     #: ring sits at ONE position — centred, upper third — whatever the picture's framing point (ISS-32,

@@ -13,7 +13,11 @@ table (`LiveSessionSlots`).
   controls `flush` and `stop`. The server-VAD knobs come from config alone (D76 §D). A debug call
   (D77) adds `call_id` (a canonical UUID) + `leg` (its reconnect ordinal) to `start` — both or
   neither, validated like `sample_rate` — and only then does the relay write its half of the CALL
-  TRAIL (`services/call_trail.py`, gated by `voice.live.debug`). A streaming-dictation leg (S11) adds
+  TRAIL (`services/call_trail.py`, gated by `voice.live.debug`) and, under that same gate, the leg's
+  CAPTURE: what the ear hears, 16 kHz pcm16 after the anti-aliased resampler, one WAV per leg beside
+  the trail (Phase 26 S6-ii, ASR_PLAN §6.1; SECURITY_MODEL §2.12). Every accepted frame is STAMPED at
+  receipt with its place on the leg clock (§3.2) — a frame the bounded queue later evicts is a GAP
+  (`gap_ms` on the leg-end line), never a shifted boundary. A streaming-dictation leg (S11) adds
   `mode: "dictation"` (`"call"` is the absent default; anything else is a protocol close) — the one
   thing the relay does differently for it is skip the gap cut below. THE TAB'S IDENTITY (Phase 26 D5,
   ASR_PLAN §3.9 ④): every leg from a client that can mint one adds `client_id` (a canonical lowercase
@@ -97,7 +101,9 @@ import anyio
 
 from app.config import UPLINK_ALLOWANCE_MS
 from app.core.audio import SPEACHES_WIRE_RATE, Pcm16Resampler, silence
-from app.services.call_trail import LIVE_MODES, LiveMode, valid_call_id
+from app.services.call_trail import LIVE_MODES, MAX_LEG, LiveMode, valid_call_id
+from app.services.voice_audio import MODEL_RATE, PcmResampler
+from app.services.voice_vad import StampedFrame
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -106,7 +112,7 @@ if TYPE_CHECKING:
 
     from app.config import LiveCfg
     from app.domain.provider import LivePolicy, ResolvedTarget
-    from app.services.call_trail import CallTrail
+    from app.services.call_trail import CallTrail, CaptureWriter
 
 log = logging.getLogger(__name__)
 
@@ -132,13 +138,20 @@ VAD_WINDOW_MS = 3000
 #: ship ~100× realtime.
 FRAME_MS_TOLERANCE = 2.0
 
-#: `start.leg`'s accepted range — the client's per-call reconnect ordinal (D77). Bounded like every
-#: other number this relay takes off the wire; a million legs is far past any real call.
-MAX_LEG = 1_000_000
-
 #: How many relay trail lines are buffered before one batch goes to disk (D77). Batched so the relay
 #: never pays a thread hop per downlink frame; `run()`'s `finally` flushes whatever is left.
 TRAIL_BATCH_LINES = 20
+
+#: How much CAPTURE audio is buffered before one batch goes to disk (Phase 26 S6-ii, ASR_PLAN §6.1) — the
+#: trail's batching reason (no thread hop per 40 ms frame), in audio: ~1 s of 16 kHz pcm16, 32 KB. A crash
+#: loses at most this much of the `.part`; `run()`'s `finally` writes whatever is left.
+CAPTURE_BATCH_MS = 1000
+CAPTURE_BATCH_BYTES = MODEL_RATE * 2 * CAPTURE_BATCH_MS // 1000
+#: THE CAPTURE'S MEMORY BOUND (S6-ii wave 1, Emma HIGH = Opus MED-1): ONE batch may be in flight on its
+#: thread, and the buffer behind it may hold ONE queued batch (plus the frames that top it up while that
+#: write finishes) — two batches in all. A disk slower than realtime past that DEGRADES the capture (one
+#: warning, the buffer dropped, nothing more recorded); the call never waits on, or grows for, a disk.
+CAPTURE_MAX_BUFFERED_BYTES = 2 * CAPTURE_BATCH_BYTES
 
 #: WebSocket close codes used by this route. 1008 = policy violation (protocol errors + the pre-accept
 #: refusals), 1011 = internal/upstream failure, 1013 = try again later (busy), 1000 = clean end.
@@ -246,6 +259,10 @@ class _LegStats:
     finals_text: int = 0
     #: Uplink items the bounded queue EVICTED (T7) — the count beside the once-per-burst `degraded`.
     drops: int = 0
+    #: …and the AUDIO they carried, in ms on the leg clock (T7's index gap, Phase 26 S6-ii ruling H4): the
+    #: sum of the evicted frames' receipt stamps. The relay's own flush silence is never stamped, so it is
+    #: never counted here even if it were ever evicted.
+    gap_ms: float = 0.0
     #: How the leg ended: the `_fail` code (or its finer `summary` — `uplink_idle` for the reaper, whose
     #: wire code is `session_limit`), `stop`, `client_gone`, `cancelled` — or `error` for an exception no
     #: handler owns (still a leg end, still a line).
@@ -278,14 +295,17 @@ class _LegStats:
             "last_err": self.last_err,
             "credit_min_ms": None if self.credit_min_ms is None else round(self.credit_min_ms),
             "budget": self.budget,
+            "gap_ms": round(self.gap_ms),
         }
 
     def line(self, mode: str) -> str:
         """The journal line's `key=value` body, `-` for an absent value. The allowance pair (T2) goes
-        LAST, after how the leg ended, so the S1 order a reader scans is unchanged."""
+        LAST, after how the leg ended, so the S1 order a reader scans is unchanged — and S6-ii's `gap_ms`
+        (T7) after it, by the same rule."""
         c = self.counters()
         ending = {"reason": self.reason, "close_code": c.pop("close_code"), "last_err": c.pop("last_err")}
         ending |= {"credit_min_ms": c.pop("credit_min_ms"), "budget": c.pop("budget")}
+        ending |= {"gap_ms": c.pop("gap_ms")}
         fields: dict[str, Any] = {"mode": mode, **c, **ending}
         return " ".join(f"{k}={'-' if v is None else v}" for k, v in fields.items())
 
@@ -456,6 +476,17 @@ class _Start(NamedTuple):
     client_id: str | None
 
 
+class _Receipt(NamedTuple):
+    """THE RECEIPT STAMP (ASR_PLAN §3.2, Phase 26 S6-ii ruling H4): where one accepted client frame sits on
+    the LEG clock — its first sample's index and its length, both in client-rate samples — minted in
+    `_accept_audio` the moment the frame clears the caps, never later. It rides the frame's queue item, so
+    an eviction knows exactly which audio it lost (`gap_ms`); the relay's own flush silence carries none.
+    At S7b it is also what `StampedFrame` carries into the segmenter (the capture is its first consumer)."""
+
+    leg_index: int
+    client_samples: int
+
+
 class LiveRelaySession:
     """One live call: the phone's WebSocket on one side, a Speaches realtime session on the other.
 
@@ -502,7 +533,31 @@ class LiveRelaySession:
         self._trail_lines: list[dict[str, Any]] = []
         self._trail_write = asyncio.Lock()
         self._trail_tasks: set[asyncio.Task[None]] = set()
-        self._trail_ended = False
+        #: The trail's `leg_end`, latched by the FIRST end path (`_close` or `run()`'s `finally`) and
+        #: WRITTEN in the shielded teardown once the capture is finalized, so it can say what the file
+        #: really holds (S6-ii wave 1) — `None` until a path ended the leg.
+        self._leg_end: dict[str, Any] | None = None
+        #: THE CAPTURE (Phase 26 S6-ii, ASR_PLAN §6.1) — the leg's audio, under EXACTLY the trail's gate
+        #: (`_trailing`), opened at `leg_start`. `_capture_resampler` is the 16 kHz copy's anti-aliased
+        #: resampler, built ONLY while capturing until the flip makes it unconditional (ruling H2: built
+        #: always, it would import PyAV on every fallback leg for a copy nothing reads). Audio batches in
+        #: `_capture_buf` and goes to disk off the loop in order (`_capture_write`, FIFO), exactly the
+        #: trail's machinery — ONE flush pending at a time, the buffer bounded (`CAPTURE_MAX_BUFFERED_BYTES`);
+        #: `_capture_degraded` = the capture stopped (a slow disk, a write or resample fault) and the leg
+        #: went on.
+        self._capture: CaptureWriter | None = None
+        self._capture_resampler: PcmResampler | None = None
+        self._capture_buf: list[bytes] = []
+        self._capture_buf_bytes = 0
+        self._capture_write = asyncio.Lock()
+        self._capture_tasks: set[asyncio.Task[None]] = set()
+        self._capture_degraded = False
+        #: THE LEG CLOCK (§3.2): client-rate samples accepted so far this leg — the next frame's stamp.
+        #: Origin = the first binary frame after `ready` (`_pump_client` only runs after it).
+        self._leg_samples = 0
+        #: The overflow burst in progress (ruling H4): `(first evicted leg index, ms evicted)`, closed —
+        #: and trailed as ONE `gap` line — by the next put that evicts nothing, or by the leg's end.
+        self._gap_burst: tuple[int, float] | None = None
 
         self._up: LiveUpstream | None = None
         self._resampler: Pcm16Resampler | None = None
@@ -515,8 +570,9 @@ class LiveRelaySession:
         self._client_gone = False
         self._closed = False
 
-        #: The bounded relay queue of append-event JSON payloads. Sized in `_pump`.
-        self._queue: asyncio.Queue[str] = asyncio.Queue()
+        #: The bounded relay queue of append-event JSON payloads, each with its receipt stamp (`None` for
+        #: the relay's own flush silence). Sized in `_pump`.
+        self._queue: asyncio.Queue[tuple[_Receipt | None, str]] = asyncio.Queue()
         #: True between a `speech_started` and its `speech_stopped`. Tracked for the commit-safety
         #: invariant (§7-S0's amendment (i)) and to keep a no-op flush from padding a silent buffer.
         self._speech_open = False
@@ -628,14 +684,13 @@ class LiveRelaySession:
             # The trail's last word (D77). A session that never reached `_close` — the phone hung up,
             # or the task was cancelled — still says how it ended; then the tail goes to disk, shielded
             # so a cancellation cannot eat the lines that explain it.
-            if not self._trail_ended:
-                self._note(
-                    "leg_end",
-                    code=None,
-                    reason="client gone" if self._client_gone else "aborted",
-                    **self._stats.counters(),
-                )
+            self._note_leg_end(code=None, reason="client gone" if self._client_gone else "aborted")
             with anyio.CancelScope(shield=True):
+                # The capture's tail FIRST, in the same shielded scope: drain the resampler, the last
+                # batch, finalize (rulings H1/H2) — then `leg_end` can say what the file holds.
+                capture = await self._finish_capture()
+                if self._leg_end is not None:
+                    self._note("leg_end", **self._leg_end, **capture)
                 await self._flush_trail()
                 await asyncio.gather(*self._trail_tasks, return_exceptions=True)
 
@@ -823,6 +878,16 @@ class LiveRelaySession:
         # The trail's header line: the exact knobs this leg runs (D77) — the update itself, verbatim —
         # and which feature it serves (S11).
         self._note("leg_start", rate=self._client_rate, mode=self._mode, session=session)
+        # FLUSHED NOW, not at the first full batch (ruling H3), and BEFORE the capture opens (S6-ii wave 1,
+        # Opus LOW-1): the trail file exists before the capture file, so a crash between the two orphans
+        # nothing — every capture has a trail, and the trail's prune, which takes a pruned trail's captures
+        # with it, is complete with no orphan sweep. One thread hop per debug leg.
+        await self._flush_trail()
+        if self._trailing:
+            # The capture's own line, right behind the header (named apart from the browser's `capture`
+            # line): its file, or `null` = the gate is on but this leg records no audio (an `O_EXCL` hit,
+            # ruling H12, or a failure already warned about).
+            self._note("capture_open", file=await self._open_capture())
         await self._send_up({"type": "session.update", "session": session})
 
     # ── phase 3: the pumps ────────────────────────────────────────────────────────────────────────
@@ -916,7 +981,7 @@ class LiveRelaySession:
         """The relay queue → Speaches, as TEXT frames. Deliberately dumb: everything that can be
         rejected was rejected by the producer, so this leg only owns the socket's failure mode."""
         while True:
-            payload = await self._queue.get()
+            _receipt, payload = await self._queue.get()
             await self._send_up_raw(payload)
             # The DELIVERY half of the queue's contract: `_flush` parks on `Queue.join()` until every
             # queued item has actually reached Speaches (F2), and this is the call that lets it go.
@@ -968,7 +1033,14 @@ class LiveRelaySession:
             converted = self._resampler.feed(data)
         except ValueError as exc:
             raise _ProtocolError(str(exc)) from None
-        await self._enqueue(converted, drop_oldest=True)
+        # THE RECEIPT STAMP (§3.2, ruling H4) — HERE, at receipt, never in `_enqueue` (whose other caller,
+        # `_flush`, generates silence that is no part of the leg clock). Every frame that clears the caps
+        # advances the clock, the ones the queue later drops included: a drop is then a GAP.
+        receipt = _Receipt(self._leg_samples, len(data) // 2)
+        self._leg_samples += receipt.client_samples
+        if self._capture_resampler is not None:
+            self._capture_frame(receipt, data)
+        await self._enqueue(converted, drop_oldest=True, receipt=receipt)
 
     def _arm_allowance(self) -> None:
         """Fill both buckets and start their wall clock — once per leg, just before `ready` (§3.3)."""
@@ -1030,8 +1102,9 @@ class LiveRelaySession:
                 f"{self._credit_ms:.0f} ms and {self._credit_frames:.2f} frames of credit — {why}"
             )
 
-    async def _enqueue(self, pcm: bytes, *, drop_oldest: bool) -> None:
-        """Queue one 24 kHz frame as an `input_audio_buffer.append` event.
+    async def _enqueue(self, pcm: bytes, *, drop_oldest: bool, receipt: _Receipt | None = None) -> None:
+        """Queue one 24 kHz frame as an `input_audio_buffer.append` event, with its receipt stamp (`None`
+        for generated silence — the flush's).
 
         `drop_oldest=True` is the MIC path: it must never stall, so a full queue loses its oldest
         frames and one `degraded` state goes down per burst (§3.1 — RealtimeSTT-server's explicit
@@ -1042,8 +1115,9 @@ class LiveRelaySession:
         """
         if not pcm:
             return
-        item = json.dumps(
-            {"type": "input_audio_buffer.append", "audio": base64.b64encode(pcm).decode("ascii")}
+        item = (
+            receipt,
+            json.dumps({"type": "input_audio_buffer.append", "audio": base64.b64encode(pcm).decode("ascii")}),
         )
         if not drop_oldest:
             await self._queue.put(item)
@@ -1055,7 +1129,7 @@ class LiveRelaySession:
                 break
             except asyncio.QueueFull:
                 try:
-                    self._queue.get_nowait()
+                    evicted, _payload = self._queue.get_nowait()
                     # An evicted item is one the uplink leg will never mark done, so it is marked
                     # here. This is not bookkeeping hygiene: `_flush`'s delivery barrier is
                     # `Queue.join()`, and an unbalanced counter makes that join either hang forever
@@ -1063,6 +1137,8 @@ class LiveRelaySession:
                     self._queue.task_done()
                     dropped = True
                     self._stats.drops += 1  # T7 — the COUNT beside the once-per-burst flag below
+                    if evicted is not None:
+                        self._note_gap(evicted)
                 except asyncio.QueueEmpty:  # pragma: no cover — the consumer drained it meanwhile
                     pass
         if dropped and not self._overflow_flagged:
@@ -1071,6 +1147,29 @@ class LiveRelaySession:
             await self._send_down({"type": "state", "state": "degraded", "reason": "overflow"})
         elif not dropped:
             self._overflow_flagged = False
+            self._close_gap_burst()
+
+    def _note_gap(self, evicted: _Receipt) -> None:
+        """Account one evicted frame (T7's index gap, ruling H4): its audio on the leg clock goes to
+        `gap_ms` (always — the leg-end line) and to the open burst (debug — one `gap` trail line)."""
+        assert self._client_rate is not None
+        ms = evicted.client_samples * 1000 / self._client_rate
+        self._stats.gap_ms += ms
+        if self._gap_burst is None:
+            self._gap_burst = (evicted.leg_index, ms)
+        else:
+            self._gap_burst = (self._gap_burst[0], self._gap_burst[1] + ms)
+
+    def _close_gap_burst(self) -> None:
+        """Trail the burst that just ended as ONE `gap {at_ms, ms}` line: where on the leg clock its first
+        lost frame began, and how much audio the burst lost in all. The CAPTURE still holds that audio
+        (it is written at receipt), so this line is where a replay learns the live ear never heard it."""
+        if self._gap_burst is None:
+            return
+        at, ms = self._gap_burst
+        self._gap_burst = None
+        assert self._client_rate is not None
+        self._note("gap", at_ms=at * 1000 // self._client_rate, ms=round(ms))
 
     async def _flush(self) -> None:
         """R70 §4's release flush: pad the ear's buffer with silence until its endpointing rule fires.
@@ -1370,8 +1469,7 @@ class LiveRelaySession:
         """Close the phone's socket once. `reason` stays short — a WS close reason is capped at 123
         bytes on the wire, so the detail lives in the `error` frame that precedes it."""
         self._stats.close_code = code
-        if not self._trail_ended:
-            self._note("leg_end", code=code, reason=reason, **self._stats.counters())
+        self._note_leg_end(code=code, reason=reason)
         if self._closed or self._client_gone:
             self._closed = True
             return
@@ -1383,16 +1481,30 @@ class LiveRelaySession:
 
     # ── the call trail (D77) ──────────────────────────────────────────────────────────────────────
 
+    @property
+    def _trailing(self) -> bool:
+        """THE GATE (D77) — the trail's, and since S6-ii EXACTLY the capture's: the store exists,
+        `cfg.debug` is on (the session-start snapshot, so a Conf flip mid-leg starts or stops nothing),
+        and the client named the call."""
+        return self._trail is not None and self._cfg.debug and self._call_id is not None
+
+    def _note_leg_end(self, *, code: int | None, reason: str) -> None:
+        """LATCH the trail's `leg_end` — the first end path's code, reason and counters, after the open gap
+        burst is trailed — WITHOUT touching the capture (S6-ii wave 1, Emma MED: the resampler is drained
+        only in `run()`'s `finally`). The line itself is written there, behind `_finish_capture`, carrying
+        the capture's outcome."""
+        if self._leg_end is not None:
+            return
+        self._close_gap_burst()
+        self._leg_end = {"code": code, "reason": reason, **self._stats.counters()}
+
     def _note(self, ev: str, **fields: Any) -> None:
         """Buffer one relay trail line — a no-op unless this leg writes a trail (see `__init__`).
 
         Synchronous, so it can sit on any path, the audio pump's included: a full batch is handed to
-        a background task and NOTHING here waits on the disk. `leg_end` latches: whichever of `_close`
-        or `run()`'s `finally` says it first is the one that stands."""
-        if self._trail is None or not self._cfg.debug or self._call_id is None:
+        a background task and NOTHING here waits on the disk. (`leg_end` is latched by `_note_leg_end`.)"""
+        if not self._trailing:
             return
-        if ev == "leg_end":
-            self._trail_ended = True
         self._trail_lines.append(
             {"t": int(time.time() * 1000), "src": "relay", "leg": self._leg, "ev": ev, **fields}
         )
@@ -1414,6 +1526,114 @@ class LiveRelaySession:
                 await asyncio.to_thread(
                     self._trail.append, self._call_id, lines, keep=self._cfg.trail_keep, mode=self._mode
                 )
+
+    # ── the capture (Phase 26 S6-ii, ASR_PLAN §6.1) ────────────────────────────────────────────────
+
+    async def _open_capture(self) -> str | None:
+        """Open this leg's capture off the loop and return its file name — `None` when the leg records
+        no audio (each such cause already warned). Called only under `_trailing`."""
+        trail, call_id, leg, rate = self._trail, self._call_id, self._leg, self._client_rate
+        assert trail is not None and call_id is not None and leg is not None and rate is not None
+
+        def open_sync() -> tuple[CaptureWriter | None, PcmResampler | None]:
+            # The resampler FIRST: a leg that cannot make the 16 kHz copy creates no file. On the 16 kHz
+            # main path it is an identity that never imports PyAV; a fallback-rate leg without the
+            # `voice` extra records nothing — a missing copy is never a failed leg.
+            try:
+                resampler = PcmResampler(rate, MODEL_RATE)
+            except Exception:  # noqa: BLE001 — ImportError (no extra) or an av fault: no capture, the leg runs
+                log.warning("live voice: no capture at %d Hz (the `voice` extra is needed)", rate)
+                return None, None
+            writer = trail.open_capture(call_id, leg, rate=MODEL_RATE, mode=self._mode)
+            return writer, (resampler if writer is not None else None)
+
+        self._capture, self._capture_resampler = await asyncio.to_thread(open_sync)
+        return None if self._capture is None else self._capture.name
+
+    def _capture_frame(self, receipt: _Receipt, data: bytes) -> None:
+        """Buffer one accepted frame's 16 kHz copy — the `StampedFrame` S7b's segmenter will be fed, its
+        first producer. A resampler fault degrades the capture, never the leg."""
+        resampler = self._capture_resampler
+        assert resampler is not None
+        try:
+            frame = StampedFrame(receipt.leg_index, receipt.client_samples, resampler.feed(data))
+        except Exception:  # noqa: BLE001 — the capture is diagnosis: it stops, the call does not
+            self._degrade_capture("call capture: cannot resample")
+            return
+        self._buffer_capture(frame.pcm16k)
+
+    def _buffer_capture(self, pcm16k: bytes) -> None:
+        """Buffer audio and start a flush when a batch is full AND none is pending (Opus MED-1: never a
+        task per frame behind a slow write). Past `CAPTURE_MAX_BUFFERED_BYTES` the disk is not keeping
+        up: the capture degrades rather than grow."""
+        if self._capture_degraded or not pcm16k:
+            return
+        if self._capture_buf_bytes + len(pcm16k) > CAPTURE_MAX_BUFFERED_BYTES:
+            self._degrade_capture("call capture: the disk is too slow")
+            return
+        self._capture_buf.append(pcm16k)
+        self._capture_buf_bytes += len(pcm16k)
+        if self._capture_buf_bytes >= CAPTURE_BATCH_BYTES and not self._capture_tasks:
+            task = asyncio.create_task(self._flush_capture(), name="voice-live-capture")
+            self._capture_tasks.add(task)
+            task.add_done_callback(self._capture_tasks.discard)
+
+    def _degrade_capture(self, why: str) -> None:
+        """Stop recording this leg (S6-ii wave 1): the warn-once, the buffer DROPPED, the resampler gone
+        (no more work per frame), and `leg_end.capture: "degraded"`. What already reached the file stays
+        — finalized like any capture, `capture_ms` counting only what was written."""
+        if self._capture_degraded:
+            return
+        self._capture_degraded = True
+        self._capture_resampler = None
+        self._capture_buf, self._capture_buf_bytes = [], 0
+        if self._trail is not None:
+            self._trail.warn_once(why)
+
+    async def _flush_capture(self) -> None:
+        """Hand the buffered audio to the writer, OFF the loop; the swap happens under `_capture_write`
+        (FIFO), so batches reach the file in order — the trail's `_flush_trail` shape. A writer that
+        failed degrades the capture here, so the relay stops resampling for it (Opus LOW-2)."""
+        writer = self._capture
+        if writer is None:
+            return
+        async with self._capture_write:
+            chunks, self._capture_buf, self._capture_buf_bytes = self._capture_buf, [], 0
+            if chunks:
+                await asyncio.to_thread(writer.append, b"".join(chunks))
+        if writer.failed:
+            self._degrade_capture("call capture: cannot write")
+
+    def _drain_capture(self) -> None:
+        """Drain the resampler's delay line into the buffer — ONCE, from `_finish_capture` alone (ruling
+        H2: `flush()` only in the teardown; a feed after it raises). The 16 kHz identity has no tail."""
+        resampler, self._capture_resampler = self._capture_resampler, None
+        if resampler is None:
+            return
+        try:
+            tail = resampler.flush()
+        except Exception:  # noqa: BLE001 — the tail is 16 samples of diagnosis
+            self._degrade_capture("call capture: cannot resample")
+            return
+        self._buffer_capture(tail)
+
+    async def _finish_capture(self) -> dict[str, Any]:
+        """The capture's teardown, inside `run()`'s shielded scope: drain the resampler, wait out the
+        batch in flight, write the last one, finalize (patch the header, rename `.part` → `.wav`, H1) —
+        and return what `leg_end` records: `capture` = the file, `"degraded"`, or `null` (none), and
+        `capture_ms` = the audio actually WRITTEN."""
+        writer = self._capture
+        if writer is None:
+            return {"capture": None, "capture_ms": None}
+        self._drain_capture()
+        await asyncio.gather(*self._capture_tasks, return_exceptions=True)
+        await self._flush_capture()
+        await asyncio.to_thread(writer.finalize)
+        degraded = self._capture_degraded or writer.failed
+        return {
+            "capture": "degraded" if degraded else writer.name,
+            "capture_ms": writer.samples * 1000 // MODEL_RATE,
+        }
 
     async def _close_upstream(self) -> None:
         """Close the realtime leg — WITHOUT a commit (the invariant). A failure here must not escape:

@@ -117,18 +117,22 @@ class PrepassResult:
     hop: int
 
 
-def scan(pcm16k: NDArray[np.float32], model: VadModel) -> tuple[NDArray[np.float32], list[tuple[int, int]]]:
+def scan(
+    pcm16k: NDArray[np.float32], model: VadModel, *, act: float | None = None
+) -> tuple[NDArray[np.float32], list[tuple[int, int]]]:
     """One fresh-state VAD run over a whole buffer → (per-hop raw probabilities, merged speech spans).
 
     The buffer rides the SAME `HopBuffer` the live segmenter uses (the leftover zero-padded to one hop,
-    span ends clamped to the real audio). A span is the hops from a `≥ prepass_act` crossing to the first
-    `< deact` hop (exclusive); spans closer than `PREPASS_MIN_SILENCE_MS` merge."""
+    span ends clamped to the real audio). A span is the hops from a `≥ act` crossing to the first
+    `< deact` hop (exclusive); spans closer than `PREPASS_MIN_SILENCE_MS` merge. `act` defaults to the
+    model's `prepass_act` — the override exists for the replay's `--prepass-sweep` (S6-ii ruling H7: the
+    §6.4 S9 gate row sweeps it), never for a runtime caller."""
     import numpy as np
 
     hops = HopBuffer(model.hop)
     block = np.concatenate([hops.push(pcm16k), hops.pad()])
     probs = model.open().probs(block) if len(block) else np.zeros(0, dtype=np.float32)
-    act = model.prepass_act
+    act = model.prepass_act if act is None else act
     deact = deact_of(act)
     raw: list[tuple[int, int]] = []
     start: int | None = None
@@ -151,11 +155,12 @@ def scan(pcm16k: NDArray[np.float32], model: VadModel) -> tuple[NDArray[np.float
     return probs, spans
 
 
-def prepass(pcm16k: NDArray[np.float32], model: VadModel) -> PrepassResult:
-    """The pre-ASR pass (module docstring). `model` is the configured `vad_model` (`get_model(...)`)."""
+def prepass(pcm16k: NDArray[np.float32], model: VadModel, *, act: float | None = None) -> PrepassResult:
+    """The pre-ASR pass (module docstring). `model` is the configured `vad_model` (`get_model(...)`);
+    `act` overrides its `prepass_act` (the replay's sweep only — `scan`, ruling H7)."""
     import numpy as np
 
-    _, spans = scan(pcm16k, model)
+    _, spans = scan(pcm16k, model, act=act)
     if not spans:
         return PrepassResult("no_speech", [], [], model.hop)
     pad = PREPASS_PAD_MS * MODEL_RATE // 1000

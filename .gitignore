@@ -9,6 +9,10 @@ clients
 # ── agent memory / personal data (D14: per-agent MEMORY.md + global USER.md) ──
 memories/
 agents/*/memories/
+# the call trails + debug audio captures, and the ASR corpus (Phase 26 S6-ii, SECURITY_MODEL §2.12): with
+# CTRLB_HOME unset, `home_path()` falls back to this project root — the owner's audio must never be tracked
+/calls/
+/asr-corpus/
 
 # ── databases ──
 *.db
