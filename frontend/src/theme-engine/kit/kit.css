@@ -1483,8 +1483,21 @@ body[data-perf="lite"] .kit .tools-sheet {
 /* ── composer · the CLIP's ATTACH MENU (ISS-47 — photos / files) ──────────────────────────────────────────
  * The popover shell's fourth occupant (AttachMenu.tsx), riding the tools panel's class: the shell, the
  * composer anchoring, every skin's dress, the perf gate, the slide and the handoff snap above are ALL
- * inherited — its rows are the shared `.tools-row` buttons. The only delta is the leading door glyph, in
- * the selection gutter's place, quiet like the clip that opened it. */
+ * inherited — its rows are the shared `.tools-row` buttons. Two deltas: the GEOMETRY and the row glyph.
+ *   · GEOMETRY (owner, 2026-10-07: "it doesn't have to be full width"): two short rows do not earn the
+ *     shell's edge-to-edge span, so the panel is CONTENT-WIDE and anchored to the clip's edge. The clip is
+ *     TRAILING in every placement — stacked (left of the mic in `.crow`), sheet (embedded at the field's
+ *     trailing edge), line (left of the cluster), and the rail tail (the composer's top-right) — so one
+ *     rule holds: `right` keeps the shell's gutter, `left` is released. The min-width is the row's touch
+ *     target plus a word, so "photos"/"files" never read as a stub. The tools menu keeps the full span
+ *     (agent names + skills earn it). (0,3,0) beats the shell's (0,2,0); the docked `:has()` override
+ *     touches only `bottom`, so the two compose.
+ *   · the leading door glyph, in the selection gutter's place, quiet like the clip that opened it. */
+.kit .tools-sheet.attach-sheet {
+  left: auto;
+  width: max-content;
+  min-width: 164px;
+}
 .kit .tools-sheet .attach-glyph {
   display: flex;
   flex-shrink: 0;
@@ -4406,7 +4419,7 @@ body[data-motion="full"] .kit .b-wrap.arrive > .b {
  * 12px`, the pad is 24px over its height). When the keyboard opens the pane shrinks and the pin rides it.
  * z 4: over the log (and the edge scrims at 3), under the composer's own popovers (5).
  *
- * THE BUTTON: a 40px round surface chip (the `.pm-x` recipe at a thumb's size), tokens only, centred
+ * THE BUTTON: a 40px round borderless disc (the squeeze pill's fill + shadow, at a thumb's size), tokens only, centred
  * without a transform so the appear pop owns `transform`. Appear = the kit's one pop (`kit-btn-pop`,
  * transform/opacity, motion-gated to `full`; nothing under reduced — it simply appears). It leaves by
  * unmounting: the latch re-stuck, there is nothing left to point at. */
@@ -4431,15 +4444,19 @@ body[data-motion="full"] .kit .b-wrap.arrive > .b {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--surface);
-  border: 1px solid var(--line-2);
+  /* BORDERLESS (owner, 2026-10-07: "a plain circle, not an outline") — the squeeze pill's own ruling
+   * (2026-09-13, ~line 1818): the fill alone is the disc, and its soft shadow keeps the silhouette alive
+   * on light themes where surface-2 on the ground measures ~1.05:1. Same fill, same shadow literal. */
+  background: var(--surface-2);
+  border: 0;
+  box-shadow: 0 3px 12px -3px rgba(0, 0, 0, 0.4);
   color: var(--text-2);
   cursor: pointer;
   pointer-events: auto;
   transition: background var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
 }
 .kit .kit-jump:active {
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
 }
 body[data-motion="full"] .kit .kit-jump {
