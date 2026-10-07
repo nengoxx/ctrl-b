@@ -166,6 +166,141 @@ required for a working install, but each fixes a real degradation on this box:
   **`--no-context-shift`** to `llama-server` (older flag name; newer builds use `--context-shift` to
   *enable* it — verify against your build's `llama-server --help`).
 
+## The ASR engines (Phase 26 — `parakeet-live` / `parakeet-clip`, machine-wide, never `install.sh`'s)
+Live voice's ear and the clip door (push-to-talk + the whole-clip dictation fallback) transcribe on
+**two `parakeet-server` processes** (`mudler/parakeet.cpp` **v0.5.0**, MIT; weights
+`nvidia/parakeet-tdt-0.6b-v3`, CC-BY-4.0) — ASR_PLAN §3.7 / D82, set up in S9 on 2026-10-07. They are
+**machine-wide user units shared by dev, prod and anything else on the box** (R18/R19), exactly like
+PocketTTS and Speaches:
+- **`install.sh` and `update.sh` never render, enable, start, stop or restart them** (R19), and a
+  §Rollback never stops them (other consumers). Every step here is by hand.
+- **Speaches stays up** (R18): this phase never stops `speaches.service` (:9000) — it is the rollback
+  target for v1.7.12 (ASR_PLAN §8.3). Whether it keeps running afterwards is the owner's later call.
+
+| Unit | Port | Door (ctrl-b provider) | Threads | Bind |
+|---|---|---|---|---|
+| `parakeet-live.service` | **9010** | `voice.live` — `parakeet-live` | 4 | 0.0.0.0 |
+| `parakeet-clip.service` | **9011** | `voice.stt` — `parakeet-clip` | 4 | 0.0.0.0 |
+
+- **Bind 0.0.0.0** per R10 (LAN trust, like Speaches :9000 — SECURITY_MODEL §2.1). No key exists; the
+  engines take only WAV and expose transcription + `/health`.
+- **Clone:** `~/github/parakeet.cpp` at tag `v0.5.0` = `1bfbebfaaf493866f49597cd3b7901959d395c60`
+  (ggml submodule `e705c5fe…`, v0.13.0; the configure step applies upstream's in-tree ggml patches, so
+  `git status` shows ` m third_party/ggml` — expected).
+- **Binary:** the source build `build/examples/server/parakeet-server` (`GGML_NATIVE=ON` ⇒ `-march=native`,
+  Zen 4 AVX-512; it links `build/third_party/ggml/src/libggml*.so` by rpath, so the whole `build/` stays).
+  sha256 `68176570239c9924b56d95930a4e93b86aa588833c03fd168ece45d4156c1aa1`; it prints
+  `parakeet-server 0.0.1` (a source build carries no version stamp — the tag is the identity). The
+  portable release binary sits beside it for the H8 comparison: `build-release/parakeet-v0.5.0-bin-linux-cpu-x64/`
+  (tarball sha256 `636a9fc48ac023096037790f9b77d7e5043b200dd6399ec0438bd648c35d79b9`, prints `0.5.0`); the
+  S9 bake-off decides which one `ExecStart` runs.
+- **Model:** `~/github/parakeet.cpp/models/tdt-0.6b-v3-f16.gguf` (gitignored) — 1 441 046 400 B,
+  sha256 `8ba47343e1e919895aca90e099150a01ed203ee0942d8ed31e27295efc5abb22`, from
+  `huggingface.co/mudler/parakeet-cpp-gguf` rev `741158ae71e64ef5c89385862c18f777d07a97a1`. Units pass
+  the **path**, never the alias (no fetch at start). Loaded before the socket binds and never unloaded —
+  resident by construction (R10 a); `/health` answers only once it is loaded (~1 s).
+- **Memory:** ~1.4–1.6 GB RSS each (MemoryPeak 1.52 GB idle → 1.56/1.61 GB after a request).
+- **Concurrency:** each process serialises inference on one mutex and parks extra requests (never
+  refuses). ctrl-b gates app-side with `max_concurrent_requests: 1` per provider — **per ctrl-b process**,
+  so a dev test call and a prod call on the same engine queue on that mutex; it shows as `asr_ms` in T9.
+
+Both unit files (`~/.config/systemd/user/`, PocketTTS's shape; only the door/port differ):
+```ini
+[Unit]
+Description=parakeet.cpp v0.5.0 parakeet-server — ctrl-b ASR engine, the live door (:9010, CPU)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/emma/github/parakeet.cpp
+Environment=PARAKEET_DEVICE=cpu
+ExecStart=/home/emma/github/parakeet.cpp/build/examples/server/parakeet-server --model /home/emma/github/parakeet.cpp/models/tdt-0.6b-v3-f16.gguf --host 0.0.0.0 --port 9010 --threads 4
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+```
+(`parakeet-clip.service`: `the clip door (:9011, CPU)` and `--port 9011`.)
+
+```bash
+# install from scratch (what S9 ran)
+git clone --recursive --branch v0.5.0 https://github.com/mudler/parakeet.cpp ~/github/parakeet.cpp
+cd ~/github/parakeet.cpp
+curl -sSL --fail -o models/tdt-0.6b-v3-f16.gguf.part \
+  https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/741158ae71e64ef5c89385862c18f777d07a97a1/tdt-0.6b-v3-f16.gguf
+sha256sum models/tdt-0.6b-v3-f16.gguf.part   # MUST be 8ba47343…abb22 — else delete it and stop
+mv models/tdt-0.6b-v3-f16.gguf.part models/tdt-0.6b-v3-f16.gguf
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DPARAKEET_BUILD_TESTS=OFF -DGGML_NATIVE=ON
+cmake --build build -j 16
+# write the two unit files above, then:
+systemctl --user daemon-reload && systemctl --user enable --now parakeet-live parakeet-clip
+
+# health (NOT under /v1) — {"status":"ok"} on both
+curl -s 127.0.0.1:9010/health; curl -s 127.0.0.1:9011/health
+# a real transcription (WAV only; any rate; anything else is a 400) — {"text":"…"}
+curl -sS -F file=@some.wav http://127.0.0.1:9011/v1/audio/transcriptions
+systemctl --user show parakeet-live parakeet-clip -p MemoryPeak
+
+# start / stop / restart (ctrl-b falls over to the chain's next hop while one is down)
+systemctl --user restart parakeet-live parakeet-clip
+# logs — the journal holds the listen line (port + model path) and errors only: parakeet-server has
+# no access log and no level flag (R10 b, ruled). Per-request evidence = ctrl-b's T9 trail lines.
+journalctl --user -u parakeet-live -u parakeet-clip -n 50
+```
+
+**Update the engine** (a new tag, only after the owner has tried it — the tested-pin policy): clone the
+new tag BESIDE the old one (`~/github/parakeet.cpp-vX.Y.Z`), build it, put the model in its `models/`
+(`cp` the verified file, or download + `sha256sum` whatever file the new release names), point both units'
+`WorkingDirectory`/`ExecStart`/`--model` at it, `daemon-reload`, restart
+both, re-run the health + transcription checks. Rollback = point them back and restart; delete the old
+clone only once the new one has served real traffic.
+
+**Remove entirely** (the reverse of the install — repoint ctrl-b's `voice.live` / `voice.stt` away from
+the `parakeet-*` providers FIRST, on dev and prod, or those doors fall straight to their fallbacks):
+```bash
+systemctl --user disable --now parakeet-live parakeet-clip
+rm ~/.config/systemd/user/parakeet-live.service ~/.config/systemd/user/parakeet-clip.service
+systemctl --user daemon-reload
+rm -rf ~/github/parakeet.cpp        # clone + build + build-release + the 1.4 GB model
+```
+
+**ctrl-b's providers** (`providers:` in `config.yaml`; `ProviderCfg`). `base_url` ends in `/v1` (the
+SDK appends `/audio/transcriptions`); the model name is cosmetic — the server never reads `model`
+(nor `language`/`vad_filter`/`hotwords`, which are accepted and ignored), but one catalog entry lets a
+section omit `model`. Distinct ports ⇒ distinct D40 gates. Paste into dev now, prod at v1.7.12:
+```yaml
+providers:
+  parakeet-live:
+    base_url: http://127.0.0.1:9010/v1
+    api_mode: openai
+    max_concurrent_requests: 1
+    models:
+      parakeet-tdt-0.6b-v3: {}
+  parakeet-clip:
+    base_url: http://127.0.0.1:9011/v1
+    api_mode: openai
+    max_concurrent_requests: 1
+    models:
+      parakeet-tdt-0.6b-v3: {}
+```
+
+**Prod at v1.7.12** (ASR_PLAN §8.2.2 — the ONE config move, symmetric with §8.3's rollback):
+```bash
+curl -s 127.0.0.1:9010/health; curl -s 127.0.0.1:9011/health     # both {"status":"ok"}
+systemctl --user stop ctrl-b-dashboard
+cp -p ~/.ctrl-b/config.yaml ~/.ctrl-b/backups/config.yaml.$(date -u +%Y%m%dT%H%M%SZ).pre-v1.7.12
+# edit ~/.ctrl-b/config.yaml: add the two providers above, then
+#   voice.live: provider: parakeet-live · fallbacks: [{provider: parakeet-clip}] · timeout_s: 10
+#   voice.stt:  provider: parakeet-clip · fallbacks: [{provider: vault-speaches}]   (drop its `model:`)
+#   voice.tts:  fallbacks: [{provider: vault-alltalk}]                               (R8: Kokoro leaves)
+bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.12                 # installs, starts, health-checks
+# verify: a dictation · a call · a push-to-talk clip · a TTS failover; T1 lines in the journal
+```
+**Rollback off v1.7.12** (§8.3): `systemctl --user start speaches` if it was ever stopped + wait for its
+`/health` → stop `ctrl-b-dashboard` → restore `config.yaml.<UTCstamp>.pre-v1.7.12` → `update.sh v1.7.11`
+→ verify. The engines stay up.
+
 ## The Claude agent services (development continues ON the box)
 The agents are first-class always-on services (owner decisions 2026-07-09 + 2026-07-10): the TEMPLATE
 unit **`ctrl-b-agent@.service`** is enabled by `install.sh dev` as **two boot instances** —
