@@ -14,6 +14,8 @@
 // one prompt and must be edited, cancelled and staged together). `Active` is the discriminated union
 // of the two request kinds; the text-mode API above is unchanged for every existing caller.
 
+import type { ComponentType } from "react";
+
 import { createStore } from "./createStore";
 import type { PromptPair } from "../types";
 
@@ -35,6 +37,11 @@ export interface PromptRequest {
    *  line). Pressing it CANCELS the edit (the request resolves `null`) and then calls `run` — so the
    *  caller's own confirm gate, not this modal, owns whether anything is actually deleted. */
   danger?: { label: string; run: () => void };
+  /** An optional live NOTICE over the field (ISS-28): a component the modal renders at the top of its
+   *  body with the CURRENT text on every keystroke — the slot pair mode's coupling note occupies. The
+   *  modal knows nothing about what it says; the caller's component decides (and returns `null` when
+   *  there is nothing to say). The agent form's head-landing fields pass the per-turn macro notice. */
+  notice?: ComponentType<{ text: string }>;
 }
 
 /** A registry prompt opened as ONE editor over both its fields (Phase 18). `defaultText` is shown

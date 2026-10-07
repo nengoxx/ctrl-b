@@ -32,8 +32,10 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import Response
 
+from app.api.voice import _is_json  # the content-type rail's one reading (the call trail's)
 from app.config import (
     AttachmentsCfg,
+    CardImportCfg,
     Settings,
     dealias_mapping,
     deep_merge,
@@ -42,6 +44,7 @@ from app.config import (
     is_provider_slug,
     providers_rev,
     sync_mapping,
+    validation_detail,
 )
 from app.core.fsutil import atomic_write_text, write_text_eol
 from app.core.media import StoreWriteError, role_dir
@@ -81,6 +84,7 @@ from app.services.agent.lorebooks import (
     load_book,
     save_book,
 )
+from app.services.agent.macros import per_turn_in
 from app.services.agent.memory import agent_memory_dir
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.prompts import resolve
@@ -2373,6 +2377,53 @@ async def export_agent_card_png(name: str, request: Request) -> Response:
     if png is None:
         raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
     return Response(content=png, media_type="image/png", headers={"x-content-type-options": "nosniff"})
+
+
+# ── The editors' per-turn macro hint (ISS-28, owner 2026-10-07) ─────────────────────────────────
+
+
+#: The ceiling on one hint request — a sanity bound, not a text policy (the `_EDIT_MAX_CHARS`
+#: posture), derived from a config field's DEFAULT so there is no new literal.
+#: Why this bound: `max_card_json_bytes` is the largest text a card can carry — its whole decoded JSON.
+#: It bounds the RAW body in BYTES, before any parse (a multibyte text is twice its length on the wire),
+#: and the decoded `text` in characters; past either, a 422 — the editor shows no hint.
+_PER_TURN_MAX = CardImportCfg().max_card_json_bytes
+
+
+class PerTurnMacrosIn(BaseModel):
+    #: No `min_length`: an empty field is an ordinary 200 with `[]` (the `schedule-preview` posture).
+    text: str = Field(default="", max_length=_PER_TURN_MAX)
+
+
+@router.post("/macros/per-turn")
+async def per_turn_macros(request: Request) -> dict[str, list[str]]:
+    """Which per-turn macros (`PER_TURN`) `text` uses — the agent form's and the lorebook entry
+    editor's live hint, asked debounced while the owner edits a HEAD-landing field (before any save).
+
+    Advisory and read-only, the `schedule-preview` shape: it calls `per_turn_in`, the SAME predicate
+    both importers' cache-warning line asks, so the editor and the import report can never disagree —
+    not about the vocabulary (the one `SUPPORTED` table) and not about the grammar (comments stripped,
+    padded names literal). Which fields are head-landing is the caller's selection, as at import.
+
+    The body is read HERE, not as a declared model param, so the cap is a bound and not a claim: the
+    content type first (`voice._is_json` — a form or `text/plain` never reaches a parse), then the raw
+    stream counted as it arrives by `_import_body` (refused the moment it passes `_PER_TURN_MAX` bytes),
+    and only then `model_validate_json`. Every refusal is this route's 422 — over the cap included,
+    where the imports answer 413: the hint has no upload semantics, and the editor reads any refusal as
+    "no hint"."""
+    if not _is_json(request.headers.get("content-type")):
+        raise HTTPException(status_code=422, detail="the per-turn check takes application/json")
+    try:
+        raw = await _import_body(
+            request, cap=_PER_TURN_MAX, what="text", setting="roleplay.card_import.max_card_json_bytes"
+        )
+    except HTTPException as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from None
+    try:
+        body = PerTurnMacrosIn.model_validate_json(raw)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=validation_detail(exc)) from None
+    return {"per_turn": per_turn_in(body.text)}
 
 
 # ── Lorebooks file API (Phase 23 / D70 §6.1) ──────────────────────────────────────────────────

@@ -13,6 +13,8 @@ const h = vi.hoisted(
     defaultPersona: string;
     agent: Record<string, unknown>;
     books: { slug: string; name: string; enabled: boolean; entries: number }[];
+    soul: string;
+    prompt: ReturnType<typeof vi.fn>;
   } => ({
     saveAgent: vi.fn(),
     roleplayEnabled: false,
@@ -20,6 +22,8 @@ const h = vi.hoisted(
     defaultPersona: "",
     agent: {},
     books: [],
+    soul: "",
+    prompt: vi.fn(() => Promise.resolve(null)),
   }),
 );
 
@@ -65,7 +69,7 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => {
     useAgent: (name: string | null) =>
       name
         ? {
-            data: { name: "lyra", is_default: false, soul: "", agent: h.agent },
+            data: { name: "lyra", is_default: false, soul: h.soul, agent: h.agent },
             isLoading: false,
           }
         : { data: undefined, isLoading: false },
@@ -75,7 +79,19 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => {
   };
 });
 
+// ISS-28 — the per-turn hint asks the SERVER (`POST /api/macros/per-turn`); the boundary is the hook,
+// whose own contract is pinned in `tests/hooks/usePerTurnMacros.test.ts`. Here it answers by the
+// head-landing flag the FORM passes, so the pin is which rows ask and where the hint lands.
+vi.mock("../../src/hooks/usePerTurnMacros", () => ({
+  usePerTurnHint: (text: string, headLanding: boolean) =>
+    headLanding && text.includes("{{") ? [`per-turn: ${text}`] : [],
+}));
+
+// The fullscreen editor is an imperative store; the pin is the REQUEST the form sends it (its `notice`).
+vi.mock("../../src/store/prompt", () => ({ requestPrompt: h.prompt }));
+
 import { AgentRow, roleplayFieldVisible } from "../../src/components/AgentsEditor";
+import { PerTurnNotice } from "../../src/components/PerTurnNotice";
 import { isAnyDirty } from "../../src/store/dirty";
 
 /** A specialist as the file API hands it back — every D70 field present, all empty by default. */
@@ -138,6 +154,7 @@ function renderRow(
 
 afterEach(() => {
   cleanup();
+  h.soul = "";
   vi.clearAllMocks();
   h.personas = {};
   h.defaultPersona = "";
@@ -189,6 +206,51 @@ describe("AgentRow · the roleplay fields on the form", () => {
     ])
       expect(screen.getByText(label), label).toBeTruthy();
     expect(screen.getByLabelText("Voice")).toBeTruthy();
+  });
+
+  it("ISS-28 — a HEAD-landing field with a per-turn macro warns under its row; tail/once/raw fields never ask", () => {
+    // The head-landing rows are the ones the card importer's cache line counts, as they land on this
+    // form: the SOUL, the scenario, the example dialogue. Post-history sits after the history, the
+    // greeting is rendered once and stored, the prompt append is never macro-rendered — none of the
+    // three can cost the cached head, so none of them asks.
+    h.soul = "Soul {{time}}";
+    renderRow(
+      {
+        scenario: "Scene {{random:a,b}}",
+        example_dialogue: "<START>\n{{char}}: {{weekday}}",
+        post_history: "Post {{time}}",
+        greeting: "Hi {{time}}",
+        prompt_append: "Append {{time}}",
+      },
+      true,
+    );
+    const form = document.querySelector(".mform");
+    const rowOf = (label: string) =>
+      [...(form?.querySelectorAll(".prow") ?? [])].find(
+        (r) => r.querySelector(".prow-name")?.textContent === label,
+      );
+    const hintAfter = (label: string) => {
+      const next = rowOf(label)?.nextElementSibling;
+      return next?.classList.contains("conf-warnrow") ? next.textContent : null;
+    };
+    expect(hintAfter("Persona · SOUL.md")).toContain("per-turn: Soul {{time}}");
+    expect(hintAfter("Scenario")).toContain("per-turn: Scene {{random:a,b}}");
+    expect(hintAfter("Example dialogue")).toContain("{{weekday}}");
+    for (const label of ["Post-history", "Greeting", "Prompt append"])
+      expect(hintAfter(label), label).toBeNull();
+  });
+
+  it("ISS-28 — the fullscreen editor of a HEAD-landing field carries the per-turn notice; a tail one does not", () => {
+    renderRow({}, true);
+    const noticeOf = (label: string) => {
+      h.prompt.mockClear();
+      fireEvent.click(screen.getByRole("button", { name: `Edit ${label}` }));
+      return (h.prompt.mock.calls[0][0] as { notice?: unknown }).notice;
+    };
+    for (const label of ["Persona · SOUL.md", "Scenario", "Example dialogue"])
+      expect(noticeOf(label), label).toBe(PerTurnNotice);
+    for (const label of ["Post-history", "Greeting", "Prompt append"])
+      expect(noticeOf(label), label).toBeUndefined();
   });
 
   it("the PROMPT-shaped fields take the full-width row face; the one-liners keep label-left", () => {

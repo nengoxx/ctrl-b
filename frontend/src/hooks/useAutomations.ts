@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { del, getJSON, postJSON, putJSON } from "../api/client";
 import type { Privilege } from "../lib/privilege";
 import { pushToast } from "../store/toast";
+import { useDebounced } from "./useDebounced";
 import { useScopedQuery } from "./useScopedQuery";
 
 // A3 slice 3 (D49 / AUTOMATIONS_PLAN §D-6) — scheduled automations, the data layer for the Conf
@@ -287,17 +287,6 @@ export function useMarkRunRead() {
       postJSON<AutomationRun>(`/api/automations/runs/${runId}/read`, {}),
     onSuccess: (_run, vars) => invalidate(vars.automationId),
   });
-}
-
-/** Debounce a value by `ms`. Local to this hook file because the ONE thing that needs it is the
- *  live schedule preview: it is a server round-trip per keystroke otherwise. */
-function useDebounced<T>(value: T, ms: number): T {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setSettled(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return settled;
 }
 
 /** How long the editor waits after a keystroke before asking the server what the cron means. Long

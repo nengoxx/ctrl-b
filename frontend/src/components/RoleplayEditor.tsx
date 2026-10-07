@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { LorebookPicker } from "./LorebooksEditor";
+import { PerTurnNotice } from "./PerTurnNotice";
 import { PromptRowFace } from "./PromptRowFace";
 import { Seg } from "./Seg";
 import { SettingRow } from "./SettingRow";
@@ -335,6 +336,9 @@ function PersonaRow(props: {
       title: `About — ${label}`,
       value: draft.description,
       placeholder: "who you are, for the agents that speak to you",
+      // ISS-28 — the About is HEAD text (`_persona_block`, macro-rendered), so the per-turn notice rides
+      // the fullscreen editor too.
+      notice: PerTurnNotice,
     });
     if (next != null) setDraft((d) => ({ ...d, description: next }));
   };
@@ -370,6 +374,9 @@ function PersonaRow(props: {
                 openTitle={`Edit About — ${label}`}
                 onOpen={() => void editAbout()}
               />
+              {/* ISS-28 — the About lands in the HEAD (`_persona_block`, macro-rendered for every agent
+                  that speaks to this persona). Mounted with the OPEN form only — no query per closed row. */}
+              <PerTurnNotice text={draft.description} />
             </div>
             <div className="mfoot">
               <button

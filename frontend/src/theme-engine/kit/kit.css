@@ -3490,9 +3490,15 @@ body[data-mode="light"] .kit .pm {
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
-/* the coupling note reuses the shared WarnRow shape; drop its Conf-row padding inside the modal body */
-.kit .pm-pair .conf-warnrow {
+/* the coupling note (pair mode) and a caller's `notice` (text mode, ISS-28) reuse the shared WarnRow
+ * shape; drop its Conf-row padding inside the modal body */
+.kit .pm-body .conf-warnrow {
   padding: 0;
+}
+/* text mode with a notice slot: the notice ABOVE the field, the field still filling the rest */
+.kit .pm-body.pm-noticed {
+  flex-direction: column;
+  gap: 8px;
 }
 .kit .pm-chips {
   display: flex;
@@ -8926,6 +8932,18 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   grid-column: 1 / -1;
   padding: 0;
   border-bottom: 0;
+}
+/* ISS-28 — the per-turn macro hint (the shared `WarnRow`) inside the form grid: under its control in
+ * the VALUE column, the `.mfhelp` placement (the lorebook entry's content); under a full-width row it
+ * spans the grid too, so it starts on the row's own left edge (the agent form's prompt rows). The
+ * Conf-row padding drops, as it does in the prompt modal. */
+.kit .mconf .mform .conf-warnrow {
+  grid-column: 2;
+  margin-top: -4px;
+  padding: 0;
+}
+.kit .mconf .mform .prow + .conf-warnrow {
+  grid-column: 1 / -1;
 }
 /* ── THE ART ROW: the picture IS the button (the researched dominant pattern — ST, open-webui,
  * LibreChat, Telegram, WhatsApp, Material, HIG). Choosing, adding and unbinding all live in the LIBRARY

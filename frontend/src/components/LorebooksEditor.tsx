@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Switch } from "./Switch";
 import { TickGrid } from "./TickGrid";
+import { WarnRow } from "./WarnRow";
 import { ApiError } from "../api/client";
 import { useAgentRoster, type AgentListing } from "../hooks/useAgents";
 import {
@@ -20,6 +21,7 @@ import {
   type LorebookInfo,
   type LorebookRefs,
 } from "../hooks/useRoleplay";
+import { usePerTurnHint } from "../hooks/usePerTurnMacros";
 import { disclosureToggle } from "../lib/disclosure";
 import { numOrKeep, numOrKeepNullable } from "../lib/num";
 import { requestConfirm } from "../store/confirm";
@@ -180,6 +182,10 @@ function EntryForm({
     entry.priority == null ? "" : String(entry.priority),
   );
   const n = index + 1;
+  // ISS-28 — a HEAD entry's content is rendered into the cached head, so a per-turn macro there
+  // re-prefills it every turn the entry is active. `position` is the entry's own landing — the field
+  // the book importer's cache line selects on; a tail entry costs no cache and is never asked.
+  const perTurn = usePerTurnHint(entry.content, entry.position === "head", "entry");
 
   return (
     <div className="lb-body">
@@ -202,6 +208,7 @@ function EntryForm({
           value={entry.content}
           onChange={(e) => onPatch({ content: e.target.value })}
         />
+        <WarnRow warnings={perTurn} />
 
         <label>Always on</label>
         <div className="mrow-switch">

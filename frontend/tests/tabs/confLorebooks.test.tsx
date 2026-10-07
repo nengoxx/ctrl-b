@@ -67,6 +67,12 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => ({
   ...(await importActual<typeof import("../../src/hooks/useAgents")>()),
   useAgentRoster: () => ({ data: h.roster }),
 }));
+// ISS-28 — the per-turn hint asks the SERVER; the boundary is the hook (its own contract is pinned in
+// `tests/hooks/usePerTurnMacros.test.ts`). Here it answers by the head-landing flag the FORM passes.
+vi.mock("../../src/hooks/usePerTurnMacros", () => ({
+  usePerTurnHint: (text: string, headLanding: boolean) =>
+    headLanding && text.includes("{{") ? [`per-turn: ${text}`] : [],
+}));
 vi.mock("../../src/store/toast", () => ({ pushToast: h.toast }));
 vi.mock("../../src/store/confirm", () => ({
   requestConfirm: (req: unknown) => h.confirm(req),
@@ -704,5 +710,36 @@ describe("LorebooksEditor · referenced-by + export (D79)", () => {
     fireEvent.change(screen.getByLabelText("Lorebook description"), { target: { value: "x" } });
     expect(screen.queryByRole("button", { name: "export" })).toBeNull();
     expect(screen.getByRole("button", { name: "save first" })).toHaveProperty("disabled", true);
+  });
+});
+
+describe("LorebooksEditor · ISS-28 the per-turn macro hint", () => {
+  it("a HEAD entry's content warns WHILE EDITING, under the content; a tail entry never asks", () => {
+    h.books = [{ slug: "hollow-sea", name: "Hollow Sea", enabled: true, entries: 1 }];
+    h.book = {
+      slug: "hollow-sea",
+      book: {
+        name: "Hollow Sea",
+        description: "",
+        enabled: true,
+        entries: [entry({ keys: ["fog"], content: "plain", position: "head" })],
+      },
+    };
+    render(<LorebooksEditor />);
+    fireEvent.click(chev(/expand Hollow Sea/));
+    fireEvent.click(chev(/expand entry 1/));
+    const content = screen.getByLabelText("Entry 1 content");
+    const hint = () => {
+      const next = content.nextElementSibling;
+      return next?.classList.contains("conf-warnrow") ? next.textContent : null;
+    };
+    expect(hint()).toBeNull();
+    // The owner's case: typed into the editor, nothing saved — the hint is already there.
+    fireEvent.change(content, { target: { value: "The fog {{random:thins,thickens}}." } });
+    expect(hint()).toContain("per-turn: The fog {{random:thins,thickens}}.");
+    expect(h.save).not.toHaveBeenCalled();
+    // The landing is the entry's own `position` — a tail entry costs no cache, so the hint goes.
+    fireEvent.change(screen.getByLabelText("Entry 1 position"), { target: { value: "tail" } });
+    expect(hint()).toBeNull();
   });
 });

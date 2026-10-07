@@ -196,6 +196,23 @@ describe("Conf › Roleplay · edit (PUT on the row, slug unchanged)", () => {
     );
   });
 
+  it("ISS-28 — an About with a per-turn macro warns under its row, asked of the server", async () => {
+    h.post.mockImplementation((path: string) =>
+      Promise.resolve(path === "/api/macros/per-turn" ? { per_turn: ["time"] } : {}),
+    );
+    setup({ personas: { ari: { name: "Ari", description: "{{user}} at {{time}}" } } });
+    fireEvent.click(rowHead("Ari"));
+    await waitFor(() =>
+      expect(h.post).toHaveBeenCalledWith("/api/macros/per-turn", { text: "{{user}} at {{time}}" }),
+    );
+    const about = screen.getByRole("button", { name: "Edit About — Ari" }).closest(".prow");
+    await waitFor(() =>
+      expect(about?.nextElementSibling?.textContent).toContain(
+        "this field uses a per-turn macro ({{time}})",
+      ),
+    );
+  });
+
   it("an emptied name cannot be saved", () => {
     setup();
     fireEvent.click(rowHead("Ari"));

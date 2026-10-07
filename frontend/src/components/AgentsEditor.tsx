@@ -24,6 +24,7 @@ import {
   type ArtField,
 } from "./AgentArtRow";
 import { LorebookPicker } from "./LorebooksEditor";
+import { PerTurnNotice } from "./PerTurnNotice";
 import { FieldRow, PromptRowFace } from "./PromptRowFace";
 import { ProviderModelPicker, type PickerCatalog } from "./ProviderModelPicker";
 import { Seg } from "./Seg";
@@ -130,6 +131,11 @@ function LongField(props: {
   placeholder: string;
   defaultText?: string;
   help?: string;
+  /** The text lands in the prompt HEAD and is macro-rendered there (the SOUL, the scenario, the
+   *  example dialogue — the card importer's `_HEAD_FIELDS`, as they land here). Such a row warns when
+   *  it carries a per-turn macro (ISS-28). Not the post-history (tail), the greeting (rendered once,
+   *  stored) or the prompt append (never macro-rendered). */
+  headLanding?: boolean;
   onCommit: (next: string) => void;
 }) {
   const open = async () => {
@@ -138,19 +144,24 @@ function LongField(props: {
       value: props.value,
       defaultText: props.defaultText,
       placeholder: props.placeholder,
+      // …and the same notice INSIDE the fullscreen editor, live while typing (where the owner edits).
+      notice: props.headLanding === true ? PerTurnNotice : undefined,
     });
     if (next != null && next !== props.value) props.onCommit(next);
   };
   return (
-    <PromptRowFace
-      label={props.label}
-      // The MARKED HELP moves INTO the row rather than trailing it as a separate `.mfhelp` line: it is
-      // the same sentence in the same place Conf → Prompts puts a registry description.
-      description={props.help}
-      preview={promptPreview(props.value, props.placeholder)}
-      openTitle={`Edit ${props.label}`}
-      onOpen={open}
-    />
+    <>
+      <PromptRowFace
+        label={props.label}
+        // The MARKED HELP moves INTO the row rather than trailing it as a separate `.mfhelp` line: it
+        // is the same sentence in the same place Conf → Prompts puts a registry description.
+        description={props.help}
+        preview={promptPreview(props.value, props.placeholder)}
+        openTitle={`Edit ${props.label}`}
+        onOpen={open}
+      />
+      {props.headLanding === true && <PerTurnNotice text={props.value} />}
+    </>
   );
 }
 
@@ -362,6 +373,7 @@ function AgentFieldsForm(props: {
 
         <LongField
           label="Persona · SOUL.md"
+          headLanding
           title={`Persona (SOUL.md) — ${label}`}
           value={props.soul}
           defaultText={props.defaultPrompt}
@@ -439,6 +451,7 @@ function AgentFieldsForm(props: {
         {rpShow(a.example_dialogue) && (
           <LongField
             label="Example dialogue"
+            headLanding
             title={`Example dialogue — ${label}`}
             value={a.example_dialogue ?? ""}
             placeholder="blank → none"
@@ -449,6 +462,7 @@ function AgentFieldsForm(props: {
         {rpShow(a.scenario) && (
           <LongField
             label="Scenario"
+            headLanding
             title={`Scenario — ${label}`}
             value={a.scenario ?? ""}
             placeholder="blank → none"

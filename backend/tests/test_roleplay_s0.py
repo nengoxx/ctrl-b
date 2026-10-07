@@ -794,6 +794,57 @@ def test_per_turn_in_is_the_cache_warning_predicate() -> None:
     ]
 
 
+def test_the_editors_per_turn_endpoint_answers_with_the_same_predicate() -> None:
+    """ISS-28's editor hint (owner 2026-10-07): `POST /api/macros/per-turn` IS `per_turn_in` over the
+    wire — the same names, and the same grammar (a commented or padded macro is not one), so the
+    editor and the import report cannot disagree. Advisory: an empty or plain text is a 200 with []."""
+    from app.config import CardImportCfg
+    from app.services.agent.macros import per_turn_in
+
+    texts = (
+        "{{Random:a,b}} at {{time_UTC+1}}",
+        "{{// {{time}} }} {{//}}{{date}}{{///}} {{ time }} {{pick:a,b}}",
+        "",
+        "plain",
+    )
+    with _workspace(), _client() as c:
+        for text in texts:
+            r = c.post("/api/macros/per-turn", json={"text": text})
+            assert r.status_code == 200, r.text
+            assert r.json() == {"per_turn": per_turn_in(text)}
+        assert c.post("/api/macros/per-turn", json={"text": texts[0]}).json() == {
+            "per_turn": ["random", "time"]
+        }
+        assert c.post("/api/macros/per-turn", json={"text": texts[1]}).json() == {"per_turn": []}
+        # BOUNDED BEFORE THE PARSE (Emma's HIGH): the RAW body is counted in bytes as it streams — one
+        # byte past the cap is a 422 however the JSON would have parsed…
+        cap = CardImportCfg().max_card_json_bytes
+        over = b'{"text": "' + b"x" * (cap + 1 - 12) + b'"}'
+        assert len(over) == cap + 1
+        r = c.post("/api/macros/per-turn", content=over, headers={"content-type": "application/json"})
+        assert r.status_code == 422
+        # …and a MULTIBYTE text under the CHARACTER cap but ~2x it on the wire is refused too (the
+        # decoded `max_length` alone let this ~4 MB body through).
+        assert c.post("/api/macros/per-turn", json={"text": "é" * cap}).status_code == 422
+        # A body just under the byte cap answers.
+        under = b'{"text": "{{time}}' + b"x" * (cap - 30) + b'"}'
+        r = c.post("/api/macros/per-turn", content=under, headers={"content-type": "application/json"})
+        assert r.status_code == 200 and r.json() == {"per_turn": ["time"]}
+        # A cross-origin FORM can send a safelisted POST, but never one this route parses: the content
+        # type is checked FIRST (`_is_json`) — and the route mutates nothing anyway.
+        for ctype in ("text/plain", "application/x-www-form-urlencoded"):
+            r = c.post(
+                "/api/macros/per-turn", content=b'{"text": "{{time}}"}', headers={"content-type": ctype}
+            )
+            assert r.status_code == 422, ctype
+        assert (
+            c.post(
+                "/api/macros/per-turn", content=b"{not json", headers={"content-type": "application/json"}
+            ).status_code
+            == 422
+        )
+
+
 # ── 6. the data model ───────────────────────────────────────────────────────────────────────────
 
 

@@ -433,7 +433,11 @@ the ST/CCv3 feature macros are BUILT.** `macros.py`'s module docstring is the au
   turn. A per-thread salt is deliberately not used. The app WARNS: both importers add ONE count line
   (`macros.per_turn_note`, over the `per_turn_in` predicate) — the card for its head-landing fields
   (`system_prompt`, `description`, `personality`, `scenario`, `mes_example`), a book for its
-  head-landing entries' content. The editors' matching hint is a FE follow-up (not built).
+  head-landing entries' content. The EDITORS say it too, live while editing (ISS-28, built 2026-10-07):
+  `POST /api/macros/per-turn` answers `per_turn_in(text)` (the client knows no macro), asked
+  debounced by `usePerTurnHint` for the agent form's SOUL / scenario / example dialogue and a head
+  lorebook entry's content and a persona's About, shown as one `WarnRow` line under that field — and,
+  for the fullscreen editor, through `PromptRequest.notice` (`PerTurnNotice`), live while typing.
 - **Divergences** — a malformed argument stays LITERAL (ST: `''`; for `time`, ST answers a bad
   argument with the plain local time — ours stays literal there too); `{{ time }}` (padded) is not a
   macro, like `{{ char }}`; `time::UTC±N` takes whole hours with |N| ≤ 14 and is literal past it

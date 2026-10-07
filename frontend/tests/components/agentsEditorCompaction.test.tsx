@@ -97,6 +97,8 @@ vi.mock("../../src/hooks/useRoleplay", async (importActual) => ({
   ...(await importActual<typeof import("../../src/hooks/useRoleplay")>()),
   useLorebooks: () => ({ data: [] }),
 }));
+// ISS-28's per-turn hint is a server query this suite has no client for; it is pinned elsewhere.
+vi.mock("../../src/hooks/usePerTurnMacros", () => ({ usePerTurnHint: () => [] }));
 vi.mock("../../src/hooks/useAgents", async (importActual) => {
   const actual = await importActual<typeof import("../../src/hooks/useAgents")>();
   return {

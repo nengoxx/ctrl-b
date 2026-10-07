@@ -121,6 +121,7 @@ export function PromptModal() {
       : `${count.toLocaleString()} chars`;
   const overCap = cap != null && count > cap;
   const danger = req.kind === "text" ? req.danger : undefined;
+  const Notice = req.kind === "text" ? req.notice : undefined;
 
   /** The ONE way out, carrying its outcome (ConfirmDialog's `finish`). The guard's close is the latch:
    *  only the gesture that actually takes the exit records what the exit means — a second gesture
@@ -158,7 +159,8 @@ export function PromptModal() {
             }}
           />
         ) : (
-          <div className="pm-body">
+          <div className={"pm-body" + (Notice ? " pm-noticed" : "")}>
+            {Notice && <Notice text={text} />}
             <textarea
               aria-labelledby={labelId}
               className={"pm-text" + ((req.mono ?? true) ? " mono" : "")}
