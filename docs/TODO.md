@@ -1812,10 +1812,11 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
   - `max_concurrent_requests: 1`;
   - the bake-off (contended row), run through the real `VoiceClient` request, including the no-language-crossing row
     and the 30-min row timed end to end.
+    *(the no-owner-audio rows ✅ measured 2026-10-07 → ASR_PLAN §6.4.1; the owner-audio rows — pre-pass sweep · hand-read · real short answers · car/home — OPEN, so the S9 gate stays OPEN)*
 
   Dev config: stt → parakeet-clip, with live pinned to Speaches.
 - [ ] TUNE — Owner capture rounds → promote → offline replay sweeps judged by hand → the `VadParams` defaults settled.
-- [ ] S7a — The client half, INERT until `ready{clock:"leg"}`, shipped and reviewed first:
+- [x] S7a — The client half, INERT until `ready{clock:"leg"}`, shipped and reviewed first *(✅ `f44025f`, session 65, 2026-10-07 — blind Opus ∥ Emma both CONFIRMED SHIP; as-built: ASR_PLAN §7.2 row + `RULINGS.md` H1–H10 in the session-64 scratch)*:
   - `config.py` owns `turn_hold_ms` (S7b keeps only the server-side VAD/deadline keys);
   - `LiveDown` fields + validation;
   - the awaited-id TTL;
