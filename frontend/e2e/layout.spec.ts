@@ -1,6 +1,14 @@
 import type { Page } from "@playwright/test";
 
-import { expect, openAllConfGroups, planThread, seedThread, seedUI, test } from "./fixtures";
+import {
+  expect,
+  openAllConfGroups,
+  planThread,
+  seedThread,
+  seedUI,
+  SETTINGS,
+  test,
+} from "./fixtures";
 
 // The SECTION LAYOUT SYSTEM v1 lever (D35 / FRONTIER_PLAN §6-F0) driven end-to-end on the REAL built app. A
 // SMOKE (no axe, no screenshots) that rides the existing e2e projects — it seeds the device-local `ui.layout`
@@ -2191,4 +2199,83 @@ test("placement=button restores the docked action's geometry (gacha bar height �
   expect(
     await page.evaluate(() => getComputedStyle(document.getElementById("app-scroll")!).paddingTop),
   ).toBe("34px");
+});
+
+// THE FIRST-PAINT SIZE FLASH (owner, 2026-10-07: "some agents bigger for a second"). A card whose art is
+// still SKIPPED by `content-visibility: auto` reports its 200px `contain-intrinsic-size` as min-content,
+// and a bare `1fr` track (= `minmax(auto, 1fr)`) widened to take it — one column ~202px, the other ~114px,
+// until a scroll brought the card on screen. Five cards so a column holds an off-screen one, with the grid
+// started low enough for that (the actions card above it is what puts it there); measured BEFORE any
+// scroll, because the scroll is what used to hide the defect. The rule it pins: `.agal-grid`'s columns.
+test("agent gallery — equal columns before any scroll (360px, five agents)", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await seedUI(page, {
+    theme: "minimal",
+    mode: "dark",
+    accent: "cyan",
+    layout: "4-tab",
+    sectionPlacement: { agents: "button" },
+    v: 1,
+  });
+  const card = (title: string) => ({
+    title,
+    description: "",
+    avatar: "",
+    background: "",
+    voice: "",
+  });
+  await page.route("**/api/agents", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        agents: ["emma", "frieren", "lynette", "seraphina"],
+        default: "default",
+        summaries: {
+          default: card(""),
+          emma: card("Emma"),
+          frieren: card("Frieren the Slayer"),
+          lynette: card("Lynette"),
+          seraphina: card("Seraphina of the Glade"),
+        },
+      }),
+    }),
+  );
+  // Roleplay ON, as the owner runs it: the actions card then carries both import doors under New, which
+  // is what lowers the grid into the band (with New alone it starts ~180px down and every card fits).
+  await page.route("**/api/settings", (r) =>
+    r.request().method() !== "GET"
+      ? r.fallback()
+      : r.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ ...SETTINGS, roleplay: { enabled: true } }),
+        }),
+  );
+  await page.goto("/");
+  await page.locator(".kit-appbar .navmenu-launch").click();
+  await expect(page.locator("#tab-agents")).toBeVisible();
+  await expect(page.locator(".agal-grid .agal-cell")).toHaveCount(5);
+  await expect(page.locator(".agal-import")).toBeVisible();
+  expect(await page.locator("#app-scroll").evaluate((el) => el.scrollTop)).toBe(0);
+
+  // The arm's premise: start the grid too high (≲200px) and every card fits, nothing is skipped, and the
+  // old CSS passes too. Here it lands at ~270px, where the old CSS measured 202 · 114 · 202 · 114 · 202.
+  const top = (await page.locator(".agal-grid").boundingBox())!.y;
+  expect(top, "the grid starts outside the band the flash lives in").toBeGreaterThanOrEqual(240);
+  expect(top).toBeLessThanOrEqual(450);
+
+  const geo = await page.evaluate(() => {
+    const grid = document.querySelector<HTMLElement>(".agal-grid")!;
+    return {
+      widths: [...grid.querySelectorAll<HTMLElement>(".agal-cell")].map((c) => c.offsetWidth),
+      overflow: grid.scrollWidth - grid.clientWidth,
+    };
+  });
+  const [min, max] = [Math.min(...geo.widths), Math.max(...geo.widths)];
+  expect(
+    max - min,
+    `unequal columns before any scroll: ${geo.widths.join(" ")}`,
+  ).toBeLessThanOrEqual(1);
+  expect(geo.overflow, "the grid scrolls sideways").toBeLessThanOrEqual(0);
 });

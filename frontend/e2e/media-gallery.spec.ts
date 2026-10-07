@@ -674,6 +674,37 @@ test("Conf · Theme art — the phone's BACK gesture closes the gallery, not the
   await expect(card).toBeVisible();
 });
 
+// The agent gallery's first-paint flash (layout.spec), in the recipe it was copied from: a `.mgal-tile`
+// that `content-visibility` is still skipping reports its 120px `contain-intrinsic-size` as min-content,
+// and a bare `1fr` track widened to take it — tiles past their share and a body that scrolled sideways.
+// A library long enough that most tiles start off-screen, measured before any scroll at the owner's 360px
+// (a wide dialog has room for the inflated tracks, so the desktop width alone would pass the old CSS).
+test("Conf · Theme art — a long library opens with equal columns and no sideways scroll", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await bootConf(page);
+  const onDisk = Array.from({ length: 40 }, (_, i) => `art-${i}.webp`);
+  await statefulMedia(page, { onDisk, files: [] });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open the Characters gallery", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.locator(".mgal-tile")).toHaveCount(BUNDLED.length + onDisk.length);
+
+  const geo = await dialog.evaluate((d) => {
+    const body = d.querySelector<HTMLElement>(".mgal-body")!;
+    return {
+      widths: [...d.querySelectorAll<HTMLElement>(".mgal-tile")].map((t) => t.offsetWidth),
+      overflow: body.scrollWidth - body.clientWidth,
+    };
+  });
+  const [min, max] = [Math.min(...geo.widths), Math.max(...geo.widths)];
+  expect(max - min, `unequal tiles: ${[...new Set(geo.widths)].join(" / ")}`).toBeLessThanOrEqual(
+    1,
+  );
+  expect(geo.overflow, "the gallery body scrolls sideways").toBeLessThanOrEqual(0);
+});
+
 test("Conf · Theme art — the gallery + its detail panel pass the a11y gate", async ({ page }) => {
   // The §11 "#12 a11y batch", with teeth. The tab-level scans in `a11y.spec.ts` never see this
   // surface: the media group ships collapsed, and the modal only exists once it is opened. So the

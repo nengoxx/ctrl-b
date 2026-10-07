@@ -7943,7 +7943,8 @@ body[data-perf="lite"] .kit .navmenu-pop {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* `minmax(0, …)`: a skipped `.mgal-tile` would widen a bare `1fr` track — see `.agal-grid`. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 .kit .mgal-tile {
@@ -8690,7 +8691,11 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   margin: 14px 16px;
   padding: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* `minmax(0, …)`, never a bare `1fr` (= `minmax(auto, 1fr)`): an `.agal-art` that
+   * `content-visibility` is still skipping reports its 200px `contain-intrinsic-size` as min-content, which
+   * widened its column until a scroll brought the card on screen (the owner's "some agents bigger for a
+   * second", 2026-10-07). Zero pins every track to its fr share. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 /* The positioning context for Talk, which is the card's SIBLING rather than its child: a button
