@@ -1793,7 +1793,7 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
       config step. Rollback: plain `update.sh v1.7.10`. **✅ LIVE 2026-10-07 10:40Z @ `bad0c99` (session 63; the dictation check passed first — trail `bec301ce`).**
 
 **Session B — engine, capture, the host, hand tuning, the client half, THE FLIP, recovery (no shadow, no Speaches baseline):**
-- [ ] S6-i — The pure engine/DSP:
+- [x] S6-i — The pure engine/DSP: **✅ MERGED `1c63ce7` (session 64, 2026-10-07; Opus ∥ Emma CONFIRMED)**
   - the `voice` extra;
   - the `VadModel`/`VadStream` boundary + `VAD_MODELS` (ASR_PLAN §3.4.1, R98) — Silero v6.2 default + v5.1.2 registered, both SHA-pinned; the per-model conformance test;
   - the `VadParams` policy in ms + `derive(params, hop)` (EMA as `ema_tau_ms`, re-arm guard) with hand-authored golden vectors (two at a 10 ms hop);
@@ -1802,10 +1802,10 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
   - the prepass;
   - bounded PyAV decode;
   - the `voice` extra wired into install.sh, CI, bootstrap and the Windows scripts.
-- [ ] S6-ii — The debug-gated raw-audio capture (beside the trail, same gate and retention), `vad_replay.py`
+- [x] S6-ii — **✅ CODE MERGED `64021d8` (session 64; Opus ∥ Emma CONFIRMED) — the owner's capture rounds still OWED (dev debug is ON)** — The debug-gated raw-audio capture (beside the trail, same gate and retention), `vad_replay.py`
       (offline), `asr_corpus.py`, and SECURITY_MODEL §2.12. Then, with `debug` ON on dev, the owner's first capture rounds
       BUILD the reference set: there is no audio today.
-- [ ] S9 — The host on the CLIP door:
+- [ ] S9 — **◐ CODE MERGED `76f5db5` + engines INSTALLED `5ce0536` + DEV CONFIG MOVED (session 64); OPEN = the bake-off (relaunch `~/.cache/tmp/ctrlb-session64/brief-bakeoff-S9.md`) + the §6.4 gate rows that need the owner's audio** — The host on the CLIP door:
   - parakeet.cpp cloned beside Speaches;
   - machine-wide units + the runbook;
   - `transcribe(door)`, and the clip door = decode + pass + parakeet-clip;

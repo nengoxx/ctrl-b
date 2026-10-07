@@ -13,7 +13,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Where we are (2026-10-07 afternoon — **PROD = v1.7.11 LIVE @ `bad0c99` (released 10:40Z by session 63 per the runbook: CI `37606193644` · release gate `37607523443` · `update.sh` exit 0 · health 1.7.11 · DB snapshot `ctrlb-20261007-124010.db.gz` · config 5, no migration; rollback = plain `update.sh v1.7.10`). Session 63 (Fable): the dictation check PASSED → the phone round read → two look tweaks `a0a0064` → ISS-68 the gallery flash fixed `7b13b85` + its slice `187f56a` → the pre-release sweep (ISS-52 `21e6b83` · ISS-51 `9a2b649`/`64eaeee`) → PUSH + RELEASE → ROADMAP H4 + §J with the J1/J2 plan stubs for the owner's parallel design seat. ALL PUSHED. **NEXT = SESSION B (ASR_PLAN §7.2) IN A CLEAN SESSION — the owner's order; the prod card below first if the owner is on the phone.** Sessions 61 + 62 follow below; this session's block is first.**)
+## Where we are (2026-10-07 evening — **PROD = v1.7.11 LIVE @ `bad0c99`** (rollback = plain `update.sh v1.7.10`). **Session 64 (Fable, closed by Opus 5.5 at the usage limit): SESSION B is under way — S6-i `1c63ce7` · S6-ii `64021d8` · S9 `76f5db5` + the parakeet engines `5ce0536` MERGED; ISS-28 fully closed `48c7d1e`; J3/J4 plan stubs `5158734`; dev's clip door moved to parakeet. Gate GREEN 6/6 on `76f5db5`; 8 commits UNPUSHED. NEXT = relaunch the cut bake-off + S7a audit, build S7a; the owner's capture rounds are the critical path to TUNE → the S9 gate → S7b. v1.7.12 waits for J3 + J4 (owner).** Read the session-64 block first.)
 
 - **Prod** (`~/apps/ctrl-b`, `ctrl-b-dashboard` :5433, https://emma.lobster-vector.ts.net): **tag `v1.7.11` on `bad0c99` — LIVE since 2026-10-07 10:40Z** (health 1.7.11, schema 7, config 5 — no migration; the icon-192 content-type check passed; the HTTPS front door answered 200; rollback = plain `bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.10` — safe by tag, nothing to restore). What v1.7.11 carries = the v1.7.11 tag message + ASR_PLAN §8.1.1 (session A: S1 · S2 · SP · K6 · ISS-54 · D9 · ISS-55 · D8 · ISS-61 · D5; D83 fail-fast; the session-51 polish; ISS-12/37/47/48/49/51/52/53/66/67/68; ISS-28 macros; the gallery slice). **Speaches is still the ear.** Prod's `voice.live` block unchanged (`{dictation, mic_hold, debug}`). *The previous state, kept for the record:* at session 63's start,
   tag **`v1.7.10` on `9c5a6c6` — LIVE** (released 2026-09-27 evening ≈ 18:14Z per `deploy/linux/README.md`
@@ -57,7 +57,47 @@
   handoff. Push on the owner's word. Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) ("the Nth session"
   resolves there).
 
-## ▶▶ NEW (2026-10-07 afternoon, Fable seat, session 64 — THE CLEAN SESSION B START) — the owner's rulings on the open rows FOLDED · session B OPENS
+## ▶▶ NEW (2026-10-07, Fable seat, session 64 — SESSION B: S6-i · S6-ii · S9 MERGED; CUT OFF BY THE USAGE LIMIT ~19:27 LOCAL) — **READ THIS BLOCK FIRST, THEN `~/.cache/tmp/ctrlb-session64/RULINGS.md` + `SESSION_PLAN.md`**
+
+**State at close (verified by the closing seat, Opus 5.5, 2026-10-07 evening):** `main` = `76f5db5` + this handoff commit, **tree clean, no worktrees, 8 commits UNPUSHED** (`0f471aa` … this handoff — push on the owner's word). **Full gate `tools/check.py` GREEN 6/6 on `76f5db5`** (pytest 3,346 · vitest 4,636/217; log `~/.cache/tmp/ctrlb-session64/` — the last gate ran after the S9 merge). **Prod untouched: v1.7.11, Speaches everywhere.** Dev dist rebuilt + `ctrl-b-dashboard-dev` restarted after the S9 merge (dev health = `1.7.12.dev…+g76f5db5…` after the next restart; it read `g64021d8` mid-session because the editable install is refreshed by `pip install -e` — harmless).
+
+### What this session built (all two-reviewer-closed: blind Opus 5.5 ∥ Emma `gpt-5.6-luna-900k` high, both CONFIRMED, every ruling in `RULINGS.md`)
+| Commit | What |
+|---|---|
+| `0f471aa` · `5158734` | The owner's rulings on the open rows (below) · **J3 [`PROMPT_ORDER_PLAN.md`](./PROMPT_ORDER_PLAN.md) + J4 [`LOREBOOK_PROBABILITY_PLAN.md`](./LOREBOOK_PROBABILITY_PLAN.md)** plan stubs |
+| `1c63ce7` | **S6-i** — `services/voice_vad.py` (the §3.4.1 model boundary: Silero v6.2 default + v5.1.2, one ORT session per model per process, `VadParams` in ms + `derive()` exact on float ms with a cap guard `max_hops > age_bound + cut_span + 1`, the pure policy `step()`, `VadSegmenter` on two clocks) · `voice_audio.py` (`PcmResampler`, PyAV, replaces `core/audio.Pcm16Resampler` at the flip) · `voice_prepass.py` (bounded decode + the pass) · `assets/silero/` · the **`voice` extra (onnxruntime 1.30.0 · numpy 2.5.3 · av 19.0.1) is GATE-MANDATORY** (`tools/check.py` probes it) · `voice.live.vad_model`. 46 hand-authored golden vectors. |
+| `48c7d1e` | **ISS-28 editor hint** — `POST /api/macros/per-turn` (the server's `per_turn_in`, raw body bounded before parse) + `usePerTurnHint` + `PerTurnNotice` (`WarnRow`) on the agent form's head fields, the lorebook entry (head position), the persona About, and INSIDE the fullscreen editor via a GENERIC `PromptRequest.notice` slot. **ISS-28 is now fully closed.** |
+| `64021d8` | **S6-ii** — receipt stamping + `gap_ms`; the debug-gated raw-audio capture (`CallTrail.open_capture`: `<call>-<leg>.wav` beside the trail, 0600, header-first `.part` → finalize, degrades under a slow disk, prune-by-stem + an open-writer guard, file name on a `capture_open` trail line); `core/audio.pcm16_wav_header()` = the ONE WAV header; **`tools/vad_replay.py`** + **`tools/asr_corpus.py`** (promote `--owner-only` · label · list · prune · `--file`; `--home`/`CTRLB_HOME` required, a git tree refused); SECURITY_MODEL §2.12; `.gitignore` `calls/` + `asr-corpus/`. |
+| `5ce0536` | **The engines (system state, machine-wide user units, R19):** parakeet.cpp **v0.5.0** at `~/github/parakeet.cpp` (source build `GGML_NATIVE=ON`; the release tarball unpacked beside it in `build-release/` for the H8 comparison), model `models/tdt-0.6b-v3-f16.gguf` (sha-verified), units **`parakeet-live` :9010 · `parakeet-clip` :9011** (0.0.0.0, 4 threads, enabled, ~1.45 GB RSS each); runbook section **"The ASR engines"** in `deploy/linux/README.md` (health · update · remove · the provider YAML · the v1.7.12 prod config steps + rollback). Speaches untouched (R18). |
+| `76f5db5` | **S9** — `transcribe(door=, prefer=)` (per-provider gate walk; the TTS `prefer` pin keeps a clip on the hop that served); `services/voice_clip.py`: the clip door decodes + passes + transcribes per chunk (no speech ⇒ "" with no ASR call; 422/413/422; `?from_ms=`; `X-Voice-Served-By`/`X-Voice-Degraded`); a `"clip"` trail mode + capture under debug (a dictation fallback joins its trail as leg 0 only if that trail exists); **the multipart CSRF gate: `/api/voice/stt` requires `X-Requested-With: ctrl-b`** (`api/csrf.py`, FE `postForm`). |
+
+**The DEV config move (main seat, after the S9 merge — not in git):** backup `~/.ctrl-b-dev/backups/config.yaml.20261007T172506Z.pre-S9`; `voice.live` pinned `provider: emma-speaches` + `model: istupakov/parakeet-tdt-0.6b-v3-onnx` (the relay stays on Speaches' realtime WS until S7b); `voice.stt` → `parakeet-clip` / `parakeet-tdt-0.6b-v3`, fallback `vault-speaches`; the two providers added. **Verified:** a header-less POST ⇒ 403; the S6-i fixture WAV ⇒ 200, `X-Voice-Served-By: parakeet-clip`, the right text; before the move the same clip through Speaches ⇒ 200 (the re-encoded WAV request is accepted by Speaches too). **On the phone (dev): push-to-talk and the whole-clip dictation fallback now run on parakeet; streaming dictation + calls are still Speaches.**
+
+### Cut off by the usage limit (nothing half-applied — verified)
+- **The S9 bake-off lane** (`brief-bakeoff-S9.md`) died after synthesizing a few WAVs into `~/.cache/tmp/ctrlb-session64/bakeoff/` (`k_es.wav` = 107 bytes, broken — delete it). No table was written, ASR_PLAN §6.4.1 does not exist, no release binary left running on :9019 (checked). **Relaunch the brief as-is.**
+- **The S7a pre-flight audit** died before writing anything. **Relaunch `brief-audit-S7a.md` as-is** (saved at close).
+
+### ▶▶ NEXT SESSION (in order)
+1. Read this block → `~/.cache/tmp/ctrlb-session64/RULINGS.md` (every ruling + why, incl. the S6-i H1–H13, S6-ii H1–H14, S9 H1–H11 and all review rulings) → `SESSION_PLAN.md` (the lane table). Memory: `session64-session-b-s6i-2026-10-07`.
+2. **Relaunch the two cut lanes in parallel:** the bake-off (`brief-bakeoff-S9.md` — synthesized audio only; it appends ASR_PLAN §6.4.1 and decides H8 source-vs-release) and the S7a audit (`brief-audit-S7a.md`).
+3. **S7a — the client half** (inert until `ready{clock:"leg"}`): rule the audit's §H → build brief → lane in a worktree → Opus ∥ Emma → merge. Buildable while the owner records.
+4. **THE CRITICAL PATH IS THE OWNER'S AUDIO:** capture rounds on dev (debug is ON) → `asr_corpus.py promote … --owner-only` → **TUNE** (`vad_replay.py` sweeps incl. `--prepass-sweep` and `--asr CONFIG` on `parakeet-clip`; the owner's hand judgement; settle `VadParams` + each model's `prepass_act`) → **the S9 gate** (§6.4: the pre-pass sweep row, the hand-read row, the English/Spanish language rows) → **S7b THE FLIP** → field rounds → S8 → S8b → S10.
+5. **v1.7.12 = session B** — and per the owner it **WAITS for J3 + J4** (designed + built before the prod update) unless the owner re-rules at release time. Prod steps = the runbook "The ASR engines" + ASR_PLAN §8.2.2.
+6. Parallel seat (owner's choice): J1 · J2 · J3 · J4 design sessions, each from its own plan stub.
+
+### ▶▶ THE OWNER'S CARD (dev, https://emma.lobster-vector.ts.net — close + reopen the PWA once)
+- **Record reference audio** — calls and dictations at home and in the car, English AND Spanish, with real pauses; some push-to-talk clips short and long (every clip is now captured too). Captures land beside their trails under `~/.ctrl-b-dev/calls/`. Then promote: `python tools/asr_corpus.py --help` (needs `--home` or `CTRLB_HOME`, refuses a git tree, needs `--owner-only`).
+- Push-to-talk → text arrives (now parakeet). A dictation (streaming = Speaches; if it falls back to the whole clip, that part is parakeet).
+- Type `{{random:a,b}}` or `{{time}}` in Persona · SOUL.md / Scenario / Example dialogue (row AND fullscreen editor), in a head-position lorebook entry, in a persona About → one amber line about the prompt cache.
+- Conf › Live call › "Call debug readout" carries a privacy line.
+
+### Standing facts / gotchas (verified this session)
+- **emma's swap is full (8.1 / 8.2 GiB) because of SPEACHES:** its uvicorn (PID 10620 at close) holds **4.4 GB in swap + 3.8 GB resident** (systemd: peak 7.6 GB). RAM available ≈ 17.8 GB, so nothing is starved; it is a slow leak/growth in Speaches. R18: this phase never stops Speaches. A `systemctl --user restart speaches` would release it but **interrupts any live call on dev AND prod** (both still use it) — the owner's call; after S7b + v1.7.12 Speaches is only the rollback path.
+- **Never run `tools/check.py` and `npm run build` at the same time** — the build empties `frontend/dist` and ~10 backend tests that mount the SPA fail (seen once; re-run green).
+- Worktree commits: the pre-commit hook needs `backend/.venv` + `frontend/node_modules` SYMLINKED in — stage first (`git add -A` with the links absent), then link, commit, `rm` the links (gitignore matches dirs, not symlinks). pytest in a worktree needs `PYTHONPATH=<worktree>/backend`. `pip install -e` from a worktree re-points the main venv — re-run it from `~/github/ctrl-b/backend` after.
+- Emma's lane: `~/.cache/tmp/ctrlb-session64/run-emma-*.sh` (hermes `-z`, `gpt-5.6-luna-900k --reasoning high --ignore-rules -t file,terminal --in <worktree>`); confirmations = a fresh run with her original review pasted (`confirm-emma-*.sh`); ~10 min each. Her one HIGH on S6-i was a misread of a `>` loop — rule with the quoted line.
+- Council 11 (golden vectors hand-authored before the code runs) is satisfied by a REVIEWER's independently derived vectors added verbatim.
+- The Opus lanes share the account's usage limit with the main seat — two lanes died at the limit at once. Plan heavy parallel waves early in a usage window.
 
 **The owner's rulings (the session-63 open list, taken one by one — each folded into its ISS row in [`ISSUES.md`](./ISSUES.md), 2026-10-07):**
 - **The dictation check** — done (the v1.7.11 gate; trail `bec301ce`). Nothing owed.
@@ -69,10 +109,7 @@
 - **ISS-59** — CLARIFIED: the agent ASKS THE QUESTION ITSELF by TTS on the call (not a cue), the chat still shows it with its options, voice OR tap resolves it the same way; non-critical questions by voice, critical ones (removing stuff, anything needing review) stay tap. A question-tool design after session B.
 - **ISS-62** — FIX BOTH (never lose speech, especially long speech); designed in S8's neighbourhood.
 
-**Session B opens in this session** (ASR_PLAN §7.2: S6-i → S6-ii → S9 → TUNE → S7a → S7b → field rounds → S8 → S8b → S10; every slice = Opus ∥ Emma). Scratch: `~/.cache/tmp/ctrlb-session64/`. Two sessions, one tree (the J1/J2 seat): commit by path; this seat owns `voice_live.py` / the voice adapter / `useDictation` / `pcmCapture` / ASR_PLAN.
-
 ---
-
 
 ## ▶▶ NEW (2026-10-07 midday, Fable seat, session 63) — THE DICTATION CHECK PASSED · the phone round READ · two look tweaks · ISS-68 the gallery flash FIXED + the consistency slice · ROADMAP H4 + J1/J2 · **NEXT = push + v1.7.11**
 
