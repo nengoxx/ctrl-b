@@ -2688,12 +2688,16 @@ class Settings(BaseModel):
     def resolve_agent(self, name: str | None = None) -> AgentDef:
         """Resolve an `AgentDef` by name (folder-only, D15 #3). `name=None` → the configured
         `agent.default_agent`: `""` (none set) → the root, `"default"` → the root (set explicitly),
-        `"<name>"` → that folder. An unknown/since-deleted name falls back to the root rather than
-        500ing — a thread that references it keeps working."""
-        target = name or self.agent.default_agent or None
-        if target == self.DEFAULT_AGENT_NAME:
-            return self.default_agent_def()  # the root's own slug — never a folder lookup
-        if target:
+        `"<name>"` → that folder. An unknown/since-deleted name falls back ONE RUNG, to the configured
+        default (ISS-51, owner-ruled 2026-10-07: the D75 ladder's own wording, and what the client's
+        `effectiveAgent` already paints — `/agent typo` used to show the default's backdrop while the
+        root answered), and only then to the root — never 500ing, so a thread that references a
+        deleted agent keeps working."""
+        for target in (name, self.agent.default_agent):
+            if not target:
+                continue
+            if target == self.DEFAULT_AGENT_NAME:
+                return self.default_agent_def()  # the root's own slug — never a folder lookup
             loaded = self._load_agent_folder(target)
             if loaded is not None:
                 return loaded

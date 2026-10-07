@@ -229,3 +229,23 @@ def test_path_shaped_agent_names_never_leave_agents_dir() -> None:
         for bad in ("..", "/etc", "../..", "ops/../ops", "a b", ""):
             assert settings.load_agent(bad) is None, bad
             assert settings.resolve_agent(bad).name == "default", bad
+
+
+def test_unknown_pick_falls_to_the_configured_default_then_the_root() -> None:
+    """ISS-51 (owner-ruled 2026-10-07): the server agrees with the client's fold — an unknown or
+    since-deleted pick lands on the CONFIGURED default (the agent the phone already paints), and only
+    with none configured (or the configured one itself gone) on the root. `None` keeps its meaning."""
+    with _workspace("agent:\n  default_agent: ops\n") as (tmp, cfg):
+        (tmp / "agents" / "ops").mkdir(parents=True)
+        (tmp / "agents" / "ops" / "SOUL.md").write_text("ops persona", encoding="utf-8")
+        settings = load_settings(cfg)
+        assert settings.resolve_agent(None).name == "ops"
+        assert settings.resolve_agent("typo").name == "ops"  # one rung down, not two
+        assert settings.resolve_agent("default").name == "default"  # the root's slug is explicit
+        assert settings.resolve_agent("ops").name == "ops"
+    with _workspace("agent:\n  default_agent: gone\n") as (tmp, cfg):
+        settings = load_settings(cfg)
+        assert settings.resolve_agent("typo").name == "default"  # the configured one is gone too
+        assert settings.resolve_agent(None).name == "default"
+    with _workspace() as (tmp, cfg):
+        assert load_settings(cfg).resolve_agent("typo").name == "default"  # none configured
