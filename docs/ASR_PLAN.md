@@ -526,7 +526,7 @@ R95 §4) · the echo backstop · the voice learner · the overlay · the idle cl
   contention only (no data, no auth surface), accepted under §2.1.
 - **Threads (Q4 ②):** live 4 · clip 4 beside PocketTTS's 8 on 8C/16T; the contended reading decides affinity (§3.4
   budget). Vulkan for the clip door = an option (wins only above ~1.5 s; pin Mesa).
-- **Engines are config (D48):** CrispASR / onnx-asr = a `providers:` edit, never code. **RAM:** ~1.5 GB per instance;
+- **Engines are config (D48):** CrispASR / onnx-asr = a `providers:` edit, never code. **RAM:** 2.2–2.3 GB per instance measured (§6.4.1; the pre-build estimate was ~1.5 GB);
   Speaches keeps its 3.4–3.8 GB + swap while its unit runs — whether it keeps running is the owner's later call (R18).
 
 ### 3.8 Dictation: the recording outlives its leg (R94 §7.4, re-ruled by council 5)
@@ -1172,7 +1172,7 @@ The hand-authored golden vectors (§3.4) are the unit tests. The tool is the ear
 
 | Gate | Pass |
 |---|---|
-| **S9 → clip door on parakeet (dev)** | • the gate-walk test passes<br>• **the pre-pass sweep (§3.4.1 ⑤):** `prepass_act` swept over the corpus positives + the push-to-talk clips on the configured model — zero labelled-speech clips answered `no_speech`, the negatives' hit rate reported (T10)<br>• live-sized p95 < 1 s uncontended and < 2 s contended (requests ≤ 20 s)<br>• RSS < 2 GB per instance<br>• R10 (a)–(b) hold<br>• **no language crossing:** English and Spanish short answers and car negatives never come back in the other language (T-5)<br>• the owner reads the push-to-talk clips and the replayed reference transcripts by hand and finds them acceptable — **Spanish included** (T-5) |
+| **S9 → clip door on parakeet (dev)** | • the gate-walk test passes<br>• **the pre-pass sweep (§3.4.1 ⑤):** `prepass_act` swept over the corpus positives + the push-to-talk clips on the configured model — zero labelled-speech clips answered `no_speech`, the negatives' hit rate reported (T10)<br>• live-sized p95 < 1 s uncontended and < 2 s contended (requests ≤ 20 s)<br>• RSS a bounded high-water mark ≤ 3 GB per instance, no growth across runs (owner-amended 2026-10-08 from "< 2 GB" on the §6.4.1 reading: 2.2–2.3 GB steady; no unit carries a memory limit)<br>• R10 (a)–(b) hold<br>• **no language crossing:** English and Spanish short answers and car negatives never come back in the other language (T-5)<br>• the owner reads the push-to-talk clips and the replayed reference transcripts by hand and finds them acceptable — **Spanish included** (T-5) |
 | **TUNE → the flip (S7b)** | • the golden vectors are green<br>• the owner's hand judgement of the replayed reference set (edges + transcripts, with the chosen `VadParams`) finds: no phantom segments on the negatives, every short answer present, no clipped onset |
 | **Release v1.7.12** (R94 §9 field acceptance, on the flipped dev) | • 5 min of no-owner-speech car audio → 0 false turns<br>• 20× each short answer, **English and Spanish** → recall ≥ 95%, no first-phoneme clipping, **no answer transcribed in the other language**<br>• no perceptible added lag<br>• ASR p95 < 1 s<br>• the §3.4 VAD budget met<br>• **a ≥ 10-min 4G dictation with induced stalls → zero stops, the suffix recovered, no duplicated text**<br>• the kill-clip-engine arm (§3.8)<br>• a > 20 s call turn arrives as ONE turn (R20)<br>• a reload mid-dictation recovers (S8b) |
 
@@ -1225,8 +1225,9 @@ lines, and the dev journal showed no warnings.
     saturating load (16 busy threads on 8C/16T, `powersave`).
   - Clip-door throughput is fine: 30 min took 116 s through Serve (≈ the 2-min estimate) and 279 s contended (over
     the ≈ 4-min estimate).
-- **RAM: FAILS "< 2 GB per instance".** Steady state through the door is 2.2–2.3 GB per unit. It is a bounded high-water
-  mark, not a leak.
+- **RAM: PASSES the amended criterion** (owner, 2026-10-08: "if it needs a little more RAM it can get it; 2–3 GB is not too
+  much" → ≤ 3 GB bounded, no growth). Steady state through the door is 2.2–2.3 GB per unit. It is a bounded high-water
+  mark, not a leak — it failed the original "< 2 GB" letter, which was a plan estimate, never a unit limit.
 - **Contention: OK functionally.** Requests serialise per chunk, nothing walks, there are no errors, and the two units
   never queue on each other. The cost is CPU share only.
 - **Language: SENTENCES OK; BARE MONOSYLLABLES CROSS.** This is the §10.2 watch item firing on synthetic audio.
