@@ -1328,7 +1328,7 @@ its own capability without per-field provenance, it makes an env-addressed provi
 
 ---
 
-## J. UX consolidation + prompt design — FOUR DEDICATED SESSIONS (owner asks 2026-10-07)
+## J. UX consolidation + prompt design — FIVE DEDICATED SESSIONS (owner asks 2026-10-07; J5 2026-10-08)
 
 > The owner, on the day the gallery flash was fixed: *"we added so many features that it's bloating a little bit of the
 > configuration options, and we need to make the app more clean and easy to use and intuitive."* Two separate sessions,
@@ -1398,6 +1398,18 @@ its own capability without per-field provenance, it makes an env-addressed provi
   the exporter's round-trip, the lorebook editor's fields; ISS-46's Frieren entry fires as its author meant.
 - **Relationship to J3:** tangential. J3's outcome (a fired entry placed in the tail breaks only the tail) is an INPUT
   to J4's placement question, not a blocker for J4's roll/cadence design.
+
+### J5. The call screen's UI refinement — after the ASR session closes (owner ask 2026-10-08)
+
+- **The ask, in the owner's words:** *"the transcript text is big enough, I guess, but the agent text is a little bit
+  small … the refinement for the call UI should be in its own session whenever we finish the whole ASR session …
+  whenever I turn off the live trails so the debug information goes off the screen and I can see the whole thing
+  better, because right now everything is a little bit clamped up everywhere."*
+- **Scope:** the call overlay's type scale (the 13 px captions vs the 16 px heard line), spacing and the body's stack
+  once the D74 debug readout is off; the heard line's future shape (ISS-69 ships FIXED two lines — a scrollable
+  two-line box or fit-to-text font sizing are the candidates the owner named). `VAPOR_PATTERNS.md` +
+  THEME_ENGINE govern; research-first like J1.
+- **When:** after Phase 26 (session B) closes and `voice.live.debug` is off on dev. Not a v1.7.12 blocker.
 
 ## P. Parked — not planned
 
