@@ -1339,7 +1339,10 @@ its own capability without per-field provenance, it makes an env-addressed provi
 > separate from each other (*"They're both tangential issues"*), from J1/J2, and from the ASR session (Phase 26 /
 > session B). **Timeline (owner):** *"I want to do it before we update production after session B"* → the v1.7.12 prod
 > update WAITS for J3 + J4 unless the owner re-rules at release time. J1/J2 keep their own "designed + planned for later"
-> timeline.
+> timeline. **RE-RULED 2026-10-09 (owner, session 68):** J3 + J4 *"can wait — it doesn't have to be done now"*; the
+> v1.7.12 prod update NO LONGER waits for them. The owner's priority while the ASR track waits on car captures =
+> **Phase 27 (conversations per agent, D84) — "the big one", its own clean session, expected to span several usage
+> windows**; ISS-69 built in session 68. J1–J5 stay "designed + planned for later".
 
 ### J1. The galleries' UI/UX refinement — agent gallery · image galleries (backgrounds, theme art) · the dense editors — **plan stub = [`GALLERY_UX_PLAN.md`](./GALLERY_UX_PLAN.md) (resume from it alone)**
 
@@ -1410,6 +1413,19 @@ its own capability without per-field provenance, it makes an env-addressed provi
   two-line box or fit-to-text font sizing are the candidates the owner named). `VAPOR_PATTERNS.md` +
   THEME_ENGINE govern; research-first like J1.
 - **When:** after Phase 26 (session B) closes and `voice.live.debug` is off on dev. Not a v1.7.12 blocker.
+
+### J6. The defaults revision — prod + fresh installs get the owner's tuned configuration (owner ask 2026-10-09)
+
+- **The ask, in the owner's words:** *"I think we should revise the defaults at some point … right now I'm tuning them in
+  dev, in the dev server, and we should probably update the defaults at some point, so production and new installations
+  have a very good configuration, but that's for another session."*
+- **Scope:** every knob the owner has tuned on dev against the shipped default (`diff` of `~/.ctrl-b-dev/config.yaml`
+  against the `config.py` defaults, voice/live first — the ISS-55 hold already moved 0 → 2500 in session 68), ruled one
+  by one into a new shipped default; keys ABSENT from prod's config take the new default on update (no migration — the
+  UPDATE_PLAN's "absent = default" rule), keys PRESENT keep the owner's value. Pairs naturally with J2 (the knob-scope
+  table) — do it in the same sitting or right after.
+- **When:** its own short session, after the car captures have settled the voice numbers (the defaults should be the
+  numbers that survived the car). Not a v1.7.12 blocker.
 
 ## P. Parked — not planned
 

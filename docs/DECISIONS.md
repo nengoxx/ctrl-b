@@ -6055,7 +6055,7 @@ per-agent link makes it right by construction).
 - **The client JOINS a `max_segment` final with the next one into ONE turn or phrase** (owner): a cap cut is not a
   pause.
 - **"Speech ended" is split from "turn over" (owner Option A, RULED 2026-09-30)** (the LiveKit/Pipecat shape). `silence_ms` stays the VAD end, bounded
-  500–1200. A NEW client key, `turn_hold_ms` (0–3000, default 0 = today), holds a call's pending turn after a final; a
+  500–1200. A NEW client key, `turn_hold_ms` (0–3000, default 0 = today; **amended 2026-10-09: default 2500, range 0–10000** — owner, session 68, with ISS-69), holds a call's pending turn after a final; a
   `speech_started` inside the hold joins the SAME turn. That one mechanism also carries the `max_segment` join. ASR runs
   at segment end regardless, so a long hold costs no ASR latency. The owner's R23 intent (longer pauses) is met here.
 - Pre-roll: `prefix_padding_ms` default 500.

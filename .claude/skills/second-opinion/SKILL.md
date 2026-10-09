@@ -152,6 +152,13 @@ Run backgrounded; `-z` prints ONLY the final text to stdout (no progress signal 
 completion notification, not log growth). Same brief discipline, same calibration paste (§Scoping
 item 9 applies — sol is sol).
 
+> **▲ WHICH MODEL IS WHICH (owner clarification 2026-10-09, session 68): EMMA = `gpt-5.6-sol`** ("Emma is
+> using Sol, not Luna, at the moment"); **MAYA = `gpt-5.6-luna-900k`**. The 09-21 note above retired the
+> *profile* for cost; when the owner or a handoff names EMMA as the reviewer, run the lane with
+> `-m gpt-5.6-sol` (blind, `--ignore-rules` as below) and record it as Emma (Sol). A Luna run is Maya,
+> whatever the handoff called it (session 63's "Emma (blind, luna)" was a Maya run; session 68's first
+> ISS-69 review likewise). State the model in the review's record every time.
+
 > ### ⚠ Two lane gotchas, both burned live on 2026-09-13 (the S2a confirm round)
 > 1. **The CLI DOUBLE-FORKS.** The PID you launch (and the one `pgrep` finds seconds later) can
 >    exit within a couple of minutes while the REAL run continues under a child with **identical

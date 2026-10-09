@@ -8,7 +8,7 @@
 > from [J3](./PROMPT_ORDER_PLAN.md)** (prompt order) and from J1/J2 — the owner: *"One for the prompt ordering, which
 > realistically doesn't have as much to do with the lorebook thing. And another for the lorebook thing. They're both
 > tangential issues."* **Timeline (owner, 2026-10-07):** *"I want to do it before we update production after session
-> B."* → the prod update that follows session B (v1.7.12) **WAITS for J3 and J4** unless the owner re-rules at release
+> B."* → the prod update that follows session B (v1.7.12) **WAITS for J3 and J4** unless the owner re-rules at release **Re-ruled 2026-10-09 (owner, session 68): J3 + J4 "can wait" — v1.7.12 no longer waits for them; Phase 27 (conversations per agent) is the owner's next build.**
 > time. The owner also: *"I didn't want you to start building this feature. This is a very design-driven thing."*
 
 ## 0. How to read this

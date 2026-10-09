@@ -28,7 +28,7 @@ function name is authoritative — re-grep it.
 |---|---|
 | Design | ✏️ RULED 2026-10-06 — owner Q&A closed (R0–R46, §1) + F1–F7 (§13), owner + main seat, session 60 — plan v2.5; owner rulings **F2** + **ON4** RULED 2026-10-06 (A · a): **F2** = reading A (§2: with no override set, a responder runs on the HOME agent's AgentDef model + privilege) · **ON4** = (a) (§6: the per-home-agent overrides persist per device and survive a reload); nothing pending |
 | Council | **CLOSED 2026-10-06 — Opus CONFIRMED WITH NOTES ∥ Emma CONFIRMED WITH NOTES (both on v2.2; notes folded v2.3–v2.4); the owner's F2 + ON4 rulings folded → v2.5; NO open rulings** (history: round 1 both NOT CONFIRMED, all folded → v2; round 2 confirms → v2.2; micro-confirms → v2.3/v2.4 — §13) |
-| Build | NOTHING BUILT — slice ladder §10 (S0–S13), seam map Appendix §A |
+| Build | NOTHING BUILT — slice ladder §10 (S0–S13), seam map Appendix §A. **Pre-build audit 2026-10-09 (session 68): NO collision, drift only — §12.1 carries the re-pins + eleven rulings; build on a `phase27` worktree branch (§12.1)** |
 | DB schema | 7 → **8** (additive column + index + idempotent NULL repairs; §3, §11) |
 | Config | **no new key**, no config-shape bump; the `auto_rotate` retirement drops two keys from the schema (§9, R24) |
 | Retires | the D75 sticky pick + tandem rule · ISS-49 (the pick trigger AND the `/opening` route, R27) · ISS-50 · ISS-51 + ISS-52 at the boundary · the global composer draft + staged rail · the global `/privilege`·`/local`·`/cloud` session values · `auto_rotate` (§14) |
@@ -835,7 +835,68 @@ ruled.**
    unlike `mode`", `be/api/agent.py:168-169`); the owner chose (a). An elevation now survives reloads on that device,
    uncapped — there is NO privilege cap (`ChatRequest.privilege` "most-specific-wins, no clamp", `:165-170`; the only clamp
    is `agent.subagent_clamp_privilege`, `be/config.py:425-428`); D84 and SECURITY_MODEL §2.2 record it. S7 builds (a).
-R0–R46 + F2 + ON4 are all ruled; nothing is open.
+R0–R46 + F2 + ON4 are all ruled; nothing was open until the session-68 pre-build audit below.
+
+### §12.1 The session-68 pre-build audit (2026-10-09, main seat Fable 5.1; the lane's report = `~/.cache/tmp/ctrlb-session68/audit-phase27-collisions.md`) — READ BEFORE WRITING ANY S-BRIEF
+
+The plan's citations were re-grepped against `main @ 80b196b` (56 commits past the `1bd2d3f` pin). **Verdict: NO code
+collision — drift only.** `fe/store/chat.ts` has ZERO commits since the pin (every S6/S7/S10 line exact); schema still 7,
+config shape still 5, `AgentCfg` unchanged, the five S5 tests exist, Phase 27 touches neither `voice_live.py` nor
+`call_trail.py`. **Line drift to re-pin per brief:** `be/api/agent.py` uniformly **+4** below line 32 (`chat` → 1306,
+`delete_agent` → 2241); `be/config.py` `resolve_agent` → 2716, `_load_agent_folder` → 2667; `session.py` `_assemble` →
+1065 (body unchanged); `fe/lib/composer.ts` +5…+17; gallery/agents files a few lines. The function name is authoritative.
+
+**Semantic drift + rulings (main seat unless marked OWNER; each S-brief folds its own):**
+1. **ISS-51 is BUILT (`9a2b649`, owner-ruled 2026-10-07) in a shape the plan did not know:** an unknown or vanished name
+   falls to the **CONFIGURED DEFAULT, then the root** — not "the root". §4's "falls back to the ROOT", §6 `effectiveAgent`
+   ("shown as the root") and R41's legacy-homes reading now read **"the configured default, else the root"**; the client's
+   vanished-home paint = the default (one fallback, server and client agree). The §3 NULL repair's literal `'default'`
+   stays the ROOT's slug (R10 — the last speaker, else the root); the wording must not blur the two. (S2, S7)
+2. **ISS-52 is DONE (`21e6b83`, built as S2 wrote it).** Dropped from S2's build list; its verify line stays as a
+   regression check; S12 adds only the "closed at the boundary" pointer.
+3. **`/agent <unknown>` = a TOAST, not a note** (`64eaeee`, owner-ruled 2026-10-07: `No agent named "x"`, judged only once
+   the roster has landed — `agentsLanded`; before that a pick goes through unjudged). §2's B-row (the `// agent "xyz" is
+   not configured` note) is SUPERSEDED; S7's `setResponder` keeps the toast and the `agentsLanded` rule.
+4. **Dictation AUTO-SEND across a hop (an R35 gap).** `useDictation.maybeAutoSend` (≈723–729) reads `getDraft()` and runs
+   the CURRENT view's composer. **Ruling:** an auto-send whose dictation STARTED in another conversation sends nothing
+   and leaves the text in its origin slot (it shows there as the draft on return). The alternative — a thread-targeted
+   background send — needs a `runComposer` the store does not have; not built. (S8)
+5. **`fe/hooks/useDictation.ts` is SHARED with the ASR track.** S7a moved the streaming append into a module-level
+   `appendPhrase(s: StreamSession, …)` — the plan's `:746`/`:1188` cites are gone. **Ordering:** ASR S8/S8b own the file
+   FIRST; Phase 27 S8 lands AFTER ASR S8b and rebases onto it. The start slot belongs on `StreamSession` (fed to
+   `appendPhrase`) and in the clip-door closure; ASR S8b's IndexedDB recovery record MUST persist the thread id the
+   dictation started in, so the recover offer lands in its origin conversation (ASR_PLAN gets the same line).
+6. **The R42 latch at hang-up:** `endCall`'s deferred R29 path runs AFTER the ISS-61 exit harvest
+   (`useLiveCall.ts` ≈2913 `appendDraft`, on every exit incl. unmount) — never synchronously inside `endCall` — so the
+   E6 carry moves the harvested utterances and no write lands in a deleted conversation's slot. A 404 during a call
+   maps to the EXISTING `SendOutcome "refused"` (no new variant: a new one would force an edit in S7b's file). (S7)
+7. **The ISS-66 scroll latch** (`ChatThread.tsx` ≈1079–1086) re-births only on tab entry. S6/S7 reset it and jump to
+   the newest message when the view's thread changes. `ChatThread.tsx` joins the seam map.
+8. **S5's retire list grows:** `bt/test_steer_drain_b_d41.py:508–527` (re-target the MED-3 raise point off
+   `_auto_route_agent`), `ft/components/agentsEditorCompaction.test.tsx:126–127, 402–420`, `frontend/e2e/fixtures.ts:201–202`,
+   the docstring mentions (`steering.py:210`, `greeting.py:11`, `core/agents.py:10`, `chat.ts:1180`, DESIGN:1519); S7's
+   `/opening` deletion also sweeps `config.py:2675` (new since the pin), `greeting.py:12`, `conversation.py:91`.
+9. **J3 vs S4:** both own `AgentSession._assemble`. If J3 opens while Phase 27 is live, **S4 lands first** (its
+   byte-identical single-agent invariant is J3's baseline).
+10. **Greeting-less specialists (ISS-37, `badc9d9`):** seam ② / `mintAndOpen` can mint an EMPTY conversation (no opening
+    row). Every B-scenario's "a fresh greeted one" reads "greeted when the agent has a greeting"; `label` → "New
+    conversation", `preview` → `null`; the `seen_at` backfill and the "already new" no-op rule hold.
+11. **OWNER — the release train.** v1.7.12 no longer waits for J3/J4 (re-ruled 2026-10-09), so anything merged to
+    `main` rides it: migration 8, S2's 404-not-mint (whose client half is S7), S5's Conf-row removal. **The main seat's
+    recommendation: Phase 27 builds on a `phase27` branch in a worktree and merges to `main` ONCE, as a whole, after
+    S10 (§11's "BE + FE ship together" stands); v1.7.12 goes independently.** The alternative — inert backend slices
+    (S1/S3/S4; migration 8 is additive) riding v1.7.12 — only on the owner's word.
+
+**The working arrangement (the ASR captures continue on dev in parallel):** `git worktree add ~/.cache/tmp/ctrlb-wt27 -b
+phase27`; pytest from the worktree's `backend/` with the main venv (imports the worktree's `app` — verify once; pyright
+needs `--pythonpath <main venv python>`); manual runs against a COPY of the dev home (`sqlite3 .backup`, never `cp` of a
+WAL DB; dev holds 44 NULL-agent threads + the dangling `probe-s1` — a realistic migration-8 rehearsal) on a spare port
+(:5435, no `--reload`). WHY: dev runs uvicorn `--reload` on the MAIN tree (every backend save there drops a running
+call, and S1's first save would migrate the capture DB before review) and serves the main tree's `frontend/dist` to the
+phone (:8443), so a build in the main tree puts half-built UI on the capture phone. **S11 (the phone round)** = merge at a
+capture-free moment (one dev restart, migration 8 once, DB backed up first) — or a second Serve port for the worktree
+instance, which is an ops change for the owner to OK. Rebase `phase27` on `main` before every frozen-diff review.
+Two seats on one tree: commit by path, `git status` before any HANDOFF/ISSUES write (the session-62 rule).
 
 **Confirmed by the main seat (round 2 — F8 in the session-60 rulings; both v2.2 micro-confirms passed over it):** deleting the agent whose conversation is OPEN on this device WITHOUT the flag
 (the owner chose to keep the conversations) — the plan moves this device to the configured default's latest the same way
