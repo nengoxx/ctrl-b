@@ -1,6 +1,6 @@
 # CONVERSATIONS_PLAN — conversations per agent + past conversations (ROADMAP A15)
 
-**Status: ✏️ DESIGN RULED 2026-10-06 (main seat Fable 5.1 + owner, session 60) — plan v2.7 (the session-69 completeness pass — Luna · Sol 6.1 · Opus 5.5 · the local Qwen experiment — folded, §12.2–§12.4); owner Q&A closed
+**Status: ✏️ DESIGN RULED 2026-10-06 (main seat Fable 5.1 + owner, session 60) — plan v2.8 (the session-69 completeness pass — Luna · Sol 6.1 · Opus 5.5 · the local Qwen lane (two REAL finds in thinking mode) — folded, §12.2–§12.4); owner Q&A closed
 2026-10-06 (R0–R46 + the main seat's F1–F7, N1–N4, ON1–ON7 and the privilege-cap RETRACTION, M1; council CLOSED; owner rulings F2 + ON4 RULED 2026-10-06 (A · a): F2 §2, ON4 §6); council rounds 1–2 + the confirms folded; NOTHING
 BUILT.** Decision of record = [`D84`](./DECISIONS.md) (the locked summary); build = TODO **Phase 27** (§10 is the
 ladder — build against this plan, NOT the TODO list); ROADMAP [§A15](./ROADMAP.md); evidence =
@@ -235,6 +235,7 @@ just agents (R13/R15).
 | `/agent xyz` (not on the roster) | `// agent "xyz" is not configured` — nothing changes |
 | `/agent …` during a live call | `// hang up to switch who answers` — nothing changes |
 | any navigate door / `/new` during a live call | `// hang up to switch conversations` — nothing changes |
+| `/privilege <lvl>` or bare `/<provider>` during a live call | the ordinary note — ALLOWED: an override is the HOME agent's setting, not a switch; it applies from the next utterance, as today's session value does (§12.4 Q4, main-seat default ⚑) |
 | `/new` (or the sheet's "New conversation") on a conversation with no owner turn | `// this conversation is already new` |
 | `/privilege full` in Lynette's conversation | `// privilege → full (Lynette, this session)` |
 | `/local` (bare `/<provider>`) in Lynette's conversation | `// inference → local (Lynette, this session)` |
@@ -347,8 +348,9 @@ server-side, its TTS stops on this device.
 
 **What does not change.** A steer carries `body.agent` into `SteerEntry` (`chat` `be/api/agent.py:1348`) and drain-B
 re-routes from it (`start_steer_turn` `:787`/`:802`). Regenerate speaks as the reply's own speaker (D81 ruling ④);
-resume continues as the last assistant row's agent (`resume` `:2795`). All three build through `_build_session`, so
-R40's rule (§4, F2 reading A) applies to them too. Nothing re-pins a thread, so drain-B's closure over the
+resume continues as the last assistant row's agent (`resume` `:2795`). All three build through `_build_session`, so R40's rule (§4, F2 reading A) applies to them too — and so does a LIVE-CALL
+utterance (`sendCallTranscript` posts to the same `chat` route; §12.4 Q3): the call answers as the responder set before it
+started, at the home's model + privilege. Nothing re-pins a thread, so drain-B's closure over the
 original `Thread` (`_spawn_drain_task` `:593` → `_maybe_spawn_drain_b` `:641`) can never hold a stale pin.
 
 ## §3 Data — migration 8 (DB schema 7 → 8) + the NULL repairs
@@ -544,7 +546,10 @@ toast), which clears the responder, and carries the open conversation's draft + 
   ONE definition; its key `turn-done:<notifyScope(thread)>:<turn>` (`:369`) equals the open view's, so no duplicate);
   `suspended` → an `agent_input` signal keyed `agent-input:<thread>:<turn>`; `cancelled`/`seen` → nothing. **A `running` frame
   for the OPEN view's own thread that this view is NOT streaming** (the other device sent there, B9) → `probeAndReattach(thread)`
-  so the visible device shows the turn instead of a stale view (§12.3 M11). On reconnect
+  so the visible device shows the turn instead of a stale view (§12.3 M11). **Answering a parked call on the other device**
+  resumes a turn, whose `running` frame invalidates both lists — the needs-you dot clears everywhere without a frame of its own
+  (§12.4 Q5). **A background reply never plays audio on this device:** read-along is driven by the OPEN view's stream, and the
+  adopt guard keeps a non-view thread's frames out of it — in a call or out of one (§12.4 Q8). On reconnect
   (`reconcileChat` `:2613`) both queries refetch.
 - **Visible vs hidden (R39).** No in-app toast for a background reply. `shouldNotify`
   (`fe/hooks/useForegroundNotifications.ts:94`) already drops every signal while the page is visible — kept: visible ⇒ the
@@ -634,7 +639,11 @@ old post-await silent returns on "streaming" or a changed user-turn count (`:127
 (name)` = `GET /api/threads?agent=name&limit=1` → the open view's id → B5 in place; another id → `openThread(id)`; none →
 `mintAndOpen(name)`. `/new` (`fe/lib/composer.ts:418`) = `mintAndOpen(threadAgent ?? defaultAgent)` (R22b) with the ISS-31
 no-op rule (no owner turn → the "already new" note, nothing else). `mintAndOpen` always names an agent. `openAgentConversation` claims its `openSeq` ticket AT ENTRY (before its `GET`) and
-abandons if superseded after it — a slow roster tap never overrides a later sheet-row tap (§12.3 L8).
+abandons if superseded after it — a slow roster tap never overrides a later sheet-row tap (§12.3 L8). **A name OFF the
+landed roster** (a stored `home` whose agent was deleted while the device was dead, H7; a stale door) **resolves to the
+configured default BEFORE the `GET`** — `openAgentConversation` never mints for a dead slug (§12.4 Q2); before the roster lands
+the name passes unjudged and seam ① pins the RESOLVED agent (`resolve_agent(body.agent).name`, ISS-51's rungs), never the raw
+slug — so a phantom conversation for a vanished agent cannot be minted from either side (S2a verifies seam ①).
 
 **Doors** (R16, R38, O4). Tools-menu `AgentRow` (`ToolsMenuSheet.tsx:226`) fires `openAgentConversation` from `onPick`
 (`onClick` `:249` — every activation, the already-checked row included), never the radio's `onChange` (`:250`, change
@@ -711,7 +720,9 @@ shapes, same persistence:
   The clip door (push-to-talk) is unaffected — its upload is bound to the slot captured at press.
 - An empty draft / rail deletes its key; a deleted conversation's slots move per "Deleted elsewhere" or are dropped
   (B8 deletes its own open conversation → moved; a non-open row deleted from the sheet → dropped); when the view becomes a
-  conversation whose slots are empty and `""` holds content (a lazy mint, `mintAndOpen`), it moves in. **Prune (§12.2 ⑦):** `initChat`'s plain `GET /api/threads`
+  conversation whose slots are empty and `""` holds content — a lazy mint, `mintAndOpen`, OR an EXISTING conversation opened
+  from the thread-less view through any door (§12.4 Q6) — it moves in; if the target's slot already holds content, `""` keeps
+  its own (the thread-less view is a fresh-install state; nothing is merged unasked). **Prune (§12.2 ⑦):** `initChat`'s plain `GET /api/threads`
   (today's reader) is the ONE global list this client ever sees — at boot every `drafts`/`rails` key that is neither `""` nor
   listed there is dropped. A conversation deleted on the other device while this device only held a draft (never opened it)
   never 404s here, so the boot prune is the only path that reclaims its slot. The prune skips the CURRENT view's key and runs
@@ -1116,8 +1127,19 @@ name), then fell into a verbatim repetition loop until the budget ended (a known
 (immediate via the success handler; the roster sweep serves other devices). One was a fair wording ask (the unread predicate is
 actor-based, so a responder's reply counts). The other nine were misreadings of "else `null`"-style clauses or re-statements of
 settled text; where a point depended on code it could not see, it said so and rated it ≤ 0.5 — **no invented code facts.** Folded:
-§6 `effectiveAgent`, §2 the B17 note row, §6 N2's local-device clause, §3 unread. Verdict on the model as a reviewer: usable as a
-cheap LAST pass for stale wording after the real lanes, never alone, never with thinking on at this quant.
+§6 `effectiveAgent`, §2 the B17 note row, §6 N2's local-device clause, §3 unread. **Run 3 — thinking ON with Qwen's thinking-mode sampling + `presence_penalty 1.0` as the loop breaker, a 200k ceiling: 22 min,
+44 651 output tokens, EIGHT findings, no loop, no invented code facts (two marked DEPENDS ON CODE at ≤ 0.5).** Ruled: **Q2 REAL
+(MED)** — the H7 boot path `openAgentConversation(stored home)` with a home deleted while the device was dead would reach
+`mintAndOpen(<dead slug>)`; rule: an off-roster name resolves to the configured default before the `GET`, and seam ① pins the
+RESOLVED agent (§6) · **Q6 REAL (MED)** — the thread-less `""` draft/rail moved only into a lazy mint, not into an existing
+conversation opened from the thread-less view; rule: any such transition moves it when the target's slot is empty (§6 drafts) ·
+**Q4 behavioural ⚑ (main-seat default)** — in-call `/privilege` and `/<provider>` are ALLOWED, applying from the next utterance
+(§2 notes) · Q3, Q5, Q8 = wording: live-call utterances go through `_build_session` (§2); answering a parked call elsewhere clears
+the dot through the resumed turn's `running` frame (§5); a background reply never plays audio here (§5) · Q1 REJECTED
+(`session_search` is a model TOOL returning text — no door opens from it) · Q7 REJECTED (the `max_active_turns` refusal is today's
+busy note, unchanged). **Verdict on the model as a reviewer, revised:** with thinking ON and the loop breaker it is a genuine
+fifth lane — two real MEDs the four paid lanes missed, honest confidence, zero hallucinated facts — at zero cost and ~25 min;
+the no-think run is only a stale-wording pass. Keep it in the council for the remaining design rounds; never trust it alone.
 
 ## §13 Council record
 
