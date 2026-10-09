@@ -31,6 +31,7 @@ judge the result rather than adopting it.**
 | Mechanical / operational work, runbook procedures, releases | **`general-purpose`** subagent (Opus 5.5 high) | the workforce — use freely |
 | An independent CLAUDE lens on the main seat's own design | **ONE Opus 5.5 subagent** briefed adversarially | occasional — the mirror of the old Fable tier |
 | **A CODE ROUND on a critical part** (security-relevant routes/parsers, chokepoints, migrations, wide refactors) — **owner rule 2026-09-26** | **BOTH, in parallel, on the SAME diff: a blind Opus 5.5 subagent (the independent reviewer) AND the Maya/Emma hermes lane (the non-Claude fresh lens)** — distinct emphasis, never partitioned; confirm with the reviewer that raised each finding (Opus by `SendMessage`, Maya by a fresh self-contained `-z`) | the default for anything that ships to prod |
+| **An OPTIONAL third lens on a design/plan round** — the owner's local Qwen behind the `strata` endpoint on corsair (§The local lane below) | **Qwen3.8-Flash-Next IQ2_XS, THINKING ON, ~25 min, output to a file** — never alone, never as the deciding voice | free (the owner's own GPU) — add it whenever a round deserves more coverage |
 | **Design, architecture, supervision, audits, a judgement call, a ruling** | **the MAIN SEAT (Fable 5) — never delegate** | — |
 
 **Standing owner directive (2026-07-22, reaffirmed 2026-07-26):** launch a Codex review **whenever
@@ -179,6 +180,46 @@ item 9 applies — sol is sol).
 > session 68's ISS-69 confirm was `gpt-5.6-sol` (Emma). The 09-21 note above retired the emma PROFILE for cost —
 > the lane never used a profile since.
 
+> ### ▲ THE LOCAL LANE — Qwen3.8-Flash-Next via `strata` (owner ask 2026-10-09, session 69): a plausible THIRD reviewer, never trusted blindly
+>
+> **What it is.** The owner's own quantized model on corsair, served by llama.cpp behind ctrl-b's `strata` provider
+> (`http://corsair:18081/v1`, model `qwen3.8-flash-next-iq2_xs`, **262 144-token context**, no API key, OpenAI-compatible;
+> corsair must be AWAKE — `curl -m 5 http://corsair:18081/v1/models` first). It is FREE and SLOW, has NO tools (paste the
+> artifact into the prompt), and is heavily quantized (IQ2_XS). Measured on the Phase 27 plan (136 KB ≈ 41k tokens):
+>
+> | Run | Result | Verdict as a reviewer |
+> |---|---|---|
+> | thinking ON, default sampling, 30k cap | reasoned 128 KB, converged on ONE real nit, then a verbatim **repetition loop** until the cap; no answer | unusable as launched |
+> | thinking OFF, 3 min, 3.4k tokens | 12 findings self-rated 0.3–0.6; 2 real wording catches, 9 misreadings; **no invented code facts** | a cheap stale-wording pass only |
+> | **thinking ON + Qwen's thinking-mode sampling + `presence_penalty 1.0`, 200k cap** — 22 min, 44.6k tokens | **8 findings, no loop: 2 REAL MEDs the four paid lanes had missed, 1 behavioural, 3 wording, 2 rejects; `DEPENDS ON CODE` marked honestly at ≤ 0.5** | **a genuine extra lane for design rounds** |
+>
+> **Recipe (the shape that worked — `~/.cache/tmp/ctrlb-session69/strata-review-think2.py` is the original):**
+> ```python
+> import json, urllib.request
+> plan = open("docs/CONVERSATIONS_PLAN.md").read()           # the artifact, pasted verbatim
+> brief = f"...the review brief (same discipline as the paid lanes)...\n=== THE DOCUMENT BEGINS ===\n{plan}\n=== THE DOCUMENT ENDS ===\nNow write the review."
+> body = {"model": "qwen3.8-flash-next-iq2_xs", "messages": [{"role": "user", "content": brief}],
+>         "temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0, "presence_penalty": 1.0,   # Qwen3 thinking-mode sampling; the penalty is THE loop breaker at this quant
+>         "max_tokens": 200000, "stream": False}                                                  # effectively unbounded inside the 262k ctx; the owner: "it's free"
+> req = urllib.request.Request("http://corsair:18081/v1/chat/completions", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+> raw = urllib.request.urlopen(req, timeout=3000).read().decode()
+> open(f"{S}/review-strata.raw.json", "w").write(raw)         # SAVE THE RAW FIRST — a crash after the request loses a 25-minute run
+> m = json.loads(raw)["choices"][0]["message"]                 # m["reasoning_content"] = the hidden thinking (keep it, read only its tail); m["content"] = the answer (may be None)
+> ```
+> Run it with `nohup python3 … > log 2>&1 & disown` and watch the **python** PID (the one you grab right after launch is the
+> bash wrapper — see the gotchas below); read ONLY the `content` into your context, never the reasoning dump (128 KB+).
+> No-think variant: add `"chat_template_kwargs": {"enable_thinking": False}` — 3 min, wording-pass quality only.
+>
+> **Brief adaptations for a tool-less small model:** say it cannot see the code and must write `DEPENDS ON CODE: <what would
+> have to be true>` at ≤ 0.5 confidence for anything that does; list the already-ruled sections as SCOPE; demand a quote per
+> finding; cap it at ~12 findings ("prefer 3 real ones over 12 weak ones"). It followed all of that.
+>
+> **Posture (the owner's words: "don't blindly trust that model's opinion").** A FIFTH/sixth lane for DESIGN completeness
+> rounds when the owner wants more coverage — launch it in parallel with the paid lanes, read it last, and re-verify every
+> accepted finding in code yourself exactly as for the others. Never the deciding voice, never a code-round reviewer (it
+> cannot open files), never with thinking OFF for anything but wording. Record the run in the plan's council section like
+> any other lane (CONVERSATIONS_PLAN §12.4 is the first record).
+
 > ### ⚠ Two lane gotchas, both burned live on 2026-09-13 (the S2a confirm round)
 > 1. **The CLI DOUBLE-FORKS.** The PID you launch (and the one `pgrep` finds seconds later) can
 >    exit within a couple of minutes while the REAL run continues under a child with **identical
@@ -188,6 +229,10 @@ item 9 applies — sol is sol).
 >    relaunches here produced THREE overlapping reviews writing the same output file, culled by
 >    PID (never by pattern). Short-lived same-argv workers also appear and vanish — fork noise,
 >    ignore them.
+> 1b. **The PID you grab right after ANY `nohup … &` launch (hermes `-z`, a python script) is usually the bash WRAPPER** —
+>    `pgrep -f <pattern>` matches it because the wrapper's argv contains the pattern; it dies within seconds and a wait loop
+>    on it exits with 0-byte output files. Take the PYTHON pid (`ps -o comm= -p`) — session 69 burned this three times. And
+>    **`pkill -f '<pattern>'` kills your OWN wrapper shell too (exit 144)** — kill by PID after the `comm` check.
 > 2. **`-z --ignore-rules` persists NO session, so `--resume latest` DOES NOT WORK in this lane**
 >    — it has nothing to re-enter and exits silently (0 bytes stdout AND stderr; the resume advice
 >    that used to sit here came from the D60/D61 rounds, which ran differently). **Confirm rounds
