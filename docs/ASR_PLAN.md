@@ -1117,6 +1117,16 @@ The hand-authored golden vectors (§3.4) are the unit tests. The tool is the ear
   - `labels/<clip>.json` — the SUPERSET D85-S2 only fills (ruling H9): `{kind: "positive"|"negative", tags, lang,
     route, route_key: null, intervals: []}`; the replay and its pre-pass sweep read `kind`;
   - `manifest.jsonl`.
+  - **Amended 2026-10-09 (session 68):** the route in the name and the label comes from the browser's `capture` (call)
+    / `rec` (dictation) trail line, and that line is NOT stamped with the leg it serves — the browser stamps its leg
+    counter at write time, and a call's capture opens during connect BEFORE the relay's `ready` bumps it, so leg 1's
+    `capture` carries `leg: 0` (a dictation's `rec` lands after `ready` and carries the leg). The tool read `leg == N`
+    and every call promotion landed `…-call-unknown-…`; it now takes the LAST client `capture`/`rec` stamped `≤ N`.
+  - **The first clip (2026-10-09):** `20261009-095811-call-media-en-2505ab79-1.wav` — the owner's 670 s home call,
+    phone in hand, media route, quiet room, English; tags `home · quiet · phone-in-hand · baseline · call`. The owner's
+    own verdict on the call: *"everything clear, crispy"*; the trail: 0 drops, 34 finals (27 with text), 6 verbatim
+    turns (the session-68 HANDOFF block has the numbers). **This is the clean reference the car + headset rounds are
+    judged against.**
 
   Permissions are 0700/0600. The root is `--home` or `CTRLB_HOME`, REQUIRED, and a destination inside a git work tree
   is refused (ruling H10 — `home_path()`'s no-`CTRLB_HOME` fallback is the project root). `promote` prints the consent
