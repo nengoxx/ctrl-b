@@ -143,7 +143,7 @@ release motivating it), both of which would have been discovered mid-build.
 S=<scratchpad>
 ~/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main \
   -z "$(cat "$S/review-prompt.txt")" \
-  -m gpt-5.6-luna-900k --reasoning high --ignore-rules -t file,terminal \
+  -m <model from the table above> --reasoning <high for Sol | max for Luna> --ignore-rules -t file,terminal \
   --in /home/emma/github/ctrl-b \
   > "$S/review.md" 2> "$S/review.err" < /dev/null
 ```
@@ -152,12 +152,32 @@ Run backgrounded; `-z` prints ONLY the final text to stdout (no progress signal 
 completion notification, not log growth). Same brief discipline, same calibration paste (§Scoping
 item 9 applies — sol is sol).
 
-> **▲ WHICH MODEL IS WHICH (owner clarification 2026-10-09, session 68): EMMA = `gpt-5.6-sol`** ("Emma is
-> using Sol, not Luna, at the moment"); **MAYA = `gpt-5.6-luna-900k`**. The 09-21 note above retired the
-> *profile* for cost; when the owner or a handoff names EMMA as the reviewer, run the lane with
-> `-m gpt-5.6-sol` (blind, `--ignore-rules` as below) and record it as Emma (Sol). A Luna run is Maya,
-> whatever the handoff called it (session 63's "Emma (blind, luna)" was a Maya run; session 68's first
-> ISS-69 review likewise). State the model in the review's record every time.
+> ### ▲ THE HERMES REVIEW MODELS — pick by criticality (owner directive 2026-10-09, session 68)
+>
+> **The lane runs NO profile** — `-m <model>` pins the model, `--ignore-rules` makes it blind (no SOUL/AGENTS/
+> memory/skills, nothing written back), `-t file,terminal` bounds the tools. The owner likes this ("I like your
+> no profile approach"): the `emma`/`maya` profiles are the owner's coding + auditing profiles and **their main
+> model changes often** — never read a profile's `config.yaml` as the truth of "what Emma runs", and never let a
+> profile's setting decide a review's model. **Always name the model in the review's record** (handoff, ISSUES).
+>
+> **The four models (verified in `~/.hermes` 2026-10-09; new ones appear — check `grep -rhoE 'gpt-[0-9.]+-[a-z]+(-900k)?' ~/.hermes/config.yaml ~/.hermes/profiles/*/config.yaml | sort -u` before launching, and ask the owner about one you have not seen):**
+>
+> | Family | id | Cost | Use |
+> |---|---|---|---|
+> | **Sol** (the big one — "Emma") | `gpt-6.1-sol` | cheaper (the current generation; no 900K variant — audits do not need it) | **the DEFAULT for a CRITICAL review** (security-relevant routes/parsers, chokepoints, migrations, wide refactors, anything that ships to prod) — `--reasoning high` |
+> | | `gpt-5.6-sol` (+ `-900k`) | **double** the cost; very slightly better | only when WARRANTED (a round where the cheaper Sol missed something real, or the owner asks) — `--reasoning high` |
+> | **Luna** (the smaller one — "Maya") | `gpt-6-luna` | cheaper (current; no 900K; "not proven better" than the old one) | **the DEFAULT for a GENERAL audit / second opinion** — it is the smaller model, so it must reason THOROUGHLY: **`--reasoning max`** (or `xhigh`) |
+> | | `gpt-5.6-luna-900k` | **double** the cost; better | only when warranted; `--reasoning max` |
+>
+> Rules of thumb (the owner's words): *"if it's a critical thing, use Sol on high; if it's a general audit or
+> second opinion, Luna on max"*; *"the old ones are double as expensive — unless there is a warrant for using
+> them, there's no reason to"*; *"you can just use Sol instead of Luna if you need a thorough audit for a
+> critical feature."* Record which one ran and why in the review file's first line.
+>
+> History, for reading old records: before 2026-10-09 "Emma" meant `gpt-5.6-sol` and "Maya" `gpt-5.6-luna-900k`;
+> session 63's "Emma (blind, luna)" and session 68's first ISS-69 review were `gpt-5.6-luna-900k` runs (Maya);
+> session 68's ISS-69 confirm was `gpt-5.6-sol` (Emma). The 09-21 note above retired the emma PROFILE for cost —
+> the lane never used a profile since.
 
 > ### ⚠ Two lane gotchas, both burned live on 2026-09-13 (the S2a confirm round)
 > 1. **The CLI DOUBLE-FORKS.** The PID you launch (and the one `pgrep` finds seconds later) can
