@@ -144,9 +144,12 @@ release motivating it), both of which would have been discovered mid-build.
 S=<scratchpad>
 ~/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main \
   -z "$(cat "$S/review-prompt.txt")" \
-  -m <model from the table above> --reasoning <high for Sol | max for Luna> --ignore-rules -t file,terminal \
+  -m <model from the table above> --provider openai-codex --reasoning <high for Sol | max for Luna> --ignore-rules -t file,terminal \
+  --usage-file "$S/review.usage.json" \
   --in /home/emma/github/ctrl-b \
   > "$S/review.md" 2> "$S/review.err" < /dev/null
+# AFTER the run: `jq -r '.model + " via " + .provider' "$S/review.usage.json"` — THAT is the model of record (session 69:
+# the model's own first-line self-report is unreliable both ways; the usage file names what actually served the run).
 ```
 
 Run backgrounded; `-z` prints ONLY the final text to stdout (no progress signal — rely on the
@@ -236,9 +239,12 @@ item 9 applies — sol is sol).
 > 1c. **THE SILENT FALLBACK (burned 2026-10-09, session 69):** `~/.hermes/config.yaml` has `fallback_providers` — when the
 >    Codex primary fails (rate limit, outage) the run SILENTLY continues on `deepseek/deepseek-v4-flash-0731` via OpenRouter
 >    (then `qwen3.6-max` local), with nothing on stderr. The S2a "Sol" review self-reported `deepseek/deepseek-v4-flash-0731`
->    in its first line — that WAS the fallback, not Sol. **Always demand the model's self-report in the output contract's
->    first line and compare it with the `-m` flag; a mismatch = the fallback engaged → record the review under the model that
->    actually ran (never as Sol/Luna) and rerun on the pinned model if the round is critical.** Two Codex lanes back-to-back
+>    in its first line — that WAS the fallback, not Sol. **The deterministic check is `--usage-file PATH` (added to the
+>    invocation above): its JSON names `model` + `provider` for the run — read it after every lane and record THAT model. The
+>    model's own first-line self-report is weak evidence both ways (a probe answered UNKNOWN; a GPT run may guess "sol"; the
+>    DeepSeek string most plausibly means the fallback really engaged). `--provider openai-codex` pins the provider explicitly.
+>    A usage file naming the fallback → record the review under that model (never as Sol/Luna) and rerun on the pinned model
+>    if the round is critical.** Two Codex lanes back-to-back
 >    (a review right after a confirm) is the pattern that tripped it.
 > 2. **`-z --ignore-rules` persists NO session, so `--resume latest` DOES NOT WORK in this lane**
 >    — it has nothing to re-enter and exits silently (0 bytes stdout AND stderr; the resume advice
