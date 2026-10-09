@@ -1455,6 +1455,9 @@ class AgentSession:
             thread_id=thread.id, role="user", actor=self._message_actor, parts=parts, skills=skills or None
         )
         await self._messages.add(user_msg)
+        # D84 R7 (§12.3 L1): the owner's send moves the conversation up the list — HERE, where the owner
+        # row is persisted, so chat, resume-with-text and drain-B steer turns all move it in one place.
+        await self._threads.touch(thread.id, user_msg.ts)
         await self._maybe_arm_reflection(thread)  # D27-C — periodic "save anything worth remembering"
         async for ev in self._drive(thread, mode=mode):
             yield ev

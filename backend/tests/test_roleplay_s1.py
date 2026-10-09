@@ -47,6 +47,8 @@ from app.services.agent.macros import Macros
 BACKEND = Path(__file__).resolve().parents[1]
 
 _ROUTING_CONFIG = "server:\n  port: 5433\nagent:\n  auto_rotate: true\n"
+#: D84 seam ②: a thread-less send's mint is pinned to the configured default and greets as it.
+_CODER_HOME_CONFIG = "server:\n  port: 5433\nagent:\n  default_agent: coder\n"
 
 
 def _messages(c, thread_id: str) -> list[dict]:
@@ -88,13 +90,16 @@ def test_seam_one_pins_the_agent_and_seeds_a_real_assistant_turn() -> None:
         assert msgs[0]["compacted"] is False  # an ordinary row — see the compaction note above
 
 
-def test_a_thread_created_with_no_agent_is_the_pre_d70_endpoint() -> None:
-    """No body at all (every existing client) and an explicit `null` alike: unpinned, unseeded."""
-    with _workspace(), _client() as c:
+def test_a_thread_created_with_no_agent_is_pinned_to_the_home() -> None:
+    """No body at all (every existing client), an explicit `null` and `""` alike: D84 pins every mint —
+    to the configured default here, greeted as it (seam ②'s rule)."""
+    with _workspace(_CODER_HOME_CONFIG), _client() as c:
+        _agent(c, "coder", greeting="Show me the traceback.")
         _agent(c, "nyx", greeting="Hello.")
-        for thread in (_new_thread(c), c.post("/api/threads", json={"agent": None}).json()):
-            assert thread["agent"] is None
-            assert _messages(c, thread["id"]) == []
+        for r in (c.post("/api/threads"), c.post("/api/threads", json={"agent": None})):
+            thread = r.json()
+            assert thread["agent"] == "coder"
+            assert [m["agent"] for m in _messages(c, thread["id"])] == ["coder"]
 
 
 def test_an_empty_greeting_seeds_nothing() -> None:
@@ -111,14 +116,14 @@ def test_an_empty_greeting_seeds_nothing() -> None:
 
 def test_a_switched_off_greeting_seeds_nothing_at_either_seam_and_keeps_its_text() -> None:
     """Vault RP-001: `greeting_enabled=False` keeps the text but starts every NEW thread empty — at
-    seam ① (the thread is still pinned to the agent) and at seam ② (the routed specialist's
-    auto-created thread gets no seeded row). The flag round-trips through the agent PUT, and
+    seam ① (the thread is still pinned to the agent) and at seam ② (the HOME agent's auto-created
+    thread gets no seeded row — D84: the configured default). The flag round-trips through the agent PUT, and
     switching it back on seeds again. Threads already greeted are untouched (ordinary history)."""
     from test_agent_selector_7eg import _capture_chat_session
 
     import app.api.agent as agent_api
 
-    with _workspace(_ROUTING_CONFIG), _client() as c:
+    with _workspace(_CODER_HOME_CONFIG), _client() as c:
         coder = {"description": "write and debug python code", "greeting": "Show me the traceback."}
         _agent(c, "coder", **coder)
         greeted = _new_thread(c, "coder")["id"]
@@ -132,14 +137,14 @@ def test_a_switched_off_greeting_seeds_nothing_at_either_seam_and_keeps_its_text
         assert _messages(c, thread["id"]) == []
 
         def seam_two() -> str:
-            """Seam ② end to end: the routed auto-created thread, and what the model would be SENT for
-            it — the assembled inference messages, serialized (the greeting's only way in is history)."""
-            with _capture_chat_session(agent_api) as cap:
+            """Seam ② end to end: the auto-created thread (pinned to the configured default, D84), and
+            what the model would be SENT for it — the assembled inference messages, serialized (the
+            greeting's only way in is history)."""
+            with _capture_chat_session(agent_api):
                 r = c.post("/api/agent/chat", json={"text": "debug my python code"})
                 assert r.status_code == 200, r.text
-            assert cap["agent_name"] == "coder"
             t = run_async(c.app.state.threads.get(r.json()["threadId"]))
-            assert t is not None
+            assert t is not None and t.agent == "coder"
             return json.dumps(_assemble(c, t, "coder"))
 
         assert "Show me the traceback." not in seam_two()  # off → absent from the model's context
@@ -249,20 +254,21 @@ def test_an_unknown_selected_agent_resolves_gracefully() -> None:
         assert _messages(c, thread["id"]) == []  # the default agent ships no greeting
 
 
-def test_seam_two_seeds_the_auto_created_chat_thread_after_routing() -> None:
-    """F5 ②: the chat endpoint's own thread seeds only once `_auto_route_agent` has decided — the
-    ROUTED specialist's greeting, not the default agent's."""
+def test_seam_two_seeds_the_home_agents_greeting_and_the_responder_answers() -> None:
+    """F5 ② as D84 re-rules it (O14): the chat endpoint's own thread is pinned to the HOME — the
+    configured default — and opens in the HOME's voice, even when the send names another agent; that
+    agent is the RESPONDER, so the turn itself still runs as it."""
     from test_agent_selector_7eg import _capture_chat_session
 
     import app.api.agent as agent_api
 
-    with _workspace(_ROUTING_CONFIG), _client() as c:
+    with _workspace(_CODER_HOME_CONFIG), _client() as c:
         _agent(c, "coder", description="write and debug python code", greeting="Show me the traceback.")
         _agent(c, "writer", description="draft prose and articles", greeting="What are we writing?")
         with _capture_chat_session(agent_api) as cap:
-            r = c.post("/api/agent/chat", json={"text": "debug my python code"})
+            r = c.post("/api/agent/chat", json={"text": "debug my python code", "agent": "writer"})
             assert r.status_code == 200, r.text
-        assert cap["agent_name"] == "coder"
+        assert cap["agent_name"] == "writer"
         tid = r.json()["threadId"]
         msgs = _messages(c, tid)
         assert [(m["role"], m["agent"]) for m in msgs] == [("assistant", "coder")]

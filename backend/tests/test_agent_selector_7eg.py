@@ -149,9 +149,15 @@ def _capture_chat_session(agent_api):
 
 
 def _chat_agent_name(c, text: str, agent: str | None = None) -> str | None:
-    import app.api.agent as agent_api
+    from _async import run_async
 
-    body: dict = {"text": text}
+    import app.api.agent as agent_api
+    from app.domain.conversation import Thread
+
+    # Into an UNPINNED legacy row, written through the repo: since D84 every mint (seam ① and ②) is
+    # pinned to its home, and a pinned thread is never auto-routed — only a legacy unpinned row is (O25).
+    legacy = run_async(c.app.state.threads.create(Thread()))
+    body: dict = {"text": text, "thread_id": legacy.id}
     if agent is not None:
         body["agent"] = agent
     with _capture_chat_session(agent_api) as cap:

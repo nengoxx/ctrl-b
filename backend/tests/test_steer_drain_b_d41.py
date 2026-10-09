@@ -176,6 +176,27 @@ def test_drain_b_all_exec_runs_pairs_no_model_turn_releases_and_records() -> Non
         assert rec is not None and rec.terminal_status == "completed"  # a terminal was recorded
 
 
+def test_drain_b_all_exec_moves_updated_at_to_the_pair() -> None:
+    """D84 R7: a `!cmd` steered behind a running turn and drained by drain-B's all-exec path moves the
+    conversation's `updated_at` to its pair's ts — the same touch the `/exec` endpoint makes."""
+    from datetime import UTC, datetime
+
+    with _workspace(), _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        s.settings.shell.user_exec_enabled = True
+        old = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+        thread = run_async(s.threads.create(Thread(created_at=old, updated_at=old)))
+        s.inference = _Fake([[_text("must not be called")]])
+        _enqueue(s, thread.id, _exec_entry("echo one"))
+
+        _run_body_directly(s, thread, cfg)
+
+        rows = run_async(s.messages.list(thread.id))
+        stored = run_async(s.threads.get(thread.id))
+        assert len(rows) == 2 and stored is not None and stored.updated_at == rows[-1].ts
+
+
 def test_drain_b_exec_then_message_runs_exec_first_then_seeds_turn() -> None:
     with _workspace(), _client() as c:
         s = c.app.state
@@ -406,11 +427,18 @@ def test_reserve_race_leaves_queue_intact_no_crash() -> None:
 def _exec_outcome():
     """A canned `ExecOutcome` for a gated `run_user_exec` stub (the command's real body is irrelevant —
     these tests exercise commit/spawn ORDERING around the run, not the shell)."""
+    from datetime import UTC, datetime
+
     from app.domain.enums import RunState
     from app.domain.result import ToolResult
     from app.services.agent.exec import ExecOutcome
 
-    return ExecOutcome(call_id="x", assistant_id="a", result=ToolResult(state=RunState.OK, summary="ran"))
+    return ExecOutcome(
+        call_id="x",
+        assistant_id="a",
+        result=ToolResult(state=RunState.OK, summary="ran"),
+        ts=datetime.now(UTC),
+    )
 
 
 def test_med1_exec_commit_before_run_harvest_midexec_no_double_run() -> None:

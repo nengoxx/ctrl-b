@@ -2716,6 +2716,13 @@ class Settings(BaseModel):
         ]
         return sorted(out)
 
+    def on_roster(self, name: str) -> bool:
+        """Whether `name` is on the agent ROSTER — `list_agent_names()` ∪ the root (D84 / §12.3 H1: the
+        root is never in `list_agent_names`, so the union is the one definition). A slug off the roster
+        (a deleted agent's orphaned home, a typo, `..`) is listed nowhere (§12.3 M7). Exact, never a
+        resolve: `resolve_agent` would fold an unknown name onto a real agent."""
+        return name == self.DEFAULT_AGENT_NAME or name in self.list_agent_names()
+
     def resolve_agent(self, name: str | None = None) -> AgentDef:
         """Resolve an `AgentDef` by name (folder-only, D15 #3). `name=None` → the configured
         `agent.default_agent`: `""` (none set) → the root, `"default"` → the root (set explicitly),

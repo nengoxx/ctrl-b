@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from app.domain.conversation import Message, ToolCallPart, ToolResultPart
@@ -35,12 +36,14 @@ if TYPE_CHECKING:
 @dataclass
 class ExecOutcome:
     """What `run_user_exec` produced: the synthesized `call_id` (the `/exec` response's `callId`), the
-    persisted `assistant` message's `id` (the steer drain's `steer.applied.messageId`), and the
-    `run_shell` `ToolResult` (the endpoint reports its `state`)."""
+    persisted `assistant` message's `id` (the steer drain's `steer.applied.messageId`), the
+    `run_shell` `ToolResult` (the endpoint reports its `state`), and `ts` — the pair's last row's
+    timestamp (the `/exec` endpoint moves the thread's `updated_at` to it, D84 R7)."""
 
     call_id: str
     assistant_id: str
     result: ToolResult
+    ts: datetime
 
 
 async def run_user_exec(
@@ -77,4 +80,4 @@ async def run_user_exec(
     async with messages.db.transaction():
         await messages.add(assistant)
         await messages.add(tool_msg)
-    return ExecOutcome(call_id=call_id, assistant_id=assistant.id, result=result)
+    return ExecOutcome(call_id=call_id, assistant_id=assistant.id, result=result, ts=tool_msg.ts)

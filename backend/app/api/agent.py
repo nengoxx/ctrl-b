@@ -24,11 +24,20 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeGuard
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import Response
 
@@ -202,9 +211,35 @@ class NewThreadRequest(BaseModel):
     """Optional body for `POST /threads` (D70 §4.2, creation seam ①). `agent` is the agent the owner
     SELECTED for this conversation: it is persisted on the thread (so every turn in it runs as that
     agent, and the per-turn auto-router stays out of the way) and it is what the greeting is seeded
-    from. Omitted / no body at all ⇒ exactly the pre-D70 endpoint: an unpinned, unseeded thread."""
+    from. Omitted / no body at all ⇒ the HOME (the configured default, else the root), pinned and
+    greeted like seam ② (D84: every mint is pinned)."""
 
     agent: str | None = None
+
+
+class ThreadPatch(BaseModel):
+    """Body for `PATCH /threads/{id}` (D84 §4) — the per-item update object: each field is applied only
+    when PRESENT (`model_fields_set`), so a later dimension is one more optional field. `title`: `""` or
+    `null` clears it (the list then labels from the first user row); trimmed by the repo. `seen_at`: the
+    `ts` of the newest row the client's view holds — timezone-aware (a naive value is a 422 here, never a
+    500 in the repo's clamp); `null` is a no-op. Unknown keys are a 422 (`extra="forbid"`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, max_length=120)
+    seen_at: AwareDatetime | None = None
+
+    @field_validator("seen_at")
+    @classmethod
+    def _seen_at_utc(cls, v: datetime | None) -> datetime | None:
+        """In UTC at the door: an extreme offset (`0001-01-01T00:00:00+23:59`) overflows the conversion,
+        and that is a 422 through the safe renderer here — never a 500 in the repo's clamp."""
+        if v is None:
+            return None
+        try:
+            return v.astimezone(timezone.utc)
+        except OverflowError as e:
+            raise ValueError("seen_at is out of range in UTC") from e
 
 
 class ReopenRequest(BaseModel):
@@ -694,7 +729,8 @@ async def _run_steer_exec(state, thread: Thread, q, entry: SteerEntry) -> None:
     if q.commit([entry.entry_id]) != 1:
         return  # DELETEd/harvested since the peek — skip, never run
     prune_if_empty(state.steer_queues, thread.id, q)
-    await run_user_exec(state.actions, state.messages, thread.id, entry.text)
+    out = await run_user_exec(state.actions, state.messages, thread.id, entry.text)
+    await state.threads.touch(thread.id, out.ts)  # D84 R7: the owner's `!cmd` moves the conversation up
 
 
 async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
@@ -835,7 +871,9 @@ async def _turn_response(
     once whenever the task reaches done — every terminal path (completed/suspended/cancelled/error) —
     decoupled from any awaiting consumer. `handle.terminal_status` is set inside the task's own
     `finally` BEFORE the terminal sentinel, so there is no done-but-unmarked window."""
-    head = {"threadId": thread.id, "title": thread.title}
+    # `agent` = the conversation's HOME (D84 §12.3 H6): after a mint or a swap the client learns the
+    # home from here, so no other home's override rides its next send. ONE head for SSE + buffered.
+    head = {"threadId": thread.id, "title": thread.title, "agent": thread.agent}
     state = request.app.state
     cfg = state.settings.agent.turns
 
@@ -904,6 +942,18 @@ def _parse_cursor(cursor: str | None) -> tuple[str, int] | None:
     return turn_id, int(seq)
 
 
+def _turn_live(handle: TurnHandle | None) -> TypeGuard[TurnHandle]:
+    """Whether `handle` is a LIVE turn — a drain TASK genuinely running: a task-bearing handle that has
+    not settled. The ONE predicate `turn_status` answers `active` from (its comment below says why each
+    exclusion holds), and that the D84 list's `running` flag reads (`_running_ids`)."""
+    return handle is not None and handle.terminal_status is None and handle.task is not None
+
+
+def _running_ids(state) -> set[str]:
+    """The thread ids with a live turn (`_turn_live`) — the `running` input of `ThreadRepo.summaries`."""
+    return {tid for tid, h in state.turns.items() if _turn_live(h)}
+
+
 @router.get("/agent/turns/{thread_id}")
 async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
     """Lightweight status probe (D39/M4) — read-only, no turn-guard. A live handle → the running
@@ -929,7 +979,7 @@ async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
     # done-but-unreleased window `reserve()` still 409s on membership while this probe reads
     # inactive — never treat an inactive probe as "reserve will succeed"; the callback runs on the
     # next loop iteration, before any client could round-trip a POST.)
-    if handle is not None and handle.terminal_status is None and handle.task is not None:
+    if _turn_live(handle):
         return {
             "active": True,
             "turn_id": handle.turn_id,
@@ -1190,8 +1240,49 @@ async def delete_steer(thread_id: str, entry_id: str, request: Request) -> dict[
     return {"removed": False, "reason": "already sent"}
 
 
+def _parse_before(before: str) -> tuple[datetime, str]:
+    """The `before=<updated_at ISO>,<id>` keyset cursor (D84 §4, §12.3 L3) → `(updated_at, id)`. Split on
+    the LAST comma (an id never carries one); the instant must be timezone-aware (`Z` accepted). A
+    malformed cursor is a 422 raised as a `RequestValidationError`, so it renders through the app's ONE
+    safe renderer (`validation_detail`) in the same `{detail: [{loc, msg, type}]}` envelope as every
+    other query-parameter 422 — and never echoes the input back."""
+    iso, sep, thread_id = before.rpartition(",")
+    at: datetime | None = None
+    if sep and iso and thread_id:
+        with contextlib.suppress(ValueError, OverflowError):
+            parsed = datetime.fromisoformat(iso)
+            # UTC here, inside validation: an extreme offset (`0001-01-01T00:00:00+23:59`) overflows the
+            # conversion, and that must be this 422 — never a 500 from the repo's own `astimezone`.
+            if parsed.tzinfo is not None:
+                at = parsed.astimezone(timezone.utc)
+    if at is None:
+        raise RequestValidationError(
+            [
+                {
+                    "loc": ("query", "before"),
+                    "msg": "expected '<updated_at ISO with a UTC offset>,<thread id>'",
+                    "type": "value_error",
+                }
+            ]
+        )
+    return at, thread_id
+
+
+async def _with_summaries(state, rows: list[Thread]) -> list[dict[str, Any]]:
+    """Each `Thread` dump merged with its five D84 fields (`label · preview · running · awaiting ·
+    unread`) from `ThreadRepo.summaries` — the one definition; `running` = a live turn (`_running_ids`)."""
+    summaries = await state.threads.summaries(rows, _running_ids(state))
+    return [{**t.model_dump(mode="json"), **summaries[t.id].model_dump(mode="json")} for t in rows]
+
+
 @router.get("/threads")
-async def list_threads(request: Request, include_archived: bool = False) -> list[dict[str, Any]]:
+async def list_threads(
+    request: Request,
+    include_archived: bool = False,
+    agent: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=200),
+    before: str | None = None,
+) -> list[dict[str, Any]]:
     """The thread list. `include_archived` maps straight onto the repo's own flag (`threads.list`),
     which exists because an A3 automation mints an ARCHIVED thread per run (`runner.py`) and the
     conversation list is the owner's, not the scheduler's.
@@ -1200,9 +1291,83 @@ async def list_threads(request: Request, include_archived: bool = False) -> list
     load must never adopt an automation's thread as "the conversation you were in", while a reader that
     already knows WHICH thread it wants — the FE's D11 pin read behind `openThread`, whose only caller
     opens run threads out of the automations history — needs the archived rows or it sees nothing at
-    all and paints the default agent over a thread the server routes to a character."""
-    threads = await request.app.state.threads.list(include_archived=include_archived)
-    return [t.model_dump(mode="json") for t in threads]
+    all and paints the default agent over a thread the server routes to a character.
+
+    **`agent=<slug>` (D84 §4)** — that HOME agent's conversations (exact match), newest first, each row
+    merged with its five summary fields; `limit` 1..200 (default 50) and the `before` keyset cursor page
+    it. A slug NOT on the roster lists `[]` (§12.3 M7): an orphaned home is listed nowhere, on every
+    device. Without `agent=` it is the plain list it always was — no summary cost, no default page size
+    (the cold-load readers want every row) — though an explicit `limit`/`before` is still honoured."""
+    state = request.app.state
+    cursor = _parse_before(before) if before is not None else None
+    if agent is None:
+        rows = await state.threads.list(include_archived=include_archived, limit=limit, before=cursor)
+        return [t.model_dump(mode="json") for t in rows]
+    if not state.settings.on_roster(agent):
+        return []
+    rows = await state.threads.list(
+        include_archived=include_archived, agent=agent, limit=limit or 50, before=cursor
+    )
+    return await _with_summaries(state, rows)
+
+
+def _publish_seen(state, thread: Thread) -> None:
+    """A moved `seen_at` publishes the `thread` frame `{state: "seen"}` (D84 §5, O10) — the seam the
+    PATCH route calls; a no-op until then."""
+    # Phase 27 S3 publishes the {state: "seen"} thread frame here
+
+
+@router.patch("/threads/{thread_id}")
+async def patch_thread(thread_id: str, body: ThreadPatch, request: Request) -> dict[str, Any]:
+    """Rename and/or mark seen (D84 §4) — each field applied only when present. Answers the updated
+    `Thread` merged with its five summary fields. 404 for an unknown or ARCHIVED id (an automation's
+    rolling conversation is archived, so it 404s here too and never publishes a seen frame — no
+    automation-thread pass needed, §12.2 ③).
+
+    **Unguarded on purpose** — no turn marker: neither field is model context nor anything a running
+    turn writes, so a rename or a seen write mid-turn races nothing. The writes go through the repo's
+    `set_title`/`set_seen`, never a raw `execute` here."""
+    state = request.app.state
+    thread = await state.threads.get(thread_id)
+    if thread is None or thread.archived:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+    if "title" in body.model_fields_set:
+        await state.threads.set_title(thread_id, body.title)
+    if body.seen_at is not None and await state.threads.set_seen(thread_id, body.seen_at):
+        _publish_seen(state, thread)
+    updated = await state.threads.get(thread_id)
+    if updated is None:  # deleted between the writes and this read
+        raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+    return (await _with_summaries(state, [updated]))[0]
+
+
+@router.delete("/threads/{thread_id}")
+async def delete_thread(thread_id: str, request: Request) -> dict[str, Any]:
+    """Delete a conversation (D84 §4): its messages, FTS rows and alternates cascade, its attachment dir
+    goes (`ThreadRepo.delete`), and its in-memory steer queue + routing entry are dropped (§12.3 L5).
+
+    Guarded like every thread mutation: the turn marker first (409 while a turn runs), then
+    `_revalidate_thread` under it (404 gone · 403 an automation's rolling conversation), then a 404 for
+    any other ARCHIVED row (E10 — `_revalidate_thread` does not look at `archived`; an automation's
+    fresh per-run threads are its own to retain or prune). Answers `{deleted: true}`."""
+    state = request.app.state
+    handle = _reserve_turn(request, thread_id, "edit")
+    try:
+        await _revalidate_thread(state, thread_id)
+        thread = await state.threads.get(thread_id)
+        if thread is None or thread.archived:
+            raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+        await state.threads.delete(thread_id)
+        for per_thread in (
+            state.steer_queues,
+            state.routing_state,
+            state.compaction_state,
+            state.steer_harvests,
+        ):
+            per_thread.pop(thread_id, None)
+        return {"deleted": True}
+    finally:
+        release(state.turns, handle)
 
 
 @router.post("/threads")
@@ -1210,12 +1375,14 @@ async def create_thread(request: Request, body: NewThreadRequest | None = None) 
     """Create an empty thread. With a selected `agent` (D70 §4.2 seam ①) the thread is PINNED to it
     and its greeting is seeded as the opening assistant turn — the RESOLVED agent's name is what gets
     persisted, so a since-deleted name lands on the same agent the session would have run as instead
-    of pinning the thread to something that isn't there."""
+    of pinning the thread to something that isn't there (D84 §12.4 Q2: an off-roster slug pins the
+    configured default, else the root — never a phantom conversation under a dead name). No body, a
+    `null` or an empty `agent` mints for the HOME like seam ② (`_home_for_mint`): every mint is pinned."""
     state = request.app.state
-    agent = state.settings.resolve_agent(body.agent) if body is not None and body.agent else None
-    thread = await state.threads.create(Thread(agent=agent.name if agent else None))
-    if agent is not None:
-        await seed_greeting(state.messages, state.settings, thread, agent)
+    name = body.agent if body is not None and body.agent else None
+    agent = state.settings.resolve_agent(name)  # `None` → the configured default, else the root
+    thread = await state.threads.create(Thread(agent=agent.name))
+    await seed_greeting(state.messages, state.settings, thread, agent, threads=state.threads)
     return thread.model_dump(mode="json")
 
 
@@ -1302,6 +1469,24 @@ async def reseat_opening(thread_id: str, body: ReopenRequest, request: Request) 
         release(state.turns, handle)
 
 
+async def _supplied_thread(threads, thread_id: str | None) -> Thread | None:
+    """The thread a chat / `!cmd` send names, or `None` when it names none (the caller mints). A
+    SUPPLIED id that is unknown is a 404 (D84 R29), never a silent mint: the conversation was deleted
+    elsewhere, and minting a stranger in its place would hide that from the owner."""
+    if not thread_id:
+        return None
+    thread = await threads.get(thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+    return thread
+
+
+def _home_for_mint(state) -> str:
+    """The HOME a thread-less send's mint is pinned to (D84 seam ②, O14/F4): the configured default,
+    else the root — `resolve_agent(None)`'s own rungs."""
+    return state.settings.resolve_agent(None).name
+
+
 @router.post("/agent/chat")
 async def chat(body: ChatRequest, request: Request) -> Response:
     """Run one chat turn. Body: `{text, thread_id?, mode?, stream?, …}`. Returns SSE (DESIGN §12) or,
@@ -1316,7 +1501,7 @@ async def chat(body: ChatRequest, request: Request) -> Response:
             detail=f"a message may carry at most {cap} attachments (attachments.max_files_per_message)",
         )
     threads = request.app.state.threads
-    thread = await threads.get(body.thread_id) if body.thread_id else None
+    thread = await _supplied_thread(threads, body.thread_id)
     if thread is not None:
         await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
     # D68 Q10: remember whether THIS request minted the thread — a claim that then refuses must not
@@ -1325,7 +1510,11 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     if thread is None:
         # `or None` for the attachment-only send (D68 §7): a title of "" would render as a named
         # thread with no name. Titling from the attached filenames is S2/S3's, with the wire text.
-        thread = await threads.create(Thread(title=body.text[:60] or None))
+        # D84 seam ② (O14): the mint is PINNED to the HOME — the configured default, else the root —
+        # NEVER `body.agent`, which is the RESPONDER (B17): the conversation belongs to its home.
+        thread = await threads.create(
+            Thread(title=body.text[:60] or None, agent=_home_for_mint(request.app.state))
+        )
 
     # Apply any pending MCP/OpenAPI integration edits at the turn boundary (Phase 7c-b) — before the
     # session reads the toolset, so the registry is rebuilt between turns, never mid-loop. ACA-17
@@ -1336,7 +1525,8 @@ async def chat(body: ChatRequest, request: Request) -> Response:
 
     # Auto-route to a specialist (7e-g, D15 #8) only when nothing pins the agent — an explicit
     # `/agent` (body.agent) or a thread-sticky agent always wins, and the switch is off by default.
-    # `thread.agent` is never set in normal chat (created None), so "no pin" → per-turn routing.
+    # Since D84 every mint is pinned (seam ① and ②), so only an unpinned legacy thread still routes
+    # (O25; the router itself retires in Phase 27 S5).
     state = request.app.state
     agent_name = await asyncio.to_thread(_auto_route_agent, state, thread, body.agent, body.text)
 
@@ -1398,12 +1588,12 @@ async def chat(body: ChatRequest, request: Request) -> Response:
                 await threads.delete(thread.id)
             raise HTTPException(status_code=exc.status, detail=exc.detail) from None
         if created_here:
-            # D70 §4.2 seam ②: an auto-created chat thread seeds its agent's greeting BEFORE the
-            # owner's first message is persisted, and only now — after `_auto_route_agent` above
-            # resolved WHO the turn belongs to, so a routed specialist opens in its own voice rather
-            # than the default agent's. An existing thread is never seeded (it already has history).
-            greeter = state.settings.resolve_agent(agent_name)
-            await seed_greeting(state.messages, state.settings, thread, greeter)
+            # D70 §4.2 seam ②: an auto-created chat thread seeds its greeting BEFORE the owner's first
+            # message is persisted. D84 (O14): the HOME agent's greeting — the conversation opens in its
+            # home's voice, while the turn below still answers as `body.agent` (the responder). An
+            # existing thread is never seeded (it already has history).
+            greeter = state.settings.resolve_agent(thread.agent)
+            await seed_greeting(state.messages, state.settings, thread, greeter, threads=threads)
         session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
         handle.mode = body.mode  # the turn's inference mode — the snapshot carries it (D39)
@@ -1433,11 +1623,13 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
         raise HTTPException(status_code=403, detail="user shell exec is disabled (shell.user_exec_enabled)")
 
     threads = request.app.state.threads
-    thread = await threads.get(body.thread_id) if body.thread_id else None
+    thread = await _supplied_thread(threads, body.thread_id)
     if thread is not None:
         await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
-    if thread is None:
-        thread = await threads.create(Thread(title=f"! {body.command[:58]}"))
+    if thread is None:  # D84: pinned to the HOME like chat's seam ② mint
+        thread = await threads.create(
+            Thread(title=f"! {body.command[:58]}", agent=_home_for_mint(request.app.state))
+        )
 
     # Reserve the thread's turn marker (D38). D41 (Slice 5): a `!cmd` to a thread already running a
     # chat/resume turn STEERS — enqueue the command (202) instead of the old 409, drained at the
@@ -1468,6 +1660,7 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
         exec_out = await run_user_exec(
             request.app.state.actions, request.app.state.messages, thread.id, body.command
         )
+        await threads.touch(thread.id, exec_out.ts)  # D84 R7: the owner's `!cmd` moves the conversation up
         return {"threadId": thread.id, "callId": exec_out.call_id, "state": exec_out.result.state.value}
     finally:
         release(request.app.state.turns, handle)

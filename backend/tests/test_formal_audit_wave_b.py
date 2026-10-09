@@ -320,7 +320,7 @@ def test_b4_cancel_before_first_step_is_cleaned_up() -> None:
 
         async def go() -> None:
             handle = reserve(state.turns, tid, "chat")
-            thread = SimpleNamespace(id=tid, title="t")
+            thread = SimpleNamespace(id=tid, title="t", agent=None)  # the stream head reads `agent` (D84 H6)
 
             async def events():
                 # Never reached — we cancel before the drain task's first step.
