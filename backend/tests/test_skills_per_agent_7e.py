@@ -140,6 +140,46 @@ def test_resolve_skills_over_available_set() -> None:
             assert "deploy" in names and "backups" in names  # invoked + keyword-selected
 
 
+# ── the shared matcher + the skill selector's scoring (moved here from the retired 7e-g test, S5) ──
+
+
+def test_skill_selector_unchanged_after_refactor() -> None:
+    from app.core.skills import Skill
+    from app.services.agent.skills import KeywordSkillSelector
+
+    skills = [
+        Skill(name="backups", description="backup and restore data"),
+        Skill(name="deploy", description="deploy a release to prod"),
+    ]
+    picked = KeywordSkillSelector().select("please run a backup and restore", skills)
+    assert [s.name for s in picked] == ["backups"]
+    # min_overlap is honored (baked at construction).
+    assert KeywordSkillSelector(min_overlap=2).select("backup", skills) == []
+
+
+def test_rank_by_overlap_threshold_order_ties_and_empty_query() -> None:
+    """`core.textmatch.rank_by_overlap` directly: a clear winner ranks first with its score; a best
+    below `min_overlap` yields nothing; equal scores keep `items` order (stable sort — a caller that
+    must not guess between equals sees the tie); an empty / all-stopword query matches nothing."""
+    from app.core.textmatch import rank_by_overlap
+
+    items = {"coder": "write and debug python code", "writer": "draft prose and articles"}
+    names = list(items)
+    ranked = rank_by_overlap("help me debug my python code", names, items.__getitem__, min_overlap=2)
+    assert ranked == [(3, "coder")]  # {debug, python, code}; writer scores 0 → filtered
+    # Only one matching token ("python") < the threshold of 2 → nothing.
+    assert rank_by_overlap("python", ["coder"], items.__getitem__, min_overlap=2) == []
+    # A tie at the top: both share {deploy, release}; equal scores, `items` order kept.
+    twins = {"alpha": "deploy release to prod", "beta": "deploy release to prod"}
+    tie = rank_by_overlap("deploy a release", ["alpha", "beta"], twins.__getitem__, min_overlap=2)
+    assert tie == [(2, "alpha"), (2, "beta")]
+    assert rank_by_overlap("deploy a release", ["beta", "alpha"], twins.__getitem__, min_overlap=2) == [
+        (2, "beta"),
+        (2, "alpha"),
+    ]
+    assert rank_by_overlap("please help me", names, items.__getitem__) == []  # all stopwords
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

@@ -1176,9 +1176,8 @@ let mintTicket: number | null = null;
  *  the pre-D70 unpinned, unseeded thread.
  *
  *  **The minted thread is PINNED** to the agent it opens as (seam ①'s contract: a greeted thread is a
- *  pinned thread — the server persists the RESOLVED name, which is what `threadAgent` takes). So
- *  `agent.auto_rotate` (7e-g, off by default) never routes a `/new` thread, exactly as it never routed a
- *  gallery-created one: the router only runs where nothing pins the agent.
+ *  pinned thread — the server persists the RESOLVED name, which is what `threadAgent` takes). So every
+ *  turn in it runs as that agent unless a send names another, exactly as in a gallery-created one.
  *
  *  Refuses, in order:
  *    · while a turn is STREAMING (ACA-10 / S2-C) — the swap would strand the live reply;

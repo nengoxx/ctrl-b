@@ -207,7 +207,7 @@ def enqueue(state, thread_id: str, entry: SteerEntry, cap: int) -> int:
 def requeue_front(state, thread_id: str, entry: SteerEntry) -> None:
     """Put `entry` back at the FRONT of the thread's queue, CREATING the queue if it vanished (D41
     MED-3). Drain-B's failure path calls this to return a head it had already committed off the queue
-    when the spawn prelude (`_auto_route_agent`/`_build_session`/`run_turn`) raised — so the message is
+    when the spawn prelude (`_build_session`/`run_turn`) raised — so the message is
     never lost: it drains at the next opportunity or harvests on Stop. Cap-exempt (via `appendleft`) — a
     requeue restores an already-accepted entry, it doesn't admit a new one."""
     q = state.steer_queues.get(thread_id)

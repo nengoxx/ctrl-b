@@ -198,8 +198,6 @@ export const SETTINGS = {
     defaults: {},
     global_subagent_limit: 6,
     subagent_clamp_privilege: true,
-    auto_rotate: false,
-    auto_rotate_min_overlap: 2,
     streaming: "auto",
     skills_enabled: true,
     skills_auto_write: true,

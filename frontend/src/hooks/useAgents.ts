@@ -48,7 +48,7 @@ export interface CompactionCfg {
 export interface AgentDef {
   name: string; // slug = folder name; the stable /agent id
   title: string; // optional display name (UI only); "" → show the slug
-  description: string; // short routing summary the auto-router matches against (7e-g); persona stays in SOUL.md
+  description: string; // one-line subtitle (gallery card + editor header); persona stays in SOUL.md
   prompt: string; // persona = SOUL.md (read-only here; edited via the soul endpoint)
   prompt_append: string;
   inherit_append: boolean;
@@ -89,8 +89,6 @@ export interface AgentSectionCfg {
   default_title: string;
   global_subagent_limit: number;
   subagent_clamp_privilege: boolean;
-  auto_rotate: boolean; // auto-route a turn to the best-matching specialist when no /agent is pinned (7e-g)
-  auto_rotate_min_overlap: number; // min matching tokens for an auto-route pick
   streaming: "auto" | "on" | "off"; // dual-mode chat delivery (D17): on=always SSE, off=always buffered, auto=honor client
   compaction: CompactionCfg; // D42 — the GLOBAL default compaction knobs (per-agent overrides stay YAML-only)
 }
@@ -105,8 +103,6 @@ export function pickAgentSection(section: Partial<AgentSectionCfg> | undefined):
     default_title: section?.default_title ?? "",
     global_subagent_limit: section?.global_subagent_limit ?? 6,
     subagent_clamp_privilege: section?.subagent_clamp_privilege ?? true,
-    auto_rotate: section?.auto_rotate ?? false,
-    auto_rotate_min_overlap: section?.auto_rotate_min_overlap ?? 2,
     streaming: section?.streaming ?? "auto",
     // D42/D60 — global compaction defaults (per-agent overrides stay YAML-only). Defaults mirror
     // CompactionCfg's backend defaults; only these knobs are surfaced.

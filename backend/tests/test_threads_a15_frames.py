@@ -239,12 +239,12 @@ def test_the_drain_b_bodys_other_non_handoff_exits_each_publish_one_terminal() -
         _enqueue(s, raising.id, _msg_entry("keep me"))
         bailing = _new_thread(s)
         _enqueue(s, bailing.id, _msg_entry("queued"))
-        orig = agent_api._auto_route_agent
+        orig = agent_api._build_session
 
         def boom(*a, **k):
             raise RuntimeError("prelude boom")
 
-        agent_api._auto_route_agent = boom
+        agent_api._build_session = boom
         try:
             with _subscribed(s.event_bus) as q:
                 turns: dict[str, str] = {}
@@ -255,7 +255,7 @@ def test_the_drain_b_bodys_other_non_handoff_exits_each_publish_one_terminal() -
                     run_async(agent_api._drain_b_body(s, t, h, cfg))
                 items = _take(q)
         finally:
-            agent_api._auto_route_agent = orig
+            agent_api._build_session = orig
 
         expected = {harvested.id: "cancelled", raising.id: "error", bailing.id: "cancelled"}
         for t in (harvested, raising, bailing):

@@ -1,8 +1,7 @@
 """ACA-8 — the chat-path tunables are config-driven, not hardcoded (Slice 1 item 4).
 
 Before: `subagents._CHILD_TIMEOUT_S = 180.0` and `KeywordSkillSelector()` built bare with its
-`min_overlap=1, max_skills=2` defaults, while the *agent* selector's threshold was already
-config-driven (`agent.auto_rotate_min_overlap`). These pin the fix: the three new `AgentCfg`
+`min_overlap=1, max_skills=2` defaults. These pin the fix: the three new `AgentCfg`
 knobs (a) default to the old hardcoded values (no behavior change) and (b) actually flow through
 to the constructed skill selector and the `spawn_subagents` orchestrator.
 

@@ -211,7 +211,7 @@ export function effectiveAgent(
  *  since the amendment's code round). Any agent other than the resolved default pins BY NAME — the root
  *  included, which `validStickyAgent` always accepts. The resolved default means "back to the default":
  *  ordinarily the sticky-pin CLEAR (`""`) — nothing pinned is the honest resting state (the ladder falls
- *  through to the thread, then the configured default, and 7e-g auto-routing stays possible). Inside a
+ *  through to the thread, then the configured default). Inside a
  *  thread that carries its own D70 §4.2 pin, though, a clear would let the thread's character resurface —
  *  so there the default is pinned BY NAME, which the ladder ranks above the thread. `defaultName` is the
  *  caller's resolved default (the roster query's `default`) — an argument for the same reason

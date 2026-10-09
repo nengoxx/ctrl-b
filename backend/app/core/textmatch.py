@@ -1,5 +1,5 @@
-"""Token-overlap text matching — the one deterministic, model-agnostic matcher shared by the default
-skill selector (`KeywordSkillSelector`) and agent selector (`KeywordAgentSelector`, 7e-g, D15 #8).
+"""Token-overlap text matching — the one deterministic, model-agnostic matcher behind the default
+skill selector (`KeywordSkillSelector`).
 
 No LLM call: tokenize two strings (lowercased word runs, stopwords + ≤2-char tokens dropped) and count
 the shared tokens. A richer LLM/embeddings ranker is a drop-in at the *selector* layer; this stays the

@@ -14,18 +14,16 @@ import { useRegisterDirty } from "../store/dirty";
 // rows moved with them, so this file is the old `AgentsEditor`'s globals half lifted verbatim —
 // including its draft-epoch bookkeeping, which is load-bearing (see `pickGlobals`).
 //
-// Two save postures live here, as they always did: the auto-router controls and the default-agent pick
-// save IMMEDIATELY (the SkillsEditor master-switch idiom — the default-agent pick since the D75
-// amendment, so it saves the same way as its other door, the gallery card's "default" pill) and
-// everything else rides one draft behind the group's save bar.
+// Two save postures live here, as they always did: the default-agent pick saves IMMEDIATELY (the
+// SkillsEditor master-switch idiom, since the D75 amendment — so it saves the same way as its other
+// door, the gallery card's "default" pill) and everything else rides one draft behind the group's
+// save bar.
 
 /** The DRAFT-MANAGED slice of the agent section — the fields the globals save bar owns. The rest of
  *  `AgentSectionCfg` belongs to IMMEDIATE-SAVE controls that read and write the server doc directly
- *  (`auto_rotate` + `auto_rotate_min_overlap` + `default_agent` here, `default_title` inside the
- *  default agent's form),
- *  so their echoes are not evidence that "the server moved" for this draft. v1.3.1: without that
- *  split, flipping auto-route echoed a changed `cfg` and the reseed below threw away unsaved
- *  globals/compaction edits. One projection feeds BOTH the reseed guard and `globalsDirty`, so the
+ *  (`default_agent` here, `default_title` inside the default agent's form), so their echoes are not
+ *  evidence that "the server moved" for this draft. v1.3.1: without that split, an immediate save
+ *  echoed a changed `cfg` and the reseed below threw away unsaved globals/compaction edits. One projection feeds BOTH the reseed guard and `globalsDirty`, so the
  *  two can't drift apart — and it is exactly the field set `saveGlobals` submits. */
 function pickGlobals(c: AgentSectionCfg) {
   return {
@@ -41,7 +39,7 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
   const saveSettings = useSaveSettings();
   // v1.3.1 Codex verify round — the globals save gets its OWN mutation instance: a second `mutate()`
   // on a shared instance DETACHES the first call's observer (TanStack mutationObserver semantics — the
-  // same class as ConfTab's I1 savingRef lesson), so an immediate-save toggle (auto-route, min-overlap)
+  // same class as ConfTab's I1 savingRef lesson), so an immediate save (the default-agent pick)
   // fired during a pending globals save silently killed the per-call epoch reconcile below. A separate
   // instance keeps the two concerns' observers independent; the ref guards globals-on-globals re-entry
   // at call time (isPending is a rendered value — stale in the same tick, the I1 lesson verbatim).
@@ -58,7 +56,7 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
   // v1.3.1 — the compare is over the DRAFT-MANAGED projection only (see `pickGlobals`): the
   // immediate-save controls in this same card write straight to the server, and their echo arrives as
   // a genuinely changed `props.cfg`, which reseeded the draft and dropped whatever was unsaved
-  // ("edit compaction, flip auto-route, the compaction edit vanishes").
+  // ("edit compaction, make an immediate save, the compaction edit vanishes").
   // v1.3.1 (Codex review) — DRAFT EPOCH, exactly as ConfTab's (its `seededRef` + per-call onSuccess).
   // `seededRef` is the projection the local draft was last seeded from; the doc is adopted ONLY while
   // the draft is CLEAN against that seed. A dirty draft keeps its edits AND its epoch — including when
@@ -74,21 +72,6 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
       return props.cfg;
     });
   }, [props.cfg]);
-
-  // Auto-router controls (7e-g) save immediately (mirrors the SkillsEditor master switch), so they
-  // read straight off the server doc (props.cfg) rather than the savebar draft. The min-overlap
-  // input keeps a local draft and commits on blur to avoid a save per keystroke.
-  const [minOverlap, setMinOverlap] = useState(String(props.cfg.auto_rotate_min_overlap));
-  useEffect(
-    () => setMinOverlap(String(props.cfg.auto_rotate_min_overlap)),
-    [props.cfg.auto_rotate_min_overlap],
-  );
-  const commitMinOverlap = () => {
-    const n = Math.max(1, Number(minOverlap) || 1);
-    if (n !== props.cfg.auto_rotate_min_overlap)
-      saveSettings.mutate({ agent: { auto_rotate_min_overlap: n } });
-    else setMinOverlap(String(props.cfg.auto_rotate_min_overlap)); // normalize a junk entry back
-  };
 
   // Globals (subagent limits, delivery, compaction) — config.yaml, saved via PUT /api/settings.
   // `default_title` is edited inside the default agent's form and `default_agent` saves immediately,
@@ -174,39 +157,7 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
 
   return (
     <div className="conf-card">
-      <SettingRow
-        label="Auto-route to specialists"
-        desc="routes each turn to the best-matching specialist when no agent is pinned — neither an /agent pick nor the thread (a /new thread is pinned to the agent it opens as)"
-      >
-        <Switch
-          on={props.cfg.auto_rotate}
-          label="Auto-route to specialists"
-          onToggle={() => saveSettings.mutate({ agent: { auto_rotate: !props.cfg.auto_rotate } })}
-        />
-      </SettingRow>
-      {/* The threshold is only meaningful while auto-route is on — show it as its own labelled sub-row
-          (like Memory's State-cap), not crammed next to the toggle, so the numeric field aligns with the
-          other right-edge inputs. */}
-      {props.cfg.auto_rotate && (
-        <div className="confrow">
-          <div className="k">
-            <div className="label">Min matching words</div>
-            <div className="desc">
-              query words a specialist must match before a turn routes to it
-            </div>
-          </div>
-          <input
-            className="lim-input"
-            inputMode="numeric"
-            aria-label="min matching words to route"
-            value={minOverlap}
-            onChange={(e) => setMinOverlap(e.target.value)}
-            onBlur={commitMinOverlap}
-          />
-        </div>
-      )}
-
-      <div className="confrow" style={{ marginTop: 6 }}>
+      <div className="confrow">
         <div className="k">
           <div className="label">Default agent</div>
           <div className="desc">
@@ -217,7 +168,7 @@ export function AgentGlobals(props: { cfg: AgentSectionCfg }) {
           label="Default agent"
           current={props.cfg.default_agent}
           onPick={(v) => {
-            // Re-picking the current value is not a save (the `commitMinOverlap` guard).
+            // Re-picking the current value is not a save.
             if (v !== props.cfg.default_agent) saveSettings.mutate({ agent: { default_agent: v } });
           }}
           options={defaultOpts}

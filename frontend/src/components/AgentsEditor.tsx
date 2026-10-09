@@ -287,7 +287,7 @@ function AgentFieldsForm(props: {
             <input
               aria-label="Description"
               value={a.description ?? ""}
-              placeholder="when to pick me (matched by the auto-router)"
+              placeholder="a one-line subtitle, shown under the name in the gallery and here"
               onChange={(e) => set({ description: e.target.value })}
             />
           </>

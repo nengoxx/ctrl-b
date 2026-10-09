@@ -101,7 +101,6 @@ from app.services.agent.planning import TaskPlanInput
 from app.services.agent.prompts import resolve
 from app.services.agent.proposals import apply_proposal
 from app.services.agent.routing import prune_routing_state, routing_state_for
-from app.services.agent.selector import select_agent
 from app.services.agent.session import AgentSession, collect_turn
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
 from app.services.agent.steering import (
@@ -212,7 +211,7 @@ class ChatRequest(BaseModel):
 class NewThreadRequest(BaseModel):
     """Optional body for `POST /threads` (D70 §4.2, creation seam ①). `agent` is the agent the owner
     SELECTED for this conversation: it is persisted on the thread (so every turn in it runs as that
-    agent, and the per-turn auto-router stays out of the way) and it is what the greeting is seeded
+    agent unless a send names another) and it is what the greeting is seeded
     from. Omitted / no body at all ⇒ the HOME (the configured default, else the root), pinned and
     greeted like seam ② (D84: every mint is pinned)."""
 
@@ -461,31 +460,6 @@ def _session(
     last assistant turn's `agent` here (D15 #5) so a suspended turn finishes on the agent that started
     it."""
     return _build_session(request.app.state, thread, agent_name, privilege)
-
-
-def _auto_route_agent(state, thread: Thread, explicit_agent: str | None, text: str) -> str | None:
-    """Resolve the agent NAME for a turn, including the auto-router (7e-g, D15 #8): an explicit
-    `/agent` (or a thread-sticky agent) always wins; only when nothing pins the agent AND the switch is
-    on does the keyword selector pick a specialist by matching `text`. Extracted so the chat endpoint
-    AND the D41 drain-B spawn resolve the agent identically (a spawned steer turn routes exactly as the
-    fresh POST that enqueued it would have — D41 §9 captured-params fidelity).
-
-    **BLOCKING — both callers hop it onto a thread** (SYS-16; audit B-3). The selector's arm reads
-    every specialist's `agent.yaml` fresh off disk, and D70 made those files more numerous (the
-    gallery + card import; an imported card's provenance is its `card.json` sidecar, not this file,
-    since R87/RP-8). Run on the loop that is N full YAML parses ahead of the first
-    token, stalling every other request — SSE streams and monitor polls included — behind a routing
-    decision. `agent.auto_rotate` is off by default, which is why this was latent rather than live."""
-    agent_name = explicit_agent
-    selector = getattr(state, "agent_selector", None)
-    if (
-        agent_name is None
-        and thread.agent is None
-        and state.settings.agent.auto_rotate
-        and selector is not None
-    ):
-        agent_name = select_agent(state.settings, selector, text)
-    return agent_name
 
 
 def _effective_stream(setting: str, requested: bool) -> bool:
@@ -897,7 +871,7 @@ async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
         # D84 §5: the chain DID fail — settle `error` so the finally publishes a terminal the client
         # acts on (behind the `completed, chained: true` that preceded this body), not a `cancelled`.
         handle.terminal_status = "error"
-        # MED-3: a spawn-prelude raise (`_auto_route_agent`/`_build_session`/`run_turn`) AFTER the head
+        # MED-3: a spawn-prelude raise (`_build_session`/`run_turn`) AFTER the head
         # was committed off the queue would LOSE the message. If we committed it this invocation and have
         # NOT handed off to a seeded drain task yet (the raise beat the spawn), put the head back at the
         # FRONT of the thread's queue (created if it vanished) so it drains at the next opportunity /
@@ -938,8 +912,8 @@ async def start_steer_turn(state, thread: Thread, entries: list[SteerEntry]) -> 
     """Start a fresh turn seeded by a queued steer (D41 Drain B) — the state-shaped mirror of the chat
     endpoint's turn-start internals (`_build_session` deps → `run_turn` → the server-owned drain-task
     spawn). `entries[0]` is a `message` head whose CAPTURED params (`mode`/`agent`/`privilege`/
-    `skills`) play the roles `body.*` play for a fresh POST, incl. the auto-router — so the spawned turn
-    runs exactly as the POST that enqueued it would have (D41 §9). The head marker is ALREADY reserved
+    `skills`) play the roles `body.*` play for a fresh POST — so the spawned turn runs exactly as the
+    POST that enqueued it would have (D41 §9). The head marker is ALREADY reserved
     (by `_maybe_spawn_drain_b`, kind `chat`); this looks it up and hands it to the drain task.
 
     The head text is persisted as the user message by `run_turn` itself (NOT here) — mirroring the chat
@@ -949,13 +923,12 @@ async def start_steer_turn(state, thread: Thread, entries: list[SteerEntry]) -> 
     handle = state.turns.get(thread.id)
     if handle is None:  # defensive — the caller reserved it; a vanished marker means abandon the spawn
         return
-    agent_name = await asyncio.to_thread(_auto_route_agent, state, thread, head.agent, head.text)
     # The captured privilege round-trips as a string (`body.privilege.value` at enqueue); re-hydrate it
     # to `Privilege | None`, tolerating a junk value like the endpoint's lenient `_coerce_privilege`.
     privilege: Privilege | None = None
     if head.privilege is not None and head.privilege in {p.value for p in Privilege}:
         privilege = Privilege(head.privilege)
-    session = _build_session(state, thread, agent_name=agent_name, privilege=privilege)
+    session = _build_session(state, thread, agent_name=head.agent, privilege=privilege)
     handle.mode = head.mode  # the turn's inference mode — the snapshot carries it (D39)
     events = session.run_turn(thread, head.text, mode=head.mode, skills=head.skills)
     _spawn_drain_task(state, thread, events, handle, state.settings.agent.turns)
@@ -1641,12 +1614,7 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     if getattr(request.app.state, "integrations_dirty", False) and not request.app.state.turns:
         await rediscover_integrations(request.app)
 
-    # Auto-route to a specialist (7e-g, D15 #8) only when nothing pins the agent — an explicit
-    # `/agent` (body.agent) or a thread-sticky agent always wins, and the switch is off by default.
-    # Since D84 every mint is pinned (seam ① and ②), so only an unpinned legacy thread still routes
-    # (O25; the router itself retires in Phase 27 S5).
     state = request.app.state
-    agent_name = await asyncio.to_thread(_auto_route_agent, state, thread, body.agent, body.text)
 
     # Reserve the thread's turn marker (D38) — synchronous check-and-set, after the thread is resolved
     # and the auto-rediscover boundary, before the response is built. Ownership transfers to the
@@ -1712,7 +1680,9 @@ async def chat(body: ChatRequest, request: Request) -> Response:
             # existing thread is never seeded (it already has history).
             greeter = state.settings.resolve_agent(thread.agent)
             await seed_greeting(state.messages, state.settings, thread, greeter, threads=threads)
-        session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
+        # The turn's agent: an explicit `/agent` (body.agent, the RESPONDER) else the thread's pin
+        # (D84: every conversation has a home) — `_build_session` resolves it.
+        session = _session(request, thread, agent_name=body.agent, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
         handle.mode = body.mode  # the turn's inference mode — the snapshot carries it (D39)
         events = session.run_turn(

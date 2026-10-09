@@ -113,7 +113,6 @@ from app.services.agent.core_memory import CoreMemoryCorpus
 from app.services.agent.memory import FileMemoryProvider, migrate_legacy_specialist_memory
 from app.services.agent.memory_backup import GitMemoryBackup
 from app.services.agent.routing import RoutingState
-from app.services.agent.selector import KeywordAgentSelector
 from app.services.agent.skills import FileSkillProvider, KeywordSkillSelector
 from app.services.agent.steering import SteerQueue
 from app.services.agent.turns import (
@@ -320,9 +319,6 @@ async def lifespan(app: FastAPI):
         min_overlap=app.state.settings.agent.skill_min_overlap,
         max_skills=app.state.settings.agent.skill_max_active,
     )
-    # Agent auto-router (Phase 7e-g, D15 #8): picks a specialist per turn when no /agent is pinned
-    # and agent.auto_rotate is on. Same swappable-protocol shape as the skill selector.
-    app.state.agent_selector = KeywordAgentSelector()
     # File-based agent memory (Phase 7e-d): per-agent MEMORY.md + global USER.md, read each turn.
     # Stateless — paths/caps resolve from live Settings per call, so edits land with no restart.
     # D26: all memory lives under the memory dir, auto-versioned by a local git repo. One backup

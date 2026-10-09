@@ -431,20 +431,13 @@ class AgentCfg(BaseModel):
     # The `skill_manage` self-author tool may write SKILL.md autonomously; off → propose-only
     # (returns data["proposed"], never writes/blocks), mirroring `memory.auto_write` (7e-f-2, D14).
     skills_auto_write: bool = True
-    # Auto-route a turn to the best-matching specialist when no `/agent` is pinned (7e-g, D15 #8).
-    # Off by default — explicit `/agent` + `spawn_subagents` stay primary. The default
-    # `KeywordAgentSelector` matches the user message against each agent's name+description.
-    auto_rotate: bool = False
-    # Min matching tokens for an auto-route pick (conservative; a tie or below-threshold → the
-    # default agent). Floored at 1 so a blanked Conf field can't make every message route.
-    auto_rotate_min_overlap: int = Field(default=2, ge=1)
     # Per-child wall-clock cap for `spawn_subagents` (§5.5): a stuck child can't hold the batch open
     # forever. Read live per fan-out, so a Conf edit applies to the next spawn without a restart.
     subagent_child_timeout_s: float = Field(default=180.0, gt=0)
     # Default `KeywordSkillSelector` tuning (built from these at startup): min token overlap for a
     # skill to match the user message, and the cap on how many skills activate per turn. Baked at
-    # construction like the selector always has been — a Conf edit needs a restart (unlike the
-    # per-call `auto_rotate_min_overlap` above); see services/agent/skills.py + core/agents.py.
+    # construction like the selector always has been — a Conf edit needs a restart; see
+    # services/agent/skills.py + core/skills.py.
     skill_min_overlap: int = Field(default=1, ge=1)
     skill_max_active: int = Field(default=2, ge=1)
     # Dual-mode chat delivery (D17). Authoritative server-side: `on` always streams (SSE), `off`

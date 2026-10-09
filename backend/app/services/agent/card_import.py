@@ -757,9 +757,8 @@ def import_card(
         fields["title"] = name
     # An empty field is ABSENT, not written blank (ruling 10): `agent.yaml` stays as small as the
     # card was, and the owner opens a file that says only what their character actually sets.
-    # `AgentDef.description` is deliberately NOT among these (§5.3): it is the auto-router's "when to
-    # pick me", and a card's description is persona prose. An imported character is reached by an
-    # explicit pick until the owner writes a routing line themselves.
+    # `AgentDef.description` is deliberately NOT among these (§5.3): it is the agent's subtitle, and a
+    # card's description is persona prose. The owner writes that line themselves.
     for key, value in (
         ("greeting", greeting),
         ("alt_greetings", alt_greetings),

@@ -533,7 +533,7 @@ def test_med2_stale_head_no_double_spawn_new_queue_untouched() -> None:
 
 
 def test_med3_spawn_prelude_raise_requeues_head_at_front() -> None:
-    """MED-3: a raise in the spawn prelude (`_auto_route_agent`) AFTER the head is committed off the
+    """MED-3: a raise in the spawn prelude (`_build_session`) AFTER the head is committed off the
     queue must not lose the message — it is re-enqueued at the FRONT, the marker is released, and nothing
     is persisted. The body swallows the exception (no crash)."""
     with _workspace(), _client() as c:
@@ -543,16 +543,16 @@ def test_med3_spawn_prelude_raise_requeues_head_at_front() -> None:
         s.inference = _Fake([[_text("unused")]])
         _enqueue(s, thread.id, _msg_entry("keep me"))
 
-        orig = agent_api._auto_route_agent
+        orig = agent_api._build_session
 
         def boom(*a, **k):
             raise RuntimeError("prelude boom")
 
-        agent_api._auto_route_agent = boom
+        agent_api._build_session = boom
         try:
             _run_body_directly(s, thread, cfg)  # the body catches internally → no raise here
         finally:
-            agent_api._auto_route_agent = orig
+            agent_api._build_session = orig
 
         assert [e.text for e in s.steer_queues[thread.id].peek()] == ["keep me"]  # requeued at the front
         assert thread.id not in s.turns  # marker released

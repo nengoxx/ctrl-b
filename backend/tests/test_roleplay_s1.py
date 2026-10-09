@@ -24,6 +24,7 @@ the voice stub comes from `test_voice_6a`. Writes go through the APIs on a **tem
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 
@@ -46,9 +47,35 @@ from app.services.agent.macros import Macros
 
 BACKEND = Path(__file__).resolve().parents[1]
 
-_ROUTING_CONFIG = "server:\n  port: 5433\nagent:\n  auto_rotate: true\n"
 #: D84 seam ②: a thread-less send's mint is pinned to the configured default and greets as it.
 _CODER_HOME_CONFIG = "server:\n  port: 5433\nagent:\n  default_agent: coder\n"
+
+
+class _DummySession:
+    """Stands in for `AgentSession` so the chat endpoint streams nothing (no LLM call) — a test only
+    asserts which `agent_name` the endpoint resolved and what it persisted around the turn."""
+
+    async def run_turn(self, *a, **k):  # async generator that yields nothing
+        return
+        yield  # pragma: no cover
+
+
+@contextlib.contextmanager
+def _capture_chat_session(agent_api):
+    """Spy on the chat endpoint's `_session` seam: record the `agent_name` it is built with and hand
+    back a `_DummySession`, so a POST to `/api/agent/chat` never drives the model."""
+    captured: dict[str, str | None] = {}
+    orig = agent_api._session
+
+    def spy(request, thread=None, agent_name=None, privilege=None):
+        captured["agent_name"] = agent_name
+        return _DummySession()
+
+    agent_api._session = spy
+    try:
+        yield captured
+    finally:
+        agent_api._session = orig
 
 
 def _messages(c, thread_id: str) -> list[dict]:
@@ -119,8 +146,6 @@ def test_a_switched_off_greeting_seeds_nothing_at_either_seam_and_keeps_its_text
     seam ① (the thread is still pinned to the agent) and at seam ② (the HOME agent's auto-created
     thread gets no seeded row — D84: the configured default). The flag round-trips through the agent PUT, and
     switching it back on seeds again. Threads already greeted are untouched (ordinary history)."""
-    from test_agent_selector_7eg import _capture_chat_session
-
     import app.api.agent as agent_api
 
     with _workspace(_CODER_HOME_CONFIG), _client() as c:
@@ -258,8 +283,6 @@ def test_seam_two_seeds_the_home_agents_greeting_and_the_responder_answers() -> 
     """F5 ② as D84 re-rules it (O14): the chat endpoint's own thread is pinned to the HOME — the
     configured default — and opens in the HOME's voice, even when the send names another agent; that
     agent is the RESPONDER, so the turn itself still runs as it."""
-    from test_agent_selector_7eg import _capture_chat_session
-
     import app.api.agent as agent_api
 
     with _workspace(_CODER_HOME_CONFIG), _client() as c:
@@ -278,17 +301,16 @@ def test_seam_two_seeds_the_home_agents_greeting_and_the_responder_answers() -> 
 def test_seam_two_never_seeds_a_thread_it_did_not_create() -> None:
     """Only the auto-created thread seeds: chatting into an existing conversation must not drop a
     greeting into the middle of it."""
-    from test_agent_selector_7eg import _capture_chat_session
-
     import app.api.agent as agent_api
 
-    with _workspace(_ROUTING_CONFIG), _client() as c:
+    with _workspace(_CODER_HOME_CONFIG), _client() as c:
         _agent(c, "coder", description="write and debug python code", greeting="Show me the traceback.")
-        tid = _new_thread(c)["id"]  # no agent → nothing seeded at creation
+        tid = _new_thread(c)["id"]  # pinned to the home (coder) → seam ① seeds its ONE opening
+        assert [m["agent"] for m in _messages(c, tid)] == ["coder"]
         with _capture_chat_session(agent_api):
             r = c.post("/api/agent/chat", json={"text": "debug my python code", "thread_id": tid})
             assert r.status_code == 200, r.text
-        assert _messages(c, tid) == []
+        assert [m["agent"] for m in _messages(c, tid)] == ["coder"]  # no second greeting
 
 
 def test_headless_threads_never_seed() -> None:
