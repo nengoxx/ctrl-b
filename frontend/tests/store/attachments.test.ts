@@ -41,14 +41,15 @@ const staged = (id: string, over: Partial<StagedAttachment> = {}): StagedAttachm
   ...over,
 });
 
-/** The blob as it actually sits in storage. */
-function stored(): { files?: unknown } | null {
+/** The blob as it actually sits in storage — `{rails: {<thread id | "">: rows}}` since Phase 27 S8. */
+function stored(): { rails?: Record<string, unknown> } | null {
   const raw = localStorage.getItem(KEY);
-  return raw === null ? null : (JSON.parse(raw) as { files?: unknown });
+  return raw === null ? null : (JSON.parse(raw) as { rails?: Record<string, unknown> });
 }
 
+/** The thread-less view's rail (`""`) — the one these cases stage into (no conversation is open). */
 function rows(): Record<string, unknown>[] {
-  return (stored()?.files ?? []) as Record<string, unknown>[];
+  return (stored()?.rails?.[""] ?? []) as Record<string, unknown>[];
 }
 
 /** A RELOAD, as far as this store is concerned: a fresh module instance, whose init reads whatever is in
@@ -239,16 +240,14 @@ describe("the persisted blob's budget (MED-6)", () => {
     // write would be silently dropped. The projection's own budget is what closes it.
     const thumb = `data:image/jpeg;base64,${"A".repeat(64 * 1024)}`;
     for (let at = 0; at < 80; at++) addStaged(staged(`id-${at}`, { thumb }));
-    const blob = JSON.parse(localStorage.getItem(KEY) ?? "{}") as {
-      files: { attachmentId: string; thumb?: string }[];
-    };
+    const files = rows() as { attachmentId: string; thumb?: string }[];
     // Every row persists — the budget sheds PICTURES, never restorable rows.
-    expect(blob.files).toHaveLength(80);
+    expect(files).toHaveLength(80);
     // The kept thumbnails are a PREFIX of the rail (the chips the owner looks for first), and at
     // least one fit — the budget admits thumbs until it is spent, in order.
-    const lastKept = blob.files.findLastIndex((f) => f.thumb !== undefined);
+    const lastKept = files.findLastIndex((f) => f.thumb !== undefined);
     expect(lastKept).toBeGreaterThanOrEqual(0);
-    expect(blob.files.slice(0, lastKept + 1).every((f) => f.thumb !== undefined)).toBe(true);
+    expect(files.slice(0, lastKept + 1).every((f) => f.thumb !== undefined)).toBe(true);
     // The whole serialised blob stays far below the quota hazard, whatever the count.
     expect((localStorage.getItem(KEY) ?? "").length).toBeLessThan(1_300_000);
   });

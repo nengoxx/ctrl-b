@@ -1,7 +1,7 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
+import { clearDraft, getDraft, pruneSlots, setDraft } from "../../src/store/composer";
 import {
   alwaysEligibleFor,
   answerQuestion,
@@ -116,6 +116,9 @@ beforeEach(() => {
   // the storage goes first; the reset then clears the responder (a reset always leaves) and persists it.
   localStorage.clear();
   resetToThreadless();
+  // …and every conversation's draft + rail (Phase 27 S8: they are per conversation now, and the cases
+  // reuse the same thread ids — a draft left under `t1` by one case would greet the next).
+  pruneSlots(() => false);
 });
 
 describe("chat streaming reducer", () => {

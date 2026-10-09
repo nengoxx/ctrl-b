@@ -181,7 +181,7 @@ describe("B11 — a 404 on the OPEN conversation → the toast → the HOME's la
     expect(h.toasts).toEqual([DELETED]);
     expect(f.at()).toBe("L1");
     expect(f.view.result.current.threadAgent).toBe("lynette");
-    expect(f.draft.getDraft()).toBe("draft text"); // S6's M1 rule today; S8 carries per slot (E6)
+    expect(f.draft.getDraft()).toBe("draft text"); // returned to L2's draft, then carried into L1 (E6)
     // no failed bubble rode into the conversation that opened
     expect(f.view.result.current.messages.map((m) => m.id)).toEqual(["L1-a"]);
   });

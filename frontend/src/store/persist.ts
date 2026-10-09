@@ -7,13 +7,20 @@
 // persistence can never break the in-memory state — a failed read falls back to the defaults, a failed
 // write is a no-op and the value still lives in memory.
 
+/** A plain OBJECT value (not `null`, not an array) — the shape test every persisted blob and every
+ *  map inside one is held to at its load boundary. One definition for the stores that fold a blob
+ *  (`chat`'s tuple, `composer`'s drafts, `attachments`' rails). */
+export function isRecord(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
 /** Defaults-over-merge for an OBJECT state: the parsed blob is merged **over** the defaults, so a field
  *  added since the value was saved keeps its default, and a stored `null`/`undefined` spreads to a no-op.
  *  Shared by both loaders so the merge rule lives in exactly one place. A corrupt non-object blob (an
  *  array/string spreads to junk numeric-index keys that would then be re-persisted) falls back to the
  *  defaults outright (verification F5, 2026-07-10). */
 function mergeOverDefaults<T>(defaults: T, parsed: unknown): T {
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     return { ...(defaults as object) } as T;
   }
   return { ...(defaults as object), ...parsed } as T;
@@ -89,9 +96,9 @@ export function savePersisted<T>(key: string, value: T): void {
  *  it owns; every other field is written back exactly as it was read. Two tabs of one browser profile
  *  therefore race only on the SAME field (last writer wins there), and a writer of one field can never
  *  re-persist another field's stale copy — e.g. a tab's navigation re-saving an elevation the other tab
- *  cleared. `ctrlb.chat`'s writers (the view tuple, one home's overrides) go through here; S8's
- *  per-conversation drafts/rails (`ctrlb.composer`, `ctrlb.attachments`) reuse it — one key's entry per
- *  write. A field patched to `undefined` is REMOVED (JSON drops it) — how a load-boundary fold deletes a
+ *  cleared. `ctrlb.chat`'s writers (the view tuple, one home's overrides) go through here, and so do
+ *  the per-conversation drafts and rails (`ctrlb.composer` / `ctrlb.attachments`, Phase 27 S8): each
+ *  write re-reads the stored map and changes only the conversation entries it owns. A field patched to `undefined` is REMOVED (JSON drops it) — how a load-boundary fold deletes a
  *  retired key. Same error contract as `savePersisted`: storage failures are swallowed. */
 export function patchPersisted(
   key: string,
@@ -101,8 +108,7 @@ export function patchPersisted(
   try {
     const raw = localStorage.getItem(key);
     const parsed = raw == null ? null : (JSON.parse(raw) as unknown);
-    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed))
-      stored = parsed as Record<string, unknown>;
+    if (isRecord(parsed)) stored = parsed;
   } catch {
     /* unreadable → patch over an empty blob */
   }

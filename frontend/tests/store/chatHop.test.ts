@@ -12,7 +12,7 @@ import type { ChatMessage } from "../../src/types";
 //     buffered branch — refuses a send whose POST was still in flight when the view moved; the POST is
 //     never aborted;
 //   · every arm (M1): a LEFT send that is refused or fails writes nothing into the new view and returns
-//     its words to the origin slot (today: the one global draft); a left-send 404 is dropped;
+//     its words to the origin slot (its ORIGIN conversation's draft, S8); a left-send 404 is dropped;
 //   · the raw steer lines stay with their thread across a swap (O22);
 //   · `openThread` / `/new` (`newConversation` → `mintAndOpen`) no longer refuse while streaming; `openThread(id, home)` installs the
 //     home at the swap (H6); an open that 404s toasts "deleted", marks the lists stale and stays (M6).
@@ -186,6 +186,15 @@ async function fresh() {
   const toast = await import("../../src/store/toast");
   const view = renderHook(() => chat.useChat());
   return { chat, composer, toast, view };
+}
+
+/** One conversation's draft as stored (Phase 27 S8 — the drafts are per conversation, and the M1 return
+ *  lands in the ORIGIN's, never in the view the owner hopped to). */
+function draftOf(thread: string): string {
+  const blob = JSON.parse(localStorage.getItem("ctrlb.composer") ?? "{}") as {
+    drafts?: Record<string, string>;
+  };
+  return blob.drafts?.[thread] ?? "";
 }
 
 /** Let parked microtasks / stream reads run. */
@@ -500,7 +509,8 @@ describe("every arm after a swap (M1) — no view write; the words go back to th
       expect(await sent).toBe("refused");
     });
     expectBUntouched(f);
-    expect(f.composer.getDraft()).toBe("are you there");
+    expect(f.composer.getDraft()).toBe(""); // B's draft is not where A's words go (S8)
+    expect(draftOf("A")).toBe("are you there"); // …they go back to A's
   });
 
   it("the network-failure arm: no error bubble in the new view, the text back, the fate `unknown`", async () => {
@@ -511,7 +521,8 @@ describe("every arm after a swap (M1) — no view write; the words go back to th
       expect(await sent).toBe("unknown");
     });
     expectBUntouched(f);
-    expect(f.composer.getDraft()).toBe("did this land");
+    expect(f.composer.getDraft()).toBe(""); // B's draft is not where A's words go (S8)
+    expect(draftOf("A")).toBe("did this land"); // …they go back to A's
   });
 
   it("a non-OK refusal (5xx) after a swap: no failStream into the new view, the text back", async () => {
@@ -522,7 +533,8 @@ describe("every arm after a swap (M1) — no view write; the words go back to th
       expect(await sent).toBe("refused");
     });
     expectBUntouched(f);
-    expect(f.composer.getDraft()).toBe("try again");
+    expect(f.composer.getDraft()).toBe(""); // B's draft is not where A's words go (S8)
+    expect(draftOf("A")).toBe("try again"); // …they go back to A's
   });
 
   it("the untrackable 202 after a swap: no note, the text back", async () => {
@@ -533,7 +545,8 @@ describe("every arm after a swap (M1) — no view write; the words go back to th
       expect(await sent).toBe("refused");
     });
     expectBUntouched(f);
-    expect(f.composer.getDraft()).toBe("queue me");
+    expect(f.composer.getDraft()).toBe(""); // B's draft is not where A's words go (S8)
+    expect(draftOf("A")).toBe("queue me"); // …they go back to A's
   });
 
   it("a left-send 404 is dropped silently — nothing written, nothing returned", async () => {
@@ -547,15 +560,20 @@ describe("every arm after a swap (M1) — no view write; the words go back to th
     expect(f.composer.getDraft()).toBe("");
   });
 
-  it("the words APPEND to a draft the owner already has (never clobber it)", async () => {
+  it("the words APPEND to the origin's draft (never clobber it), and B's own draft is untouched", async () => {
     const f = await fresh();
+    await act(async () => {
+      await f.chat.openThread("A", "lynette");
+    });
+    act(() => f.composer.setDraft("typed in A")); // a store-level send leaves the draft as it was
     const { sent } = await sendOnAThenHop(f, "left words");
     act(() => f.composer.setDraft("typed in B"));
     posts[0].resolve(json(409, {}));
     await act(async () => {
       await sent;
     });
-    expect(f.composer.getDraft()).toBe("typed in B\nleft words");
+    expect(f.composer.getDraft()).toBe("typed in B");
+    expect(draftOf("A")).toBe("typed in A\nleft words");
   });
 
   it("without a swap the arms are unchanged — the 409 still notes and rolls back in its own view", async () => {
@@ -909,7 +927,8 @@ describe("the late windows inside an arm's own await (M1)", () => {
       expect(await sent).toBe("refused");
     });
     expectBUntouched(f);
-    expect(f.composer.getDraft()).toBe("are you there");
+    expect(f.composer.getDraft()).toBe(""); // B's draft is not where A's words go (S8)
+    expect(draftOf("A")).toBe("are you there"); // …they go back to A's
   });
 
   it.each(["capped", "error"])(
@@ -994,7 +1013,8 @@ describe("Stop on A, then a hop to B while the cancel is pending (M1)", () => {
     });
     expectBLive(f);
     expect(calls.slice(before).filter((c) => c.includes("/messages"))).toEqual([]);
-    expect(f.composer.getDraft()).toBe("later"); // a real harvest is not a view write
+    expect(f.composer.getDraft()).toBe(""); // a real harvest is not a view write — it goes to A's draft
+    expect(draftOf("A")).toBe("later");
   });
 
   it("a scoped mismatch never starts a re-attach for the view it left", async () => {

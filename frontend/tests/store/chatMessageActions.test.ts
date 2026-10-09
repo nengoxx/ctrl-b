@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // the send → SSE → end-of-turn floor chain runs for real, so every case starts from a view the server's
 // floor built — which is exactly where the `reply` annotation the controls read comes from.
 
-import { getDraft, clearDraft } from "../../src/store/composer";
+import { getDraft, pruneSlots } from "../../src/store/composer";
 import { resolveConfirm, useConfirm } from "../../src/store/confirm";
 import { useToasts } from "../../src/store/toast";
 import {
@@ -146,7 +146,7 @@ beforeEach(() => {
   floor = [];
   install();
   vi.mocked(forgetMessage).mockClear();
-  clearDraft();
+  pruneSlots(() => false); // every conversation's draft (Phase 27 S8: per conversation; ids are reused)
 });
 afterEach(() => resolveConfirm(false)); // never leave a dialog open across cases
 

@@ -17,7 +17,15 @@ import { TOO_SHORT_MSG, useDictation } from "../../src/hooks/useDictation";
 import { FakeMediaRecorder, mockStt, recordOnce, setMediaDevices } from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
 import { getChatStatus } from "../../src/store/chat";
-import { clearDraft, getDraft } from "../../src/store/composer";
+import {
+  carryOnLeave,
+  clearDraft,
+  getDraft,
+  pruneSlots,
+  setComposerSlot,
+  setDraft,
+  stopLiveDictation,
+} from "../../src/store/composer";
 import { releaseMic, resetLegHold } from "../../src/store/micRelease";
 import { pushToast } from "../../src/store/toast";
 
@@ -1121,5 +1129,129 @@ describe("useDictation · S11 the non-user stops CUT a running tail (whole-clip 
     act(() => result.current.stop("user")); // a second release (a stray tap) must not restart the tail
     await tick(100); // the FIRST tail's deadline
     await expectCutOnce(result);
+  });
+});
+
+// ── Phase 27 S8 — the clip door's slot (R35) ──────────────────────────────────────────────────────────
+// A whole-clip (push-to-talk) recording captures the conversation at the PRESS, in its closure: the
+// transcript lands in that draft wherever the view went, and an auto-send across the hop sends nothing
+// (§12.1 ④). A view swap does not stop it — only a STREAMING dictation is the live one a swap ends
+// (§12.2 ④; those arms are in `dictationStreaming.test.ts`).
+describe("useDictation · Phase 27 S8 — the clip door lands in the slot captured at the press", () => {
+  afterEach(() => {
+    setComposerSlot("");
+    pruneSlots(() => false);
+  });
+
+  it("press in L2, hop to E1, release → L2's draft, E1 untouched, no auto-send across the hop", async () => {
+    setComposerSlot("L2");
+    const { result } = renderHook(() => useDictation(opts(true)));
+    act(() => result.current.toggle());
+    await waitFor(() => expect(result.current.status).toBe("recording"));
+    // the hop: the swap's stop is a no-op for the clip door, and the slot follows the view
+    await act(async () => {
+      await stopLiveDictation();
+      setComposerSlot("E1");
+    });
+    act(() => setDraft("E1's own words")); // what an auto-send reading the VIEW's draft would send
+    expect(result.current.status).toBe("recording");
+    const realNow = Date.now;
+    const at = realNow() + 1200; // past the 1000 ms floor (`recordOnce`'s nudge)
+    Date.now = () => at;
+    try {
+      act(() => result.current.toggle());
+    } finally {
+      Date.now = realNow;
+    }
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(getDraft()).toBe("E1's own words");
+    expect(runComposer).not.toHaveBeenCalled();
+    setComposerSlot("L2");
+    expect(getDraft()).toBe("hello world");
+  });
+
+  it("F1 — pressed thread-less, a Send while held lazily mints X: the transcript lands in X", async () => {
+    const { result } = renderHook(() => useDictation(opts(false)));
+    act(() => result.current.toggle());
+    await waitFor(() => expect(result.current.status).toBe("recording"));
+    act(() => setComposerSlot("X", true)); // the lazy mint (`setWireThread`'s flag; nothing to carry)
+    const realNow = Date.now;
+    const at = realNow() + 1200;
+    Date.now = () => at;
+    try {
+      act(() => result.current.toggle());
+    } finally {
+      Date.now = realNow;
+    }
+    await waitFor(() => expect(getDraft()).toBe("hello world"));
+    setComposerSlot("");
+    expect(getDraft()).toBe(""); // nothing stranded in the thread-less view
+  });
+
+  it("a clip pending across an E6 carry lands in the opened draft and does NOT auto-send (involuntary move)", async () => {
+    setComposerSlot("D");
+    let answer!: () => void;
+    globalThis.fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = () =>
+            resolve({
+              status: 200,
+              ok: true,
+              json: async () => ({ text: "late clip words" }),
+            } as unknown as Response);
+        }),
+    );
+    const { result } = renderHook(() => useDictation(opts(true)));
+    await recordOnce(result);
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+    act(() => {
+      carryOnLeave("D");
+      setComposerSlot("A");
+    });
+    await act(async () => {
+      answer();
+    });
+    await waitFor(() => expect(getDraft()).toBe("late clip words"));
+    expect(runComposer).not.toHaveBeenCalled();
+  });
+
+  it("F4 — a clip pending when E6 carries its conversation lands in what opened, nothing re-created", async () => {
+    setComposerSlot("D");
+    let answer!: () => void;
+    globalThis.fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = () =>
+            resolve({
+              status: 200,
+              ok: true,
+              json: async () => ({ text: "late clip words" }),
+            } as unknown as Response);
+        }),
+    );
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await recordOnce(result); // released — the upload is in flight
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+    act(() => {
+      carryOnLeave("D"); // D deleted elsewhere: the fallback starts…
+      setComposerSlot("A"); // …and opens A
+    });
+    await act(async () => {
+      answer();
+    });
+    await waitFor(() => expect(getDraft()).toBe("late clip words"));
+    const stored = JSON.parse(localStorage.getItem("ctrlb.composer") ?? "{}") as {
+      drafts?: Record<string, string>;
+    };
+    expect(stored.drafts?.D).toBeUndefined();
+  });
+
+  it("without a hop the auto-send is unchanged — it sends from the conversation it started in", async () => {
+    setComposerSlot("L2");
+    const { result } = renderHook(() => useDictation(opts(true)));
+    await recordOnce(result);
+    await waitFor(() => expect(runComposer).toHaveBeenCalledWith("hello world"));
+    expect(getDraft()).toBe("");
   });
 });

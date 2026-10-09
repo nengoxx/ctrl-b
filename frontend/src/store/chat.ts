@@ -25,12 +25,19 @@ import type {
   ToolResult,
 } from "../types";
 import { consumeStaged, releaseStaged, stagedPreviews } from "./attachments";
-import { appendDraft } from "./composer";
+import {
+  appendDraft,
+  carryOnLeave,
+  pruneSlots,
+  setComposerSlot,
+  slotsCarried,
+  stopLiveDictation,
+} from "./composer";
 import { requestConfirm } from "./confirm";
 import { createStore } from "./createStore";
 import { setConnection } from "./connection";
 import { callLive } from "./liveCall";
-import { loadPersisted, patchPersisted } from "./persist";
+import { isRecord, loadPersisted, patchPersisted } from "./persist";
 import { pushToast } from "./toast";
 import { getUI } from "./ui";
 
@@ -102,9 +109,6 @@ const NO_CHAT: PersistedChat = { thread: null, home: null, responder: null, over
  *  a stored `mode` that could never route is dropped at the load boundary. */
 const MODE_SLUG = /^[a-z0-9][a-z0-9_+.-]{0,31}$/;
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === "object" && !Array.isArray(v);
-}
 const slugOrNull = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 
 /** The `overrides` map, type-guarded ENTRY BY ENTRY (ON4): a non-object entry, or a `privilege`/`mode`
@@ -838,8 +842,8 @@ export function reportResponder(): void {
  *       re-created slug never inherits an old elevation (ON4); clearing a responder never touches its
  *       home's slot;
  *    3. a VIEW whose HOME is off the roster moves to the configured default's latest
- *       (`openAgentConversation`) — on whichever device holds it (M7). S8 carries the left view's draft +
- *       rail into it (E6, the seam); the deleting device's own immediate move is the delete's success
+ *       (`openAgentConversation`) — on whichever device holds it (M7), the left view's draft + rail carried
+ *       into it (E6, `carryOnLeave`); the deleting device's own immediate move is the delete's success
  *       handler (`leaveDeletedHome`, N3), so here it has usually already happened. In a live call the
  *       move is not made here — it LATCHES (`pendingHomeMove`) and the call's teardown runs it
  *       (`runAfterCall`, §12.3 M8).
@@ -875,7 +879,10 @@ export function sweepRoster(): void {
   const home = state.threadAgent;
   if (state.threadId !== null && home !== null && !onRoster(home)) {
     if (callLive()) pendingHomeMove = home;
-    else void openAgentConversation(rosterDefault());
+    else {
+      carryOnLeave(state.threadId); // E6 — into whatever opens
+      void openAgentConversation(rosterDefault());
+    }
   }
   // A landing makes a thread-less view's home KNOWN (`homeOf`, S7A-02) without any chat-state write:
   // one emit, so the chip leaves "…" (its slice re-renders only if its value changed).
@@ -917,11 +924,12 @@ function setWireThread(id: string, agent?: string): void {
   // The responder survives ONLY the originating lazy mint — a THREAD-LESS view becoming its first
   // conversation is not leaving it (B17); any other id change is a swap like any other (S7A-01).
   const responder = state.threadId === null ? normalised(state.responder, home) : null;
-  // S8: the per-conversation composer slot is set HERE too (`setComposerSlot(id)`, §12.3 H2 — a lazy
-  // mint moves the thread-less `""` draft/rail into the conversation it created). A wire mint is a
-  // FRESH conversation, never an archived one (H3).
+  // A wire mint is a FRESH conversation, never an archived one (H3).
   set({ threadId: id, threadAgent: home, responder, archived: false });
   persistView();
+  // The per-conversation composer slot follows the view HERE too (§12.3 H2, Phase 27 S8) — and a lazy
+  // mint from the thread-less view carries the `""` draft/rail into the conversation it created (Q6).
+  setComposerSlot(id, true); // the wire MINT — from `""`, the auto-send gate's one non-hop (N1)
 }
 
 // ── the optimistic bubbles' object URLs (D68 MED-6) ──────────────────────────────────────────────
@@ -1144,10 +1152,15 @@ type ViewSwap = Pick<ChatState, "threadId" | "messages" | "threadAgent" | "archi
  *  by definition; the same-conversation landings that KEEP it never swap: `openThread`'s same-id branch,
  *  B5, the cold load. So the §12.2 (a) normalisation lives at the non-swap installs — `setWireThread`,
  *  `loadThread`, `installHome` — and a swap needs none: it clears outright.) The view tuple is rewritten with the swap (the one
- *  `ctrlb.chat` write per view change). A live streaming dictation is STOPPED by every swap (§12.2 ④,
- *  §12.3 L7) — S8 builds it (`useDictation`'s session ends here, its finals landing in the origin slot);
- *  so is S8's per-conversation composer slot (`setComposerSlot(view.threadId ?? "")`, H2). */
+ *  `ctrlb.chat` write per view change).
+ *
+ *  THE COMPOSER (Phase 27 S8): a live STREAMING dictation is stopped FIRST, by every swap (§12.2 ④,
+ *  §12.3 L7 — a door, `/new`, the delete fallbacks, the thread-less reset): the recorder is global, and
+ *  its words land in the slot it started in (R35), never in the view swapped in; the stop resolves
+ *  later, and the E6 carry waits for it (`carryOnLeave`). Then the per-conversation draft + rail follow
+ *  the view (`setComposerSlot`, H2 — with the thread-less `""` move, Q6). */
 function swapView(view: ViewSwap): number {
+  void stopLiveDictation();
   const gen = ++loadGen;
   ++streamGeneration; // S6 — every stream claimed against the view being left is stale from here
   clearAudioCache(); // 6b-2: revoke the left thread's TTS blobs + stop any playback
@@ -1156,6 +1169,7 @@ function swapView(view: ViewSwap): number {
   lastHarvestSig = null; // FIX E — forget the last harvest receipt (mirrors the backend clear)
   set({ ...view, responder: null, status: "idle", streamingId: null });
   persistView();
+  setComposerSlot(view.threadId ?? "");
   return gen;
 }
 
@@ -1360,8 +1374,8 @@ export async function returnToChat(): Promise<void> {
 // which resolves a home off the roster to the configured default — Q2). DURING a call the 404 is
 // LATCHED: no toast, no swap (B12 — the call goes on; its utterances keep failing), and the call's
 // teardown runs the path once (`runAfterCall`). An ARCHIVED view (or one not known to be live) is never
-// a source (H3). S8 carries the dead conversation's draft + rail into what opens (E6 — the seam is the
-// marked line in `conversationDeleted`); until then the unsent text follows S6's M1 rule: the global draft.
+// a source (H3). Every one of these moves carries the left conversation's draft + staged rail into what
+// opened (E6, `carryOnLeave`) — a send that hit the 404 has already returned its words to that draft.
 
 /** The open conversation found deleted DURING a call (R42) — run at the call's teardown. */
 let pendingDeleted: string | null = null;
@@ -1383,8 +1397,10 @@ function conversationDeleted(threadId: string): void {
   r29InFlight = threadId;
   pushToast("this conversation was deleted");
   threadListsStale();
-  // S8: E6 — the dead conversation's draft + staged rail move into the conversation that opens (appended
-  // after its own draft with a blank line). Today both are one global slot each, so they simply stay.
+  // E6 — the dead conversation's draft + staged rail (and a 404'd send's words, already returned to
+  // that draft by `returnToOrigin`) move into whatever opens next — this fallback's target, or the
+  // owner's own door if it supersedes it (`store/composer#carryOnLeave`, consumed at the slot setter).
+  carryOnLeave(threadId);
   void openAgentConversation(state.threadAgent ?? rosterDefault()).finally(() => {
     if (r29InFlight === threadId) r29InFlight = null;
   });
@@ -1401,7 +1417,7 @@ export function leaveDeletedHome(name: string): void {
     pendingHomeMove = name;
     return;
   }
-  // S8: E6 — the left view's draft + rail are carried into what opens (the seam).
+  carryOnLeave(state.threadId); // E6 — into whatever opens
   void openAgentConversation(afterDeleteOf(name));
 }
 
@@ -1426,7 +1442,7 @@ export function runAfterCall(): void {
   pendingDeleted = null;
   pendingHomeMove = null;
   if (home !== null && state.threadId !== null && state.threadAgent === home) {
-    void openAgentConversation(afterDeleteOf(home));
+    leaveDeletedHome(home); // N3, with its E6 carry (`callLive()` is false here)
     return;
   }
   if (dead !== null && state.threadId === dead) conversationDeleted(dead);
@@ -1455,9 +1471,8 @@ async function loadThread(
   if (gen !== loadGen) return; // superseded mid-fetch — this result belongs to a view that is gone
   // The cold load writes `threadId` through neither `swapView` nor `setWireThread`, so it is the third
   // place the view's identity is installed (§12.3 H2): the HOME arrives with it, the view tuple is
-  // rewritten with it, and S8's per-conversation composer slot must be set HERE as well as in `swapView`
-  // and `setWireThread` (`setComposerSlot(threadId)`, the seam). Today the draft and the rail are one
-  // global slot each, so there is nothing to point yet.
+  // rewritten with it, and the per-conversation composer slot follows it (`setComposerSlot`, S8 — B13
+  // across a reload: the draft and the rail the device left in this conversation come back with it).
   set({
     threadId,
     messages: msgs,
@@ -1466,6 +1481,7 @@ async function loadThread(
     responder: normalised(responder, agent),
   });
   persistView();
+  setComposerSlot(threadId);
   void markSeen();
   void probeAndReattach(threadId);
 }
@@ -1594,11 +1610,19 @@ export async function openThread(threadId: string, home?: string): Promise<boole
  *      or its history 404s right after the list (deleted in between; a live record only, H3) —
  *      the R29 path, never a silent fallback (§12.3 H7): the "deleted" toast, then the stored HOME's
  *      latest (`openAgentConversation`, which resolves a home off the roster to the configured default,
- *      Q2). S8 moves the dead conversation's draft + rail into what opened (E6) BEFORE its boot prune;
+ *      Q2), and the dead conversation's draft + rail move into what opened (E6) — BEFORE the prune;
  *    · no stored thread → the newest, with no responder;
  *    · nothing at all → the thread-less view — a stored responder survives there only because the stored
  *      `thread` was null (B17 across a reload).
- *  The tuple is rewritten after boot (by whichever install ran). The cold load's identity install stays
+ *  The tuple is rewritten after boot (by whichever install ran).
+ *
+ *  THE BOOT PRUNE (Phase 27 S8, §12.2 ⑦, §12.3 L6): this list is the one GLOBAL list the client ever
+ *  sees, so it is where dead per-conversation drafts and rails are reclaimed — every key that is
+ *  neither `""`, nor listed here (archived rows count), nor the OPEN view's is dropped (`pruneSlots`),
+ *  after the H7 carry, and only while the boot's own generation still holds: a door the owner used
+ *  during the boot (a roster-door mint, a lazy mint from typing) moves it, and then nothing is pruned.
+ *  (S10's validated `?thread=` target is just the open view here — the prune keeps it either way.)
+ *  The cold load's identity install stays
  *  as it was (S6's Qwen F1, settled): it bumps no generation — the thread half of `viewMoved` already
  *  refuses a thread-less send's frames once this install moves `threadId`. */
 export async function initChat(): Promise<void> {
@@ -1619,6 +1643,8 @@ export async function initChat(): Promise<void> {
     // window): its history 404s — the same R29 answer as a target that did not list. Not for an
     // archived record (H3 — never an R29 source): its failure keeps the plain retry below.
     let dead = record === undefined && target !== null;
+    /** The generation the prune is allowed under — the boot's own; the R29 arm's swap re-issues it. */
+    let pruneGen = gen;
     if (record) {
       try {
         await loadThread(
@@ -1636,16 +1662,28 @@ export async function initChat(): Promise<void> {
     }
     if (dead) {
       // R29 at boot (H7) — unless the owner already navigated during the boot read (a roster door's own
-      // ticket: theirs is the newer intent, L8's posture). S8: the dead conversation's draft + rail move
-      // into what opens (E6), then prune.
-      if (openSeq === navAtEntry) {
+      // ticket: theirs is the newer intent, L8's posture). The dead conversation's draft + rail move into
+      // what opens (E6) — before the prune below, which would otherwise drop them as unlisted.
+      pruneGen = -1;
+      // E6 — armed whichever door opens next: this fallback's, a failed one's next door, or the owner's
+      // own door already in flight (Opus N2 — it consumes the carry at its swap).
+      if (target !== null) carryOnLeave(target);
+      if (openSeq === navAtEntry && target !== null) {
         pushToast("this conversation was deleted");
-        await openAgentConversation(record?.agent ?? stored.home ?? rosterDefault());
+        if (await openAgentConversation(record?.agent ?? stored.home ?? rosterDefault())) {
+          pruneGen = loadGen; // this boot's own swap — a door used after it moves the generation on
+          await slotsCarried();
+        }
       }
     } else if (!record) {
       const newest = threads.find((t) => !t.archived);
       if (newest) await loadThread(newest.id, gen, newest.agent ?? null, false, null);
       else if (gen === loadGen) commitResponder(stored.responder); // the thread-less view keeps its own
+    }
+    if (pruneGen === loadGen) {
+      const listed = new Set(threads.map((t) => t.id));
+      const open = state.threadId ?? "";
+      pruneSlots((k) => k === "" || k === open || listed.has(k));
     }
     sweepRoster(); // a roster that landed BEFORE this boot judges what it installed (M3)
   } catch {
@@ -2545,9 +2583,8 @@ async function streamTurn(
   const handle = makeTurnReducer(ctx);
   /** M1 — a LEFT send the server refused, or that failed at the transport, writes NOTHING into the view
    *  the owner moved to (no note, no rollback, no error bubble, no status): its words go back to the
-   *  composer slot of the conversation it was sent from, silently. A resume / regenerate carries no
-   *  text, so returns nothing. Today the composer holds ONE global draft, so the slot is that draft;
-   *  S8's per-conversation slots turn this into `appendDraft(text, "\n", origin)` — the seam is here.
+   *  composer slot of the conversation it was sent from, silently (Phase 27 S8: the ORIGIN's draft —
+   *  `""` for a thread-less send). A resume / regenerate carries no text, so returns nothing.
    *
    *  A LIVE-CALL utterance can no longer reach this arm "after a swap" (S7, R20): no swap is possible
    *  while a call is up — every navigation door and `setResponder` refuse in a call, at entry AND at the
@@ -2556,7 +2593,7 @@ async function streamTurn(
    *  that ever sees its text, which closes S6's recorded double-return. */
   const returnToOrigin = (): void => {
     const text = raw ?? (typeof body.text === "string" ? body.text : "");
-    appendDraft(text, "\n");
+    appendDraft(text, "\n", ctx.view?.thread ?? "");
   };
   /** Past the 200: the server holds this send, so a later throw never returns its words (M1 is for a
    *  send the server did NOT take). */
@@ -2845,9 +2882,8 @@ async function streamTurn(
     }
     // R29 — a SEND into the conversation still on screen answered 404: it was deleted elsewhere (the
     // left-send 404 above is the other case, dropped). Outside a call the send's words go back to the
-    // composer (S6's M1 rule — the global draft; S8 moves them into the opened conversation's slot with
-    // the rest of E6), its optimistic bubbles go with the view, and `conversationDeleted` toasts and
-    // opens the home's latest. In a call (B12) the 404 is latched there and the utterance fails as
+    // dead conversation's draft (M1's origin slot), its optimistic bubbles go with the view, and
+    // `conversationDeleted` toasts, opens the home's latest and carries that draft into it (E6). In a call (B12) the 404 is latched there and the utterance fails as
     // today, below — no toast, no swap. Only a live view is a source (H3).
     const origin = ctx.view?.thread;
     if (
@@ -3461,7 +3497,7 @@ function harvestToDraft(threadId: string, data: CancelResp): void {
     delRaw(threadId, e.entry_id);
   }
   if (lines.length) {
-    appendDraft(lines.join("\n"), "\n");
+    appendDraft(lines.join("\n"), "\n", threadId); // its OWN thread's draft (S8), wherever the view is
     lastHarvestSig = sig;
   }
 }
@@ -3522,7 +3558,7 @@ async function runCancel(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> 
   // A hop is allowed while the cancel is pending (R9), so every VIEW write below — the status settle, the
   // floor reload, the successor re-attach — is guarded on it; a cancel answering after the owner left
   // never settles or reloads the view swapped in. The harvest is not a view write: it still applies to
-  // its ORIGIN thread's raw lines (and the draft — S8's per-conversation slot seam, like `returnToOrigin`).
+  // its ORIGIN thread's raw lines (and that thread's draft — `harvestToDraft`, like `returnToOrigin`).
   const at = { view: { thread: threadId, gen: loadGen } };
   const settleIdle = () => {
     if (!viewMoved(at)) set({ status: "idle", streamingId: null });

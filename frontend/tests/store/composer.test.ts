@@ -14,8 +14,9 @@ describe("composer draft store", () => {
   it("setDraft / getDraft round-trips and persists to localStorage", () => {
     setDraft("wake the vault");
     expect(getDraft()).toBe("wake the vault");
+    // Phase 27 S8 — the drafts are per conversation; with none open the draft is the thread-less `""`'s.
     expect(JSON.parse(localStorage.getItem("ctrlb.composer")!)).toEqual({
-      draft: "wake the vault",
+      drafts: { "": "wake the vault" },
     });
   });
 
