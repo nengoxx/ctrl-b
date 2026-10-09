@@ -233,6 +233,13 @@ item 9 applies — sol is sol).
 >    `pgrep -f <pattern>` matches it because the wrapper's argv contains the pattern; it dies within seconds and a wait loop
 >    on it exits with 0-byte output files. Take the PYTHON pid (`ps -o comm= -p`) — session 69 burned this three times. And
 >    **`pkill -f '<pattern>'` kills your OWN wrapper shell too (exit 144)** — kill by PID after the `comm` check.
+> 1c. **THE SILENT FALLBACK (burned 2026-10-09, session 69):** `~/.hermes/config.yaml` has `fallback_providers` — when the
+>    Codex primary fails (rate limit, outage) the run SILENTLY continues on `deepseek/deepseek-v4-flash-0731` via OpenRouter
+>    (then `qwen3.6-max` local), with nothing on stderr. The S2a "Sol" review self-reported `deepseek/deepseek-v4-flash-0731`
+>    in its first line — that WAS the fallback, not Sol. **Always demand the model's self-report in the output contract's
+>    first line and compare it with the `-m` flag; a mismatch = the fallback engaged → record the review under the model that
+>    actually ran (never as Sol/Luna) and rerun on the pinned model if the round is critical.** Two Codex lanes back-to-back
+>    (a review right after a confirm) is the pattern that tripped it.
 > 2. **`-z --ignore-rules` persists NO session, so `--resume latest` DOES NOT WORK in this lane**
 >    — it has nothing to re-enter and exits silently (0 bytes stdout AND stderr; the resume advice
 >    that used to sit here came from the D60/D61 rounds, which ran differently). **Confirm rounds
