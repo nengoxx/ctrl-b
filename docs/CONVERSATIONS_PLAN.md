@@ -465,7 +465,11 @@ refinement: the split may change after testing):** the responder keeps its OWN t
 which tools are on the table, at the home's privilege (privilege gates what any tool may DO; the typed-action registry and the
 confirm tokens stay the execution boundary). Copying the home's tool set too would make the responder a mask over the home
 agent rather than a guest voice. `mode` (a `/<provider>` name, `ChatRequest.mode` `:162`) is sent from the home agent's slot. One place, so
-chat, resume, regenerate and drain-B steers all obey it.
+chat, resume, regenerate and drain-B steers all obey it. **An AUTOMATION run is EXEMPT from the copy (main-seat ruling at the S2b build,
+2026-10-09):** an unattended run keeps the agent and privilege it was authorised for — a rolling thread keeps the pin it was
+created with, so if the automation's agent is later edited the literal copy would run the job on a stale agent's model and
+privilege; `_build_session`'s `automation` options object already marks these turns, so the exemption is one condition at
+the one copy point (`_as_guest_of_home`).
 
 **Guard invariants.** `backend/tests/test_turn_guard_invariant.py`: `_EXPECTED` (`:93`) gains `delete_thread` and `delete_agent`
 (F6) (each must call `_revalidate_thread(` after its reserve — both tests assert the SAME set); `_MUTATION_MARKERS` (`:40`)
