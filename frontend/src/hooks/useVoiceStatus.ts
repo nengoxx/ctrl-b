@@ -182,7 +182,7 @@ export interface LiveCallWire {
    *  a final taken inside it joins the same message and restarts it, so a thinking pause shorter than
    *  this never splits a monologue. Read ONCE at call start (§4.5). **0 = send at once.** OPTIONAL, and
    *  absent reads as 0 — an older backend has no hold, and a client that invented one would delay every
-   *  reply on a number nobody chose. The backend ships 0. */
+   *  reply on a number nobody chose. The backend ships 2500 (the owner's 2026-10-09 ruling). */
   turn_hold_ms?: number;
   /** D74 S7 — the call overlay's READBACK block: the track's resolved echo-cancellation mode beside
    *  its open-time capability, the live level (dBFS) against the floor, and the flags the arming

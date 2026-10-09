@@ -445,7 +445,7 @@ test("S7a — a 25 s turn cut at the cap submits ONE turn (the `max_segment` joi
     reason: "max_segment",
     outcome: "ok",
   });
-  // (the heard line shows `…` while B is open — the ear is still listening)
+  // (the heard line shows the held words + `…` while B is open — the ear is still listening, ISS-69)
   await page.waitForTimeout(300);
   expect(sends).toHaveLength(0); // a cap cut is not a pause: the turn waits for the continuation
 
@@ -462,7 +462,10 @@ test("S7a — a 25 s turn cut at the cap submits ONE turn (the `max_segment` joi
   });
   await expect.poll(() => sends.length).toBe(1);
   expect(sends[0].text).toBe("the first twenty seconds and the rest");
-  await expect(page.locator(`${overlay} .kit-call-heard`)).toHaveText("and the rest");
+  // ISS-69: the line is the TURN that went out, not its last segment
+  await expect(page.locator(`${overlay} .kit-call-heard`)).toHaveText(
+    "the first twenty seconds and the rest",
+  );
   await page.waitForTimeout(300);
   expect(sends).toHaveLength(1);
 

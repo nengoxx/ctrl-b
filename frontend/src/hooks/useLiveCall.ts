@@ -228,6 +228,11 @@ const DEGRADED_NOTE_MS = 6000;
 const PENDING_JOIN = " ";
 const HARVEST_JOIN = "\n";
 
+/** THE TURN, as words — the ONE join of the held queue (ISS-69 ①, owner 2026-10-08/09). Three readers
+ *  and one answer: what `drain()` submits, what `queueTook()` compares against, and what the heard line
+ *  shows; a second copy of the join is how the line and the message would come to disagree. */
+export const joinTurn = (lines: readonly string[]): string => lines.join(PENDING_JOIN);
+
 /** The kill's haptic tick, ms (LIVE-001) — DECORATIVE, like every buzz (`lib/haptics`): it rides a state
  *  change the screen is already making, and Firefox for Android swallows it silently. 20 ms is the house
  *  "tap acknowledged" length (`useMicGesture`'s start/catch buzz, R69 §2). Not a config knob: it is the
@@ -526,8 +531,21 @@ export interface CallState {
   noiseOpen: boolean;
   /** The §4.3 pending-utterance queue: ordered, drained as one message. */
   pending: string[];
-  /** The last final the ear heard — the overlay's transcript line (what YOU said, §6). */
+  /** THE HEARD LINE'S TEXT (what YOU said, §6) — the TURN, not the last final (ISS-69 ①③, owner
+   *  2026-10-08/09: under continuous speech the last final alone never showed the owner what the agent
+   *  would get). THE INVARIANT: `heard === joinTurn(pending)` whenever `pending` is non-empty — every arm
+   *  that writes the queue writes this beside it — EXCEPT that an echo drop puts `CALL_COPY.ownWords`
+   *  here until the next taken final restores the turn. `drain()` writes the turn it sends, so the line
+   *  KEEPS the sent turn until the next turn's first taken final replaces it (③) — and a marker that stood
+   *  over a held turn yields to that turn at the send (③ outranks the marker's moment; review LOW-1).
+   *  The trailing `…` is the VIEW's (`heardView`), never stored here. */
   heard: string;
+  /** …and the newest TAKEN segment with its ordinal — what the line's announcer reads (ISS-69 ⑤: announce
+   *  the new segment, never the whole turn again). Its own field because nothing else carries it: with
+   *  `turn_hold_ms` 0 (off) a taken final drains in the same step, so the queue is already empty
+   *  and `pending.at(-1)` is not there to read; and `seq` moves on EVERY taken final, so the same words
+   *  twice ("yes", "yes") are two announcements. Bumped only where `heard` gains a taken segment. */
+  lastTaken: { text: string; seq: number };
   /** One plain line: a degrade, a nonfatal failure, or a terminal's reason. */
   note: string | null;
   /** The cancel-settle window (§4.3 step ②): a kill is in flight and nothing may submit yet. */
@@ -633,6 +651,7 @@ export const CALL_INITIAL: CallState = {
   noiseOpen: false,
   pending: [],
   heard: "",
+  lastTaken: { text: "", seq: 0 },
   note: null,
   killing: false,
   heldUpload: false,
@@ -894,8 +913,9 @@ function held(s: CallState): boolean {
 function drain(s: CallState): Step {
   if (held(s) || s.pending.length === 0) return { state: s, out: [] };
   return {
-    state: { ...s, pending: [], phase: "thinking" },
-    out: [{ type: "submit", text: s.pending.join(PENDING_JOIN) }],
+    // `heard` = what goes out (ISS-69 ③): already true unless an echo marker stood over the held turn.
+    state: { ...s, pending: [], heard: joinTurn(s.pending), phase: "thinking" },
+    out: [{ type: "submit", text: joinTurn(s.pending) }],
   };
 }
 
@@ -1409,7 +1429,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
       // note (S7a review, Opus LOW-2): about one segment, and an ear that just answered disproves it.
       const taken: CallState = {
         ...settled,
-        heard: text,
+        // ISS-69 ①: the line is the TURN this final joins — exactly what a drain would send now.
+        heard: joinTurn([...s.pending, text]),
+        lastTaken: { text, seq: s.lastTaken.seq + 1 },
         pending: [...s.pending, text],
         note: s.note === CALL_COPY.tooQuiet || s.note === CALL_COPY.answerLate ? null : s.note,
         // …and a rebuilt ear that heard speech end-to-end earns its one rebuild back (ISS-54 code round,
@@ -1674,6 +1696,9 @@ function reduce(s: CallState, sig: CallSignal): Step {
               ...s,
               heldUpload: true,
               pending: [sig.text, ...s.pending],
+              // …and the line follows the queue (ISS-69's invariant): the turn the retry will send, the
+              // requeued words FIRST. Not a new segment — `lastTaken` stays, nothing is re-announced.
+              heard: joinTurn([sig.text, ...s.pending]),
               phase: s.phase === "thinking" ? "listening" : s.phase,
             },
             out: [],
@@ -2030,7 +2055,7 @@ function clearSegments(m: EarMeter): void {
  *  same step, so the queue does not grow. Read by the voice learner (`meterEdge`) and the `turn` line. */
 function queueTook(prev: CallState, next: CallState, out: readonly CallEffect[]): boolean {
   if (next.pending.length > prev.pending.length) return true;
-  const before = prev.pending.join(PENDING_JOIN);
+  const before = joinTurn(prev.pending);
   return out.some((e) => e.type === "submit" && e.text !== before);
 }
 
@@ -2482,11 +2507,16 @@ export interface CallDebug {
 /** What the overlay renders + the things it can do. */
 export interface CallView {
   phase: CallPhase;
+  /** THE HEARD LINE, ready to print (`heardView`): the turn, with its `…` already decided. */
   heard: string;
+  /** …and what its announcer says: the newest taken segment alone, and an ordinal that moves once per
+   *  taken final — the overlay re-mounts on it, so the same words twice still announce (ISS-69 ⑤). */
+  heardNew: string;
+  heardSeq: number;
   note: string | null;
   userSpeechActive: boolean;
-  /** A speech segment closed and its transcript is still in flight — the overlay keeps its `…` up
-   *  (owner, 2026-09-23: the LAST final showing for the STT round-trip read as a stale pop). */
+  /** A speech segment closed and its transcript is still in flight — the machine's "words in flight"
+   *  half that `heardView` reads for the line's `…` (owner, 2026-09-23). */
   waitingFinal: boolean;
   /** The ear is closed (§6) — a STATIC look on the ring/accent, never a pulse. */
   muted: boolean;
@@ -2520,6 +2550,24 @@ export interface CallView {
   /** …and the pin itself: a dBFS floor for THIS call, or `null` to hand the floor back to Auto. Writes
    *  nothing — per call, applied from the next frame, no leg redial. */
   setFloorPin: (dbfs: number | null) => void;
+}
+
+/** THE HEARD LINE'S VIEW (ISS-69 ②, owner 2026-10-08/09, amended 2026-10-09) — the `…` rule, decided HERE
+ *  rather than in the overlay so it is pinned beside the machine. While words are in flight (an open
+ *  segment, or a closed one whose transcript has not landed — §4.2's own predicate) the `…` goes AFTER the
+ *  line's words — the held turn's, or with nothing held the last SENT turn's (owner, 2026-10-09: "if I
+ *  start speaking again, I want the transcription as we talked about"). It stands alone only on an empty
+ *  line, the very start of the call. The 2026-09-23 ruling (an old final popping in during the STT
+ *  round-trip read as stale) is kept by ③ itself: the sent turn is ALREADY on the line and stays — nothing
+ *  pops in, it is only followed by the `…` — and the next taken final replaces it. An echo marker with
+ *  speech in flight prints the marker with the `…` for that moment: honest, gone at the next taken final. */
+export function heardView(s: CallState): Pick<CallView, "heard" | "heardNew" | "heardSeq"> {
+  const inFlight = s.userSpeechActive || s.waitingFinal;
+  return {
+    heard: inFlight ? (s.heard ? `${s.heard}…` : "…") : s.heard,
+    heardNew: s.lastTaken.text,
+    heardSeq: s.lastTaken.seq,
+  };
 }
 
 export function useLiveCall(): CallView {
@@ -3997,7 +4045,7 @@ export function useLiveCall(): CallView {
 
   return {
     phase: state.phase,
-    heard: state.heard,
+    ...heardView(state),
     note: state.note,
     userSpeechActive: state.userSpeechActive,
     waitingFinal: state.waitingFinal,

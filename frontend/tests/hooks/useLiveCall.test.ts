@@ -7,7 +7,9 @@ import {
   type CallEffect,
   type CallSignal,
   type CallState,
+  heardView,
   type HoldMode,
+  joinTurn,
   mouthMayOpen,
 } from "../../src/hooks/useLiveCall";
 
@@ -3172,5 +3174,217 @@ describe("callReduce — the leg clock, the cap join and the awaited-id TTL (S7a
     const ended = run(a, [{ type: "captureLost" }]);
     expect(ended.state.capJoin).toBe(false);
     expect(ended.out).toContainEqual({ type: "harvest", lines: ["a"] });
+  });
+});
+
+// ── ISS-69: THE HEARD LINE IS THE TURN (owner ruling 2026-10-08/09) ──────────────────────────────────
+
+describe("callReduce — the heard line is the TURN (ISS-69)", () => {
+  const HOLD = 5000;
+  const fin = (text: string, itemId: string, extra: Partial<CallSignal> = {}): CallSignal =>
+    ({ type: "final", text, itemId, turnHoldMs: HOLD, ...extra }) as CallSignal;
+  const said = (id: string, text: string): CallSignal[] => [
+    seg("speechStart", id),
+    seg("speechStop", id),
+    fin(text, id),
+  ];
+  const over = (s: CallState): CallSignal => ({ type: "turnHoldOver", seq: s.turnHoldSeq });
+  /** The invariant on `CallState.heard`, as one predicate. */
+  const holds = (s: CallState): boolean =>
+    s.pending.length === 0 || s.heard === CALL_COPY.ownWords || s.heard === joinTurn(s.pending);
+
+  it("① two taken finals under the ISS-55 hold read as the whole turn", () => {
+    const a = run(routed, said("A", "first")).state;
+    expect(a.heard).toBe("first");
+    const b = run(a, said("B", "second")).state;
+    expect(b.pending).toEqual(["first", "second"]);
+    expect(b.heard).toBe("first second");
+  });
+
+  it("③ the drain sends the join, and the line KEEPS it after the send", () => {
+    const b = run(routed, [...said("A", "first"), ...said("B", "second")]).state;
+    const { state, out } = run(b, [over(b)]);
+    expect(submits(out)).toEqual(["first second"]);
+    expect(state.pending).toEqual([]);
+    expect(state.heard).toBe("first second");
+    // …through the reply, too: nothing but a taken final moves it.
+    const spoke = run(state, [{ type: "playbackStarted" }, { type: "playbackDrained" }]).state;
+    expect(spoke.heard).toBe("first second");
+  });
+
+  it("③ the next turn's FIRST taken final replaces the sent turn", () => {
+    const b = run(routed, [...said("A", "first"), ...said("B", "second")]).state;
+    const sent = run(b, [over(b), { type: "playbackStarted" }, { type: "playbackDrained" }]).state;
+    const next = run(sent, said("C", "third")).state;
+    expect(next.heard).toBe("third");
+    expect(next.pending).toEqual(["third"]);
+  });
+
+  it("③ an echo drop mid-turn shows its marker, and the next taken final restores the WHOLE turn", () => {
+    const a = run(routed, said("A", "first")).state;
+    const echoed = run(a, [
+      seg("speechStart", "E"),
+      seg("speechStop", "E"),
+      fin("the reply's words", "E", { echo: 0.9, echoMin: 0.75 }),
+    ]).state;
+    expect(echoed.heard).toBe(CALL_COPY.ownWords);
+    expect(echoed.pending).toEqual(["first"]); // the held turn is untouched
+    const restored = run(echoed, said("B", "second")).state;
+    expect(restored.heard).toBe("first second");
+  });
+
+  it("③ a marker standing over a held turn YIELDS to that turn at the send (review LOW-1)", () => {
+    const a = run(routed, said("A", "first")).state;
+    const echoed = run(a, [
+      seg("speechStart", "E"),
+      seg("speechStop", "E"),
+      fin("the reply's words", "E", { echo: 0.9, echoMin: 0.75 }),
+    ]).state;
+    expect(echoed.heard).toBe(CALL_COPY.ownWords);
+    const { state, out } = run(echoed, [over(echoed)]);
+    expect(submits(out)).toEqual(["first"]);
+    expect(state.heard).toBe("first"); // the line says what went out, not the marker
+  });
+
+  it("the `held` requeue puts the sent words at the FRONT, and the line follows", () => {
+    const sent = run(listening, [{ type: "final", text: "again" }]).state;
+    // a confirm gate holds what is said next, so the queue is not empty when the requeue lands
+    const queued = run(sent, [
+      { type: "confirmHold", on: true },
+      { type: "final", text: "first" },
+    ]).state;
+    expect(queued.heard).toBe("first");
+    const held = run(queued, [{ type: "sent", outcome: "held", text: "again" }]).state;
+    expect(held.pending).toEqual(["again", "first"]);
+    expect(held.heard).toBe("again first");
+    expect(held.lastTaken).toEqual(queued.lastTaken); // a requeue is not a new segment
+  });
+
+  it("⑤ `lastTaken` moves once per TAKEN final — the same words twice are two — and never for a drop", () => {
+    // turn_hold_ms 0 (off): every taken final drains in its own step, the queue already empty
+    const one = run(listening, [{ type: "final", text: "yes" }]).state;
+    expect(one.pending).toEqual([]);
+    expect(one.lastTaken).toEqual({ text: "yes", seq: 1 });
+    const two = run(one, [
+      { type: "playbackStarted" },
+      { type: "playbackDrained" },
+      { type: "final", text: "yes" },
+    ]).state;
+    expect(two.lastTaken).toEqual({ text: "yes", seq: 2 });
+    for (const dropped of [
+      { type: "final", text: "" },
+      { type: "final", text: "a TV line", energyMs: 10, minFinalMs: 200 },
+      { type: "final", text: "the reply's words", echo: 1, echoMin: 0.75 },
+    ] as CallSignal[])
+      expect(run(two, [dropped]).state.lastTaken).toEqual(two.lastTaken);
+  });
+
+  it("the invariant holds after EVERY step of a scripted call", () => {
+    const script: ((s: CallState) => CallSignal)[] = [
+      () => seg("speechStart", "A"),
+      () => seg("speechStop", "A"),
+      () => fin("one", "A"),
+      () => seg("speechStart", "B"),
+      () => seg("speechStop", "B"),
+      () => fin("two", "B"),
+      () => seg("speechStart", "C"),
+      () => seg("speechStop", "C"),
+      () => fin("the reply's own words", "C", { echo: 0.95, echoMin: 0.75 }),
+      () => seg("speechStart", "D"),
+      () => seg("speechStop", "D"),
+      () => fin("three", "D"),
+      (s) => over(s), // the hold expires: "one two three" goes out
+      () => ({ type: "playbackStarted" }),
+      () => fin("over the reply", "E"), // queued behind `speaking`
+      () => ({ type: "playbackDrained" }),
+      (s) => over(s),
+      () => ({ type: "sent", outcome: "held", text: "over the reply" }),
+      () => fin("and this", "F"),
+      () => ({ type: "setMuted", on: true }),
+      () => fin("muted words", "G"),
+      () => ({ type: "setMuted", on: false }),
+      (s) => over(s),
+      () => ({ type: "uploadSettled" }),
+      () => ({ type: "hangup" }),
+    ];
+    let s = routed;
+    const sends: string[] = [];
+    script.forEach((step, i) => {
+      const r = callReduce(s, step(s));
+      s = r.state;
+      sends.push(...submits(r.out));
+      expect(
+        holds(s),
+        `step ${i}: heard=${JSON.stringify(s.heard)} pending=${JSON.stringify(s.pending)}`,
+      ).toBe(true);
+    });
+    // …and the script did walk the paths it claims to: the turn, the speaking-held final, the requeue.
+    expect(sends).toEqual(["one two three", "over the reply", "over the reply and this"]);
+  });
+});
+
+describe("heardView — the line's `…` (ISS-69 ②) and its announcer (⑤)", () => {
+  const HOLD = 5000;
+  const fin = (text: string, itemId: string): CallSignal => ({
+    type: "final",
+    text,
+    itemId,
+    turnHoldMs: HOLD,
+  });
+
+  it("bare `…` only on an EMPTY line (the call's start), the turn + `…` once something is held, no `…` when settled", () => {
+    const opened = run(routed, [seg("speechStart", "A")]).state;
+    expect(heardView(opened).heard).toBe("…");
+    const first = run(opened, [seg("speechStop", "A"), fin("first", "A")]).state;
+    expect(heardView(first).heard).toBe("first");
+    const second = run(first, [seg("speechStart", "B")]).state;
+    expect(heardView(second).heard).toBe("first…");
+    // …held through the STT round-trip too (`waitingFinal`), never the bare `…` over a held turn
+    const owedB = run(second, [seg("speechStop", "B")]).state;
+    expect(owedB.waitingFinal).toBe(true);
+    expect(heardView(owedB).heard).toBe("first…");
+    const both = run(owedB, [fin("second", "B")]).state;
+    expect(heardView(both).heard).toBe("first second");
+  });
+
+  it("after the drain: the sent turn with NO `…`; the next turn's speech appends `…` to it (owner 2026-10-09); its first taken final replaces it", () => {
+    const held = run(routed, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      fin("first", "A"),
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+      fin("second", "B"),
+    ]).state;
+    const sent = run(held, [{ type: "turnHoldOver", seq: held.turnHoldSeq }]).state;
+    expect(sent.pending).toEqual([]);
+    expect(heardView(sent).heard).toBe("first second");
+    const next = run(sent, [seg("speechStart", "C")]).state;
+    expect(heardView(next).heard).toBe("first second…");
+    // THE 2026-09-23 RULING, as ③ keeps it: through the STT round-trip the line is the sent turn + `…` —
+    // it never drops to an older final or pops anything new in — and the next TAKEN final replaces it.
+    const owedC = run(next, [seg("speechStop", "C")]).state;
+    expect(owedC.waitingFinal).toBe(true);
+    expect(heardView(owedC).heard).toBe("first second…");
+    const third = run(owedC, [fin("third", "C")]).state;
+    expect(heardView(third).heard).toBe("third");
+    // …and the bare `…` belongs to an empty line only — the call's very start
+    expect(heardView({ ...CALL_INITIAL, userSpeechActive: true }).heard).toBe("…");
+  });
+
+  it("the announcer reads the newest taken segment alone, and its ordinal", () => {
+    const two = run(routed, [
+      seg("speechStart", "A"),
+      seg("speechStop", "A"),
+      fin("first", "A"),
+      seg("speechStart", "B"),
+      seg("speechStop", "B"),
+      fin("second", "B"),
+    ]).state;
+    const v = heardView(two);
+    expect(v.heard).toBe("first second");
+    expect(v.heardNew).toBe("second");
+    expect(v.heardSeq).toBe(2);
+    expect(heardView(CALL_INITIAL)).toEqual({ heard: "", heardNew: "", heardSeq: 0 });
   });
 });

@@ -774,9 +774,12 @@ class LiveCfg(VoiceServiceCfg):
     #: cannot do this job: it ends the EAR's segment (capped at 1200 so a phrase still endpoints), and
     #: one monologue became three or four turns whose replies queued. The cost is latency, all of it on
     #: purpose: a reply now starts `silence_ms` + this + ASR + TTFT after the owner stops. 0 = send at
-    #: once (today's call, byte-identical); the ceiling is the owner's own 10 s cap. A CLIENT knob — the
-    #: queue it holds is the browser's.
-    turn_hold_ms: int = Field(default=0, ge=0, le=10000)
+    #: once (the pre-hold call, byte-identical); the ceiling is the owner's own 10 s cap. A CLIENT knob —
+    #: the queue it holds is the browser's. DEFAULT 2500 (owner 2026-10-09, session 68: "I don't think
+    #: there's much sense of not having a hold at all" — a fresh install and a prod config without the
+    #: key get a 2.5 s thinking pause; the heard line shows the turn it builds, ISS-69). Shipped at 0
+    #: from ISS-55 (2026-10-03) until v1.7.12; the owner's dev tuning runs 5000.
+    turn_hold_ms: int = Field(default=2500, ge=0, le=10000)
     #: Interruption floor: speech shorter than this never counts as a barge-in (livekit's
     #: `min_duration`, plan §4.3). A CLIENT gate — Speaches' TurnDetection has no such field.
     min_speech_ms: int = Field(default=300, ge=0, le=5000)

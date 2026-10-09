@@ -2150,8 +2150,9 @@ def test_live_config_defaults() -> None:
     # The noise verdict ships at 1 s: a segment still sounding a second in, with less than
     # `min_final_ms` of accrual, is noise and stops holding the reply (the owner's 2026-09-26 ruling).
     assert cfg.noise_verdict_ms == 1000
-    # ISS-55 — the turn hold ships OFF: 0 sends every taken final at once, exactly the pre-hold call.
-    assert cfg.turn_hold_ms == 0
+    # ISS-55 — the turn hold ships at 2.5 s (owner 2026-10-09: "not much sense of not having a hold at
+    # all"); 0 is still the pre-hold call, byte-identical, and the Conf knob's floor.
+    assert cfg.turn_hold_ms == 2500
     # D80 ① (R91 §4) — the tail hold: nothing for 300 ms, then 700 ms of quiet under noise + 10 dB,
     # capped at 5 s (the worst measured audible end, 3.46 s, + the quiet run + headroom).
     assert (cfg.hold_tail_min_ms, cfg.tail_quiet_ms, cfg.hold_tail_max_ms) == (300, 700, 5000)

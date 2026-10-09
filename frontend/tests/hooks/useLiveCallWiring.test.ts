@@ -4140,7 +4140,7 @@ describe("useLiveCall — THE TURN HOLD, wired (ISS-55)", () => {
     expect(whys()).toEqual(["open", why]);
   });
 
-  it("OFF (0, as shipped): no `turn` line and no `turnHoldMs` on the final — the pre-hold trail", async () => {
+  it("OFF (0): no `turn` line and no `turnHoldMs` on the final — the pre-hold trail", async () => {
     h.voice.data.live_call.debug = true;
     const c = await call();
     await c.say("hello");

@@ -7239,16 +7239,18 @@ body[data-sheet="open"] .kit .kit-composer {
   overflow-y: auto;
   overscroll-behavior: contain; /* scrolling the body never chains to the page behind the sheet */
 }
-/* sr-only — ONE recipe, four users: the sheet's close button (keyboard/AT parity without a visible ✕),
+/* sr-only — ONE recipe, five users: the sheet's close button (keyboard/AT parity without a visible ✕),
  * the tools menu's native agent radios (A6 — real radios for real arrow-key group semantics, with the
  * `.tools-row` beside them as the visual; its focus ring is in the tools block), the media gallery's
  * per-tile description (D65 — a tile's membership is SAID in its description rather than faked with a
  * role it does not have), and the D62 who-line (its disclosure toggle — the owner ruled out a visible
- * affordance — plus the words behind the ↑/↓/↯ glyphs and the endpoint chip). */
+ * affordance — plus the words behind the ↑/↓/↯ glyphs and the endpoint chip), and the call screen's
+ * heard-line announcer (ISS-69 ⑤ — it reads only the NEW segment; the visible line is not a live region). */
 .kit .bs-close-sr,
 .kit .tools-sheet .tools-radio,
 .kit .mgal-sr,
-.kit .b .who-sr {
+.kit .b .who-sr,
+.kit .kit-call-heard-sr {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -9502,7 +9504,7 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-ring-stroke {
   display: inline-block;
   width: 8px;
   height: 8px;
-  margin-inline-end: 8px;
+  margin-inline-start: 8px; /* it trails the words (ISS-69 review MED-1): the tail is what stays visible */
   border-radius: 50%;
   background: var(--call-accent);
   opacity: var(--call-ring-op);
@@ -9525,17 +9527,30 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-dot {
     transform: scale(1);
   }
 }
-/* The transcript line: what the ear heard YOU say. Two lines at most — it is a check, not a log. */
+/* The transcript line: what the ear heard YOU say — the whole held turn (ISS-69). FIXED TWO LINES, TAIL
+ * VISIBLE (owner ruling 2026-10-08/09): exactly two lines of its own line-height, never growing, never
+ * scrolling, showing the END of a long turn — the newest segment is the one being checked. The old
+ * `-webkit-line-clamp: 2` kept the START, which would hide exactly that. So the box bottom-anchors its ONE
+ * flex item (the component's inner span: words + dot): an item taller than the box overflows toward
+ * main-START under `justify-content: unsafe flex-end`, and `overflow: hidden` clips that start. The
+ * `unsafe` is written on purpose: CSS Box Alignment 3 §4.4 leaves the default overflow alignment a
+ * safe/unsafe BLEND that varies by layout mode, and `overflow: hidden` makes this box a scroll container
+ * — only `unsafe` guarantees the alignment is honoured when the item overflows (MDN `justify-content`:
+ * `safe` would fall back to `start` and keep the START, the bug being fixed). Measured in Chromium +
+ * Firefox (session 68, with and without the keyword): the span's bottom sits on the box's, its top above
+ * it, the trailing no-ring dot inside the box, and nothing is scrollable (scrollHeight = clientHeight).
+ * A scrollable box or fit-to-text sizing is ROADMAP J5, not this. */
 .kit .kit-call-heard {
   margin: 0;
-  min-height: 2.6em;
+  height: calc(2 * 1.3em);
   font-size: 16px;
   line-height: 1.3;
   color: var(--text);
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end; /* the fallback where `unsafe` is unknown (Chrome < 115): measured identical */
+  justify-content: unsafe flex-end;
 }
 .kit .kit-call-note {
   margin: 0;

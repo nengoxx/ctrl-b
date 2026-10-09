@@ -9,6 +9,8 @@ const h = vi.hoisted(() => {
   const call: {
     phase: string;
     heard: string;
+    heardNew: string;
+    heardSeq: number;
     note: string | null;
     userSpeechActive: boolean;
     waitingFinal: boolean;
@@ -28,6 +30,8 @@ const h = vi.hoisted(() => {
   } = {
     phase: "listening",
     heard: "",
+    heardNew: "",
+    heardSeq: 0,
     note: null,
     userSpeechActive: false,
     waitingFinal: false,
@@ -129,6 +133,8 @@ beforeEach(() => {
     ...h.call,
     phase: "listening",
     heard: "",
+    heardNew: "",
+    heardSeq: 0,
     note: null,
     userSpeechActive: false,
     waitingFinal: false,
@@ -352,21 +358,64 @@ describe("CallOverlay — the two ring modes (§6)", () => {
     }
   });
 
-  it("the heard line holds its `…` through waitingFinal — the previous final never surfaces during the STT round-trip (owner, 2026-09-23)", () => {
-    const heard = () => document.querySelector(".kit-call-heard")!.textContent;
+  it("the heard line prints the machine's line VERBATIM — the `…` rule is `heardView`'s (ISS-69) — and is NOT a live region", () => {
+    const line = () => document.querySelector<HTMLElement>(".kit-call-heard")!;
     h.call = { ...h.call, heard: "wake the vault" };
     const view = render(<Host open={true} />);
-    expect(heard()).toBe("wake the vault");
-    h.call = { ...h.call, userSpeechActive: true };
+    expect(line().textContent).toBe("wake the vault");
+    // the overlay decides nothing from the flags any more: the machine's string is the line
+    h.call = { ...h.call, userSpeechActive: true, heard: "wake the vault…" };
     view.rerender(<Host open={true} />);
-    expect(heard()).toBe("…");
-    // The segment closed; the transcript is still in flight. The OLD final must not pop back in here.
-    h.call = { ...h.call, userSpeechActive: false, waitingFinal: true };
+    expect(line().textContent).toBe("wake the vault…");
+    expect(line().hasAttribute("aria-live")).toBe(false);
+    expect(line().closest("[aria-live]")).toBeNull();
+  });
+
+  it("the ANNOUNCER is a standing polite region that reads only the NEW segment, re-mounted per segment (ISS-69 ⑤)", () => {
+    const sr = () => document.querySelector<HTMLElement>(".kit-call-heard-sr")!;
+    h.call = { ...h.call, heard: "first", heardNew: "first", heardSeq: 1 };
+    const view = render(<Host open={true} />);
+    expect(sr().getAttribute("aria-live")).toBe("polite");
+    expect(sr().textContent).toBe("first");
+    const region = sr();
+    const firstNode = sr().firstElementChild;
+    expect(firstNode?.getAttribute("data-seq")).toBe("1");
+    // the turn grows, the announcer says only what is new
+    h.call = { ...h.call, heard: "first yes", heardNew: "yes", heardSeq: 2 };
     view.rerender(<Host open={true} />);
-    expect(heard()).toBe("…");
-    h.call = { ...h.call, waitingFinal: false, heard: "lock the vault" };
+    expect(sr().textContent).toBe("yes");
+    const yesNode = sr().firstElementChild;
+    expect(yesNode).not.toBe(firstNode);
+    // the SAME words again: a new ordinal re-mounts the child, so the reader hears it twice
+    h.call = { ...h.call, heard: "first yes yes", heardNew: "yes", heardSeq: 3 };
     view.rerender(<Host open={true} />);
-    expect(heard()).toBe("lock the vault");
+    expect(sr().textContent).toBe("yes");
+    expect(sr().firstElementChild?.getAttribute("data-seq")).toBe("3");
+    expect(sr().firstElementChild).not.toBe(yesNode);
+    // …while the REGION itself stands (a region inserted already filled is one some readers skip)
+    expect(sr()).toBe(region);
+    // an unrelated re-render (the same ordinal) keeps the node: no duplicate announcement
+    const kept = sr().firstElementChild;
+    h.call = { ...h.call, note: "something else" };
+    view.rerender(<Host open={true} />);
+    expect(sr().firstElementChild).toBe(kept);
+  });
+
+  it("NO-RING mode: the dot stays `aria-hidden` inside the line, AFTER the words, and out of the announcer", () => {
+    h.ring = false;
+    h.call = { ...h.call, heard: "first", heardNew: "first", heardSeq: 1 };
+    render(<Host open={true} />);
+    const dot = document.querySelector(".kit-call-heard .kit-call-dot")!;
+    expect(dot.getAttribute("aria-hidden")).toBe("true");
+    expect(document.querySelector(".kit-call-heard-sr .kit-call-dot")).toBeNull();
+    // …the words, then the WORD JOINER that glues the dot to them (review confirm LOW-a); the dot is empty
+    expect(document.querySelector(".kit-call-heard")!.textContent).toBe("first\u2060");
+    // …and it TRAILS the words (review MED-1): the bottom-anchored box keeps the tail, so a dot first
+    // in the span would be clipped away by any turn past two lines
+    expect(dot.parentElement!.lastChild).toBe(dot);
+    // …glued to them: the word joiner sits between the words and the dot (confirm LOW-a)
+    expect(dot.previousSibling?.textContent).toBe("\u2060");
+    expect(dot.previousSibling?.previousSibling?.textContent).toBe("first");
   });
 });
 

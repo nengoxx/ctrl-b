@@ -686,7 +686,7 @@ const CAPTION_ATTACH_PX = 32;
  *
  * DELIBERATELY NOT A LIVE REGION: the reply is being SPOKEN, and an `aria-live` here would read the
  * whole of it over its own audio. It is ordinary text in a dialog — readable on demand, announced by
- * nobody. (`.kit-call-heard` keeps its live region for the opposite reason: nothing says that aloud.)
+ * nobody. (The heard line's announcer is a live region for the opposite reason: nothing says that aloud.)
  */
 function CallCaptions() {
   // `undefined` = the gate is still shut (a turn was live at mount); a string/null is the latched
@@ -998,16 +998,42 @@ export function CallOverlay({ close }: { close: () => boolean }) {
         <p className="kit-call-phase" id={labelId}>
           {phaseLabel(face, call.userSpeechActive, call.muted, call.tail)}
         </p>
-        {/* What the ear heard YOU say (§6) — so a mishearing is visible instantly. The `…` is the
-            live-speech state: the ear has an open segment and no transcript for it yet — and it HOLDS
-            through `waitingFinal`, the STT round-trip after the segment closes (owner, 2026-09-23:
-            the previous final surfacing for those milliseconds read as a stale line popping in before
-            the real one). The pair is the machine's own "words in flight" predicate (§4.2's iron rule).
-            In NO-RING mode this line carries the state indicator too (the dot is `aria-hidden`, so the
-            live region still announces only the words). */}
-        <p className="kit-call-heard" aria-live="polite">
-          {!ringMode && <span className="kit-call-dot" aria-hidden />}
-          {call.userSpeechActive || call.waitingFinal ? "…" : call.heard}
+        {/* What the ear heard YOU say (§6) — so a mishearing is visible instantly — as the TURN the agent
+            will get, not the last final (ISS-69, owner 2026-10-08/09): every taken segment of the held
+            queue, joined as the send joins it, and kept after the send until the next turn's first
+            taken segment. Printed VERBATIM: the `…` is the machine's (`heardView`) — appended after the
+            line's words (the held turn, else the last sent one; owner 2026-10-09) while words are in
+            flight, bare only on an empty line at the call's start. The 2026-09-23 ruling (no stale
+            line popping in) holds because the sent turn never left the line. FIXED TWO LINES, TAIL
+            VISIBLE: the inner span is the one flex item the stylesheet bottom-anchors, so a long turn
+            shows its END.
+            In NO-RING mode this line carries the state indicator too (the dot, `aria-hidden`) — AFTER
+            the words, so it rides the visible tail: first in the span, a turn past two lines would
+            clip the call's only indicator away (review MED-1).
+            NOT a live region any more: it changes on every append and would re-read the whole turn. The
+            sibling announcer reads only the NEW segment (ISS-69 ⑤) — a standing polite region whose
+            child re-mounts per taken final (`key`), so the same words twice ("yes", "yes") are two
+            additions and both announce; a region inserted already filled is one some readers skip. The
+            echo marker is NOT announced: D80 ② drops the echo silently on purpose, and a reader's voice
+            is one more sound for the car to play back. */}
+        <p className="kit-call-heard">
+          <span>
+            {call.heard}
+            {/* U+2060 WORD JOINER glues the dot to the last word: Chromium may otherwise break the line
+                right before an inline-block and drop the dot alone onto the second line (review
+                confirm LOW-a, 4 of 131 widths measured; Firefox never splits it). */}
+            {!ringMode && (
+              <>
+                {"\u2060"}
+                <span className="kit-call-dot" aria-hidden />
+              </>
+            )}
+          </span>
+        </p>
+        <p className="kit-call-heard-sr" aria-live="polite">
+          <span key={call.heardSeq} data-seq={call.heardSeq}>
+            {call.heardNew}
+          </span>
         </p>
         {call.note !== null && call.note !== "" && <p className="kit-call-note">{call.note}</p>}
         <div className="kit-call-cluster" onClick={(e) => e.stopPropagation()}>

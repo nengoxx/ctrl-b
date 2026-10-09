@@ -851,7 +851,7 @@ const LIVE_FALLBACK: SettingsDoc["voice"]["live"] = {
   vad_threshold: 0.6,
   silence_ms: 700,
   prefix_padding_ms: 300,
-  turn_hold_ms: 0,
+  turn_hold_ms: 2500,
   min_speech_ms: 300,
   barge_in: false,
   min_final_ms: 200,

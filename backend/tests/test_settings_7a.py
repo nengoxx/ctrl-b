@@ -314,7 +314,7 @@ def test_d74_text_and_gate_knobs_round_trip_to_the_status_probe() -> None:
             assert body["tts_chunking"]["speak_actions"] is False
             assert (body["live_call"]["min_final_ms"], body["live_call"]["debug"]) == (200, False)
             assert body["live_call"]["noise_verdict_ms"] == 1000
-            assert body["live_call"]["turn_hold_ms"] == 0  # ISS-55: the turn hold ships off
+            assert body["live_call"]["turn_hold_ms"] == 2500  # ISS-55 knob; 2.5 s default (owner 2026-10-09)
 
             r = c.put(
                 "/api/settings",
