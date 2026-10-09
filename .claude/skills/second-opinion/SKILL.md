@@ -246,6 +246,13 @@ item 9 applies — sol is sol).
 >    A usage file naming the fallback → record the review under that model (never as Sol/Luna) and rerun on the pinned model
 >    if the round is critical.** Two Codex lanes back-to-back
 >    (a review right after a confirm) is the pattern that tripped it.
+> 1d. **PACE THE CODEX LANE — it is rate-limited by OpenAI (owner, 2026-10-09).** A review is NOT one request: each tool
+>    round is another API call carrying the whole context (one audited run = 51 calls at ~143k tokens each). Session 69's
+>    fallbacks all fell in the densest 50 minutes (a confirm, a review of the next slice and a rerun, two of them overlapping).
+>    Rules: **ONE Hermes lane at a time** — never launch the next until the previous one's usage file exists; keep the brief's
+>    read list tight (the named files, not "follow everything"); a confirm round names only the fix-delta files; after a
+>    usage file shows the fallback, WAIT (≥ 15 min) before any rerun — relaunching into the limit only deepens it. The Opus
+>    subagent lane bills the Anthropic window instead, so pairing one Hermes lane with one Opus lane in parallel is fine.
 > 2. **`-z --ignore-rules` persists NO session, so `--resume latest` DOES NOT WORK in this lane**
 >    — it has nothing to re-enter and exits silently (0 bytes stdout AND stderr; the resume advice
 >    that used to sit here came from the D60/D61 rounds, which ran differently). **Confirm rounds
