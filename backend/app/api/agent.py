@@ -24,7 +24,7 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal, TypeGuard
+from typing import Any, Literal, TypeGuard, cast, get_args
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -56,6 +56,7 @@ from app.config import (
     validation_detail,
 )
 from app.core.attachments import remove_thread_attachments
+from app.core.events import ThreadFrame, ThreadFrameState
 from app.core.fsutil import atomic_write_text, write_text_eol
 from app.core.media import StoreWriteError, role_dir
 from app.core.memory import StoreScope, StoreSpec, store_by_key
@@ -653,6 +654,38 @@ async def _stream_live(
         remove_subscriber(handle, queue)
 
 
+_THREAD_FRAME_STATES: frozenset[str] = frozenset(get_args(ThreadFrameState))
+
+
+def _publish_thread_frame(
+    state,
+    thread: Thread,
+    frame_state: str,
+    *,
+    turn_id: str | None = None,
+    chained: bool = False,
+) -> None:
+    """The ONE producer of the `thread` frame (D84 / CONVERSATIONS_PLAN §5, DESIGN §12) — every frame
+    goes through here. An ARCHIVED thread publishes nothing (an automation run keeps its `Event` +
+    `read_at` path; the runner's spawn needs no check of its own). `agent` = `thread.agent`, the HOME
+    agent. Called from sync done-callbacks and `finally` blocks, so it never awaits and never raises:
+    `EventBus.publish` is sync + non-raising, and a state outside the frame vocabulary is logged and
+    dropped instead of failing validation inside the drain path."""
+    if thread.archived:
+        return
+    if frame_state not in _THREAD_FRAME_STATES:
+        log.warning("thread frame: unknown state %r for thread %s — not published", frame_state, thread.id)
+        return
+    frame = ThreadFrame(
+        thread_id=thread.id,
+        state=cast(ThreadFrameState, frame_state),
+        turn_id=turn_id,
+        agent=thread.agent,
+        chained=chained,
+    )
+    state.event_bus.publish(frame)
+
+
 def _spawn_drain_task(
     state, thread: Thread, events: AsyncIterator[Any], handle: TurnHandle, cfg
 ) -> asyncio.Task:
@@ -695,13 +728,22 @@ def _spawn_drain_task(
         # D41 Drain B: a `completed` turn that leaves pending steers spawns the next turn (or drains an
         # all-exec queue) — synchronously in this sync done-callback. Suppressed at shutdown / on a
         # cancel that already harvested the queue (see `_maybe_spawn_drain_b`).
-        _maybe_spawn_drain_b(state, thread, handle, cfg)
+        chained = _maybe_spawn_drain_b(state, thread, handle, cfg)
+        # D84 §5: the terminal `thread` frame goes LAST — after the marker is released and the chain
+        # decided, so a client refetching on it reads the settled state. The backfill above guarantees
+        # `terminal_status` is set here.
+        _publish_thread_frame(
+            state, thread, handle.terminal_status or "error", turn_id=handle.turn_id, chained=chained
+        )
 
     task.add_done_callback(_cleanup)
+    # D84 §5: `running` once the cleanup is wired (no `await` since `create_task`), so the marker can
+    # never be left without the callback that publishes its terminal.
+    _publish_thread_frame(state, thread, "running", turn_id=handle.turn_id)
     return task
 
 
-def _maybe_spawn_drain_b(state, thread: Thread, handle: TurnHandle, cfg) -> None:
+def _maybe_spawn_drain_b(state, thread: Thread, handle: TurnHandle, cfg) -> bool:
     """D41 Drain B (turn end, `completed` ONLY). Called from the drain task's SYNC done-callback: iff
     the turn completed AND the thread still has pending steers AND we are NOT shutting down, RESERVE the
     thread marker SYNCHRONOUSLY (no `await` before the reserve — the callback is sync) then
@@ -712,24 +754,48 @@ def _maybe_spawn_drain_b(state, thread: Thread, handle: TurnHandle, cfg) -> None
     Suppressions: `suspended`/`cancelled`/`error` terminals never spawn (only `completed`); a cancel
     that harvested the queue first (§Cancel) leaves it absent → nothing to spawn; `state.shutting_down`
     (set at the top of the lifespan finally) blocks a natural completion from spawning past the drain
-    snapshot into a closing DB."""
+    snapshot into a closing DB.
+
+    Returns whether it spawned a drain-B body — the terminal `thread` frame's `chained` (D84 §5)."""
     if handle.terminal_status != "completed":
-        return
+        return False
     if getattr(state, "shutting_down", False):
-        return
+        return False
     q = state.steer_queues.get(thread.id)
     if not q:  # absent (harvested by a racing cancel) or empty → nothing to drain
-        return
+        return False
     try:
         new_handle = reserve(state.turns, thread.id, "chat", ring_size=cfg.ring_size)
     except TurnBusy:
-        return  # a fresh POST won the thread first → it will drain the queue at its own loop top
+        return False  # a fresh POST won the thread first → it will drain the queue at its own loop top
     # FIX 2: the body task IS the durable task — assign it to `new_handle.task` immediately (no None
     # gap after the sync reserve), so from this instant `turn_status` reads active, Stop can cancel the
     # drain (all-exec queues included, which previously ran task-less + invisible), and the lifespan
     # drain snapshot (`h.task is not None`) includes it. The message-seed path later REPLACES this task
     # with the seeded turn's drain task (via `_spawn_drain_task`) — single ownership at every instant.
-    new_handle.task = asyncio.create_task(_drain_b_body(state, thread, new_handle, cfg))
+    body = asyncio.create_task(_drain_b_body(state, thread, new_handle, cfg))
+    new_handle.task = body
+
+    def _never_started(t: asyncio.Task) -> None:
+        # The body's never-started window — the drain-B mirror of `_cleanup`'s C4-M3 backfill: a cancel
+        # landing BEFORE the body's first step runs none of its code (no shutdown bail, no `try`, no
+        # `finally`), so the marker stays held (the thread 409s forever) and — since the turn behind it
+        # published `chained: true` — the running dot sticks. Act ONLY when the body never took over:
+        # still `new_handle.task` (a handoff REPLACES it with the seeded turn's drain task, whose own
+        # `_cleanup` owns the terminal), still the marker (a body that ran released it in its `finally`)
+        # and no terminal settled. Then settle + release + record like `_cleanup`, the frame LAST.
+        if new_handle.task is not t or state.turns.get(thread.id) is not new_handle:
+            return
+        if new_handle.terminal_status is not None:
+            return
+        new_handle.terminal_status = "cancelled" if t.cancelled() else "error"
+        push_terminal(new_handle)
+        release(state.turns, new_handle)
+        record_terminal(state.turn_terminals, new_handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
+        _publish_thread_frame(state, thread, new_handle.terminal_status, turn_id=new_handle.turn_id)
+
+    body.add_done_callback(_never_started)
+    return True
 
 
 async def _run_steer_exec(state, thread: Thread, q, entry: SteerEntry) -> None:
@@ -780,6 +846,8 @@ async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
     # bail so a natural completion can't spawn a turn into a closing DB.
     if getattr(state, "shutting_down", False):
         release(state.turns, handle)
+        # D84 §5 (§12.3 M2): a non-handoff exit — the turn behind it already published `chained: true`.
+        _publish_thread_frame(state, thread, "cancelled", turn_id=handle.turn_id)
         return
     committed_head: SteerEntry | None = None  # MED-3: the head we popped this invocation, for requeue
     handed_off = False  # FIX 2: True once the seeded turn's drain task owns `handle` (skip finally release)
@@ -826,6 +894,9 @@ async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
         raise
     except Exception:
         log.exception("D41 drain-B body failed for thread %s", thread.id)
+        # D84 §5: the chain DID fail — settle `error` so the finally publishes a terminal the client
+        # acts on (behind the `completed, chained: true` that preceded this body), not a `cancelled`.
+        handle.terminal_status = "error"
         # MED-3: a spawn-prelude raise (`_auto_route_agent`/`_build_session`/`run_turn`) AFTER the head
         # was committed off the queue would LOSE the message. If we committed it this invocation and have
         # NOT handed off to a seeded drain task yet (the raise beat the spawn), put the head back at the
@@ -837,15 +908,30 @@ async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
         # SINGLE release point (FIX 2): unless a seeded turn's drain task took ownership (`handed_off`),
         # free the marker here. A clean `completed` all-exec drain ALSO records a terminal (so a probe
         # settles) and CHAINS — re-checking the queue for a message that arrived during the run. On any
-        # non-completed exit (cancel / abandon / stale-head / prelude-raise) we ONLY release: no terminal
+        # non-completed exit (cancel / abandon / stale-head / a raise) we ONLY release: no terminal
         # record, no chain (`_maybe_spawn_drain_b`'s own `!= "completed"` guard would suppress it anyway).
+        #
+        # D84 §5 (§12.3 M2): every non-handoff exit publishes this body's terminal `thread` frame here,
+        # LAST and exactly once — the turn behind it published `chained: true`, so without it the
+        # running dot sticks. The state is the settled one (`completed` all-exec · `cancelled` on a Stop
+        # · `error` on a raise); the harvested-queue and stale-head returns leave it unset → `cancelled`
+        # (nothing ran to a result). A handed-off body publishes nothing: the seeded turn's own
+        # `_spawn_drain_task` + `_cleanup` carry its `running` + terminal frames.
         if not handed_off:
             release(state.turns, handle)
+            chained = False
             if handle.terminal_status == "completed":
                 record_terminal(
                     state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap
                 )
-                _maybe_spawn_drain_b(state, thread, handle, cfg)
+                chained = _maybe_spawn_drain_b(state, thread, handle, cfg)
+            _publish_thread_frame(
+                state,
+                thread,
+                handle.terminal_status or "cancelled",
+                turn_id=handle.turn_id,
+                chained=chained,
+            )
 
 
 async def start_steer_turn(state, thread: Thread, entries: list[SteerEntry]) -> None:
@@ -1337,8 +1423,8 @@ async def list_threads(
 
 def _publish_seen(state, thread: Thread) -> None:
     """A moved `seen_at` publishes the `thread` frame `{state: "seen"}` (D84 §5, O10) — the seam the
-    PATCH route calls; a no-op until then."""
-    # Phase 27 S3 publishes the {state: "seen"} thread frame here
+    PATCH route calls with the POST-write row. No `turn_id`."""
+    _publish_thread_frame(state, thread, "seen")
 
 
 @router.patch("/threads/{thread_id}")
