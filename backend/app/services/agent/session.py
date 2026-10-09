@@ -363,6 +363,48 @@ def _tool_content(result: ToolResult, *, cleared: bool = False) -> str:
     return body
 
 
+def _is_foreign(m: Message, responder: str) -> bool:
+    """An assistant row ANOTHER agent wrote (D84 §8, ISS-50): `agent` set AND not the answering agent.
+    `agent IS NULL` (a legacy row, an owner `!exec`/plan pair) is the conversation's own."""
+    return m.role == "assistant" and bool(m.agent) and m.agent != responder
+
+
+def _fold_run(members: list[tuple[object, str | None]]) -> list[dict]:
+    """One maximal RUN of owner `user` rows + foreign text-only rows → ONE `user` message (D84 §8, the
+    ON2 fold), each member `(content, dimensions notice)` already rendered: a string, or D68's part
+    array `[text, image_url…]`. Members join by a blank line; when any member carries real image parts
+    the result is a part array in member order, adjacent text coalesced into one text part (an image
+    between two members splits it). A ONE-member run is emitted exactly as before the fold — the same
+    content object — which is what keeps a single-agent history byte-identical. The members' dimensions
+    notices follow the merged turn as ONE system line, joined by a newline in member order — the
+    singleton `user · system` shape D68 already emits, never one line per member (each would re-role
+    into its own `user` message on the wire)."""
+    if len(members) == 1:
+        content = members[0][0]
+    elif all(isinstance(c, str) for c, _ in members):
+        content = "\n\n".join(c for c, _ in members if isinstance(c, str))
+    else:
+        parts: list[object] = []
+        texts: list[str] = []
+        for c, _ in members:
+            for part in c if isinstance(c, list) else [{"type": "text", "text": c}]:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    texts.append(str(part.get("text", "")))
+                    continue
+                if texts:
+                    parts.append({"type": "text", "text": "\n\n".join(texts)})
+                    texts = []
+                parts.append(part)
+        if texts:
+            parts.append({"type": "text", "text": "\n\n".join(texts)})
+        content = parts
+    notices = [n for _, n in members if n]
+    turn: list[dict] = [{"role": "user", "content": content}]
+    if notices:
+        turn.append({"role": "system", "content": "\n".join(notices)})
+    return turn
+
+
 def _fmt_cache(report: StreamReport) -> str:
     """Render `StreamReport` cache telemetry for the context-cost log (ACA-18). A `None` field means
     the endpoint didn't report that number (local llama.cpp without `return_progress`, or a cloud
@@ -1098,12 +1140,34 @@ class AgentSession:
         out: list[dict] = list(
             self._static_prefix()
         )  # shallow copy — append history below, never mutate the cached head
+        # ISS-50 (D84 §8): another agent's text-only rows read as DIALOGUE — `Name: <text>` inside the
+        # owner's turn — never as the responder's own voice. `run` collects the current maximal run of
+        # owner `user` rows + foreign text-only rows; anything else that EMITS (the responder's own
+        # assistant rows, any tool-call row with its results, a system row) flushes it first, and rows
+        # that emit nothing (an error-only reply, an empty user row) are transparent — so user/assistant
+        # alternation holds. A single-agent history with no adjacent owner rows makes only one-member
+        # runs, which `_fold_run` emits unchanged: the fold is a no-op there (byte-identical, cache-stable).
+        responder = self._agent.name
+        names = self._speaker_names(history)  # {} for a single-agent history — no roster read at all
+        run: list[tuple[object, str | None]] = []
+
+        def flush() -> None:
+            if run:
+                out.extend(_fold_run(run))
+                run.clear()
+
         for m in history:
             if m.role == "tool":
                 continue  # emitted inline after the assistant call below
             if m.role == "assistant":
                 calls = m.tool_calls()
                 text = m.text()
+                if not calls and _is_foreign(m, responder):
+                    if text:
+                        run.append((f"{names.get(m.agent or '') or m.agent}: {text}", None))
+                    continue
+                if calls or text:
+                    flush()  # the responder's own row, or ANY tool-call row (recorded, not renamed): bounds the run
                 if calls:
                     out.append(
                         {
@@ -1146,22 +1210,28 @@ class AgentSession:
                         )
                 elif text:
                     out.append({"role": "assistant", "content": text})
-            else:  # user / system
+            elif m.role == "user":
                 text = m.text()
-                files = m.attachments() if m.role == "user" else []
+                files = m.attachments()
                 if files:
-                    content, notice = await self._render_attachments(thread, text, files, sent_images)
-                    out.append({"role": m.role, "content": content})
-                    if notice:
-                        # The dimensions notice (§4.1, main-seat amendment) is its own developer-role
-                        # line rather than words inside the owner's turn: it is the SERVER stating what
-                        # it sent, and putting it in the user's mouth would be a small lie in the one
-                        # place the model is reasoning about pixels. It sits AFTER the turn it
-                        # describes; `normalize_system_messages` re-roles it in place, like any other
-                        # mid-history system line.
-                        out.append({"role": "system", "content": notice})
+                    # The dimensions notice (§4.1, main-seat amendment) is its own developer-role
+                    # line rather than words inside the owner's turn: it is the SERVER stating what
+                    # it sent, and putting it in the user's mouth would be a small lie in the one
+                    # place the model is reasoning about pixels. It sits AFTER the turn it
+                    # describes (`_fold_run` places it); `normalize_system_messages` re-roles it in
+                    # place, like any other mid-history system line.
+                    run.append(await self._render_attachments(thread, text, files, sent_images))
                 elif text:
+                    run.append((text, None))
+            else:  # system
+                # A system row BREAKS a run (§8). Today the only persisted one is the compaction summary,
+                # which sorts to the head; a future MID-history system row must be routed through the fold
+                # (or ride the head), or it splits the owner's turn and breaks alternation.
+                text = m.text()
+                if text:
+                    flush()
                     out.append({"role": m.role, "content": text})
+        flush()
         # The turn's activated `tail` lorebook entries (D70 §6.4), sharing the tail slot with
         # `post_history` and sitting AHEAD of it: the agent's own last word stays closest to
         # generation (§4.2), and reference material never displaces an instruction from that spot.
@@ -1181,6 +1251,33 @@ class AgentSession:
         if self._reflect_now:
             out.append({"role": "system", "content": self._reflection_nudge()})
             self._reflect_now = False
+        return out
+
+    def _speaker_names(self, history: list[Message]) -> dict[str, str]:
+        """The display name of every FOREIGN agent in `history` (D84 §8): its `title`, else its slug;
+        a name no longer on the roster (`Settings.on_roster` — the one roster predicate; a deleted agent)
+        renders as its slug. Read ONCE per `_assemble` and only for the agents actually present — once
+        per foreign slug, never per row, and not at all for a single-agent history. An unloadable folder
+        (malformed `agent.yaml`) renders as its slug rather than failing another agent's turn — the
+        roster readers' posture (`agent_summaries`, the lorebook `used_by`).
+        (A roster-wide display-name helper would belong in `config.py`; it lives here until one has a
+        second caller.)"""
+        slugs = {
+            m.agent for m in history if m.agent and _is_foreign(m, self._agent.name) and not m.tool_calls()
+        }
+        if not slugs:
+            return {}
+        out: dict[str, str] = {}
+        for slug in sorted(slugs):
+            title = ""
+            if self._settings.on_roster(slug):
+                try:
+                    agent = self._settings.load_agent(slug)
+                except Exception:
+                    log.warning("agent %r failed to load; its turns read under its slug", slug, exc_info=True)
+                    agent = None
+                title = agent.title if agent is not None else ""
+            out[slug] = title or slug
         return out
 
     def _images_to_send(self, history: list[Message]) -> set[str]:

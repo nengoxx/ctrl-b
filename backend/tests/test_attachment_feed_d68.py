@@ -264,6 +264,7 @@ def test_the_ceiling_degrades_the_OLDEST_images_first(home: Path) -> None:
         thread = _thread(c)
         for n in (1, 2, 3):
             _say(c, thread, f"turn {n}", _attach(home, thread.id, f"p{n}.png", png_bytes(n, n)))
+            _say(c, thread, f"reply {n}", role="assistant")  # three TURNS, not one owner run (D84 §8)
         turns = _user_turns(_assemble(c, thread))
         assert isinstance(turns[0]["content"], str) and 'image "p1.png"' in turns[0]["content"]
         assert turns[1]["content"][1]["type"] == "image_url"
