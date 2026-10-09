@@ -186,9 +186,9 @@ def _regen(c, thread_id: str, message_id: str, **extra):
 def test_migration_7_adds_the_alternates_table() -> None:
     from app.db import MIGRATIONS
 
-    assert MIGRATIONS[-1][0] == 7
+    assert 7 in [v for v, _ in MIGRATIONS]  # no longer the tail since D84's migration 8
     with _client() as c:
-        assert _run(c.app.state.db.schema_version()) == 7
+        assert _run(c.app.state.db.schema_version()) >= 7
         cols = {r["name"] for r in _run(c.app.state.db.query("PRAGMA table_info(message_alternates)"))}
         assert cols == {"id", "thread_id", "anchor_id", "n", "rows", "created_at"}
 
