@@ -17,6 +17,8 @@ from __future__ import annotations
 from test_roleplay_s0 import _agent, _client, _workspace
 
 _FIELDS = {"title", "description", "avatar", "background", "voice", "duties"}
+#: D84 R25 — every summary also carries the agent's roster status (all-False with no conversations).
+_IDLE = {"status": {"running": False, "awaiting": False, "unread": False}}
 
 
 def _listing(c) -> dict:
@@ -48,6 +50,7 @@ def test_the_map_carries_the_default_and_every_specialist() -> None:
             "background": "cafe.webp",
             "voice": "af_sky",
             "duties": "agent",  # the AgentDef default — a hand-made specialist is an agent until flipped
+            **_IDLE,
         }
         # every specialist is listed, and the map answers for each of them
         assert set(body["agents"]) <= set(body["summaries"])
@@ -92,7 +95,7 @@ def test_the_summary_is_exactly_the_showcase_fields() -> None:
     with _workspace(), _client() as c:
         _agent(c, "ops", title="Ops Bot", privilege="full")
         for summary in _listing(c)["summaries"].values():
-            assert set(summary) == _FIELDS
+            assert set(summary) == _FIELDS | set(_IDLE)
 
 
 def test_an_unloadable_specialist_degrades_instead_of_500ing() -> None:
@@ -103,7 +106,7 @@ def test_an_unloadable_specialist_degrades_instead_of_500ing() -> None:
         (tmp / "agents" / "broken" / "agent.yaml").write_text("title: [unclosed\n", encoding="utf-8")
         body = _listing(c)
         assert body["agents"] == ["broken"]
-        assert body["summaries"]["broken"] == dict.fromkeys(_FIELDS, "")
+        assert body["summaries"]["broken"] == {**dict.fromkeys(_FIELDS, ""), **_IDLE}
 
 
 def test_an_unloadable_CONFIGURED_DEFAULT_degrades_too() -> None:
@@ -118,7 +121,7 @@ def test_an_unloadable_CONFIGURED_DEFAULT_degrades_too() -> None:
         (tmp / "agents" / "broken" / "agent.yaml").write_text("title: [unclosed\n", encoding="utf-8")
         body = _listing(c)
         assert body["agents"] == ["broken"]
-        assert body["summaries"]["broken"] == dict.fromkeys(_FIELDS, "")
+        assert body["summaries"]["broken"] == {**dict.fromkeys(_FIELDS, ""), **_IDLE}
         assert body["default"] == "broken"  # its degraded row IS a row — `default` may point at it
 
         # …and the other arm: a configured default that `list_agent_names` skips (a folder whose name

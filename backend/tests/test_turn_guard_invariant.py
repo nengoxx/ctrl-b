@@ -56,6 +56,8 @@ _MUTATION_MARKERS = (
     "threads.set_agent(",
     # D84 — deleting a conversation (`DELETE /threads/{id}`; chat's D68 cleanup already reserves).
     "threads.delete(",
+    # D84 F6 — the agent cascade deletes every conversation homed on the agent in one transaction.
+    "threads.delete_many(",
 )
 
 
@@ -91,7 +93,8 @@ def _code_only(src: str) -> str:
 _EXEMPT: frozenset[str] = frozenset()
 
 #: The complete guarded set as of ACA Slice 2 (D38), widened by D81's four message-action routes,
-#: ISS-49's opening re-seat and D84's conversation delete. A new guarded endpoint updates this pin.
+#: ISS-49's opening re-seat, D84's conversation delete and its agent cascade (`?conversations=true`). A
+#: new guarded endpoint updates this pin.
 _EXPECTED = {
     "chat",
     "resume",
@@ -105,6 +108,7 @@ _EXPECTED = {
     "edit_message",
     "reseat_opening",
     "delete_thread",
+    "delete_agent",
 }
 
 

@@ -324,6 +324,26 @@ class ThreadRepo:
             await asyncio.to_thread(remove_thread_attachments, self._home, thread_id)
         return True
 
+    async def delete_many(self, ids: Sequence[str]) -> int:
+        """Delete these threads and everything hanging off them in ONE transaction. Returns how many
+        rows went.
+
+        The agent cascade's half of `delete` (D84 F6, `DELETE /api/agents/{name}?conversations=true`):
+        the same cascade — `messages` (`ON DELETE CASCADE`), their FTS rows (the `messages_fts_ad`
+        trigger) and their alternates — for a whole set at once, so the database side of the cascade is
+        all-or-nothing: either every conversation goes or none does.
+
+        **The attachment dirs are NOT removed here** — unlike `delete`. A transaction cannot cover the
+        filesystem, and a removal inside the block would run before the COMMIT it depends on; the caller
+        removes each dir AFTER this returns (it already holds the ids), best-effort, and surfaces a
+        failure. What it cannot remove is the boot sweep's: the rows are gone, so the dirs are dead to
+        `sweep_thread_dirs`'s first arm."""
+        if not ids:
+            return 0
+        marks = ", ".join("?" for _ in ids)
+        async with self._db.transaction():
+            return await self._db.execute(f"DELETE FROM threads WHERE id IN ({marks})", tuple(ids))
+
     @staticmethod
     def _row(r) -> Thread:
         return Thread(

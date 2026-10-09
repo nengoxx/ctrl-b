@@ -101,6 +101,18 @@ def test_an_empty_pinned_thread_is_pinned_and_seeded() -> None:
         assert greet["agent"] == "nyx"
 
 
+def test_a_reseated_greeting_is_not_unread() -> None:
+    """The re-seat's seed lifts `seen_at` like the other greeting seams (D84 §3, §12.3 L2): the owner is
+    looking at this thread — its new opening never dots it unread."""
+    with _workspace(), _client() as c:
+        _agent(c, "lynette", greeting="Tea?")
+        _agent(c, "emma", greeting="Hello.")
+        tid = _new_thread(c, "lynette")["id"]
+        assert _reopen(c, tid, "emma").status_code == 200
+        (row,) = c.get("/api/threads", params={"agent": "emma"}).json()
+        assert row["id"] == tid and row["unread"] is False
+
+
 def test_a_target_with_no_greeting_or_switched_off_leaves_the_thread_empty() -> None:
     with _workspace(), _client() as c:
         _agent(c, "lynette", greeting="Tea?")

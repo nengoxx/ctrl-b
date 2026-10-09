@@ -20,7 +20,7 @@ import logging
 import shutil
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,6 +55,7 @@ from app.config import (
     sync_mapping,
     validation_detail,
 )
+from app.core.attachments import remove_thread_attachments
 from app.core.fsutil import atomic_write_text, write_text_eol
 from app.core.media import StoreWriteError, role_dir
 from app.core.memory import StoreScope, StoreSpec, store_by_key
@@ -357,6 +358,24 @@ def resolve_session_agent(settings, name: str | None, privilege: Privilege | Non
     return agent
 
 
+def _as_guest_of_home(settings, responder: AgentDef, home: str, privilege: Privilege | None) -> AgentDef:
+    """A RESPONDER answering inside another agent's conversation runs on the HOME agent's `model` and —
+    absent an explicit session `privilege` override, which `resolve_session_agent` already applied and
+    which wins — the home's `privilege` (D84 R40, F2 = reading A, owner 2026-10-06): the home agent IS
+    the conversation, so a hop never changes what it costs or may do. Everything else stays the
+    responder's own — tools, skills, lorebooks, memory, persona (§12.2 ⑤: it is "who answers"; the
+    typed-action registry + confirm tokens stay the execution boundary). RECORDED FOR REFINEMENT: the
+    owner may change which fields a responder inherits after testing — `_build_session`'s call is the
+    ONE copy point (chat, resume, regenerate and drain-B steers all build through it), so the split
+    changes here and nowhere else. `home` resolves like any name (ISS-51: a vanished home folds onto the
+    configured default, else the root)."""
+    home_def = settings.resolve_agent(home)
+    update: dict[str, Any] = {"model": home_def.model}
+    if privilege is None:
+        update["privilege"] = home_def.privilege
+    return responder.model_copy(update=update)
+
+
 def _build_session(
     state,
     thread: Thread | None = None,
@@ -368,9 +387,12 @@ def _build_session(
     with the D41 drain-B spawn (`start_steer_turn`, which has only `state`, never a Request) and with the
     A3 automation runner. Resolves which `AgentDef` drives the turn: `agent_name` (the `/agent <name>`
     switch, 7d) wins; else the thread's `agent` field (D11); else the configured default. `privilege` is
-    the `/privilege` session override (A1/D16). Wires the D41 Drain-A `steer_source` when a thread is
-    resolved (subagent sessions build the session directly with the `None` default — children are never
-    steered).
+    the `/privilege` session override (A1/D16). When the resolved agent is NOT the thread's home (a
+    responder answering in another agent's conversation), it is copied onto the home's `model` +
+    `privilege` (`_as_guest_of_home`, D84 R40/F2 — the one copy point). An automation run is exempt: the
+    agent and privilege it was authorized for are the ones it runs with (its own pinned snapshot, never
+    a home's). Wires the D41 Drain-A `steer_source` when a thread is resolved (subagent sessions build
+    the session directly with the `None` default — children are never steered).
 
     `automation` (A3/D49 §D-3) is the ONE options object that turns this into an UNATTENDED run — the
     frozen claim snapshot itself, so the builder cannot disagree with the row the run was claimed from.
@@ -388,6 +410,8 @@ def _build_session(
     would be a second place for the steer/compaction/routing/skills wiring to drift."""
     name = agent_name or (thread.agent if thread else None)
     agent = resolve_session_agent(state.settings, name, privilege)
+    if thread is not None and thread.agent is not None and automation is None and agent.name != thread.agent:
+        agent = _as_guest_of_home(state.settings, agent, thread.agent, privilege)
     return AgentSession(
         state.threads,
         state.messages,
@@ -1046,7 +1070,7 @@ async def turn_stream(thread_id: str, request: Request, cursor: str | None = Non
     #   • `task is None` — a SYNC-kind marker (exec/plan/apply/compact) with no drain task ever
     #     dispatches, so a subscriber would wait forever. (A pre-spawn chat/resume handle also reads
     #     task=None briefly → JSON answer; harmless, its own POST carries the stream.)
-    if handle is None or handle.terminal_status is not None or handle.task is None:
+    if not _turn_live(handle):
         # Done-but-unreleased (C4-M2): a settled handle (`terminal_status` set, `_cleanup` not yet
         # fired) is authoritative for its own turn — prefer it over the cache, which in this one-tick
         # window still holds the PREVIOUS turn's record. Fall back to the cache only when the handle
@@ -1333,12 +1357,26 @@ async def patch_thread(thread_id: str, body: ThreadPatch, request: Request) -> d
         raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
     if "title" in body.model_fields_set:
         await state.threads.set_title(thread_id, body.title)
-    if body.seen_at is not None and await state.threads.set_seen(thread_id, body.seen_at):
-        _publish_seen(state, thread)
+    seen_moved = body.seen_at is not None and await state.threads.set_seen(thread_id, body.seen_at)
     updated = await state.threads.get(thread_id)
     if updated is None:  # deleted between the writes and this read
         raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+    if seen_moved:
+        _publish_seen(state, updated)  # the POST-write row — the frame never carries a stale field
     return (await _with_summaries(state, [updated]))[0]
+
+
+def _drop_thread_state(state, thread_id: str) -> None:
+    """Drop a deleted thread's in-memory per-thread entries — its steer queue, routing and compaction
+    state, and the steer harvest (§12.3 L5). Both deleting routes (`delete_thread`, the agent cascade)
+    call it after the rows went."""
+    for per_thread in (
+        state.steer_queues,
+        state.routing_state,
+        state.compaction_state,
+        state.steer_harvests,
+    ):
+        per_thread.pop(thread_id, None)
 
 
 @router.delete("/threads/{thread_id}")
@@ -1358,13 +1396,7 @@ async def delete_thread(thread_id: str, request: Request) -> dict[str, Any]:
         if thread is None or thread.archived:
             raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
         await state.threads.delete(thread_id)
-        for per_thread in (
-            state.steer_queues,
-            state.routing_state,
-            state.compaction_state,
-            state.steer_harvests,
-        ):
-            per_thread.pop(thread_id, None)
+        _drop_thread_state(state, thread_id)
         return {"deleted": True}
     finally:
         release(state.turns, handle)
@@ -1458,7 +1490,7 @@ async def reseat_opening(thread_id: str, body: ReopenRequest, request: Request) 
         async with state.db.transaction():
             await state.messages.delete_ids([m.id for m in msgs])
             await state.threads.set_agent(thread_id, agent.name, datetime.now(timezone.utc))
-            await seed_greeting(state.messages, state.settings, thread, agent)
+            await seed_greeting(state.messages, state.settings, thread, agent, threads=state.threads)
         reseated = await state.threads.get(thread_id)
         assert reseated is not None
         return {
@@ -1877,8 +1909,37 @@ async def list_agents(request: Request) -> dict[str, Any]:
 
     `summaries` (D70 §10-S4) maps EVERY agent — the root default included — to its `_SUMMARY_FIELDS`,
     so the gallery, the composer's agent picker, the who-line avatar and the backdrop all read one
-    compact response instead of fetching each agent in full."""
-    return await asyncio.to_thread(_list_agents_payload, request.app.state.settings)
+    compact response instead of fetching each agent in full. Each summary also carries the agent's
+    `status` (`_roster_status`, D84 R25)."""
+    state = request.app.state
+    payload = await asyncio.to_thread(_list_agents_payload, state.settings)
+    status = await _roster_status(state)
+    for name, summary in payload["summaries"].items():
+        summary["status"] = status.get(name, dict.fromkeys(_STATUS_FIELDS, False))
+    return payload
+
+
+#: The roster status flags (D84 R25) — the per-thread `ThreadSummary` flags an agent ORs together.
+_STATUS_FIELDS = ("running", "awaiting", "unread")
+
+
+async def _roster_status(state) -> dict[str, dict[str, bool]]:
+    """Each home agent's `{running, awaiting, unread}` = the OR over its NON-archived conversations
+    (D84 R25; the root's under `"default"`). Computed through `ThreadRepo.summaries` — the one
+    definition of the flags, never a second predicate: every non-archived thread listed once, ONE
+    `summaries` call over all of them, folded per home. An agent with no conversations is absent here
+    (the caller answers all-False)."""
+    rows = await state.threads.list()
+    summaries = await state.threads.summaries(rows, _running_ids(state))
+    out: dict[str, dict[str, bool]] = {}
+    for thread in rows:
+        if thread.agent is None:
+            continue
+        flags = out.setdefault(thread.agent, dict.fromkeys(_STATUS_FIELDS, False))
+        summary = summaries[thread.id]
+        for field in _STATUS_FIELDS:
+            flags[field] = flags[field] or getattr(summary, field)
+    return out
 
 
 #: Scaffold for a brand-new skill so the editor opens with valid frontmatter, not a blank file.
@@ -2040,7 +2101,29 @@ def _shown_path(p: Path, home: Path) -> str:
     return str(p.relative_to(home)) if p.is_relative_to(home) else str(p)
 
 
-def _delete_agent_folder(s: Settings, name: str, folder: Path) -> dict[str, Any] | None:
+def _step_error(exc: BaseException) -> str:
+    """A failed cascade step as the delete report states it — the exception's message, else its type."""
+    return str(exc) or type(exc).__name__
+
+
+def _remove_tree(path: Path, step: str, errors: dict[str, str] | None) -> bool:
+    """`shutil.rmtree(path)`; whether it went. `errors is None` → a failure raises (today's delete);
+    else it is logged and recorded as `errors[step]` (the D84 cascade surfaces it)."""
+    if errors is None:
+        shutil.rmtree(path)
+        return True
+    try:
+        shutil.rmtree(path)
+    except Exception as exc:
+        log.warning("agent delete: removing %s failed", path, exc_info=True)
+        errors[step] = _step_error(exc)
+        return False
+    return True
+
+
+def _delete_agent_folder(
+    s: Settings, name: str, folder: Path, *, errors: dict[str, str] | None = None
+) -> dict[str, Any] | None:
     """The whole blocking side of `DELETE /agents/{name}` in one hop (SYS-16). `None` → nothing there
     (the caller 404s); else the report of what was removed and what was deliberately KEPT (ISS-24).
 
@@ -2051,7 +2134,12 @@ def _delete_agent_folder(s: Settings, name: str, folder: Path) -> dict[str, Any]
     would otherwise silently inherit the dead character's MEMORY.md. A custom `memory_dir` may be
     shared or hand-placed, so it is left and reported. Books and art are never deleted by a cascade
     (owner): they are library items other agents may link, and the report names them instead. An
-    agent whose `agent.yaml` will not load still deletes; its memory resolves as the default's."""
+    agent whose `agent.yaml` will not load still deletes; its memory resolves as the default's.
+
+    `errors` is the D84 cascade's mode (`?conversations=true`, F6): each removal's failure is logged and
+    recorded under its step (`"folder"` · `"memory"`) instead of raised, so the caller can SURFACE it —
+    and a failed folder removal skips the memory step (a re-run finishes both). `None` (today's route):
+    a failure raises, as it always has."""
     if not folder.is_dir():
         return None
     try:
@@ -2065,15 +2153,15 @@ def _delete_agent_folder(s: Settings, name: str, folder: Path) -> dict[str, Any]
     home = s.home_dir()
     memory_dir = agent_memory_dir(s, agent)
     default_memory = s.memories_dir_path() / "agents" / name
-    shutil.rmtree(folder)
-    removed = [_shown_path(folder, home)]
+    removed: list[str] = []
     kept_memory: list[str] = []
-    if memory_dir.resolve() == default_memory.resolve():
-        if default_memory.is_dir():
-            shutil.rmtree(default_memory)
-            removed.append(_shown_path(default_memory, home))
-    elif memory_dir.exists():
-        kept_memory.append(_shown_path(memory_dir, home))
+    if _remove_tree(folder, "folder", errors):
+        removed.append(_shown_path(folder, home))
+        if memory_dir.resolve() == default_memory.resolve():
+            if default_memory.is_dir() and _remove_tree(default_memory, "memory", errors):
+                removed.append(_shown_path(default_memory, home))
+        elif memory_dir.exists():
+            kept_memory.append(_shown_path(memory_dir, home))
     return {
         "removed": removed,
         "kept": {
@@ -2081,6 +2169,76 @@ def _delete_agent_folder(s: Settings, name: str, folder: Path) -> dict[str, Any]
             "art": [media for media in (agent.avatar, agent.background) if media],
             "memory": kept_memory,
         },
+    }
+
+
+def _cascade_agent_files(s: Settings, name: str, folder: Path, thread_ids: Sequence[str]) -> dict[str, Any]:
+    """The filesystem half of the D84 agent cascade (`?conversations=true`, F6 step 3 + the M1
+    recovery) in one `to_thread` hop, AFTER the rows' transaction committed: each deleted
+    conversation's attachment dir, then the agent folder and its default memory dir
+    (`_delete_agent_folder` in its surfacing mode) — and, when the folder is already ABSENT, the slug's
+    default memory dir `memories/agents/<slug>` explicitly (the helper returns early on an absent
+    folder, so a re-run after a failed memory removal could not otherwise finish it).
+
+    Best-effort and never raising: the database and the filesystem cannot share a transaction, so a
+    failure here is NOT rolled back — each step answers `"ok"`, `"absent"` or its error, logged and
+    surfaced (`memory` may also answer `"kept"`: a custom `memory_dir` is left and reported, ISS-24). A re-run completes the agent side; an attachment dir it can no longer name (its row is
+    gone) is the boot sweep's (`sweep_thread_dirs`' rowless-dir arm)."""
+    home = s.home_dir()
+    attachment_errors: list[str] = []
+    for thread_id in thread_ids:
+        thread_errors: list[str] = []
+        try:
+            remove_thread_attachments(home, thread_id, errors=thread_errors)
+        except Exception as exc:  # the helper surfaces its own OSErrors; this is anything around them
+            log.warning("agent delete: removing thread %s's attachments failed", thread_id, exc_info=True)
+            thread_errors.append(_step_error(exc))
+        else:
+            if thread_errors:
+                log.warning("agent delete: thread %s's attachments left behind: %s", thread_id, thread_errors)
+        attachment_errors.extend(thread_errors)
+    errors: dict[str, str] = {}
+    default_memory = s.memories_dir_path() / "agents" / name
+    report: dict[str, Any] = {"removed": [], "kept": {"books": [], "art": [], "memory": []}}
+    try:
+        folder_report = _delete_agent_folder(s, name, folder, errors=errors)
+    except Exception as exc:  # the steps record their own failures; this is anything around them
+        log.warning("agent delete: the folder step for %r failed", name, exc_info=True)
+        folder_status, memory_status = _step_error(exc), "skipped — the folder was not removed"
+    else:
+        if folder_report is None:
+            folder_status = "absent"
+            if not default_memory.is_dir():
+                memory_status = "absent"
+            elif _remove_tree(default_memory, "memory", errors):
+                memory_status = "ok"
+                report["removed"].append(_shown_path(default_memory, home))
+            else:
+                memory_status = errors["memory"]
+        else:
+            report = folder_report
+            folder_status = errors.get("folder", "ok")
+            if "folder" in errors:
+                memory_status = "skipped — the folder was not removed"
+            elif "memory" in errors:
+                memory_status = errors["memory"]
+            elif _shown_path(default_memory, home) in folder_report["removed"]:
+                memory_status = "ok"
+            elif folder_report["kept"]["memory"]:
+                memory_status = "kept"  # a custom `memory_dir` — left and reported (ISS-24)
+            else:
+                memory_status = "absent"  # never there
+    if not attachment_errors:
+        attachments_status = "ok"
+    elif len(attachment_errors) == 1:
+        attachments_status = attachment_errors[0]
+    else:
+        attachments_status = f"{attachment_errors[0]} (and {len(attachment_errors) - 1} more)"
+    return {
+        "folder": folder_status,
+        "memory": memory_status,
+        "attachments": attachments_status,
+        **report,
     }
 
 
@@ -2430,8 +2588,8 @@ def _character_book(s: Settings, card: ImportedCard, warnings: list[str]) -> tup
     return slug, imported
 
 
-@router.delete("/agents/{name}")
-async def delete_agent(name: str, request: Request) -> dict[str, Any]:
+@router.delete("/agents/{name}", response_model=None)  # union return (dict | the 409 busy Response)
+async def delete_agent(name: str, request: Request, conversations: bool = False) -> dict[str, Any] | Response:
     """Delete a specialist: its whole folder (`agent.yaml`, `SOUL.md`, `card.json`) and its DEFAULT
     memory directory (`memories/agents/<slug>`; a custom `memory_dir` is left and reported). Nothing
     else cascades — its lorebooks and art stay in their libraries, and the report names them. The
@@ -2442,20 +2600,94 @@ async def delete_agent(name: str, request: Request) -> dict[str, Any]:
     name, which will fail at its next fire with `AutomationAgentMissing` (named now rather than
     discovered then).
 
+    **`?conversations=true` (D84 R41/F6/N4)** — the agent's conversations go too, server-side, in one
+    request that is NOT atomic across stores: (0) the folder is resolved first — absent is not an error
+    here; (1) the guard pass: every NON-archived thread homed on this slug — exactly the rows step (2)
+    deletes — is reserved (`_reserve_turn`) then revalidated under its marker; any busy one (a running
+    turn) or a refusal (403) releases every marker taken and answers **409** `{detail, busy: k}` with
+    NOTHING deleted (one that vanished meanwhile is simply gone). An automation's rolling conversation is
+    BORN archived (the runner), so it is never in the pass and never deleted: it stays, and the answer's
+    `broken.automations` names its automation — exactly as without the flag (guarding it would 409 a
+    cascade that never touches it, forever once the automation is re-pointed elsewhere, since a home
+    never moves); the 403 arm is defensive; (2) ONE transaction deletes those rows (`threads.delete_many`)
+    — the archived run/subagent history stays, as it does without the flag;
+    (3) then the filesystem, best-effort (`_cascade_agent_files`): the attachment dirs, the folder, the
+    default memory dir. The answer is `{deleted: <n>, folder: "ok" | "absent" | "<error>", memory: "ok"
+    | "absent" | "kept" | "<error>", attachments: "ok" | "<error>", …the report}`; a re-run finishes
+    what a failed step left (an absent folder still clears the default memory dir — M1).
+    Markers are released in `finally`. Without the flag the conversations stay (listed nowhere, the
+    roster rule) and this is the route it always was.
+
     Accepted, unfixed edge (the S9 review's F7, recorded): ANOTHER agent whose custom `memory_dir`
     points INTO `memories/agents/<this-slug>` loses those files with this delete — a hand-configured
-    overlap the resolver has no reason to forbid, rare enough to state rather than guard."""
-    s: Settings = request.app.state.settings
+    overlap the resolver has no reason to forbid, rare enough to state rather than guard. Accepted
+    residual (§12.2 ⑥): a conversation minted for this slug during the cascade's own awaits escapes the
+    guard set and stays, orphaned — the declined-cascade state."""
+    state = request.app.state
+    s: Settings = state.settings
     folder, _ = _agent_folder(request, name)
-    report = await asyncio.to_thread(_delete_agent_folder, s, name, folder)
-    if report is None:
-        raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    if not conversations:
+        report = await asyncio.to_thread(_delete_agent_folder, s, name, folder)
+        if report is None:
+            raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+        return {
+            "name": name,
+            "deleted": True,
+            **report,
+            "broken": await _clear_after_agent_delete(request, name),
+        }
+    handles: list[TurnHandle] = []
+    held: list[str] = []
+    busy = 0
+    try:
+        # Guard EXACTLY what step (2) deletes — the non-archived rows. An automation's rolling
+        # conversation is born archived, so it is neither guarded nor deleted (see the docstring); the
+        # 403 arm below is defensive.
+        for thread in await state.threads.list(agent=name):
+            try:
+                handles.append(_reserve_turn(request, thread.id, "edit"))
+            except HTTPException:
+                busy += 1
+                continue
+            try:
+                await _revalidate_thread(state, thread.id)
+            except HTTPException as exc:
+                if exc.status_code != 404:  # 403 — an automation's rolling conversation
+                    busy += 1
+                continue  # 404 — it went meanwhile: nothing left to delete
+            held.append(thread.id)
+        if busy:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": f"{busy} of {name}'s conversations are busy — nothing was deleted",
+                    "busy": busy,
+                },
+            )
+        deleted = await state.threads.delete_many(held)
+        for thread_id in held:
+            _drop_thread_state(state, thread_id)
+        files = await asyncio.to_thread(_cascade_agent_files, s, name, folder, held)
+    finally:
+        for handle in handles:
+            release(state.turns, handle)
+    return {
+        "name": name,
+        "deleted": deleted,
+        **files,
+        "broken": await _clear_after_agent_delete(request, name),
+    }
+
+
+async def _clear_after_agent_delete(request: Request, name: str) -> dict[str, list[str]]:
+    """What an agent delete leaves broken + the state it invalidates: the automations pinned to this slug
+    by name (ISS-24 — named now rather than discovered at their next fire), and the reasoning demotions
+    (D46/F6: a later agent reusing the same (endpoint, model) starts fresh — blanket-on-mutation; see
+    `put_agent`)."""
     repo = getattr(request.app.state, "automations", None)
     pinned = [a.name for a in await repo.list() if a.agent == name] if repo is not None else []
-    # D46/F6: deleting a specialist drops its reasoning settings — clear demotions so a later agent that
-    # reuses the same (endpoint, model) starts fresh (blanket-on-mutation; see `put_agent`).
     clear_reasoning_demotions(request.app)
-    return {"name": name, "deleted": True, **report, "broken": {"automations": pinned}}
+    return {"automations": pinned}
 
 
 @router.get("/agents/{name}/soul")
