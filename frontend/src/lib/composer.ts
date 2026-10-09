@@ -18,33 +18,32 @@
 
 import { DEFAULT_AGENT } from "./agentSlug";
 import { setAttachmentInfo, type AttachmentInfoWire } from "./attachments";
+import { displayName, landRoster, rosterSlugs, type RosterWire } from "./roster";
 import { getJSON } from "../api/client";
 import { isUploading, reserveStaged, stagedIds } from "../store/attachments";
-import { pushToast } from "../store/toast";
 import {
   compactThread,
-  conversationStarted,
-  getThreadAgent,
-  getThreadId,
-  openingEdited,
+  newConversation,
   pushSystemNote,
-  reseatOpening,
+  reportResponder,
   runShell,
   sendMessage,
   type SendOutcome,
-  setStickyAgent,
-  setSessionMode,
-  setSessionPrivilege,
-  startNewThread,
-  wouldReseat,
+  setHomeMode,
+  setHomePrivilege,
+  setResponder,
+  sweepRoster,
 } from "../store/chat";
 import { setDraft } from "../store/composer";
-import { requestConfirm } from "../store/confirm";
 import { clearComposerSkills, takeComposerSkills } from "../store/composerSkills";
 import { createStore } from "../store/createStore";
 import { setUI } from "../store/ui";
 import type { PromptsDoc } from "../types";
-import { PRIVILEGE_LEVELS, PRIVILEGE_VALUES, privilegeLabel, type Privilege } from "./privilege";
+import { PRIVILEGE_LEVELS, PRIVILEGE_VALUES, type Privilege } from "./privilege";
+
+/** What an override verb says when the open conversation's HOME is not known yet (a failed late read,
+ *  §12.3 H6): nothing is written — an override keyed by a guess could land on another agent. */
+const UNKNOWN_HOME_NOTE = "// this conversation's agent isn't known yet — try again in a moment";
 
 /** The guarded-shell sigil. Configurable in Conf later (Phase 7); the only command prefix (no $/>). */
 export const SHELL_SIGIL = "!";
@@ -124,111 +123,59 @@ export async function loadSkills(): Promise<void> {
 }
 void loadSkills();
 
-/** Configured agent names, so `/agent <name>` can validate + the default is known (7d). Best-effort,
- *  same as the skills set; an unknown name still routes (the backend resolves gracefully). PRIVATE to
- *  routing: a SURFACE that has to show the roster (the tools menu, the backdrop) reads the always-on
- *  roster QUERY through `hooks/useActiveAgent`, never this Set — it is filled once at import, refreshed
- *  only by a save, and keeps whatever it had when a load fails.
- *
- *  A plain Set for the same reason as the providers one: `GET /api/agents` lists only folders that
- *  EQUAL their own slug (`backend/app/config.py` `list_agent_names`: `_slug(p.name) == p.name`, with
- *  `_slug` = lowercase + non-alphanumerics → `-`), so every listed name is lowercase and whitespace-free.
- *  A mixed-case `/agent Ops` genuinely isn't configured, and the "will fall back to default" warning
- *  below is the correct answer rather than a lookup miss. */
-const knownAgents = new Set<string>();
-/** The RESOLVED default agent's name (the roster's `default` — the root when nothing is set): what
- *  `/agent`'s notes call "default", and the agent `/new` mints its thread with when a default is SET. */
-let defaultAgent = DEFAULT_AGENT;
-/** Whether a default agent is CONFIGURED (`agent.default_agent` non-empty — the roster's `default_set`,
- *  D75 amendment), which is the whole of `/new`'s tandem rule: none set → keep the sticky pick, set →
- *  clear it so the fresh thread starts on the default. Starts `false` = "keep" — the harmless direction
- *  while the roster is still unknown (a failed first load keeps the owner on the agent they had). */
-let defaultSet = false;
+// THE ROSTER (D84 §12.3 H1) lives in `lib/roster` — routing's module copy of `GET /api/agents`, a leaf
+// both this module and `store/chat` read (the store needs it for the home of a thread-less view and the
+// N2 sweep, and this module imports the store, so it cannot live here). This module keeps the ONE
+// INSTALLER (`installAgents`, below) and its generation.
 let agentsGen = 0;
-/** Whether a roster has ever LANDED (`installAgents` ran) — until then `knownAgents` is empty and cannot
- *  judge a name, so `pinStickyAgent` pins unjudged rather than refusing every pick on a cold start. */
-let agentsLanded = false;
 
-/** The sticky `/agent` pick REDUCED TO A CONFIGURED AGENT, or `null` for "the resolved default".
- *
- *  A typed `/agent typo` no longer pins (ISS-51, owner-ruled 2026-10-07: a typo is a NO-OP + a toast), but
- *  the pin can still name an agent that does not exist — a since-deleted one, or a pick made before the
- *  roster landed — and the backend falls such a name to the configured default. Every surface that has to
- *  say WHICH agent the next message actually runs as therefore has to fold the unknown name back to the
- *  default: the tools menu's radio group (which would otherwise leave the whole group unchecked, i.e.
- *  claim the message goes nowhere) and, since D70 §8.3a, the agent backdrop (which would otherwise paint
- *  nothing where the default's own art belongs). ONE fold, PURE over its two inputs — the agent list is
- *  an argument, not the module Set above, so the surfaces can feed it the roster query they subscribe to
- *  (`hooks/useActiveAgent`). */
-export function validStickyAgent(sticky: string | null, agents: readonly string[]): string | null {
-  // The ROOT's own slug is always valid: the roster lists specialists only, so without this a by-name
-  // root pin (Talk / the menu's root row inside a character thread, when a specialist is the default)
-  // folded to `null` = the RESOLVED default, and every surface showed that specialist while the server
-  // ran the root.
-  return sticky !== null && (sticky === DEFAULT_AGENT || agents.includes(sticky)) ? sticky : null;
+/** A roster slug is ON the landed roster — the root's own slug always is (it is never listed in
+ *  `agents`, yet every repaired legacy thread is a root conversation, §12.3 H1). PURE over the list, so a
+ *  surface feeds it the roster QUERY it subscribes to (`hooks/useActiveAgent`), never `lib/roster`'s
+ *  imperative copy. */
+function onListedRoster(name: string, agents: readonly string[]): boolean {
+  return name === DEFAULT_AGENT || agents.includes(name);
 }
 
-/** WHICH agent the next message actually runs as, given both pins — the server's routing ladder,
- *  mirrored (`api/agent.py` `_build_session`: `name = agent_name or (thread.agent if thread else None)`,
- *  then a graceful resolve that falls back to the default for an unknown name).
+/** WHO ANSWERS the next message (D84 §6): `responder ?? threadAgent ?? the configured default` — the
+ *  server's routing ladder, mirrored (`body.agent` = the responder, else the thread's home). `null` = the
+ *  resolved (configured) default: the caller decides what that means for it (`useAgentArt`'s `art(null)`
+ *  resolves the default's slug in exactly one place).
  *
- *  Every clause of that one line matters here, so it is copied rather than re-invented:
- *    · a TRUTHY sticky pick wins OUTRIGHT — including a typo'd one, which resolves to the default rather
- *      than falling through to the thread's pin. `/agent typo` sends `body.agent="typo"`, and the server
- *      never looks at `thread.agent` once that is set;
- *    · a FALSY one yields to the thread. A CLEAR (`pinStickyAgent("")`, stored as `null` — bare
- *      `/agent`, or "back to the default" in an unpinned thread) sends no `agent` at all, so the thread
- *      pin winning over it is the server's own behaviour, not a gap to plug (a surface that must beat
- *      the thread's pin with the default pins the default BY NAME — `agentPin` does, for the
- *      tools menu's default row and the gallery's Talk alike);
- *    · an unknown name from EITHER pin folds to `null` = the resolved default, via the same
- *      `validStickyAgent` every caller already shares — once the roster has LANDED (before that,
- *      nothing is judged; see the body). The root's own slug is always valid.
+ *  Once the roster has LANDED, a name OFF it folds: a responder off the roster falls to the home (the
+ *  N2 sweep clears it at once anyway), and a HOME off the roster is shown as the CONFIGURED DEFAULT —
+ *  ISS-51 as built (§12.1 ①): the server falls a vanished name to the configured default, else the root,
+ *  and the client paints the same one. NO FOLD before the landing (`undefined` — M3): a stored responder
+ *  is kept unjudged until then, and folding would have the surfaces claim the default while the send
+ *  carries the responder. `undefined`, not "empty": a workspace with no specialists has a legitimately
+ *  EMPTY loaded roster (the root is never listed), and that one must fold a stale name like any other.
  *
- *  The FE learned the thread's pin (`ChatState.threadAgent`) only in wave 1c: before it, opening a thread
- *  pinned to a character replied as that character while the backdrop painted the default (owner glance
- *  2026-09-08). PURE over its three inputs for the same reason `validStickyAgent` is, and subscribed
- *  ONCE, in `hooks/useActiveAgent` (the sticky pin · the thread pin · the roster query), so that it is
- *  the ONE answer to "who is the active agent": the backdrop paints it and the tools menu checks its
- *  row from the same three inputs, so the two cannot disagree. */
+ *  PURE over its three inputs and subscribed ONCE, in `hooks/useActiveAgent` (the responder · the home ·
+ *  the roster query), so the backdrop and every active-agent surface answer the question the same way. */
 export function effectiveAgent(
-  sticky: string | null,
+  responder: string | null,
   threadAgent: string | null,
   agents: readonly string[] | undefined,
 ): string | null {
-  // NO FOLD before the roster has LANDED (`undefined` — Maya 1, D75 amendment): the pick is persisted
-  // now, so a cold PWA launch hydrates it before the roster query lands (or when that query failed).
-  // Folding there would have the backdrop and the menu claim "default" while `sendMessage` — which reads
-  // the pin directly — sends the pick. Unfolded, the surfaces show the pick (or check no row) until the
-  // roster can judge it. `undefined`, not "empty": a workspace with no specialists has a legitimately
-  // EMPTY loaded roster (the root is never listed), and that one must fold a stale name like any other.
-  if (agents === undefined) return sticky || threadAgent || null;
-  return validStickyAgent(sticky || threadAgent, agents);
+  if (agents === undefined) return responder ?? threadAgent ?? null;
+  if (responder !== null && onListedRoster(responder, agents)) return responder;
+  return homeAgent(threadAgent, agents);
 }
 
-/** What picking agent `name` hands `pinStickyAgent` — the tools menu's rows and the gallery's Talk,
- *  through ONE expression so the two doors cannot disagree (D75 ruling, 2026-09-24; the whole ternary
- *  since the amendment's code round). Any agent other than the resolved default pins BY NAME — the root
- *  included, which `validStickyAgent` always accepts. The resolved default means "back to the default":
- *  ordinarily the sticky-pin CLEAR (`""`) — nothing pinned is the honest resting state (the ladder falls
- *  through to the thread, then the configured default). Inside a
- *  thread that carries its own D70 §4.2 pin, though, a clear would let the thread's character resurface —
- *  so there the default is pinned BY NAME, which the ladder ranks above the thread. `defaultName` is the
- *  caller's resolved default (the roster query's `default`) — an argument for the same reason
- *  `effectiveAgent`'s list is: the surfaces subscribe to the roster, and the module Set here is routing's
- *  best-effort copy. */
-export function agentPin(name: string, threadAgent: string | null, defaultName: string): string {
-  return name === defaultName ? (threadAgent !== null ? defaultName : "") : name;
+/** The open conversation's HOME, folded through the roster like `effectiveAgent`'s home rung (`null` =
+ *  the configured default) — what the tools menu CHECKS (R38: the checked row is the conversation you
+ *  are in, never the responder). */
+export function homeAgent(
+  threadAgent: string | null,
+  agents: readonly string[] | undefined,
+): string | null {
+  if (threadAgent === null) return null;
+  return agents === undefined || onListedRoster(threadAgent, agents) ? threadAgent : null;
 }
 
-/** The part of a `GET /api/agents` read routing installs — ONE wire type for both readers.
- *  `default_set` is optional for `AgentListing.summaries`' reason (a pre-amendment cached response, an
- *  e2e mock): absent reads as "none set" = keep, the harmless direction. */
-interface AgentsWire {
-  agents: string[];
-  default: string;
-  default_set?: boolean;
-}
+/** The part of a `GET /api/agents` read routing installs — ONE wire type for both readers: the names,
+ *  the resolved default, and the summaries' titles (the notes' display names). */
+type AgentsWire = RosterWire;
 
 /** Claim a load generation BEFORE a `GET /api/agents` fetch — see `installAgents`. */
 export function beginAgentsLoad(): number {
@@ -239,18 +186,20 @@ export function beginAgentsLoad(): number {
  *  readers of that route: `loadAgents` below (the import-time load + the SYS-9.2 refresh after a save)
  *  and the always-on roster QUERY (`hooks/useAgents#useAgentRoster`, the `loadProviders` →
  *  `setAttachmentInfo` precedent). The query retries and refetches on focus, so a failed first load
- *  heals here too — `/new`'s tandem rule must never read a `defaultSet` a single bad fetch left stale.
+ *  heals here too — and a roster refresh after an agent delete on ANOTHER device is how this device's
+ *  sweep learns of it (N2).
  *
  *  GENERATION-GUARDED on both paths (the loaders' v1.3.1 rule): each reader claims `beginAgentsLoad()`
  *  before its fetch and hands it here, and only the NEWEST-STARTED read installs — two readers now race
- *  over the same module values, and a slow older response must not overwrite a fresher `defaultSet`. */
+ *  over the same roster, and a slow older response must not overwrite a fresher one.
+ *
+ *  Every LANDED roster then runs THE SWEEP (`store/chat#sweepRoster`, D84 N2 + M7 — a responder or a
+ *  home that left the roster, the overrides slots of a vanished home). A failed read never reaches here,
+ *  so it judges nothing (M3). */
 export function installAgents(data: AgentsWire, gen: number): void {
   if (gen !== agentsGen) return; // a newer load started → it owns the set
-  agentsLanded = true;
-  knownAgents.clear();
-  for (const n of data.agents) knownAgents.add(n);
-  defaultAgent = data.default || DEFAULT_AGENT;
-  defaultSet = data.default_set ?? false;
+  landRoster(data);
+  sweepRoster();
   verbsChanged();
 }
 
@@ -315,99 +264,47 @@ interface BuiltinVerb {
 /** The built-in verbs — ONE table driving dispatch (`routeSlash`), the `/help` listing, and the composer's
  *  first-token suggestions, so the three can't drift. Adding a verb is one row. Skills and providers are
  *  DISCOVERED (the sets above), so they stay out of the table and keep their own dynamic `/help` lines. */
-/** PIN THE STICKY AGENT — the whole body of the `/agent` verb, extracted so the other affordances
- *  drive the same seam rather than mint one: the agents gallery's Talk button (D70 §8.4) and the
- *  composer tools menu's agent rows (the D75 sticky ruling).
- *
- *  `name` is a slug, or `""` for "back to the configured default" — the bare-`/agent` case, which is a
- *  sticky-pick CLEAR rather than a pin at the default's name. A pin AT the default's name is a real
- *  pin too (it outranks a thread's own pin, which a clear would let resurface — the tools menu's
- *  default row inside a pinned thread) and gets the default's note. Any other name is validated against
- *  the roster: an UNKNOWN one is a NO-OP — nothing pins, nothing changes, one toast says there is no such
- *  agent (ISS-51, owner-ruled 2026-10-07: "it seems unintuitive that the agent changes to another agent
- *  just because of a typo"). Judged only once a roster has landed (`agentsLanded`); before that a pick
- *  pins unjudged and the server's own one-rung fallback covers it.
- *
- *  The CLEAR's note names who will actually answer: inside a thread carrying its own D70 §4.2 pin (every
- *  `/new` thread since ISS-31 is one), the server's ladder falls through to that pin, not the default —
- *  so the note says the thread's agent when it differs from the default (the code round's O-LOW-3).
- *
- *  ISS-49: a pick on a FRESH thread (nothing said yet) also re-seats its opening — pin and greeting —
- *  through the store's `reseatOpening`, after the pin + note. An opening the owner EDITED would be
- *  discarded, so that one case asks first: Cancel changes NOTHING (no pin, no note); Switch pins and
- *  re-seats with the discard confirmed FOR THE THREAD IT WAS ASKED ABOUT (snapshotted before the
- *  dialog — if the view moved meanwhile, the other thread's edit is never discarded). Without an edit
- *  nothing is awaited before the pin, so the pin and the note stay synchronous.
- *
- *  The note is MID-CHAT only (`conversationStarted`): before the owner's first turn it would be the sole
- *  line in an otherwise empty chat. */
-export async function pinStickyAgent(name: string): Promise<void> {
-  // THE TYPO DOOR — before anything is asked or written: a name the landed roster does not know (and
-  // that is not the default's or the root's own slug) changes nothing; the toast is the whole response.
-  if (
-    agentsLanded &&
-    name &&
-    name !== defaultAgent &&
-    name !== DEFAULT_AGENT &&
-    !knownAgents.has(name)
-  ) {
-    pushToast(`No agent named "${name}"`, "err");
-    return;
-  }
-  const discard = wouldReseat(name) && openingEdited();
-  const askedFor = discard ? getThreadId() : null;
-  if (discard) {
-    const from = getThreadAgent() ?? defaultAgent;
-    const ok = await requestConfirm({
-      title: "Discard the edited greeting?",
-      body: `You edited ${from}'s opening message. Switching to ${name} replaces it with ${name}'s greeting.`,
-      confirmLabel: "Switch",
-      danger: true,
-    });
-    if (!ok) return;
-  }
-  setStickyAgent(name || null);
-  const threadAgent = getThreadAgent();
-  // Nothing said yet → no note: the chat should hold only the opening (or nothing), and the re-seat's
-  // greeting + who-line already show who answers (owner nit 2026-10-01).
-  if (conversationStarted())
-    pushSystemNote(
-      !name && threadAgent !== null && threadAgent !== defaultAgent
-        ? `// agent → ${threadAgent} (this thread's)`
-        : !name || name === defaultAgent
-          ? `// agent → ${defaultAgent} (default)`
-          : `// agent → ${name}`,
-    );
-  void reseatOpening(name, askedFor);
-}
-
 const BUILTIN_VERBS: readonly BuiltinVerb[] = [
   {
     verb: "agent",
     args: "[name]",
-    help: "switch the active agent (bare = back to default)",
-    // `/agent <name>` sets the sticky agent pick (persisted per device, D75 amendment); bare `/agent`
-    // clears it (back to the thread's / configured default).
-    run: (rest) => void pinStickyAgent(rest.split(/\s+/)[0] || ""),
+    help: "choose who answers in this conversation (bare = who answers now)",
+    // `/agent <name>` sets the RESPONDER for the open conversation on this device (D84 R45, persisted
+    // with it); `/agent <its home>` clears it. Bare `/agent` says who answers. The notes are the store's
+    // (`setResponder` / `reportResponder`). Another agent's OWN conversation is reached through the
+    // roster (the tools menu, the gallery's Talk) — never from here (THE INVARIANT, R22).
+    run: (rest) => {
+      const name = rest.split(/\s+/)[0];
+      if (name) setResponder(name);
+      else reportResponder();
+    },
   },
   {
     verb: "privilege",
     aliases: ["priv"],
     args: "[lvl]",
-    help: "set the session privilege (read|confirm|auto_low|full; bare = agent default)",
+    help: "set this agent's privilege (read|confirm|auto_low|full; bare = agent default)",
     run: (rest) => {
-      // `/privilege <level>` sets a sticky session override; bare (or `default`/`clear`) resets to
-      // the agent's own privilege. Accepts `read` as an alias for `readonly`. Unknown → warn, no-op.
+      // `/privilege <level>` sets the open conversation's HOME agent's override (D84 R40 — shared by its
+      // conversations, persisted per device, ON4); bare (or `default`/`clear`) clears it back to the
+      // home's own AgentDef privilege. Accepts `read` as an alias for `readonly`. Unknown → warn, no-op.
+      // Allowed in a live call (§12.4 Q4): it applies from the next utterance.
       const word = rest.split(/\s+/)[0]?.toLowerCase() ?? "";
       if (!word || word === "default" || word === "clear") {
-        setSessionPrivilege(null);
-        pushSystemNote("// privilege → agent default");
+        const home = setHomePrivilege(null);
+        pushSystemNote(
+          home === null ? UNKNOWN_HOME_NOTE : `// privilege → agent default (${displayName(home)})`,
+        );
         return;
       }
       const lvl = (word === "read" ? "readonly" : word) as Privilege;
       if (PRIVILEGE_VALUES.has(lvl)) {
-        setSessionPrivilege(lvl);
-        pushSystemNote(`// privilege → ${privilegeLabel(lvl)}`);
+        const home = setHomePrivilege(lvl);
+        pushSystemNote(
+          home === null
+            ? UNKNOWN_HOME_NOTE
+            : `// privilege → ${lvl} (${displayName(home)}, this session)`,
+        );
       } else {
         pushSystemNote(`// unknown level: ${word} — try read · confirm · auto_low · full`);
       }
@@ -427,14 +324,14 @@ const BUILTIN_VERBS: readonly BuiltinVerb[] = [
     // The whole verb is "send the owner's own consolidation prompt as this message" — see below.
     run: (rest, raw) => void runConsolidate(rest, raw),
   },
-  // The D75-amendment tandem rule: a CONFIGURED default → the fresh thread starts on it (the sticky
-  // pick clears, and the thread is minted with the RESOLVED default's name — `defaultAgent`, installed
-  // by the same roster read as `defaultSet`); none configured → it keeps the agent the owner was talking
-  // to. `/new` mints the thread through D70 §4.2 seam ① so a character's greeting shows at once (ISS-31).
+  // `/new` (D84 R22b): a fresh conversation for the open conversation's HOME agent (the configured
+  // default with none open), minted through D70 §4.2 seam ① so its greeting shows at once (ISS-31);
+  // the responder stays behind with the conversation it was set in. On a conversation with no owner
+  // turn it is the "already new" no-op.
   {
     verb: "new",
-    help: "start a new thread",
-    run: () => void startNewThread({ keepAgent: !defaultSet, defaultAgent }),
+    help: "start a new conversation with this conversation's agent",
+    run: () => void newConversation(),
   },
   { verb: "help", help: "show this list", run: () => pushSystemNote(helpText()) },
 ];
@@ -588,8 +485,8 @@ export function runComposer(raw: string): boolean {
   // the exact line on Stop (D41 §6) — the raw-line map is keyed uniformly for every send path.
   // A6: this is the message the tools/skills menu's skills were ticked for, so they ride along and are
   // SPENT here (`take` = read + clear); absent, the field is omitted rather than passed empty. The AGENT
-  // is not this branch's business: the menu's agent rows write the sticky pin, and `sendMessage`
-  // reads it like every other send does.
+  // is not this branch's business: `/agent` sets the responder, and `sendMessage` reads it like every
+  // other send does.
   //
   // D68 §7 — the STAGED ATTACHMENTS are consumed HERE, in the natural-language branch, and nowhere
   // else. Two consequences, both deliberate:
@@ -626,7 +523,8 @@ export function runComposer(raw: string): boolean {
  *    the owner ticked them for the message they are typing; a spoken utterance is not that message, and
  *    silently unticking them mid-call would be a surprise they never asked for. The AGENT is no
  *    exception to anything: it follows the routing ladder like every send (`sendMessage` reads the
- *    sticky pin), so the call answers as the agent the tools menu shows.
+ *    responder, else the home), so the call answers as whoever answered when it started — no responder
+ *    change and no conversation switch is possible during a call (R20).
  *
  *  What it DOES share is the staged-attachment reservation, deliberately (§4.5, owner-ratified: stage a
  *  photo, start the call, ask about it) — including the upload HOLD, which here returns `"held"` rather
@@ -695,13 +593,19 @@ function routeSlash(text: string): void {
     // ambiguous — it falls to the unknown note below rather than quietly routing to a same-named
     // provider, matching how `getCompletions` drops skill-shadowed providers.
   } else if (!bucket && knownProviders.has(verb)) {
-    // /<provider> [msg] → force that inference backend. With args = one-shot; bare = sticky.
+    // /<provider> [msg] → force that inference backend. With args = one-shot (this message only);
+    // bare = the open conversation's HOME agent's sticky mode (D84 R40, persisted per device, ON4) —
+    // allowed in a live call (§12.4 Q4).
     if (rest) {
       clearComposerSkills();
       void sendMessage(rest, { mode: verb, raw });
     } else {
-      setSessionMode(verb);
-      pushSystemNote(`// inference → ${verb}`);
+      const home = setHomeMode(verb);
+      pushSystemNote(
+        home === null
+          ? UNKNOWN_HOME_NOTE
+          : `// inference → ${verb} (${displayName(home)}, this session)`,
+      );
     }
   } else {
     pushSystemNote(`// unknown command: /${verb} — try /help`);
@@ -773,7 +677,11 @@ export function getCompletions(draft: string): Completion[] {
   const head = verb.toLowerCase();
   const hit = (n: string) => n.toLowerCase().startsWith(lower);
   const mk = (value: string, kind: CompletionKind): Completion => ({ value, kind, insert: value });
-  if (head === "agent") return [...knownAgents].filter(hit).map((n) => mk(n, "agent"));
+  // THE ROSTER (H1) — the root included: `/agent default` is a valid responder.
+  if (head === "agent")
+    return rosterSlugs()
+      .filter(hit)
+      .map((n) => mk(n, "agent"));
   if (BUILTIN_BY_VERB.get(head)?.verb === "privilege") {
     return PRIVILEGE_LEVELS.filter((l) => hit(l.val)).map((l) => mk(l.val, "privilege"));
   }

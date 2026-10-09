@@ -45,7 +45,7 @@ import {
   openThread,
   resetToThreadless,
   sendMessage,
-  setStickyAgent,
+  setResponder,
   useChat,
 } from "../../src/store/chat";
 import { clearGroupScrollTarget, getGroupScrollTarget } from "../../src/store/groupScroll";
@@ -883,7 +883,7 @@ describe("session-51 #1 · the who-line names the character", () => {
             release = resolve;
           }),
       );
-    setStickyAgent("seraphina");
+    setResponder("seraphina"); // `/agent seraphina` — the responder the POST names
     try {
       const { result } = renderHook(() => useChat());
       let sent!: Promise<unknown>;
@@ -901,11 +901,11 @@ describe("session-51 #1 · the who-line names the character", () => {
         await sent;
       });
     } finally {
-      setStickyAgent(null);
+      act(() => resetToThreadless()); // a reset leaves — the responder clears
     }
   });
 
-  // Fix wave 1 — with no sticky pick, the agent that will answer is the THREAD's pin (the server's own
+  // Fix wave 1 — with no responder, the agent that will answer is the THREAD's home (the server's own
   // fallback order), so a Seraphina thread's placeholder is Seraphina's; the POST still names no agent.
   it("the send placeholder falls back to the thread's pinned agent, display only (#1c)", async () => {
     const frames = [
@@ -927,7 +927,6 @@ describe("session-51 #1 · the who-line names the character", () => {
         });
       return Promise.resolve(sseResponse(frames));
     });
-    setStickyAgent(null);
     const { result } = renderHook(() => useChat());
     await act(async () => {
       await openThread("t-sera");
@@ -1220,7 +1219,7 @@ describe("ChatThread — stick to bottom (ISS-66)", () => {
       />,
     );
     expect(p.pane.scrollTop).toBe(p.max());
-    act(() => resetToThreadless(null)); // leave the singleton store thread-less for later cases
+    act(() => resetToThreadless()); // leave the singleton store thread-less for later cases
     vi.unstubAllGlobals();
   });
 });

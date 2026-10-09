@@ -564,9 +564,15 @@ export function planThread(steps: { text: string; status: "pending" | "active" |
   ];
 }
 
+/** The thread LIST the chat boots from — `GET /api/threads?include_archived=true` since D84 (an archived
+ *  run the owner left open counts as present, §12.3 H3), the same read `openThread`'s late home lookup
+ *  makes; the bare path too. NOT the roster door's `?agent=` read. A glob cannot say it: Playwright
+ *  anchors a glob on the whole URL, query included. */
+export const THREAD_LIST = /\/api\/threads(\?include_archived=true)?$/;
+
 /** Seed one thread + its messages (the two routes every chat-shaped arm here needs). */
 export async function seedThread(page: Page, messages: unknown[]) {
-  await page.route("**/api/threads", (route) =>
+  await page.route(THREAD_LIST, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",

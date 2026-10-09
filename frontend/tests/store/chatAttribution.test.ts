@@ -67,7 +67,7 @@ async function streamTurn(end: Record<string, unknown>) {
 }
 
 beforeEach(() => {
-  resetToThreadless(null);
+  resetToThreadless();
 });
 
 describe("D62 · the message.end fold", () => {

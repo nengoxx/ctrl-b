@@ -64,7 +64,7 @@ async function openThread() {
   return result;
 }
 
-beforeEach(() => resetToThreadless(null)); // reset the module-level store between cases
+beforeEach(() => resetToThreadless()); // reset the module-level store between cases
 afterEach(() => vi.clearAllMocks());
 
 describe("compactThread (D42 manual /compact)", () => {
@@ -135,7 +135,7 @@ describe("compactThread (D42 manual /compact)", () => {
     });
     await act(async () => {
       const done = compactThread();
-      resetToThreadless(null); // switch away (threadId → null) before the fetch resolves
+      resetToThreadless(); // switch away (threadId → null) before the fetch resolves
       release();
       await done;
     });

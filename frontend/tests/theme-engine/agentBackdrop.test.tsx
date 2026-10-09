@@ -58,8 +58,8 @@ vi.mock("../../src/hooks/useAgentChat", () => ({ useAgentChat: () => chat.view }
 
 import { useActiveBackdrop } from "../../src/hooks/useActiveBackdrop";
 import type { MediaFile } from "../../src/hooks/useMedia";
-import { pinStickyAgent, runComposer } from "../../src/lib/composer";
-import { getChatStatus, openThread, resetToThreadless, setStickyAgent } from "../../src/store/chat";
+import { runComposer } from "../../src/lib/composer";
+import { getChatStatus, openThread, resetToThreadless, setResponder } from "../../src/store/chat";
 import { setUI } from "../../src/store/ui";
 import { AgentTab } from "../../src/tabs/AgentTab";
 import { DefaultRoot } from "../../src/theme-engine/kit/DefaultRoot";
@@ -139,11 +139,10 @@ beforeEach(() => {
   media.by = {
     agents: { ns: "agents", collation: "library-v1", roles: { backgrounds: [file("hall")] } },
   };
-  setStickyAgent(null);
   setUI({ theme: "cosmos", tab: "agent", agentBackdrop: "operator", motion: "full" });
 });
 afterEach(() => {
-  resetToThreadless(null); // the sticky pick AND the thread pin: both rungs of the ladder start each arm empty
+  resetToThreadless(); // the responder AND the home: both rungs of the ladder start each arm empty
   setUI({ agentBackdrop: "operator" });
   cleanup();
 });
@@ -255,18 +254,18 @@ describe("which agent the backdrop belongs to (§8.3a item 2)", () => {
     };
   });
 
-  it("the sticky pin WINS while it names a configured agent", () => {
-    setStickyAgent("lynette");
+  it("the RESPONDER wins while it names a configured agent (`/agent lynette`, D84 R45)", () => {
+    act(() => setResponder("lynette"));
     const { container } = draw(<AgentTab active />);
     expect(
       container.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src"),
     ).toBe(painted("lynette"));
   });
 
-  it("a sticky name that is NOT configured falls back to the default's art, not to nothing", () => {
-    // `/agent typo` stays sticky on purpose (the backend resolves it to the default) — the surface has to
-    // agree with where the message actually goes. The shared `validStickyAgent` fold is what makes it.
-    setStickyAgent("typo");
+  it("a responder that is NOT on the roster falls back to the home's art (the default's), not to nothing", () => {
+    // A responder kept from before the roster landed (M3) — or one whose agent was deleted, which the N2
+    // sweep clears — is folded by `effectiveAgent` to the home: the surface agrees with where it goes.
+    act(() => setResponder("typo"));
     const { container } = draw(<AgentTab active />);
     expect(
       container.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src"),
@@ -279,17 +278,15 @@ describe("which agent the backdrop belongs to (§8.3a item 2)", () => {
       view.container.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src");
     expect(src()).toBe(painted("hall"));
     act(() => {
-      setStickyAgent("lynette"); // what the `/agent` verb and the gallery's Talk button both call
+      setResponder("lynette"); // what the `/agent lynette` verb calls
     });
     expect(src()).toBe(painted("lynette"));
   });
 });
 
-describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-24)", () => {
-  // The menu's agent rows used to arm a ONE-SHOT that this surface previewed and then HELD through the
-  // armed turn. The owner ruled it sticky instead: a row is `/agent <name>` by another hand
-  // (`pinStickyAgent`, the seam the rows call), so the backdrop is just the ladder — and it STAYS on the
-  // picked agent after the send, because nothing about the pick is spent any more.
+describe("the responder holds the surface through and after the send it rides (D84 R45)", () => {
+  // The backdrop is just the ladder (`effectiveAgent`: the responder, else the home, else the default) —
+  // and it STAYS on the responder after the send, because a responder is spent by nothing but leaving.
   beforeEach(() => {
     media.by = {
       agents: {
@@ -329,16 +326,16 @@ describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-
     );
   }
 
-  it("a pick repaints at once, and STAYS through and after the send it rides", async () => {
+  it("`/agent` repaints at once, and the surface STAYS through and after the send it rides", async () => {
     const view = draw(<AgentTab active />);
     expect(src(view.container)).toBe(painted("hall"));
     act(() => {
-      void pinStickyAgent("lynette"); // the menu's row
+      setResponder("lynette"); // `/agent lynette`
     });
     expect(src(view.container)).toBe(painted("lynette"));
     serveCompletedTurn();
     await act(async () => {
-      runComposer("hello"); // the real dispatch chokepoint — it no longer spends or holds any pick
+      runComposer("hello"); // the real dispatch chokepoint — it spends no responder
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[0]).toBe("/api/agent/chat"); // it really sent
@@ -346,11 +343,11 @@ describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-
     expect(src(view.container)).toBe(painted("lynette")); // …and her face is still up
   });
 
-  it("the CALL screen's read (`useActiveBackdrop()`, no argument) paints the picked agent too", () => {
-    // A call's turns route by the same ladder (`sendMessage` reads the sticky pin), so the call surface
-    // wears the menu's pick — the call-side wiring is pinned in callOverlay's own suite.
+  it("the CALL screen's read (`useActiveBackdrop()`, no argument) paints the responder too", () => {
+    // A call's turns route by the same ladder (`sendMessage` sends the responder), so the call surface
+    // wears it — the call-side wiring is pinned in callOverlay's own suite.
     act(() => {
-      void pinStickyAgent("lynette");
+      setResponder("lynette");
     });
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
@@ -360,12 +357,12 @@ describe("the composer menu's agent pick IS the sticky pin (D75 ruling, 2026-09-
     );
   });
 
-  it("the default row (a clear) hands the surface back to the ladder", () => {
-    setStickyAgent("lynette");
+  it("`/agent <home>` (a clear) hands the surface back to the home", () => {
+    act(() => setResponder("lynette"));
     const view = draw(<AgentTab active />);
     expect(src(view.container)).toBe(painted("lynette"));
     act(() => {
-      void pinStickyAgent("");
+      setResponder("default"); // thread-less: the home-to-be is the default — the responder clears
     });
     expect(src(view.container)).toBe(painted("hall"));
   });
@@ -513,23 +510,15 @@ describe("the OPEN THREAD's pin is the ladder's second rung (wave 1c)", () => {
   const src = (c: HTMLElement) =>
     c.querySelector<HTMLImageElement>(".kit-backdrop-art")!.getAttribute("src");
 
-  it("paints the THREAD's character when nothing is sticky", async () => {
+  it("paints the HOME's character when no responder is set", async () => {
     await openPinned("lynette");
     expect(src(draw(<AgentTab active />).container)).toBe(painted("lynette"));
   });
 
-  it("the sticky pick still wins — a `/agent` switch is the owner speaking last", async () => {
+  it("the responder still wins — `/agent default` in Lynette's conversation is the root answering", async () => {
     await openPinned("lynette");
-    setStickyAgent("default"); // …not a specialist name: the default agent, explicitly picked
+    act(() => setResponder("default")); // the root, by name — a valid responder (H1)
     expect(src(draw(<AgentTab active />).container)).toBe(painted("hall"));
-  });
-
-  it('an EMPTY sticky pick yields to the thread — the server reads "" as unset too', async () => {
-    // `pinStickyAgent("")` is what Talk on the DEFAULT agent stores; the server sees a falsy
-    // `body.agent` and routes by `thread.agent`. Mirroring that is the rule, not a gap.
-    await openPinned("lynette");
-    setStickyAgent("");
-    expect(src(draw(<AgentTab active />).container)).toBe(painted("lynette"));
   });
 
   it("a pin naming an agent the roster no longer has falls to the default's art", async () => {
@@ -553,17 +542,14 @@ describe("the OPEN THREAD's pin is the ladder's second rung (wave 1c)", () => {
     expect(src(view.container)).toBe(painted("lynette"));
   });
 
-  it("the default's NAME as the sticky pin beats the thread's character — the menu's default row", async () => {
-    // What the tools menu's default row writes inside a pinned thread (D75 ruling): a CLEAR would let
-    // the thread's pin resurface, so the row pins the default BY NAME — truthy, so it outranks the
-    // thread on the server's ladder — and the fold lands on the default's own art.
+  it("the responder set INSIDE the conversation beats its home, and `/agent <home>` gives it back", async () => {
     await openPinned("lynette");
     const view = draw(<AgentTab active />);
     expect(src(view.container)).toBe(painted("lynette"));
-    act(() => {
-      void pinStickyAgent("default");
-    });
+    act(() => setResponder("default"));
     expect(src(view.container)).toBe(painted("hall"));
+    act(() => setResponder("lynette")); // the home's own name: the responder clears
+    expect(src(view.container)).toBe(painted("lynette"));
   });
 });
 

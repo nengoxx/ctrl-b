@@ -8,11 +8,12 @@ owner, and it is written the way the agent loop writes every other assistant tur
 
 ONE helper, called from exactly the two enumerated INTERACTIVE creation seams (§4.2): the explicit
 new-thread endpoint and the chat endpoint's auto-created thread, the latter in its HOME agent's
-voice (D84: that mint is pinned to the configured default, whoever answers the turn) — plus one
-REOPEN seam (ISS-49): `PUT /threads/{id}/opening`, which replaces a still-FRESH thread's opening (pin + greeting) when the owner
-picks another agent before saying anything. It re-seats a thread one of the two creation seams opened,
-so the headless rule below is untouched. Automation and subagent threads are
-ruled out and reach this module from nowhere — a headless run wants no greeting in its transcript.
+voice (D84: that mint is pinned to the configured default, whoever answers the turn). There is no
+third seam: ISS-49's opening re-seat (`PUT /threads/{id}/opening`) was deleted with D84 R27 — a
+conversation's home agent is written once at mint and never moves, so its opening never changes
+hands (the `alt_greetings` picker re-adds a route, for the SAME agent, when it is built). Automation
+and subagent threads are ruled out and reach this module from nowhere — a headless run wants no
+greeting in its transcript.
 
 **Compaction, by design:** the seeded message is ordinary history, so a long thread's compactor may
 fold it into the summary like any other old turn. That is correct — the head's persona carries the

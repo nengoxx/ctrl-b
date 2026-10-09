@@ -6,9 +6,9 @@ import { useAgentArt, type BoundArt } from "./useAgentArt";
 //
 // THE RULE, and what it deliberately excludes:
 //   · the ACTIVE agent is the SERVER's routing ladder, mirrored (`lib/composer#effectiveAgent`): the
-//     sticky pin when it is set (`/agent`, the gallery's Talk, the composer tools menu's agent
-//     rows — one seam, `pinStickyAgent`), else the OPEN THREAD's own D11 pin, else the resolved default
-//     (whose own art may paint — a fresh install with art on the default agent shows it). The thread rung
+//     RESPONDER when one is set (`/agent <name>`, D84 R45), else the open conversation's HOME agent, else
+//     the configured default (whose own art may paint — a fresh install with art on the default agent
+//     shows it). The home rung
 //     is what wave 1c added: booting into a thread pinned to a character replied as that character while
 //     this surface still painted the default (owner glance 2026-09-08), and §8.3a's rule is that the
 //     surface belongs to whoever the NEXT message runs as — so it has to read what actually routes it;
@@ -23,10 +23,10 @@ import { useAgentArt, type BoundArt } from "./useAgentArt";
 // `null` is handed to `useAgentArt`'s resolver on purpose rather than resolved here: `art(null)` already
 // means "whichever agent a bare turn runs as", so the default's slug is looked up in exactly one place.
 //
-// THE LADDER ITSELF LIVES IN `lib/composer` (`effectiveAgent`, over `validStickyAgent`), and the ONE
-// subscription that feeds it — the sticky pin, the thread pin, the roster QUERY — is `useActiveAgent`,
-// taken by this hook AND by the tools menu's checked row, which is the only way those two can keep
-// answering the same question the same way.
+// THE LADDER ITSELF LIVES IN `lib/composer` (`effectiveAgent`), and the ONE subscription that feeds it —
+// the responder, the home, the roster QUERY — is `useActiveAgent`, taken by every surface that shows who
+// answers, which is the only way they can keep answering the same question the same way. (The tools
+// menu's CHECKED row is a different question — the conversation's HOME, R38 — `useHomeAgent`.)
 
 /** The ACTIVE agent's bound `background`, its `avatar` when it binds no background, or `undefined` when
  *  there is neither to paint — the agent binds nothing, binds entries the library no longer holds, or binds

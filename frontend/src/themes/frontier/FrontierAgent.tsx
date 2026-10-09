@@ -11,7 +11,7 @@ import { useFrontierArt } from "./ownerArt";
 // bespoke part is the backdrop: the 3-layer bobbing rig-stack that reads as a centered hero in the empty
 // state and RECEDES to a dim living-background watermark once the thread has messages (§14.13 #8 applied over
 // time). All of that recede/reverse is CSS-only, driven by the `data-thread` attribute below — a `/new`
-// opens a fresh thread (`startNewThread`: empty unless its agent greets) so the reversal is free (no JS
+// opens a fresh conversation (`newConversation`: empty unless its agent greets) so the reversal is free (no JS
 // transition bookkeeping).
 //
 // Parity with the default AgentTab: it renders the SAME `.sec` header + PrivilegeChip (functionality parity,

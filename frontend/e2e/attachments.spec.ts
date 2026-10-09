@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "./fixtures";
+import { expect, test, THREAD_LIST } from "./fixtures";
 
 // COMPOSER ATTACHMENTS end to end (D68 S3 / ATTACHMENTS_PLAN §7/§8), in the REAL built app.
 //
@@ -84,7 +84,7 @@ async function mockAttachments(
     // A BUFFERED turn (D17): the client re-reads the durable floor, which is where the parts are.
     return json(route, { threadId: "t1", messages: [] });
   });
-  await page.route("**/api/threads", (route) =>
+  await page.route(THREAD_LIST, (route) =>
     json(route, sent ? [{ id: "t1", title: "photo", agent: null, archived: false }] : []),
   );
   await page.route("**/api/threads/t1/messages", (route) =>

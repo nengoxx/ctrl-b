@@ -1,17 +1,12 @@
 import { useEffect, useRef } from "react";
 
 import { FocalFace } from "../../../../components/FocalFace";
-import { useActiveAgent } from "../../../../hooks/useActiveAgent";
+import { useHomeAgent } from "../../../../hooks/useActiveAgent";
 import { useAgentArt, type AgentArt } from "../../../../hooks/useAgentArt";
 import { DEFAULT_AGENT, useAgentRoster } from "../../../../hooks/useAgents";
 import { useOutsideDismiss } from "../../../../hooks/useOutsideDismiss";
-import {
-  agentPin,
-  getKnownSkills,
-  pinStickyAgent,
-  useVerbsVersion,
-} from "../../../../lib/composer";
-import { useThreadAgent } from "../../../../store/chat";
+import { getKnownSkills, useVerbsVersion } from "../../../../lib/composer";
+import { openAgentConversation } from "../../../../store/chat";
 import { releaseComposerOverlay, useComposerOverlayOpen } from "../../../../store/composerOverlay";
 import {
   clearComposerSkills,
@@ -33,20 +28,22 @@ import {
 // prop; BottomSheet applies the same thing imperatively to its below-the-fold content). `pointer-events:
 // none` on the closed shell is the pointer half of the same contract.
 //
-// Two sections, two lifetimes (D75 ruling, 2026-09-24):
-//   • AGENT  — radio: the ACTIVE agent, STICKY. A row is the same switch `/agent <name>` and the agents
-//     gallery's Talk button flip (`lib/composer#pinStickyAgent` → `store/chat` `stickyAgent`), so it
-//     holds until switched again. The "default" row clears the pin — or, inside a thread that carries its
-//     own D70 §4.2 pin, pins the default BY NAME, because a clear would let the thread's agent resurface.
+// Two sections, two lifetimes:
+//   • AGENTS — the ROSTER DOOR (D84 §2 R16, R38, O4): every activation of a row — the already-checked one
+//     included — opens that agent's LATEST conversation, or mints it a greeted one
+//     (`store/chat#openAgentConversation`, the same door the agents gallery's Talk takes). The CHECKED row
+//     is the open conversation's HOME agent ("the conversation you are in", R38) — never the responder an
+//     `/agent <name>` set: who ANSWERS shows on the backdrop, the who-line, and `/agent`'s own note.
 //   • SKILLS — checkboxes: the discovered skills, ticked for the NEXT message only (`store/composerSkills`,
 //     spent on dispatch).
 // The skills read the composer's own verb set (`lib/composer`), the same source `/<skill>` routes from — so
 // the menu can never offer a skill the router wouldn't accept, and it costs no extra fetch. The AGENTS read
 // the always-on ROSTER QUERY (`useAgentRoster`) — the same source the backdrop paints by — and NOT the
-// composer's module-level `/agent` set: that Set is best-effort (filled once at import, refreshed only by
-// a save, kept as-is on a failed load), so after a failed first load it listed no agent and checked the
-// default row while the backdrop painted the pinned character (the sticky slice's review, 2026-09-24).
-// `useActiveAgent` is the one subscription both surfaces take for the checked row.
+// routing's module copy (`lib/roster`): that copy is best-effort (filled at import, refreshed by a save,
+// kept as-is on a failed load), so after a failed first load it listed no agent and checked the default
+// row while the backdrop painted the pinned character (the D75 slice's review, 2026-09-24). The checked
+// row is fed by `useHomeAgent` (the conversation's HOME, R38) over that same query; the backdrop by
+// `useActiveAgent` (who answers).
 
 /** The panel element id — one composer is mounted at a time, like `#composer-suggest`/`#cmd-input`. */
 export const TOOLS_SHEET_ID = "composer-tools";
@@ -94,16 +91,17 @@ export function ToolsMenuSheet() {
   }, [open]);
   /** An agent row was ACTIVATED (tap, Space, a TalkBack double-tap — the checked row included): the owner
    *  picked who to talk to, so the panel closes (owner, 2026-10-01; skills keep it open — several are
-   *  ticked together). Focus goes back to the trigger, as NavMenu's close does: the radio it sat on is
-   *  now inside an inert panel — and a discard confirm `pinStickyAgent` may raise captures it to restore.
-   *  Runs before the row's `onChange` for the same click, so that capture sees the trigger. */
-  const picked = (): void => {
+   *  ticked together), and that agent's conversation opens. Focus goes back to the trigger, as NavMenu's
+   *  close does: the radio it sat on is now inside an inert panel. An arrow-key BROWSE is not a pick: it
+   *  neither closes the panel nor opens anything. */
+  const picked = (name: string): void => {
     if (arrowNav.current) {
       arrowNav.current = false;
       return;
     }
     releaseComposerOverlay("menu");
     document.getElementById(TOOLS_TRIGGER_ID)?.focus();
+    void openAgentConversation(name);
   };
 
   // The roster, and its resolved default — `DEFAULT_AGENT` stands in until the query lands (the gallery's
@@ -116,23 +114,16 @@ export function ToolsMenuSheet() {
   // threaded down: the rows are a `.map()`, and one resolver serves the whole group (`useAgentArt`).
   const art = useAgentArt();
   const armed = ticked.length > 0;
-  // The radio group checks the ACTIVE agent: the server's routing ladder (`useActiveAgent`, the one
-  // subscription the agent backdrop paints by) — the sticky pin, else the OPEN THREAD's own pin, else the
-  // resolved default. A pin that isn't a configured agent folds to the resolved default's row (the
-  // server's own answer for an unknown name), and a pin AT the default's name — what that row writes
-  // inside a pinned thread — lands there too, so it reads checked in both of its representations.
-  // Both pins are subscribed inside the hook: the sticky one because this panel WRITES it (a pick must
-  // repaint the open group) and `/agent` or the gallery's Talk can move it from elsewhere; the thread pin
-  // because it arrives on its own, from `openThread`'s LATE list read, and can land while the panel is up.
-  const active = useActiveAgent() ?? defaultAgent;
-  // …read here too, for what the default's row WRITES (`agentPin`): a clear, or the name.
-  const threadAgent = useThreadAgent();
+  // The radio group checks the open conversation's HOME (R38 — `useHomeAgent`, folded through the same
+  // roster query: a home off the roster reads as the configured default's row, ISS-51's paint; the
+  // thread-less view's home-to-be IS the default). Subscribed, because the home can arrive on its own —
+  // from `openThread`'s LATE list read — while the panel is up, and a door opened elsewhere moves it.
+  const home = useHomeAgent() ?? defaultAgent;
   // THE ROWS (D75 amendment code round): the ROOT first — it is never in the roster's `agents`, so it
   // needs its own row — then each specialist, ONCE. The resolved default's row (the root, or a specialist
-  // promoted to the default) carries the "default" tag, meaning "what a bare thread resolves to"; the
-  // root row, when it is NOT that, reads "root" (its slug is "default", and two rows reading "default"
-  // was the code round's catch). What a row pins is `agentPin` — the gallery Talk's own expression, so
-  // the two doors cannot disagree.
+  // promoted to the default) carries the "default" tag, meaning "what a bare conversation resolves to";
+  // the root row, when it is NOT that, reads "root" (its slug is "default", and two rows reading
+  // "default" was the code round's catch).
   const rows = [DEFAULT_AGENT, ...agents.filter((n) => n !== DEFAULT_AGENT)];
 
   return (
@@ -161,11 +152,11 @@ export function ToolsMenuSheet() {
             <AgentRow
               key={n}
               name={n}
+              title={roster?.summaries?.[n]?.title || n}
               tag={n === defaultAgent ? "default" : n === DEFAULT_AGENT ? "root" : undefined}
-              on={active === n}
-              pin={agentPin(n, threadAgent, defaultAgent)}
+              on={home === n}
               avatar={art(n).avatar}
-              onPick={picked}
+              onPick={() => picked(n)}
             />
           ))}
         </div>
@@ -211,8 +202,10 @@ export function ToolsMenuSheet() {
   );
 }
 
-/** One agent radio row. `pin` is what choosing it hands `pinStickyAgent` — the agent's name, or `""`
- *  (the sticky-pin CLEAR) for the resolved default's row outside a thread-pinned conversation.
+/** One agent radio row — a ROSTER DOOR: activating it (`onPick`, the already-checked row included) opens
+ *  the agent's conversation. The radio's own `onChange` deliberately does NOTHING (O4): it fires only on a
+ *  CHANGE, so a door hung on it would skip the checked row; the native input stays for its a11y (below),
+ *  and its accessible description says what activation does ("open <Name>'s conversation").
  *
  *  D70 §8.4 — the name is LED by the agent's avatar as a small circle when it has one; an agent with no
  *  art (every agent before this phase) renders exactly the row it always did.
@@ -225,16 +218,17 @@ export function ToolsMenuSheet() {
  *  text is still the accessible name. Its keyboard ring is drawn on the row (`:has()`, kit.css). */
 function AgentRow({
   name,
+  title,
   tag,
   on,
-  pin,
   avatar,
   onPick,
 }: {
   name: string;
+  /** The display name (the agent's `title`, else its slug) — the accessible description's `<Name>`. */
+  title: string;
   tag?: string;
   on: boolean;
-  pin: string;
   avatar: AgentArt["avatar"];
   /** Every activation, the already-checked row included (`onChange` fires only on a change). */
   onPick: () => void;
@@ -246,8 +240,10 @@ function AgentRow({
         className="tools-radio"
         name={AGENT_RADIO_NAME}
         checked={on}
+        aria-description={`open ${title}'s conversation`}
         onClick={onPick}
-        onChange={() => void pinStickyAgent(pin)}
+        // A controlled radio needs a handler; the door is `onClick` (every activation), never this.
+        onChange={() => {}}
       />
       <span className="tools-tick" aria-hidden>
         {on ? "•" : ""}

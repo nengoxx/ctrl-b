@@ -82,3 +82,29 @@ export function savePersisted<T>(key: string, value: T): void {
     /* private mode / quota — non-fatal, state still lives in memory */
   }
 }
+
+/** Patch ONE persisted object FIELD BY FIELD (Phase 27 §12.3 M4): read the stored blob FRESH, apply
+ *  `patch` to it, and save the result — never a whole-blob write of in-memory state. `patch` receives the
+ *  blob as stored right now (a non-object or unreadable value reads as `{}`) and returns ONLY the fields
+ *  it owns; every other field is written back exactly as it was read. Two tabs of one browser profile
+ *  therefore race only on the SAME field (last writer wins there), and a writer of one field can never
+ *  re-persist another field's stale copy — e.g. a tab's navigation re-saving an elevation the other tab
+ *  cleared. `ctrlb.chat`'s writers (the view tuple, one home's overrides) go through here; S8's
+ *  per-conversation drafts/rails (`ctrlb.composer`, `ctrlb.attachments`) reuse it — one key's entry per
+ *  write. A field patched to `undefined` is REMOVED (JSON drops it) — how a load-boundary fold deletes a
+ *  retired key. Same error contract as `savePersisted`: storage failures are swallowed. */
+export function patchPersisted(
+  key: string,
+  patch: (stored: Record<string, unknown>) => Record<string, unknown>,
+): void {
+  let stored: Record<string, unknown> = {};
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw == null ? null : (JSON.parse(raw) as unknown);
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed))
+      stored = parsed as Record<string, unknown>;
+  } catch {
+    /* unreadable → patch over an empty blob */
+  }
+  savePersisted(key, { ...stored, ...patch(stored) });
+}

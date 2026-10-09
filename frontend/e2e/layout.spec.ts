@@ -8,6 +8,7 @@ import {
   seedUI,
   SETTINGS,
   test,
+  THREAD_LIST,
 } from "./fixtures";
 
 // The SECTION LAYOUT SYSTEM v1 lever (D35 / FRONTIER_PLAN §6-F0) driven end-to-end on the REAL built app. A
@@ -583,7 +584,7 @@ test("gacha · chat bubbles: white user bubble with the hard pink offset, filled
     compacted: false,
   });
   // Route BEFORE the fixture's catch-all would answer these two with `{}`.
-  await page.route("**/api/threads", (route) =>
+  await page.route(THREAD_LIST, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -1009,7 +1010,7 @@ test("gacha · M7: the oracle ghosts as ONE SURFACE — art and copy together �
     tokens: null,
     compacted: false,
   });
-  await page.route("**/api/threads", (route) =>
+  await page.route(THREAD_LIST, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",

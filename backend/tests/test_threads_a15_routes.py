@@ -416,6 +416,9 @@ def test_seam_two_pins_the_configured_default_and_greets_as_it(scripted) -> None
 
         r = c.post("/api/exec", json={"command": "echo hi"})
         assert _get(c, r.json()["threadId"]).agent == "nyx"
+        assert r.json()["agent"] == "nyx"  # the `!cmd` mint names its HOME on the wire (H6)
+        r = c.post("/api/exec", json={"command": "echo hi", "thread_id": t.id})
+        assert r.json()["agent"] == "nyx"  # …and an exec into an existing conversation names its own
 
 
 def test_seam_one_pins_the_resolved_agent_never_a_dead_slug() -> None:

@@ -2668,7 +2668,7 @@ class Settings(BaseModel):
         grammar folders are minted and listed under (`valid_skill_slug`, as `list_agent_names`). Without
         this, `".."` resolved the workspace home and `"/etc"` that directory, each loaded as an agent
         NAMED after the input; every caller (`load_agent`, `resolve_agent`, hence `body.agent` on a
-        turn, `POST /threads`, the opening route) passes through here, so the check lives here once.
+        turn, `POST /threads`) passes through here, so the check lives here once.
         The root's own slug never reaches this method (both callers branch on it first)."""
         if not valid_skill_slug(name):
             return None

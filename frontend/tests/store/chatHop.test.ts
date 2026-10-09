@@ -14,7 +14,7 @@ import type { ChatMessage } from "../../src/types";
 //   · every arm (M1): a LEFT send that is refused or fails writes nothing into the new view and returns
 //     its words to the origin slot (today: the one global draft); a left-send 404 is dropped;
 //   · the raw steer lines stay with their thread across a swap (O22);
-//   · `openThread` / `startNewThread` no longer refuse while streaming; `openThread(id, home)` installs the
+//   · `openThread` / `/new` (`newConversation` → `mintAndOpen`) no longer refuse while streaming; `openThread(id, home)` installs the
 //     home at the swap (H6); an open that 404s toasts "deleted", marks the lists stale and stays (M6).
 
 type Frame = { event: string; data: unknown; id?: string };
@@ -654,11 +654,11 @@ describe("the doors no longer refuse while streaming (R9)", () => {
     expectBUntouched(f);
   });
 
-  it("startNewThread while streaming mints and swaps; the left turn runs on unseen", async () => {
+  it("`/new` while streaming mints and swaps; the left turn runs on unseen", async () => {
     const f = await fresh();
     const { s, sent } = await streamingOnA(f);
     await act(async () => {
-      await f.chat.startNewThread({ keepAgent: false, defaultAgent: "default" });
+      await f.chat.newConversation();
     });
     const v = f.view.result.current;
     expect(v.threadId).toBe("fresh");

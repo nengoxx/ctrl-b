@@ -52,8 +52,6 @@ _MUTATION_MARKERS = (
     "alternates.",
     "messages.delete_ids(",
     "messages.edit_text(",
-    # ISS-49 — the opening re-seat re-pins the thread row (the one writer after `create`).
-    "threads.set_agent(",
     # D84 — deleting a conversation (`DELETE /threads/{id}`; chat's D68 cleanup already reserves).
     "threads.delete(",
     # D84 F6 — the agent cascade deletes every conversation homed on the agent in one transaction.
@@ -92,9 +90,9 @@ def _code_only(src: str) -> str:
 #: Handlers allowed to mutate WITHOUT a marker. Empty today — additions need a D38-level ruling.
 _EXEMPT: frozenset[str] = frozenset()
 
-#: The complete guarded set as of ACA Slice 2 (D38), widened by D81's four message-action routes,
-#: ISS-49's opening re-seat, D84's conversation delete and its agent cascade (`?conversations=true`). A
-#: new guarded endpoint updates this pin.
+#: The complete guarded set as of ACA Slice 2 (D38), widened by D81's four message-action routes and
+#: D84's conversation delete and its agent cascade (`?conversations=true`). ISS-49's opening re-seat
+#: left it with D84 R27 (a conversation's home never moves). A new guarded endpoint updates this pin.
 _EXPECTED = {
     "chat",
     "resume",
@@ -106,7 +104,6 @@ _EXPECTED = {
     "select_alternate",
     "delete_message",
     "edit_message",
-    "reseat_opening",
     "delete_thread",
     "delete_agent",
 }

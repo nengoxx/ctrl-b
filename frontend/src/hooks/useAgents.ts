@@ -168,8 +168,8 @@ export interface AgentSummary {
  *
  *  `default` is what a bare thread RESOLVES to — the root when nothing is set; `default_set` says whether
  *  the owner SET one (`agent.default_agent` non-empty, D75 amendment). The two differ exactly when
- *  nothing is set: `default: "default", default_set: false`. The gallery's pill and `/new`'s tandem rule
- *  read `default_set`; the tools menu's default row and the backdrop's fallback read `default`.
+ *  nothing is set: `default: "default", default_set: false`. The gallery's pill reads `default_set`; the
+ *  tools menu's default row, the backdrop's fallback and every `/new`/thread-less home read `default`.
  *
  *  `summaries` is declared OPTIONAL for the reason the media wire fields are: a client can be handed a
  *  pre-D70 response (a service-worker cache from before an update, an e2e mock) and every consumer
@@ -203,7 +203,8 @@ export function rosterNames(list: AgentListing | undefined): string[] {
  *
  *  Every read is also INSTALLED into routing's module copy (`lib/composer#installAgents`, the
  *  `loadProviders` → `setAttachmentInfo` precedent): this query retries and refetches on focus, so it is
- *  what heals `/new`'s tandem rule on the phone after a failed import-time `loadAgents`. */
+ *  what heals routing's roster (`lib/roster`) on the phone after a failed import-time `loadAgents`, and
+ *  how a delete made on ANOTHER device reaches this one's roster sweep (D84 N2). */
 export function useAgentRoster() {
   return useQuery<AgentListing>({
     queryKey: ["agents"],

@@ -133,7 +133,6 @@ from app.services.conversation import (
     Revocable,
     TailReply,
     history_payload,
-    is_owner_turn,
     replace_text,
     resolve_unit,
 )
@@ -241,15 +240,6 @@ class ThreadPatch(BaseModel):
             return v.astimezone(timezone.utc)
         except OverflowError as e:
             raise ValueError("seen_at is out of range in UTC") from e
-
-
-class ReopenRequest(BaseModel):
-    """Body for `PUT /threads/{id}/opening` (ISS-49): the agent a FRESH thread should open as.
-    `discard_edited` is the owner's confirm that an opening they edited (D81) may go — without it an
-    edited greeting is a 409, never a silent loss."""
-
-    agent: str = Field(min_length=1)
-    discard_edited: bool = False
 
 
 class ExecRequest(BaseModel):
@@ -1488,78 +1478,6 @@ async def list_messages(thread_id: str, request: Request) -> list[dict[str, Any]
     return await history_payload(request.app.state.messages, thread_id)
 
 
-# The re-seat's refusals (ISS-49). The client shows each verbatim right under its own pick note
-# ("// agent → emma"), so they read as that note's addendum — the pick itself always stands.
-_NOT_FRESH_DETAIL = "this conversation has started — the pick applies from the next reply"
-_EDITED_OPENING_DETAIL = "the greeting here was edited — pick again to confirm discarding it"
-
-
-@router.put("/threads/{thread_id}/opening")
-async def reseat_opening(thread_id: str, body: ReopenRequest, request: Request) -> dict[str, Any]:
-    """Replace a FRESH thread's OPENING — its pin and its greeting — with `body.agent`'s (ISS-49): the
-    owner ran `/new` (minted for the default, D75's tandem rule) and then picked another agent before
-    saying anything. Without this the thread stays pinned to the first agent with its greeting, and the
-    picked agent's model reads that greeting as its own prior turn. The third greeting seam (D70 §4.2):
-    a REOPEN of a thread seam ① or ② already opened. Returns `{thread, messages: history_payload}`.
-
-    Named for the OPERATION, not the pin: a later `alt_greetings` picker (D70's recorded FE seam) adds
-    one optional field — which greeting — to this same route with the SAME agent.
-
-    Refuses, in order: 404 unknown thread · 409 busy (the turn marker) · 422 a name that does not
-    resolve to ITSELF — `resolve_agent` folds an unknown folder to the root, and a typo must never wipe
-    the greeting and pin the root · (same pin → 200 no-op with the current floor: never a re-seed, even
-    when the agent's greeting text changed since — `/new` is that door) · 409 not fresh (any owner turn,
-    `is_owner_turn`) · 409 an opening the owner EDITED, unless `discard_edited`.
-
-    **Delete-ALL is safe** because no owner turn ⇒ only the seeded greeting can exist: alternates and
-    the D81 delete stash need an anchor (a user row), compaction needs turns, attachments ride user rows.
-
-    **Future seam (A14 alt greetings):** opening VARIANTS seeded under `message_alternates.anchor_id =
-    NULL` do NOT cascade from deleting the greeting row (they are keyed by thread, not by a message) —
-    that rider must clear them here, inside the same transaction.
-
-    **A queued steer is no reason to refuse.** One can outlive a turn that failed BEFORE persisting its
-    user row: a pre-handoff raise in the chat route after the reserve (revalidate, the attachment
-    claim), or `run_turn` failing in `_activate_lorebooks` before `messages.add` — an `error` terminal
-    skips drain-B. The orphan then drains at the next turn's loop top, behind the new opening: the same
-    outcome as a send racing this route, nothing lost."""
-    state = request.app.state
-    if await state.threads.get(thread_id) is None:
-        raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
-    handle = _reserve_turn(request, thread_id, "edit")
-    try:
-        await _revalidate_thread(state, thread_id)
-        thread = await state.threads.get(thread_id)
-        assert thread is not None  # revalidated under the marker
-        agent = state.settings.resolve_agent(body.agent)  # a disk read — outside the transaction
-        if agent.name != body.agent:
-            raise HTTPException(
-                status_code=422, detail=f"there is no agent named '{body.agent}' — the opening stays"
-            )
-        if agent.name == thread.agent:
-            return {
-                "thread": thread.model_dump(mode="json"),
-                "messages": await history_payload(state.messages, thread_id),
-            }
-        msgs = await state.messages.list(thread_id)
-        if any(is_owner_turn(m) for m in msgs):
-            raise HTTPException(status_code=409, detail=_NOT_FRESH_DETAIL)
-        if not body.discard_edited and any(m.edited for m in msgs):
-            raise HTTPException(status_code=409, detail=_EDITED_OPENING_DETAIL)
-        async with state.db.transaction():
-            await state.messages.delete_ids([m.id for m in msgs])
-            await state.threads.set_agent(thread_id, agent.name, datetime.now(timezone.utc))
-            await seed_greeting(state.messages, state.settings, thread, agent, threads=state.threads)
-        reseated = await state.threads.get(thread_id)
-        assert reseated is not None
-        return {
-            "thread": reseated.model_dump(mode="json"),
-            "messages": await history_payload(state.messages, thread_id),
-        }
-    finally:
-        release(state.turns, handle)
-
-
 async def _supplied_thread(threads, thread_id: str | None) -> Thread | None:
     """The thread a chat / `!cmd` send names, or `None` when it names none (the caller mints). A
     SUPPLIED id that is unknown is a 404 (D84 R29), never a silent mint: the conversation was deleted
@@ -1749,7 +1667,14 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
             request.app.state.actions, request.app.state.messages, thread.id, body.command
         )
         await threads.touch(thread.id, exec_out.ts)  # D84 R7: the owner's `!cmd` moves the conversation up
-        return {"threadId": thread.id, "callId": exec_out.call_id, "state": exec_out.result.state.value}
+        # `agent` = the conversation's HOME (D84 §12.3 H6, the field S3 put on the chat stream head): a
+        # `!cmd` on a thread-less view MINTS here, and the client installs the minted home from this.
+        return {
+            "threadId": thread.id,
+            "agent": thread.agent,
+            "callId": exec_out.call_id,
+            "state": exec_out.result.state.value,
+        }
     finally:
         release(request.app.state.turns, handle)
 
@@ -1942,11 +1867,11 @@ def _list_agents_payload(s: Settings) -> dict[str, Any]:
         summaries.setdefault(resolved.name, _agent_summary(resolved))
         default = resolved.name
     # `default_set` beside the resolved `default` (D75 amendment): `""` and `"default"` both resolve to
-    # the root, but only the second is a default the owner SET — which is what flips the client's `/new`
-    # from "keep the sticky pick" to "start on the default", and what presses the gallery's pill. SET means
-    # the configured name is the one that RESOLVED: a configured specialist whose folder is gone resolves to
-    # the root, and reporting it as set would press the ROOT's pill for a choice the owner never made — so
-    # a dangling name reads as "nothing set" at both doors (the pill and `/new`), which is what it acts as.
+    # the root, but only the second is a default the owner SET — which is what presses the gallery's
+    # "default" pill (its one reader since D84 retired `/new`'s tandem rule). SET means the configured name
+    # is the one that RESOLVED: a configured specialist whose folder is gone resolves to the root, and
+    # reporting it as set would press the ROOT's pill for a choice the owner never made — so a dangling
+    # name reads as "nothing set", which is what it acts as.
     return {
         "agents": names,
         "default": default,

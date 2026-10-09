@@ -141,7 +141,7 @@ const SAFE = () => true;
 
 beforeEach(() => {
   localStorage.clear();
-  resetToThreadless(null);
+  resetToThreadless();
   routes = {};
   floor = [];
   install();

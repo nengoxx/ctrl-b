@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadAgents, loadSkills } from "../../src/lib/composer";
 import {
   openThread,
-  pushUserEcho,
   resetToThreadless,
-  setStickyAgent,
+  setResponder,
   useChat,
-  useStickyAgent,
+  useResponder,
+  useThreadAgent,
 } from "../../src/store/chat";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
 import { clearComposerSkills, useComposerSkills } from "../../src/store/composerSkills";
@@ -21,9 +21,9 @@ import { kitToolsMenuSlots } from "../../src/theme-engine/kit/composer/toolsMenu
 
 // A6 — the composer tools/skills MENU, driven through a REAL Kit composer with the addon composed in the
 // way DefaultRoot composes it (mergeComposerSlots → the variant's slots). Covers the trigger↔panel aria
-// contract, the two lifetimes the rows write (the agent = the STICKY pin, the D75 ruling of
-// 2026-09-24; the skills = a one-shot for the next message), and the shared overlay slot (opening the menu
-// closes the plan sheet). The store mechanics live in tests/store/composerSkills|composerOverlay.test.ts.
+// contract, the two sections (the agents = the ROSTER DOOR, D84 R16/R38/O4 — a row opens that agent's
+// conversation and the CHECKED row is the open conversation's home; the skills = a one-shot for the next
+// message), and the shared overlay slot (opening the menu closes the plan sheet). The store mechanics live in tests/store/composerSkills|composerOverlay.test.ts.
 
 // D70 §10-S4 — `GET /agents` now also carries the SUMMARY map. Only `ops` binds an avatar here, so the
 // avatar assertions below read a mixed list (the shape the picker actually meets).
@@ -59,16 +59,34 @@ const AGENT_MEDIA = {
   },
 };
 const SKILLS = [{ name: "deploy" }, { name: "backups" }];
+/** Every agent a roster door READ (`GET /api/threads?agent=<name>`), in order — what a pick opened. */
+const doors: string[] = [];
 
 beforeEach(async () => {
   clearDraft();
   clearComposerSkills();
-  resetToThreadless(null); // an empty chat — the arms that read the pick note take a turn first
-  setStickyAgent(null);
+  resetToThreadless(); // an empty, thread-less chat — no home but the default's, no responder
   setComposerOverlay(null);
   localStorage.clear();
+  doors.length = 0;
   globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
     const u = String(url);
+    // THE ROSTER DOOR's read (`openAgentConversation`): every agent has ONE conversation, `t-<name>`.
+    if (u.startsWith("/api/threads?agent=")) {
+      const name = decodeURIComponent(u.slice("/api/threads?agent=".length).split("&")[0]);
+      doors.push(name);
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve([{ id: `t-${name}`, agent: name }]),
+      } as Response);
+    }
+    if (u.startsWith("/api/threads/") && u.endsWith("/messages"))
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+    if (u.includes("/api/agent/turns/"))
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ active: false }),
+      } as Response);
     if (u.includes("/api/agents"))
       return Promise.resolve({ ok: true, json: () => Promise.resolve(AGENTS) } as Response);
     if (u.includes("/api/media/agents"))
@@ -119,14 +137,17 @@ async function openMenu(c: HTMLElement, n = 3): Promise<void> {
   fireEvent.click(trigger(c));
   await waitFor(() => expect(radios(c).length).toBe(n));
 }
-/** Read-only probes on the REAL stores the rows write: the sticky pin, the chat's last line (the
- *  `// agent → …` note the seam pushes), and the ticked skills. */
+/** Read-only probes on the REAL stores: the open conversation's HOME and the RESPONDER (what a door and
+ *  `/agent` write), the chat's last line, and the ticked skills. */
 function probes() {
-  const pin = renderHook(() => useStickyAgent());
+  const home = renderHook(() => useThreadAgent());
+  const responder = renderHook(() => useResponder());
   const chat = renderHook(() => useChat());
   const skills = renderHook(() => useComposerSkills());
   return {
-    pin: () => pin.result.current,
+    home: () => home.result.current,
+    responder: () => responder.result.current,
+    threadId: () => chat.result.current.threadId,
     lastNote: () => {
       const part = chat.result.current.messages.at(-1)?.parts[0];
       return part?.type === "text" ? part.text : undefined;
@@ -188,83 +209,98 @@ describe("tools menu — trigger/panel wiring", () => {
   });
 });
 
-// THE AGENT SECTION IS A STICKY SWITCH (D75 ruling, 2026-09-24): a row is `/agent <name>` by another hand
-// — it writes the sticky pin through the one seam (`pinStickyAgent`), pushes the same note, and holds
-// until switched again. Nothing about it is pending, so it never lights the trigger's dot.
-describe("tools menu — the agent switch (sticky)", () => {
-  it("picking a row PINS the sticky agent and pushes the `/agent` note — no dot, nothing pending", async () => {
-    pushUserEcho("hi"); // mid-chat — the note is held back before the owner's first turn
+// THE AGENT SECTION IS THE ROSTER DOOR (D84 §2 R16, R38, O4): every activation of a row — the checked one
+// included — opens that agent's LATEST conversation (or mints it one); the CHECKED row is the open
+// conversation's HOME, never the responder `/agent` set. Nothing is pending, so it never lights the dot.
+describe("tools menu — the agent rows (the roster door)", () => {
+  it("picking a row OPENS that agent's latest conversation; the checked row follows the HOME", async () => {
     const p = probes();
     const { container } = renderComposer();
     await openMenu(container);
     fireEvent.click(radios(container)[1]); // "ops"
-    expect(p.pin()).toBe("ops");
-    expect(p.lastNote()).toBe("// agent → ops");
+    expect(doors).toEqual(["ops"]);
+    await waitFor(() => expect(p.threadId()).toBe("t-ops"));
+    expect(p.home()).toBe("ops");
+    await openMenu(container);
     expect(checkedRows(container)).toEqual(["ops"]);
+    expect(p.lastNote()).toBe(undefined); // navigation prints no note — the view visibly changes
     expect(trigger(container).querySelector(".tools-dot")).toBe(null);
     expect(container.querySelector(".tools-clear")).toBe(null); // the clear row is the skills' alone
   });
 
-  it("before the owner's first turn a pick still PINS, but adds no line to the empty chat", async () => {
+  it("the CHECKED row is the HOME, never the responder (R38)", async () => {
     const p = probes();
+    await act(async () => {
+      await openThread("t-ops", "ops");
+    });
+    act(() => setResponder("research")); // `/agent research` — Research answers in Ops's conversation
+    expect(p.responder()).toBe("research");
     const { container } = renderComposer();
     await openMenu(container);
-    fireEvent.click(radios(container)[1]); // "ops"
-    expect(p.pin()).toBe("ops");
-    expect(p.lastNote()).toBe(undefined);
     expect(checkedRows(container)).toEqual(["ops"]);
   });
 
-  it("the DEFAULT row CLEARS the pin in an unpinned thread, and reads checked", async () => {
-    setStickyAgent("ops");
-    pushUserEcho("hi");
+  it("the already-checked row is a door too: on the home's own latest it clears the responder IN PLACE (B5)", async () => {
     const p = probes();
+    await act(async () => {
+      await openThread("t-ops", "ops");
+    });
+    act(() => setResponder("research"));
     const { container } = renderComposer();
     await openMenu(container);
-    expect(checkedRows(container)).toEqual(["ops"]);
-    fireEvent.click(radios(container)[0]); // the "default" row
-    expect(p.pin()).toBe(null); // a CLEAR, exactly bare `/agent`
-    expect(p.lastNote()).toBe("// agent → default (default)");
-    expect(checkedRows(container)).toEqual(["default"]);
+    fireEvent.click(radios(container)[1]); // "ops" — already checked
+    await waitFor(() => expect(p.responder()).toBe(null)); // back to the rule
+    expect(p.threadId()).toBe("t-ops"); // nothing reloaded
+    expect(doors).toEqual(["ops"]);
   });
 
-  it("the default's NAME as the pin reads as the default row too (the thread-pinned representation)", async () => {
-    setStickyAgent("default");
+  it("each row's radio says what activation does — `open <Name>'s conversation` (the display name)", async () => {
     const { container } = renderComposer();
     await openMenu(container);
-    expect(checkedRows(container)).toEqual(["default"]);
+    expect(radios(container).map((r) => r.getAttribute("aria-description"))).toEqual([
+      "open default's conversation",
+      "open Ops Bot's conversation",
+      "open research's conversation",
+    ]);
   });
 
-  it("the checked row follows the pin REACTIVELY — a `/agent` made elsewhere repaints the open panel", async () => {
+  it("the checked row follows the HOME REACTIVELY — a door used elsewhere repaints the open panel", async () => {
     const { container } = renderComposer();
     await openMenu(container);
-    expect(checkedRows(container)).toEqual(["default"]);
-    act(() => setStickyAgent("research")); // `/agent research`, the gallery's Talk — any other hand
+    expect(checkedRows(container)).toEqual(["default"]); // thread-less: the home-to-be is the default
+    await act(async () => {
+      await openThread("t-research", "research"); // a sheet row, the gallery's Talk — any other door
+    });
     expect(checkedRows(container)).toEqual(["research"]);
-    act(() => setStickyAgent(null));
-    expect(checkedRows(container)).toEqual(["default"]);
   });
 
-  // Codex, verify round — `/agent typo` stays sticky ON PURPOSE (the backend falls back to the default and
-  // routeSlash already warned), but "typo" matches no row: reflecting it verbatim left EVERY radio
-  // unchecked, i.e. the panel claiming the next message goes nowhere. The default row is where it goes.
-  it("a sticky agent that isn't configured reads as the DEFAULT row, not an empty group", async () => {
-    setStickyAgent("typo");
+  // ISS-51's paint (§12.1 ①): a home the landed roster no longer holds reads as the configured default —
+  // never an empty group (the panel claiming the conversation belongs to nobody).
+  it("a home that isn't on the roster reads as the DEFAULT row, not an empty group", async () => {
+    await act(async () => {
+      await openThread("t-typo", "typo");
+    });
+    // ISOLATE the paint fold (F5): the landing's M7 sweep would move this view to the default's own
+    // conversation — fail its roster read, so the view STAYS on `typo`'s and only the fold can check.
+    const base = globalThis.fetch;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL, init?: RequestInit) =>
+      String(url).startsWith("/api/threads?agent=")
+        ? Promise.reject(new Error("down"))
+        : base(url, init),
+    );
     const p = probes();
     const { container } = renderComposer();
     await openMenu(container);
-    expect(checkedRows(container)).toEqual(["default"]);
-    expect(p.pin()).toBe("typo"); // the DISPLAY fold never touches the pin the send path reads
+    await waitFor(() => expect(checkedRows(container)).toEqual(["default"]));
+    expect(p.threadId()).toBe("t-typo"); // the view never moved — the fold alone checked the row
+    expect(p.home()).toBe("typo");
   });
 
   // The sticky slice's review round (2026-09-24): the rows, the default row's NAME and the checked row all
-  // come from the ROSTER QUERY — the list the backdrop paints by — and never from the composer's
-  // module-level `/agent` set. That Set is filled once at import and kept as-is on a failed load, so a
-  // menu drawn from it after a failed first load (the PWA opening from its shell before Tailscale is up)
-  // listed no agent and checked "default" while the backdrop, drawn from the retrying query, painted the
-  // pinned character. Here the module set holds the harness's `ops`/`research`; the query is served a
-  // DIFFERENT roster, and the menu shows the query's.
-  it("draws its rows from the ROSTER QUERY, not the composer's module-level `/agent` set", async () => {
+  // come from the ROSTER QUERY — the list the backdrop paints by — and never from routing's module copy.
+  // Here the module copy holds the harness's `ops`/`research`; the query is served a DIFFERENT roster, and
+  // the menu shows the query's.
+  it("draws its rows from the ROSTER QUERY, not routing's module copy", async () => {
     const base = globalThis.fetch;
     globalThis.fetch = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
       if (String(url).includes("/api/agents") && !String(url).includes("/api/media/"))
@@ -275,18 +311,17 @@ describe("tools menu — the agent switch (sticky)", () => {
         } as Response);
       return base(url, init);
     });
-    setStickyAgent("lynette"); // unknown to the module set — the query knows her
+    await act(async () => {
+      await openThread("t-lynette", "lynette");
+    });
     const { container } = renderComposer();
-    await openMenu(container, 3); // the root + "ari" + "lynette" — the query's roster, not the set's
+    await openMenu(container, 3); // the root + "ari" + "lynette" — the query's roster
     expect(radios(container).map(rowName)).toEqual(["default", "ari", "lynette"]);
-    expect(checkedRows(container)).toEqual(["lynette"]); // …so the fold checks HER row, not the default's
+    expect(checkedRows(container)).toEqual(["lynette"]); // …so the fold checks HER row
   });
 
-  // D75 amendment code round (Opus MED): the ROOT is never in the roster's `agents`, so when a specialist
-  // is the RESOLVED default the old rows drew that specialist twice (as the "default" row and in the list)
-  // and the root not at all. Now: the root row first, each specialist once, the resolved default's row
-  // tagged — and the root is pinnable BY NAME (the same expression the gallery's Talk takes), which the
-  // fold keeps (`validStickyAgent`: the root's slug is always valid) so its row reads checked.
+  // D75 amendment code round (Opus MED): the ROOT is never in the roster's `agents`, so it has its own row,
+  // each specialist appears once, and the resolved default's row is tagged.
   it("a specialist as the resolved default: the root has its own row, the specialist is tagged, no duplicate", async () => {
     const base = globalThis.fetch;
     globalThis.fetch = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
@@ -306,9 +341,10 @@ describe("tools menu — the agent switch (sticky)", () => {
       r.closest("label")?.querySelector(".tools-tag")?.textContent ?? null;
     // the root row reads "root" when it is not the default — never a second "default" (confirm round)
     expect(radios(container).map(tagOf)).toEqual(["root", "default", null]);
-    expect(checkedRows(container)).toEqual(["lynette"]); // nothing pinned → the resolved default
-    fireEvent.click(radios(container)[0]); // the ROOT row
-    expect(p.pin()).toBe("default"); // pinned by name…
+    expect(checkedRows(container)).toEqual(["lynette"]); // thread-less → the configured default's row
+    fireEvent.click(radios(container)[0]); // the ROOT row — the root's own conversation
+    await waitFor(() => expect(p.home()).toBe("default"));
+    await openMenu(container, 3);
     expect(checkedRows(container)).toEqual(["default"]); // …and NOT folded back to lynette
   });
 });
@@ -322,7 +358,7 @@ describe("tools menu — closing", () => {
     await openMenu(container);
     radios(container)[1].focus(); // where a keyboard pick or the label's activation leaves it
     fireEvent.click(radios(container)[1]); // "ops"
-    expect(checkedRows(container)).toEqual(["ops"]); // the pick still lands…
+    expect(doors).toEqual(["ops"]); // the door still opens…
     expect(panelOpen(container)).toBe(false); // …and the panel closes
     expect(document.activeElement).toBe(trigger(container)); // not stranded in the inert panel
   });
@@ -331,7 +367,7 @@ describe("tools menu — closing", () => {
     const { container } = renderComposer();
     await openMenu(container);
     fireEvent.click(radios(container)[0]); // "default", already checked: no change, still a pick
-    expect(checkedRows(container)).toEqual(["default"]);
+    expect(doors).toEqual(["default"]); // the checked row is a door like any other (O4)
     expect(panelOpen(container)).toBe(false);
   });
 
@@ -350,8 +386,8 @@ describe("tools menu — closing", () => {
     fireEvent.keyDown(group, { key: "ArrowDown" });
     fireEvent.click(radios(container)[1]);
     fireEvent.keyUp(group, { key: "ArrowDown" });
-    expect(checkedRows(container)).toEqual(["ops"]); // browsing still moves the pick…
-    expect(panelOpen(container)).toBe(true); // …without closing
+    expect(doors).toEqual([]); // browsing opens nothing…
+    expect(panelOpen(container)).toBe(true); // …and does not close
     // an arrow that moved nothing (no click) can't leave the guard up: the next Space pick closes
     fireEvent.keyDown(group, { key: "ArrowUp" });
     fireEvent.keyUp(group, { key: "ArrowUp" });
@@ -425,7 +461,7 @@ describe("tools menu — the skills one-shot", () => {
   });
 
   it("the clear row appears only with a skill ticked, and drops the skills — never the agent", () => {
-    setStickyAgent("ops");
+    act(() => setResponder("ops"));
     const p = probes();
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
@@ -435,7 +471,7 @@ describe("tools menu — the skills one-shot", () => {
     );
     fireEvent.click(container.querySelector<HTMLButtonElement>(".tools-clear")!);
     expect(p.skills()).toEqual([]);
-    expect(p.pin()).toBe("ops"); // the standing switch is not the clear row's business
+    expect(p.responder()).toBe("ops"); // who answers is not the clear row's business
     expect(trigger(container).querySelector(".tools-dot")).toBe(null);
     expect(container.querySelector(".tools-clear")).toBe(null);
   });
@@ -513,11 +549,10 @@ describe("tools menu — agent avatars (D70 §8.4)", () => {
   });
 });
 
-// ── the OPEN THREAD's pin (wave 1c + its review's F2). The group has to name the agent the next message
-// will ACTUALLY run as, and since 1c that ladder has a second rung: the sticky `/agent` pick, else the
-// thread's own D11 pin. The pin arrives from `openThread`'s LATE list read — which can land while this
-// panel is up, so the read is subscribed rather than snapshotted.
-describe("tools menu — the open thread's pinned agent", () => {
+// ── the OPEN conversation's HOME (wave 1c + its review's F2; D84 R38). The group checks the conversation
+// the owner is in, and a door that knew nothing learns the home from `openThread`'s LATE list read —
+// which can land while this panel is up, so the read is subscribed rather than snapshotted.
+describe("tools menu — the open conversation's home", () => {
   /** The composer harness's stub plus the two routes an open touches; the LIST is deferrable, which is
    *  the whole point (the pin deliberately does not gate the history swap). */
   function serveThread(agent: string) {
@@ -529,7 +564,7 @@ describe("tools menu — the open thread's pinned agent", () => {
       const body = (v: unknown) => ({ ok: true, status: 200, json: async () => v }) as Response;
       if (u.endsWith("/messages")) return body([]);
       if (u.includes("/api/agent/turns/")) return body({ active: false });
-      if (u.includes("/api/threads")) {
+      if (u.includes("/api/threads?include_archived")) {
         await parked; // the pin read, held open
         return body([
           { id: "t1", title: null, agent, created_at: "", updated_at: "", archived: false },
@@ -540,9 +575,9 @@ describe("tools menu — the open thread's pinned agent", () => {
     return release;
   }
 
-  afterEach(() => resetToThreadless(null)); // the pin is store state — every arm starts with none
+  afterEach(() => resetToThreadless()); // the pin is store state — every arm starts with none
 
-  it("checks the THREAD's agent, and follows a pin that lands while the panel is OPEN", async () => {
+  it("checks the conversation's HOME, and follows one that lands while the panel is OPEN", async () => {
     const release = serveThread("ops");
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
@@ -567,23 +602,29 @@ describe("tools menu — the open thread's pinned agent", () => {
     await waitFor(() => expect(rowName(radios(container).find((r) => r.checked)!)).toBe("ops"));
   });
 
-  // The default row's second representation: inside a thread pinned to `ops`, a CLEAR would let `ops`
-  // resurface (the server's ladder: the sticky pick, else the thread's), so the row pins the default BY
-  // NAME — which outranks the thread's pin — and reads checked from that name.
-  it("in a thread-PINNED conversation the default row pins the default BY NAME, and reads checked", async () => {
+  it("the default row in a conversation homed elsewhere is a DOOR to the default's own conversation", async () => {
     const release = serveThread("ops");
     release();
     const p = probes();
     await act(async () => {
-      await openThread("t1");
+      await openThread("t1"); // ops's conversation, the home learnt late
     });
-    act(() => pushUserEcho("hi")); // mid-chat — the note is held back before the owner's first turn
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
-    await waitFor(() => expect(checkedRows(container)).toEqual(["ops"])); // the thread's pin answers
-    fireEvent.click(radios(container)[0]); // the "default" row
-    expect(p.pin()).toBe("default"); // a PIN at the default's name, not a clear
-    expect(p.lastNote()).toBe("// agent → default (default)");
-    expect(checkedRows(container)).toEqual(["default"]);
+    await waitFor(() => expect(checkedRows(container)).toEqual(["ops"]));
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      const body = (v: unknown) => ({ ok: true, status: 200, json: async () => v }) as Response;
+      if (u.startsWith("/api/threads?agent=")) return Promise.resolve(body([]));
+      if (u === "/api/threads")
+        return Promise.resolve(
+          body({ id: "t-new", title: null, agent: "default", created_at: "", updated_at: "" }),
+        );
+      if (u.endsWith("/messages")) return Promise.resolve(body([]));
+      return Promise.resolve(body({ active: false }));
+    });
+    fireEvent.click(radios(container)[0]); // the "default" row: no conversation yet → minted
+    await waitFor(() => expect(p.threadId()).toBe("t-new"));
+    expect(p.home()).toBe("default");
   });
 });
