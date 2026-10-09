@@ -1,6 +1,6 @@
 # CONVERSATIONS_PLAN — conversations per agent + past conversations (ROADMAP A15)
 
-**Status: ✏️ DESIGN RULED 2026-10-06 (main seat Fable 5.1 + owner, session 60) — plan v2.7 (the session-69 completeness pass — Luna · Sol 6.1 · Opus 5.5 — folded, §12.2–§12.3); owner Q&A closed
+**Status: ✏️ DESIGN RULED 2026-10-06 (main seat Fable 5.1 + owner, session 60) — plan v2.7 (the session-69 completeness pass — Luna · Sol 6.1 · Opus 5.5 · the local Qwen experiment — folded, §12.2–§12.4); owner Q&A closed
 2026-10-06 (R0–R46 + the main seat's F1–F7, N1–N4, ON1–ON7 and the privilege-cap RETRACTION, M1; council CLOSED; owner rulings F2 + ON4 RULED 2026-10-06 (A · a): F2 §2, ON4 §6); council rounds 1–2 + the confirms folded; NOTHING
 BUILT.** Decision of record = [`D84`](./DECISIONS.md) (the locked summary); build = TODO **Phase 27** (§10 is the
 ladder — build against this plan, NOT the TODO list); ROADMAP [§A15](./ROADMAP.md); evidence =
@@ -231,7 +231,7 @@ just agents (R13/R15).
 | `/agent emma` while Emma already answers | `// Emma already answers here` |
 | bare `/agent`, overridden | `// talking to Emma in Lynette's conversation` |
 | bare `/agent`, not overridden | `// talking to Lynette` |
-| `/agent emma` with no conversation open | `// Emma will answer — the conversation starts as Lynette's` (Lynette = the roster default) |
+| `/agent emma` with no conversation open | `// Emma will answer — the conversation starts as Lynette's` (Lynette = the configured default; when the picked agent IS the configured default the note is just `// Emma will answer` and the mint is her own conversation with no responder — §12.2 a) |
 | `/agent xyz` (not on the roster) | `// agent "xyz" is not configured` — nothing changes |
 | `/agent …` during a live call | `// hang up to switch who answers` — nothing changes |
 | any navigate door / `/new` during a live call | `// hang up to switch conversations` — nothing changes |
@@ -383,7 +383,8 @@ WHERE agent IS NULL AND archived = 0;
   every greeting-only thread unread. **The backfill also marks EVERY pre-existing conversation seen** — there is no prior
   `seen_at` to preserve, so no unread survives migration 8: a reply pending at the update lands as read (§11 carries the
   owner-facing line; §12.2 ①).
-- **Unread (O9)** ⇔ the newest row with `role = 'assistant' AND actor = 'agent'` has `ts > seen_at`. A `!cmd` exec pair
+- **Unread (O9)** ⇔ the newest row with `role = 'assistant' AND actor = 'agent'` has `ts > seen_at` — WHOEVER answered (a
+  responder's reply is `actor = agent` like the home's; the predicate never looks at the slug). A `!cmd` exec pair
   (`run_user_exec` `be/services/agent/exec.py:46`: an assistant row with `actor = user` + a tool row) never counts.
   `ThreadRepo.create` writes `seen_at = created_at`, and `seed_greeting` lifts `seen_at` to the greeting row's `ts` server-side
   (so a greeted mint from ANY surface — Conf → Agents' N3 move included — never dots unread for its own greeting; §12.3 L2);
@@ -602,7 +603,9 @@ ON4 prune, `setResponder` (`/agent default` is valid) and the ISS-51 paint all u
 judges only a LANDED roster** (`agentsLanded`; a failed read judges nothing, M3). **The same sweep handles a HOME that left the
 roster (§12.3 M7 — generalises F8/N3 to every device):** a view whose home is no longer on the roster moves to the configured
 default's latest with its draft + rail carried (E6), on whichever device holds it, when its roster query lands; the orphan rows
-stay in the database, listed nowhere (`?agent=` answers `[]` for a slug off the roster, §4).
+stay in the database, listed nowhere (`?agent=` answers `[]` for a slug off the roster, §4). On the device that performed the
+delete the move is IMMEDIATE — the delete's own success handler (N3/F8), both branches of the second confirm — and the roster
+sweep is the path for every OTHER device (§12.4).
 
 **The responder lifetime (R45).** `swapView` clears `responder` ONLY when the new view's thread ≠ the old one (leaving).
 `openThread`'s same-id branch (`:887-891`, no `swapView`) keeps it — so a notification tap or a sheet-row tap on the open
@@ -663,7 +666,7 @@ exists, above) — D84 and SECURITY_MODEL §2.2 record it, and §11 states the r
 (persisted) value. B9/B15: "Emma still answers, at Lynette's persisted overrides."
 
 **`effectiveAgent`** (`composer.ts:189`) = `responder ?? threadAgent ?? defaultAgent`, a home not on the roster shown as
-the root (ISS-51). Readers: `useActiveAgent` (`fe/hooks/useActiveAgent.ts:31`), `useActiveBackdrop`,
+the CONFIGURED DEFAULT, else the root (ISS-51 as built, §12.1 ①; the root itself IS on the roster, §12.3 H1). Readers: `useActiveAgent` (`fe/hooks/useActiveAgent.ts:31`), `useActiveBackdrop`,
 `store/composerSkills.ts`. Who-line rows read each row's own `agent`.
 
 **Seen write** (R30, O11). `PATCH {seen_at: <ts of the newest row in view>}` after a conversation's history lands, when a
@@ -1102,6 +1105,19 @@ in the code (`_list_agents_payload`, `loadThread`, `AutomationsPanel.tsx:164`, t
 | Sol F2 | the tab-return seen write may post a stale floor | ACCEPTED: the write follows `reconcileChat`'s refetch | §6 seen |
 
 Sound per both: the §3/§4 predicates (beyond L1–L4), the DELETE guard story, the drain-B race, §8, §11.
+
+### §12.4 The session-69 local-model experiment (2026-10-09 — Qwen3.8-Flash-Next IQ2_XS behind the owner's `strata` llama.cpp endpoint on corsair; plan v2.7 pasted verbatim, no tools; `review-plan-strata*.md` in the session dir)
+
+The owner's ask: *"see how good it is at finding gaps … and doesn't hallucinate them."* Two runs. **Thinking ON (30 000-token
+budget): no answer** — the model reasoned for 128 KB, converged on one real candidate (the B17 note hardcodes the default agent's
+name), then fell into a verbatim repetition loop until the budget ended (a known small-quant failure mode). **Thinking OFF, 3 min,
+3 440 tokens: 12 findings, self-rated 0.3–0.6, verdict COMPLETE WITH GAPS.** Two were real: a stale §6 sentence (`effectiveAgent`
+"shown as the root" — §12.1 ① had corrected the rule but not that line) and the local-device timing of the declined-cascade move
+(immediate via the success handler; the roster sweep serves other devices). One was a fair wording ask (the unread predicate is
+actor-based, so a responder's reply counts). The other nine were misreadings of "else `null`"-style clauses or re-statements of
+settled text; where a point depended on code it could not see, it said so and rated it ≤ 0.5 — **no invented code facts.** Folded:
+§6 `effectiveAgent`, §2 the B17 note row, §6 N2's local-device clause, §3 unread. Verdict on the model as a reviewer: usable as a
+cheap LAST pass for stale wording after the real lanes, never alone, never with thinking on at this quant.
 
 ## §13 Council record
 
