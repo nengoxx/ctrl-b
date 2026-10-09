@@ -28,7 +28,7 @@ function name is authoritative — re-grep it.
 |---|---|
 | Design | ✏️ RULED 2026-10-06 — owner Q&A closed (R0–R46, §1) + F1–F7 (§13), owner + main seat, session 60 — plan v2.5; owner rulings **F2** + **ON4** RULED 2026-10-06 (A · a): **F2** = reading A (§2: with no override set, a responder runs on the HOME agent's AgentDef model + privilege) · **ON4** = (a) (§6: the per-home-agent overrides persist per device and survive a reload); nothing pending |
 | Council | **CLOSED 2026-10-06 — Opus CONFIRMED WITH NOTES ∥ Emma CONFIRMED WITH NOTES (both on v2.2; notes folded v2.3–v2.4); the owner's F2 + ON4 rulings folded → v2.5; NO open rulings** · **session-69 completeness pass (2026-10-09): Luna (`gpt-6-luna --reasoning max`, blind) COMPLETE WITH GAPS → nine findings RULED in §12.2, folded → v2.6; the two PROVISIONAL rulings (④ dictation-stop · ⑤ the responder keeps its own tools/skills, inherits only `model` + `privilege`) CONFIRMED by the owner 2026-10-09 — ⑤ is RECORDED FOR REFINEMENT: the owner may revise WHAT a responder inherits (model too? not tools/skills?) after testing** · **then two more blind lanes on v2.6 (the owner: "just in case"): Sol (`gpt-6.1-sol` high) COMPLETE WITH GAPS, 2 findings · Opus 5.5 (high) COMPLETE WITH GAPS, 7 HIGH · 11 MED · 10 LOW — ALL RULED in §12.3 (every load-bearing claim re-verified in code by the main seat), folded → v2.7; `ctrlb.chat` gains `home`; the roster = `agents` ∪ root; S8 lands BEFORE ASR S8/S8b** (history: round 1 both NOT CONFIRMED, all folded → v2; round 2 confirms → v2.2; micro-confirms → v2.3/v2.4 — §13) |
-| Build | NOTHING BUILT — slice ladder §10 (S0–S13), seam map Appendix §A. **Pre-build audit 2026-10-09 (session 68): NO collision, drift only — §12.1 carries the re-pins + eleven rulings; build on a `phase27` worktree branch (§12.1)** |
+| Build | **S0 · S1 · S2a · S2b BUILT + two-reviewer-closed on the `phase27` worktree branch (2026-10-09, sessions 69–70): S1 `dd71679` · S2a `5bb07e1` · S2b `315687a` — the as-built + the code-round record = §13 "The build rounds"; S3 IN BUILD; S4…S10 open** — slice ladder §10 (S0–S13), seam map Appendix §A. Pre-build audit 2026-10-09 (session 68): NO collision, drift only — §12.1 carries the re-pins + eleven rulings; build on a `phase27` worktree branch (§12.1); **merge to `main` ONCE after S10 (§12.1 ⑪, owner-ruled)** |
 | DB schema | 7 → **8** (additive column + index + idempotent NULL repairs; §3, §11) |
 | Config | **no new key**, no config-shape bump; the `auto_rotate` retirement drops two keys from the schema (§9, R24) |
 | Retires | the D75 sticky pick + tandem rule · ISS-49 (the pick trigger AND the `/opening` route, R27) · ISS-50 · ISS-51 + ISS-52 at the boundary · the global composer draft + staged rail · the global `/privilege`·`/local`·`/cloud` session values · `auto_rotate` (§14) |
@@ -499,9 +499,14 @@ per-item object, not a sibling map. `list_agents` composes it after the settings
 gains `?conversations=true`. Without it: today's behaviour (the folder + default memory dir go, nothing else cascades;
 the agent's conversations stay, unlisted; an absent folder → today's 404). With it:
 0. **Resolve first:** the folder is looked up BEFORE anything is reserved; an absent folder is not an error (step 4).
-1. **Guard pass** over every non-archived thread with `agent = name`: `_reserve_turn(request, id, "edit")` each; any
-   busy (a running turn) or `_revalidate_thread` refusal (403, an automation's rolling conversation) → release every
+1. **Guard pass** over every non-archived thread with `agent = name` — exactly the rows step 2 deletes: `_reserve_turn(request, id, "edit")` each; any
+   busy (a running turn) or `_revalidate_thread` refusal (403) → release every
    marker taken, answer **409** `{"detail": "<k> of <name>'s conversations are busy — nothing was deleted", "busy": k}`.
+   **An automation's rolling conversation is BORN archived** (the runner, `runner.py:429/434`; nothing ever archives an
+   existing row), so it is never in the pass and never deleted: it stays, and the answer's `broken.automations` names its
+   automation — exactly as without the flag. The 403 arm is DEFENSIVE (S2b code round, 2026-10-09: guarding archived rows
+   was tried and reverted on Opus N1 — it would 409 a cascade that never touches that row, forever once the automation is
+   re-pointed to another agent, since a home never moves).
 2. **One DB transaction:** `ThreadRepo.delete_many(ids)` (new, beside `delete` `be/services/conversation.py:113`) deletes
    the rows (messages/FTS/alternates cascade) in ONE `Database.transaction()` and COMMITS.
 3. **Then the filesystem, best-effort:** each deleted conversation's attachment dir (`remove_thread_attachments`,
@@ -1147,6 +1152,15 @@ busy note, unchanged). **Verdict on the model as a reviewer, revised:** with thi
 fifth lane — two real MEDs the four paid lanes missed, honest confidence, zero hallucinated facts — at zero cost and ~25 min;
 the no-think run is only a stale-wording pass. Keep it in the council for the remaining design rounds; never trust it alone.
 
+**The CODE rounds (S2a, S2b — 2026-10-09; the owner made Qwen the standing third lane on every Phase 27 round, read last, re-verified).** Three lanes on the same frozen diff, the post-diff sources pasted for the tool-less Qwen:
+
+| Round | Blind Opus 5.5 | Hermes lane | Qwen/Strata (thinking ON, ~30 min) | What decided |
+|---|---|---|---|---|
+| S2a | SHIP WITH FIXES, 3 LOW (the OverflowError → 422, the seen-lift assertion, the drain-B touch) | fell back SILENTLY to `deepseek-v4-flash` (recorded as DeepSeek; the usage-file rule was born here) — SHIP WITH FIXES | the shared drain-B catch + 3 NEW real small ones: `reseat_opening` seeded without `threads=` (its greeting dotted unread) · `_publish_seen` handed the PRE-write row · `turn_stream` re-implemented `_turn_live`; 1 refuted | all three Qwen catches built in the S2b wave |
+| S2b | SHIP WITH FIXES — F1 MED (the attachment helper swallows OSErrors → `attachments: "ok"` with bytes left; the test stubbed the helper) + F2 LOW (`routing.lead`/`compaction` ride the copy → ⑤'s refinement list); **the confirm round found N1 MED**: guarding archived rows (the S2B-01 fix) would 409 a cascade forever once a rolling automation is re-pointed — ACCEPTED, reverted | pinned `gpt-6.1-sol` (usage file) — SHIP WITH FIXES, the SAME F1 independently; confirm: SHIP (note: the failing-`delete_many` test pins route behaviour, not atomicity — accepted) | SHIP WITH FIXES: S2B-01 (the guard pass never sees an automation's rolling conversation — TRUE premise, verified: rolling threads are born archived) · S2B-02 (moot: nothing archives an existing row) · S2B-03 tests · S2B-04 docstring | F1 fixed via the `errors=` surfacing pattern through the REAL helper; S2B-01's first fix REVERSED on Opus N1 — the correct answer was "neither guarded nor deleted, named in `broken.automations`" (§4 step 1) |
+
+Reading: Opus and Sol converged on the one MED each round; Qwen found the small real things both missed (S2a) and the true premise behind a wrong fix (S2b); the main seat's own first ruling on S2B-01 was the round's only wrong turn — caught by the confirm round, which is why confirms are not optional.
+
 ## §13 Council record
 
 **Round 1 (2026-10-06, on plan v1).** Two blind reviewers in parallel, both assessed against R100's peer practice.
@@ -1208,6 +1222,11 @@ the no-think run is only a stale-wording pass. Keep it in the council for the re
   **ON4 = (a)** (the main seat recommended (c); the owner chose to persist both). Folded into §1, §2's F2 box, §4, §6
   ("Overrides persist per device" — blocks (b)/(c) deleted), §10, §11, §12; D84, SECURITY_MODEL §2.2, TODO Phase 27 in
   the same change.
+
+**The build rounds (2026-10-09, sessions 69–70, main seat Fable 5.1; every slice = a pinned Opus 5.5 build lane from a brief in `~/.cache/tmp/ctrlb-session69/brief-s*.md`, then blind Opus 5.5 ∥ pinned Sol ∥ Qwen on the frozen diff, a fix wave, confirms, the full gate, one commit).**
+- **S1 `dd71679`** — migration 8 (`threads.seen_at` + the per-agent index), the idempotent `_REPAIRS` on every connect (the `seen_at` backfill; NULL homes → the last speaker, else the root), `Thread.seen_at`, `ThreadRepo.list(agent, limit, before)` with a total keyset order, `summaries` (label · preview · running · awaiting · unread — the ONE definition), `set_title`, `set_seen` (monotonic, clamped, answered from the guarded UPDATE's row count; `Database.execute` now returns it). Rehearsed twice on a copy of the dev home: 46 NULL homes → 38 root + 8 lynette, every `seen_at` filled, boot 2 a no-op.
+- **S2a `5bb07e1`** — `GET /api/threads` summaries with `agent=` (limit 1..200, the `before` keyset cursor; malformed → 422; an off-roster slug → `[]`), `PATCH /api/threads/{id}` (title · seen_at, unguarded by design, the `_publish_seen` seam), `DELETE /api/threads/{id}` (reserve → revalidate → archived 404 → delete → the four per-thread maps dropped → release); a supplied unknown `thread_id` 404s instead of minting; every mint pinned to the HOME (seam ①, seam ②, `!cmd`, the bodyless create) and greeted as it; `updated_at` moves on the owner send and on an exec pair; `seed_greeting` lifts `seen_at`; the chat stream head gains `agent`; `Settings.on_roster`; the turn-guard pins.
+- **S2b `315687a`** — `summaries[name].status` on `GET /api/agents` (the OR over the agent's non-archived conversations through `ThreadRepo.summaries`; the root under `"default"`), the R40/F2 responder copy `_as_guest_of_home` in `_build_session` (the home's `model` + `privilege` unless an explicit override; automation runs EXEMPT — §4 R40), `ThreadRepo.delete_many` (one transaction), `DELETE /api/agents/{name}?conversations=true` (the guard pass over exactly the rows deleted → 409 with nothing deleted → one transaction → the filesystem best-effort with truthful per-step results: `remove_thread_attachments(errors=)`, `memory: "ok" | "absent" | "kept" | "<error>"`, the M1 absent-folder recovery; an automation's rolling conversation — born archived — is neither guarded nor deleted and is named in `broken.automations`), `_drop_thread_state` shared with `delete_thread`; the S2a catches folded (`reseat_opening` lifts `seen_at`, `patch_thread` publishes the POST-write row, `turn_stream` uses `_turn_live`). The code-round record = §12.4's table.
 
 Session-60 working files (provenance only; nothing here depends on them): `~/.cache/tmp/ctrlb-session60/`
 (`RULINGS.md`, `audit-A15.md`, `review-A15-opus.md`, `review-A15-emma.md`, the frozen plan/D84 copies per round).
