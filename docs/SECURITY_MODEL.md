@@ -109,8 +109,33 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
   `/privilege` / `default`, the chip's "Default", or the home agent leaving the roster. With no override set, a
   turn (a responder's included) runs at the HOME agent's AgentDef privilege (F2). The trust boundary is unchanged
   — the tailnet + the single owner; no server state, no write-back to the AgentDef (R46) — and the privilege chip
-  always shows the live value. *(Ruled, not yet built — F2 lands with Phase 27 S2, the persistence with S7; until
-  then today's global override is session-only.)*
+  always shows the live value. The overrides are keyed by the HOME agent, where THE ROSTER = `agents` ∪ the root
+  (`DEFAULT_AGENT_NAME`), so a root conversation's override is never pruned by a roster refresh
+  (CONVERSATIONS_PLAN §12.3 H1). While a conversation's home is UNKNOWN to the client (its pin read failed), a send
+  carries NO override — a persisted, uncapped elevation never rides another home's conversation (§12.3 H6).
+  *(Ruled, not yet built — F2 lands with Phase 27 S2, the persistence with S7; until then today's global override is
+  session-only.)*
+- **The conversation mutation routes (Phase 27 S2, D84 — CONVERSATIONS_PLAN §4; ruled, not yet built).** A route that
+  mutates a thread takes its per-thread turn marker first (D38: `_reserve_turn(…, "edit")` → `_revalidate_thread`; 409
+  while a turn runs), and `backend/tests/test_turn_guard_invariant.py` pins that route by route. Phase 27 adds three:
+  - `PATCH /api/threads/{id}` `{title?, seen_at?}` — **unguarded, by design:** `title` and `seen_at` are neither model
+    context nor race a turn (the `_MUTATION_MARKERS` comment records why; the writes go through `ThreadRepo.set_title` /
+    `set_seen`, never a raw `db.execute(` in the route). 404 for an unknown or archived id (an automation's rolling
+    conversation is archived, so it is never touched here); `title` trimmed, ≤ 120; `seen_at` an AWARE datetime (a naive
+    one is a 422 through the safe renderer), clamped to now and monotonic.
+  - `DELETE /api/threads/{id}` — `_reserve_turn(…, "edit")` → `_revalidate_thread` (404 gone · 403 an automation's
+    rolling conversation) → a 404 for an archived row → `ThreadRepo.delete` (messages/FTS/alternates cascade, the
+    attachment dir removed — §2.8) → release in `finally`; **409 while a turn runs**; the thread's in-memory steer queue
+    and routing state are dropped with it.
+  - `DELETE /api/agents/{name}?conversations=true` — resolve the folder first → a guard pass reserving EVERY
+    non-archived conversation of that home (any busy or refused → 409 with the count, every marker released, **nothing
+    deleted**) → ONE DB transaction (`ThreadRepo.delete_many`) → then the filesystem best-effort (attachment dirs, the
+    folder, the default memory dir) with per-step results in the answer. **Not atomic across stores:** a retry completes
+    the agent side, and the existing boot sweep reclaims rowless attachment dirs (§2.8 retention).
+
+  The invariant test's `_EXPECTED` gains `delete_thread` + `delete_agent` (each must call `_revalidate_thread` after its
+  reserve) and `_MUTATION_MARKERS` gains `threads.delete(` + `threads.delete_many(`; in S7 the ISS-49
+  `PUT /api/threads/{id}/opening` route leaves both with `ThreadRepo.set_agent`.
 - **Risk levels** (`Risk`): `LOW` · `MED` · `HIGH`. Risk + the `confirm` flag are declared per action on its
   `ToolSpec` — the gate is data, not scattered `if`s.
 - A suspended call becomes `RunState.AWAITING_CONFIRM` and renders as the confirm bubble.

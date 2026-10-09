@@ -1,6 +1,6 @@
 # CONVERSATIONS_PLAN — conversations per agent + past conversations (ROADMAP A15)
 
-**Status: ✏️ DESIGN RULED 2026-10-06 (main seat Fable 5.1 + owner, session 60) — plan v2.5; owner Q&A closed
+**Status: ✏️ DESIGN RULED 2026-10-06 (main seat Fable 5.1 + owner, session 60) — plan v2.7 (the session-69 completeness pass — Luna · Sol 6.1 · Opus 5.5 — folded, §12.2–§12.3); owner Q&A closed
 2026-10-06 (R0–R46 + the main seat's F1–F7, N1–N4, ON1–ON7 and the privilege-cap RETRACTION, M1; council CLOSED; owner rulings F2 + ON4 RULED 2026-10-06 (A · a): F2 §2, ON4 §6); council rounds 1–2 + the confirms folded; NOTHING
 BUILT.** Decision of record = [`D84`](./DECISIONS.md) (the locked summary); build = TODO **Phase 27** (§10 is the
 ladder — build against this plan, NOT the TODO list); ROADMAP [§A15](./ROADMAP.md); evidence =
@@ -27,7 +27,7 @@ function name is authoritative — re-grep it.
 | | |
 |---|---|
 | Design | ✏️ RULED 2026-10-06 — owner Q&A closed (R0–R46, §1) + F1–F7 (§13), owner + main seat, session 60 — plan v2.5; owner rulings **F2** + **ON4** RULED 2026-10-06 (A · a): **F2** = reading A (§2: with no override set, a responder runs on the HOME agent's AgentDef model + privilege) · **ON4** = (a) (§6: the per-home-agent overrides persist per device and survive a reload); nothing pending |
-| Council | **CLOSED 2026-10-06 — Opus CONFIRMED WITH NOTES ∥ Emma CONFIRMED WITH NOTES (both on v2.2; notes folded v2.3–v2.4); the owner's F2 + ON4 rulings folded → v2.5; NO open rulings** (history: round 1 both NOT CONFIRMED, all folded → v2; round 2 confirms → v2.2; micro-confirms → v2.3/v2.4 — §13) |
+| Council | **CLOSED 2026-10-06 — Opus CONFIRMED WITH NOTES ∥ Emma CONFIRMED WITH NOTES (both on v2.2; notes folded v2.3–v2.4); the owner's F2 + ON4 rulings folded → v2.5; NO open rulings** · **session-69 completeness pass (2026-10-09): Luna (`gpt-6-luna --reasoning max`, blind) COMPLETE WITH GAPS → nine findings RULED in §12.2, folded → v2.6; the two PROVISIONAL rulings (④ dictation-stop · ⑤ the responder keeps its own tools/skills, inherits only `model` + `privilege`) CONFIRMED by the owner 2026-10-09 — ⑤ is RECORDED FOR REFINEMENT: the owner may revise WHAT a responder inherits (model too? not tools/skills?) after testing** · **then two more blind lanes on v2.6 (the owner: "just in case"): Sol (`gpt-6.1-sol` high) COMPLETE WITH GAPS, 2 findings · Opus 5.5 (high) COMPLETE WITH GAPS, 7 HIGH · 11 MED · 10 LOW — ALL RULED in §12.3 (every load-bearing claim re-verified in code by the main seat), folded → v2.7; `ctrlb.chat` gains `home`; the roster = `agents` ∪ root; S8 lands BEFORE ASR S8/S8b** (history: round 1 both NOT CONFIRMED, all folded → v2; round 2 confirms → v2.2; micro-confirms → v2.3/v2.4 — §13) |
 | Build | NOTHING BUILT — slice ladder §10 (S0–S13), seam map Appendix §A. **Pre-build audit 2026-10-09 (session 68): NO collision, drift only — §12.1 carries the re-pins + eleven rulings; build on a `phase27` worktree branch (§12.1)** |
 | DB schema | 7 → **8** (additive column + index + idempotent NULL repairs; §3, §11) |
 | Config | **no new key**, no config-shape bump; the `auto_rotate` retirement drops two keys from the schema (§9, R24) |
@@ -218,7 +218,7 @@ just agents (R13/R15).
 |---|---|---|
 | **Roster** (navigate) | tools-menu agent rows (on every activation, `onPick`) · gallery Talk | open that agent's LATEST conversation (newest `updated_at`), or mint a greeted one through seam ① when it has none. Another conversation → leaving: the responder clears. **The open conversation's own HOME agent when it IS that agent's latest** → nothing reloads; the responder clears ("back to the rule" — B5). |
 | **Specific** (navigate) | a sheet row · a notification tap | open THAT conversation via `openThread(id)`. Another conversation → leaving: the responder clears. The SAME conversation → nothing reloads; the responder STAYS (R45). |
-| **Responder** | `/agent <name>` in the composer | set `responder` for this conversation on this device; the next send carries it. A reply already streaming finishes as whoever started it (no 409). `/agent <home>` clears it. |
+| **Responder** | `/agent <name>` in the composer | set `responder` for this conversation on this device; the next send carries it. A reply already streaming finishes as whoever started it (no 409) — and **a send WHILE it streams is a STEER into that reply, answered by whoever is running** (a mid-loop drain ignores `agent`, `steering.py:13-15`, a security stance): the responder applies from the next TURN (§12.3 M10). `/agent <home>` clears it. |
 
 `/new` opens a fresh conversation for the HOME agent (R22b) — leaving, so the responder clears.
 
@@ -251,7 +251,8 @@ newest is E1. The owner is on the phone in L2, nothing streaming, no call, chat 
   send is answered by Emma (her who-line reads Emma; Lynette's earlier bubbles still read Lynette). L2 stays in
   Lynette's sheet with her name; its preview reads `Emma: …`. The header button opens LYNETTE's sheet (R36). The
   privilege chip shows Lynette's session value and Lynette's overrides apply to the turn (R40; without one, Lynette's AgentDef `model` + `privilege` — F2). Emma's model reads
-  Lynette's earlier lines as `Lynette: …` dialogue, not as her own turns (§8).
+  Lynette's earlier lines as `Lynette: …` dialogue, not as her own turns (§8). Had Lynette's reply still been STREAMING when the
+  owner sent, that send would have joined HER reply (a steer); Emma answers from the first send after it settles (M10).
 - **B2 — `/new` while switched.** From B1 the owner types `/new`.
   → A fresh LYNETTE conversation L3 opens with Lynette's greeting; the responder is gone (leaving). Emma's conversations
   are untouched. Lynette's sheet lists L3, L2, L1. (Had L2 no owner turn yet: the "already new" note, nothing minted,
@@ -338,7 +339,11 @@ newest is E1. The owner is on the phone in L2, nothing streaming, no call, chat 
 **Concurrency.** Turns are server-owned detached tasks (D39) with a per-thread marker (D38) and the shared
 `agent.turns.max_active_turns` cap (`TurnsCfg.max_active_turns` `be/config.py:392`, checked in `_reserve_or_busy`
 `be/api/agent.py:501`). Several agents on ONE local llama.cpp box run concurrently only in name: they queue on the
-per-server gate (DESIGN §10).
+per-server gate (DESIGN §10). **Drain-B cannot race a delete (§12.2 ⑨):** `_cleanup` is a SYNC done-callback — `release` →
+`_maybe_spawn_drain_b` → the re-reserve run in one synchronous stack with no `await`, so `DELETE /threads/{id}` (an async
+route) can never interleave; a steer turn on a deleted thread is impossible. **A hop stops the left reply's PLAYBACK
+(§12.2 b):** `swapView` already calls `clearAudioCache()` unconditionally (`chat.ts:785`, 6b-2) — the turn keeps running
+server-side, its TTS stops on this device.
 
 **What does not change.** A steer carries `body.agent` into `SteerEntry` (`chat` `be/api/agent.py:1348`) and drain-B
 re-routes from it (`start_steer_turn` `:787`/`:802`). Regenerate speaks as the reply's own speaker (D81 ruling ④);
@@ -375,13 +380,19 @@ WHERE agent IS NULL AND archived = 0;
   `MIGRATIONS` (the framework has no such hook today — this adds it; each statement is a no-op once clean).
 - **The `seen_at` backfill is exact (O8).** `MAX(updated_at, newest message ts)` — `seed_greeting`
   (`be/services/agent/greeting.py:55`) adds a row without touching `updated_at`, so `seen_at = updated_at` would wake
-  every greeting-only thread unread.
+  every greeting-only thread unread. **The backfill also marks EVERY pre-existing conversation seen** — there is no prior
+  `seen_at` to preserve, so no unread survives migration 8: a reply pending at the update lands as read (§11 carries the
+  owner-facing line; §12.2 ①).
 - **Unread (O9)** ⇔ the newest row with `role = 'assistant' AND actor = 'agent'` has `ts > seen_at`. A `!cmd` exec pair
   (`run_user_exec` `be/services/agent/exec.py:46`: an assistant row with `actor = user` + a tool row) never counts.
-  `ThreadRepo.create` writes `seen_at = created_at`; `mintAndOpen` marks a minted conversation seen as it opens.
+  `ThreadRepo.create` writes `seen_at = created_at`, and `seed_greeting` lifts `seen_at` to the greeting row's `ts` server-side
+  (so a greeted mint from ANY surface — Conf → Agents' N3 move included — never dots unread for its own greeting; §12.3 L2);
+  `mintAndOpen` marks a minted conversation seen as it opens.
 - **`updated_at` moves on a user send too** (R7). Today only an assistant persist (`session.py:1270` → `ThreadRepo.touch`
-  `be/services/conversation.py:84`) moves it. `chat` calls `threads.touch(thread.id, <owner row ts>)` right after
-  persisting the owner row; `exec_shell` touches with the exec pair's `ts` after `run_user_exec` returns. Exec publishes
+  `be/services/conversation.py:84`) moves it. the touch lives WHERE THE OWNER ROW IS PERSISTED — `run_turn`'s user-row `messages.add` in `session.py` (the
+  `chat` route never persists it; the detached turn does, and drain-B steer turns go through the same persist) →
+  `threads.touch(thread.id, <that row's ts>)` right after it (§12.3 L1); `exec_shell` touches with the exec pair's `ts` after
+  `run_user_exec` returns. Exec publishes
   no `thread` frame (it never passes through `_spawn_drain_task`).
 - **Seam ② pins the HOME (O14).** `chat` mints `Thread(title=body.text[:60] or None)` (`be/api/agent.py:1324`) and never
   pins. It now mints `Thread(title=…, agent=settings.resolve_agent(None).name)` — the configured default, else the root —
@@ -412,24 +423,29 @@ keep working, and pay no summary cost — O24). With `agent=<slug>` (exact HOME 
 | `awaiting` | a parked confirm/question (`MessageRepo.with_call_states`, `be/services/conversation.py:323`) whose call came AFTER the thread's last owner row — the rule `notifyRestoredAwaiting` already uses (`fe/store/chat.ts:403`); no TTL (ON3, supersedes O20). An abandoned call is by definition followed by an owner row, so it drops out; a live one stays until answered. |
 | `unread` | the §3 predicate. |
 
-Params with `agent=`: `limit=<n>`; `before=<updated_at ISO>,<id>` (keyset for `ORDER BY updated_at DESC, id DESC`, built
-by the client from its last row). The roster door's "latest" = `?agent=x&limit=1`; the sheet pages with `limit=50`. One
+Params with `agent=`: `limit=<n>` (**1..200**, default 50); `before=<updated_at ISO>,<id>` (keyset for `ORDER BY updated_at
+DESC, id DESC`, built by the client from its last row and sent through `encodeURIComponent` — the ISO carries `+00:00`; a
+malformed cursor → 422 through the safe renderer; §12.3 L3). **A slug NOT on the roster (`agents` ∪ root) lists `[]`** — R41's
+"listed nowhere" holds for an orphaned home on every device, not only the one that deleted it (§12.3 M7). The roster door's "latest" = `?agent=x&limit=1`; the sheet pages with `limit=50`. One
 repo pair: `ThreadRepo.list(include_archived, agent, limit, before)` (`be/services/conversation.py:102`) +
 `ThreadRepo.summaries(rows, turns)` — the ONLY definition of the five fields (R25 reuses it).
 
-**`PATCH /api/threads/{id}`** — body `{title?: string | null, seen_at?: datetime}` (pydantic, `extra="forbid"`), the
+**`PATCH /api/threads/{id}`** — body `{title?: string | null, seen_at?: AwareDatetime}` (pydantic, `extra="forbid"`; a naive datetime is a 422, never a 500
+in `min(given, now)`; stored through `_iso(UTC)` like `ts` so the TEXT comparison of the unread predicate holds — §12.3 L3), the
 per-item update object. `title`: trimmed, `max_length=120`; `""`/`null` clears it. `seen_at`: the `ts` of the newest row
 the client's view holds; stored as `max(stored, min(given, now))` (monotonic; a reply landing between render and write
 stays unread). A `seen_at` that moved publishes a `thread` frame `{state: "seen"}` (§5, O10). Answers the updated row
 with the five fields. **Unguarded** (neither field is model context nor races a turn) — through `ThreadRepo.set_title(`
 / `ThreadRepo.set_seen(`, never `db.execute(` in the route; the `_MUTATION_MARKERS` comment records why. 404 for an
-unknown or archived id.
+unknown or archived id. An automation's rolling conversation is `archived = 1` (`runner.py:429/:434`), so it 404s here like
+any archived row and can never publish a `seen` frame — PATCH needs no `_reject_automation_thread` pass (§12.2 ③).
 
 **`DELETE /api/threads/{id}`** — `_reserve_turn(request, id, "edit")` (409 busy while a turn runs) →
 `_revalidate_thread(state, id)` (404 gone · 403 an automation's rolling conversation, `be/api/agent.py:473`) → a 404 for
 `archived = 1` (checked after the reserve too — `_revalidate_thread` does not check `archived`; E10) →
 `ThreadRepo.delete` (`be/services/conversation.py:113`: cascades messages/FTS/alternates, removes the attachment dir) →
-release in `finally`. Answers `{deleted: true}`.
+release in `finally`; the delete (and `delete_many`) also drops the thread's in-memory `state.steer_queues[id]` and
+`routing_state[id]` entries (§12.3 L5). Answers `{deleted: true}`.
 
 **404 instead of a silent mint (R29).** Today `chat` (`:1315-1324`) and `exec_shell` (`:1432-1436`) treat an UNKNOWN
 `thread_id` like an absent one and lazily mint a NEW thread. Both now answer `404 unknown thread '<id>'` when `thread_id`
@@ -441,7 +457,11 @@ overrides (§6, persisted per device — ON4) — `privilege` and `mode` — nev
 answering agent as today (`name = agent_name or thread.agent`); when a thread exists and the resolved agent differs from
 `thread.agent`, it is copied with the HOME agent's `model` (`AgentDef.model`, `be/domain/agent.py:250`) and, absent an
 override, its `privilege` (`AgentDef.privilege`, `:258`). (Reading B — no copy, the responder keeping its own values —
-was rejected by the owner, §2.) `mode` (a `/<provider>` name, `ChatRequest.mode` `:162`) is sent from the home agent's slot. One place, so
+was rejected by the owner, §2.) **Only `model` + `privilege` are copied (§12.2 ⑤ — RULED by the owner 2026-10-09, recorded for
+refinement: the split may change after testing):** the responder keeps its OWN tools, skills, lorebooks, memory and persona — it is "who answers" — so a hop changes
+which tools are on the table, at the home's privilege (privilege gates what any tool may DO; the typed-action registry and the
+confirm tokens stay the execution boundary). Copying the home's tool set too would make the responder a mask over the home
+agent rather than a guest voice. `mode` (a `/<provider>` name, `ChatRequest.mode` `:162`) is sent from the home agent's slot. One place, so
 chat, resume, regenerate and drain-B steers all obey it.
 
 **Guard invariants.** `backend/tests/test_turn_guard_invariant.py`: `_EXPECTED` (`:93`) gains `delete_thread` and `delete_agent`
@@ -508,7 +528,10 @@ toast), which clears the responder, and carries the open conversation's draft + 
   chained: false}` after `create_task`. Its `_cleanup` publishes the terminal frame LAST — after `release` (`:623`) and
   after `_maybe_spawn_drain_b` (`:635`), which now returns whether it spawned a turn — with `state =
   handle.terminal_status` (`completed` · `suspended` · `capped` · `error` · `cancelled`) and `chained = <drain-B spawned>`
-  (O29). `ThreadRepo.set_seen` (via PATCH) publishes `{thread_id, state: "seen", agent}` (O10). `agent` = `thread.agent`
+  (O29). **`_drain_b_body`'s NON-handoff exits publish too (§12.3 M2):** an all-exec queue, a Stop, a stale head or a
+  prelude raise end in that body's own `finally` (never through `_spawn_drain_task`), so that `finally` publishes the
+  terminal frame itself — `state` = the body's `terminal_status`, else `cancelled`, `chained` = whether IT handed off —
+  otherwise a `chained: true` completion is never followed and the running dot sticks. `ThreadRepo.set_seen` (via PATCH) publishes `{thread_id, state: "seen", agent}` (O10). `agent` = `thread.agent`
   (the HOME agent). `archived` threads publish nothing (automation runs keep their Event + `read_at` path); exec publishes
   nothing (§3). Never persisted.
 - **Bus.** `EventBus` (`be/core/events.py:20`) widens to `Event | ThreadFrame` (a small pydantic model in that module);
@@ -518,14 +541,16 @@ toast), which clears the responder, and carries the open conversation's draft + 
   and `['agents']`. A terminal frame whose `thread_id` is not the open view's, and is not `chained`:
   `completed`/`capped`/`error` → `notifyTurnTerminal(thread_id, turn_id, state)` (`fe/store/chat.ts:354`, exported — the
   ONE definition; its key `turn-done:<notifyScope(thread)>:<turn>` (`:369`) equals the open view's, so no duplicate);
-  `suspended` → an `agent_input` signal keyed `agent-input:<thread>:<turn>`; `cancelled`/`seen` → nothing. On reconnect
+  `suspended` → an `agent_input` signal keyed `agent-input:<thread>:<turn>`; `cancelled`/`seen` → nothing. **A `running` frame
+  for the OPEN view's own thread that this view is NOT streaming** (the other device sent there, B9) → `probeAndReattach(thread)`
+  so the visible device shows the turn instead of a stale view (§12.3 M11). On reconnect
   (`reconcileChat` `:2613`) both queries refetch.
 - **Visible vs hidden (R39).** No in-app toast for a background reply. `shouldNotify`
   (`fe/hooks/useForegroundNotifications.ts:94`) already drops every signal while the page is visible — kept: visible ⇒ the
   dots only; hidden ⇒ the OS notification. (A live call still suppresses `turn_done`, `:91`.)
 - **Names (R37).** Every agent-class signal's title names the conversation's HOME agent: "Lynette finished" · "Lynette
   stopped" · "Lynette hit the step limit" · "Lynette needs approval" · "Lynette has a question" (today: "The agent …" /
-  "Approval needed", `chat.ts:306-381`); bodies unchanged; a vanished home → its slug.
+  "Approval needed", `chat.ts:306-381`); bodies unchanged; a vanished home → the configured default's name (ONE fallback, §12.1 ①; §12.3 M7).
 - **The tap — four seams (O2).** (1) `NotifySignal` (`fe/lib/notifyBus.ts:23`) gains `thread?: string`, set by every
   agent-class signal; (2) `show()` puts it in `options.data` (`useForegroundNotifications.ts:204`, today `{focus, key}`);
   (3) `public/notify-sw.js` posts it back (`:34`, today `focus` only) and, with no live client, opens
@@ -547,33 +572,56 @@ ChatMode}>`** keyed by HOME agent slug, persisted per device in `ctrlb.chat` (ON
 below; this supersedes the pre-ruling "never persisted" contract for privilege, SECURITY_MODEL §2.2 records it); the
 module-level `sessionMode` (`:483-491`) folds into it.
 
-**`ctrlb.chat` = `{thread: string | null, responder: string | null, overrides: {<home slug>: {privilege?, mode?}}}`**
-(`KEY` `:71`, today `{agent}`; R45 + ON4). One load-boundary fold: a blob without a string `thread` loads as `{thread:
+**`ctrlb.chat` = `{thread: string | null, home: string | null, responder: string | null, overrides: {<home slug>:
+{privilege?, mode?}}}`** (`KEY` `:71`, today `{agent}`; R45 + ON4; `home` = the stored thread's HOME slug, written with it,
+so a boot whose thread is gone still knows whose latest to open — §12.3 H7). One load-boundary fold: a blob without a string `thread` loads as `{thread:
 null, responder: null}` (the `overrides` map is type-guarded entry by entry, below); the old `agent` key is never written
 again. Written by every view change — `swapView` (`:783`) AND `setWireThread` (`:558`, the lazy-mint path, O23) — by
 `setResponder`, and by every override writer. **Boot — ONE rule (`initChat` `:943`, N1):** load the stored `{thread, responder}` pair
-first; the TARGET = a validated `?thread=` (§5) if present, else the stored `thread`. If the target lists in
-`GET /api/threads`: open it, and keep the stored `responder` ONLY when target === stored `thread` AND the responder is on
-the roster (a notification tap on the conversation this device was in = the device never left); a different target =
-the device LEFT → no responder. Else `threads[0]` with no responder, else a thread-less view (a stored responder survives
-there only if the stored `thread` was null). The pair is rewritten after boot.
+first; the TARGET = a validated `?thread=` (§5) if present, else the stored `thread`. The boot list read is `GET /api/threads?include_archived=true` (the existing param — an archived automation run the owner
+left open must still count as present, §12.3 H3). If the target lists: open it (passing its `agent` as the home, H6), and keep
+the stored `responder` ONLY when target === stored `thread` (a notification tap on the conversation this device was in = the
+device never left); a different target = the device LEFT → no responder. The roster test on that responder waits for the roster
+(`agentsLanded`, M3): before it lands the responder is kept UNJUDGED; the N2 sweep judges it on the first landing. **If the
+target does NOT list — the stored conversation was deleted elsewhere while this device was dead (Android process death, R45) —
+boot runs the R29 path, not a silent fallback (§12.3 H7 = Sol F1):** the toast "this conversation was deleted", then
+`openAgentConversation(stored home ?? defaultAgent)`, and the dead thread's draft + rail move into what opened (E6) BEFORE the
+boot prune runs. No stored thread → `threads[0]` with no responder, else a thread-less view (a stored responder survives there
+only if the stored `thread` was null). The tuple is rewritten after boot. **Tabs are not isolated (§12.2 ②, main-seat
+ruling):** the pair is ONE blob per browser profile, last writer wins — a reload of one of two desktop tabs lands on the other
+tab's conversation (and its responder). Recorded, not built around: the owner's two devices are two profiles. (§12.3 M4 corrected the v2.6 wording: with whole-blob
+writes drafts and rails WERE affected too — hence the field-level patch rule under "Drafts and staged files".)
 
 **A responder that leaves the roster (N2).** Whenever the roster changes — a local agent delete, or the `['agents']` query
 refreshing after a delete on another device — a `responder` whose slug is no longer listed is CLEARED at once: the
 persisted pair is rewritten, the caption/backdrop return to the home agent, and the note `// <slug> is gone — <Home>
-answers` prints. Never a silent root fallback while the UI still shows the old name.
+answers` prints. Never a silent root fallback while the UI still shows the old name. **THE ROSTER, one definition (§12.3 H1):** `agents` ∪
+{`DEFAULT_AGENT_NAME`} = the keys of `GET /api/agents`' `summaries` — the root is never in `agents` (`_list_agents_payload`,
+"the default/root agent isn't listed") yet every legacy thread the repair pins to `'default'` is a ROOT conversation; N1, N2, the
+ON4 prune, `setResponder` (`/agent default` is valid) and the ISS-51 paint all use this definition, never `agents` alone. **N2
+judges only a LANDED roster** (`agentsLanded`; a failed read judges nothing, M3). **The same sweep handles a HOME that left the
+roster (§12.3 M7 — generalises F8/N3 to every device):** a view whose home is no longer on the roster moves to the configured
+default's latest with its draft + rail carried (E6), on whichever device holds it, when its roster query lands; the orphan rows
+stay in the database, listed nowhere (`?agent=` answers `[]` for a slug off the roster, §4).
 
 **The responder lifetime (R45).** `swapView` clears `responder` ONLY when the new view's thread ≠ the old one (leaving).
 `openThread`'s same-id branch (`:887-891`, no `swapView`) keeps it — so a notification tap or a sheet-row tap on the open
 conversation keeps it. `openAgentConversation(home)` on the open conversation's own home agent when it is the latest
-clears it in place (B5). `/new` clears it (it swaps). The delete fallback clears it.
+clears it in place (B5). `/new` clears it (it swaps). The delete fallback clears it. **Normalisation (§12.2 a):** whenever the view's HOME becomes known
+or changes (`swapView`; `setWireThread` on the lazy mint, B17), a `responder` EQUAL to that home is set to `null` and the pair
+rewritten — a redundant override never lingers (B17 with the configured default picked thread-less: the mint is that agent's own
+conversation with no responder; the caption and the bare-`/agent` note stay honest).
 
 **Hop while streaming** (R9). `swapView` does `++streamGeneration` (`:248`); the refusals drop — `openThread`'s pre- and
 post-fetch `getChatStatus() === "streaming"` checks (`:883`, `:905`) and `startNewThread`'s (`:1222`). **The adopt guard
 (O6):** `streamTurn` (`:1842`) captures `enteredOn` (the view's thread id) and the swap generation BEFORE its `fetch`
 (`:1860`); at the adopt point (`claimStream` `:249`, called at `:2036`), in the reducer's `case "thread"` (`:1653` →
 `setWireThread`) and in the buffered branch (`:1973`) it refuses to adopt when the view moved — the turn simply continues
-server-side as a background conversation. The POST is never aborted (the server may already hold the message).
+server-side as a background conversation. The POST is never aborted (the server may already hold the message). **Every arm, not only the success ones (§12.3 M1):**
+when the view moved, `streamTurn` performs NO view write on its 409 arm, its untrackable-202 arm, `HttpRefusal`/`catch` →
+`failStream`, or the not-settled re-attach — a refused or failed LEFT send returns its text to its ORIGIN slot
+(`appendDraft(text, …, slot = enteredOn)`) silently; a left-send 404 is dropped (the next visit to that conversation 404s and
+runs R29).
 **`dropAllRaw` (O22):** `swapView` stops pruning every thread's raw steer lines (`:788`); steers belong to their thread —
 only the view's optimistic queue is dropped; a thread's raw lines go with its own harvest/turn end.
 
@@ -582,13 +630,18 @@ only the view's optimistic queue is dropped; a thread's raw lines go with its ow
 old post-await silent returns on "streaming" or a changed user-turn count (`:1276-1278`) are removed. `openAgentConversation
 (name)` = `GET /api/threads?agent=name&limit=1` → the open view's id → B5 in place; another id → `openThread(id)`; none →
 `mintAndOpen(name)`. `/new` (`fe/lib/composer.ts:418`) = `mintAndOpen(threadAgent ?? defaultAgent)` (R22b) with the ISS-31
-no-op rule (no owner turn → the "already new" note, nothing else). `mintAndOpen` always names an agent.
+no-op rule (no owner turn → the "already new" note, nothing else). `mintAndOpen` always names an agent. `openAgentConversation` claims its `openSeq` ticket AT ENTRY (before its `GET`) and
+abandons if superseded after it — a slow roster tap never overrides a later sheet-row tap (§12.3 L8).
 
 **Doors** (R16, R38, O4). Tools-menu `AgentRow` (`ToolsMenuSheet.tsx:226`) fires `openAgentConversation` from `onPick`
 (`onClick` `:249` — every activation, the already-checked row included), never the radio's `onChange` (`:250`, change
 only). The checked row = the open conversation's HOME agent (it reads as "the conversation you are in"); the caption =
-the responder when set. Gallery `talk` (`fe/tabs/AgentsTab.tsx:226`) → `openAgentConversation`. Sheet rows (§7) and the
-notification tap (§5) → `openThread(id)`. `/agent <name>` (the `agent` verb, `composer.ts:368`) → `setResponder(name)`:
+the responder when set. Gallery `talk` (`fe/tabs/AgentsTab.tsx:226`) → `openAgentConversation`. Sheet rows (§7) and the notification tap (§5) → `openThread(id, home)` — **every door hands the HOME it already knows into
+the swap (§12.3 H6):** the sheet row's `agent`, `openAgentConversation(name)`'s name, the notification frame's `agent`; the
+chat stream head (`agent.py:838`, `{threadId, title}`) gains `agent` so `setWireThread` installs the minted home at once; the
+late `fetchThreadAgent` read stays only as the repair for a door that knew nothing (`?thread=` cold start). **While the home
+of a conversation is unknown** (that read failed), `sendMessage` carries NO override and the chip reads "…" — a persisted,
+uncapped elevation never rides another home's conversation; the §12.2 (a) normalisation also runs at that late write. `/agent <name>` (the `agent` verb, `composer.ts:368`) → `setResponder(name)`:
 roster names only; `name === threadAgent` → clear; then the §2 note. **`sendMessage`** (`chat.ts:2799`) sends `agent =
 responder` (`:2831`), `privilege = overrides[home].privilege`, `mode = opts.mode ?? overrides[home].mode` (`:2825`) where
 `home = threadAgent ?? defaultAgent`.
@@ -615,16 +668,23 @@ the root (ISS-51). Readers: `useActiveAgent` (`fe/hooks/useActiveAgent.ts:31`), 
 
 **Seen write** (R30, O11). `PATCH {seen_at: <ts of the newest row in view>}` after a conversation's history lands, when a
 turn settles in the open view, and on regaining visibility or switching back to the chat tab — each ONLY while
-`document.visibilityState === "visible"` AND the chat tab is on screen (`ui.tab === "agent"`, `fe/store/ui.ts`). On success
-it invalidates `['threads']` and `['agents']` locally (O10).
+`document.visibilityState === "visible"` AND the chat tab is on screen (`ui.tab === "agent"`, `fe/store/ui.ts`). On success it invalidates `['threads']` and `['agents']` locally (O10). **Never for an ARCHIVED view (§12.3 H3):** the
+automations panel opens archived run threads in chat (`AutomationsPanel.tsx:164`, by design) and PATCH 404s archived ids, so an
+archived view writes no `seen_at`, is not an R29 404 source, and keeps its draft slot through the prune (the view carries
+`archived` from its `Thread` dump). **Freshness (Sol F2):** the visibility/tab-return write runs AFTER `reconcileChat`'s
+refetch — the newest row of the REFRESHED view, never a stale pre-background floor.
 
 **Deleted elsewhere** (R29, R42, E6). A thread-scoped request on the OPEN conversation answering 404 — `sendMessage`, the
 seen PATCH, `fetchMessages` (`:811`) — while NOT in a call → `pushToast("this conversation was deleted")`
 (`fe/store/toast.ts:41`) → `openAgentConversation(threadAgent)` → the dead conversation's draft, staged files and any
 unsent send text move into the slots of the conversation that opened (appended after its own draft with a blank line;
 staged files appended to its rail). During a call the 404 is latched (no toast, no swap); `endCall`
-(`fe/store/liveCall.ts:58`) runs the R29 path once. (`turn_status` answers `{active:false}` for an unknown thread — not a
-404 source, O21.)
+(`fe/store/liveCall.ts:58`) runs the R29 path once. (`turn_status` answers `{active:false}` for an unknown thread — not a 404 source, O21.) **A door onto a since-deleted
+conversation (§12.3 M6)** — a stale sheet row, a notification tap after a delete elsewhere — gets `openThread`'s 404 → the toast
+"this conversation was deleted", `['threads']` invalidated, and the view STAYS where it was (today's text there says "backend
+unreachable" — wrong for a 404). **In a live call (§12.3 M8):** the sheet's Delete on the OPEN conversation is refused with the
+hang-up note (its fallback is a swap, R20); a Conf → Agents delete of the open HOME (N3/F8) is accepted server-side and its
+move LATCHES like R42, running at `endCall`.
 
 **Drafts and staged files — one per conversation** (R31, R34, R35). Today: ONE global draft — `fe/store/composer.ts`
 `{draft}`, persisted per device in `localStorage` key `ctrlb.composer` via the D23 `store/persist` chokepoint — and ONE
@@ -633,15 +693,39 @@ shapes, same persistence:
 - `ctrlb.composer` → `{drafts: Record<string, string>}`; `ctrlb.attachments` → `{rails: Record<string, PersistedFile[]>}`;
   both keyed by thread id, key `""` = the thread-less view. One load-boundary fold each: the legacy single value loads
   under `""`; the old shapes are never written back.
-- A non-persisted `slot` per store, set by `swapView` and `setWireThread` via `setComposerSlot(threadId ?? "")` (chat →
+- A non-persisted `slot` per store, set WHEREVER `threadId` is written — `swapView`, `setWireThread` AND the cold load
+  `loadThread` (`initChat`/`reloadChat` → `loadThread` writes `set({threadId, …})` through neither, §12.3 H2) — via
+  `setComposerSlot(threadId ?? "")` (chat →
   composer/attachments, the direction the imports already run, `chat.ts:26`). The stores' public functions keep their
   signatures and act on the current slot — `useComposer`, `lib/composer.ts`, `useLiveCall`, `useAttachments` unchanged.
 - `appendDraft(text, sep, slot?)`: `harvestToDraft(threadId, …)` (`chat.ts:2658`) passes its own thread; `useDictation`
   captures the slot when a dictation STARTS and passes it to its `appendDraft` calls (`fe/hooks/useDictation.ts:746`,
-  `:1188`) (R35).
+  `:1188`) (R35). **ANY swap while a STREAMING dictation is live — a navigate door, `/new`, the three delete fallbacks (§12.2 ④, RULED by the
+  owner 2026-10-09; widened by §12.3 L7):** the swap STOPS the dictation first — the recorder is global (the module-level `StreamSession`), and a
+  live mic in the new view whose words land elsewhere would read as broken. The leg ends; its in-flight finals land in the
+  ORIGIN slot (R35); the new view's composer starts with no recording affordance; auto-send across a hop sends nothing (§12.1 ④); a delete
+  fallback's E6 carry runs AFTER the stopped dictation's finals have landed (L7).
+  The clip door (push-to-talk) is unaffected — its upload is bound to the slot captured at press.
 - An empty draft / rail deletes its key; a deleted conversation's slots move per "Deleted elsewhere" or are dropped
   (B8 deletes its own open conversation → moved; a non-open row deleted from the sheet → dropped); when the view becomes a
-  conversation whose slots are empty and `""` holds content (a lazy mint, `mintAndOpen`), it moves in.
+  conversation whose slots are empty and `""` holds content (a lazy mint, `mintAndOpen`), it moves in. **Prune (§12.2 ⑦):** `initChat`'s plain `GET /api/threads`
+  (today's reader) is the ONE global list this client ever sees — at boot every `drafts`/`rails` key that is neither `""` nor
+  listed there is dropped. A conversation deleted on the other device while this device only held a draft (never opened it)
+  never 404s here, so the boot prune is the only path that reclaims its slot. The prune skips the CURRENT view's key and runs
+  only while `initChat`'s generation still holds (a roster-door mint + typing during boot is never pruned, §12.3 L6); the R29
+  boot carry (H7) runs before it.
+- **Id-addressed rail mutations cross slots (§12.3 H4).** A hop may land between Send and the accept (R9/S6) or mid-upload:
+  `reserveStaged`/`consumeStaged`/`releaseStaged`/`updateStaged`/`removeStaged`/`stagedPreviews` find their row across ALL
+  rails (ids are unique), so L2's chips never stick in `sending`/`uploading` after a hop to E1 (`sending` is dropped from
+  persistence by design — a stuck chip would lose the photo on reload). Only the reads that BUILD a send (`stagedIds`,
+  `hasStaged`) and the composer's view are slot-scoped.
+- **The thumbnail budget is GLOBAL across rails (§12.3 M5):** `THUMB_BUDGET_CHARS` was sized for one rail against the ~5 MB
+  origin quota (and `savePersisted` swallows quota errors) — the current slot's rail is served first, then the others in
+  last-used order, so three full rails can never push every later write into silent failure.
+- **Writers patch their own field (§12.3 M4):** every `ctrlb.*` writer does load → patch ONE entry → save (the D23 `persist`
+  chokepoint grows that helper), never a whole-blob write of in-memory state — two tabs of one browser then only race on the
+  SAME key (last writer wins on `thread`/`home`/`responder`, §12.2 ②), and a tab B navigation can never re-persist an
+  elevation tab A cleared.
 
 **Live call** (R20). `openThread`, `mintAndOpen`, `openAgentConversation` and `setResponder` return early with their §2
 note while `callLive()` (`fe/store/liveCall.ts:78`). Without it a swap would `clearAudioCache()`
@@ -671,7 +755,7 @@ in `syncMessageRoute` (`:3174`); `resetToThreadless`'s sticky parameter (`:802`)
   open one marked; "Show older" while a page came back full. Every root renders under `DefaultRoot`'s `.kit`
   (`fe/theme-engine/kit/DefaultRoot.tsx:359`; vapor via `fe/themes/vapor/VaporRoot.tsx:57`).
 - **Row anatomy** (R100 §7): label (one line, ellipsis) · preview (one line; `Name: ` when the speaker is not the home
-  agent, `You: ` for the owner) · trailing `relativeTime` (`fe/lib/relativeTime.ts:6`) · one dot, priority needs-you
+  agent, `You: ` for the owner; an assistant row with `agent IS NULL` is the home's own, as §8 reads it — §12.3 L4) · trailing `relativeTime` (`fe/lib/relativeTime.ts:6`) · one dot, priority needs-you
   (`--warn`) > running (`--ok`, pulsing only when UIState `motion` allows, `fe/store/ui.ts:62`) > unread (`--accent`) · a
   trailing `⋯` button. Tap = `openThread(id)`; the sheet closes.
 - **Rename / delete.** `⋯` discloses an inline actions row (the D81 `.who-acts` precedent, `fe/components/chatAttribution.tsx`):
@@ -761,7 +845,8 @@ ruled.**
   without the flag the rows stay unlisted and an absent folder still 404s; turn-guard pins widened
   (`delete_thread`, `delete_agent`; `threads.delete(`, `threads.delete_many(`); qh9 green.
 - **S3 — the `thread` frame** (after S2). *Verify:* `running` then the terminal on a detached chat turn; a drain-B chain gives
-  `chained: true` then the steer turn's own frames; `seen` on a moved `seen_at`, none on a no-op; none for archived or exec;
+  `chained: true` then the steer turn's own frames; `seen` on a moved `seen_at`, none on a no-op; none for archived or exec; an all-exec drain-B and a Stop mid-chain each
+  publish the terminal frame from `_drain_b_body`'s finally (M2);
   no `id` on the wire; `Event` frames unchanged; a slow subscriber drops, never blocks.
 - **S4 ∥ — ISS-50** (parallel with S1–S3; `session.py` only). *Verify:* a two-speaker history with ADJACENT owner and foreign
   rows (B1's `[user] [Lynette] [user]`, a foreign row before the responder's reply, one at the tail) assembles with strict
@@ -775,20 +860,33 @@ ruled.**
   (O6); `dropAllRaw` narrowed (O22). *Verify (store tests — the UI doors arrive in S7, O26):* a swap between Send and the
   response headers never adopts the left turn's stream, wire thread or buffered floor into the new view, and the POST is not
   aborted; after a swap a live reducer's frames never touch the new view; re-entry re-attaches; a background thread's raw
-  steer lines survive a swap.
+  steer lines survive a swap; the 409 and the network-failure arms after a swap write nothing into the new view and return the
+  text to the origin slot (M1).
 - **S7 — the responder model, the doors, the overrides, the `/opening` deletion.** `responder` + R45 lifetime; `{thread,
   responder}` persistence + fold; `mintAndOpen` + the new fence (O7)/`openAgentConversation`; `/new` = home; `/agent` + notes
   (incl. B17's); the roster door on `onPick` (O4); `overrides` per home agent (R40), persisted per device in `ctrlb.chat` (ON4 (a): type-guarded, pruned with the home agent) + the chip; the §6 retire list; the
   `/opening` route deleted with `set_agent` + `test_iss49_reopen.py` + its pins (R27); the call refusals; the seen write (R30,
   O11, O10); the 404 → toast → home's latest, latched in a call (R29, R42); the agent-delete second confirm with the count → the F6 flag (R41); the open-home transition after an agent delete (N3, and the no-flag reading in §12); the roster-drop responder clear (N2); the one boot rule (N1). *Verify:*
   store tests for B1–B5, B9, B10, B11, B12, B15 (incl. its dead-page arm, N1), B16, B17, B18 (both sub-cases: the open home deleted with the flag → the default's latest with draft + rail carried, no toast; a deleted responder cleared with its note — local delete AND a remote delete seen through a roster refresh); the invariant (no door writes another agent's conversation);
-  the `ctrlb.chat` fold + the overrides' per-entry type guard and reload survival (ON4); `mintAndOpen` while another view streams still swaps (O7); the seen write skipped off the chat tab;
+  the `ctrlb.chat` fold + the overrides' per-entry type guard and reload survival (ON4); a responder equal to the home is nulled on
+  `swapView`/`setWireThread` (§12.2 a); `mintAndOpen` while another view streams still swaps (O7); the seen write skipped off the chat tab;
+  the roster = `agents` ∪ root (H1: `/agent default` valid, root overrides survive a roster refresh); every door installs
+  its home and a send with an unknown home carries no override (H6); the boot rule keeps a not-yet-judged responder until the
+  roster lands (M3); a 404 on `openThread` toasts "deleted" and stays (M6); *(M9: the E6 draft-carry arms of B8/B11/B18 verify
+  in S8, the `?thread=` dead-page arm, the `seen` frame and B9's cross-device dot in S10 — S7 verifies the tuple, the
+  responder and the overrides)*;
   the BE suite green without the route; e2e — B1 → B2 → B3 → B4 → B5 through the tools menu (the checked row included), and
   B6's "open B mid-stream, back to A, the reply is whole" (moved from S6).
-- **S8 — drafts + staged rail per conversation** (`fe/store/composer.ts`, `fe/store/attachments.ts`, `fe/hooks/useDictation.ts`,
-  the `setComposerSlot` call sites in `chat.ts` — after S7). *Verify:* B13, B14; both folds (`{draft}` → `{drafts: {"": …}}`,
+- **S8 — drafts + staged rail per conversation + the `useDictation` slot** (`fe/store/composer.ts`, `fe/store/attachments.ts`,
+  `fe/hooks/useDictation.ts`, the `setComposerSlot` call sites in `chat.ts` incl. `loadThread` — after S7). **Phase 27 S8 lands
+  FIRST on `useDictation.ts`; ASR S8/S8b rebase onto it** (§12.3 H5 — the ASR build resumes after Phase 27 per HANDOFF, so
+  §12.1 ⑤'s order was circular; the slot rides `StreamSession`, ASR S8b's IndexedDB record then persists it). *Verify:* B13, B14; both folds (`{draft}` → `{drafts: {"": …}}`,
   `{files}` → `{rails: {"": …}}`); a harvest lands in its own thread's slot; `""` moves into a minted conversation; the
-  delete-move (E6) appends with a blank line.
+  delete-move (E6) appends with a blank line; the boot prune drops every key not `""`, not listed (archived included) and not the open view's (§12.2 ⑦, L6) and runs after
+  the H7 boot carry; B13 across a RELOAD (the slot set by `loadThread`, H2); a hop mid-send/mid-upload consumes, releases and
+  updates L2's chips by id (H4); the budget is global (M5); a draft write patches one key (M4); the E6 carry arms of B8/B11/B18
+  (moved from S7, M9); a live streaming
+  dictation ENDS on a navigate door and its finals land in the origin slot (§12.2 ④).
 - **S9 — the sheet.** `ChatHeaderActions` factor FIRST (its own commit, no visual change), then the sheet, rows,
   rename/delete. *Verify:* row anatomy, preview prefixes, dot priority, "Show older", the "already new" close (O28); e2e at
   390 px on cosmos + vapor + gacha + frontier — B7, B8 (incl. delete-open → next latest with the draft carried), the header
@@ -798,7 +896,8 @@ ruled.**
   conversation is open; a `chained` completion does not notify; a seen on device A clears device B's dot; the tap through
   (a) the constructor path, (b) the service-worker message path, (c) the dead-page `openWindow` path with `?thread=` — twice: `?thread=` equal to the stored thread keeps the stored
   responder, a different one opens with none (N1); a tap
-  during a call only switches tab; roster dots move with the sheet closed.
+  during a call only switches tab; roster dots move with the sheet closed; a `running` frame for the open view from the OTHER device re-attaches it (M11); the
+  `?thread=` dead-page arm + B9's cross-device dot (moved from S7, M9).
 - **S11 — the owner's device round** (phone + desktop, dev): B1–B19 by hand; ISS-50 heard in a reply.
 - **S12 — close-out.** As-built records (§13 tail); ISSUES ISS-49 / ISS-50 / ISS-51 / ISS-52 → FIXED; ROADMAP A15 → BUILT;
   D75's amendment block gets its SUPERSEDED pointer; HANDOFF pointer.
@@ -809,7 +908,7 @@ ruled.**
 - **DB schema 7 → 8, additive** — an older build ignores `seen_at` + the index and applies only migrations above its own
   version (`Database._migrate`). Rollback by tag is safe; rolling FORWARD again repairs whatever the older build inserted
   (the §3 `_REPAIRS`, O13).
-- **`ctrlb.chat`** — the new build folds `{agent}` → `{thread, responder, overrides}`; an older build reads it as "no
+- **`ctrlb.chat`** — the new build folds `{agent}` → `{thread, home, responder, overrides}`; an older build reads it as "no
   sticky pick" (its `readStickyAgent` type guard, `chat.ts:79`) and ignores `overrides` — its `/privilege` and mode are
   session-only, so a persisted elevation does NOT carry into the older build (every turn runs at the AgentDef defaults
   until set again). Rolling forward again restores the persisted overrides unless the older build rewrote the blob (any
@@ -819,6 +918,8 @@ ruled.**
 - **Config** — no new key, no config-shape bump (R24); rollback = plain `update.sh <previous tag>`.
 - **Wire** — an older FE against the new BE: a stale `thread_id` now 404s instead of minting (shown as a send error).
   Ship BE and FE together (one tag), per the runbook §Release.
+- **Migration 8 marks every existing conversation SEEN** (§3) — no pre-update reply shows as unread after the update; the
+  release note says so (§12.2 ①).
 - One release after S11; the version is the owner's call at release time (Phase 26 holds v1.7.11/v1.7.12).
 
 ## §12 Still open
@@ -862,8 +963,8 @@ config shape still 5, `AgentCfg` unchanged, the five S5 tests exist, Phase 27 to
    and leaves the text in its origin slot (it shows there as the draft on return). The alternative — a thread-targeted
    background send — needs a `runComposer` the store does not have; not built. (S8)
 5. **`fe/hooks/useDictation.ts` is SHARED with the ASR track.** S7a moved the streaming append into a module-level
-   `appendPhrase(s: StreamSession, …)` — the plan's `:746`/`:1188` cites are gone. **Ordering:** ASR S8/S8b own the file
-   FIRST; Phase 27 S8 lands AFTER ASR S8b and rebases onto it. The start slot belongs on `StreamSession` (fed to
+   `appendPhrase(s: StreamSession, …)` — the plan's `:746`/`:1188` cites are gone. **Ordering — REVERSED by §12.3 H5 (the order here was circular with HANDOFF's "ASR build resumes after Phase 27"):**
+   Phase 27 S8 lands FIRST; ASR S8/S8b rebase onto it. The start slot belongs on `StreamSession` (fed to
    `appendPhrase`) and in the clip-door closure; ASR S8b's IndexedDB recovery record MUST persist the thread id the
    dictation started in, so the recover offer lands in its origin conversation (ASR_PLAN gets the same line).
 6. **The R42 latch at hang-up:** `endCall`'s deferred R29 path runs AFTER the ISS-61 exit harvest
@@ -911,17 +1012,96 @@ same-conversation landing keeps it (R45).
 Q8 → R32 · the AgentDef write-back → R46 · the v2 fold's flagged readings → F1–F7 · Emma's confirm → N1–N4 · Opus's confirm → ON1–ON7 · Q-I → R34 · Q-J → R35 · Q-K → R36 · Q-L → R37 · Q-M → R38 · O1 → R39 · O3 → R45 · O5 → R40 · O12 → R41 ·
 O15 → R42 · O17 → R43 · F2 → reading A (owner) · ON4 → (a) (owner).
 
-**Recorded, not built (R32, R46):** write-back of the local/cloud mode (first) and privilege to the AgentDef · a list TAB via the satellite
+**Recorded, not built (R32, R46):** **the responder-inheritance split** (§12.2 ⑤, owner 2026-10-09: v1 = a responder inherits
+the home's `model` + `privilege` and keeps its own tools/skills/lorebooks/memory; the owner may want the responder's own model,
+or the home's tools — refine after S11, in `_build_session`'s one copy point) · write-back of the local/cloud mode (first) and privilege to the AgentDef · a list TAB via the satellite
 lever (R14) · search grouped by conversation (`MessageRepo.search`, `be/services/conversation.py:399`) ·
 `pinned`/`muted`/manual mark-unread (R100 §7) as additive columns / PATCH keys · `session_search` scoped per agent (R13) ·
 cancel a notification when the conversation is seen on another device (R43; the `seen` frame is the seam) · a visible
 responder chip (open-webui's ✕ chip, R100 §2).
 
-**Recorded residuals:** after a DECLINED cascade (the agent deleted, its conversations kept) another device's open sheet /
+**Recorded residuals:** every `thread` frame and every seen write refetch `GET /api/agents` (which now loads each agent folder
+and computes `status` over all threads) on both devices — bounded for one owner and a handful of agents, revisit with evidence
+(§12.3 L10) · a conversation MINTED for a home agent during its own `?conversations=true` delete (seam ① from
+another device; seam ② only when that agent IS the configured default — the window is the await between the guard pass and the
+transaction) survives pinned to a vanished slug: unlisted (the R41 declined-cascade state), its reply resolved through ISS-51's
+fallback; no mechanism (§12.2 ⑥) · after a DECLINED cascade (the agent deleted, its conversations kept) another device's open sheet /
 list cache still shows the deleted agent's conversations until its roster or list query refreshes (focus, a frame) · a `suspended` frame's `agent_input` (keyed by turn) and the open view's reconstructed one (keyed by
 call id) can both fire if the owner opens that conversation within the notification's life — at most one duplicate ·
 utterances in a call on a conversation deleted
 elsewhere fail until hang-up (R42) · the stray-`auto_rotate`-key residual (§9) · an older FE against the new BE (§11).
+
+### §12.2 The session-69 completeness pass (2026-10-09, main seat Fable 5.1 + a blind Luna lane — `gpt-6-luna --reasoning max`, `--ignore-rules`; the review = `~/.cache/tmp/ctrlb-session69/review-plan-luna.md`, the brief beside it)
+
+The owner's ask: *"make sure every nuance, edge case and design decision is clearly specified — nothing overlooked."* The main
+seat read the plan + §12.1 + the collision audit and held six candidates; Luna was briefed RECALL-FIRST with them (confirm or
+refute) and §13/§12.1 as known. **Verdict: COMPLETE WITH GAPS → nine findings + six candidates, all ruled below and folded
+(v2.6).** Two rulings are PROVISIONAL (main-seat readings on behaviour, R23) — the owner confirms them before their slice builds;
+both are the plan's literal text, so nothing changes if confirmed. **Owner, 2026-10-09: "yes to both"** — ④ and ⑤ RULED. On ⑤ the owner
+added: *"we might want to change the approach for what it would change — maybe we also want to change the model, or maybe we don't
+want to change skills/tools; for now let's go with what you said"* → **recorded for refinement** (below, "Recorded, not built"):
+the inheritance split (which of model · privilege · tools · skills · lorebooks · memory a responder takes from the home agent)
+is a v1 reading to revisit after the owner's S11 round, not a lock.
+
+| # | Finding (Luna / main seat) | Ruling | Folded |
+|---|---|---|---|
+| ① | MED — the `seen_at` backfill marks every pre-existing thread seen; the plan never said so | ACCEPTED (unavoidable: no prior `seen_at`); stated | §3, §11 |
+| ② | MED — `ctrlb.chat`'s `{thread, responder}` is one blob per browser profile; two desktop tabs are last-writer-wins (main-seat candidate c) | ACCEPTED as a RECORDED residual (two devices = two profiles); **wording corrected by §12.3 M4** — whole-blob writes crossed tabs for drafts/rails too → field-level patch writes | §6 |
+| ③ | MED — PATCH is unguarded vs DELETE's rolling-automation 403; a `seen` frame from a rolling thread undecided | DISSOLVED: rolling threads are `archived = 1` (`runner.py:429/:434`) → PATCH 404s them; stated | §4 |
+| ④ | MED — the recording indicator is global; the new view's composer during a cross-conversation dictation undecided (candidate f) | **RULED (owner 2026-10-09):** a navigate door STOPS a live streaming dictation; finals land in the origin slot (R35); the clip door unaffected | §6 drafts |
+| ⑤ | MED — F2 copies `model` + `privilege` only; the responder's tool set applies — "may do" not fully covered by privilege (candidate d) | **RULED (owner 2026-10-09; RECORDED FOR REFINEMENT):** the responder keeps its own tools/skills/lorebooks/memory; privilege is the execution gate | §4 R40 |
+| ⑥ | LOW/MED — a thread minted for the home during its own cascade delete escapes the guard set | ACCEPTED as a RECORDED residual (a tiny await window; the orphan = the R41 declined state) — no mechanism | §12 residuals |
+| ⑦ | LOW — dead `drafts`/`rails` keys are never pruned | ACCEPTED: one boot prune against `initChat`'s plain list | §6 drafts, S8 verify |
+| ⑧ | LOW — §A S8 cites the gone `useDictation` lines; `chat.ts:3272` (the unsent carry) absent from the seam map | ACCEPTED; §A S6 also gains `ChatThread.tsx` (§12.1 ⑦) | §A |
+| ⑨ | LOW — the drain-B invariant (sync release → re-reserve) is nowhere in the plan's text | ACCEPTED; stated | §2 |
+| a | main seat — B17 with the configured default picked thread-less leaves `responder === home` | Luna: no rule normalises it → ACCEPTED: `swapView`/`setWireThread` null a responder equal to the home | §6, S7 verify |
+| b | main seat — a hop's effect on the left reply's read-along audio | Luna REFUTED as a gap: `swapView` already stops playback (`chat.ts:785`); stated | §2 |
+| e | main seat — a DELETE between release and the drain-B re-reserve | Luna REFUTED: one sync stack, no `await` → impossible (= ⑨) | §2 |
+
+Sound per Luna, verified: §3↔§4 predicates (unread, monotonic seen, exec exclusion, keyset under equal `updated_at`, the
+greeting-less label/preview defaults), §5/§6/§10 client + bus, the §11 rollback claims, the `{agent}` fold readback.
+
+### §12.3 The session-69 second and third lanes (2026-10-09 — Sol `gpt-6.1-sol --reasoning high` ∥ Opus 5.5 high, both blind on v2.6 with §12.2 as known; reviews beside the brief in `~/.cache/tmp/ctrlb-session69/`)
+
+The owner asked for both *"just in case"*. **Sol: COMPLETE WITH GAPS, 2 findings. Opus: COMPLETE WITH GAPS, 7 HIGH · 11 MED · 10
+LOW — the client half had real holes the first three rounds never reached.** The main seat re-verified every load-bearing claim
+in the code (`_list_agents_payload`, `loadThread`, `AutomationsPanel.tsx:164`, the rail functions, `agent.py:838`,
+`_drain_b_body`, `steering.py:13-15`, `agentsLanded`, `_iso`) before ruling. All ruled + folded → v2.7. Behavioural rulings
+(marked ⚑) are least-surprise main-seat defaults the owner may re-rule (R23); none changes the server half.
+
+| # | Finding | Ruling | Folded |
+|---|---|---|---|
+| H1 | the root is never in `agents`, so N1/N2/the ON4 prune/`/agent`/ISS-51 all mis-handle root conversations (every repaired legacy thread) | ACCEPTED: **the roster = `agents` ∪ root** (the keys of `summaries`), one definition | §6 N2 |
+| H2 | the cold load (`loadThread`) sets no composer slot → B13 fails across a reload | ACCEPTED: the slot is set wherever `threadId` is written | §6, S8 |
+| H3 | an archived automation run opened in chat gets a 404 on its seen write → the "deleted" toast + a yank | ACCEPTED: archived views write no seen, are no R29 source, survive the prune; the boot list includes archived | §6 seen, boot |
+| H4 | rail mutations filter one array; a hop mid-send/mid-upload strands L2's chips (`sending` is not persisted → the photo is lost) | ACCEPTED: id-addressed mutations cross slots; only send-building reads are slot-scoped | §6 drafts |
+| H5 | §12.1 ⑤ (S8 after ASR S8b) is circular with HANDOFF (ASR resumes after Phase 27) | ACCEPTED (a): Phase 27 S8 FIRST, ASR rebases | §10 S8, §12.1 ⑤ |
+| H6 | after a swap/mint the client does not know the home (`openThread` swaps with `threadAgent: null`; the stream head carries no `agent`) → another home's uncapped override can ride a send | ACCEPTED: every door hands its home in; the head gains `agent`; unknown home ⇒ no override | §6 doors |
+| H7 (= Sol F1) | a stored thread deleted elsewhere makes boot fall to `threads[0]` silently and prune its draft, against R29/B11/E6 | ACCEPTED ⚑: boot runs R29 (toast → the stored HOME's latest → E6 carry → then the prune); `ctrlb.chat` gains `home` | §6 boot, §11 |
+| M1 | the adopt guard covers only the success arms; a failing left send writes into the new view and loses its text | ACCEPTED: no view write on any arm; the text returns to its origin slot | §6 hop, S6 |
+| M2 | drain-B's non-handoff exits publish no terminal frame → a `chained: true` completion never notifies, the dot sticks | ACCEPTED: `_drain_b_body`'s finally publishes | §5, S3 |
+| M3 | N1/N2 judge the roster before it lands (the roster read is now the slower one) → the stored responder is dropped on reload | ACCEPTED: unjudged until `agentsLanded` | §6 boot, N2 |
+| M4 | whole-blob `savePersisted` writes cross tabs for drafts/rails too; a cleared elevation can be re-persisted by the other tab | ACCEPTED: field-level patch writes in the persist chokepoint; §12.2 ② corrected | §6 drafts, tabs |
+| M5 | the thumbnail budget is per rail → several rails exceed the origin quota, later writes fail silently | ACCEPTED: global budget, current rail first | §6 drafts |
+| M6 | `openThread` onto a since-deleted conversation says "backend unreachable" | ACCEPTED ⚑: toast "deleted", invalidate, stay | §6 deleted |
+| M7 | an orphaned home open on ANOTHER device is undecided; `?agent=` still lists orphans; two vanished-home paints | ACCEPTED ⚑: the N2 sweep moves any view whose home left the roster (F8 generalised); `?agent=` off-roster → `[]`; one paint = the default | §6 N2, §4, §5 |
+| M8 | in a call, deleting the open conversation / the open home has no latch | ACCEPTED ⚑: the sheet's Delete refused with the hang-up note; the N3/F8 move latches to `endCall` | §6 deleted |
+| M9 | S7 verifies seams S8/S10 build | ACCEPTED: moved | §10 |
+| M10 | `/agent emma` + a send while Lynette streams is answered by Lynette (mid-loop steers ignore `agent`) | ACCEPTED ⚑ as the stated behaviour: a send mid-stream is a steer into the running reply; the responder applies from the next turn | §2 doors, B1 |
+| M11 | the other device's turn never shows on this device's open view | ACCEPTED: a `running` frame for the open view → `probeAndReattach` | §5, S10 |
+| L1 | the `touch` is placed in `chat`, which never persists the owner row | ACCEPTED: the touch rides `run_turn`'s user persist | §3 |
+| L2 | a seam-① greeting dots unread until a client PATCH | ACCEPTED: `seed_greeting` lifts `seen_at` server-side | §3 |
+| L3 | `limit` unbounded; `before` carries `+00:00`; a naive `seen_at` → 500; TEXT comparison needs `_iso(UTC)` | ACCEPTED: 1..200 · `encodeURIComponent` + 422 · `AwareDatetime` · `_iso` | §4 |
+| L4 | preview speaker for `agent IS NULL` unstated | ACCEPTED: the home's own | §7 |
+| L5 | a thread delete leaves `steer_queues[id]` + `routing_state[id]` | ACCEPTED: dropped | §4 |
+| L6 | the boot prune can drop a conversation minted during boot | ACCEPTED: skip the open view's key; run only while the boot generation holds | §6 drafts |
+| L7 | only navigate doors stop a live dictation; `/new` + the delete fallbacks are swaps too | ACCEPTED: EVERY swap; the carry runs after its finals | §6 dictation |
+| L8 | `openAgentConversation` takes no supersession ticket at entry | ACCEPTED | §6 |
+| L9 | §A misses the regenerate/answer privilege carry, the stream head, `AutomationsPanel`, the rail call sites, `agentsLanded` | ACCEPTED | §A |
+| L10 | every frame + seen write reloads the whole roster | RECORDED, not built: single-user, frames are per turn; revisit with evidence (HARDENING) | §12 residuals |
+| Sol F2 | the tab-return seen write may post a stale floor | ACCEPTED: the write follows `reconcileChat`'s refetch | §6 seen |
+
+Sound per both: the §3/§4 predicates (beyond L1–L4), the DELETE guard story, the drain-B race, §8, §11.
 
 ## §13 Council record
 
@@ -971,6 +1151,14 @@ elsewhere fail until hang-up (R42) · the stray-`auto_rotate`-key residual (§9)
 - **COUNCIL CLOSED 2026-10-06** — Opus CONFIRMED WITH NOTES ∥ Emma CONFIRMED WITH NOTES (both on v2.2; notes folded in
   v2.3–v2.4). The owner's F2 and ON4 rulings were the only open items (§12) — **both RULED 2026-10-06** (below). The confirm rounds closed on v2.2 (Opus by message; Emma by a fresh self-contained run with her
   review attached).
+- **Session-69 second + third lanes (2026-10-09) → plan v2.7:** Sol (`gpt-6.1-sol` high) ∥ Opus 5.5 (high), blind on v2.6 —
+  2 + 28 findings, every load-bearing one re-verified in code by the main seat, all ruled in §12.3 (five ⚑ behavioural defaults
+  the owner may re-rule). The client half of the plan changed materially: the roster definition, `home` in `ctrlb.chat`, the
+  boot R29 path, every door hands its home in, archived views, cross-slot rail mutations, field-level persistence writes, S8
+  before ASR S8/S8b.
+- **Session-69 completeness pass (2026-10-09) → plan v2.6:** one blind Luna lane (`gpt-6-luna --reasoning max`) on v2.5 +
+  the main seat's six candidates → COMPLETE WITH GAPS; nine findings + six candidates ruled in §12.2 (two PROVISIONAL, owner
+  to confirm). Build started the same day (S0).
 - **Owner rulings 2026-10-06 (session 61) → plan v2.5:** **F2 = reading A** (the reviewers — main seat, Emma, Opus —
   recommended B; the owner overruled: the home agent's model + privilege govern every turn in its conversation) ·
   **ON4 = (a)** (the main seat recommended (c); the owner chose to persist both). Folded into §1, §2's F2 box, §4, §6
@@ -1014,7 +1202,8 @@ Function name first (authoritative), then the line at `1bd2d3f`. `be/` = `backen
 | `ThreadRepo` | `be/services/conversation.py:60` (`create` `:69`, `touch` `:84`, `list` `:102`, `delete` `:113`) | `seen_at` on create; `list` filter/cursor; new `summaries`, `set_title`, `set_seen` |
 | `MessageRepo.with_call_states` | `be/services/conversation.py:323` | `awaiting` |
 | `run_user_exec` | `be/services/agent/exec.py:46` (pair `:63-75`) | the actor the unread predicate excludes |
-| `seed_greeting` | `be/services/agent/greeting.py:38` (add `:55`) | why the backfill uses MAX(ts) |
+| `seed_greeting` | `be/services/agent/greeting.py:38` (add `:55`) | why the backfill uses MAX(ts); lifts `seen_at` to the greeting's ts (§12.3 L2) |
+| `run_turn`'s user persist | `be/services/agent/session.py` (`messages.add` of the user row) | `threads.touch` with that row's ts (§12.3 L1) |
 
 **S2 — routes**
 | Seam | Where | Change |
@@ -1026,7 +1215,9 @@ Function name first (authoritative), then the line at `1bd2d3f`. `be/` = `backen
 | `_reject_automation_thread` / `_revalidate_thread` | `be/api/agent.py:451` / `:473` | reused by DELETE |
 | `_reserve_or_busy` / `_reserve_turn` | `be/api/agent.py:501` / `:516` | reused by DELETE |
 | `turn_status` | `be/api/agent.py:904` (predicate `:928`) | `running` |
-| `list_threads` / `create_thread` | `be/api/agent.py:1190` / `:1205` | summaries with `agent=` / unchanged |
+| `list_threads` / `create_thread` | `be/api/agent.py:1190` / `:1205` | summaries with `agent=`; `limit` 1..200; `before` 422 on malformed; an off-roster slug → `[]` (§12.3 L3, M7) / unchanged |
+| chat stream head | `be/api/agent.py:838` (`{threadId, title}`) | + `agent` (§12.3 H6) |
+| `state.steer_queues` / `routing_state` | `be/api/agent.py` (per-thread dicts) | dropped on thread delete (§12.3 L5) |
 | `chat` | `be/api/agent.py:1302` (lookup `:1315`, mint `:1324`, greeter `:1401`) | 404-not-mint; pin the default; home greeting; `touch` |
 | `exec_shell` | `be/api/agent.py:1421` (lookup `:1432`, mint `:1436`) | 404-not-mint; pin the default; `touch` with the pair ts |
 | new `patch_thread` / `delete_thread` | `be/api/agent.py` beside `list_threads` | §4 |
@@ -1045,6 +1236,7 @@ Function name first (authoritative), then the line at `1bd2d3f`. `be/` = `backen
 |---|---|---|
 | `_spawn_drain_task` + `_cleanup` | `be/api/agent.py:593` (`release` `:623`, drain-B `:635`, callback `:637`) | running / terminal (last) frames |
 | `_maybe_spawn_drain_b` | `be/api/agent.py:641` | return whether it spawned (`chained`) |
+| `_drain_b_body` | `be/api/agent.py` (its `finally`, "FIX 2") | publishes the terminal frame on non-handoff exits (§12.3 M2) |
 | spawn callers | `be/api/agent.py:811`, `:845`; `be/services/automations/runner.py:473` | archived → no frame |
 | `TurnHandle` | `be/services/agent/turns.py:265` (`terminal_status` `:298`) | frame fields |
 | `EventBus` | `be/core/events.py:20` | `Event \| ThreadFrame` |
@@ -1075,10 +1267,12 @@ Function name first (authoritative), then the line at `1bd2d3f`. `be/` = `backen
 | `claimStream` | `fe/store/chat.ts:249` (called `:2036`) | adopt guard |
 | `setWireThread` | `fe/store/chat.ts:558` | adopt guard |
 | `swapView` | `fe/store/chat.ts:783` (`dropAllRaw` `:788`) | bump; narrow the raw prune |
-| `openThread` | `fe/store/chat.ts:876` (refusals `:883`, `:905`; same-id `:887-891`) | drop refusals |
+| `openThread` | `fe/store/chat.ts:876` (refusals `:883`, `:905`; same-id `:887-891`) | drop refusals; `openThread(id, home)` (§12.3 H6); 404 → "deleted" toast, stay (M6) |
+| `loadThread` | `fe/store/chat.ts:852` (`set({threadId, …})` `:855`) | the slot + the home on the cold load (§12.3 H2/H6) |
 | reducer `case "thread"` | `fe/store/chat.ts:1653` | adopt guard |
 | `streamTurn` | `fe/store/chat.ts:1842` (fetch `:1860`, buffered `:1973`) | capture entry + generation |
 | `startNewThread` | `fe/store/chat.ts:1218` (refusal `:1222`) | drop |
+| `ChatThread` stick latch | `fe/components/ChatThread.tsx` (`:987`, re-birth `:1079-1086`) | reset + jump to newest on a thread change (§12.1 ⑦) |
 
 **S7 — responder, doors, overrides, the `/opening` deletion**
 | Seam | Where | Change |
@@ -1090,7 +1284,10 @@ Function name first (authoritative), then the line at `1bd2d3f`. `be/` = `backen
 | `resetToThreadless` / `fetchThreadAgent` / `initChat` | `fe/store/chat.ts:802` / `:832` / `:943` | sticky param out / cache read / boot order |
 | `startNewThread` | `fe/store/chat.ts:1218` (fence `:1276-1278`, re-seat tail `:1296-1306`) | → `mintAndOpen` + `/new` |
 | `userTurnCount` | `fe/store/chat.ts:1153` | the ISS-31 no-op only |
-| `sendMessage` | `fe/store/chat.ts:2799` (mode `:2825`, agent `:2831`) | responder + home overrides |
+| `sendMessage` | `fe/store/chat.ts:2799` (mode `:2825`, agent `:2831`) | responder + home overrides; no override while the home is unknown (§12.3 H6) |
+| regenerate / answer / resume carry | `fe/store/chat.ts:3345`, `:3375`, `:3590`, `:3617` (`sessionPrivilege` readers) | → `overrides[home]` (§12.3 L9) |
+| `agentsLanded` | `fe/lib/composer.ts:150` (set `:249`) | gates N1/N2 (§12.3 M3) |
+| automation run threads opened in chat | `fe/components/AutomationsPanel.tsx:164` (`openThread`) | archived view: no seen write, no R29 (§12.3 H3) |
 | notification titles | `fe/store/chat.ts:306-381` | home agent names (R37) |
 | `syncMessageRoute` / ISS-49 client | `fe/store/chat.ts:3174`; `wouldReseat` `:3467` … `reseatOpening` `:3501` | delete re-seat parts |
 | `validStickyAgent` / `effectiveAgent` / `agentPin` | `fe/lib/composer.ts:158` / `:189` / `:215` | delete / rewrite / delete |
@@ -1113,9 +1310,12 @@ Function name first (authoritative), then the line at `1bd2d3f`. `be/` = `backen
 | Seam | Where | Change |
 |---|---|---|
 | draft store | `fe/store/composer.ts` (`KEY` `ctrlb.composer`, `setDraft`, `appendDraft`, `useDraft`) | `{drafts}` + slot + fold |
-| staged rail | `fe/store/attachments.ts` (`KEY` `:77`) | `{rails}` + slot + fold |
+| staged rail | `fe/store/attachments.ts` (`KEY` `:77`; `stagedIds` `:206`, `hasStaged` `:214`, `reserveStaged` `:223`, `releaseStaged` `:238`, `updateStaged` `:283`, `removeStaged` `:292`, `consumeStaged` `:318`; `projectAll` + `THUMB_BUDGET_CHARS`) | `{rails}` + slot + fold; id-addressed mutations cross slots, the budget global (§12.3 H4/M5) |
+| `sendMessage`'s rail calls | `fe/store/chat.ts` (`onAccepted` → `consumeStaged`, `finally` → `releaseStaged`) | unchanged call sites, now cross-slot |
+| `store/persist` | `fe/store/persist.ts` (D23: `loadPersisted` / `savePersisted`) | the field-level patch helper (§12.3 M4) |
 | composer import / `harvestToDraft` | `fe/store/chat.ts:26` / `:2658` | `setComposerSlot`; own-thread slot |
-| dictation | `fe/hooks/useDictation.ts` (`appendDraft` `:746`, `:1188`) | capture the start slot |
+| dictation | `fe/hooks/useDictation.ts` (`appendPhrase(s: StreamSession, …)` `:249`, call `:254`; the clip door `:784`; `maybeAutoSend` `:723-729`) — SHARED with ASR S8/S8b, §12.1 ⑤ | the start slot on `StreamSession` + the clip closure; auto-send sends nothing across a hop (§12.1 ④); a navigate door stops a live dictation (§12.2 ④) |
+| unsent-text carry | `fe/store/chat.ts:3272` (`appendDraft`) | E6's delete-move + B8's delete-open extend it |
 
 **S9 — the sheet**
 | Seam | Where | Change |
