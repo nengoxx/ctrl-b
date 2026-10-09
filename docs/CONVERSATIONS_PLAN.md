@@ -1004,7 +1004,9 @@ config shape still 5, `AgentCfg` unchanged, the five S5 tests exist, Phase 27 to
     `main` rides it: migration 8, S2's 404-not-mint (whose client half is S7), S5's Conf-row removal. **The main seat's
     recommendation: Phase 27 builds on a `phase27` branch in a worktree and merges to `main` ONCE, as a whole, after
     S10 (§11's "BE + FE ship together" stands); v1.7.12 goes independently.** The alternative — inert backend slices
-    (S1/S3/S4; migration 8 is additive) riding v1.7.12 — only on the owner's word.
+    (S1/S3/S4; migration 8 is additive) riding v1.7.12 — only on the owner's word. **RULED (owner 2026-10-09): merge
+    `phase27` to `main` ONCE, as a whole, as soon as S10 is done — v1.7.12 = everything merged by then; the paused ASR
+    build resumes on top of the merge. The inert-slices alternative is OFF.**
 
 **The working arrangement (the ASR captures continue on dev in parallel):** `git worktree add ~/.cache/tmp/ctrlb-wt27 -b
 phase27`; pytest from the worktree's `backend/` with the main venv (imports the worktree's `app` — verify once; pyright
@@ -1067,7 +1069,7 @@ is a v1 reading to revisit after the owner's S11 round, not a lock.
 | ② | MED — `ctrlb.chat`'s `{thread, responder}` is one blob per browser profile; two desktop tabs are last-writer-wins (main-seat candidate c) | ACCEPTED as a RECORDED residual (two devices = two profiles); **wording corrected by §12.3 M4** — whole-blob writes crossed tabs for drafts/rails too → field-level patch writes | §6 |
 | ③ | MED — PATCH is unguarded vs DELETE's rolling-automation 403; a `seen` frame from a rolling thread undecided | DISSOLVED: rolling threads are `archived = 1` (`runner.py:429/:434`) → PATCH 404s them; stated | §4 |
 | ④ | MED — the recording indicator is global; the new view's composer during a cross-conversation dictation undecided (candidate f) | **RULED (owner 2026-10-09):** a navigate door STOPS a live streaming dictation; finals land in the origin slot (R35); the clip door unaffected | §6 drafts |
-| ⑤ | MED — F2 copies `model` + `privilege` only; the responder's tool set applies — "may do" not fully covered by privilege (candidate d) | **RULED (owner 2026-10-09; RECORDED FOR REFINEMENT):** the responder keeps its own tools/skills/lorebooks/memory; privilege is the execution gate | §4 R40 |
+| ⑤ | MED — F2 copies `model` + `privilege` only; the responder's tool set applies — "may do" not fully covered by privilege (candidate d) | **RULED (owner 2026-10-09; RECORDED FOR REFINEMENT):** the responder keeps its own tools/skills/lorebooks/memory; privilege is the execution gate. **Re-confirmed by the owner the same day after reading it back** — his own framing: *"the whole prompts and everything from the agent you call, and keep the rest from the original agent"* — the same split seen from the responder's side; he will test it live before changing what is inherited | §4 R40 |
 | ⑥ | LOW/MED — a thread minted for the home during its own cascade delete escapes the guard set | ACCEPTED as a RECORDED residual (a tiny await window; the orphan = the R41 declined state) — no mechanism | §12 residuals |
 | ⑦ | LOW — dead `drafts`/`rails` keys are never pruned | ACCEPTED: one boot prune against `initChat`'s plain list | §6 drafts, S8 verify |
 | ⑧ | LOW — §A S8 cites the gone `useDictation` lines; `chat.ts:3272` (the unsent carry) absent from the seam map | ACCEPTED; §A S6 also gains `ChatThread.tsx` (§12.1 ⑦) | §A |
@@ -1085,7 +1087,7 @@ The owner asked for both *"just in case"*. **Sol: COMPLETE WITH GAPS, 2 findings
 LOW — the client half had real holes the first three rounds never reached.** The main seat re-verified every load-bearing claim
 in the code (`_list_agents_payload`, `loadThread`, `AutomationsPanel.tsx:164`, the rail functions, `agent.py:838`,
 `_drain_b_body`, `steering.py:13-15`, `agentsLanded`, `_iso`) before ruling. All ruled + folded → v2.7. Behavioural rulings
-(marked ⚑) are least-surprise main-seat defaults the owner may re-rule (R23); none changes the server half.
+(marked ⚑) are least-surprise main-seat defaults the owner may re-rule (R23); none changes the server half. **Owner CONFIRMED all six ⚑ defaults 2026-10-09** (H7 · M6 · M7 · M8 · M10 · §12.4 Q4 — "clear enough, no need to over-engineer"; no extra design lane was run on them; M8 and Q4 are recorded for a call UI that has no delete / override control today).
 
 | # | Finding | Ruling | Folded |
 |---|---|---|---|
@@ -1137,7 +1139,7 @@ settled text; where a point depended on code it could not see, it said so and ra
 `mintAndOpen(<dead slug>)`; rule: an off-roster name resolves to the configured default before the `GET`, and seam ① pins the
 RESOLVED agent (§6) · **Q6 REAL (MED)** — the thread-less `""` draft/rail moved only into a lazy mint, not into an existing
 conversation opened from the thread-less view; rule: any such transition moves it when the target's slot is empty (§6 drafts) ·
-**Q4 behavioural ⚑ (main-seat default)** — in-call `/privilege` and `/<provider>` are ALLOWED, applying from the next utterance
+**Q4 behavioural ⚑ (main-seat default; owner CONFIRMED 2026-10-09 — the call UI has no such control today, so this is the recorded posture for when it does)** — in-call `/privilege` and `/<provider>` are ALLOWED, applying from the next utterance
 (§2 notes) · Q3, Q5, Q8 = wording: live-call utterances go through `_build_session` (§2); answering a parked call elsewhere clears
 the dot through the resumed turn's `running` frame (§5); a background reply never plays audio here (§5) · Q1 REJECTED
 (`session_search` is a model TOOL returning text — no door opens from it) · Q7 REJECTED (the `max_active_turns` refusal is today's
