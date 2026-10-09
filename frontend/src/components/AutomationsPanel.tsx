@@ -160,6 +160,8 @@ function RunHistory({ automation }: { automation: Automation }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unread.map((r) => r.id).join(","), automation.id]);
 
+  // A door that KNOWS NOTHING (D84 §12.3 H6/H3): no home handed in — `openThread`'s late RECORD read
+  // installs the run thread's home and its `archived` flag (an archived run writes no seen, is no R29).
   const jump = async (threadId: string) => {
     if (await openThread(threadId)) setUI({ tab: "agent" });
   };

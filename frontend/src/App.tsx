@@ -11,6 +11,7 @@ import { useAutoTts } from "./hooks/useAutoTts";
 import { useEventStream } from "./hooks/useEvents";
 import { useFleetCycle } from "./hooks/useFleet";
 import { useForegroundNotifications } from "./hooks/useForegroundNotifications";
+import { useThreadListsBridge } from "./hooks/useThreads";
 import { crashBtn, crashBtnQuiet, crashMessage, crashShell } from "./lib/crashScreen";
 import { isAnyDirty } from "./store/dirty";
 import { usePlanOpenAutoClose } from "./store/planSheet";
@@ -156,6 +157,10 @@ function AppEngines() {
   // visibility + permission + de-dupe are decided in exactly one place. Inert until the owner enables
   // notifications in Conf, and a no-op entirely on a browser/origin without the Notifications API.
   useForegroundNotifications();
+  // D84 — the ONE bridge between the chat store and the thread-list cache: the store's "lists are stale"
+  // bus → `['threads']` + `['agents']`, and the seen write's return trigger (visibility / back to the chat
+  // tab). Shell-mounted for the same reason as the gate above: one subscription, theme-independent.
+  useThreadListsBridge();
   // A4 — reset the SHARED plan-open flag when the plan clears. Hosted HERE (not AgentTab) so a bespoke
   // theme body that replaces the agent section can never lose the reset (§14.5, theme-independent engines).
   // `useAgentChat` is a cheap memoized derivation (threads are bounded); we only read `currentPlan`.

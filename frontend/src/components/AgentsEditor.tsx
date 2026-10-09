@@ -5,6 +5,8 @@ import { useExportCard, type CardFormat } from "../hooks/useAgentArt";
 import { useProviders, useSaveSettings, useSettings } from "../hooks/useSettings";
 import { personaChoices, personaLabel, personaOf, pickRoleplay } from "../hooks/useRoleplay";
 import {
+  COUNT_CEILING,
+  countAgentConversations,
   DEFAULT_AGENT,
   pickFields,
   useAgent,
@@ -670,8 +672,9 @@ export function AgentRow(props: {
   };
 
   const onRemove = async () => {
+    const label = draft?.title || name;
     const ok = await requestConfirm({
-      title: `Remove agent ${draft?.title || name}?`,
+      title: `Remove agent ${label}?`,
       // ISS-24 (D79 / §15.6) — the truth, stated before: the folder and its DEFAULT memory folder go
       // (a custom `memory_dir` is left, and the report names it); the lorebooks and art it uses are
       // LIBRARY content and stay (a delete never cascades, owner); an automation pinned to it breaks,
@@ -680,7 +683,30 @@ export function AgentRow(props: {
       confirmLabel: "remove",
       danger: true,
     });
-    if (ok) delAgent.mutate(name, { onSuccess: props.onToggle });
+    if (!ok) return;
+    // D84 R41/F6 — the agent's conversations: counted (non-archived — what the cascade would delete),
+    // and when there are any, a SECOND confirm with the number. OK → the cascade flag (one request,
+    // server-side; a reply still running refuses the whole delete — the server's sentence is the toast).
+    // Cancel → no flag: the agent goes, its conversations stay in the database, listed nowhere. A count
+    // that FAILED asks nothing and sends no flag — the toast says so.
+    let conversations = false;
+    let uncounted = false;
+    try {
+      const n = await countAgentConversations(name);
+      if (n > 0) {
+        const shown = n >= COUNT_CEILING ? `${COUNT_CEILING}+` : String(n);
+        const noun = n === 1 ? "conversation" : "conversations";
+        conversations = await requestConfirm({
+          title: `Also delete ${label}'s ${shown} ${noun}?`,
+          body: `${shown} ${noun} with ${label} — deleted with the agent. Cancel keeps them in the database, listed nowhere; re-creating an agent named "${name}" brings them back.`,
+          confirmLabel: "Delete",
+          danger: true,
+        });
+      }
+    } catch {
+      uncounted = true;
+    }
+    delAgent.mutate({ name, conversations, uncounted }, { onSuccess: props.onToggle });
   };
 
   const saving = saveAgent.isPending || saveSettings.isPending;

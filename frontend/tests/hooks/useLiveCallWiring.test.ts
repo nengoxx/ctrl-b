@@ -140,6 +140,8 @@ const h = vi.hoisted(() => ({
   /** The call's STOP door (LIVE-001): `dismiss` + the rest of the turn silenced (keyed to the turn). */
   dismissTurn: vi.fn(),
   cancelTurn: vi.fn(async (_ref: unknown, _harvest: string) => {}),
+  /** The chat's call-teardown runner (D84 R42/M8) — the unmount cleanup calls it once. */
+  runAfterCall: vi.fn(),
   /** Every decorative buzz the wiring asked for (LIVE-001's kill tick), by duration. */
   buzz: vi.fn((_ms: number) => {}),
   appendDraft: vi.fn(),
@@ -371,6 +373,7 @@ vi.mock("../../src/store/chat", () => ({
   confirmOutstanding: () => h.confirm,
   getLiveTurn: () => h.liveTurn,
   lastReply: () => h.reply,
+  runAfterCall: h.runAfterCall,
   useChatSlice: (sel: (s: { status: string }) => unknown) => sel(h.chat),
 }));
 vi.mock("../../src/store/composer", () => ({ appendDraft: h.appendDraft }));
@@ -638,6 +641,14 @@ describe("useLiveCall — THE MOUTH'S GATE, wired (the owner's 2026-09-26 ruling
     expect(h.mouthGate?.()).toBe(false);
     view.unmount();
     expect(h.mouthGate).toBeNull(); // the teardown takes it, with whatever start it was holding
+  });
+
+  it("D84 R42/M8 — the unmount runs the chat's call-teardown runner, once, after the teardown", async () => {
+    const { view } = await call();
+    h.runAfterCall.mockClear();
+    expect(h.runAfterCall).not.toHaveBeenCalled(); // never mid-call
+    view.unmount();
+    expect(h.runAfterCall).toHaveBeenCalledTimes(1);
   });
 
   it("survives a route cycle — it reads the machine, not the track", async () => {

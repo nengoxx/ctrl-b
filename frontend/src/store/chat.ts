@@ -8,6 +8,7 @@
 import type { CoreMemoryStatus } from "../hooks/useMemory";
 import { clearAudioCache, forgetMessage } from "../lib/audioController";
 import { publishNotify } from "../lib/notifyBus";
+import { DEFAULT_AGENT } from "../lib/agentSlug";
 import { currentPlanOf } from "../lib/plan";
 import { PRIVILEGE_VALUES, type Privilege } from "../lib/privilege";
 import { displayName, offRoster, onRoster, rosterDefault, rosterLanded } from "../lib/roster";
@@ -31,6 +32,7 @@ import { setConnection } from "./connection";
 import { callLive } from "./liveCall";
 import { loadPersisted, patchPersisted } from "./persist";
 import { pushToast } from "./toast";
+import { getUI } from "./ui";
 
 export type ChatStatus = "idle" | "streaming" | "error";
 
@@ -70,6 +72,15 @@ interface ChatState {
   // wherever `threadId` is (`swapView`, `setWireThread`, `loadThread`): the two describe ONE
   // conversation and must never disagree.
   threadAgent: string | null;
+  // Is the open conversation ARCHIVED (§12.3 H3)? The automations panel opens an automation's run
+  // thread in chat (by design), and an archived id answers 404 to `PATCH /api/threads/{id}` — so an
+  // archived view writes no `seen_at` and is never an R29 "deleted elsewhere" source. `null` = NOT YET
+  // KNOWN (a door that knew nothing, before its record read lands; the thread-less view) — treated as
+  // "not known to be live": no seen write, no R29. Written wherever `threadId` is (`swapView`,
+  // `setWireThread`, `loadThread`) and by the late record read — a door that hands a HOME implies
+  // `false` (a sheet row, the roster door's `?agent=` read and a notification frame all name
+  // non-archived conversations only; a wire mint is fresh).
+  archived: boolean | null;
 }
 
 //: The chat store's persisted slice (D23 chokepoint, `store/persist`) — `{thread, home, responder,
@@ -153,6 +164,7 @@ let state: ChatState = {
   overrides: readPersistedChat().overrides,
   responder: null,
   threadAgent: null,
+  archived: null,
 };
 let loaded = false;
 //: The chat view's LOAD GENERATION — app-owned cross-generation state (the D39/ACA precedent).
@@ -827,9 +839,10 @@ export function reportResponder(): void {
  *       home's slot;
  *    3. a VIEW whose HOME is off the roster moves to the configured default's latest
  *       (`openAgentConversation`) — on whichever device holds it (M7). S8 carries the left view's draft +
- *       rail into it (E6, the seam); the deleting device's own immediate move is S7b's success handler
- *       (N3), so here it has usually already happened. In a live call the move is not made here — it
- *       latches to `endCall` with the R42 path (S7b, §12.3 M8).
+ *       rail into it (E6, the seam); the deleting device's own immediate move is the delete's success
+ *       handler (`leaveDeletedHome`, N3), so here it has usually already happened. In a live call the
+ *       move is not made here — it LATCHES (`pendingHomeMove`) and the call's teardown runs it
+ *       (`runAfterCall`, §12.3 M8).
  *  Import direction: `lib/composer` (the installer) → `store/chat` (this) → `lib/roster` (the data) —
  *  the edge that already runs composer → chat, never back. */
 export function sweepRoster(): void {
@@ -860,8 +873,10 @@ export function sweepRoster(): void {
     });
   }
   const home = state.threadAgent;
-  if (state.threadId !== null && home !== null && !onRoster(home) && !callLive())
-    void openAgentConversation(rosterDefault());
+  if (state.threadId !== null && home !== null && !onRoster(home)) {
+    if (callLive()) pendingHomeMove = home;
+    else void openAgentConversation(rosterDefault());
+  }
   // A landing makes a thread-less view's home KNOWN (`homeOf`, S7A-02) without any chat-state write:
   // one emit, so the chip leaves "…" (its slice re-renders only if its value changed).
   emit();
@@ -903,8 +918,9 @@ function setWireThread(id: string, agent?: string): void {
   // conversation is not leaving it (B17); any other id change is a swap like any other (S7A-01).
   const responder = state.threadId === null ? normalised(state.responder, home) : null;
   // S8: the per-conversation composer slot is set HERE too (`setComposerSlot(id)`, §12.3 H2 — a lazy
-  // mint moves the thread-less `""` draft/rail into the conversation it created).
-  set({ threadId: id, threadAgent: home, responder });
+  // mint moves the thread-less `""` draft/rail into the conversation it created). A wire mint is a
+  // FRESH conversation, never an archived one (H3).
+  set({ threadId: id, threadAgent: home, responder, archived: false });
   persistView();
 }
 
@@ -1099,8 +1115,9 @@ export function lastReply(): { id: string; text: string } | null {
   return null;
 }
 
-/** What a view swap installs: the conversation's identity — its id, its history, its HOME. */
-type ViewSwap = Pick<ChatState, "threadId" | "messages" | "threadAgent">;
+/** What a view swap installs: the conversation's identity — its id, its history, its HOME, and whether
+ *  it is ARCHIVED (`null` = not yet known, H3). */
+type ViewSwap = Pick<ChatState, "threadId" | "messages" | "threadAgent" | "archived">;
 
 /** Swap the chat view to another conversation — THE one place the per-conversation client state is
  *  dropped. Every entry is keyed to the conversation being left (its TTS blobs, the turn-event ordering,
@@ -1151,7 +1168,7 @@ function swapView(view: ViewSwap): number {
  *  needs a SYNCHRONOUS reset between cases that performs no mint (the "exported for tests" idiom,
  *  `store/ui.ts`). */
 export function resetToThreadless(): void {
-  swapView({ threadId: null, messages: [], threadAgent: null });
+  swapView({ threadId: null, messages: [], threadAgent: null, archived: null });
 }
 
 /** Fetch one thread's persisted history. Split from the state write so a caller can decide what to do
@@ -1185,30 +1202,234 @@ function threadListsStale(): void {
   for (const cb of threadListListeners) cb();
 }
 
-/** ONE thread's HOME (D11's pin), read from the LIST (`GET /api/threads` publishes whole `Thread` dumps and is the
- *  only thread-record route there is — no by-id read exists, and an explicit open is rare enough that
- *  adding one would be a backend endpoint bought for a field the list already carries).
+/** What the late RECORD read learns about one thread (§12.3 H6 + H3): its HOME (`null` = the record
+ *  names none) and whether it is ARCHIVED. */
+interface ThreadRecord {
+  agent: string | null;
+  archived: boolean;
+}
+
+/** ONE thread's RECORD — its HOME (D11's pin) and its `archived` flag — read from the LIST
+ *  (`GET /api/threads` publishes whole `Thread` dumps and is the only thread-record route there is — no
+ *  by-id read exists, and an explicit open is rare enough that adding one would be a backend endpoint
+ *  bought for two fields the list already carries). The repair for a door that KNEW NOTHING (H6): the
+ *  automations run history, a `?thread=` cold start (S10).
  *
- *  `include_archived` because of WHO opens threads explicitly: the automations run history, and an A3 run
+ *  `include_archived` because of WHO opens threads that way: the automations run history, and an A3 run
  *  mints an ARCHIVED thread pinned to the automation's agent (a terminal per-run thread is deliberately
  *  continuable in chat). The bare list hides those, so this read — the one that has already been told
- *  which thread it wants — asked for a row it could never see and reported "unpinned" for every run
- *  thread there is (the S6 review's F1). `initChat` reads the same flagged list (§12.3 H3 — an archived
- *  run the owner left open must still count as present at boot) and picks its "newest" among the
- *  NON-archived rows, so the boot view never adopts an automation's thread on its own.
+ *  which thread it wants — would ask for a row it could never see (the S6 review's F1). It is also how
+ *  such a view learns it is archived (H3): no seen write, no R29. `initChat` reads the same flagged list
+ *  (an archived run the owner left open must still count as present at boot) and picks its "newest"
+ *  among the NON-archived rows, so the boot view never adopts an automation's thread on its own.
  *
  *  BEST-EFFORT by design: a thread that opens with its history intact must not fail because this second
- *  read did — an unknown pin is the same "nobody pinned" the FE has always assumed, and the SERVER still
- *  routes the turn by the thread's own field either way. `initChat` needs none of this: it is already
- *  holding the record it picked. */
-async function fetchThreadAgent(threadId: string): Promise<string | null> {
+ *  read did — `null` leaves the view's home and `archived` UNKNOWN (no override rides a send, no seen
+ *  write fires), and the SERVER still routes the turn by the thread's own field either way. */
+async function fetchThreadRecord(threadId: string): Promise<ThreadRecord | null> {
   try {
     const res = await fetch("/api/threads?include_archived=true");
     const threads = (await res.json()) as Thread[];
-    return threads.find((t) => t.id === threadId)?.agent ?? null;
+    const row = threads.find((t) => t.id === threadId);
+    return row ? { agent: row.agent ?? null, archived: row.archived === true } : null;
   } catch {
     return null;
   }
+}
+
+/** Install a RECORD the read returned — only on the view STILL on its thread (the read's whole guard):
+ *  its home (a `null` agent needs no write) and its `archived` flag. */
+function installRecord(threadId: string, rec: ThreadRecord | null): void {
+  if (rec === null || state.threadId !== threadId) return;
+  if (rec.agent !== null) installHome(rec.agent);
+  set({ archived: rec.archived });
+}
+
+/** The record repair RETRIED (S7B-04): a view whose `archived` is still UNKNOWN — its door's first record
+ *  read failed — re-reads it (the same guarded `fetchThreadRecord`) before a trigger decides. Never
+ *  inferred: an archived automation run is continuable, so no wire echo can say `false`. Called by the
+ *  seen write's entry and a same-id `openThread`; a no-op once known. */
+async function repairRecord(): Promise<void> {
+  const threadId = state.threadId;
+  if (threadId === null || state.archived !== null) return;
+  installRecord(threadId, await fetchThreadRecord(threadId));
+}
+
+// ── the seen write (D84 §6 "Seen write" — R30, O11, O10, §12.3 H3, Sol F2) ────────────────────────
+// `PATCH /api/threads/{id} {seen_at}` = "the owner has SEEN this conversation up to its newest row" —
+// the server's unread predicate's floor, read on every device (the `seen` frame, S10). ONE writer,
+// `markSeen`, fired from three places:
+//   (a) after a conversation's history lands (`loadThread`; `openThread`'s swap, or its late record read
+//       for a door that knew nothing);
+//   (b) when a turn settles in the OPEN view — `reloadFloor`, the one installer every turn end this view
+//       started or attached to goes through (and every sync route's floor);
+//   (c) on regaining visibility / switching back to the chat tab — `returnToChat`, AFTER its refetch (F2).
+// Each ONLY while the page is visible AND the chat tab is on screen, and NEVER for an archived view (H3:
+// its PATCH 404s) or one whose `archived` is not known yet (the next trigger retries). On success the
+// thread lists are stale (O10: the row's dot and the roster's `status`); a 404 on the open view is R29.
+
+/** The newest `ts` this device WROTE per thread, in epoch ms — a cheap dedupe, not persisted (a reload
+ *  simply writes once more; the server keeps the max anyway). */
+const lastSeen = new Map<string, number>();
+
+/** The view's newest DURABLE row's `ts` (client-only rows — notes, optimistic bubbles, the "…"
+ *  placeholder — carry the device's clock and no server row), or `null` when the view holds none. */
+function newestDurableTs(messages: readonly ChatMessage[]): { ts: string; ms: number } | null {
+  let best: { ts: string; ms: number } | null = null;
+  for (const m of messages) {
+    if (m.local) continue;
+    const ms = Date.parse(m.ts);
+    if (Number.isFinite(ms) && (best === null || ms > best.ms)) best = { ts: m.ts, ms };
+  }
+  return best;
+}
+
+/** The seen write's screen gate: the page is visible AND the chat tab is on screen. */
+function chatOnScreen(): boolean {
+  return (
+    (typeof document === "undefined" || document.visibilityState === "visible") &&
+    getUI().tab === "agent"
+  );
+}
+
+/** THE SEEN WRITE — see the block note above. Resolves when the PATCH settled (or nothing was sent); it
+ *  never throws. A write that fails rolls this device's dedupe back, so the next trigger retries. */
+export async function markSeen(): Promise<void> {
+  if (!chatOnScreen()) return;
+  if (state.archived === null) {
+    // S7B-04 — a failed first read is retried here. The gate is re-checked after the await (S7B-C01): a
+    // page hidden, a tab switched or a view moved while the record read was in flight writes nothing.
+    const at = viewHere();
+    await repairRecord();
+    if (!chatOnScreen() || viewMoved({ view: at })) return;
+  }
+  const threadId = state.threadId;
+  if (threadId === null || state.archived !== false) return; // H3 — archived, or still not known
+  const newest = newestDurableTs(state.messages);
+  if (newest === null) return;
+  const prior = lastSeen.get(threadId);
+  if (prior !== undefined && newest.ms <= prior) return; // nothing newer than this device already wrote
+  lastSeen.set(threadId, newest.ms);
+  const rollback = (): void => {
+    if (lastSeen.get(threadId) !== newest.ms) return; // a newer write owns the slot now
+    if (prior === undefined) lastSeen.delete(threadId);
+    else lastSeen.set(threadId, prior);
+  };
+  try {
+    const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seen_at: newest.ts }),
+    });
+    if (res.status === 404) {
+      rollback();
+      conversationDeleted(threadId); // R29 — only if the view is still on it (and still live)
+      return;
+    }
+    if (!res.ok) {
+      rollback();
+      return;
+    }
+    threadListsStale(); // O10 — the bridge invalidates `['threads']` + `['agents']`
+  } catch {
+    rollback(); // unreachable — the next trigger retries
+  }
+}
+
+/** (c) — the page became visible, or the chat tab came back on screen (`useThreadListsBridge`, the ONE
+ *  listener): refetch the open view; the seen write follows a SUCCESSFUL floor install ONLY (Sol F2 —
+ *  the REFRESHED newest row, never a stale pre-background floor): it is `reloadFloor`'s own success arm,
+ *  so a refetch that FAILED, or was SKIPPED because the view streams (its rows carry the device's
+ *  clock), writes nothing — the next trigger retries (S7B-01). The refetch is the D81 floor installer —
+ *  the durable history, keeping what only this view holds (its notes, an unsent bubble, an error's
+ *  retry), which a tab switch must not wipe — then `reconcileChat`'s other half, the re-attach probe for
+ *  a turn that went live meanwhile, guarded by the view identity (S6's `viewHere`). */
+export async function returnToChat(): Promise<void> {
+  const at = viewHere();
+  const threadId = at.thread;
+  if (threadId === null) return;
+  await reloadFloor();
+  if (viewMoved({ view: at })) return;
+  if (getChatStatus() !== "streaming") void probeAndReattach(threadId);
+}
+
+// ── deleted elsewhere (D84 §6 — R29, R42, §12.3 M6/M8; B11, B12) ─────────────────────────────────
+// A thread-scoped request on the OPEN conversation answering 404 — a send (`streamTurn`), the seen
+// PATCH, a history read (`reloadFloor`, `reloadChat`, the boot's `loadThread`) — means another device
+// deleted it. Outside a call: the toast, the lists stale, the HOME's latest (`openAgentConversation`,
+// which resolves a home off the roster to the configured default — Q2). DURING a call the 404 is
+// LATCHED: no toast, no swap (B12 — the call goes on; its utterances keep failing), and the call's
+// teardown runs the path once (`runAfterCall`). An ARCHIVED view (or one not known to be live) is never
+// a source (H3). S8 carries the dead conversation's draft + rail into what opens (E6 — the seam is the
+// marked line in `conversationDeleted`); until then the unsent text follows S6's M1 rule: the global draft.
+
+/** The open conversation found deleted DURING a call (R42) — run at the call's teardown. */
+let pendingDeleted: string | null = null;
+/** The open view's HOME deleted DURING a call (§12.3 M8 — a Conf → Agents delete of it on this device,
+ *  N3, or a roster refresh on any device, M7) — the move to the configured default's latest, run at the
+ *  call's teardown. Holds the deleted slug. */
+let pendingHomeMove: string | null = null;
+/** The thread whose R29 move is in flight — two 404 sources racing (the seen PATCH beside a floor read)
+ *  toast and move once. */
+let r29InFlight: string | null = null;
+
+function conversationDeleted(threadId: string): void {
+  if (state.threadId !== threadId || state.archived !== false) return;
+  if (r29InFlight === threadId) return;
+  if (callLive()) {
+    pendingDeleted = threadId; // R42 — latched, nothing shown
+    return;
+  }
+  r29InFlight = threadId;
+  pushToast("this conversation was deleted");
+  threadListsStale();
+  // S8: E6 — the dead conversation's draft + staged rail move into the conversation that opens (appended
+  // after its own draft with a blank line). Today both are one global slot each, so they simply stay.
+  void openAgentConversation(state.threadAgent ?? rosterDefault()).finally(() => {
+    if (r29InFlight === threadId) r29InFlight = null;
+  });
+}
+
+/** N3 (D84 §4, §2 B18) — the agent this device just DELETED was the open view's HOME: move to the
+ *  configured default's latest (or a fresh greeted one), the responder clearing with the swap. No toast
+ *  — the owner just did it (the delete's own toast speaks). Called by the delete's success handler on
+ *  BOTH branches of the second confirm (the conversations deleted, or left orphaned and listed nowhere)
+ *  — never through the 404 path, whose target would be the deleted slug. In a call it LATCHES (M8). */
+export function leaveDeletedHome(name: string): void {
+  if (state.threadId === null || state.threadAgent !== name) return;
+  if (callLive()) {
+    pendingHomeMove = name;
+    return;
+  }
+  // S8: E6 — the left view's draft + rail are carried into what opens (the seam).
+  void openAgentConversation(afterDeleteOf(name));
+}
+
+/** Where N3 lands (S7B-03): the configured default — unless the deleted agent WAS the configured default
+ *  (the roster that still names it has not refetched yet), then the ROOT, never the deleted slug. */
+function afterDeleteOf(deleted: string): string {
+  const dflt = rosterDefault();
+  return dflt === deleted ? DEFAULT_AGENT : dflt;
+}
+
+/** THE CALL'S TEARDOWN RUNNER (R42, M8) — what a call latched, run ONCE when it is over: the move off a
+ *  deleted HOME, or the deleted-elsewhere path for the conversation the call was in — each only if the
+ *  view is STILL there. A pending HOME MOVE takes PRECEDENCE (S7B-02): both latches are consumed by ONE
+ *  N3 move with no toast — the R29 path would toast a remote delete for a local one and resolve the
+ *  deleted home's latest; R29 runs only when no home move matches the view. Called from the one place every call's teardown completes
+ *  (`useLiveCall`'s unmount cleanup — `endCall()`'s unmount IS the teardown). A redial remounts with the
+ *  call still up (and StrictMode's simulated cleanup runs mid-call): the latch then waits for the real end. */
+export function runAfterCall(): void {
+  if (callLive()) return;
+  const dead = pendingDeleted;
+  const home = pendingHomeMove;
+  pendingDeleted = null;
+  pendingHomeMove = null;
+  if (home !== null && state.threadId !== null && state.threadAgent === home) {
+    void openAgentConversation(afterDeleteOf(home));
+    return;
+  }
+  if (dead !== null && state.threadId === dead) conversationDeleted(dead);
 }
 
 /** Hydrate ONE thread into the chat view: its persisted history, then the D39/M4 re-attach probe.
@@ -1220,12 +1441,14 @@ async function fetchThreadAgent(threadId: string): Promise<string | null> {
  *
  *  `gen` is the caller's load generation: the write is DISCARDED if a newer load has started since (see
  *  `loadGen`), so a slow fetch can never land on top of a view that has moved on. `agent` is the HOME
- *  (from the record the caller already holds — H6) and `responder` the one the boot rule decided to keep
- *  (N1: only when this is the conversation the device was last in), normalised against the home. */
+ *  and `archived` its flag (from the record the caller already holds — H6, H3), and `responder` the one
+ *  the boot rule decided to keep (N1: only when this is the conversation the device was last in),
+ *  normalised against the home. The history landing is a seen trigger (a). */
 async function loadThread(
   threadId: string,
   gen: number,
   agent: string | null,
+  archived: boolean,
   responder: string | null,
 ): Promise<void> {
   const msgs = await fetchMessages(threadId);
@@ -1239,9 +1462,11 @@ async function loadThread(
     threadId,
     messages: msgs,
     threadAgent: agent,
+    archived,
     responder: normalised(responder, agent),
   });
   persistView();
+  void markSeen();
   void probeAndReattach(threadId);
 }
 
@@ -1266,8 +1491,10 @@ async function loadThread(
  *
  *  `home` (§12.3 H6): the conversation's HOME agent when the door already knows it — a sheet row's
  *  `agent`, `openAgentConversation`'s name, a notification frame's `agent`. It is installed AT the swap,
- *  so no surface (and no send) ever runs against an unknown home; only a door that knows nothing (the
- *  automations run history, a `?thread=` cold start) falls back to the late list read.
+ *  so no surface (and no send) ever runs against an unknown home — and a handed home implies the view is
+ *  NOT archived (H3: every door that knows a home names a live conversation). Only a door that knows
+ *  nothing (the automations run history, a `?thread=` cold start) falls back to the late RECORD read,
+ *  which installs both the home and `archived` (and then marks the view seen — trigger (a)).
  *
  *  A 404 means the conversation is gone (§12.3 M6 — a stale row, a tap after a delete elsewhere): the
  *  "deleted" toast, the thread lists marked stale, and the view STAYS where it was. Any other failure
@@ -1285,19 +1512,22 @@ export async function openThread(threadId: string, home?: string): Promise<boole
     // a sheet-row tap on the open conversation is not leaving it). But DO re-probe: an automation's
     // rolling thread can have gone live since the owner last looked at it, and the probe is what
     // re-attaches to it. A home the door knows repairs a view whose home is still unknown (a failed late
-    // read).
-    if (home && state.threadAgent !== home) installHome(home);
+    // read) — and says the view is live (H3).
+    if (home) {
+      if (state.threadAgent !== home) installHome(home);
+      if (state.archived === null) set({ archived: false });
+    } else if (state.archived === null) void repairRecord().then(() => markSeen()); // S7B-04
     void probeAndReattach(threadId);
     return true;
   }
   try {
-    // The pin read starts BESIDE the history and never gates it. `GET /api/threads` is the LIST route, so
+    // The record read starts BESIDE the history and never gates it. `GET /api/threads` is the LIST route, so
     // an open that awaited it would inherit the list's latency — and a parked list read (a cold `initChat`
     // in flight against a slow backend) would hang the open outright, which is exactly the coupling
     // explicit navigation is kept free of. It lands late instead, under this file's usual post-await
     // guards — and only for a door that did not hand the home in (H6).
     const history = fetchMessages(threadId); // …started FIRST: the history is what the open lives or dies by
-    const pin = home ? null : fetchThreadAgent(threadId);
+    const record = home ? null : fetchThreadRecord(threadId);
     const msgs = await history;
     if (ticket !== openSeq) return false; // a newer open (or /new) superseded this one mid-fetch
     // R20 at the COMMIT point too (S7A-03): a call started while the history was in flight.
@@ -1308,11 +1538,20 @@ export async function openThread(threadId: string, home?: string): Promise<boole
     // yet, and a stale one from the thread being left would be worse than none. The DOOR CONTRACT
     // (§12.4 F2): `home` is `undefined` when the door does not know it, a slug when it does — never
     // `null` (the root is `"default"`).
-    const gen = swapView({ threadId, messages: msgs, threadAgent: home ?? null });
+    const gen = swapView({
+      threadId,
+      messages: msgs,
+      threadAgent: home ?? null,
+      archived: home ? false : null,
+    });
     loaded = true; // a later `initChat` must not replace this with the most-recent thread
-    if (gen === loadGen) void probeAndReattach(threadId);
-    // …and the pin when it arrives, if the VIEW IS STILL ON THIS THREAD. A `null` answer (an unpinned
-    // thread, or a list read that failed) needs no write: the swap above already said null.
+    if (gen === loadGen) {
+      if (home) void markSeen(); // (a) — a door that knew nothing marks seen when its record lands
+      void probeAndReattach(threadId);
+    }
+    // …and the RECORD when it arrives, if the VIEW IS STILL ON THIS THREAD (the H6 repair): its home (a
+    // `null` agent needs no write — the swap already said null) and its `archived` flag (H3), then the
+    // seen write the swap could not make yet. A failed read leaves both unknown.
     //
     // `threadId` alone is the whole guard, deliberately — an open ticket must NOT be part of it (the
     // main-seat audit of wave 1c). Every navigation the ticket would have caught moves `threadId` first
@@ -1323,8 +1562,9 @@ export async function openThread(threadId: string, home?: string): Promise<boole
     // and that early return starts no pin read of its own, so re-tapping the thread you are already
     // opening invalidated the only pin fetch that would ever run, and a pinned thread sat at `null`
     // until the next real navigation.
-    void pin?.then((agent) => {
-      if (agent !== null && state.threadId === threadId) installHome(agent);
+    void record?.then((rec) => {
+      installRecord(threadId, rec);
+      if (rec !== null && state.threadId === threadId) void markSeen();
     });
     return true;
   } catch (e) {
@@ -1335,7 +1575,7 @@ export async function openThread(threadId: string, home?: string): Promise<boole
     if (e instanceof HttpRefusal && e.status === 404) {
       // M6 — the conversation is gone; the lists that offered it are stale. The view stays.
       pushToast("this conversation was deleted");
-      threadListsStale(); // S7's thread-list hook subscribes — until then nothing listens
+      threadListsStale(); // `useThreadListsBridge` invalidates the cached lists
     } else pushSystemNote("// could not open that thread — the backend is unreachable");
     return false;
   }
@@ -1350,7 +1590,8 @@ export async function openThread(threadId: string, home?: string): Promise<boole
  *    · the target is listed → open it with its record's HOME, KEEPING the stored responder (the same
  *      conversation = the device never left, R45) — UNJUDGED until the roster lands (M3; the landing's
  *      sweep judges it, and so does the sweep run here when a roster already landed);
- *    · the target is NOT listed — deleted elsewhere while this device was dead (Android process death) —
+ *    · the target is NOT listed — deleted elsewhere while this device was dead (Android process death),
+ *      or its history 404s right after the list (deleted in between; a live record only, H3) —
  *      the R29 path, never a silent fallback (§12.3 H7): the "deleted" toast, then the stored HOME's
  *      latest (`openAgentConversation`, which resolves a home off the roster to the configured default,
  *      Q2). S8 moves the dead conversation's draft + rail into what opened (E6) BEFORE its boot prune;
@@ -1374,19 +1615,36 @@ export async function initChat(): Promise<void> {
     if (gen !== loadGen) return; // an explicit open won the race — leave it alone
     const target = stored.thread; // S10: a validated `?thread=` target is read ahead of this
     const record = target === null ? undefined : threads.find((t) => t.id === target);
+    // The target can also vanish BETWEEN the list and its history read (a delete elsewhere in that
+    // window): its history 404s — the same R29 answer as a target that did not list. Not for an
+    // archived record (H3 — never an R29 source): its failure keeps the plain retry below.
+    let dead = record === undefined && target !== null;
     if (record) {
-      await loadThread(record.id, gen, record.agent ?? null, stored.responder);
-    } else if (target !== null) {
+      try {
+        await loadThread(
+          record.id,
+          gen,
+          record.agent ?? null,
+          record.archived === true,
+          stored.responder,
+        );
+      } catch (e) {
+        if (!(e instanceof HttpRefusal && e.status === 404) || record.archived || gen !== loadGen)
+          throw e;
+        dead = true;
+      }
+    }
+    if (dead) {
       // R29 at boot (H7) — unless the owner already navigated during the boot read (a roster door's own
       // ticket: theirs is the newer intent, L8's posture). S8: the dead conversation's draft + rail move
       // into what opens (E6), then prune.
       if (openSeq === navAtEntry) {
         pushToast("this conversation was deleted");
-        await openAgentConversation(stored.home ?? rosterDefault());
+        await openAgentConversation(record?.agent ?? stored.home ?? rosterDefault());
       }
-    } else {
+    } else if (!record) {
       const newest = threads.find((t) => !t.archived);
-      if (newest) await loadThread(newest.id, gen, newest.agent ?? null, null);
+      if (newest) await loadThread(newest.id, gen, newest.agent ?? null, false, null);
       else if (gen === loadGen) commitResponder(stored.responder); // the thread-less view keeps its own
     }
     sweepRoster(); // a roster that landed BEFORE this boot judges what it installed (M3)
@@ -1411,9 +1669,9 @@ export async function initChat(): Promise<void> {
 export async function reloadChat(force = false): Promise<void> {
   if (!force && state.status === "streaming") return;
   const gen = loadGen;
+  const threadId = state.threadId;
   try {
-    if (state.threadId) {
-      const threadId = state.threadId;
+    if (threadId) {
       const msgs = await fetchMessages(threadId);
       // Discard if the view moved on mid-fetch: without this, an in-flight reconcile writes the OLD
       // thread's messages under the NEW `threadId` — a chat log belonging to a different conversation.
@@ -1423,8 +1681,12 @@ export async function reloadChat(force = false): Promise<void> {
       loaded = false;
       await initChat();
     }
-  } catch {
-    /* still unreachable — next reconnect signal will try again */
+  } catch (e) {
+    // R29 — the open conversation's history answered 404: deleted elsewhere (only while the view is
+    // still on it; `conversationDeleted` re-checks, and latches in a call). Anything else: still
+    // unreachable — the next reconnect signal will try again.
+    if (threadId && gen === loadGen && e instanceof HttpRefusal && e.status === 404)
+      conversationDeleted(threadId);
   }
 }
 
@@ -1521,7 +1783,8 @@ export function applyFloor(floor: ChatMessage[]): void {
  *  (so the retry and the `‹ n/N ›` controls describe the take just produced). One GET per turn.
  *
  *  Never while a turn streams (a floor would yank the live bubble), and discarded if the view moved on
- *  mid-fetch — the `reloadChat` guards. Best-effort: an unreachable backend leaves the view as it is. */
+ *  mid-fetch — the `reloadChat` guards. Best-effort: an unreachable backend leaves the view as it is;
+ *  a 404 is the conversation deleted elsewhere (R29). An installed floor is seen trigger (b). */
 async function reloadFloor(): Promise<void> {
   const threadId = state.threadId;
   if (!threadId || getChatStatus() === "streaming") return;
@@ -1530,9 +1793,15 @@ async function reloadFloor(): Promise<void> {
     const floor = await fetchMessages(threadId);
     if (gen !== loadGen || state.threadId !== threadId || getChatStatus() === "streaming") return;
     applyFloor(floor);
-  } catch {
-    /* unreachable — the next turn / reconnect reconciles */
+  } catch (e) {
+    // R29 — a 404 on the open conversation's history: deleted elsewhere. Otherwise unreachable — the
+    // next turn / reconnect reconciles.
+    if (gen === loadGen && e instanceof HttpRefusal && e.status === 404)
+      conversationDeleted(threadId);
+    return;
   }
+  // (b) — a turn settled (or a sync route's floor landed) in the OPEN view: the owner is looking at it.
+  void markSeen();
 }
 
 /** Append a client-only message (system note or shell echo) — not persisted; gone on reload. Used
@@ -1625,6 +1894,7 @@ async function mintWith(agent: string, ticket: number): Promise<MintOutcome> {
     threadId: opened.thread.id,
     messages: opened.messages,
     threadAgent: opened.thread.agent ?? agent,
+    archived: false, // seam ① mints a live conversation (H3)
   });
   loaded = true; // a later `initChat` must not replace this with the most-recent thread
   // No re-attach probe (`openThread` runs one): a thread minted this instant has no turn to rejoin.
@@ -1699,6 +1969,7 @@ export async function openAgentConversation(name: string): Promise<boolean> {
   if (latest !== null && latest === state.threadId) {
     // B5 — the open conversation IS that agent's latest: no reload; back to the rule.
     if (state.threadAgent !== home) installHome(home);
+    if (state.archived === null) set({ archived: false }); // a `?agent=` latest is never archived
     if (state.responder !== null) commitResponder(null);
     return true;
   }
@@ -2571,6 +2842,34 @@ async function streamTurn(
       const reattached = tid ? await reattachTurn(tid, cursor).catch(() => false) : false;
       if (reattached) return "accepted";
       if (viewMoved(ctx)) return leftOutcome(); // a hop during the recovery — the same M1 disposition
+    }
+    // R29 — a SEND into the conversation still on screen answered 404: it was deleted elsewhere (the
+    // left-send 404 above is the other case, dropped). Outside a call the send's words go back to the
+    // composer (S6's M1 rule — the global draft; S8 moves them into the opened conversation's slot with
+    // the rest of E6), its optimistic bubbles go with the view, and `conversationDeleted` toasts and
+    // opens the home's latest. In a call (B12) the 404 is latched there and the utterance fails as
+    // today, below — no toast, no swap. Only a live view is a source (H3).
+    const origin = ctx.view?.thread;
+    if (
+      e instanceof HttpRefusal &&
+      e.status === 404 &&
+      url === "/api/agent/chat" &&
+      origin &&
+      body.thread_id === origin &&
+      state.archived === false
+    ) {
+      if (!callLive()) {
+        const dropped = new Set([placeholderId, pendingUserId].filter(Boolean));
+        set({
+          messages: state.messages.filter((m) => !dropped.has(m.id)),
+          // a fresh send settles; a steer leaves the status to the turn it steered (the 409 arm's rule)
+          ...(placeholderId !== undefined ? { status: "idle" as const, streamingId: null } : {}),
+        });
+        returnToOrigin();
+        conversationDeleted(origin);
+        return "refused";
+      }
+      conversationDeleted(origin); // latches (R42)
     }
     // A 4xx refusal speaks the server's own sentence when it sent one (a 5xx keeps `<url> → <status>`,
     // which is also what flags the connection badge above).

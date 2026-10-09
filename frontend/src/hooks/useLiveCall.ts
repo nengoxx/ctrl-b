@@ -67,6 +67,7 @@ import {
   confirmOutstanding,
   getLiveTurn,
   lastReply,
+  runAfterCall,
   useChatSlice,
 } from "../store/chat";
 import { appendDraft } from "../store/composer";
@@ -3822,6 +3823,11 @@ export function useLiveCall(): CallView {
       // fence every other stale callback hits. The arm's own effect runs the teardown.
       send({ type: "unmounted" });
       endTrail(); // the terminal edge above already ended it, unless the machine was terminal before
+      // D84 R42 / §12.3 M8 — what the chat LATCHED while the call was up (the open conversation deleted
+      // elsewhere, or its home deleted) runs now, once, after the teardown's harvest. THIS is the one
+      // place every call's end completes (`endCall()`'s unmount IS the teardown); the runner itself
+      // waits while a call is still up — a redial's remount, StrictMode's simulated cleanup.
+      runAfterCall();
     };
     // Armed ONCE per mount: the overlay's lifetime IS the call's, and a mid-call `/voice/status`
     // refetch must not re-open the ear (§4.5 — settings edited mid-call apply to the NEXT call).
