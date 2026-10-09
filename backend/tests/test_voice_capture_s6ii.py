@@ -873,8 +873,19 @@ def _seed_capture(root: Path, *, lang: str | None = "en", part: bool = False, le
     trail.append(
         CALL,
         [
+            # The browser's `capture` line precedes the relay's `ready`, so it carries the leg counter
+            # BEFORE the bump — leg N's route is stamped N-1 (the real trail shape; a dictation's `rec`
+            # carries N). A later leg's capture must not be read as this leg's.
+            {
+                "t": t - 5,
+                "src": "client",
+                "leg": max(leg - 1, 0),
+                "ev": "capture",
+                "route": "car",
+                "label": "x",
+            },
             {"t": t, "src": "relay", "leg": leg, "ev": "leg_start", "rate": 16000, "session": session},
-            {"t": t + 5, "src": "client", "leg": leg, "ev": "capture", "route": "car", "label": "x"},
+            {"t": t + 5, "src": "client", "leg": leg + 1, "ev": "capture", "route": "later", "label": "x"},
         ],
         keep=20,
     )

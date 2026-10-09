@@ -161,7 +161,13 @@ def _mkdirs(corpus: Path) -> None:
 
 def _trail_meta(trail: Path, leg: int) -> dict[str, Any]:
     """What the leg's trail says: its `leg_start` time + language (relay) and its route (client
-    `capture` for a call, `rec` for a dictation). Absent fields stay absent."""
+    `capture` for a call, `rec` for a dictation). Absent fields stay absent.
+
+    The route line is NOT stamped with the leg it serves: the browser stamps every trail line with its
+    leg counter at write time, and a call's capture opens during connect, BEFORE the relay's `ready`
+    bumps that counter — so leg 1's `capture` carries `leg: 0` (every owner call trail; a dictation's
+    `rec` lands after `ready` and carries the leg itself). The route of leg N is therefore the LAST
+    client capture/`rec` line stamped at or before N (a later line for a later leg is not ours)."""
     meta: dict[str, Any] = {}
     if not trail.is_file():
         return meta
@@ -170,15 +176,15 @@ def _trail_meta(trail: Path, leg: int) -> dict[str, Any]:
             d = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(d, dict) or d.get("leg") != leg:
+        if not isinstance(d, dict) or not isinstance(d.get("leg"), int):
             continue
-        if d.get("src") == "relay" and d.get("ev") == "leg_start" and "t" not in meta:
+        if d.get("src") == "relay" and d.get("ev") == "leg_start" and d["leg"] == leg and "t" not in meta:
             meta["t"] = d.get("t")
             session = d.get("session") if isinstance(d.get("session"), dict) else {}
             iat = session.get("input_audio_transcription")
             if isinstance(iat, dict) and isinstance(iat.get("language"), str):
                 meta["lang"] = iat["language"]
-        elif d.get("src") == "client" and d.get("ev") in ("capture", "rec") and "route" not in meta:
+        elif d.get("src") == "client" and d.get("ev") in ("capture", "rec") and d["leg"] <= leg:
             meta["route"] = d.get("route")
     return meta
 

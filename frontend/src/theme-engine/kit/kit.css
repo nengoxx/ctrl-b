@@ -9317,9 +9317,10 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   /* …as a share of the box, not a length: the mask is positioned against the padding box, so a
    * percentage keeps the fade the same fraction of a line whatever the two numbers above become.
    * 22% ate a third of the top line's height (design round L2), so the partially-visible line read as
-   * damaged rather than as continuing; 12% was "a hint of an edge"; 15% is the owner's 2026-09-24
-   * "slightly more" over the four-line box (≈0.87 of a line, still under a whole one). */
-  --call-said-fade: 15%;
+   * damaged rather than as continuing; 12% was "a hint of an edge"; 15% was the owner's 2026-09-24
+   * "slightly more" over the four-line box; 17% is the owner's 2026-10-09 "very slightly bigger" over
+   * the six-line one (≈0.99 of a line — a whole line's worth of hint, still not into the next). */
+  --call-said-fade: 17%;
 }
 .kit .kit-call.ph-thinking {
   --call-accent: var(--text-2);
@@ -9451,8 +9452,8 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-ring-stroke {
   padding: 20px 18px calc(24px + env(safe-area-inset-bottom));
   text-align: center;
 }
-/* THE CAPTIONS (owner ask 2026-09-22) — the reply as text, above the state line: three lines of it,
- * scrollable, and faded at whichever edge is hiding something. Left-aligned inside the centred body,
+/* THE CAPTIONS (owner ask 2026-09-22) — the reply as text, above the state line: a few lines of it,
+ * scrollable, and faded at the top when something is hiding above. Left-aligned inside the centred body,
  * because prose centred line by line is unreadable at three lines — the readback block's rule, one
  * rung up in size.
  *
@@ -9460,12 +9461,14 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-ring-stroke {
  * legible one on it — `--text-2` over near-raw art, at 13px. The SIZE is what keeps it subordinate to
  * the 16px heard line; dimming it as well was paying the rank twice.
  *
- * THE FADE IS PER-EDGE, AND CONDITIONAL, which is the whole of why it takes two classes instead of one
- * unconditional mask: a mask that always fades both edges dims a one-line reply top and bottom, and
- * dims the STREAMING line — the newest words, at the bottom, which are the reason the box is there.
- * So the component measures what is actually out of view and says so; an edge with nothing beyond it
- * keeps its stop opaque, and the gradient is then a uniform black mask, i.e. no mask at all. One
- * declaration, two one-line overrides, because `mask-image` does not compose.
+ * THE FADE IS TOP-ONLY, AND CONDITIONAL: the mask fades the top edge when, and only when, something is
+ * scrolled out above it — the component measures that (CSS cannot ask whether a box overflows) and
+ * says so with one class; without it the top stop is opaque, the gradient is a uniform black mask,
+ * i.e. no mask at all. The BOTTOM edge never fades (owner ruling 2026-10-09): the newest words sit
+ * there — the streaming line while it grows, the last sentence once it has — and a fade there made
+ * exactly the line being read the hardest one to read, for the sake of hinting at a scroll that the
+ * follow already makes. A hint that costs legibility is the wrong trade on the one surface whose job
+ * is to be read.
  *
  * `overscroll-behavior: contain`: this is the only scroller on a fixed full-screen overlay, and a
  * flick past its end must not start scrolling the app underneath it. */
@@ -9480,25 +9483,11 @@ body[data-motion="full"] .kit .kit-call.speech .kit-call-ring-stroke {
   color: var(--text);
   text-align: start;
   --call-said-a: #000;
-  --call-said-b: #000;
-  -webkit-mask-image: linear-gradient(
-    var(--call-said-a),
-    #000 var(--call-said-fade),
-    #000 calc(100% - var(--call-said-fade)),
-    var(--call-said-b)
-  );
-  mask-image: linear-gradient(
-    var(--call-said-a),
-    #000 var(--call-said-fade),
-    #000 calc(100% - var(--call-said-fade)),
-    var(--call-said-b)
-  );
+  -webkit-mask-image: linear-gradient(var(--call-said-a), #000 var(--call-said-fade));
+  mask-image: linear-gradient(var(--call-said-a), #000 var(--call-said-fade));
 }
 .kit .kit-call-said.more-above {
   --call-said-a: transparent;
-}
-.kit .kit-call-said.more-below {
-  --call-said-b: transparent;
 }
 .kit .kit-call-phase {
   margin: 0;

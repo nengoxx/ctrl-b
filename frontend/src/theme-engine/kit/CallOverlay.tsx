@@ -664,8 +664,9 @@ function SensitivityControl({ call, min, max }: { call: CallView; min: number; m
 const CAPTION_ATTACH_PX = 32;
 
 /**
- * THE CAPTIONS (owner ask 2026-09-22) — the agent's reply as text on the call screen, three lines of
- * it, fading at whichever edge hides more, growing as it streams. The screen said what the EAR heard and
+ * THE CAPTIONS (owner ask 2026-09-22) — the agent's reply as text on the call screen, a few lines of
+ * it, fading at the top when something is scrolled out above (never at the bottom — the stylesheet's
+ * note), growing as it streams. The screen said what the EAR heard and
  * never what came BACK; on a phone that is the half you cannot re-read, because the reply is in the
  * chat behind an overlay you would have to hang up to see.
  *
@@ -727,9 +728,10 @@ function CallCaptions() {
   // own element; the chat's instance is bound to `#app-scroll`, which this overlay covers.
   const boxRef = useRef<HTMLDivElement>(null);
   const [latch] = useState(() => createStickLatch({ attachPx: CAPTION_ATTACH_PX }));
-  // Which edge is hiding something — what the stylesheet fades (and nothing else may decide: CSS
-  // cannot ask whether a box overflows). A separate concern from the follow: it is measured after
-  // every pin and every scroll, from the box as it then stands.
+  // Which edge is hiding something: the TOP read is what the stylesheet fades (and nothing else may
+  // decide: CSS cannot ask whether a box overflows); the two together answer "does this box scroll"
+  // for the click stop below. A separate concern from the follow: it is measured after every pin and
+  // every scroll, from the box as it then stands.
   const [edges, setEdges] = useState({ above: false, below: false });
   const measure = (el: HTMLElement): void => {
     const slack = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -757,9 +759,7 @@ function CallCaptions() {
   if (said === "") return null; // nothing said yet, or a tool-only turn: no empty box
   return (
     <div
-      className={
-        "kit-call-said" + (edges.above ? " more-above" : "") + (edges.below ? " more-below" : "")
-      }
+      className={"kit-call-said" + (edges.above ? " more-above" : "")}
       ref={boxRef}
       // Its own click stop (the cluster's rule): this block SCROLLS, and reading the start of a reply
       // must never also be a tap-to-stop. (A touch scroll never clicks — the browser takes the gesture
