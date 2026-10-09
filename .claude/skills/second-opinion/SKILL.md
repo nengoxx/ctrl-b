@@ -253,6 +253,19 @@ item 9 applies — sol is sol).
 >    read list tight (the named files, not "follow everything"); a confirm round names only the fix-delta files; after a
 >    usage file shows the fallback, WAIT (≥ 15 min) before any rerun — relaunching into the limit only deepens it. The Opus
 >    subagent lane bills the Anthropic window instead, so pairing one Hermes lane with one Opus lane in parallel is fine.
+> 1e. **NEVER WAIT ON A PATTERN — wait on a PID or an artifact (burned 2026-10-09, session 70: a Qwen pass sat an hour
+>    unstarted).** A chain like `while pgrep -f "strata-review-s5.py"; do sleep 15; done; python3 next.py` NEVER ends:
+>    `pgrep -f` matches the chain's OWN `bash -c` wrapper, whose argv contains the pattern. The same self-match makes a
+>    liveness check (`pgrep -f 'hermes_cli.main -z'` → "a lane is still running") lie. The rules: (i) capture the REAL pid at
+>    launch (`ps -o comm=` = `python3`/`hermes`, not `bash`) and wait with `kill -0 $pid`; (ii) better, wait on the lane's
+>    OUTPUT ARTIFACT (`[ -s review.usage.json ]`, `[ -s review-strata.md ]`) — it cannot self-match and survives the
+>    double-fork; (iii) a "no other Hermes lane running" check tests `ps -o comm=` of each match, never the match count.
+>    The chains that worked this session: `while ! [ -s prev.usage.json ] && kill -0 $PREV_PID; do sleep 15; done; exec hermes …`.
+>
+> **▲ STANDING RULE (owner, 2026-10-09): every lane mechanic that burns — a hang, a silent fallback, a self-matching
+> check, a lost output file — is written HERE, in this gotcha list, in the same session it happens, with the fix that
+> worked. The skill is where the next session reads before launching a lane; a gotcha that lives only in a memory file or
+> a handoff block gets re-burned (this session re-burned 1b's cousin because the Qwen chain was not in the list).**
 > 2. **`-z --ignore-rules` persists NO session, so `--resume latest` DOES NOT WORK in this lane**
 >    — it has nothing to re-enter and exits silently (0 bytes stdout AND stderr; the resume advice
 >    that used to sit here came from the D60/D61 rounds, which ran differently). **Confirm rounds
