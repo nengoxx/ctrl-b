@@ -262,6 +262,13 @@ item 9 applies — sol is sol).
 >    double-fork; (iii) a "no other Hermes lane running" check tests `ps -o comm=` of each match, never the match count.
 >    The chains that worked this session: `while ! [ -s prev.usage.json ] && kill -0 $PREV_PID; do sleep 15; done; exec hermes …`.
 >
+> 1f. **A WORKTREE's gate runs `python -m pytest`, never the venv's `pytest` entry point (burned 2026-10-09, session 71).** The
+>    worktree shares main's venv through a symlink (`<wt>/backend/.venv -> <main>/backend/.venv`), and that venv's `pytest`
+>    script resolves `app` to MAIN's editable install — so `<wt>/backend/.venv/bin/pytest` collects the worktree's tests against
+>    main's code (2 collection errors on a diverged tree, or worse, a silent pass on the wrong sources). `cd <wt>/backend &&
+>    .venv/bin/python -m pytest -q` puts the worktree's `backend/` first on `sys.path`; `python tools/check.py` from the worktree
+>    does the same. Write the `-m` form into every worktree brief's gate line.
+>
 > **▲ STANDING RULE (owner, 2026-10-09): every lane mechanic that burns — a hang, a silent fallback, a self-matching
 > check, a lost output file — is written HERE, in this gotcha list, in the same session it happens, with the fix that
 > worked. The skill is where the next session reads before launching a lane; a gotcha that lives only in a memory file or
