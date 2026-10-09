@@ -13,7 +13,6 @@ import {
   resetToThreadless,
   sendMessage,
   setStickyAgent,
-  startNewThread,
   stopTurn,
   useChat,
   useStickyAgent,
@@ -533,55 +532,6 @@ describe("turn integrity — client (Slice 2)", () => {
     const sys = result.current.messages.find((m) => m.role === "system");
     expect(sys && textOf(sys.parts)).toContain("a turn is already running on this thread");
     expect(result.current.status).toBe("idle");
-  });
-
-  it("startNewThread is blocked while a turn is streaming (does not clear)", async () => {
-    // Hold the SSE body open so the turn stays in "streaming" while we try to clear.
-    let controller!: ReadableStreamDefaultController<Uint8Array>;
-    const body = new ReadableStream<Uint8Array>({
-      start(c) {
-        controller = c;
-      },
-    });
-    globalThis.fetch = vi.fn(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        body,
-        headers: {
-          get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
-        },
-      } as unknown as Response),
-    );
-
-    const { result } = renderHook(() => useChat());
-    let sendP!: Promise<SendOutcome>;
-    await act(async () => {
-      sendP = sendMessage("hi"); // sets status "streaming" synchronously, then holds on the open body
-    });
-    expect(result.current.status).toBe("streaming");
-
-    act(() => {
-      void startNewThread({ keepAgent: false, defaultAgent: "default" }); // must be refused: a turn is live
-    });
-    expect(result.current.status).toBe("streaming"); // NOT reset to idle
-    expect(
-      result.current.messages.some(
-        (m) => m.role === "system" && textOf(m.parts).includes("a turn is running"),
-      ),
-    ).toBe(true);
-    expect(result.current.messages.some((m) => m.role === "user")).toBe(true); // log not wiped
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1); // the send alone — the refused /new minted nothing
-
-    // Let the held turn finish so nothing leaks into the next case.
-    const enc = new TextEncoder();
-    controller.enqueue(
-      enc.encode(`event: done\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`),
-    );
-    controller.close();
-    await act(async () => {
-      await sendP;
-    });
   });
 
   it("a resume carries the turn's stashed inference mode (ACA-16)", async () => {
@@ -2789,7 +2739,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
     expect(result.current.status).toBe("idle");
   });
 
-  it("a view swap (/new) prunes rawByEntry: a later harvest falls back to server text (FIX C)", async () => {
+  it("a view swap KEEPS the left thread's raw lines (Phase 27 O22): a later harvest there restores the raw line", async () => {
     clearDraft();
     // 1) queue a steer carrying a `/cloud` RAW line on t1 (populates rawByEntry[t1][e1]); end + close.
     {
@@ -2812,13 +2762,14 @@ describe("steering queue — client (Slice 5, D41)", () => {
         await new Promise((r) => setTimeout(r, 320)); // drain the post-done discovery probe
       });
     }
-    // 2) a view swap prunes rawByEntry (`swapView`'s dropAllRaw — every door: an open, /new's mint, its
-    //    thread-less fallback, which is the one driven here).
+    // 2) a view swap (every door goes through `swapView` — an open, /new's mint, its thread-less
+    //    fallback, which is the one driven here) no longer prunes rawByEntry: the steers are t1's, and a
+    //    turn left running keeps them queued server-side (O22).
     act(() => {
       resetToThreadless(null);
     });
-    // 3) a fresh streaming turn; Stop harvests the SAME entry — the raw line was pruned, so the harvest
-    //    reconstructs the PLAIN server text ("do X"), NOT the "/cloud do X" raw that would survive a leak.
+    // 3) back on t1 (the held turn's `thread` frame), Stop harvests the SAME entry — its raw line
+    //    survived the swap, so the harvest restores "/cloud do X" with its prefix, not the server's text.
     {
       const { hook, controller, sendP } = await heldTurn((u) => {
         if (u.includes("/cancel"))
@@ -2833,7 +2784,7 @@ describe("steering queue — client (Slice 5, D41)", () => {
       await act(async () => {
         await stopTurn();
       });
-      expect(getDraft()).toBe("do X"); // reconstructed from server text — the raw "/cloud" line was pruned
+      expect(getDraft()).toBe("/cloud do X"); // the raw line, kept with its thread across the swap
       void hook;
       controller.close();
       await act(async () => {

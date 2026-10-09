@@ -41,7 +41,13 @@ import { ChatThread } from "../../src/components/ChatThread";
 import type { FocalArt } from "../../src/lib/focalPosition";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
 import { AUTOMATIONS_GROUP_ID } from "../../src/hooks/useAutomations";
-import { openThread, sendMessage, setStickyAgent, useChat } from "../../src/store/chat";
+import {
+  openThread,
+  resetToThreadless,
+  sendMessage,
+  setStickyAgent,
+  useChat,
+} from "../../src/store/chat";
 import { clearGroupScrollTarget, getGroupScrollTarget } from "../../src/store/groupScroll";
 import { getUI, setUI } from "../../src/store/ui";
 import {
@@ -1172,5 +1178,49 @@ describe("ChatThread — stick to bottom (ISS-66)", () => {
     fireEvent.click(btn);
     expect(pill()).toBeNull();
     expect(document.activeElement).toBe(document.getElementById("chatlog"));
+  });
+
+  it("a change of the VIEW'S CONVERSATION re-births the latch and jumps to the newest (Phase 27 §12.1 ⑦)", async () => {
+    const left = [msg("u0", "user", "hi"), msg("a1", "assistant", "hello")];
+    const p = await mount(left);
+    p.userScroll(100); // escaped on the conversation being left
+    expect(pill()).not.toBeNull();
+
+    // The store's view swaps to another conversation (a door → `openThread` → `swapView`) — a loaded
+    // history, nothing `fresh`, so only the thread change itself can re-stick.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: true, status: 200, json: async () => [] } as Response)),
+    );
+    await act(async () => {
+      await openThread("hop-other", "emma");
+    });
+    p.grow(2600);
+    p.view.rerender(
+      <ChatThread
+        active
+        chat={chatOf([msg("o0", "user", "elsewhere"), msg("o1", "assistant", "other reply")])}
+      />,
+    );
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+    expect(p.pane.scrollTop).toBe(p.max());
+    expect(pill()).toBeNull();
+    // …and the re-born latch follows growth again (it is stuck, not still escaped from the old thread).
+    p.grow(2900);
+    p.view.rerender(
+      <ChatThread
+        active
+        chat={chatOf([
+          msg("o0", "user", "elsewhere"),
+          msg("o1", "assistant", "other reply"),
+          msg("o2", "assistant", "more"),
+        ])}
+      />,
+    );
+    expect(p.pane.scrollTop).toBe(p.max());
+    act(() => resetToThreadless(null)); // leave the singleton store thread-less for later cases
+    vi.unstubAllGlobals();
   });
 });

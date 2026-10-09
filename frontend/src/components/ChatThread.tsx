@@ -25,6 +25,7 @@ import {
   // The text-part join moved to the store when the call screen became its second reader (owner ask
   // 2026-09-22) — one filter, so "what was said" cannot mean two things.
   textOf,
+  useChatSlice,
 } from "../store/chat";
 import { openConfGroup } from "../store/groupScroll";
 import { requestPrompt } from "../store/prompt";
@@ -1076,7 +1077,11 @@ export function ChatThread({ active, chat, emptyState }: Props) {
   }, [messages, active]);
 
   // Entering the tab always jumps to the newest message (rAF so the now-visible pane has laid out) — and
-  // re-births the latch: whatever it last sampled belongs to the scroller's other owners since.
+  // re-births the latch: whatever it last sampled belongs to the scroller's other owners since. A change
+  // of the VIEW'S CONVERSATION is the same moment (Phase 27 §12.1 ⑦): an escape sampled on the thread
+  // left says nothing about the one swapped in, which opens at its newest message like any entry. Read
+  // as a slice (the id changes once per swap; `messages` changes per token).
+  const threadId = useChatSlice((s) => s.threadId);
   useEffect(() => {
     if (!active) return;
     latch.reset();
@@ -1084,7 +1089,7 @@ export function ChatThread({ active, chat, emptyState }: Props) {
     const id = requestAnimationFrame(stickNow);
     return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  }, [active, threadId]);
 
   return (
     <>

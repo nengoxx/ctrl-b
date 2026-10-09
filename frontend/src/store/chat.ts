@@ -150,9 +150,11 @@ export function alwaysEligibleFor(callId: string): boolean {
 // `reloadChat` (the durable floor never carries raw lines).
 //
 // THREAD-SCOPED (Codex FE FIX C / reviewer LOW-9): a per-thread map so a stale harvest can never append
-// another thread's raw lines into the current composer, and a `/new` / thread switch prunes the old
-// thread's entries wholesale (`dropAllRaw`). entry_ids are server-unique, but the nesting makes the
-// pruning trivial + keeps the scoping honest rather than relying on that uniqueness.
+// another thread's raw lines into the current composer. A view swap does NOT prune it (Phase 27 O22):
+// since a swap may leave a turn running in the background (R9), the conversation left still owns its
+// queued steers, and their raw lines must survive until THAT thread's own drain (`steer.applied` /
+// `turn.sync`), harvest (Stop) or re-entry reconcile (`pruneRaw`, from the probe) retires them. entry_ids
+// are server-unique, but the nesting keeps the scoping honest rather than relying on that uniqueness.
 const rawByEntry: Record<string, Record<string, string>> = {};
 function setRaw(threadId: string, entryId: string, raw: string): void {
   (rawByEntry[threadId] ??= {})[entryId] = raw;
@@ -169,11 +171,6 @@ function pruneRaw(threadId: string, keep: Set<string>): void {
   const m = rawByEntry[threadId];
   if (m) for (const e of Object.keys(m)) if (!keep.has(e)) delete m[e];
 }
-/** Drop EVERY thread's raw lines — a `/new` full reset (no queued steer survives it). */
-function dropAllRaw(): void {
-  for (const k of Object.keys(rawByEntry)) delete rawByEntry[k];
-}
-
 /** Build an optimistic QUEUED steer bubble (D41 §3/§1). `text` is the stripped body; an exec entry
  *  renders its command with the `!` sigil restored so the bubble reads like the `!cmd` the owner typed. */
 function makeQueuedBubble(entryId: string, kind: "message" | "exec", text: string): ChatMessage {
@@ -245,9 +242,51 @@ let lastSeq = 0;
 // stream also never re-attaches or fails on drop (its owner has moved on). `claimStream` is called at
 // the exact live-adopt point, NOT at reducer construction, so a 202/409/buffered reply that never
 // streams does not bump the generation and orphan the genuinely-live turn.
+//
+// A VIEW SWAP bumps it too (Phase 27 S6, R9 — `swapView`): a swap while a turn streams is allowed, and the
+// left turn simply continues server-side as a background conversation. The bump is what makes every
+// stream claimed BEFORE the swap stale at once — its frames, its terminal, its re-attach-on-drop — through
+// the same checks above, never a second mechanism. A turn whose POST was still in flight at the swap had
+// no generation to go stale; the adopt guard (`viewMoved`, below) covers it instead.
 let streamGeneration = 0;
-function claimStream(ctx: TurnCtx): void {
+/** Claim THE live stream for `ctx` — refused (`false`, nothing bumped) when the turn's view moved since
+ *  its send (O6's first adopt point): adopting would hand the left conversation's stream to the view the
+ *  owner swapped to. A re-attach is bound the same way to the view it was started from (M1 — a hop during
+ *  a drop's recovery must not hand the left turn's frames to the view swapped in). */
+function claimStream(ctx: TurnCtx): boolean {
+  if (viewMoved(ctx)) return false;
   ctx.gen = ++streamGeneration;
+  return true;
+}
+
+/** A VIEW's identity (O6): its thread and its view generation (`loadGen`), captured at the moment a turn,
+ *  a re-attach or a Stop starts on it (`viewHere`). The ONE guard identity of the hop kernel. */
+type ViewRef = { thread: string | null; gen: number };
+function viewHere(): ViewRef {
+  return { thread: state.threadId, gen: loadGen };
+}
+
+/** O6 — has the view this turn was SENT from moved since? `ctx.view` is captured before the POST's
+ *  `fetch` (`streamTurn`; a re-attach before its own, `runCancel` at the Stop): the view's thread and its
+ *  VIEW generation. The view generation is `loadGen` —
+ *  bumped by `swapView` and by a wire mint, i.e. by exactly the changes of view identity — and NOT
+ *  `streamGeneration`, which also moves on a same-view claim (a re-attach, a steer-race adoption): a
+ *  steer's late 202 must still mark its bubble in the view it never left. The thread comparison backs it
+ *  up for a write that changes `threadId` without a swap. Always `false` for a ctx with no `view`. */
+function viewMoved(ctx: { view?: ViewRef }): boolean {
+  return ctx.view !== undefined && (ctx.view.gen !== loadGen || ctx.view.thread !== state.threadId);
+}
+
+/** O6's wire-thread adopt point (the reducer's `thread` frame and the buffered payload's `threadId`):
+ *  install the id unless the turn's view moved. A lazy mint IS this turn's own move — the thread-less
+ *  view becomes the minted conversation — so on adoption the turn's view follows it, and the turn's
+ *  later guards compare against the conversation it created rather than the null it left. `agent` is the
+ *  head's home (S3's `{threadId, title, agent}`, on BOTH transports) — `setWireThread` installs it. */
+function adoptWireThread(ctx: TurnCtx, id: string, agent?: string): boolean {
+  if (viewMoved(ctx)) return false;
+  setWireThread(id, agent);
+  if (ctx.view) ctx.view = { thread: id, gen: loadGen };
+  return true;
 }
 
 /** Parse a `turn_id:seq` wire id → `{turnId, seq}` or null (absent/malformed). `turn_id` is uuid4
@@ -551,20 +590,24 @@ export function getThreadId(): string | null {
 }
 
 /** Write a thread id learned from the WIRE — the stream's `thread` frame, a buffered turn's payload, an
- *  exec response: the three places a send can MINT a thread. A DIFFERENT id is exactly that mint, and a
- *  just-created thread carries no D11 pin, so the thread agent resets with it. The SAME id is the
- *  ordinary echo of the conversation we are already in and must leave the pin alone — clearing it there
- *  would repaint every active-agent surface the moment the owner sends into a pinned thread. */
-function setWireThread(id: string): void {
+ *  exec response: the three places a send can MINT a thread. A DIFFERENT id is exactly that mint: the
+ *  thread agent becomes the head's `agent` (Phase 27 S3 put the minted conversation's HOME on the head —
+ *  §12.3 H6: no surface runs against an unknown home), or `null` when the wire carried none. The SAME id
+ *  is the ordinary echo of the conversation we are already in and must leave a KNOWN pin alone —
+ *  clearing it there would repaint every active-agent surface the moment the owner sends into a pinned
+ *  thread — while an UNKNOWN one (`null`: a failed late read) is repaired from the head. */
+function setWireThread(id: string, agent?: string): void {
   if (id === state.threadId) {
-    set({ threadId: id });
+    set(
+      agent && state.threadAgent === null ? { threadId: id, threadAgent: agent } : { threadId: id },
+    );
     return;
   }
   // A MINT is a change of view identity, exactly like an open or a `/new` — so it invalidates every
   // parked reconciliation too (the S6 review's F3). Without this a cold `initChat` that started before
   // the send lands the OLD thread's history, and its pin, over the conversation just created.
   loadGen++;
-  set({ threadId: id, threadAgent: null });
+  set({ threadId: id, threadAgent: agent ?? null });
 }
 
 // Sticky session privilege override, set by `/privilege <level>` (A1/D16). Reactive (lives in
@@ -779,13 +822,21 @@ type ViewSwap = Pick<ChatState, "threadId" | "messages" | "threadAgent"> &
  *  reconciliation parked against the identity it replaces is stale by definition — a cold `initChat` or
  *  a `reloadChat` must not land the OLD thread's history (and its pin) on the view just swapped in.
  *  Returns the new generation so a caller can guard a follow-up on it. Claims NO open ticket
- *  (`openSeq`): tickets order user DECISIONS, and each caller claimed its own at entry. */
+ *  (`openSeq`): tickets order user DECISIONS, and each caller claimed its own at entry.
+ *
+ *  HOP WHILE STREAMING (Phase 27 S6, R9): a swap is allowed while a turn streams. It also bumps the
+ *  STREAM generation, so the left turn's live stream (and any re-attach) goes stale at once and never
+ *  writes into the view swapped in — the turn itself continues server-side as a background conversation,
+ *  and a later visit re-attaches to it (`probeAndReattach`). A send whose POST is still in flight is
+ *  held off by the adopt guard instead (`viewMoved`). Only the VIEW's optimistic state goes with the
+ *  swap (its messages, queued bubbles included, are replaced); the left thread's raw steer lines stay
+ *  with that thread (O22, see `rawByEntry`). */
 function swapView(view: ViewSwap): number {
   const gen = ++loadGen;
+  ++streamGeneration; // S6 — every stream claimed against the view being left is stale from here
   clearAudioCache(); // 6b-2: revoke the left thread's TTS blobs + stop any playback
   lastTurnId = null; // D39: a new view starts a fresh per-turn event ordering
   lastSeq = 0;
-  dropAllRaw(); // FIX C — prune every thread's harvested raw lines (no queued steer survives a swap)
   lastHarvestSig = null; // FIX E — forget the last harvest receipt (mirrors the backend clear)
   set({ ...view, status: "idle", streamingId: null });
   return gen;
@@ -807,11 +858,32 @@ export function resetToThreadless(stickyAgent: string | null): void {
 /** Fetch one thread's persisted history. Split from the state write so a caller can decide what to do
  *  with a FAILED fetch before it has touched the view (see `openThread`). A non-OK answer IS a failed
  *  fetch (ISS-31): its `{detail}` body is not a message list, and handed back as one it would be set as
- *  `messages` by whichever loader asked — every caller already has a failure path for a throw. */
+ *  `messages` by whichever loader asked — every caller already has a failure path for a throw. It throws
+ *  an `HttpRefusal` so a caller can tell the server's definite answer (`openThread`'s 404 = the
+ *  conversation was deleted, M6) from an unreachable backend; the message keeps the old shape. */
 async function fetchMessages(threadId: string): Promise<ChatMessage[]> {
-  const res = await fetch(`/api/threads/${threadId}/messages`);
-  if (!res.ok) throw new Error(`/api/threads/${threadId}/messages → ${res.status}`);
+  const url = `/api/threads/${threadId}/messages`;
+  const res = await fetch(url);
+  if (!res.ok) throw new HttpRefusal(url, res.status, "");
   return (await res.json()) as ChatMessage[];
+}
+
+// ── the thread lists' staleness signal (Phase 27 M6) ─────────────────────────────────────────────
+// The thread LIST is ordinary server state (DESIGN §13 as amended: `useQuery(['threads', agent])`, with
+// the per-agent status on `['agents']`), but this store learns things about it first — an open that
+// answers 404 means a conversation the lists still show is gone. A plain module cannot reach the
+// QueryClient (it lives in the React tree), so the store PUBLISHES and a mounted hook invalidates — the
+// `notifyBus` shape (an event, delivered once; no state to snapshot). S7's thread-list hook is its
+// subscriber; until one mounts there is no cached list to invalidate, so a publish into no listener is
+// correct, not lost.
+const threadListListeners = new Set<() => void>();
+/** Subscribe to "the thread lists are stale" — returns the unsubscribe (a `useEffect` cleanup). */
+export function onThreadListsStale(cb: () => void): () => void {
+  threadListListeners.add(cb);
+  return () => threadListListeners.delete(cb);
+}
+function threadListsStale(): void {
+  for (const cb of threadListListeners) cb();
 }
 
 /** ONE thread's D11 pin, read from the LIST (`GET /api/threads` publishes whole `Thread` dumps and is the
@@ -852,6 +924,11 @@ async function fetchThreadAgent(threadId: string): Promise<string | null> {
 async function loadThread(threadId: string, gen: number, agent: string | null): Promise<void> {
   const msgs = await fetchMessages(threadId);
   if (gen !== loadGen) return; // superseded mid-fetch — this result belongs to a view that is gone
+  // The cold load writes `threadId` through neither `swapView` nor `setWireThread`, so it is the third
+  // place the view's identity is installed (§12.3 H2): the HOME arrives with it (`agent`, read from the
+  // record the caller already holds — H6), and S8's per-conversation composer slot must be set HERE as
+  // well as in `swapView` and `setWireThread` (`setComposerSlot(threadId)`, the seam). Today the draft
+  // and the rail are one global slot each, so there is nothing to point yet.
   set({ threadId, messages: msgs, threadAgent: agent });
   void probeAndReattach(threadId);
 }
@@ -870,23 +947,29 @@ async function loadThread(threadId: string, gen: number, agent: string | null): 
  *  so an unreachable backend left the owner staring at an emptied chat they had not asked to lose. The
  *  current view is only touched once the replacement is in hand.
  *
- *  Refuses while a turn is streaming (ACA-10/S2-C) — checked BEFORE the fetch and again after it, since
- *  a turn can start during the round-trip. Returns whether the thread was opened, so the caller can skip
- *  the tab switch it would otherwise make. */
-export async function openThread(threadId: string): Promise<boolean> {
-  // Claimed unconditionally at entry — even an open that goes on to be refused supersedes an older
-  // pending one (the owner's newest intent is the one that counts).
+ *  NOT refused while a turn is streaming (Phase 27 S6, R9 — it was, ACA-10/S2-C): the swap goes ahead,
+ *  the left turn continues server-side as a background conversation, and coming back re-attaches to it
+ *  (the post-swap probe). `swapView` makes the left stream stale; `streamTurn`'s adopt guard keeps a send
+ *  still in flight out of the new view.
+ *
+ *  `home` (§12.3 H6): the conversation's HOME agent when the door already knows it — a sheet row's
+ *  `agent`, `openAgentConversation`'s name, a notification frame's `agent`. It is installed AT the swap,
+ *  so no surface (and no send) ever runs against an unknown home; only a door that knows nothing (the
+ *  automations run history, a `?thread=` cold start) falls back to the late list read.
+ *
+ *  A 404 means the conversation is gone (§12.3 M6 — a stale row, a tap after a delete elsewhere): the
+ *  "deleted" toast, the thread lists marked stale, and the view STAYS where it was. Any other failure
+ *  keeps the "unreachable" note. Returns whether the thread was opened, so the caller can skip the tab
+ *  switch it would otherwise make. */
+export async function openThread(threadId: string, home?: string | null): Promise<boolean> {
+  // Claimed unconditionally at entry — even an open that goes on to fail supersedes an older pending
+  // one (the owner's newest intent is the one that counts).
   const ticket = ++openSeq;
-  // `getChatStatus()` rather than `state.status`: the same check runs again after the fetch, and a
-  // direct read would let the compiler narrow the first one across the `await` — which is exactly the
-  // change this is here to notice.
-  if (getChatStatus() === "streaming") {
-    pushSystemNote("// a turn is running — stop it or wait before opening another thread");
-    return false;
-  }
   if (state.threadId === threadId) {
     // Already here, so no reload and no cache churn — but DO re-probe: an automation's rolling thread
     // can have gone live since the owner last looked at it, and the probe is what re-attaches to it.
+    // A home the door knows repairs a view whose home is still unknown (a failed late read).
+    if (home && state.threadAgent !== home) set({ threadAgent: home });
     void probeAndReattach(threadId);
     return true;
   }
@@ -895,21 +978,16 @@ export async function openThread(threadId: string): Promise<boolean> {
     // an open that awaited it would inherit the list's latency — and a parked list read (a cold `initChat`
     // in flight against a slow backend) would hang the open outright, which is exactly the coupling
     // explicit navigation is kept free of. It lands late instead, under this file's usual post-await
-    // guards.
+    // guards — and only for a door that did not hand the home in (H6).
     const history = fetchMessages(threadId); // …started FIRST: the history is what the open lives or dies by
-    const pin = fetchThreadAgent(threadId);
+    const pin = home ? null : fetchThreadAgent(threadId);
     const msgs = await history;
     if (ticket !== openSeq) return false; // a newer open (or /new) superseded this one mid-fetch
-    if (getChatStatus() === "streaming") {
-      // A turn started during the fetch — the pre-check above is not enough on its own.
-      pushSystemNote("// a turn is running — stop it or wait before opening another thread");
-      return false;
-    }
     // An explicit open is a user DECISION, so it invalidates any reconciliation in flight (a slow
     // initChat/reloadChat landing after this must be discarded) — the swap's generation bump.
-    // `threadAgent: null` is the HONEST value at the swap — the pin is not known yet, and a stale one
-    // from the thread being left would be worse than none.
-    const gen = swapView({ threadId, messages: msgs, threadAgent: null });
+    // With no home handed in, `threadAgent: null` is the HONEST value at the swap — the pin is not known
+    // yet, and a stale one from the thread being left would be worse than none.
+    const gen = swapView({ threadId, messages: msgs, threadAgent: home ?? null });
     loaded = true; // a later `initChat` must not replace this with the most-recent thread
     if (gen === loadGen) void probeAndReattach(threadId);
     // …and the pin when it arrives, if the VIEW IS STILL ON THIS THREAD. A `null` answer (an unpinned
@@ -924,17 +1002,20 @@ export async function openThread(threadId: string): Promise<boolean> {
     // and that early return starts no pin read of its own, so re-tapping the thread you are already
     // opening invalidated the only pin fetch that would ever run, and a pinned thread sat at `null`
     // until the next real navigation.
-    void pin.then((agent) => {
+    void pin?.then((agent) => {
       if (agent !== null && state.threadId === threadId) set({ threadAgent: agent });
     });
     return true;
-  } catch {
+  } catch (e) {
     // Nothing was cleared — the view the owner was looking at is still intact. The note only speaks
     // for the CURRENT intent (R3, L2): a superseded open failing late must not drop a misleading
     // "unreachable" note into the view of the open that won.
-    if (ticket === openSeq) {
-      pushSystemNote("// could not open that thread — the backend is unreachable");
-    }
+    if (ticket !== openSeq) return false;
+    if (e instanceof HttpRefusal && e.status === 404) {
+      // M6 — the conversation is gone; the lists that offered it are stale. The view stays.
+      pushToast("this conversation was deleted");
+      threadListsStale(); // S7's thread-list hook subscribes — until then nothing listens
+    } else pushSystemNote("// could not open that thread — the backend is unreachable");
     return false;
   }
 }
@@ -1209,8 +1290,8 @@ let mintTicket: number | null = null;
  *  owner kept using the view while the mint was in flight (fix wave 1, the code round's HIGH): a turn
  *  taken meanwhile — a send appends its user bubble synchronously, so one that started AND settled
  *  during the mint counts too — or a view that moved to another thread (a lazy mint from a thread-less
- *  view, a wire mint) or that is streaming (a resume, an answer, a re-attach — none of which append a
- *  user bubble). Swapping then would hide the turn the owner just took; the mint is the one given up.
+ *  view, a wire mint). Swapping then would hide the turn the owner just took; the mint is the one given
+ *  up. A view that is merely STREAMING is swapped (Phase 27 S6): the turn runs on in the background.
  *
  *  A FAILED mint (network, a non-OK answer, a malformed body, a failed history read) falls back to
  *  `resetToThreadless` — the lazy mint on the next send — and says so in the log. */
@@ -1218,12 +1299,8 @@ export async function startNewThread(opts: {
   keepAgent: boolean;
   defaultAgent: string;
 }): Promise<void> {
-  // ACA-10 / S2-C: don't swap out from under a live turn — the reset would strand the streaming
-  // reply (and the server would 409 the next send onto the abandoned thread). Ask the owner to wait.
-  if (state.status === "streaming") {
-    pushSystemNote("// a turn is running — stop it or wait before clearing");
-    return;
-  }
+  // No streaming refusal (Phase 27 S6, R9 — it was ACA-10/S2-C): `/new` while a turn streams swaps like
+  // any door, and the left turn continues server-side as a background conversation.
   if (mintTicket === openSeq) return; // the in-flight /new is still the owner's newest intent
   // The tandem rule's agent — decided BEFORE guard 2, because a fresh thread is only "already fresh"
   // for the agent it is pinned to (fix wave 2).
@@ -1268,15 +1345,12 @@ export async function startNewThread(opts: {
   // not drop a note into it — the note speaks only for the CURRENT intent (openThread's R3 L2 rule).
   if (ticket !== openSeq) return;
   // The owner kept using the view while the mint was in flight: a turn taken meanwhile (its user bubble
-  // is one MORE user turn — even one that already settled), a thread change under us, or a live stream
-  // (a resume/answer/re-attach appends no user bubble). The swap would hide what they just did, so the
-  // mint is given up SILENTLY — the view already shows what the owner chose to do instead.
-  if (
-    state.threadId !== threadAtEntry ||
-    userTurnCount(state.messages) !== turnsAtEntry ||
-    getChatStatus() === "streaming"
-  )
-    return;
+  // is one MORE user turn — even one that already settled) or a thread change under us. The swap would
+  // hide what they just did, so the mint is given up SILENTLY — the view already shows what the owner
+  // chose to do instead. A live stream alone no longer counts (S6: a swap while streaming is allowed —
+  // the left turn runs on in the background); S7's `mintAndOpen` retires this fence for the supersession
+  // check alone (O7).
+  if (state.threadId !== threadAtEntry || userTurnCount(state.messages) !== turnsAtEntry) return;
   // The tandem rule's pick, unless the owner re-picked while the mint was in flight (the newer intent).
   const stickyAgent = state.stickyAgent === stickyAtEntry ? kept : state.stickyAgent;
   if (opened === null) {
@@ -1569,7 +1643,8 @@ async function busyDetail(res: Response, fallback = TURN_BUSY_FALLBACK): Promise
 /** A DEFINITE non-OK answer to a turn POST (D81 fix wave 1) — the server answered and no turn started,
  *  which the catch must tell apart from a dropped stream (that one re-attaches). The message keeps the
  *  `<url> → <status>` shape `isLikelyUnreachable` reads; `detail` is the server's `{detail}` sentence,
- *  or "" when it sent none. */
+ *  or "" when it sent none. `fetchMessages` throws it too (a history read's definite answer — the 404
+ *  `openThread` reads as "deleted", Phase 27 M6). */
 class HttpRefusal extends Error {
   readonly status: number;
   readonly detail: string;
@@ -1639,6 +1714,10 @@ interface TurnCtx {
   // frame's `ctx.gen` is set by the time it is checked. A stale generation (`ctx.gen !== streamGeneration`)
   // is dropped at the reducer's very top — before the seq gate — so it can never settle state.
   gen: number;
+  // The VIEW a turn entered on (Phase 27 O6): its thread id and the view generation (`loadGen`), both
+  // captured BEFORE the first `fetch` — the POST's (`streamTurn`) or the re-attach's (`reattachTurn`).
+  // See `viewMoved`.
+  view?: ViewRef;
 }
 
 /** The turn-event reducer, factored out of `streamTurn` so the re-attach stream reduces LIVE events
@@ -1652,7 +1731,7 @@ function makeTurnReducer(ctx: TurnCtx) {
       case "thread": {
         const id = nonEmpty(data.threadId);
         if (!id) return dropWarn(event, "missing threadId");
-        setWireThread(id);
+        adoptWireThread(ctx, id, nonEmpty(data.agent)); // O6 — never into a view the owner moved to
         break;
       }
       case "message.start": {
@@ -1852,8 +1931,29 @@ async function streamTurn(
    *  resolves when the STREAM ends, which is far too late. */
   onAccepted?: () => void,
 ): Promise<SendOutcome> {
-  const ctx: TurnCtx = { claimed: !placeholderId, placeholderId, settled: false, gen: -1 };
+  // O6 — the view this send ENTERED on, captured before the `fetch`: a swap may land while the POST is
+  // in flight (R9), and from then on this turn belongs to the conversation it was sent from, not to the
+  // view on screen. The POST itself is never aborted (the server may already hold the message).
+  const ctx: TurnCtx = {
+    claimed: !placeholderId,
+    placeholderId,
+    settled: false,
+    gen: -1,
+    view: viewHere(),
+  };
   const handle = makeTurnReducer(ctx);
+  /** M1 — a LEFT send the server refused, or that failed at the transport, writes NOTHING into the view
+   *  the owner moved to (no note, no rollback, no error bubble, no status): its words go back to the
+   *  composer slot of the conversation it was sent from, silently. A resume / regenerate carries no
+   *  text, so returns nothing. Today the composer holds ONE global draft, so the slot is that draft;
+   *  S8's per-conversation slots turn this into `appendDraft(text, "\n", origin)` — the seam is here. */
+  const returnToOrigin = (): void => {
+    const text = raw ?? (typeof body.text === "string" ? body.text : "");
+    appendDraft(text, "\n");
+  };
+  /** Past the 200: the server holds this send, so a later throw never returns its words (M1 is for a
+   *  send the server did NOT take). */
+  let taken = false;
 
   try {
     const res = await fetch(url, {
@@ -1870,6 +1970,11 @@ async function streamTurn(
     // would render as sent-then-vanished on the next reload).
     if (res.status === 409) {
       const detail = await busyDetail(res);
+      // Checked AFTER the body read — the arm's one await, which a hop can land in.
+      if (viewMoved(ctx)) {
+        returnToOrigin(); // M1 — refused, and the owner has moved on: no view write
+        return "refused";
+      }
       // Drop BOTH optimistic bubbles — the unclaimed assistant placeholder AND the user's own
       // message (it was rejected, never persisted; leaving it renders as sent-then-vanished).
       const rejected = new Set(
@@ -1895,6 +2000,19 @@ async function streamTurn(
     if (res.status === 202) {
       onAccepted?.(); // ENQUEUED with its attachment ids — the drain claims them (D41 / §3's steer arm)
       const info = (await res.json().catch(() => ({}))) as { entry_id?: string; turn_id?: string };
+      if (viewMoved(ctx)) {
+        // A LEFT steer (M1): nothing in this view is its to mark, strip or settle. A queued one keeps its
+        // raw line under the thread it was queued on (O22) — the drain, a Stop harvest there, or the
+        // re-entry reconcile retires it; an untrackable one is a refusal, its words go home.
+        if (!info.entry_id) {
+          returnToOrigin();
+          return "refused";
+        }
+        const origin = ctx.view?.thread;
+        if (origin)
+          setRaw(origin, info.entry_id, raw ?? (typeof body.text === "string" ? body.text : ""));
+        return "accepted";
+      }
       // NORMALIZE-ON-202 (D71 §4.5, the recorded pre-existing defect — wider than the call). A send
       // taken while chat status is `idle` builds the FRESH-turn shape: an optimistic assistant
       // placeholder plus `status: "streaming"`. A suspended turn (a confirm gate) leaves the status idle
@@ -1954,10 +2072,12 @@ async function streamTurn(
     // Past the 409 and past `!res.ok`: the turn is RUNNING (or already ran, buffered), so whatever
     // this POST named is the server's now. Everything below is about rendering it.
     onAccepted?.();
+    taken = true;
     // D81 fix wave 1 — the optimistic user bubble LANDED: its durable row exists, so every floor from
     // here supersedes it (even one that runs long after this turn — a failed end-of-turn read must not
-    // leave a ghost that later floors keep beside the real row).
-    if (pendingUserId !== undefined)
+    // leave a ghost that later floors keep beside the real row). Not after a swap: the bubble left with
+    // the view, and its durable row is in the floor the owner will see on coming back.
+    if (pendingUserId !== undefined && !viewMoved(ctx))
       set({
         messages: state.messages.map((m) => (m.id === pendingUserId ? { ...m, landed: true } : m)),
       });
@@ -1969,7 +2089,12 @@ async function streamTurn(
     // buffered confirm stays resumable (it's the one thing not persisted). No parallel render path.
     if (res.headers.get("content-type")?.includes("application/json")) {
       const payload = (await res.json()) as Record<string, unknown>;
-      if (payload.threadId) setWireThread(payload.threadId as string);
+      // O6's buffered adopt point: the turn already ran; after a swap its thread, floor, notes and status
+      // are the LEFT conversation's (the per-call pins below still seed — they are keyed by call id, not
+      // by view, and a buffered confirm's token is the one thing a visit back could not re-read).
+      const left = viewMoved(ctx);
+      if (payload.threadId)
+        adoptWireThread(ctx, payload.threadId as string, nonEmpty(payload.agent)); // refused when `left`
       const perm = payload.permission as
         | {
             callId?: string;
@@ -1995,6 +2120,7 @@ async function streamTurn(
         modeByCall[q.callId] = turnMode;
         skillsByCall[q.callId] = skillIds(q.skills) ?? turnSkills;
       }
+      if (left) return "accepted";
       // The thread THIS turn belongs to, captured BEFORE the reload await (verify-5, fix 3). The
       // notify calls below used to read `state.threadId` after it, so a `/new` interleaving during
       // the reload (the view is idle by then — `startNewThread` is allowed) re-namespaced this turn's
@@ -2003,9 +2129,14 @@ async function streamTurn(
       // Clear the streaming placeholder so the floor reload (which skips while "streaming") runs.
       set({ status: "idle", streamingId: null });
       await reloadFloor();
-      if (payload.state === "capped")
+      // A hop during the floor read (M1): `reloadFloor` discards its own floor, and the VIEW writes below —
+      // the capped note, the error status, the steer discovery — are the left conversation's too. The
+      // notifications are not view writes: they are keyed by the turn's own thread (`notifyThread`,
+      // captured before the await — verify-5 fix 3), so they still publish.
+      const here = !viewMoved(ctx);
+      if (here && payload.state === "capped")
         pushSystemNote("// reached the step limit — send a message to continue");
-      if (payload.state === "error") set({ status: "error" });
+      if (here && payload.state === "error") set({ status: "error" });
       // F1 (Codex MED-1) — the buffered transport announces the SAME occurrences the live reducer
       // does, through the SAME builders/keys: a turn that suspends on a confirm/question is exactly as
       // unattended here as it is over SSE. Published AFTER the reload so the announcement follows the
@@ -2020,7 +2151,7 @@ async function streamTurn(
         str(payload.state),
         isObj(payload.error) ? str(payload.error.message) : undefined,
       );
-      discoverSpawnedSteerTurn(); // D41 §3 — a buffered turn can also leave queued steers to a drain-B turn
+      if (here) discoverSpawnedSteerTurn(); // D41 §3 — a buffered turn can also leave queued steers to a drain-B turn
       return "accepted";
     }
 
@@ -2028,11 +2159,18 @@ async function streamTurn(
     // landed, so the server started a FRESH turn and streamed it (200, not 202). Adopt it as a live
     // turn — the reducer's message.start creates the bubble; we just need the view in "streaming" so it
     // renders + the Stop control appears. A normal/resume send is already streaming here (no-op).
-    if (getChatStatus() !== "streaming") set({ status: "streaming" });
     // FIX A — this 200 IS the live stream now (a fresh send's own turn, or a steer-race adoption of a
     // just-started turn B). Claim a fresh generation at the adopt point so a stale sibling stream (turn
     // A's trailing `done`) is dropped by the reducer and can never settle status under this turn.
-    claimStream(ctx);
+    // O6 — unless the view moved while the POST was in flight: the claim is refused, the view is not
+    // touched, and the reader is CANCELLED rather than held open for the whole left turn. The POST was
+    // never aborted — past the 200 the turn is detached server-side (D39) and runs on regardless; its
+    // terminal is cached there, and coming back re-attaches through the probe, not through this reader.
+    if (!claimStream(ctx)) {
+      await res.body.cancel().catch(() => {});
+      return "accepted";
+    }
+    if (getChatStatus() !== "streaming") set({ status: "streaming" });
     // Reduce the SSE stream through the shared byte-parser (each frame carries `id: turn_id:seq`,
     // fed to the seq gate + the re-attach cursor).
     await parseSSE(res.body, handle);
@@ -2051,8 +2189,9 @@ async function streamTurn(
       const cursor = lastTurnId ? `${lastTurnId}:${lastSeq}` : undefined;
       const tid = state.threadId;
       const reattached = tid ? await reattachTurn(tid, cursor) : false;
-      // (A re-attach that drove the turn home reloads the floor itself — D81, `reattachTurn`.)
-      if (!reattached) failStream("connection interrupted");
+      // (A re-attach that drove the turn home reloads the floor itself — D81, `reattachTurn`.) A hop
+      // during the recovery (M1): the re-attach bailed, and the failure is not the new view's to show.
+      if (!reattached && !viewMoved(ctx)) failStream("connection interrupted");
     } else {
       // D81 — the turn settled: re-read the durable floor (the sent bubble's server id + the tail's
       // `reply`). BEFORE the steer discovery, which reads the queued bubbles the floor carries over.
@@ -2076,6 +2215,16 @@ async function streamTurn(
     // stream must not re-attach or failStream off its own drop: the newer generation owns the view. A
     // never-claimed stream (gen −1: the fetch/setup threw before going live) still fails normally.
     if (ctx.gen >= 0 && ctx.gen !== streamGeneration) return "accepted";
+    // M1 — a send that never went live (the POST was refused or failed at the transport) after the view
+    // moved: no `failStream` into the view the owner is in. A 404 is dropped — the conversation it was
+    // sent to is gone, and the next visit there 404s and runs R29; anything else returns its words to the
+    // origin slot.
+    const leftOutcome = (): SendOutcome => {
+      if (taken) return "accepted";
+      if (!(e instanceof HttpRefusal && e.status === 404)) returnToOrigin();
+      return e instanceof TypeError ? "unknown" : "refused";
+    };
+    if (viewMoved(ctx)) return leftOutcome();
     // A THROWN read error (abrupt network loss, TCP reset) is the other half of the drop
     // case — the clean-EOF branch above already re-attaches; this one must too (final-review
     // CONCERN-1: without it a transient blip that recovers in seconds still failStreams a
@@ -2085,6 +2234,7 @@ async function streamTurn(
       const tid = state.threadId;
       const reattached = tid ? await reattachTurn(tid, cursor).catch(() => false) : false;
       if (reattached) return "accepted";
+      if (viewMoved(ctx)) return leftOutcome(); // a hop during the recovery — the same M1 disposition
     }
     // A 4xx refusal speaks the server's own sentence when it sent one (a 5xx keeps `<url> → <status>`,
     // which is also what flags the connection badge above).
@@ -2246,7 +2396,10 @@ export async function reattachTurn(
   requireIdle = false,
 ): Promise<boolean> {
   const url = `/api/agent/turns/${threadId}/stream${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`;
-  const ctx: TurnCtx = { claimed: true, settled: false, gen: -1 }; // no placeholder — a fresh message.start creates a bubble
+  // No placeholder — a fresh message.start creates a bubble. Bound to the VIEW it starts on (Phase 27 S6,
+  // M1): a hop while this re-attach is in flight (a drop's recovery, a probe) must not let it claim — its
+  // frames, its terminal, or its caller's `failStream` would land in the view swapped in.
+  const ctx: TurnCtx = { claimed: true, settled: false, gen: -1, view: viewHere() };
   const reduce = makeTurnReducer(ctx);
   // FIX C — the thread this re-attach operates on. Every await below re-checks the view still sits on it
   // (an async re-attach can resolve after a `/new` or a new-thread switch) and bails before mutating,
@@ -2397,18 +2550,20 @@ export async function reattachTurn(
   };
 
   for (let attempt = 0; attempt < 2; attempt++) {
+    // S6 — the retry re-checks: a view that moved during the first attempt is not re-fetched for.
+    if (viewMoved(ctx)) return false;
     try {
       const res = await fetch(url, { headers: { Accept: "text/event-stream" } });
       // C4-M1: a cold-probe re-attach must not attach if a user send flipped us to "streaming" during
       // the fetch await above — a second subscriber whose snapshot would rewind the seq gate
       // mid-stream. Bail BEFORE applying any frame (JSON branch or first SSE frame); close the body.
-      if (requireIdle && getChatStatus() === "streaming") {
+      // FIX A — otherwise from here this re-attach IS the live stream: claim a fresh generation so a
+      // stale sibling stream is dropped, and so our own settle below is guarded. S6 — the claim is
+      // REFUSED when the view moved during the fetch: the same bail, before any frame.
+      if ((requireIdle && getChatStatus() === "streaming") || !claimStream(ctx)) {
         await res.body?.cancel().catch(() => {});
         return false;
       }
-      // FIX A — from here this re-attach IS the live stream (it survived the requireIdle gate). Claim a
-      // fresh generation so a stale sibling stream is dropped, and so our own settle below is guarded.
-      claimStream(ctx);
       // Not live → JSON {active:false, terminal_status}: the turn ENDED (or lingered out) — the
       // durable floor has the truth, so reconcile from it and report handled (Slice-3 audit MED-2:
       // returning false here made a turn that COMPLETED during the drop render as a false
@@ -2432,6 +2587,9 @@ export async function reattachTurn(
         // doesn't drop the terminal_status (review fix): `capped` gets the step-limit note; `error`
         // settles to the error status; everything else goes idle as before.
         await reloadChat(true);
+        // S6 (M1) — and again AFTER the forced read: a hop during it leaves the terminal note / status /
+        // `failStream` below to the conversation left, never the view swapped in.
+        if (viewMoved(ctx) || ctx.gen !== streamGeneration) return false;
         const st = body.terminal_status;
         if (st === "capped")
           pushSystemNote("// reached the step limit — send a message to continue");
@@ -2725,17 +2883,31 @@ async function runCancel(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> 
   // A6/C4-H2: scope the cancel to THIS turn (the ref's own id) so a delayed Stop can't cancel/harvest a
   // successor turn — the server refuses/peeks a turn_id that doesn't match the live handle.
   const scopedTurn = ref.turnId;
+  // Phase 27 S6 (M1) — the VIEW this Stop was pressed in: the ref's thread at the current view generation.
+  // A hop is allowed while the cancel is pending (R9), so every VIEW write below — the status settle, the
+  // floor reload, the successor re-attach — is guarded on it; a cancel answering after the owner left
+  // never settles or reloads the view swapped in. The harvest is not a view write: it still applies to
+  // its ORIGIN thread's raw lines (and the draft — S8's per-conversation slot seam, like `returnToOrigin`).
+  const at = { view: { thread: threadId, gen: loadGen } };
+  const settleIdle = () => {
+    if (!viewMoved(at)) set({ status: "idle", streamingId: null });
+  };
+  const reloadHere = async () => {
+    if (!viewMoved(at)) await reloadChat(true);
+  };
   try {
     const res = await postCancel(threadId, scopedTurn);
     if (!res.ok) throw new Error(`cancel → ${res.status}`);
     const data = (await res.json()) as CancelResp;
-    // SCOPED MISMATCH — a successor turn is live; the peeked queue is NOT ours to harvest. Adopt it.
+    // SCOPED MISMATCH — a successor turn is live; the peeked queue is NOT ours to harvest. Adopt it —
+    // unless the owner left the view: a re-attach is a view write, so never one into the view swapped in.
     if (data.cancelled === false && data.active === true) {
+      if (viewMoved(at)) return;
       const ok = await reattachTurn(threadId, undefined, false);
       // Couldn't attach (the successor ended in the gap) → settle from the durable floor.
-      if (!ok && state.threadId === threadId) {
-        await reloadChat(true);
-        set({ status: "idle", streamingId: null });
+      if (!ok) {
+        await reloadHere();
+        settleIdle();
       }
       return;
     }
@@ -2745,8 +2917,8 @@ async function runCancel(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> 
     // calls to CANCELLED server-side, but the ATTACHED client's local call parts still render pending —
     // the live-cancel reply carries no active:false to trigger a reload, so without this a stopped-but-
     // attached turn would spin those parts forever. The stream's own `done{cancelled}` still settles.
-    if (data.active === false) set({ status: "idle", streamingId: null });
-    await reloadChat(true);
+    if (data.active === false) settleIdle();
+    await reloadHere();
   } catch {
     // LOST RESPONSE (socket drop) — retry the Stop ONCE: the backend REPLAYS the harvest receipt, so the
     // harvest is not lost (that is what the receipt is for). `harvestToDraft`'s signature keeps it single.
@@ -2756,15 +2928,15 @@ async function runCancel(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> 
         const data = (await res.json()) as CancelResp;
         if (!(data.cancelled === false && data.active === true))
           applyHarvest(threadId, data, harvest);
-        if (data.active === false) set({ status: "idle", streamingId: null });
-        await reloadChat(true);
+        if (data.active === false) settleIdle();
+        await reloadHere();
         return;
       }
     } catch {
       /* the retry also failed — fall back to a durable-floor settle below */
     }
-    await reloadChat(true);
-    set({ status: "idle", streamingId: null });
+    await reloadHere();
+    settleIdle();
   } finally {
     cancelInFlight = null;
   }
@@ -2902,7 +3074,9 @@ export async function sendMessage(
   const releaseUnspent = () => {
     if (claimed) return;
     releaseStaged(attachments);
-    if (previews.length) {
+    // Only while the bubble is still in the view: after a hop (S6) it left with the view it was sent
+    // from, and the view swapped in is not this send's to rewrite.
+    if (previews.length && state.messages.some((m) => m.id === tempUser.id)) {
       const messages = state.messages.flatMap((m) => {
         if (m.id !== tempUser.id) return [m];
         if (!body) return []; // attachment-only: nothing left to say
