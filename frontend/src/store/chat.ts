@@ -89,6 +89,15 @@ interface ChatState {
   // `false` (a sheet row, the roster door's `?agent=` read and a notification frame all name
   // non-archived conversations only; a wire mint is fresh).
   archived: boolean | null;
+  // The STREAMING turn was started by ANOTHER device and attached here by the visible M11 re-attach
+  // (D84 §12.3 M11; owner ruling 2026-10-10): auto-TTS stays silent for it — two devices side by side
+  // must not both speak. Set ONLY by that attach (`reattachTurn`'s go-live write, `foreign = true` from
+  // `applyThreadFrame`'s `running` branch) — and not when this device held queued steers going in (its own
+  // drain-B turn; `probeAndReattach`); every other streaming edge starts loud — `set()` resets it
+  // on the idle → streaming edge for any patch that does not name it (the own-send writers), and every
+  // other re-attach (cold load, reconnect, the interrupt paths) names it `false` — so it can never leak
+  // into the owner's next turn, and the owner's own turn re-attached after an app kill still speaks.
+  foreignTurn: boolean;
 }
 
 //: The chat store's persisted slice (D23 chokepoint, `store/persist`) — `{thread, home, responder,
@@ -170,6 +179,7 @@ let state: ChatState = {
   responder: null,
   threadAgent: null,
   archived: null,
+  foreignTurn: false,
 };
 let loaded = false;
 //: The chat view's LOAD GENERATION — app-owned cross-generation state (the D39/ACA precedent).
@@ -598,6 +608,16 @@ export interface ThreadFrame {
   chained: boolean;
 }
 
+//: THE LAZY-MINT HOLD (S10-C01, Sol's confirm — reproduced). While the view is THREAD-LESS and STREAMING
+//: (the window from Send to the mint's adoption: on the streaming transport until the `thread` head lands,
+//: on the buffered one for the whole first turn), the open view's identity is not known yet — any frame
+//: might be the minted conversation's own (announced by this view's transport) or an UNRELATED one's
+//: (owed a signal). Judging it then is wrong either way (the old ⑦ `open` swallowed the unrelated one's
+//: needs-you — LOST, not delayed), so `applyThreadFrame` HOLDS every frame of the window, whatever its
+//: state, and `set()` REPLAYS them through the same policy the moment the window closes (see `set`). No
+//: cap: the window is one turn, and the frames per conversation per turn are few.
+let heldFrames: ThreadFrame[] = [];
+
 /** THE FRAME CONSUMER'S POLICY (D84 §5) — called by `useEventStream` AFTER it has invalidated
  *  `['threads']` + `['agents']` (the dots, both lists; unconditional, whatever this does). It lives here
  *  because it reads the open view and its stream, and owns the notify builders:
@@ -611,27 +631,33 @@ export interface ThreadFrame {
  *    · `running` for the OPEN view's own conversation while this view is NOT streaming and the page is
  *      VISIBLE (the other device sent there, B9 — §12.3 M11) → probe + re-attach, so the visible device
  *      shows the turn; every other `running` → nothing (the dots carry it; a hidden page probes on return).
- *  "Open" also covers a thread-less view that is STREAMING (a lazy mint not yet adopted — fix ⑦).
+ *  A frame that lands while the view is thread-less AND streaming (a lazy mint not yet adopted) is HELD,
+ *  not judged — `heldFrames` above; `set()` replays it once the view's identity is known (S10-C01, which
+ *  replaced fix ⑦'s wider `open`).
  *  Whether a signal becomes an OS notification is the engine's gate, unchanged (R39: visible ⇒ the dots
  *  only; hidden ⇒ the notification). Nothing here plays audio: read-along rides the OPEN view's stream
  *  alone (§12.4 Q8). Synchronous — no await, so the view read cannot go stale under it. */
 export function applyThreadFrame(frame: ThreadFrame): void {
-  // A thread-less view that is STREAMING may be about to adopt THIS conversation (a lazy mint whose head
-  // has not landed yet — the buffered transport learns the id only from its JSON answer): its own transport
-  // announces the turn, so the frame must not (S10 fix ⑦ — else "needs you" beside "needs approval").
-  const open =
-    frame.threadId === state.threadId ||
-    (state.threadId === null && getChatStatus() === "streaming");
+  // The lazy-mint window (S10-C01): the view may be about to adopt THIS conversation, or it may be another
+  // one's — not knowable yet, so hold it for the replay (`set()` drains it when the window closes).
+  if (state.threadId === null && getChatStatus() === "streaming") {
+    heldFrames.push(frame);
+    return;
+  }
+  const open = frame.threadId === state.threadId;
   if (frame.state === "running") {
     // M11 on a VISIBLE page only (S10 fix ⑥ — "so the VISIBLE device shows the turn"): a hidden page
     // re-attaching would cross the view's streaming → idle edge in a pocket (auto-TTS speaks it); nothing
-    // is lost — the bridge's `returnToChat` probes when the page comes back.
+    // is lost — the bridge's `returnToChat` probes when the page comes back. `foreign = true`: this
+    // device did not start the turn, so the attach marks it `foreignTurn` and auto-TTS stays silent for
+    // it (owner ruling 2026-10-10 — two devices side by side must not both speak) — unless this device
+    // held queued steers going in (its own drain-B turn — decided in `probeAndReattach`).
     if (
       frame.threadId === state.threadId &&
       getChatStatus() !== "streaming" &&
       (typeof document === "undefined" || document.visibilityState === "visible") // `markSeen`'s guard
     )
-      void probeAndReattach(frame.threadId);
+      void probeAndReattach(frame.threadId, false, true);
     return;
   }
   if (open || frame.chained) return;
@@ -1078,10 +1104,42 @@ function sweepPreviews(next: readonly ChatMessage[]): void {
   }
 }
 
+// Two more invariants kept at THIS chokepoint (the `sweepPreviews` precedent — a rule every write must
+// honour lives where every write passes, never at a list of call sites):
+//
+//  · THE FOREIGN-TURN RESET (owner ruling 2026-10-10): on the idle → streaming EDGE, a patch that does
+//    not name `foreignTurn` starts the turn LOUD (`foreignTurn: false`). Only the visible M11 attach names
+//    it; none of the own-send `status: "streaming"` writers has to, and the flag can never outlive the
+//    attached turn into the owner's next one.
+//  · THE HELD-FRAME DRAIN (S10-C01): the moment the view stops being thread-less-and-streaming, every
+//    frame `applyThreadFrame` held in that window is replayed through it, in arrival order. This ONE rule
+//    IS the three ruled drain points — the ADOPTION (`setWireThread`'s mint writes `threadId`), the
+//    stream's END or FAILURE (any idle/error writer), a NAVIGATION (`swapView`) — and it lives here, not
+//    as three calls, because the stream's end alone has eight writers: a missed one would hold frames
+//    until the next navigation, the very silent-loss class the hold exists to close. The queue is swapped
+//    out FIRST, so a replay can never re-enter the array it drains. Cost: one `length` read per `set()`
+//    (per streamed token) — O(1) whenever nothing is held.
+//    · The ADOPTED id's own frames need NO filter: after a mint the minted conversation IS the open view,
+//      so the replay finds `open` true (its terminal / `suspended` do nothing — this view's own transport
+//      announced them) and its `running` finds the view streaming (nothing).
+//    · Recorded, correct: a send that FAILS before any id (still thread-less, now idle) replays everything
+//      as BACKGROUND frames — this device views none of them; a hop (`swapView`) inside the window
+//      replays against the NEW view — the left mint's own terminal then publishes under
+//      `turn-done:<thread>:<turn>`, the key the buffered path's post-hop publish uses too, so the engine
+//      collapses the pair (R9: the left turn is a background conversation now).
+//    · The replay makes no synchronous chat write: `applyThreadFrame` only publishes (the notify builders,
+//      `pressure = false`) or starts `probeAndReattach`, whose first act is an awaited `fetch`.
 function set(next: Partial<ChatState>) {
   if (next.messages !== undefined) sweepPreviews(next.messages);
+  if (next.status === "streaming" && state.status !== "streaming" && next.foreignTurn === undefined)
+    next = { ...next, foreignTurn: false };
   state = { ...state, ...next };
   emit();
+  if (heldFrames.length && !(state.threadId === null && state.status === "streaming")) {
+    const q = heldFrames;
+    heldFrames = [];
+    for (const f of q) applyThreadFrame(f);
+  }
 }
 
 export function useChat(): ChatState {
@@ -3322,11 +3380,16 @@ function overlaySyncCall(
  * the fetch resolves and BEFORE applying ANY frame (JSON branch or first SSE frame), bail out
  * (returning false, cancelling the body) if we're already streaming. Interrupt-path re-attaches
  * (`streamTurn`) pass false — there the drop is real and re-attach is the recovery.
+ *
+ * `foreign` (D84 §12.3 M11, owner ruling 2026-10-10) — ONLY the visible M11 attach passes true (through
+ * `probeAndReattach` → `attachOrSettle`): the turn was started by ANOTHER device, so the go-live write
+ * marks it `foreignTurn` and auto-TTS stays silent for it. Every other caller stays loud.
  */
 export async function reattachTurn(
   threadId: string,
   cursor?: string,
   requireIdle = false,
+  foreign = false,
 ): Promise<boolean> {
   const url = `/api/agent/turns/${threadId}/stream${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`;
   // No placeholder — a fresh message.start creates a bubble. Bound to the VIEW it starts on (Phase 27 S6,
@@ -3449,7 +3512,8 @@ export async function reattachTurn(
         pushSystemNote("// reached the step limit — send a message to continue");
       set({ status: termState === "error" ? "error" : "idle", streamingId: null });
     } else {
-      set({ status: "streaming", streamingId: openId });
+      // `foreign` (only the visible M11 attach): the OTHER device's turn — silent for auto-TTS here.
+      set({ status: "streaming", streamingId: openId, foreignTurn: foreign });
     }
     // (d) F1 (Codex MED-1) — ANNOUNCE what the snapshot reconstructed, through the shared builders.
     // This is the transport that matters most for notifications: a phone that slept through the live
@@ -3623,8 +3687,8 @@ const DRAIN_B_REPROBE_MS = 250;
 
 /** Re-attach if the probe says the turn is live; else settle from the durable floor. Shared by the
  *  first probe and the HIGH-2 re-probe. Returns nothing; the caller has already reconciled the queue. */
-async function attachOrSettle(threadId: string): Promise<void> {
-  const ok = await reattachTurn(threadId, undefined, true);
+async function attachOrSettle(threadId: string, foreign = false): Promise<void> {
+  const ok = await reattachTurn(threadId, undefined, true, foreign);
   // FIX C — the re-attach awaited; bail if the owner switched threads meanwhile (never settle/reload a
   // thread we have left). The settle only fires when WE left the view streaming and couldn't attach.
   if (state.threadId !== threadId) return;
@@ -3639,7 +3703,7 @@ async function attachOrSettle(threadId: string): Promise<void> {
  *  the initial paint. If the re-attach set the view streaming but couldn't reach a terminal, reconcile
  *  from the durable floor so the cold view never hangs spinning. Also reconciles the D41 steer_queue so
  *  a reload / cold load re-renders any still-queued steers instead of dropping them (§3). */
-async function probeAndReattach(threadId: string, force = false): Promise<void> {
+async function probeAndReattach(threadId: string, force = false, foreign = false): Promise<void> {
   try {
     const probe = (await (await fetch(`/api/agent/turns/${threadId}`)).json()) as {
       active?: boolean;
@@ -3653,7 +3717,14 @@ async function probeAndReattach(threadId: string, force = false): Promise<void> 
     // rendered yet — the reconcile below may DROP those bubbles without ever reloading the floor.
     // `force` (FIX D) counts as "had queued" so a DELETE-triggered probe still reloads the drained
     // entry's durable floor even after its own optimistic bubble was dropped.
-    const hadQueued = force || state.messages.some((m) => m.queued);
+    // …and the same read decides `foreign` (Opus F1, the S10-C01 fix wave): a device that held queued
+    // steer bubbles going in has a stake in the turn it chains into — the owner's own drain-B steer turn,
+    // whose `running` frame lands inside the settle path's `await reloadFloor()` on an idle + visible view
+    // and so reaches here through the M11 branch — so that attach stays LOUD. It must be read HERE, before
+    // the `reconcileSteerQueue` below, which renders the OTHER device's steers as queued bubbles on this
+    // one (read after it, every foreign turn carrying steers would turn loud).
+    const queued = state.messages.some((m) => m.queued);
+    const hadQueued = force || queued;
     // Re-render queued steers from server truth BEFORE any streaming bail — the reconcile is truthful
     // regardless of the attach decision (kills the vanished-steer double-send hazard on a reload).
     if (Array.isArray(probe.steer_queue)) reconcileSteerQueue(threadId, probe.steer_queue);
@@ -3685,7 +3756,7 @@ async function probeAndReattach(threadId: string, force = false): Promise<void> 
         if (state.threadId !== threadId) return;
         if (re.active) {
           if (Array.isArray(re.steer_queue)) reconcileSteerQueue(threadId, re.steer_queue);
-          await attachOrSettle(threadId);
+          await attachOrSettle(threadId, foreign && !queued);
           return;
         }
         // Still not live → the durable floor is the truth. Reload it (renders the exec pair / a
@@ -3697,7 +3768,7 @@ async function probeAndReattach(threadId: string, force = false): Promise<void> 
       }
       return;
     }
-    await attachOrSettle(threadId);
+    await attachOrSettle(threadId, foreign && !queued);
   } catch {
     /* probe / re-attach failed — the plain history is already shown */
   }

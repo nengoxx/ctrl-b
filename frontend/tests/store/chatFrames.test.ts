@@ -27,6 +27,8 @@ vi.mock("../../src/hooks/useNotificationPrefs", () => ({
 const L2 = "a2".repeat(16);
 const L1 = "a1".repeat(16);
 const E1 = "e1".repeat(16);
+/** A conversation the next THREAD-LESS send mints (S10-C01's tests). */
+const L3 = "a3".repeat(16);
 
 type Frame = { event: string; data: unknown; id?: string };
 let calls: string[];
@@ -36,21 +38,47 @@ let chatFrames: Frame[] | null;
 let chatJson: Record<string, unknown> | null;
 /** Is a turn live on the server — what the probe (`GET /api/agent/turns/<id>`) answers. */
 let turnActive: boolean;
+/** The probe answer's `steer_queue` (the server's still-pending steers — `SteerQueueEntry`), when set. */
+let probeQueue: { entry_id: string; kind: string; text: string }[] | null;
 /** Frames a re-attach's `…/stream` delivers — and then the stream stays OPEN (the turn still runs). */
 let attachFrames: Frame[];
 /** History reads parked until released, by thread id. */
 let heldHistory: Map<string, () => void>;
+/** A CONTROLLED stream the next chat POST answers with (wins over `chatJson`/`chatFrames` when set). */
+let chatStream: Response | null;
+/** A CONTROLLED stream a re-attach's `…/stream` answers with (wins over `attachFrames` when set). */
+let attachStream: Response | null;
 
 const json = (v: unknown): Response =>
   ({ ok: true, status: 200, json: async () => v }) as unknown as Response;
+const sseBytes = (frames: Frame[]): Uint8Array =>
+  new TextEncoder().encode(
+    frames
+      .map(
+        (f) =>
+          `event: ${f.event}\r\n${f.id ? `id: ${f.id}\r\n` : ""}data: ${JSON.stringify(f.data)}\r\n\r\n`,
+      )
+      .join(""),
+  );
+/** An SSE answer the test drives frame by frame — `push` delivers, `close` ends the stream. */
+function controlled() {
+  let ctl!: ReadableStreamDefaultController<Uint8Array>;
+  const res = {
+    ok: true,
+    status: 200,
+    body: new ReadableStream<Uint8Array>({ start: (c) => void (ctl = c) }),
+    headers: {
+      get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+    },
+  } as unknown as Response;
+  return {
+    res,
+    push: (frames: Frame[]) => ctl.enqueue(sseBytes(frames)),
+    close: () => ctl.close(),
+  };
+}
 const sse = (frames: Frame[], keepOpen = false): Response => {
-  const text = frames
-    .map(
-      (f) =>
-        `event: ${f.event}\r\n${f.id ? `id: ${f.id}\r\n` : ""}data: ${JSON.stringify(f.data)}\r\n\r\n`,
-    )
-    .join("");
-  const bytes = new TextEncoder().encode(text);
+  const bytes = sseBytes(frames);
   return {
     ok: true,
     status: 200,
@@ -81,6 +109,7 @@ function route(input: RequestInfo | URL, init?: RequestInit): Promise<Response> 
   const method = init?.method ?? "GET";
   calls.push(`${method} ${url}`);
   if (method === "POST" && url === "/api/agent/chat") {
+    if (chatStream !== null) return Promise.resolve(chatStream);
     if (chatJson !== null)
       return Promise.resolve({
         ok: true,
@@ -95,7 +124,7 @@ function route(input: RequestInfo | URL, init?: RequestInit): Promise<Response> 
     return Promise.resolve(sse(chatFrames));
   }
   if (url.startsWith("/api/agent/turns/") && url.includes("/stream"))
-    return Promise.resolve(sse(attachFrames, true));
+    return Promise.resolve(attachStream ?? sse(attachFrames, true));
   const history = (id: string) =>
     json([msg(`${id}-u`, id, "user"), msg(`${id}-a`, id, "assistant")]);
   if (url.startsWith("/api/threads/") && url.endsWith("/messages")) {
@@ -106,7 +135,10 @@ function route(input: RequestInfo | URL, init?: RequestInit): Promise<Response> 
   return Promise.resolve().then(() => {
     if (url.startsWith("/api/threads/") && url.endsWith("/messages"))
       return history(url.split("/")[3]);
-    if (url.startsWith("/api/agent/turns/")) return json({ active: turnActive });
+    if (url.startsWith("/api/agent/turns/"))
+      return json(
+        probeQueue ? { active: turnActive, steer_queue: probeQueue } : { active: turnActive },
+      );
     return json({});
   });
 }
@@ -160,7 +192,10 @@ beforeEach(() => {
   chatFrames = null;
   chatJson = null;
   turnActive = false;
+  probeQueue = null;
   attachFrames = [];
+  chatStream = null;
+  attachStream = null;
   heldHistory = new Map();
   holdNext.clear();
   vi.stubGlobal("fetch", vi.fn(route));
@@ -505,5 +540,314 @@ describe("the buffered transport and the frame — ONE key per occurrence", () =
       await sent;
     });
     expect(f.signals.map((s) => s.key)).toEqual([`perm:${L2}:c1`]); // the buffered branch's, alone
+  });
+});
+
+// ── S10-C01 — THE LAZY-MINT HOLD: frames of a thread-less STREAMING window are held, then replayed ──────
+
+/** The needs-you signal an E1 `suspended` frame (turn `tE5`) owes — Sol's reproduction's expectation. */
+const EMMA_NEEDS_YOU = {
+  cls: "agent_input",
+  key: `agent-input:${E1}:tE5`,
+  title: "Emma needs you",
+  body: "open the conversation to continue",
+  focus: "agent",
+  thread: E1,
+  home: "emma",
+};
+
+describe("S10-C01 — the hold-and-replay of `thread` frames during a thread-less streaming send", () => {
+  /** The view thread-less, then the owner's send — its POST answered by `answer` (or left hanging). */
+  async function threadlessSend(f: Awaited<ReturnType<typeof setup>>) {
+    act(() => f.chat.resetToThreadless());
+    let sent!: Promise<unknown>;
+    act(() => {
+      sent = f.chat.sendMessage("hello"); // thread-less → the server mints L3
+    });
+    await act(async () => {});
+    expect(f.chat.getChatStatus()).toBe("streaming");
+    expect(f.state().threadId).toBeNull();
+    return { sent }; // boxed — an async function returning the promise itself would await it
+  }
+
+  it('Sol\'s reproduction: an E1 `suspended` during an L mint is HELD, then "Emma needs you" publishes ONCE at adoption', async () => {
+    const f = await setup();
+    const live = controlled();
+    chatStream = live.res;
+    await threadlessSend(f);
+    f.frame({ threadId: E1, state: "suspended", turnId: "tE5", agent: "emma" });
+    expect(f.signals).toEqual([]); // held — not judged, not lost
+    await act(async () => {
+      live.push([{ event: "thread", data: { threadId: L3, agent: "lynette" } }]);
+    });
+    await vi.waitFor(() => expect(f.state().threadId).toBe(L3));
+    expect(f.signals).toEqual([EMMA_NEEDS_YOU]);
+  });
+
+  it("the ADOPTED id's own frames drop at replay with no filter: L's `running` + `completed` → no turn-done for L, no probe; the stream's own terminal is the one signal", async () => {
+    const f = await setup();
+    const live = controlled();
+    chatStream = live.res;
+    await threadlessSend(f);
+    f.frame({ threadId: L3, state: "running", turnId: "tL", agent: "lynette" });
+    f.frame({ threadId: L3, state: "completed", turnId: "tL", agent: "lynette" });
+    f.frame({ threadId: E1, state: "suspended", turnId: "tE5", agent: "emma" });
+    await act(async () => {
+      live.push([{ event: "thread", data: { threadId: L3, agent: "lynette" } }]);
+    });
+    await vi.waitFor(() => expect(f.state().threadId).toBe(L3));
+    expect(f.signals).toEqual([EMMA_NEEDS_YOU]); // L's frames: the open view's — nothing
+    expect(f.probes()).toEqual([]); // L's `running` found the view streaming
+    await act(async () => {
+      live.push([
+        { event: "message.start", data: { messageId: "mL" }, id: "tL:1" },
+        { event: "done", data: { state: "completed" }, id: "tL:2" },
+      ]);
+      live.close();
+    });
+    await vi.waitFor(() => expect(f.chat.getChatStatus()).toBe("idle"));
+    const done = f.signals.filter((s) => s.cls === "turn_done");
+    expect(done.map((s) => [s.key, s.title])).toEqual([
+      [`turn-done:${L3}:tL`, "Lynette finished"], // the stream's — once
+    ]);
+  });
+
+  it('the BUFFERED variant: the E1 `suspended` is held through the whole first turn, published once the JSON adopts; L\'s own `completed` (frame AND answer) → ONE "Lynette finished"', async () => {
+    const f = await setup();
+    let answer!: (r: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(
+      () => new Promise<Response>((resolve) => (answer = resolve)),
+    );
+    const { sent } = await threadlessSend(f);
+    f.frame({ threadId: E1, state: "suspended", turnId: "tE5", agent: "emma" });
+    f.frame({ threadId: L3, state: "completed", turnId: "t9", agent: "lynette" });
+    expect(f.signals).toEqual([]);
+    await act(async () => {
+      answer({
+        ok: true,
+        status: 200,
+        body: {},
+        headers: { get: () => "application/json" },
+        json: async () => ({
+          threadId: L3,
+          agent: "lynette",
+          title: null,
+          state: "completed",
+          turn_id: "t9",
+        }),
+      } as unknown as Response);
+      await sent;
+    });
+    expect(f.state().threadId).toBe(L3);
+    expect(f.signals.map((s) => [s.key, s.title])).toEqual([
+      [`agent-input:${E1}:tE5`, "Emma needs you"], // replayed at the mint (adopt runs before the idle write)
+      [`turn-done:${L3}:t9`, "Lynette finished"], // the buffered branch's, alone
+    ]);
+  });
+
+  it("the FAILURE variant: the POST rejects before any id → the held E1 frame replays as a background frame → the signal publishes", async () => {
+    const f = await setup();
+    let fail!: (e: Error) => void;
+    vi.mocked(fetch).mockImplementationOnce(
+      () => new Promise<Response>((_, reject) => (fail = reject)),
+    );
+    const { sent } = await threadlessSend(f);
+    f.frame({ threadId: E1, state: "suspended", turnId: "tE5", agent: "emma" });
+    expect(f.signals).toEqual([]);
+    await act(async () => {
+      fail(new TypeError("network down"));
+      await sent;
+    });
+    expect(f.state().threadId).toBeNull();
+    expect(f.chat.getChatStatus()).not.toBe("streaming");
+    expect(f.signals).toEqual([EMMA_NEEDS_YOU]);
+  });
+
+  it("the NAVIGATION variant: opening another conversation inside the window replays against the NEW view", async () => {
+    const f = await setup();
+    chatFrames = null; // the POST hangs — the window stays open
+    await threadlessSend(f);
+    f.frame({ threadId: L1, state: "completed", turnId: "t1", agent: "lynette" }); // the view-to-be's
+    f.frame({ threadId: E1, state: "suspended", turnId: "tE5", agent: "emma" });
+    expect(f.signals).toEqual([]);
+    await act(async () => {
+      await f.chat.openThread(L1, "lynette");
+    });
+    expect(f.state().threadId).toBe(L1);
+    expect(f.signals).toEqual([EMMA_NEEDS_YOU]); // L1 is open now — its terminal is the view's, nothing
+  });
+
+  it("no hold OUTSIDE the window: a thread-less IDLE view acts at once", async () => {
+    const f = await setup();
+    act(() => f.chat.resetToThreadless());
+    expect(f.chat.getChatStatus()).toBe("idle");
+    f.frame({ threadId: E1, state: "suspended", turnId: "tE5", agent: "emma" });
+    expect(f.signals).toEqual([EMMA_NEEDS_YOU]);
+  });
+
+  it("no hold OUTSIDE the window: a view WITH a thread that streams judges an unrelated frame at once (the plain `open` rule)", async () => {
+    const f = await setup(); // the view is E1
+    chatFrames = null;
+    void f.chat.sendMessage("hello");
+    await act(async () => {});
+    expect(f.chat.getChatStatus()).toBe("streaming");
+    f.frame({ state: "suspended" }); // L2 — not the open view
+    f.frame({ threadId: E1, state: "completed", turnId: "tE" }); // E1 — the open view: nothing
+    expect(f.signals.map((s) => [s.key, s.title])).toEqual([
+      [`agent-input:${L2}:t9`, "Lynette needs you"],
+    ]);
+  });
+});
+
+// ── the owner's ruling 2026-10-10 — a VISIBLE M11 attach is a FOREIGN turn: silent for auto-TTS ─────────
+
+describe("`foreignTurn` — set ONLY by the visible M11 attach", () => {
+  /** M11: the desktop's turn on E1 attaches here (a `turn.sync` → live), then ends. */
+  async function foreignAttach(f: Awaited<ReturnType<typeof setup>>) {
+    turnActive = true;
+    const live = controlled();
+    attachStream = live.res;
+    f.frame({ threadId: E1, state: "running", agent: "emma" });
+    await act(async () => {
+      live.push([
+        {
+          event: "turn.sync",
+          data: { message: { id: "m-desk", text: "from the desktop" }, calls: [], seq: 1 },
+          id: "tD:1",
+        },
+      ]);
+    });
+    await vi.waitFor(() => expect(f.chat.getChatStatus()).toBe("streaming"));
+    expect(f.probes()).toEqual([`GET /api/agent/turns/${E1}`]);
+    expect(f.state().foreignTurn).toBe(true);
+    await act(async () => {
+      live.push([{ event: "done", data: { state: "completed" }, id: "tD:2" }]);
+      live.close();
+    });
+    await vi.waitFor(() => expect(f.chat.getChatStatus()).toBe("idle"));
+    attachStream = null;
+  }
+
+  it("the M11 attach leaves `foreignTurn === true`; the owner's next OWN send flips it to false at the streaming edge", async () => {
+    const f = await setup();
+    expect(f.state().foreignTurn).toBe(false);
+    await foreignAttach(f);
+    chatFrames = null; // the owner's own turn streams on
+    void f.chat.sendMessage("my turn");
+    await act(async () => {});
+    expect(f.chat.getChatStatus()).toBe("streaming");
+    expect(f.state().foreignTurn).toBe(false);
+  });
+
+  it("Opus F1 — the owner's OWN drain-B steer turn stays LOUD: its `running` frame lands inside the settle's floor read, on an idle + visible view holding a QUEUED steer → the attach lands with `foreignTurn === false`", async () => {
+    const f = await setup();
+    await act(async () => {
+      await f.chat.openThread(L2, "lynette");
+    });
+    const own = controlled();
+    chatStream = own.res; // the owner's own turn on L2
+    void f.chat.sendMessage("first");
+    await act(async () => {
+      own.push([{ event: "message.start", data: { messageId: "mO" }, id: "tO:1" }]);
+    });
+    expect(f.chat.getChatStatus()).toBe("streaming");
+    chatStream = null;
+    vi.mocked(fetch).mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: true,
+        status: 202,
+        headers: { get: () => "application/json" },
+        json: async () => ({ entry_id: "q1", turn_id: "tO" }),
+      } as unknown as Response),
+    );
+    await act(async () => {
+      await f.chat.sendMessage("and also this"); // a STEER — enqueued (202), a queued bubble
+    });
+    expect(f.state().messages.some((m) => m.queued === "q1")).toBe(true);
+    holdNext.add(L2); // the settle's `reloadFloor` parks — the drain-B frame lands inside it
+    await act(async () => {
+      own.push([{ event: "done", data: { state: "completed" }, id: "tO:2" }]);
+      own.close();
+    });
+    await vi.waitFor(() => expect(heldHistory.has(L2)).toBe(true));
+    expect(f.chat.getChatStatus()).toBe("idle");
+    turnActive = true; // the drain-B steer turn is live
+    const drainB = controlled();
+    attachStream = drainB.res;
+    f.frame({ threadId: L2, state: "running", turnId: "tB", agent: "lynette" }); // → the M11 branch
+    await vi.waitFor(() =>
+      expect(calls.some((c) => c.startsWith(`GET /api/agent/turns/${L2}/stream`))).toBe(true),
+    );
+    // The attach's own forced reload answers at once (the NEXT fetch); the settle's floor stays parked,
+    // so the attach goes live INSIDE the owner's settle — the window F1 names.
+    vi.mocked(fetch).mockImplementationOnce(() =>
+      Promise.resolve(json([msg(`${L2}-u`, L2, "user"), msg(`${L2}-a`, L2, "assistant")])),
+    );
+    await act(async () => {
+      drainB.push([
+        {
+          event: "turn.sync",
+          data: { message: { id: "mB", text: "the steered reply" }, calls: [], seq: 1 },
+          id: "tB:1",
+        },
+      ]);
+    });
+    await vi.waitFor(() => expect(f.chat.getChatStatus()).toBe("streaming"));
+    expect(f.state().streamingId).toBe("mB");
+    expect(f.state().foreignTurn).toBe(false); // the owner's own steered reply speaks
+    await act(async () => heldHistory.get(L2)?.()); // the parked floor lands on a live view: discarded
+    expect(f.state().foreignTurn).toBe(false);
+  });
+
+  it("the plain M11 case whose probe carries the OTHER device's `steer_queue` stays FOREIGN: the reconcile renders its queued bubbles here DURING the probe, after the `queued` read", async () => {
+    const f = await setup();
+    await act(async () => {
+      await f.chat.openThread(L2, "lynette");
+    });
+    expect(f.state().messages.some((m) => m.queued)).toBe(false); // nothing queued on this device
+    turnActive = true; // the desktop's turn is live…
+    probeQueue = [{ entry_id: "qD", kind: "message", text: "the desktop's steer" }]; // …with its steer
+    const live = controlled();
+    attachStream = live.res;
+    calls = [];
+    f.frame({ threadId: L2, state: "running", turnId: "tD", agent: "lynette" });
+    await vi.waitFor(() =>
+      expect(calls.some((c) => c.startsWith(`GET /api/agent/turns/${L2}/stream`))).toBe(true),
+    );
+    expect(f.state().messages.some((m) => m.queued === "qD")).toBe(true); // rendered by the reconcile
+    await act(async () => {
+      live.push([
+        {
+          event: "turn.sync",
+          data: {
+            message: { id: "m-desk", text: "from the desktop" },
+            calls: [],
+            seq: 1,
+            steer_queue: probeQueue,
+          },
+          id: "tD:1",
+        },
+      ]);
+    });
+    await vi.waitFor(() => expect(f.chat.getChatStatus()).toBe("streaming"));
+    expect(f.state().foreignTurn).toBe(true); // the other device's turn — silent here
+  });
+
+  it("a cold-load / reconnect re-attach (`reconcileChat`) stays LOUD — `foreignTurn` false", async () => {
+    const f = await setup();
+    await foreignAttach(f); // the flag is up from the last (foreign) turn…
+    turnActive = true;
+    attachFrames = [
+      {
+        event: "turn.sync",
+        data: { message: { id: "m-own", text: "my own turn" }, calls: [], seq: 1 },
+        id: "tO:1",
+      },
+    ];
+    await act(async () => {
+      await f.chat.reconcileChat();
+    });
+    await vi.waitFor(() => expect(f.chat.getChatStatus()).toBe("streaming"));
+    expect(f.state().foreignTurn).toBe(false); // …and the owner's own re-attached turn is loud again
   });
 });
