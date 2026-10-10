@@ -5,12 +5,12 @@ import { useAgentArt } from "../hooks/useAgentArt";
 import { useAgentRoster } from "../hooks/useAgents";
 import {
   flattenThreads,
+  THREAD_DOT_WORDS,
   threadDot,
   trimThreads,
   useDeleteThread,
   useRenameThread,
   useThreads,
-  type ThreadDot,
 } from "../hooks/useThreads";
 import { relativeTime } from "../lib/relativeTime";
 import {
@@ -40,8 +40,8 @@ import { FocalFace } from "./FocalFace";
 // on top (`/new` for the home, with the O28 "already new" rule), each row = label · preview · time · the
 // §5 dot, the OPEN one marked; a row's `⋯` discloses Rename · Delete (the D81 `.who-acts` row pattern);
 // "Show older" while the last page came back full. Its own failures are TOASTS (visible over the sheet).
-// SEAM (S10): the `thread` frame consumer keeps these dots live; today the list refreshes on the store's
-// stale bus, a focus refetch, and every rename/delete.
+// The dots stay live through the `thread` frame consumer (S10 — `hooks/useEvents` invalidates
+// `['threads']` on every frame), the store's stale bus, a focus refetch, and every rename/delete.
 
 /** The sheet's detent memory key (`store/sheetSnap`) — one per sheet identity. */
 const SNAP_KEY = "conversations";
@@ -50,13 +50,6 @@ const rememberSnap = (snap: SheetDetent): void => setSheetSnap(SNAP_KEY, snap);
 /** The homes a mounted sheet body is showing right now (a count per home) — the close path's trim leaves
  *  a list alone while a body shows it again. */
 const liveBodies = new Map<string, number>();
-
-/** The row dot's words — the row's accessible description (the dot itself is decoration). */
-const DOT_WORDS: Record<ThreadDot, string> = {
-  "needs-you": "needs you",
-  running: "a reply is running",
-  unread: "unread",
-};
 
 export function ConversationsSheet() {
   const open = useConversationsSheetOpen();
@@ -189,7 +182,7 @@ function SheetBody({ home, headId }: { home: string; headId: string }) {
                   type="button"
                   className="cvs-row"
                   aria-current={isOpen ? "true" : undefined}
-                  aria-description={dot ? DOT_WORDS[dot] : undefined}
+                  aria-description={dot ? THREAD_DOT_WORDS[dot] : undefined}
                   onClick={() => pick(row)}
                 >
                   <span className="cvs-main">
@@ -203,7 +196,7 @@ function SheetBody({ home, headId }: { home: string; headId: string }) {
                   </span>
                   <span className="cvs-meta">
                     <span className="cvs-time">{relativeTime(row.updated_at)}</span>
-                    {dot && <span className="cvs-dot" data-state={dot} aria-hidden />}
+                    {dot && <span className="thread-dot" data-state={dot} aria-hidden />}
                   </span>
                 </button>
                 <button

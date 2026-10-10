@@ -982,7 +982,11 @@ async def _turn_response(
         # turns are server-owned + cancellable for free (re-attach is documented degraded — the PWA
         # always streams).
         payload = await collect_turn(_consume())
-        return JSONResponse({**head, **payload})
+        # `turn_id` (D84 §5, Phase 27 S10): the handle's — the SAME id the turn's `thread` frames carry
+        # (and the SSE frame ids' prefix), so a client keys the buffered terminal's notification exactly
+        # as the frame consumer keys a background one (`turn-done:<thread>:<turn>`) and never buzzes twice
+        # for one turn. Additive: nothing older reads it.
+        return JSONResponse({**head, **payload, "turn_id": handle.turn_id})
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         yield {"event": "thread", "data": json.dumps(head)}

@@ -31,8 +31,8 @@ export function ChatHeaderActions() {
  *  answers (R36), and is disabled while the home is UNKNOWN (`useViewHome` = null) — no surface runs
  *  against a home this device cannot name. The §5 DOT: the strongest state among the home's OTHER
  *  conversations, from `['threads', home]` — enabled here, sheet closed, because the dot needs it.
- *  SEAM (S10): the `thread` frame consumer will invalidate that key live; until then the bridge's stale
- *  bus and a focus refetch are its freshness. */
+ *  Live through the `thread` frame consumer (S10 — `hooks/useEvents` invalidates `['threads']` on every
+ *  frame), beside the bridge's stale bus and a focus refetch. */
 function ConversationsButton() {
   const home = useViewHome();
   const openId = useChatSlice((s) => s.threadId);
@@ -53,7 +53,7 @@ function ConversationsButton() {
         <path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2z" />
         <path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1" />
       </Glyph>
-      {dot && <span className="cvs-dot" data-state={dot} aria-hidden />}
+      {dot && <span className="thread-dot" data-state={dot} aria-hidden />}
     </button>
   );
 }

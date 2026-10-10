@@ -137,3 +137,48 @@ describe("notify-sw · no live client (the page died)", () => {
     expect(clientsApi.openWindow).toHaveBeenCalledWith("/");
   });
 });
+
+// ── Phase 27 S10 — the conversation a tap opens (D84 §5 O2, seam ③) ─────────────────────────────────
+
+const T = "a2".repeat(16); // a conversation id: a uuid4's hex
+
+describe("notify-sw · the conversation an agent-class tap names", () => {
+  it("a live client: `thread` + `home` ride the routing message (the page's router validates them)", async () => {
+    const c = client();
+    clientsApi.matchAll = vi.fn(() => Promise.resolve([c]));
+    await tap({ focus: "agent", key: `turn-done:${T}:t9`, thread: T, home: "lynette" });
+    expect(c.postMessage).toHaveBeenCalledWith({
+      type: "ctrlb:notification-click",
+      focus: "agent",
+      thread: T,
+      home: "lynette",
+    });
+  });
+
+  it("(c) the page died: opens `/?tab=agent&thread=<id>` for a valid id — no `home` on the URL", async () => {
+    await tap({ focus: "agent", thread: T, home: "lynette" });
+    expect(clientsApi.openWindow).toHaveBeenCalledWith(`/?tab=agent&thread=${T}`);
+  });
+
+  it("…and plain `/?tab=agent` for anything that is not a conversation id — never interpolated blind", async () => {
+    for (const bad of [
+      "not-hex",
+      T.toUpperCase(),
+      T.slice(1),
+      `${T}&tab=conf`,
+      `x#${T}`,
+      { id: T },
+      42,
+      null,
+    ]) {
+      clientsApi.openWindow.mockClear();
+      await tap({ focus: "agent", thread: bad });
+      expect(clientsApi.openWindow).toHaveBeenCalledExactlyOnceWith("/?tab=agent");
+    }
+  });
+
+  it("a `thread` on a non-agent destination is ignored — the fleet tab opens alone", async () => {
+    await tap({ focus: "fleet", thread: T });
+    expect(clientsApi.openWindow).toHaveBeenCalledWith("/?tab=fleet");
+  });
+});

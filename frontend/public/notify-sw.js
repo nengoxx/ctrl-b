@@ -10,8 +10,9 @@
 // fires on the phone, which is the primary client. Before this file the tap informed but never
 // navigated ("tapping lands on the Android home screen").
 //
-// The page half is `src/hooks/useForegroundNotifications.ts`: it puts `{focus, key}` into
-// `options.data` (which survives the tray) and owns the ONE router both paths call.
+// The page half is `src/hooks/useForegroundNotifications.ts`: it puts `{focus, key, thread, home}` into
+// `options.data` (which survives the tray) and owns the ONE router both paths call. `thread` + `home`
+// (Phase 27 S10, D84 §5 O2) are the conversation an agent-class tap opens.
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
@@ -31,7 +32,13 @@ self.addEventListener("notificationclick", (event) => {
         // and may reject outright; `postMessage` has no transient-activation requirement, so the tab
         // switch must not ride on focus succeeding. Then even on the broken engine the owner arrives
         // on the notification's tab whenever they reach the app by any route.
-        client.postMessage({ type: "ctrlb:notification-click", focus: data.focus });
+        // `thread`/`home` ride along as they are: the page's router validates both (never trusted).
+        client.postMessage({
+          type: "ctrlb:notification-click",
+          focus: data.focus,
+          thread: data.thread,
+          home: data.home,
+        });
         try {
           await client.focus();
         } catch {
@@ -43,7 +50,14 @@ self.addEventListener("notificationclick", (event) => {
       // whatever tab was last used — the fallback would silently fail its one job. `?tab=<focus>` is
       // the instruction for this open; `store/ui.ts#consumeTabParam` reads and strips it at boot.
       // Allowlisted, never interpolated blind: `focus` crossed the tray from another realm.
-      const dest = ["agent", "fleet"].includes(data.focus) ? `/?tab=${data.focus}` : "/";
+      let dest = ["agent", "fleet"].includes(data.focus) ? `/?tab=${data.focus}` : "/";
+      // An agent-class tap names its conversation: `&thread=<id>` (read + stripped by
+      // `store/ui.ts#consumeThreadParam`, opened by the chat's boot) — allowlisted by the SAME id test
+      // before interpolation (it crossed the tray too). No `home` on the URL: the cold path's record read
+      // repairs it.
+      const thread = data.thread;
+      if (data.focus === "agent" && typeof thread === "string" && /^[0-9a-f]{32}$/.test(thread))
+        dest += `&thread=${thread}`;
       await self.clients.openWindow(dest);
     })(),
   );

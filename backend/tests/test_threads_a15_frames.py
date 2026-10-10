@@ -117,6 +117,8 @@ def test_a_detached_chat_turn_publishes_running_then_its_terminal() -> None:
         assert running.turn_id is not None and done.turn_id == running.turn_id
         assert {running.agent, done.agent} == {home.agent}  # the HOME agent
         assert running.chained is False and done.chained is False
+        # S10 — the buffered answer names the SAME turn its frames do (one notification key per turn).
+        assert r.json()["turn_id"] == done.turn_id
 
 
 def test_a_drain_b_chain_marks_the_first_terminal_chained_then_the_steer_turns_own_frames() -> None:

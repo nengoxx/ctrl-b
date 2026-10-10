@@ -40,7 +40,7 @@ import { setConnection } from "./connection";
 import { callLive } from "./liveCall";
 import { isRecord, loadPersisted, patchPersisted } from "./persist";
 import { pushToast } from "./toast";
-import { getUI } from "./ui";
+import { getUI, takeBootThread } from "./ui";
 
 export type ChatStatus = "idle" | "streaming" | "error";
 
@@ -405,6 +405,14 @@ function seqGateDrop(id: string | undefined): boolean {
 // (Codex final round, MED-1: publishing only from the live reducer meant a phone that missed the live
 // frame was never told, while one that saw it and then re-attached risked a second buzz). So every
 // turn-side `publishNotify` goes through these three builders; do NOT inline one anywhere else.
+// (Phase 27 S10 adds the FIFTH transport — the `thread` frame of a BACKGROUND conversation, D84 §5 —
+// which reuses the terminal builder as is and adds the one signal no other transport can produce, the
+// frame-level needs-you, `notifyNeedsYou`.)
+//
+// NAMES + TAPS (D84 §5, R37 · O2): every builder takes the conversation's HOME — the open view's own
+// stream passes `state.threadAgent`, the frame its `agent` — and names it in the title ("<Name>
+// finished", the ONE vanished-home paint), and every agent-class signal carries `thread` + `home` so its
+// tap opens THAT conversation (`applyNotificationFocus` → `openThread(thread, home)`).
 //
 // Keys are namespaced `<kind>:<threadId>:<id>` (Codex LOW): call ids and turn ids are server-unique
 // already, but the thread segment makes a snapshot's key provably identical to the live frame's
@@ -418,6 +426,19 @@ function notifyScope(threadId: string | null | undefined): string {
   return threadId ?? state.threadId ?? NOTIFY_NO_THREAD;
 }
 
+/** The thread an agent-class signal's TAP opens (D84 §5 O2, the notification's `data.thread`) — the same
+ *  thread `notifyScope` keys it under, `undefined` only in the thread-less test case. */
+function notifyThreadOf(threadId: string | null | undefined): string | undefined {
+  return threadId ?? state.threadId ?? undefined;
+}
+
+/** WHO a signal names (R37): the conversation's HOME agent's display name, through the ONE vanished-home
+ *  paint (`homeName` — a home off the landed roster reads as the configured default, §12.1 ①); a home this
+ *  device does not know yet (`null`) reads as the configured default too. */
+function signalName(home: string | null): string {
+  return homeName(home ?? rosterDefault());
+}
+
 /** F1 — the agent is now BLOCKED on the owner (a confirm-gated call). This is the class that makes
  *  notifications worth having: an unattended turn parks here indefinitely otherwise. Keyed on the
  *  durable `callId`, so a re-attach that REPLAYS or RECONSTRUCTS the same call resolves to the same
@@ -427,13 +448,16 @@ function notifyAwaitingConfirm(
   callId: string,
   prompt: string | undefined,
   tool: string | undefined,
+  home: string | null,
 ): void {
   publishNotify({
     cls: "agent_input",
     key: `perm:${notifyScope(threadId)}:${callId}`,
-    title: "Approval needed",
+    title: `${signalName(home)} needs approval`,
     body: prompt ?? `${tool ?? "a tool"} is waiting for your approval`,
     focus: "agent",
+    thread: notifyThreadOf(threadId),
+    home: home ?? undefined,
   });
 }
 
@@ -443,13 +467,16 @@ function notifyAwaitingAnswer(
   threadId: string | null | undefined,
   callId: string,
   question: string | undefined,
+  home: string | null,
 ): void {
   publishNotify({
     cls: "agent_input",
     key: `ask:${notifyScope(threadId)}:${callId}`,
-    title: "The agent has a question",
+    title: `${signalName(home)} has a question`,
     body: question ?? "open the chat to answer",
     focus: "agent",
+    thread: notifyThreadOf(threadId),
+    home: home ?? undefined,
   });
 }
 
@@ -475,29 +502,31 @@ function notifyTurnTerminal(
   threadId: string | null | undefined,
   turnId: string | null,
   st: string | null | undefined,
-  message?: string,
+  message: string | undefined,
+  home: string | null,
+  pressure = true,
 ): void {
   if (!st || st === "suspended") return;
   // D61 ② — a turn just ended, so the owner is back in the loop: the moment to tell them the
   // core-memory index is filling up. It rides THIS helper, not the `done` frame, for exactly the
   // reason the notifications do — it is the one point every transport's terminal passes through.
-  checkMemoryPressure();
+  // NOT for a BACKGROUND conversation's frame (`pressure = false`, S10 fix ⑨): the hint is a system note
+  // pushed into the OPEN view, and a background frame never touches the open view (§12.4 Q8).
+  if (pressure) checkMemoryPressure();
   const scope = notifyScope(threadId);
   const failed = st === "error";
   publishNotify({
     cls: "turn_done",
     key: `${failed ? "turn-error" : "turn-done"}:${scope}:${turnId ?? scope}`,
-    title: failed
-      ? "The agent stopped"
-      : st === "capped"
-        ? "The agent hit its step limit"
-        : "The agent finished",
+    title: `${signalName(home)} ${failed ? "stopped" : st === "capped" ? "hit the step limit" : "finished"}`,
     body: failed
       ? (message ?? "the turn ended with an error")
       : st === "capped"
         ? "send a message to continue"
         : "your reply is ready in the chat",
     focus: "agent",
+    thread: notifyThreadOf(threadId),
+    home: home ?? undefined,
   });
 }
 
@@ -520,7 +549,7 @@ function notifyTurnTerminal(
  *  (it lives only on the live `tool.permission` frame / the in-memory snapshot), so a reconstructed
  *  confirm falls back to the builder's "<tool> is waiting for your approval" body — same key, so the
  *  de-dupe is unaffected. A question's text IS durable (`args.prompt`, the `question` builtin's input). */
-function notifyRestoredAwaiting(threadId: string): void {
+function notifyRestoredAwaiting(threadId: string, home: string | null): void {
   const msgs = state.messages;
   let from = 0;
   for (let i = msgs.length - 1; i >= 0; i--)
@@ -535,10 +564,80 @@ function notifyRestoredAwaiting(threadId: string): void {
     for (const p of msgs[i].parts) {
       if (p.type !== "tool_call" || resolved.has(p.call_id)) continue;
       if (p.state === "awaiting_confirm")
-        notifyAwaitingConfirm(threadId, p.call_id, undefined, p.tool);
+        notifyAwaitingConfirm(threadId, p.call_id, undefined, p.tool, home);
       else if (p.state === "awaiting_answer")
-        notifyAwaitingAnswer(threadId, p.call_id, str(p.args.prompt));
+        notifyAwaitingAnswer(threadId, p.call_id, str(p.args.prompt), home);
     }
+}
+
+/** D84 §5 — a BACKGROUND conversation parked on the owner (its `suspended` terminal frame): the frame says
+ *  only that the turn parked, not on which call (that detail is the open view's own `tool.permission` /
+ *  `tool.question`, which this device never streamed) — so the signal names the HOME and sends the owner
+ *  to the conversation. Keyed on the TURN (`agent-input:<thread>:<turn>`): one buzz per parked turn. */
+function notifyNeedsYou(threadId: string, turnId: string | null, home: string | null): void {
+  publishNotify({
+    cls: "agent_input",
+    key: `agent-input:${threadId}:${turnId ?? threadId}`,
+    title: `${signalName(home)} needs you`,
+    body: "open the conversation to continue",
+    focus: "agent",
+    thread: threadId,
+    home: home ?? undefined,
+  });
+}
+
+/** One live `thread` frame (D84 §5, R8/R26 — backend `core/events.ThreadFrame`, `event: thread`), as
+ *  `hooks/useEvents` parsed it off the wire: `state` ∈ running · completed · suspended · capped · error ·
+ *  cancelled · seen (an unknown one is simply not acted on); `agent` = the conversation's HOME; `chained` =
+ *  the terminal handed off to a drain-B steer turn, whose own frames follow. */
+export interface ThreadFrame {
+  threadId: string;
+  state: string;
+  turnId: string | null;
+  agent: string | null;
+  chained: boolean;
+}
+
+/** THE FRAME CONSUMER'S POLICY (D84 §5) — called by `useEventStream` AFTER it has invalidated
+ *  `['threads']` + `['agents']` (the dots, both lists; unconditional, whatever this does). It lives here
+ *  because it reads the open view and its stream, and owns the notify builders:
+ *    · a terminal (`completed`/`capped`/`error`) of a conversation that is NOT the open view, and not
+ *      `chained` → the turn-done signal through the ONE builder (its key `turn-done:<thread>:<turn>` is
+ *      the open view's own, so the conversation that IS open — whose stream already announced it — is
+ *      skipped here and could not double-buzz anyway);
+ *    · `suspended` (not open, not chained) → the needs-you signal (`notifyNeedsYou`);
+ *    · `cancelled` / `seen` → nothing (the invalidation IS their effect: a seen on device A clears device
+ *      B's dot through the refetch); `chained` → nothing (the steer turn's own frames follow);
+ *    · `running` for the OPEN view's own conversation while this view is NOT streaming and the page is
+ *      VISIBLE (the other device sent there, B9 — §12.3 M11) → probe + re-attach, so the visible device
+ *      shows the turn; every other `running` → nothing (the dots carry it; a hidden page probes on return).
+ *  "Open" also covers a thread-less view that is STREAMING (a lazy mint not yet adopted — fix ⑦).
+ *  Whether a signal becomes an OS notification is the engine's gate, unchanged (R39: visible ⇒ the dots
+ *  only; hidden ⇒ the notification). Nothing here plays audio: read-along rides the OPEN view's stream
+ *  alone (§12.4 Q8). Synchronous — no await, so the view read cannot go stale under it. */
+export function applyThreadFrame(frame: ThreadFrame): void {
+  // A thread-less view that is STREAMING may be about to adopt THIS conversation (a lazy mint whose head
+  // has not landed yet — the buffered transport learns the id only from its JSON answer): its own transport
+  // announces the turn, so the frame must not (S10 fix ⑦ — else "needs you" beside "needs approval").
+  const open =
+    frame.threadId === state.threadId ||
+    (state.threadId === null && getChatStatus() === "streaming");
+  if (frame.state === "running") {
+    // M11 on a VISIBLE page only (S10 fix ⑥ — "so the VISIBLE device shows the turn"): a hidden page
+    // re-attaching would cross the view's streaming → idle edge in a pocket (auto-TTS speaks it); nothing
+    // is lost — the bridge's `returnToChat` probes when the page comes back.
+    if (
+      frame.threadId === state.threadId &&
+      getChatStatus() !== "streaming" &&
+      (typeof document === "undefined" || document.visibilityState === "visible") // `markSeen`'s guard
+    )
+      void probeAndReattach(frame.threadId);
+    return;
+  }
+  if (open || frame.chained) return;
+  if (frame.state === "completed" || frame.state === "capped" || frame.state === "error")
+    notifyTurnTerminal(frame.threadId, frame.turnId, frame.state, undefined, frame.agent, false);
+  else if (frame.state === "suspended") notifyNeedsYou(frame.threadId, frame.turnId, frame.agent);
 }
 
 // ── D61 ② the core-memory pressure hint ─────────────────────────────────────────────────────────
@@ -1674,14 +1773,37 @@ export async function openThread(threadId: string, home?: string): Promise<boole
   }
 }
 
+/** THE BOOT'S TAP TARGET (Phase 27 S10, fix ②) — `store/ui`'s one-shot `?thread=` is taken ONCE, then
+ *  kept HERE across `initChat` retries (a transient history failure must not spend it — the retry would
+ *  boot the stored conversation, responder and all), until the boot resolves it (opened, or proven
+ *  unopenable) or a newer navigation supersedes it (`openSeq` moved since the take). */
+let bootTap: { id: string; seq: number } | null = null;
+let bootTapTaken = false;
+
+/** The boot's tap target, if it still stands (see `bootTap`). */
+function takeBootTap(): string | null {
+  if (!bootTapTaken) {
+    bootTapTaken = true;
+    const id = takeBootThread();
+    if (id !== null) bootTap = { id, seq: openSeq };
+  }
+  if (bootTap !== null && bootTap.seq !== openSeq) bootTap = null; // superseded by a newer door
+  return bootTap?.id ?? null;
+}
+
 /** THE BOOT — ONE rule (D84 §6 N1; first Agent-tab mount, and `reloadChat` with no thread yet).
  *
- *  Load the stored view tuple (`ctrlb.chat`, folded); the TARGET = the stored `thread` (S10 adds a
- *  validated `?thread=` notification target ahead of it — the seam is the `target` line below). ONE list
+ *  Load the stored view tuple (`ctrlb.chat`, folded); the TARGET = a notification tap's validated
+ *  `?thread=` (`takeBootTap`, S10 — kept across this boot's retries) when it lists, else the stored
+ *  `thread`. A tapped conversation OTHER than the stored one opens with no responder and is never an R29
+ *  source: deleted between the list and its history read, the boot falls back QUIETLY to the stored
+ *  conversation, else the newest (fix ③); a stored conversation that no longer lists while a tap opens
+ *  another has its draft + rail carried into what opens, untoasted (fix ⑧). ONE list
  *  read, `GET /api/threads?include_archived=true` (§12.3 H3: an archived automation run the owner left
  *  open still counts as present); "the newest" = the newest NON-archived row of it.
- *    · the target is listed → open it with its record's HOME, KEEPING the stored responder (the same
- *      conversation = the device never left, R45) — UNJUDGED until the roster lands (M3; the landing's
+ *    · the target is listed → open it with its record's HOME, KEEPING the stored responder only when
+ *      the target IS the stored thread (the same conversation = the device never left, R45; a tap on
+ *      another conversation opens it with none, N1) — UNJUDGED until the roster lands (M3; the landing's
  *      sweep judges it, and so does the sweep run here when a roster already landed);
  *    · the target is NOT listed — deleted elsewhere while this device was dead (Android process death),
  *      or its history 404s right after the list (deleted in between; a live record only, H3) —
@@ -1698,7 +1820,7 @@ export async function openThread(threadId: string, home?: string): Promise<boole
  *  neither `""`, nor listed here (archived rows count), nor the OPEN view's is dropped (`pruneSlots`),
  *  after the H7 carry, and only while the boot's own generation still holds: a door the owner used
  *  during the boot (a roster-door mint, a lazy mint from typing) moves it, and then nothing is pruned.
- *  (S10's validated `?thread=` target is just the open view here — the prune keeps it either way.)
+ *  (A tapped `?thread=` target is just the open view here — the prune keeps it either way.)
  *  The cold load's identity install stays
  *  as it was (S6's Qwen F1, settled): it bumps no generation — the thread half of `viewMoved` already
  *  refuses a thread-less send's frames once this install moves `threadId`. */
@@ -1711,64 +1833,107 @@ export async function initChat(): Promise<void> {
   if (state.messages.length || state.threadId) return;
   const stored = readPersistedChat();
   const navAtEntry = openSeq; // a door the owner uses DURING the boot read outranks its R29 fallback
+  // A notification tap's `?thread=` (S10 — validated + stripped by `store/ui`'s boot): kept across this
+  // boot's retries until it is resolved (S10 fix ②, `takeBootTap`).
+  const tap = takeBootTap();
   try {
     const threads = (await (await fetch("/api/threads?include_archived=true")).json()) as Thread[];
-    if (gen !== loadGen) return; // an explicit open won the race — leave it alone
-    const target = stored.thread; // S10: a validated `?thread=` target is read ahead of this
-    const record = target === null ? undefined : threads.find((t) => t.id === target);
-    // The target can also vanish BETWEEN the list and its history read (a delete elsewhere in that
-    // window): its history 404s — the same R29 answer as a target that did not list. Not for an
-    // archived record (H3 — never an R29 source): its failure keeps the plain retry below.
-    let dead = record === undefined && target !== null;
+    if (gen !== loadGen) {
+      bootTap = null; // a door that won the race spends the tap too — the owner's newer intent
+      return; // an explicit open won the race — leave it alone
+    }
+    const listedIds = new Set(threads.map((t) => t.id));
+    const listed = (id: string): boolean => listedIds.has(id);
     /** The generation the prune is allowed under — the boot's own; the R29 arm's swap re-issues it. */
     let pruneGen = gen;
-    if (record) {
+    // THE TARGET (N1) = the TAPPED conversation when it lists, else the stored one. A tap ON the stored
+    // conversation is simply the stored path (the device never left it). A tap on ANOTHER conversation
+    // opens it with NO responder; it is never an R29 source — this device never held it: unlisted, or
+    // deleted between the list and its history (S10 fix ③), the boot falls back QUIETLY (no toast, no
+    // carry) to the stored conversation, else the newest.
+    const tapRecord =
+      tap !== null && tap !== stored.thread ? threads.find((t) => t.id === tap) : undefined;
+    let tapOpened = false;
+    let tapFailed = false;
+    /** S10 fix ⑧ — the STORED conversation deleted elsewhere while this device was dead, superseded by a
+     *  tap: its draft + rail follow into what opens (E6), with NO toast (the tap is the owner's intent). */
+    const carryDeadStored =
+      tapRecord !== undefined && stored.thread !== null && !listed(stored.thread);
+    if (tapRecord) {
+      if (carryDeadStored && stored.thread !== null) carryOnLeave(stored.thread);
       try {
         await loadThread(
-          record.id,
+          tapRecord.id,
           gen,
-          record.agent ?? null,
-          record.archived === true,
-          stored.responder,
+          tapRecord.agent ?? null,
+          tapRecord.archived === true,
+          null, // N1 — the device LEFT its stored conversation: no responder
         );
+        tapOpened = true;
       } catch (e) {
-        if (!(e instanceof HttpRefusal && e.status === 404) || record.archived || gen !== loadGen)
-          throw e;
-        dead = true;
+        if (!(e instanceof HttpRefusal && e.status === 404) || gen !== loadGen) throw e; // ② retried
+        tapFailed = true; // ③ — the quiet fallback below
       }
     }
-    if (dead) {
-      // R29 at boot (H7) — unless the owner already navigated during the boot read (a roster door's own
-      // ticket: theirs is the newer intent, L8's posture). The dead conversation's draft + rail move into
-      // what opens (E6) — before the prune below, which would otherwise drop them as unlisted.
-      pruneGen = -1;
-      // E6 — armed whichever door opens next: this fallback's, a failed one's next door, or the owner's
-      // own door already in flight (Opus N2 — it consumes the carry at its swap).
-      if (target !== null) carryOnLeave(target);
-      if (openSeq === navAtEntry && target !== null) {
-        pushToast("this conversation was deleted");
-        if (await openAgentConversation(record?.agent ?? stored.home ?? rosterDefault())) {
-          pruneGen = loadGen; // this boot's own swap — a door used after it moves the generation on
-          await slotsCarried();
+    if (!tapOpened) {
+      const target = stored.thread;
+      const record = target === null ? undefined : threads.find((t) => t.id === target);
+      // The target can also vanish BETWEEN the list and its history read (a delete elsewhere in that
+      // window): its history 404s — the same R29 answer as a target that did not list. Not for an
+      // archived record (H3 — never an R29 source): its failure keeps the plain retry below. After a
+      // failed TAP an unlisted stored conversation is not toasted either (③ — quiet; ⑧ armed its carry).
+      let dead = record === undefined && target !== null && !tapFailed;
+      if (record) {
+        try {
+          await loadThread(
+            record.id,
+            gen,
+            record.agent ?? null,
+            record.archived === true,
+            stored.responder, // the stored conversation — the device never left it (R45)
+          );
+        } catch (e) {
+          if (!(e instanceof HttpRefusal && e.status === 404) || record.archived || gen !== loadGen)
+            throw e;
+          dead = true;
         }
       }
-    } else if (!record) {
-      const newest = threads.find((t) => !t.archived);
-      if (newest) await loadThread(newest.id, gen, newest.agent ?? null, false, null);
-      else if (gen === loadGen) commitResponder(stored.responder); // the thread-less view keeps its own
+      if (dead) {
+        // R29 at boot (H7) — unless the owner already navigated during the boot read (a roster door's own
+        // ticket: theirs is the newer intent, L8's posture). The dead conversation's draft + rail move into
+        // what opens (E6) — before the prune below, which would otherwise drop them as unlisted.
+        pruneGen = -1;
+        // E6 — armed whichever door opens next: this fallback's, a failed one's next door, or the owner's
+        // own door already in flight (Opus N2 — it consumes the carry at its swap).
+        if (target !== null) carryOnLeave(target);
+        if (openSeq === navAtEntry && target !== null) {
+          pushToast("this conversation was deleted");
+          if (await openAgentConversation(record?.agent ?? stored.home ?? rosterDefault())) {
+            pruneGen = loadGen; // this boot's own swap — a door used after it moves the generation on
+            await slotsCarried();
+          }
+        }
+      } else if (!record) {
+        const newest = threads.find((t) => !t.archived);
+        if (newest) await loadThread(newest.id, gen, newest.agent ?? null, false, null);
+        // the thread-less view keeps its own responder — only a stored thread-less one (B17)
+        else if (gen === loadGen && target === null) commitResponder(stored.responder);
+      }
     }
+    if (carryDeadStored) await slotsCarried(); // ⑧ — the carry lands before the prune reads the slots
     if (pruneGen === loadGen) {
-      const listed = new Set(threads.map((t) => t.id));
       const open = state.threadId ?? "";
-      pruneSlots((k) => k === "" || k === open || listed.has(k));
+      pruneSlots((k) => k === "" || k === open || listed(k));
     }
+    bootTap = null; // resolved — opened, or proven unopenable (③)
     sweepRoster(); // a roster that landed BEFORE this boot judges what it installed (M3)
   } catch {
     // Backend was down at load time. Reset `loaded` so the next initChat (or the F16
     // reconnect-triggered reloadChat) can retry — otherwise the chat would be stuck empty
     // until a full page refresh. NOT if a thread was opened while we were failing: that reset would
-    // let the next mount reload over a deliberate open.
+    // let the next mount reload over a deliberate open. The tap stays for the retry (②).
     if (gen === loadGen) loaded = false;
+    else bootTap = null;
   }
 }
 
@@ -2501,7 +2666,13 @@ function makeTurnReducer(ctx: TurnCtx) {
         setCallState(callId, "awaiting_confirm");
         // F1 — announce the block through the shared builder (the same one the buffered reply and the
         // `turn.sync` reconstruction use, so all three collapse onto one key in the engine).
-        notifyAwaitingConfirm(state.threadId, callId, str(data.prompt), str(data.tool));
+        notifyAwaitingConfirm(
+          state.threadId,
+          callId,
+          str(data.prompt),
+          str(data.tool),
+          state.threadAgent,
+        );
         break;
       }
       case "tool.question": {
@@ -2513,7 +2684,7 @@ function makeTurnReducer(ctx: TurnCtx) {
         skillsByCall[callId] = skillIds(data.skills) ?? turnSkills; // …and its skills (C5-M1, M2/C-12)
         setCallState(callId, "awaiting_answer");
         // F1 — same class as the confirm bubble: the turn is parked on the owner's reply.
-        notifyAwaitingAnswer(state.threadId, callId, str(data.question));
+        notifyAwaitingAnswer(state.threadId, callId, str(data.question), state.threadAgent);
         break;
       }
       case "tool.result": {
@@ -2604,7 +2775,13 @@ function makeTurnReducer(ctx: TurnCtx) {
         // either way) and the same key the `done(error)` that follows it publishes under, so the pair
         // collapses to one buzz carrying THIS frame's real message. `lastTurnId` is the wire `turn_id`
         // the seq gate just latched — per-turn, and identical on a replay of the same frame.
-        notifyTurnTerminal(state.threadId, lastTurnId, "error", str(data.message) ?? "agent error");
+        notifyTurnTerminal(
+          state.threadId,
+          lastTurnId,
+          "error",
+          str(data.message) ?? "agent error",
+          state.threadAgent,
+        );
         break;
       case "done": {
         ctx.settled = true;
@@ -2617,7 +2794,7 @@ function makeTurnReducer(ctx: TurnCtx) {
         set({ status: st === "error" ? "error" : "idle", streamingId: null });
         // F1 — the turn reached a terminal state (the builder owns the `suspended` exclusion and the
         // error-key sharing; see its docstring).
-        notifyTurnTerminal(state.threadId, lastTurnId, st);
+        notifyTurnTerminal(state.threadId, lastTurnId, st, undefined, state.threadAgent);
         break;
       }
       default:
@@ -2849,6 +3026,9 @@ async function streamTurn(
       // the reload (the view is idle by then — `/new` is allowed) re-namespaced this turn's
       // signals under the NEW thread (or the no-thread fallback), breaking the live↔replay collapse.
       const notifyThread = str(payload.threadId) ?? state.threadId;
+      // …and its HOME, for the signals' names (R37) and their taps (O2) — the head's `agent` when the
+      // payload named one (S3), else the view's, captured beside the thread for the same reason.
+      const notifyHome = nonEmpty(payload.agent) ?? state.threadAgent;
       // Clear the streaming placeholder so the floor reload (which skips while "streaming") runs.
       set({ status: "idle", streamingId: null });
       await reloadFloor();
@@ -2863,16 +3043,19 @@ async function streamTurn(
       // F1 (Codex MED-1) — the buffered transport announces the SAME occurrences the live reducer
       // does, through the SAME builders/keys: a turn that suspends on a confirm/question is exactly as
       // unattended here as it is over SSE. Published AFTER the reload so the announcement follows the
-      // state it describes. The payload carries no turn id (verified: `collect_turn` folds only
-      // state/messageId/permission/question/error/notices, and the endpoint merges `{threadId, title}`
-      // on top) — so the terminal key falls back to the thread scope, the documented bounded case.
-      if (perm?.callId) notifyAwaitingConfirm(notifyThread, perm.callId, perm.prompt, perm.tool);
-      if (q?.callId) notifyAwaitingAnswer(notifyThread, q.callId, q.question);
+      // state it describes. The payload's `turn_id` (Phase 27 S10 fix ① — the handle's, the same id the
+      // turn's `thread` frames carry) keys the terminal exactly as the frame consumer keys it, so a turn
+      // this device LEFT before the buffered answer resolved collapses to ONE notification; a server that
+      // predates the field sends none and the key falls back to the thread scope (the bounded case).
+      if (perm?.callId)
+        notifyAwaitingConfirm(notifyThread, perm.callId, perm.prompt, perm.tool, notifyHome);
+      if (q?.callId) notifyAwaitingAnswer(notifyThread, q.callId, q.question, notifyHome);
       notifyTurnTerminal(
         notifyThread,
-        null,
+        nonEmpty(payload.turn_id) ?? null,
         str(payload.state),
         isObj(payload.error) ? str(payload.error.message) : undefined,
+        notifyHome,
       );
       if (here) discoverSpawnedSteerTurn(); // D41 §3 — a buffered turn can also leave queued steers to a drain-B turn
       return "accepted";
@@ -3283,11 +3466,12 @@ export async function reattachTurn(
       // The accumulator stamps these RunStates on the call when it folds the suspend event, and drops
       // the ephemeral payload once a result lands — so an already-resolved call never re-announces.
       if (c.state === "awaiting_confirm")
-        notifyAwaitingConfirm(threadId, callId, str(p?.prompt), str(c.tool));
+        notifyAwaitingConfirm(threadId, callId, str(p?.prompt), str(c.tool), state.threadAgent);
       else if (c.state === "awaiting_answer")
-        notifyAwaitingAnswer(threadId, callId, str(qn?.question));
+        notifyAwaitingAnswer(threadId, callId, str(qn?.question), state.threadAgent);
     }
-    if (termState) notifyTurnTerminal(threadId, lastTurnId, termState);
+    if (termState)
+      notifyTurnTerminal(threadId, lastTurnId, termState, undefined, state.threadAgent);
   };
 
   const onFrame = async (
@@ -3358,8 +3542,14 @@ export async function reattachTurn(
         // that moment (verify-5, fix 1: reconstructed from the floor the reload above just applied,
         // through the shared builders). An absent/null terminal_status (an unknown/expired turn)
         // publishes nothing at all: nothing was learned about how it ended.
-        notifyTurnTerminal(threadId, nonEmpty(body.turn_id) ?? null, st);
-        if (st === "suspended") notifyRestoredAwaiting(threadId);
+        notifyTurnTerminal(
+          threadId,
+          nonEmpty(body.turn_id) ?? null,
+          st,
+          undefined,
+          state.threadAgent,
+        );
+        if (st === "suspended") notifyRestoredAwaiting(threadId, state.threadAgent);
         return true;
       }
       if (!res.ok || !res.body) return false;

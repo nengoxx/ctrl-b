@@ -11,6 +11,10 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 // snapshot, and the `{active:false}` terminal answer — must publish the SAME signal under the SAME
 // key, so a device that MISSED the live frame still learns, and one that SAW it doesn't buzz twice.
 // The last section mounts the real engine to prove both halves end to end.
+//
+// TITLES (Phase 27 S10, R37): every title names the conversation's HOME agent. These fixtures' turns
+// name no home and land no roster, so the ONE fallback names the configured default — the root,
+// `"default"`, before a roster lands. The names themselves are pinned in `chatFrames.test.ts`.
 
 // The engine's prefs come from an always-on query; mocked so these tests need no QueryClient.
 const h = vi.hoisted(() => ({
@@ -212,7 +216,7 @@ describe("chat reducer → notifyBus", () => {
     // Namespaced `<kind>:<threadId>:<callId>` (Codex LOW) — the same key the `turn.sync`
     // reconstruction of this call computes, which is what lets the engine collapse the two.
     expect(inputs[0].key).toBe("perm:t1:c1");
-    expect(inputs[0].title).toBe("Approval needed");
+    expect(inputs[0].title).toBe("default needs approval");
     expect(inputs[0].body).toBe("Shutdown: confirm to proceed.");
     expect(inputs[0].focus).toBe("agent");
     // `suspended` is the terminal that ALWAYS accompanies a permission frame — notifying for it too
@@ -241,7 +245,7 @@ describe("chat reducer → notifyBus", () => {
     const inputs = byClass("agent_input");
     expect(inputs).toHaveLength(1);
     expect(inputs[0].key).toBe("ask:t1:q1");
-    expect(inputs[0].title).toBe("The agent has a question");
+    expect(inputs[0].title).toBe("default has a question");
     expect(inputs[0].body).toBe("which host?");
   });
 
@@ -259,7 +263,7 @@ describe("chat reducer → notifyBus", () => {
     const done = byClass("turn_done");
     expect(done).toHaveLength(1);
     expect(done[0].key).toBe("turn-done:t1:turn-a");
-    expect(done[0].title).toBe("The agent finished");
+    expect(done[0].title).toBe("default finished");
     expect(done[0].focus).toBe("agent");
   });
 
@@ -272,7 +276,7 @@ describe("chat reducer → notifyBus", () => {
     await act(async () => {
       await sendMessage("big job");
     });
-    expect(byClass("turn_done")[0].title).toBe("The agent hit its step limit");
+    expect(byClass("turn_done")[0].title).toBe("default hit the step limit");
   });
 
   it("an `error` frame and the `done(error)` that follows it share ONE key (de-duped to one buzz)", async () => {
@@ -291,7 +295,7 @@ describe("chat reducer → notifyBus", () => {
     // `error` frame, carrying the real message — is the one that reaches the tray.
     expect(done.map((s) => s.key)).toEqual(["turn-error:t1:turn-c", "turn-error:t1:turn-c"]);
     expect(done[0].body).toBe("endpoint unreachable");
-    expect(done[0].title).toBe("The agent stopped");
+    expect(done[0].title).toBe("default stopped");
   });
 
   it("a `done(error)` with no preceding error frame still produces exactly one signal", async () => {
@@ -306,7 +310,7 @@ describe("chat reducer → notifyBus", () => {
     const done = byClass("turn_done");
     expect(done).toHaveLength(1);
     expect(done[0].key).toBe("turn-error:t1:turn-e");
-    expect(done[0].title).toBe("The agent stopped");
+    expect(done[0].title).toBe("default stopped");
   });
 
   it("a plain text turn publishes NOTHING for the agent_input class", async () => {
@@ -333,7 +337,7 @@ describe("the non-live transports publish the same signals", () => {
     });
     const done = byClass("turn_done");
     expect(done).toHaveLength(1);
-    expect(done[0].title).toBe("The agent finished");
+    expect(done[0].title).toBe("default finished");
     // The buffered reply carries no turn id (`collect_turn` folds state/messageId/permission/
     // question/error/notices only), so the key degrades to the thread scope — see the bounded-fallback
     // test below.
@@ -468,7 +472,7 @@ describe("the non-live transports publish the same signals", () => {
     const done = byClass("turn_done");
     expect(done).toHaveLength(1);
     expect(done[0].key).toBe("turn-done:t1:turn-y");
-    expect(done[0].title).toBe("The agent hit its step limit");
+    expect(done[0].title).toBe("default hit the step limit");
   });
 
   // ── verify-5 ──────────────────────────────────────────────────────────────────────────────────
@@ -555,7 +559,7 @@ describe("the non-live transports publish the same signals", () => {
 
   it("an UNKNOWN/EXPIRED reattach (null terminal_status) publishes NOTHING", async () => {
     // No handle and no linger record ⇒ the server can say only "not live". Nothing was learned about
-    // how the turn ended, so a `turn_done` here would be a fabricated "The agent finished" (fix 2) —
+    // how the turn ended, so a `turn_done` here would be a fabricated "<Name> finished" (fix 2) —
     // and the floor's awaiting call may be an ancient unanswered one, so it is not announced either.
     await seedThread();
     captured.length = 0;
@@ -650,7 +654,7 @@ describe("a hidden device + a turn.sync snapshot → exactly one notification", 
       await reattachTurn("t1", "turn-a:1");
     });
     expect(shown).toHaveLength(1);
-    expect(shown[0].title).toBe("Approval needed");
+    expect(shown[0].title).toBe("default needs approval");
     expect(shown[0].options.tag).toBe("perm:t1:c1");
   });
 
@@ -702,7 +706,7 @@ describe("a hidden device + a turn.sync snapshot → exactly one notification", 
       await reattachTurn("t1", "turn-s:1");
     });
     expect(shown).toHaveLength(1);
-    expect(shown[0].title).toBe("Approval needed");
+    expect(shown[0].title).toBe("default needs approval");
     expect(shown[0].options.tag).toBe("perm:t1:c1");
   });
 

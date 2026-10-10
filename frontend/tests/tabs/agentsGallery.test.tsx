@@ -31,7 +31,15 @@ const list = {
   default_set: false,
   summaries: {} as Record<
     string,
-    { title: string; description: string; avatar: string; background: string; voice: string }
+    {
+      title: string;
+      description: string;
+      avatar: string;
+      background: string;
+      voice: string;
+      /** Phase 27 S10 — the agent's live status (the roster dot's source). */
+      status?: { running: boolean; awaiting: boolean; unread: boolean };
+    }
   >,
 };
 
@@ -184,6 +192,50 @@ describe("AgentsTab · the card grid", () => {
       "D",
       "S",
     ]);
+  });
+});
+
+// Phase 27 S10 (D84 R19 · R25 · §7) — the ROSTER DOT: each card renders its agent's live status
+// (`summaries[name].status`) through the sheet's own `threadDot`, as the kit-wide `.thread-dot` at the
+// plate's corner; the state in words is the card's accessible description.
+describe("AgentsTab · the roster dot", () => {
+  const row = (status?: { running?: boolean; awaiting?: boolean; unread?: boolean }) => ({
+    title: "",
+    description: "",
+    avatar: "",
+    background: "",
+    voice: "",
+    status: status && { running: false, awaiting: false, unread: false, ...status },
+  });
+  /** Each card's dot state (`null` = none), in grid order. */
+  const dots = () =>
+    [...document.querySelectorAll(".agal-card")].map(
+      (c) => c.querySelector<HTMLElement>(".thread-dot")?.dataset.state ?? null,
+    );
+
+  it("renders the S9 priority (needs-you > running > unread); none when clean or absent", () => {
+    list.agents = ["scout", "coder", "idle", "old"];
+    list.summaries = {
+      default: row({ unread: true }),
+      scout: row({ running: true, unread: true }),
+      coder: row({ awaiting: true, running: true }),
+      idle: row({}), // all false
+      // old: a response without a status
+    };
+    render(<AgentsTab active />);
+    expect(dots()).toEqual(["unread", "running", "needs-you", null, null]);
+  });
+
+  it("the dot is decoration — the state is SAID in the card's accessible description; it sits in the plate", () => {
+    list.agents = ["scout"];
+    list.summaries = { scout: row({ awaiting: true }) };
+    render(<AgentsTab active />);
+    const [root, scout] = [...document.querySelectorAll<HTMLElement>(".agal-card")];
+    expect(scout.getAttribute("aria-description")).toBe("needs you");
+    expect(root.hasAttribute("aria-description")).toBe(false);
+    const dot = scout.querySelector(".thread-dot")!;
+    expect(dot.getAttribute("aria-hidden")).toBe("true");
+    expect(dot.parentElement?.className).toBe("agal-plate");
   });
 });
 

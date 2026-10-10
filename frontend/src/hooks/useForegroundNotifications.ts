@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 
 import { onNotify, type NotifySignal } from "../lib/notifyBus";
+import { openThread } from "../store/chat";
 import { callLive } from "../store/liveCall";
-import { setUI } from "../store/ui";
+import { isThreadId, setUI } from "../store/ui";
 import { useNotificationPrefs, type NotificationPrefs } from "./useNotificationPrefs";
 
 // F1 — the foreground notification engine. ONE hook, mounted once in <AppEngines/>, holding ALL the
@@ -141,8 +142,13 @@ export function useForegroundNotifications(): void {
     // own for the same reason the gate does: the `focus` vocabulary, the mount site and the router are
     // already here, and a second listener elsewhere is a second gate on one concern.
     const onSwMessage = (e: MessageEvent) => {
-      const d = e.data as { type?: string; focus?: unknown } | null;
-      if (d?.type === "ctrlb:notification-click") applyNotificationFocus(d.focus);
+      const d = e.data as {
+        type?: string;
+        focus?: unknown;
+        thread?: unknown;
+        home?: unknown;
+      } | null;
+      if (d?.type === "ctrlb:notification-click") applyNotificationFocus(d.focus, d.thread, d.home);
     };
     // Optional-chained because an insecure context has no `serviceWorker` at all (same shape as the
     // Notifications feature-detect above) — nothing here may throw on a plain-HTTP origin.
@@ -160,17 +166,27 @@ export function useForegroundNotifications(): void {
 }
 
 /** The ONE router for a notification activation, called by BOTH paths — the constructor path's
- *  `onclick` and the service worker's `postMessage`. `focus` is typed `unknown` because one caller is
- *  a structured-cloned message from another realm: it is whatever crossed the wire, not a
- *  `NotifySignal` field we can trust. Anything that isn't a known destination is a no-op, so a
+ *  `onclick` and the service worker's `postMessage`. `focus`, `thread` and `home` are typed `unknown`
+ *  because one caller is a structured-cloned message from another realm: it is whatever crossed the wire,
+ *  not a `NotifySignal` field we can trust. Anything that isn't a known destination is a no-op, so a
  *  fleet-side notification never yanks the owner off the tab they were on.
+ *
+ *  THE CONVERSATION (D84 §5 O2): after the tab switch, for an AGENT destination only (S10 fix ④ — as the
+ *  worker's cold path), a `thread` that is a conversation id opens THAT
+ *  conversation through the Specific door (`openThread`, handed the `home` when it is a string — §12.3
+ *  H6; the same conversation = `openThread`'s same-id branch, the responder stays, R45) — UNLESS a call
+ *  is up (R20, B10): a tap during a call only switches the tab. Anything else in `thread` (absent, a
+ *  non-id string, an object) only switches the tab.
  *
  *  `setUI` is the same store call `lib/composer` uses to route a message to the Agent tab — not a
  *  second router. Exported so both halves' routing is testable without a service worker. */
-export function applyNotificationFocus(focus: unknown): void {
+export function applyNotificationFocus(focus: unknown, thread?: unknown, home?: unknown): void {
   if (focus === "agent") setUI({ tab: "agent" });
   // F1/D50 M5 — a host up/down lands on the fleet, where the answer to "what happened to it" is.
   if (focus === "fleet") setUI({ tab: "fleet" });
+  // Only an AGENT-class destination opens a conversation (S10 fix ④ — the worker's cold path agrees).
+  if (focus !== "agent" || !isThreadId(thread) || callLive()) return;
+  void openThread(thread, typeof home === "string" && home !== "" ? home : undefined);
 }
 
 /** Raise the actual browser notification. Two paths, deliberately in this order:
@@ -201,7 +217,8 @@ function show(signal: NotifySignal): void {
     icon: ICON,
     // Structured-cloned onto the notification and read back by `public/notify-sw.js` on the tap. Also
     // a valid member on the constructor path, which simply never looks at it (it has the closure).
-    data: { focus: signal.focus, key: signal.key },
+    // `thread` + `home` (D84 §5 O2): the conversation the tap opens, on both paths.
+    data: { focus: signal.focus, key: signal.key, thread: signal.thread, home: signal.home },
   };
   try {
     // `tag` = the de-dupe key: a same-tag notification REPLACES its predecessor in the tray rather
@@ -209,7 +226,8 @@ function show(signal: NotifySignal): void {
     const n = new window.Notification(signal.title, options);
     n.onclick = () => {
       window.focus();
-      applyNotificationFocus(signal.focus); // the classes that name a destination land the owner there
+      // the classes that name a destination land the owner there — an agent-class one in ITS conversation
+      applyNotificationFocus(signal.focus, signal.thread, signal.home);
       n.close();
     };
   } catch {

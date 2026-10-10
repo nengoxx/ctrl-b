@@ -3,8 +3,9 @@ import { useEffect, useRef } from "react";
 import { FocalFace } from "../../../../components/FocalFace";
 import { useHomeAgent } from "../../../../hooks/useActiveAgent";
 import { useAgentArt, type AgentArt } from "../../../../hooks/useAgentArt";
-import { DEFAULT_AGENT, useAgentRoster } from "../../../../hooks/useAgents";
+import { DEFAULT_AGENT, useAgentRoster, type AgentStatus } from "../../../../hooks/useAgents";
 import { useOutsideDismiss } from "../../../../hooks/useOutsideDismiss";
+import { THREAD_DOT_WORDS, threadDot } from "../../../../hooks/useThreads";
 import { getKnownSkills, useVerbsVersion } from "../../../../lib/composer";
 import { openAgentConversation } from "../../../../store/chat";
 import { releaseComposerOverlay, useComposerOverlayOpen } from "../../../../store/composerOverlay";
@@ -156,6 +157,7 @@ export function ToolsMenuSheet() {
               tag={n === defaultAgent ? "default" : n === DEFAULT_AGENT ? "root" : undefined}
               on={home === n}
               avatar={art(n).avatar}
+              status={roster?.summaries?.[n]?.status}
               onPick={() => picked(n)}
             />
           ))}
@@ -210,6 +212,11 @@ export function ToolsMenuSheet() {
  *  D70 §8.4 — the name is LED by the agent's avatar as a small circle when it has one; an agent with no
  *  art (every agent before this phase) renders exactly the row it always did.
  *
+ *  D84 R19 — the ROSTER DOT trails the name and the tag: the agent's live status (`summaries[name].status`
+ *  on the `['agents']` query, which every `thread` frame invalidates — so it moves with the sheet closed)
+ *  through the sheet's own `threadDot` (same states, same priority). Decoration (`aria-hidden`); its state
+ *  in words joins the radio's accessible description.
+ *
  *  A NATIVE `<input type="radio">` (Codex, round 2), not a `role="radio"` button: the ARIA role promises
  *  arrow-key selection within the group, and hand-rolling that (roving tabindex + Home/End + wrap) is a
  *  widget the browser already ships. Same-`name` inputs give it for free, along with checked state and the
@@ -222,6 +229,7 @@ function AgentRow({
   tag,
   on,
   avatar,
+  status,
   onPick,
 }: {
   name: string;
@@ -230,9 +238,12 @@ function AgentRow({
   tag?: string;
   on: boolean;
   avatar: AgentArt["avatar"];
+  /** The agent's live status (absent on a pre-S2a response) — the row's dot. */
+  status?: AgentStatus;
   /** Every activation, the already-checked row included (`onChange` fires only on a change). */
   onPick: () => void;
 }) {
+  const dot = status ? threadDot(status) : null;
   return (
     <label className={"tools-row" + (on ? " on" : "")}>
       <input
@@ -240,7 +251,9 @@ function AgentRow({
         className="tools-radio"
         name={AGENT_RADIO_NAME}
         checked={on}
-        aria-description={`open ${title}'s conversation`}
+        aria-description={
+          `open ${title}'s conversation` + (dot ? ` — ${THREAD_DOT_WORDS[dot]}` : "")
+        }
         onClick={onPick}
         // A controlled radio needs a handler; the door is `onClick` (every activation), never this.
         onChange={() => {}}
@@ -256,6 +269,7 @@ function AgentRow({
       {avatar && <FocalFace className="tools-face" src={avatar.url} art={avatar.focus} />}
       <span className="tools-name">{name}</span>
       {tag && <span className="tools-tag">{tag}</span>}
+      {dot && <span className="thread-dot" data-state={dot} aria-hidden />}
     </label>
   );
 }

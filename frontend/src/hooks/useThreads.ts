@@ -115,7 +115,9 @@ export async function trimThreads(
 }
 
 /** A conversation's status dot (D84 §5, §7): needs-you (a parked confirm/question) over running over
- *  unread; `null` = none. The SAME states and priority S10's roster dots read. */
+ *  unread; `null` = none. The SAME states and priority the roster dots read (S10 — an agent's
+ *  `summaries[name].status` has this very shape). Every surface renders it as ONE kit-wide disc,
+ *  `<span class="thread-dot" data-state=…>` (kit.css), positioned by its host. */
 export type ThreadDot = "needs-you" | "running" | "unread";
 export function threadDot(
   row: Pick<ThreadSummary, "awaiting" | "running" | "unread">,
@@ -125,6 +127,14 @@ export function threadDot(
   if (row.unread) return "unread";
   return null;
 }
+
+/** A dot's state in WORDS — the accessible description of a row or card that carries one (the disc
+ *  itself is decoration, `aria-hidden`). One map for the sheet rows, the tools-menu rows and the cards. */
+export const THREAD_DOT_WORDS: Record<ThreadDot, string> = {
+  "needs-you": "needs you",
+  running: "a reply is running",
+  unread: "unread",
+};
 
 /** The header button's dot (§5): the strongest dot among the home's conversations OTHER than the open one
  *  — the open view's own activity is on screen already. */

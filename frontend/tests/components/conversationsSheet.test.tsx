@@ -336,7 +336,7 @@ describe("the sheet — head, rows, the open row", () => {
     await f.openId("L2", "lynette");
     await f.openSheet(5);
     const dot = (label: string) =>
-      f.rowOf(label).querySelector<HTMLElement>(".cvs-dot")?.dataset.state ?? null;
+      f.rowOf(label).querySelector<HTMLElement>(".thread-dot")?.dataset.state ?? null;
     expect(dot("Old chat")).toBe("needs-you");
     expect(dot("Older")).toBe("running");
     expect(dot("Trip plans")).toBe("unread"); // the open one still shows its own row dot
@@ -641,14 +641,14 @@ describe("the CSS — the running dot's pulse sits inside the reduced-motion gat
     expect([...unset].filter((c) => !ringed.has(c))).toEqual([]);
   });
 
-  it("`body[data-motion=reduced] … .cvs-dot[data-state=running]` → animation: none", () => {
+  it("`body[data-motion=reduced] … .thread-dot[data-state=running]` → animation: none", () => {
     const kit = readFileSync(resolve(process.cwd(), "src/theme-engine/kit/kit.css"), "utf8");
     const gate = /([^{}]*)\{\s*animation:\s*none;\s*\}/g;
     const gated = Array.from(kit.matchAll(gate)).some(([, sel]) =>
-      sel.includes('body[data-motion="reduced"] .kit .cvs-dot[data-state="running"]'),
+      sel.includes('body[data-motion="reduced"] .kit .thread-dot[data-state="running"]'),
     );
     expect(gated).toBe(true);
-    expect(kit).toMatch(/\.kit \.cvs-dot\[data-state="running"\] \{[^}]*kit-tag-pulse/);
+    expect(kit).toMatch(/\.kit \.thread-dot\[data-state="running"\] \{[^}]*kit-tag-pulse/);
   });
 
   it("the `cvs-` family is the kit's alone: no theme stylesheet other than kit.css names a `cvs-` class", () => {

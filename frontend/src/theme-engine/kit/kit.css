@@ -1414,6 +1414,11 @@ body[data-perf="lite"] .kit .tools-sheet {
   width: 100%;
   box-sizing: border-box;
 }
+/* an agent row's status dot (D84 R19 — the kit-wide `.thread-dot`): in flow at the row's trailing end,
+ * after the name and the tag, a hair in from the row's edge. */
+.kit .tools-sheet .tools-row .thread-dot {
+  margin-inline-end: 2px;
+}
 /* two sections (agent · skills) — a hairline between them, no heavy chrome. */
 .kit .tools-sheet .tools-sec + .tools-sec {
   margin-top: 4px;
@@ -4935,7 +4940,7 @@ body[data-motion="full"] .kit .kit-jump {
 body[data-motion="reduced"] .kit .b.bot .dots i,
 body[data-motion="reduced"] .kit .b.bot .caret,
 body[data-motion="reduced"] .kit .b.bot .who .status-tag,
-body[data-motion="reduced"] .kit .cvs-dot[data-state="running"] {
+body[data-motion="reduced"] .kit .thread-dot[data-state="running"] {
   animation: none;
 }
 
@@ -5877,26 +5882,32 @@ body[data-motion="reduced"] .kit .priv-menu {
   opacity: 0.4;
   cursor: default;
 }
-.kit .cvs-dot {
+/* THE STATUS DOT (D84 §5 · §7, Phase 27 S10) — ONE kit-wide disc for a conversation's or an agent's live
+ * status (`hooks/useThreads#threadDot`: needs-you > running > unread), rendered by the conversations
+ * button, the sheet rows, the tools-menu agent rows and the gallery cards alike. The three hues are tokens;
+ * the `running` pulse rides `kit-tag-pulse` under the reduced-motion gate (the `.b.bot` motion gate). Each
+ * HOST keeps its own position rule (`.cvs-btn .thread-dot`, `.tools-row .thread-dot`, `.agal-card
+ * .thread-dot`); the sheet row's sits in flow in `.cvs-meta`. */
+.kit .thread-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
-.kit .cvs-btn .cvs-dot {
-  position: absolute;
-  top: 6px;
-  right: 5px;
-}
-.kit .cvs-dot[data-state="needs-you"] {
+.kit .thread-dot[data-state="needs-you"] {
   background: var(--warn);
 }
-.kit .cvs-dot[data-state="running"] {
+.kit .thread-dot[data-state="running"] {
   background: var(--ok);
   animation: kit-tag-pulse 1.3s ease-in-out infinite;
 }
-.kit .cvs-dot[data-state="unread"] {
+.kit .thread-dot[data-state="unread"] {
   background: var(--accent);
+}
+.kit .cvs-btn .thread-dot {
+  position: absolute;
+  top: 6px;
+  right: 5px;
 }
 .kit .bs-root.cvs-bs .bs-sheet {
   max-height: min(80dvh, 640px);
@@ -9005,6 +9016,21 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   display: block;
   padding: 8px 10px 10px;
   border-top: 1px solid var(--line);
+}
+/* THE CARD'S STATUS DOT (D84 R19 — the kit-wide `.thread-dot`): the plate's top/inline-end corner, level
+ * with the name — the portrait's two top corners already carry the pills, and a 6px disc over a bright
+ * portrait would not read. The plate is the card's own surface, so the token hues hold their contrast. The
+ * name keeps clear of it. */
+.kit .agal-plate:has(.thread-dot) {
+  position: relative; /* the dot's box */
+}
+.kit .agal-card .thread-dot {
+  position: absolute;
+  inset-block-start: 12px;
+  inset-inline-end: 10px;
+}
+.kit .agal-plate:has(.thread-dot) .agal-name {
+  padding-inline-end: 12px;
 }
 .kit .agal-name {
   display: block;

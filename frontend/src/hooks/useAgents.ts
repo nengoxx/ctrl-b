@@ -162,6 +162,18 @@ export interface AgentSummary {
    *  agent whose folder will not load) — the same empty-string sentinel `voice` uses — and reads as
    *  "not conversational". */
   duties: "agent" | "conversational" | "";
+  /** The agent's LIVE STATUS (D84 R25, §7 — backend `_roster_status`): the OR of its non-archived
+   *  conversations' flags, the same three `ThreadSummary` carries (`_STATUS_FIELDS`); all `false` for an
+   *  agent with no conversations. The roster dots render it through `hooks/useThreads#threadDot` (the
+   *  sheet's states and priority). Optional for the `summaries` reason below (a pre-S2a response, a mock). */
+  status?: AgentStatus;
+}
+
+/** `summaries[name].status` exactly as the server sends it (`{running, awaiting, unread}`). */
+export interface AgentStatus {
+  running: boolean;
+  awaiting: boolean;
+  unread: boolean;
 }
 
 /** `GET /api/agents` — the names, the resolved default, whether a default is CONFIGURED, and one

@@ -8,6 +8,7 @@ import {
   rosterNames,
   useAgentRoster,
   useImportAgent,
+  type AgentStatus,
   type ImportReport,
 } from "../hooks/useAgents";
 import { useAgentToolGrid } from "../hooks/useActions";
@@ -17,6 +18,7 @@ import { useSections } from "../hooks/useSections";
 import { pickRoleplay } from "../hooks/useRoleplay";
 import { useSaveSettings, useSettings } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
+import { THREAD_DOT_WORDS, threadDot } from "../hooks/useThreads";
 import { agentSubtitle } from "../lib/agentSubtitle";
 import { tileInitial } from "../lib/fallbackTile";
 import { openAgentConversation } from "../store/chat";
@@ -54,10 +56,16 @@ import { openAgentConversation } from "../store/chat";
 // summary+media join (`hooks/useAgentArt`), so the gallery, the composer's picker and the who-line
 // avatar can never disagree about what an agent looks like.
 
-/** One agent's card: the portrait (or the quiet initial tile that stands in for one) + the plate. */
+/** One agent's card: the portrait (or the quiet initial tile that stands in for one) + the plate.
+ *
+ *  D84 R19 — the ROSTER DOT: the agent's live status (`summaries[name].status`, the `['agents']` query
+ *  every `thread` frame invalidates) through the sheet's own `threadDot` — the kit-wide `.thread-dot` at
+ *  the plate's corner, `aria-hidden`; its state in words is the card's accessible description. */
 function AgentCard(props: {
   art: AgentArt;
   description: string;
+  /** The agent's live status (absent on a pre-S2a response) — the card's dot. */
+  status?: AgentStatus;
   isDefault: boolean;
   isSetDefault: boolean;
   pending: boolean;
@@ -66,9 +74,15 @@ function AgentCard(props: {
   onToggleDefault: () => void;
 }) {
   const { art } = props;
+  const dot = props.status ? threadDot(props.status) : null;
   return (
     <li className="agal-cell">
-      <button type="button" className="agal-card" onClick={props.onOpen}>
+      <button
+        type="button"
+        className="agal-card"
+        aria-description={dot ? THREAD_DOT_WORDS[dot] : undefined}
+        onClick={props.onOpen}
+      >
         <span className="agal-art">
           {art.avatar ? (
             <FocalImg
@@ -93,6 +107,7 @@ function AgentCard(props: {
           <small className="agal-sub">
             {agentSubtitle(art.name, props.description, props.isDefault)}
           </small>
+          {dot && <span className="thread-dot" data-state={dot} aria-hidden />}
         </span>
       </button>
       <button
@@ -331,6 +346,7 @@ export function AgentsContent() {
                 key={name}
                 art={art(name)}
                 description={list?.summaries?.[name]?.description ?? ""}
+                status={list?.summaries?.[name]?.status}
                 isDefault={name === DEFAULT_AGENT}
                 isSetDefault={isSetDefault(name)}
                 pending={saveSettings.isPending}

@@ -75,7 +75,7 @@ async function fresh({ landed = true }: { landed?: boolean } = {}) {
     </QueryClientProvider>,
   );
   const button = () => view.container.querySelector<HTMLButtonElement>("button.cvs-btn")!;
-  const dot = () => button().querySelector<HTMLElement>(".cvs-dot");
+  const dot = () => button().querySelector<HTMLElement>(".thread-dot");
   return { chat, sheet, view, button, dot, land };
 }
 type F = Awaited<ReturnType<typeof fresh>>;

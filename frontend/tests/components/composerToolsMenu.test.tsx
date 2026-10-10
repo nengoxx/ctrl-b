@@ -59,6 +59,19 @@ const AGENT_MEDIA = {
   },
 };
 const SKILLS = [{ name: "deploy" }, { name: "backups" }];
+/** Phase 27 S10 — each agent's live STATUS, as `summaries[name].status` carries it (absent = a response
+ *  without one). Mutable so a refetch can answer differently. */
+type Status = { running: boolean; awaiting: boolean; unread: boolean };
+let statuses: Record<string, Status>;
+const withStatus = () => ({
+  ...AGENTS,
+  summaries: Object.fromEntries(
+    Object.entries(AGENTS.summaries).map(([k, v]) => [
+      k,
+      statuses[k] ? { ...v, status: statuses[k] } : v,
+    ]),
+  ),
+});
 /** Every agent a roster door READ (`GET /api/threads?agent=<name>`), in order — what a pick opened. */
 const doors: string[] = [];
 
@@ -69,6 +82,7 @@ beforeEach(async () => {
   setComposerOverlay(null);
   localStorage.clear();
   doors.length = 0;
+  statuses = {};
   globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
     const u = String(url);
     // THE ROSTER DOOR's read (`openAgentConversation`): every agent has ONE conversation, `t-<name>`.
@@ -88,7 +102,7 @@ beforeEach(async () => {
         json: () => Promise.resolve({ active: false }),
       } as Response);
     if (u.includes("/api/agents"))
-      return Promise.resolve({ ok: true, json: () => Promise.resolve(AGENTS) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(withStatus()) } as Response);
     if (u.includes("/api/media/agents"))
       return Promise.resolve({ ok: true, json: () => Promise.resolve(AGENT_MEDIA) } as Response);
     if (u.includes("/api/skills"))
@@ -626,5 +640,77 @@ describe("tools menu — the open conversation's home", () => {
     fireEvent.click(radios(container)[0]); // the "default" row: no conversation yet → minted
     await waitFor(() => expect(p.threadId()).toBe("t-new"));
     expect(p.home()).toBe("default");
+  });
+});
+
+// ── Phase 27 S10 — the ROSTER DOTS (D84 R19 · R25 · §7) ──────────────────────────────────────────────
+
+describe("tools menu — the roster dots", () => {
+  const S = (over: Partial<Status> = {}): Status => ({
+    running: false,
+    awaiting: false,
+    unread: false,
+    ...over,
+  });
+  /** Each row's dot state (`null` = no dot), keyed by the row's name. */
+  const dots = (c: HTMLElement): Record<string, string | null> => {
+    const out: Record<string, string | null> = {};
+    for (const r of radios(c))
+      out[rowName(r) ?? "?"] =
+        r.closest("label")?.querySelector<HTMLElement>(".thread-dot")?.dataset.state ?? null;
+    return out;
+  };
+
+  it("a row's dot = `summaries[name].status` through the sheet's priority (needs-you > running > unread); none when clean or absent", async () => {
+    statuses = {
+      default: S({ unread: true, running: true }),
+      ops: S({ awaiting: true, running: true, unread: true }),
+      // research: absent
+    };
+    const { container } = renderComposer();
+    await openMenu(container);
+    expect(dots(container)).toEqual({ default: "running", ops: "needs-you", research: null });
+    // The dot sits in the row's label, after the name (and the tag), decoration only.
+    const opsRow = radios(container)[1].closest("label")!;
+    const dot = opsRow.querySelector(".thread-dot")!;
+    expect(dot.getAttribute("aria-hidden")).toBe("true");
+    expect(dot.previousElementSibling?.className).toBe("tools-name");
+  });
+
+  it("its state in words joins the radio's accessible description", async () => {
+    statuses = { ops: S({ unread: true }), research: S() };
+    const { container } = renderComposer();
+    await openMenu(container);
+    const [root, ops, research] = radios(container);
+    expect(ops.getAttribute("aria-description")).toBe("open Ops Bot's conversation — unread");
+    expect(research.getAttribute("aria-description")).toBe("open research's conversation");
+    expect(root.getAttribute("aria-description")).toBe("open default's conversation");
+  });
+
+  it("the dots MOVE when `['agents']` refetches — the frame consumer's invalidation, no sheet open", async () => {
+    statuses = { ops: S({ running: true }) };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const slots = mergeComposerSlots(kitToolsMenuSlots, undefined);
+    const { container } = render(
+      <QueryClientProvider client={qc}>
+        <KitComposer {...slots} />
+      </QueryClientProvider>,
+    );
+    await openMenu(container);
+    expect(dots(container).ops).toBe("running");
+    statuses = { ops: S({ unread: true }), research: S({ awaiting: true }) };
+    await act(async () => {
+      await qc.invalidateQueries({ queryKey: ["agents"] }); // what `useEventStream` does per `thread` frame
+    });
+    await waitFor(() =>
+      expect(dots(container)).toMatchObject({ ops: "unread", research: "needs-you" }),
+    );
+    statuses = {}; // a seen elsewhere cleared everything
+    await act(async () => {
+      await qc.invalidateQueries({ queryKey: ["agents"] });
+    });
+    await waitFor(() =>
+      expect(dots(container)).toEqual({ default: null, ops: null, research: null }),
+    );
   });
 });
