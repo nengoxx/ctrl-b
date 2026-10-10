@@ -1329,7 +1329,7 @@ its own capability without per-field provenance, it makes an env-addressed provi
 
 ---
 
-## J. UX consolidation + prompt design — FIVE DEDICATED SESSIONS (owner asks 2026-10-07; J5 2026-10-08)
+## J. UX consolidation + prompt design — DEDICATED SESSIONS (owner asks 2026-10-07; J5 2026-10-08; J6 2026-10-09; J7 2026-10-10)
 
 > The owner, on the day the gallery flash was fixed: *"we added so many features that it's bloating a little bit of the
 > configuration options, and we need to make the app more clean and easy to use and intuitive."* Two separate sessions,
@@ -1427,6 +1427,43 @@ its own capability without per-field provenance, it makes an env-addressed provi
   table) — do it in the same sitting or right after.
 - **When:** its own short session, after the car captures have settled the voice numbers (the defaults should be the
   numbers that survived the car). Not a v1.7.12 blocker.
+
+### J7. The prompt inspector — read the RAW prompt a turn actually sent (owner ask 2026-10-10)
+
+- **The ask, in the owner's words:** *"I would like to inspect the whole prompt that is sent to the agent to debug exactly
+  how the prompt is being constructed and what the instructions are … SillyTavern … shows how many tokens does certain
+  parts of the prompt have. But I just want to be able to read the original prompt that is sent to the agent, you know,
+  the skills, the everything, basically. It doesn't have to be organized or anything, just the raw prompt."* — placed
+  *"alongside the retry and delete buttons in the header of the message … one to inspect the prompt that has been sent
+  in that turn. At least so I can copy and inspect it cleanly."* **A separate feature, its OWN session** (the owner:
+  "that's a separate feature … we should do in a different session").
+- **What it is:** a READ-ONLY view of the exact request a reply was produced from: the `messages` array as sent (role +
+  content of every part: the Voice/Duties head, scenario, roster, persona, memory, Core index, skills, lorebook blocks,
+  examples, history, post-history, nudge), plus the tool schemas offered and the request params (model, sampling).
+  Plain text, a **copy** button, no organisation required. SillyTavern's Prompt Itemization (per-part token counts) is
+  the reference convention but explicitly NOT required. Per-part token counts are a possible later add-on, not v1 of this.
+- **The seams it rides (verified 2026-10-10):** the entry point is the assistant **who-line disclosure**, the D81 message
+  actions `retry · edit · delete` (`components/chatAttribution.tsx` ≈:125, `BotWhoLine`; ChatThread's D81 block ≈:606)
+  — an `inspect`/`prompt` action beside them. The request is built in ONE place, `session.py` `_static_prefix` (≈:1040)
+  + `_assemble` (≈:1107) → the inference adapter. D62's per-message serve attribution (endpoint · model · token metrics on
+  the who-line) is the precedent for "facts about how THIS reply was served, stored with the message".
+- **The design questions for its session (not decided):**
+  1. **Capture at send time, never re-assemble later.** A later re-assembly is NOT what was sent: lorebook activation (and
+     J4's probability rolls), memory/Core writes, macros/time, skills and config all move between turns. So the snapshot
+     is taken at the adapter boundary, as the bytes go out.
+  2. **A turn is N requests.** The tool loop makes one request per hop. Show every hop's request, or the first in full +
+     each later hop's additions.
+  3. **Storage + size.** A full request is large (the whole system head + history, every hop), so storing it on every
+     message bloats SQLite fast. Candidates: an opt-in debug flag that keeps snapshots (the `voice.live.debug` trail-file
+     precedent, `~/.ctrl-b/calls/`), a bounded ring (the last N turns per thread), or in-memory only (lost on restart).
+     The inspect action shows a clear "not captured" state for turns outside the window.
+  4. **Images/attachments** render as placeholders (name + size), never inline base64.
+  5. **Security** (`SECURITY_MODEL.md`): the view exposes the full context (memory, persona, tool results). That's
+     fine for the single tailnet owner, but snapshots are NEVER logged, never exported by default, and API keys never
+     enter them (they travel in headers, not the body; assert it at the capture point).
+- **Relation to J3 (prompt order):** J3 changes WHERE each part lands. This is how the owner SEES where it landed, so
+  J7 is J3's natural verification tool. Build it before or alongside J3 if both are scheduled; it stays its own feature.
+- **When:** its own session, owner-scheduled. Not a v1.7.12 blocker.
 
 ## P. Parked — not planned
 
