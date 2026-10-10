@@ -8,8 +8,10 @@
 import type { CoreMemoryStatus } from "../hooks/useMemory";
 import { clearAudioCache, forgetMessage } from "../lib/audioController";
 import { publishNotify } from "../lib/notifyBus";
+import { DEFAULT_AGENT } from "../lib/agentSlug";
 import { currentPlanOf } from "../lib/plan";
-import type { Privilege } from "../lib/privilege";
+import { PRIVILEGE_VALUES, type Privilege } from "../lib/privilege";
+import { displayName, offRoster, onRoster, rosterDefault, rosterLanded } from "../lib/roster";
 import type {
   CallUsage,
   ChatMessage,
@@ -23,62 +25,149 @@ import type {
   ToolResult,
 } from "../types";
 import { consumeStaged, releaseStaged, stagedPreviews } from "./attachments";
-import { appendDraft } from "./composer";
+import {
+  appendDraft,
+  carryOnLeave,
+  moveSlots,
+  pruneSlots,
+  setComposerSlot,
+  slotsCarried,
+  stopLiveDictation,
+} from "./composer";
 import { requestConfirm } from "./confirm";
 import { createStore } from "./createStore";
 import { setConnection } from "./connection";
-import { loadPersisted, savePersisted } from "./persist";
+import { callLive } from "./liveCall";
+import { isRecord, loadPersisted, patchPersisted } from "./persist";
 import { pushToast } from "./toast";
+import { getUI, takeBootThread } from "./ui";
 
 export type ChatStatus = "idle" | "streaming" | "error";
+
+/** One HOME agent's session overrides (D84 R40 + ON4): `/privilege <lvl>` / the `PrivilegeChip`, and a
+ *  bare `/<provider>` (the inference mode). An absent field = the home agent's own AgentDef value. */
+export interface HomeOverride {
+  privilege?: Privilege;
+  mode?: ChatMode;
+}
+/** The overrides, keyed by HOME agent slug (never by the responder — R40: the conversation's stance). */
+export type Overrides = Readonly<Record<string, HomeOverride>>;
 
 interface ChatState {
   threadId: string | null;
   messages: ChatMessage[];
   status: ChatStatus;
   streamingId: string | null; // the message currently receiving deltas (drives caret/dots)
-  // `/privilege <level>` session override (A1/D16), null → follow the agent's own privilege. Reactive
-  // (unlike sessionMode) so the chip reflects it; session-scoped, so `/new` keeps it.
-  sessionPrivilege: Privilege | null;
-  // The sticky agent pick (7d) — `/agent <name>`, the agents gallery's Talk, the composer tools menu's
-  // agent rows, all through `lib/composer#pinStickyAgent` — null → the thread's / configured default
-  // AgentDef. REACTIVE for exactly the reason `sessionPrivilege` is — surfaces render it: the agent
-  // backdrop paints the ACTIVE agent's art, and "active" is this pin (§8.3a item 2); the tools menu
-  // checks its row. It lives in ChatState rather than beside `sessionMode`/`turnMode` as a second
-  // module-level store because that is the shape this file already has for "a pick a surface reflects".
-  // LIFETIME (D75 amendment, 2026-09-26 — the owner reversed the "session-scoped" S1 ruling): the pick
-  // is PERSISTED PER DEVICE (`ctrlb.chat`, see `KEY`), so a PWA relaunch comes back talking to
-  // the same agent; `writeSticky` is its one persist seam (`setStickyAgent` and `/new`'s single `set` both
-  // go through it), so every door persists by construction. `/new` keeps or clears it by the TANDEM RULE
-  // (`startNewThread`): no default configured → keep "the agent I was talking to"; a default configured
-  // → clear, so the fresh thread starts on that default.
-  // Per-message only (not persisted on the thread): a resume/answer payload carries no `agent` at all,
-  // so a continuation finishes on the SUSPENDED TURN's own agent (the server resolves it), not on
-  // whatever is sticky now.
-  stickyAgent: string | null;
-  // The OPEN THREAD's own pinned agent (D11's `Thread.agent`), null → the thread pins nobody. It is the
-  // server's SECOND routing rung (`agent_name or thread.agent`, api/agent.py `_build_session`), and the
-  // FE had no notion of it at all: booting into a thread pinned to a character replied AS that character
-  // while every "which agent is active" surface still showed the default (owner glance 2026-09-08). It
-  // rides beside `stickyAgent` for the same reason that one is reactive — a surface renders it — and it
-  // is written wherever `threadId` is: the two describe ONE conversation and must never disagree.
+  // The session OVERRIDES per HOME agent (D84 R40, ON4) — `/privilege <lvl>`, the chip, a bare
+  // `/<provider>`; a home with no entry follows its own AgentDef. Keyed by the HOME, so they follow the
+  // conversation's home agent whoever answers (a responder's turn runs at its home's overrides) and are
+  // shared by every conversation of that home. PERSISTED PER DEVICE in `ctrlb.chat` (ON4, owner
+  // 2026-10-06 — "both of them should be survivable for a reload"; this superseded the old session-only
+  // contract, SECURITY_MODEL §2.2). Reactive because the chip renders the open home's privilege.
+  overrides: Overrides;
+  // THE RESPONDER (D84 §2, R45) — a per-device override set by `/agent <name>`: WHO ANSWERS in the open
+  // conversation (persona, prompt, memory), sent as `body.agent` on every send. `null` = the home agent
+  // answers ("the home agent is the rule; the responder is the exception"). Its LIFETIME is the view:
+  // leaving the conversation on this device (another conversation, `/new`, the thread-less reset) clears
+  // it in `swapView`; landing on the SAME conversation (a reload, a same-id open) keeps it; a roster
+  // door onto the open conversation's own home clears it in place (B5). Persisted with the view tuple in
+  // `ctrlb.chat`. Never anyone's home (THE INVARIANT, R22): a send carries it, nothing re-pins a thread.
+  responder: string | null;
+  // The open conversation's HOME agent (D84 — `threads.agent`, written once at mint, never moved): its
+  // list, its name, its checked roster row, its overrides. `null` with a `threadId` = UNKNOWN (a door
+  // that knew nothing and a late read that failed, §12.3 H6) — then no override rides a send. `null`
+  // with no `threadId` = the thread-less view, whose home-to-be is the configured default. Written
+  // wherever `threadId` is (`swapView`, `setWireThread`, `loadThread`): the two describe ONE
+  // conversation and must never disagree.
   threadAgent: string | null;
+  // Is the open conversation ARCHIVED (§12.3 H3)? The automations panel opens an automation's run
+  // thread in chat (by design), and an archived id answers 404 to `PATCH /api/threads/{id}` — so an
+  // archived view writes no `seen_at` and is never an R29 "deleted elsewhere" source. `null` = NOT YET
+  // KNOWN (a door that knew nothing, before its record read lands; the thread-less view) — treated as
+  // "not known to be live": no seen write, no R29. Written wherever `threadId` is (`swapView`,
+  // `setWireThread`, `loadThread`) and by the late record read — a door that hands a HOME implies
+  // `false` (a sheet row, the roster door's `?agent=` read and a notification frame all name
+  // non-archived conversations only; a wire mint is fresh).
+  archived: boolean | null;
+  // The STREAMING turn was started by ANOTHER device and attached here by the visible M11 re-attach
+  // (D84 §12.3 M11; owner ruling 2026-10-10): auto-TTS stays silent for it — two devices side by side
+  // must not both speak. Set ONLY by that attach (`reattachTurn`'s go-live write, `foreign = true` from
+  // `applyThreadFrame`'s `running` branch) — and not when this device held queued steers going in (its own
+  // drain-B turn; `probeAndReattach`); every other streaming edge starts loud — `set()` resets it
+  // on the idle → streaming edge for any patch that does not name it (the own-send writers), and every
+  // other re-attach (cold load, reconnect, the interrupt paths) names it `false` — so it can never leak
+  // into the owner's next turn, and the owner's own turn re-attached after an app kill still speaks.
+  foreignTurn: boolean;
 }
 
-//: The chat store's persisted slice (D23 chokepoint, `store/persist`) — ONE object so a later persisted
-//: chat preference is an added field, not a second key. Only `stickyAgent` rides it today; once a second
-//: field lands, `writeSticky` must SPREAD the stored blob rather than write `{agent}` alone.
+//: The chat store's persisted slice (D23 chokepoint, `store/persist`) — `{thread, home, responder,
+//: overrides}` (D84 R45 + ON4 + §12.3 H7). The VIEW TUPLE (`thread`, its `home`, the `responder`) is
+//: written together wherever the view identity changes and by `setResponder`; one home's `overrides`
+//: entry is patched alone by the override writers — every write goes through `patchPersisted`, never a
+//: whole-blob write of in-memory state (§12.3 M4). `home` rides with `thread` so a boot whose thread was
+//: deleted elsewhere still knows whose latest to open (H7).
 const KEY = "ctrlb.chat";
 interface PersistedChat {
-  agent: string | null;
+  thread: string | null;
+  home: string | null;
+  responder: string | null;
+  overrides: Overrides;
+}
+const NO_CHAT: PersistedChat = { thread: null, home: null, responder: null, overrides: {} };
+
+/** A provider/mode name's syntax (`backend/app/config.py` `_PROVIDER_SLUG_RE`) — the wire's own check, so
+ *  a stored `mode` that could never route is dropped at the load boundary. */
+const MODE_SLUG = /^[a-z0-9][a-z0-9_+.-]{0,31}$/;
+
+const slugOrNull = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+
+/** The `overrides` map, type-guarded ENTRY BY ENTRY (ON4): a non-object entry, or a `privilege`/`mode`
+ *  outside the known values, drops THAT entry — never the blob, never another home's. */
+function foldOverrides(v: unknown): Overrides {
+  if (!isRecord(v)) return {};
+  const out: Record<string, HomeOverride> = {};
+  for (const [home, e] of Object.entries(v)) {
+    if (!home || !isRecord(e)) continue;
+    const { privilege, mode } = e;
+    if (
+      privilege !== undefined &&
+      !(typeof privilege === "string" && PRIVILEGE_VALUES.has(privilege))
+    )
+      continue;
+    if (mode !== undefined && !(typeof mode === "string" && MODE_SLUG.test(mode))) continue;
+    const entry: HomeOverride = {};
+    if (privilege !== undefined) entry.privilege = privilege as Privilege;
+    if (mode !== undefined) entry.mode = mode;
+    if (entry.privilege !== undefined || entry.mode !== undefined) out[home] = entry;
+  }
+  return out;
 }
 
-/** The persisted sticky pick, or `null`. The TYPE guard is on the field, not the blob: `loadPersisted`
- *  already folds a non-object blob to the defaults, but a hand-edited or foreign `{agent: 42}` still
- *  merges through — a corrupt value is a clear, never a crash or a bogus `body.agent`. */
-function readStickyAgent(): string | null {
-  const { agent } = loadPersisted<PersistedChat>(KEY, { agent: null });
-  return typeof agent === "string" && agent.length ? agent : null;
+/** THE load-boundary fold of `ctrlb.chat` (one, here). A blob whose `thread` is neither a string nor an
+ *  explicit `null` — the legacy D75 `{agent}` sticky pick, a corrupt value — loads as NO_CHAT: the old
+ *  pick is DROPPED, never carried into `responder` (R4), and written back folded so the `agent` key is
+ *  never seen again. An explicit `thread: null` is the thread-less view's own tuple — its responder
+ *  survives (the boot rule, N1). `home`/`responder` are slug-or-null; `overrides` is guarded per entry. */
+function readPersistedChat(): PersistedChat {
+  const raw = loadPersisted<unknown>(KEY, null);
+  if (raw === null) return NO_CHAT;
+  if (!isRecord(raw)) {
+    patchPersisted(KEY, () => ({ ...NO_CHAT }));
+    return NO_CHAT;
+  }
+  const thread = raw.thread;
+  const folded: PersistedChat =
+    typeof thread === "string" || thread === null
+      ? {
+          thread: slugOrNull(thread),
+          home: slugOrNull(raw.home),
+          responder: slugOrNull(raw.responder),
+          overrides: foldOverrides(raw.overrides),
+        }
+      : NO_CHAT;
+  // The load boundary's ONE write-back: what was read, folded — the legacy key and any dropped entry go.
+  patchPersisted(KEY, () => ({ agent: undefined, ...folded }));
+  return folded;
 }
 
 let state: ChatState = {
@@ -86,9 +175,11 @@ let state: ChatState = {
   messages: [],
   status: "idle",
   streamingId: null,
-  sessionPrivilege: null,
-  stickyAgent: readStickyAgent(),
+  overrides: readPersistedChat().overrides,
+  responder: null,
   threadAgent: null,
+  archived: null,
+  foreignTurn: false,
 };
 let loaded = false;
 //: The chat view's LOAD GENERATION — app-owned cross-generation state (the D39/ACA precedent).
@@ -150,9 +241,11 @@ export function alwaysEligibleFor(callId: string): boolean {
 // `reloadChat` (the durable floor never carries raw lines).
 //
 // THREAD-SCOPED (Codex FE FIX C / reviewer LOW-9): a per-thread map so a stale harvest can never append
-// another thread's raw lines into the current composer, and a `/new` / thread switch prunes the old
-// thread's entries wholesale (`dropAllRaw`). entry_ids are server-unique, but the nesting makes the
-// pruning trivial + keeps the scoping honest rather than relying on that uniqueness.
+// another thread's raw lines into the current composer. A view swap does NOT prune it (Phase 27 O22):
+// since a swap may leave a turn running in the background (R9), the conversation left still owns its
+// queued steers, and their raw lines must survive until THAT thread's own drain (`steer.applied` /
+// `turn.sync`), harvest (Stop) or re-entry reconcile (`pruneRaw`, from the probe) retires them. entry_ids
+// are server-unique, but the nesting keeps the scoping honest rather than relying on that uniqueness.
 const rawByEntry: Record<string, Record<string, string>> = {};
 function setRaw(threadId: string, entryId: string, raw: string): void {
   (rawByEntry[threadId] ??= {})[entryId] = raw;
@@ -169,11 +262,6 @@ function pruneRaw(threadId: string, keep: Set<string>): void {
   const m = rawByEntry[threadId];
   if (m) for (const e of Object.keys(m)) if (!keep.has(e)) delete m[e];
 }
-/** Drop EVERY thread's raw lines — a `/new` full reset (no queued steer survives it). */
-function dropAllRaw(): void {
-  for (const k of Object.keys(rawByEntry)) delete rawByEntry[k];
-}
-
 /** Build an optimistic QUEUED steer bubble (D41 §3/§1). `text` is the stripped body; an exec entry
  *  renders its command with the `!` sigil restored so the bubble reads like the `!cmd` the owner typed. */
 function makeQueuedBubble(entryId: string, kind: "message" | "exec", text: string): ChatMessage {
@@ -245,9 +333,51 @@ let lastSeq = 0;
 // stream also never re-attaches or fails on drop (its owner has moved on). `claimStream` is called at
 // the exact live-adopt point, NOT at reducer construction, so a 202/409/buffered reply that never
 // streams does not bump the generation and orphan the genuinely-live turn.
+//
+// A VIEW SWAP bumps it too (Phase 27 S6, R9 — `swapView`): a swap while a turn streams is allowed, and the
+// left turn simply continues server-side as a background conversation. The bump is what makes every
+// stream claimed BEFORE the swap stale at once — its frames, its terminal, its re-attach-on-drop — through
+// the same checks above, never a second mechanism. A turn whose POST was still in flight at the swap had
+// no generation to go stale; the adopt guard (`viewMoved`, below) covers it instead.
 let streamGeneration = 0;
-function claimStream(ctx: TurnCtx): void {
+/** Claim THE live stream for `ctx` — refused (`false`, nothing bumped) when the turn's view moved since
+ *  its send (O6's first adopt point): adopting would hand the left conversation's stream to the view the
+ *  owner swapped to. A re-attach is bound the same way to the view it was started from (M1 — a hop during
+ *  a drop's recovery must not hand the left turn's frames to the view swapped in). */
+function claimStream(ctx: TurnCtx): boolean {
+  if (viewMoved(ctx)) return false;
   ctx.gen = ++streamGeneration;
+  return true;
+}
+
+/** A VIEW's identity (O6): its thread and its view generation (`loadGen`), captured at the moment a turn,
+ *  a re-attach or a Stop starts on it (`viewHere`). The ONE guard identity of the hop kernel. */
+type ViewRef = { thread: string | null; gen: number };
+function viewHere(): ViewRef {
+  return { thread: state.threadId, gen: loadGen };
+}
+
+/** O6 — has the view this turn was SENT from moved since? `ctx.view` is captured before the POST's
+ *  `fetch` (`streamTurn`; a re-attach before its own, `runCancel` at the Stop): the view's thread and its
+ *  VIEW generation. The view generation is `loadGen` —
+ *  bumped by `swapView` and by a wire mint, i.e. by exactly the changes of view identity — and NOT
+ *  `streamGeneration`, which also moves on a same-view claim (a re-attach, a steer-race adoption): a
+ *  steer's late 202 must still mark its bubble in the view it never left. The thread comparison backs it
+ *  up for a write that changes `threadId` without a swap. Always `false` for a ctx with no `view`. */
+function viewMoved(ctx: { view?: ViewRef }): boolean {
+  return ctx.view !== undefined && (ctx.view.gen !== loadGen || ctx.view.thread !== state.threadId);
+}
+
+/** O6's wire-thread adopt point (the reducer's `thread` frame and the buffered payload's `threadId`):
+ *  install the id unless the turn's view moved. A lazy mint IS this turn's own move — the thread-less
+ *  view becomes the minted conversation — so on adoption the turn's view follows it, and the turn's
+ *  later guards compare against the conversation it created rather than the null it left. `agent` is the
+ *  head's home (S3's `{threadId, title, agent}`, on BOTH transports) — `setWireThread` installs it. */
+function adoptWireThread(ctx: TurnCtx, id: string, agent?: string): boolean {
+  if (viewMoved(ctx)) return false;
+  setWireThread(id, agent);
+  if (ctx.view) ctx.view = { thread: id, gen: loadGen };
+  return true;
 }
 
 /** Parse a `turn_id:seq` wire id → `{turnId, seq}` or null (absent/malformed). `turn_id` is uuid4
@@ -285,6 +415,14 @@ function seqGateDrop(id: string | undefined): boolean {
 // (Codex final round, MED-1: publishing only from the live reducer meant a phone that missed the live
 // frame was never told, while one that saw it and then re-attached risked a second buzz). So every
 // turn-side `publishNotify` goes through these three builders; do NOT inline one anywhere else.
+// (Phase 27 S10 adds the FIFTH transport — the `thread` frame of a BACKGROUND conversation, D84 §5 —
+// which reuses the terminal builder as is and adds the one signal no other transport can produce, the
+// frame-level needs-you, `notifyNeedsYou`.)
+//
+// NAMES + TAPS (D84 §5, R37 · O2): every builder takes the conversation's HOME — the open view's own
+// stream passes `state.threadAgent`, the frame its `agent` — and names it in the title ("<Name>
+// finished", the ONE vanished-home paint), and every agent-class signal carries `thread` + `home` so its
+// tap opens THAT conversation (`applyNotificationFocus` → `openThread(thread, home)`).
 //
 // Keys are namespaced `<kind>:<threadId>:<id>` (Codex LOW): call ids and turn ids are server-unique
 // already, but the thread segment makes a snapshot's key provably identical to the live frame's
@@ -298,6 +436,19 @@ function notifyScope(threadId: string | null | undefined): string {
   return threadId ?? state.threadId ?? NOTIFY_NO_THREAD;
 }
 
+/** The thread an agent-class signal's TAP opens (D84 §5 O2, the notification's `data.thread`) — the same
+ *  thread `notifyScope` keys it under, `undefined` only in the thread-less test case. */
+function notifyThreadOf(threadId: string | null | undefined): string | undefined {
+  return threadId ?? state.threadId ?? undefined;
+}
+
+/** WHO a signal names (R37): the conversation's HOME agent's display name, through the ONE vanished-home
+ *  paint (`homeName` — a home off the landed roster reads as the configured default, §12.1 ①); a home this
+ *  device does not know yet (`null`) reads as the configured default too. */
+function signalName(home: string | null): string {
+  return homeName(home ?? rosterDefault());
+}
+
 /** F1 — the agent is now BLOCKED on the owner (a confirm-gated call). This is the class that makes
  *  notifications worth having: an unattended turn parks here indefinitely otherwise. Keyed on the
  *  durable `callId`, so a re-attach that REPLAYS or RECONSTRUCTS the same call resolves to the same
@@ -307,13 +458,16 @@ function notifyAwaitingConfirm(
   callId: string,
   prompt: string | undefined,
   tool: string | undefined,
+  home: string | null,
 ): void {
   publishNotify({
     cls: "agent_input",
     key: `perm:${notifyScope(threadId)}:${callId}`,
-    title: "Approval needed",
+    title: `${signalName(home)} needs approval`,
     body: prompt ?? `${tool ?? "a tool"} is waiting for your approval`,
     focus: "agent",
+    thread: notifyThreadOf(threadId),
+    home: home ?? undefined,
   });
 }
 
@@ -323,13 +477,16 @@ function notifyAwaitingAnswer(
   threadId: string | null | undefined,
   callId: string,
   question: string | undefined,
+  home: string | null,
 ): void {
   publishNotify({
     cls: "agent_input",
     key: `ask:${notifyScope(threadId)}:${callId}`,
-    title: "The agent has a question",
+    title: `${signalName(home)} has a question`,
     body: question ?? "open the chat to answer",
     focus: "agent",
+    thread: notifyThreadOf(threadId),
+    home: home ?? undefined,
   });
 }
 
@@ -355,29 +512,31 @@ function notifyTurnTerminal(
   threadId: string | null | undefined,
   turnId: string | null,
   st: string | null | undefined,
-  message?: string,
+  message: string | undefined,
+  home: string | null,
+  pressure = true,
 ): void {
   if (!st || st === "suspended") return;
   // D61 ② — a turn just ended, so the owner is back in the loop: the moment to tell them the
   // core-memory index is filling up. It rides THIS helper, not the `done` frame, for exactly the
   // reason the notifications do — it is the one point every transport's terminal passes through.
-  checkMemoryPressure();
+  // NOT for a BACKGROUND conversation's frame (`pressure = false`, S10 fix ⑨): the hint is a system note
+  // pushed into the OPEN view, and a background frame never touches the open view (§12.4 Q8).
+  if (pressure) checkMemoryPressure();
   const scope = notifyScope(threadId);
   const failed = st === "error";
   publishNotify({
     cls: "turn_done",
     key: `${failed ? "turn-error" : "turn-done"}:${scope}:${turnId ?? scope}`,
-    title: failed
-      ? "The agent stopped"
-      : st === "capped"
-        ? "The agent hit its step limit"
-        : "The agent finished",
+    title: `${signalName(home)} ${failed ? "stopped" : st === "capped" ? "hit the step limit" : "finished"}`,
     body: failed
       ? (message ?? "the turn ended with an error")
       : st === "capped"
         ? "send a message to continue"
         : "your reply is ready in the chat",
     focus: "agent",
+    thread: notifyThreadOf(threadId),
+    home: home ?? undefined,
   });
 }
 
@@ -400,7 +559,7 @@ function notifyTurnTerminal(
  *  (it lives only on the live `tool.permission` frame / the in-memory snapshot), so a reconstructed
  *  confirm falls back to the builder's "<tool> is waiting for your approval" body — same key, so the
  *  de-dupe is unaffected. A question's text IS durable (`args.prompt`, the `question` builtin's input). */
-function notifyRestoredAwaiting(threadId: string): void {
+function notifyRestoredAwaiting(threadId: string, home: string | null): void {
   const msgs = state.messages;
   let from = 0;
   for (let i = msgs.length - 1; i >= 0; i--)
@@ -415,10 +574,96 @@ function notifyRestoredAwaiting(threadId: string): void {
     for (const p of msgs[i].parts) {
       if (p.type !== "tool_call" || resolved.has(p.call_id)) continue;
       if (p.state === "awaiting_confirm")
-        notifyAwaitingConfirm(threadId, p.call_id, undefined, p.tool);
+        notifyAwaitingConfirm(threadId, p.call_id, undefined, p.tool, home);
       else if (p.state === "awaiting_answer")
-        notifyAwaitingAnswer(threadId, p.call_id, str(p.args.prompt));
+        notifyAwaitingAnswer(threadId, p.call_id, str(p.args.prompt), home);
     }
+}
+
+/** D84 §5 — a BACKGROUND conversation parked on the owner (its `suspended` terminal frame): the frame says
+ *  only that the turn parked, not on which call (that detail is the open view's own `tool.permission` /
+ *  `tool.question`, which this device never streamed) — so the signal names the HOME and sends the owner
+ *  to the conversation. Keyed on the TURN (`agent-input:<thread>:<turn>`): one buzz per parked turn. */
+function notifyNeedsYou(threadId: string, turnId: string | null, home: string | null): void {
+  publishNotify({
+    cls: "agent_input",
+    key: `agent-input:${threadId}:${turnId ?? threadId}`,
+    title: `${signalName(home)} needs you`,
+    body: "open the conversation to continue",
+    focus: "agent",
+    thread: threadId,
+    home: home ?? undefined,
+  });
+}
+
+/** One live `thread` frame (D84 §5, R8/R26 — backend `core/events.ThreadFrame`, `event: thread`), as
+ *  `hooks/useEvents` parsed it off the wire: `state` ∈ running · completed · suspended · capped · error ·
+ *  cancelled · seen (an unknown one is simply not acted on); `agent` = the conversation's HOME; `chained` =
+ *  the terminal handed off to a drain-B steer turn, whose own frames follow. */
+export interface ThreadFrame {
+  threadId: string;
+  state: string;
+  turnId: string | null;
+  agent: string | null;
+  chained: boolean;
+}
+
+//: THE LAZY-MINT HOLD (S10-C01, Sol's confirm — reproduced). While the view is THREAD-LESS and STREAMING
+//: (the window from Send to the mint's adoption: on the streaming transport until the `thread` head lands,
+//: on the buffered one for the whole first turn), the open view's identity is not known yet — any frame
+//: might be the minted conversation's own (announced by this view's transport) or an UNRELATED one's
+//: (owed a signal). Judging it then is wrong either way (the old ⑦ `open` swallowed the unrelated one's
+//: needs-you — LOST, not delayed), so `applyThreadFrame` HOLDS every frame of the window, whatever its
+//: state, and `set()` REPLAYS them through the same policy the moment the window closes (see `set`). No
+//: cap: the window is one turn, and the frames per conversation per turn are few.
+let heldFrames: ThreadFrame[] = [];
+
+/** THE FRAME CONSUMER'S POLICY (D84 §5) — called by `useEventStream` AFTER it has invalidated
+ *  `['threads']` + `['agents']` (the dots, both lists; unconditional, whatever this does). It lives here
+ *  because it reads the open view and its stream, and owns the notify builders:
+ *    · a terminal (`completed`/`capped`/`error`) of a conversation that is NOT the open view, and not
+ *      `chained` → the turn-done signal through the ONE builder (its key `turn-done:<thread>:<turn>` is
+ *      the open view's own, so the conversation that IS open — whose stream already announced it — is
+ *      skipped here and could not double-buzz anyway);
+ *    · `suspended` (not open, not chained) → the needs-you signal (`notifyNeedsYou`);
+ *    · `cancelled` / `seen` → nothing (the invalidation IS their effect: a seen on device A clears device
+ *      B's dot through the refetch); `chained` → nothing (the steer turn's own frames follow);
+ *    · `running` for the OPEN view's own conversation while this view is NOT streaming and the page is
+ *      VISIBLE (the other device sent there, B9 — §12.3 M11) → probe + re-attach, so the visible device
+ *      shows the turn; every other `running` → nothing (the dots carry it; a hidden page probes on return).
+ *  A frame that lands while the view is thread-less AND streaming (a lazy mint not yet adopted) is HELD,
+ *  not judged — `heldFrames` above; `set()` replays it once the view's identity is known (S10-C01, which
+ *  replaced fix ⑦'s wider `open`).
+ *  Whether a signal becomes an OS notification is the engine's gate, unchanged (R39: visible ⇒ the dots
+ *  only; hidden ⇒ the notification). Nothing here plays audio: read-along rides the OPEN view's stream
+ *  alone (§12.4 Q8). Synchronous — no await, so the view read cannot go stale under it. */
+export function applyThreadFrame(frame: ThreadFrame): void {
+  // The lazy-mint window (S10-C01): the view may be about to adopt THIS conversation, or it may be another
+  // one's — not knowable yet, so hold it for the replay (`set()` drains it when the window closes).
+  if (state.threadId === null && getChatStatus() === "streaming") {
+    heldFrames.push(frame);
+    return;
+  }
+  const open = frame.threadId === state.threadId;
+  if (frame.state === "running") {
+    // M11 on a VISIBLE page only (S10 fix ⑥ — "so the VISIBLE device shows the turn"): a hidden page
+    // re-attaching would cross the view's streaming → idle edge in a pocket (auto-TTS speaks it); nothing
+    // is lost — the bridge's `returnToChat` probes when the page comes back. `foreign = true`: this
+    // device did not start the turn, so the attach marks it `foreignTurn` and auto-TTS stays silent for
+    // it (owner ruling 2026-10-10 — two devices side by side must not both speak) — unless this device
+    // held queued steers going in (its own drain-B turn — decided in `probeAndReattach`).
+    if (
+      frame.threadId === state.threadId &&
+      getChatStatus() !== "streaming" &&
+      (typeof document === "undefined" || document.visibilityState === "visible") // `markSeen`'s guard
+    )
+      void probeAndReattach(frame.threadId, false, true);
+    return;
+  }
+  if (open || frame.chained) return;
+  if (frame.state === "completed" || frame.state === "capped" || frame.state === "error")
+    notifyTurnTerminal(frame.threadId, frame.turnId, frame.state, undefined, frame.agent, false);
+  else if (frame.state === "suspended") notifyNeedsYou(frame.threadId, frame.turnId, frame.agent);
 }
 
 // ── D61 ② the core-memory pressure hint ─────────────────────────────────────────────────────────
@@ -475,27 +720,17 @@ function checkMemoryPressure(): void {
   })();
 }
 
-// Sticky inference backend for this session, set by a bare `/<provider>` verb (A11/D48 C7). `null` →
-// the server's configured default. A `/<provider> <msg>` form forces one message via sendMessage's
-// `mode` arg without touching this. Module-level (not reactive). The mode string IS a provider name
-// end-to-end (syntax-only validated on the wire); the registry coerces an unknown one → default.
+// The inference mode (A11/D48 C7): a provider name end-to-end (syntax-only validated on the wire; the
+// registry coerces an unknown one → default). The STICKY one is a HOME override — `overrides[home].mode`,
+// set by a bare `/<provider>` (D84 R40, persisted per device by ON4); a `/<provider> <msg>` forces ONE
+// message through sendMessage's `mode` arg without touching it. `null` → the server's configured default.
 export type ChatMode = string;
-let sessionMode: ChatMode | null = null;
-export function setSessionMode(mode: ChatMode | null): void {
-  sessionMode = mode;
-}
-/** The sticky pick, non-reactively — the composer's attachment rail needs to know whether a
- *  `/<provider>` override is in force, because the vision hint it can render (D68 §7) is only true
- *  of the CONFIGURED chain: a forced provider resolves server-side and is not reported. */
-export function getSessionMode(): ChatMode | null {
-  return sessionMode;
-}
 
 // The inference mode the CURRENT turn was sent with (ACA-16 / S2-D). `sendMessage` stashes its derived
-// per-turn mode here — a per-message `/cloud <msg>` overrides the sticky `sessionMode` for that one
-// turn, so a resume/answer must carry the *turn's* mode, not re-read `sessionMode`. Module-level +
-// non-reactive like `sessionMode` (no UI reflects it); a chained resume keeps the original turn's mode
-// until the next send overwrites it. `null` → the server's configured default.
+// per-turn mode here — a per-message `/cloud <msg>` overrides the home's sticky mode for that one turn,
+// so a resume/answer must carry the *turn's* mode, not re-read the override. Module-level + non-reactive
+// (no UI reflects it); a chained resume keeps the original turn's mode until the next send overwrites it.
+// `null` → the server's configured default.
 let turnMode: ChatMode | null = null;
 
 // The active skills the CURRENT turn was sent with (C5-M1). `sendMessage` stashes the turn's explicit
@@ -503,74 +738,339 @@ let turnMode: ChatMode | null = null;
 // Module-level + non-reactive like `turnMode`; `null`-equivalent is the empty list.
 let turnSkills: string[] = [];
 
-// The sticky agent pick lives in ChatState (see its field note). These two are its whole API.
-/** The ONE writer of the sticky pick — every door (`/agent`, Talk, the menu's rows) comes through here;
- *  `/new` writes it inside its own single `set` and persists through the same `writeSticky`, so the
- *  persisted copy can never disagree with the live one. */
-export function setStickyAgent(name: string | null): void {
-  set({ stickyAgent: name });
-  writeSticky(name);
-}
-/** The ONE persist seam for the sticky pick — PRIVATE and non-emitting, so a caller that already emitted
- *  the new state (`setStickyAgent`, `startNewThread`) persists without a second emit. */
-function writeSticky(name: string | null): void {
-  savePersisted<PersistedChat>(KEY, { agent: name });
-}
-/** The sticky pick, REACTIVELY (D70 §8.3a item 2) — for a surface that must repaint when the owner
- *  switches agent (`/agent`, the gallery's Talk button, the tools menu's agent rows): the agent backdrop
- *  and the tools menu's checked row. A slice, not `useChat()`: the store emits on every streamed token,
- *  and this value changes a handful of times a session. */
-export function useStickyAgent(): string | null {
-  return useChatSlice((s) => s.stickyAgent);
+// ── THE HOME, THE RESPONDER, THE OVERRIDES (D84 §2, §6 — R40, R45, ON4) ───────────────────────────
+// THE PRINCIPLE (owner): the home agent is the rule; the responder is the exception. Everything about a
+// conversation — its overrides included — follows its HOME; the responder changes only who answers.
+
+/** The view's HOME: the open conversation's `threadAgent` when known; with no conversation open, the
+ *  home-to-be = the CONFIGURED default (what the lazy mint pins, F4/B17) — known only once a roster has
+ *  LANDED (before that `rosterDefault()` is the root's placeholder, and the root's overrides must not ride
+ *  the configured default's mint, S7A-02); `null` while the home is UNKNOWN (that, or a door that knew
+ *  nothing and a late read that failed, §12.3 H6). */
+function homeOf(s: ChatState): string | null {
+  if (s.threadAgent !== null) return s.threadAgent;
+  return s.threadId === null && rosterLanded() ? rosterDefault() : null;
 }
 
-// The OPEN THREAD's pinned agent (see its field note). Read-only to the app: it is not a pick anyone
-// makes here, it is what the loaded thread already carries, so the writes live at the load seams.
-/** The thread pin, REACTIVELY — the twin of `useStickyAgent` for every surface that must follow it: the
- *  agent backdrop, and the composer menu's checked row. A SURFACE must use this, never the getter below:
- *  the value arrives on its own from `openThread`'s late pin read, so a snapshot taken at render time
- *  can be stale while the surface is still up. Same slice reasoning as its twin: it changes once per thread switch, while the store emits
- *  on every streamed token. */
+/** The DISPLAY name a note gives a home: a home OFF the landed roster reads as the configured default —
+ *  the client's one vanished-home paint (§12.1 ①, ISS-51 as built) — else its title-or-slug. */
+function homeName(home: string): string {
+  return displayName(offRoster(home) ? rosterDefault() : home);
+}
+
+/** The open home's overrides — `undefined` when it has none OR the home is UNKNOWN: a persisted, uncapped
+ *  elevation never rides a conversation whose home this device cannot name (§12.3 H6). The ONE reader
+ *  every send path takes (`sendMessage`, and the regenerate / answer / resume carries). */
+function homeOverride(): HomeOverride | undefined {
+  const home = homeOf(state);
+  return home === null ? undefined : state.overrides[home];
+}
+
+/** The open home's sticky inference mode, non-reactively — the composer's attachment rail needs to know
+ *  whether a `/<provider>` override is in force, because the vision hint it can render (D68 §7) is only
+ *  true of the CONFIGURED chain: a forced provider resolves server-side and is not reported. */
+export function getHomeMode(): ChatMode | null {
+  return homeOverride()?.mode ?? null;
+}
+
+/** The open home's privilege override, REACTIVELY — the `PrivilegeChip`. `null` = none set ("Default":
+ *  the home AgentDef's own); `undefined` = the home is UNKNOWN (the chip reads "…", §12.3 H6). A slice of
+ *  primitives, so the chip re-renders only when its value changes, never per streamed token. */
+export function useHomePrivilege(): Privilege | null | undefined {
+  return useChatSlice((s) => {
+    const home = homeOf(s);
+    return home === null ? undefined : (s.overrides[home]?.privilege ?? null);
+  });
+}
+
+/** The view's HOME, REACTIVELY — the ONE definition the chat header's conversations button and its sheet
+ *  read (D84 §7, R36: the button always opens the HOME's sheet, whoever answers). `homeOf`, the chip's
+ *  own rule: `null` while the home is UNKNOWN — a door that knew nothing and a failed late read, or a
+ *  thread-less view before the roster lands (S7A-02) — and no surface runs against an unknown home. */
+export function useViewHome(): string | null {
+  return useChatSlice(homeOf);
+}
+
+/** Write ONE field of the open home's override (`null` clears it), in memory and in `ctrlb.chat` — that
+ *  home's entry patched alone (§12.3 M4). Returns the home written for, or `null` when the home is
+ *  UNKNOWN (nothing is written: an override keyed by a guess could land on the wrong home). */
+function writeHomeOverride<K extends keyof HomeOverride>(
+  field: K,
+  value: HomeOverride[K] | null,
+): string | null {
+  const home = homeOf(state);
+  if (home === null) return null;
+  const entry: HomeOverride = { ...state.overrides[home] };
+  if (value === null) delete entry[field];
+  else entry[field] = value;
+  const overrides: Record<string, HomeOverride> = { ...state.overrides };
+  if (entry.privilege === undefined && entry.mode === undefined) delete overrides[home];
+  else overrides[home] = entry;
+  set({ overrides });
+  persistOverride(home);
+  return home;
+}
+
+/** `/privilege <lvl>` (bare/`default`/`clear` → `null`) and the chip: the open HOME's privilege override
+ *  (R40). Allowed during a live call (§12.4 Q4 — an override is the home's setting, not a switch; it
+ *  applies from the next utterance). Returns the home written for, `null` when the home is unknown. */
+export function setHomePrivilege(p: Privilege | null): string | null {
+  return writeHomeOverride("privilege", p);
+}
+
+/** A bare `/<provider>`: the open HOME's sticky inference mode (R40). Allowed in a call, like the
+ *  privilege. Returns the home written for, `null` when the home is unknown. (No verb clears a sticky
+ *  mode today — a bare `/<provider>` naming the default chain's provider is the way back.) */
+export function setHomeMode(mode: ChatMode): string | null {
+  return writeHomeOverride("mode", mode);
+}
+
+/** Persist ONE home's override entry (`ctrlb.chat` `overrides[home]`), read fresh and patched alone. */
+function persistOverride(home: string): void {
+  const entry = state.overrides[home];
+  patchPersisted(KEY, (stored) => {
+    const overrides = isRecord(stored.overrides) ? { ...stored.overrides } : {};
+    if (entry) overrides[home] = entry;
+    else delete overrides[home];
+    return { overrides };
+  });
+}
+
+/** Persist the VIEW TUPLE `{thread, home, responder}` — together, wherever the view identity changes
+ *  (`swapView`, `setWireThread`, `loadThread`, a late home read) and by every responder write. The
+ *  tuple's fields only; the overrides beside them are untouched (§12.3 M4). */
+function persistView(): void {
+  patchPersisted(KEY, () => ({
+    thread: state.threadId,
+    home: state.threadAgent,
+    responder: state.responder,
+  }));
+}
+
+/** §12.2 (a) — the NORMALISATION: whenever the view's HOME becomes known or changes, a responder EQUAL to
+ *  it is redundant and is dropped, so a redundant override never lingers (B17 with the configured default
+ *  picked thread-less: the mint is that agent's own conversation, with no responder). */
+function normalised(responder: string | null, home: string | null): string | null {
+  return home !== null && responder === home ? null : responder;
+}
+
+/** Install the view's HOME when it becomes known after the swap (a door's handed home on a same-id open,
+ *  the late list read, B5) — normalised and persisted with the tuple. */
+function installHome(home: string): void {
+  set({ threadAgent: home, responder: normalised(state.responder, home) });
+  persistView();
+}
+
+/** The RESPONDER, REACTIVELY — for a surface that must repaint when it changes (`useActiveAgent`: the
+ *  backdrop and every active-agent surface). A slice: it changes a handful of times a session. */
+export function useResponder(): string | null {
+  return useChatSlice((s) => s.responder);
+}
+
+/** Set (or clear) the responder and persist the tuple — the ONE writer behind every responder change. */
+function commitResponder(responder: string | null): void {
+  set({ responder });
+  persistView();
+}
+
+// The two live-call refusal notes (R20, §2's table): a swap would `clearAudioCache()` (the mouth) and the
+// next utterance (`sendCallTranscript`) would land in another conversation or another voice.
+const HANG_UP_SWITCH_CONVERSATION = "// hang up to switch conversations";
+const HANG_UP_SWITCH_RESPONDER = "// hang up to switch who answers";
+
+/** R20 — refuse a navigation / a responder change while a call is up: the note, and `true`. */
+function refusedInCall(note: string): boolean {
+  if (!callLive()) return false;
+  pushSystemNote(note);
+  return true;
+}
+
+/** R20 for a surface OUTSIDE this store whose action ends in a conversation switch — the sheet's Delete of
+ *  the OPEN conversation (§12.3 M8: its fallback is a swap): while a call is up, the hang-up note, and
+ *  `true` (refused). The rule, `callLive()` and the note text stay here with every other R20 site. */
+export function refuseSwitchInCall(): boolean {
+  return refusedInCall(HANG_UP_SWITCH_CONVERSATION);
+}
+
+/** `/agent <name>` — set WHO ANSWERS in the open conversation on this device (D84 §2, R45, THE RESPONDER
+ *  door). Validity = THE ROSTER (`lib/roster`, agents ∪ the root — `/agent default` is valid): a name the
+ *  LANDED roster does not hold changes nothing and toasts (`No agent named "x"` — §12.1 ③, owner-ruled
+ *  2026-10-07, which superseded §2's note row); before the roster lands a name passes UNJUDGED (the first
+ *  landing's sweep judges it, N2). The notes are §2's, verbatim, with `Name` = the display name:
+ *    · the HOME's own name → the responder clears (`// Lynette answers again`);
+ *    · the current responder → `// Emma already answers here`;
+ *    · another → `// Emma answers in Lynette's conversation — /agent lynette switches back`;
+ *    · no conversation open (B17) → the home-to-be is the configured default:
+ *      `// Emma will answer — the conversation starts as Lynette's`, or `// Lynette will answer` when the
+ *      pick IS the default (no responder — the mint is her own conversation, §12.2 a).
+ *  A send already streaming finishes as whoever started it; a send WHILE it streams steers that reply —
+ *  the responder applies from the next TURN (§12.3 M10). Refused in a live call (R20). */
+export function setResponder(name: string): void {
+  if (refusedInCall(HANG_UP_SWITCH_RESPONDER)) return;
+  if (offRoster(name)) {
+    pushToast(`No agent named "${name}"`, "err");
+    return;
+  }
+  const label = displayName(name);
+  const home = homeOf(state);
+  if (state.threadId === null) {
+    // B17 — the home-to-be is the configured default (`homeOf`).
+    const homeToBe = home ?? rosterDefault();
+    if (name === homeToBe) {
+      commitResponder(null);
+      pushSystemNote(`// ${label} will answer`);
+      return;
+    }
+    if (state.responder === name) {
+      pushSystemNote(`// ${label} already answers here`);
+      return;
+    }
+    commitResponder(name);
+    pushSystemNote(`// ${label} will answer — the conversation starts as ${homeName(homeToBe)}'s`);
+    return;
+  }
+  if (home !== null && name === home) {
+    if (state.responder === null) pushSystemNote(`// ${label} already answers here`);
+    else {
+      commitResponder(null);
+      pushSystemNote(`// ${label} answers again`);
+    }
+    return;
+  }
+  if (state.responder === name) {
+    pushSystemNote(`// ${label} already answers here`);
+    return;
+  }
+  commitResponder(name);
+  // An UNKNOWN home (H6) cannot be named — the note says only what is known; the late read normalises.
+  pushSystemNote(
+    home === null
+      ? `// ${label} answers in this conversation`
+      : `// ${label} answers in ${homeName(home)}'s conversation — /agent ${home} switches back`,
+  );
+}
+
+/** Bare `/agent` — who answers here, as §2's two "talking to" notes (and B17's form with no conversation
+ *  open). Changes nothing. */
+export function reportResponder(): void {
+  const home = homeOf(state);
+  const where = home === null ? null : homeName(home);
+  const r = state.responder;
+  if (r === null) {
+    pushSystemNote(
+      where === null ? "// talking to this conversation's agent" : `// talking to ${where}`,
+    );
+    return;
+  }
+  const label = displayName(r);
+  if (state.threadId === null && where !== null)
+    pushSystemNote(`// ${label} will answer — the conversation starts as ${where}'s`);
+  else
+    pushSystemNote(
+      where === null
+        ? `// talking to ${label} in this conversation`
+        : `// talking to ${label} in ${where}'s conversation`,
+    );
+}
+
+/** THE ROSTER SWEEP (D84 §6 N2 + §12.3 M7) — ONE place, run on every LANDED roster read
+ *  (`lib/composer#installAgents`, the one installer both readers of `GET /api/agents` go through; a failed
+ *  read installs nothing, so it judges nothing — M3) and once more when the boot installs its stored tuple
+ *  (a roster that landed BEFORE the boot read is otherwise never applied to it):
+ *    1. a RESPONDER off the roster is cleared at once — the tuple rewritten, the note
+ *       `// <slug> is gone — <Home> answers` (never a silent fallback while the UI still shows the name);
+ *    2. every OVERRIDES slot whose HOME is off the roster is pruned (memory + `ctrlb.chat`), so a
+ *       re-created slug never inherits an old elevation (ON4); clearing a responder never touches its
+ *       home's slot;
+ *    3. a VIEW whose HOME is off the roster moves to the configured default's latest
+ *       (`openAgentConversation`) — on whichever device holds it (M7), the left view's draft + rail carried
+ *       into it (E6, `carryOnLeave`); the deleting device's own immediate move is the delete's success
+ *       handler (`leaveDeletedHome`, N3), so here it has usually already happened. In a live call the
+ *       move is not made here — it LATCHES (`pendingHomeMove`) and the call's teardown runs it
+ *       (`runAfterCall`, §12.3 M8).
+ *  Import direction: `lib/composer` (the installer) → `store/chat` (this) → `lib/roster` (the data) —
+ *  the edge that already runs composer → chat, never back. */
+export function sweepRoster(): void {
+  if (!rosterLanded()) return;
+  const gone = state.responder;
+  if (gone !== null && !onRoster(gone)) {
+    commitResponder(null);
+    const home = homeOf(state);
+    pushSystemNote(
+      `// ${gone} is gone — ${home === null ? "this conversation's agent" : homeName(home)} answers`,
+    );
+  }
+  // §12.2 (a) — a THREAD-LESS view's home-to-be just became known (the configured default, `homeOf`):
+  // a responder equal to it is redundant, normalised here rather than only at the mint's head.
+  if (state.threadId === null) {
+    const kept = normalised(state.responder, rosterDefault());
+    if (kept !== state.responder) commitResponder(kept);
+  }
+  const dead = Object.keys(state.overrides).filter((h) => !onRoster(h));
+  if (dead.length) {
+    const overrides: Record<string, HomeOverride> = { ...state.overrides };
+    for (const h of dead) delete overrides[h];
+    set({ overrides });
+    patchPersisted(KEY, (stored) => {
+      const kept = isRecord(stored.overrides) ? { ...stored.overrides } : {};
+      for (const h of dead) delete kept[h];
+      return { overrides: kept };
+    });
+  }
+  const home = state.threadAgent;
+  if (state.threadId !== null && home !== null && !onRoster(home)) {
+    if (callLive()) pendingHomeMove = home;
+    else {
+      carryOnLeave(state.threadId); // E6 — into whatever opens
+      void openAgentConversation(rosterDefault());
+    }
+  }
+  // A landing makes a thread-less view's home KNOWN (`homeOf`, S7A-02) without any chat-state write:
+  // one emit, so the chip leaves "…" (its slice re-renders only if its value changed).
+  emit();
+}
+
+// The OPEN THREAD's HOME agent (see its field note). Read-only to the app: it is not a pick anyone
+// makes here, it is what the open conversation already carries, so the writes live at the load seams.
+/** The home, REACTIVELY — for every surface that must follow it: the composer menu's checked row (the
+ *  HOME, R38), and `useActiveAgent`'s fallback rung. Never a render-time snapshot of the store: the value
+ *  can arrive on its own from `openThread`'s late list read, so a snapshot taken at render time can be
+ *  stale while the surface is still up. A slice: it changes once per conversation switch, while
+ *  the store emits on every streamed token. */
 export function useThreadAgent(): string | null {
   return useChatSlice((s) => s.threadAgent);
 }
 
-/** The thread pin, NON-reactively — for an imperative moment that reads it once and is done, in the
- *  family of `getChatStatus`/`getLiveTurn`: bare `/agent`'s note, which must name the agent that will
- *  actually answer once the sticky pick is cleared (the thread's own pin outranks the default on the
- *  server's ladder). Never for rendering — that is `useThreadAgent`'s job (see its note). */
-export function getThreadAgent(): string | null {
-  return state.threadAgent;
-}
-
-/** The open thread's id, NON-reactively — the same imperative-moment family as `getThreadAgent`: the
- *  pick seam snapshots it before its confirm, so the discard it asks about stays bound to THAT thread
- *  (ISS-49). Never for rendering. */
-export function getThreadId(): string | null {
-  return state.threadId;
-}
-
 /** Write a thread id learned from the WIRE — the stream's `thread` frame, a buffered turn's payload, an
- *  exec response: the three places a send can MINT a thread. A DIFFERENT id is exactly that mint, and a
- *  just-created thread carries no D11 pin, so the thread agent resets with it. The SAME id is the
- *  ordinary echo of the conversation we are already in and must leave the pin alone — clearing it there
- *  would repaint every active-agent surface the moment the owner sends into a pinned thread. */
-function setWireThread(id: string): void {
+ *  exec response: the three places a send can MINT a thread. A DIFFERENT id is exactly that mint: the
+ *  thread agent becomes the head's `agent` (Phase 27 S3 put the minted conversation's HOME on the head —
+ *  §12.3 H6: no surface runs against an unknown home), or `null` when the wire carried none. The SAME id
+ *  is the ordinary echo of the conversation we are already in and must leave a KNOWN home alone —
+ *  clearing it there would repaint every active-agent surface the moment the owner sends into a pinned
+ *  thread — while an UNKNOWN one (`null`: a failed late read) is repaired from the head.
+ *
+ *  The RESPONDER survives the lazy mint (B17 — the thread-less view becoming its first conversation is
+ *  not leaving it), normalised against the home it learns (§12.2 a); from any other view it clears. The
+ *  tuple is rewritten with it. */
+function setWireThread(id: string, agent?: string): void {
   if (id === state.threadId) {
-    set({ threadId: id });
+    if (agent && state.threadAgent === null) installHome(agent);
     return;
   }
   // A MINT is a change of view identity, exactly like an open or a `/new` — so it invalidates every
   // parked reconciliation too (the S6 review's F3). Without this a cold `initChat` that started before
   // the send lands the OLD thread's history, and its pin, over the conversation just created.
   loadGen++;
-  set({ threadId: id, threadAgent: null });
-}
-
-// Sticky session privilege override, set by `/privilege <level>` (A1/D16). Reactive (lives in
-// ChatState) so the PrivilegeChip can render it; `null` → the resolved agent's own privilege.
-export function setSessionPrivilege(p: Privilege | null): void {
-  set({ sessionPrivilege: p });
+  const home = agent ?? null;
+  // The responder survives ONLY the originating lazy mint — a THREAD-LESS view becoming its first
+  // conversation is not leaving it (B17); any other id change is a swap like any other (S7A-01).
+  const responder = state.threadId === null ? normalised(state.responder, home) : null;
+  // A wire mint is a FRESH conversation, never an archived one (H3).
+  set({ threadId: id, threadAgent: home, responder, archived: false });
+  persistView();
+  // The per-conversation composer slot follows the view HERE too (§12.3 H2, Phase 27 S8) — and a lazy
+  // mint from the thread-less view carries the `""` draft/rail into the conversation it created (Q6).
+  setComposerSlot(id, true); // the wire MINT — from `""`, the auto-send gate's one non-hop (N1)
 }
 
 // ── the optimistic bubbles' object URLs (D68 MED-6) ──────────────────────────────────────────────
@@ -604,10 +1104,42 @@ function sweepPreviews(next: readonly ChatMessage[]): void {
   }
 }
 
+// Two more invariants kept at THIS chokepoint (the `sweepPreviews` precedent — a rule every write must
+// honour lives where every write passes, never at a list of call sites):
+//
+//  · THE FOREIGN-TURN RESET (owner ruling 2026-10-10): on the idle → streaming EDGE, a patch that does
+//    not name `foreignTurn` starts the turn LOUD (`foreignTurn: false`). Only the visible M11 attach names
+//    it; none of the own-send `status: "streaming"` writers has to, and the flag can never outlive the
+//    attached turn into the owner's next one.
+//  · THE HELD-FRAME DRAIN (S10-C01): the moment the view stops being thread-less-and-streaming, every
+//    frame `applyThreadFrame` held in that window is replayed through it, in arrival order. This ONE rule
+//    IS the three ruled drain points — the ADOPTION (`setWireThread`'s mint writes `threadId`), the
+//    stream's END or FAILURE (any idle/error writer), a NAVIGATION (`swapView`) — and it lives here, not
+//    as three calls, because the stream's end alone has eight writers: a missed one would hold frames
+//    until the next navigation, the very silent-loss class the hold exists to close. The queue is swapped
+//    out FIRST, so a replay can never re-enter the array it drains. Cost: one `length` read per `set()`
+//    (per streamed token) — O(1) whenever nothing is held.
+//    · The ADOPTED id's own frames need NO filter: after a mint the minted conversation IS the open view,
+//      so the replay finds `open` true (its terminal / `suspended` do nothing — this view's own transport
+//      announced them) and its `running` finds the view streaming (nothing).
+//    · Recorded, correct: a send that FAILS before any id (still thread-less, now idle) replays everything
+//      as BACKGROUND frames — this device views none of them; a hop (`swapView`) inside the window
+//      replays against the NEW view — the left mint's own terminal then publishes under
+//      `turn-done:<thread>:<turn>`, the key the buffered path's post-hop publish uses too, so the engine
+//      collapses the pair (R9: the left turn is a background conversation now).
+//    · The replay makes no synchronous chat write: `applyThreadFrame` only publishes (the notify builders,
+//      `pressure = false`) or starts `probeAndReattach`, whose first act is an awaited `fetch`.
 function set(next: Partial<ChatState>) {
   if (next.messages !== undefined) sweepPreviews(next.messages);
+  if (next.status === "streaming" && state.status !== "streaming" && next.foreignTurn === undefined)
+    next = { ...next, foreignTurn: false };
   state = { ...state, ...next };
   emit();
+  if (heldFrames.length && !(state.threadId === null && state.status === "streaming")) {
+    const q = heldFrames;
+    heldFrames = [];
+    for (const f of q) applyThreadFrame(f);
+  }
 }
 
 export function useChat(): ChatState {
@@ -615,7 +1147,7 @@ export function useChat(): ChatState {
 }
 
 /** Subscribe to ONE slice of chat state (mirror of `useUISlice`). The store `emit()`s on every streamed
- *  token, so a consumer that needs only `status`/`sessionPrivilege` must NOT use `useChat()` (the whole
+ *  token, so a consumer that needs only `status`/`responder` must NOT use `useChat()` (the whole
  *  object changes each token → re-render). A sliced primitive is stable across tokens, so the consumer
  *  re-renders only when ITS value changes. (`useAgentChat` legitimately needs `messages`, which change per
  *  token regardless — it keeps `useChat`.) Selector must return a primitive/stable ref (createStore contract). */
@@ -764,10 +1296,9 @@ export function lastReply(): { id: string; text: string } | null {
   return null;
 }
 
-/** What a view swap installs: the conversation's identity (its id, its history, its D11 pin) — and, for
- *  `/new` only, the sticky pick the tandem rule decided WITH it, so the two land in one `set`. */
-type ViewSwap = Pick<ChatState, "threadId" | "messages" | "threadAgent"> &
-  Partial<Pick<ChatState, "stickyAgent">>;
+/** What a view swap installs: the conversation's identity — its id, its history, its HOME, and whether
+ *  it is ARCHIVED (`null` = not yet known, H3). */
+type ViewSwap = Pick<ChatState, "threadId" | "messages" | "threadAgent" | "archived">;
 
 /** Swap the chat view to another conversation — THE one place the per-conversation client state is
  *  dropped. Every entry is keyed to the conversation being left (its TTS blobs, the turn-event ordering,
@@ -779,80 +1310,410 @@ type ViewSwap = Pick<ChatState, "threadId" | "messages" | "threadAgent"> &
  *  reconciliation parked against the identity it replaces is stale by definition — a cold `initChat` or
  *  a `reloadChat` must not land the OLD thread's history (and its pin) on the view just swapped in.
  *  Returns the new generation so a caller can guard a follow-up on it. Claims NO open ticket
- *  (`openSeq`): tickets order user DECISIONS, and each caller claimed its own at entry. */
+ *  (`openSeq`): tickets order user DECISIONS, and each caller claimed its own at entry.
+ *
+ *  HOP WHILE STREAMING (Phase 27 S6, R9): a swap is allowed while a turn streams. It also bumps the
+ *  STREAM generation, so the left turn's live stream (and any re-attach) goes stale at once and never
+ *  writes into the view swapped in — the turn itself continues server-side as a background conversation,
+ *  and a later visit re-attaches to it (`probeAndReattach`). A send whose POST is still in flight is
+ *  held off by the adopt guard instead (`viewMoved`). Only the VIEW's optimistic state goes with the
+ *  swap (its messages, queued bubbles included, are replaced); the left thread's raw steer lines stay
+ *  with that thread (O22, see `rawByEntry`).
+ *
+ *  THE RESPONDER'S LIFETIME (R45): every swap LEAVES the conversation on this device — the responder
+ *  clears. (Every caller changes the thread — an open, a mint — or is the thread-less RESET, which leaves
+ *  by definition; the same-conversation landings that KEEP it never swap: `openThread`'s same-id branch,
+ *  B5, the cold load. So the §12.2 (a) normalisation lives at the non-swap installs — `setWireThread`,
+ *  `loadThread`, `installHome` — and a swap needs none: it clears outright.) The view tuple is rewritten with the swap (the one
+ *  `ctrlb.chat` write per view change).
+ *
+ *  THE COMPOSER (Phase 27 S8): a live STREAMING dictation is stopped FIRST, by every swap (§12.2 ④,
+ *  §12.3 L7 — a door, `/new`, the delete fallbacks, the thread-less reset): the recorder is global, and
+ *  its words land in the slot it started in (R35), never in the view swapped in; the stop resolves
+ *  later, and the E6 carry waits for it (`carryOnLeave`). Then the per-conversation draft + rail follow
+ *  the view (`setComposerSlot`, H2 — with the thread-less `""` move, Q6). */
 function swapView(view: ViewSwap): number {
+  void stopLiveDictation();
   const gen = ++loadGen;
+  ++streamGeneration; // S6 — every stream claimed against the view being left is stale from here
   clearAudioCache(); // 6b-2: revoke the left thread's TTS blobs + stop any playback
   lastTurnId = null; // D39: a new view starts a fresh per-turn event ordering
   lastSeq = 0;
-  dropAllRaw(); // FIX C — prune every thread's harvested raw lines (no queued steer survives a swap)
   lastHarvestSig = null; // FIX E — forget the last harvest receipt (mirrors the backend clear)
-  set({ ...view, status: "idle", streamingId: null });
+  set({ ...view, responder: null, status: "idle", streamingId: null });
+  persistView();
+  setComposerSlot(view.threadId ?? "");
   return gen;
 }
 
-/** Drop to a fresh, THREAD-LESS view with `stickyAgent` as the pick — the next send mints the thread
- *  lazily (D70 §4.2 seam ②: the server creates one when `thread_id` is null). What `/new` did before
- *  ISS-31, and still what it falls back to when its own mint fails; the pick is persisted through the
- *  one `writeSticky` seam, beside the `set` that shows it.
+/** Drop to a fresh, THREAD-LESS view — the next send mints the conversation lazily (D70 §4.2 seam ②:
+ *  the server creates one, pinned to the configured default, when `thread_id` is null). Where a FAILED
+ *  `/new` mint falls back to (`mintAndOpen`). A RESET is a swap that always LEAVES: the responder clears
+ *  (R45), even from a thread-less view — `/new` asked for a fresh start.
  *
- *  No streaming guard and no open ticket: both are the CALLER's decision (`startNewThread` makes them
- *  before it gets here). Exported for the test suites, whose singleton store needs a SYNCHRONOUS reset
- *  between cases that performs no mint (the "exported for tests" idiom, `store/ui.ts`). */
-export function resetToThreadless(stickyAgent: string | null): void {
-  swapView({ threadId: null, messages: [], threadAgent: null, stickyAgent });
-  writeSticky(stickyAgent);
+ *  No open ticket: that is the CALLER's decision. Exported for the test suites, whose singleton store
+ *  needs a SYNCHRONOUS reset between cases that performs no mint (the "exported for tests" idiom,
+ *  `store/ui.ts`). */
+export function resetToThreadless(): void {
+  swapView({ threadId: null, messages: [], threadAgent: null, archived: null });
 }
 
 /** Fetch one thread's persisted history. Split from the state write so a caller can decide what to do
  *  with a FAILED fetch before it has touched the view (see `openThread`). A non-OK answer IS a failed
  *  fetch (ISS-31): its `{detail}` body is not a message list, and handed back as one it would be set as
- *  `messages` by whichever loader asked — every caller already has a failure path for a throw. */
+ *  `messages` by whichever loader asked — every caller already has a failure path for a throw. It throws
+ *  an `HttpRefusal` so a caller can tell the server's definite answer (`openThread`'s 404 = the
+ *  conversation was deleted, M6) from an unreachable backend; the message keeps the old shape. */
 async function fetchMessages(threadId: string): Promise<ChatMessage[]> {
-  const res = await fetch(`/api/threads/${threadId}/messages`);
-  if (!res.ok) throw new Error(`/api/threads/${threadId}/messages → ${res.status}`);
+  const url = `/api/threads/${threadId}/messages`;
+  const res = await fetch(url);
+  if (!res.ok) throw new HttpRefusal(url, res.status, "");
   return (await res.json()) as ChatMessage[];
 }
 
-/** ONE thread's D11 pin, read from the LIST (`GET /api/threads` publishes whole `Thread` dumps and is the
- *  only thread-record route there is — no by-id read exists, and an explicit open is rare enough that
- *  adding one would be a backend endpoint bought for a field the list already carries).
+// ── the thread lists' staleness signal (Phase 27 M6) ─────────────────────────────────────────────
+// The thread LIST is ordinary server state (DESIGN §13 as amended: `useQuery(['threads', agent])`, with
+// the per-agent status on `['agents']`), but this store learns things about it first — an open that
+// answers 404 means a conversation the lists still show is gone. A plain module cannot reach the
+// QueryClient (it lives in the React tree), so the store PUBLISHES and a mounted hook invalidates — the
+// `notifyBus` shape (an event, delivered once; no state to snapshot). S7's thread-list hook is its
+// subscriber; until one mounts there is no cached list to invalidate, so a publish into no listener is
+// correct, not lost.
+const threadListListeners = new Set<() => void>();
+/** Subscribe to "the thread lists are stale" — returns the unsubscribe (a `useEffect` cleanup). */
+export function onThreadListsStale(cb: () => void): () => void {
+  threadListListeners.add(cb);
+  return () => threadListListeners.delete(cb);
+}
+function threadListsStale(): void {
+  for (const cb of threadListListeners) cb();
+}
+
+/** What the late RECORD read learns about one thread (§12.3 H6 + H3): its HOME (`null` = the record
+ *  names none) and whether it is ARCHIVED. */
+interface ThreadRecord {
+  agent: string | null;
+  archived: boolean;
+}
+
+/** ONE thread's RECORD — its HOME (D11's pin) and its `archived` flag — read from the LIST
+ *  (`GET /api/threads` publishes whole `Thread` dumps and is the only thread-record route there is — no
+ *  by-id read exists, and an explicit open is rare enough that adding one would be a backend endpoint
+ *  bought for two fields the list already carries). The repair for a door that KNEW NOTHING (H6): the
+ *  automations run history, a `?thread=` cold start (S10).
  *
- *  `include_archived` because of WHO opens threads explicitly: the automations run history, and an A3 run
+ *  `include_archived` because of WHO opens threads that way: the automations run history, and an A3 run
  *  mints an ARCHIVED thread pinned to the automation's agent (a terminal per-run thread is deliberately
  *  continuable in chat). The bare list hides those, so this read — the one that has already been told
- *  which thread it wants — asked for a row it could never see and reported "unpinned" for every run
- *  thread there is (the S6 review's F1). `initChat`'s list read stays UNFLAGGED on purpose: the boot view
- *  must never adopt an automation's thread as the conversation the owner was in.
+ *  which thread it wants — would ask for a row it could never see (the S6 review's F1). It is also how
+ *  such a view learns it is archived (H3): no seen write, no R29. `initChat` reads the same flagged list
+ *  (an archived run the owner left open must still count as present at boot) and picks its "newest"
+ *  among the NON-archived rows, so the boot view never adopts an automation's thread on its own.
  *
  *  BEST-EFFORT by design: a thread that opens with its history intact must not fail because this second
- *  read did — an unknown pin is the same "nobody pinned" the FE has always assumed, and the SERVER still
- *  routes the turn by the thread's own field either way. `initChat` needs none of this: it is already
- *  holding the record it picked. */
-async function fetchThreadAgent(threadId: string): Promise<string | null> {
+ *  read did — `null` leaves the view's home and `archived` UNKNOWN (no override rides a send, no seen
+ *  write fires), and the SERVER still routes the turn by the thread's own field either way. */
+async function fetchThreadRecord(threadId: string): Promise<ThreadRecord | null> {
   try {
     const res = await fetch("/api/threads?include_archived=true");
     const threads = (await res.json()) as Thread[];
-    return threads.find((t) => t.id === threadId)?.agent ?? null;
+    const row = threads.find((t) => t.id === threadId);
+    return row ? { agent: row.agent ?? null, archived: row.archived === true } : null;
   } catch {
     return null;
   }
 }
 
+/** Install a RECORD the read returned — only on the view STILL on its thread (the read's whole guard):
+ *  its home (a `null` agent needs no write) and its `archived` flag. */
+function installRecord(threadId: string, rec: ThreadRecord | null): void {
+  if (rec === null || state.threadId !== threadId) return;
+  if (rec.agent !== null) installHome(rec.agent);
+  set({ archived: rec.archived });
+}
+
+/** The record repair RETRIED (S7B-04): a view whose `archived` is still UNKNOWN — its door's first record
+ *  read failed — re-reads it (the same guarded `fetchThreadRecord`) before a trigger decides. Never
+ *  inferred: an archived automation run is continuable, so no wire echo can say `false`. Called by the
+ *  seen write's entry and a same-id `openThread`; a no-op once known. */
+async function repairRecord(): Promise<void> {
+  const threadId = state.threadId;
+  if (threadId === null || state.archived !== null) return;
+  installRecord(threadId, await fetchThreadRecord(threadId));
+}
+
+// ── the seen write (D84 §6 "Seen write" — R30, O11, O10, §12.3 H3, Sol F2) ────────────────────────
+// `PATCH /api/threads/{id} {seen_at}` = "the owner has SEEN this conversation up to its newest row" —
+// the server's unread predicate's floor, read on every device (the `seen` frame, S10). ONE writer,
+// `markSeen`, fired from three places:
+//   (a) after a conversation's history lands (`loadThread`; `openThread`'s swap, or its late record read
+//       for a door that knew nothing);
+//   (b) when a turn settles in the OPEN view — `reloadFloor`, the one installer every turn end this view
+//       started or attached to goes through (and every sync route's floor);
+//   (c) on regaining visibility / switching back to the chat tab — `returnToChat`, AFTER its refetch (F2).
+// Each ONLY while the page is visible AND the chat tab is on screen, and NEVER for an archived view (H3:
+// its PATCH 404s) or one whose `archived` is not known yet (the next trigger retries). On success the
+// thread lists are stale (O10: the row's dot and the roster's `status`); a 404 on the open view is R29.
+
+/** The newest `ts` this device WROTE per thread, in epoch ms — a cheap dedupe, not persisted (a reload
+ *  simply writes once more; the server keeps the max anyway). */
+const lastSeen = new Map<string, number>();
+
+/** The view's newest DURABLE row's `ts` (client-only rows — notes, optimistic bubbles, the "…"
+ *  placeholder — carry the device's clock and no server row), or `null` when the view holds none. */
+function newestDurableTs(messages: readonly ChatMessage[]): { ts: string; ms: number } | null {
+  let best: { ts: string; ms: number } | null = null;
+  for (const m of messages) {
+    if (m.local) continue;
+    const ms = Date.parse(m.ts);
+    if (Number.isFinite(ms) && (best === null || ms > best.ms)) best = { ts: m.ts, ms };
+  }
+  return best;
+}
+
+/** The seen write's screen gate: the page is visible AND the chat tab is on screen. */
+function chatOnScreen(): boolean {
+  return (
+    (typeof document === "undefined" || document.visibilityState === "visible") &&
+    getUI().tab === "agent"
+  );
+}
+
+/** THE SEEN WRITE — see the block note above. Resolves when the PATCH settled (or nothing was sent); it
+ *  never throws. A write that fails rolls this device's dedupe back, so the next trigger retries. */
+export async function markSeen(): Promise<void> {
+  if (!chatOnScreen()) return;
+  if (state.archived === null) {
+    // S7B-04 — a failed first read is retried here. The gate is re-checked after the await (S7B-C01): a
+    // page hidden, a tab switched or a view moved while the record read was in flight writes nothing.
+    const at = viewHere();
+    await repairRecord();
+    if (!chatOnScreen() || viewMoved({ view: at })) return;
+  }
+  const threadId = state.threadId;
+  if (threadId === null || state.archived !== false) return; // H3 — archived, or still not known
+  const newest = newestDurableTs(state.messages);
+  if (newest === null) return;
+  const prior = lastSeen.get(threadId);
+  if (prior !== undefined && newest.ms <= prior) return; // nothing newer than this device already wrote
+  lastSeen.set(threadId, newest.ms);
+  const rollback = (): void => {
+    if (lastSeen.get(threadId) !== newest.ms) return; // a newer write owns the slot now
+    if (prior === undefined) lastSeen.delete(threadId);
+    else lastSeen.set(threadId, prior);
+  };
+  try {
+    const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seen_at: newest.ts }),
+    });
+    if (res.status === 404) {
+      rollback();
+      conversationDeleted(threadId); // R29 — only if the view is still on it (and still live)
+      return;
+    }
+    if (!res.ok) {
+      rollback();
+      return;
+    }
+    threadListsStale(); // O10 — the bridge invalidates `['threads']` + `['agents']`
+  } catch {
+    rollback(); // unreachable — the next trigger retries
+  }
+}
+
+/** (c) — the page became visible, or the chat tab came back on screen (`useThreadListsBridge`, the ONE
+ *  listener): refetch the open view; the seen write follows a SUCCESSFUL floor install ONLY (Sol F2 —
+ *  the REFRESHED newest row, never a stale pre-background floor): it is `reloadFloor`'s own success arm,
+ *  so a refetch that FAILED, or was SKIPPED because the view streams (its rows carry the device's
+ *  clock), writes nothing — the next trigger retries (S7B-01). The refetch is the D81 floor installer —
+ *  the durable history, keeping what only this view holds (its notes, an unsent bubble, an error's
+ *  retry), which a tab switch must not wipe — then `reconcileChat`'s other half, the re-attach probe for
+ *  a turn that went live meanwhile, guarded by the view identity (S6's `viewHere`). */
+export async function returnToChat(): Promise<void> {
+  const at = viewHere();
+  const threadId = at.thread;
+  if (threadId === null) return;
+  await reloadFloor();
+  if (viewMoved({ view: at })) return;
+  if (getChatStatus() !== "streaming") void probeAndReattach(threadId);
+}
+
+// ── deleted elsewhere (D84 §6 — R29, R42, §12.3 M6/M8; B11, B12) ─────────────────────────────────
+// A thread-scoped request on the OPEN conversation answering 404 — a send (`streamTurn`), the seen
+// PATCH, a history read (`reloadFloor`, `reloadChat`, the boot's `loadThread`) — means another device
+// deleted it. Outside a call: the toast, the lists stale, the HOME's latest (`openAgentConversation`,
+// which resolves a home off the roster to the configured default — Q2). DURING a call the 404 is
+// LATCHED: no toast, no swap (B12 — the call goes on; its utterances keep failing), and the call's
+// teardown runs the path once (`runAfterCall`). An ARCHIVED view (or one not known to be live) is never
+// a source (H3). Every one of these moves carries the left conversation's draft + staged rail into what
+// opened (E6, `carryOnLeave`) — a send that hit the 404 has already returned its words to that draft.
+
+/** The open conversation found deleted DURING a call (R42) — run at the call's teardown. */
+let pendingDeleted: string | null = null;
+/** The open view's HOME deleted DURING a call (§12.3 M8 — a Conf → Agents delete of it on this device,
+ *  N3, or a roster refresh on any device, M7) — the move to the configured default's latest, run at the
+ *  call's teardown. Holds the deleted slug. */
+let pendingHomeMove: string | null = null;
+/** The thread whose R29 move is in flight — two 404 sources racing (the seen PATCH beside a floor read)
+ *  toast and move once. */
+let r29InFlight: string | null = null;
+
+function conversationDeleted(threadId: string): void {
+  if (state.threadId !== threadId || state.archived !== false) return;
+  if (r29InFlight === threadId) return;
+  if (callLive()) {
+    pendingDeleted = threadId; // R42 — latched, nothing shown
+    return;
+  }
+  pushToast("this conversation was deleted");
+  threadListsStale();
+  moveOffDeleted(threadId);
+}
+
+/** THE MOVE OFF A DELETED OPEN CONVERSATION — shared by the remote path (`conversationDeleted`, R29) and
+ *  the local one (`conversationRemoved`, B8): claim the `r29InFlight` guard (between a DELETE's answer and
+ *  the swap the view still sits on the dead id, and a concurrent 404 — a `markSeen`, a floor read — must
+ *  neither toast "deleted" nor start a second move), arm the E6 carry, open the HOME's next latest (or a
+ *  fresh greeted one). */
+function moveOffDeleted(threadId: string): void {
+  r29InFlight = threadId;
+  // E6 — the dead conversation's draft + staged rail (and a 404'd send's words, already returned to
+  // that draft by `returnToOrigin`) move into whatever opens next — this fallback's target, or the
+  // owner's own door if it supersedes it (`store/composer#carryOnLeave`, consumed at the slot setter).
+  carryOnLeave(threadId);
+  void openAgentConversation(state.threadAgent ?? rosterDefault()).finally(() => {
+    if (r29InFlight === threadId) r29InFlight = null;
+  });
+}
+
+// ── THE SHEET'S DELETE (D84 §2 B8) — Phase 27 S9b grows this store's public surface by FOUR exports:
+// `useViewHome`, `refuseSwitchInCall`, `armConversationRemoval` and `conversationRemoved`.
+//
+// The sheet judges "the OPEN row" at its COMMIT; the DELETE's success lands a round trip later, and the
+// owner can take a door in between (the sheet stays open after a Delete) — or a remote 404 can move the
+// view with its E6 carry deferred behind a dictation stop. So the commit's facts are LATCHED here and the
+// success rules by them, never by the view it happens to find.
+
+/** The commit's facts for the sheet's last Delete: the id, the navigation ticket at the commit, and
+ *  whether it was the open conversation then. ONE slot — every commit overwrites it, so a failed
+ *  attempt's latch is harmless (re-armed by the next commit, consumed only for its own id). */
+let removal: { id: string; seq: number; wasOpen: boolean } | null = null;
+// (Its `seq` is REFRESHED by the two navigations that do not leave the open conversation — `openThread`'s
+// same-id branch and `openAgentConversation`'s B5 in-place arm. RECORDED: a DELETE success landing BEFORE
+// such a tap commits still arms only the carry; the next 404 on the dead id moves the view.)
+
+/** Called by the sheet AT THE COMMIT of a Delete (after the confirm and the second M8 check, right before
+ *  the request) — latches what `conversationRemoved` rules by. */
+export function armConversationRemoval(threadId: string): void {
+  removal = { id: threadId, seq: openSeq, wasOpen: state.threadId === threadId };
+}
+
+/** THIS DEVICE deleted `threadId` on purpose — the conversations sheet's Delete (D84 §2 B8), called by the
+ *  delete mutation's success (a 404 answer counts: the row is gone either way). The LOCAL sibling of
+ *  `conversationDeleted`: no toast (the owner just did it), no call latch (the sheet refuses an open-row
+ *  delete in a call BEFORE the request, M8; a call started DURING the request makes the move refuse, and
+ *  the next 404 latches). It consumes the commit's latch (`armConversationRemoval`) and rules:
+ *    · the view is STILL on it — a navigation started since the commit (another door in flight) → only
+ *      arm the E6 carry: that door's swap consumes it, and its ticket stays the owner's newest intent;
+ *      otherwise → the home's next latest with the draft + rail carried (`moveOffDeleted`), once;
+ *    · the view already LEFT it — after any pending carry has finished (`slotsCarried`: a carry deferred
+ *      behind a dictation stop goes FIRST, after which the source's keys are gone and this is a no-op):
+ *      it WAS open at the commit → its draft + rail follow the owner into the view they are in NOW (E6,
+ *      their own door included); it was not → its draft + rail are DROPPED (`pruneSlots`).
+ *  The lists' refresh is the mutation's (`onSettled`). */
+export function conversationRemoved(threadId: string): void {
+  const latch = removal?.id === threadId ? removal : null;
+  if (latch) removal = null;
+  if (state.threadId === threadId) {
+    if (latch && latch.seq !== openSeq) carryOnLeave(threadId);
+    else if (r29InFlight !== threadId) moveOffDeleted(threadId); // a racing 404 already moved: once
+    return;
+  }
+  void slotsCarried().then(() => {
+    if (latch?.wasOpen) moveSlots(threadId, state.threadId ?? "");
+    else pruneSlots((k) => k !== threadId);
+  });
+}
+
+/** N3 (D84 §4, §2 B18) — the agent this device just DELETED was the open view's HOME: move to the
+ *  configured default's latest (or a fresh greeted one), the responder clearing with the swap. No toast
+ *  — the owner just did it (the delete's own toast speaks). Called by the delete's success handler on
+ *  BOTH branches of the second confirm (the conversations deleted, or left orphaned and listed nowhere)
+ *  — never through the 404 path, whose target would be the deleted slug. In a call it LATCHES (M8). */
+export function leaveDeletedHome(name: string): void {
+  if (state.threadId === null || state.threadAgent !== name) return;
+  if (callLive()) {
+    pendingHomeMove = name;
+    return;
+  }
+  carryOnLeave(state.threadId); // E6 — into whatever opens
+  void openAgentConversation(afterDeleteOf(name));
+}
+
+/** Where N3 lands (S7B-03): the configured default — unless the deleted agent WAS the configured default
+ *  (the roster that still names it has not refetched yet), then the ROOT, never the deleted slug. */
+function afterDeleteOf(deleted: string): string {
+  const dflt = rosterDefault();
+  return dflt === deleted ? DEFAULT_AGENT : dflt;
+}
+
+/** THE CALL'S TEARDOWN RUNNER (R42, M8) — what a call latched, run ONCE when it is over: the move off a
+ *  deleted HOME, or the deleted-elsewhere path for the conversation the call was in — each only if the
+ *  view is STILL there. A pending HOME MOVE takes PRECEDENCE (S7B-02): both latches are consumed by ONE
+ *  N3 move with no toast — the R29 path would toast a remote delete for a local one and resolve the
+ *  deleted home's latest; R29 runs only when no home move matches the view. Called from the one place every call's teardown completes
+ *  (`useLiveCall`'s unmount cleanup — `endCall()`'s unmount IS the teardown). A redial remounts with the
+ *  call still up (and StrictMode's simulated cleanup runs mid-call): the latch then waits for the real end. */
+export function runAfterCall(): void {
+  if (callLive()) return;
+  const dead = pendingDeleted;
+  const home = pendingHomeMove;
+  pendingDeleted = null;
+  pendingHomeMove = null;
+  if (home !== null && state.threadId !== null && state.threadAgent === home) {
+    leaveDeletedHome(home); // N3, with its E6 carry (`callLive()` is false here)
+    return;
+  }
+  if (dead !== null && state.threadId === dead) conversationDeleted(dead);
+}
+
 /** Hydrate ONE thread into the chat view: its persisted history, then the D39/M4 re-attach probe.
  *
- *  The single load seam. The last turn of the thread we are opening may still be running detached (the
- *  mobile app-kill headline case — the socket died, the server-owned task did not), so the probe runs
- *  AFTER the initial paint (non-blocking, snapshot path, so a live turn resumes streaming instead of
- *  looking dead). Both entry points below go through here — cold load and an explicit open — so a
- *  thread opened from anywhere gets the same re-attach guarantee.
+ *  The cold-load seam (`initChat`). The last turn of the thread we are opening may still be running
+ *  detached (the mobile app-kill headline case — the socket died, the server-owned task did not), so the
+ *  probe runs AFTER the initial paint (non-blocking, snapshot path, so a live turn resumes streaming
+ *  instead of looking dead).
  *
  *  `gen` is the caller's load generation: the write is DISCARDED if a newer load has started since (see
- *  `loadGen`), so a slow fetch can never land on top of a view that has moved on. */
-async function loadThread(threadId: string, gen: number, agent: string | null): Promise<void> {
+ *  `loadGen`), so a slow fetch can never land on top of a view that has moved on. `agent` is the HOME
+ *  and `archived` its flag (from the record the caller already holds — H6, H3), and `responder` the one
+ *  the boot rule decided to keep (N1: only when this is the conversation the device was last in),
+ *  normalised against the home. The history landing is a seen trigger (a). */
+async function loadThread(
+  threadId: string,
+  gen: number,
+  agent: string | null,
+  archived: boolean,
+  responder: string | null,
+): Promise<void> {
   const msgs = await fetchMessages(threadId);
   if (gen !== loadGen) return; // superseded mid-fetch — this result belongs to a view that is gone
-  set({ threadId, messages: msgs, threadAgent: agent });
+  // The cold load writes `threadId` through neither `swapView` nor `setWireThread`, so it is the third
+  // place the view's identity is installed (§12.3 H2): the HOME arrives with it, the view tuple is
+  // rewritten with it, and the per-conversation composer slot follows it (`setComposerSlot`, S8 — B13
+  // across a reload: the draft and the rail the device left in this conversation come back with it).
+  set({
+    threadId,
+    messages: msgs,
+    threadAgent: agent,
+    archived,
+    responder: normalised(responder, agent),
+  });
+  persistView();
+  setComposerSlot(threadId);
+  void markSeen();
   void probeAndReattach(threadId);
 }
 
@@ -870,50 +1731,77 @@ async function loadThread(threadId: string, gen: number, agent: string | null): 
  *  so an unreachable backend left the owner staring at an emptied chat they had not asked to lose. The
  *  current view is only touched once the replacement is in hand.
  *
- *  Refuses while a turn is streaming (ACA-10/S2-C) — checked BEFORE the fetch and again after it, since
- *  a turn can start during the round-trip. Returns whether the thread was opened, so the caller can skip
- *  the tab switch it would otherwise make. */
-export async function openThread(threadId: string): Promise<boolean> {
-  // Claimed unconditionally at entry — even an open that goes on to be refused supersedes an older
-  // pending one (the owner's newest intent is the one that counts).
+ *  NOT refused while a turn is streaming (Phase 27 S6, R9 — it was, ACA-10/S2-C): the swap goes ahead,
+ *  the left turn continues server-side as a background conversation, and coming back re-attaches to it
+ *  (the post-swap probe). `swapView` makes the left stream stale; `streamTurn`'s adopt guard keeps a send
+ *  still in flight out of the new view.
+ *
+ *  `home` (§12.3 H6): the conversation's HOME agent when the door already knows it — a sheet row's
+ *  `agent`, `openAgentConversation`'s name, a notification frame's `agent`. It is installed AT the swap,
+ *  so no surface (and no send) ever runs against an unknown home — and a handed home implies the view is
+ *  NOT archived (H3: every door that knows a home names a live conversation). Only a door that knows
+ *  nothing (the automations run history, a `?thread=` cold start) falls back to the late RECORD read,
+ *  which installs both the home and `archived` (and then marks the view seen — trigger (a)).
+ *
+ *  A 404 means the conversation is gone (§12.3 M6 — a stale row, a tap after a delete elsewhere): the
+ *  "deleted" toast, the thread lists marked stale, and the view STAYS where it was. Any other failure
+ *  keeps the "unreachable" note. Returns whether the thread was opened, so the caller can skip the tab
+ *  switch it would otherwise make. */
+export async function openThread(threadId: string, home?: string): Promise<boolean> {
+  // R20 — no conversation switch while a call is up (the swap would silence the mouth and send the next
+  // utterance elsewhere). Refused BEFORE the ticket: a refused door supersedes nothing.
+  if (refusedInCall(HANG_UP_SWITCH_CONVERSATION)) return false;
+  // Claimed unconditionally at entry — even an open that goes on to fail supersedes an older pending
+  // one (the owner's newest intent is the one that counts).
   const ticket = ++openSeq;
-  // `getChatStatus()` rather than `state.status`: the same check runs again after the fetch, and a
-  // direct read would let the compiler narrow the first one across the `await` — which is exactly the
-  // change this is here to notice.
-  if (getChatStatus() === "streaming") {
-    pushSystemNote("// a turn is running — stop it or wait before opening another thread");
-    return false;
-  }
   if (state.threadId === threadId) {
-    // Already here, so no reload and no cache churn — but DO re-probe: an automation's rolling thread
-    // can have gone live since the owner last looked at it, and the probe is what re-attaches to it.
+    // A tap on the open conversation does not LEAVE it: a sheet Delete of it latched before this tap
+    // must not read the bumped ticket as "a door in flight" (S9b micro-wave ⑩).
+    if (removal?.id === state.threadId) removal.seq = openSeq;
+    // Already here, so no reload and no cache churn — and the RESPONDER STAYS (R45: a notification tap or
+    // a sheet-row tap on the open conversation is not leaving it). But DO re-probe: an automation's
+    // rolling thread can have gone live since the owner last looked at it, and the probe is what
+    // re-attaches to it. A home the door knows repairs a view whose home is still unknown (a failed late
+    // read) — and says the view is live (H3).
+    if (home) {
+      if (state.threadAgent !== home) installHome(home);
+      if (state.archived === null) set({ archived: false });
+    } else if (state.archived === null) void repairRecord().then(() => markSeen()); // S7B-04
     void probeAndReattach(threadId);
     return true;
   }
   try {
-    // The pin read starts BESIDE the history and never gates it. `GET /api/threads` is the LIST route, so
+    // The record read starts BESIDE the history and never gates it. `GET /api/threads` is the LIST route, so
     // an open that awaited it would inherit the list's latency — and a parked list read (a cold `initChat`
     // in flight against a slow backend) would hang the open outright, which is exactly the coupling
     // explicit navigation is kept free of. It lands late instead, under this file's usual post-await
-    // guards.
+    // guards — and only for a door that did not hand the home in (H6).
     const history = fetchMessages(threadId); // …started FIRST: the history is what the open lives or dies by
-    const pin = fetchThreadAgent(threadId);
+    const record = home ? null : fetchThreadRecord(threadId);
     const msgs = await history;
     if (ticket !== openSeq) return false; // a newer open (or /new) superseded this one mid-fetch
-    if (getChatStatus() === "streaming") {
-      // A turn started during the fetch — the pre-check above is not enough on its own.
-      pushSystemNote("// a turn is running — stop it or wait before opening another thread");
-      return false;
-    }
+    // R20 at the COMMIT point too (S7A-03): a call started while the history was in flight.
+    if (refusedInCall(HANG_UP_SWITCH_CONVERSATION)) return false;
     // An explicit open is a user DECISION, so it invalidates any reconciliation in flight (a slow
     // initChat/reloadChat landing after this must be discarded) — the swap's generation bump.
-    // `threadAgent: null` is the HONEST value at the swap — the pin is not known yet, and a stale one
-    // from the thread being left would be worse than none.
-    const gen = swapView({ threadId, messages: msgs, threadAgent: null });
+    // With no home handed in, `threadAgent: null` is the HONEST value at the swap — the home is not known
+    // yet, and a stale one from the thread being left would be worse than none. The DOOR CONTRACT
+    // (§12.4 F2): `home` is `undefined` when the door does not know it, a slug when it does — never
+    // `null` (the root is `"default"`).
+    const gen = swapView({
+      threadId,
+      messages: msgs,
+      threadAgent: home ?? null,
+      archived: home ? false : null,
+    });
     loaded = true; // a later `initChat` must not replace this with the most-recent thread
-    if (gen === loadGen) void probeAndReattach(threadId);
-    // …and the pin when it arrives, if the VIEW IS STILL ON THIS THREAD. A `null` answer (an unpinned
-    // thread, or a list read that failed) needs no write: the swap above already said null.
+    if (gen === loadGen) {
+      if (home) void markSeen(); // (a) — a door that knew nothing marks seen when its record lands
+      void probeAndReattach(threadId);
+    }
+    // …and the RECORD when it arrives, if the VIEW IS STILL ON THIS THREAD (the H6 repair): its home (a
+    // `null` agent needs no write — the swap already said null) and its `archived` flag (H3), then the
+    // seen write the swap could not make yet. A failed read leaves both unknown.
     //
     // `threadId` alone is the whole guard, deliberately — an open ticket must NOT be part of it (the
     // main-seat audit of wave 1c). Every navigation the ticket would have caught moves `threadId` first
@@ -924,22 +1812,76 @@ export async function openThread(threadId: string): Promise<boolean> {
     // and that early return starts no pin read of its own, so re-tapping the thread you are already
     // opening invalidated the only pin fetch that would ever run, and a pinned thread sat at `null`
     // until the next real navigation.
-    void pin.then((agent) => {
-      if (agent !== null && state.threadId === threadId) set({ threadAgent: agent });
+    void record?.then((rec) => {
+      installRecord(threadId, rec);
+      if (rec !== null && state.threadId === threadId) void markSeen();
     });
     return true;
-  } catch {
+  } catch (e) {
     // Nothing was cleared — the view the owner was looking at is still intact. The note only speaks
     // for the CURRENT intent (R3, L2): a superseded open failing late must not drop a misleading
     // "unreachable" note into the view of the open that won.
-    if (ticket === openSeq) {
-      pushSystemNote("// could not open that thread — the backend is unreachable");
-    }
+    if (ticket !== openSeq) return false;
+    if (e instanceof HttpRefusal && e.status === 404) {
+      // M6 — the conversation is gone; the lists that offered it are stale. The view stays.
+      pushToast("this conversation was deleted");
+      threadListsStale(); // `useThreadListsBridge` invalidates the cached lists
+    } else pushSystemNote("// could not open that thread — the backend is unreachable");
     return false;
   }
 }
 
-/** Load the most-recent thread + its history once (on first Agent-tab mount). */
+/** THE BOOT'S TAP TARGET (Phase 27 S10, fix ②) — `store/ui`'s one-shot `?thread=` is taken ONCE, then
+ *  kept HERE across `initChat` retries (a transient history failure must not spend it — the retry would
+ *  boot the stored conversation, responder and all), until the boot resolves it (opened, or proven
+ *  unopenable) or a newer navigation supersedes it (`openSeq` moved since the take). */
+let bootTap: { id: string; seq: number } | null = null;
+let bootTapTaken = false;
+
+/** The boot's tap target, if it still stands (see `bootTap`). */
+function takeBootTap(): string | null {
+  if (!bootTapTaken) {
+    bootTapTaken = true;
+    const id = takeBootThread();
+    if (id !== null) bootTap = { id, seq: openSeq };
+  }
+  if (bootTap !== null && bootTap.seq !== openSeq) bootTap = null; // superseded by a newer door
+  return bootTap?.id ?? null;
+}
+
+/** THE BOOT — ONE rule (D84 §6 N1; first Agent-tab mount, and `reloadChat` with no thread yet).
+ *
+ *  Load the stored view tuple (`ctrlb.chat`, folded); the TARGET = a notification tap's validated
+ *  `?thread=` (`takeBootTap`, S10 — kept across this boot's retries) when it lists, else the stored
+ *  `thread`. A tapped conversation OTHER than the stored one opens with no responder and is never an R29
+ *  source: deleted between the list and its history read, the boot falls back QUIETLY to the stored
+ *  conversation, else the newest (fix ③); a stored conversation that no longer lists while a tap opens
+ *  another has its draft + rail carried into what opens, untoasted (fix ⑧). ONE list
+ *  read, `GET /api/threads?include_archived=true` (§12.3 H3: an archived automation run the owner left
+ *  open still counts as present); "the newest" = the newest NON-archived row of it.
+ *    · the target is listed → open it with its record's HOME, KEEPING the stored responder only when
+ *      the target IS the stored thread (the same conversation = the device never left, R45; a tap on
+ *      another conversation opens it with none, N1) — UNJUDGED until the roster lands (M3; the landing's
+ *      sweep judges it, and so does the sweep run here when a roster already landed);
+ *    · the target is NOT listed — deleted elsewhere while this device was dead (Android process death),
+ *      or its history 404s right after the list (deleted in between; a live record only, H3) —
+ *      the R29 path, never a silent fallback (§12.3 H7): the "deleted" toast, then the stored HOME's
+ *      latest (`openAgentConversation`, which resolves a home off the roster to the configured default,
+ *      Q2), and the dead conversation's draft + rail move into what opened (E6) — BEFORE the prune;
+ *    · no stored thread → the newest, with no responder;
+ *    · nothing at all → the thread-less view — a stored responder survives there only because the stored
+ *      `thread` was null (B17 across a reload).
+ *  The tuple is rewritten after boot (by whichever install ran).
+ *
+ *  THE BOOT PRUNE (Phase 27 S8, §12.2 ⑦, §12.3 L6): this list is the one GLOBAL list the client ever
+ *  sees, so it is where dead per-conversation drafts and rails are reclaimed — every key that is
+ *  neither `""`, nor listed here (archived rows count), nor the OPEN view's is dropped (`pruneSlots`),
+ *  after the H7 carry, and only while the boot's own generation still holds: a door the owner used
+ *  during the boot (a roster-door mint, a lazy mint from typing) moves it, and then nothing is pruned.
+ *  (A tapped `?thread=` target is just the open view here — the prune keeps it either way.)
+ *  The cold load's identity install stays
+ *  as it was (S6's Qwen F1, settled): it bumps no generation — the thread half of `viewMoved` already
+ *  refuses a thread-less send's frames once this install moves `threadId`. */
 export async function initChat(): Promise<void> {
   if (loaded) return;
   loaded = true;
@@ -947,18 +1889,109 @@ export async function initChat(): Promise<void> {
   // Don't clobber a session already in flight (e.g. local-only /help notes or a send that beat the
   // first Agent-tab mount) — only hydrate history into an empty log.
   if (state.messages.length || state.threadId) return;
+  const stored = readPersistedChat();
+  const navAtEntry = openSeq; // a door the owner uses DURING the boot read outranks its R29 fallback
+  // A notification tap's `?thread=` (S10 — validated + stripped by `store/ui`'s boot): kept across this
+  // boot's retries until it is resolved (S10 fix ②, `takeBootTap`).
+  const tap = takeBootTap();
   try {
-    const threads = (await (await fetch("/api/threads")).json()) as Thread[];
-    if (gen !== loadGen || !threads.length) return; // an explicit open won the race — leave it alone
-    // The thread RECORD carries D11's pin, and this loader already holds it — so the pin arrives with
-    // the history rather than costing a second read.
-    await loadThread(threads[0].id, gen, threads[0].agent ?? null);
+    const threads = (await (await fetch("/api/threads?include_archived=true")).json()) as Thread[];
+    if (gen !== loadGen) {
+      bootTap = null; // a door that won the race spends the tap too — the owner's newer intent
+      return; // an explicit open won the race — leave it alone
+    }
+    const listedIds = new Set(threads.map((t) => t.id));
+    const listed = (id: string): boolean => listedIds.has(id);
+    /** The generation the prune is allowed under — the boot's own; the R29 arm's swap re-issues it. */
+    let pruneGen = gen;
+    // THE TARGET (N1) = the TAPPED conversation when it lists, else the stored one. A tap ON the stored
+    // conversation is simply the stored path (the device never left it). A tap on ANOTHER conversation
+    // opens it with NO responder; it is never an R29 source — this device never held it: unlisted, or
+    // deleted between the list and its history (S10 fix ③), the boot falls back QUIETLY (no toast, no
+    // carry) to the stored conversation, else the newest.
+    const tapRecord =
+      tap !== null && tap !== stored.thread ? threads.find((t) => t.id === tap) : undefined;
+    let tapOpened = false;
+    let tapFailed = false;
+    /** S10 fix ⑧ — the STORED conversation deleted elsewhere while this device was dead, superseded by a
+     *  tap: its draft + rail follow into what opens (E6), with NO toast (the tap is the owner's intent). */
+    const carryDeadStored =
+      tapRecord !== undefined && stored.thread !== null && !listed(stored.thread);
+    if (tapRecord) {
+      if (carryDeadStored && stored.thread !== null) carryOnLeave(stored.thread);
+      try {
+        await loadThread(
+          tapRecord.id,
+          gen,
+          tapRecord.agent ?? null,
+          tapRecord.archived === true,
+          null, // N1 — the device LEFT its stored conversation: no responder
+        );
+        tapOpened = true;
+      } catch (e) {
+        if (!(e instanceof HttpRefusal && e.status === 404) || gen !== loadGen) throw e; // ② retried
+        tapFailed = true; // ③ — the quiet fallback below
+      }
+    }
+    if (!tapOpened) {
+      const target = stored.thread;
+      const record = target === null ? undefined : threads.find((t) => t.id === target);
+      // The target can also vanish BETWEEN the list and its history read (a delete elsewhere in that
+      // window): its history 404s — the same R29 answer as a target that did not list. Not for an
+      // archived record (H3 — never an R29 source): its failure keeps the plain retry below. After a
+      // failed TAP an unlisted stored conversation is not toasted either (③ — quiet; ⑧ armed its carry).
+      let dead = record === undefined && target !== null && !tapFailed;
+      if (record) {
+        try {
+          await loadThread(
+            record.id,
+            gen,
+            record.agent ?? null,
+            record.archived === true,
+            stored.responder, // the stored conversation — the device never left it (R45)
+          );
+        } catch (e) {
+          if (!(e instanceof HttpRefusal && e.status === 404) || record.archived || gen !== loadGen)
+            throw e;
+          dead = true;
+        }
+      }
+      if (dead) {
+        // R29 at boot (H7) — unless the owner already navigated during the boot read (a roster door's own
+        // ticket: theirs is the newer intent, L8's posture). The dead conversation's draft + rail move into
+        // what opens (E6) — before the prune below, which would otherwise drop them as unlisted.
+        pruneGen = -1;
+        // E6 — armed whichever door opens next: this fallback's, a failed one's next door, or the owner's
+        // own door already in flight (Opus N2 — it consumes the carry at its swap).
+        if (target !== null) carryOnLeave(target);
+        if (openSeq === navAtEntry && target !== null) {
+          pushToast("this conversation was deleted");
+          if (await openAgentConversation(record?.agent ?? stored.home ?? rosterDefault())) {
+            pruneGen = loadGen; // this boot's own swap — a door used after it moves the generation on
+            await slotsCarried();
+          }
+        }
+      } else if (!record) {
+        const newest = threads.find((t) => !t.archived);
+        if (newest) await loadThread(newest.id, gen, newest.agent ?? null, false, null);
+        // the thread-less view keeps its own responder — only a stored thread-less one (B17)
+        else if (gen === loadGen && target === null) commitResponder(stored.responder);
+      }
+    }
+    if (carryDeadStored) await slotsCarried(); // ⑧ — the carry lands before the prune reads the slots
+    if (pruneGen === loadGen) {
+      const open = state.threadId ?? "";
+      pruneSlots((k) => k === "" || k === open || listed(k));
+    }
+    bootTap = null; // resolved — opened, or proven unopenable (③)
+    sweepRoster(); // a roster that landed BEFORE this boot judges what it installed (M3)
   } catch {
     // Backend was down at load time. Reset `loaded` so the next initChat (or the F16
     // reconnect-triggered reloadChat) can retry — otherwise the chat would be stuck empty
     // until a full page refresh. NOT if a thread was opened while we were failing: that reset would
-    // let the next mount reload over a deliberate open.
+    // let the next mount reload over a deliberate open. The tap stays for the retry (②).
     if (gen === loadGen) loaded = false;
+    else bootTap = null;
   }
 }
 
@@ -974,9 +2007,9 @@ export async function initChat(): Promise<void> {
 export async function reloadChat(force = false): Promise<void> {
   if (!force && state.status === "streaming") return;
   const gen = loadGen;
+  const threadId = state.threadId;
   try {
-    if (state.threadId) {
-      const threadId = state.threadId;
+    if (threadId) {
       const msgs = await fetchMessages(threadId);
       // Discard if the view moved on mid-fetch: without this, an in-flight reconcile writes the OLD
       // thread's messages under the NEW `threadId` — a chat log belonging to a different conversation.
@@ -986,8 +2019,12 @@ export async function reloadChat(force = false): Promise<void> {
       loaded = false;
       await initChat();
     }
-  } catch {
-    /* still unreachable — next reconnect signal will try again */
+  } catch (e) {
+    // R29 — the open conversation's history answered 404: deleted elsewhere (only while the view is
+    // still on it; `conversationDeleted` re-checks, and latches in a call). Anything else: still
+    // unreachable — the next reconnect signal will try again.
+    if (threadId && gen === loadGen && e instanceof HttpRefusal && e.status === 404)
+      conversationDeleted(threadId);
   }
 }
 
@@ -1084,7 +2121,8 @@ export function applyFloor(floor: ChatMessage[]): void {
  *  (so the retry and the `‹ n/N ›` controls describe the take just produced). One GET per turn.
  *
  *  Never while a turn streams (a floor would yank the live bubble), and discarded if the view moved on
- *  mid-fetch — the `reloadChat` guards. Best-effort: an unreachable backend leaves the view as it is. */
+ *  mid-fetch — the `reloadChat` guards. Best-effort: an unreachable backend leaves the view as it is;
+ *  a 404 is the conversation deleted elsewhere (R29). An installed floor is seen trigger (b). */
 async function reloadFloor(): Promise<void> {
   const threadId = state.threadId;
   if (!threadId || getChatStatus() === "streaming") return;
@@ -1093,9 +2131,15 @@ async function reloadFloor(): Promise<void> {
     const floor = await fetchMessages(threadId);
     if (gen !== loadGen || state.threadId !== threadId || getChatStatus() === "streaming") return;
     applyFloor(floor);
-  } catch {
-    /* unreachable — the next turn / reconnect reconciles */
+  } catch (e) {
+    // R29 — a 404 on the open conversation's history: deleted elsewhere. Otherwise unreachable — the
+    // next turn / reconnect reconciles.
+    if (gen === loadGen && e instanceof HttpRefusal && e.status === 404)
+      conversationDeleted(threadId);
+    return;
   }
+  // (b) — a turn settled (or a sync route's floor landed) in the OPEN view: the owner is looking at it.
+  void markSeen();
 }
 
 /** Append a client-only message (system note or shell echo) — not persisted; gone on reload. Used
@@ -1134,176 +2178,146 @@ export function pushUserEcho(text: string): void {
  *  `!cmd` exec pair persists as assistant + tool rows stamped with the owner as actor
  *  (`services/agent/exec.py`), and a thread holding a command the owner ran is not a fresh one. What
  *  is left is the agent's own opening (the seeded greeting, `actor: "agent"`) and client-only notes
- *  (`role: "system"`) — neither makes a thread worth leaving for another fresh one. */
+ *  (`role: "system"`) — neither makes a thread worth leaving for another fresh one. (The server's twin,
+ *  `is_owner_turn`, left with the ISS-49 re-seat route, D84 R27.) */
 function isUserTurn(m: ChatMessage): boolean {
   return m.role === "user" || m.actor === "user";
 }
 function hasUserTurn(messages: readonly ChatMessage[]): boolean {
   return messages.some(isUserTurn);
 }
-/** How many turns the owner has taken in `messages` — `/new`'s post-await fence compares it. A COUNT,
- *  not the last turn's id: a reconnect's `reloadChat` rewrites an optimistic `local-…` id to the durable
- *  one without anyone taking a turn, while every raced send adds one bubble synchronously.
- *
- *  QUEUED steer bubbles (`m.queued` = the server's `entry_id`, D41) are NOT counted (fix wave 2): they
- *  come and go on the server's schedule, not the owner's — `reconcileSteerQueue` drops a drained or
- *  removed one (and re-creates a still-queued one) whenever a probe lands, which right after a turn
- *  settles can be mid-mint. Truthiness, not key presence: `resolveSteerBubble` clears the marker to
- *  `undefined` in place when a steer drains into a durable message. */
-function userTurnCount(messages: readonly ChatMessage[]): number {
-  return messages.filter((m) => isUserTurn(m) && !m.queued).length;
-}
-
-/** The open ticket (`openSeq`) the in-flight `/new` claimed, or `null` when no mint is in flight. */
+/** The open ticket (`openSeq`) the in-flight mint claimed, or `null` when no mint is in flight. */
 let mintTicket: number | null = null;
 
-/** `/new`: MINT a fresh thread through D70 §4.2 **seam ①** (`POST /api/threads {agent}`) and open it
- *  (ISS-31, owner ruling 2026-09-27). The thread exists server-side from this moment, so a reload or an
- *  app switch comes back to it (`initChat` hydrates the newest-updated thread), and a character's
- *  greeting — a REAL seeded assistant message minted with the thread — shows at once, instead of only
- *  after the owner spoke first on the lazy mint (seam ②). History stays in SQLite.
- *
- *  `keepAgent` is the TANDEM RULE (D75 amendment, 2026-09-26), decided by the caller from whether a
- *  default agent is CONFIGURED (`lib/composer`'s `defaultSet`, from the roster's `default_set`):
- *    · none set → `keepAgent: true` — the fresh thread keeps the agent the owner was talking to: the
- *      sticky pick if there is one, else PROMOTED from the thread's own pin (the agent actually talking
- *      in a character thread, where nothing was sticky); the pick is kept and minted WITH;
- *    · a default set (the root or a specialist) → `keepAgent: false` — the pick is cleared, and the
- *      thread is minted with `defaultAgent`, the roster's RESOLVED default name (`lib/composer`'s
- *      `defaultAgent`, installed by the same read as `defaultSet`). Read only on this branch.
- *  Required, no default: which of the two a `/new` means is a decision, never an accident of arity.
- *  No resolvable agent (neither a pick nor a pin to keep; an empty default name) mints with NO body —
- *  the pre-D70 unpinned, unseeded thread.
- *
- *  **The minted thread is PINNED** to the agent it opens as (seam ①'s contract: a greeted thread is a
- *  pinned thread — the server persists the RESOLVED name, which is what `threadAgent` takes). So
- *  `agent.auto_rotate` (7e-g, off by default) never routes a `/new` thread, exactly as it never routed a
- *  gallery-created one: the router only runs where nothing pins the agent.
- *
- *  Refuses, in order:
- *    · while a turn is STREAMING (ACA-10 / S2-C) — the swap would strand the live reply;
- *    · while an earlier `/new`'s mint is still in flight AND still the newest intent — it will deliver
- *      the fresh thread; a second POST (the double Enter) would only mint a twin into the list;
- *    · SILENTLY when the open thread has no turn in it yet (`hasUserTurn`) AND is pinned to the very
- *      agent this `/new` would mint with — a greeting-only or empty thread IS fresh, so `/new` twice
- *      mints nothing. A fresh thread pinned to ANOTHER agent (the configured default changed
- *      meanwhile; a fresh thread the owner re-seated by picking — see below) is not the thread asked
- *      for: it mints, and the fresh-but-wrong thread stays behind in the list (fix wave 2). A
- *      thread-less view proceeds (there is nothing to keep). Decided from the messages the store already
- *      holds — no fetch. The tandem rule still applies to the PICK there (fix wave 1): with a default
- *      set, a standing pick is cleared exactly as a mint would clear it; with none set there is nothing
- *      to do. Since ISS-49 a pick on a fresh thread RE-SEATS it (`reseatOpening`), so `/agent ops` on a
- *      fresh default thread makes it an ops thread: a later `/new` with a default set then MINTS a new
- *      default thread (the pick cleared) and leaves the re-seated ops thread behind — the same
- *      fresh-but-wrong class as above, not a re-seat back (ROADMAP A15's per-agent conversations turn
- *      those left-behind threads into each agent's own conversation); with none set the kept pick IS
- *      the re-seated pin, so `/new` there is the silent no-op.
+/** How one mint ended (`mintWith`): the minted conversation is OPEN, a newer navigation SUPERSEDED it
+ *  or a call started meanwhile REFUSED it (either way the mint stays behind in the list, unopened), or it
+ *  FAILED (network, a non-OK answer, a malformed body, a failed history read) with the view untouched —
+ *  each caller decides what a failure means. */
+type MintOutcome = "opened" | "superseded" | "refused" | "failed";
+
+/** MINT a conversation for `agent` through D70 §4.2 **seam ①** (`POST /api/threads {agent}` — the server
+ *  pins the RESOLVED agent, ISS-51's rungs, so a since-deleted name never mints a phantom, §12.4 Q2) and
+ *  open it under `ticket`. The minted thread's `agent` is the HOME it installs; a greeting (when the agent
+ *  has one, §12.1 ⑩) is ordinary history, read back like any open.
  *
  *  **Fetch first, swap second** (the `openThread` pattern): the mint AND the minted thread's history are
  *  in hand before the view is touched, so the owner never stares at an emptied chat while the request is
- *  in flight. The history is read back from the server like any open (the greeting is ordinary
- *  history), and the swap writes the view AND the tandem rule's pick in ONE `set` (`swapView`), then
- *  persists the pick through `writeSticky`. A pick the owner changed WHILE the mint was in flight is the
- *  newer intent and survives the swap. The open ticket is claimed at entry, so an older `openThread`
- *  resolving later cannot land on the fresh view — and a NEWER open (or `/new`) supersedes this one,
- *  whose mint then stays behind in the thread list, unopened. The same happens, SILENTLY, when the
- *  owner kept using the view while the mint was in flight (fix wave 1, the code round's HIGH): a turn
- *  taken meanwhile — a send appends its user bubble synchronously, so one that started AND settled
- *  during the mint counts too — or a view that moved to another thread (a lazy mint from a thread-less
- *  view, a wire mint) or that is streaming (a resume, an answer, a re-attach — none of which append a
- *  user bubble). Swapping then would hide the turn the owner just took; the mint is the one given up.
- *
- *  A FAILED mint (network, a non-OK answer, a malformed body, a failed history read) falls back to
- *  `resetToThreadless` — the lazy mint on the next send — and says so in the log. */
-export async function startNewThread(opts: {
-  keepAgent: boolean;
-  defaultAgent: string;
-}): Promise<void> {
-  // ACA-10 / S2-C: don't swap out from under a live turn — the reset would strand the streaming
-  // reply (and the server would 409 the next send onto the abandoned thread). Ask the owner to wait.
-  if (state.status === "streaming") {
-    pushSystemNote("// a turn is running — stop it or wait before clearing");
-    return;
-  }
-  if (mintTicket === openSeq) return; // the in-flight /new is still the owner's newest intent
-  // The tandem rule's agent — decided BEFORE guard 2, because a fresh thread is only "already fresh"
-  // for the agent it is pinned to (fix wave 2).
-  const kept = opts.keepAgent ? (state.stickyAgent ?? state.threadAgent) : null;
-  const agent = opts.keepAgent ? kept : opts.defaultAgent || null;
-  if (state.threadId !== null && !hasUserTurn(state.messages) && agent === state.threadAgent) {
-    // Already fresh (ISS-31) — no mint. But the tandem rule is about the PICK too: a default set clears a
-    // standing pick here exactly as a mint would (through the one sticky seam); none set keeps it.
-    if (!opts.keepAgent && state.stickyAgent !== null) setStickyAgent(null);
-    return;
-  }
-  // A /new supersedes any pending explicit open — its fetch must not swap in afterwards. The load
-  // generation is bumped at the SWAP (`swapView`), exactly as `openThread` does it.
-  const ticket = ++openSeq;
+ *  in flight. **THE FENCE (O7) is the supersession check ALONE** — a newer navigation wins and this mint
+ *  stays behind in the list; the old silent give-ups on a changed turn count / a moved view are gone: a
+ *  mint while another view streams, or after a send, still swaps (S6 — the left turn runs on in the
+ *  background, R9). The swap leaves the conversation the view was in, so the responder clears (R45). */
+async function mintWith(agent: string, ticket: number): Promise<MintOutcome> {
   mintTicket = ticket;
-  const stickyAtEntry = state.stickyAgent;
-  // The view's identity at entry — what the post-await fence compares against (see the docstring).
-  const threadAtEntry = state.threadId;
-  const turnsAtEntry = userTurnCount(state.messages);
   let opened: { thread: Thread; messages: ChatMessage[] } | null = null;
   try {
-    const res = await fetch(
-      "/api/threads",
-      agent
-        ? {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ agent }),
-          }
-        : { method: "POST" },
-    );
+    const res = await fetch("/api/threads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent }),
+    });
     if (!res.ok) throw new Error(`/api/threads → ${res.status}`);
     const thread = (await res.json()) as Thread;
     if (!nonEmpty(thread.id)) throw new Error("/api/threads → no thread id");
     opened = { thread, messages: await fetchMessages(thread.id) };
   } catch {
-    /* `opened` stays null → the thread-less fallback below */
+    /* `opened` stays null → "failed" */
   } finally {
     if (mintTicket === ticket) mintTicket = null;
   }
-  // Superseded mid-flight (a newer open or /new): that intent owns the view, and a failure here must
-  // not drop a note into it — the note speaks only for the CURRENT intent (openThread's R3 L2 rule).
-  if (ticket !== openSeq) return;
-  // The owner kept using the view while the mint was in flight: a turn taken meanwhile (its user bubble
-  // is one MORE user turn — even one that already settled), a thread change under us, or a live stream
-  // (a resume/answer/re-attach appends no user bubble). The swap would hide what they just did, so the
-  // mint is given up SILENTLY — the view already shows what the owner chose to do instead.
-  if (
-    state.threadId !== threadAtEntry ||
-    userTurnCount(state.messages) !== turnsAtEntry ||
-    getChatStatus() === "streaming"
-  )
-    return;
-  // The tandem rule's pick, unless the owner re-picked while the mint was in flight (the newer intent).
-  const stickyAgent = state.stickyAgent === stickyAtEntry ? kept : state.stickyAgent;
-  if (opened === null) {
-    resetToThreadless(stickyAgent);
-    pushSystemNote("// couldn't start a new thread — your next message will start one");
-    return;
-  }
+  if (ticket !== openSeq) return "superseded";
+  // R20 at the COMMIT point (S7A-03): a call started while the mint was in flight.
+  if (refusedInCall(HANG_UP_SWITCH_CONVERSATION)) return "refused";
+  if (opened === null) return "failed";
   swapView({
     threadId: opened.thread.id,
     messages: opened.messages,
-    threadAgent: opened.thread.agent ?? null,
-    stickyAgent,
+    threadAgent: opened.thread.agent ?? agent,
+    archived: false, // seam ① mints a live conversation (H3)
   });
-  writeSticky(stickyAgent);
   loaded = true; // a later `initChat` must not replace this with the most-recent thread
   // No re-attach probe (`openThread` runs one): a thread minted this instant has no turn to rejoin.
-  // ISS-49: a pick made WHILE the mint was in flight was too late to mint with — re-seat the fresh
-  // thread's opening to it (a minted thread holds no edit to lose). Only a CHANGED pick: an unchanged
-  // one was minted with, and still differing from the pin means the server resolved it elsewhere (a
-  // since-deleted name, folded to the root) — a re-seat would only 422 on it.
-  if (
-    state.stickyAgent !== stickyAtEntry &&
-    state.stickyAgent &&
-    state.stickyAgent !== opened.thread.agent
-  )
-    void reseatOpening(state.stickyAgent);
+  return "opened";
+}
+
+/** Mint a fresh conversation for `agent` and open it (D84 §6 "Shared mint + navigation") — `/new`'s
+ *  body, and what a roster door does for an agent with no conversation yet. Always names an agent.
+ *  Refused in a live call (R20). A FAILED mint falls back to the thread-less view — the lazy mint on the
+ *  next send — and says so in the log. Resolves whether the minted conversation opened. */
+export async function mintAndOpen(agent: string): Promise<boolean> {
+  if (refusedInCall(HANG_UP_SWITCH_CONVERSATION)) return false;
+  const outcome = await mintWith(agent, ++openSeq);
+  if (outcome === "failed") {
+    resetToThreadless();
+    pushSystemNote("// couldn't start a new conversation — your next message will start one");
+  }
+  return outcome === "opened";
+}
+
+/** `/new` (R22b) — a fresh conversation for the open view's HOME agent (`threadAgent ?? the configured
+ *  default`), never for the responder: THE INVARIANT (R22) — nothing inside a conversation writes another
+ *  agent's conversations. Leaving, so the responder clears. Refuses, in order:
+ *    · in a live call (R20) — `// hang up to switch conversations`;
+ *    · while a mint is still in flight AND still the newest intent — it will deliver the fresh
+ *      conversation; a second POST (the double Enter) would only mint a twin into the list;
+ *    · the ISS-31 NO-OP: the open conversation has no owner turn (`hasUserTurn` — a greeting-only or
+ *      empty conversation IS new) → `// this conversation is already new`, nothing minted, and the
+ *      responder STAYS (the owner did not leave). A thread-less view mints (there is nothing to keep). */
+export async function newConversation(): Promise<void> {
+  if (refusedInCall(HANG_UP_SWITCH_CONVERSATION)) return;
+  if (mintTicket === openSeq) return; // the in-flight mint is still the owner's newest intent
+  if (state.threadId !== null && !hasUserTurn(state.messages)) {
+    pushSystemNote("// this conversation is already new");
+    return;
+  }
+  await mintAndOpen(state.threadAgent ?? rosterDefault());
+}
+
+/** THE ROSTER DOOR (D84 §2 R16, R38, O4) — the tools menu's agent rows (every activation) and the
+ *  gallery's Talk: open `name`'s LATEST conversation, or mint it a greeted one when it has none.
+ *    · claims its open ticket AT ENTRY, before the read, and abandons if a later navigation superseded it
+ *      after any await (§12.3 L8 — a slow roster tap never overrides a later sheet-row tap);
+ *    · a name OFF the LANDED roster (a stored home whose agent was deleted while the device was dead, a
+ *      stale door) resolves to the configured default BEFORE the read — never a mint for a dead slug
+ *      (§12.4 Q2); before the roster lands it passes unjudged (seam ① pins the RESOLVED agent anyway);
+ *    · `GET /api/threads?agent=<name>&limit=1` (S2a's route, newest first) → the OPEN view's own id = B5
+ *      IN PLACE: nothing reloads, the responder clears ("back to the rule" — the roster is the door from
+ *      elsewhere even when it lands where you are, F1), the home is installed; another id →
+ *      `openThread(id, name)` (leaving: the responder clears); none → mint for `name` (seam ①);
+ *    · a failed read, or a failed mint → the "unreachable" note, the view untouched.
+ *  Refused in a live call (R20). Resolves whether `name`'s conversation is the view now. */
+export async function openAgentConversation(name: string): Promise<boolean> {
+  if (refusedInCall(HANG_UP_SWITCH_CONVERSATION)) return false;
+  const ticket = ++openSeq;
+  const home = offRoster(name) ? rosterDefault() : name;
+  let latest: string | null;
+  try {
+    const res = await fetch(`/api/threads?agent=${encodeURIComponent(home)}&limit=1`);
+    if (!res.ok) throw new Error(`/api/threads?agent → ${res.status}`);
+    const rows = (await res.json()) as { id?: unknown }[];
+    if (!Array.isArray(rows)) throw new Error("/api/threads?agent → not a list");
+    latest = nonEmpty(rows[0]?.id) ?? null;
+  } catch {
+    if (ticket === openSeq)
+      pushSystemNote("// could not open that thread — the backend is unreachable");
+    return false;
+  }
+  if (ticket !== openSeq) return false; // a later navigation won while the read was in flight (L8)
+  // R20 at the COMMIT point (S7A-03) — the B5 in-place arm included: a call started during the read.
+  if (refusedInCall(HANG_UP_SWITCH_CONVERSATION)) return false;
+  if (latest !== null && latest === state.threadId) {
+    // B5 — the open conversation IS that agent's latest: no reload; back to the rule. Not a leave: a
+    // latched sheet Delete of it keeps reading its own commit as the newest intent (S9b micro-wave ⑩).
+    if (removal?.id === state.threadId) removal.seq = openSeq;
+    if (state.threadAgent !== home) installHome(home);
+    if (state.archived === null) set({ archived: false }); // a `?agent=` latest is never archived
+    if (state.responder !== null) commitResponder(null);
+    return true;
+  }
+  if (latest !== null) return openThread(latest, home);
+  const outcome = await mintWith(home, ticket);
+  if (outcome === "failed")
+    pushSystemNote("// could not open that thread — the backend is unreachable");
+  return outcome === "opened";
 }
 
 function emptyAssistant(id: string, agent: string | null = null): ChatMessage {
@@ -1570,7 +2584,8 @@ async function busyDetail(res: Response, fallback = TURN_BUSY_FALLBACK): Promise
 /** A DEFINITE non-OK answer to a turn POST (D81 fix wave 1) — the server answered and no turn started,
  *  which the catch must tell apart from a dropped stream (that one re-attaches). The message keeps the
  *  `<url> → <status>` shape `isLikelyUnreachable` reads; `detail` is the server's `{detail}` sentence,
- *  or "" when it sent none. */
+ *  or "" when it sent none. `fetchMessages` throws it too (a history read's definite answer — the 404
+ *  `openThread` reads as "deleted", Phase 27 M6). */
 class HttpRefusal extends Error {
   readonly status: number;
   readonly detail: string;
@@ -1640,6 +2655,10 @@ interface TurnCtx {
   // frame's `ctx.gen` is set by the time it is checked. A stale generation (`ctx.gen !== streamGeneration`)
   // is dropped at the reducer's very top — before the seq gate — so it can never settle state.
   gen: number;
+  // The VIEW a turn entered on (Phase 27 O6): its thread id and the view generation (`loadGen`), both
+  // captured BEFORE the first `fetch` — the POST's (`streamTurn`) or the re-attach's (`reattachTurn`).
+  // See `viewMoved`.
+  view?: ViewRef;
 }
 
 /** The turn-event reducer, factored out of `streamTurn` so the re-attach stream reduces LIVE events
@@ -1653,7 +2672,7 @@ function makeTurnReducer(ctx: TurnCtx) {
       case "thread": {
         const id = nonEmpty(data.threadId);
         if (!id) return dropWarn(event, "missing threadId");
-        setWireThread(id);
+        adoptWireThread(ctx, id, nonEmpty(data.agent)); // O6 — never into a view the owner moved to
         break;
       }
       case "message.start": {
@@ -1705,7 +2724,13 @@ function makeTurnReducer(ctx: TurnCtx) {
         setCallState(callId, "awaiting_confirm");
         // F1 — announce the block through the shared builder (the same one the buffered reply and the
         // `turn.sync` reconstruction use, so all three collapse onto one key in the engine).
-        notifyAwaitingConfirm(state.threadId, callId, str(data.prompt), str(data.tool));
+        notifyAwaitingConfirm(
+          state.threadId,
+          callId,
+          str(data.prompt),
+          str(data.tool),
+          state.threadAgent,
+        );
         break;
       }
       case "tool.question": {
@@ -1717,7 +2742,7 @@ function makeTurnReducer(ctx: TurnCtx) {
         skillsByCall[callId] = skillIds(data.skills) ?? turnSkills; // …and its skills (C5-M1, M2/C-12)
         setCallState(callId, "awaiting_answer");
         // F1 — same class as the confirm bubble: the turn is parked on the owner's reply.
-        notifyAwaitingAnswer(state.threadId, callId, str(data.question));
+        notifyAwaitingAnswer(state.threadId, callId, str(data.question), state.threadAgent);
         break;
       }
       case "tool.result": {
@@ -1808,7 +2833,13 @@ function makeTurnReducer(ctx: TurnCtx) {
         // either way) and the same key the `done(error)` that follows it publishes under, so the pair
         // collapses to one buzz carrying THIS frame's real message. `lastTurnId` is the wire `turn_id`
         // the seq gate just latched — per-turn, and identical on a replay of the same frame.
-        notifyTurnTerminal(state.threadId, lastTurnId, "error", str(data.message) ?? "agent error");
+        notifyTurnTerminal(
+          state.threadId,
+          lastTurnId,
+          "error",
+          str(data.message) ?? "agent error",
+          state.threadAgent,
+        );
         break;
       case "done": {
         ctx.settled = true;
@@ -1821,7 +2852,7 @@ function makeTurnReducer(ctx: TurnCtx) {
         set({ status: st === "error" ? "error" : "idle", streamingId: null });
         // F1 — the turn reached a terminal state (the builder owns the `suspended` exclusion and the
         // error-key sharing; see its docstring).
-        notifyTurnTerminal(state.threadId, lastTurnId, st);
+        notifyTurnTerminal(state.threadId, lastTurnId, st, undefined, state.threadAgent);
         break;
       }
       default:
@@ -1853,8 +2884,34 @@ async function streamTurn(
    *  resolves when the STREAM ends, which is far too late. */
   onAccepted?: () => void,
 ): Promise<SendOutcome> {
-  const ctx: TurnCtx = { claimed: !placeholderId, placeholderId, settled: false, gen: -1 };
+  // O6 — the view this send ENTERED on, captured before the `fetch`: a swap may land while the POST is
+  // in flight (R9), and from then on this turn belongs to the conversation it was sent from, not to the
+  // view on screen. The POST itself is never aborted (the server may already hold the message).
+  const ctx: TurnCtx = {
+    claimed: !placeholderId,
+    placeholderId,
+    settled: false,
+    gen: -1,
+    view: viewHere(),
+  };
   const handle = makeTurnReducer(ctx);
+  /** M1 — a LEFT send the server refused, or that failed at the transport, writes NOTHING into the view
+   *  the owner moved to (no note, no rollback, no error bubble, no status): its words go back to the
+   *  composer slot of the conversation it was sent from, silently (Phase 27 S8: the ORIGIN's draft —
+   *  `""` for a thread-less send). A resume / regenerate carries no text, so returns nothing.
+   *
+   *  A LIVE-CALL utterance can no longer reach this arm "after a swap" (S7, R20): no swap is possible
+   *  while a call is up — every navigation door and `setResponder` refuse in a call, at entry AND at the
+   *  commit point after their awaits (an open/mint/roster read started before `startCall()` and landing
+   *  after it was the one window, S7A-03 — closed) — so the call's own refusal handling is the only one
+   *  that ever sees its text, which closes S6's recorded double-return. */
+  const returnToOrigin = (): void => {
+    const text = raw ?? (typeof body.text === "string" ? body.text : "");
+    appendDraft(text, "\n", ctx.view?.thread ?? "");
+  };
+  /** Past the 200: the server holds this send, so a later throw never returns its words (M1 is for a
+   *  send the server did NOT take). */
+  let taken = false;
 
   try {
     const res = await fetch(url, {
@@ -1871,6 +2928,11 @@ async function streamTurn(
     // would render as sent-then-vanished on the next reload).
     if (res.status === 409) {
       const detail = await busyDetail(res);
+      // Checked AFTER the body read — the arm's one await, which a hop can land in.
+      if (viewMoved(ctx)) {
+        returnToOrigin(); // M1 — refused, and the owner has moved on: no view write
+        return "refused";
+      }
       // Drop BOTH optimistic bubbles — the unclaimed assistant placeholder AND the user's own
       // message (it was rejected, never persisted; leaving it renders as sent-then-vanished).
       const rejected = new Set(
@@ -1896,6 +2958,19 @@ async function streamTurn(
     if (res.status === 202) {
       onAccepted?.(); // ENQUEUED with its attachment ids — the drain claims them (D41 / §3's steer arm)
       const info = (await res.json().catch(() => ({}))) as { entry_id?: string; turn_id?: string };
+      if (viewMoved(ctx)) {
+        // A LEFT steer (M1): nothing in this view is its to mark, strip or settle. A queued one keeps its
+        // raw line under the thread it was queued on (O22) — the drain, a Stop harvest there, or the
+        // re-entry reconcile retires it; an untrackable one is a refusal, its words go home.
+        if (!info.entry_id) {
+          returnToOrigin();
+          return "refused";
+        }
+        const origin = ctx.view?.thread;
+        if (origin)
+          setRaw(origin, info.entry_id, raw ?? (typeof body.text === "string" ? body.text : ""));
+        return "accepted";
+      }
       // NORMALIZE-ON-202 (D71 §4.5, the recorded pre-existing defect — wider than the call). A send
       // taken while chat status is `idle` builds the FRESH-turn shape: an optimistic assistant
       // placeholder plus `status: "streaming"`. A suspended turn (a confirm gate) leaves the status idle
@@ -1955,10 +3030,12 @@ async function streamTurn(
     // Past the 409 and past `!res.ok`: the turn is RUNNING (or already ran, buffered), so whatever
     // this POST named is the server's now. Everything below is about rendering it.
     onAccepted?.();
+    taken = true;
     // D81 fix wave 1 — the optimistic user bubble LANDED: its durable row exists, so every floor from
     // here supersedes it (even one that runs long after this turn — a failed end-of-turn read must not
-    // leave a ghost that later floors keep beside the real row).
-    if (pendingUserId !== undefined)
+    // leave a ghost that later floors keep beside the real row). Not after a swap: the bubble left with
+    // the view, and its durable row is in the floor the owner will see on coming back.
+    if (pendingUserId !== undefined && !viewMoved(ctx))
       set({
         messages: state.messages.map((m) => (m.id === pendingUserId ? { ...m, landed: true } : m)),
       });
@@ -1970,7 +3047,12 @@ async function streamTurn(
     // buffered confirm stays resumable (it's the one thing not persisted). No parallel render path.
     if (res.headers.get("content-type")?.includes("application/json")) {
       const payload = (await res.json()) as Record<string, unknown>;
-      if (payload.threadId) setWireThread(payload.threadId as string);
+      // O6's buffered adopt point: the turn already ran; after a swap its thread, floor, notes and status
+      // are the LEFT conversation's (the per-call pins below still seed — they are keyed by call id, not
+      // by view, and a buffered confirm's token is the one thing a visit back could not re-read).
+      const left = viewMoved(ctx);
+      if (payload.threadId)
+        adoptWireThread(ctx, payload.threadId as string, nonEmpty(payload.agent)); // refused when `left`
       const perm = payload.permission as
         | {
             callId?: string;
@@ -1996,32 +3078,44 @@ async function streamTurn(
         modeByCall[q.callId] = turnMode;
         skillsByCall[q.callId] = skillIds(q.skills) ?? turnSkills;
       }
+      if (left) return "accepted";
       // The thread THIS turn belongs to, captured BEFORE the reload await (verify-5, fix 3). The
       // notify calls below used to read `state.threadId` after it, so a `/new` interleaving during
-      // the reload (the view is idle by then — `startNewThread` is allowed) re-namespaced this turn's
+      // the reload (the view is idle by then — `/new` is allowed) re-namespaced this turn's
       // signals under the NEW thread (or the no-thread fallback), breaking the live↔replay collapse.
       const notifyThread = str(payload.threadId) ?? state.threadId;
+      // …and its HOME, for the signals' names (R37) and their taps (O2) — the head's `agent` when the
+      // payload named one (S3), else the view's, captured beside the thread for the same reason.
+      const notifyHome = nonEmpty(payload.agent) ?? state.threadAgent;
       // Clear the streaming placeholder so the floor reload (which skips while "streaming") runs.
       set({ status: "idle", streamingId: null });
       await reloadFloor();
-      if (payload.state === "capped")
+      // A hop during the floor read (M1): `reloadFloor` discards its own floor, and the VIEW writes below —
+      // the capped note, the error status, the steer discovery — are the left conversation's too. The
+      // notifications are not view writes: they are keyed by the turn's own thread (`notifyThread`,
+      // captured before the await — verify-5 fix 3), so they still publish.
+      const here = !viewMoved(ctx);
+      if (here && payload.state === "capped")
         pushSystemNote("// reached the step limit — send a message to continue");
-      if (payload.state === "error") set({ status: "error" });
+      if (here && payload.state === "error") set({ status: "error" });
       // F1 (Codex MED-1) — the buffered transport announces the SAME occurrences the live reducer
       // does, through the SAME builders/keys: a turn that suspends on a confirm/question is exactly as
       // unattended here as it is over SSE. Published AFTER the reload so the announcement follows the
-      // state it describes. The payload carries no turn id (verified: `collect_turn` folds only
-      // state/messageId/permission/question/error/notices, and the endpoint merges `{threadId, title}`
-      // on top) — so the terminal key falls back to the thread scope, the documented bounded case.
-      if (perm?.callId) notifyAwaitingConfirm(notifyThread, perm.callId, perm.prompt, perm.tool);
-      if (q?.callId) notifyAwaitingAnswer(notifyThread, q.callId, q.question);
+      // state it describes. The payload's `turn_id` (Phase 27 S10 fix ① — the handle's, the same id the
+      // turn's `thread` frames carry) keys the terminal exactly as the frame consumer keys it, so a turn
+      // this device LEFT before the buffered answer resolved collapses to ONE notification; a server that
+      // predates the field sends none and the key falls back to the thread scope (the bounded case).
+      if (perm?.callId)
+        notifyAwaitingConfirm(notifyThread, perm.callId, perm.prompt, perm.tool, notifyHome);
+      if (q?.callId) notifyAwaitingAnswer(notifyThread, q.callId, q.question, notifyHome);
       notifyTurnTerminal(
         notifyThread,
-        null,
+        nonEmpty(payload.turn_id) ?? null,
         str(payload.state),
         isObj(payload.error) ? str(payload.error.message) : undefined,
+        notifyHome,
       );
-      discoverSpawnedSteerTurn(); // D41 §3 — a buffered turn can also leave queued steers to a drain-B turn
+      if (here) discoverSpawnedSteerTurn(); // D41 §3 — a buffered turn can also leave queued steers to a drain-B turn
       return "accepted";
     }
 
@@ -2029,11 +3123,18 @@ async function streamTurn(
     // landed, so the server started a FRESH turn and streamed it (200, not 202). Adopt it as a live
     // turn — the reducer's message.start creates the bubble; we just need the view in "streaming" so it
     // renders + the Stop control appears. A normal/resume send is already streaming here (no-op).
-    if (getChatStatus() !== "streaming") set({ status: "streaming" });
     // FIX A — this 200 IS the live stream now (a fresh send's own turn, or a steer-race adoption of a
     // just-started turn B). Claim a fresh generation at the adopt point so a stale sibling stream (turn
     // A's trailing `done`) is dropped by the reducer and can never settle status under this turn.
-    claimStream(ctx);
+    // O6 — unless the view moved while the POST was in flight: the claim is refused, the view is not
+    // touched, and the reader is CANCELLED rather than held open for the whole left turn. The POST was
+    // never aborted — past the 200 the turn is detached server-side (D39) and runs on regardless; its
+    // terminal is cached there, and coming back re-attaches through the probe, not through this reader.
+    if (!claimStream(ctx)) {
+      await res.body.cancel().catch(() => {});
+      return "accepted";
+    }
+    if (getChatStatus() !== "streaming") set({ status: "streaming" });
     // Reduce the SSE stream through the shared byte-parser (each frame carries `id: turn_id:seq`,
     // fed to the seq gate + the re-attach cursor).
     await parseSSE(res.body, handle);
@@ -2052,8 +3153,9 @@ async function streamTurn(
       const cursor = lastTurnId ? `${lastTurnId}:${lastSeq}` : undefined;
       const tid = state.threadId;
       const reattached = tid ? await reattachTurn(tid, cursor) : false;
-      // (A re-attach that drove the turn home reloads the floor itself — D81, `reattachTurn`.)
-      if (!reattached) failStream("connection interrupted");
+      // (A re-attach that drove the turn home reloads the floor itself — D81, `reattachTurn`.) A hop
+      // during the recovery (M1): the re-attach bailed, and the failure is not the new view's to show.
+      if (!reattached && !viewMoved(ctx)) failStream("connection interrupted");
     } else {
       // D81 — the turn settled: re-read the durable floor (the sent bubble's server id + the tail's
       // `reply`). BEFORE the steer discovery, which reads the queued bubbles the floor carries over.
@@ -2077,6 +3179,16 @@ async function streamTurn(
     // stream must not re-attach or failStream off its own drop: the newer generation owns the view. A
     // never-claimed stream (gen −1: the fetch/setup threw before going live) still fails normally.
     if (ctx.gen >= 0 && ctx.gen !== streamGeneration) return "accepted";
+    // M1 — a send that never went live (the POST was refused or failed at the transport) after the view
+    // moved: no `failStream` into the view the owner is in. A 404 is dropped — the conversation it was
+    // sent to is gone, and the next visit there 404s and runs R29; anything else returns its words to the
+    // origin slot.
+    const leftOutcome = (): SendOutcome => {
+      if (taken) return "accepted";
+      if (!(e instanceof HttpRefusal && e.status === 404)) returnToOrigin();
+      return e instanceof TypeError ? "unknown" : "refused";
+    };
+    if (viewMoved(ctx)) return leftOutcome();
     // A THROWN read error (abrupt network loss, TCP reset) is the other half of the drop
     // case — the clean-EOF branch above already re-attaches; this one must too (final-review
     // CONCERN-1: without it a transient blip that recovers in seconds still failStreams a
@@ -2086,6 +3198,34 @@ async function streamTurn(
       const tid = state.threadId;
       const reattached = tid ? await reattachTurn(tid, cursor).catch(() => false) : false;
       if (reattached) return "accepted";
+      if (viewMoved(ctx)) return leftOutcome(); // a hop during the recovery — the same M1 disposition
+    }
+    // R29 — a SEND into the conversation still on screen answered 404: it was deleted elsewhere (the
+    // left-send 404 above is the other case, dropped). Outside a call the send's words go back to the
+    // dead conversation's draft (M1's origin slot), its optimistic bubbles go with the view, and
+    // `conversationDeleted` toasts, opens the home's latest and carries that draft into it (E6). In a call (B12) the 404 is latched there and the utterance fails as
+    // today, below — no toast, no swap. Only a live view is a source (H3).
+    const origin = ctx.view?.thread;
+    if (
+      e instanceof HttpRefusal &&
+      e.status === 404 &&
+      url === "/api/agent/chat" &&
+      origin &&
+      body.thread_id === origin &&
+      state.archived === false
+    ) {
+      if (!callLive()) {
+        const dropped = new Set([placeholderId, pendingUserId].filter(Boolean));
+        set({
+          messages: state.messages.filter((m) => !dropped.has(m.id)),
+          // a fresh send settles; a steer leaves the status to the turn it steered (the 409 arm's rule)
+          ...(placeholderId !== undefined ? { status: "idle" as const, streamingId: null } : {}),
+        });
+        returnToOrigin();
+        conversationDeleted(origin);
+        return "refused";
+      }
+      conversationDeleted(origin); // latches (R42)
     }
     // A 4xx refusal speaks the server's own sentence when it sent one (a 5xx keeps `<url> → <status>`,
     // which is also what flags the connection badge above).
@@ -2240,14 +3380,22 @@ function overlaySyncCall(
  * the fetch resolves and BEFORE applying ANY frame (JSON branch or first SSE frame), bail out
  * (returning false, cancelling the body) if we're already streaming. Interrupt-path re-attaches
  * (`streamTurn`) pass false — there the drop is real and re-attach is the recovery.
+ *
+ * `foreign` (D84 §12.3 M11, owner ruling 2026-10-10) — ONLY the visible M11 attach passes true (through
+ * `probeAndReattach` → `attachOrSettle`): the turn was started by ANOTHER device, so the go-live write
+ * marks it `foreignTurn` and auto-TTS stays silent for it. Every other caller stays loud.
  */
 export async function reattachTurn(
   threadId: string,
   cursor?: string,
   requireIdle = false,
+  foreign = false,
 ): Promise<boolean> {
   const url = `/api/agent/turns/${threadId}/stream${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`;
-  const ctx: TurnCtx = { claimed: true, settled: false, gen: -1 }; // no placeholder — a fresh message.start creates a bubble
+  // No placeholder — a fresh message.start creates a bubble. Bound to the VIEW it starts on (Phase 27 S6,
+  // M1): a hop while this re-attach is in flight (a drop's recovery, a probe) must not let it claim — its
+  // frames, its terminal, or its caller's `failStream` would land in the view swapped in.
+  const ctx: TurnCtx = { claimed: true, settled: false, gen: -1, view: viewHere() };
   const reduce = makeTurnReducer(ctx);
   // FIX C — the thread this re-attach operates on. Every await below re-checks the view still sits on it
   // (an async re-attach can resolve after a `/new` or a new-thread switch) and bails before mutating,
@@ -2364,7 +3512,8 @@ export async function reattachTurn(
         pushSystemNote("// reached the step limit — send a message to continue");
       set({ status: termState === "error" ? "error" : "idle", streamingId: null });
     } else {
-      set({ status: "streaming", streamingId: openId });
+      // `foreign` (only the visible M11 attach): the OTHER device's turn — silent for auto-TTS here.
+      set({ status: "streaming", streamingId: openId, foreignTurn: foreign });
     }
     // (d) F1 (Codex MED-1) — ANNOUNCE what the snapshot reconstructed, through the shared builders.
     // This is the transport that matters most for notifications: a phone that slept through the live
@@ -2381,11 +3530,12 @@ export async function reattachTurn(
       // The accumulator stamps these RunStates on the call when it folds the suspend event, and drops
       // the ephemeral payload once a result lands — so an already-resolved call never re-announces.
       if (c.state === "awaiting_confirm")
-        notifyAwaitingConfirm(threadId, callId, str(p?.prompt), str(c.tool));
+        notifyAwaitingConfirm(threadId, callId, str(p?.prompt), str(c.tool), state.threadAgent);
       else if (c.state === "awaiting_answer")
-        notifyAwaitingAnswer(threadId, callId, str(qn?.question));
+        notifyAwaitingAnswer(threadId, callId, str(qn?.question), state.threadAgent);
     }
-    if (termState) notifyTurnTerminal(threadId, lastTurnId, termState);
+    if (termState)
+      notifyTurnTerminal(threadId, lastTurnId, termState, undefined, state.threadAgent);
   };
 
   const onFrame = async (
@@ -2398,18 +3548,20 @@ export async function reattachTurn(
   };
 
   for (let attempt = 0; attempt < 2; attempt++) {
+    // S6 — the retry re-checks: a view that moved during the first attempt is not re-fetched for.
+    if (viewMoved(ctx)) return false;
     try {
       const res = await fetch(url, { headers: { Accept: "text/event-stream" } });
       // C4-M1: a cold-probe re-attach must not attach if a user send flipped us to "streaming" during
       // the fetch await above — a second subscriber whose snapshot would rewind the seq gate
       // mid-stream. Bail BEFORE applying any frame (JSON branch or first SSE frame); close the body.
-      if (requireIdle && getChatStatus() === "streaming") {
+      // FIX A — otherwise from here this re-attach IS the live stream: claim a fresh generation so a
+      // stale sibling stream is dropped, and so our own settle below is guarded. S6 — the claim is
+      // REFUSED when the view moved during the fetch: the same bail, before any frame.
+      if ((requireIdle && getChatStatus() === "streaming") || !claimStream(ctx)) {
         await res.body?.cancel().catch(() => {});
         return false;
       }
-      // FIX A — from here this re-attach IS the live stream (it survived the requireIdle gate). Claim a
-      // fresh generation so a stale sibling stream is dropped, and so our own settle below is guarded.
-      claimStream(ctx);
       // Not live → JSON {active:false, terminal_status}: the turn ENDED (or lingered out) — the
       // durable floor has the truth, so reconcile from it and report handled (Slice-3 audit MED-2:
       // returning false here made a turn that COMPLETED during the drop render as a false
@@ -2433,6 +3585,9 @@ export async function reattachTurn(
         // doesn't drop the terminal_status (review fix): `capped` gets the step-limit note; `error`
         // settles to the error status; everything else goes idle as before.
         await reloadChat(true);
+        // S6 (M1) — and again AFTER the forced read: a hop during it leaves the terminal note / status /
+        // `failStream` below to the conversation left, never the view swapped in.
+        if (viewMoved(ctx) || ctx.gen !== streamGeneration) return false;
         const st = body.terminal_status;
         if (st === "capped")
           pushSystemNote("// reached the step limit — send a message to continue");
@@ -2451,8 +3606,14 @@ export async function reattachTurn(
         // that moment (verify-5, fix 1: reconstructed from the floor the reload above just applied,
         // through the shared builders). An absent/null terminal_status (an unknown/expired turn)
         // publishes nothing at all: nothing was learned about how it ended.
-        notifyTurnTerminal(threadId, nonEmpty(body.turn_id) ?? null, st);
-        if (st === "suspended") notifyRestoredAwaiting(threadId);
+        notifyTurnTerminal(
+          threadId,
+          nonEmpty(body.turn_id) ?? null,
+          st,
+          undefined,
+          state.threadAgent,
+        );
+        if (st === "suspended") notifyRestoredAwaiting(threadId, state.threadAgent);
         return true;
       }
       if (!res.ok || !res.body) return false;
@@ -2526,8 +3687,8 @@ const DRAIN_B_REPROBE_MS = 250;
 
 /** Re-attach if the probe says the turn is live; else settle from the durable floor. Shared by the
  *  first probe and the HIGH-2 re-probe. Returns nothing; the caller has already reconciled the queue. */
-async function attachOrSettle(threadId: string): Promise<void> {
-  const ok = await reattachTurn(threadId, undefined, true);
+async function attachOrSettle(threadId: string, foreign = false): Promise<void> {
+  const ok = await reattachTurn(threadId, undefined, true, foreign);
   // FIX C — the re-attach awaited; bail if the owner switched threads meanwhile (never settle/reload a
   // thread we have left). The settle only fires when WE left the view streaming and couldn't attach.
   if (state.threadId !== threadId) return;
@@ -2542,7 +3703,7 @@ async function attachOrSettle(threadId: string): Promise<void> {
  *  the initial paint. If the re-attach set the view streaming but couldn't reach a terminal, reconcile
  *  from the durable floor so the cold view never hangs spinning. Also reconciles the D41 steer_queue so
  *  a reload / cold load re-renders any still-queued steers instead of dropping them (§3). */
-async function probeAndReattach(threadId: string, force = false): Promise<void> {
+async function probeAndReattach(threadId: string, force = false, foreign = false): Promise<void> {
   try {
     const probe = (await (await fetch(`/api/agent/turns/${threadId}`)).json()) as {
       active?: boolean;
@@ -2556,7 +3717,14 @@ async function probeAndReattach(threadId: string, force = false): Promise<void> 
     // rendered yet — the reconcile below may DROP those bubbles without ever reloading the floor.
     // `force` (FIX D) counts as "had queued" so a DELETE-triggered probe still reloads the drained
     // entry's durable floor even after its own optimistic bubble was dropped.
-    const hadQueued = force || state.messages.some((m) => m.queued);
+    // …and the same read decides `foreign` (Opus F1, the S10-C01 fix wave): a device that held queued
+    // steer bubbles going in has a stake in the turn it chains into — the owner's own drain-B steer turn,
+    // whose `running` frame lands inside the settle path's `await reloadFloor()` on an idle + visible view
+    // and so reaches here through the M11 branch — so that attach stays LOUD. It must be read HERE, before
+    // the `reconcileSteerQueue` below, which renders the OTHER device's steers as queued bubbles on this
+    // one (read after it, every foreign turn carrying steers would turn loud).
+    const queued = state.messages.some((m) => m.queued);
+    const hadQueued = force || queued;
     // Re-render queued steers from server truth BEFORE any streaming bail — the reconcile is truthful
     // regardless of the attach decision (kills the vanished-steer double-send hazard on a reload).
     if (Array.isArray(probe.steer_queue)) reconcileSteerQueue(threadId, probe.steer_queue);
@@ -2588,7 +3756,7 @@ async function probeAndReattach(threadId: string, force = false): Promise<void> 
         if (state.threadId !== threadId) return;
         if (re.active) {
           if (Array.isArray(re.steer_queue)) reconcileSteerQueue(threadId, re.steer_queue);
-          await attachOrSettle(threadId);
+          await attachOrSettle(threadId, foreign && !queued);
           return;
         }
         // Still not live → the durable floor is the truth. Reload it (renders the exec pair / a
@@ -2600,7 +3768,7 @@ async function probeAndReattach(threadId: string, force = false): Promise<void> 
       }
       return;
     }
-    await attachOrSettle(threadId);
+    await attachOrSettle(threadId, foreign && !queued);
   } catch {
     /* probe / re-attach failed — the plain history is already shown */
   }
@@ -2669,7 +3837,7 @@ function harvestToDraft(threadId: string, data: CancelResp): void {
     delRaw(threadId, e.entry_id);
   }
   if (lines.length) {
-    appendDraft(lines.join("\n"), "\n");
+    appendDraft(lines.join("\n"), "\n", threadId); // its OWN thread's draft (S8), wherever the view is
     lastHarvestSig = sig;
   }
 }
@@ -2726,17 +3894,31 @@ async function runCancel(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> 
   // A6/C4-H2: scope the cancel to THIS turn (the ref's own id) so a delayed Stop can't cancel/harvest a
   // successor turn — the server refuses/peeks a turn_id that doesn't match the live handle.
   const scopedTurn = ref.turnId;
+  // Phase 27 S6 (M1) — the VIEW this Stop was pressed in: the ref's thread at the current view generation.
+  // A hop is allowed while the cancel is pending (R9), so every VIEW write below — the status settle, the
+  // floor reload, the successor re-attach — is guarded on it; a cancel answering after the owner left
+  // never settles or reloads the view swapped in. The harvest is not a view write: it still applies to
+  // its ORIGIN thread's raw lines (and that thread's draft — `harvestToDraft`, like `returnToOrigin`).
+  const at = { view: { thread: threadId, gen: loadGen } };
+  const settleIdle = () => {
+    if (!viewMoved(at)) set({ status: "idle", streamingId: null });
+  };
+  const reloadHere = async () => {
+    if (!viewMoved(at)) await reloadChat(true);
+  };
   try {
     const res = await postCancel(threadId, scopedTurn);
     if (!res.ok) throw new Error(`cancel → ${res.status}`);
     const data = (await res.json()) as CancelResp;
-    // SCOPED MISMATCH — a successor turn is live; the peeked queue is NOT ours to harvest. Adopt it.
+    // SCOPED MISMATCH — a successor turn is live; the peeked queue is NOT ours to harvest. Adopt it —
+    // unless the owner left the view: a re-attach is a view write, so never one into the view swapped in.
     if (data.cancelled === false && data.active === true) {
+      if (viewMoved(at)) return;
       const ok = await reattachTurn(threadId, undefined, false);
       // Couldn't attach (the successor ended in the gap) → settle from the durable floor.
-      if (!ok && state.threadId === threadId) {
-        await reloadChat(true);
-        set({ status: "idle", streamingId: null });
+      if (!ok) {
+        await reloadHere();
+        settleIdle();
       }
       return;
     }
@@ -2746,8 +3928,8 @@ async function runCancel(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> 
     // calls to CANCELLED server-side, but the ATTACHED client's local call parts still render pending —
     // the live-cancel reply carries no active:false to trigger a reload, so without this a stopped-but-
     // attached turn would spin those parts forever. The stream's own `done{cancelled}` still settles.
-    if (data.active === false) set({ status: "idle", streamingId: null });
-    await reloadChat(true);
+    if (data.active === false) settleIdle();
+    await reloadHere();
   } catch {
     // LOST RESPONSE (socket drop) — retry the Stop ONCE: the backend REPLAYS the harvest receipt, so the
     // harvest is not lost (that is what the receipt is for). `harvestToDraft`'s signature keeps it single.
@@ -2757,15 +3939,15 @@ async function runCancel(ref: LiveTurnRef, harvest: HarvestMode): Promise<void> 
         const data = (await res.json()) as CancelResp;
         if (!(data.cancelled === false && data.active === true))
           applyHarvest(threadId, data, harvest);
-        if (data.active === false) set({ status: "idle", streamingId: null });
-        await reloadChat(true);
+        if (data.active === false) settleIdle();
+        await reloadHere();
         return;
       }
     } catch {
       /* the retry also failed — fall back to a durable-floor settle below */
     }
-    await reloadChat(true);
-    set({ status: "idle", streamingId: null });
+    await reloadHere();
+    settleIdle();
   } finally {
     cancelInFlight = null;
   }
@@ -2818,17 +4000,21 @@ export async function sendMessage(
   if (!body && !attachments.length) return "refused";
   // D41 — the send-while-streaming guard is LIFTED: a send during a live turn is a STEER (enqueued via a
   // 202, drained into the running turn or spawned at its end). Per-message `/cloud <msg>` wins; else the
-  // sticky session mode; else the server default (null). Only a FRESH (non-steer) send stashes
+  // HOME's sticky mode (R40); else the server default (null). Only a FRESH (non-steer) send stashes
   // turnMode/turnSkills — those pin the LIVE turn's resume/answer context (ACA-16/C5-M1); a steer must
   // not re-point them (its own captured params ride the POST for a turn-end spawn instead).
   const steering = state.status === "streaming";
-  const mode = opts?.mode ?? sessionMode ?? null;
+  // THE HOME's overrides (D84 R40, ON4) ride every turn in its conversation, whoever answers — and NONE
+  // while the home is unknown (§12.3 H6: an uncapped elevation never rides another home's conversation).
+  const override = homeOverride();
+  const mode = opts?.mode ?? override?.mode ?? null;
   const skills = opts?.skills ?? []; // explicit /skill-name invocations (4.5)
-  // The agent is the sticky pick (`/agent`, Talk, the tools menu's agent rows), else the
-  // server's ladder (null → the thread's pin, else the configured default). NOT stashed per-turn like
-  // turnMode/turnSkills: the resume/answer payloads carry no `agent` (the server resolves the suspended
-  // turn's own), so there is no pin a steer could re-point — a steer's agent rides its own POST.
-  const agent = state.stickyAgent;
+  // The agent is the RESPONDER (`/agent <name>`, R45), else the server's ladder (null → the thread's
+  // home). NOT stashed per-turn like turnMode/turnSkills: the resume/answer payloads carry no `agent`
+  // (the server resolves the suspended turn's own), so there is nothing a steer could re-point — a
+  // steer's agent rides its own POST (and a mid-loop drain ignores it — the responder applies from the
+  // next TURN, §12.3 M10).
+  const agent = state.responder;
   if (!steering) {
     turnMode = mode;
     turnSkills = skills;
@@ -2862,7 +4048,7 @@ export async function sendMessage(
     mode,
     skills,
     agent,
-    privilege: state.sessionPrivilege,
+    privilege: override?.privilege ?? null,
     stream: true, // the PWA always prefers streaming; the server's agent.streaming=off can override (D17)
     // Omitted when empty so the request shape of every pre-D68 send is byte-identical (the field
     // defaults to `[]` server-side).
@@ -2903,7 +4089,9 @@ export async function sendMessage(
   const releaseUnspent = () => {
     if (claimed) return;
     releaseStaged(attachments);
-    if (previews.length) {
+    // Only while the bubble is still in the view: after a hop (S6) it left with the view it was sent
+    // from, and the view swapped in is not this send's to rewrite.
+    if (previews.length && state.messages.some((m) => m.id === tempUser.id)) {
       const messages = state.messages.flatMap((m) => {
         if (m.id !== tempUser.id) return [m];
         if (!body) return []; // attachment-only: nothing left to say
@@ -2929,8 +4117,8 @@ export async function sendMessage(
   const placeholderId = `assist-${Date.now()}`;
   set({
     // Session-51 #1c — the placeholder wears the agent that WILL answer, so the "working…" bubble has
-    // the right name + avatar from its first frame (the regenerate path's mirror): the sticky pick this
-    // POST names, else the thread's pin — the server's own fallback order. DISPLAY ONLY: `reqBody` is
+    // the right name + avatar from its first frame (the regenerate path's mirror): the responder this
+    // POST names, else the thread's home — the server's own fallback order. DISPLAY ONLY: `reqBody` is
     // untouched. Neither ⇒ `null` (the default) until `message_start` stamps the server's.
     messages: [...state.messages, tempUser, placeholder(placeholderId, agent ?? state.threadAgent)],
     status: "streaming",
@@ -3016,20 +4204,26 @@ export async function compactThread(instructions: string | null = null): Promise
  *  tool result pair, so a re-read renders it as a command bubble (and the agent sees it next turn).
  *  Mirrors the D17 buffered path: set the thread id, then `reloadChat()` — no parallel render path. */
 export async function runShell(command: string): Promise<void> {
+  // O6/M1 (S7A-01) — the view this `!cmd` was typed in, captured before the POST: a swap may land while
+  // it is in flight, and from then on the exec belongs to the conversation it was sent from.
+  const view = viewHere();
   try {
     const res = await fetch("/api/exec", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ command, thread_id: state.threadId }),
     });
+    // M1 — a LEFT exec writes nothing into the view swapped in: no refusal note (403/409) either.
     if (res.status === 403) {
-      pushSystemNote("// shell exec is disabled (Conf → Shell → user exec)");
+      if (!viewMoved({ view }))
+        pushSystemNote("// shell exec is disabled (Conf → Shell → user exec)");
       return;
     }
     // 409 = the thread's turn marker is held (D38) — busy, not broken; don't fall through to the
     // "backend unreachable" catch (misleading) — surface the server's actionable detail instead.
     if (res.status === 409) {
-      pushSystemNote("// " + (await busyDetail(res)));
+      const detail = await busyDetail(res);
+      if (!viewMoved({ view })) pushSystemNote("// " + detail); // checked AFTER the body read's await
       return;
     }
     // 202 = a chat/resume turn is live and ACCEPTED this `!cmd` as a queued exec steer (D41). Render an
@@ -3037,6 +4231,12 @@ export async function runShell(command: string): Promise<void> {
     // durable tool_call/result pair arrives on a later reload. `steer.applied{kind:exec}` resolves it.
     if (res.status === 202) {
       const info = (await res.json().catch(() => ({}))) as { entry_id?: string; turn_id?: string };
+      if (info.entry_id && viewMoved({ view })) {
+        // A LEFT exec steer (M1, chat's own 202 arm): no bubble in the moved view — its raw line stays
+        // under the thread it was queued on (O22), retired by that thread's drain / harvest / reconcile.
+        if (view.thread) setRaw(view.thread, info.entry_id, `!${command}`);
+        return;
+      }
       if (info.entry_id) {
         setRaw(state.threadId ?? "", info.entry_id, `!${command}`);
         set({ messages: [...state.messages, makeQueuedBubble(info.entry_id, "exec", command)] });
@@ -3052,8 +4252,12 @@ export async function runShell(command: string): Promise<void> {
       return;
     }
     if (!res.ok) throw new Error(`exec → ${res.status}`);
-    const data = (await res.json()) as { threadId: string };
-    if (data.threadId) setWireThread(data.threadId);
+    const data = (await res.json()) as { threadId: string; agent?: string | null };
+    // The exec RAN server-side in its own conversation; a view the owner moved away from writes nothing
+    // (the next visit shows the pair). Otherwise the wire thread — with its HOME (F2: a `!cmd` on a
+    // thread-less view MINTS, and the 200 names the minted home) — then the forced floor read.
+    if (viewMoved({ view })) return;
+    if (data.threadId) setWireThread(data.threadId, data.agent ?? undefined);
     // FIX B — a 200 means the exec RAN (the marker was free server-side: a live chat/resume turn returns
     // 202, a sync holder 409). A prior stream may still read "streaming" locally (a race where the turn
     // released server-side but our socket hasn't drained), which would make a NON-forced reload skip and
@@ -3061,7 +4265,7 @@ export async function runShell(command: string): Promise<void> {
     // live server turn to yank.
     await reloadChat(true);
   } catch {
-    pushSystemNote("// shell exec failed — backend unreachable?");
+    if (!viewMoved({ view })) pushSystemNote("// shell exec failed — backend unreachable?");
   }
 }
 
@@ -3158,18 +4362,10 @@ function actionable(): boolean {
  *  with the host id the first one just replaced (an honest 409, but a pointless one). */
 let syncInFlight = false;
 
-/** ISS-49 — an opening re-seat that found a sync route in flight (`reseatOpening`), PARKED with the
- *  thread it was asked for and whether the owner confirmed discarding that thread's edited opening. The
- *  route's `finally` runs ONE more re-seat for whatever the pick is by then — latest intent wins, no
- *  queue — and only while that same thread is still the one in view. */
-let reseatParked: { threadId: string; discard: boolean } | null = null;
-
-/** Run ONE of the sync routes (swap/edit/delete, and ISS-49's opening re-seat) and install the floor it
- *  answers with. A refusal (409 stale/busy/folded, 422, 404, 403) says the server's own sentence and
+/** Run ONE of the sync routes (swap/edit/delete) and install the floor it answers with. A refusal (409 stale/busy/folded, 422, 404, 403) says the server's own sentence and
  *  re-reads the floor — the usual cause is a view that no longer matches the thread (another device
  *  acted), and the fresh floor is the fix. `before` runs just ahead of the install (the edit's audio
- *  forget). An answer that carries the `thread` too (the re-seat) installs its pin as `threadAgent`.
- *  Resolves whether the route TOOK the change — `false` for a refusal, a failure, or a local one (a turn
+ *  forget). Resolves whether the route TOOK the change — `false` for a refusal, a failure, or a local one (a turn
  *  streaming, a route already in flight): the editor uses it to hand the owner's typed text back. */
 async function syncMessageRoute(
   url: string,
@@ -3188,12 +4384,9 @@ async function syncMessageRoute(
       await reloadFloor();
       return false;
     }
-    const data = (await res.json()) as { messages?: unknown; thread?: Thread };
+    const data = (await res.json()) as { messages?: unknown };
     if (!Array.isArray(data.messages)) throw new Error("no floor");
     before?.();
-    // The re-seat's new pin lands even under a turn that started meanwhile: the server DID re-seat, and
-    // that turn's own floor will not carry the pin.
-    if (data.thread) set({ threadAgent: data.thread.agent ?? null });
     // A turn that started meanwhile will land its own floor; the change itself was taken either way.
     if (getChatStatus() !== "streaming") applyFloor(data.messages as ChatMessage[]);
     return true;
@@ -3202,12 +4395,6 @@ async function syncMessageRoute(
     return false;
   } finally {
     syncInFlight = false;
-    const parked = reseatParked;
-    reseatParked = null;
-    // Opening another thread meanwhile drops the parked re-seat: a pick never re-seats a thread it was
-    // not made on.
-    if (parked && state.threadId === parked.threadId)
-      void reseatOpening(state.stickyAgent ?? "", parked.discard ? parked.threadId : null);
   }
 }
 
@@ -3342,7 +4529,9 @@ export async function regenerate(
   const threadId = state.threadId as string;
   // A regenerate is a FRESH turn on this view: it pins the turn's context for any resume it suspends on
   // (ACA-16/C5-M1), like a send. No explicit skills — the server re-activates the anchor's own.
-  const mode = sessionMode ?? null;
+  // The HOME's overrides (R40) — a regenerate speaks as the reply's own speaker, at its home's stance.
+  const override = homeOverride();
+  const mode = override?.mode ?? null;
   turnMode = mode;
   turnSkills = [];
   // Whatever is docked for the displaced take is stopped now: it is leaving the log.
@@ -3372,7 +4561,7 @@ export async function regenerate(
       thread_id: threadId,
       message_id: target,
       mode,
-      privilege: state.sessionPrivilege,
+      privilege: override?.privilege ?? null,
       stream: true,
     },
     placeholderId,
@@ -3458,66 +4647,6 @@ export async function deleteMessage(messageId: string): Promise<void> {
   );
 }
 
-// ── ISS-49 — a pick on a FRESH thread re-seats its opening (pin + greeting) ──────────────────────────
-
-/** Would picking `name` re-seat the open thread's opening? A real name (a bare `/agent` clear never
- *  re-seats), a thread to re-seat, no turn taken in it yet (`hasUserTurn` — the server's `is_owner_turn`
- *  refuses the same set), and a pin that differs. Read from LIVE state on every call — the pick seam asks
- *  before its confirm, and `reseatOpening` asks again after it. */
-export function wouldReseat(name: string): boolean {
-  return (
-    name !== "" &&
-    state.threadId !== null &&
-    !hasUserTurn(state.messages) &&
-    name !== state.threadAgent
-  );
-}
-
-/** Has the owner taken a turn in the open view (`hasUserTurn`)? Until then the chat holds only the
- *  agent's opening, and the pick seam keeps its `// agent → …` note out of it (`lib/composer#pinStickyAgent`). */
-export function conversationStarted(): boolean {
-  return hasUserTurn(state.messages);
-}
-
-/** Does the open thread's opening carry the owner's own edit (D81 `edited`)? A re-seat would discard
- *  it, so the pick seam asks first (`lib/composer#pinStickyAgent`) — never a silent loss. */
-export function openingEdited(): boolean {
-  return state.messages.some((m) => !!m.edited);
-}
-
-/** Replace the open thread's opening with `name`'s — `PUT /api/threads/{id}/opening` (ISS-49): the owner
- *  ran `/new` (minted for the default) and picked another agent before saying anything, so the thread
- *  should open as THAT agent, greeting and who-line alike. Called explicitly by the pick seam and by
- *  `/new`'s tail — never from a subscription, so opening or hydrating a thread never re-seats.
- *
- *  A no-op unless `wouldReseat(name)`, and while the opening is edited unless the caller's confirm
- *  covers it: `discardFor` is the THREAD the owner confirmed discarding an edited opening on (the id the
- *  confirm was asked about), honoured only while that thread is still the one in view — a confirm never
- *  travels to another thread's edit. Runs through the D81 `syncMessageRoute` — same thread id, so no
- *  `swapView` — which installs the floor + the new pin, or says the server's refusal (an addendum to the
- *  pick note) and re-reads the floor. A sync route already in flight (an earlier re-seat, a D81
- *  edit/delete) parks this one (`reseatParked`, its confirm OR-ed into one already parked for the same
- *  thread): that route's `finally` re-runs it ONCE for the pick as it stands then. */
-export async function reseatOpening(name: string, discardFor: string | null = null): Promise<void> {
-  const discard = discardFor !== null && discardFor === state.threadId;
-  if (!wouldReseat(name) || (openingEdited() && !discard)) return;
-  const threadId = state.threadId!;
-  if (syncInFlight) {
-    const kept = reseatParked?.threadId === threadId && reseatParked.discard;
-    reseatParked = { threadId, discard: discard || kept };
-    return;
-  }
-  await syncMessageRoute(
-    `/api/threads/${encodeURIComponent(threadId)}/opening`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agent: name, discard_edited: discard }),
-    },
-    "could not switch the greeting",
-  );
-}
-
 // Proposals being applied/dismissed right now — guards a double-tap of Approve/Dismiss (the POST is
 // not instant and the bubble stays mounted until the result patch lands).
 const applyingProposals = new Set<string>();
@@ -3587,7 +4716,8 @@ export async function answerQuestion(callId: string, answer: string): Promise<vo
     call_id: callId,
     decision: "answer",
     answer,
-    privilege: state.sessionPrivilege,
+    // The HOME's privilege override (R40) — today's carry rule, keyed by the home now.
+    privilege: homeOverride()?.privilege ?? null,
     // The suspended call's own turn mode (ACA-16) — `turnMode` alone can belong to a NEWER
     // interleaved send; the per-call pin survives it. Fallback covers pre-pin persisted bubbles.
     mode: modeByCall[callId] ?? turnMode,
@@ -3612,9 +4742,9 @@ export async function resumeCall(
     call_id: callId,
     decision,
     confirm_token: confirmTokens[callId],
-    // Carry the session privilege across the resume (A1/D16) so the continuation gates at the same
-    // level the suspended turn used — a lowered session can't silently revert to the agent default.
-    privilege: state.sessionPrivilege,
+    // Carry the HOME's privilege override across the resume (A1/D16, R40) so the continuation gates at
+    // the same level the suspended turn used — a lowered override can't silently revert to the default.
+    privilege: homeOverride()?.privilege ?? null,
     // The suspended call's own turn mode (ACA-16), not the last-send `turnMode` — see answerQuestion.
     mode: modeByCall[callId] ?? turnMode,
     // …and its active skills (C5-M1), pinned per-call for the same reason as `mode`.

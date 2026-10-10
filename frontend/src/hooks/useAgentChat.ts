@@ -5,7 +5,7 @@
 //
 // What it does NOT own:
 // - The chat *loop* + *actions* live in `store/chat.ts` (the streaming reducer: send/resume/answer/
-//   applyProposal/editPlan/retry/setSessionPrivilege). This controller COMPOSES that store; it does not
+//   applyProposal/editPlan/retry/setHomePrivilege). This controller COMPOSES that store; it does not
 //   re-implement it. Bubble sub-components import those stable module-level actions directly (like
 //   `fillComposer`/`playMessage` already are) — a deep bubble can't call this hook (it would re-run the
 //   O(n) derivation per bubble), and prop-drilling the actions is worse than the direct singleton import.

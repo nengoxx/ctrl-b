@@ -405,4 +405,26 @@ export interface Thread {
   created_at: string;
   updated_at: string;
   archived: boolean;
+  /** When the owner last SAW it (D84 §3) — the unread predicate's floor; moved by the seen write. */
+  seen_at?: string | null;
+}
+
+/** The newest user/assistant row of a conversation that has text (D84 §4 `preview`) — `agent` is that
+ *  row's own speaker (`null` for a user row, and for a legacy assistant row = the home agent's). */
+export interface ThreadPreview {
+  role: "user" | "assistant";
+  agent: string | null;
+  text: string;
+  ts: string;
+}
+
+/** One row of `GET /api/threads?agent=<slug>` (D84 §4): the `Thread` dump merged with its five summary
+ *  fields — the per-agent conversations sheet's row (S9), read through `hooks/useThreads`. */
+export interface ThreadSummary extends Thread {
+  /** `title`, else the first user line (cut at 60), else `null` ("New conversation"). */
+  label: string | null;
+  preview: ThreadPreview | null;
+  running: boolean;
+  awaiting: boolean;
+  unread: boolean;
 }

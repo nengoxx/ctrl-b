@@ -41,7 +41,13 @@ import { ChatThread } from "../../src/components/ChatThread";
 import type { FocalArt } from "../../src/lib/focalPosition";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
 import { AUTOMATIONS_GROUP_ID } from "../../src/hooks/useAutomations";
-import { openThread, sendMessage, setStickyAgent, useChat } from "../../src/store/chat";
+import {
+  openThread,
+  resetToThreadless,
+  sendMessage,
+  setResponder,
+  useChat,
+} from "../../src/store/chat";
 import { clearGroupScrollTarget, getGroupScrollTarget } from "../../src/store/groupScroll";
 import { getUI, setUI } from "../../src/store/ui";
 import {
@@ -877,7 +883,7 @@ describe("session-51 #1 · the who-line names the character", () => {
             release = resolve;
           }),
       );
-    setStickyAgent("seraphina");
+    setResponder("seraphina"); // `/agent seraphina` — the responder the POST names
     try {
       const { result } = renderHook(() => useChat());
       let sent!: Promise<unknown>;
@@ -895,11 +901,11 @@ describe("session-51 #1 · the who-line names the character", () => {
         await sent;
       });
     } finally {
-      setStickyAgent(null);
+      act(() => resetToThreadless()); // a reset leaves — the responder clears
     }
   });
 
-  // Fix wave 1 — with no sticky pick, the agent that will answer is the THREAD's pin (the server's own
+  // Fix wave 1 — with no responder, the agent that will answer is the THREAD's home (the server's own
   // fallback order), so a Seraphina thread's placeholder is Seraphina's; the POST still names no agent.
   it("the send placeholder falls back to the thread's pinned agent, display only (#1c)", async () => {
     const frames = [
@@ -921,7 +927,6 @@ describe("session-51 #1 · the who-line names the character", () => {
         });
       return Promise.resolve(sseResponse(frames));
     });
-    setStickyAgent(null);
     const { result } = renderHook(() => useChat());
     await act(async () => {
       await openThread("t-sera");
@@ -1172,5 +1177,49 @@ describe("ChatThread — stick to bottom (ISS-66)", () => {
     fireEvent.click(btn);
     expect(pill()).toBeNull();
     expect(document.activeElement).toBe(document.getElementById("chatlog"));
+  });
+
+  it("a change of the VIEW'S CONVERSATION re-births the latch and jumps to the newest (Phase 27 §12.1 ⑦)", async () => {
+    const left = [msg("u0", "user", "hi"), msg("a1", "assistant", "hello")];
+    const p = await mount(left);
+    p.userScroll(100); // escaped on the conversation being left
+    expect(pill()).not.toBeNull();
+
+    // The store's view swaps to another conversation (a door → `openThread` → `swapView`) — a loaded
+    // history, nothing `fresh`, so only the thread change itself can re-stick.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: true, status: 200, json: async () => [] } as Response)),
+    );
+    await act(async () => {
+      await openThread("hop-other", "emma");
+    });
+    p.grow(2600);
+    p.view.rerender(
+      <ChatThread
+        active
+        chat={chatOf([msg("o0", "user", "elsewhere"), msg("o1", "assistant", "other reply")])}
+      />,
+    );
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+    expect(p.pane.scrollTop).toBe(p.max());
+    expect(pill()).toBeNull();
+    // …and the re-born latch follows growth again (it is stuck, not still escaped from the old thread).
+    p.grow(2900);
+    p.view.rerender(
+      <ChatThread
+        active
+        chat={chatOf([
+          msg("o0", "user", "elsewhere"),
+          msg("o1", "assistant", "other reply"),
+          msg("o2", "assistant", "more"),
+        ])}
+      />,
+    );
+    expect(p.pane.scrollTop).toBe(p.max());
+    act(() => resetToThreadless()); // leave the singleton store thread-less for later cases
+    vi.unstubAllGlobals();
   });
 });

@@ -9,7 +9,7 @@ import {
 } from "../lib/attachments";
 import { useVerbsVersion } from "../lib/composer";
 import { removeStaged, useStagedFiles, type StagedAttachment } from "../store/attachments";
-import { getSessionMode } from "../store/chat";
+import { getHomeMode } from "../store/chat";
 
 // COMPOSER ATTACHMENTS, the React surface (D68 / ATTACHMENTS_PLAN §7).
 //
@@ -110,9 +110,9 @@ export function useAttachments(): AttachController {
     remove: removeStaged,
     inputProps: { ref: inputRef, type: "file", multiple: true, onChange },
     dropProps: { onDragOver, onDrop, onPaste },
-    // Only ever claimed about the CONFIGURED chain: with a sticky `/<provider>` in force the model
+    // Only ever claimed about the CONFIGURED chain: with the home's sticky `/<provider>` in force the model
     // that will serve is resolved server-side and is not in this payload, so the honest answer is to
     // say nothing rather than warn about a model that is not the one being used.
-    imagesUnsupported: getSessionMode() === null && !primaryAcceptsImages(),
+    imagesUnsupported: getHomeMode() === null && !primaryAcceptsImages(),
   };
 }

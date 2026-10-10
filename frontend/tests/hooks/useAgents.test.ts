@@ -109,6 +109,63 @@ describe("deleteToast — the ISS-24 report, as the owner reads it", () => {
   });
 });
 
+// D84 §4 step 3 — the cascade's filesystem steps are NOT rolled back: the toast names every step that
+// failed ("delete again to finish") and sticks; `ok` / `absent` / `kept` are not failures.
+describe("deleteToast — the D84 cascade report (R41, F6, M1)", () => {
+  it("reports how many conversations went; a clean cascade is a normal toast", () => {
+    expect(deleteToast({ deleted: 3, folder: "ok", memory: "absent", attachments: "ok" })).toEqual({
+      text: "Agent removed · 3 conversations deleted",
+      sticky: false,
+    });
+    expect(deleteToast({ deleted: 1, folder: "absent", memory: "kept" }).text).toBe(
+      "Agent removed · 1 conversation deleted",
+    );
+  });
+
+  it("the folder step failed → delete again to finish (the re-run also finishes the memory dir); sticky", () => {
+    expect(
+      deleteToast({
+        name: "emma",
+        deleted: 2,
+        folder: "PermissionError: denied",
+        memory: "skipped — the folder was not removed",
+        attachments: "ok",
+      }),
+    ).toEqual({
+      text:
+        "Agent not fully removed · 2 conversations deleted · its folder could not be removed: " +
+        "PermissionError: denied — delete again to finish",
+      sticky: true,
+    });
+  });
+
+  it("the folder went but the memory dir did not → it is NAMED (the agent is off the roster: no re-run)", () => {
+    const t = deleteToast({ name: "emma", deleted: 1, folder: "ok", memory: "OSError: busy" });
+    expect(t).toEqual({
+      text:
+        "Agent removed · 1 conversation deleted · its memory folder memories/agents/emma was left: " +
+        "OSError: busy",
+      sticky: true,
+    });
+    expect(t.text).not.toContain("delete again");
+  });
+
+  it("an attachment-dir failure → reclaimed at the next start (no re-run can name it)", () => {
+    expect(
+      deleteToast({ deleted: 1, folder: "ok", memory: "ok", attachments: "OSError: busy" }),
+    ).toEqual({
+      text:
+        "Agent removed · 1 conversation deleted · some attachments were left (OSError: busy) — " +
+        "reclaimed at the next start",
+      sticky: true,
+    });
+  });
+
+  it("without the flag (`deleted: true`) there is no count clause", () => {
+    expect(deleteToast({ deleted: true }).text).toBe("Agent removed");
+  });
+});
+
 // The roster's ONE derivation (D2 L3) — the gallery's grid and both header counts read it.
 describe("rosterNames", () => {
   it("is the root first, then the route's order — the root even before the listing loads", () => {

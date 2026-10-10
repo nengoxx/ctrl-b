@@ -121,7 +121,14 @@ import { BUCKET_CAP_MS } from "../../src/lib/uplinkPacer";
 import { newWakeLockState, releaseWakeLock, takeWakeLock } from "../../src/lib/wakeLock";
 import { FakeMediaRecorder, gateMediaDevices, mockStt, setMediaDevices } from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
-import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
+import {
+  clearDraft,
+  getDraft,
+  pruneSlots,
+  setComposerSlot,
+  setDraft,
+  stopLiveDictation,
+} from "../../src/store/composer";
 import { releaseMic, resetLegHold } from "../../src/store/micRelease";
 import { pushToast } from "../../src/store/toast";
 
@@ -2874,5 +2881,184 @@ describe("useDictation · streaming S7a the leg clock: the cap join and the `flu
     ready();
     final("not held", "max_segment");
     expect(getDraft()).toBe("not held");
+  });
+});
+
+// ── Phase 27 S8 — the dictation slot (R35) and the navigate-stop (§12.2 ④, §12.1 ④, §12.3 L7) ────────
+//
+// A streaming dictation captures the conversation it STARTED in (on its session), and every one of its
+// appends lands there. A view swap while it is live STOPS it first (`store/composer#stopLiveDictation`,
+// what `store/chat#swapView` calls before anything else): the stop reason is `navigated` on the trail's
+// `end` line, the leg's finals land in the ORIGIN slot, the stop's promise resolves only once they have
+// (the E6 carry awaits it, L7), and no auto-send follows (the owner did not release it, §12.1 ④).
+describe("useDictation · Phase 27 S8 — the dictation slot and the navigate-stop", () => {
+  const DEBUG = { ...KNOBS, debug: true };
+  const ends = (): Record<string, unknown>[] =>
+    vi
+      .mocked(postJSON)
+      .mock.calls.flatMap((c) => (c[1] as { entries: Record<string, unknown>[] }).entries)
+      .filter((l) => l.ev === "end");
+  afterEach(() => {
+    setComposerSlot("");
+    pruneSlots(() => false);
+  });
+
+  it("B14 — a swap ENDS it with `navigated`; its finals land in the origin slot; no auto-send", async () => {
+    setComposerSlot("L2");
+    const { result } = renderHook(() => useDictation(opts({ autoSend: true, liveCall: DEBUG })));
+    await hold(result);
+    ready();
+    phrase("first words");
+    let landed = false;
+    let stopped!: Promise<void>;
+    act(() => {
+      stopped = stopLiveDictation(); // what `swapView` does first…
+      void stopped.then(() => {
+        landed = true;
+      });
+      setComposerSlot("E1"); // …and then the slot follows the view to Emma's E1
+    });
+    expect(h.sent).toEqual(["flush"]); // stopped at once (no settle tail): the release choreography runs
+    phrase("tail words"); // the flush's answer arrives AFTER the hop
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(landed).toBe(false); // still inside the tail wait — a carry would have to wait (L7)
+    await runOutTail();
+    await act(async () => {
+      await stopped;
+    });
+    expect(landed).toBe(true);
+    expect(result.current.status).toBe("idle");
+    expect(getDraft()).toBe(""); // E1 untouched
+    expect(runComposer).not.toHaveBeenCalled();
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // the clip would have said them twice
+    expect(ends()).toHaveLength(1);
+    expect(ends()[0]).toMatchObject({ reason: "navigated", finals: 2, clip: "discarded" });
+    setComposerSlot("L2");
+    expect(getDraft()).toBe("first words tail words");
+  });
+
+  it("a navigate-stop never auto-sends — even when the view comes back to the same slot", async () => {
+    setComposerSlot("L2");
+    const { result } = renderHook(() => useDictation(opts({ autoSend: true })));
+    await hold(result);
+    ready();
+    phrase("kept, not sent");
+    let stopped!: Promise<void>;
+    act(() => {
+      stopped = stopLiveDictation();
+    });
+    await runOutTail();
+    await act(async () => {
+      await stopped;
+    });
+    expect(runComposer).not.toHaveBeenCalled();
+    expect(getDraft()).toBe("kept, not sent");
+  });
+
+  it("…and with no finals the clip carries it — into the origin slot, still without an auto-send", async () => {
+    setComposerSlot("L2");
+    const { result } = renderHook(() => useDictation(opts({ autoSend: true })));
+    await hold(result);
+    ready();
+    await act(async () => {
+      vi.advanceTimersByTime(1200); // past the 1000 ms floor
+    });
+    let stopped!: Promise<void>;
+    act(() => {
+      stopped = stopLiveDictation();
+      setComposerSlot("E1");
+    });
+    await runOutTail();
+    await act(async () => {
+      await stopped;
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1); // the whole clip went up
+    expect(getDraft()).toBe("");
+    expect(runComposer).not.toHaveBeenCalled();
+    setComposerSlot("L2");
+    expect(getDraft()).toBe("the whole clip");
+  });
+
+  it("a release by the OWNER, then a hop inside the tail wait: the words stay home, nothing auto-sends", async () => {
+    setComposerSlot("L2");
+    const { result } = renderHook(() => useDictation(opts({ autoSend: true, liveCall: DEBUG })));
+    await hold(result);
+    ready();
+    phrase("said in L2");
+    await act(async () => {
+      vi.advanceTimersByTime(1200);
+    });
+    act(() => result.current.stop("user"));
+    let stopped!: Promise<void>;
+    act(() => {
+      stopped = stopLiveDictation(); // the leg is still the live one until its release ends
+      setComposerSlot("E1");
+      setDraft("E1's own words"); // what an auto-send reading the VIEW's draft would wrongly send
+    });
+    await runOutTail();
+    await act(async () => {
+      await stopped;
+    });
+    expect(ends()[0]).toMatchObject({ reason: "user" }); // the first reason given stands
+    expect(runComposer).not.toHaveBeenCalled(); // §12.1 ④ — not the view on screen's to send
+    expect(getDraft()).toBe("E1's own words");
+    setComposerSlot("L2");
+    expect(getDraft()).toBe("said in L2");
+  });
+
+  it("F1 — a Send while LOCKED lazily mints X: later finals land in X, and the release auto-sends there", async () => {
+    // thread-less (`""`): the leg captures `""`
+    const { result } = renderHook(() => useDictation(opts({ autoSend: true })));
+    await hold(result);
+    ready();
+    phrase("before the send");
+    // the Send takes the draft and the stream's `thread` frame lazily mints X — NOT a swap: no stop
+    act(() => {
+      clearDraft();
+      setComposerSlot("X", true); // `setWireThread`'s mint flag
+    });
+    phrase("after the send");
+    expect(getDraft()).toBe("after the send"); // into X, not the invisible `""`
+    await release(result);
+    await runOutTail();
+    expect(runComposer).toHaveBeenCalledWith("after the send"); // the view never LEFT: it sends in X
+  });
+
+  it('Opus N1 — a DOOR from `""` inside a released tail wait sends nothing; the words sit in Y\'s draft', async () => {
+    const { result } = renderHook(() => useDictation(opts({ autoSend: true })));
+    await hold(result); // thread-less
+    ready();
+    phrase("said thread-less");
+    await act(async () => {
+      vi.advanceTimersByTime(1200);
+    });
+    act(() => result.current.stop("user")); // the owner released — the tail wait is open
+    let stopped!: Promise<void>;
+    act(() => {
+      stopped = stopLiveDictation(); // a roster door's swap (no mint flag)…
+      setComposerSlot("Y"); // …into the empty Y: `""` forwards there, but it is a hop
+    });
+    await runOutTail();
+    await act(async () => {
+      await stopped;
+    });
+    expect(runComposer).not.toHaveBeenCalled();
+    expect(getDraft()).toBe("said thread-less");
+  });
+
+  it("a leg that DROPPED (the recording carries on as a clip) is no longer stopped by a swap", async () => {
+    setComposerSlot("L2");
+    const { result } = renderHook(() => useDictation(opts()));
+    await hold(result);
+    await act(async () => {
+      h.close?.(); // refused at the handshake — the recording degrades to the whole clip
+    });
+    await act(async () => {
+      await stopLiveDictation();
+    });
+    expect(result.current.status).toBe("recording"); // the clip door is unaffected (§12.2 ④)
+    act(() => result.current.cancel());
   });
 });

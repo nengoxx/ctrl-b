@@ -20,15 +20,24 @@ import logging
 import shutil
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeGuard, cast, get_args
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import Response
 
@@ -46,6 +55,8 @@ from app.config import (
     sync_mapping,
     validation_detail,
 )
+from app.core.attachments import remove_thread_attachments
+from app.core.events import ThreadFrame, ThreadFrameState
 from app.core.fsutil import atomic_write_text, write_text_eol
 from app.core.media import StoreWriteError, role_dir
 from app.core.memory import StoreScope, StoreSpec, store_by_key
@@ -90,7 +101,6 @@ from app.services.agent.planning import TaskPlanInput
 from app.services.agent.prompts import resolve
 from app.services.agent.proposals import apply_proposal
 from app.services.agent.routing import prune_routing_state, routing_state_for
-from app.services.agent.selector import select_agent
 from app.services.agent.session import AgentSession, collect_turn
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
 from app.services.agent.steering import (
@@ -123,7 +133,6 @@ from app.services.conversation import (
     Revocable,
     TailReply,
     history_payload,
-    is_owner_turn,
     replace_text,
     resolve_unit,
 )
@@ -201,19 +210,36 @@ class ChatRequest(BaseModel):
 class NewThreadRequest(BaseModel):
     """Optional body for `POST /threads` (D70 §4.2, creation seam ①). `agent` is the agent the owner
     SELECTED for this conversation: it is persisted on the thread (so every turn in it runs as that
-    agent, and the per-turn auto-router stays out of the way) and it is what the greeting is seeded
-    from. Omitted / no body at all ⇒ exactly the pre-D70 endpoint: an unpinned, unseeded thread."""
+    agent unless a send names another) and it is what the greeting is seeded
+    from. Omitted / no body at all ⇒ the HOME (the configured default, else the root), pinned and
+    greeted like seam ② (D84: every mint is pinned)."""
 
     agent: str | None = None
 
 
-class ReopenRequest(BaseModel):
-    """Body for `PUT /threads/{id}/opening` (ISS-49): the agent a FRESH thread should open as.
-    `discard_edited` is the owner's confirm that an opening they edited (D81) may go — without it an
-    edited greeting is a 409, never a silent loss."""
+class ThreadPatch(BaseModel):
+    """Body for `PATCH /threads/{id}` (D84 §4) — the per-item update object: each field is applied only
+    when PRESENT (`model_fields_set`), so a later dimension is one more optional field. `title`: `""` or
+    `null` clears it (the list then labels from the first user row); trimmed by the repo. `seen_at`: the
+    `ts` of the newest row the client's view holds — timezone-aware (a naive value is a 422 here, never a
+    500 in the repo's clamp); `null` is a no-op. Unknown keys are a 422 (`extra="forbid"`)."""
 
-    agent: str = Field(min_length=1)
-    discard_edited: bool = False
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, max_length=120)
+    seen_at: AwareDatetime | None = None
+
+    @field_validator("seen_at")
+    @classmethod
+    def _seen_at_utc(cls, v: datetime | None) -> datetime | None:
+        """In UTC at the door: an extreme offset (`0001-01-01T00:00:00+23:59`) overflows the conversion,
+        and that is a 422 through the safe renderer here — never a 500 in the repo's clamp."""
+        if v is None:
+            return None
+        try:
+            return v.astimezone(timezone.utc)
+        except OverflowError as e:
+            raise ValueError("seen_at is out of range in UTC") from e
 
 
 class ExecRequest(BaseModel):
@@ -322,6 +348,24 @@ def resolve_session_agent(settings, name: str | None, privilege: Privilege | Non
     return agent
 
 
+def _as_guest_of_home(settings, responder: AgentDef, home: str, privilege: Privilege | None) -> AgentDef:
+    """A RESPONDER answering inside another agent's conversation runs on the HOME agent's `model` and —
+    absent an explicit session `privilege` override, which `resolve_session_agent` already applied and
+    which wins — the home's `privilege` (D84 R40, F2 = reading A, owner 2026-10-06): the home agent IS
+    the conversation, so a hop never changes what it costs or may do. Everything else stays the
+    responder's own — tools, skills, lorebooks, memory, persona (§12.2 ⑤: it is "who answers"; the
+    typed-action registry + confirm tokens stay the execution boundary). RECORDED FOR REFINEMENT: the
+    owner may change which fields a responder inherits after testing — `_build_session`'s call is the
+    ONE copy point (chat, resume, regenerate and drain-B steers all build through it), so the split
+    changes here and nowhere else. `home` resolves like any name (ISS-51: a vanished home folds onto the
+    configured default, else the root)."""
+    home_def = settings.resolve_agent(home)
+    update: dict[str, Any] = {"model": home_def.model}
+    if privilege is None:
+        update["privilege"] = home_def.privilege
+    return responder.model_copy(update=update)
+
+
 def _build_session(
     state,
     thread: Thread | None = None,
@@ -333,9 +377,12 @@ def _build_session(
     with the D41 drain-B spawn (`start_steer_turn`, which has only `state`, never a Request) and with the
     A3 automation runner. Resolves which `AgentDef` drives the turn: `agent_name` (the `/agent <name>`
     switch, 7d) wins; else the thread's `agent` field (D11); else the configured default. `privilege` is
-    the `/privilege` session override (A1/D16). Wires the D41 Drain-A `steer_source` when a thread is
-    resolved (subagent sessions build the session directly with the `None` default — children are never
-    steered).
+    the `/privilege` session override (A1/D16). When the resolved agent is NOT the thread's home (a
+    responder answering in another agent's conversation), it is copied onto the home's `model` +
+    `privilege` (`_as_guest_of_home`, D84 R40/F2 — the one copy point). An automation run is exempt: the
+    agent and privilege it was authorized for are the ones it runs with (its own pinned snapshot, never
+    a home's). Wires the D41 Drain-A `steer_source` when a thread is resolved (subagent sessions build
+    the session directly with the `None` default — children are never steered).
 
     `automation` (A3/D49 §D-3) is the ONE options object that turns this into an UNATTENDED run — the
     frozen claim snapshot itself, so the builder cannot disagree with the row the run was claimed from.
@@ -353,6 +400,8 @@ def _build_session(
     would be a second place for the steer/compaction/routing/skills wiring to drift."""
     name = agent_name or (thread.agent if thread else None)
     agent = resolve_session_agent(state.settings, name, privilege)
+    if thread is not None and thread.agent is not None and automation is None and agent.name != thread.agent:
+        agent = _as_guest_of_home(state.settings, agent, thread.agent, privilege)
     return AgentSession(
         state.threads,
         state.messages,
@@ -401,31 +450,6 @@ def _session(
     last assistant turn's `agent` here (D15 #5) so a suspended turn finishes on the agent that started
     it."""
     return _build_session(request.app.state, thread, agent_name, privilege)
-
-
-def _auto_route_agent(state, thread: Thread, explicit_agent: str | None, text: str) -> str | None:
-    """Resolve the agent NAME for a turn, including the auto-router (7e-g, D15 #8): an explicit
-    `/agent` (or a thread-sticky agent) always wins; only when nothing pins the agent AND the switch is
-    on does the keyword selector pick a specialist by matching `text`. Extracted so the chat endpoint
-    AND the D41 drain-B spawn resolve the agent identically (a spawned steer turn routes exactly as the
-    fresh POST that enqueued it would have — D41 §9 captured-params fidelity).
-
-    **BLOCKING — both callers hop it onto a thread** (SYS-16; audit B-3). The selector's arm reads
-    every specialist's `agent.yaml` fresh off disk, and D70 made those files more numerous (the
-    gallery + card import; an imported card's provenance is its `card.json` sidecar, not this file,
-    since R87/RP-8). Run on the loop that is N full YAML parses ahead of the first
-    token, stalling every other request — SSE streams and monitor polls included — behind a routing
-    decision. `agent.auto_rotate` is off by default, which is why this was latent rather than live."""
-    agent_name = explicit_agent
-    selector = getattr(state, "agent_selector", None)
-    if (
-        agent_name is None
-        and thread.agent is None
-        and state.settings.agent.auto_rotate
-        and selector is not None
-    ):
-        agent_name = select_agent(state.settings, selector, text)
-    return agent_name
 
 
 def _effective_stream(setting: str, requested: bool) -> bool:
@@ -594,6 +618,38 @@ async def _stream_live(
         remove_subscriber(handle, queue)
 
 
+_THREAD_FRAME_STATES: frozenset[str] = frozenset(get_args(ThreadFrameState))
+
+
+def _publish_thread_frame(
+    state,
+    thread: Thread,
+    frame_state: str,
+    *,
+    turn_id: str | None = None,
+    chained: bool = False,
+) -> None:
+    """The ONE producer of the `thread` frame (D84 / CONVERSATIONS_PLAN §5, DESIGN §12) — every frame
+    goes through here. An ARCHIVED thread publishes nothing (an automation run keeps its `Event` +
+    `read_at` path; the runner's spawn needs no check of its own). `agent` = `thread.agent`, the HOME
+    agent. Called from sync done-callbacks and `finally` blocks, so it never awaits and never raises:
+    `EventBus.publish` is sync + non-raising, and a state outside the frame vocabulary is logged and
+    dropped instead of failing validation inside the drain path."""
+    if thread.archived:
+        return
+    if frame_state not in _THREAD_FRAME_STATES:
+        log.warning("thread frame: unknown state %r for thread %s — not published", frame_state, thread.id)
+        return
+    frame = ThreadFrame(
+        thread_id=thread.id,
+        state=cast(ThreadFrameState, frame_state),
+        turn_id=turn_id,
+        agent=thread.agent,
+        chained=chained,
+    )
+    state.event_bus.publish(frame)
+
+
 def _spawn_drain_task(
     state, thread: Thread, events: AsyncIterator[Any], handle: TurnHandle, cfg
 ) -> asyncio.Task:
@@ -636,13 +692,22 @@ def _spawn_drain_task(
         # D41 Drain B: a `completed` turn that leaves pending steers spawns the next turn (or drains an
         # all-exec queue) — synchronously in this sync done-callback. Suppressed at shutdown / on a
         # cancel that already harvested the queue (see `_maybe_spawn_drain_b`).
-        _maybe_spawn_drain_b(state, thread, handle, cfg)
+        chained = _maybe_spawn_drain_b(state, thread, handle, cfg)
+        # D84 §5: the terminal `thread` frame goes LAST — after the marker is released and the chain
+        # decided, so a client refetching on it reads the settled state. The backfill above guarantees
+        # `terminal_status` is set here.
+        _publish_thread_frame(
+            state, thread, handle.terminal_status or "error", turn_id=handle.turn_id, chained=chained
+        )
 
     task.add_done_callback(_cleanup)
+    # D84 §5: `running` once the cleanup is wired (no `await` since `create_task`), so the marker can
+    # never be left without the callback that publishes its terminal.
+    _publish_thread_frame(state, thread, "running", turn_id=handle.turn_id)
     return task
 
 
-def _maybe_spawn_drain_b(state, thread: Thread, handle: TurnHandle, cfg) -> None:
+def _maybe_spawn_drain_b(state, thread: Thread, handle: TurnHandle, cfg) -> bool:
     """D41 Drain B (turn end, `completed` ONLY). Called from the drain task's SYNC done-callback: iff
     the turn completed AND the thread still has pending steers AND we are NOT shutting down, RESERVE the
     thread marker SYNCHRONOUSLY (no `await` before the reserve — the callback is sync) then
@@ -653,24 +718,48 @@ def _maybe_spawn_drain_b(state, thread: Thread, handle: TurnHandle, cfg) -> None
     Suppressions: `suspended`/`cancelled`/`error` terminals never spawn (only `completed`); a cancel
     that harvested the queue first (§Cancel) leaves it absent → nothing to spawn; `state.shutting_down`
     (set at the top of the lifespan finally) blocks a natural completion from spawning past the drain
-    snapshot into a closing DB."""
+    snapshot into a closing DB.
+
+    Returns whether it spawned a drain-B body — the terminal `thread` frame's `chained` (D84 §5)."""
     if handle.terminal_status != "completed":
-        return
+        return False
     if getattr(state, "shutting_down", False):
-        return
+        return False
     q = state.steer_queues.get(thread.id)
     if not q:  # absent (harvested by a racing cancel) or empty → nothing to drain
-        return
+        return False
     try:
         new_handle = reserve(state.turns, thread.id, "chat", ring_size=cfg.ring_size)
     except TurnBusy:
-        return  # a fresh POST won the thread first → it will drain the queue at its own loop top
+        return False  # a fresh POST won the thread first → it will drain the queue at its own loop top
     # FIX 2: the body task IS the durable task — assign it to `new_handle.task` immediately (no None
     # gap after the sync reserve), so from this instant `turn_status` reads active, Stop can cancel the
     # drain (all-exec queues included, which previously ran task-less + invisible), and the lifespan
     # drain snapshot (`h.task is not None`) includes it. The message-seed path later REPLACES this task
     # with the seeded turn's drain task (via `_spawn_drain_task`) — single ownership at every instant.
-    new_handle.task = asyncio.create_task(_drain_b_body(state, thread, new_handle, cfg))
+    body = asyncio.create_task(_drain_b_body(state, thread, new_handle, cfg))
+    new_handle.task = body
+
+    def _never_started(t: asyncio.Task) -> None:
+        # The body's never-started window — the drain-B mirror of `_cleanup`'s C4-M3 backfill: a cancel
+        # landing BEFORE the body's first step runs none of its code (no shutdown bail, no `try`, no
+        # `finally`), so the marker stays held (the thread 409s forever) and — since the turn behind it
+        # published `chained: true` — the running dot sticks. Act ONLY when the body never took over:
+        # still `new_handle.task` (a handoff REPLACES it with the seeded turn's drain task, whose own
+        # `_cleanup` owns the terminal), still the marker (a body that ran released it in its `finally`)
+        # and no terminal settled. Then settle + release + record like `_cleanup`, the frame LAST.
+        if new_handle.task is not t or state.turns.get(thread.id) is not new_handle:
+            return
+        if new_handle.terminal_status is not None:
+            return
+        new_handle.terminal_status = "cancelled" if t.cancelled() else "error"
+        push_terminal(new_handle)
+        release(state.turns, new_handle)
+        record_terminal(state.turn_terminals, new_handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
+        _publish_thread_frame(state, thread, new_handle.terminal_status, turn_id=new_handle.turn_id)
+
+    body.add_done_callback(_never_started)
+    return True
 
 
 async def _run_steer_exec(state, thread: Thread, q, entry: SteerEntry) -> None:
@@ -694,7 +783,8 @@ async def _run_steer_exec(state, thread: Thread, q, entry: SteerEntry) -> None:
     if q.commit([entry.entry_id]) != 1:
         return  # DELETEd/harvested since the peek — skip, never run
     prune_if_empty(state.steer_queues, thread.id, q)
-    await run_user_exec(state.actions, state.messages, thread.id, entry.text)
+    out = await run_user_exec(state.actions, state.messages, thread.id, entry.text)
+    await state.threads.touch(thread.id, out.ts)  # D84 R7: the owner's `!cmd` moves the conversation up
 
 
 async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
@@ -720,6 +810,8 @@ async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
     # bail so a natural completion can't spawn a turn into a closing DB.
     if getattr(state, "shutting_down", False):
         release(state.turns, handle)
+        # D84 §5 (§12.3 M2): a non-handoff exit — the turn behind it already published `chained: true`.
+        _publish_thread_frame(state, thread, "cancelled", turn_id=handle.turn_id)
         return
     committed_head: SteerEntry | None = None  # MED-3: the head we popped this invocation, for requeue
     handed_off = False  # FIX 2: True once the seeded turn's drain task owns `handle` (skip finally release)
@@ -766,7 +858,10 @@ async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
         raise
     except Exception:
         log.exception("D41 drain-B body failed for thread %s", thread.id)
-        # MED-3: a spawn-prelude raise (`_auto_route_agent`/`_build_session`/`run_turn`) AFTER the head
+        # D84 §5: the chain DID fail — settle `error` so the finally publishes a terminal the client
+        # acts on (behind the `completed, chained: true` that preceded this body), not a `cancelled`.
+        handle.terminal_status = "error"
+        # MED-3: a spawn-prelude raise (`_build_session`/`run_turn`) AFTER the head
         # was committed off the queue would LOSE the message. If we committed it this invocation and have
         # NOT handed off to a seeded drain task yet (the raise beat the spawn), put the head back at the
         # FRONT of the thread's queue (created if it vanished) so it drains at the next opportunity /
@@ -777,23 +872,38 @@ async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
         # SINGLE release point (FIX 2): unless a seeded turn's drain task took ownership (`handed_off`),
         # free the marker here. A clean `completed` all-exec drain ALSO records a terminal (so a probe
         # settles) and CHAINS — re-checking the queue for a message that arrived during the run. On any
-        # non-completed exit (cancel / abandon / stale-head / prelude-raise) we ONLY release: no terminal
+        # non-completed exit (cancel / abandon / stale-head / a raise) we ONLY release: no terminal
         # record, no chain (`_maybe_spawn_drain_b`'s own `!= "completed"` guard would suppress it anyway).
+        #
+        # D84 §5 (§12.3 M2): every non-handoff exit publishes this body's terminal `thread` frame here,
+        # LAST and exactly once — the turn behind it published `chained: true`, so without it the
+        # running dot sticks. The state is the settled one (`completed` all-exec · `cancelled` on a Stop
+        # · `error` on a raise); the harvested-queue and stale-head returns leave it unset → `cancelled`
+        # (nothing ran to a result). A handed-off body publishes nothing: the seeded turn's own
+        # `_spawn_drain_task` + `_cleanup` carry its `running` + terminal frames.
         if not handed_off:
             release(state.turns, handle)
+            chained = False
             if handle.terminal_status == "completed":
                 record_terminal(
                     state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap
                 )
-                _maybe_spawn_drain_b(state, thread, handle, cfg)
+                chained = _maybe_spawn_drain_b(state, thread, handle, cfg)
+            _publish_thread_frame(
+                state,
+                thread,
+                handle.terminal_status or "cancelled",
+                turn_id=handle.turn_id,
+                chained=chained,
+            )
 
 
 async def start_steer_turn(state, thread: Thread, entries: list[SteerEntry]) -> None:
     """Start a fresh turn seeded by a queued steer (D41 Drain B) — the state-shaped mirror of the chat
     endpoint's turn-start internals (`_build_session` deps → `run_turn` → the server-owned drain-task
     spawn). `entries[0]` is a `message` head whose CAPTURED params (`mode`/`agent`/`privilege`/
-    `skills`) play the roles `body.*` play for a fresh POST, incl. the auto-router — so the spawned turn
-    runs exactly as the POST that enqueued it would have (D41 §9). The head marker is ALREADY reserved
+    `skills`) play the roles `body.*` play for a fresh POST — so the spawned turn runs exactly as the
+    POST that enqueued it would have (D41 §9). The head marker is ALREADY reserved
     (by `_maybe_spawn_drain_b`, kind `chat`); this looks it up and hands it to the drain task.
 
     The head text is persisted as the user message by `run_turn` itself (NOT here) — mirroring the chat
@@ -803,13 +913,12 @@ async def start_steer_turn(state, thread: Thread, entries: list[SteerEntry]) -> 
     handle = state.turns.get(thread.id)
     if handle is None:  # defensive — the caller reserved it; a vanished marker means abandon the spawn
         return
-    agent_name = await asyncio.to_thread(_auto_route_agent, state, thread, head.agent, head.text)
     # The captured privilege round-trips as a string (`body.privilege.value` at enqueue); re-hydrate it
     # to `Privilege | None`, tolerating a junk value like the endpoint's lenient `_coerce_privilege`.
     privilege: Privilege | None = None
     if head.privilege is not None and head.privilege in {p.value for p in Privilege}:
         privilege = Privilege(head.privilege)
-    session = _build_session(state, thread, agent_name=agent_name, privilege=privilege)
+    session = _build_session(state, thread, agent_name=head.agent, privilege=privilege)
     handle.mode = head.mode  # the turn's inference mode — the snapshot carries it (D39)
     events = session.run_turn(thread, head.text, mode=head.mode, skills=head.skills)
     _spawn_drain_task(state, thread, events, handle, state.settings.agent.turns)
@@ -835,7 +944,9 @@ async def _turn_response(
     once whenever the task reaches done — every terminal path (completed/suspended/cancelled/error) —
     decoupled from any awaiting consumer. `handle.terminal_status` is set inside the task's own
     `finally` BEFORE the terminal sentinel, so there is no done-but-unmarked window."""
-    head = {"threadId": thread.id, "title": thread.title}
+    # `agent` = the conversation's HOME (D84 §12.3 H6): after a mint or a swap the client learns the
+    # home from here, so no other home's override rides its next send. ONE head for SSE + buffered.
+    head = {"threadId": thread.id, "title": thread.title, "agent": thread.agent}
     state = request.app.state
     cfg = state.settings.agent.turns
 
@@ -871,7 +982,11 @@ async def _turn_response(
         # turns are server-owned + cancellable for free (re-attach is documented degraded — the PWA
         # always streams).
         payload = await collect_turn(_consume())
-        return JSONResponse({**head, **payload})
+        # `turn_id` (D84 §5, Phase 27 S10): the handle's — the SAME id the turn's `thread` frames carry
+        # (and the SSE frame ids' prefix), so a client keys the buffered terminal's notification exactly
+        # as the frame consumer keys a background one (`turn-done:<thread>:<turn>`) and never buzzes twice
+        # for one turn. Additive: nothing older reads it.
+        return JSONResponse({**head, **payload, "turn_id": handle.turn_id})
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         yield {"event": "thread", "data": json.dumps(head)}
@@ -904,6 +1019,18 @@ def _parse_cursor(cursor: str | None) -> tuple[str, int] | None:
     return turn_id, int(seq)
 
 
+def _turn_live(handle: TurnHandle | None) -> TypeGuard[TurnHandle]:
+    """Whether `handle` is a LIVE turn — a drain TASK genuinely running: a task-bearing handle that has
+    not settled. The ONE predicate `turn_status` answers `active` from (its comment below says why each
+    exclusion holds), and that the D84 list's `running` flag reads (`_running_ids`)."""
+    return handle is not None and handle.terminal_status is None and handle.task is not None
+
+
+def _running_ids(state) -> set[str]:
+    """The thread ids with a live turn (`_turn_live`) — the `running` input of `ThreadRepo.summaries`."""
+    return {tid for tid, h in state.turns.items() if _turn_live(h)}
+
+
 @router.get("/agent/turns/{thread_id}")
 async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
     """Lightweight status probe (D39/M4) — read-only, no turn-guard. A live handle → the running
@@ -929,7 +1056,7 @@ async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
     # done-but-unreleased window `reserve()` still 409s on membership while this probe reads
     # inactive — never treat an inactive probe as "reserve will succeed"; the callback runs on the
     # next loop iteration, before any client could round-trip a POST.)
-    if handle is not None and handle.terminal_status is None and handle.task is not None:
+    if _turn_live(handle):
         return {
             "active": True,
             "turn_id": handle.turn_id,
@@ -996,7 +1123,7 @@ async def turn_stream(thread_id: str, request: Request, cursor: str | None = Non
     #   • `task is None` — a SYNC-kind marker (exec/plan/apply/compact) with no drain task ever
     #     dispatches, so a subscriber would wait forever. (A pre-spawn chat/resume handle also reads
     #     task=None briefly → JSON answer; harmless, its own POST carries the stream.)
-    if handle is None or handle.terminal_status is not None or handle.task is None:
+    if not _turn_live(handle):
         # Done-but-unreleased (C4-M2): a settled handle (`terminal_status` set, `_cleanup` not yet
         # fired) is authoritative for its own turn — prefer it over the cache, which in this one-tick
         # window still holds the PREVIOUS turn's record. Fall back to the cache only when the handle
@@ -1190,8 +1317,49 @@ async def delete_steer(thread_id: str, entry_id: str, request: Request) -> dict[
     return {"removed": False, "reason": "already sent"}
 
 
+def _parse_before(before: str) -> tuple[datetime, str]:
+    """The `before=<updated_at ISO>,<id>` keyset cursor (D84 §4, §12.3 L3) → `(updated_at, id)`. Split on
+    the LAST comma (an id never carries one); the instant must be timezone-aware (`Z` accepted). A
+    malformed cursor is a 422 raised as a `RequestValidationError`, so it renders through the app's ONE
+    safe renderer (`validation_detail`) in the same `{detail: [{loc, msg, type}]}` envelope as every
+    other query-parameter 422 — and never echoes the input back."""
+    iso, sep, thread_id = before.rpartition(",")
+    at: datetime | None = None
+    if sep and iso and thread_id:
+        with contextlib.suppress(ValueError, OverflowError):
+            parsed = datetime.fromisoformat(iso)
+            # UTC here, inside validation: an extreme offset (`0001-01-01T00:00:00+23:59`) overflows the
+            # conversion, and that must be this 422 — never a 500 from the repo's own `astimezone`.
+            if parsed.tzinfo is not None:
+                at = parsed.astimezone(timezone.utc)
+    if at is None:
+        raise RequestValidationError(
+            [
+                {
+                    "loc": ("query", "before"),
+                    "msg": "expected '<updated_at ISO with a UTC offset>,<thread id>'",
+                    "type": "value_error",
+                }
+            ]
+        )
+    return at, thread_id
+
+
+async def _with_summaries(state, rows: list[Thread]) -> list[dict[str, Any]]:
+    """Each `Thread` dump merged with its five D84 fields (`label · preview · running · awaiting ·
+    unread`) from `ThreadRepo.summaries` — the one definition; `running` = a live turn (`_running_ids`)."""
+    summaries = await state.threads.summaries(rows, _running_ids(state))
+    return [{**t.model_dump(mode="json"), **summaries[t.id].model_dump(mode="json")} for t in rows]
+
+
 @router.get("/threads")
-async def list_threads(request: Request, include_archived: bool = False) -> list[dict[str, Any]]:
+async def list_threads(
+    request: Request,
+    include_archived: bool = False,
+    agent: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=200),
+    before: str | None = None,
+) -> list[dict[str, Any]]:
     """The thread list. `include_archived` maps straight onto the repo's own flag (`threads.list`),
     which exists because an A3 automation mints an ARCHIVED thread per run (`runner.py`) and the
     conversation list is the owner's, not the scheduler's.
@@ -1200,9 +1368,91 @@ async def list_threads(request: Request, include_archived: bool = False) -> list
     load must never adopt an automation's thread as "the conversation you were in", while a reader that
     already knows WHICH thread it wants — the FE's D11 pin read behind `openThread`, whose only caller
     opens run threads out of the automations history — needs the archived rows or it sees nothing at
-    all and paints the default agent over a thread the server routes to a character."""
-    threads = await request.app.state.threads.list(include_archived=include_archived)
-    return [t.model_dump(mode="json") for t in threads]
+    all and paints the default agent over a thread the server routes to a character.
+
+    **`agent=<slug>` (D84 §4)** — that HOME agent's conversations (exact match), newest first, each row
+    merged with its five summary fields; `limit` 1..200 (default 50) and the `before` keyset cursor page
+    it. A slug NOT on the roster lists `[]` (§12.3 M7): an orphaned home is listed nowhere, on every
+    device. Without `agent=` it is the plain list it always was — no summary cost, no default page size
+    (the cold-load readers want every row) — though an explicit `limit`/`before` is still honoured."""
+    state = request.app.state
+    cursor = _parse_before(before) if before is not None else None
+    if agent is None:
+        rows = await state.threads.list(include_archived=include_archived, limit=limit, before=cursor)
+        return [t.model_dump(mode="json") for t in rows]
+    if not state.settings.on_roster(agent):
+        return []
+    rows = await state.threads.list(
+        include_archived=include_archived, agent=agent, limit=limit or 50, before=cursor
+    )
+    return await _with_summaries(state, rows)
+
+
+def _publish_seen(state, thread: Thread) -> None:
+    """A moved `seen_at` publishes the `thread` frame `{state: "seen"}` (D84 §5, O10) — the seam the
+    PATCH route calls with the POST-write row. No `turn_id`."""
+    _publish_thread_frame(state, thread, "seen")
+
+
+@router.patch("/threads/{thread_id}")
+async def patch_thread(thread_id: str, body: ThreadPatch, request: Request) -> dict[str, Any]:
+    """Rename and/or mark seen (D84 §4) — each field applied only when present. Answers the updated
+    `Thread` merged with its five summary fields. 404 for an unknown or ARCHIVED id (an automation's
+    rolling conversation is archived, so it 404s here too and never publishes a seen frame — no
+    automation-thread pass needed, §12.2 ③).
+
+    **Unguarded on purpose** — no turn marker: neither field is model context nor anything a running
+    turn writes, so a rename or a seen write mid-turn races nothing. The writes go through the repo's
+    `set_title`/`set_seen`, never a raw `execute` here."""
+    state = request.app.state
+    thread = await state.threads.get(thread_id)
+    if thread is None or thread.archived:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+    if "title" in body.model_fields_set:
+        await state.threads.set_title(thread_id, body.title)
+    seen_moved = body.seen_at is not None and await state.threads.set_seen(thread_id, body.seen_at)
+    updated = await state.threads.get(thread_id)
+    if updated is None:  # deleted between the writes and this read
+        raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+    if seen_moved:
+        _publish_seen(state, updated)  # the POST-write row — the frame never carries a stale field
+    return (await _with_summaries(state, [updated]))[0]
+
+
+def _drop_thread_state(state, thread_id: str) -> None:
+    """Drop a deleted thread's in-memory per-thread entries — its steer queue, routing and compaction
+    state, and the steer harvest (§12.3 L5). Both deleting routes (`delete_thread`, the agent cascade)
+    call it after the rows went."""
+    for per_thread in (
+        state.steer_queues,
+        state.routing_state,
+        state.compaction_state,
+        state.steer_harvests,
+    ):
+        per_thread.pop(thread_id, None)
+
+
+@router.delete("/threads/{thread_id}")
+async def delete_thread(thread_id: str, request: Request) -> dict[str, Any]:
+    """Delete a conversation (D84 §4): its messages, FTS rows and alternates cascade, its attachment dir
+    goes (`ThreadRepo.delete`), and its in-memory steer queue + routing entry are dropped (§12.3 L5).
+
+    Guarded like every thread mutation: the turn marker first (409 while a turn runs), then
+    `_revalidate_thread` under it (404 gone · 403 an automation's rolling conversation), then a 404 for
+    any other ARCHIVED row (E10 — `_revalidate_thread` does not look at `archived`; an automation's
+    fresh per-run threads are its own to retain or prune). Answers `{deleted: true}`."""
+    state = request.app.state
+    handle = _reserve_turn(request, thread_id, "edit")
+    try:
+        await _revalidate_thread(state, thread_id)
+        thread = await state.threads.get(thread_id)
+        if thread is None or thread.archived:
+            raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+        await state.threads.delete(thread_id)
+        _drop_thread_state(state, thread_id)
+        return {"deleted": True}
+    finally:
+        release(state.turns, handle)
 
 
 @router.post("/threads")
@@ -1210,12 +1460,14 @@ async def create_thread(request: Request, body: NewThreadRequest | None = None) 
     """Create an empty thread. With a selected `agent` (D70 §4.2 seam ①) the thread is PINNED to it
     and its greeting is seeded as the opening assistant turn — the RESOLVED agent's name is what gets
     persisted, so a since-deleted name lands on the same agent the session would have run as instead
-    of pinning the thread to something that isn't there."""
+    of pinning the thread to something that isn't there (D84 §12.4 Q2: an off-roster slug pins the
+    configured default, else the root — never a phantom conversation under a dead name). No body, a
+    `null` or an empty `agent` mints for the HOME like seam ② (`_home_for_mint`): every mint is pinned."""
     state = request.app.state
-    agent = state.settings.resolve_agent(body.agent) if body is not None and body.agent else None
-    thread = await state.threads.create(Thread(agent=agent.name if agent else None))
-    if agent is not None:
-        await seed_greeting(state.messages, state.settings, thread, agent)
+    name = body.agent if body is not None and body.agent else None
+    agent = state.settings.resolve_agent(name)  # `None` → the configured default, else the root
+    thread = await state.threads.create(Thread(agent=agent.name))
+    await seed_greeting(state.messages, state.settings, thread, agent, threads=state.threads)
     return thread.model_dump(mode="json")
 
 
@@ -1230,76 +1482,22 @@ async def list_messages(thread_id: str, request: Request) -> list[dict[str, Any]
     return await history_payload(request.app.state.messages, thread_id)
 
 
-# The re-seat's refusals (ISS-49). The client shows each verbatim right under its own pick note
-# ("// agent → emma"), so they read as that note's addendum — the pick itself always stands.
-_NOT_FRESH_DETAIL = "this conversation has started — the pick applies from the next reply"
-_EDITED_OPENING_DETAIL = "the greeting here was edited — pick again to confirm discarding it"
-
-
-@router.put("/threads/{thread_id}/opening")
-async def reseat_opening(thread_id: str, body: ReopenRequest, request: Request) -> dict[str, Any]:
-    """Replace a FRESH thread's OPENING — its pin and its greeting — with `body.agent`'s (ISS-49): the
-    owner ran `/new` (minted for the default, D75's tandem rule) and then picked another agent before
-    saying anything. Without this the thread stays pinned to the first agent with its greeting, and the
-    picked agent's model reads that greeting as its own prior turn. The third greeting seam (D70 §4.2):
-    a REOPEN of a thread seam ① or ② already opened. Returns `{thread, messages: history_payload}`.
-
-    Named for the OPERATION, not the pin: a later `alt_greetings` picker (D70's recorded FE seam) adds
-    one optional field — which greeting — to this same route with the SAME agent.
-
-    Refuses, in order: 404 unknown thread · 409 busy (the turn marker) · 422 a name that does not
-    resolve to ITSELF — `resolve_agent` folds an unknown folder to the root, and a typo must never wipe
-    the greeting and pin the root · (same pin → 200 no-op with the current floor: never a re-seed, even
-    when the agent's greeting text changed since — `/new` is that door) · 409 not fresh (any owner turn,
-    `is_owner_turn`) · 409 an opening the owner EDITED, unless `discard_edited`.
-
-    **Delete-ALL is safe** because no owner turn ⇒ only the seeded greeting can exist: alternates and
-    the D81 delete stash need an anchor (a user row), compaction needs turns, attachments ride user rows.
-
-    **Future seam (A14 alt greetings):** opening VARIANTS seeded under `message_alternates.anchor_id =
-    NULL` do NOT cascade from deleting the greeting row (they are keyed by thread, not by a message) —
-    that rider must clear them here, inside the same transaction.
-
-    **A queued steer is no reason to refuse.** One can outlive a turn that failed BEFORE persisting its
-    user row: a pre-handoff raise in the chat route after the reserve (revalidate, the attachment
-    claim), or `run_turn` failing in `_activate_lorebooks` before `messages.add` — an `error` terminal
-    skips drain-B. The orphan then drains at the next turn's loop top, behind the new opening: the same
-    outcome as a send racing this route, nothing lost."""
-    state = request.app.state
-    if await state.threads.get(thread_id) is None:
+async def _supplied_thread(threads, thread_id: str | None) -> Thread | None:
+    """The thread a chat / `!cmd` send names, or `None` when it names none (the caller mints). A
+    SUPPLIED id that is unknown is a 404 (D84 R29), never a silent mint: the conversation was deleted
+    elsewhere, and minting a stranger in its place would hide that from the owner."""
+    if not thread_id:
+        return None
+    thread = await threads.get(thread_id)
+    if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
-    handle = _reserve_turn(request, thread_id, "edit")
-    try:
-        await _revalidate_thread(state, thread_id)
-        thread = await state.threads.get(thread_id)
-        assert thread is not None  # revalidated under the marker
-        agent = state.settings.resolve_agent(body.agent)  # a disk read — outside the transaction
-        if agent.name != body.agent:
-            raise HTTPException(
-                status_code=422, detail=f"there is no agent named '{body.agent}' — the opening stays"
-            )
-        if agent.name == thread.agent:
-            return {
-                "thread": thread.model_dump(mode="json"),
-                "messages": await history_payload(state.messages, thread_id),
-            }
-        msgs = await state.messages.list(thread_id)
-        if any(is_owner_turn(m) for m in msgs):
-            raise HTTPException(status_code=409, detail=_NOT_FRESH_DETAIL)
-        if not body.discard_edited and any(m.edited for m in msgs):
-            raise HTTPException(status_code=409, detail=_EDITED_OPENING_DETAIL)
-        async with state.db.transaction():
-            await state.messages.delete_ids([m.id for m in msgs])
-            await state.threads.set_agent(thread_id, agent.name, datetime.now(timezone.utc))
-            await seed_greeting(state.messages, state.settings, thread, agent)
-        reseated = await state.threads.get(thread_id)
-        assert reseated is not None
-        return {
-            "thread": reseated.model_dump(mode="json"),
-            "messages": await history_payload(state.messages, thread_id),
-        }
-    finally:
-        release(state.turns, handle)
+    return thread
+
+
+def _home_for_mint(state) -> str:
+    """The HOME a thread-less send's mint is pinned to (D84 seam ②, O14/F4): the configured default,
+    else the root — `resolve_agent(None)`'s own rungs."""
+    return state.settings.resolve_agent(None).name
 
 
 @router.post("/agent/chat")
@@ -1316,7 +1514,7 @@ async def chat(body: ChatRequest, request: Request) -> Response:
             detail=f"a message may carry at most {cap} attachments (attachments.max_files_per_message)",
         )
     threads = request.app.state.threads
-    thread = await threads.get(body.thread_id) if body.thread_id else None
+    thread = await _supplied_thread(threads, body.thread_id)
     if thread is not None:
         await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
     # D68 Q10: remember whether THIS request minted the thread — a claim that then refuses must not
@@ -1325,7 +1523,11 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     if thread is None:
         # `or None` for the attachment-only send (D68 §7): a title of "" would render as a named
         # thread with no name. Titling from the attached filenames is S2/S3's, with the wire text.
-        thread = await threads.create(Thread(title=body.text[:60] or None))
+        # D84 seam ② (O14): the mint is PINNED to the HOME — the configured default, else the root —
+        # NEVER `body.agent`, which is the RESPONDER (B17): the conversation belongs to its home.
+        thread = await threads.create(
+            Thread(title=body.text[:60] or None, agent=_home_for_mint(request.app.state))
+        )
 
     # Apply any pending MCP/OpenAPI integration edits at the turn boundary (Phase 7c-b) — before the
     # session reads the toolset, so the registry is rebuilt between turns, never mid-loop. ACA-17
@@ -1334,11 +1536,7 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     if getattr(request.app.state, "integrations_dirty", False) and not request.app.state.turns:
         await rediscover_integrations(request.app)
 
-    # Auto-route to a specialist (7e-g, D15 #8) only when nothing pins the agent — an explicit
-    # `/agent` (body.agent) or a thread-sticky agent always wins, and the switch is off by default.
-    # `thread.agent` is never set in normal chat (created None), so "no pin" → per-turn routing.
     state = request.app.state
-    agent_name = await asyncio.to_thread(_auto_route_agent, state, thread, body.agent, body.text)
 
     # Reserve the thread's turn marker (D38) — synchronous check-and-set, after the thread is resolved
     # and the auto-rediscover boundary, before the response is built. Ownership transfers to the
@@ -1398,13 +1596,15 @@ async def chat(body: ChatRequest, request: Request) -> Response:
                 await threads.delete(thread.id)
             raise HTTPException(status_code=exc.status, detail=exc.detail) from None
         if created_here:
-            # D70 §4.2 seam ②: an auto-created chat thread seeds its agent's greeting BEFORE the
-            # owner's first message is persisted, and only now — after `_auto_route_agent` above
-            # resolved WHO the turn belongs to, so a routed specialist opens in its own voice rather
-            # than the default agent's. An existing thread is never seeded (it already has history).
-            greeter = state.settings.resolve_agent(agent_name)
-            await seed_greeting(state.messages, state.settings, thread, greeter)
-        session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
+            # D70 §4.2 seam ②: an auto-created chat thread seeds its greeting BEFORE the owner's first
+            # message is persisted. D84 (O14): the HOME agent's greeting — the conversation opens in its
+            # home's voice, while the turn below still answers as `body.agent` (the responder). An
+            # existing thread is never seeded (it already has history).
+            greeter = state.settings.resolve_agent(thread.agent)
+            await seed_greeting(state.messages, state.settings, thread, greeter, threads=threads)
+        # The turn's agent: an explicit `/agent` (body.agent, the RESPONDER) else the thread's pin
+        # (D84: every conversation has a home) — `_build_session` resolves it.
+        session = _session(request, thread, agent_name=body.agent, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
         handle.mode = body.mode  # the turn's inference mode — the snapshot carries it (D39)
         events = session.run_turn(
@@ -1433,11 +1633,13 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
         raise HTTPException(status_code=403, detail="user shell exec is disabled (shell.user_exec_enabled)")
 
     threads = request.app.state.threads
-    thread = await threads.get(body.thread_id) if body.thread_id else None
+    thread = await _supplied_thread(threads, body.thread_id)
     if thread is not None:
         await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
-    if thread is None:
-        thread = await threads.create(Thread(title=f"! {body.command[:58]}"))
+    if thread is None:  # D84: pinned to the HOME like chat's seam ② mint
+        thread = await threads.create(
+            Thread(title=f"! {body.command[:58]}", agent=_home_for_mint(request.app.state))
+        )
 
     # Reserve the thread's turn marker (D38). D41 (Slice 5): a `!cmd` to a thread already running a
     # chat/resume turn STEERS — enqueue the command (202) instead of the old 409, drained at the
@@ -1468,7 +1670,15 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
         exec_out = await run_user_exec(
             request.app.state.actions, request.app.state.messages, thread.id, body.command
         )
-        return {"threadId": thread.id, "callId": exec_out.call_id, "state": exec_out.result.state.value}
+        await threads.touch(thread.id, exec_out.ts)  # D84 R7: the owner's `!cmd` moves the conversation up
+        # `agent` = the conversation's HOME (D84 §12.3 H6, the field S3 put on the chat stream head): a
+        # `!cmd` on a thread-less view MINTS here, and the client installs the minted home from this.
+        return {
+            "threadId": thread.id,
+            "agent": thread.agent,
+            "callId": exec_out.call_id,
+            "state": exec_out.result.state.value,
+        }
     finally:
         release(request.app.state.turns, handle)
 
@@ -1661,11 +1871,11 @@ def _list_agents_payload(s: Settings) -> dict[str, Any]:
         summaries.setdefault(resolved.name, _agent_summary(resolved))
         default = resolved.name
     # `default_set` beside the resolved `default` (D75 amendment): `""` and `"default"` both resolve to
-    # the root, but only the second is a default the owner SET — which is what flips the client's `/new`
-    # from "keep the sticky pick" to "start on the default", and what presses the gallery's pill. SET means
-    # the configured name is the one that RESOLVED: a configured specialist whose folder is gone resolves to
-    # the root, and reporting it as set would press the ROOT's pill for a choice the owner never made — so
-    # a dangling name reads as "nothing set" at both doors (the pill and `/new`), which is what it acts as.
+    # the root, but only the second is a default the owner SET — which is what presses the gallery's
+    # "default" pill (its one reader since D84 retired `/new`'s tandem rule). SET means the configured name
+    # is the one that RESOLVED: a configured specialist whose folder is gone resolves to the root, and
+    # reporting it as set would press the ROOT's pill for a choice the owner never made — so a dangling
+    # name reads as "nothing set", which is what it acts as.
     return {
         "agents": names,
         "default": default,
@@ -1684,8 +1894,37 @@ async def list_agents(request: Request) -> dict[str, Any]:
 
     `summaries` (D70 §10-S4) maps EVERY agent — the root default included — to its `_SUMMARY_FIELDS`,
     so the gallery, the composer's agent picker, the who-line avatar and the backdrop all read one
-    compact response instead of fetching each agent in full."""
-    return await asyncio.to_thread(_list_agents_payload, request.app.state.settings)
+    compact response instead of fetching each agent in full. Each summary also carries the agent's
+    `status` (`_roster_status`, D84 R25)."""
+    state = request.app.state
+    payload = await asyncio.to_thread(_list_agents_payload, state.settings)
+    status = await _roster_status(state)
+    for name, summary in payload["summaries"].items():
+        summary["status"] = status.get(name, dict.fromkeys(_STATUS_FIELDS, False))
+    return payload
+
+
+#: The roster status flags (D84 R25) — the per-thread `ThreadSummary` flags an agent ORs together.
+_STATUS_FIELDS = ("running", "awaiting", "unread")
+
+
+async def _roster_status(state) -> dict[str, dict[str, bool]]:
+    """Each home agent's `{running, awaiting, unread}` = the OR over its NON-archived conversations
+    (D84 R25; the root's under `"default"`). Computed through `ThreadRepo.summaries` — the one
+    definition of the flags, never a second predicate: every non-archived thread listed once, ONE
+    `summaries` call over all of them, folded per home. An agent with no conversations is absent here
+    (the caller answers all-False)."""
+    rows = await state.threads.list()
+    summaries = await state.threads.summaries(rows, _running_ids(state))
+    out: dict[str, dict[str, bool]] = {}
+    for thread in rows:
+        if thread.agent is None:
+            continue
+        flags = out.setdefault(thread.agent, dict.fromkeys(_STATUS_FIELDS, False))
+        summary = summaries[thread.id]
+        for field in _STATUS_FIELDS:
+            flags[field] = flags[field] or getattr(summary, field)
+    return out
 
 
 #: Scaffold for a brand-new skill so the editor opens with valid frontmatter, not a blank file.
@@ -1847,7 +2086,29 @@ def _shown_path(p: Path, home: Path) -> str:
     return str(p.relative_to(home)) if p.is_relative_to(home) else str(p)
 
 
-def _delete_agent_folder(s: Settings, name: str, folder: Path) -> dict[str, Any] | None:
+def _step_error(exc: BaseException) -> str:
+    """A failed cascade step as the delete report states it — the exception's message, else its type."""
+    return str(exc) or type(exc).__name__
+
+
+def _remove_tree(path: Path, step: str, errors: dict[str, str] | None) -> bool:
+    """`shutil.rmtree(path)`; whether it went. `errors is None` → a failure raises (today's delete);
+    else it is logged and recorded as `errors[step]` (the D84 cascade surfaces it)."""
+    if errors is None:
+        shutil.rmtree(path)
+        return True
+    try:
+        shutil.rmtree(path)
+    except Exception as exc:
+        log.warning("agent delete: removing %s failed", path, exc_info=True)
+        errors[step] = _step_error(exc)
+        return False
+    return True
+
+
+def _delete_agent_folder(
+    s: Settings, name: str, folder: Path, *, errors: dict[str, str] | None = None
+) -> dict[str, Any] | None:
     """The whole blocking side of `DELETE /agents/{name}` in one hop (SYS-16). `None` → nothing there
     (the caller 404s); else the report of what was removed and what was deliberately KEPT (ISS-24).
 
@@ -1858,7 +2119,12 @@ def _delete_agent_folder(s: Settings, name: str, folder: Path) -> dict[str, Any]
     would otherwise silently inherit the dead character's MEMORY.md. A custom `memory_dir` may be
     shared or hand-placed, so it is left and reported. Books and art are never deleted by a cascade
     (owner): they are library items other agents may link, and the report names them instead. An
-    agent whose `agent.yaml` will not load still deletes; its memory resolves as the default's."""
+    agent whose `agent.yaml` will not load still deletes; its memory resolves as the default's.
+
+    `errors` is the D84 cascade's mode (`?conversations=true`, F6): each removal's failure is logged and
+    recorded under its step (`"folder"` · `"memory"`) instead of raised, so the caller can SURFACE it —
+    and a failed folder removal skips the memory step (a re-run finishes both). `None` (today's route):
+    a failure raises, as it always has."""
     if not folder.is_dir():
         return None
     try:
@@ -1872,15 +2138,15 @@ def _delete_agent_folder(s: Settings, name: str, folder: Path) -> dict[str, Any]
     home = s.home_dir()
     memory_dir = agent_memory_dir(s, agent)
     default_memory = s.memories_dir_path() / "agents" / name
-    shutil.rmtree(folder)
-    removed = [_shown_path(folder, home)]
+    removed: list[str] = []
     kept_memory: list[str] = []
-    if memory_dir.resolve() == default_memory.resolve():
-        if default_memory.is_dir():
-            shutil.rmtree(default_memory)
-            removed.append(_shown_path(default_memory, home))
-    elif memory_dir.exists():
-        kept_memory.append(_shown_path(memory_dir, home))
+    if _remove_tree(folder, "folder", errors):
+        removed.append(_shown_path(folder, home))
+        if memory_dir.resolve() == default_memory.resolve():
+            if default_memory.is_dir() and _remove_tree(default_memory, "memory", errors):
+                removed.append(_shown_path(default_memory, home))
+        elif memory_dir.exists():
+            kept_memory.append(_shown_path(memory_dir, home))
     return {
         "removed": removed,
         "kept": {
@@ -1888,6 +2154,76 @@ def _delete_agent_folder(s: Settings, name: str, folder: Path) -> dict[str, Any]
             "art": [media for media in (agent.avatar, agent.background) if media],
             "memory": kept_memory,
         },
+    }
+
+
+def _cascade_agent_files(s: Settings, name: str, folder: Path, thread_ids: Sequence[str]) -> dict[str, Any]:
+    """The filesystem half of the D84 agent cascade (`?conversations=true`, F6 step 3 + the M1
+    recovery) in one `to_thread` hop, AFTER the rows' transaction committed: each deleted
+    conversation's attachment dir, then the agent folder and its default memory dir
+    (`_delete_agent_folder` in its surfacing mode) — and, when the folder is already ABSENT, the slug's
+    default memory dir `memories/agents/<slug>` explicitly (the helper returns early on an absent
+    folder, so a re-run after a failed memory removal could not otherwise finish it).
+
+    Best-effort and never raising: the database and the filesystem cannot share a transaction, so a
+    failure here is NOT rolled back — each step answers `"ok"`, `"absent"` or its error, logged and
+    surfaced (`memory` may also answer `"kept"`: a custom `memory_dir` is left and reported, ISS-24). A re-run completes the agent side; an attachment dir it can no longer name (its row is
+    gone) is the boot sweep's (`sweep_thread_dirs`' rowless-dir arm)."""
+    home = s.home_dir()
+    attachment_errors: list[str] = []
+    for thread_id in thread_ids:
+        thread_errors: list[str] = []
+        try:
+            remove_thread_attachments(home, thread_id, errors=thread_errors)
+        except Exception as exc:  # the helper surfaces its own OSErrors; this is anything around them
+            log.warning("agent delete: removing thread %s's attachments failed", thread_id, exc_info=True)
+            thread_errors.append(_step_error(exc))
+        else:
+            if thread_errors:
+                log.warning("agent delete: thread %s's attachments left behind: %s", thread_id, thread_errors)
+        attachment_errors.extend(thread_errors)
+    errors: dict[str, str] = {}
+    default_memory = s.memories_dir_path() / "agents" / name
+    report: dict[str, Any] = {"removed": [], "kept": {"books": [], "art": [], "memory": []}}
+    try:
+        folder_report = _delete_agent_folder(s, name, folder, errors=errors)
+    except Exception as exc:  # the steps record their own failures; this is anything around them
+        log.warning("agent delete: the folder step for %r failed", name, exc_info=True)
+        folder_status, memory_status = _step_error(exc), "skipped — the folder was not removed"
+    else:
+        if folder_report is None:
+            folder_status = "absent"
+            if not default_memory.is_dir():
+                memory_status = "absent"
+            elif _remove_tree(default_memory, "memory", errors):
+                memory_status = "ok"
+                report["removed"].append(_shown_path(default_memory, home))
+            else:
+                memory_status = errors["memory"]
+        else:
+            report = folder_report
+            folder_status = errors.get("folder", "ok")
+            if "folder" in errors:
+                memory_status = "skipped — the folder was not removed"
+            elif "memory" in errors:
+                memory_status = errors["memory"]
+            elif _shown_path(default_memory, home) in folder_report["removed"]:
+                memory_status = "ok"
+            elif folder_report["kept"]["memory"]:
+                memory_status = "kept"  # a custom `memory_dir` — left and reported (ISS-24)
+            else:
+                memory_status = "absent"  # never there
+    if not attachment_errors:
+        attachments_status = "ok"
+    elif len(attachment_errors) == 1:
+        attachments_status = attachment_errors[0]
+    else:
+        attachments_status = f"{attachment_errors[0]} (and {len(attachment_errors) - 1} more)"
+    return {
+        "folder": folder_status,
+        "memory": memory_status,
+        "attachments": attachments_status,
+        **report,
     }
 
 
@@ -2237,8 +2573,8 @@ def _character_book(s: Settings, card: ImportedCard, warnings: list[str]) -> tup
     return slug, imported
 
 
-@router.delete("/agents/{name}")
-async def delete_agent(name: str, request: Request) -> dict[str, Any]:
+@router.delete("/agents/{name}", response_model=None)  # union return (dict | the 409 busy Response)
+async def delete_agent(name: str, request: Request, conversations: bool = False) -> dict[str, Any] | Response:
     """Delete a specialist: its whole folder (`agent.yaml`, `SOUL.md`, `card.json`) and its DEFAULT
     memory directory (`memories/agents/<slug>`; a custom `memory_dir` is left and reported). Nothing
     else cascades — its lorebooks and art stay in their libraries, and the report names them. The
@@ -2249,20 +2585,94 @@ async def delete_agent(name: str, request: Request) -> dict[str, Any]:
     name, which will fail at its next fire with `AutomationAgentMissing` (named now rather than
     discovered then).
 
+    **`?conversations=true` (D84 R41/F6/N4)** — the agent's conversations go too, server-side, in one
+    request that is NOT atomic across stores: (0) the folder is resolved first — absent is not an error
+    here; (1) the guard pass: every NON-archived thread homed on this slug — exactly the rows step (2)
+    deletes — is reserved (`_reserve_turn`) then revalidated under its marker; any busy one (a running
+    turn) or a refusal (403) releases every marker taken and answers **409** `{detail, busy: k}` with
+    NOTHING deleted (one that vanished meanwhile is simply gone). An automation's rolling conversation is
+    BORN archived (the runner), so it is never in the pass and never deleted: it stays, and the answer's
+    `broken.automations` names its automation — exactly as without the flag (guarding it would 409 a
+    cascade that never touches it, forever once the automation is re-pointed elsewhere, since a home
+    never moves); the 403 arm is defensive; (2) ONE transaction deletes those rows (`threads.delete_many`)
+    — the archived run/subagent history stays, as it does without the flag;
+    (3) then the filesystem, best-effort (`_cascade_agent_files`): the attachment dirs, the folder, the
+    default memory dir. The answer is `{deleted: <n>, folder: "ok" | "absent" | "<error>", memory: "ok"
+    | "absent" | "kept" | "<error>", attachments: "ok" | "<error>", …the report}`; a re-run finishes
+    what a failed step left (an absent folder still clears the default memory dir — M1).
+    Markers are released in `finally`. Without the flag the conversations stay (listed nowhere, the
+    roster rule) and this is the route it always was.
+
     Accepted, unfixed edge (the S9 review's F7, recorded): ANOTHER agent whose custom `memory_dir`
     points INTO `memories/agents/<this-slug>` loses those files with this delete — a hand-configured
-    overlap the resolver has no reason to forbid, rare enough to state rather than guard."""
-    s: Settings = request.app.state.settings
+    overlap the resolver has no reason to forbid, rare enough to state rather than guard. Accepted
+    residual (§12.2 ⑥): a conversation minted for this slug during the cascade's own awaits escapes the
+    guard set and stays, orphaned — the declined-cascade state."""
+    state = request.app.state
+    s: Settings = state.settings
     folder, _ = _agent_folder(request, name)
-    report = await asyncio.to_thread(_delete_agent_folder, s, name, folder)
-    if report is None:
-        raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    if not conversations:
+        report = await asyncio.to_thread(_delete_agent_folder, s, name, folder)
+        if report is None:
+            raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+        return {
+            "name": name,
+            "deleted": True,
+            **report,
+            "broken": await _clear_after_agent_delete(request, name),
+        }
+    handles: list[TurnHandle] = []
+    held: list[str] = []
+    busy = 0
+    try:
+        # Guard EXACTLY what step (2) deletes — the non-archived rows. An automation's rolling
+        # conversation is born archived, so it is neither guarded nor deleted (see the docstring); the
+        # 403 arm below is defensive.
+        for thread in await state.threads.list(agent=name):
+            try:
+                handles.append(_reserve_turn(request, thread.id, "edit"))
+            except HTTPException:
+                busy += 1
+                continue
+            try:
+                await _revalidate_thread(state, thread.id)
+            except HTTPException as exc:
+                if exc.status_code != 404:  # 403 — an automation's rolling conversation
+                    busy += 1
+                continue  # 404 — it went meanwhile: nothing left to delete
+            held.append(thread.id)
+        if busy:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": f"{busy} of {name}'s conversations are busy — nothing was deleted",
+                    "busy": busy,
+                },
+            )
+        deleted = await state.threads.delete_many(held)
+        for thread_id in held:
+            _drop_thread_state(state, thread_id)
+        files = await asyncio.to_thread(_cascade_agent_files, s, name, folder, held)
+    finally:
+        for handle in handles:
+            release(state.turns, handle)
+    return {
+        "name": name,
+        "deleted": deleted,
+        **files,
+        "broken": await _clear_after_agent_delete(request, name),
+    }
+
+
+async def _clear_after_agent_delete(request: Request, name: str) -> dict[str, list[str]]:
+    """What an agent delete leaves broken + the state it invalidates: the automations pinned to this slug
+    by name (ISS-24 — named now rather than discovered at their next fire), and the reasoning demotions
+    (D46/F6: a later agent reusing the same (endpoint, model) starts fresh — blanket-on-mutation; see
+    `put_agent`)."""
     repo = getattr(request.app.state, "automations", None)
     pinned = [a.name for a in await repo.list() if a.agent == name] if repo is not None else []
-    # D46/F6: deleting a specialist drops its reasoning settings — clear demotions so a later agent that
-    # reuses the same (endpoint, model) starts fresh (blanket-on-mutation; see `put_agent`).
     clear_reasoning_demotions(request.app)
-    return {"name": name, "deleted": True, **report, "broken": {"automations": pinned}}
+    return {"automations": pinned}
 
 
 @router.get("/agents/{name}/soul")

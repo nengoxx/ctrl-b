@@ -106,8 +106,7 @@ class KeywordSkillSelector(SkillSelector):
     """Default selector (D11): score each skill by token overlap between the user message and the
     skill's name + description; return those scoring at least `min_overlap`, best first, capped at
     `max_skills`. Deterministic and model-agnostic — swap in an LLM-based selector for richer
-    matching later. Scoring is the shared `core.textmatch.rank_by_overlap` (one source of truth with
-    the agent selector)."""
+    matching later. Scoring is the shared `core.textmatch.rank_by_overlap`."""
 
     def __init__(self, min_overlap: int = 1, max_skills: int = 2) -> None:
         self._min = min_overlap

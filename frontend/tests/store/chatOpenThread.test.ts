@@ -15,9 +15,10 @@ import type { ChatMessage } from "../../src/types";
 // (fetch-first, swap-second), and re-opening the thread you are already in still re-probes for a live
 // turn instead of being a silent no-op.
 //
-// And `/new` (ISS-31): it MINTS through D70 §4.2 seam ① (`POST /api/threads {agent}`) and opens the
-// minted thread through the same fetch-first swap — so it races the same loaders, under the same
-// tickets and generations, and its tandem-rule cases live here too.
+// And `/new` (ISS-31): it MINTS through D70 §4.2 seam ① (`POST /api/threads {agent}`) for the open
+// conversation's HOME (D84 R22b) and opens the minted thread through the same fetch-first swap — so it
+// races the same loaders, under the same tickets and generations. The roster door
+// (`openAgentConversation`) and the responder have their own suite (`chatResponder.test.ts`).
 
 function msg(id: string, threadId: string, text: string): ChatMessage {
   return {
@@ -41,6 +42,10 @@ function userMsg(id: string, threadId: string, text: string): ChatMessage {
   return { ...msg(id, threadId, text), role: "user", actor: "user" };
 }
 
+/** The LIST read both the boot (`initChat`) and `openThread`'s late home read make — one URL since
+ *  D84 (the boot reads archived rows too, §12.3 H3). */
+const LIST = "/api/threads?include_archived=true";
+
 /** What `GET /api/threads` answers — the LIST route, which since wave 1c is read by `openThread` too
  *  (for the opened thread's D11 `agent` pin). Mutable so an arm can pin a thread; the default is the one
  *  unpinned record every earlier test was written against. */
@@ -61,10 +66,6 @@ let mintAgent: string | null | undefined;
  *  user bubbles, and drops local ones the server no longer lists. */
 let probeQueue: { entry_id: string; kind: string; text: string }[] | undefined;
 
-/** ISS-49 — when set, `PUT /api/threads/{id}/opening` REFUSES with this status + `{detail}` sentence;
- *  `null` → it re-seats (the new pin, a one-row greeting `greet-<agent>`). */
-let reopenRefusal: { status: number; detail: string } | null = null;
-
 /** A `fetch` stub whose per-URL responses can be DEFERRED: `hold(url)` parks every request for EXACTLY
  *  that URL (a POST is keyed `POST <url>`) until `release(url)`, which is how a slow loader is made to
  *  land after a fast one. Exact
@@ -81,8 +82,6 @@ function deferrableFetch() {
   const calls: string[] = [];
   /** Every `POST /api/threads` body, parsed (`null` = a bodyless POST) — what `/new` minted with. */
   const mints: ({ agent?: string } | null)[] = [];
-  /** Every `PUT /api/threads/{id}/opening` (ISS-49's re-seat), with its parsed body. */
-  const reopens: { url: string; body: { agent: string; discard_edited: boolean } }[] = [];
   const impl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     // A write is keyed `<METHOD> <url>` — `/api/threads` is BOTH the list read and the mint, and an arm
     // must be able to park one without the other.
@@ -91,33 +90,7 @@ function deferrableFetch() {
     const key = method === "GET" ? url : `${method} ${url}`;
     calls.push(key);
     let payload: unknown;
-    if (method === "PUT" && url.endsWith("/opening")) {
-      // ISS-49's re-seat: the server re-pins and seeds the new agent's greeting — or refuses.
-      const body = JSON.parse(String(init?.body)) as { agent: string; discard_edited: boolean };
-      reopens.push({ url, body });
-      const id = url.split("/")[3];
-      if (reopenRefusal) {
-        const { status, detail } = reopenRefusal;
-        return Promise.resolve({
-          ok: false,
-          status,
-          json: async () => ({ detail }),
-        } as unknown as Response);
-      }
-      histories[id] = [msg(`greet-${body.agent}`, id, `${body.agent} says hello`)];
-      threadList = threadList.map((t) => (t.id === id ? { ...t, agent: body.agent } : t));
-      payload = {
-        thread: {
-          id,
-          title: null,
-          agent: body.agent,
-          created_at: "",
-          updated_at: "",
-          archived: false,
-        },
-        messages: histories[id],
-      };
-    } else if (method !== "GET" && url.includes("/messages/")) {
+    if (method !== "GET" && url.includes("/messages/")) {
       // A D81 sync route (edit/delete/swap): it answers with the thread's floor.
       payload = { messages: histories[url.split("/")[3]] ?? [] };
     } else if (key === "POST /api/threads") {
@@ -152,7 +125,6 @@ function deferrableFetch() {
     impl,
     calls,
     mints,
-    reopens,
     hold: (url: string) => held.add(url),
     release: (url: string) => {
       for (const resolve of pending.get(url) ?? []) resolve();
@@ -181,12 +153,11 @@ async function freshChat() {
 }
 
 beforeEach(() => {
-  localStorage.clear(); // the sticky pick is persisted (D75 amendment) and every `freshChat` hydrates it
+  localStorage.clear(); // the view tuple is persisted (`ctrlb.chat`) and every `freshChat` folds it
   threadList = [{ id: "recent-thread", agent: null }];
   histories = {};
   mintAgent = undefined;
   probeQueue = undefined;
-  reopenRefusal = null;
   net = deferrableFetch();
   vi.stubGlobal("fetch", net.impl);
 });
@@ -199,14 +170,14 @@ afterEach(() => {
 describe("openThread vs the reconciling loaders", () => {
   it("a slow initChat cannot overwrite the thread the owner just opened", async () => {
     const { initChat, openThread, useChat } = await freshChat();
-    net.hold("/api/threads"); // the LIST read initChat starts with — parked (exact: not the by-id reads)
+    net.hold(LIST); // the LIST read initChat starts with — parked (exact: not the by-id reads)
     const init = initChat();
     const { result } = renderHook(() => useChat());
 
     expect(await openThread("run-thread")).toBe(true);
     await waitFor(() => expect(result.current.threadId).toBe("run-thread"));
 
-    net.release("/api/threads"); // …and only now does the cold load come back
+    net.release(LIST); // …and only now does the cold load come back
     await init;
     expect(result.current.threadId).toBe("run-thread"); // the explicit open still owns the view
   });
@@ -231,20 +202,20 @@ describe("openThread vs the reconciling loaders", () => {
 
   it("a stale initChat's FAILURE does not un-latch `loaded` behind a deliberate open", async () => {
     const { initChat, openThread, resetToThreadless, useChat } = await freshChat();
-    net.hold("/api/threads");
+    net.hold(LIST);
     const init = initChat(); // …parked mid-fetch
     const { result } = renderHook(() => useChat());
 
     expect(await openThread("run-thread")).toBe(true);
     await waitFor(() => expect(result.current.threadId).toBe("run-thread"));
 
-    net.fail("/api/threads"); // the cold load finally errors — AFTER the open won
+    net.fail(LIST); // the cold load finally errors — AFTER the open won
     await init;
 
     // `loaded` is not observable directly, so read it through the behaviour it gates: drop the view to
     // thread-less (`/new`'s fallback) and mount again. A stale reset would make this load the
     // most-recent thread, i.e. undo the fresh view the owner just asked for.
-    resetToThreadless(null);
+    resetToThreadless();
     await initChat();
     expect(result.current.threadId).toBeNull();
   });
@@ -296,12 +267,12 @@ describe("two explicit opens — intent order, not completion order (R2 verify, 
   });
 
   it("a /new supersedes a pending open — its fetch must not swap in afterwards", async () => {
-    const { openThread, startNewThread, useChat } = await freshChat();
+    const { openThread, newConversation, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());
     net.hold("/api/threads/late/messages");
     const openLate = openThread("late"); // …parked
 
-    await startNewThread({ keepAgent: false, defaultAgent: "default" }); // the owner's newer intent
+    await newConversation(); // the owner's newer intent
     expect(result.current.threadId).toBe("fresh");
     net.release("/api/threads/late/messages");
     expect(await openLate).toBe(false);
@@ -309,10 +280,10 @@ describe("two explicit opens — intent order, not completion order (R2 verify, 
   });
 
   it("…and a NEWER open supersedes a /new still minting — its thread stays behind, unopened", async () => {
-    const { openThread, startNewThread, useChat } = await freshChat();
+    const { openThread, newConversation, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());
     net.hold("POST /api/threads"); // the mint, parked
-    const mint = startNewThread({ keepAgent: false, defaultAgent: "default" });
+    const mint = newConversation();
 
     expect(await openThread("later")).toBe(true); // the owner opens a run thread meanwhile
     net.release("POST /api/threads");
@@ -385,18 +356,18 @@ describe("the open thread's pinned agent", () => {
     await waitFor(() => expect(result.current.threadId).toBe("recent-thread"));
     expect(result.current.threadAgent).toBe("lynette");
     // `initChat` already holds the RECORD it picked, so the pin costs it nothing extra.
-    expect(net.calls.filter((u) => u.endsWith("/api/threads"))).toHaveLength(1);
+    expect(net.calls.filter((u) => u === LIST)).toHaveLength(1);
   });
 
   it("an explicit open learns the pin from the list — and never WAITS on it", async () => {
     threadList = [{ id: "run-thread", agent: "ops" }];
     const { openThread, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());
-    net.hold("/api/threads"); // the pin read, parked: the list can be slow, or a cold load can own it
+    net.hold(LIST); // the pin read, parked: the list can be slow, or a cold load can own it
     expect(await openThread("run-thread")).toBe(true); // …the history still swapped in
     expect(result.current.threadId).toBe("run-thread");
     expect(result.current.threadAgent).toBeNull(); // honest: not known yet, never the LEFT thread's pin
-    net.release("/api/threads");
+    net.release(LIST);
     await waitFor(() => expect(result.current.threadAgent).toBe("ops")); // …and it lands late
   });
 
@@ -409,11 +380,11 @@ describe("the open thread's pinned agent", () => {
     threadList = [{ id: "rolling", agent: "lynette" }];
     const { openThread, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());
-    net.hold("/api/threads"); // the pin read, parked
+    net.hold(LIST); // the pin read, parked
     expect(await openThread("rolling")).toBe(true);
     await waitFor(() => expect(result.current.threadId).toBe("rolling"));
     expect(await openThread("rolling")).toBe(true); // …the early-return path, claiming a newer ticket
-    net.release("/api/threads");
+    net.release(LIST);
     await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
   });
 
@@ -424,26 +395,28 @@ describe("the open thread's pinned agent", () => {
     ];
     const { openThread, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());
-    net.hold("/api/threads");
+    net.hold(LIST);
     const slow = openThread("slow"); // its pin read is parked…
     await waitFor(() => expect(result.current.threadId).toBe("slow"));
-    net.release("/api/threads"); // …released only after the view has moved
+    net.release(LIST); // …released only after the view has moved
     expect(await openThread("fast")).toBe(true);
     await slow;
     await waitFor(() => expect(result.current.threadId).toBe("fast"));
     expect(result.current.threadAgent).toBeNull(); // `slow`'s pin must not paint `fast`
   });
 
-  it("a /new carries the MINTED thread's pin — never the left thread's", async () => {
+  it("a /new installs the MINTED thread's home — the server's answer, not a guess", async () => {
     threadList = [{ id: "pinned", agent: "lynette" }];
     histories = { pinned: [userMsg("u1", "pinned", "hi")] };
-    const { openThread, startNewThread, useChat } = await freshChat();
+    mintAgent = "lynette-resolved"; // whatever seam ① persisted is what the view takes
+    const { openThread, newConversation, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());
     await openThread("pinned");
     await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
-    await startNewThread({ keepAgent: false, defaultAgent: "default" });
+    await newConversation();
+    expect(net.mints).toEqual([{ agent: "lynette" }]); // minted for the HOME (R22b)…
     expect(result.current.threadId).toBe("fresh");
-    expect(result.current.threadAgent).toBe("default"); // seam ① pins the thread to the agent it opens as
+    expect(result.current.threadAgent).toBe("lynette-resolved"); // …and the minted row's home installed
   });
 });
 
@@ -453,32 +426,14 @@ describe("the open thread's pinned agent", () => {
 // `initChat` (or a `reloadChat`) sat parked mid-fetch, and that load then landed the OLD thread's history
 // AND its pin on the conversation the owner had just started.
 describe("a changed view identity invalidates the loads parked against the old one", () => {
-  // D75 amendment — `/new` with `keepAgent` (no default configured) keeps "the agent I was talking to":
-  // in a character thread nothing was sticky, so the THREAD's pin is promoted to the sticky pick.
-  it("a /new with keepAgent PROMOTES the thread's pin when nothing is sticky", async () => {
-    threadList = [{ id: "pinned", agent: "lynette" }];
-    histories = { pinned: [userMsg("u1", "pinned", "hi")] };
-    const { openThread, startNewThread, useChat } = await freshChat();
-    const { result } = renderHook(() => useChat());
-    await openThread("pinned");
-    await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
-    expect(result.current.stickyAgent).toBeNull();
-    await startNewThread({ keepAgent: true, defaultAgent: "default" });
-    expect(net.mints).toEqual([{ agent: "lynette" }]); // minted WITH the promoted agent (ISS-31)…
-    expect(result.current.threadId).toBe("fresh");
-    expect(result.current.threadAgent).toBe("lynette"); // …so the fresh thread is pinned to her…
-    expect(result.current.stickyAgent).toBe("lynette"); // …and the pick carries the agent over
-    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: "lynette" });
-  });
-
   it("a /new kills a parked cold load — history and pin alike", async () => {
     threadList = [{ id: "recent-thread", agent: "lynette" }];
     histories = { fresh: [] }; // the root greets nobody: the minted thread opens empty
-    const { initChat, startNewThread, useChat } = await freshChat();
+    const { initChat, newConversation, useChat } = await freshChat();
     const { result } = renderHook(() => useChat());
     net.hold("/api/threads/recent-thread/messages"); // the cold load's HISTORY fetch, parked
     const init = initChat();
-    await startNewThread({ keepAgent: false, defaultAgent: "default" }); // the owner's /new meanwhile
+    await newConversation(); // the owner's /new meanwhile (thread-less → the configured default)
     net.release("/api/threads/recent-thread/messages");
     await init;
     expect(result.current.threadId).toBe("fresh");
@@ -501,12 +456,14 @@ describe("a changed view identity invalidates the loads parked against the old o
   });
 });
 
-// ── `/new` mints through seam ① (ISS-31, owner ruling 2026-09-27) ─────────────────────────────────────
+// ── `/new` mints through seam ① (ISS-31, owner ruling 2026-09-27) — for the HOME (D84 R22b) ───────────
 // Two symptoms, one root: `/new` only nulled `threadId` in memory, so a reload came back to the LAST
 // thread, and a character's greeting — a real message seeded WITH the thread — only appeared after the
-// owner spoke first. `/new` now mints the thread (`POST /api/threads {agent}`), then opens it through the
-// same fetch-first swap `openThread` uses; the tandem rule (D75 amendment) decides WHICH agent.
-describe("`/new` mints the thread through seam ① (ISS-31)", () => {
+// owner spoke first. `/new` mints the conversation (`POST /api/threads {agent}`), then opens it through the
+// same fetch-first swap `openThread` uses. Since D84 the agent is ALWAYS the open conversation's HOME
+// (`threadAgent ?? the configured default`) — never the responder (THE INVARIANT, R22): the D75 tandem
+// rule and its keep/clear/promote cases are retired with the sticky pick.
+describe("`/new` mints a conversation for the HOME through seam ① (ISS-31, R22b)", () => {
   /** Open a thread the owner has already TALKED in, so `/new` has a reason to leave it. */
   async function talkedIn(
     chat: Awaited<ReturnType<typeof freshChat>>,
@@ -515,138 +472,87 @@ describe("`/new` mints the thread through seam ① (ISS-31)", () => {
   ) {
     threadList = [{ id, agent }];
     histories[id] = [userMsg("u1", id, "hi"), msg("a1", id, "hello")];
-    await chat.openThread(id);
+    await chat.openThread(id, agent ?? undefined);
   }
+  /** The last line in the view's log, when it is a note. */
+  const lastNote = (chat: Awaited<ReturnType<typeof freshChat>>) => {
+    const { result } = renderHook(() => chat.useChat());
+    const m = result.current.messages.at(-1);
+    const p = m?.role === "system" ? m.parts[0] : undefined;
+    return p?.type === "text" ? p.text : undefined;
+  };
 
-  it("a default SET → minted once WITH the default, greeting in view, the pick cleared (persisted)", async () => {
+  it("mints once WITH the home, greeting in view — the responder stays behind (B2)", async () => {
     histories = { fresh: [msg("greet", "fresh", "*Lynette looks up from her tea.*")] };
     const chat = await freshChat();
     const { result } = renderHook(() => chat.useChat());
-    await talkedIn(chat);
-    chat.setStickyAgent("ops"); // the owner had picked a specialist…
-    await chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" }); // …but a default is set
+    await talkedIn(chat, "old", "lynette");
+    chat.setResponder("emma"); // B1 — Emma answers in Lynette's conversation…
+    await waitFor(() => expect(result.current.responder).toBe("emma"));
+    await chat.newConversation(); // …then `/new`: a fresh LYNETTE conversation
 
-    expect(net.mints).toEqual([{ agent: "lynette" }]);
+    expect(net.mints).toEqual([{ agent: "lynette" }]); // the HOME, never the responder
     expect(result.current.threadId).toBe("fresh");
     expect(result.current.messages.map((m) => m.id)).toEqual(["greet"]); // the server's history, as-is
     expect(result.current.threadAgent).toBe("lynette");
-    expect(result.current.stickyAgent).toBeNull(); // the tandem rule's clear…
-    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: null }); // …persisted
+    expect(result.current.responder).toBeNull(); // leaving — the responder clears (R45)
+    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toMatchObject({
+      thread: "fresh",
+      home: "lynette",
+      responder: null,
+    });
     expect(result.current.status).toBe("idle");
   });
 
-  it("NO default + a sticky pick → minted WITH the pick, and the pick is kept (persisted)", async () => {
+  it("a thread-less view mints for the CONFIGURED default (there is nothing to keep)", async () => {
     const chat = await freshChat();
+    const roster = await import("../../src/lib/roster");
+    roster.landRoster({ agents: ["lynette"], default: "lynette" });
     const { result } = renderHook(() => chat.useChat());
-    await talkedIn(chat, "old", "lynette"); // the pick outranks the thread's own pin
-    chat.setStickyAgent("ops");
-    await chat.startNewThread({ keepAgent: true, defaultAgent: "default" });
-
-    expect(net.mints).toEqual([{ agent: "ops" }]);
-    expect(result.current.threadAgent).toBe("ops");
-    expect(result.current.stickyAgent).toBe("ops");
-    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: "ops" });
+    expect(result.current.threadId).toBeNull();
+    await chat.newConversation();
+    expect(net.mints).toEqual([{ agent: "lynette" }]);
+    expect(result.current.threadId).toBe("fresh");
   });
 
-  it("the server's RESOLVED name is the pin — a since-deleted pick lands where the session would run", async () => {
+  it("an UNKNOWN home (a failed late read) mints for the configured default — the root here", async () => {
+    const chat = await freshChat();
+    const { result } = renderHook(() => chat.useChat());
+    await talkedIn(chat); // the list says agent: null → the home stays unknown
+    expect(result.current.threadAgent).toBeNull();
+    await chat.newConversation();
+    expect(net.mints).toEqual([{ agent: "default" }]);
+    expect(result.current.threadAgent).toBe("default");
+  });
+
+  it("the server's RESOLVED name is the home it installs — a since-deleted home lands where it runs", async () => {
     mintAgent = "default"; // seam ① persists `resolve_agent(name).name`: an unknown name → the root
     const chat = await freshChat();
     const { result } = renderHook(() => chat.useChat());
-    await talkedIn(chat);
-    chat.setStickyAgent("ghost");
-    await chat.startNewThread({ keepAgent: true, defaultAgent: "default" });
-
+    await talkedIn(chat, "old", "ghost");
+    await chat.newConversation();
     expect(net.mints).toEqual([{ agent: "ghost" }]);
     expect(result.current.threadAgent).toBe("default");
-    expect(result.current.stickyAgent).toBe("ghost"); // the pick itself is not rewritten (D75: typos stay sticky)
   });
 
-  it("no resolvable agent → a BODYLESS mint: unpinned, no greeting", async () => {
-    histories = { fresh: [] };
-    const chat = await freshChat();
-    const { result } = renderHook(() => chat.useChat());
-    await talkedIn(chat); // an unpinned thread, nothing sticky, no default set: nobody to keep
-    await chat.startNewThread({ keepAgent: true, defaultAgent: "default" });
-
-    expect(net.mints).toEqual([null]);
-    expect(result.current.threadId).toBe("fresh");
-    expect(result.current.messages).toHaveLength(0);
-    expect(result.current.threadAgent).toBeNull();
-  });
-
-  it("a thread-less view mints (there is nothing to keep, and nothing fresh to stay on)", async () => {
-    const chat = await freshChat();
-    const { result } = renderHook(() => chat.useChat());
-    expect(result.current.threadId).toBeNull();
-    await chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
-    expect(net.mints).toEqual([{ agent: "lynette" }]);
-    expect(result.current.threadId).toBe("fresh");
-  });
-
-  it("a thread with NO user turn, pinned to the agent `/new` would mint, is already fresh — a silent no-op", async () => {
-    threadList = [
-      { id: "greeted", agent: "lynette" },
-      { id: "empty", agent: null },
-    ];
-    const chat = await freshChat();
-    const { result } = renderHook(() => chat.useChat());
-    await chat.openThread("greeted"); // the generic history: ONE agent-authored message (a greeting)
-    await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
-    const before = result.current;
-    await chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
-    expect(net.mints).toHaveLength(0);
-    expect(result.current).toBe(before); // not a single write — no note, no swap
-
-    histories = { empty: [] };
-    await chat.openThread("empty"); // the root greets nobody: a minted thread can hold zero messages
-    // none set, nothing sticky → the agent to keep is the thread's own (none) — the pin it already has
-    await chat.startNewThread({ keepAgent: true, defaultAgent: "default" });
-    expect(net.mints).toHaveLength(0);
-    expect(result.current.threadId).toBe("empty");
-  });
-
-  // Fix wave 2 (O-LOW, confirm round): "fresh" is only fresh for the agent it is pinned to.
-  it("…but a fresh thread pinned to ANOTHER agent is not the thread asked for — `/new` mints", async () => {
-    threadList = [{ id: "sera", agent: "seraphina" }];
-    const chat = await freshChat();
-    const { result } = renderHook(() => chat.useChat());
-    await chat.openThread("sera"); // Seraphina's greeting thread, nothing said yet
-    await waitFor(() => expect(result.current.threadAgent).toBe("seraphina"));
-    chat.setStickyAgent("ops"); // `/agent ops`…
-    await chat.startNewThread({ keepAgent: true, defaultAgent: "default" }); // …then `/new`, none set
-    expect(net.mints).toEqual([{ agent: "ops" }]);
-    expect(result.current.threadId).toBe("fresh");
-    expect(result.current.threadAgent).toBe("ops");
-  });
-
-  it("…and so does one pinned to the OLD default after the configured default changed", async () => {
-    threadList = [{ id: "maya-fresh", agent: "maya" }];
-    const chat = await freshChat();
-    const { result } = renderHook(() => chat.useChat());
-    await chat.openThread("maya-fresh");
-    await waitFor(() => expect(result.current.threadAgent).toBe("maya"));
-    await chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" }); // the default is lynette now
-    expect(net.mints).toEqual([{ agent: "lynette" }]);
-    expect(result.current.threadAgent).toBe("lynette");
-  });
-
-  it("…yet the tandem rule still applies to the PICK there: a default set clears it, none set keeps it", async () => {
-    // Fix wave 1 (O-LOW-4): before ISS-31 every `/new` cleared a standing pick when a default was set,
-    // so `/agent ops` then `/new` on a fresh default thread must still mean "back to the default".
+  it("no owner turn → `// this conversation is already new`: nothing minted, the responder STAYS", async () => {
     threadList = [{ id: "greeted", agent: "lynette" }];
     const chat = await freshChat();
     const { result } = renderHook(() => chat.useChat());
-    await chat.openThread("greeted"); // lynette's greeting-only thread: `/new` for lynette mints nothing
-    await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
-    chat.setStickyAgent("lynette"); // (Talk) — none set: the pick IS the pin, so it is kept
-    await chat.startNewThread({ keepAgent: true, defaultAgent: "default" });
-    expect(result.current.stickyAgent).toBe("lynette");
-    chat.setStickyAgent("ops"); // `/agent ops`, then `/new` with lynette the configured default
-    await chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" }); // a default set → clear
+    await chat.openThread("greeted", "lynette"); // the generic history: ONE agent-authored message
+    chat.setResponder("emma");
+    await chat.newConversation();
     expect(net.mints).toHaveLength(0);
+    await waitFor(() => expect(result.current.responder).toBe("emma")); // the owner did not leave
     expect(result.current.threadId).toBe("greeted");
-    expect(result.current.stickyAgent).toBeNull();
-    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: null });
+    expect(lastNote(chat)).toBe("// this conversation is already new");
+
+    histories = { empty: [] };
+    threadList = [{ id: "empty", agent: "default" }];
+    await chat.openThread("empty", "default"); // a greeting-less agent: zero messages is new too
+    await chat.newConversation();
+    expect(net.mints).toHaveLength(0);
+    expect(result.current.threadId).toBe("empty");
   });
 
   it("…while a command the owner RAN (`!cmd`, persisted as actor=user rows) is a turn worth leaving", async () => {
@@ -655,35 +561,36 @@ describe("`/new` mints the thread through seam ① (ISS-31)", () => {
     };
     const chat = await freshChat();
     const { result } = renderHook(() => chat.useChat());
-    await chat.openThread("shell");
-    await chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
+    await chat.openThread("shell", "lynette");
+    await chat.newConversation();
     expect(net.mints).toHaveLength(1);
     expect(result.current.threadId).toBe("fresh");
   });
 
-  it("`/new` twice mints ONCE — the second lands on the fresh thread, and a double Enter mid-mint is one POST", async () => {
+  it("`/new` twice mints ONCE — the second lands on the fresh one, and a double Enter mid-mint is one POST", async () => {
     const chat = await freshChat();
-    await talkedIn(chat);
+    await talkedIn(chat, "old", "lynette");
     net.hold("POST /api/threads");
-    const first = chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
-    const second = chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" }); // the double Enter
+    const first = chat.newConversation();
+    const second = chat.newConversation(); // the double Enter
     net.release("POST /api/threads");
     await Promise.all([first, second]);
     expect(net.mints).toHaveLength(1);
 
-    await chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" }); // on the greeting-only thread
+    await chat.newConversation(); // on the greeting-only conversation: already new
     expect(net.mints).toHaveLength(1);
+    expect(lastNote(chat)).toBe("// this conversation is already new");
   });
 
   it("a FAILED mint falls back to the thread-less view + a note — and never touches the view before", async () => {
     const chat = await freshChat();
     const { result } = renderHook(() => chat.useChat());
-    await talkedIn(chat);
-    chat.setStickyAgent("ops");
-    await waitFor(() => expect(result.current.stickyAgent).toBe("ops")); // rendered before the snapshot
+    await talkedIn(chat, "old", "lynette");
+    chat.setResponder("emma");
+    await waitFor(() => expect(result.current.responder).toBe("emma")); // rendered before the snapshot
     const inFlight = result.current;
     net.hold("POST /api/threads");
-    const mint = chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
+    const mint = chat.newConversation();
     await Promise.resolve(); // let the request go out…
     expect(result.current).toBe(inFlight); // …and the view the owner is looking at is untouched
     expect(result.current.threadId).toBe("old");
@@ -692,11 +599,14 @@ describe("`/new` mints the thread through seam ① (ISS-31)", () => {
     await mint;
     expect(result.current.threadId).toBeNull(); // the lazy mint on the next send (seam ②)
     expect(result.current.threadAgent).toBeNull();
-    expect(result.current.stickyAgent).toBeNull(); // the tandem rule still applies to the fallback
+    expect(result.current.responder).toBeNull(); // the reset leaves
     expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0].role).toBe("system");
     expect(result.current.messages[0].parts).toEqual([
-      { type: "text", text: "// couldn't start a new thread — your next message will start one" },
+      {
+        type: "text",
+        text: "// couldn't start a new conversation — your next message will start one",
+      },
     ]);
   });
 
@@ -707,7 +617,7 @@ describe("`/new` mints the thread through seam ① (ISS-31)", () => {
     net.impl.mockImplementationOnce(() =>
       Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as unknown as Response),
     );
-    await chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
+    await chat.newConversation();
     expect(result.current.threadId).toBeNull();
     expect(result.current.messages.map((m) => m.role)).toEqual(["system"]);
   });
@@ -726,23 +636,22 @@ describe("`/new` mints the thread through seam ① (ISS-31)", () => {
           } as unknown as Response)
         : base(input, init),
     );
-    await chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
+    await chat.newConversation();
     expect(net.mints).toHaveLength(1); // the thread WAS minted (it stays in the list, unopened)…
     expect(result.current.threadId).toBeNull(); // …but the view falls back, it does not swap garbage in
     expect(result.current.messages.map((m) => m.role)).toEqual(["system"]);
   });
 
-  // Fix wave 1 (the code round's HIGH): the owner can keep using the view while the mint is in flight.
-  // A send that starts AND settles meanwhile leaves the status idle, so a streaming check alone let the
-  // swap hide the turn they had just taken. The fence compares the view's identity instead — silently.
-  it("a send that COMPLETES mid-mint keeps the view — no swap, the turn stays, no note", async () => {
+  // THE FENCE (O7): `mintAndOpen` keeps only the supersession check. The old silent give-ups on a turn
+  // taken meanwhile are gone — the owner asked for a fresh conversation, and a turn in the view being left
+  // runs on server-side (S6, R9); its history is there on the way back.
+  it("a send that COMPLETES mid-mint no longer holds the swap — the mint opens (O7)", async () => {
     const chat = await freshChat();
     const { result } = renderHook(() => chat.useChat());
     await talkedIn(chat);
     const base = net.impl.getMockImplementation()!;
     net.impl.mockImplementation((input, init) => {
       if (String(input) !== "/api/agent/chat") return base(input, init);
-      // The server took the turn (buffered, D17): its durable floor now carries it.
       histories.old = [...histories.old, userMsg("u2", "old", "again"), msg("a2", "old", "sure")];
       return Promise.resolve({
         ok: true,
@@ -753,37 +662,30 @@ describe("`/new` mints the thread through seam ① (ISS-31)", () => {
       } as unknown as Response);
     });
     net.hold("POST /api/threads");
-    const mint = chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
+    const mint = chat.newConversation();
     await chat.sendMessage("again"); // starts AND settles while the mint is parked
-    expect(chat.getChatStatus()).toBe("idle");
     net.release("POST /api/threads");
     await mint;
-
-    expect(net.mints).toHaveLength(1); // minted — and left behind, unopened
-    expect(result.current.threadId).toBe("old");
-    expect(result.current.messages.map((m) => m.id)).toEqual(["u1", "a1", "u2", "a2"]);
-    expect(result.current.messages.some((m) => m.role === "system")).toBe(false);
+    expect(result.current.threadId).toBe("fresh");
+    expect(histories.old.map((m) => m.id)).toEqual(["u1", "a1", "u2", "a2"]); // nothing was lost
   });
 
-  // Fix wave 2 (O-LOW, confirm round): a QUEUED steer bubble comes and goes on the server's schedule —
-  // a probe or a reconnect reload can drop it mid-mint without the owner doing anything.
-  it("a QUEUED steer bubble dropped mid-mint is not a turn taken — the mint still opens", async () => {
+  it("a QUEUED steer bubble dropped mid-mint does not matter either — the mint opens", async () => {
     probeQueue = [{ entry_id: "e1", kind: "message", text: "later" }];
     const chat = await freshChat();
     const { result } = renderHook(() => chat.useChat());
     await talkedIn(chat); // …and its re-attach probe renders the still-queued steer
     await waitFor(() => expect(result.current.messages.some((m) => m.queued === "e1")).toBe(true));
     net.hold("POST /api/threads");
-    const mint = chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
-    probeQueue = []; // it drained / was removed server-side…
-    await chat.reconcileChat(); // …and a reconnect's reconcile drops the bubble while the mint is out
-    expect(result.current.messages.some((m) => m.queued)).toBe(false);
+    const mint = chat.newConversation();
+    probeQueue = [];
+    await chat.reconcileChat();
     net.release("POST /api/threads");
     await mint;
     expect(result.current.threadId).toBe("fresh");
   });
 
-  it("a send still STREAMING when the mint lands keeps the view too — silently", async () => {
+  it("`mintAndOpen` while another view STREAMS still swaps — the turn runs on in the background (O7)", async () => {
     const chat = await freshChat();
     const { result } = renderHook(() => chat.useChat());
     await talkedIn(chat);
@@ -794,244 +696,25 @@ describe("`/new` mints the thread through seam ① (ISS-31)", () => {
         : base(input, init),
     );
     net.hold("POST /api/threads");
-    const mint = chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
+    const mint = chat.newConversation();
     void chat.sendMessage("again");
     expect(chat.getChatStatus()).toBe("streaming");
     net.release("POST /api/threads");
     await mint;
-
-    await waitFor(() => expect(result.current.status).toBe("streaming"));
-    expect(result.current.threadId).toBe("old");
-    expect(result.current.messages.some((m) => m.role === "system")).toBe(false);
+    expect(result.current.threadId).toBe("fresh");
+    expect(result.current.status).toBe("idle");
   });
 
-  it("a pick the owner changes WHILE the mint is in flight is the newer intent and survives the swap", async () => {
+  it("a responder set WHILE the mint is in flight stays with the conversation it was set in", async () => {
     const chat = await freshChat();
     const { result } = renderHook(() => chat.useChat());
-    await talkedIn(chat);
+    await talkedIn(chat, "old", "lynette");
     net.hold("POST /api/threads");
-    const mint = chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" }); // would clear the pick…
-    chat.setStickyAgent("ops"); // …but the owner picks ops before it lands
+    const mint = chat.newConversation();
+    chat.setResponder("ops"); // `/agent ops` on the view being left…
     net.release("POST /api/threads");
     await mint;
     expect(result.current.threadId).toBe("fresh");
-    expect(result.current.stickyAgent).toBe("ops");
-    expect(JSON.parse(localStorage.getItem("ctrlb.chat")!)).toEqual({ agent: "ops" });
-  });
-});
-
-// ── ISS-49 — a pick on a FRESH thread re-seats its opening (pin + greeting) ───────────────────────────
-// `/new` mints for the default (the tandem rule), so the owner's pick right after it must replace the
-// thread's opening too — or the who-line keeps the old agent and the picked agent's model reads that
-// greeting as its own turn. The store's `reseatOpening` runs the PUT through the D81 `syncMessageRoute`
-// (same thread id: no view swap); the trigger is re-derived from LIVE state on every call.
-describe("a pick on a fresh thread re-seats its opening (ISS-49)", () => {
-  /** Open lynette's greeting-only thread (the generic history = ONE agent-authored message). */
-  async function greeted(chat: Awaited<ReturnType<typeof freshChat>>, history?: ChatMessage[]) {
-    threadList = [{ id: "greeted", agent: "lynette" }];
-    if (history) histories.greeted = history;
-    const hook = renderHook(() => chat.useChat());
-    await chat.openThread("greeted");
-    await waitFor(() => expect(hook.result.current.threadAgent).toBe("lynette"));
-    return hook;
-  }
-
-  it("the trigger: a real name, a thread, no turn taken, a different pin", async () => {
-    const chat = await freshChat();
-    expect(chat.wouldReseat("emma")).toBe(false); // no thread in view
-    await greeted(chat);
-    expect(chat.wouldReseat("emma")).toBe(true);
-    expect(chat.wouldReseat("lynette")).toBe(false); // the pin it already has
-    expect(chat.wouldReseat("")).toBe(false); // a bare `/agent` clear never re-seats
-
-    const talked = await freshChat();
-    await greeted(talked, [msg("g", "greeted", "hi"), userMsg("u1", "greeted", "hello")]);
-    expect(talked.wouldReseat("emma")).toBe(false); // the owner spoke
-
-    const ran = await freshChat();
-    await greeted(ran, [
-      msg("g", "greeted", "hi"),
-      { ...msg("x1", "greeted", "ls"), actor: "user" },
-    ]);
-    expect(ran.wouldReseat("emma")).toBe(false); // a `!cmd` the owner ran is a turn too
-  });
-
-  it("re-seats in place: the PUT, the new floor, the new pin — same thread, the pick untouched", async () => {
-    const chat = await freshChat();
-    const { result } = await greeted(chat);
-    chat.setStickyAgent("emma");
-    await chat.reseatOpening("emma");
-
-    expect(net.reopens).toEqual([
-      { url: "/api/threads/greeted/opening", body: { agent: "emma", discard_edited: false } },
-    ]);
-    expect(result.current.threadId).toBe("greeted");
-    expect(result.current.messages.map((m) => m.id)).toEqual(["greet-emma"]);
-    expect(result.current.threadAgent).toBe("emma");
-    expect(result.current.stickyAgent).toBe("emma"); // KEPT after a re-seat
-    expect(result.current.messages.some((m) => m.role === "system")).toBe(false);
-  });
-
-  it("an EDITED opening is never discarded silently — only with the caller's confirm", async () => {
-    const chat = await freshChat();
-    await greeted(chat, [
-      { ...msg("g", "greeted", "tea, with honey?"), edited: "2026-10-01T10:00:00Z" },
-    ]);
-    expect(chat.openingEdited()).toBe(true);
-    await chat.reseatOpening("emma");
-    expect(net.reopens).toHaveLength(0);
-
-    await chat.reseatOpening("emma", "elsewhere"); // a confirm given for ANOTHER thread is no confirm
-    expect(net.reopens).toHaveLength(0);
-    await chat.reseatOpening("emma", "greeted");
-    expect(net.reopens.map((r) => r.body)).toEqual([{ agent: "emma", discard_edited: true }]);
-  });
-
-  it("the new pin lands even when a turn is streaming at landing; the floor waits for that turn", async () => {
-    const chat = await freshChat();
-    const { result } = await greeted(chat);
-    const base = net.impl.getMockImplementation()!;
-    net.impl.mockImplementation((input, init) =>
-      String(input) === "/api/agent/chat"
-        ? new Promise<Response>(() => {}) // the turn is still going
-        : base(input, init),
-    );
-    net.hold("PUT /api/threads/greeted/opening");
-    const reseat = chat.reseatOpening("emma");
-    void chat.sendMessage("hello");
-    expect(chat.getChatStatus()).toBe("streaming");
-    net.release("PUT /api/threads/greeted/opening");
-    await reseat;
-
-    expect(result.current.threadAgent).toBe("emma"); // the server DID re-seat
-    expect(result.current.messages.some((m) => m.id === "greet-emma")).toBe(false); // not installed
-  });
-
-  it("a refusal says the server's sentence and re-reads the floor", async () => {
-    reopenRefusal = {
-      status: 409,
-      detail: "this conversation has started — the pick applies from the next reply",
-    };
-    const chat = await freshChat();
-    const { result } = await greeted(chat);
-    // Another device spoke meanwhile — the floor the refusal re-reads carries the turn.
-    histories.greeted = [msg("g", "greeted", "hi"), userMsg("u9", "greeted", "from the phone")];
-    await chat.reseatOpening("emma");
-
-    expect(net.reopens).toHaveLength(1);
-    expect(result.current.threadAgent).toBe("lynette");
-    // The note is the server's sentence verbatim (an addendum to the pick note), and it survives the
-    // re-read: `applyFloor` keeps client-only notes around the durable rows it installs.
-    const notes = result.current.messages.filter((m) => m.role === "system");
-    expect(notes.map((m) => (m.parts[0].type === "text" ? m.parts[0].text : ""))).toEqual([
-      "// this conversation has started — the pick applies from the next reply",
-    ]);
-    expect(result.current.messages.filter((m) => !m.local).map((m) => m.id)).toEqual(["g", "u9"]);
-    expect(chat.wouldReseat("emma")).toBe(false);
-  });
-
-  it("two rapid picks: the second waits for the first, then runs ONCE for the LATEST pick", async () => {
-    const chat = await freshChat();
-    const { result } = await greeted(chat);
-    net.hold("PUT /api/threads/greeted/opening");
-    chat.setStickyAgent("emma");
-    const first = chat.reseatOpening("emma");
-    chat.setStickyAgent("seraphina");
-    await chat.reseatOpening("seraphina"); // a sync route is in flight → parked, no second PUT yet
-    chat.setStickyAgent("frieren");
-    await chat.reseatOpening("frieren"); // still parked — the latest pick is what runs
-    expect(net.reopens).toHaveLength(1);
-    net.release("PUT /api/threads/greeted/opening");
-    await first;
-
-    await waitFor(() => expect(result.current.threadAgent).toBe("frieren"));
-    expect(net.reopens.map((r) => r.body.agent)).toEqual(["emma", "frieren"]);
-    expect(result.current.messages.map((m) => m.id)).toEqual(["greet-frieren"]);
-  });
-
-  // Fix wave (Maya MED-1 ∥ Opus L1): a parked re-seat keeps its thread AND its confirmed discard.
-  it("a CONFIRMED discard parked behind an in-flight D81 route survives and is sent", async () => {
-    const edited = { ...msg("g", "greeted", "tea, with honey?"), edited: "2026-10-01T10:00:00Z" };
-    const chat = await freshChat();
-    await greeted(chat, [edited]);
-    net.hold("PATCH /api/threads/greeted/messages/g");
-    const edit = chat.editMessage("g", "tea, with lemon?");
-    chat.setStickyAgent("emma");
-    await chat.reseatOpening("emma", "greeted"); // parked behind the edit
-    expect(net.reopens).toHaveLength(0);
-    net.release("PATCH /api/threads/greeted/messages/g");
-    await edit;
-
-    await waitFor(() => expect(net.reopens).toHaveLength(1));
-    expect(net.reopens[0].body).toEqual({ agent: "emma", discard_edited: true });
-  });
-
-  it("a re-seat parked, then the view moves to another thread → the other thread is NOT re-seated", async () => {
-    const chat = await freshChat();
-    const { result } = await greeted(chat);
-    threadList = [...threadList, { id: "other", agent: "lynette" }]; // fresh too: re-seatable
-    net.hold("PUT /api/threads/greeted/opening");
-    chat.setStickyAgent("emma");
-    const first = chat.reseatOpening("emma");
-    chat.setStickyAgent("frieren");
-    await chat.reseatOpening("frieren"); // parked for `greeted`
-    await chat.openThread("other");
-    await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
-    net.release("PUT /api/threads/greeted/opening");
-    await first;
-
-    expect(net.reopens.map((r) => r.url)).toEqual(["/api/threads/greeted/opening"]);
-    expect(result.current.threadId).toBe("other");
-    expect(result.current.threadAgent).toBe("lynette");
-  });
-
-  // Fix wave (Maya MED-2): the confirm is bound to the thread it was asked about. The pick seam
-  // snapshots the id before its dialog (`lib/composer` test); here the view moved while it was open.
-  it("a confirm asked on one thread never discards an edited opening on the thread the view moved to", async () => {
-    const chat = await freshChat();
-    const { result } = await greeted(chat);
-    const askedFor = chat.getThreadId(); // what `pinStickyAgent` snapshots before `requestConfirm`
-    threadList = [...threadList, { id: "other", agent: "lynette" }];
-    histories.other = [{ ...msg("o", "other", "my own words"), edited: "2026-10-01T10:00:00Z" }];
-    await chat.openThread("other"); // the view moved while the dialog was open…
-    await waitFor(() => expect(result.current.threadAgent).toBe("lynette"));
-    chat.setStickyAgent("emma"); // …then Switch: the pin lands…
-    await chat.reseatOpening("emma", askedFor); // …but the discard was for `greeted`
-
-    expect(net.reopens).toHaveLength(0);
-    expect(result.current.messages.map((m) => m.id)).toEqual(["o"]); // the edited opening stays
-  });
-
-  it("a pick made WHILE `/new` mints re-seats the minted thread to it", async () => {
-    histories = { fresh: [msg("greet", "fresh", "*Lynette looks up from her tea.*")] };
-    const chat = await freshChat();
-    const { result } = renderHook(() => chat.useChat());
-    net.hold("POST /api/threads");
-    const mint = chat.startNewThread({ keepAgent: false, defaultAgent: "lynette" });
-    chat.setStickyAgent("emma"); // the pick lands before the mint does
-    net.release("POST /api/threads");
-    await mint;
-
-    await waitFor(() => expect(result.current.threadAgent).toBe("emma"));
-    expect(net.mints).toEqual([{ agent: "lynette" }]);
-    expect(net.reopens.map((r) => r.body)).toEqual([{ agent: "emma", discard_edited: false }]);
-    expect(result.current.threadId).toBe("fresh");
-    expect(result.current.messages.map((m) => m.id)).toEqual(["greet-emma"]);
-  });
-
-  it("…but an UNCHANGED pick the server resolved elsewhere (a since-deleted name) is not re-seated", async () => {
-    mintAgent = "default";
-    const chat = await freshChat();
-    chat.setStickyAgent("ghost");
-    await chat.startNewThread({ keepAgent: true, defaultAgent: "default" });
-    expect(net.mints).toEqual([{ agent: "ghost" }]);
-    expect(net.reopens).toHaveLength(0);
-  });
-
-  it("opening a thread never re-seats, whatever the standing pick", async () => {
-    localStorage.setItem("ctrlb.chat", JSON.stringify({ agent: "emma" })); // a persisted pick
-    const chat = await freshChat();
-    await greeted(chat);
-    expect(net.reopens).toHaveLength(0);
+    expect(result.current.responder).toBeNull(); // …left there: the mint is leaving (R45)
   });
 });

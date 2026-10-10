@@ -198,8 +198,6 @@ export const SETTINGS = {
     defaults: {},
     global_subagent_limit: 6,
     subagent_clamp_privilege: true,
-    auto_rotate: false,
-    auto_rotate_min_overlap: 2,
     streaming: "auto",
     skills_enabled: true,
     skills_auto_write: true,
@@ -566,9 +564,15 @@ export function planThread(steps: { text: string; status: "pending" | "active" |
   ];
 }
 
+/** The thread LIST the chat boots from — `GET /api/threads?include_archived=true` since D84 (an archived
+ *  run the owner left open counts as present, §12.3 H3), the same read `openThread`'s late home lookup
+ *  makes; the bare path too. NOT the roster door's `?agent=` read. A glob cannot say it: Playwright
+ *  anchors a glob on the whole URL, query included. */
+export const THREAD_LIST = /\/api\/threads(\?include_archived=true)?$/;
+
 /** Seed one thread + its messages (the two routes every chat-shaped arm here needs). */
 export async function seedThread(page: Page, messages: unknown[]) {
-  await page.route("**/api/threads", (route) =>
+  await page.route(THREAD_LIST, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -576,7 +580,9 @@ export async function seedThread(page: Page, messages: unknown[]) {
         {
           id: "t1",
           title: "t",
-          agent: null,
+          // The ROOT, as a real server answers after migration 8's repair (no thread has a null home);
+          // a null home is UNKNOWN to the client since D84 S7a (the privilege chip reads "…", disabled).
+          agent: "default",
           created_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
           archived: false,

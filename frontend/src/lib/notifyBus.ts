@@ -34,6 +34,14 @@ export interface NotifySignal {
    *  agent-side classes and by a host up/down (which lands on Fleet) — a fleet action FAILURE still
    *  leaves it unset, being legible from wherever the user was. */
   focus?: "agent" | "fleet";
+  /** The conversation the signal is about (D84 §5 O2) — set by EVERY agent-class signal, so the tap opens
+   *  THAT conversation (`openThread`), not just the chat tab. Rides the notification's `data` through the
+   *  tray (`public/notify-sw.js` posts it back, or opens `/?tab=agent&thread=<id>` on a dead page). */
+  thread?: string;
+  /** That conversation's HOME agent, when the publisher knows it (the frame's `agent`, the open view's
+   *  `threadAgent`) — handed into the swap so the tapped view never runs against an unknown home (§12.3
+   *  H6). Never on the dead-page URL: the cold path's record read repairs it. */
+  home?: string;
 }
 
 type Listener = (signal: NotifySignal) => void;

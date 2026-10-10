@@ -56,6 +56,8 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/conversation.py", "MessageRepo.search"),
         ("app/services/conversation.py", "MessageRepo.with_call_states"),
         ("app/services/conversation.py", "ThreadRepo.create"),
+        ("app/services/conversation.py", "ThreadRepo.set_seen"),  # D84 — the monotonic seen write
+        ("app/services/conversation.py", "ThreadRepo.summaries"),  # D84 — the five list fields
         ("app/services/events.py", "EventService.recent"),
         ("app/services/events.py", "EventService.record"),
     ),

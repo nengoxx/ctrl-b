@@ -4,7 +4,6 @@ import {
   cleanup,
   fireEvent,
   render as rtlRender,
-  renderHook,
   screen,
   waitFor,
 } from "@testing-library/react";
@@ -19,8 +18,8 @@ const h = vi.hoisted(() => ({
   importMutate: vi.fn(),
   importPending: false,
   roleplayOn: false,
-  /** The OPEN thread's own D70 §4.2 pin, as `useThreadAgent` reports it — `null` = an unpinned thread. */
-  threadAgent: null as string | null,
+  /** THE ROSTER DOOR (`store/chat#openAgentConversation`) — Talk's whole effect on the chat store. */
+  openAgentConversation: vi.fn((_name: string) => Promise.resolve(true)),
   /** The gallery's ONE settings mutation (the "default" pills) — its `mutate` + its `isPending`. */
   saveMutate: vi.fn(),
   savePending: false,
@@ -32,7 +31,15 @@ const list = {
   default_set: false,
   summaries: {} as Record<
     string,
-    { title: string; description: string; avatar: string; background: string; voice: string }
+    {
+      title: string;
+      description: string;
+      avatar: string;
+      background: string;
+      voice: string;
+      /** Phase 27 S10 — the agent's live status (the roster dot's source). */
+      status?: { running: boolean; awaiting: boolean; unread: boolean };
+    }
   >,
 };
 
@@ -103,16 +110,15 @@ vi.mock("../../src/hooks/useRoleplay", async (importActual) => ({
   ...(await importActual<typeof import("../../src/hooks/useRoleplay")>()),
   useLorebooks: () => ({ data: [] }),
 }));
-// The thread pin is store state that only `openThread`'s list read writes; the harness hands Talk the
-// value directly. Everything else about the chat store stays REAL — Talk's pin is read back through it.
+// Talk is a ROSTER DOOR (D84 R16) — the store's `openAgentConversation`, whose own behaviour is pinned in
+// `tests/store/chatResponder.test.ts`; here it is a spy. Everything else about the chat store stays REAL.
 vi.mock("../../src/store/chat", async (importActual) => ({
   ...(await importActual<typeof import("../../src/store/chat")>()),
-  useThreadAgent: () => h.threadAgent,
+  openAgentConversation: h.openAgentConversation,
 }));
 
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { AgentsTab } from "../../src/tabs/AgentsTab";
-import { setStickyAgent, useStickyAgent } from "../../src/store/chat";
 import { requestConfirm, resolveConfirm } from "../../src/store/confirm";
 import { getUI, setUI } from "../../src/store/ui";
 
@@ -126,13 +132,12 @@ beforeEach(() => {
   list.default = "default";
   list.default_set = false;
   list.summaries = {};
-  setStickyAgent(null);
+  h.openAgentConversation.mockClear();
   h.saveMutate.mockReset();
   h.savePending = false;
   h.importMutate.mockReset();
   h.importPending = false;
   h.roleplayOn = false;
-  h.threadAgent = null;
   setUI({ theme: "minimal", tab: "agents", layout: "auto", appbarMode: "visible" });
 });
 afterEach(async () => {
@@ -187,6 +192,50 @@ describe("AgentsTab · the card grid", () => {
       "D",
       "S",
     ]);
+  });
+});
+
+// Phase 27 S10 (D84 R19 · R25 · §7) — the ROSTER DOT: each card renders its agent's live status
+// (`summaries[name].status`) through the sheet's own `threadDot`, as the kit-wide `.thread-dot` at the
+// plate's corner; the state in words is the card's accessible description.
+describe("AgentsTab · the roster dot", () => {
+  const row = (status?: { running?: boolean; awaiting?: boolean; unread?: boolean }) => ({
+    title: "",
+    description: "",
+    avatar: "",
+    background: "",
+    voice: "",
+    status: status && { running: false, awaiting: false, unread: false, ...status },
+  });
+  /** Each card's dot state (`null` = none), in grid order. */
+  const dots = () =>
+    [...document.querySelectorAll(".agal-card")].map(
+      (c) => c.querySelector<HTMLElement>(".thread-dot")?.dataset.state ?? null,
+    );
+
+  it("renders the S9 priority (needs-you > running > unread); none when clean or absent", () => {
+    list.agents = ["scout", "coder", "idle", "old"];
+    list.summaries = {
+      default: row({ unread: true }),
+      scout: row({ running: true, unread: true }),
+      coder: row({ awaiting: true, running: true }),
+      idle: row({}), // all false
+      // old: a response without a status
+    };
+    render(<AgentsTab active />);
+    expect(dots()).toEqual(["unread", "running", "needs-you", null, null]);
+  });
+
+  it("the dot is decoration — the state is SAID in the card's accessible description; it sits in the plate", () => {
+    list.agents = ["scout"];
+    list.summaries = { scout: row({ awaiting: true }) };
+    render(<AgentsTab active />);
+    const [root, scout] = [...document.querySelectorAll<HTMLElement>(".agal-card")];
+    expect(scout.getAttribute("aria-description")).toBe("needs you");
+    expect(root.hasAttribute("aria-description")).toBe(false);
+    const dot = scout.querySelector(".thread-dot")!;
+    expect(dot.getAttribute("aria-hidden")).toBe("true");
+    expect(dot.parentElement?.className).toBe("agal-plate");
   });
 });
 
@@ -260,37 +309,29 @@ describe("AgentsTab · the default pill", () => {
 });
 
 describe("AgentsTab · the two verbs", () => {
-  it("TALK pins the sticky agent and lands on the chat section", () => {
+  it("TALK opens that agent's conversation (the roster door) and lands on the chat section", () => {
     list.agents = ["scout"];
-    const pin = renderHook(() => useStickyAgent());
     render(<AgentsTab active />);
     fireEvent.click(screen.getByRole("button", { name: "Talk to scout" }));
-    expect(pin.result.current).toBe("scout"); // the `/agent <name>` seam, not a second pinning path
+    // the same door as the tools menu's rows — not a pick, not a second path
+    expect(h.openAgentConversation).toHaveBeenCalledExactlyOnceWith("scout");
     expect(getUI().tab).toBe("agent");
   });
 
-  it("TALK on the RESOLVED DEFAULT clears the pin (bare `/agent`), rather than pinning its name", () => {
+  it("TALK on the RESOLVED DEFAULT is the same door — that agent's own conversation", () => {
     list.agents = ["scout"];
     list.default = "scout";
-    setStickyAgent("coder");
-    const pin = renderHook(() => useStickyAgent());
     render(<AgentsTab active />);
     fireEvent.click(screen.getByRole("button", { name: "Talk to scout" }));
-    expect(pin.result.current).toBeNull();
+    expect(h.openAgentConversation).toHaveBeenCalledExactlyOnceWith("scout");
   });
 
-  it("TALK on the resolved default inside a thread PINNED to a character pins the default BY NAME (D75 ruling)", () => {
-    // A clear here would let the thread's character resurface (the ladder: sticky, else the thread's
-    // pin). The same `agentPin` expression the tools menu's rows take decides it — fed
-    // the LIST's resolved default (a specialist promoted to the default here, to prove the name is the
-    // list's own and not the composer's module-set copy, which this harness never loads).
+  it("TALK on the ROOT opens the root's conversation, even with a specialist as the default", () => {
     list.agents = ["lynette", "ari"];
     list.default = "ari";
-    h.threadAgent = "lynette";
-    const pin = renderHook(() => useStickyAgent());
     render(<AgentsTab active />);
-    fireEvent.click(screen.getByRole("button", { name: "Talk to ari" }));
-    expect(pin.result.current).toBe("ari"); // by NAME — not the clear the unpinned arm above gets
+    fireEvent.click(screen.getByRole("button", { name: "Talk to default" }));
+    expect(h.openAgentConversation).toHaveBeenCalledExactlyOnceWith("default");
   });
 
   it("a card TAP opens that agent's editor — the very row the list has always opened", () => {

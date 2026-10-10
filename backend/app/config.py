@@ -431,20 +431,13 @@ class AgentCfg(BaseModel):
     # The `skill_manage` self-author tool may write SKILL.md autonomously; off → propose-only
     # (returns data["proposed"], never writes/blocks), mirroring `memory.auto_write` (7e-f-2, D14).
     skills_auto_write: bool = True
-    # Auto-route a turn to the best-matching specialist when no `/agent` is pinned (7e-g, D15 #8).
-    # Off by default — explicit `/agent` + `spawn_subagents` stay primary. The default
-    # `KeywordAgentSelector` matches the user message against each agent's name+description.
-    auto_rotate: bool = False
-    # Min matching tokens for an auto-route pick (conservative; a tie or below-threshold → the
-    # default agent). Floored at 1 so a blanked Conf field can't make every message route.
-    auto_rotate_min_overlap: int = Field(default=2, ge=1)
     # Per-child wall-clock cap for `spawn_subagents` (§5.5): a stuck child can't hold the batch open
     # forever. Read live per fan-out, so a Conf edit applies to the next spawn without a restart.
     subagent_child_timeout_s: float = Field(default=180.0, gt=0)
     # Default `KeywordSkillSelector` tuning (built from these at startup): min token overlap for a
     # skill to match the user message, and the cap on how many skills activate per turn. Baked at
-    # construction like the selector always has been — a Conf edit needs a restart (unlike the
-    # per-call `auto_rotate_min_overlap` above); see services/agent/skills.py + core/agents.py.
+    # construction like the selector always has been — a Conf edit needs a restart; see
+    # services/agent/skills.py + core/skills.py.
     skill_min_overlap: int = Field(default=1, ge=1)
     skill_max_active: int = Field(default=2, ge=1)
     # Dual-mode chat delivery (D17). Authoritative server-side: `on` always streams (SSE), `off`
@@ -2675,7 +2668,7 @@ class Settings(BaseModel):
         grammar folders are minted and listed under (`valid_skill_slug`, as `list_agent_names`). Without
         this, `".."` resolved the workspace home and `"/etc"` that directory, each loaded as an agent
         NAMED after the input; every caller (`load_agent`, `resolve_agent`, hence `body.agent` on a
-        turn, `POST /threads`, the opening route) passes through here, so the check lives here once.
+        turn, `POST /threads`) passes through here, so the check lives here once.
         The root's own slug never reaches this method (both callers branch on it first)."""
         if not valid_skill_slug(name):
             return None
@@ -2715,6 +2708,13 @@ class Settings(BaseModel):
             and ((p / "agent.yaml").is_file() or (p / "SOUL.md").is_file())
         ]
         return sorted(out)
+
+    def on_roster(self, name: str) -> bool:
+        """Whether `name` is on the agent ROSTER — `list_agent_names()` ∪ the root (D84 / §12.3 H1: the
+        root is never in `list_agent_names`, so the union is the one definition). A slug off the roster
+        (a deleted agent's orphaned home, a typo, `..`) is listed nowhere (§12.3 M7). Exact, never a
+        resolve: `resolve_agent` would fold an unknown name onto a real agent."""
+        return name == self.DEFAULT_AGENT_NAME or name in self.list_agent_names()
 
     def resolve_agent(self, name: str | None = None) -> AgentDef:
         """Resolve an `AgentDef` by name (folder-only, D15 #3). `name=None` → the configured

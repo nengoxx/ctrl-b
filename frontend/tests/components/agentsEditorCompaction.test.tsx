@@ -123,8 +123,6 @@ const baseCfg: AgentSectionCfg = {
   default_title: "",
   global_subagent_limit: 6,
   subagent_clamp_privilege: true,
-  auto_rotate: false,
-  auto_rotate_min_overlap: 2,
   streaming: "auto",
   compaction: {
     enabled: true,
@@ -384,7 +382,7 @@ describe("AgentGlobals · draft reseed value-guard (Codex FIX B)", () => {
   });
 
   // v1.3.1 draft-loss slice — this card mixes the savebar draft with IMMEDIATE-SAVE controls
-  // (auto-route + its min-overlap; default_title lives in the default row). Their echo is a real
+  // (the default-agent pick; default_title lives in the default row). Their echo is a real
   // change to `props.cfg`, so the value-guard above still fired and wiped unsaved draft edits — the
   // user-visible "edit A, save B, A vanishes". Only the draft-managed projection may reseed.
   it("the globals save rides its OWN mutation instance and blocks re-entry while pending", () => {
@@ -394,30 +392,32 @@ describe("AgentGlobals · draft reseed value-guard (Codex FIX B)", () => {
     // globals-on-globals (TanStack's detach semantics themselves were verified upstream).
     render(propsFor(baseCfg));
     fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });
-    fireEvent.click(screen.getByLabelText("Auto-route to specialists")); // immediate-save control
+    fireEvent.click(screen.getByRole("button", { name: "default (root)" })); // immediate-save control
     fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
     const isGlobals = (p: unknown) =>
       (p as { agent?: { compaction?: unknown } }).agent?.compaction !== undefined;
-    const isAutoRoute = (p: unknown) =>
-      (p as { agent?: { auto_rotate?: unknown } }).agent?.auto_rotate !== undefined;
-    const autoRoute = h.taggedCalls.find((c) => isAutoRoute(c.patch));
+    const isDefaultPick = (p: unknown) =>
+      (p as { agent?: { default_agent?: unknown } }).agent?.default_agent !== undefined;
+    const defaultPick = h.taggedCalls.find((c) => isDefaultPick(c.patch));
     const globals = h.taggedCalls.find((c) => isGlobals(c.patch));
-    expect(autoRoute).toBeTruthy();
+    expect(defaultPick).toBeTruthy();
     expect(globals).toBeTruthy();
-    expect(autoRoute!.inst).not.toBe(globals!.inst); // different useSaveSettings() instances
+    expect(defaultPick!.inst).not.toBe(globals!.inst); // different useSaveSettings() instances
     // A second click while the first save is unsettled is a no-op (the call-time ref guard).
     fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
     expect(h.taggedCalls.filter((c) => isGlobals(c.patch))).toHaveLength(1);
   });
 
-  it("an immediate-save echo (auto-route) does NOT clobber unsaved draft edits", () => {
+  it("an immediate-save echo (the default-agent pick) does NOT clobber unsaved draft edits", () => {
     const { rerender } = render(propsFor(baseCfg));
     fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });
-    fireEvent.click(screen.getByLabelText("Auto-route to specialists")); // saves immediately
-    expect(h.saveSettings).toHaveBeenCalledWith({ agent: { auto_rotate: true } });
+    fireEvent.click(screen.getByRole("button", { name: "default (root)" })); // saves immediately
+    expect(h.saveSettings).toHaveBeenCalledWith({ agent: { default_agent: "default" } });
     h.saveSettings.mockClear(); // so `lastAgentPayload` reads the GLOBALS save below
     // …the PUT echo lands: a changed cfg, but the change is confined to the immediate-save keys.
-    rerender(propsFor({ ...baseCfg, auto_rotate: true, compaction: { ...baseCfg.compaction } }));
+    rerender(
+      propsFor({ ...baseCfg, default_agent: "default", compaction: { ...baseCfg.compaction } }),
+    );
     expect(value("Compact at % of context")).toBe("70"); // the unsaved edit survives
     // …and it is still submittable (the dirty projection is unchanged by the echo).
     fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));

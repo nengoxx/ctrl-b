@@ -101,6 +101,8 @@ vi.mock("../src/hooks/useFleet", () => ({ useFleetCycle: () => undefined }));
 vi.mock("../src/hooks/useForegroundNotifications", () => ({
   useForegroundNotifications: () => undefined,
 }));
+// D84 — the thread-list bridge reads the QueryClient too; its own behaviour is in tests/hooks/useThreads.test.ts.
+vi.mock("../src/hooks/useThreads", () => ({ useThreadListsBridge: () => undefined }));
 
 import App from "../src/App";
 import { useToasts } from "../src/store/toast";

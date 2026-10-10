@@ -320,3 +320,31 @@ class Thread(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     archived: bool = False
+    #: When the owner last SAW this thread (D84 / CONVERSATIONS_PLAN §3) — the unread predicate's floor:
+    #: the thread is unread while its newest agent reply is newer. Moves only forward
+    #: (`ThreadRepo.set_seen`); `ThreadRepo.create` seeds it with `created_at`. `None` only on a model
+    #: not yet persisted (and, transiently, a row an older build wrote — `db._REPAIRS` backfills it).
+    seen_at: datetime | None = None
+
+
+class ThreadPreview(BaseModel):
+    """The newest user/assistant row of a thread that has text (D84 §4 `preview`): tool-only rows are
+    skipped; `text` is whitespace-collapsed and cut at 120 characters. `agent` = the row's own
+    `Message.agent` — `None` for a user row AND for a legacy assistant row (the client renders `None`
+    as the thread's home agent)."""
+
+    role: Literal["user", "assistant"]
+    agent: str | None = None
+    text: str
+    ts: datetime
+
+
+class ThreadSummary(BaseModel):
+    """The five per-thread fields the per-agent list carries beside each `Thread` dump (D84 §4) —
+    computed ONLY by `ThreadRepo.summaries`, the one definition (the roster status reuses it)."""
+
+    label: str | None = None
+    preview: ThreadPreview | None = None
+    running: bool = False
+    awaiting: bool = False
+    unread: bool = False

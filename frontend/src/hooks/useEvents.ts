@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { publishNotify } from "../lib/notifyBus";
-import { reconcileChat } from "../store/chat";
+import { applyThreadFrame, reconcileChat, type ThreadFrame } from "../store/chat";
 import { setConnection } from "../store/connection";
 
 // Subscribe to the live activity feed (SSE). Any recorded Event — a UI action now, an agent or
@@ -197,6 +197,40 @@ export function notifyForEvent(raw: string): void {
   });
 }
 
+/** The live `thread` frame as it crosses the wire (D84 §5 — backend `core/events.ThreadFrame`, rendered
+ *  `event: thread` with no `id`). Every field `unknown`: the parse is defensive like `WireEvent`'s — a
+ *  frame this client cannot read still invalidates, and simply drives nothing. */
+interface WireThreadFrame {
+  thread_id?: unknown;
+  state?: unknown;
+  turn_id?: unknown;
+  /** The conversation's HOME agent. */
+  agent?: unknown;
+  chained?: unknown;
+}
+
+/** Read one raw `thread` frame into the store's `ThreadFrame`, or `null` when it names no conversation or
+ *  no state (nothing to act on). Pure + exported for tests. */
+export function parseThreadFrame(raw: string): ThreadFrame | null {
+  let f: WireThreadFrame;
+  try {
+    f = JSON.parse(raw) as WireThreadFrame;
+  } catch {
+    return null;
+  }
+  if (f === null || typeof f !== "object") return null;
+  const threadId = str(f.thread_id);
+  const state = str(f.state);
+  if (!threadId || !state) return null;
+  return {
+    threadId,
+    state,
+    turnId: str(f.turn_id) || null,
+    agent: str(f.agent) || null,
+    chained: f.chained === true,
+  };
+}
+
 export function useEventStream(): void {
   const qc = useQueryClient();
   useEffect(() => {
@@ -232,10 +266,25 @@ export function useEventStream(): void {
       notifyForEvent(e.data);
     }
 
+    // D84 §5 — the live `thread` frame (Phase 27 S10): a conversation's turn started, ended, or was read.
+    // Its cache effect is THE BRIDGE'S TWO KEYS — every conversation list (`['threads']`, all agents) and
+    // the roster (`['agents']`, whose `summaries[name].status` carries the roster dots) — invalidated FIRST
+    // and unconditionally, the same rule as above: a frame that cannot be read, or one whose policy
+    // throws, still refreshes the dots (so device A's `seen` clears device B's dot through the refetch).
+    // The POLICY (notify or not, re-attach or not) reads the open view, so it lives in the chat store.
+    function onThreadFrame(e: MessageEvent<string>) {
+      void qc.invalidateQueries({ queryKey: ["threads"] });
+      void qc.invalidateQueries({ queryKey: ["agents"] });
+      const frame = parseThreadFrame(e.data);
+      if (frame) applyThreadFrame(frame);
+    }
+
     // Reconcile after a reconnect: invalidate ALL React Query caches (settings, integrations,
     // agents, skills, …) since any of them could have changed during the drop, and trigger the
     // chat reducer to reload too (it's not a React Query consumer). Disabled-by-tab queries
     // just become stale and refetch when their tab next becomes active — no wasted requests.
+    // The unfiltered invalidation already covers the `thread` frame's two keys (`['threads']`,
+    // `['agents']` — every `thread` frame missed during the drop): no second call for them.
     function reconcileAfterReconnect() {
       void qc.invalidateQueries();
       // Reload + probe-for-a-live-turn (D39): a feed reconnect usually means the chat stream died
@@ -271,6 +320,7 @@ export function useEventStream(): void {
       });
 
       es.addEventListener("event", onEvent);
+      es.addEventListener("thread", onThreadFrame);
     }
 
     // F16 — global React Query cache observer as a second connection-health signal. The

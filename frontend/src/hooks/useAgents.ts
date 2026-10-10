@@ -4,6 +4,7 @@ import { del, getJSON, putBytes, putJSON } from "../api/client";
 import { DEFAULT_AGENT } from "../lib/agentSlug";
 import { beginAgentsLoad, installAgents, loadAgents } from "../lib/composer";
 import type { Privilege } from "../lib/privilege";
+import { leaveDeletedHome } from "../store/chat";
 import { pushToast } from "../store/toast";
 
 export type { Privilege }; // re-export so existing `import { Privilege } from "../hooks/useAgents"` keeps working
@@ -48,7 +49,7 @@ export interface CompactionCfg {
 export interface AgentDef {
   name: string; // slug = folder name; the stable /agent id
   title: string; // optional display name (UI only); "" → show the slug
-  description: string; // short routing summary the auto-router matches against (7e-g); persona stays in SOUL.md
+  description: string; // one-line subtitle (gallery card + editor header); persona stays in SOUL.md
   prompt: string; // persona = SOUL.md (read-only here; edited via the soul endpoint)
   prompt_append: string;
   inherit_append: boolean;
@@ -89,8 +90,6 @@ export interface AgentSectionCfg {
   default_title: string;
   global_subagent_limit: number;
   subagent_clamp_privilege: boolean;
-  auto_rotate: boolean; // auto-route a turn to the best-matching specialist when no /agent is pinned (7e-g)
-  auto_rotate_min_overlap: number; // min matching tokens for an auto-route pick
   streaming: "auto" | "on" | "off"; // dual-mode chat delivery (D17): on=always SSE, off=always buffered, auto=honor client
   compaction: CompactionCfg; // D42 — the GLOBAL default compaction knobs (per-agent overrides stay YAML-only)
 }
@@ -105,8 +104,6 @@ export function pickAgentSection(section: Partial<AgentSectionCfg> | undefined):
     default_title: section?.default_title ?? "",
     global_subagent_limit: section?.global_subagent_limit ?? 6,
     subagent_clamp_privilege: section?.subagent_clamp_privilege ?? true,
-    auto_rotate: section?.auto_rotate ?? false,
-    auto_rotate_min_overlap: section?.auto_rotate_min_overlap ?? 2,
     streaming: section?.streaming ?? "auto",
     // D42/D60 — global compaction defaults (per-agent overrides stay YAML-only). Defaults mirror
     // CompactionCfg's backend defaults; only these knobs are surfaced.
@@ -165,6 +162,18 @@ export interface AgentSummary {
    *  agent whose folder will not load) — the same empty-string sentinel `voice` uses — and reads as
    *  "not conversational". */
   duties: "agent" | "conversational" | "";
+  /** The agent's LIVE STATUS (D84 R25, §7 — backend `_roster_status`): the OR of its non-archived
+   *  conversations' flags, the same three `ThreadSummary` carries (`_STATUS_FIELDS`); all `false` for an
+   *  agent with no conversations. The roster dots render it through `hooks/useThreads#threadDot` (the
+   *  sheet's states and priority). Optional for the `summaries` reason below (a pre-S2a response, a mock). */
+  status?: AgentStatus;
+}
+
+/** `summaries[name].status` exactly as the server sends it (`{running, awaiting, unread}`). */
+export interface AgentStatus {
+  running: boolean;
+  awaiting: boolean;
+  unread: boolean;
 }
 
 /** `GET /api/agents` — the names, the resolved default, whether a default is CONFIGURED, and one
@@ -172,8 +181,8 @@ export interface AgentSummary {
  *
  *  `default` is what a bare thread RESOLVES to — the root when nothing is set; `default_set` says whether
  *  the owner SET one (`agent.default_agent` non-empty, D75 amendment). The two differ exactly when
- *  nothing is set: `default: "default", default_set: false`. The gallery's pill and `/new`'s tandem rule
- *  read `default_set`; the tools menu's default row and the backdrop's fallback read `default`.
+ *  nothing is set: `default: "default", default_set: false`. The gallery's pill reads `default_set`; the
+ *  tools menu's default row, the backdrop's fallback and every `/new`/thread-less home read `default`.
  *
  *  `summaries` is declared OPTIONAL for the reason the media wire fields are: a client can be handed a
  *  pre-D70 response (a service-worker cache from before an update, an e2e mock) and every consumer
@@ -207,7 +216,8 @@ export function rosterNames(list: AgentListing | undefined): string[] {
  *
  *  Every read is also INSTALLED into routing's module copy (`lib/composer#installAgents`, the
  *  `loadProviders` → `setAttachmentInfo` precedent): this query retries and refetches on focus, so it is
- *  what heals `/new`'s tandem rule on the phone after a failed import-time `loadAgents`. */
+ *  what heals routing's roster (`lib/roster`) on the phone after a failed import-time `loadAgents`, and
+ *  how a delete made on ANOTHER device reaches this one's roster sweep (D84 N2). */
 export function useAgentRoster() {
   return useQuery<AgentListing>({
     queryKey: ["agents"],
@@ -311,6 +321,16 @@ export function useImportAgent() {
  *  so it is named now rather than discovered then. Every field optional: an older server answers with
  *  no body at all, and the toast then says only what it always said. */
 export interface AgentDeleteReport {
+  /** The deleted slug (the route echoes it) — names the memory dir a failed step left. */
+  name?: string;
+  /** `true` without `?conversations=true`; WITH it, how many conversations went (D84 F6). */
+  deleted?: boolean | number;
+  /** The cascade's filesystem steps (D84 §4 step 3 — `?conversations=true` only): each `"ok"`,
+   *  `"absent"` (nothing was there), `"kept"` (`memory` only — a custom `memory_dir`, ISS-24), or the
+   *  step's ERROR — not rolled back, and a re-run finishes it ("delete again to finish"). */
+  folder?: string;
+  memory?: string;
+  attachments?: string;
   removed?: string[];
   /** `memory` = a CUSTOM `memory_dir` the delete deliberately LEFT in place (only the default
    *  `memories/agents/<slug>` is removed) — usually empty. */
@@ -318,14 +338,46 @@ export interface AgentDeleteReport {
   broken?: { automations?: string[] };
 }
 
-/** The delete's toast, from its report. Two clauses ask the owner to act — a broken automation (repoint
- *  it) and memories left on disk (the confirm promised the memory folder goes; a custom one did not) —
- *  so a report carrying either makes the toast STICKY: a 3 s toast is not how either should be learned. */
-export function deleteToast(report: AgentDeleteReport | undefined): {
+/** A step answer that is NOT a failure: done, nothing there, or a custom memory dir left by design. */
+const STEP_FINE = new Set(["ok", "absent", "kept"]);
+const stepFailed = (v: string | undefined): v is string =>
+  typeof v === "string" && !STEP_FINE.has(v);
+
+/** The delete's toast, from its report. Three clauses ask the owner to act — a broken automation
+ *  (repoint it), memories left on disk (the confirm promised the memory folder goes; a custom one did
+ *  not), and a cascade step that FAILED (D84 §4 — the conversations are gone but the folder ("delete
+ *  again to finish"), the memory dir (named) or an attachment dir (the boot sweep's) is not) — so a report carrying any makes the toast
+ *  STICKY: a 3 s toast is not how either should be learned. `deleted` (a number with the cascade) says
+ *  how many conversations went; `uncounted` = the count read failed, so the second confirm was never
+ *  asked and the conversations were left (the delete still ran — it says so). */
+export function deleteToast(
+  report: AgentDeleteReport | undefined,
+  opts?: { uncounted?: boolean },
+): {
   text: string;
   sticky: boolean;
 } {
-  const parts = ["Agent removed"];
+  // What a failed step asks of the owner differs (F1, D84 §4 step 4): only a FOLDER failure leaves a row
+  // to delete again (the re-run also finishes the memory dir); once the folder went the agent is off the
+  // roster, so a memory dir it left is named for the owner, and an attachment dir — which no re-run can
+  // name, its row is gone — is reclaimed by the boot sweep.
+  const folderFailed = stepFailed(report?.folder);
+  const failed: string[] = [];
+  if (folderFailed)
+    failed.push(`its folder could not be removed: ${report?.folder} — delete again to finish`);
+  else if (stepFailed(report?.memory))
+    failed.push(
+      `its memory folder${report?.name ? ` memories/agents/${report.name}` : ""} was left: ${report?.memory}`,
+    );
+  if (stepFailed(report?.attachments))
+    failed.push(
+      `some attachments were left (${report?.attachments}) — reclaimed at the next start`,
+    );
+  const parts = [folderFailed ? "Agent not fully removed" : "Agent removed"];
+  if (typeof report?.deleted === "number")
+    parts.push(`${report.deleted} conversation${report.deleted === 1 ? "" : "s"} deleted`);
+  parts.push(...failed);
+  if (opts?.uncounted) parts.push("its conversations could not be counted, so none were deleted");
   const books = report?.kept?.books ?? [];
   const art = report?.kept?.art ?? [];
   const memory = report?.kept?.memory ?? [];
@@ -335,18 +387,58 @@ export function deleteToast(report: AgentDeleteReport | undefined): {
   if (memory.length > 0) parts.push(`kept memories: ${memory.join(", ")}`);
   if (automations.length > 0)
     parts.push(`automations left without an agent (repoint them): ${automations.join(", ")}`);
-  return { text: parts.join(" · "), sticky: automations.length > 0 || memory.length > 0 };
+  return {
+    text: parts.join(" · "),
+    sticky: automations.length > 0 || memory.length > 0 || failed.length > 0,
+  };
 }
 
-/** Delete a specialist agent's folder (and its default memory directory — ISS-24). */
+/** The count read's page — the route's ceiling (`limit` 1..200): the confirm's number, not the sheet's
+ *  page. A count AT the ceiling is shown as "200+" (`AgentsEditor`). */
+export const COUNT_CEILING = 200;
+
+/** How many conversations `name` HOMES (D84 R41 — the agent delete's second confirm): the length of its
+ *  `GET /api/threads?agent=<name>` list, non-archived only (an automation's rolling run thread is never in
+ *  the cascade). Throws when the read fails: the caller then asks no second confirm and sends no flag. */
+export async function countAgentConversations(name: string): Promise<number> {
+  const rows = await getJSON<unknown>(
+    `/api/threads?agent=${encodeURIComponent(name)}&limit=${COUNT_CEILING}`,
+  );
+  if (!Array.isArray(rows)) throw new Error("/api/threads?agent → not a list");
+  return rows.length;
+}
+
+/** What one agent delete asks for (the mutation variable): `conversations` = the D84 F6 cascade flag
+ *  (`?conversations=true` — the second confirm's OK); `uncounted` = the count read failed (no second
+ *  confirm, no flag — the toast says so). */
+export interface AgentDeleteRequest {
+  name: string;
+  conversations: boolean;
+  uncounted?: boolean;
+}
+
+/** Delete a specialist agent's folder (and its default memory directory — ISS-24), and — with the
+ *  flag — its conversations (D84 R41/F6, one request, server-side). A 409 (one of them has a reply
+ *  running: NOTHING was deleted) toasts the server's own sentence (B18). On success:
+ *    · the roster refreshes (`invalidateAgents` — another device's responder/home sweep rides its own
+ *      roster refresh, N2/M7; this device's responder arm is the same sweep);
+ *    · N3 — when the deleted agent was the OPEN conversation's HOME, this device moves to the configured
+ *      default's latest AT ONCE (`leaveDeletedHome`; latched in a call, M8) — on BOTH branches of the
+ *      second confirm and on the no-count path: the conversation is gone or orphaned either way. No
+ *      "deleted" toast — the delete's own toast speaks. */
 export function useDeleteAgent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => del<AgentDeleteReport | undefined>(`/api/agents/${name}`),
-    onSuccess: (report, name) => {
+    mutationFn: ({ name, conversations }: AgentDeleteRequest) =>
+      del<AgentDeleteReport | undefined>(
+        `/api/agents/${encodeURIComponent(name)}${conversations ? "?conversations=true" : ""}`,
+      ),
+    onSuccess: (report, { name, uncounted }) => {
       invalidateAgents(qc, name);
-      const { text, sticky } = deleteToast(report);
+      void qc.invalidateQueries({ queryKey: ["threads"] }); // its sheet (and any cached list) is gone
+      const { text, sticky } = deleteToast(report, { uncounted });
       pushToast(text, "ok", { sticky });
+      leaveDeletedHome(name);
     },
     onError: (e: Error) => pushToast(e.message || "Remove failed", "err"),
   });

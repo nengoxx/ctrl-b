@@ -7,12 +7,13 @@ owner, and it is written the way the agent loop writes every other assistant tur
 (`actor=AGENT` + the resolved agent name) so attribution and the who-line read correctly.
 
 ONE helper, called from exactly the two enumerated INTERACTIVE creation seams (§4.2): the explicit
-new-thread endpoint and the chat endpoint's auto-created thread, the latter only AFTER
-`_auto_route_agent` has resolved who the turn belongs to — plus one REOPEN seam (ISS-49): `PUT
-/threads/{id}/opening`, which replaces a still-FRESH thread's opening (pin + greeting) when the owner
-picks another agent before saying anything. It re-seats a thread one of the two creation seams opened,
-so the headless rule below is untouched. Automation and subagent threads are
-ruled out and reach this module from nowhere — a headless run wants no greeting in its transcript.
+new-thread endpoint and the chat endpoint's auto-created thread, the latter in its HOME agent's
+voice (D84: that mint is pinned to the configured default, whoever answers the turn). There is no
+third seam: ISS-49's opening re-seat (`PUT /threads/{id}/opening`) was deleted with D84 R27 — a
+conversation's home agent is written once at mint and never moves, so its opening never changes
+hands (the `alt_greetings` picker re-adds a route, for the SAME agent, when it is built). Automation
+and subagent threads are ruled out and reach this module from nowhere — a headless run wants no
+greeting in its transcript.
 
 **Compaction, by design:** the seeded message is ordinary history, so a long thread's compactor may
 fold it into the summary like any other old turn. That is correct — the head's persona carries the
@@ -32,11 +33,16 @@ if TYPE_CHECKING:
     from app.config import Settings
     from app.domain.agent import AgentDef
     from app.domain.conversation import Thread
-    from app.services.conversation import MessageRepo
+    from app.services.conversation import MessageRepo, ThreadRepo
 
 
 async def seed_greeting(
-    messages: MessageRepo, settings: Settings, thread: Thread, agent: AgentDef
+    messages: MessageRepo,
+    settings: Settings,
+    thread: Thread,
+    agent: AgentDef,
+    *,
+    threads: ThreadRepo | None = None,
 ) -> Message | None:
     """Persist `agent`'s greeting as the thread's opening assistant turn. Returns the message, or
     `None` when the agent has no greeting — including one that only becomes empty once its macros
@@ -50,13 +56,17 @@ async def seed_greeting(
     `{{random}}` rolls ONCE here and the roll is what the thread keeps (ST writes message 0 back
     the same way), `{{time}}` is the moment the thread opened, and `{{idle_duration}}` has no earlier
     message to measure from, so it says "just now". No salt: the thread id alone seeds the roll
-    (uuids differ per thread), and the salt is the session's, minted in one place."""
+    (uuids differ per thread), and the salt is the session's, minted in one place.
+
+    With `threads`, a persisted greeting also lifts the thread's `seen_at` to its own `ts` (D84 §3,
+    §12.3 L2): the owner opened this conversation, so its opening is never "unread" — server-side, so a
+    greeted mint from ANY surface stays undotted without a client seen write."""
     if not agent.greeting_enabled:
         return None
     text = macros_for(agent, settings, thread=thread.id).render(agent.greeting.strip()).strip()
     if not text:
         return None
-    return await messages.add(
+    msg = await messages.add(
         Message(
             thread_id=thread.id,
             role="assistant",
@@ -65,3 +75,6 @@ async def seed_greeting(
             parts=[TextPart(text=text)],
         )
     )
+    if threads is not None:
+        await threads.set_seen(thread.id, msg.ts)
+    return msg

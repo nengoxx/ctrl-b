@@ -194,9 +194,10 @@ def test_drains_at_loop_top_before_next_model_call_fifo() -> None:
 
         # The steered user rows are persisted BEFORE the second model call saw the payload.
         assert snap["users"] == ["hi", "s1", "s2"]
-        # The second model call's assembled messages carry them as user turns.
+        # The second model call's assembled messages carry them — as ONE user turn: two adjacent owner
+        # rows are a run, and a run folds into one message (D84 §8, Phase 27 S4).
         second_users = [m["content"] for m in fake.seen[1] if m.get("role") == "user"]
-        assert "s1" in second_users and "s2" in second_users
+        assert "s1\n\ns2" in second_users
         # steer.applied FIFO, and both precede the SECOND message.start.
         applied = [e for e in events if e.event == "steer.applied"]
         assert [e.data["text"] for e in applied] == ["s1", "s2"]  # FIFO

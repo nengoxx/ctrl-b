@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 
+import { ChatHeaderActions } from "../../components/ChatHeaderActions";
 import { ChatThread } from "../../components/ChatThread";
-import { PrivilegeChip } from "../../components/PrivilegeChip";
 import { useActiveBackdrop } from "../../hooks/useActiveBackdrop";
 import { useAgentChat } from "../../hooks/useAgentChat";
 import { useFocalPosition } from "../../hooks/useFocalPosition";
@@ -382,16 +382,15 @@ export function GachaAgent({ active }: { active: boolean }) {
         <GachaOracle fade={oracleFade} art={art} oracleRef={oracleRef} anchorRef={anchorRef} />
       )}
       {/* The kit's own `.sec` header, exactly as AgentTab and FrontierAgent render it (owner ruling, G3
-          round 2). The first pass gave the privilege chip a bespoke right-aligned strip of its own, which
-          put a shared chat control somewhere it is in no other theme AND parked it in a z-context of its
-          own making — the dropdown then opened UNDER the thread. Shared chat chrome renders, positions
-          and stacks the same everywhere; the theme's contribution is paint, not placement. */}
+          round 2), its action cluster the shared `ChatHeaderActions` (D84 §7). The first pass gave the
+          privilege chip a bespoke right-aligned strip of its own, which put a shared chat control somewhere
+          it is in no other theme AND parked it in a z-context of its own making — the dropdown then opened
+          UNDER the thread. Shared chat chrome renders, positions and stacks the same everywhere; the theme's
+          contribution is paint, not placement. */}
       <div className="sec">
         <span className="num">02</span>
         <b>Chat</b>
-        <span className="right">
-          <PrivilegeChip />
-        </span>
+        <ChatHeaderActions />
       </div>
       <ChatThread active={active} chat={chat} emptyState={<GachaEmptyState />} />
     </div>

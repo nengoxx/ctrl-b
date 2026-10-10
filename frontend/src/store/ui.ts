@@ -293,18 +293,52 @@ export function consumeTabParam(search: string): Tab | null {
   return raw !== null && TABS.includes(raw) ? (raw as Tab) : null;
 }
 
+/** A conversation id as the server mints it (`Thread.id` = a uuid4's hex) — the ONE shape check every
+ *  door a conversation id crosses from outside this realm passes through (the `?thread=` param below, a
+ *  notification tap's `data.thread`; `public/notify-sw.js` restates it, being a plain worker script). */
+export function isThreadId(v: unknown): v is string {
+  return typeof v === "string" && /^[0-9a-f]{32}$/.test(v);
+}
+
+/** Parse a `?thread=` query param (Phase 27 S10, D84 §5 — the dead-page arm of a notification tap: the
+ *  worker opens `/?tab=agent&thread=<id>`), returning it ONLY when it is a conversation id. Pure + exported
+ *  for tests; the boot application is below. */
+export function consumeThreadParam(search: string): string | null {
+  const raw = new URLSearchParams(search).get("thread");
+  return isThreadId(raw) ? raw : null;
+}
+
+/** The tapped conversation, parked by the boot below for the chat's boot (`store/chat#initChat`) — which
+ *  reads it ONCE through `takeBootThread`. A module slot, not UI state: it is an instruction for this
+ *  open, never persisted, and this store must not import the chat store (the edge runs chat → ui). */
+let bootThread: string | null = null;
+
+/** Return the tapped conversation id the boot parked (if any) and clear it — one reader, one read. */
+export function takeBootThread(): string | null {
+  const t = bootThread;
+  bootThread = null;
+  return t;
+}
+
 // Apply it BEFORE the first `applyBodyAttrs` so the boot paint already carries the right `data-tab` —
 // and deliberately WITHOUT `setUI`: the URL is an instruction for THIS open, not a preference change.
 // The persisted last-used tab stays exactly as the owner left it, so the next ordinary launch is
 // unaffected. The param is then stripped (rest of the URL preserved) so a reload or a shared link
-// doesn't re-force the tab. Wrapped like `defaultMotion()` above: this runs at module scope, where a
-// jsdom/test environment may be missing `location`/`history` pieces, and nothing here is worth a crash.
+// doesn't re-force the tab. `?thread=` rides the same way (S10): parked for the chat's boot when it is a
+// conversation id, and stripped whenever present (an invalid one too — it is an instruction for this
+// open, and a reload must not carry it). Wrapped like `defaultMotion()` above: this runs at module scope,
+// where a jsdom/test environment may be missing `location`/`history` pieces, and nothing here is worth a
+// crash.
 try {
-  const forced = consumeTabParam(window.location.search);
-  if (forced !== null) {
-    state = { ...state, tab: forced };
+  const search = window.location.search;
+  const forced = consumeTabParam(search);
+  const hasThread = new URLSearchParams(search).has("thread");
+  bootThread = consumeThreadParam(search);
+  if (forced !== null) state = { ...state, tab: forced };
+  if (forced !== null || hasThread) {
     const url = new URL(window.location.href);
-    url.searchParams.delete("tab");
+    if (forced !== null) url.searchParams.delete("tab");
+    url.searchParams.delete("thread");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }
 } catch {

@@ -12,7 +12,7 @@ import {
   useChat,
   type SendOutcome,
 } from "../../src/store/chat";
-import { clearDraft, getDraft } from "../../src/store/composer";
+import { getDraft, pruneSlots } from "../../src/store/composer";
 
 // store/chat — THE LIVE-TURN SEAM (D71 §4.2's council F3) and the two things built on it: the send
 // OUTCOME (F8) and normalize-on-202 (§4.5's recorded pre-existing defect). Driven through the real
@@ -88,8 +88,8 @@ function routes(map: Record<string, (url: string) => Response | Promise<Response
 }
 
 beforeEach(() => {
-  resetToThreadless(null);
-  clearDraft();
+  resetToThreadless();
+  pruneSlots(() => false); // every conversation's draft (Phase 27 S8: per conversation; ids are reused)
 });
 
 describe("the live-turn seam (F3)", () => {

@@ -5,7 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // the gate: the pure `shouldNotify` matrix, then the mounted hook end-to-end (a bus publish → a
 // browser notification, or not) including the replay de-dupe that keeps a re-attached turn silent.
 
-const h = vi.hoisted(() => ({ prefs: undefined as NotificationPrefsLike }));
+const h = vi.hoisted(() => ({
+  prefs: undefined as NotificationPrefsLike,
+  /** Is a call up (`store/liveCall#callLive`)? */
+  call: false,
+  /** The Specific door (`store/chat#openThread`) — a tap's whole effect on the chat store. Its own
+   *  behaviour is pinned in the store suites (`chatOpenThread`, `chatFrames`). */
+  openThread: vi.fn((_id: string, _home?: string) => Promise.resolve(true)),
+}));
 
 /** Whatever the mocked `useNotificationPrefs` should hand back this test — including `undefined`
  *  (the not-yet-loaded state the gate must survive). */
@@ -19,6 +26,8 @@ type NotificationPrefsLike =
 vi.mock("../../src/hooks/useNotificationPrefs", () => ({
   useNotificationPrefs: () => ({ data: h.prefs }),
 }));
+vi.mock("../../src/store/liveCall", () => ({ callLive: () => h.call }));
+vi.mock("../../src/store/chat", () => ({ openThread: h.openThread }));
 
 import {
   applyNotificationFocus,
@@ -93,6 +102,8 @@ function setVisibility(state: DocumentVisibilityState) {
 beforeEach(() => {
   shown = [];
   h.prefs = ALL_ON;
+  h.call = false;
+  h.openThread.mockClear();
   installNotificationApi("granted");
   setVisibility("hidden");
 });
@@ -438,5 +449,114 @@ describe("the service-worker notification-click message", () => {
     } finally {
       removeSwContainer();
     }
+  });
+});
+
+// ── Phase 27 S10 — the tap opens THE conversation (D84 §5 O2, the four seams) ───────────────────────
+
+const T = "a2".repeat(16); // a conversation id: a uuid4's hex
+
+describe("the tap — the conversation it names (O2)", () => {
+  it("seam ②: `show()` puts `thread` + `home` into `data` beside `focus` + `key`", () => {
+    renderHook(() => useForegroundNotifications());
+    publishNotify(
+      signal({ cls: "turn_done", key: `turn-done:${T}:t9`, thread: T, home: "lynette" }),
+    );
+    expect(shown[0].options.data).toEqual({
+      focus: "agent",
+      key: `turn-done:${T}:t9`,
+      thread: T,
+      home: "lynette",
+    });
+  });
+
+  it("(a) the constructor path's `onclick` switches to the chat tab and opens THAT conversation, home handed in", async () => {
+    vi.spyOn(window, "focus").mockImplementation(() => undefined);
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "fleet" });
+    renderHook(() => useForegroundNotifications());
+    publishNotify(signal({ thread: T, home: "lynette" }));
+    shown[0].onclick?.();
+    expect(getUI().tab).toBe("agent");
+    expect(h.openThread).toHaveBeenCalledExactlyOnceWith(T, "lynette");
+  });
+
+  it("(b) the service-worker `message` path does the same — `focus`/`thread`/`home` read off the message", async () => {
+    const sw = Object.assign(new EventTarget(), { startMessages: vi.fn() });
+    Object.defineProperty(navigator, "serviceWorker", { value: sw, configurable: true });
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "fleet" });
+    try {
+      renderHook(() => useForegroundNotifications());
+      sw.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "ctrlb:notification-click", focus: "agent", thread: T, home: "lynette" },
+        }),
+      );
+      expect(getUI().tab).toBe("agent");
+      expect(h.openThread).toHaveBeenCalledExactlyOnceWith(T, "lynette");
+    } finally {
+      delete (navigator as unknown as Record<string, unknown>).serviceWorker;
+    }
+  });
+
+  it("a tap during a LIVE CALL only switches the tab (R20, B10) — no conversation switch", async () => {
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "fleet" });
+    h.call = true;
+    applyNotificationFocus("agent", T, "lynette");
+    expect(getUI().tab).toBe("agent");
+    expect(h.openThread).not.toHaveBeenCalled();
+  });
+
+  it("a `thread` that is not a conversation id only switches the tab — never trusted", async () => {
+    const { setUI, getUI } = await import("../../src/store/ui");
+    for (const bad of [
+      "not-hex",
+      T.toUpperCase(),
+      T.slice(1),
+      `${T}0`,
+      `../${T}`,
+      { id: T },
+      [T],
+      42,
+      null,
+    ]) {
+      setUI({ tab: "fleet" });
+      applyNotificationFocus("agent", bad, "lynette");
+      expect(getUI().tab).toBe("agent");
+    }
+    expect(h.openThread).not.toHaveBeenCalled();
+  });
+
+  it("a `home` that is not a string is not handed in — the door that knew nothing (the late record read repairs it)", () => {
+    applyNotificationFocus("agent", T, { slug: "lynette" });
+    applyNotificationFocus("agent", T, "");
+    applyNotificationFocus("agent", T);
+    expect(h.openThread.mock.calls).toEqual([
+      [T, undefined],
+      [T, undefined],
+      [T, undefined],
+    ]);
+  });
+
+  it("④ only an AGENT destination opens the conversation — `fleet` or a bogus focus never does", async () => {
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "agent" });
+    applyNotificationFocus("fleet", T, "lynette");
+    expect(getUI().tab).toBe("fleet"); // the tab, and nothing behind it
+    setUI({ tab: "utils" });
+    applyNotificationFocus("bogus", T, "lynette");
+    applyNotificationFocus(undefined, T, "lynette");
+    expect(getUI().tab).toBe("utils");
+    expect(h.openThread).not.toHaveBeenCalled();
+  });
+
+  it("a fleet-side signal names no conversation — its tap opens none", async () => {
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "agent" });
+    applyNotificationFocus("fleet");
+    expect(getUI().tab).toBe("fleet");
+    expect(h.openThread).not.toHaveBeenCalled();
   });
 });

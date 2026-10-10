@@ -20,7 +20,7 @@ import asyncio
 import json
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,6 +39,8 @@ from app.domain.conversation import (
     SourceInfo,
     TextPart,
     Thread,
+    ThreadPreview,
+    ThreadSummary,
 )
 from app.domain.enums import Actor, RunState
 
@@ -47,6 +49,31 @@ _PARTS = TypeAdapter(list[Part])
 
 def _iso(dt: datetime) -> str:
     return dt.isoformat()
+
+
+def _collapse(text: str, limit: int) -> str:
+    """Whitespace-collapsed (every run of whitespace, newlines included, becomes one space), stripped,
+    cut at `limit` characters — the D84 label/preview text shape."""
+    return " ".join(text.split())[:limit]
+
+
+#: D84 §4 — how much of a thread's text its list row carries.
+_LABEL_CHARS = 60
+_PREVIEW_CHARS = 120
+
+#: The PARKED call states (D84 `awaiting`): a confirm or a question suspended on the owner. Mirrors the
+#: client's `notifyRestoredAwaiting` (`frontend/src/store/chat.ts`) and turns.py's
+#: `_SUSPEND_CALL_STATES` — kept local, the session.py precedent, so this repo never imports the turn
+#: machinery.
+_PARKED_CALL_STATES = (RunState.AWAITING_CONFIRM, RunState.AWAITING_ANSWER)
+
+#: A `messages_fts` row whose text is not blank (NULL — a tool-only row — fails it too). The FTS text is
+#: the row's concatenated `TextPart`s (migration 3), so it is the same text the bubble shows.
+#: Accepted residual: SQLite's `trim` knows only the ASCII blanks listed, so a row of ONLY other
+#: whitespace (U+3000, U+00A0, \v, \f) passes it — as the newest text row it yields `preview = None`
+#: (and as the first user row `label = None`) instead of falling back to the next older row.
+#: Unreachable from the composer, which trims.
+_FTS_HAS_TEXT = "trim(f.text, char(32, 9, 10, 13)) != ''"
 
 
 def _fts_query(raw: str) -> str:
@@ -67,9 +94,13 @@ class ThreadRepo:
         self._home = home
 
     async def create(self, thread: Thread) -> Thread:
+        """Insert the thread. `seen_at` defaults to `created_at` (D84): a new thread has nothing the
+        owner has not seen, so it is never unread for nothing."""
+        if thread.seen_at is None:
+            thread.seen_at = thread.created_at
         await self._db.execute(
-            "INSERT INTO threads (id, title, agent, created_at, updated_at, archived) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO threads (id, title, agent, created_at, updated_at, archived, seen_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 thread.id,
                 thread.title,
@@ -77,6 +108,7 @@ class ThreadRepo:
                 _iso(thread.created_at),
                 _iso(thread.updated_at),
                 int(thread.archived),
+                _iso(thread.seen_at),
             ),
         )
         return thread
@@ -86,25 +118,171 @@ class ThreadRepo:
             "UPDATE threads SET updated_at = ? WHERE id = ?", (_iso(updated_at), thread_id)
         )
 
-    async def set_agent(self, thread_id: str, agent: str, updated_at: datetime) -> None:
-        """Re-pin the thread (D11) — the ONE writer after `create`, for the opening re-seat (ISS-49:
-        `PUT /threads/{id}/opening`, which calls it inside its own transaction). `updated_at` moves with
-        it: the re-seated thread is the one a reload should hydrate (`initChat` opens the newest)."""
-        await self._db.execute(
-            "UPDATE threads SET agent = ?, updated_at = ? WHERE id = ?",
-            (agent, _iso(updated_at), thread_id),
-        )
-
     async def get(self, thread_id: str) -> Thread | None:
         rows = await self._db.query("SELECT * FROM threads WHERE id = ?", (thread_id,))
         return self._row(rows[0]) if rows else None
 
-    async def list(self, *, include_archived: bool = False) -> list[Thread]:
-        sql = "SELECT * FROM threads"
+    async def set_title(self, thread_id: str, title: str | None) -> bool:
+        """Rename the thread (D84 PATCH): trimmed; `""`/`None` clears it (the list then labels it from
+        its first user row). Returns whether a row matched. Unguarded on purpose — a title is neither
+        model context nor anything a running turn writes."""
+        rows = await self._db.query("SELECT id FROM threads WHERE id = ?", (thread_id,))
+        if not rows:
+            return False
+        await self._db.execute(
+            "UPDATE threads SET title = ? WHERE id = ?", ((title or "").strip() or None, thread_id)
+        )
+        return True
+
+    async def set_seen(self, thread_id: str, seen_at: datetime, *, now: datetime | None = None) -> bool:
+        """Mark the thread seen up to `seen_at` — the `ts` of the newest row the client's view holds
+        (D84 §4). Stored as `max(stored, min(seen_at, now))`: MONOTONIC (a stale or out-of-order write
+        never moves it back) and CLAMPED to the present (a future value cannot pre-read a reply that has
+        not landed yet). Rendered through `_iso` in UTC, like `ts`, so the unread predicate stays a plain
+        TEXT comparison. Returns whether `seen_at` MOVED — the caller publishes only then — read from
+        the guarded UPDATE's OWN row count, never the lock-free pre-read: a write interleaving between
+        the two (another `set_seen` advancing the floor past `target`, a delete) leaves the UPDATE
+        matching nothing, and that is a `False`. The pre-read is only the cheap early-out (an unknown id,
+        a floor already at or past `target`). `seen_at`/`now` must be timezone-aware."""
+        if seen_at.tzinfo is None or (now is not None and now.tzinfo is None):
+            raise ValueError("set_seen needs timezone-aware datetimes")
+        target = min(seen_at, now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        rows = await self._db.query("SELECT seen_at FROM threads WHERE id = ?", (thread_id,))
+        if not rows:
+            return False
+        if (stored := rows[0]["seen_at"]) is not None:
+            prior = datetime.fromisoformat(stored)
+            if (prior if prior.tzinfo is not None else prior.replace(tzinfo=timezone.utc)) >= target:
+                return False
+        value = _iso(target)
+        # The guard repeats the comparison in SQL so a write that interleaves between the read and this
+        # UPDATE can never move the floor backwards — and its row count is the answer.
+        moved = await self._db.execute(
+            "UPDATE threads SET seen_at = ? WHERE id = ? AND (seen_at IS NULL OR seen_at < ?)",
+            (value, thread_id, value),
+        )
+        return moved > 0
+
+    async def list(
+        self,
+        *,
+        include_archived: bool = False,
+        agent: str | None = None,
+        limit: int | None = None,
+        before: tuple[datetime, str] | None = None,
+    ) -> list[Thread]:
+        """Threads newest-first (`updated_at DESC, id DESC` — the `id` makes the order total, so a
+        keyset page never skips or repeats a row sharing an `updated_at`). `agent` = an EXACT home
+        match (D84); `limit` caps the page; `before = (updated_at, id)` of the previous page's last row
+        is the keyset cursor (rows strictly after it in this order). The cursor's instant is rendered
+        through `_iso` in UTC — the stored text — and compared as text, as `updated_at` is ordered."""
+        where: list[str] = []
+        params: list[Any] = []
         if not include_archived:
-            sql += " WHERE archived = 0"
-        sql += " ORDER BY updated_at DESC"
-        return [self._row(r) for r in await self._db.query(sql)]
+            where.append("archived = 0")
+        if agent is not None:
+            where.append("agent = ?")
+            params.append(agent)
+        if before is not None:
+            where.append("(updated_at, id) < (?, ?)")
+            params += [_iso(before[0].astimezone(timezone.utc)), before[1]]
+        sql = "SELECT * FROM threads"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY updated_at DESC, id DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        return [self._row(r) for r in await self._db.query(sql, tuple(params))]
+
+    async def summaries(
+        self, rows: Sequence[Thread], running_ids: Collection[str]
+    ) -> dict[str, ThreadSummary]:
+        """The five D84 list fields for each thread in `rows`, keyed by id — the ONLY definition of
+        them (CONVERSATIONS_PLAN §4; the per-agent list and the roster status both read it).
+
+        - `label` — the title; else the first line of the FIRST user row with text, whitespace-collapsed,
+          cut at 60; else `None`.
+        - `preview` — the NEWEST user/assistant row with text (tool-only rows skipped), cut at 120.
+        - `running` — `id in running_ids`: the caller owns the live-turn state; the repo never reads it.
+        - `awaiting` — a call parked on a confirm/question that came AFTER the thread's last user row —
+          the boundary `notifyRestoredAwaiting` walks back to. No TTL: an abandoned call is by
+          definition followed by an owner row, so it drops out; a live one stays until answered (the
+          resume flips its durable state).
+        - `unread` — an `actor = agent` assistant row newer than `seen_at`. The `!cmd` exec pair is
+          `actor = user`, so it never counts.
+
+        Bounded: four set-based reads over `thread_id IN (…)` for the page, never one per thread.
+        Texts come from `messages_fts` (by `rowid`), which already holds each row's `TextPart` text."""
+        if not rows:
+            return {}
+        ids = [t.id for t in rows]
+        marks = ", ".join("?" for _ in ids)
+        out = {t.id: ThreadSummary(running=t.id in running_ids) for t in rows}
+
+        untitled = [t.id for t in rows if not t.title]
+        for t in rows:
+            if t.title:
+                out[t.id].label = t.title
+        if untitled:
+            u_marks = ", ".join("?" for _ in untitled)
+            for r in await self._db.query(
+                "SELECT thread_id, text FROM ("
+                "  SELECT m.thread_id AS thread_id, f.text AS text, ROW_NUMBER() OVER ("
+                "    PARTITION BY m.thread_id ORDER BY m.ts ASC, m.rowid ASC) AS rn"
+                "  FROM messages m JOIN messages_fts f ON f.rowid = m.rowid"
+                f"  WHERE m.thread_id IN ({u_marks}) AND m.role = 'user' AND {_FTS_HAS_TEXT}"
+                ") WHERE rn = 1",
+                tuple(untitled),
+            ):
+                # The first NON-BLANK line of that row (Python's notion of blank — wider than the SQL
+                # test's, see `_FTS_HAS_TEXT`); a row blank to Python labels `None`, never raises.
+                first = next((ln for ln in r["text"].splitlines() if ln.strip()), "")
+                out[r["thread_id"]].label = _collapse(first, _LABEL_CHARS) or None
+
+        for r in await self._db.query(
+            "SELECT thread_id, role, agent, text, ts FROM ("
+            "  SELECT m.thread_id AS thread_id, m.role AS role,"
+            "    CASE WHEN m.role = 'assistant' THEN m.agent END AS agent, f.text AS text, m.ts AS ts,"
+            "    ROW_NUMBER() OVER (PARTITION BY m.thread_id ORDER BY m.ts DESC, m.rowid DESC) AS rn"
+            "  FROM messages m JOIN messages_fts f ON f.rowid = m.rowid"
+            f"  WHERE m.thread_id IN ({marks}) AND m.role IN ('user', 'assistant') AND {_FTS_HAS_TEXT}"
+            ") WHERE rn = 1",
+            tuple(ids),
+        ):
+            text = _collapse(r["text"], _PREVIEW_CHARS)
+            if text:
+                out[r["thread_id"]].preview = ThreadPreview(
+                    role=r["role"], agent=r["agent"], text=text, ts=r["ts"]
+                )
+
+        states = ", ".join("?" for _ in _PARKED_CALL_STATES)
+        for r in await self._db.query(
+            "WITH last_owner AS ("
+            "  SELECT thread_id, ts, rid FROM ("
+            "    SELECT thread_id, ts, rowid AS rid, ROW_NUMBER() OVER ("
+            "      PARTITION BY thread_id ORDER BY ts DESC, rowid DESC) AS rn"
+            f"    FROM messages WHERE thread_id IN ({marks}) AND role = 'user'"
+            "  ) WHERE rn = 1)"
+            " SELECT DISTINCT m.thread_id AS thread_id"
+            " FROM messages m LEFT JOIN last_owner o ON o.thread_id = m.thread_id"
+            f" WHERE m.thread_id IN ({marks})"
+            "   AND (o.ts IS NULL OR (m.ts, m.rowid) > (o.ts, o.rid))"
+            "   AND EXISTS (SELECT 1 FROM json_each(m.parts)"
+            "     WHERE json_extract(value, '$.type') = 'tool_call'"
+            f"     AND json_extract(value, '$.state') IN ({states}))",
+            (*ids, *ids, *(s.value for s in _PARKED_CALL_STATES)),
+        ):
+            out[r["thread_id"]].awaiting = True
+
+        for r in await self._db.query(
+            f"SELECT t.id AS id FROM threads t WHERE t.id IN ({marks}) AND EXISTS ("
+            "  SELECT 1 FROM messages m WHERE m.thread_id = t.id"
+            "  AND m.role = 'assistant' AND m.actor = ? AND m.ts > t.seen_at)",
+            (*ids, Actor.AGENT.value),
+        ):
+            out[r["id"]].unread = True
+        return out
 
     async def latest(self) -> Thread | None:
         threads = await self.list()
@@ -137,6 +315,26 @@ class ThreadRepo:
             await asyncio.to_thread(remove_thread_attachments, self._home, thread_id)
         return True
 
+    async def delete_many(self, ids: Sequence[str]) -> int:
+        """Delete these threads and everything hanging off them in ONE transaction. Returns how many
+        rows went.
+
+        The agent cascade's half of `delete` (D84 F6, `DELETE /api/agents/{name}?conversations=true`):
+        the same cascade — `messages` (`ON DELETE CASCADE`), their FTS rows (the `messages_fts_ad`
+        trigger) and their alternates — for a whole set at once, so the database side of the cascade is
+        all-or-nothing: either every conversation goes or none does.
+
+        **The attachment dirs are NOT removed here** — unlike `delete`. A transaction cannot cover the
+        filesystem, and a removal inside the block would run before the COMMIT it depends on; the caller
+        removes each dir AFTER this returns (it already holds the ids), best-effort, and surfaces a
+        failure. What it cannot remove is the boot sweep's: the rows are gone, so the dirs are dead to
+        `sweep_thread_dirs`'s first arm."""
+        if not ids:
+            return 0
+        marks = ", ".join("?" for _ in ids)
+        async with self._db.transaction():
+            return await self._db.execute(f"DELETE FROM threads WHERE id IN ({marks})", tuple(ids))
+
     @staticmethod
     def _row(r) -> Thread:
         return Thread(
@@ -146,6 +344,7 @@ class ThreadRepo:
             created_at=r["created_at"],
             updated_at=r["updated_at"],
             archived=bool(r["archived"]),
+            seen_at=r["seen_at"],
         )
 
 
@@ -484,15 +683,6 @@ def is_anchor(m: Message) -> bool:
     """A turn OPENER: a `role="user"` row that is not a mid-turn steer (D57's marker). The same boundary
     `_seed_recall` walks back to and compaction's fold snaps to."""
     return m.role == "user" and not m.steer
-
-
-def is_owner_turn(m: Message) -> bool:
-    """A turn the OWNER took: a `role="user"` row (typed, steered, dictated — an automation's injected
-    prompt too) OR any row stamped `actor=user` — the `!cmd` exec pair persists as assistant + tool rows
-    with the owner as actor. The server twin of the client's `isUserTurn` (`frontend/src/store/chat.ts`),
-    keep the two in step: a thread with none is FRESH, and only a fresh thread's opening may be re-seated
-    (ISS-49). NB `MessageRepo.count_user_messages` counts `role='user'` only — not this predicate."""
-    return m.role == "user" or m.actor == Actor.USER
 
 
 def is_agent_row(m: Message) -> bool:

@@ -916,7 +916,7 @@ def read_page(
 # ── retention: the thread-delete hook + the boot sweep ─────────────────────────────────────────────
 
 
-def remove_thread_attachments(home: Path, thread_id: str) -> int:
+def remove_thread_attachments(home: Path, thread_id: str, *, errors: list[str] | None = None) -> int:
     """Delete one thread's attachment directory; return how many files went (§2 retention).
 
     Called by `ThreadRepo.delete`, so a deleted conversation leaves no bytes behind. Deliberately
@@ -929,6 +929,11 @@ def remove_thread_attachments(home: Path, thread_id: str) -> int:
     (`claim`) keeps the opposite rule — it may never guess where to put bytes. A store ROOT that is
     not a real directory is the same 0 (`_real_root`, MED-1): the directory this would remove is only
     the thread's while the root above it is ours.
+
+    `errors` (the D84 agent cascade, F6) SURFACES what this otherwise suppresses: each failed `unlink`,
+    a failed `rmdir`, and an `iterdir` failure on a directory that EXISTS appends one `"<name>: <why>"`
+    line (an absent directory stays the plain 0 — nothing was left behind). The return value is still
+    the count; `None` (`ThreadRepo.delete`) keeps it silent best-effort.
     """
     if _real_root(home) is None:
         return 0
@@ -940,17 +945,31 @@ def remove_thread_attachments(home: Path, thread_id: str) -> int:
         return 0
     try:
         entries = list(directory.iterdir())
-    except OSError:  # no attachments on this thread — the common case
+    except OSError as exc:  # no attachments on this thread — the common case
+        if errors is not None and directory.exists():
+            errors.append(_os_error(directory, exc))
         return 0
     removed = 0
     for p in entries:
         if is_served_file(p):
-            with contextlib.suppress(OSError):
+            try:
                 p.unlink()
+            except OSError as exc:
+                if errors is not None:
+                    errors.append(_os_error(p, exc))
+            else:
                 removed += 1
-    with contextlib.suppress(OSError):
+    try:
         directory.rmdir()
+    except OSError as exc:
+        if errors is not None:
+            errors.append(_os_error(directory, exc))
     return removed
+
+
+def _os_error(path: Path, exc: OSError) -> str:
+    """One suppressed filesystem failure as `remove_thread_attachments` surfaces it: `"<name>: <why>"`."""
+    return f"{path.name}: {exc.strerror or str(exc) or type(exc).__name__}"
 
 
 def sweep_staging(home: Path, *, max_age_s: float) -> int:

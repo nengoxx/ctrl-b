@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { ConversationsSheet } from "../../components/ConversationsSheet";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { MiniPlayer } from "../../components/MiniPlayer";
 import { NavHome, NavMenu } from "../../components/NavMenu";
@@ -440,6 +441,12 @@ export function DefaultRoot({
           machine starts exactly the way the first one did. No restart path to keep in step with mount.
           The back-guard above deliberately sits OUTSIDE that key — see its comment. */}
       {callMount !== null && <CallOverlay key={callMount} close={closeCall} />}
+      {/* THE CONVERSATIONS SHEET (D84 §7) — a ROOT sheet for the same reason as the call screen: inside the
+          chat's `.sec` header it would sit in that header's stacking context (z 1 under the `full`
+          backdrop) and paint under the composer and the app bar. BEFORE `<Toasts/>`: both are z 40, so DOM
+          order puts a toast (the sheet's failure channel) over it; confirm (50), call (55) and the prompt
+          (60) already stack above it. */}
+      <ConversationsSheet />
       <Toasts />
       <ConfirmDialog />
       <PromptModal />

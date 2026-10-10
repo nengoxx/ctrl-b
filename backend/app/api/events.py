@@ -1,5 +1,6 @@
 """Events API (Phase 2). `GET /api/events` reads the recent audit trail; `GET /api/events/stream`
-is the live SSE feed every recorded Event is published to (DESIGN.md §12).
+is the live SSE feed every recorded Event is published to (DESIGN.md §12), plus the non-persisted
+`thread` frame — a conversation's live status (D84, CONVERSATIONS_PLAN §5).
 
 The same EventBus powers the agent chat stream later; this is the fleet-activity slice. Each SSE
 message carries the Event id so a reconnecting client could resume via `Last-Event-ID` (full
@@ -19,6 +20,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
+from app.core.events import ThreadFrame
 from app.services import wake_on_connect
 
 router = APIRouter(tags=["events"])
@@ -52,6 +54,11 @@ async def stream_events(request: Request) -> EventSourceResponse:
                     event = await asyncio.wait_for(queue.get(), timeout=_KEEPALIVE_S)
                 except asyncio.TimeoutError:
                     yield {"event": "ping", "data": ""}
+                    continue
+                if isinstance(event, ThreadFrame):
+                    # A conversation's live status (D84 §5, DESIGN §12): NO `id` — never replayed; a
+                    # reconnecting client refetches its thread + agent lists instead.
+                    yield {"event": "thread", "data": event.model_dump_json()}
                     continue
                 # `output` is EXCLUDED from the live frame (Codex final round, LOW): it is the action's
                 # full (redacted, but still up to `max_output_chars`) stdout, and no stream consumer

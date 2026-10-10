@@ -1331,6 +1331,27 @@ carries the thread's `steer_queue`), `GET /api/agent/turns/{id}/stream` (re-atta
 position, depth}` (both `POST /api/agent/chat` and `POST /api/exec`), not the old 409 (D41).
 `GET /api/events/stream` (fleet activity) is a separate feed off the EventBus.
 
+**The events feed + the `thread` frame (Phase 27 S3 — D84; [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) §5;
+ruled, not yet built).** `GET /api/events/stream` renders each persisted `Event` as `event: event` with `id: <event.id>`
+(the action's `output` excluded) plus a `ping` keepalive. Phase 27 widens the EventBus to `Event | ThreadFrame` and adds a
+second, NON-persisted frame beside it — a conversation's live status:
+
+```
+event: thread             data: {thread_id, state, turn_id?, agent, chained}   # NO id: — never replayed
+```
+
+- `state ∈ {running, completed, suspended, capped, error, cancelled, seen}`; `agent` = the conversation's HOME agent
+  (`threads.agent`), never the responder; `chained` = a drain-B steer turn was spawned behind this one (the client
+  notifies on that turn's frame instead).
+- Producers: `_spawn_drain_task` (`running`, after `create_task`, `chained: false`) · its `_cleanup` (the terminal
+  `handle.terminal_status`, published LAST — after `release` and `_maybe_spawn_drain_b`) · `_drain_b_body`'s `finally` on
+  its non-handoff exits (its terminal status, else `cancelled`) · `ThreadRepo.set_seen` via `PATCH /api/threads/{id}`
+  when `seen_at` moved (`seen`, no `turn_id`).
+- Never for an archived thread (automation runs keep their `Event` + `read_at` path) and never for `!cmd` exec (it
+  never passes through `_spawn_drain_task`).
+- Consumer: `useEventStream` invalidates `['threads']` + `['agents']` on every frame; a non-chained terminal frame for a
+  thread that is not the open view feeds the F1 notification signals, named for the HOME agent (plan §5).
+
 **Chat message actions (D81, 2026-09-27).** `POST /api/agent/regenerate` `{thread_id, message_id,
 mode?, privilege?, stream?}` is an ORDINARY turn on this wire (turn kind `chat` — steer, Stop,
 re-attach, the cap and the ring all apply): the route validates the tail under the marker, then
@@ -1396,6 +1417,11 @@ interface Message { id:string; role:Role; parts:Part[]; ts:string; }
 - **Chat is *not* Query** — the thread list and each thread's messages live in `store/chat.ts`
   (fetched directly from `/api/threads[/{id}/messages]`), and a dedicated SSE reducer appends/patches
   parts by id into it; confirm/question parts render interactive controls that POST back.
+  **Amended by Phase 27 S9/S10 (D84; [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) §6 "Query vs store") — ruled,
+  not yet built:** the thread LIST becomes ordinary server state — `useQuery(['threads', agent])` in
+  `hooks/useThreads.ts` (the per-agent sheet's rows with their `label/preview/running/awaiting/unread`), and `['agents']`
+  carries each agent's `summaries[name].status` (the roster dots); both are invalidated by the `thread` frame (§12) and
+  by a local seen write. MESSAGES stay in `store/chat.ts` with the SSE reducer.
 - **UI-only state** in module-singleton stores under `src/store/` (`ui.ts`, `chat.ts`, `composer.ts`, …):
   `activeTab`, `theme`, `skyline`, `ttsAuto`, `activeThread`, composer draft — persisted to
   `localStorage` (`store/persist.ts`), mirrored to `settings.appearance`. **No zustand dep** — each store
@@ -1517,6 +1543,7 @@ registry/Protocol design rather than hoped for.
 - ✅ **Resolved — plan persistence**: the latest `task_plan` call **rides the message history** (no
   `plans` table); reload + the model's context recover it.
 - ⏳ **AgentSelector auto-rotate algorithm** (D15 #8) — seam locked (off-by-default `agent.auto_rotate`,
-  `KeywordAgentSelector` default lean); concrete algorithm decided at the 7e-g build.
+  `KeywordAgentSelector` default lean); concrete algorithm decided at the 7e-g build. *(Retires in Phase 27 S5,
+  CONVERSATIONS_PLAN §9.)*
 - ⏳ **Real idle detection** mechanism for D1 (helper agent vs heuristic) — still the hard one.
 - ⏳ **OpenAPI→TS** type generation vs hand-written types.

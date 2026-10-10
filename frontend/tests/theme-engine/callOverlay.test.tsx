@@ -91,6 +91,7 @@ vi.mock("../../src/hooks/useVoiceStatus", () => ({
 vi.mock("../../src/store/chat", () => ({
   confirmAwaiting: (): AwaitingConfirm | null => h.awaiting,
   resumeCall: h.resumeCall,
+  runAfterCall: () => undefined, // the call-teardown runner (D84 R42) — pinned in useLiveCallWiring
   useChatSlice: <T,>(sel: () => T) => sel(),
   // The two readers the captions take (both non-reactive in the real store too — the block subscribes
   // by calling them inside a slice selector, so a stub returning the current fixture is faithful).

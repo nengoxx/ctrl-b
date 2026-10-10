@@ -466,6 +466,7 @@ back to the analysis.
   **→ Done 2026-10-06:** research = [R100](./research/R100-per-agent-conversations.md); design RULED (D84,
   owner rulings R0–R46) in [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md); build = TODO Phase 27 after the
   design council's confirm rounds.
+  **→ Build started 2026-10-09 (Phase 27, plan v2.7, the `phase27` worktree branch).**
 
 ## B. Memory (configurable, pluggable)
 

@@ -19,7 +19,12 @@ interface VoiceProbe {
 }
 
 const h = vi.hoisted(() => {
-  const chat: { messages: ChatMessage[]; status: Status } = { messages: [], status: "idle" };
+  // `foreignTurn` — the visible M11 attach's mark (owner ruling 2026-10-10): the other device's turn.
+  const chat: { messages: ChatMessage[]; status: Status; foreignTurn: boolean } = {
+    messages: [],
+    status: "idle",
+    foreignTurn: false,
+  };
   const voice: VoiceProbe = {};
   const player: { id: string | null } = { id: null };
   return {
@@ -84,17 +89,18 @@ const thought = (id: string, text: string): ChatMessage =>
 /** Mount the hook the way the app does — before the turn starts, so the streaming EDGE is real. */
 function mount() {
   const view = renderHook(() => useAutoTts());
-  /** One store update: a fresh `messages` array (as every delta produces) + a status, then a render. */
-  return (status: Status, messages: ChatMessage[]) => {
+  /** One store update: a fresh `messages` array (as every delta produces) + a status, then a render.
+   *  `foreignTurn` = the store's flag for the turn (true only for a visible M11 attach). */
+  return (status: Status, messages: ChatMessage[], foreignTurn = false) => {
     act(() => {
-      h.chat = { messages, status };
+      h.chat = { messages, status, foreignTurn };
       view.rerender();
     });
   };
 }
 
 beforeEach(() => {
-  h.chat = { messages: [], status: "idle" };
+  h.chat = { messages: [], status: "idle", foreignTurn: false };
   h.ui = { ttsAuto: true };
   h.voice = { tts: true, tts_chunking: { mode: "sentence", read_along: true } };
   h.player.id = null;
@@ -296,6 +302,23 @@ describe("useAutoTts — the per-turn abandon latch", () => {
     expect(h.feed).toHaveBeenCalledTimes(2);
     step("idle", [user, said("a1", "One sentence. Two sentences.")]);
     expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "One sentence. Two sentences.", AGENT);
+  });
+
+  it("a FOREIGN turn (the visible M11 attach — `foreignTurn`) starts latched: no feed, no flush; the NEXT turn speaks again", () => {
+    // Owner ruling 2026-10-10: two devices side by side must not both speak the turn one of them sent.
+    const step = mount();
+    step("streaming", [user, said("d1", "From the desktop.")], true);
+    step("streaming", [user, said("d1", "From the desktop. Still going.")], true);
+    expect(h.feed).not.toHaveBeenCalled();
+    step("idle", [user, said("d1", "From the desktop. Still going.")], true);
+    expect(h.endTurn).not.toHaveBeenCalled();
+
+    // …the owner's own next turn (the store resets the flag at its streaming edge) reads along again.
+    const turn2 = [user, said("d1", "From the desktop. Still going."), user, said("a2", "Mine.")];
+    step("streaming", turn2);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a2", "Mine.", AGENT);
+    step("idle", turn2);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a2", "Mine.", AGENT);
   });
 
   it("the latch is per TURN — the next turn reads along again", () => {

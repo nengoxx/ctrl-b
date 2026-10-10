@@ -14,7 +14,8 @@ message pairs) commit atomically via `transaction()` (SYS-1) — otherwise `exec
 statement and a crash mid-sequence tears state.
 
 Phase 0 creates the v1 tables the rest of the app builds on — threads, messages, memory,
-events; migration 5 adds the automations pair (A3/D49), migration 7 the reply alternates (D81).
+events; migration 5 adds the automations pair (A3/D49), migration 7 the reply alternates (D81),
+migration 8 the threads' `seen_at` + the idempotent `_REPAIRS` that re-run on every connect (D84).
 Repositories and later tables (push_subscriptions, pending_actions) arrive with the phases that need
 them.
 """
@@ -285,6 +286,68 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_alternates_thread ON message_alternates(thread_id);
         """,
     ),
+    (
+        8,
+        # Conversations per agent (D84 / CONVERSATIONS_PLAN §3). `seen_at` = when the owner last saw
+        # the thread (the ISO-UTC text `ts` uses, so the unread predicate is a plain TEXT comparison
+        # against `messages.ts`); NULL until the `_REPAIRS` backfill below gives it a value. The index
+        # serves the per-agent list (`WHERE agent = ? ORDER BY updated_at DESC`). Purely additive under
+        # the release-compat rule above: a build that predates it never reads the column, so prod rolls
+        # back by tag — and the NULL rows such a build writes meanwhile are what `_REPAIRS` exists for.
+        """
+        ALTER TABLE threads ADD COLUMN seen_at TEXT;
+        CREATE INDEX idx_threads_agent_updated ON threads(agent, updated_at);
+        """,
+    ),
+]
+
+#: The ROOT agent's slug — `Settings.DEFAULT_AGENT_NAME`, restated here so this module keeps importing
+#: nothing from `app.config` at import time (its one config read, `db_path`, is a local import). One
+#: source of truth all the same: `test_threads_a15_s1.py` pins the two equal. NB this is the ROOT,
+#: never the CONFIGURED default (`agents.default`) — the NULL-home repair below falls a thread back to
+#: the root, as R10 rules (CONVERSATIONS_PLAN §12.1 ①).
+ROOT_AGENT_SLUG = "default"
+
+# Idempotent data repairs, run by `_migrate` AFTER the version loop on EVERY connect (not once, like a
+# migration). Each is `(the schema version it needs, sql)` — it runs only once the database has reached
+# that version (a test booting a truncated `MIGRATIONS` list, or the first boot that applies it) — and
+# each is a `WHERE … IS NULL` UPDATE, so it is a no-op once the data is clean (CONVERSATIONS_PLAN O13).
+#
+# WHY they re-run: migrations are forward-only and prod rolls back BY TAG. A build older than the
+# migration a repair belongs to, run after a rollback, keeps inserting rows without the new column's
+# value (it does not know the column exists) — and when prod rolls forward again it finds that version
+# already stamped, so a once-only backfill would never revisit them. Re-running a cheap idempotent
+# repair on every connect closes that window for good.
+#
+# Same authoring rule as `MIGRATIONS`: no transaction control; `_migrate` commits them.
+_REPAIRS: list[tuple[int, str]] = [
+    (
+        8,
+        # D84 `seen_at` backfill: the NEWER of `updated_at` and the thread's newest message. Not plain
+        # `updated_at`: the greeting seed (`agent/greeting.py`) adds the opening row without touching
+        # `updated_at`, so that would wake every greeting-only thread as unread. Marks every
+        # pre-existing thread seen.
+        """
+        UPDATE threads SET seen_at = MAX(updated_at,
+          COALESCE((SELECT MAX(m.ts) FROM messages m WHERE m.thread_id = threads.id), updated_at))
+        WHERE seen_at IS NULL
+        """,
+    ),
+    (
+        8,
+        # D84 the NULL-home repair (R10): a live thread with no pinned agent gets its last speaker —
+        # `messages.agent` is stamped on every assistant row since migration 2 — else the ROOT. Only
+        # NULL homes: a thread pinned to a slug whose folder is gone stays as it is (R41). Archived
+        # threads (automation runs, subagent threads) are never listed, so they are left alone.
+        f"""
+        UPDATE threads SET agent = COALESCE(
+          (SELECT m.agent FROM messages m
+            WHERE m.thread_id = threads.id AND m.role = 'assistant' AND m.agent IS NOT NULL
+            ORDER BY m.ts DESC, m.rowid DESC LIMIT 1),
+          '{ROOT_AGENT_SLUG}')
+        WHERE agent IS NULL AND archived = 0
+        """,
+    ),
 ]
 
 
@@ -328,18 +391,22 @@ class Database:
             await self._conn.close()
             self._conn = None
 
-    async def execute(self, sql: str, params: tuple = ()) -> None:
+    async def execute(self, sql: str, params: tuple = ()) -> int:
         """Run a single write. Standalone (the common case) it takes the process-wide write lock and
         commits immediately (the shared-connection worker thread serializes the actual I/O, so this is
         about statement grouping, not SQLITE_BUSY — that's impossible with one connection). Inside a
         `transaction()` it **joins** the open transaction: the write lock is already held by the CM and
-        the commit is deferred to the CM's COMMIT, so this call only issues the statement."""
+        the commit is deferred to the CM's COMMIT, so this call only issues the statement.
+
+        Returns the statement's own row count (the cursor's `rowcount`) — what a guarded `UPDATE …
+        WHERE` caller reads to learn whether its write actually matched (D84 `ThreadRepo.set_seen`)."""
         if _in_transaction.get():
-            await self.conn.execute(sql, params)  # joins the open transaction — no lock, no commit
-            return
+            cur = await self.conn.execute(sql, params)  # joins the open transaction — no lock, no commit
+            return cur.rowcount
         async with self._write_lock:
-            await self.conn.execute(sql, params)
+            cur = await self.conn.execute(sql, params)
             await self.conn.commit()
+            return cur.rowcount
 
     @contextlib.asynccontextmanager
     async def transaction(self) -> AsyncIterator[None]:
@@ -425,11 +492,25 @@ class Database:
         return row[0] if row and row[0] is not None else 0
 
     async def _migrate(self) -> None:
+        """Apply every pending migration, then run the data repairs the reached version admits — all
+        under the write lock, so nothing else on this connection observes the half-repaired state."""
         async with self._write_lock:
             current = await self._current_version()
             for version, sql in MIGRATIONS:
                 if version > current:
                     await self._apply_migration(version, sql)
+                    current = version
+            try:
+                for needs, sql in _REPAIRS:
+                    if needs <= current:
+                        await self.conn.execute(sql)
+                await self.conn.commit()
+            except BaseException:
+                # The UPDATEs opened an implicit transaction; never leave it open on the shared
+                # connection (the `_apply_migration` cleanup, C3-H1). `connect()` then fails as it would.
+                with contextlib.suppress(BaseException):
+                    await self._shielded_rollback()
+                raise
 
     async def _apply_migration(self, version: int, sql: str) -> None:
         """Apply ONE migration and its `schema_version` stamp **atomically** (post-14a review, MED).

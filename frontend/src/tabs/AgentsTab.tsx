@@ -8,6 +8,7 @@ import {
   rosterNames,
   useAgentRoster,
   useImportAgent,
+  type AgentStatus,
   type ImportReport,
 } from "../hooks/useAgents";
 import { useAgentToolGrid } from "../hooks/useActions";
@@ -17,10 +18,10 @@ import { useSections } from "../hooks/useSections";
 import { pickRoleplay } from "../hooks/useRoleplay";
 import { useSaveSettings, useSettings } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
+import { THREAD_DOT_WORDS, threadDot } from "../hooks/useThreads";
 import { agentSubtitle } from "../lib/agentSubtitle";
-import { agentPin, pinStickyAgent } from "../lib/composer";
 import { tileInitial } from "../lib/fallbackTile";
-import { useThreadAgent } from "../store/chat";
+import { openAgentConversation } from "../store/chat";
 
 // THE AGENTS GALLERY (D70 / ROLEPLAY_PLAN §8.4) — one home for every agent regardless of kind, and
 // the section the per-agent editor moved OUT of Conf into. Conf keeps the `agent.*` globals and
@@ -35,8 +36,9 @@ import { useThreadAgent } from "../store/chat";
 //
 // **Two verbs, two homes** (§8.4, deliberately inverting the field's 3/3 primary-tap-talks
 // convention): a card TAP opens that agent's editor, because this is a settings surface; TALK is its
-// own visible button and drives exactly the seam the `/agent` composer verb drives
-// (`lib/composer#pinStickyAgent`) before landing on the chat section through the one nav chokepoint.
+// own visible button and is a ROSTER DOOR (D84 §2 R16) — the same one the composer tools menu's agent
+// rows take (`store/chat#openAgentConversation`: that agent's latest conversation, or a fresh greeted
+// one) — before landing on the chat section through the one nav chokepoint.
 // The Talk button is a SIBLING of the card, never its child — a button inside a button is invalid
 // HTML (the media grid's own lesson).
 //
@@ -44,8 +46,8 @@ import { useThreadAgent } from "../store/chat";
 // the space the old read-only badge held becomes the button, restyled when selected). A toggle
 // (`aria-pressed`) on EVERY card, a sibling of the card for the Talk reason: pressing an unpressed pill
 // makes that agent the configured default (`agent.default_agent` — the root card writes its own slug,
-// `"default"`); pressing the PRESSED one deselects it (`""` = none set, and `/new` goes back to keeping
-// the agent the owner was talking to). Pressed = the owner SET this default (`default_set`), never merely
+// `"default"`); pressing the PRESSED one deselects it (`""` = none set, and the root is the default
+// again). Pressed = the owner SET this default (`default_set`), never merely
 // "what a bare thread resolves to" — so on a fresh install no pill is pressed. The same one config field
 // Conf → Agent globals edits; both doors save immediately.
 //
@@ -54,10 +56,16 @@ import { useThreadAgent } from "../store/chat";
 // summary+media join (`hooks/useAgentArt`), so the gallery, the composer's picker and the who-line
 // avatar can never disagree about what an agent looks like.
 
-/** One agent's card: the portrait (or the quiet initial tile that stands in for one) + the plate. */
+/** One agent's card: the portrait (or the quiet initial tile that stands in for one) + the plate.
+ *
+ *  D84 R19 — the ROSTER DOT: the agent's live status (`summaries[name].status`, the `['agents']` query
+ *  every `thread` frame invalidates) through the sheet's own `threadDot` — the kit-wide `.thread-dot` at
+ *  the plate's corner, `aria-hidden`; its state in words is the card's accessible description. */
 function AgentCard(props: {
   art: AgentArt;
   description: string;
+  /** The agent's live status (absent on a pre-S2a response) — the card's dot. */
+  status?: AgentStatus;
   isDefault: boolean;
   isSetDefault: boolean;
   pending: boolean;
@@ -66,9 +74,15 @@ function AgentCard(props: {
   onToggleDefault: () => void;
 }) {
   const { art } = props;
+  const dot = props.status ? threadDot(props.status) : null;
   return (
     <li className="agal-cell">
-      <button type="button" className="agal-card" onClick={props.onOpen}>
+      <button
+        type="button"
+        className="agal-card"
+        aria-description={dot ? THREAD_DOT_WORDS[dot] : undefined}
+        onClick={props.onOpen}
+      >
         <span className="agal-art">
           {art.avatar ? (
             <FocalImg
@@ -93,6 +107,7 @@ function AgentCard(props: {
           <small className="agal-sub">
             {agentSubtitle(art.name, props.description, props.isDefault)}
           </small>
+          {dot && <span className="thread-dot" data-state={dot} aria-hidden />}
         </span>
       </button>
       <button
@@ -227,18 +242,14 @@ export function AgentsContent() {
   const saveSettings = useSaveSettings({ quiet: true });
   const toggleDefault = (name: string) =>
     saveSettings.mutate({ agent: { default_agent: isSetDefault(name) ? "" : name } });
-  // The OPEN thread's own pin — what "Talk to the default" has to mean depends on it (see `talk`).
-  const threadAgent = useThreadAgent();
   const skillNames = skillList.map((s) => s.name);
 
   const talk = (name: string) => {
-    // The `/agent` seam verbatim, through `agentPin` — the tools menu's rows take the same expression: any
-    // other agent is a pin by name; the resolved default is whatever "back to the default" means for the
-    // OPEN thread (a clear, or the default by name inside a thread pinned to a character). Then the ONE
-    // nav chokepoint, which is where the chat log lives — at once, not after the pin: when the pick would
-    // discard an edited greeting (ISS-49) the confirm is app-level, so it opens over the very chat whose
-    // opening it is asking about.
-    void pinStickyAgent(agentPin(name, threadAgent, resolvedDefault));
+    // THE ROSTER DOOR (D84 R16) — the tools menu's rows take the same one: that agent's latest
+    // conversation (or a fresh greeted one). Then the ONE nav chokepoint, which is where the chat log
+    // lives — at once, not after the open: the chat section shows the open landing (or the note when the
+    // door is refused — a live call, an unreachable backend).
+    void openAgentConversation(name);
     navigate("agent");
   };
 
@@ -335,6 +346,7 @@ export function AgentsContent() {
                 key={name}
                 art={art(name)}
                 description={list?.summaries?.[name]?.description ?? ""}
+                status={list?.summaries?.[name]?.status}
                 isDefault={name === DEFAULT_AGENT}
                 isSetDefault={isSetDefault(name)}
                 pending={saveSettings.isPending}

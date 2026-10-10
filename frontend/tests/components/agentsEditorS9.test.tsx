@@ -11,6 +11,7 @@ const h = vi.hoisted(
     saveSettings: ReturnType<typeof vi.fn>;
     exportCard: ReturnType<typeof vi.fn>;
     deleteAgent: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn<(name: string) => Promise<number>>>;
     confirm: ReturnType<typeof vi.fn<(req: unknown) => Promise<boolean>>>;
     agent: Record<string, unknown>;
     roleplay: Record<string, unknown>;
@@ -19,6 +20,7 @@ const h = vi.hoisted(
     saveSettings: vi.fn(),
     exportCard: vi.fn(),
     deleteAgent: vi.fn(),
+    count: vi.fn<(name: string) => Promise<number>>(),
     confirm: vi.fn<(req: unknown) => Promise<boolean>>(),
     agent: {},
     roleplay: {},
@@ -64,6 +66,7 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => {
         : { data: undefined, isLoading: false },
     useSaveAgent: () => ({ mutate: h.saveAgent, isPending: false }),
     useDeleteAgent: () => ({ mutate: h.deleteAgent, isPending: false }),
+    countAgentConversations: (name: string) => h.count(name),
     useSaveAgentSoul: () => ({ mutate: vi.fn() }),
   };
 });
@@ -204,6 +207,7 @@ describe("AgentRow · the card export (§15.3)", () => {
 describe("AgentRow · the delete confirm tells the truth (ISS-24, §15.6)", () => {
   it("memories go; books and art stay; broken automations are reported after", async () => {
     h.confirm.mockResolvedValue(true);
+    h.count.mockResolvedValue(0);
     renderRow();
     fireEvent.click(button("remove"));
     await waitFor(() => expect(h.deleteAgent).toHaveBeenCalled());
@@ -212,7 +216,88 @@ describe("AgentRow · the delete confirm tells the truth (ISS-24, §15.6)", () =
     expect(req.body).toBe(
       "Deletes its folder (agent.yaml, SOUL.md) and its memory folder. The lorebooks and art it uses are kept. An automation pinned to it stops working — the report names any.",
     );
-    expect(h.deleteAgent.mock.calls[0][0]).toBe("lyra");
+    // no conversations → no second confirm, no cascade flag (D84 R41)
+    expect(h.confirm).toHaveBeenCalledTimes(1);
+    expect(h.count).toHaveBeenCalledWith("lyra");
+    expect(h.deleteAgent.mock.calls[0][0]).toEqual({
+      name: "lyra",
+      conversations: false,
+      uncounted: false,
+    });
+  });
+});
+
+// D84 R41/F6 (CONVERSATIONS_PLAN §4 "Agent delete", §2 B18) — after the agent-delete confirm the agent's
+// conversations are COUNTED; with any, a second confirm carries the number, and its answer is the
+// cascade flag. A failed count asks nothing and sends no flag (the toast says so — `uncounted`).
+describe("AgentRow · the agent delete's second confirm (D84 R41, F6)", () => {
+  const remove = async () => {
+    renderRow();
+    fireEvent.click(button("remove"));
+    await waitFor(() => expect(h.deleteAgent).toHaveBeenCalled());
+  };
+
+  it("the count → the second confirm with the number → OK sends the flag", async () => {
+    h.count.mockResolvedValue(3);
+    h.confirm.mockResolvedValue(true);
+    await remove();
+    expect(h.confirm).toHaveBeenCalledTimes(2);
+    const second = h.confirm.mock.calls[1][0] as {
+      title: string;
+      body: string;
+      confirmLabel: string;
+      danger: boolean;
+    };
+    expect(second.title).toBe("Also delete Lyra's 3 conversations?");
+    expect(second.body).toContain("3 conversations");
+    expect(second.confirmLabel).toBe("Delete");
+    expect(second.danger).toBe(true);
+    expect(h.deleteAgent.mock.calls[0][0]).toEqual({
+      name: "lyra",
+      conversations: true,
+      uncounted: false,
+    });
+  });
+
+  it("Cancel on the second confirm → the agent still goes, WITHOUT the flag", async () => {
+    h.count.mockResolvedValue(1);
+    h.confirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    await remove();
+    expect((h.confirm.mock.calls[1][0] as { title: string }).title).toBe(
+      "Also delete Lyra's 1 conversation?",
+    );
+    expect(h.deleteAgent.mock.calls[0][0]).toMatchObject({ conversations: false });
+  });
+
+  it("a failed count → no second confirm, no flag, and the toast is told (`uncounted`)", async () => {
+    h.count.mockRejectedValue(new Error("down"));
+    h.confirm.mockResolvedValue(true);
+    await remove();
+    expect(h.confirm).toHaveBeenCalledTimes(1);
+    expect(h.deleteAgent.mock.calls[0][0]).toEqual({
+      name: "lyra",
+      conversations: false,
+      uncounted: true,
+    });
+  });
+
+  it("a count at the route's ceiling reads as 200+", async () => {
+    h.count.mockResolvedValue(200);
+    h.confirm.mockResolvedValue(true);
+    await remove();
+    expect((h.confirm.mock.calls[1][0] as { title: string }).title).toBe(
+      "Also delete Lyra's 200+ conversations?",
+    );
+  });
+
+  it("the first confirm's Cancel deletes nothing and counts nothing", async () => {
+    h.confirm.mockResolvedValue(false);
+    renderRow();
+    fireEvent.click(button("remove"));
+    await waitFor(() => expect(h.confirm).toHaveBeenCalled());
+    await act(async () => {});
+    expect(h.count).not.toHaveBeenCalled();
+    expect(h.deleteAgent).not.toHaveBeenCalled();
   });
 });
 

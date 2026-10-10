@@ -15,6 +15,12 @@ const chat = vi.hoisted(() => {
 });
 vi.mock("../../src/hooks/useAgentChat", () => ({ useAgentChat: () => chat.view }));
 vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: [] }) }));
+// D84 §7 (S9b) — the shared header's conversations button reads its §5 dot through `useThreads` (a
+// QUERY), mocked to "no list yet" for the same reason as `useActionSpecs`: no QueryClient for a body test.
+vi.mock("../../src/hooks/useThreads", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/useThreads")>()),
+  useThreads: () => ({ data: undefined }),
+}));
 vi.mock("../../src/hooks/useAgentArt", () => ({
   // D70 §8.5/§8.4 — the agent-art resolver is a QUERY PAIR (roster + media index), so it is mocked to the
   // NO-ART answer here (which is the state every assertion in this file is about) rather than dragging a

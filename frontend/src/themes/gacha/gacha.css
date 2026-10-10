@@ -3179,6 +3179,22 @@
       outline-color: var(--gc-dossier-accent);
     }
 
+    /* THE CONVERSATIONS SHEET (D84 §7) rides the same `.bs-sheet` skin above, so it sits on the DOSSIER
+     * surface — the light slip, or the picked dark panel. Its rows are kit chrome painted with kit tokens
+     * (`.cvs-*`, kit.css), and the kit's NIGHT inks are only measured against the night page: on slip they
+     * would be light ink on a light card. So inside that sheet the kit's ink/line/accent tokens are
+     * re-pointed at the surface's own inks — the `--gc-dossier-*` pairs the contrast gate already
+     * measures against these panels, on every palette. Tokens only; nothing about the dossier changes. */
+    .bs-root.cvs-bs .bs-sheet {
+      --text: var(--gc-dossier-ink);
+      --text-2: var(--gc-dossier-ink-2);
+      --text-3: var(--gc-dossier-ink-2);
+      --accent: var(--gc-dossier-accent);
+      --line: var(--gc-dossier-line);
+      --line-2: var(--gc-dossier-line);
+      --surface: var(--gc-dossier-card);
+    }
+
     /* ── M3's IMAGE MORPH, the `detail`-typed transition (owner-pulled from G4 at the G2 eyeball).
      * The scope root IS the html element (`data-skin` lives there), so `:scope` reaches the
      * view-transition pseudos from inside gacha's own fence (verified live — both engines report our

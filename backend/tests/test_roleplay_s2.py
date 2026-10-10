@@ -809,9 +809,8 @@ def test_the_full_mapping_lands_on_the_agent(home: Path) -> None:
     assert agent["example_dialogue"] == "<START>\n{{user}}: hi\n{{char}}: mm."  # VERBATIM, marker kept
     assert agent["scenario"] == "A drowned observatory."
     assert agent["post_history"] == "Stay in character."
-    # …and the auto-router's copy stays EMPTY (§5.3): a card's description is persona prose, not
-    # "when to pick me", so an imported character is reached by an explicit pick until the owner
-    # writes a routing line themselves.
+    # …and the agent's description (its subtitle) stays EMPTY (§5.3): a card's description is persona
+    # prose, not a subtitle — the owner writes that line themselves.
     assert agent["description"] == ""
     # The embedded lorebook is kept in `card.json` verbatim — its permanent provenance home — AND
     # landed as a real attached book (S3 §6.5; the end-to-end hook is pinned in test_roleplay_s3).

@@ -32,7 +32,15 @@ import {
   takeWakeLock,
   type WakeLockState,
 } from "../lib/wakeLock";
-import { PHRASE_JOIN, appendDraft, clearDraft, getDraft } from "../store/composer";
+import {
+  PHRASE_JOIN,
+  appendDraft,
+  clearDraft,
+  composerSlot,
+  getDraft,
+  registerLiveDictation,
+  sendsInView,
+} from "../store/composer";
 import { holdLeg, legClosing, setMicRelease } from "../store/micRelease";
 import { pushToast } from "../store/toast";
 
@@ -251,7 +259,7 @@ function appendPhrase(s: StreamSession, text = ""): void {
   const joined = joinHeld(s.capText, text);
   s.capText = null;
   if (!joined) return;
-  appendDraft(joined); // THE join rule — `store/composer` owns it
+  appendDraft(joined, PHRASE_JOIN, s.slot); // THE join rule — `store/composer` owns it; the ORIGIN slot
   streamAppends += 1; // …and the caret seam's cue that THIS commit is a phrase landing
   s.finals += 1;
 }
@@ -270,6 +278,9 @@ function appendPhrase(s: StreamSession, text = ""): void {
  *    · `media_error`    — the MediaRecorder failed (no `stop()` runs there — its `onerror` records it);
  *    · `call_handover`  — a starting call took the ear (`yieldMic`, D74 S6 ⑧);
  *    · `unmount`        — the composer went away mid-recording;
+ *    · `navigated`      — the view swapped to another conversation while it streamed (Phase 27 S8,
+ *                         §12.2 ④ — `store/composer#stopLiveDictation`): its words land in the slot it
+ *                         started in, and it never auto-sends (§12.1 ④);
  *    · `cancel`         — the owner discarded it (no `stop()` either — `cancel()` records it). */
 export type StopReason =
   | "user"
@@ -282,6 +293,7 @@ export type StopReason =
   | "media_error"
   | "call_handover"
   | "unmount"
+  | "navigated"
   | "cancel";
 
 /** The reasons that arrive THROUGH `stop()` — `cancel` and `media_error` never do (`cancel()` and the
@@ -377,6 +389,13 @@ interface StreamSession extends PacerState {
    *  next segment's final appends ONCE as one phrase. The join defers WHEN words land, never WHETHER:
    *  every way the leg ends appends it (H2 — `appendPhrase`). Always null on a leg without the clock. */
   capText: string | null;
+  /** THE CONVERSATION IT STARTED IN (Phase 27 S8, R35): the composer slot captured at the press — every
+   *  append of this leg lands in that conversation's draft, wherever the view has gone since. (ASR S8b's
+   *  recovery record persists it, so a recover offer lands in its origin conversation.) */
+  slot: string;
+  /** The leg is over — its `navigated` stopper unregistered and its awaiters released (S8, L7). Called
+   *  once the words are in: at a drop, or when the release choreography (and any clip upload) ends. */
+  ended: () => void;
 }
 
 /** Did the draft get — or is it about to get — words from this leg? The mid-death rule's question
@@ -571,6 +590,9 @@ export function useDictation({
   // recording until `liveEar && live_call.dictation` is true.
   const streamRef = useRef<StreamSession | null>(null);
   const legRef = useRef(0);
+  /** The composer slot THIS recording started in (Phase 27 S8, R35) — captured at the press (`start`),
+   *  read by its streaming leg when it arms. */
+  const slotRef = useRef("");
   /** The last value handed to `onPending`, so a repeat costs no DOM write. */
   const pendingRef = useRef(false);
 
@@ -673,6 +695,7 @@ export function useDictation({
       // without its leg (a death with nothing in the draft, a handshake that never came).
       endTrail(s, { finals: s.finals, closed: "dropped", clip_bytes: null });
       setPending(false);
+      s.ended(); // S8 — a dropped leg is no longer the live dictation a swap stops (the clip door is not)
     },
     [setPending],
   );
@@ -720,13 +743,19 @@ export function useDictation({
    *  typed+sent message, NO streaming gate (HIGH-1, D41 — a voice message during a live turn QUEUES as
    *  a steer, same as Enter), and the draft is cleared ONLY if the seam actually routed (D68 MED-2:
    *  `runComposer` HOLDS a send while a staged file is still uploading, and the words must wait for the
-   *  file rather than send without it). */
-  const maybeAutoSend = useCallback((): void => {
-    if (!autoSend) return;
-    // Reads the just-appended draft imperatively (combines with anything already typed).
-    const full = getDraft().trim();
-    if (full && runComposer(full)) clearDraft();
-  }, [autoSend]);
+   *  file rather than send without it). `slot` is the conversation the recording STARTED in (Phase 27
+   *  S8): an auto-send across a hop sends NOTHING (§12.1 ④) — the words stay in their origin draft, and
+   *  the composer on screen (another conversation's) is not theirs to send — except the lazy
+   *  mint the owner's own Send made from `""`; an E6 carry never sends (`store/composer#sendsInView`). */
+  const maybeAutoSend = useCallback(
+    (slot: string): void => {
+      if (!autoSend || !sendsInView(slot)) return;
+      // Reads the just-appended draft imperatively (combines with anything already typed).
+      const full = getDraft().trim();
+      if (full && runComposer(full)) clearDraft();
+    },
+    [autoSend],
+  );
 
   /** @param mime the recorder's ACTUAL container, handed over by the `onstop` closure that owns it —
    *  the recorder releases its ownership of `recRef` before the upload begins (F2), so this can no
@@ -741,9 +770,12 @@ export function useDictation({
    *  stamp" alone must never discard a clip. A recording that ERRORED is covered by the discard flag
    *  `onerror` sets — F4 — never by the missing stamp.)
    *  …and it arrives MEASURED (A-F1): the clip carries how long the recording ran, stamped by the
-   *  terminal that ended it, because this function can run `tail_wait_ms` after the release. */
+   *  terminal that ended it, because this function can run `tail_wait_ms` after the release.
+   *  @param slot the conversation the recording started in (Phase 27 S8, R35) — the clip door's
+   *  closure captured it at the press; the transcript lands in that draft, wherever the view is now.
+   *  @param send whether rule ④ may auto-send it — not after a `navigated` stop (§12.1 ④). */
   const upload = useCallback(
-    async (mime: string, clip: Clip) => {
+    async (mime: string, clip: Clip, slot: string, send = true) => {
       const blob = new Blob(clip.chunks, { type: mime });
       if (!blob.size) {
         setPhase("idle");
@@ -781,8 +813,8 @@ export function useDictation({
         }
         const data = (await res.json()) as { text?: string };
         if (data.text?.trim()) {
-          appendDraft(data.text); // always show it in the composer first
-          maybeAutoSend(); // rule ④ — the one shared helper, once per session
+          appendDraft(data.text, PHRASE_JOIN, slot); // always show it in the composer first
+          if (send) maybeAutoSend(slot); // rule ④ — the one shared helper, once per session
         } else {
           pushToast("Didn't catch that — try again", "info");
         }
@@ -1122,14 +1154,15 @@ export function useDictation({
       // THE EITHER/OR (rule ③), evaluated exactly once, here.
       if (s.finals > 0) {
         // The flush's tail was the last append: the clip would say the same words a second time, so
-        // it is simply dropped — it left the refs at `onstop` and nothing else holds it.
-        maybeAutoSend();
+        // it is simply dropped — it left the refs at `onstop` and nothing else holds it. A leg the view
+        // swap ended (`navigated`) never auto-sends (§12.1 ④): the owner did not release it.
+        if (s.stopReason !== "navigated") maybeAutoSend(s.slot);
         setPhase("idle");
         return;
       }
       // Nothing was appended — the clip is the whole recording, uploaded exactly as it always was
       // (the 1000 ms floor, its teaching, the 502 greying, the toasts: all of it untouched).
-      await upload(mime, clip);
+      await upload(mime, clip, s.slot, s.stopReason !== "navigated");
     },
     [ceilingMs, frameMs, maybeAutoSend, setPending, tailWaitMs, upload],
   );
@@ -1328,6 +1361,24 @@ export function useDictation({
         lastError: null,
         ttlMs: null,
         capText: null,
+        slot: slotRef.current,
+        ended: () => {},
+      };
+      // THE NAVIGATE-STOP (Phase 27 S8, §12.2 ④ / L7): while this leg is the live dictation, a view swap
+      // stops it (`store/composer#stopLiveDictation`, reason `navigated`) and waits until its words are
+      // in its origin slot — `ended`, called once from the drop (`closeStream`) or after the release
+      // choreography (`onstop`'s hand-off), unregisters the stopper and releases that wait.
+      let settle = (): void => {};
+      const settled = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+      const unregister = registerLiveDictation((reason) => {
+        stop(reason);
+        return settled;
+      });
+      session.ended = () => {
+        unregister();
+        settle();
       };
       streamRef.current = session;
       if (trail) {
@@ -1660,6 +1711,10 @@ export function useDictation({
     if (armRef.current || recRef.current || legClosing()) return false;
     if (!preflight()) return false;
     activateAtRef.current = Date.now(); // the trail's `t_activate` (S11)
+    // THE CONVERSATION THIS RECORDING BELONGS TO (Phase 27 S8, R35) — captured at the PRESS, before any
+    // await: the clip door's closure below keeps it, and the streaming leg reads it when it arms.
+    const slot = composerSlot();
+    slotRef.current = slot;
     // A fresh recording starts HAND-ON by default: `start()` is what the gesture calls from a press,
     // and whoever knows better (the gesture's `locked` stage, the keyboard's tap-to-start) says so
     // after. ⚠ IT MUST PRECEDE THE FIRST AWAIT (S2.5 review F3) — the ordering rule this codebase
@@ -1778,10 +1833,13 @@ export function useDictation({
           // D5 — the leg stays WANTED until the release closes it, so the tab-wide hold goes up HERE,
           // in the same synchronous step that freed the ear above (a waiting `releaseMic` reads it next).
           const released = holdLeg();
-          void finishStream(live, rec.mimeType || "audio/webm", clip, released).finally(released);
+          void finishStream(live, rec.mimeType || "audio/webm", clip, released).finally(() => {
+            released();
+            live.ended(); // S8 — its words are in its origin slot: the navigate-stop's wait is over
+          });
           return;
         }
-        void upload(rec.mimeType || "audio/webm", clip);
+        void upload(rec.mimeType || "audio/webm", clip, slot); // the slot captured at the press
       };
       rec.onerror = () => {
         // OWNERSHIP IS DELIBERATELY NOT RELEASED HERE (the confirm round's sweep): an `error` is not

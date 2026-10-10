@@ -12,49 +12,41 @@ vi.mock("../../src/store/chat", () => ({
   sendMessage: vi.fn(),
   runShell: vi.fn(),
   compactThread: vi.fn(),
-  startNewThread: vi.fn(),
-  getThreadAgent: vi.fn(() => null), // the open thread's pin — none unless an arm says so
-  getThreadId: vi.fn(() => "t1"),
-  setSessionMode: vi.fn(),
-  setStickyAgent: vi.fn(),
-  setSessionPrivilege: vi.fn(),
+  newConversation: vi.fn(),
   pushSystemNote: vi.fn(),
-  // mid-chat unless an arm says so — the pick note is suppressed before the owner's first turn
-  conversationStarted: vi.fn(() => true),
-  // ISS-49 — the pick seam's re-seat: no fresh thread to re-seat unless an arm says so.
-  wouldReseat: vi.fn(() => false),
-  openingEdited: vi.fn(() => false),
-  reseatOpening: vi.fn(() => Promise.resolve()),
+  // D84 — the responder verb and the HOME overrides; the store owns the notes and the home (its own
+  // suite: tests/store/chatResponder.test.ts). The override writers answer the home they wrote for.
+  setResponder: vi.fn(),
+  reportResponder: vi.fn(),
+  setHomePrivilege: vi.fn(() => "lynette"),
+  setHomeMode: vi.fn(() => "lynette"),
+  sweepRoster: vi.fn(),
 }));
 vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
-vi.mock("../../src/store/toast", () => ({ pushToast: vi.fn() }));
-vi.mock("../../src/store/confirm", () => ({ requestConfirm: vi.fn(() => Promise.resolve(true)) }));
 
 import {
-  agentPin,
   effectiveAgent,
   fillComposer,
   getCompletions,
   beginAgentsLoad,
   getKnownSkills,
+  homeAgent,
   installAgents,
   loadAgents,
   loadProviders,
   loadSkills,
-  pinStickyAgent,
   runComposer,
 } from "../../src/lib/composer";
 import { PRIVILEGE_LEVELS } from "../../src/lib/privilege";
 import { addStaged, clearStaged, stagedFiles, stagedIds } from "../../src/store/attachments";
+import * as roster from "../../src/lib/roster";
 import * as chat from "../../src/store/chat";
-import * as toast from "../../src/store/toast";
 import { clearDraft, getDraft, setDraft, useDraft } from "../../src/store/composer";
 import {
   clearComposerSkills,
   takeComposerSkills,
   toggleComposerSkill,
 } from "../../src/store/composerSkills";
-import { requestConfirm } from "../../src/store/confirm";
 import { setUI } from "../../src/store/ui";
 
 // loadSkills/loadAgents fire a best-effort fetch on import; make it a quiet no-op so nothing hits the
@@ -108,10 +100,13 @@ describe("runComposer routing", () => {
     });
   });
 
-  it("bare `/<provider>` sets the sticky session mode", async () => {
+  it("bare `/<provider>` sets the HOME's sticky mode, and the note names the home (R40)", async () => {
     await loadVerbs(["llamacpp", "openrouter"]);
     runComposer("/openrouter");
-    expect(chat.setSessionMode).toHaveBeenCalledWith("openrouter");
+    expect(chat.setHomeMode).toHaveBeenCalledWith("openrouter");
+    expect(chat.pushSystemNote).toHaveBeenLastCalledWith(
+      "// inference → openrouter (lynette, this session)",
+    );
     expect(chat.sendMessage).not.toHaveBeenCalled();
   });
 
@@ -138,12 +133,12 @@ describe("runComposer routing", () => {
       skills: ["deploy"],
       raw: "/deploy do it",
     });
-    expect(chat.setSessionMode).not.toHaveBeenCalled();
+    expect(chat.setHomeMode).not.toHaveBeenCalled();
   });
 
   it("`/new` and `/compact` map to their thread actions", () => {
     runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenCalled();
+    expect(chat.newConversation).toHaveBeenCalled();
     // bare `/compact` → no steer (null instructions), D42.
     runComposer("/compact");
     expect(chat.compactThread).toHaveBeenCalledWith(null);
@@ -154,18 +149,39 @@ describe("runComposer routing", () => {
     expect(chat.compactThread).toHaveBeenCalledWith("focus on the deploy steps");
   });
 
-  it("`/privilege <level>` sets a valid level and rejects an invalid one", () => {
+  it("`/privilege <level>` sets the HOME's override (the note names it) and rejects an invalid one", () => {
     runComposer("/privilege full");
-    expect(chat.setSessionPrivilege).toHaveBeenCalledWith("full");
+    expect(chat.setHomePrivilege).toHaveBeenCalledWith("full");
+    expect(chat.pushSystemNote).toHaveBeenLastCalledWith(
+      "// privilege → full (lynette, this session)",
+    );
 
     runComposer("/privilege bogus");
-    expect(chat.setSessionPrivilege).toHaveBeenCalledTimes(1); // not called again for the bad level
+    expect(chat.setHomePrivilege).toHaveBeenCalledTimes(1); // not called again for the bad level
     expect(chat.pushSystemNote).toHaveBeenCalledWith(expect.stringContaining("unknown level"));
+
+    runComposer("/privilege"); // bare = back to the home AgentDef's own
+    expect(chat.setHomePrivilege).toHaveBeenLastCalledWith(null);
+    expect(chat.pushSystemNote).toHaveBeenLastCalledWith("// privilege → agent default (lynette)");
+  });
+
+  it("an override with the open conversation's home UNKNOWN writes nothing and says so (H6)", async () => {
+    vi.mocked(chat.setHomePrivilege).mockReturnValueOnce(null);
+    runComposer("/privilege full");
+    expect(chat.pushSystemNote).toHaveBeenLastCalledWith(
+      "// this conversation's agent isn't known yet — try again in a moment",
+    );
+    await loadVerbs(["openrouter"]);
+    vi.mocked(chat.setHomeMode).mockReturnValueOnce(null);
+    runComposer("/openrouter");
+    expect(chat.pushSystemNote).toHaveBeenLastCalledWith(
+      "// this conversation's agent isn't known yet — try again in a moment",
+    );
   });
 
   it("`/priv` still routes as the `/privilege` alias (the built-in table's alias column)", () => {
     runComposer("/priv confirm");
-    expect(chat.setSessionPrivilege).toHaveBeenCalledWith("confirm");
+    expect(chat.setHomePrivilege).toHaveBeenCalledWith("confirm");
   });
 
   it("an unknown slash verb gets a note, not the agent", () => {
@@ -191,9 +207,9 @@ describe("runComposer routing", () => {
     await first; // …and now the older response lands, and must NOT overwrite
 
     runComposer("/fresh");
-    expect(chat.setSessionMode).toHaveBeenCalledWith("fresh");
+    expect(chat.setHomeMode).toHaveBeenCalledWith("fresh");
     runComposer("/stale");
-    expect(chat.setSessionMode).toHaveBeenCalledTimes(1); // the stale verb never became known
+    expect(chat.setHomeMode).toHaveBeenCalledTimes(1); // the stale verb never became known
     expect(chat.pushSystemNote).toHaveBeenCalledWith(expect.stringContaining("unknown command"));
   });
 });
@@ -298,7 +314,7 @@ describe("runComposer × staged attachments (D68 §7)", () => {
     expect(runComposer("!ls")).toBe(true);
     expect(chat.runShell).toHaveBeenCalledWith("ls");
     expect(runComposer("/new")).toBe(true);
-    expect(chat.startNewThread).toHaveBeenCalled();
+    expect(chat.newConversation).toHaveBeenCalled();
   });
 
   // MED-5 — sendability is READY-only: a failed chip is neither an argument nor an obstacle.
@@ -322,8 +338,8 @@ describe("runComposer × staged attachments (D68 §7)", () => {
 // A6 — the composer tools/skills MENU ticks ONE-SHOT skills for the NEXT message; `runComposer` is where
 // they are applied or overridden. The pinned precedence rule: a plain NL send CARRIES the ticks (and spends
 // them); an EXPLICIT `/verb` send WINS over the menu — it spends the ticks WITHOUT applying them. The
-// menu's AGENT section is not part of this: it writes the sticky pin (D75 ruling, 2026-09-24),
-// which `sendMessage` reads like every send does — so no branch here ever passes an `agent`.
+// menu's AGENT section is not part of this: its rows are the roster door (D84 R16 — they open a
+// conversation), and `sendMessage` reads the responder itself — so no branch here ever passes an `agent`.
 describe("runComposer × the one-shot menu skills (A6)", () => {
   beforeEach(() => clearComposerSkills());
 
@@ -410,144 +426,33 @@ describe("runComposer × the one-shot menu skills (A6)", () => {
       expect(takeComposerSkills(), line).toEqual(["deploy"]);
     }
     expect(chat.runShell).toHaveBeenCalledWith("ls -la");
-    // and none of those lines sent a MESSAGE — `/compact` runs the summarizer, `/agent` flips the sticky
+    // and none of those lines sent a MESSAGE — `/compact` runs the summarizer, `/agent` sets the responder
     expect(chat.sendMessage).not.toHaveBeenCalled();
   });
 });
 
-// The ONE seam that sets "who am I talking to": `/agent`, the gallery's Talk, and the tools menu's agent
-// rows all end here. A pin AT the default's name is a real pin (the menu's default row writes it inside a
-// thread-pinned conversation, where a clear would let the thread's agent resurface) — and its note must
-// say "default", not the typo's "not configured" (the default is never among the SPECIALIST names).
-describe("pinStickyAgent — the sticky switch", () => {
-  beforeEach(async () => {
-    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
-      String(url).includes("/api/agents")
-        ? Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ agents: ["ops"], default: "maya" }),
-          } as Response)
-        : Promise.resolve({ ok: false } as Response),
-    );
-    await loadAgents();
-    vi.mocked(chat.conversationStarted).mockReturnValue(true); // mid-chat unless an arm says otherwise
-  });
-  const lastNote = () => vi.mocked(chat.pushSystemNote).mock.calls.at(-1)?.[0];
-
-  it('`""` CLEARS the pin — back to the thread\'s pin, else the default', () => {
-    void pinStickyAgent("");
-    expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
-    expect(lastNote()).toBe("// agent → maya (default)");
+// D84 — `/agent` is THE RESPONDER door (R45): `/agent <name>` → the store's `setResponder` (which owns
+// the roster judgement and every §2 note — tests/store/chatResponder.test.ts); bare `/agent` → the
+// "talking to" report. Another agent's OWN conversation is reached through the roster, never from here.
+describe("`/agent` — the responder verb", () => {
+  it("`/agent <name>` sets the responder — the first token only", () => {
+    runComposer("/agent ops");
+    expect(chat.setResponder).toHaveBeenLastCalledWith("ops");
+    runComposer("/agent emma and something else");
+    expect(chat.setResponder).toHaveBeenLastCalledWith("emma");
+    expect(chat.reportResponder).not.toHaveBeenCalled();
   });
 
-  it("the default's own NAME pins it — with the default's note, not the typo's", () => {
-    void pinStickyAgent("maya");
-    expect(chat.setStickyAgent).toHaveBeenLastCalledWith("maya");
-    expect(lastNote()).toBe("// agent → maya (default)");
+  it("bare `/agent` reports who answers — and changes nothing", () => {
+    runComposer("/agent");
+    expect(chat.reportResponder).toHaveBeenCalledTimes(1);
+    expect(chat.setResponder).not.toHaveBeenCalled();
   });
 
-  // ISS-51 (owner-ruled 2026-10-07): a typo is a NO-OP — nothing pins, no note in the chat, one toast.
-  it("a specialist pins; an unknown name pins NOTHING and only toasts", () => {
-    void pinStickyAgent("ops");
-    expect(chat.setStickyAgent).toHaveBeenLastCalledWith("ops");
-    expect(lastNote()).toBe("// agent → ops");
-    vi.mocked(chat.setStickyAgent).mockClear();
-    vi.mocked(chat.pushSystemNote).mockClear();
-    void pinStickyAgent("typo");
-    expect(chat.setStickyAgent).not.toHaveBeenCalled();
-    expect(chat.pushSystemNote).not.toHaveBeenCalled();
-    expect(chat.reseatOpening).not.toHaveBeenCalledWith("typo", expect.anything());
-    expect(toast.pushToast).toHaveBeenLastCalledWith('No agent named "typo"', "err");
-  });
-
-  // Owner nit 2026-10-01: before the first turn the chat holds only the opening — no pick note in it.
-  // A typo is a toast whether or not the conversation started (ISS-51).
-  it("before the owner's first turn: no note — the pin still lands; a typo is still only a toast", () => {
-    vi.mocked(chat.pushSystemNote).mockClear();
-    vi.mocked(chat.conversationStarted).mockReturnValue(false);
-    void pinStickyAgent("ops");
-    void pinStickyAgent("maya");
-    void pinStickyAgent("");
-    expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
-    expect(chat.pushSystemNote).not.toHaveBeenCalled();
-    void pinStickyAgent("typo");
-    expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null); // unchanged by the typo
-    expect(chat.pushSystemNote).not.toHaveBeenCalled();
-    expect(toast.pushToast).toHaveBeenLastCalledWith('No agent named "typo"', "err");
-  });
-
-  // O-LOW-3 (ISS-31 code round): every `/new` thread is pinned now, so a bare `/agent` inside one falls
-  // through to the THREAD's agent on the server's ladder — the note must name who will answer.
-  it("a CLEAR inside a thread pinned to another agent names that agent, not the default", () => {
-    vi.mocked(chat.getThreadAgent).mockReturnValueOnce("lynette");
-    void pinStickyAgent("");
-    expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
-    expect(lastNote()).toBe("// agent → lynette (this thread's)");
-  });
-
-  it("…while a thread pinned to the DEFAULT itself, or a by-name pin, keeps the default's note", () => {
-    vi.mocked(chat.getThreadAgent).mockReturnValueOnce("maya");
-    void pinStickyAgent("");
-    expect(lastNote()).toBe("// agent → maya (default)");
-    vi.mocked(chat.getThreadAgent).mockReturnValueOnce("lynette");
-    void pinStickyAgent("maya"); // the default BY NAME outranks the thread's pin — the note is true as is
-    expect(lastNote()).toBe("// agent → maya (default)");
-  });
-
-  // ISS-49 — a pick on a FRESH thread re-seats its opening. The pin + note stay synchronous (nothing is
-  // awaited before them) unless the pick would discard an opening the owner EDITED: that one asks first.
-  describe("the opening re-seat (ISS-49)", () => {
-    beforeEach(() => {
-      vi.mocked(chat.setStickyAgent).mockClear();
-      vi.mocked(chat.pushSystemNote).mockClear();
-      vi.mocked(chat.reseatOpening).mockClear();
-      vi.mocked(requestConfirm).mockClear();
-    });
-
-    it("no edited opening → pin + note at once, then the re-seat — no confirm", () => {
-      vi.mocked(chat.wouldReseat).mockReturnValueOnce(true);
-      void pinStickyAgent("ops");
-      expect(chat.setStickyAgent).toHaveBeenLastCalledWith("ops"); // synchronous, as before
-      expect(lastNote()).toBe("// agent → ops");
-      expect(chat.reseatOpening).toHaveBeenCalledWith("ops", null); // no discard to confirm
-      expect(requestConfirm).not.toHaveBeenCalled();
-    });
-
-    it("an EDITED opening asks first; Cancel changes nothing — no pin, no note, no re-seat", async () => {
-      vi.mocked(chat.wouldReseat).mockReturnValueOnce(true);
-      vi.mocked(chat.openingEdited).mockReturnValueOnce(true);
-      vi.mocked(chat.getThreadAgent).mockReturnValueOnce("lynette");
-      vi.mocked(requestConfirm).mockResolvedValueOnce(false);
-      await pinStickyAgent("ops");
-      expect(requestConfirm).toHaveBeenCalledWith(
-        expect.objectContaining({ confirmLabel: "Switch", danger: true }),
-      );
-      expect(vi.mocked(requestConfirm).mock.calls[0][0].body).toMatch(/lynette.*ops/);
-      expect(chat.setStickyAgent).not.toHaveBeenCalled();
-      expect(chat.pushSystemNote).not.toHaveBeenCalled();
-      expect(chat.reseatOpening).not.toHaveBeenCalled();
-    });
-
-    it("…Switch pins, notes, and re-seats with the discard confirmed FOR the thread asked about", async () => {
-      vi.mocked(chat.wouldReseat).mockReturnValueOnce(true);
-      vi.mocked(chat.openingEdited).mockReturnValueOnce(true);
-      vi.mocked(requestConfirm).mockImplementationOnce(() => {
-        vi.mocked(chat.getThreadId).mockReturnValue("t2"); // the view moves while the dialog is open
-        return Promise.resolve(true);
-      });
-      await pinStickyAgent("ops");
-      vi.mocked(chat.getThreadId).mockReturnValue("t1");
-      expect(chat.setStickyAgent).toHaveBeenLastCalledWith("ops");
-      expect(lastNote()).toBe("// agent → ops");
-      expect(chat.reseatOpening).toHaveBeenCalledWith("ops", "t1"); // snapshotted BEFORE the dialog
-    });
-
-    it("an edit on a thread the pick would NOT re-seat (a bare clear, a turn taken) never asks", () => {
-      vi.mocked(chat.openingEdited).mockReturnValueOnce(true); // wouldReseat stays false
-      void pinStickyAgent("");
-      expect(requestConfirm).not.toHaveBeenCalled();
-      expect(chat.setStickyAgent).toHaveBeenLastCalledWith(null);
-    });
+  it("`/agent` never sends, never mints, never navigates (THE INVARIANT, R22)", () => {
+    runComposer("/agent ops");
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    expect(chat.newConversation).not.toHaveBeenCalled();
   });
 });
 
@@ -714,128 +619,91 @@ describe("`/consolidate [dry]` (D61 ①)", () => {
 // line (`api/agent.py` `_build_session`: `agent_name or thread.agent`, then a graceful resolve). Pure, and
 // pinned here rather than at its two callers because the CLAIM is the mirror: a surface that disagrees
 // with the router tells the owner their message goes somewhere it does not.
-describe("effectiveAgent — the server's routing ladder, mirrored", () => {
+describe("effectiveAgent — who answers: responder ?? home ?? the configured default (D84 §6)", () => {
   const agents = ["lynette", "ops"];
 
-  it("a sticky pick wins over the thread's pin", () => {
+  it("the RESPONDER wins over the home", () => {
     expect(effectiveAgent("ops", "lynette", agents)).toBe("ops");
   });
 
-  it("the THREAD's pin answers when nothing is sticky — the rung wave 1c added", () => {
-    // The owner's glance: a thread pinned to Lynette replies as Lynette, and every active-agent surface
-    // used to show the default because the FE never read `Thread.agent`.
+  it("with no responder the HOME answers — the conversation's own agent", () => {
     expect(effectiveAgent(null, "lynette", agents)).toBe("lynette");
   });
 
-  it('an EMPTY sticky pick yields to the thread — the server treats "" as unset too', () => {
-    // `pinStickyAgent("")` is what Talk on the default agent stores (AgentsTab). On the server that is a
-    // falsy `body.agent`, so `thread.agent` answers; mirroring it is the point, not a bug to plug.
-    expect(effectiveAgent("", "lynette", agents)).toBe("lynette");
+  it("a responder OFF the landed roster falls to the home (the N2 sweep clears it anyway)", () => {
+    expect(effectiveAgent("ghost", "lynette", agents)).toBe("lynette");
   });
 
-  it("a TYPO'd sticky pick resolves to the default and does NOT fall through to the thread", () => {
-    // `/agent typo` sends a truthy `body.agent`, so the server never consults `thread.agent` — it
-    // resolves the unknown name to the default. A fall-through here would paint (and check) a character
-    // the message will not run as.
-    expect(effectiveAgent("typo", "lynette", agents)).toBeNull();
+  it("a HOME off the landed roster is shown as the CONFIGURED default (ISS-51's paint, §12.1 ①)", () => {
+    expect(effectiveAgent(null, "ghost", agents)).toBeNull(); // null = the configured default
+    expect(effectiveAgent(null, null, agents)).toBeNull(); // the thread-less view: the home-to-be
   });
 
-  it("an unknown thread pin folds to the default — a deleted or renamed character", () => {
-    expect(effectiveAgent(null, "ghost", agents)).toBeNull();
-    expect(effectiveAgent(null, null, agents)).toBeNull();
-  });
-
-  it("NO fold before the roster LANDS — the persisted pick is shown, not claimed as the default", () => {
-    // D75 amendment (Maya 1): a cold PWA launch hydrates the persisted pick before the roster lands, and
-    // `sendMessage` sends that pick regardless — so a surface folding it to "default" here would lie.
-    expect(effectiveAgent("typo", "lynette", undefined)).toBe("typo");
+  it("NO fold before the roster LANDS — a kept responder is shown, never claimed as the default (M3)", () => {
+    expect(effectiveAgent("ghost", "lynette", undefined)).toBe("ghost");
     expect(effectiveAgent(null, "lynette", undefined)).toBe("lynette");
-    expect(effectiveAgent("", null, undefined)).toBeNull();
-    // …and once the roster HAS landed, the unknown name folds as before — an EMPTY loaded roster too (a
-    // workspace with no specialists: the root is never listed, and a stale name is still stale).
-    expect(effectiveAgent("typo", null, agents)).toBeNull();
-    expect(effectiveAgent("typo", null, [])).toBeNull();
+    expect(effectiveAgent(null, null, undefined)).toBeNull();
+    // …and once the roster HAS landed, the unknown name folds — an EMPTY loaded roster too (a workspace
+    // with no specialists: the root is never listed, and a stale name is still stale).
+    expect(effectiveAgent("ghost", null, [])).toBeNull();
   });
 
-  it("the ROOT's own slug is always valid — the roster lists specialists only", () => {
-    // A by-name root pin (Talk / the menu's root row inside a character thread while a specialist is
-    // the default) used to fold to `null` = the RESOLVED default, while the server ran the root.
+  it("the ROOT's own slug is always on the roster — `agents` lists specialists only (H1)", () => {
     expect(effectiveAgent("default", "lynette", agents)).toBe("default");
     expect(effectiveAgent(null, "default", [])).toBe("default");
   });
 });
 
-// D75 amendment (2026-09-26) — `/new`'s TANDEM RULE: a CONFIGURED default (`default_set`) → the fresh
-// thread starts on it (the sticky pick clears); none set → it keeps the agent the owner was talking to.
-// `installAgents` is the ONE installer both the import-time load and the roster query feed.
-describe("`/new` × the configured default (the tandem rule)", () => {
-  /** One whole load — claim, then install — the way both readers do it. */
-  const install = (data: Parameters<typeof installAgents>[0]) =>
-    installAgents(data, beginAgentsLoad());
-
-  // ISS-31: `/new` mints through seam ①, so the RESOLVED default's name rides beside `keepAgent` — read
-  // from the SAME installed roster read as `defaultSet` (no second fetch). Only the `false` branch uses it.
-  it("none set → keepAgent: true; a default set → keepAgent: false, minted with the default's name", () => {
-    install({ agents: ["ops"], default: "default", default_set: false });
-    runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenLastCalledWith({
-      keepAgent: true,
-      defaultAgent: "default",
-    });
-    install({ agents: ["ops"], default: "default", default_set: true }); // the root, set explicitly
-    runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenLastCalledWith({
-      keepAgent: false,
-      defaultAgent: "default",
-    });
-    install({ agents: ["ops"], default: "ops", default_set: true }); // a specialist
-    runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: false, defaultAgent: "ops" });
-  });
-
-  it("a listing WITHOUT `default_set` (a pre-amendment cache, a mock) reads as none set — keep", () => {
-    install({ agents: [], default: "default" });
-    runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenLastCalledWith({
-      keepAgent: true,
-      defaultAgent: "default",
-    });
-  });
-
-  it("the GENERATION guard: an OLDER read landing after a newer one is ignored (Maya, code round)", () => {
-    // Two readers (`loadAgents` + the roster query) race over the same module values now — the one that
-    // STARTED last owns them, whichever lands last.
-    const older = beginAgentsLoad();
-    const newer = beginAgentsLoad();
-    installAgents({ agents: ["ops"], default: "ops", default_set: true }, newer);
-    installAgents({ agents: [], default: "default", default_set: false }, older); // stale — dropped
-    runComposer("/new");
-    expect(chat.startNewThread).toHaveBeenLastCalledWith({ keepAgent: false, defaultAgent: "ops" });
+// R38 — the tools menu CHECKS the conversation's HOME, never the responder.
+describe("homeAgent — the checked row", () => {
+  it("is the home whoever answers, folded through the roster like effectiveAgent's home rung", () => {
+    expect(homeAgent("lynette", ["lynette"])).toBe("lynette");
+    expect(homeAgent("ghost", ["lynette"])).toBeNull(); // off the roster → the default's row
+    expect(homeAgent("default", [])).toBe("default"); // the root is always on it
+    expect(homeAgent("ghost", undefined)).toBe("ghost"); // unjudged before the landing
+    expect(homeAgent(null, ["lynette"])).toBeNull(); // thread-less → the default's row
   });
 });
 
-// D75 ruling (2026-09-24) — what a pick hands the sticky pin is ONE expression for both doors (the tools
-// menu's rows, the gallery's Talk): any other agent by name; "back to the default" a clear, unless the
-// open thread carries its own pin, where a clear would let the thread's character resurface and the
-// default must be pinned by name.
-// PURE over both inputs: the default's NAME is the caller's (the roster query's `default`), not the module
-// `/agent` set's copy — the sticky slice's review round (2026-09-24) found the menu and the backdrop reading
-// different lists, and the fix made every surface-facing fold take the list it subscribes to.
-describe("agentPin — what a pick hands the sticky pin", () => {
-  it("the default is the CLEAR in an unpinned thread — nothing pinned is the honest resting state", () => {
-    expect(agentPin("default", null, "default")).toBe("");
-    expect(agentPin("ari", null, "ari")).toBe(""); // whatever the default is called
+// `installAgents` — the ONE installer both readers of `GET /api/agents` feed (the import-time load and the
+// roster QUERY): it lands the roster (`lib/roster`, H1) and then runs THE SWEEP (`store/chat#sweepRoster`,
+// N2 + M7) — on every LANDED read, never on a failed one.
+describe("installAgents — lands the roster, then sweeps", () => {
+  it("lands the roster (agents ∪ root ∪ the summaries' keys, with the titles) and sweeps once per landing", () => {
+    vi.mocked(chat.sweepRoster).mockClear();
+    installAgents(
+      {
+        agents: ["ops"],
+        default: "ops",
+        summaries: { default: { title: "Root" }, ops: { title: "Ops Bot" }, extra: { title: "" } },
+      },
+      beginAgentsLoad(),
+    );
+    expect(roster.rosterSlugs()).toEqual(["default", "ops", "extra"]);
+    expect(roster.rosterDefault()).toBe("ops");
+    expect(roster.displayName("ops")).toBe("Ops Bot");
+    expect(roster.displayName("extra")).toBe("extra"); // no title → the slug
+    expect(roster.displayName("default")).toBe("Root");
+    expect(chat.sweepRoster).toHaveBeenCalledTimes(1);
   });
 
-  it("the default is pinned BY NAME inside a thread pinned to a character — the caller's name, verbatim", () => {
-    expect(agentPin("default", "lynette", "default")).toBe("default");
-    expect(agentPin("ari", "lynette", "ari")).toBe("ari"); // a specialist promoted to the default
+  it("a FAILED read installs nothing and sweeps nothing (M3)", async () => {
+    vi.mocked(chat.sweepRoster).mockClear();
+    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false } as Response));
+    await loadAgents();
+    expect(chat.sweepRoster).not.toHaveBeenCalled();
   });
 
-  it("any OTHER agent pins by name — the root included, when a specialist is the default", () => {
-    expect(agentPin("ops", null, "default")).toBe("ops");
-    expect(agentPin("default", null, "ari")).toBe("default");
-    expect(agentPin("default", "lynette", "ari")).toBe("default");
+  it("the GENERATION guard: an OLDER read landing after a newer one is ignored (Maya, code round)", () => {
+    // Two readers (`loadAgents` + the roster query) race over the same roster — the one that STARTED
+    // last owns it, whichever lands last.
+    vi.mocked(chat.sweepRoster).mockClear();
+    const older = beginAgentsLoad();
+    const newer = beginAgentsLoad();
+    installAgents({ agents: ["ops"], default: "ops" }, newer);
+    installAgents({ agents: [], default: "default" }, older); // stale — dropped
+    expect(roster.rosterDefault()).toBe("ops");
+    expect(chat.sweepRoster).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -892,7 +760,7 @@ describe("getCompletions (A2)", () => {
     expect(kinds("/hel")).toEqual(["builtin"]);
   });
 
-  it("`/agent ` lists the configured agents; a partial second token filters them", () => {
+  it("`/agent ` lists THE ROSTER (the root included — `/agent default` is valid); a partial token filters", () => {
     expect(values("/agent ")).toEqual(["default", "ops", "research"]);
     expect(kinds("/agent ")).toEqual(["agent", "agent", "agent"]);
     expect(values("/agent re")).toEqual(["research"]);
@@ -929,7 +797,7 @@ describe("getCompletions (A2)", () => {
     expect(values("/agent\t")).toEqual(["default", "ops", "research"]);
     expect(getCompletions("/agent\tops\tx")).toEqual([]); // a third token still ends the grammar
     runComposer("/agent\tops");
-    expect(chat.setStickyAgent).toHaveBeenCalledWith("ops");
+    expect(chat.setResponder).toHaveBeenCalledWith("ops");
   });
 
   // Skill names are free-form server-side (SKILL.md frontmatter — no slug check), so the composer must

@@ -57,7 +57,7 @@ function finalReply(
 }
 
 export function useAutoTts(): void {
-  const { messages, status } = useChat();
+  const { messages, status, foreignTurn } = useChat();
   const ttsAuto = useUISlice((s) => s.ttsAuto);
   const voice = useVoiceStatus().data;
   const ttsOk = voice?.tts ?? false;
@@ -93,7 +93,10 @@ export function useAutoTts(): void {
     prevStatus.current = status;
     if (was !== "streaming" && status === "streaming") {
       fed.current = null; // a new turn starts with clean read-along bookkeeping
-      abandoned.current = false;
+      // A turn the OTHER device started, attached here by the visible M11 re-attach, starts "already
+      // stopped" (owner ruling 2026-10-10 — two devices side by side must not both speak): the latch
+      // silences the feed AND the terminal flush. Every other turn starts loud (`foreignTurn` false).
+      abandoned.current = foreignTurn;
       turnStops.current = getTurnStops();
     }
     if (getTurnStops() !== turnStops.current) abandoned.current = true;
@@ -161,5 +164,5 @@ export function useAutoTts(): void {
       docked: fed.current?.id === live.id && fed.current.docked,
     };
     feedReadAlong(live.id, live.text, live.speaker);
-  }, [status, messages, ttsAuto, ttsOk, chunking, dockedId, callSpeaks, agentArt]);
+  }, [status, foreignTurn, messages, ttsAuto, ttsOk, chunking, dockedId, callSpeaks, agentArt]);
 }

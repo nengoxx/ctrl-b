@@ -316,15 +316,15 @@ test.describe("gacha integrates through its own body", () => {
   });
 });
 
-// THE COMPOSER MENU'S AGENT ROWS ARE A STICKY SWITCH (D75 ruling, 2026-09-24): a row pins the sticky agent
-// through the same seam `/agent <name>` drives, so the backdrop switches the moment it is picked and STAYS
-// — through the send, the reply and after it — until another row is picked. The unit suite proves the
-// ladder; this arm proves it through the real built menu, the real send path and the real cascade.
-test.describe("the composer menu's agent pick is sticky", () => {
+// THE COMPOSER MENU'S AGENT ROWS ARE THE ROSTER DOOR (D84 §2 R16, R38, O4): a row opens that agent's
+// latest conversation (or mints one), so the backdrop follows the conversation's HOME the moment it opens
+// and STAYS — through the send, the reply and after it — until another conversation opens. The unit suite
+// proves the ladder; this arm proves it through the real built menu, the real send path and the cascade.
+test.describe("the composer menu's agent rows open that agent's conversation", () => {
   const LYNETTE_BG = "/api/media/agents/files/backgrounds/lynette.webp";
   const msg = (id: string, role: string, text: string) => ({
     id,
-    thread_id: "t1",
+    thread_id: "t-lyn",
     role,
     parts: [{ type: "text", text }],
     actor: role,
@@ -333,14 +333,15 @@ test.describe("the composer menu's agent pick is sticky", () => {
     compacted: false,
   });
 
-  test("pick → the backdrop switches and stays through and after the reply; the default row reverts", async ({
+  test("a row opens its conversation → the backdrop follows the home and stays; the default row opens the root's", async ({
     page,
     pageErrors,
   }) => {
     // A second agent with her OWN background, registered AFTER `boot`'s routes so these win.
     const frame = (event: string, data: unknown) =>
       `event: ${event}\r\ndata: ${JSON.stringify(data)}\r\n\r\n`;
-    let sentAgent: unknown = "unsent";
+    let sent: { agent?: unknown; thread_id?: unknown } = {};
+    let replied = false;
     await boot(page, "minimal", "operator");
     await page.route("**/api/media/agents", (route) =>
       route.fulfill({
@@ -390,26 +391,59 @@ test.describe("the composer menu's agent pick is sticky", () => {
         body: Buffer.from("R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==", "base64"),
       }),
     );
+    const thread = (id: string, agent: string) => ({
+      id,
+      title: null,
+      agent,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      archived: false,
+    });
+    // THE ROSTER DOOR's read: Lynette has ONE conversation; the root has none (its row mints one).
+    await page.route(/\/api\/threads\?agent=lynette&limit=1$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([thread("t-lyn", "lynette")]),
+      }),
+    );
+    await page.route(/\/api\/threads\?agent=default&limit=1$/, (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
+    );
+    await page.route(/\/api\/threads$/, (route) =>
+      route.request().method() === "POST" // seam ① — the root's fresh conversation
+        ? route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(thread("t-root", "default")),
+          })
+        : route.fallback(),
+    );
+    await page.route("**/api/threads/t-root/messages", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
+    );
     await page.route("**/api/agent/chat", (route) => {
-      sentAgent = (route.request().postDataJSON() as { agent?: unknown }).agent;
+      sent = route.request().postDataJSON() as { agent?: unknown; thread_id?: unknown };
+      replied = true;
       return route.fulfill({
         status: 200,
         contentType: "text/event-stream",
         body:
-          frame("thread", { threadId: "t1" }) +
+          frame("thread", { threadId: "t-lyn", agent: "lynette" }) +
           frame("message.start", { messageId: "m2", agent: "lynette" }) +
           frame("text.delta", { messageId: "m2", delta: "hello from lynette" }) +
           frame("done", { state: "completed" }),
       });
     });
-    await page.route("**/api/threads/t1/messages", (route) =>
+    await page.route("**/api/threads/t-lyn/messages", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify([
-          msg("m1", "user", "hi there"),
-          msg("m2", "assistant", "hello from lynette"),
-        ]),
+        body: JSON.stringify(
+          replied
+            ? [msg("m1", "user", "hi there"), msg("m2", "assistant", "hello from lynette")]
+            : [],
+        ),
       }),
     );
     // The overrides above land on the NEXT read — reload so the roster and the library are the new ones.
@@ -426,18 +460,19 @@ test.describe("the composer menu's agent pick is sticky", () => {
       });
     await trigger.click();
     await row("lynette").click();
-    await expect(art).toHaveAttribute("src", /lynette\.webp/); // switched on the pick…
-    await expect(trigger).not.toHaveClass(/armed/); // …and nothing is pending: it is a switch, not a shot
-    await expect(page.locator("#composer-tools.open")).toHaveCount(0); // an agent pick closes the panel
+    await expect(art).toHaveAttribute("src", /lynette\.webp/); // her conversation opened…
+    await expect(trigger).not.toHaveClass(/armed/); // …and nothing is pending: a door, not a shot
+    await expect(page.locator("#composer-tools.open")).toHaveCount(0); // an agent row closes the panel
 
     await page.locator(".kit-composer textarea").fill("hi there");
     await page.locator("#cmd-send").click();
     await expect(page.getByText("hello from lynette").first()).toBeVisible();
-    expect(sentAgent).toBe("lynette"); // the send carried the sticky pin
+    expect(sent.thread_id).toBe("t-lyn"); // the send went into HER conversation…
+    expect(sent.agent).toBe(null); // …with no responder: the home answers
     await expect(art).toHaveAttribute("src", /lynette\.webp/); // …and the surface STAYED after the reply
 
     await trigger.click();
-    await row("default").click(); // the default row clears the pin
+    await row("default").click(); // the root's row: it has no conversation yet → one is minted
     await expect(art).toHaveAttribute("src", /hall\.webp/);
     expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
   });
