@@ -1,5 +1,5 @@
+import { ChatHeaderActions } from "../components/ChatHeaderActions";
 import { ChatThread } from "../components/ChatThread";
-import { PrivilegeChip } from "../components/PrivilegeChip";
 import { useActiveBackdrop } from "../hooks/useActiveBackdrop";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { AgentBackdrop } from "../theme-engine/kit/AgentBackdrop";
@@ -9,8 +9,8 @@ import { usePlanPlacement } from "../theme-engine/kit/composer/plan/placement";
 
 // Agent chat tab (Phase 4a + 4b). The chat LOG itself lives in the reusable `<ChatThread/>` (F4) — this tab
 // composes it with the kit plan chrome + the section header. AgentTab owns: the tab wrapper, the `.sec`
-// header + PrivilegeChip, and the kit `PinnedPlanPanel` first-in-flow mount rule (DESIGN §12,
-// vapor.html:1934). There is NO theme branching left here — D51 V4 moved vapor onto the shared
+// header (its action cluster = the shared `ChatHeaderActions`), and the kit `PinnedPlanPanel` first-in-flow
+// mount rule (DESIGN §12, vapor.html:1934). There is NO theme branching left here — D51 V4 moved vapor onto the shared
 // `planPlacement` axis (it declares `"pinned"`), so every theme takes the same code path — and V4 phase 2
 // deleted the vapor-only in-tab `PinnedPlan` this file used to carry (with its `PlanSteps`/`advanceStep`/
 // `editPlan`/`useState` imports; the kit `PinnedPlanPanel` owns that whole job now).
@@ -66,9 +66,7 @@ export function AgentTab({ active }: Props) {
       <div className="sec">
         <span className="num">02</span>
         <b>Chat</b>
-        <span className="right">
-          <PrivilegeChip />
-        </span>
+        <ChatHeaderActions />
       </div>
       <ChatThread active={active} chat={chat} />
     </div>

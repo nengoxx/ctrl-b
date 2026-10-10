@@ -13,6 +13,7 @@ import { setHomePrivilege, useHomePrivilege } from "../store/chat";
 // Extracted from AgentTab (F4) so a BESPOKE theme body (frontier's FrontierAgent) can reuse the exact same
 // chip — DOM/classes byte-identical — inside its own `.sec` header without forking the privilege menu. The
 // `.priv-*` class family is a §15 chat-hook contract member, styled by every theme via tokens.
+// Every chat body now renders it through the one shared header cluster, `ChatHeaderActions` (D84 §7).
 export function PrivilegeChip() {
   const homePrivilege = useHomePrivilege(); // slice — don't re-render per token
   const unknown = homePrivilege === undefined;
