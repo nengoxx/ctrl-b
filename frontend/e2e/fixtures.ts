@@ -580,7 +580,9 @@ export async function seedThread(page: Page, messages: unknown[]) {
         {
           id: "t1",
           title: "t",
-          agent: null,
+          // The ROOT, as a real server answers after migration 8's repair (no thread has a null home);
+          // a null home is UNKNOWN to the client since D84 S7a (the privilege chip reads "…", disabled).
+          agent: "default",
           created_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
           archived: false,

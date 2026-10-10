@@ -128,6 +128,12 @@ export function putJSON<T>(path: string, body: unknown): Promise<T> {
   return sendJSON<T>("PUT", path, body);
 }
 
+/** PATCH JSON — a partial update of one item (D84 §4: `PATCH /api/threads/{id}` `{title}`). Same
+ *  error-surfacing as `postJSON`. */
+export function patchJSON<T>(path: string, body: unknown): Promise<T> {
+  return sendJSON<T>("PATCH", path, body);
+}
+
 /** A picked `File` that reported size 0 and then failed to send (ISS-47 ⓓ) — still a `TypeError`, so
  *  every catch that classifies a network failure keeps doing so, but its message is the hint the owner
  *  can act on. Android's GENERIC picker can hand the page a file whose recorded size is 0; XHR sends

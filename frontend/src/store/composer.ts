@@ -216,6 +216,11 @@ export function moveSlots(from: string, target: string): void {
   // execute after its target itself moved on (`""` → X) — draft and rail then both land in X.
   const to = followSlot(target);
   if (from === to) return;
+  // AN ALREADY-CARRIED SOURCE KEEPS ITS FORWARD (S9b micro-wave — Sol S9B-05). Predicate: `from` is
+  // already forwarded AND holds nothing (no draft, an empty rail) — its content left with that earlier
+  // move, so its late writers (a dictation final, a clip transcript) must follow the CONTENT, not be
+  // retargeted to wherever a later, empty move points. (Nothing to move either, so nothing else runs.)
+  if (movedTo.has(from) && !drafts[from] && railEmpty(from)) return;
   movedTo.set(from, to);
   const carried = drafts[from];
   if (carried) {

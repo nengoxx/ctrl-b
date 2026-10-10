@@ -28,6 +28,7 @@ import { consumeStaged, releaseStaged, stagedPreviews } from "./attachments";
 import {
   appendDraft,
   carryOnLeave,
+  moveSlots,
   pruneSlots,
   setComposerSlot,
   slotsCarried,
@@ -657,6 +658,14 @@ export function useHomePrivilege(): Privilege | null | undefined {
   });
 }
 
+/** The view's HOME, REACTIVELY — the ONE definition the chat header's conversations button and its sheet
+ *  read (D84 §7, R36: the button always opens the HOME's sheet, whoever answers). `homeOf`, the chip's
+ *  own rule: `null` while the home is UNKNOWN — a door that knew nothing and a failed late read, or a
+ *  thread-less view before the roster lands (S7A-02) — and no surface runs against an unknown home. */
+export function useViewHome(): string | null {
+  return useChatSlice(homeOf);
+}
+
 /** Write ONE field of the open home's override (`null` clears it), in memory and in `ctrlb.chat` — that
  *  home's entry patched alone (§12.3 M4). Returns the home written for, or `null` when the home is
  *  UNKNOWN (nothing is written: an override keyed by a guess could land on the wrong home). */
@@ -749,6 +758,13 @@ function refusedInCall(note: string): boolean {
   if (!callLive()) return false;
   pushSystemNote(note);
   return true;
+}
+
+/** R20 for a surface OUTSIDE this store whose action ends in a conversation switch — the sheet's Delete of
+ *  the OPEN conversation (§12.3 M8: its fallback is a swap): while a call is up, the hang-up note, and
+ *  `true` (refused). The rule, `callLive()` and the note text stay here with every other R20 site. */
+export function refuseSwitchInCall(): boolean {
+  return refusedInCall(HANG_UP_SWITCH_CONVERSATION);
 }
 
 /** `/agent <name>` — set WHO ANSWERS in the open conversation on this device (D84 §2, R45, THE RESPONDER
@@ -1394,15 +1410,73 @@ function conversationDeleted(threadId: string): void {
     pendingDeleted = threadId; // R42 — latched, nothing shown
     return;
   }
-  r29InFlight = threadId;
   pushToast("this conversation was deleted");
   threadListsStale();
+  moveOffDeleted(threadId);
+}
+
+/** THE MOVE OFF A DELETED OPEN CONVERSATION — shared by the remote path (`conversationDeleted`, R29) and
+ *  the local one (`conversationRemoved`, B8): claim the `r29InFlight` guard (between a DELETE's answer and
+ *  the swap the view still sits on the dead id, and a concurrent 404 — a `markSeen`, a floor read — must
+ *  neither toast "deleted" nor start a second move), arm the E6 carry, open the HOME's next latest (or a
+ *  fresh greeted one). */
+function moveOffDeleted(threadId: string): void {
+  r29InFlight = threadId;
   // E6 — the dead conversation's draft + staged rail (and a 404'd send's words, already returned to
   // that draft by `returnToOrigin`) move into whatever opens next — this fallback's target, or the
   // owner's own door if it supersedes it (`store/composer#carryOnLeave`, consumed at the slot setter).
   carryOnLeave(threadId);
   void openAgentConversation(state.threadAgent ?? rosterDefault()).finally(() => {
     if (r29InFlight === threadId) r29InFlight = null;
+  });
+}
+
+// ── THE SHEET'S DELETE (D84 §2 B8) — Phase 27 S9b grows this store's public surface by FOUR exports:
+// `useViewHome`, `refuseSwitchInCall`, `armConversationRemoval` and `conversationRemoved`.
+//
+// The sheet judges "the OPEN row" at its COMMIT; the DELETE's success lands a round trip later, and the
+// owner can take a door in between (the sheet stays open after a Delete) — or a remote 404 can move the
+// view with its E6 carry deferred behind a dictation stop. So the commit's facts are LATCHED here and the
+// success rules by them, never by the view it happens to find.
+
+/** The commit's facts for the sheet's last Delete: the id, the navigation ticket at the commit, and
+ *  whether it was the open conversation then. ONE slot — every commit overwrites it, so a failed
+ *  attempt's latch is harmless (re-armed by the next commit, consumed only for its own id). */
+let removal: { id: string; seq: number; wasOpen: boolean } | null = null;
+// (Its `seq` is REFRESHED by the two navigations that do not leave the open conversation — `openThread`'s
+// same-id branch and `openAgentConversation`'s B5 in-place arm. RECORDED: a DELETE success landing BEFORE
+// such a tap commits still arms only the carry; the next 404 on the dead id moves the view.)
+
+/** Called by the sheet AT THE COMMIT of a Delete (after the confirm and the second M8 check, right before
+ *  the request) — latches what `conversationRemoved` rules by. */
+export function armConversationRemoval(threadId: string): void {
+  removal = { id: threadId, seq: openSeq, wasOpen: state.threadId === threadId };
+}
+
+/** THIS DEVICE deleted `threadId` on purpose — the conversations sheet's Delete (D84 §2 B8), called by the
+ *  delete mutation's success (a 404 answer counts: the row is gone either way). The LOCAL sibling of
+ *  `conversationDeleted`: no toast (the owner just did it), no call latch (the sheet refuses an open-row
+ *  delete in a call BEFORE the request, M8; a call started DURING the request makes the move refuse, and
+ *  the next 404 latches). It consumes the commit's latch (`armConversationRemoval`) and rules:
+ *    · the view is STILL on it — a navigation started since the commit (another door in flight) → only
+ *      arm the E6 carry: that door's swap consumes it, and its ticket stays the owner's newest intent;
+ *      otherwise → the home's next latest with the draft + rail carried (`moveOffDeleted`), once;
+ *    · the view already LEFT it — after any pending carry has finished (`slotsCarried`: a carry deferred
+ *      behind a dictation stop goes FIRST, after which the source's keys are gone and this is a no-op):
+ *      it WAS open at the commit → its draft + rail follow the owner into the view they are in NOW (E6,
+ *      their own door included); it was not → its draft + rail are DROPPED (`pruneSlots`).
+ *  The lists' refresh is the mutation's (`onSettled`). */
+export function conversationRemoved(threadId: string): void {
+  const latch = removal?.id === threadId ? removal : null;
+  if (latch) removal = null;
+  if (state.threadId === threadId) {
+    if (latch && latch.seq !== openSeq) carryOnLeave(threadId);
+    else if (r29InFlight !== threadId) moveOffDeleted(threadId); // a racing 404 already moved: once
+    return;
+  }
+  void slotsCarried().then(() => {
+    if (latch?.wasOpen) moveSlots(threadId, state.threadId ?? "");
+    else pruneSlots((k) => k !== threadId);
   });
 }
 
@@ -1524,6 +1598,9 @@ export async function openThread(threadId: string, home?: string): Promise<boole
   // one (the owner's newest intent is the one that counts).
   const ticket = ++openSeq;
   if (state.threadId === threadId) {
+    // A tap on the open conversation does not LEAVE it: a sheet Delete of it latched before this tap
+    // must not read the bumped ticket as "a door in flight" (S9b micro-wave ⑩).
+    if (removal?.id === state.threadId) removal.seq = openSeq;
     // Already here, so no reload and no cache churn — and the RESPONDER STAYS (R45: a notification tap or
     // a sheet-row tap on the open conversation is not leaving it). But DO re-probe: an automation's
     // rolling thread can have gone live since the owner last looked at it, and the probe is what
@@ -2005,7 +2082,9 @@ export async function openAgentConversation(name: string): Promise<boolean> {
   // R20 at the COMMIT point (S7A-03) — the B5 in-place arm included: a call started during the read.
   if (refusedInCall(HANG_UP_SWITCH_CONVERSATION)) return false;
   if (latest !== null && latest === state.threadId) {
-    // B5 — the open conversation IS that agent's latest: no reload; back to the rule.
+    // B5 — the open conversation IS that agent's latest: no reload; back to the rule. Not a leave: a
+    // latched sheet Delete of it keeps reading its own commit as the newest intent (S9b micro-wave ⑩).
+    if (removal?.id === state.threadId) removal.seq = openSeq;
     if (state.threadAgent !== home) installHome(home);
     if (state.archived === null) set({ archived: false }); // a `?agent=` latest is never archived
     if (state.responder !== null) commitResponder(null);

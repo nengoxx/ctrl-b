@@ -76,6 +76,8 @@
    * theme that wants another can still override it at or above `.kit`, exactly like `--kit-plan-gap`.) */
   --kit-who-face: 40px;
   --kit-tools-face: 24px;
+  /* …and the conversations sheet's head (D84 §7): the home agent's face beside its name. */
+  --kit-cvs-face: 32px;
 }
 /* ── the SHARED owner background (the Kit Art System) ────────────────────────────────────────────
  * `KitBackground` mounts this as the shell's FIRST child — and only when the theme participates, the
@@ -4932,7 +4934,8 @@ body[data-motion="full"] .kit .kit-jump {
 /* motion gate — drop the ambient streaming anims under reduced motion (§14.11) */
 body[data-motion="reduced"] .kit .b.bot .dots i,
 body[data-motion="reduced"] .kit .b.bot .caret,
-body[data-motion="reduced"] .kit .b.bot .who .status-tag {
+body[data-motion="reduced"] .kit .b.bot .who .status-tag,
+body[data-motion="reduced"] .kit .cvs-dot[data-state="running"] {
   animation: none;
 }
 
@@ -5841,6 +5844,235 @@ body[data-motion="reduced"] .kit .priv-menu {
  * this tie by source order, and the folded rule now sits ABOVE this one — so the exclusion is explicit. */
 .kit .priv-menu button:not(.active):active {
   background: var(--surface-2);
+}
+
+/* ── the CONVERSATIONS button + its per-home sheet (.cvs-*, D84 §7 — Phase 27 S9b) ──────────────────────
+ * The TOKENS band (THEME_ENGINE §14.14): no new Surface, every colour a token, 390px first, motion by
+ * transform/opacity only (VAPOR_PATTERNS §11–§13). The BUTTON is chat-header chrome beside the privilege
+ * chip (`ChatHeaderActions`), its §5 DOT a 6px disc in the state's hue. The SHEET rides the shared
+ * `<BottomSheet>` primitive (`.cvs-bs` is its root class): its base skin here gives a theme that does not
+ * skin `.bs-sheet` (minimal, vapor) a real panel and a ceiling; a theme that does (cosmos, frontier,
+ * gacha — @layer theme) wins over it by layer, as for every other sheet. The rows are full-width ≥44px
+ * targets; `⋯` discloses the row's actions as the D81 `.who-acts` row recipe, re-stated for this scope.
+ * NAMES: `cvs-` (conversations sheet), never `cv-` — gacha owns the `.cv-*` family for its cover fleet
+ * layout under its @scope, and two families sharing a prefix in one `.kit` tree is how a class collides. */
+.kit .cvs-btn {
+  all: unset;
+  position: relative; /* anchors the dot */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -8px 4px -8px 0; /* a 32px target inside the 12px header line, without growing the line */
+  vertical-align: middle;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.kit .cvs-btn:active {
+  background: var(--surface-2);
+}
+.kit .cvs-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.kit .cvs-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.kit .cvs-btn .cvs-dot {
+  position: absolute;
+  top: 6px;
+  right: 5px;
+}
+.kit .cvs-dot[data-state="needs-you"] {
+  background: var(--warn);
+}
+.kit .cvs-dot[data-state="running"] {
+  background: var(--ok);
+  animation: kit-tag-pulse 1.3s ease-in-out infinite;
+}
+.kit .cvs-dot[data-state="unread"] {
+  background: var(--accent);
+}
+.kit .bs-root.cvs-bs .bs-sheet {
+  max-height: min(80dvh, 640px);
+  border: 1px solid var(--line-2);
+  border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.kit .cvs-sheet {
+  padding: 0 0 calc(12px + env(safe-area-inset-bottom));
+}
+.kit .cvs-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 18px 8px;
+}
+.kit .cvs-face {
+  flex-shrink: 0;
+  width: var(--kit-cvs-face);
+  height: var(--kit-cvs-face);
+  border-radius: 999px;
+  background-color: var(--surface);
+  background-size: cover;
+  background-position: 50% 50%;
+  background-repeat: no-repeat;
+}
+.kit .cvs-title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+.kit .cvs-list {
+  margin: 0;
+  padding: 0 8px;
+  list-style: none;
+}
+.kit .cvs-list > li {
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+.kit .cvs-list > li:first-child {
+  border-top: 0;
+}
+.kit .cvs-item {
+  display: flex;
+  align-items: stretch;
+}
+.kit .cvs-row {
+  all: unset;
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.kit .cvs-row:active,
+.kit .cvs-more:active,
+.kit .cvs-older:active {
+  background: var(--surface);
+}
+.kit .cvs-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kit .cvs-label,
+.kit .cvs-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kit .cvs-label {
+  color: var(--text);
+  font-size: 14px;
+}
+.kit .cvs-new .cvs-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+.kit .cvs-row[aria-current] .cvs-label {
+  color: var(--accent);
+}
+.kit .cvs-preview,
+.kit .cvs-time {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.kit .cvs-meta {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kit .cvs-more {
+  all: unset;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 16px;
+  cursor: pointer;
+}
+.kit .cvs-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 0 0 6px;
+}
+.kit .cvs-act {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: color-mix(in oklch, var(--accent) var(--kit-act-tint, 40%), currentColor);
+  border-radius: var(--radius-sm);
+}
+.kit .cvs-act.danger {
+  color: color-mix(in oklch, var(--danger) var(--kit-act-danger-tint, 60%), currentColor);
+}
+.kit .cvs-act:active {
+  background: var(--accent-soft);
+}
+.kit .cvs-older {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+}
+.kit .cvs-older:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* The keyboard ring. These controls are `all: unset`, which resets `outline` and unties the global
+ * `.kit :focus-visible` ring (the P3 case of `.pm-listbtn` & co) — restored ONCE for the family on the
+ * tools-row recipe (`.kit .tools-sheet .tools-row:focus-visible`): a 2px accent outline inset by 2px, so
+ * neither the sheet's edge nor a neighbouring row clips it. */
+.kit .cvs-btn:focus-visible,
+.kit .cvs-row:focus-visible,
+.kit .cvs-more:focus-visible,
+.kit .cvs-act:focus-visible,
+.kit .cvs-older:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* perf gate — drop the frosted blur on the plan sheet under data-perf=lite (§14.11) → opaque surface (the
