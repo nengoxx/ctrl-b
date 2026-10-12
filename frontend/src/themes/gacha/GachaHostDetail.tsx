@@ -1,6 +1,9 @@
+import { useEffect, useRef } from "react";
+
 import { FocalImg } from "../../components/FocalImg";
 import type { FleetRun } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
+import { attachScrollingStamp } from "../../lib/scrollingStamp";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
 import { livenessWord, type PendingKind } from "../../store/fleetPending";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
@@ -62,6 +65,14 @@ export function GachaHostDetail({
   onShowArt,
 }: Props) {
   const facts = hostDetailFacts(host, services);
+  // ISS-75 — the services list scrolls on its own, so it takes its own ISS-74 scrolling stamp (the shared
+  // helper; the sheet's covers `.bs-body` only). The list is always rendered, so it binds once.
+  const svcsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = svcsRef.current;
+    if (!el) return;
+    return attachScrollingStamp(el);
+  }, []);
   const online = facts.online;
   // The state word each action's accessible name ends with (W6/D72) — the same rule the capsule card's
   // and the track's labels already carry, now on the dossier's own bar: it is disabled for the whole
@@ -241,7 +252,10 @@ export function GachaHostDetail({
         )}
       </div>
 
-      <div className="gc-svcs">
+      {/* THE ONE SCROLLER (ISS-75): only the services scroll, under a still portrait and ✕ (gacha.css
+          `.gc-dossier`). Its bar is the kit's quiet one (ISS-74) — the class here, and its own scrolling
+          stamp below, because the sheet's stamp covers `.bs-body` only. */}
+      <div className="gc-svcs kit-quiet-scrollbar" ref={svcsRef}>
         {services.length === 0 ? (
           <div className="gc-svc-empty">no services on this unit</div>
         ) : (

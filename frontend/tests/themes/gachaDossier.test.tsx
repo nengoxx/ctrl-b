@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { focalPosition, type FocalArt } from "../../src/lib/focalPosition";
 import { relativeTime } from "../../src/lib/relativeTime";
+import { SCROLL_IDLE_MS } from "../../src/lib/scrollingStamp";
 import { rebaseServiceUrl, serviceBase } from "../../src/lib/serviceBase";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
 import { GachaHostDetail } from "../../src/themes/gacha/GachaHostDetail";
@@ -334,6 +335,69 @@ describe("the live service rows", () => {
     const { container } = renderD({ services: [] });
     expect(container.querySelectorAll(".gc-svc")).toHaveLength(0);
     expect(container.querySelector(".gc-svc-empty")).not.toBeNull();
+  });
+});
+
+// ── ONLY THE SERVICES SCROLL (ISS-75, owner report 2026-10-10) — a many-service machine scrolled the WHOLE
+//    dossier, cropping the portrait and carrying the ✕ away. Source-level for the layout (jsdom lays out
+//    nothing), behavioural for the stamp. ──────────────────────────────────────────────────────────────
+describe("only the services list scrolls (ISS-75)", () => {
+  const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  const block = (sel: string): string => {
+    const at = css.indexOf(`\n    ${sel} {`);
+    expect(at, sel).toBeGreaterThan(-1);
+    return /\{([^{}]*)\}/.exec(css.slice(at))![1];
+  };
+
+  it("bounds the dossier to the capped sheet: the body a column, the dossier a shrinkable column", () => {
+    const body = block(".bs-body:has(> .gc-dossier)");
+    expect(body).toContain("display: flex");
+    expect(body).toContain("flex-direction: column");
+    // the kit body keeps its own overflow-y: auto — the fallback for a short viewport — so it is NOT reset
+    expect(body).not.toContain("overflow");
+    const dossier = block(".gc-dossier");
+    expect(dossier).toContain("display: flex");
+    expect(dossier).toContain("flex-direction: column");
+    expect(dossier).toContain("min-height: 0");
+    // the head, metrics and actions keep their size; only the list gives way
+    expect(block(".gc-dossier > :not(.gc-svcs)")).toContain("flex-shrink: 0");
+  });
+
+  it("makes `.gc-svcs` the one scroller, shrinking only from a third row on, to a two-row floor", () => {
+    const list = block(".gc-svcs");
+    expect(list).toContain("overflow-y: auto");
+    // NO overscroll containment: at its end the list's drag chains to the body (the short-viewport
+    // fallback scroller); the kit body's own `contain` stops it at the page
+    expect(list).not.toContain("overscroll-behavior");
+    expect(list).toContain("flex: 0 0 auto"); // up to two rows it never shrinks (a short list is unchanged)
+    // 4px on top keeps the first row's focus ring inside the scroll clip; the gesture-bar inset moved
+    // here from the dossier, so it ends whichever box scrolls (the list, or the body in the fallback)
+    expect(list).toContain("padding: 4px 14px calc(14px + env(safe-area-inset-bottom))");
+    expect(block(".gc-dossier")).toContain("padding-bottom: 2px");
+    const many = block(".gc-svcs:has(> :nth-child(3))");
+    expect(many).toContain("flex-shrink: 1");
+    expect(many).toContain(
+      "min-height: calc(2 * var(--gc-svc-row-h) + 7px + 4px + 14px + env(safe-area-inset-bottom))",
+    );
+  });
+
+  it("wears the kit's quiet scrollbar and its own scrolling stamp (ISS-74's class + helper)", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = renderD({ services: [svc({ id: "a" }), svc({ id: "b" })] });
+      const list = container.querySelector<HTMLElement>(".gc-svcs")!;
+      expect(list.classList.contains("kit-quiet-scrollbar")).toBe(true);
+      expect(list.dataset.scrolling).toBeUndefined();
+      fireEvent.scroll(list);
+      expect(list.dataset.scrolling).toBe("true");
+      vi.advanceTimersByTime(SCROLL_IDLE_MS);
+      expect(list.dataset.scrolling).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
