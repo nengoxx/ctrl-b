@@ -330,7 +330,7 @@ export function GachaFleet({ active }: { active: boolean }) {
       morphImg.style.setProperty("view-transition-name", "capsule-shell");
       const myPrep = { card: morphImg, avatar, badge };
       prep.current = myPrep;
-      runViewTransition(() => {
+      void runViewTransition(() => {
         // Restore ONLY while still the owner — a newer intent may have cleaned and RE-STAMPED these
         // same nodes, and the stale callback must not undo its work (M1). Ownership lost ⇒ the newer
         // intent already restored (or re-claimed) them; nothing here is leaked.
@@ -616,7 +616,7 @@ export function GachaFleet({ active }: { active: boolean }) {
       return;
     }
     const avatar = document.querySelector<HTMLElement>(".gc-dossier .avatar");
-    runViewTransition(() => {
+    void runViewTransition(() => {
       // Void intent: touch NOTHING. The avatar this closed over may now belong to a different machine's
       // dossier (React re-uses the node across a swap) — suppressing it would leave that dossier's own
       // morph without a destination, and re-raising the overlay would put the art back over a screen the
@@ -641,7 +641,16 @@ export function GachaFleet({ active }: { active: boolean }) {
       return;
     }
     const myPrep = artPrep.current;
-    runViewTransition(() => {
+    // THE BADGE ON THE CLOSE LEG (ISS-79 — the G7 recipe, mirrored). The flying portrait is a named group,
+    // painted ABOVE the root snapshot for the whole flight, and the star lozenge is NOT named under
+    // `showcase` (gacha.css) — so it rides inside the root snapshot, hidden under the portrait, and pops
+    // on top in one frame when the pseudos are torn down. Named `dossier-rar` for the NEW capture only, it
+    // gets its own new-only group (appended after `capsule-shell`, which the old capture already
+    // registered, so it paints above the landing portrait) and gacha.css's held `gacha-rar-in` fades it up
+    // as the frame lands. NEVER in the old capture: there it sits under the opaque full-screen art, and as
+    // its own group it would float above that art from the first frame — hence set INSIDE the callback.
+    let badge: HTMLElement | null = null;
+    void runViewTransition(() => {
       // Release only what is still OURS: a teardown may have released it already, or a newer showcase may
       // have re-suppressed the very same avatar — stripping that would put two `capsule-shell` nodes in
       // its own closing capture.
@@ -650,8 +659,16 @@ export function GachaFleet({ active }: { active: boolean }) {
         myPrep.avatar.style.removeProperty("view-transition-name");
       }
       if (artGen.current !== mine) return; // a teardown, or a newer showcase, owns this layer now
+      badge = document.querySelector<HTMLElement>(".gc-dossier .art-rar");
+      badge?.style.setProperty("view-transition-name", "dossier-rar");
       setShowArt(null);
-    }, "showcase");
+    }, "showcase").then(() => {
+      // Drop it once the transition is over (finished OR skipped — a skipped one settles in microtasks,
+      // before a superseding transition's old capture). Only if it is still OUR value: a capsule morph's
+      // lingering-badge suppression may have claimed the same node with `none` meanwhile.
+      if (badge?.style.getPropertyValue("view-transition-name") === "dossier-rar")
+        badge.style.removeProperty("view-transition-name");
+    });
   }, [showArt, releaseArtName]);
   // THE ANDROID BACK GESTURE (ISS-53). The showcase is full-screen, so Back is its own dismissal — the
   // overlay's ✕ / tap / Escape all call the guard's closer, and `closeShowcase` runs in the guard's

@@ -160,7 +160,7 @@ async function runSwitch(
   // The feature-detect + reduced-motion bypass + flushSync trio now lives in `lib/viewTransition.ts` (D52 —
   // one shared wrapper, so the gacha tab transition can't grow a second hand-rolled copy). No `type` is
   // passed: a theme swap is the UNSTAMPED default kind, exactly as this block behaved before the extraction.
-  runViewTransition(() =>
+  void runViewTransition(() =>
     setUI({
       theme: next,
       mode: target.mode,

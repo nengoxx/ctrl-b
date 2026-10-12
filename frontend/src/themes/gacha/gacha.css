@@ -3268,7 +3268,9 @@
      * overlay — so on the open leg the badge exists in the new capture too, and a named element is lifted
      * OUT of the root snapshot and painted above it: the badge would float over the artwork it is supposed
      * to be behind. The reported artefact is the `detail` morph; `showcase` keeps the badge inside the page
-     * snapshot, where occlusion still works. */
+     * snapshot, where occlusion still works — on the OPEN leg and in every OLD capture. The CLOSE leg's new
+     * capture is the one exception (ISS-79, the showcase block below): there the badge must land ABOVE the
+     * returning portrait, so GachaFleet names it inline after the old capture. */
     :scope[data-transition="detail"] .gc-dossier .art-rar {
       view-transition-name: dossier-rar;
     }
@@ -3329,6 +3331,14 @@
      * suppression its partner does. */
     :scope[data-transition="showcase"] .gc-art-view img {
       view-transition-name: capsule-shell;
+    }
+    /* THE BADGE ON THE CLOSE LEG (ISS-79). Named inline by GachaFleet's `closeShowcase` for the NEW
+     * capture only (never the old one, never the open leg — the `detail` block's note above), so this is
+     * a new-only group: the `detail` block's held fade, re-timed to this flight's 420 ms, brings the stars
+     * up over the last ~115 ms as the portrait lands instead of popping on top after the teardown.
+     * Opacity only (§14.11). */
+    :scope[data-transition="showcase"]::view-transition-new(dossier-rar) {
+      animation: gacha-rar-in 420ms both;
     }
 
     .gc-dossier {

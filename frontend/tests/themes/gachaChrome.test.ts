@@ -875,6 +875,13 @@ describe("gacha G7 — the DRAWN rarity star (R16)", () => {
     // The element identity is load-bearing elsewhere: the `dossier-rar` view-transition-name is declared
     // on this selector, and GachaFleet's lingering-badge suppression queries it.
     expect(rules).toContain('[data-transition="detail"] .gc-dossier .art-rar');
+    // ISS-79: under `showcase` CSS never NAMES it (the open leg and every old capture keep it inside the
+    // root snapshot); GachaFleet names it inline for the close leg's new capture, and this is its fade —
+    // the `detail` hold, re-timed to the showcase's 420 ms flight.
+    expect(rules).not.toContain('[data-transition="showcase"] .gc-dossier .art-rar');
+    expect(
+      ruleBlock(rules, '[data-transition="showcase"]::view-transition-new(dossier-rar) {'),
+    ).toContain("animation: gacha-rar-in 420ms both");
   });
 });
 

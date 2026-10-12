@@ -86,14 +86,20 @@ export function viewTransitionsActive(): boolean {
  *
  *  Never rejects and never needs awaiting: a caller's correctness must not depend on the animation (a hidden
  *  page skips transitions entirely, and a second `startViewTransition` SKIPS the running one with an
- *  AbortError — the skipped callback has already run, so state stays correct either way). */
-export function runViewTransition(update: () => void, type?: string): void {
+ *  AbortError — the skipped callback has already run, so state stays correct either way).
+ *
+ *  RETURNS a promise that settles when the transition is OVER — finished, skipped or aborted, all alike,
+ *  and never rejecting — after this wrapper's own cleanup has run; already resolved when no transition ran
+ *  (the instant path). It exists for VT-only DOM prep that must outlive the update callback and be undone
+ *  once the pseudos are torn down (gacha's showcase-close badge name, ISS-79). Additive: a caller that
+ *  ignores it is unchanged. It is a TEARDOWN signal, never a state gate (the rule above). */
+export function runViewTransition(update: () => void, type?: string): Promise<void> {
   const doc = document as VTDocument;
   const start = doc.startViewTransition?.bind(doc);
   const apply = () => flushSync(update);
   if (!viewTransitionsActive() || !start) {
     apply(); // reduced-motion or unsupported → instant swap
-    return;
+    return Promise.resolve();
   }
   const root = doc.documentElement;
   // Stamp BEFORE starting, so the pseudo-element rules keyed on `html[data-transition]` are already in
@@ -132,7 +138,7 @@ export function runViewTransition(update: () => void, type?: string): void {
     stampOwner = null;
     delete root.dataset.transition;
   };
-  void t.finished.then(clear, clear); // `.then(f, f)`, not `.finally(f)`: finally RE-THROWS the rejection
+  return t.finished.then(clear, clear); // `.then(f, f)`, not `.finally(f)`: finally RE-THROWS the rejection
 }
 
 // ── THE NAVIGATION-TRANSITION DECORATOR (M2 — D52 / GACHA_PLAN §10.1) ───────────────────────────────
@@ -162,5 +168,5 @@ export function runNavTransition(update: () => void): void {
     update();
     return;
   }
-  runViewTransition(update, "tab");
+  void runViewTransition(update, "tab");
 }

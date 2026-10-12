@@ -1543,6 +1543,56 @@ describe("the art showcase's morph", () => {
     });
   });
 
+  it("names the STAR badge for the close leg's NEW capture only, and drops it once it is over (ISS-79)", async () => {
+    // The badge rode the root snapshot under the flying portrait and popped on top at teardown. Its own
+    // `dossier-rar` group (gacha.css's held fade) needs the name in the NEW capture — and NOT in the old
+    // one, where it would float above the full-screen art. This variant of the mock settles `finished`
+    // on demand, because the drop rides it (`runViewTransition`'s returned promise).
+    const settles: (() => void)[] = [];
+    const pending: (() => void)[] = [];
+    (document as { startViewTransition?: unknown }).startViewTransition = vi.fn(
+      (cb: () => void) => {
+        pending.push(cb);
+        let settle!: () => void;
+        const finished = new Promise<void>((res) => {
+          settle = res;
+        });
+        settles.push(settle);
+        return { ready: Promise.resolve(), finished, skipTransition: vi.fn() };
+      },
+    );
+    const badgeName = (): string =>
+      document
+        .querySelector<HTMLElement>(".gc-dossier .art-rar")!
+        .style.getPropertyValue("view-transition-name");
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    act(() => void pending[0]());
+    act(() => void settles[0]());
+    act(() => {
+      fireEvent.click(portrait());
+    });
+    act(() => void pending[1]());
+    expect(badgeName()).toBe(""); // the OPEN leg never names it (the existing ruling)
+    act(() => void settles[1]());
+    act(() => {
+      fireEvent.click(document.querySelector<HTMLElement>(".gc-art-view")!);
+    });
+    expect(badgeName()).toBe(""); // the close's OLD capture: un-named, under the art
+    act(() => {
+      pending[2]();
+      expect(badgeName()).toBe("dossier-rar"); // …named inside the callback, for the NEW capture
+    });
+    expect(badgeName()).toBe("dossier-rar"); // held through the flight
+    await act(async () => {
+      settles[2]();
+      await Promise.resolve();
+    });
+    expect(badgeName()).toBe(""); // gone once the transition is over: the next capture starts clean
+  });
+
   it("leaves NO suppression behind after open/close cycles — the next capsule morph needs its destination", () => {
     // The single-owner discipline. A stray `view-transition-name: none` on the avatar would give the next
     // `detail` morph no destination at all (a lone `::view-transition-old`, i.e. nothing visible).
@@ -1660,7 +1710,7 @@ describe("the art showcase's morph", () => {
     const vt = deferVT();
     const { rerender } = render(<GachaFleet active />);
     act(() => {
-      runViewTransition(() => {}, "tab"); // what the nav decorator does, minus its gate
+      void runViewTransition(() => {}, "tab"); // what the nav decorator does, minus its gate
     });
     expect(vt.start).toHaveBeenCalledTimes(1);
     rerender(<GachaFleet active={false} />); // the same commit's other half: the body leaves
