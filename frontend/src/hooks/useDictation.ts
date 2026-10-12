@@ -1,4 +1,4 @@
-import { QueryClientContext } from "@tanstack/react-query";
+import { hashKey, QueryClientContext } from "@tanstack/react-query";
 import {
   useCallback,
   useContext,
@@ -10,7 +10,14 @@ import {
 } from "react";
 
 import { postForm } from "../api/client";
-import type { LiveCallWire, SttAutoStopWire, SttUploadWire, VoiceStatus } from "./useVoiceStatus";
+import type {
+  LiveCallWire,
+  SttAutoStopWire,
+  SttUploadWire,
+  TtsBackgroundWire,
+  VoiceStatus,
+} from "./useVoiceStatus";
+import { holdWhileHidden, touchHoldProgress } from "../lib/audioController";
 import { type CallTrail, createCallTrail, postTrail } from "../lib/callTrail";
 import { runComposer } from "../lib/composer";
 import {
@@ -351,6 +358,10 @@ interface OutboundClip {
  *  own horizon so the wait can never outgrow the thing it waits for. The `online` event cuts it short. */
 const UPLOAD_BACKOFF_BASE_MS = 1000;
 
+/** ISS-73 ① row 17 — the `/voice/status` cache entry's hash (the key `useVoiceStatus` queries under, and
+ *  the one `sendClip`'s `livePolicy` reads): an upload loop watches the cache for THAT entry's changes. */
+const VOICE_STATUS_HASH = hashKey(["voice-status"]);
+
 /** ISS-84 (fix wave W5) — how many times the clip's OWN duration one attempt may take, when that beats
  *  the `upload_timeout_s` floor. A derived factor, not a knob: at `RECORDER_BITRATE` (32 kbps) a clip's
  *  bytes take exactly its own length on a 32 kbps uplink, and EDGE / an edge-of-LTE cell under WireGuard's
@@ -609,6 +620,10 @@ function extFromMime(mime: string): string {
  *                    test stub) → the old behaviour: ONE attempt, no timeout — nothing here invents one
  *                    of these numbers. Snapshotted at each loop's entry, so a Conf refresh never changes
  *                    a loop halfway.
+ * @param background `/voice/status.tts_background` (ISS-73 ①, car-wave §2.7): the hidden-page hold's
+ *                    switch + idle bound, which an upload loop on a HIDDEN page arms like a pending reply
+ *                    does. Read like `upload` (the query cache first, this the fallback) and snapshotted
+ *                    at the loop's entry. Absent → no hold: the retries resume on the thaw, as before.
  */
 export function useDictation({
   sttReady,
@@ -618,6 +633,7 @@ export function useDictation({
   liveEar,
   liveCall,
   upload: uploadKnobs,
+  background,
 }: {
   sttReady: boolean;
   statusStamp: number;
@@ -626,6 +642,7 @@ export function useDictation({
   liveEar?: boolean;
   liveCall?: LiveCallWire;
   upload?: SttUploadWire;
+  background?: TtsBackgroundWire;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   /** The phase as of THIS instant (ISS-83) — the state above is what the UI paints, and it lags a
@@ -775,10 +792,22 @@ export function useDictation({
   );
   const uploadRef = useRef(uploadCfg);
   const autoSendRef = useRef(autoSend);
+  // ISS-73 ① — the hidden-page hold's knobs, the same fallback mirror (memoized on the primitives).
+  const holdKeep = background?.keepalive;
+  const holdIdleS = background?.idle_s;
+  const backgroundCfg = useMemo<TtsBackgroundWire | undefined>(
+    () =>
+      holdKeep !== undefined && holdIdleS !== undefined
+        ? { keepalive: holdKeep, idle_s: holdIdleS }
+        : undefined,
+    [holdKeep, holdIdleS],
+  );
+  const backgroundRef = useRef(backgroundCfg);
   useEffect(() => {
     uploadRef.current = uploadCfg;
     autoSendRef.current = autoSend;
-  }, [uploadCfg, autoSend]);
+    backgroundRef.current = backgroundCfg;
+  }, [uploadCfg, autoSend, backgroundCfg]);
   const streamWanted = !!liveEar && !!liveCall?.dictation && frameMs > 0 && tailWaitMs > 0;
 
   // Whether the browser will even hand us a mic. `navigator.mediaDevices` is undefined in an insecure
@@ -952,10 +981,23 @@ export function useDictation({
       /** The LIVE policy (W2): the shared query cache first — app-global, so a Retry from a dead
        *  instance's toast still reads the owner's current Conf — and this instance's props only when the
        *  cache has nothing (no provider, or no answer yet). */
-      const livePolicy = (): { autoSend: boolean; upload: SttUploadWire | undefined } => {
+      const livePolicy = (): {
+        autoSend: boolean;
+        upload: SttUploadWire | undefined;
+        background: TtsBackgroundWire | undefined;
+      } => {
         const status = queryClient?.getQueryData<VoiceStatus>(["voice-status"]);
-        if (status) return { autoSend: status.stt_auto_send, upload: status.stt_upload };
-        return { autoSend: autoSendRef.current, upload: uploadRef.current };
+        if (status)
+          return {
+            autoSend: status.stt_auto_send,
+            upload: status.stt_upload,
+            background: status.tts_background,
+          };
+        return {
+          autoSend: autoSendRef.current,
+          upload: uploadRef.current,
+          background: backgroundRef.current,
+        };
       };
       // ONE CLOSURE PER CLIP: the parked toast's Retry re-enters `run` — this same clip, through this
       // same loop, with a fresh policy read at its own entry.
@@ -964,8 +1006,27 @@ export function useDictation({
         const cfg = policy.upload;
         const owner = {}; // this loop's claim on the tab's activity slot
         let release = (): void => {};
+        /** The loop's policy watch (row 17), installed in the `try`, removed in the `finally`. */
+        let unwatchPolicy: (() => void) | null = null;
         setPhaseNow("sending");
-        // ISS-73: the pending-upload hold arms here
+        // ISS-73 ① — THE PENDING-UPLOAD HOLD (car-wave §2.7): a retry loop on a HIDDEN page freezes like a
+        // pending reply (its timers and its `online` wait stop after ~90 s of silence), so while this loop
+        // runs AND the page is hidden it holds the page awake — the reply hold's own mechanism, under the
+        // same switch and idle bound (`tts_background`). Unlike the RETRY budget above (snapshotted: ISS-84's
+        // "a late clip behaves as on time"), the switch and the bound are read LIVE at every evaluation
+        // (code round row 4, Sol M5): OFF must mean no hold, even for a loop already running. It follows
+        // the page's own edges and the knobs' changes for the loop's lifetime (installed inside the `try`,
+        // so the `finally` always removes it), and its PROGRESS is the loop's entry, a link coming back, an
+        // attempt starting or answering. Off/absent → no hold: the retries resume on the thaw and the clip
+        // is never lost either way.
+        const holdUpload = (): void => {
+          const bg = livePolicy().background;
+          holdWhileHidden(
+            "upload",
+            bg?.keepalive === true && document.visibilityState === "hidden",
+            bg?.idle_s ?? 0,
+          );
+        };
         const horizonMs = cfg
           ? Math.max(
               cfg.timeout_s * 1000,
@@ -1007,6 +1068,20 @@ export function useDictation({
           // wait included — so a composer remounted (or a dead-toast Retry) during that wait paints
           // `sending`, not `idle`, for the whole of it. Each attempt republishes its own number.
           publishUploadActivity(owner, { attempt: 1, of: attempts });
+          // ISS-73 ① — this OPERATION's progress baseline, before the hold can arm (code round row 1,
+          // Opus MED-1 · Sol M4): the bound is page-wide, and a fresh loop hidden on a known-dead link
+          // (no attempt yet) would otherwise inherit an older reply's stale stamp and lapse at once.
+          touchHoldProgress();
+          document.addEventListener("visibilitychange", holdUpload); // see `holdUpload`
+          // …and the KNOBS' changes, observed by the LOOP for its own lifetime (code round row 17, Sol):
+          // the loop outlives the composer by design (ruling 18), so a component effect cannot be what
+          // tells it the owner switched the hold OFF from Conf. The source is the one `livePolicy` reads —
+          // the app's query cache — re-read on every change of the `voice-status` entry.
+          unwatchPolicy =
+            queryClient?.getQueryCache().subscribe((e) => {
+              if (e.query.queryHash === VOICE_STATUS_HASH) holdUpload();
+            }) ?? null;
+          holdUpload();
           // THE LOST-CLIP MARK (part G, W4): written at the loop's ENTRY — a hanging first attempt is the
           // usual failure and can run as long as the clip, and a reload in that window (the SW refresh a
           // returning link pops) would lose it. Cleared on every settle; kept by a park.
@@ -1024,6 +1099,7 @@ export function useDictation({
                 park();
                 return;
               }
+              touchHoldProgress(); // ISS-73 ① row 1: the link came back — progress for the hold's bound
             }
             if (left() <= 0) {
               park(); // the total horizon is spent — no NEW attempt starts past it, whatever remain
@@ -1033,7 +1109,9 @@ export function useDictation({
             // Every attempt gets its FULL horizon (X3): capping it to what is left would cut short exactly
             // the returning-link case — a tunnel eats most of the total, `online` fires, and the first
             // real attempt would get a sliver and park. The gate above keeps the bound finite.
+            touchHoldProgress(); // ISS-73 ①: an attempt starting is progress for the hold's bound…
             const r = await attemptUpload(form, horizonMs);
+            touchHoldProgress(); // …and so is its answer, whatever it was
             if (r.kind === "text") {
               clearClipPending(clip.id);
               if (r.text.trim()) {
@@ -1079,7 +1157,10 @@ export function useDictation({
             attempt += 1;
           }
         } finally {
-          // ISS-73: the pending-upload hold retires here
+          // ISS-73 ① — the loop is over (landed, parked or dropped): its hold goes with it.
+          document.removeEventListener("visibilitychange", holdUpload);
+          unwatchPolicy?.();
+          holdWhileHidden("upload", false);
           publishUploadActivity(owner, null);
           setPhaseNow("idle");
           release();
@@ -2338,6 +2419,10 @@ export function useDictation({
     onPending: onPendingRef,
     handsFree: handsFreeRef,
     onLive: onLiveRef,
+    /** ISS-73 ① (rulings row 12) — the hidden-page hold's battery switch (`tts_background.keepalive`,
+     *  this hook's `background` prop; absent → off). The mic gesture primes the reply hold only while it
+     *  is ON, reading it here rather than opening a probe query of its own. */
+    replyHold: holdKeep === true,
   };
 }
 

@@ -79,7 +79,9 @@ TRAIL_MAX_ENTRIES = 200
 #: is), any other mode is the subdirectory of that name. `clip` (Phase 26 S9, session-64 rulings H6/H7) is
 #: the CLIP DOOR's: every push-to-talk upload under `voice.live.debug` gets a SERVER-minted id and its own
 #: trail + capture there, so all three doors share one trail/capture seam instead of a per-door special case.
-LiveMode = Literal["call", "dictation", "clip"]
+#: `mouth` (ISS-73 ①, car-wave design §3.7 ②) is the browser's PLAYBACK probe: one trail per page, written
+#: only through the trail route, never a leg — what the reply's `play()` did while the page was hidden.
+LiveMode = Literal["call", "dictation", "clip", "mouth"]
 LIVE_MODES: tuple[LiveMode, ...] = get_args(LiveMode)
 
 #: What a live LEG serves — `start.mode` on the relay's wire (S11) and `mode` on the browser's trail route
@@ -87,6 +89,12 @@ LIVE_MODES: tuple[LiveMode, ...] = get_args(LiveMode)
 #: so a socket or a browser batch naming it is refused at the edge exactly like an unknown mode.
 LegMode = Literal["call", "dictation"]
 LEG_MODES: tuple[LegMode, ...] = get_args(LegMode)
+
+#: What the browser's TRAIL ROUTE accepts as a batch's `mode`: every live leg's, plus `mouth` (ISS-73 ①)
+#: — a trail with no socket behind it. Its own vocabulary rather than a widened `LegMode`, because the
+#: relay's `start.mode` reads `LEG_MODES` and a socket must never be admitted as a "mouth" leg.
+ClientTrailMode = Literal["call", "dictation", "mouth"]
+CLIENT_TRAIL_MODES: tuple[ClientTrailMode, ...] = get_args(ClientTrailMode)
 
 
 #: `start.leg`'s accepted range — the client's per-call reconnect ordinal (D77). Bounded like every

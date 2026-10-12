@@ -13,113 +13,12 @@ import {
   startPcmCapture,
   wantsAec,
 } from "../../src/lib/pcmCapture";
+import { FakeContext } from "./audioFakes";
 
 // lib/pcmCapture — the call's EAR, opened. The worklet's arithmetic is pinned by `pcmWorklet.test.ts`
 // (which evaluates the shipped source against a fake processor); what is pinned HERE is the chain's
 // failure contract: a capture that cannot actually run must FAIL the start rather than hand back a
 // silent ear, and nothing it allocated on the way may be left behind.
-
-/** The Web Audio stand-ins, minimal and driveable. `state` is the whole point of the suspended case. */
-class FakeContext {
-  static last: FakeContext | null = null;
-  /** Every context made, in order — the K6 fallback makes two. */
-  static all: FakeContext[] = [];
-  /** K6 — the device's own rate: what a context runs at when no rate is asked for. */
-  static deviceRate = 48000;
-  /** K6 — Firefox/Fennec before 148: `createMediaStreamSource` THROWS on a context whose rate is not
-   *  the track's (R96 §2.3). The track here runs at the device rate. */
-  static foreignRateThrows = false;
-  /** K6 — a browser that takes the option and runs at the device rate anyway (R96 §2.2's unverified
-   *  "some devices stick to the system default"): whatever it GIVES is what must be declared. */
-  static ignoresRateOption = false;
-  /** What the constructor was handed — the K6 ask, recorded. */
-  options: AudioContextOptions | undefined;
-  state: AudioContextState = "running";
-  /** The rate the fake RUNS at: the requested one, as a real context honours it, unless a case says
-   *  otherwise. */
-  sampleRate: number;
-  streamSources = 0;
-  closed = 0;
-  resumes = 0;
-  /** What `resume()` leaves the context in — a policy that refuses the resume leaves it suspended. */
-  resumesTo: AudioContextState = "running";
-  audioWorklet = { addModule: vi.fn(async () => {}) };
-  /** The render clock (ISS-54's trail field) — a case moves it by hand. */
-  currentTime = 0;
-  /** ISS-54 — the context's own `error`/`statechange` listeners, the `FakeTrack` pattern. */
-  ctxListeners: Record<string, ((e: Event) => void)[]> = {};
-  addEventListener(type: string, cb: (e: Event) => void) {
-    (this.ctxListeners[type] ||= []).push(cb);
-  }
-  removeEventListener(type: string, cb: (e: Event) => void) {
-    this.ctxListeners[type] = (this.ctxListeners[type] ?? []).filter((c) => c !== cb);
-  }
-  /** Raise one of the context's events the way the renderer does (R99 §1.5: `error`, then the state). */
-  fire(type: string) {
-    for (const cb of [...(this.ctxListeners[type] ?? [])]) cb(new Event(type));
-  }
-  /** How many listeners are still attached, across both events — `stop()` must leave none (ISS-54 design round, Maya L1). */
-  listening(): number {
-    return Object.values(this.ctxListeners).reduce((n, l) => n + l.length, 0);
-  }
-  constructor(options?: AudioContextOptions) {
-    this.options = options;
-    this.sampleRate =
-      (!FakeContext.ignoresRateOption && options?.sampleRate) || FakeContext.deviceRate;
-    FakeContext.last = this;
-    FakeContext.all.push(this);
-  }
-  async resume(): Promise<void> {
-    this.resumes += 1;
-    this.state = this.resumesTo;
-  }
-  async close(): Promise<void> {
-    this.closed += 1;
-    this.state = "closed";
-  }
-  createMediaStreamSource() {
-    if (FakeContext.foreignRateThrows && this.sampleRate !== FakeContext.deviceRate)
-      throw new DOMException(
-        "Connecting AudioNodes from AudioContexts with different sample-rate is currently not supported.",
-        "NotSupportedError",
-      );
-    this.streamSources += 1;
-    return { connect: () => {} };
-  }
-  /** Every gain this context ever made: the uplink's silent sink, and (D73 S6 ③) the keepalive's. */
-  gains: { gain: { value: number }; disconnects: number }[] = [];
-  createGain() {
-    const node = {
-      gain: { value: 1 },
-      disconnects: 0,
-      connect: () => {},
-      disconnect: () => {
-        node.disconnects += 1;
-      },
-    };
-    this.gains.push(node);
-    return node;
-  }
-  /** …and every constant source — the keepalive's, started while the page is hidden. */
-  sources: { started: number; stopped: number }[] = [];
-  createConstantSource() {
-    const src = {
-      started: 0,
-      stopped: 0,
-      start: () => {
-        src.started += 1;
-      },
-      stop: () => {
-        src.stopped += 1;
-      },
-      connect: () => {},
-      disconnect: () => {},
-    };
-    this.sources.push(src);
-    return src;
-  }
-  destination = {};
-}
 
 class FakeTrack {
   stopped = 0;

@@ -11,11 +11,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // the real chain, so "the gesture changes capture ergonomics, not send policy" is a property these
 // cases can actually observe (the transcript lands in the draft, or routes, exactly as dictation does).
 
-const voice = vi.hoisted(() => ({ live: false, autoSend: false }));
+const voice = vi.hoisted(() => ({ live: false, autoSend: false, keepalive: true }));
 
 vi.mock("../../src/hooks/useVoiceStatus", () => ({
   useVoiceStatus: () => ({
-    data: { stt: true, tts: false, stt_auto_send: voice.autoSend, live: voice.live },
+    data: {
+      stt: true,
+      tts: false,
+      stt_auto_send: voice.autoSend,
+      live: voice.live,
+      // ISS-73 ① row 12 — the hidden-page hold's switch gates the gesture's reply prime.
+      tts_background: { keepalive: voice.keepalive, idle_s: 600 },
+    },
     dataUpdatedAt: 1,
   }),
 }));
@@ -35,10 +42,18 @@ vi.mock("../../src/store/toast", async (importActual) => {
   return { ...actual, pushToast: vi.fn(actual.pushToast) };
 });
 // Real behaviour, observable: the call commit's ORDER contract (dismiss → prime → open) closes the
-// carried-seek blocker (micro-confirm №2), and an order is only assertable on recorded calls.
+// carried-seek blocker (micro-confirm №2), and an order is only assertable on recorded calls. The reply
+// hold's gesture prime (ISS-73 ①) is a bare spy: the press only has to CALL it (its own behaviour is
+// pinned in `audioControllerCall.test.ts`), and a real one would build the page-lifetime `<audio>` on
+// the first press of the file — ahead of the call-commit case that watches that construction.
 vi.mock("../../src/lib/audioController", async (importActual) => {
   const actual = await importActual<typeof import("../../src/lib/audioController")>();
-  return { ...actual, dismiss: vi.fn(actual.dismiss), primeAudio: vi.fn(actual.primeAudio) };
+  return {
+    ...actual,
+    dismiss: vi.fn(actual.dismiss),
+    primeAudio: vi.fn(actual.primeAudio),
+    primeReplyHold: vi.fn(),
+  };
 });
 
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
@@ -453,6 +468,57 @@ describe("Esc + the keyboard door (R69 §8.1/risk 5)", () => {
     fireEvent.click(mic()); // Enter/Space, past the guard
     await tick(10);
     expect(mic().className).toContain("rec"); // the keyboard door works again
+  });
+
+  it("ISS-73 ① · an ACCEPTED press primes the reply hold (its gesture); a press refused while sending does not", async () => {
+    const { primeReplyHold } = await import("../../src/lib/audioController");
+    const stt = pendingStt();
+    render(<KitComposer />);
+    down(); // the press itself — before any activation, inside the gesture
+    expect(vi.mocked(primeReplyHold)).toHaveBeenCalledTimes(1);
+    await tick(ACTIVATE_MS + 10);
+    await tick(HELD_MS);
+    up();
+    await tick(CLICK_GUARD_MS + 10);
+    const spinning = document.querySelector<HTMLButtonElement>(".kit-cbtn.mic.sending")!;
+    expect(spinning).not.toBeNull();
+    fireEvent.pointerDown(spinning, { pointerId: PID, button: 0, clientX: X0, clientY: Y0 }); // refused
+    expect(vi.mocked(primeReplyHold)).toHaveBeenCalledTimes(1); // the door refused it first
+    await act(async () => {
+      stt.answer();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+    up();
+  });
+
+  it("ISS-73 ① row 12 · with the battery switch OFF neither the press nor the keyboard start primes", async () => {
+    voice.keepalive = false;
+    try {
+      const { primeReplyHold } = await import("../../src/lib/audioController");
+      render(composed(KitComposer));
+      down();
+      up();
+      await tick(CLICK_GUARD_MS + 10);
+      fireEvent.click(mic()); // the keyboard start
+      await tick(10);
+      expect(mic().className).toContain("rec");
+      expect(vi.mocked(primeReplyHold)).not.toHaveBeenCalled();
+    } finally {
+      voice.keepalive = true;
+    }
+  });
+
+  it("ISS-73 ① row 7 · a KEYBOARD dictation START primes the reply hold too; its STOP does not", async () => {
+    const { primeReplyHold } = await import("../../src/lib/audioController");
+    render(composed(KitComposer));
+    fireEvent.click(mic()); // Enter/Space — no pointer session
+    await tick(10);
+    expect(mic().className).toContain("rec");
+    expect(vi.mocked(primeReplyHold)).toHaveBeenCalledTimes(1);
+    await tick(HELD_MS);
+    fireEvent.click(mic()); // the keyboard stop
+    await tick(10);
+    expect(vi.mocked(primeReplyHold)).toHaveBeenCalledTimes(1);
   });
 
   it("…and the swallow expires, so the next keyboard activation still works", async () => {
@@ -898,6 +964,7 @@ describe("OF-3/OF-4 (+S2.5) · the recorder seams the gesture registers", () => 
     onPending: { current: null },
     handsFree: { current: false },
     onLive: { current: null },
+    replyHold: false, // ISS-73 ① — the hold's switch (row 12): these cases are not about it
   });
 
   /** The hook PLUS its chrome, which is what gives the level somewhere to land. */
@@ -1003,6 +1070,7 @@ describe("S2.5 · the gesture publishes WHOSE TIMEOUT THE FINGER IS (§9.3-c)", 
     onPending: { current: null },
     handsFree: { current: false },
     onLive: { current: null },
+    replyHold: false, // ISS-73 ① — the hold's switch (row 12): these cases are not about it
   });
 
   function Button({ mic: m }: { mic: ReturnType<typeof useDictation> }) {

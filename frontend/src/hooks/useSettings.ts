@@ -105,6 +105,11 @@ export interface VoiceTts extends VoiceServiceCommon {
   // applied client-side by `lib/toSpeech`, published on the same `tts_chunking` payload the playback
   // queue already reads; bold keeps unwrapping either way (emphasis is speech, an action is not).
   speak_actions: boolean;
+  // ISS-73 ① — the hidden-page hold: keep the page awake while a reply (or a clip upload) is pending with
+  // the screen off (the call's `background_keepalive` analogue — calls keep their own), bounded by
+  // `background_idle_s` seconds without progress (0 = no bound, ≤ 3600). Both ride `tts_background`.
+  background_keepalive: boolean;
+  background_idle_s: number;
 }
 
 /** LIVE VOICE / call mode (Phase 24 / D71 §5.1 — `LiveCfg`, which extends the same `VoiceServiceCfg`

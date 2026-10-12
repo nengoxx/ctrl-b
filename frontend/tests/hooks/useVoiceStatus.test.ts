@@ -8,8 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // the response lands. That hand-off is the one place a wire rename (`min_words` → `minChars`, …) would
 // silently mis-size every chunk, so it gets driven for real here rather than mocked.
 
-const h = vi.hoisted(() => ({ setChunkPolicy: vi.fn() }));
-vi.mock("../../src/lib/audioController", () => ({ setChunkPolicy: h.setChunkPolicy }));
+const h = vi.hoisted(() => ({ setChunkPolicy: vi.fn(), setMouthTrail: vi.fn() }));
+vi.mock("../../src/lib/audioController", () => ({
+  setChunkPolicy: h.setChunkPolicy,
+  setMouthTrail: h.setMouthTrail,
+}));
 
 import { useVoiceStatus } from "../../src/hooks/useVoiceStatus";
 
@@ -88,6 +91,21 @@ describe("useVoiceStatus · the D63 chunk policy reaches the playback controller
     expect(h.setChunkPolicy).toHaveBeenCalledWith(
       expect.objectContaining({ speakActions: true }) as unknown,
     );
+  });
+
+  // ISS-73 ① — the mouth's probe trail rides the CALL TRAIL's gate (`live_call.debug`), published the
+  // same way: on when the server says so, off on every other answer (absent included — no gate invented).
+  it("publishes the mouth trail's gate from `live_call.debug`, absent reading as off", async () => {
+    mockStatus({ stt: true, tts: true, stt_auto_send: false, live_call: { debug: true } });
+    const { result } = renderHook(() => useVoiceStatus(), { wrapper });
+    await waitFor(() => expect(result.current.data?.tts).toBe(true));
+    expect(h.setMouthTrail).toHaveBeenLastCalledWith(true);
+
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mockStatus({ stt: true, tts: true, stt_auto_send: false });
+    const older = renderHook(() => useVoiceStatus(), { wrapper });
+    await waitFor(() => expect(older.result.current.data?.tts).toBe(true));
+    expect(h.setMouthTrail).toHaveBeenLastCalledWith(false);
   });
 
   it("a payload without the block leaves the controller on its whole-message default", async () => {

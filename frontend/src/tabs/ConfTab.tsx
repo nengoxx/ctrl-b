@@ -1894,6 +1894,10 @@ export function ConfTab({ active }: Props) {
           chunk_min_chars: Number(draft.voice.tts.chunk_min_chars),
           chunk_max_chars: Number(draft.voice.tts.chunk_max_chars),
           chunk_lookahead: Number(draft.voice.tts.chunk_lookahead),
+          // ISS-73 ① — the hold's bound takes `numOrNull`, the call's `background_idle_s` reason: its
+          // floor IS zero and zero MEANS something (no bound), so a blank coercing to 0 would silently
+          // switch the bound off instead of earning the visible 422.
+          background_idle_s: numOrNull(draft.voice.tts.background_idle_s),
         },
         // D71 §5.1. `silence_ms` takes the bare `Number` its neighbours take — the backend floors it at
         // 500 (D76), so a cleared field earns the same visible 422; `vad_threshold` saves through
@@ -2937,6 +2941,25 @@ export function ConfTab({ active }: Props) {
             desc="how many chunks to synthesize ahead of the one playing (1–4)"
             value={String(vtts?.chunk_lookahead ?? "")}
             onChange={(v) => setTts("chunk_lookahead", v as unknown as number)}
+          />
+          {/* ISS-73 ① — the hidden-page hold (the call's "Keep the ear awake", for a pending reply or a
+              clip upload); both values ride `GET /voice/status` (`tts_background`) to the mouth. Its own
+              switch because it is a deliberate defeat of a battery protection (owner ruling 2026-10-12). */}
+          <SettingRow
+            label="Speak while in the background"
+            desc="keep the app awake while a reply or a clip upload is pending with the screen off, so it speaks in your pocket (uses battery; calls have their own setting)"
+          >
+            <Switch
+              on={!!vtts?.background_keepalive}
+              onToggle={() => setTts("background_keepalive", !vtts?.background_keepalive)}
+              label="Speak while in the background"
+            />
+          </SettingRow>
+          <Field
+            label="Background hold limit"
+            desc="seconds without progress before the hold lets go (0 = no limit)"
+            value={String(vtts?.background_idle_s ?? "")}
+            onChange={(v) => setTts("background_idle_s", v as unknown as number)}
           />
           {/* A11/D48 Slice 2 — the TTS primary + ordered fallbacks point at the registry; the server
               voice id + playback speed are per-model fields (edited on the provider card's model row). */}

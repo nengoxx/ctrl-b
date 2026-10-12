@@ -1,5 +1,5 @@
-import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatMessage, Part } from "../../src/types";
 
@@ -16,6 +16,8 @@ type Status = "idle" | "streaming" | "error";
 interface VoiceProbe {
   tts?: boolean;
   tts_chunking?: { mode: "off" | "paragraph" | "sentence"; read_along: boolean };
+  /** ISS-73 ① — the hidden-page hold's switch + bound; absent = an older backend = no hold. */
+  tts_background?: { keepalive: boolean; idle_s: number };
 }
 
 const h = vi.hoisted(() => {
@@ -41,6 +43,17 @@ const h = vi.hoisted(() => {
     dismiss: vi.fn(),
     /** The controller's turn-stop count (LIVE-001 — a call's stop bumps it). */
     stops: 0,
+    // ISS-73 ① — the reply hold's seams on the controller: the hold itself, its progress feed, which
+    // message's audio is still pending (`audioPending`), and the playback store's listeners (the hook
+    // re-evaluates the hold on the mouth's status edges without a render).
+    hold: vi.fn<(reason: string, on: boolean, idleS?: number) => void>(),
+    touch: vi.fn(),
+    pendingId: null as string | null,
+    /** The message whose audio the controller reports STOPPED (`paused`: refused, or the owner's pause). */
+    stoppedId: null as string | null,
+    /** …and the one it reports `playing` (row 16: a platform pause Chrome resumed). */
+    playingId: null as string | null,
+    playbackSubs: [] as (() => void)[],
     /** The agent resolver, ONE stable function (the real one is memoized): `lynette` is the
      *  conversational agent here, every other turn (the default included) an `agent`-duties one. */
     art: (name: string | null) => ({ actions: name === "lynette" }),
@@ -61,6 +74,17 @@ vi.mock("../../src/lib/audioController", () => ({
   getTurnStops: () => h.stops,
   usePlayback: (sel: (p: { id: string | null }) => unknown) => sel(h.player),
   useCallVoice: () => h.call.active && !h.call.waiting,
+  holdWhileHidden: h.hold,
+  touchHoldProgress: h.touch,
+  audioPending: (id: string) => h.pendingId === id,
+  audioStopped: (id: string) => h.stoppedId === id,
+  audioPlaying: (id: string) => h.playingId === id,
+  subscribePlayback: (cb: () => void) => {
+    h.playbackSubs.push(cb);
+    return () => {
+      h.playbackSubs = h.playbackSubs.filter((c) => c !== cb);
+    };
+  },
 }));
 
 import { useAutoTts } from "../../src/hooks/useAutoTts";
@@ -109,7 +133,27 @@ beforeEach(() => {
   h.endTurn.mockClear();
   h.dismiss.mockClear();
   h.stops = 0;
+  h.pendingId = null;
+  h.stoppedId = null;
+  h.playingId = null;
+  h.playbackSubs = [];
+  setVisibility("visible");
 });
+// `globals: false` means RTL's auto-cleanup never registers: unmount each case's hook, or a previous
+// case's visibility listener would answer this case's `visibilitychange` (ISS-73 ①).
+afterEach(() => {
+  cleanup();
+  setVisibility("visible");
+});
+
+/** The page hiding / returning (ISS-73 ①). jsdom has no visibility model, so the property is redefined
+ *  and the event dispatched by hand — exactly the pair a browser delivers (`useLiveCallWiring`'s). */
+function setVisibility(state: DocumentVisibilityState): void {
+  Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+  act(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+}
 
 describe("useAutoTts — the read-along feed (C3 S2)", () => {
   it("waits for a boundary in the UN-FED suffix, then hands the whole markdown over", () => {
@@ -423,5 +467,221 @@ describe("useAutoTts — the CALL's read-along override (D71 §4.5)", () => {
     expect(h.feed).toHaveBeenCalledTimes(2);
     step("idle", [user, said("a1", "One. Two. Three.")]);
     expect(h.endTurn).not.toHaveBeenCalled();
+  });
+});
+
+// --- ISS-73 ① — the reply hold: armed from the feeder's OWN eligibility (car-wave design §3.3) --------
+// The hook decides "pending ∧ hidden ∧ eligible" and says so to the controller (`holdWhileHidden`), which
+// owns the node, the context and the idle bound. So the assertions are on the LAST thing it said for the
+// "reply" reason — re-assertion is idempotent at the controller, which only acts on an edge.
+
+describe("useAutoTts — the reply hold (ISS-73 ①)", () => {
+  const BG = { keepalive: true, idle_s: 600 };
+  beforeEach(() => {
+    h.voice = { ...h.voice, tts_background: BG };
+    h.hold.mockClear();
+    h.touch.mockClear();
+  });
+  /** What the hook last told the controller about its reason: true = held, false = released. */
+  const held = (): boolean | undefined =>
+    h.hold.mock.calls.filter((c) => c[0] === "reply").at(-1)?.[1];
+  /** The mouth's status moved (the playback store emitted) — the hook re-evaluates without a render. */
+  const mouthMoved = (): void => {
+    act(() => {
+      for (const cb of [...h.playbackSubs]) cb();
+    });
+  };
+
+  it("hidden + streaming + eligible → HELD, with the knob's idle bound", () => {
+    const step = mount();
+    step("streaming", [user, said("a1", "Working on it")]);
+    expect(held()).toBe(false); // in front: nothing to hold
+    setVisibility("hidden");
+    expect(held()).toBe(true);
+    expect(h.hold).toHaveBeenLastCalledWith("reply", true, 600);
+  });
+
+  it("is never held while the page is VISIBLE, and the return releases it", () => {
+    const step = mount();
+    step("streaming", [user, said("a1", "One.")]);
+    step("streaming", [user, said("a1", "One. Two.")]);
+    expect(h.hold.mock.calls.some((c) => c[1] === true)).toBe(false);
+    setVisibility("hidden");
+    expect(held()).toBe(true);
+    setVisibility("visible");
+    expect(held()).toBe(false);
+  });
+
+  it("a FOREIGN turn is never held — it was born stopped", () => {
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, said("a1", "The other device's reply.")], true);
+    step("idle", [user, said("a1", "The other device's reply.")], true);
+    expect(h.hold.mock.calls.some((c) => c[1] === true)).toBe(false);
+  });
+
+  // (A LIVE CALL's exclusion lives in the CONTROLLER since the code round's row 6 — one place for both
+  // reasons; pinned in `audioControllerCall.test.ts`, not here.)
+
+  it("the owned reply REFUSED (or owner-paused) while the turn still streams releases it — and later frames do not re-arm it (row 2)", () => {
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, said("a1", "One.")]);
+    h.pendingId = "a1";
+    mouthMoved();
+    expect(held()).toBe(true);
+    h.pendingId = null;
+    h.stoppedId = "a1"; // `play()` refused → the controller publishes `paused`
+    mouthMoved();
+    expect(held()).toBe(false);
+    step("streaming", [user, said("a1", "One. Two.")]);
+    step("streaming", [user, said("a1", "One. Two. Three.")]);
+    expect(held()).toBe(false); // latched for the turn: the stream alone does not hold a stopped reply
+    h.stoppedId = null;
+    step("idle", [user, said("a1", "One. Two. Three.")]);
+    step("streaming", [user, said("a1", "One. Two. Three."), user, said("a2", "Next")]);
+    expect(held()).toBe(true); // …and only for that turn
+  });
+
+  it("auto-TTS muted → never held (the owner's 'unless auto-TTS is off')", () => {
+    h.ui = { ttsAuto: false };
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, said("a1", "Quiet.")]);
+    expect(h.hold.mock.calls.some((c) => c[1] === true)).toBe(false);
+  });
+
+  it("the knob ABSENT (an older backend) or OFF → never held", () => {
+    setVisibility("hidden");
+    h.voice = { tts: true, tts_chunking: { mode: "sentence", read_along: true } };
+    const absent = mount();
+    absent("streaming", [user, said("a1", "Old server.")]);
+    expect(h.hold.mock.calls.some((c) => c[1] === true)).toBe(false);
+    h.voice = { ...h.voice, tts_background: { keepalive: false, idle_s: 600 } };
+    const off = mount();
+    off("streaming", [user, said("a2", "Switch off.")]);
+    expect(h.hold.mock.calls.some((c) => c[1] === true)).toBe(false);
+  });
+
+  it("a TEXTLESS end releases it — nothing was handed to the mouth", () => {
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, thought("a1", "Thinking it over.")]);
+    expect(held()).toBe(true);
+    step("idle", [user, thought("a1", "Thinking it over.")]);
+    expect(h.endTurn).not.toHaveBeenCalled();
+    expect(held()).toBe(false);
+  });
+
+  it("a user STOP mid-turn releases it (the abandon latch), and it stays released for the turn", () => {
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, said("a1", "One.")]);
+    expect(held()).toBe(true);
+    h.stops = 1; // the call's stop / `dismissTurn`
+    step("streaming", [user, said("a1", "One. Two.")]);
+    expect(held()).toBe(false);
+  });
+
+  it("holds THROUGH the turn end while the owned reply is pending, and releases at the CONTROLLER's end — not a chunk's", () => {
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, said("a1", "One.")]);
+    expect(h.feed).toHaveBeenCalledTimes(1);
+    h.pendingId = "a1"; // the read-along queue is loading/playing a1
+    step("idle", [user, said("a1", "One. Two.")]);
+    expect(h.endTurn).toHaveBeenCalledOnce();
+    expect(held()).toBe(true); // the stream is over, the reply is not
+    mouthMoved(); // a chunk seam: the controller is still `playing`/`loading` for a1
+    expect(held()).toBe(true);
+    h.pendingId = null; // the queue finished (parked → `paused`), or failed (`idle`)
+    mouthMoved();
+    expect(held()).toBe(false);
+  });
+
+  it("a buffered turn (no read-along) holds through its whole-reply synth and playback", () => {
+    h.voice = { ...h.voice, tts_chunking: { mode: "off", read_along: false } };
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, said("a1", "All at once.")]);
+    expect(held()).toBe(true);
+    h.pendingId = "a1";
+    step("idle", [user, said("a1", "All at once.")]);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "All at once.", AGENT);
+    expect(held()).toBe(true);
+    h.pendingId = null;
+    mouthMoved();
+    expect(held()).toBe(false);
+  });
+
+  it("an OLDER reply still playing is not this turn's: a later textless turn does not hold for it", () => {
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, said("a1", "First.")]);
+    h.pendingId = "a1";
+    step("idle", [user, said("a1", "First.")]);
+    expect(held()).toBe(true);
+    step("streaming", [user, said("a1", "First."), user, thought("a2", "Hmm.")]);
+    step("idle", [user, said("a1", "First."), user, thought("a2", "Hmm.")]);
+    expect(held()).toBe(false); // a2 handed nothing over; a1 belongs to the previous turn
+  });
+
+  it("feeds the idle bound PROGRESS on each applied stream frame — and only on a frame", () => {
+    const step = mount();
+    step("streaming", [user, said("a1", "One")]);
+    step("streaming", [user, said("a1", "One two")]);
+    expect(h.touch).toHaveBeenCalledTimes(2);
+    // a re-render that carries no new frame (the player docking) is not progress
+    act(() => {
+      h.player.id = "a1";
+    });
+    step("streaming", h.chat.messages);
+    expect(h.touch).toHaveBeenCalledTimes(2);
+    step("idle", h.chat.messages);
+    expect(h.touch).toHaveBeenCalledTimes(2); // the end is not a frame of the stream
+  });
+
+  it("a turn it would NOT hold for feeds no progress — a foreign turn's frames cannot keep another reason's hold alive (row 13)", () => {
+    const step = mount();
+    step("streaming", [user, said("a1", "Theirs")], true);
+    step("streaming", [user, said("a1", "Theirs, still")], true);
+    expect(h.touch).not.toHaveBeenCalled();
+    h.voice = { ...h.voice, tts_background: { keepalive: false, idle_s: 600 } };
+    step("idle", [user, said("a1", "Theirs, still")], true);
+    step("streaming", [user, said("a1", "Theirs, still"), user, said("a2", "Mine")]);
+    step("streaming", [user, said("a1", "Theirs, still"), user, said("a2", "Mine, too")]);
+    expect(h.touch).not.toHaveBeenCalled(); // the switch off: not this hook's hold either
+  });
+
+  it("a PLATFORM pause the browser resumes unlatches it — the reply playing again re-arms the hold (row 16)", () => {
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, said("a1", "One.")]);
+    h.pendingId = h.playingId = "a1";
+    mouthMoved();
+    expect(held()).toBe(true);
+    h.pendingId = h.playingId = null;
+    h.stoppedId = "a1"; // audio focus lost (a nav prompt): the element's own `pause`
+    mouthMoved();
+    expect(held()).toBe(false); // latched, exactly like a refusal…
+    step("streaming", [user, said("a1", "One. Two.")]);
+    expect(held()).toBe(false);
+    h.stoppedId = null;
+    h.pendingId = h.playingId = "a1"; // …but focus came back and Chrome resumed it
+    mouthMoved();
+    expect(held()).toBe(true);
+  });
+
+  it("unmount releases the reason", () => {
+    setVisibility("hidden");
+    const view = renderHook(() => useAutoTts());
+    act(() => {
+      h.chat = { messages: [user, said("a1", "Going.")], status: "streaming", foreignTurn: false };
+      view.rerender();
+    });
+    expect(held()).toBe(true);
+    view.unmount();
+    expect(held()).toBe(false);
+    expect(h.playbackSubs).toHaveLength(0);
   });
 });

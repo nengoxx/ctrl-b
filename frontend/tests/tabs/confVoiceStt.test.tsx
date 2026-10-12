@@ -81,6 +81,9 @@ const makeSettings = () => ({
       // D74 — the TEXT knob on the same object as the chunk sizes (it rides the same payload to the
       // playback queue), never a sibling map.
       speak_actions: true,
+      // ISS-73 ① — the hidden-page hold, on the same object again.
+      background_keepalive: true,
+      background_idle_s: 600,
       connect_timeout_s: 3,
       timeout_s: 30,
       extra_body: {},
@@ -329,6 +332,44 @@ describe("ConfTab · clip upload rows (ISS-84)", () => {
     fireEvent.change(field("Upload attempts"), { target: { value: "5" } });
     fireEvent.click(saveButton());
     expect(voiceOf()).toMatchObject({ upload_timeout_s: 45.5, upload_attempts: 5 });
+  });
+});
+
+describe("ConfTab · the hidden-page hold rows (ISS-73 ① — the TTS group, keys on voice.tts)", () => {
+  const ttsGroup = () => {
+    const el = document.getElementById("voice-tts");
+    if (!el) throw new Error("the Voice · TTS group is not rendered");
+    return within(el);
+  };
+  const ttsOf = () =>
+    (h.save.mock.calls[0][0] as { voice?: { tts?: Record<string, unknown> } }).voice?.tts;
+
+  it("renders both from the live config and saves the switch + the bound as a number", () => {
+    render(<ConfTab active />);
+    const sw = ttsGroup().getByLabelText("Speak while in the background");
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    const limit = ttsGroup().getByLabelText<HTMLInputElement>("Background hold limit");
+    expect(limit.value).toBe("600");
+    fireEvent.click(sw);
+    fireEvent.change(limit, { target: { value: "120" } });
+    fireEvent.click(saveButton());
+    expect(ttsOf()).toMatchObject({ background_keepalive: false, background_idle_s: 120 });
+  });
+
+  it("a typed 0 saves as a real 0 (no bound) — a CLEARED field rides as null, a visible 422", () => {
+    render(<ConfTab active />);
+    const limit = ttsGroup().getByLabelText<HTMLInputElement>("Background hold limit");
+    fireEvent.change(limit, { target: { value: "0" } });
+    fireEvent.click(saveButton());
+    expect(ttsOf()?.background_idle_s).toBe(0);
+    cleanup();
+    h.save.mockClear();
+    render(<ConfTab active />);
+    fireEvent.change(ttsGroup().getByLabelText<HTMLInputElement>("Background hold limit"), {
+      target: { value: "" },
+    });
+    fireEvent.click(saveButton());
+    expect(ttsOf()?.background_idle_s).toBeNull();
   });
 });
 

@@ -1220,6 +1220,22 @@ class TtsServiceCfg(VoiceServiceCfg):
     # mp3/opus/aac/flac clips pass through untouched (no decoder in the stdlib). Server-side only: it
     # changes the bytes, never the client's policy, so it is NOT delivered in `/voice/status`.
     trim_silence: bool = True
+    # ISS-73 ① — THE HIDDEN-PAGE HOLD (client behavior, like the chunk policy: both ride `GET /voice/status`
+    # as ONE `tts_background` object). Chrome Android freezes a hidden page that has been silent for ~90 s
+    # (D73/R75) — timers and `play()` with it — so a reply pending when the owner pockets the phone only
+    # spoke on the return. The cure is D73's: an inaudible-but-nonzero source keeping the page audible,
+    # here on a context of the mouth's own, held ONLY while a reply (or a clip upload) is pending and the
+    # page is hidden. The live block's `background_keepalive` ANALOGUE — the same deliberate defeat of a
+    # battery protection, hence a switch (owner ruling 2026-10-12) — named for what it is and kept apart
+    # from `voice.live.background*`, which governs CALLS (a live call excludes this hold). Off ⇒ no hold:
+    # the reply plays on the return, the fallback the owner keeps either way.
+    background_keepalive: bool = True
+    #: The hold's bound, s, measured from the LAST PROGRESS (an applied stream frame, playback moving, an
+    #: upload attempt starting or answering) — never from arming. Needed because NOTHING client-side bounds
+    #: a streaming turn on a dead link (the SSE reader awaits forever, unsignalled), and the hold would keep
+    #: exactly that hung page awake to the OS's TCP give-up (ruling 15 of the car-wave council). **0 = no
+    #: bound.** 600 matches the call's own `background_idle_s` default; `le=3600` also rejects `.inf`/NaN.
+    background_idle_s: float = Field(default=600.0, ge=0, le=3600)
 
     @model_validator(mode="after")
     def _chunk_bounds(self) -> "TtsServiceCfg":

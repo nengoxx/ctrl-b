@@ -5,6 +5,7 @@
 
 import { useDictation } from "./useDictation";
 import { useVoiceStatus } from "./useVoiceStatus";
+import { primeReplyHold } from "../lib/audioController";
 import { runComposer } from "../lib/composer";
 import { hasStaged, isUploading, useStagedFiles } from "../store/attachments";
 import { useChatSlice } from "../store/chat";
@@ -54,6 +55,9 @@ export function useComposer(): ComposerController {
     // ISS-84 — the clip upload's bound + retry budget, off the same probe; absent (older backend /
     // stub) → the old single unbounded attempt.
     upload: voice.data?.stt_upload,
+    // ISS-73 ① — the hidden-page hold's switch + bound, which the upload loop arms on a hidden page;
+    // absent (older backend / stub) → no hold.
+    background: voice.data?.tts_background,
     // D71 S2.5 — phrase-by-phrase streaming dictation, off the same probe again. `live_ear` is the
     // EAR's own bit (the WS route's own terms; since S3.5 the dictation toggle alone opens it),
     // deliberately not `live`: dictation fills the composer and needs no mouth, so a TTS-less or
@@ -62,6 +66,8 @@ export function useComposer(): ComposerController {
     liveCall: voice.data?.live_call,
   });
   const isStreaming = status === "streaming";
+  /** ISS-73 ① row 12 — the hidden-page hold's switch, off the same probe; absent → no prime. */
+  const holdKeep = voice.data?.tts_background?.keepalive === true;
 
   // Reads the draft imperatively (no stale closure) so it always sends what's currently typed. NO
   // `isStreaming` gate (HIGH-1, owner-ratified UX): while a turn streams, Enter/mic-send STEER — the
@@ -75,6 +81,12 @@ export function useComposer(): ComposerController {
     // (MED-2), because the dictation auto-send never comes through this function.
     if (!text && !hasStaged()) return;
     if (isUploading()) return;
+    // ISS-73 ① — the typed Send IS the gesture the reply's hidden-page hold needs (the mouth's context
+    // made + resumed, the `<audio>` element given a real gesture-started play): the reply arrives with
+    // no gesture of its own, maybe after the phone is pocketed. Before `runComposer`, inside the
+    // gesture; idempotent and cheap — a `!shell` or `/slash` send primes for nothing, harmlessly. Only
+    // with the battery switch ON (rulings row 12, the Qwen lane's Q4): off/absent → no context at all.
+    if (holdKeep) primeReplyHold();
     // The staged ids are NOT passed from here: `runComposer`'s natural-language branch reserves them
     // (D68 §7), so the button, Enter, a steer and the dictation auto-send — which bypasses this
     // function entirely and calls `runComposer` itself — all carry them with no plumbing. The draft

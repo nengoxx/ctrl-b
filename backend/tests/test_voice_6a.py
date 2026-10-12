@@ -551,6 +551,44 @@ def test_api_status_carries_the_upload_policy() -> None:
     assert c.get("/api/voice/status").json()["stt_upload"] == {"timeout_s": 12.5, "attempts": 1}
 
 
+# --- ISS-73 ①: the hidden-page hold for a pending reply / clip upload ------------------------------
+
+
+def test_tts_background_knobs_default_and_bounds() -> None:
+    """The hold ships ON (the owner's battery switch, ruled 2026-10-12) with a 600 s idle bound (the
+    call's own default); the bound is 0..3600 with 0 MEANING "no bound", and `inf`/NaN fall to the same
+    bounds — a negative or absurd value can neither wedge nor silently disable it."""
+    from pydantic import ValidationError
+
+    from app.config import VoiceCfg
+
+    tts = VoiceCfg.model_validate({}).tts
+    assert (tts.background_keepalive, tts.background_idle_s) == (True, 600.0)
+    edge = VoiceCfg.model_validate({"tts": {"background_keepalive": False, "background_idle_s": 0}}).tts
+    assert (edge.background_keepalive, edge.background_idle_s) == (False, 0.0)
+    assert VoiceCfg.model_validate({"tts": {"background_idle_s": 3600}}).tts.background_idle_s == 3600.0
+    for bad in (
+        {"tts": {"background_idle_s": -1}},
+        {"tts": {"background_idle_s": 3601}},
+        {"tts": {"background_idle_s": float("inf")}},
+        {"tts": {"background_idle_s": float("nan")}},
+    ):
+        try:
+            VoiceCfg.model_validate(bad)
+            raise AssertionError(f"expected ValidationError for {bad}")
+        except ValidationError:
+            pass
+
+
+def test_api_status_carries_the_background_hold() -> None:
+    """`tts_background` rides the always-on probe as ONE object (the `stt_upload` precedent) — shape
+    only: a switch + an idle bound. The reply/upload hold is the only reader."""
+    on = _app(_StubVoice()).get("/api/voice/status").json()
+    assert on["tts_background"] == {"keepalive": True, "idle_s": 600.0}
+    c = _app(_StubVoice(), tts={"background_keepalive": False, "background_idle_s": 90})
+    assert c.get("/api/voice/status").json()["tts_background"] == {"keepalive": False, "idle_s": 90.0}
+
+
 # --- D63 chunked TTS: config bounds, the client policy, the pin, the format override --------------
 
 

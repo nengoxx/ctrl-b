@@ -14,8 +14,16 @@ vi.mock("../../src/store/toast", () => ({ pushToast: vi.fn() }));
 // "it routed"; the HELD case rides the real seam in `tests/hooks/attachmentDictation.test.ts`.
 vi.mock("../../src/lib/composer", () => ({ runComposer: vi.fn(() => true) }));
 vi.mock("../../src/store/chat", () => ({ getChatStatus: vi.fn(() => "idle") }));
+// ISS-73 ① — the upload loop's hold rides the mouth's `holdWhileHidden`/`touchHoldProgress`; both are
+// spies here (their own behaviour is pinned in `audioControllerCall.test.ts`), the rest is the real module.
+vi.mock("../../src/lib/audioController", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/lib/audioController")>()),
+  holdWhileHidden: vi.fn(),
+  touchHoldProgress: vi.fn(),
+}));
 
 import { TOO_SHORT_MSG, useDictation } from "../../src/hooks/useDictation";
+import { holdWhileHidden, touchHoldProgress } from "../../src/lib/audioController";
 import {
   FakeMediaRecorder,
   mockStt,
@@ -1759,5 +1767,178 @@ describe("useDictation · ISS-84 the clip upload loop", () => {
     });
     await tick(0);
     expect(runComposer).toHaveBeenCalledWith("parked words");
+  });
+
+  // ── ISS-73 ① (car-wave §2.7): the pending-upload hold ──
+  describe("the pending-upload hold (ISS-73 ①)", () => {
+    const BG = { keepalive: true, idle_s: 600 };
+    /** The last thing the loop told the hold about its reason. */
+    const held = (): boolean | undefined =>
+      vi
+        .mocked(holdWhileHidden)
+        .mock.calls.filter((c) => c[0] === "upload")
+        .at(-1)?.[1];
+    const setVisibility = (state: DocumentVisibilityState): void => {
+      Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    afterEach(() => setVisibility("visible"));
+
+    it("HELD while the loop is in flight on a hidden page, under the knob's bound — RELEASED when the clip lands", async () => {
+      scriptStt("hang", { status: 200, body: { text: "pocket words" } });
+      const added = vi.spyOn(document, "addEventListener");
+      const removed = vi.spyOn(document, "removeEventListener");
+      const { result } = renderHook(() => useDictation(loopOpts({ background: BG })));
+      await recordClip(result);
+      // The loop's own page listener (an earlier case's loop that never settled keeps ITS listener — the
+      // loop is store-level, ruling 18 — so this one is told apart by identity, not by a count).
+      const loopListener = added.mock.calls.find(
+        (c) => c[0] === "visibilitychange" && (c[1] as { name?: string }).name === "holdUpload",
+      )?.[1];
+      expect(loopListener).toBeDefined();
+      expect(held()).toBe(false); // in front: nothing to hold
+      act(() => setVisibility("hidden")); // the phone goes in the pocket mid-upload
+      expect(held()).toBe(true);
+      expect(holdWhileHidden).toHaveBeenLastCalledWith("upload", true, 600);
+      await tick(5000); // attempt 1 times out…
+      await tick(1000); // …the backoff, then attempt 2 answers
+      expect(getDraft()).toBe("pocket words");
+      expect(held()).toBe(false); // the loop is over…
+      expect(removed).toHaveBeenCalledWith("visibilitychange", loopListener); // …and its listener left with it
+    });
+
+    it("feeds PROGRESS on every attempt's start and answer", async () => {
+      scriptStt("reject", { status: 200, body: { text: "ok" } });
+      const { result } = renderHook(() => useDictation(loopOpts({ background: BG })));
+      await recordClip(result);
+      await tick(1000);
+      expect(getDraft()).toBe("ok");
+      // the loop's entry (row 1's baseline) + two attempts × (start + answer)
+      expect(touchHoldProgress).toHaveBeenCalledTimes(5);
+    });
+
+    it("RELEASED when the clip parks", async () => {
+      scriptStt("reject", "reject", "reject");
+      const { result } = renderHook(() => useDictation(loopOpts({ background: BG })));
+      await recordClip(result);
+      act(() => setVisibility("hidden"));
+      expect(held()).toBe(true);
+      await tick(1000);
+      await tick(2000);
+      expect(parked()).toBeDefined();
+      expect(held()).toBe(false);
+    });
+
+    it("the page returning releases it mid-loop; NEVER held while visible", async () => {
+      scriptStt("hang", { status: 200, body: { text: "x" } });
+      const { result } = renderHook(() => useDictation(loopOpts({ background: BG })));
+      await recordClip(result);
+      expect(vi.mocked(holdWhileHidden).mock.calls.some((c) => c[1] === true)).toBe(false);
+      act(() => setVisibility("hidden"));
+      expect(held()).toBe(true);
+      act(() => setVisibility("visible"));
+      expect(held()).toBe(false);
+      await tick(5000);
+      await tick(1000);
+      expect(getDraft()).toBe("x");
+    });
+
+    it("a FRESH loop on a known-dead link sets its own progress baseline BEFORE the hold arms — and again when the link returns (row 1)", async () => {
+      setOnline(false);
+      scriptStt({ status: 200, body: { text: "back online" } });
+      const { result } = renderHook(() => useDictation(loopOpts({ background: BG })));
+      act(() => setVisibility("hidden")); // pocketed before the release: the loop arms already hidden
+      await recordClip(result);
+      const touches = vi.mocked(touchHoldProgress).mock.invocationCallOrder;
+      const firstOn = vi
+        .mocked(holdWhileHidden)
+        .mock.calls.findIndex((c) => c[0] === "upload" && c[1] === true);
+      expect(firstOn).toBeGreaterThanOrEqual(0);
+      expect(touches).toHaveLength(1); // no attempt yet — the entry is the operation's baseline…
+      expect(touches[0]).toBeLessThan(
+        vi.mocked(holdWhileHidden).mock.invocationCallOrder[firstOn], // …taken before it arms
+      );
+      setOnline(true);
+      await act(async () => {
+        window.dispatchEvent(new Event("online"));
+      });
+      await tick(0);
+      // (`toContain`, and a floor on the count: an earlier case's loop parked on the same `online` may
+      // wake with this one — the loop is store-level, ruling 18.)
+      expect(getDraft()).toContain("back online");
+      // link back · attempt start · attempt answer, after the entry's one
+      expect(vi.mocked(touchHoldProgress).mock.calls.length).toBeGreaterThanOrEqual(4);
+    });
+
+    /** The app's query cache carrying `/voice/status` — the source the loop reads its policy from. */
+    function cached(keepalive: boolean) {
+      const qc = new QueryClient();
+      const status = (on: boolean): VoiceStatus => ({
+        stt: true,
+        tts: true,
+        stt_auto_send: false,
+        stt_upload: KNOBS,
+        tts_background: { keepalive: on, idle_s: 0 },
+      });
+      qc.setQueryData(["voice-status"], status(keepalive));
+      const wrapper = ({ children }: { children: ReactNode }) =>
+        createElement(QueryClientProvider, { client: qc }, children);
+      return { wrapper, set: (on: boolean) => qc.setQueryData(["voice-status"], status(on)) };
+    }
+
+    it("the switch turned OFF mid-loop drops an in-flight hidden upload's hold — the knob is read LIVE (row 4)", async () => {
+      scriptStt("hang", { status: 200, body: { text: "w" } });
+      const q = cached(true);
+      const { result } = renderHook(() => useDictation(loopOpts()), { wrapper: q.wrapper });
+      await recordClip(result);
+      act(() => setVisibility("hidden"));
+      expect(held()).toBe(true);
+      act(() => {
+        q.set(false); // a Conf save while the clip is still going
+      });
+      expect(held()).toBe(false);
+      await tick(5000);
+      await tick(1000);
+      expect(getDraft()).toBe("w"); // the retry budget was untouched by it
+    });
+
+    it("…and with the composer UNMOUNTED mid-upload too — the LOOP watches the policy, not the component (row 17)", async () => {
+      scriptStt("hang", { status: 200, body: { text: "v" } });
+      const q = cached(true);
+      const { result, unmount } = renderHook(() => useDictation(loopOpts()), {
+        wrapper: q.wrapper,
+      });
+      await recordClip(result);
+      unmount(); // the owner opens Conf: the composer goes, the loop stays (ruling 18)
+      act(() => setVisibility("hidden")); // hidden before the refetch lands: the cached ON holds…
+      expect(held()).toBe(true);
+      act(() => {
+        q.set(false); // …and the OFF arrives with nothing of the composer alive
+      });
+      expect(held()).toBe(false);
+      await tick(5000);
+      await tick(1000);
+      expect(getDraft()).toBe("v");
+    });
+
+    it("the knob OFF or ABSENT → never held, hidden or not", async () => {
+      scriptStt("hang", { status: 200, body: { text: "y" } });
+      const { result } = renderHook(() =>
+        useDictation(loopOpts({ background: { keepalive: false, idle_s: 600 } })),
+      );
+      await recordClip(result);
+      act(() => setVisibility("hidden"));
+      expect(vi.mocked(holdWhileHidden).mock.calls.some((c) => c[1] === true)).toBe(false);
+      await tick(5000);
+      await tick(1000);
+      expect(getDraft()).toBe("y");
+      cleanup();
+      clearDraft();
+      scriptStt({ status: 200, body: { text: "z" } });
+      const older = renderHook(() => useDictation(loopOpts()));
+      await recordClip(older.result);
+      await tick(0);
+      expect(vi.mocked(holdWhileHidden).mock.calls.some((c) => c[1] === true)).toBe(false);
+    });
   });
 });

@@ -32,7 +32,13 @@ from fastapi.testclient import TestClient
 
 from app.api import voice as voice_api
 from app.config import Settings
-from app.services.call_trail import LEG_MODES, LIVE_MODES, TRAIL_MAX_BODY_BYTES, CallTrail
+from app.services.call_trail import (
+    CLIENT_TRAIL_MODES,
+    LEG_MODES,
+    LIVE_MODES,
+    TRAIL_MAX_BODY_BYTES,
+    CallTrail,
+)
 
 CALL = "0f8e2c4a-1b3d-4e5f-8a9b-0c1d2e3f4a5b"
 URL = "/api/voice/live/trail"
@@ -144,12 +150,15 @@ def test_append_rejects_an_unknown_mode(tmp_path: Path, bad: str) -> None:
 def test_the_mode_vocabulary_is_the_relays() -> None:
     """ONE vocabulary (Phase 26 S1): the store owns it, the relay and the route import it. S9 adds the
     clip door's `clip` to the STORE only — its ids are server-minted, so the wire (`LEG_MODES`: the
-    relay's `start.mode`, the browser's batch `mode`) never names it."""
+    relay's `start.mode`; `CLIENT_TRAIL_MODES`: the browser's batch `mode`) never names it. ISS-73 ① adds
+    the mouth's playback probe `mouth` to the store AND the trail route — never to the relay's legs: a
+    socket naming it is refused like an unknown mode."""
     from app.api import voice as api_voice
     from app.services import voice_live
 
-    assert LIVE_MODES == ("call", "dictation", "clip")
+    assert LIVE_MODES == ("call", "dictation", "clip", "mouth")
     assert LEG_MODES == ("call", "dictation")
+    assert CLIENT_TRAIL_MODES == ("call", "dictation", "mouth")
     assert voice_live.LEG_MODES is LEG_MODES
     assert api_voice.TrailBatch.model_fields["mode"].default == "call"
 
@@ -222,6 +231,28 @@ def test_a_dictation_batch_lands_in_the_dictation_directory(tmp_path: Path) -> N
     assert _read(tmp_path / "calls" / "dictation") == [{"src": "client", "t": 1, "ev": "rec"}]
     assert _read(tmp_path / "calls", _call(1)) == [{"src": "client", "t": 2, "ev": "sig"}]
     assert not (tmp_path / "calls" / f"{CALL}.jsonl").exists()
+
+
+def test_a_mouth_batch_lands_in_the_mouth_directory(tmp_path: Path) -> None:
+    """ISS-73 ① — the mouth's playback probe (one trail per page) is filed like a dictation's: its own
+    directory, its own retention, the lines verbatim (the visibility rides every one)."""
+    line = {
+        "t": 1,
+        "ev": "play_result",
+        "vis": "hidden",
+        "hidden": True,
+        "ok": False,
+        "err": "NotAllowedError",
+    }
+    assert _app(tmp_path).post(URL, json=_batch([line], mode="mouth")).status_code == 204
+    assert _read(tmp_path / "calls" / "mouth") == [{"src": "client", **line}]
+    assert not (tmp_path / "calls" / f"{CALL}.jsonl").exists()
+
+
+def test_a_mouth_batch_is_404_while_debug_is_off(tmp_path: Path) -> None:
+    res = _app(tmp_path, debug=False).post(URL, json=_batch([{"t": 1, "ev": "hold"}], mode="mouth"))
+    assert (res.status_code, res.json()["detail"]) == (404, "call trail is off")
+    assert not (tmp_path / "calls").exists()
 
 
 def test_the_route_prunes_by_the_live_keep(tmp_path: Path) -> None:

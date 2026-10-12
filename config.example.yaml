@@ -447,6 +447,11 @@ voice:
     chunk_lookahead: 1     # synth-ahead depth (1 = synthesize chunk N+1 while N plays)
     speak_actions: false   # D74: read roleplay actions (*he leans in*) aloud; false (default) DROPS those spans
                            # (bold still reads — emphasis is speech, a stage direction is not)
+    # The hidden-page hold (ISS-73 ①) — while a reply (or a clip upload) is pending with the screen off or
+    # the app in the background, an inaudible tone keeps the page awake so the reply speaks in your
+    # pocket. Uses battery; calls have their own `live.background_keepalive`. Off → it plays on return.
+    background_keepalive: true
+    background_idle_s: 600      # the hold lets go after this long with no progress, seconds (0 = no limit, ≤ 3600)
   # Live voice / call mode (Phase 24, D71) — the realtime EAR behind `WS /api/voice/live`. Same
   # pointer shape as stt/tts; leave `provider` blank and it resolves exactly like `voice.stt` (one
   # Speaches box serves both doors). ON since v1.7.8 (S4 closed 2026-09-26): the call rides the

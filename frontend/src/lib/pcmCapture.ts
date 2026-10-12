@@ -1,3 +1,4 @@
+import { createKeepalive, type Keepalive } from "./keepalive";
 import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from "./pcmWorklet";
 
 // THE CALL'S EAR, client side (Phase 24 / D71 §3.1 · §4.1 · §4.3) — one `getUserMedia`, one
@@ -301,12 +302,6 @@ export async function listAudioInputs(probe = false): Promise<MicDevice[]> {
     .filter((d) => d.deviceId !== "default" && d.deviceId !== "communications")
     .map((d) => ({ deviceId: d.deviceId, label: d.label }));
 }
-
-/** The keepalive's amplitude (D73 S6 ③). Inaudible on any device — it is ~80 dB below a normal signal,
- *  far under a phone speaker's own noise floor — and NONZERO, which is the whole requirement: Blink
- *  asks `energy > 0` of the rendered bus and nothing more (R75 §13, verified at `audio_context.cc:157`).
- *  Not a config knob: it is the platform's threshold, not the owner's preference. */
-const KEEPALIVE_GAIN = 1e-4;
 
 /** What the worklet posts up: pcm16 LE mono bytes, plus the RMS of the same samples (§4.3's energy gate
  *  reuses the worklet's own pass — there is deliberately no second AnalyserNode measuring the same
@@ -678,7 +673,9 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
   /** The track's OWN `muted` — the OS/another app has the mic (never our `track.enabled`, which is a
    *  different property and this module's own two rules above). Frames still arrive; they are silence. */
   let deaf = false;
-  let keepalive: { src: ConstantSourceNode; gain: GainNode } | null = null;
+  /** The context's keepalive (`lib/keepalive` — the node pair the mouth's reply hold shares, ISS-73 ①),
+   *  made the moment the context exists; null before that, which makes an early ON a no-op. */
+  let keepalive: Keepalive | null = null;
   // THE EAR'S DEATH (ISS-54). `framed` is ANY frame — deaf ones included: an OS-muted track still posts
   // its silence (R99 §2.1), so a mute cannot trip the watchdog; only a graph that never ran can.
   // `errored` latches a context `error` raised before the watchdog is armed (ISS-54 design round F4). `dead` is the one
@@ -719,29 +716,11 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
     // one, and re-enabling one the call has already torn down would be a lie about the ear.
     if (!stopped) track.enabled = !muted;
   };
-  /** The keepalive's one switch (S6 ③). A `ConstantSourceNode` cannot be restarted once stopped, so
-   *  each ON mints a fresh pair and each OFF retires it — which also keeps "is it running?" a single
-   *  fact (the node's existence) rather than a flag beside it. */
+  /** The keepalive's one switch (S6 ③) — a thin call since ISS-73 ①: the mint-on-ON / retire-on-OFF rule
+   *  and the gain live in `lib/keepalive`, and `close()` (in `stop`) is what refuses an ON after the
+   *  capture is released. */
   const setKeepalive = (on: boolean): void => {
-    const want = on && !stopped && ctx !== null;
-    if (want === (keepalive !== null)) return;
-    if (keepalive) {
-      keepalive.src.stop();
-      keepalive.src.disconnect();
-      keepalive.gain.disconnect();
-      keepalive = null;
-      return;
-    }
-    if (!ctx) return;
-    // A constant source's `offset` defaults to 1, so the gain below IS the amplitude that reaches the
-    // destination — DC, which costs nothing to render and still counts as energy.
-    const src = ctx.createConstantSource();
-    const gain = ctx.createGain();
-    gain.gain.value = KEEPALIVE_GAIN;
-    src.connect(gain);
-    gain.connect(ctx.destination);
-    src.start();
-    keepalive = { src, gain };
+    keepalive?.set(on && !stopped);
   };
   const stop = (): void => {
     if (stopped) return;
@@ -750,7 +729,7 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
     ctxWatch = null;
     // Before the context goes: the node is this graph's, and a keepalive outliving the call it kept
     // alive would be a page held audible by nothing.
-    setKeepalive(false);
+    keepalive?.close();
     for (const t of stream.getTracks()) t.stop();
     if (ctx) {
       // No listener survives the capture (ISS-54 design round, Maya L1): the close below raises its own `statechange`.
@@ -768,6 +747,7 @@ export async function startPcmCapture(opts: PcmCaptureOpts): Promise<PcmCapture>
     // and the running check below, unchanged.
     const opened = openCaptureContext(stream);
     ctx = opened.ctx;
+    keepalive = createKeepalive(ctx);
     // WATCHED FROM BIRTH (ISS-54 design round F4): an `error` raised during the resume or the worklet install is exactly the
     // flip's evidence, and a listener armed later would never hear it.
     ctx.addEventListener("error", onCtxEvent);

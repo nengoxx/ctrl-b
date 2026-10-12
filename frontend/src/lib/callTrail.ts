@@ -5,13 +5,15 @@
 // the route readbacks, the phase changes — and the relay sees only the wire. So `useLiveCall` pushes
 // what it decided into this buffer, and the buffer ships it to `POST /api/voice/live/trail`, which
 // appends it to the SAME per-call file the relay writes (`$CTRLB_HOME/calls/<callId>.jsonl` — or, for a
-// dictation, `calls/dictation/<callId>.jsonl`: every batch names its `mode`, Phase 26 S1). The main
-// seat reads the file after the owner's phone round instead of reconstructing the call from memory.
+// dictation, `calls/dictation/<callId>.jsonl`: every batch names its `mode`, Phase 26 S1; the mouth's
+// hidden-page playback probe, `calls/mouth/`, ISS-73 ①). The main seat reads the file after the owner's
+// phone round instead of reconstructing the call from memory.
 //
 // PURE-ISH ON PURPOSE: no React, no store, no fetch of its own — the POST is injected (`post`), the
 // clock is injectable (`now`), and the ONE timer is the flush interval. Nothing renders off it. The
-// production poster (`postTrail`, the route's ONE spelling) lives here too, so its two callers — the
-// call (`useLiveCall`) and, since S11, each debug dictation (`useDictation`) — inject the same one.
+// production poster (`postTrail`, the route's ONE spelling) lives here too, so its callers — the call
+// (`useLiveCall`), since S11 each debug dictation (`useDictation`), and since ISS-73 ① the mouth
+// (`audioController`, one trail per page) — inject the same one.
 //
 // DEBUG DATA, SHAPED LIKE IT. A rejected POST drops its batch (one `console.debug`, never a retry, never
 // a throw into the call); a disposed trail ignores every push. The call must never notice the trail.
@@ -53,11 +55,12 @@ export const TRAIL_MAX_ENTRY_BYTES = 2048;
 
 export type TrailFlushReason = "interval" | "count" | "hidden" | "end";
 
-/** WHICH FEATURE a trail belongs to (Phase 26 S1) — the relay's `start.mode` vocabulary, and the
- *  directory the server files the batch under (`services/call_trail.py::LEG_MODES`, mirrored here: a
- *  call at the root, a dictation in its own directory with its own retention, ISS-41). Typed ONCE, here;
- *  the two trail writers import it. */
-export type TrailMode = "call" | "dictation";
+/** WHICH FEATURE a trail belongs to (Phase 26 S1) — the directory the server files the batch under
+ *  (`services/call_trail.py::CLIENT_TRAIL_MODES`, mirrored here: a call at the root, a dictation in its
+ *  own directory with its own retention, ISS-41; since ISS-73 ① the MOUTH's playback probe in its own
+ *  too — a trail with no relay leg behind it, which is why the server keeps it out of the socket's
+ *  `start.mode`). Typed ONCE, here; the three trail writers import it. */
+export type TrailMode = "call" | "dictation" | "mouth";
 
 export interface CallTrail {
   /** Buffer one line: `{t, leg, gen, ev, ...data}` — stamped at push time. */

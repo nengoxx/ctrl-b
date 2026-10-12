@@ -1,10 +1,16 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import {
+  audioPending,
+  audioPlaying,
+  audioStopped,
   dismiss,
   endTurnSpeak,
   feedReadAlong,
   getTurnStops,
+  holdWhileHidden,
+  subscribePlayback,
+  touchHoldProgress,
   useCallVoice,
   usePlayback,
   type Speaker,
@@ -27,6 +33,19 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // which owns the whole planning pipeline. This hook stays a THIN gate: the four gates, the boundary
 // test, and the per-turn "the user stopped it" latch. Turn end goes through `endTurnSpeak` and never
 // `toggle`, which for an already-docked message would PAUSE the reply instead of finishing it.
+//
+// ISS-73 ① — THE REPLY HOLD. The same eligibility also decides whether a HIDDEN page is held awake for
+// this turn (`audioController.holdWhileHidden("reply")`, the D73 keepalive on the mouth's own context):
+// a pocketed phone otherwise froze before the reply could speak, and it only played on the return. Armed
+// iff TTS is up ∧ the owner's auto-TTS is on ∧ the hold's switch (`tts_background.keepalive`) ∧ the turn
+// was not stopped (`abandoned`, re-read every pass) ∧ its owned audio was not refused or paused while
+// the turn still streamed (`mouthStopped`, code round row 2) ∧ the page is hidden ∧ the reply is still
+// PENDING: the turn streaming, or the audio this turn handed the controller loading/playing
+// (`audioPending`). Everything else releases it — the page visible, a stop, a textless end (nothing was
+// handed over), a failure or the end of playback (the controller's terminal status: `paused`/`idle`,
+// never a chunk's own `ended`), a view swap (its reset reads `idle`). A LIVE CALL is excluded by the
+// controller itself (code round row 6 — one place for both reasons). The idle bound lives with the hold;
+// this hook feeds it PROGRESS: each applied stream frame (`touchHoldProgress`).
 
 /** Sentence end or any line break — the boundaries `lib/ttsChunks` itself splits on. */
 const BOUNDARY = /[.!?…\n]/;
@@ -87,12 +106,31 @@ export function useAutoTts(): void {
   // holds it shut until the turn that was streaming at call start has settled, so a reply the owner was
   // reading silently is never picked up half-way through.
   const callSpeaks = useCallVoice();
+  // ISS-73 ① — the hold's two knobs, flattened to primitives so a refetch carrying equal values re-runs nothing.
+  // Absent (an older backend) → no hold: nothing here invents the switch or the bound.
+  const holdKeep = voice?.tts_background?.keepalive === true;
+  const holdIdleS = voice?.tts_background?.idle_s ?? 0;
+  /** The message id this TURN handed the controller (a read-along feed, or the turn-end flush) — the
+   *  audio the hold waits for once the stream is over. Null at each turn's start: an older reply the
+   *  owner replays is not this turn's business. */
+  const owned = useRef<string | null>(null);
+  /** The owned audio was REFUSED or PAUSED by the owner while the turn still streamed (code round row 2,
+   *  Sol M1): the turn's hold is over — the stream alone must not keep a page awake for a reply that is
+   *  not going to speak. Latched for the turn (reset with `owned`), read by `applyHold`. */
+  const mouthStopped = useRef(false);
+  /** The turn-level half of the hold's predicate, recomputed per pass; `applyHold` adds the two live
+   *  halves (the page's visibility, the mouth's status) at the moment it runs. */
+  const hold = useRef({ eligible: false, streaming: false, idleS: 0 });
+  /** The `messages` the last pass saw — a NEW array while streaming is an applied frame (progress). */
+  const lastFrame = useRef(messages);
 
   useEffect(() => {
     const was = prevStatus.current;
     prevStatus.current = status;
     if (was !== "streaming" && status === "streaming") {
       fed.current = null; // a new turn starts with clean read-along bookkeeping
+      owned.current = null; // …and owns no audio yet (ISS-73 ①)
+      mouthStopped.current = false;
       // A turn the OTHER device started, attached here by the visible M11 re-attach, starts "already
       // stopped" (owner ruling 2026-10-10 — two devices side by side must not both speak): the latch
       // silences the feed AND the terminal flush. Every other turn starts loud (`foreignTurn` false).
@@ -138,6 +176,7 @@ export function useAutoTts(): void {
       const target = live ?? fed.current;
       if (!target || target.id === spokenId.current) return;
       spokenId.current = target.id;
+      owned.current = target.id; // ISS-73 ①: the hold now waits on this reply's audio
       void endTurnSpeak(target.id, target.text, target.speaker);
       return;
     }
@@ -163,6 +202,73 @@ export function useAutoTts(): void {
       speaker: live.speaker,
       docked: fed.current?.id === live.id && fed.current.docked,
     };
+    owned.current = live.id; // ISS-73 ①: what the hold waits on once the stream ends
     feedReadAlong(live.id, live.text, live.speaker);
   }, [status, foreignTurn, messages, ttsAuto, ttsOk, chunking, dockedId, callSpeaks, agentArt]);
+
+  // ── ISS-73 ① — the reply hold (see the header) ──
+  /** Hold or release, from the turn-level half the effect below keeps current plus the two LIVE halves
+   *  read now. Stable, so the page's `visibilitychange` and the playback store can call it directly —
+   *  a hide, a return, the mouth finishing, none of which re-renders this hook (and must not: it runs
+   *  in the app shell). Idempotent: the controller only acts on an edge. */
+  const applyHold = useCallback(() => {
+    const t = hold.current;
+    const id = owned.current;
+    // Row 2: a `paused` owned reply WHILE the queue is open is a refusal or the owner's pause, never a
+    // seam or a gap (`audioStopped`'s contract) — latch it, so the stream frames that follow cannot
+    // re-arm a hold for a reply that has stopped.
+    if (t.streaming && id !== null && audioStopped(id)) mouthStopped.current = true;
+    // …and UNLATCH when it plays again (code round row 16): only a PLATFORM pause (a transient focus loss
+    // Chrome resumes) comes back to `playing` on its own — a refusal or an owner pause stays latched.
+    else if (id !== null && audioPlaying(id)) mouthStopped.current = false;
+    const pending = t.streaming || (id !== null && audioPending(id));
+    const hidden = document.visibilityState === "hidden";
+    holdWhileHidden("reply", t.eligible && !mouthStopped.current && pending && hidden, t.idleS);
+  }, []);
+
+  // Declared AFTER the feeder's effect on purpose: effects run in order, so this pass reads the
+  // `abandoned`/`owned` the feeder has just written for the same render.
+  useEffect(() => {
+    const eligible = ttsOk && ttsAuto && holdKeep && !abandoned.current;
+    // PROGRESS for the hold's idle bound: a new `messages` array while streaming is a stream frame the
+    // store applied (the store makes one per frame — the same fact the feeder's per-delta re-run rides).
+    // Only for a turn this hook would hold for (rulings row 13, the Qwen lane's Q6): the bound is
+    // page-wide, and a FOREIGN or stopped turn's frames must not keep an upload's hold alive past it.
+    if (
+      status === "streaming" &&
+      messages !== lastFrame.current &&
+      eligible &&
+      !mouthStopped.current
+    )
+      touchHoldProgress();
+    lastFrame.current = messages;
+    hold.current = { eligible, streaming: status === "streaming", idleS: holdIdleS };
+    applyHold();
+  }, [
+    status,
+    foreignTurn,
+    messages,
+    ttsAuto,
+    ttsOk,
+    chunking,
+    dockedId,
+    callSpeaks,
+    agentArt,
+    holdKeep,
+    holdIdleS,
+    applyHold,
+  ]);
+
+  // The two live halves' own edges, subscribed once: the page hiding/returning (the call's own pattern,
+  // `useLiveCall`), and the mouth's status moving (`subscribePlayback` — synchronous, no render). The
+  // unmount releases this hook's reason, whatever it held.
+  useEffect(() => {
+    document.addEventListener("visibilitychange", applyHold);
+    const unsubscribe = subscribePlayback(applyHold);
+    return () => {
+      document.removeEventListener("visibilitychange", applyHold);
+      unsubscribe();
+      holdWhileHidden("reply", false);
+    };
+  }, [applyHold]);
 }

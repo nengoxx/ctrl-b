@@ -80,6 +80,8 @@ const makeSettings = () => ({
       chunk_min_chars: 50,
       chunk_max_chars: 400,
       chunk_lookahead: 1,
+      background_keepalive: true,
+      background_idle_s: 600,
       connect_timeout_s: 3,
       timeout_s: 30,
       extra_body: {},

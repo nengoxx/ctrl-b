@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getJSON } from "../api/client";
-import { setChunkPolicy } from "../lib/audioController";
+import { setChunkPolicy, setMouthTrail } from "../lib/audioController";
 
 // Phase 6b — voice capability probe. `GET /api/voice/status` returns which services are configured
 // AND enabled (`{stt, tts}`), without leaking whether keys exist. Drives whether the composer shows
@@ -31,6 +31,17 @@ export interface SttAutoStopWire {
 export interface SttUploadWire {
   timeout_s: number;
   attempts: number;
+}
+
+/** The `tts_background` object, in wire spelling (`TtsServiceCfg.background_*`, backend/app/config.py —
+ *  ISS-73 ①): the HIDDEN-PAGE HOLD for a pending reply or clip upload. `keepalive` is the battery
+ *  switch (the call's `background_keepalive` analogue — the call keeps its own); `idle_s` is the hold's
+ *  bound in seconds with no progress, 0 = none. Read by `useAutoTts` (the reply) and `useDictation`'s
+ *  upload loop (via `useComposer`); absent (an older backend / a test stub) → no hold, today's
+ *  behaviour, and nothing here invents either number. */
+export interface TtsBackgroundWire {
+  keepalive: boolean;
+  idle_s: number;
 }
 
 /** The `tts_chunking` object, in wire spelling (`TtsServiceCfg.chunk_*`, backend/app/config.py). */
@@ -227,6 +238,9 @@ export interface VoiceStatus {
   /** Client behavior (D63): how to split a reply for read-aloud. Optional so a pre-D63 backend (or a
    *  test stub) simply leaves the controller on its whole-message default. */
   tts_chunking?: TtsChunkingWire;
+  /** Client behavior (ISS-73 ①): the hidden-page hold. Optional so an older backend (or a test stub)
+   *  holds nothing — exactly the pre-ISS-73 catch-up-on-return. */
+  tts_background?: TtsBackgroundWire;
   /** Client behavior (D71 §5.1): the call's pacing/interruption knobs. Optional so a pre-S1 backend (or
    *  a test stub) reads as "no call knobs" — which pairs with `live` being absent there anyway. */
   live_call?: LiveCallWire;
@@ -251,6 +265,9 @@ export function useVoiceStatus() {
           speakActions: c.speak_actions ?? true,
         });
       }
+      // ISS-73 ① — the mouth's probe trail rides the call trail's own gate (`voice.live.debug`), published
+      // to the controller here for the chunk policy's reason: the mouth reads it from no component.
+      setMouthTrail(status.live_call?.debug === true);
       return status;
     },
     staleTime: 60_000,

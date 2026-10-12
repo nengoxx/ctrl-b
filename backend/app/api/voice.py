@@ -12,8 +12,9 @@ the process-wide admission slot.
 
 `POST /api/voice/live/trail` (D77) is the browser's half of the CALL TRAIL — a debug-gated, bounded
 JSON append into `$CTRLB_HOME/calls/<call_id>.jsonl` (a call) or `$CTRLB_HOME/calls/dictation/…` (a
-dictation — the body's `mode`, Phase 26 S1) (`services/call_trail.py`); 404 while `voice.live.debug` is
-off, 204 on success, and no read path anywhere.
+dictation — the body's `mode`, Phase 26 S1; `calls/mouth/…` for the mouth's playback probe, ISS-73 ①)
+(`services/call_trail.py`); 404 while `voice.live.debug` is off, 204 on success, and no read path
+anywhere.
 
 `POST /api/voice/stt` is the CLIP DOOR (Phase 26 S9, ASR_PLAN §3.6): the upload is decoded, run
 through the pre-ASR pass and transcribed chunk by chunk as WAV (`services/voice_clip.py`) — never
@@ -55,7 +56,7 @@ from app.services.call_trail import (
     TRAIL_MAX_ENTRIES,
     TRAIL_MAX_ENTRY_BYTES,
     CallTrail,
-    LegMode,
+    ClientTrailMode,
 )
 from app.services.voice_clip import CLIP_DECODE_HEADROOM_S, clip_trail, transcribe_clip
 from app.services.voice_live import (
@@ -78,17 +79,18 @@ def _client(request: Request) -> VoiceClient:
 @router.get("/status")
 async def voice_status(request: Request) -> dict[str, object]:
     """Capability probe: which voice services are configured + enabled, the STT auto-send flag, the R51
-    Tier-0 auto-stop policy, the ISS-84 clip-upload bound, the D63 TTS chunk policy, and the D71
-    live-call policy (`{stt, tts, live, live_ear, stt_auto_send, stt_auto_stop, stt_upload,
-    tts_chunking, live_call}`). Everything past the capability bits is CLIENT BEHAVIOR composed HERE
-    from live settings (A11/R2) — the frozen resolved chain the `VoiceClient` holds deliberately doesn't
-    carry it — and this probe is the always-on endpoint the PWA already polls, so neither the chunker
-    nor the mic's silence detector nor the call overlay needs a query of its own.
+    Tier-0 auto-stop policy, the ISS-84 clip-upload bound, the D63 TTS chunk policy, the ISS-73 ①
+    hidden-page hold, and the D71 live-call policy (`{stt, tts, live, live_ear, stt_auto_send,
+    stt_auto_stop, stt_upload, tts_chunking, tts_background, live_call}`). Everything past the
+    capability bits is CLIENT BEHAVIOR composed HERE from live settings (A11/R2) — the frozen resolved
+    chain the `VoiceClient` holds deliberately doesn't carry it — and this probe is the always-on
+    endpoint the PWA already polls, so neither the chunker nor the mic's silence detector nor the call
+    overlay needs a query of its own.
 
-    `stt_auto_stop`, `stt_upload`, `tts_chunking` and `live_call` are shape-only: a toggle +
-    thresholds, a timeout floor + an attempt count, the split mode + size floors/caps + container +
-    the read-along flag, and the call's client-side pacing / interruption / presentation knobs. No
-    endpoint, no key, no model id — nothing here says whether a
+    `stt_auto_stop`, `stt_upload`, `tts_chunking`, `tts_background` and `live_call` are shape-only: a
+    toggle + thresholds, a timeout floor + an attempt count, the split mode + size floors/caps +
+    container + the read-along flag, a switch + an idle bound, and the call's client-side pacing /
+    interruption / presentation knobs. No endpoint, no key, no model id — nothing here says whether a
     secret exists."""
     status: dict[str, object] = dict(_client(request).status())
     stt = request.app.state.settings.voice.stt
@@ -116,6 +118,10 @@ async def voice_status(request: Request) -> dict[str, object]:
         # side of the wire ever sees the prose.
         "speak_actions": tts.speak_actions,
     }
+    # ISS-73 ① — the hidden-page hold for a pending reply / clip upload, ONE object (the `stt_auto_stop` /
+    # `stt_upload` precedent: the next knob is an additive field). Shape only; the browser is the only
+    # end that can see a page go hidden.
+    status["tts_background"] = {"keepalive": tts.background_keepalive, "idle_s": tts.background_idle_s}
     # LIVE VOICE / call mode (D71 §5.1). The BIT is composed of three things, because the call needs
     # both ears and a mouth: a resolvable realtime target (the frozen client's chain), TTS configured
     # (the §5.1 refinement 2026-09-12 — a call with nothing to say back is not a call), and the
@@ -329,10 +335,11 @@ class TrailEntry(BaseModel):
 
 class TrailBatch(BaseModel):
     call_id: str = Field(pattern=CALL_ID_PATTERN)
-    #: Which feature wrote the batch (Phase 26 S1) — the store's `LegMode`, so the route and the relay
-    #: share one vocabulary (`clip` is server-minted, never a client's). Absent = `call`: a pre-S1
-    #: client's batches land exactly where they did.
-    mode: LegMode = "call"
+    #: Which feature wrote the batch (Phase 26 S1) — the store's `ClientTrailMode`: the relay's legs plus
+    #: the mouth's playback probe (ISS-73 ①, `calls/mouth/`), one vocabulary owned by the store (`clip`
+    #: is server-minted, never a client's). Absent = `call`: a pre-S1 client's batches land exactly where
+    #: they did.
+    mode: ClientTrailMode = "call"
     entries: list[TrailEntry] = Field(min_length=1, max_length=TRAIL_MAX_ENTRIES)
 
 

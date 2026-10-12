@@ -1224,8 +1224,9 @@ def test_a_dictation_leg_is_never_gap_cut(tmp_path: Any) -> None:
     assert not [line for line in lines if line["ev"] == "gap_cut"]
 
 
-# `clip` is the store's server-minted mode (Phase 26 S9) — a socket may never name it.
-@pytest.mark.parametrize("mode", ["", "Dictation", "chat", "clip", 1, None, True])
+# `clip` is the store's server-minted mode (Phase 26 S9) — a socket may never name it; nor `mouth`, the
+# browser's playback probe (ISS-73 ①): a trail-route mode with no leg behind it.
+@pytest.mark.parametrize("mode", ["", "Dictation", "chat", "clip", "mouth", 1, None, True])
 def test_a_malformed_start_mode_is_a_protocol_close(mode: Any) -> None:
     app = _fake_app(FakeSpeaches([created()]))
     with app.websocket_connect("/api/voice/live", headers=ORIGIN) as ws:

@@ -10,6 +10,7 @@ import {
 
 import { micLabel } from "./useComposerChrome";
 import { TOO_SHORT_MSG, type useDictation } from "../../../hooks/useDictation";
+import { primeReplyHold } from "../../../lib/audioController";
 import { buzz } from "../../../lib/haptics";
 import { startCall } from "../../../store/liveCall";
 import { setMicCancel } from "../../../store/micCancel";
@@ -623,6 +624,12 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
       // hold-to-CALL never rode the clip door (refusing it would kill calls after a link drop — the
       // car-wave council, ruling 6).
       if (micRef.current.status === "sending") return;
+      // ISS-73 ① — an ACCEPTED press is the dictation's one gesture: its auto-send (and the reply that
+      // follows) has none of its own, so the reply's hidden-page hold is primed HERE (the mouth's context
+      // + the element's real play). After the sending door — a refused press primes nothing — and
+      // before anything else; idempotent and cheap. Only with the battery switch ON (rulings row 12, the
+      // Qwen lane's Q4 — `mic.replyHold`, the recorder's copy of the probe's `tts_background.keepalive`).
+      if (micRef.current.replyHold) primeReplyHold();
       pointerSession.current = true;
       clearTimeout(guardTimer.current);
       // THE DEGRADED STATE, preserved exactly (owner-locked UX): with no secure context the mic can
@@ -724,6 +731,11 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
         send({ type: "keyStop" });
         return;
       }
+      // ISS-73 ① (code round row 7, Sol M6): the keyboard / assistive START is a mic activation like the
+      // accepted press — the dictation's one gesture — so it primes the reply's hidden-page hold too.
+      // Only here: a stop or the call branch above is not a dictation start (the call door primes its own).
+      // Only with the battery switch ON (row 12).
+      if (micRef.current.replyHold) primeReplyHold();
       // A keyboard session never ran `onPointerDown`, so the anchor was never measured — and the
       // locked circle + CANCEL twin about to paint position off it. Measure from the activating
       // button, or the chrome lands at the host's 0,0 (main-seat audit F-B).

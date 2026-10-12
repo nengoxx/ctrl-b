@@ -32,6 +32,8 @@
 
 import { pushToast } from "../store/toast";
 import { createStore } from "../store/createStore";
+import { type CallTrail, createCallTrail, postTrail } from "./callTrail";
+import { createKeepalive, type Keepalive } from "./keepalive";
 import { stableMarkdownPrefix, toSpeech } from "./toSpeech";
 import { chunkPlan, chunkPlanFrom, type ChunkCfg } from "./ttsChunks";
 
@@ -171,8 +173,25 @@ const SILENT_WAV =
 /** True while `primeAudio`'s silent unlock is on the element — the two status listeners above ignore it
  *  so a prime never publishes a phantom "playing"/"paused" into the transport. */
 let priming = false;
-/** The unlock is once per page: the element keeps its activation for the session. */
+/** The unlock is once per page: the element keeps its activation for the session. Latched only by a
+ *  FULFILLED play (ISS-73 ①, the Sol confirm's §3): a refused or skipped prime leaves it down, so the
+ *  next gesture tries again instead of the page living with an element that was never unlocked. */
 let primed = false;
+/** Which prime owns the element (ISS-73 ① code round, rulings row 5b / Sol M3): bumped when REAL playback
+ *  takes the element over (`releasePrime`), so a prime still settling finds itself superseded and its
+ *  `done()` touches nothing — it used to pause + unload whatever reply had replaced its silent clip. */
+let primeGen = 0;
+
+/** Real playback takes the element (a reply begins: `beginMessage`; an audible play: `startEl`): a
+ *  prime still in flight is OVER — its mute is lifted and its `priming` filter dropped here, now, and its
+ *  late settlement becomes a no-op (`primeGen`). Unlatched, so the next gesture primes again. */
+function releasePrime(a: HTMLAudioElement): void {
+  if (!priming) return;
+  primeGen++;
+  priming = false;
+  a.muted = false;
+  mouthLine("prime", { branch: "superseded" });
+}
 
 /**
  * Unlock the shared `<audio>` element from inside a user gesture (D71 §6 "audio priming").
@@ -184,17 +203,32 @@ let primed = false;
  * decodable silent source, then put the element straight back the way it was.
  *
  * Never throws and never awaits: a rejected unlock (an engine that wants more, a src already loaded)
- * leaves exactly today's behaviour. Idempotent — a redial costs nothing.
+ * leaves exactly today's behaviour — and, since ISS-73 ①, leaves the latch DOWN, so the next gesture
+ * (a typed Send, a mic press, a dial: `primeReplyHold` and the call door) tries again. Idempotent once
+ * it has worked — a redial costs nothing — and a gesture landing while one is in flight is a no-op.
  */
 export function primeAudio(): void {
-  if (primed) return;
-  primed = true;
+  if (primed || priming) return;
+  // The mouth is BUSY (rulings row 5a, Opus LOW-2): a reply is loading, playing or parked on the
+  // element, and a prime now would swap its source for the silent clip. Skipped, logged, NOT latched —
+  // the next gesture on an idle mouth primes.
+  if (pb.status !== "idle") {
+    mouthLine("prime", { branch: "busy", id: pb.id, status: pb.status });
+    return;
+  }
   const a = ensureEl();
-  // Something is already loaded on the element: it was unlocked by whatever put it there, and clobbering
-  // its `src` to prime would stop live audio. Nothing to do.
-  if (a.currentSrc || a.getAttribute("src")) return;
+  // Something is already loaded on the element: clobbering its `src` to prime would stop live audio, so
+  // nothing is done. NOT latched, and LOGGED (car-wave §3.7): a loaded src is not proof the element ever
+  // had a gesture-started play (a timer may have loaded it), and that is exactly the premise the
+  // hidden-page probe tests — the branch must be visible in the trail, not fail silently.
+  if (a.currentSrc || a.getAttribute("src")) {
+    mouthLine("prime", { branch: "loaded", id: pb.id, status: pb.status });
+    return;
+  }
   priming = true;
+  const gen = ++primeGen;
   const done = (): void => {
+    if (gen !== primeGen) return; // superseded by real playback (`releasePrime`): not ours to touch
     a.pause();
     a.removeAttribute("src");
     a.load();
@@ -205,10 +239,274 @@ export function primeAudio(): void {
   a.src = SILENT_WAV;
   // `play()` returns a promise everywhere that matters — but not in every environment this module runs
   // in (jsdom's is a no-op returning undefined), and a prime must never throw into the gesture that
-  // called it.
+  // called it. No promise = nothing to wait for: latched, as before.
   const started = a.play() as Promise<void> | undefined;
-  if (started) void started.then(done).catch(() => done());
-  else done();
+  if (!started) {
+    primed = true;
+    done();
+    return;
+  }
+  void started.then(
+    () => {
+      primed = true; // ISS-73 ①: the ONE place the latch goes up — the play really ran
+      mouthLine("prime", { branch: "played" });
+      done();
+    },
+    (e: unknown) => {
+      mouthLine("prime", { branch: "rejected", err: errName(e) });
+      done();
+    },
+  );
+}
+
+// ── ISS-73 ① — THE MOUTH'S PROBE TRAIL (car-wave design §3.7 ②) ───────────────────────────────────
+// The owner's first hidden-page observation was NOT the freeze: the reply was synthesised while the
+// page was hidden-but-RUNNING and only spoke at the return — a blocked playback START. A rejected
+// `play()` and a load that never starts are DIFFERENT fixes (the ladder's rung ③, or not), so under
+// `voice.live.debug` the mouth writes what it did into the call trail's own machinery (D77): ONE trail
+// per PAGE, opened lazily on the first line, `mode: "mouth"` (filed in `calls/mouth/`), every line
+// carrying the page's visibility. Gate off (the default) → every line costs one boolean test.
+
+/** The trail gate (`live_call.debug`), published by the `/voice/status` query — the `setChunkPolicy`
+ *  precedent: client behaviour read imperatively, from no component. */
+let mouthDebug = false;
+/** This page's mouth trail, opened by the first line under the gate; null before that. */
+let mouthTrail: CallTrail | null = null;
+
+/** Publish the trail gate. Turning it OFF ends this page's trail (flushed, disposed); a later ON opens
+ *  a fresh one — a batch the server refuses meanwhile (404: the gate flipped server-side first) is
+ *  dropped by the trail itself, silently, exactly as the call's is. */
+export function setMouthTrail(on: boolean): void {
+  mouthDebug = on;
+  if (on || !mouthTrail) return;
+  mouthTrail.flush("end");
+  mouthTrail.dispose();
+  mouthTrail = null;
+  document.removeEventListener("visibilitychange", onMouthVisibility);
+}
+
+/** The page's visibility edges, as lines of their own (the probe's hide/return marks) — and the call's
+ *  own rule: a page going away ships what it holds on `keepalive`, which outlives a freeze or a kill. */
+function onMouthVisibility(): void {
+  mouthLine("vis");
+  if (document.visibilityState === "hidden") mouthTrail?.flush("hidden");
+}
+
+/** One probe line. `vis`/`hidden` ride every one of them: the question the probe answers is always
+ *  "what did the mouth do, and was the page in front when it did it". */
+function mouthLine(ev: string, data?: Record<string, unknown>): void {
+  if (!mouthDebug) return;
+  if (!mouthTrail) {
+    // `randomUUID` is secure-context only — without it there is simply no trail (the dictation's rule).
+    if (typeof crypto === "undefined" || typeof crypto.randomUUID !== "function") return;
+    mouthTrail = createCallTrail({
+      callId: crypto.randomUUID(),
+      mode: "mouth",
+      post: postTrail, // the call trail's own poster — one route, one spelling
+      stamp: () => ({ leg: 0, gen: 0 }), // a page has no legs; the envelope's shape is the trail's
+    });
+    document.addEventListener("visibilitychange", onMouthVisibility);
+  }
+  mouthTrail.push(ev, { vis: document.visibilityState, hidden: document.hidden, ...data });
+}
+
+/** A rejection's name for the trail (`NotAllowedError`, `AbortError`, …) — never its message. */
+function errName(e: unknown): string {
+  return e instanceof Error || e instanceof DOMException ? e.name : String(e);
+}
+
+/** Record one `play()` the mouth issued: the issue now, and its outcome when it settles — so a play
+ *  that is still PENDING at the page's return reads as a `play` with no `play_result` before the `vis`
+ *  line. The caller's own handlers are untouched: this is a second, observing branch. */
+function probePlay(started: Promise<void> | undefined): void {
+  if (!mouthDebug) return;
+  const at = Date.now();
+  mouthLine("play", { id: pb.id, status: pb.status });
+  void started?.then(
+    () => mouthLine("play_result", { ok: true, ms: Date.now() - at, status: pb.status }),
+    (e: unknown) =>
+      mouthLine("play_result", {
+        ok: false,
+        err: errName(e),
+        ms: Date.now() - at,
+        status: pb.status,
+      }),
+  );
+}
+
+// ── ISS-73 ① — THE HIDDEN-PAGE HOLD (car-wave design §3.2; D73's mechanism, one more owner) ─────────
+// The goal (owner ruling 2026-10-12): a pending reply SPEAKS while the phone is locked or the app is in
+// the background (unless auto-TTS is off) — the catch-up on return stays as the fallback. Chrome Android
+// freezes a hidden page that has been silent for ~90 s (D73/R75), timers and `play()` with it; the call
+// defeats that with `lib/keepalive` on its capture context, and this is the same node on a context of
+// the MOUTH's own, held while something is pending on a hidden page. Two reasons (a set, so they
+// overlap into ONE node): a REPLY (`useAutoTts`) and a clip UPLOAD (`useDictation`'s loop, §2.7).
+//
+// TWO OPERATIONS, because the platform splits the job (council ruling 8): `primeReplyHold()` runs
+// INSIDE a gesture — it makes the context (and resumes it there, which is what lets a later resume
+// while hidden ride sticky activation) and gives the `<audio>` element its real gesture-started play
+// (`primeAudio`); `holdWhileHidden()` runs with no gesture and only mints/retires the node. Nothing
+// renders between holds: the context is suspended whenever no reason is held.
+//
+// THE IDLE BOUND (ruling 15): nothing client-side bounds a streaming turn on a dead link (the SSE reader
+// is `for (;;) await reader.read()`, no signal, no timer), so a hold would keep exactly that hung page
+// awake to the OS's TCP give-up. It lapses after `tts.background_idle_s` with no PROGRESS — an applied
+// stream frame, playback progress, an upload attempt starting or answering — measured from the last
+// progress, never from arming; the next progress re-arms it. 0 = no bound.
+
+/** Why the page is being held — each owner names its own, so one releasing never drops the other's. */
+export type HoldReason = "reply" | "upload";
+
+/** The hold's context: made by the first `primeReplyHold` (a gesture), page-lifetime. Null until then —
+ *  and a hold with no context renders nothing: it is only ever useful after a gesture primed it. */
+let holdCtx: AudioContext | null = null;
+let holdNode: Keepalive | null = null;
+/** Name-keyed, not refcounted (rulings row 14): ONE owner per reason is the invariant — `useAutoTts`
+ *  mounts once (the app shell) and ISS-84's tab-wide capture ownership allows one upload loop per tab. */
+const holdReasons = new Set<HoldReason>();
+/** The node is running (and the context was resumed for it). One fact, written only by `holdApply`. */
+let holdOn = false;
+/** The idle bound, ms (0 = none) — the value the last ON carried. */
+let holdIdleMs = 0;
+/** `Date.now()` of the last progress; null before any (the bound then runs from the arming — there is
+ *  no earlier moment to measure from). */
+let holdLastProgress: number | null = null;
+/** The idle bound fired: the reasons are still recorded, the node is retired, and the next progress
+ *  brings it back. Cleared when the last reason goes. */
+let holdLapsed = false;
+let holdTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * THE GESTURE HALF (council ruling 8) — call it INSIDE a user gesture: the typed Send and the mic's
+ * accepted press (the dictation's auto-send has no gesture of its own; the press is it). Makes the ONE
+ * context on first use (default rate), resumes it (never awaited into the gesture — and suspended again
+ * once resumed if nothing is being held, so a prime renders nothing), and calls `primeAudio()` — the
+ * element's unlock, called rather than imitated: what the hidden-page start needs is a REAL
+ * gesture-started play on the element (Chromium defers a hidden page's media load when the page has
+ * never played media — the leading hypothesis for the owner's first observation, Sol's confirm).
+ * Idempotent and cheap: a second gesture resumes an existing context and finds the element primed.
+ */
+export function primeReplyHold(): void {
+  if (!holdCtx && typeof AudioContext !== "undefined") {
+    try {
+      holdCtx = new AudioContext();
+      holdNode = createKeepalive(holdCtx);
+    } catch {
+      holdCtx = null; // an engine that refuses a context: no hold, exactly today's behaviour
+      holdNode = null;
+    }
+  }
+  const ctx = holdCtx;
+  if (ctx) {
+    void ctx.resume().then(
+      () => {
+        mouthLine("ctx_state", { op: "prime", state: ctx.state });
+        // Reasons recorded BEFORE this context existed are applied now rather than stranded (rulings
+        // row 11, the Qwen lane's Q2); only a context with nothing to render is suspended.
+        holdApply();
+        if (!holdOn) holdStep("suspend"); // unlocked now; nothing to render until a hold arms
+      },
+      (e: unknown) => mouthLine("ctx_state", { op: "prime", state: ctx.state, err: errName(e) }),
+    );
+  }
+  primeAudio();
+}
+
+/**
+ * Hold (or release) the page for one REASON while it is hidden — the CALLER decides "pending ∧ hidden"
+ * (its own eligibility, re-evaluated on its own edges); this only keeps the reason set and renders the
+ * node while the set is non-empty. Idempotent both ways, so a caller may re-assert on every pass; only a
+ * real edge reaches the trail. `idleS` (read on ON) is the knob's idle bound — see THE IDLE BOUND above.
+ * No context yet (no gesture this page) → the reason is recorded and nothing renders.
+ */
+export function holdWhileHidden(reason: HoldReason, on: boolean, idleS = 0): void {
+  const had = holdReasons.has(reason);
+  let moved = false;
+  if (on) {
+    const idleMs = idleS > 0 ? idleS * 1000 : 0;
+    moved = idleMs !== holdIdleMs;
+    holdIdleMs = idleMs;
+    if (!had) holdReasons.add(reason);
+  } else {
+    if (!had) return;
+    holdReasons.delete(reason);
+    if (holdReasons.size === 0) holdLapsed = false; // the next hold starts with a fresh bound
+  }
+  if (on !== had)
+    mouthLine("hold", { reason, on, reasons: [...holdReasons], ctx: holdCtx?.state ?? "none" });
+  // Reconciled on EVERY call, a re-assert included: after a call released the hold, an owner's next
+  // edge is what brings it back (row 6) — `holdApply` is a no-op when nothing changed.
+  holdApply();
+  // …and the timer follows the EFFECTIVE bound whenever it moved — a newly added reason carrying a
+  // different one included (rulings row 3 / Sol M2: `holdApply` alone leaves a running node's timer on
+  // the old deadline, or on none). A no-op while nothing renders.
+  if (moved) armHoldTimer();
+}
+
+/** PROGRESS for the idle bound: an applied stream frame (`useAutoTts`), an upload attempt starting or
+ *  answering (`useDictation`), playback moving (the element's `timeupdate`, here). Cheap enough for
+ *  4×/s: a timestamp, and — only after a lapse — the node back. Exported apart from `holdWhileHidden`
+ *  (rather than "re-asserting ON counts as progress") because the hold's owners re-assert on every
+ *  render, and a re-render is not progress: the bound would never fire on the hung page it exists for. */
+export function touchHoldProgress(): void {
+  holdLastProgress = Date.now();
+  if (!holdLapsed) return;
+  holdLapsed = false;
+  mouthLine("hold_resumed", { reasons: [...holdReasons] });
+  holdApply();
+}
+
+/** Reconcile the node with the reason set — the ONE writer of `holdOn`. A live call excludes every
+ *  reason (rulings row 6): the call's own background policy governs, so a hold must neither override a
+ *  disabled call keepalive nor open a second output stream beside the call's. */
+function holdApply(): void {
+  const want = holdReasons.size > 0 && !holdLapsed && !callVoice.active;
+  if (!holdCtx || !holdNode || want === holdOn) return;
+  holdOn = want;
+  if (want) {
+    holdStep("resume"); // allowed with no gesture: the page has sticky activation from the prime
+    holdNode.set(true);
+    armHoldTimer();
+    return;
+  }
+  clearTimeout(holdTimer);
+  holdTimer = undefined;
+  holdNode.set(false);
+  holdStep("suspend"); // nothing renders between holds
+}
+
+/** Resume/suspend the hold's context, the resulting state logged (the probe's `ctx.state` after a
+ *  HIDDEN resume — the Qwen lane's ⑦: a resume refused while hidden is its own finding). */
+function holdStep(op: "resume" | "suspend"): void {
+  const ctx = holdCtx;
+  if (!ctx) return;
+  void ctx[op]().then(
+    () => mouthLine("ctx_state", { op, state: ctx.state }),
+    (e: unknown) => mouthLine("ctx_state", { op, state: ctx.state, err: errName(e) }),
+  );
+}
+
+/** ONE timer for the bound, armed while the node runs: it fires when `holdIdleMs` has passed since the
+ *  last progress, and re-arms itself for the remainder when progress moved meanwhile — so progress
+ *  itself never touches a timer. */
+function armHoldTimer(): void {
+  clearTimeout(holdTimer);
+  holdTimer = undefined;
+  if (!holdOn || holdIdleMs <= 0) return;
+  holdLastProgress ??= Date.now();
+  holdTimer = setTimeout(
+    () => {
+      holdTimer = undefined;
+      if (Date.now() - (holdLastProgress ?? 0) < holdIdleMs) {
+        armHoldTimer();
+        return;
+      }
+      holdLapsed = true;
+      mouthLine("hold_lapsed", { idle_ms: holdIdleMs, reasons: [...holdReasons] });
+      holdApply();
+    },
+    Math.max(0, (holdLastProgress ?? 0) + holdIdleMs - Date.now()),
+  );
 }
 
 /** The CALL's read-along override (§4.5) — client-local for the call's duration; the Conf rows are never
@@ -243,7 +541,7 @@ let callVoice: { active: boolean; waiting: boolean } = { active: false, waiting:
 // and a reply that would start inside the window waits it out — but ONLY after a flip that left comm
 // mode (`markStreamRetag`); an ordinary call pays nothing.
 /** Chromium's close delay plus IPC slack (R81 §0: "budget 5.5 s"). The platform's number, not a knob
- *  — the same reasoning as `pcmCapture`'s `KEEPALIVE_GAIN`. */
+ *  — the same reasoning as `lib/keepalive`'s `KEEPALIVE_GAIN`. */
 export const STREAM_RETAG_MS = 5500;
 /** When the element was last UNLOADED (`reset()`), on `performance.now()`'s clock; the dispatcher's
  *  5 s runs from there. -Infinity = never, or long enough ago not to matter. */
@@ -296,6 +594,10 @@ export function setCallVoice(active: boolean, waitForSettle: boolean): void {
   if (!active) retagPending = false; // ISS-18: the retag belongs to the call; its teardown ends it
   if (callVoice.active === active && callVoice.waiting === waiting) return;
   callVoice = { active, waiting };
+  // ISS-73 ① (rulings row 6, Opus LOW-1): a call ARMING releases the hidden-page hold for EVERY reason —
+  // the call's own `voice.live.background*` policy governs the page now. Its END re-arms nothing by
+  // itself: the owners re-assert on their own edges (`holdWhileHidden` reconciles on every call).
+  if (active) holdApply();
   emit(); // the feeder is a hook: flipping the override has to re-run its gates
 }
 
@@ -395,8 +697,11 @@ export function pokeCallMouth(): void {
 /** Start the shared element — the ONE door to an audible `play()` (the silent, muted prime keeps its
  *  own path). Every future play site goes through here or it reopens the pre-play leak. */
 function startEl(a: HTMLAudioElement): ReturnType<HTMLMediaElement["play"]> {
+  releasePrime(a); // ISS-73 ① row 5b: an audible play owns the element — a pending prime is over
   callPrePlay?.();
-  return a.play();
+  const started = a.play();
+  probePlay(started); // ISS-73 ① — every audible play's outcome, for the hidden-page probe
+  return started;
 }
 
 /** MOUTH FAILURES, counted (§4.5's "voice failed" note). The transport `status`
@@ -606,6 +911,15 @@ function ensureEl(): HTMLAudioElement {
   if (el) return el;
   const a = new Audio();
   a.preload = "auto";
+  // ISS-73 ① — THE PROBE's element lines (car-wave §3.7 ②): a load that never STARTS on a hidden page
+  // (no `loadstart`) and one that starts but never PLAYS are different fixes. Registered FIRST, so each
+  // line reads the state before the listeners below move it (`error` resets the player). The prime's
+  // own silent clip is marked rather than skipped: whether IT played is half the question.
+  for (const type of ["loadstart", "playing", "ended", "error"] as const) {
+    a.addEventListener(type, () =>
+      mouthLine("el", { type, priming, id: pb.id, status: pb.status }),
+    );
+  }
   const syncDuration = () => {
     // Under chunking the published duration is the MESSAGE's, not this chunk's — the element's own
     // duration is one span of the timeline and would clobber the sum.
@@ -615,6 +929,7 @@ function ensureEl(): HTMLAudioElement {
   a.addEventListener("timeupdate", () => {
     const s = liveSession();
     set({ current: s ? globalCurrent(s) : a.currentTime });
+    touchHoldProgress(); // ISS-73 ①: playback moving is progress for the hold's idle bound
   });
   a.addEventListener("durationchange", syncDuration);
   a.addEventListener("loadedmetadata", syncDuration);
@@ -880,6 +1195,7 @@ function newSession(
 /** Take the element + the docked player for `id`, reaping the previous message's queue (D63's
  *  single-message retention). Returns the generation the new queue owns. */
 function beginMessage(id: string, a: HTMLAudioElement): number {
+  releasePrime(a); // ISS-73 ① row 5b: a reply takes the element — a pending prime must not unload it
   a.pause(); // stop whatever's playing now so it doesn't keep going during the new clip's synth
   const seq = ++reqSeq;
   mouthHeld = null; // a superseded reply held on the mouth gate must not start after this one
@@ -1634,6 +1950,34 @@ export function subscribePlayback(cb: () => void): () => void {
  *  store listener). */
 export function getPlayStatus(): PlayStatus {
   return pb.status;
+}
+
+/** ISS-73 ① — is message `id`'s audio still TO COME or SOUNDING: docked and `loading` (a synthesis, a
+ *  catch-up gap, a held start) or `playing`. Read outside React like `getPlayStatus`, by the reply hold.
+ *  Every `paused` is an END for the hold — the finish/park (`finish()`, never the per-chunk `ended`,
+ *  which the seam swallows), the whole clip's `ended`, a refused `play()`, the owner's own pause: none of
+ *  them speaks again unasked — and `idle` is a reset (a dismiss, a failure, a view swap). */
+export function audioPending(id: string): boolean {
+  return pb.id === id && (pb.status === "loading" || pb.status === "playing");
+}
+
+/** ISS-73 ① (code round, rulings row 2 / Sol M1) — has message `id`'s audio STOPPED: docked and
+ *  `paused`. While its read-along queue is still OPEN (the turn streaming) that status has three causes
+ *  — a refused `play()` (`mouthFailed` + `paused`), the owner's own pause (`transport`, a paused intent
+ *  landing under the latch), or a PLATFORM pause (audio-focus loss, headphones unplugged, a Bluetooth
+ *  drop: the element's own `pause` event — code round row 16) — because the queue's other edges never
+ *  read `paused`: a chunk SEAM keeps `playing` (the `pause` before `ended` is swallowed, `a.ended`), a
+ *  synthesis GAP reads `loading`, and the finish/park cannot run while the queue is open. Only the
+ *  platform's can resume by itself — which `audioPlaying` is for. */
+export function audioStopped(id: string): boolean {
+  return pb.id === id && pb.status === "paused";
+}
+
+/** …and is it `playing` (code round row 16): the edge that tells a platform pause Chrome resumed after
+ *  a transient focus loss apart from a refusal or an owner pause, neither of which reaches `playing` by
+ *  itself. */
+export function audioPlaying(id: string): boolean {
+  return pb.id === id && pb.status === "playing";
 }
 
 /** Write the queue's play INTENT and PUBLISH it. Intent moves without the status moving — that is the
