@@ -538,6 +538,21 @@ describe("the dark sheet's dotted texture", () => {
     );
   });
 
+  it("hides the dot row under an OPAQUE grab bar, not behind a see-through one (ISS-78)", () => {
+    // the dot row above runs through the grip's centre line on purpose, so a translucent grip (the old
+    // `opacity: 0.3`) shows the dots INSIDE the bar. The 30% look is pre-mixed against the sheet's top
+    // stop instead — both inputs opaque, no alpha — cosmos's own recipe.
+    const grip = /\n\s*\.bs-grip \{([^}]*)\}/.exec(css)![1];
+    expect(grip).toContain(
+      "background: color-mix(in srgb, var(--gc-dossier-ink) 30%, var(--gc-dossier-from))",
+    );
+    expect(grip).not.toMatch(/(^|[;\s])opacity:/);
+    // every dossier palette declares an OPAQUE top stop (a hex with no alpha pair), so the mix stays opaque
+    const froms = [...tokens.matchAll(/--gc-dossier-from: ([^;]+);/g)].map((m) => m[1]);
+    expect(froms.length).toBeGreaterThan(1);
+    for (const f of froms) expect(f).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
   it("keeps its strength in the dot's own alpha, never in an element opacity", () => {
     // one number tunes the texture — the alpha in `--gc-dossier-texture`. An element `opacity` here would
     // be a second, invisible knob multiplying the first.

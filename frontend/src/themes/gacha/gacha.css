@@ -3155,10 +3155,14 @@
       mask-image: var(--gc-dossier-texture-mask);
     }
     /* The grab bar inverts with the surface: the kit's translucent-white grip is invisible on a light
-     * panel (the prototype's own dark handle at 30%). */
+     * panel (the prototype's own dark handle at 30%). OPAQUE, pre-mixed to that same 30% look (ISS-78):
+     * an `opacity` grip is see-through, and the G6.4 dot field above puts a dot row exactly on its centre
+     * line, so the dots showed INSIDE the bar. Mixed against `--gc-dossier-from` — the sheet's top stop,
+     * which is what the grip sits on (12px into a 3-stop ramp whose next stop is at 30%) — both inputs are
+     * opaque, so there is no alpha and the dots tuck under the handle: cosmos's own recipe (cosmos.css
+     * `.bs-grip`), the half of the texture port G6.4 left behind. */
     .bs-grip {
-      background: var(--gc-dossier-ink);
-      opacity: 0.3;
+      background: color-mix(in srgb, var(--gc-dossier-ink) 30%, var(--gc-dossier-from));
     }
     /* THE KEYBOARD FOCUS RING, re-coloured for this surface (G6). The kit's global ring is
      * `outline: 2px solid var(--accent)` — the NIGHT pink, which is exactly the token that measures 2.62
