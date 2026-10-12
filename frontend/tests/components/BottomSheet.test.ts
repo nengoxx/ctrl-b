@@ -1,8 +1,15 @@
+/// <reference types="node" />
+// ^ the ISS-74 block reads kit.css from disk (fs/path/process); the tests tsconfig pins `types:["vitest"]`,
+//   so node's globals are pulled in explicitly (the micGestureCss/gachaChrome precedent).
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BottomSheet, pickSnap } from "../../src/components/BottomSheet";
+import { SCROLL_IDLE_MS } from "../../src/lib/scrollingStamp";
 
 // BottomSheet snap selection (Cosmos C3c). The drag/transform itself is verified live (jsdom can't render the
 // gesture); this covers the pure helper. snaps ascending: [0 = full, peekTy, fullH = closed].
@@ -231,5 +238,75 @@ describe("BottomSheet — focus restoration on close", () => {
     expect(spy).toHaveBeenCalled();
     for (const call of spy.mock.calls) expect(call[0]).toEqual({ preventScroll: true });
     trigger.remove();
+  });
+});
+
+// ISS-74 — the sheet body's scrollbar is QUIET (the owner's ruling, recorded on ISS-81): hidden outright on
+// touch; on a fine pointer invisible at rest and shown only while scrolling / hovered. The body carries the
+// ONE shared class, and the primitive stamps `data-scrolling` while it scrolls (CSS can't see that state).
+// The old body had neither — no class, no stamp — so the engine's overlay bar sat painted from the open.
+describe("ISS-74 · the quiet sheet scrollbar", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  const openSheet = () =>
+    render(
+      createElement(BottomSheet, {
+        open: true,
+        onClose: () => {},
+        children: createElement("div", null, "content"),
+      }),
+    );
+
+  it("the body carries the shared quiet-scrollbar class", () => {
+    const { container } = openSheet();
+    expect(container.querySelector(".bs-body")!.classList).toContain("kit-quiet-scrollbar");
+  });
+
+  it("stamps data-scrolling while the body scrolls, clearing it after the idle window", () => {
+    const { container } = openSheet();
+    const body = container.querySelector<HTMLElement>(".bs-body")!;
+    expect(body.dataset.scrolling).toBeUndefined(); // at rest: quiet
+    fireEvent.scroll(body);
+    expect(body.dataset.scrolling).toBe("true");
+    vi.advanceTimersByTime(SCROLL_IDLE_MS - 1);
+    fireEvent.scroll(body); // a still-running scroll re-arms the idle window
+    vi.advanceTimersByTime(SCROLL_IDLE_MS - 1);
+    expect(body.dataset.scrolling).toBe("true");
+    vi.advanceTimersByTime(1);
+    expect(body.dataset.scrolling).toBeUndefined();
+  });
+
+  // Source-level, like micGestureCss: the failure mode is a deleted/split declaration, and the cascade
+  // itself needs a real engine. Comments stripped so prose can't satisfy a check.
+  it("kit.css: hidden outright on touch; thin, transparent at rest + revealed on stamp/hover on desktop", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/theme-engine/kit/kit.css"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\s+/g, " ");
+    expect(css).toContain(
+      ".kit .kit-quiet-scrollbar { scrollbar-width: thin; scrollbar-color: transparent transparent; }",
+    );
+    expect(css).toMatch(
+      /\.kit \.kit-quiet-scrollbar:hover, \.kit \.kit-quiet-scrollbar\[data-scrolling\] \{ scrollbar-color: var\(--text-3\) transparent; \}/,
+    );
+    const touch = css.match(
+      /@media \(pointer: coarse\) \{ \.kit \.kit-quiet-scrollbar \{[^}]*\}[^}]*\}/,
+    );
+    expect(touch?.[0]).toContain("scrollbar-width: none;");
+    expect(touch?.[0]).toContain(".kit .kit-quiet-scrollbar::-webkit-scrollbar { display: none; }");
+  });
+
+  // The standard `scrollbar-*` properties supersede vapor's `::-webkit-scrollbar` keep in Chromium ≥121, so
+  // vapor re-colours the REVEAL thumb in its own sheet (@layer theme) — a vapor sheet keeps its magenta.
+  it("vapor.css: the quiet scrollbar's reveal thumb takes vapor's magenta", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/themes/vapor/vapor.css"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\s+/g, " ");
+    expect(css).toContain(
+      ".kit-quiet-scrollbar:hover, .kit-quiet-scrollbar[data-scrolling] { scrollbar-color: var(--magenta) transparent; }",
+    );
   });
 });

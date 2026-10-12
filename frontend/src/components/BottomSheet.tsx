@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { attachScrollingStamp } from "../lib/scrollingStamp";
+
 // A dependency-free, reusable draggable bottom sheet (Cosmos C3). Kit-level + presentational — it owns the
 // GESTURE + the open/close/snap transitions, NOT any host logic. frontier reuses it.
 //
@@ -131,6 +133,7 @@ export function BottomSheet({
   // with the flag unset `present === mounted`, so every other host runs the exact same code path.
   const present = mounted || (!!enterInstant && open);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -420,6 +423,15 @@ export function BottomSheet({
     return () => ro.disconnect();
   }, [present]);
 
+  // ISS-74 — the body's scrollbar is quiet (`.kit-quiet-scrollbar`, kit.css): hidden outright on touch, and on
+  // a fine pointer invisible at rest, shown only while scrolling — which CSS can't see, so the shared stamp
+  // marks it. Bound to the body node's lifetime (it exists exactly while `present`).
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!present || !body) return;
+    return attachScrollingStamp(body);
+  }, [present]);
+
   useEffect(
     () => () => {
       clearTimeout(exitTimer.current);
@@ -551,7 +563,9 @@ export function BottomSheet({
         <button className="bs-close-sr" onClick={onClose}>
           {closeLabel}
         </button>
-        <div className="bs-body">{children}</div>
+        <div className="bs-body kit-quiet-scrollbar" ref={bodyRef}>
+          {children}
+        </div>
       </div>
     </div>
   );
