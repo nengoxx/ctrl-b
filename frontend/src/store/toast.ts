@@ -11,17 +11,26 @@ import { createStore } from "./createStore";
 
 export type ToastKind = "ok" | "err" | "info";
 
-/** Action button attached to a toast — renders as a small inline pill (see Toasts.tsx). */
+/** Action button attached to a toast — renders as a small inline pill (see Toasts.tsx). `onClick` may
+ *  answer `false` to KEEP its toast (ISS-84: a parked clip's Retry that is refused while the mic is busy
+ *  must not destroy the clip it is holding); any other answer — `undefined` included, i.e. every
+ *  action written before this — dismisses it, as it always has. */
 export interface ToastAction {
   label: string;
-  onClick: () => void;
+  onClick: () => void | boolean;
 }
 
 export interface ToastOptions {
-  /** Inline button; clicking it runs `onClick` and dismisses the toast. */
+  /** Inline button; clicking it runs `onClick` and dismisses the toast (unless it answers `false`). */
   action?: ToastAction;
+  /** A SECOND inline button beside `action`, same contract (ISS-84: the parked clip's Retry + Discard —
+   *  two explicit choices, because the toast is holding something the owner said). */
+  secondary?: ToastAction;
   /** Skip the auto-dismiss timer. The toast persists until tapped (body → dismiss, action → run+dismiss). */
   sticky?: boolean;
+  /** Stronger than `sticky`: no timer AND no body-tap dismiss — only an action ends it (ISS-84: a stray
+   *  tap in a moving car must not destroy a parked clip; Discard is the explicit way to drop it). */
+  persist?: boolean;
 }
 
 export interface Toast {
@@ -29,7 +38,9 @@ export interface Toast {
   kind: ToastKind;
   text: string;
   action?: ToastAction;
+  secondary?: ToastAction;
   sticky?: boolean;
+  persist?: boolean;
 }
 
 const TTL_MS = 3200;
@@ -40,9 +51,20 @@ let seq = 0;
 
 export function pushToast(text: string, kind: ToastKind = "info", opts?: ToastOptions): void {
   const id = ++seq;
-  toasts = [...toasts, { id, kind, text, action: opts?.action, sticky: opts?.sticky }];
+  toasts = [
+    ...toasts,
+    {
+      id,
+      kind,
+      text,
+      action: opts?.action,
+      secondary: opts?.secondary,
+      sticky: opts?.sticky,
+      persist: opts?.persist,
+    },
+  ];
   emit();
-  if (!opts?.sticky) {
+  if (!opts?.sticky && !opts?.persist) {
     setTimeout(() => dismissToast(id), TTL_MS);
   }
 }

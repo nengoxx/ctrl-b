@@ -163,6 +163,33 @@ describe("App — the discard notice", () => {
   });
 });
 
+// THE LOST-CLIP NOTICE (ISS-84 part G): a boot that finds clips the last session left in trouble (the
+// marker set `store/pendingClips` keeps) says how many, once, sticky — and forgets them.
+describe("App — the lost-clip notice", () => {
+  const NullRoot = () => null;
+  afterEach(() => localStorage.removeItem("ctrlb.pendingClips"));
+
+  it("counts the marks the last session left, says it once, and clears them", () => {
+    hoisted.root = NullRoot;
+    localStorage.setItem("ctrlb.pendingClips", JSON.stringify({ a: 1, b: 2 }));
+    const toasts = renderHook(() => useToasts());
+    render(<App />);
+    render(<App />); // a second mount (StrictMode's double effect): the marks are already taken
+    const notices = toasts.result.current.filter((t) => t.text.includes("from the last session"));
+    expect(notices.map((t) => t.text)).toEqual(["2 clips from the last session were lost"]);
+    expect(notices[0]?.sticky).toBe(true);
+    expect(localStorage.getItem("ctrlb.pendingClips")).toBe("{}");
+  });
+
+  it("no marks — says nothing", () => {
+    hoisted.root = NullRoot;
+    const toasts = renderHook(() => useToasts());
+    const before = toasts.result.current.length;
+    render(<App />);
+    expect(toasts.result.current.length).toBe(before);
+  });
+});
+
 describe("App theme-fault boundary (item ②)", () => {
   it("a Root that throws on render shows the fault fallback (not a blank screen)", () => {
     hoisted.root = ThrowingRoot;

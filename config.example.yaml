@@ -424,6 +424,10 @@ voice:
     auto_stop: false       # true → hands-free stop; false → tap to stop (the shipped default)
     auto_stop_silence_s: 3.0    # silence run that ends the recording (0.5–30)
     auto_stop_threshold: 0.01   # normalized RMS below this counts as silence (0.001–0.5; calibrate on-device)
+    # The clip upload (ISS-84) — bounded + retried, never silently dropped: after the last attempt the clip
+    # waits in a Retry / Discard notice. One attempt may take max(this, 2 × the clip's length).
+    upload_timeout_s: 30.0      # one attempt's horizon FLOOR, seconds (> 0, ≤ 600)
+    upload_attempts: 3          # total attempts before the clip is parked (1–10)
     connect_timeout_s: 3   # fail-fast on an unreachable endpoint → fall over
     timeout_s: 30          # read window for the transcription itself
   tts:

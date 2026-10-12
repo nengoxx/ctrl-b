@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import { QueryClientContext } from "@tanstack/react-query";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 
 import { postForm } from "../api/client";
-import type { LiveCallWire, SttAutoStopWire } from "./useVoiceStatus";
+import type { LiveCallWire, SttAutoStopWire, SttUploadWire, VoiceStatus } from "./useVoiceStatus";
 import { type CallTrail, createCallTrail, postTrail } from "../lib/callTrail";
 import { runComposer } from "../lib/composer";
 import {
@@ -41,8 +50,10 @@ import {
   registerLiveDictation,
   sendsInView,
 } from "../store/composer";
-import { holdLeg, legClosing, setMicRelease } from "../store/micRelease";
+import { captureOwned, holdLeg, legClosing, ownCapture, setMicRelease } from "../store/micRelease";
+import { clearClipPending, markClipPending, newClipId } from "../store/pendingClips";
 import { pushToast } from "../store/toast";
+import { publishUploadActivity, useUploadActivity } from "../store/uploadActivity";
 
 // Phase 6b-1 — push-to-talk dictation (tap to start, tap to stop). The idiomatic React home for the
 // imperative MediaRecorder API is a custom hook (not a store): recording state is read by exactly one
@@ -56,7 +67,9 @@ import { pushToast } from "../store/toast";
 // Five button states (owner-locked 2026-06-22; `insecure` added 2026-06-26), surfaced via `status`:
 //   idle        — armed, not recording (the default look)
 //   recording   — actively capturing (drives the vapor `.rec` red-pulse)
-//   sending     — clip uploaded, awaiting the transcript (briefly inert, idle look)
+//   sending     — the clip is on its way: uploading and awaiting the transcript, inert with the spinner,
+//                 through EVERY attempt of the bounded, retried upload (ISS-84) — and painted from the
+//                 TAB's upload activity, so an upload a remounted composer did not start still shows
 //   unavailable — a recording attempt 502'd (the whole STT chain failed). REACTIVE per the owner's
 //                 call: no proactive liveness probe — looks normal until an attempt fails, then greys
 //                 + goes inert. Re-arms on the next fresh /voice/status probe (Conf save / refocus),
@@ -318,6 +331,94 @@ interface Clip {
   heldMs: number;
 }
 
+/** ISS-84 — a clip ON ITS WAY TO THE CLIP DOOR: everything one upload loop needs, by VALUE, so a parked
+ *  clip's toast can re-enter the loop with the very same clip long after the refs (and maybe the
+ *  composer) are gone. Several can exist at once — each parked toast owns its own; nothing is shared.
+ *  `id` is the lost-clip marker's key (`store/pendingClips`), stable across a Retry; `heldMs` rides
+ *  along because the attempt's horizon is derived from it (`Infinity` = no stamp, see `Clip`). */
+interface OutboundClip {
+  id: string;
+  blob: Blob;
+  mime: string;
+  slot: string;
+  send: boolean;
+  heldMs: number;
+}
+
+/** ISS-84 — the backoff's BASE between two upload attempts, ms: attempt n waits
+ *  `min(horizon, BASE · 2^(n−1))` before n+1. NOT a tunable — the design's "two knobs, one DERIVED
+ *  schedule" (car-wave §2.1): the conventional 1 s first step, doubling, and capped by the attempt's
+ *  own horizon so the wait can never outgrow the thing it waits for. The `online` event cuts it short. */
+const UPLOAD_BACKOFF_BASE_MS = 1000;
+
+/** ISS-84 (fix wave W5) — how many times the clip's OWN duration one attempt may take, when that beats
+ *  the `upload_timeout_s` floor. A derived factor, not a knob: at `RECORDER_BITRATE` (32 kbps) a clip's
+ *  bytes take exactly its own length on a 32 kbps uplink, and EDGE / an edge-of-LTE cell under WireGuard's
+ *  overhead sits right there — a 1× horizon would abort every attempt of a slow-but-alive link a hair
+ *  before it finished and restart it from byte 0. 2× gives that link real headroom and still bounds the
+ *  attempt. The recorded trade: a bounded attempt, where the old unbounded single shot would eventually
+ *  have landed on a link slower than half real time. */
+const UPLOAD_REALTIME_FACTOR = 2;
+
+/** ISS-84 — the parked clip's toast, and the one line a refused Retry says. */
+const PARKED_MSG = "Clip didn't send";
+const RETRY_BUSY_MSG = "The mic is busy — try again in a moment";
+/** …and the one line a REFUSED press says when only the tab's upload stands in its way (W1). */
+const STILL_SENDING_MSG = "Still sending the last clip";
+
+/** One upload attempt's verdict (ISS-84, car-wave §2.2). Any HTTP ANSWER ends the loop (`status` — the
+ *  server has spoken; only its class decides park vs drop); a COMPLETE body that is not JSON — or not a
+ *  transcript (W6) — is `garbled` (parked, never retried: the same bytes will not parse better); everything else — OUR
+ *  deadline's abort, a network `TypeError`, the body's transport dying mid-read — is `transport`, the
+ *  one retryable class. */
+type AttemptResult =
+  | { kind: "text"; text: string }
+  | { kind: "status"; status: number }
+  | { kind: "garbled" }
+  | { kind: "transport" };
+
+/** ONE ATTEMPT = the POST *and* its body read, under ONE signal (ruling 3): a 200 whose body never
+ *  arrives is a transport failure, not a success. The deadline is an `AbortController` + `setTimeout`
+ *  rather than `AbortSignal.timeout` (ruling 12) — the fake clock drives it in the suites, and the timer
+ *  is cleared on every exit. `horizonMs: null` = no deadline at all (an older server sent no knobs). */
+async function attemptUpload(form: FormData, horizonMs: number | null): Promise<AttemptResult> {
+  const ctl = new AbortController();
+  const timer = horizonMs === null ? undefined : setTimeout(() => ctl.abort(), horizonMs);
+  try {
+    // Through `postForm`: it carries the CSRF header the clip door requires (S9, SECURITY_MODEL §2.7).
+    const res = await postForm("/api/voice/stt", form, { signal: ctl.signal });
+    if (!res.ok) return { kind: "status", status: res.status };
+    const data = (await res.json()) as { text?: unknown } | null;
+    // A 200 whose JSON carries no STRING `text` (`{}`, `null`, `{"text": 42}`) is not a transcript —
+    // `garbled` (parked, W6), never the "didn't catch that" drop. `{"text": ""}` IS one: silence.
+    if (typeof data?.text !== "string") return { kind: "garbled" };
+    return { kind: "text", text: data.text };
+  } catch (e) {
+    // `SyntaxError` is ONLY `res.json()` refusing a body that fully arrived; a body cut off in transit
+    // rejects as a `TypeError` (or our `AbortError`) instead, and that one deserves another try.
+    return e instanceof SyntaxError ? { kind: "garbled" } : { kind: "transport" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Wait `ms`, or until the browser says the link is back — whichever first; answers whether the LINK
+ *  woke it. `online` is a wake HINT, never proof of connectivity (through the Tailscale VPN it may never
+ *  fire, and then the timer carries the loop). The listener is removed on BOTH paths: `{once: true}`
+ *  only unregisters it when the event wins, and a timer win would otherwise leave one behind per wait. */
+function waitForLink(ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const done = (woke: boolean): void => {
+      clearTimeout(timer);
+      window.removeEventListener("online", onOnline);
+      resolve(woke);
+    };
+    const onOnline = (): void => done(true);
+    const timer = setTimeout(() => done(false), ms);
+    window.addEventListener("online", onOnline, { once: true });
+  });
+}
+
 /** ONE streaming dictation session: the leg, its uplink queue, and the counters the either/or rule, the
  *  pending pulse and the two §9.3 clocks read. There is at most one — there is one recorder.
  *
@@ -503,6 +604,11 @@ function extFromMime(mime: string): string {
  * @param liveCall   `/voice/status.live_call`, the client-side knobs. Absent (pre-S1 backend / test
  *                    stub) → no streaming, exactly as `liveEar` false. NOTHING in the streaming branch
  *                    may invent one of these numbers.
+ * @param upload     `/voice/status.stt_upload` (ISS-84): the clip upload's per-attempt horizon floor and
+ *                    its total attempts before the clip is PARKED (Retry/Discard). Absent (older backend /
+ *                    test stub) → the old behaviour: ONE attempt, no timeout — nothing here invents one
+ *                    of these numbers. Snapshotted at each loop's entry, so a Conf refresh never changes
+ *                    a loop halfway.
  */
 export function useDictation({
   sttReady,
@@ -511,6 +617,7 @@ export function useDictation({
   autoStop,
   liveEar,
   liveCall,
+  upload: uploadKnobs,
 }: {
   sttReady: boolean;
   statusStamp: number;
@@ -518,12 +625,14 @@ export function useDictation({
   autoStop?: SttAutoStopWire;
   liveEar?: boolean;
   liveCall?: LiveCallWire;
+  upload?: SttUploadWire;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   /** The phase as of THIS instant (ISS-83) — the state above is what the UI paints, and it lags a
    *  render; `start()` must refuse a press during a POST that runs with `recRef` already released, so
    *  it reads the synchronous truth here. Written ONLY through `setPhaseNow`, the hook's one phase
-   *  writer. (ISS-84 will read it too, for the clip's Retry.) */
+   *  writer. (A parked clip's Retry reads the TAB's truth instead — `store/micRelease.captureOwned`
+   *  — because its toast can outlive this instance; ISS-84 part F.) */
   const phaseRef = useRef<Phase>("idle");
   /** THE ONE PHASE WRITER (ISS-83): the ref synchronously, then the state — never one without the
    *  other, so the refusal in `start()` and the painted button can never disagree. */
@@ -532,6 +641,15 @@ export function useDictation({
     setPhase(next);
   }, []);
   const [unavailable, setUnavailable] = useState(false);
+  /** ISS-84 W1 — the TAB's clip-upload activity (`store/uploadActivity`): the published `status` reads
+   *  it, so an upload this instance did not start (a remount mid-loop, a Retry from a dead instance's
+   *  toast) still paints `sending` — the spinner, the attempt label and ISS-83's door agree on it. */
+  const uploadActivity = useUploadActivity();
+  /** ISS-84 W2 — the app's query client, which outlives this instance: the loop reads the LIVE
+   *  `/voice/status` policy from its cache at every entry (a Retry included), so a Conf change made while
+   *  a clip was parked is honoured. Read through the context rather than `useQueryClient()`, which THROWS
+   *  without a provider — a consumer with none (the hook's own suites) simply falls back to its props. */
+  const queryClient = useContext(QueryClientContext);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   /** The in-flight `start()` attempt, or null — the re-entrancy latch, now a TOKEN (F5). A second entry
@@ -539,7 +657,7 @@ export function useDictation({
    *  stopped → the mic stays live), which is what the old boolean blocked; the token additionally lets a
    *  release/cancel landing inside that window ABORT the attempt, so a stream that resolves after the
    *  gesture ended is released immediately instead of becoming a recording nobody asked for. */
-  const armRef = useRef<{ aborted: boolean } | null>(null);
+  const armRef = useRef<{ aborted: boolean; release: () => void } | null>(null);
   /** Set by `cancel()` and consumed in `onstop`: the clip is DROPPED, no upload (LIVE_VOICE_PLAN §6). */
   const discardRef = useRef(false);
   /** `Date.now()` at `rec.start()` — the only thing the 1000 ms floor needs, and this is the layer that
@@ -642,6 +760,25 @@ export function useDictation({
   useEffect(() => {
     releaseTailRef.current = releaseTailMs;
   }, [releaseTailMs]);
+  // ISS-84 — this instance's upload policy, mirrored into refs for the same reason: the loop reads it
+  // at its entry, and `upload`'s identity (which `start` and `finishStream` close over) must not churn on
+  // a `/voice/status` refetch. It is only the FALLBACK — the loop prefers the query cache's live copy (W2).
+  // Memoized on the two primitives, so a refetch carrying equal values writes nothing.
+  const uploadTimeoutS = uploadKnobs?.timeout_s;
+  const uploadAttempts = uploadKnobs?.attempts;
+  const uploadCfg = useMemo<SttUploadWire | undefined>(
+    () =>
+      uploadTimeoutS !== undefined && uploadAttempts !== undefined
+        ? { timeout_s: uploadTimeoutS, attempts: uploadAttempts }
+        : undefined,
+    [uploadTimeoutS, uploadAttempts],
+  );
+  const uploadRef = useRef(uploadCfg);
+  const autoSendRef = useRef(autoSend);
+  useEffect(() => {
+    uploadRef.current = uploadCfg;
+    autoSendRef.current = autoSend;
+  }, [uploadCfg, autoSend]);
   const streamWanted = !!liveEar && !!liveCall?.dictation && frameMs > 0 && tailWaitMs > 0;
 
   // Whether the browser will even hand us a mic. `navigator.mediaDevices` is undefined in an insecure
@@ -759,13 +896,198 @@ export function useDictation({
    *  the composer on screen (another conversation's) is not theirs to send — except the lazy
    *  mint the owner's own Send made from `""`; an E6 carry never sends (`store/composer#sendsInView`). */
   const maybeAutoSend = useCallback(
-    (slot: string): void => {
-      if (!autoSend || !sendsInView(slot)) return;
+    // `policy` (ISS-84 W2): the upload loop passes the LIVE `stt_auto_send` it read at its entry; the
+    // streaming release keeps this instance's own.
+    (slot: string, policy: boolean = autoSend): void => {
+      if (!policy || !sendsInView(slot)) return;
       // Reads the just-appended draft imperatively (combines with anything already typed).
       const full = getDraft().trim();
       if (full && runComposer(full)) clearDraft();
     },
     [autoSend],
+  );
+
+  /**
+   * THE CLIP DOOR'S UPLOAD LOOP (ISS-84, car-wave design §2) — the ONE place a clip is sent, both doors
+   * alike (push-to-talk's `onstop`, the streaming door's whole-clip fallback in `finishStream`), and the
+   * place a parked clip's Retry re-enters. Bounded, retried, and never a silent drop:
+   *
+   *  · the POLICY is read LIVE at every entry (W2: the query cache's `/voice/status`, this instance's
+   *    props only when the cache has nothing) and SNAPSHOTTED for the loop (a Conf refresh never changes
+   *    a loop halfway); knobs absent (an older server) → one attempt, no deadline — the old single shot,
+   *    with only its failure made recoverable;
+   *  · one attempt's HORIZON = `max(timeout_s, UPLOAD_REALTIME_FACTOR × the clip's own duration)` — a
+   *    long dictation's ASR runs long, and a flat number would abort it and re-run its ASR on every retry
+   *    (ASR_PLAN §3.8 T-9). The duration counts only when FINITE: the no-stamp `Infinity` is deliberate
+   *    (`Clip`) and must never reach a timer, where it would fire at once;
+   *  · the TOTAL horizon (`attempts × horizon`, from the loop's start) gates every attempt: none STARTS
+   *    past it, and a backoff is capped to what is left — but an attempt that does start gets its FULL
+   *    horizon (X3: a late `online` wake must get a real try), so the loop's worst case is
+   *    `deadline + one horizon` — still finite;
+   *  · a link the browser KNOWS is down (`navigator.onLine === false`) spends no attempt: the loop waits
+   *    for `online` or the rest of the total horizon — without this a dead radio burns every attempt in
+   *    ~3 s (Chrome rejects at once). (Recorded, not fixed — Qwen 2a: an attempt that really went out and
+   *    failed as `onLine` flipped is not counted either; the TIME bound still holds.);
+   *  · a retryable failure (see `AttemptResult`) never greys the mic and never toasts (ruling 6): the
+   *    tab stays `sending` (the spinner is honest — the clip IS still being sent), the next attempt
+   *    after the derived backoff;
+   *  · any HTTP answer ends it: 2xx lands exactly as on-time (`appendDraft` in the slot captured at the
+   *    press, then rule ④'s auto-send iff `send` AND the live policy says so); 5xx PARKS (and a 502 still
+   *    greys the mic — that one IS the chain's verdict); any other non-2xx keeps the old toast and drops
+   *    the clip (a malformed clip will not get better);
+   *  · exhaustion, a 5xx or a garbled body PARK the clip in its own persistent toast (Retry/Discard).
+   *
+   * While it runs, the TAB's capture is OWNED (`store/micRelease.ownCapture`) — no recording starts in
+   * any composer instance, and no parked Retry overlaps it — and its ACTIVITY is published tab-wide
+   * (`store/uploadActivity`, W1), which is what every instance's `status` paints. UNMOUNT NEVER ABORTS
+   * IT (ruling 18): every outcome is a store write (draft, toast, marker, activity), so a composer a tab
+   * switch unmounted lets its loop finish — an abort would be an unclassified failure. `setPhaseNow` on a
+   * dead instance only writes its private ref; React ignores the state half.
+   *
+   * @param clip the clip, by value (see `OutboundClip`): only its bytes, `slot` and `send` (the rule-④
+   *             permission) travel with it — the policy is always read live.
+   */
+  const sendClip = useCallback(
+    (clip: OutboundClip): Promise<void> => {
+      /** The LIVE policy (W2): the shared query cache first — app-global, so a Retry from a dead
+       *  instance's toast still reads the owner's current Conf — and this instance's props only when the
+       *  cache has nothing (no provider, or no answer yet). */
+      const livePolicy = (): { autoSend: boolean; upload: SttUploadWire | undefined } => {
+        const status = queryClient?.getQueryData<VoiceStatus>(["voice-status"]);
+        if (status) return { autoSend: status.stt_auto_send, upload: status.stt_upload };
+        return { autoSend: autoSendRef.current, upload: uploadRef.current };
+      };
+      // ONE CLOSURE PER CLIP: the parked toast's Retry re-enters `run` — this same clip, through this
+      // same loop, with a fresh policy read at its own entry.
+      const run = async (): Promise<void> => {
+        const policy = livePolicy();
+        const cfg = policy.upload;
+        const owner = {}; // this loop's claim on the tab's activity slot
+        let release = (): void => {};
+        setPhaseNow("sending");
+        // ISS-73: the pending-upload hold arms here
+        const horizonMs = cfg
+          ? Math.max(
+              cfg.timeout_s * 1000,
+              Number.isFinite(clip.heldMs) ? UPLOAD_REALTIME_FACTOR * clip.heldMs : 0,
+            )
+          : null;
+        const attempts = cfg?.attempts ?? 1;
+        const deadline = horizonMs === null ? Infinity : Date.now() + attempts * horizonMs;
+        /** What is left of the total horizon, ms (`Infinity` with no knobs). */
+        const left = (): number => deadline - Date.now();
+        /** PARK: the clip goes into its OWN persistent toast, by value — no shared ref, so any number can
+         *  wait at once. Its lost-clip mark STAYS (the clip is still at risk until it lands or is
+         *  discarded). Retry re-enters THIS loop with the same clip (a fresh policy read); Discard is the
+         *  one explicit way to drop it (`persist`: a stray tap in a moving car must not). */
+        const park = (): void => {
+          pushToast(PARKED_MSG, "err", {
+            persist: true,
+            action: {
+              label: "Retry",
+              onClick: () => {
+                // The TAB's live truth, never this (possibly unmounted) instance's refs: a recording
+                // arming or running in ANY composer, an upload in flight, or a leg still closing out.
+                // Refused → the toast stays (`false`), still holding the clip.
+                if (captureOwned() || legClosing()) {
+                  pushToast(RETRY_BUSY_MSG, "info");
+                  return false;
+                }
+                void run();
+                return true;
+              },
+            },
+            secondary: { label: "Discard", onClick: () => clearClipPending(clip.id) },
+          });
+        };
+        try {
+          // Inside the `try` (W8 belt): an environment that throws here must still release the token.
+          release = ownCapture();
+          // THE TAB SEES IT AT ONCE (final wave X1): published before ANY await — the top-of-loop offline
+          // wait included — so a composer remounted (or a dead-toast Retry) during that wait paints
+          // `sending`, not `idle`, for the whole of it. Each attempt republishes its own number.
+          publishUploadActivity(owner, { attempt: 1, of: attempts });
+          // THE LOST-CLIP MARK (part G, W4): written at the loop's ENTRY — a hanging first attempt is the
+          // usual failure and can run as long as the clip, and a reload in that window (the SW refresh a
+          // returning link pops) would lose it. Cleared on every settle; kept by a park.
+          markClipPending(clip.id);
+          // Filename extension follows the recorder's *actual* container (mime ↔ ext must agree —
+          // Whisper routes by extension). One form for every attempt: a `FormData` holding a `Blob`
+          // re-sends as many times as it is posted.
+          const form = new FormData();
+          form.append("file", clip.blob, `dictation.${extFromMime(clip.mime)}`);
+          for (let attempt = 1; ;) {
+            if (horizonMs !== null && navigator.onLine === false) {
+              // A KNOWN-DEAD LINK spends no attempt (ruling 5): wait for it, bounded by what is left of
+              // the total horizon. The timer winning means the horizon ran out with no link — park.
+              if (left() <= 0 || !(await waitForLink(left()))) {
+                park();
+                return;
+              }
+            }
+            if (left() <= 0) {
+              park(); // the total horizon is spent — no NEW attempt starts past it, whatever remain
+              return;
+            }
+            publishUploadActivity(owner, { attempt, of: attempts });
+            // Every attempt gets its FULL horizon (X3): capping it to what is left would cut short exactly
+            // the returning-link case — a tunnel eats most of the total, `online` fires, and the first
+            // real attempt would get a sliver and park. The gate above keeps the bound finite.
+            const r = await attemptUpload(form, horizonMs);
+            if (r.kind === "text") {
+              clearClipPending(clip.id);
+              if (r.text.trim()) {
+                appendDraft(r.text, PHRASE_JOIN, clip.slot); // always show it in the composer first
+                // rule ④ — the one shared helper, once per clip, on the LIVE policy (W2)
+                if (clip.send) maybeAutoSend(clip.slot, policy.autoSend);
+              } else {
+                pushToast("Didn't catch that — try again", "info");
+              }
+              return;
+            }
+            if (r.kind === "status") {
+              if (r.status >= 500) {
+                // The server ANSWERED and failed: parked, not retried (ruling 7 — §3.8's "never silently
+                // dropped"). A 502 is the whole STT chain's verdict (primary + fallback), so it keeps the
+                // reactive "unavailable" greying as well — the one failure that may grey the mic.
+                if (r.status === 502) setUnavailable(true);
+                park();
+              } else {
+                // Any other refusal: the old toast, and the clip is dropped — a malformed clip will not
+                // get better by being sent again.
+                clearClipPending(clip.id);
+                pushToast(`Transcription failed (${r.status})`, "err");
+              }
+              return;
+            }
+            if (r.kind === "garbled") {
+              park();
+              return;
+            }
+            // A rejection while the browser KNOWS the link is down was never a real attempt: the top of
+            // the loop waits for the link instead (absent knobs keep the old single shot — no wait).
+            if (horizonMs !== null && navigator.onLine === false) continue;
+            if (attempt >= attempts) {
+              park();
+              return;
+            }
+            // The backoff, capped to what is left (W7). (`horizonMs` is never null here: no knobs means
+            // ONE attempt, which parked just above.)
+            await waitForLink(
+              Math.min(horizonMs ?? 0, UPLOAD_BACKOFF_BASE_MS * 2 ** (attempt - 1), left()),
+            );
+            attempt += 1;
+          }
+        } finally {
+          // ISS-73: the pending-upload hold retires here
+          publishUploadActivity(owner, null);
+          setPhaseNow("idle");
+          release();
+        }
+      };
+      return run();
+    },
+    [maybeAutoSend, queryClient, setPhaseNow],
   );
 
   /** @param mime the recorder's ACTUAL container, handed over by the `onstop` closure that owns it —
@@ -784,7 +1106,8 @@ export function useDictation({
    *  terminal that ended it, because this function can run `tail_wait_ms` after the release.
    *  @param slot the conversation the recording started in (Phase 27 S8, R35) — the clip door's
    *  closure captured it at the press; the transcript lands in that draft, wherever the view is now.
-   *  @param send whether rule ④ may auto-send it — not after a `navigated` stop (§12.1 ④). */
+   *  @param send whether rule ④ may auto-send it — not after a `navigated` stop (§12.1 ④).
+   *  The clip's PRE-FLIGHT (empty, too short); what survives it is sent by `sendClip`'s loop (ISS-84). */
   const upload = useCallback(
     async (mime: string, clip: Clip, slot: string, send = true) => {
       const blob = new Blob(clip.chunks, { type: mime });
@@ -804,40 +1127,9 @@ export function useDictation({
         setPhaseNow("idle");
         return;
       }
-      setPhaseNow("sending");
-      // Filename extension follows the recorder's *actual* container (mime ↔ ext must agree — Whisper
-      // routes by extension). `mime` strips codec params via extFromMime's substring checks.
-      const form = new FormData();
-      form.append("file", blob, `dictation.${extFromMime(mime)}`);
-      try {
-        // Through `postForm`: it carries the CSRF header the clip door requires (S9, SECURITY_MODEL §2.7).
-        const res = await postForm("/api/voice/stt", form);
-        if (res.status === 502) {
-          // The whole STT chain (primary + fallback) failed → the reactive "unavailable" state.
-          setUnavailable(true);
-          pushToast("Voice servers unreachable", "err");
-          return;
-        }
-        if (!res.ok) {
-          pushToast(`Transcription failed (${res.status})`, "err");
-          return;
-        }
-        const data = (await res.json()) as { text?: string };
-        if (data.text?.trim()) {
-          appendDraft(data.text, PHRASE_JOIN, slot); // always show it in the composer first
-          if (send) maybeAutoSend(slot); // rule ④ — the one shared helper, once per session
-        } else {
-          pushToast("Didn't catch that — try again", "info");
-        }
-      } catch {
-        // Network failure reaching our own backend — treat like an unreachable chain.
-        setUnavailable(true);
-        pushToast("Voice servers unreachable", "err");
-      } finally {
-        setPhaseNow("idle");
-      }
+      await sendClip({ id: newClipId(), blob, mime, slot, send, heldMs: clip.heldMs });
     },
-    [maybeAutoSend, setPhaseNow],
+    [sendClip, setPhaseNow],
   );
 
   /** Abort an in-flight `start()` (F5), reporting whether there WAS one. The caller then knows there is
@@ -849,6 +1141,7 @@ export function useDictation({
     if (!arm) return false;
     arm.aborted = true;
     armRef.current = null;
+    arm.release(); // …and the TAB's ownership too (ISS-84 part F), or the re-press would be refused
     return true;
   }, []);
 
@@ -1173,8 +1466,8 @@ export function useDictation({
         setPhaseNow("idle");
         return;
       }
-      // Nothing was appended — the clip is the whole recording, uploaded exactly as it always was
-      // (the 1000 ms floor, its teaching, the 502 greying, the toasts: all of it untouched).
+      // Nothing was appended — the clip is the whole recording, uploaded exactly as push-to-talk's is
+      // (the 1000 ms floor, its teaching, and since ISS-84 the same bounded, retried, parking loop).
       await upload(mime, clip, s.slot, s.stopReason !== "navigated");
     },
     [ceilingMs, frameMs, maybeAutoSend, setPending, setPhaseNow, tailWaitMs, upload],
@@ -1725,8 +2018,19 @@ export function useDictation({
     // runs after `onstop` released `recRef`, and the streaming door's whole-clip fallback after
     // `released()`, so neither guard above sees it — a recording armed in that window would have its
     // phase flipped to idle under it by the upload's `finally`. Read from the ref: the state lags.
+    // …and so does a press while the TAB's capture is owned by anyone (ISS-84 part F, closing ISS-83's
+    // code-round C4): a composer REMOUNTED during its predecessor's POST starts with a fresh `phaseRef`
+    // that cannot see it, and a parked clip's Retry may be uploading from a toast no instance owns. The
+    // instance's own triple stays beside it — the tab-wide term is ADDED, not swapped in, because the
+    // two are not provably equal (the streaming door's `sending` before its upload is the leg latch's,
+    // not an owner's). A press refused ONLY by the tab says so (W1's belt): this instance looks free,
+    // and a silent refusal would read as a dead mic.
     if (armRef.current || recRef.current || legClosing() || phaseRef.current === "sending")
       return false;
+    if (captureOwned()) {
+      pushToast(STILL_SENDING_MSG, "info");
+      return false;
+    }
     if (!preflight()) return false;
     activateAtRef.current = Date.now(); // the trail's `t_activate` (S11)
     // THE CONVERSATION THIS RECORDING BELONGS TO (Phase 27 S8, R35) — captured at the PRESS, before any
@@ -1743,7 +2047,13 @@ export function useDictation({
     // whole session, which would then run to the hard cap. Written here, any lock published during
     // acquisition lands AFTER it and wins.
     handsFreeRef.current = false;
-    const arm = { aborted: false };
+    // THE TAB'S CAPTURE IS OWNED FROM THE ARMING (ISS-84 part F) — `armRef` alone is this instance's,
+    // and a parked clip's Retry must see the arming from a toast. The release rides the arming TOKEN so
+    // an abort (`abortArming`) gives the tab back with it; once the recorder has started it is handed
+    // to that recorder's `onstop`, and every other way out releases it in the `finally` below.
+    const releaseOwner = ownCapture();
+    let ownerHandedOff = false;
+    const arm = { aborted: false, release: releaseOwner };
     armRef.current = arm;
     try {
       let stream: MediaStream;
@@ -1805,6 +2115,10 @@ export function useDictation({
         // free from now on. Guarded on the closure's own `rec` so a future defensive overwrite of the
         // ref is never clobbered by a late callback belonging to an older recorder.
         if (recRef.current === rec) recRef.current = null;
+        // …and the TAB's ownership with it (ISS-84 part F). Whatever follows owns the tab its own way,
+        // in this same synchronous step: the upload loop takes its own token at entry, the streaming
+        // release raises the leg latch (`holdLeg`) below — no window between them.
+        releaseOwner();
         teardownDetector(); // BEFORE the upload enters `sending` — the watcher dies with the recording
         stream.getTracks().forEach((t) => t.stop()); // release the mic indicator
         // …and the ear is free from THIS line, not from the end of the release choreography (D74 S6
@@ -1889,6 +2203,7 @@ export function useDictation({
       releasedAtRef.current = 0;
       liveOwedRef.current = true; // S11 — "go" is owed from here, said once the words-carrying path runs
       rec.start();
+      ownerHandedOff = true; // a started recorder WILL fire `onstop`, which releases the ownership
       startedAtRef.current = Date.now(); // the 1000 ms floor's start, read once in `onstop`
       // P3 (Phase 26 SP, R21) — THE SCREEN STAYS ON while this recording runs: every recording, hold or
       // lock (a held finger keeps the screen on anyway; the lock costs nothing). A FRESH state per
@@ -1915,6 +2230,9 @@ export function useDictation({
       // Only if it is still OURS: an abort released the ref so a re-press could start immediately, and
       // that newer attempt's token must survive this one's unwind.
       if (armRef.current === arm) armRef.current = null;
+      // No recorder took the ownership over (denied, aborted, unsupported, a throwing `start`): give
+      // the tab back here, or every later recording — and every parked Retry — would be refused.
+      if (!ownerHandedOff) releaseOwner();
     }
   }, [
     upload,
@@ -1988,7 +2306,17 @@ export function useDictation({
 
   // `insecure` wins over `unavailable`: with no secure context a recording attempt can't even start,
   // so the 502-driven `unavailable` flag never gets set — surface the actionable reason instead.
-  const status: MicStatus = !micCapable ? "insecure" : unavailable ? "unavailable" : phase;
+  // …and a clip upload running ANYWHERE in the tab paints `sending` (ISS-84 W1), whichever instance
+  // started it: a remounted composer's own phase cannot see its predecessor's loop. It OUTRANKS the
+  // `unavailable` greying (final wave X2): a parked 502's Retry is uploading, and the spinner must say
+  // so — the flag itself is untouched, and greys the mic again once the upload settles.
+  const status: MicStatus = !micCapable
+    ? "insecure"
+    : uploadActivity
+      ? "sending"
+      : unavailable
+        ? "unavailable"
+        : phase;
   // `toggle` is the keyboard/AT path; `start`/`stop`/`cancel` are the gesture's three verbs (S0.5).
   // There is one recorder behind all four. `meter`/`onTooShort`/`onPending`/`handsFree`/`onLive` are the
   // ASSIGNABLE seams — all null-safe, all owned by whoever mounts (assign on mount, null on cleanup),
@@ -1997,6 +2325,10 @@ export function useDictation({
   // only the gesture knows (`handsFree`).
   return {
     status,
+    // ISS-84 — which attempt a RETRYING clip upload is on (`{attempt, of}`, the TAB's activity — W1);
+    // the button's accessible label says so, and nothing else reads it. Spread so the field is OPTIONAL
+    // on the controller's type: absent = the first attempt, or nothing uploading.
+    ...(uploadActivity && uploadActivity.attempt > 1 ? { sendingAttempt: uploadActivity } : {}),
     toggle,
     start,
     stop,

@@ -1,5 +1,7 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createElement, type ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 
 // hooks/useDictation — the tap-to-start/stop mic state machine. We replace MediaRecorder + getUserMedia
 // + fetch with fakes and drive the recorder lifecycle, asserting the transcript lands (fill vs
@@ -14,7 +16,14 @@ vi.mock("../../src/lib/composer", () => ({ runComposer: vi.fn(() => true) }));
 vi.mock("../../src/store/chat", () => ({ getChatStatus: vi.fn(() => "idle") }));
 
 import { TOO_SHORT_MSG, useDictation } from "../../src/hooks/useDictation";
-import { FakeMediaRecorder, mockStt, recordOnce, setMediaDevices } from "./dictationFakes";
+import {
+  FakeMediaRecorder,
+  mockStt,
+  recordOnce,
+  pendingStt,
+  scriptStt,
+  setMediaDevices,
+} from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
 import { getChatStatus } from "../../src/store/chat";
 import {
@@ -26,13 +35,22 @@ import {
   setDraft,
   stopLiveDictation,
 } from "../../src/store/composer";
-import { releaseMic, resetLegHold } from "../../src/store/micRelease";
-import { pushToast } from "../../src/store/toast";
+import {
+  captureOwned,
+  releaseMic,
+  resetCaptureOwners,
+  resetLegHold,
+} from "../../src/store/micRelease";
+import { resetUploadActivity } from "../../src/store/uploadActivity";
+import { pushToast, type ToastOptions } from "../../src/store/toast";
+import type { VoiceStatus } from "../../src/hooks/useVoiceStatus";
 
 const opts = (autoSend = false) => ({ sttReady: true, statusStamp: 1, autoSend });
 
 beforeEach(() => {
   resetLegHold(); // D5 — no leg of the tab is closing out at the start of a case
+  resetCaptureOwners(); // ISS-84 — nor is a capture owned (a case that ended mid-recording/upload)
+  resetUploadActivity(); // …and its upload ACTIVITY (W1), which every instance's status paints
   vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
   FakeMediaRecorder.deferStop = false; // the queued-events window is opt-in, per case
   setMediaDevices(true);
@@ -64,12 +82,17 @@ describe("useDictation", () => {
     expect(getDraft()).toBe("");
   });
 
-  it("a 502 (whole STT chain down) greys the mic reactively", async () => {
+  it("a 502 (whole STT chain down) greys the mic reactively — and PARKS the clip (ISS-84)", async () => {
     mockStt(502, {});
     const { result } = renderHook(() => useDictation(opts(false)));
     await recordOnce(result);
     await waitFor(() => expect(result.current.status).toBe("unavailable"));
-    expect(pushToast).toHaveBeenCalledWith("Voice servers unreachable", "err");
+    // The greying is the chain's verdict and stays; the clip is no longer dropped with it.
+    expect(pushToast).toHaveBeenCalledWith(
+      "Clip didn't send",
+      "err",
+      expect.objectContaining({ persist: true }),
+    );
   });
 
   it("insecure context (no getUserMedia) reports `insecure` and re-explains the fix on tap", async () => {
@@ -187,6 +210,7 @@ describe("useDictation · the gesture verbs (S0.5)", () => {
     });
     expect(armed).toBe(false);
     expect(result.current.status).toBe("idle");
+    expect(captureOwned()).toBe(false); // ISS-84 — a denied start gives the tab back (no leak)
   });
 
   it("THE ARMING LATCH (F5): a release inside the getUserMedia window aborts the pending start", async () => {
@@ -339,6 +363,7 @@ describe("useDictation · the gesture verbs (S0.5)", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(getDraft()).toBe("");
     expect(result.current.status).toBe("idle");
+    expect(captureOwned()).toBe(false); // ISS-84 — `onerror` → `onstop` releases the tab's ownership
   });
 
   it("an errored recorder still OWNS the lifecycle until its queued `stop` lands (confirm sweep)", async () => {
@@ -367,6 +392,7 @@ describe("useDictation · the gesture verbs (S0.5)", () => {
       await Promise.resolve();
     });
     expect(globalThis.fetch).not.toHaveBeenCalled(); // the failed clip stayed discarded (F4)
+    expect(captureOwned()).toBe(false); // ISS-84 — the terminal `onstop` gave the tab back too
     await act(async () => {
       armed = await result.current.start(); // the terminal `onstop` released ownership
     });
@@ -717,6 +743,10 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
   });
 
   it("the cleanup completes BEFORE the upload starts sending", async () => {
+    // jsdom's Storage schedules a timer per WRITE, and the upload loop writes its lost-clip mark
+    // (ISS-84) before the POST — so storage writes are no-ops here: this case counts the DETECTOR's
+    // timers, and only those.
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {});
     let timersAtUpload = -1;
     let ctxStateAtUpload = "";
     globalThis.fetch = vi.fn(async () => {
@@ -1253,5 +1283,481 @@ describe("useDictation · Phase 27 S8 — the clip door lands in the slot captur
     await recordOnce(result);
     await waitFor(() => expect(runComposer).toHaveBeenCalledWith("hello world"));
     expect(getDraft()).toBe("");
+  });
+});
+
+// --- ISS-84: the bounded, retried, never-dropped clip upload (car-wave design §2) --------------------
+// The loop is ONE chokepoint (`sendClip`), so it is driven through the public verbs under FAKE timers:
+// the attempt's deadline is an `AbortController` + `setTimeout` precisely so this clock can run it. The
+// clip door is scripted attempt by attempt (`scriptStt`), and its fake honours the abort signal exactly
+// as a real `fetch` does — the deadline is only real if the request actually dies with it.
+
+describe("useDictation · ISS-84 the clip upload loop", () => {
+  const KNOBS = { timeout_s: 5, attempts: 3 };
+  const loopOpts = (over: Record<string, unknown> = {}) =>
+    ({ ...opts(false), upload: KNOBS, ...over }) as Parameters<typeof useDictation>[0];
+  type Mic = { current: ReturnType<typeof useDictation> };
+
+  /** Record a clip held `heldMs` and release it — the upload starts on the release. */
+  async function recordClip(result: Mic, heldMs = 1200): Promise<void> {
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(result.current.status).toBe("recording");
+    await act(async () => {
+      vi.advanceTimersByTime(heldMs);
+    });
+    await act(async () => {
+      result.current.stop("user");
+    });
+  }
+
+  /** Run the clock and let what it kicked off (an abort, a backoff, an answer) settle. */
+  async function tick(ms: number): Promise<void> {
+    await act(async () => {
+      vi.advanceTimersByTime(ms);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  /** The parked clip's toast options (the LAST one pushed), or undefined. */
+  function parked(): ToastOptions | undefined {
+    const calls = vi.mocked(pushToast).mock.calls.filter((c) => c[0] === "Clip didn't send");
+    return calls.at(-1)?.[2];
+  }
+
+  const marks = (): string[] =>
+    Object.keys(JSON.parse(localStorage.getItem("ctrlb.pendingClips") ?? "{}") as object);
+
+  let online: MockInstance<() => boolean> | null = null;
+  function setOnline(on: boolean): void {
+    online ??= vi.spyOn(navigator, "onLine", "get");
+    online.mockReturnValue(on);
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.removeItem("ctrlb.pendingClips");
+    vi.mocked(runComposer).mockClear();
+  });
+  afterEach(() => {
+    online?.mockRestore();
+    online = null;
+    vi.useRealTimers();
+  });
+
+  it("timeout → retry → success: the text lands ONCE, auto-sends ONCE, with no toast and no greying", async () => {
+    const door = scriptStt("hang", "hang", { status: 200, body: { text: "late words" } });
+    const { result } = renderHook(() => useDictation(loopOpts({ autoSend: true })));
+    await recordClip(result);
+    expect(door.calls).toHaveLength(1);
+    expect(marks()).toHaveLength(1); // marked at the loop's ENTRY (W4) — a hang is the usual failure
+    expect(result.current.status).toBe("sending");
+    expect(result.current.sendingAttempt).toBeUndefined(); // the first attempt keeps the plain label
+    await tick(5000); // attempt 1's horizon (max(5 s, 2 × the 1.2 s clip)) — aborted
+    expect(door.calls[0].signal?.aborted).toBe(true);
+    expect(door.calls).toHaveLength(1); // …and the backoff is REAL: no instant re-send (W9)
+    await tick(1000); // backoff min(5 s, 1 s · 2^0)
+    expect(door.calls).toHaveLength(2);
+    expect(result.current.sendingAttempt).toEqual({ attempt: 2, of: 3 });
+    await tick(5000);
+    expect(door.calls).toHaveLength(2); // the second backoff is real too
+    await tick(2000); // backoff min(5 s, 1 s · 2^1)
+    expect(door.calls).toHaveLength(3);
+    expect(runComposer).toHaveBeenCalledTimes(1);
+    expect(runComposer).toHaveBeenCalledWith("late words");
+    expect(result.current.status).toBe("idle");
+    expect(result.current.sendingAttempt).toBeUndefined();
+    expect(pushToast).not.toHaveBeenCalled(); // ruling 6: no toast per attempt…
+    expect(marks()).toHaveLength(0); // …and the landed clip is no longer at risk
+  });
+
+  it("a retryable failure never greys the mic and never toasts (ruling 6)", async () => {
+    scriptStt("reject", "reject", { status: 200, body: { text: "ok" } });
+    const statuses: string[] = [];
+    const { result } = renderHook(() => {
+      const mic = useDictation(loopOpts());
+      statuses.push(mic.status);
+      return mic;
+    });
+    await recordClip(result);
+    await tick(1000);
+    await tick(2000);
+    expect(getDraft()).toBe("ok");
+    expect(statuses).not.toContain("unavailable");
+    expect(pushToast).not.toHaveBeenCalled();
+  });
+
+  it("a body-read TRANSPORT failure is retried — a 200 whose body never arrives is not a success", async () => {
+    const door = scriptStt(
+      { status: 200, json: "transport" },
+      { status: 200, body: { text: "x" } },
+    );
+    const { result } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    await tick(1000);
+    expect(door.calls).toHaveLength(2);
+    expect(getDraft()).toBe("x");
+  });
+
+  it("a body that never arrives is ended by the SAME deadline as the request (one signal)", async () => {
+    const door = scriptStt({ status: 200, json: "hang" }, { status: 200, body: { text: "y" } });
+    const { result } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    await tick(5000);
+    await tick(1000);
+    expect(door.calls).toHaveLength(2);
+    expect(getDraft()).toBe("y");
+  });
+
+  it("a SyntaxError on a COMPLETE body parks — never retried", async () => {
+    const door = scriptStt({ status: 200, json: "syntax" });
+    const { result } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    await tick(10_000);
+    expect(door.calls).toHaveLength(1);
+    expect(parked()).toMatchObject({ persist: true });
+    expect(result.current.status).toBe("idle");
+    expect(marks()).toHaveLength(1);
+  });
+
+  it("a 5xx parks without a retry — and only a 502 greys the mic", async () => {
+    const door = scriptStt({ status: 503 });
+    const { result } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    await tick(10_000);
+    expect(door.calls).toHaveLength(1);
+    expect(parked()).toBeDefined();
+    expect(result.current.status).toBe("idle"); // a 503 is not the chain's verdict
+    scriptStt({ status: 502 });
+    await recordClip(result);
+    await tick(10_000);
+    expect(result.current.status).toBe("unavailable");
+    expect(vi.mocked(pushToast).mock.calls.filter((c) => c[0] === "Clip didn't send")).toHaveLength(
+      2,
+    );
+  });
+
+  it("a 4xx keeps the old toast and drops the clip — no park, no mark", async () => {
+    const door = scriptStt({ status: 422 });
+    const { result } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    await tick(10_000);
+    expect(door.calls).toHaveLength(1);
+    expect(pushToast).toHaveBeenCalledWith("Transcription failed (422)", "err");
+    expect(parked()).toBeUndefined();
+    expect(marks()).toHaveLength(0);
+  });
+
+  it("OFFLINE spends no attempt: `online` wakes it, and the listener goes with the wake", async () => {
+    setOnline(false);
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const door = scriptStt({ status: 200, body: { text: "back" } });
+    const { result } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    await tick(10_000); // well inside the total horizon (3 × 5 s)
+    expect(door.calls).toHaveLength(0); // nothing spent on a link the browser knows is down
+    expect(result.current.status).toBe("sending");
+    expect(marks()).toHaveLength(1); // …but the clip is at risk, so it is marked
+    setOnline(true);
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
+    await tick(0);
+    expect(door.calls).toHaveLength(1);
+    expect(getDraft()).toBe("back");
+    const listener = add.mock.calls.find((c) => c[0] === "online")?.[1];
+    expect(remove).toHaveBeenCalledWith("online", listener);
+  });
+
+  it("…and OFFLINE through the whole TOTAL horizon parks, the listener removed on the timer's path too", async () => {
+    setOnline(false);
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const door = scriptStt();
+    const { result } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    await tick(15_000); // attempts × horizon = 3 × 5 s
+    expect(door.calls).toHaveLength(0);
+    expect(parked()).toBeDefined();
+    expect(result.current.status).toBe("idle");
+    const listener = add.mock.calls.find((c) => c[0] === "online")?.[1];
+    expect(listener).toBeDefined();
+    expect(remove).toHaveBeenCalledWith("online", listener); // `{once}` alone would have leaked it
+  });
+
+  it("a fast rejection while OFFLINE is not an attempt either (Chrome rejects at once with no network)", async () => {
+    const door = scriptStt("reject", { status: 200, body: { text: "z" } });
+    // The radio dies AS the clip leaves: online at the loop's top, offline by the rejection.
+    const scripted = globalThis.fetch;
+    globalThis.fetch = vi.fn((...args: Parameters<typeof fetch>) => {
+      if (door.calls.length === 0) setOnline(false);
+      return scripted(...args);
+    });
+    const { result } = renderHook(() =>
+      useDictation(loopOpts({ upload: { timeout_s: 5, attempts: 1 } })),
+    );
+    await recordClip(result);
+    await tick(0);
+    expect(door.calls).toHaveLength(1);
+    expect(parked()).toBeUndefined(); // ONE attempt configured, yet nothing parked: it was not spent
+    expect(result.current.status).toBe("sending"); // …it waits for the link instead
+    setOnline(true);
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
+    await tick(0);
+    expect(door.calls).toHaveLength(2);
+    expect(getDraft()).toBe("z");
+  });
+
+  it("the horizon follows the clip's length — TWICE it (W5) — so a long dictation is not aborted at the floor", async () => {
+    const door = scriptStt("hang");
+    const { result } = renderHook(() =>
+      useDictation(loopOpts({ upload: { timeout_s: 1, attempts: 1 } })),
+    );
+    await recordClip(result, 4000);
+    await tick(1000); // the knob's floor alone would have aborted here
+    expect(door.calls[0].signal?.aborted).toBe(false);
+    await tick(3000); // the clip's own 4 s — a slow-but-alive 32 kbps link would be cut off here
+    expect(door.calls[0].signal?.aborted).toBe(false);
+    await tick(4000); // max(1 s, 2 × the 4 s clip)
+    expect(door.calls[0].signal?.aborted).toBe(true);
+  });
+
+  it("a LATE wake gets its attempt's FULL horizon (X3); past the total, the gate parks without a new one", async () => {
+    setOnline(false);
+    const door = scriptStt("hang", "hang");
+    const { result } = renderHook(() => useDictation(loopOpts())); // total = 3 × 5 s
+    await recordClip(result);
+    await tick(13_000); // a tunnel eats most of the total…
+    expect(door.calls).toHaveLength(0);
+    setOnline(true);
+    await act(async () => {
+      window.dispatchEvent(new Event("online")); // …and the link returns with 2 s left
+    });
+    await tick(0);
+    expect(door.calls).toHaveLength(1);
+    await tick(2000); // a cap to what is left would have aborted the returning link's try here
+    expect(door.calls[0].signal?.aborted).toBe(false);
+    await tick(3000); // the full 5 s horizon
+    expect(door.calls[0].signal?.aborted).toBe(true);
+    await tick(0);
+    await tick(0);
+    expect(door.calls).toHaveLength(1); // attempts remain, but no NEW one starts past the total
+    expect(parked()).toBeDefined();
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("a remount DURING the pre-attempt offline wait already shows `sending` (X1)", async () => {
+    setOnline(false);
+    const door = scriptStt();
+    const first = renderHook(() => useDictation(loopOpts()));
+    await recordClip(first.result);
+    first.unmount();
+    const second = renderHook(() => useDictation(loopOpts()));
+    expect(door.calls).toHaveLength(0); // still waiting for the link — no attempt yet…
+    expect(second.result.current.status).toBe("sending"); // …and the tab already paints it
+    expect(second.result.current.sendingAttempt).toBeUndefined(); // attempt 1: the plain label
+  });
+
+  it("a parked 502's Retry paints `sending` over the greying (X2), which returns once it settles", async () => {
+    scriptStt({ status: 502 });
+    const { result } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    await tick(0);
+    expect(result.current.status).toBe("unavailable");
+    const toast = parked()!;
+    const answer = pendingStt(); // the Retry's POST waits for the case
+    await act(async () => {
+      toast.action!.onClick();
+    });
+    expect(result.current.status).toBe("sending"); // the upload outranks the flag…
+    await act(async () => {
+      answer.answer();
+    });
+    await tick(0);
+    expect(getDraft()).toBe("hello world");
+    expect(result.current.status).toBe("unavailable"); // …which is preserved for after it
+  });
+
+  it("…and a clip with NO stamp (`Infinity`) never reaches the timer — the knob alone is the horizon", async () => {
+    vi.setSystemTime(0); // `rec.start()` stamps 0 → the clip carries `Infinity` (the deliberate default)
+    const door = scriptStt("hang");
+    const { result } = renderHook(() =>
+      useDictation(loopOpts({ upload: { timeout_s: 2, attempts: 1 } })),
+    );
+    await act(async () => {
+      await result.current.start();
+    });
+    await act(async () => {
+      result.current.stop("user"); // no time passes: only `Infinity` gets this clip past the floor
+    });
+    await tick(0);
+    expect(door.calls).toHaveLength(1);
+    expect(door.calls[0].signal?.aborted).toBe(false); // `setTimeout(Infinity)` would have fired at once
+    await tick(2000);
+    expect(door.calls[0].signal?.aborted).toBe(true);
+  });
+
+  it("knobs ABSENT (an older server) → one attempt, no deadline at all", async () => {
+    const door = scriptStt("hang");
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await recordClip(result);
+    await tick(600_000);
+    expect(door.calls).toHaveLength(1);
+    expect(door.calls[0].signal?.aborted).toBe(false);
+    expect(result.current.status).toBe("sending");
+  });
+
+  it("…and its one failed shot PARKS rather than dropping the clip", async () => {
+    const door = scriptStt("reject");
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await recordClip(result);
+    await tick(0);
+    expect(door.calls).toHaveLength(1);
+    expect(parked()).toBeDefined();
+    expect(result.current.status).toBe("idle"); // never `unavailable` for a link failure
+  });
+
+  it("exhaustion parks → Retry REFUSED while a recording owns the tab (toast kept) → Retry lands", async () => {
+    const door = scriptStt("reject", "reject", { status: 200, body: { text: "kept words" } });
+    const { result } = renderHook(() =>
+      useDictation(loopOpts({ upload: { timeout_s: 5, attempts: 2 } })),
+    );
+    await recordClip(result);
+    await tick(1000);
+    expect(door.calls).toHaveLength(2);
+    const toast = parked()!;
+    expect(toast).toMatchObject({ persist: true });
+    expect(toast.action?.label).toBe("Retry");
+    expect(toast.secondary?.label).toBe("Discard");
+    expect(result.current.status).toBe("idle"); // the mic is usable again
+    // A NEW recording owns the tab's capture: Retry refuses, says so, and keeps its toast.
+    await act(async () => {
+      await result.current.start();
+    });
+    let kept: unknown;
+    act(() => {
+      kept = toast.action!.onClick();
+    });
+    expect(kept).toBe(false);
+    expect(pushToast).toHaveBeenCalledWith("The mic is busy — try again in a moment", "info");
+    expect(door.calls).toHaveLength(2);
+    act(() => result.current.cancel());
+    // Free again → the SAME clip re-enters the loop and lands.
+    await act(async () => {
+      toast.action!.onClick();
+    });
+    await tick(0);
+    expect(door.calls).toHaveLength(3);
+    expect(getDraft()).toBe("kept words");
+    expect(marks()).toHaveLength(0);
+  });
+
+  it("Discard drops the parked clip and clears its mark", async () => {
+    scriptStt({ status: 503 });
+    const { result } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    await tick(0);
+    expect(marks()).toHaveLength(1);
+    act(() => {
+      parked()!.secondary!.onClick();
+    });
+    expect(marks()).toHaveLength(0);
+  });
+
+  it("UNMOUNT never aborts (ruling 18): a composer gone mid-upload still lands its clip", async () => {
+    const door = scriptStt("hang", { status: 200, body: { text: "after the tab switch" } });
+    const { result, unmount } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    unmount();
+    expect(door.calls[0].signal?.aborted).toBe(false);
+    await tick(5000);
+    await tick(1000);
+    expect(getDraft()).toBe("after the tab switch");
+  });
+
+  it("a REMOUNTED composer SHOWS its predecessor's upload and cannot start over it (C4 + W1)", async () => {
+    const door = pendingStt();
+    const first = renderHook(() => useDictation(loopOpts()));
+    await recordClip(first.result);
+    first.unmount();
+    const second = renderHook(() => useDictation(loopOpts()));
+    // Its own phase is idle, but the TAB is sending: the spinner (and ISS-83's door) follow the tab.
+    expect(second.result.current.status).toBe("sending");
+    let armed: boolean | undefined;
+    await act(async () => {
+      armed = await second.result.current.start();
+    });
+    expect(armed).toBe(false); // the tab's ownership refuses it…
+    expect(pushToast).toHaveBeenCalledWith("Still sending the last clip", "info"); // …and SAYS so
+    await act(async () => {
+      door.answer();
+    });
+    await tick(0);
+    expect(second.result.current.status).toBe("idle");
+    await act(async () => {
+      armed = await second.result.current.start();
+    });
+    expect(armed).toBe(true);
+  });
+
+  it.each([
+    ["{}", {}],
+    ["null", null],
+    ['{"text": 42}', { text: 42 }],
+  ])(
+    "a 200 whose JSON is not a transcript (%s) PARKS — never the silent drop (W6)",
+    async (_n, body) => {
+      const door = scriptStt({ status: 200, body });
+      const { result } = renderHook(() => useDictation(loopOpts()));
+      await recordClip(result);
+      await tick(10_000);
+      expect(door.calls).toHaveLength(1); // not retried
+      expect(parked()).toBeDefined();
+      expect(pushToast).not.toHaveBeenCalledWith("Didn't catch that — try again", "info");
+    },
+  );
+
+  it('…while `{"text": ""}` is legitimate silence: "didn\'t catch that", nothing parked', async () => {
+    scriptStt({ status: 200, body: { text: "" } });
+    const { result } = renderHook(() => useDictation(loopOpts()));
+    await recordClip(result);
+    await tick(0);
+    expect(pushToast).toHaveBeenCalledWith("Didn't catch that — try again", "info");
+    expect(parked()).toBeUndefined();
+    expect(marks()).toHaveLength(0);
+  });
+
+  it("a Retry reads the LIVE policy from the query cache (W2): auto-send turned on while parked is honoured", async () => {
+    const qc = new QueryClient();
+    const status = (autoSend: boolean): VoiceStatus => ({
+      stt: true,
+      tts: false,
+      stt_auto_send: autoSend,
+      stt_upload: { timeout_s: 5, attempts: 1 },
+    });
+    qc.setQueryData(["voice-status"], status(false));
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: qc }, children);
+    scriptStt("reject", { status: 200, body: { text: "parked words" } });
+    // The PROPS say auto-send OFF and no knobs throughout: only the cache can turn it on.
+    const { result } = renderHook(() => useDictation(opts(false)), { wrapper });
+    await recordClip(result);
+    await tick(0);
+    const toast = parked()!;
+    expect(toast).toBeDefined(); // the cache's ONE attempt was spent (props alone would also be one)
+    act(() => {
+      qc.setQueryData(["voice-status"], status(true)); // the owner flips Conf meanwhile
+    });
+    await act(async () => {
+      toast.action!.onClick();
+    });
+    await tick(0);
+    expect(runComposer).toHaveBeenCalledWith("parked words");
   });
 });

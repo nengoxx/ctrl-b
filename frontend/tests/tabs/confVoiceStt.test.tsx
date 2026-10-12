@@ -61,6 +61,8 @@ const makeSettings = () => ({
       auto_stop: false,
       auto_stop_silence_s: 3,
       auto_stop_threshold: 0.01,
+      upload_timeout_s: 30,
+      upload_attempts: 3,
       connect_timeout_s: 3,
       timeout_s: 30,
       extra_body: {},
@@ -315,6 +317,18 @@ describe("ConfTab · auto-stop dictation rows (R51 Tier 0)", () => {
     fireEvent.change(field("Silence threshold"), { target: { value: "" } });
     fireEvent.click(saveButton());
     expect(voiceOf()?.auto_stop_threshold).toBe(0);
+  });
+});
+
+describe("ConfTab · clip upload rows (ISS-84)", () => {
+  it("renders both from the live config and saves them coerced to numbers", () => {
+    render(<ConfTab active />);
+    expect(field("Upload timeout").value).toBe("30");
+    expect(field("Upload attempts").value).toBe("3");
+    fireEvent.change(field("Upload timeout"), { target: { value: "45.5" } });
+    fireEvent.change(field("Upload attempts"), { target: { value: "5" } });
+    fireEvent.click(saveButton());
+    expect(voiceOf()).toMatchObject({ upload_timeout_s: 45.5, upload_attempts: 5 });
   });
 });
 

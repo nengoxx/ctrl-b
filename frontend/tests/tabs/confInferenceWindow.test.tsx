@@ -80,6 +80,8 @@ const makeSettings = () => ({
       auto_stop: false,
       auto_stop_silence_s: 3,
       auto_stop_threshold: 0.01,
+      upload_timeout_s: 30,
+      upload_attempts: 3,
       connect_timeout_s: 3,
       timeout_s: 30,
       extra_body: {},

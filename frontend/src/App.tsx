@@ -14,6 +14,7 @@ import { useForegroundNotifications } from "./hooks/useForegroundNotifications";
 import { useThreadListsBridge } from "./hooks/useThreads";
 import { crashBtn, crashBtnQuiet, crashMessage, crashShell } from "./lib/crashScreen";
 import { isAnyDirty } from "./store/dirty";
+import { takeLostClips } from "./store/pendingClips";
 import { usePlanOpenAutoClose } from "./store/planSheet";
 import { pushToast } from "./store/toast";
 import { useUISlice } from "./store/ui";
@@ -36,6 +37,7 @@ export default function App() {
   useAppViewport(); // --app-h tracks the visual viewport (keyboard-aware dvh) — effect only
   useUnsavedGuard(); // warn before unload if any editor has unsaved changes — effect only
   useDiscardNotice(); // say so when the browser threw this page away while it was in the background
+  useLostClipNotice(); // …and when the last session died holding dictation clips that never sent (ISS-84)
 
   // App re-renders ONLY on a theme change (the reactive reads it keeps: `useActiveRoot` resolves the Root
   // for the skin, and `theme` below keys item ②'s fault boundary — both fire on the same skin change, so no
@@ -222,6 +224,25 @@ function useDiscardNotice(): void {
     pushToast("the browser discarded this page while it was away and reloaded it", "info", {
       sticky: true,
     });
+  }, []);
+}
+
+// THE LOST-CLIP NOTICE (ISS-84 part G — S8b's interrupted-clip marker, pulled forward). A clip whose
+// upload was in trouble lived only in memory; a reload or a tab kill in that window lost it, and the
+// marker (`store/pendingClips`) is how this boot knows. Said ONCE (taking the marks clears them — a
+// StrictMode second run reads none) and sticky like the discard notice beside it: the reload may have
+// happened while the owner was not looking. Recovering the clip itself is S8b's.
+function useLostClipNotice(): void {
+  useEffect(() => {
+    const n = takeLostClips();
+    if (n === 0) return;
+    pushToast(
+      n === 1
+        ? "1 clip from the last session was lost"
+        : `${n} clips from the last session were lost`,
+      "info",
+      { sticky: true },
+    );
   }, []);
 }
 

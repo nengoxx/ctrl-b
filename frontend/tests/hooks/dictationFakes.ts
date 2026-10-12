@@ -113,6 +113,44 @@ export function pendingStt(body: unknown = { text: "hello world" }) {
   return { answer: () => answer?.() };
 }
 
+/** One scripted answer of the clip door (ISS-84): an HTTP answer — whose body may be a parsed `body`,
+ *  or `json: "syntax"` (a COMPLETE body that is not JSON), `"transport"` (the body dies in transit) or
+ *  `"hang"` (the body never arrives) — or the whole request `"hang"`ing / `"reject"`ing like a dead
+ *  network. */
+export type SttStep =
+  "hang" | "reject" | { status: number; body?: unknown; json?: "syntax" | "transport" | "hang" };
+
+/** Answer `POST /api/voice/stt` attempt by attempt from `steps` (then the ordinary transcript), and
+ *  record each attempt's `RequestInit`. The fake HONOURS the abort signal on the request AND on the
+ *  body read, exactly as a real `fetch` does — the loop's deadline is only a deadline if the request
+ *  dies with it. */
+export function scriptStt(...steps: SttStep[]): { calls: RequestInit[] } {
+  const calls: RequestInit[] = [];
+  const aborted = (signal: AbortSignal | null | undefined): Promise<never> =>
+    new Promise((_, reject) => {
+      signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    });
+  globalThis.fetch = vi.fn((_path: unknown, init?: RequestInit) => {
+    const req = init ?? {};
+    calls.push(req);
+    const step = steps.shift() ?? { status: 200, body: { text: "hello world" } };
+    if (step === "hang") return aborted(req.signal);
+    if (step === "reject") return Promise.reject(new TypeError("Failed to fetch"));
+    const json = (): Promise<unknown> => {
+      if (step.json === "hang") return aborted(req.signal);
+      if (step.json === "syntax") return Promise.reject(new SyntaxError("Unexpected token <"));
+      if (step.json === "transport") return Promise.reject(new TypeError("network error"));
+      return Promise.resolve(step.body ?? {});
+    };
+    return Promise.resolve({
+      status: step.status,
+      ok: step.status >= 200 && step.status < 300,
+      json,
+    } as unknown as Response);
+  });
+  return { calls };
+}
+
 /** Tap to start, wait until recording, tap to stop (which kicks off the async upload).
  *
  *  HELD PAST THE 1000 ms FLOOR by default (S0.5): `useDictation` now discards a clip shorter than

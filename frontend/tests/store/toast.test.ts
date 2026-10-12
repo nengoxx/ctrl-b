@@ -56,6 +56,25 @@ describe("toast store", () => {
     act(() => dismissToast(t!.id));
   });
 
+  it("ISS-84 — a `persist` toast skips the TTL like a sticky one, and carries its second action", () => {
+    const { result } = renderHook(() => useToasts());
+    act(() =>
+      pushToast("parked", "err", {
+        persist: true,
+        action: { label: "Retry", onClick: () => false },
+        secondary: { label: "Discard", onClick: () => {} },
+      }),
+    );
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    const t = result.current.find((x) => x.text === "parked");
+    expect(t?.persist).toBe(true);
+    expect(t?.action?.label).toBe("Retry");
+    expect(t?.secondary?.label).toBe("Discard");
+    act(() => dismissToast(t!.id));
+  });
+
   it("assigns distinct ids to successive toasts", () => {
     const { result } = renderHook(() => useToasts());
     act(() => {

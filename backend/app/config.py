@@ -661,6 +661,18 @@ class SttServiceCfg(VoiceServiceCfg):
     #: that ship this measure different quantities) — the knob exists so the owner calibrates it on the
     #: phone against quiet speech + room noise; the bounds keep it a floor, never a mute or a gate.
     auto_stop_threshold: float = Field(default=0.01, ge=0.001, le=0.5)
+    # ISS-84 — THE CLIP UPLOAD's bounded, retried POST (client behavior, like the two above: nothing
+    # here uploads; both ride `GET /voice/status` as ONE `stt_upload` object). One attempt covers the
+    # upload AND the transcription (the response IS the transcript), so its horizon is derived on the
+    # client as `max(upload_timeout_s, the clip's own duration)`: a flat number would abort a long
+    # dictation whose ASR legitimately runs long (ASR_PLAN §3.8 T-9: a 30-min clip ≈ 2–4 min) and re-run
+    # it on every retry. This is that horizon's FLOOR, in seconds like its `*_s` neighbours; `le=600`
+    # also rejects `.inf`/NaN by bound.
+    upload_timeout_s: float = Field(default=30.0, gt=0, le=600)
+    #: TOTAL attempts of one clip's upload before it is PARKED (Retry/Discard — never dropped); the
+    #: backoff between them is derived on the client, not a third knob. 1 = ONE bounded attempt — not
+    #: the old unbounded single shot, which only an older server (no `stt_upload` at all) still gets.
+    upload_attempts: int = Field(default=3, ge=1, le=10)
 
 
 # ── THE UPLINK ALLOWANCE (Phase 26 S2, ASR_PLAN §3.3 / Q2 as amended by R97 P-6) ──

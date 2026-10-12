@@ -1878,6 +1878,10 @@ export function ConfTab({ active }: Props) {
           // 0 (0.5 s / 0.001), so a cleared field earns the same visible 422, never a silent zero.
           auto_stop_silence_s: Number(draft.voice.stt.auto_stop_silence_s),
           auto_stop_threshold: Number(draft.voice.stt.auto_stop_threshold),
+          // ISS-84 — bare `Number` for the same reason: both floor above 0 (`gt=0` / `ge=1`), so a
+          // cleared field earns the visible 422, never a silent zero.
+          upload_timeout_s: Number(draft.voice.stt.upload_timeout_s),
+          upload_attempts: Number(draft.voice.stt.upload_attempts),
         },
         tts: {
           ...draft.voice.tts,
@@ -2731,6 +2735,20 @@ export function ConfTab({ active }: Props) {
             desc="mic level counted as silence (0.001–0.5) — lower it if it cuts you off, raise it in a noisy room"
             value={String(vstt?.auto_stop_threshold ?? "")}
             onChange={(v) => setStt("auto_stop_threshold", v as unknown as number)}
+          />
+          {/* ISS-84 — the clip upload's bound + retry budget; the same values ride `GET /voice/status`
+              (`stt_upload`) to the mic's upload loop. */}
+          <Field
+            label="Upload timeout"
+            desc="seconds one clip-upload attempt may take (up to 600) — one attempt's floor: a long clip gets its own length"
+            value={String(vstt?.upload_timeout_s ?? "")}
+            onChange={(v) => setStt("upload_timeout_s", v as unknown as number)}
+          />
+          <Field
+            label="Upload attempts"
+            desc="tries before an unsent clip waits in a Retry / Discard notice (1–10)"
+            value={String(vstt?.upload_attempts ?? "")}
+            onChange={(v) => setStt("upload_attempts", v as unknown as number)}
           />
           {/* S3.5 — streaming dictation lives HERE, beside the mic it upgrades (the R70 field norm:
               composer dictation and voice/call mode are separate features everywhere). The KEYS stay

@@ -63,6 +63,41 @@ export function resetLegHold(): void {
   closing = null;
 }
 
+// THE TAB'S CAPTURE OWNERSHIP (ISS-84 part F; also closes ISS-83 code round C4) — beside the leg's
+// latch, for the same reason it is module scope: a parked clip's toast can outlive the composer that
+// recorded it (Conf/Utils unmount it), and a composer REMOUNTED while its predecessor's POST is still in
+// flight starts with a fresh `phaseRef` that cannot see that POST. Both must read the LIVE truth of the
+// TAB, never one instance's (possibly dead) refs — so the truth lives here.
+//
+// A capture is OWNED from `useDictation.start()`'s arming through that recording's terminal release (its
+// `onstop`), and for the whole of an upload loop (entry → `finally`). A SET OF OWNER TOKENS rather than a
+// counter or a flag, because owners OVERLAP and each must release only itself: a parked clip's Retry can
+// be uploading while the next recording arms, and a plain flag would be cleared by whichever finished
+// first. A counter would do the same job but makes a doubled release (a belt `finally` after a normal
+// release) silently steal another owner's count; a token's release is idempotent by construction.
+const owners = new Set<object>();
+
+/** Take the tab's capture: returns the ONE idempotent release for this owner. Every path that ends the
+ *  ownership calls it — and a belt call on a path that already released is harmless. */
+export function ownCapture(): () => void {
+  const token = {};
+  owners.add(token);
+  return () => {
+    owners.delete(token);
+  };
+}
+
+/** Is any capture of this tab owned right now — arming, recording, or an upload in flight? */
+export function captureOwned(): boolean {
+  return owners.size > 0;
+}
+
+/** TESTS ONLY — drop the owners a finished case left standing (an upload parked on a fake clock the
+ *  case never ran out), the `resetLegHold` twin. Never called by the app. */
+export function resetCaptureOwners(): void {
+  owners.clear();
+}
+
 /** Offer `fn` as the way to make the microphone free again, or `null` to withdraw the offer. The
  *  publisher withdraws on unmount, so a dead composer can never leave a live handover behind. */
 export function setMicRelease(fn: (() => Promise<void>) | null): void {

@@ -78,16 +78,17 @@ def _client(request: Request) -> VoiceClient:
 @router.get("/status")
 async def voice_status(request: Request) -> dict[str, object]:
     """Capability probe: which voice services are configured + enabled, the STT auto-send flag, the R51
-    Tier-0 auto-stop policy, the D63 TTS chunk policy, and the D71 live-call policy (`{stt, tts, live,
-    live_ear, stt_auto_send, stt_auto_stop, tts_chunking, live_call}`). Everything past the capability
-    bits is CLIENT BEHAVIOR composed HERE from live settings (A11/R2) — the frozen resolved chain the
-    `VoiceClient` holds deliberately doesn't carry it — and this probe is the always-on endpoint the PWA
-    already polls, so neither the chunker nor the mic's silence detector nor the call overlay needs a
-    query of its own.
+    Tier-0 auto-stop policy, the ISS-84 clip-upload bound, the D63 TTS chunk policy, and the D71
+    live-call policy (`{stt, tts, live, live_ear, stt_auto_send, stt_auto_stop, stt_upload,
+    tts_chunking, live_call}`). Everything past the capability bits is CLIENT BEHAVIOR composed HERE
+    from live settings (A11/R2) — the frozen resolved chain the `VoiceClient` holds deliberately doesn't
+    carry it — and this probe is the always-on endpoint the PWA already polls, so neither the chunker
+    nor the mic's silence detector nor the call overlay needs a query of its own.
 
-    `stt_auto_stop`, `tts_chunking` and `live_call` are shape-only: a toggle + thresholds, the split
-    mode + size floors/caps + container + the read-along flag, and the call's client-side pacing /
-    interruption / presentation knobs. No endpoint, no key, no model id — nothing here says whether a
+    `stt_auto_stop`, `stt_upload`, `tts_chunking` and `live_call` are shape-only: a toggle +
+    thresholds, a timeout floor + an attempt count, the split mode + size floors/caps + container +
+    the read-along flag, and the call's client-side pacing / interruption / presentation knobs. No
+    endpoint, no key, no model id — nothing here says whether a
     secret exists."""
     status: dict[str, object] = dict(_client(request).status())
     stt = request.app.state.settings.voice.stt
@@ -98,6 +99,9 @@ async def voice_status(request: Request) -> dict[str, object]:
         "silence_s": stt.auto_stop_silence_s,
         "threshold": stt.auto_stop_threshold,
     }
+    # ISS-84 — the clip upload's bound + retry budget, ONE object (the `stt_auto_stop` precedent: a
+    # client-behavior knob set rides one object, so the next knob is an additive field). Shape only.
+    status["stt_upload"] = {"timeout_s": stt.upload_timeout_s, "attempts": stt.upload_attempts}
     status["tts_chunking"] = {
         "mode": tts.chunking,
         "min_words": tts.chunk_min_words,

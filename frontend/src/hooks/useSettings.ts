@@ -82,6 +82,10 @@ export interface VoiceStt extends VoiceServiceCommon {
   auto_stop: boolean;
   auto_stop_silence_s: number; // silence run that ends the recording (0.5–30)
   auto_stop_threshold: number; // normalized RMS below this counts as silence (0.001–0.5)
+  // ISS-84 — the clip upload: one attempt's horizon FLOOR, s (a long clip gets its own length; ≤ 600)
+  // and the total attempts before the clip is parked for Retry/Discard (1–10).
+  upload_timeout_s: number;
+  upload_attempts: number;
 }
 export interface VoiceTts extends VoiceServiceCommon {
   format: string; // response_format/container (mp3 = universally seekable)

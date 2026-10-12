@@ -277,9 +277,20 @@ export const CSRF_HEADER_VALUE = "ctrl-b";
 /** POST a multipart FORM, carrying `CSRF_HEADER` — the ONE way the app sends a form (today: the clip
  *  door, `POST /api/voice/stt`, push-to-talk and the dictation whole-clip fallback alike). Answers the
  *  raw `Response`: the caller reads its own statuses (the clip door's 502 = "voice servers unreachable"
- *  is a state, not an error toast). No `Content-Type` is set — the browser writes the multipart boundary. */
-export function postForm(path: string, form: FormData): Promise<Response> {
-  return fetch(path, { method: "POST", headers: { [CSRF_HEADER]: CSRF_HEADER_VALUE }, body: form });
+ *  is a state, not an error toast). No `Content-Type` is set — the browser writes the multipart boundary.
+ *  `opts.signal` (ISS-84) bounds the request: the clip door's upload loop aborts an attempt past its
+ *  horizon and reads the body under the SAME signal, so the caller owns the whole attempt's deadline. */
+export function postForm(
+  path: string,
+  form: FormData,
+  opts?: { signal?: AbortSignal },
+): Promise<Response> {
+  return fetch(path, {
+    method: "POST",
+    headers: { [CSRF_HEADER]: CSRF_HEADER_VALUE },
+    body: form,
+    signal: opts?.signal,
+  });
 }
 
 /** DELETE a resource. Surfaces FastAPI `detail` on error; tolerates an empty 204 body. A route that

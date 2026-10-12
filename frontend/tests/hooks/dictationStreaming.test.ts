@@ -119,7 +119,13 @@ import { RECORDER_BITRATE, dictationAppends, useDictation } from "../../src/hook
 import { rmsToDbfs } from "../../src/lib/levelGate";
 import { BUCKET_CAP_MS } from "../../src/lib/uplinkPacer";
 import { newWakeLockState, releaseWakeLock, takeWakeLock } from "../../src/lib/wakeLock";
-import { FakeMediaRecorder, gateMediaDevices, mockStt, setMediaDevices } from "./dictationFakes";
+import {
+  FakeMediaRecorder,
+  gateMediaDevices,
+  mockStt,
+  scriptStt,
+  setMediaDevices,
+} from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
 import {
   clearDraft,
@@ -129,7 +135,8 @@ import {
   setDraft,
   stopLiveDictation,
 } from "../../src/store/composer";
-import { releaseMic, resetLegHold } from "../../src/store/micRelease";
+import { releaseMic, resetCaptureOwners, resetLegHold } from "../../src/store/micRelease";
+import { resetUploadActivity } from "../../src/store/uploadActivity";
 import { pushToast } from "../../src/store/toast";
 
 // ── the Web Audio stand-in (the mic suite's, trimmed to what the streaming branch needs) ───────────
@@ -340,6 +347,8 @@ async function runOutTail(): Promise<void> {
 
 beforeEach(() => {
   resetLegHold(); // D5 — a case that ended mid-release leaves the TAB-wide hold up; the next starts clean
+  resetCaptureOwners(); // ISS-84 — …and so does a capture owner (a recording or an upload left running)
+  resetUploadActivity(); // …and its upload ACTIVITY (W1), which every instance's status paints
   vi.useFakeTimers();
   vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
   vi.stubGlobal("AudioContext", FakeAudioContext);
@@ -3060,5 +3069,28 @@ describe("useDictation · Phase 27 S8 — the dictation slot and the navigate-st
     });
     expect(result.current.status).toBe("recording"); // the clip door is unaffected (§12.2 ④)
     act(() => result.current.cancel());
+  });
+});
+
+// ISS-84 — the streaming door's whole-clip fallback (`finishStream` → `upload`) is the SAME loop as the
+// push-to-talk door: bounded, retried, never dropped. Its arms live in `useDictation.test.ts`; this pins
+// only that the fallback reaches it.
+describe("useDictation · ISS-84 the streaming fallback rides the upload loop", () => {
+  it("a leg with no phrase falls to the clip, whose failed first attempt is RETRIED, not dropped", async () => {
+    const door = scriptStt("reject", { status: 200, body: { text: "the whole clip" } });
+    const { result } = renderHook(() =>
+      useDictation(opts({ upload: { timeout_s: 5, attempts: 3 } })),
+    );
+    await hold(result);
+    ready();
+    await release(result); // no phrase landed → rule ③ uploads the clip
+    await tick(0);
+    expect(door.calls).toHaveLength(1);
+    expect(result.current.status).toBe("sending"); // retrying, not parked, not greyed
+    await tick(1000); // the derived backoff
+    expect(door.calls).toHaveLength(2);
+    expect(getDraft()).toBe("the whole clip");
+    expect(result.current.status).toBe("idle");
+    expect(pushToast).not.toHaveBeenCalledWith("Clip didn't send", "err", expect.anything());
   });
 });

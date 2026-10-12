@@ -29,4 +29,14 @@ describe("postForm", () => {
     expect([CSRF_HEADER, CSRF_HEADER_VALUE]).toEqual(["X-Requested-With", "ctrl-b"]);
     expect(res).toBe(answer); // a 502 is the caller's state to read, never thrown here
   });
+
+  it("passes the caller's abort signal through (ISS-84 — the upload loop owns the deadline)", async () => {
+    const fetchMock = vi.fn(async () => Promise.resolve(new Response("{}")));
+    globalThis.fetch = fetchMock;
+    const ctl = new AbortController();
+    await postForm("/api/voice/stt", new FormData(), { signal: ctl.signal });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.signal).toBe(ctl.signal);
+    expect(init.headers).toEqual({ [CSRF_HEADER]: CSRF_HEADER_VALUE }); // the CSRF header rides along
+  });
 });

@@ -875,7 +875,7 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
   return {
     pressing: state.stage === "press",
     mode,
-    label: micLabel(mic.status, mode),
+    label: micLabel(mic.status, mode, mic.sendingAttempt),
     handlers: {
       onPointerDown,
       onPointerMove,

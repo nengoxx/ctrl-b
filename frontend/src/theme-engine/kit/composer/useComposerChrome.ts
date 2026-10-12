@@ -72,8 +72,17 @@ export const MIC_LABEL: Record<string, string> = {
  *  because the two modes are not on/off — they are two destinations). Call mode only ever reaches this
  *  while `voice.live` is up, so the idle label is the only one that changes: once a call is running the
  *  overlay owns the surface, and every DICTATION state keeps the sentence it has always had. */
-export function micLabel(status: string, mode: "mic" | "call"): string {
+export function micLabel(
+  status: string,
+  mode: "mic" | "call",
+  attempt?: { attempt: number; of: number } | null,
+): string {
   if (mode === "call" && status === "idle") return "start a voice call";
+  // ISS-84 — a clip upload that is RETRYING says which attempt it is on; the spinner alone cannot tell
+  // "still sending" from "trying again" (the first attempt keeps the plain label).
+  if (status === "sending" && attempt) {
+    return `${MIC_LABEL.sending} (attempt ${attempt.attempt} of ${attempt.of})`;
+  }
   return MIC_LABEL[status] ?? MIC_LABEL.idle;
 }
 

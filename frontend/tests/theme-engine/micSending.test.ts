@@ -39,6 +39,7 @@ const dict = vi.hoisted(() => ({
   onPending: { current: null },
   handsFree: { current: false },
   onLive: { current: null }, // S11 — the go seam
+  sendingAttempt: null as { attempt: number; of: number } | null, // ISS-84 — a retrying upload
 }));
 
 vi.mock("../../src/hooks/useVoiceStatus", () => ({
@@ -92,6 +93,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   voice.live = false;
   dict.status = "sending";
+  dict.sendingAttempt = null;
   for (const f of [dict.toggle, dict.start, dict.stop, dict.cancel]) f.mockClear();
   vi.mocked(startCall).mockClear();
 });
@@ -102,6 +104,16 @@ afterEach(() => {
 });
 
 describe("mic button while transcribing (status `sending`)", () => {
+  // ISS-84 — a RETRYING upload says which attempt it is on; the spinner alone cannot tell "still
+  // sending" from "trying again". The first attempt keeps the plain sentence.
+  it("the accessible name names the attempt while an upload retries", () => {
+    const { container, refresh } = renderWith(KitComposer);
+    expect(micBtn(container).getAttribute("aria-label")).toBe("transcribing…");
+    dict.sendingAttempt = { attempt: 2, of: 3 };
+    refresh();
+    expect(micBtn(container).getAttribute("aria-label")).toBe("transcribing… (attempt 2 of 3)");
+  });
+
   it.each([
     ["stacked", KitComposer],
     ["sheet", SheetComposer],

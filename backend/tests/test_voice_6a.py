@@ -511,6 +511,46 @@ def test_api_status_carries_the_auto_stop_policy() -> None:
     }
 
 
+# --- ISS-84: the clip upload's bound + retry budget ------------------------------------------------
+
+
+def test_upload_knobs_default_and_bounds_reject_wedging_values() -> None:
+    """30 s floor × 3 attempts by default; both bounded BOTH ways — a 0 s horizon would abort every
+    clip, an unbounded one never parks it, 0 attempts would never send it at all. `inf`/NaN fall to
+    the same bounds (and a float attempt count to the int type)."""
+    from pydantic import ValidationError
+
+    from app.config import VoiceCfg
+
+    stt = VoiceCfg.model_validate({}).stt
+    assert (stt.upload_timeout_s, stt.upload_attempts) == (30.0, 3)
+    edge = VoiceCfg.model_validate({"stt": {"upload_timeout_s": 600, "upload_attempts": 1}}).stt
+    assert (edge.upload_timeout_s, edge.upload_attempts) == (600.0, 1)
+    for bad in (
+        {"stt": {"upload_timeout_s": 0}},
+        {"stt": {"upload_timeout_s": 601}},
+        {"stt": {"upload_timeout_s": float("inf")}},
+        {"stt": {"upload_timeout_s": float("nan")}},
+        {"stt": {"upload_attempts": 0}},
+        {"stt": {"upload_attempts": 11}},
+        {"stt": {"upload_attempts": 2.5}},
+    ):
+        try:
+            VoiceCfg.model_validate(bad)
+            raise AssertionError(f"expected ValidationError for {bad}")
+        except ValidationError:
+            pass
+
+
+def test_api_status_carries_the_upload_policy() -> None:
+    """`stt_upload` rides the always-on probe as ONE object beside `stt_auto_stop` — shape only (a
+    timeout floor + an attempt count). The mic's upload loop is the only reader."""
+    off = _app(_StubVoice()).get("/api/voice/status").json()
+    assert off["stt_upload"] == {"timeout_s": 30.0, "attempts": 3}
+    c = _app(_StubVoice(), stt={"upload_timeout_s": 12.5, "upload_attempts": 1})
+    assert c.get("/api/voice/status").json()["stt_upload"] == {"timeout_s": 12.5, "attempts": 1}
+
+
 # --- D63 chunked TTS: config bounds, the client policy, the pin, the format override --------------
 
 

@@ -25,6 +25,14 @@ export interface SttAutoStopWire {
   threshold: number;
 }
 
+/** The `stt_upload` object, in wire spelling (`SttServiceCfg.upload_*`, backend/app/config.py — ISS-84):
+ *  the clip upload's per-attempt horizon FLOOR (seconds; the clip's own length raises it) and its total
+ *  attempts before the clip is parked. Read by `useDictation`'s upload loop, via `useComposer`. */
+export interface SttUploadWire {
+  timeout_s: number;
+  attempts: number;
+}
+
 /** The `tts_chunking` object, in wire spelling (`TtsServiceCfg.chunk_*`, backend/app/config.py). */
 export interface TtsChunkingWire {
   mode: "off" | "paragraph" | "sentence";
@@ -213,6 +221,9 @@ export interface VoiceStatus {
   /** Client behavior (R51 Tier 0): the mic's silence auto-stop policy. Optional so a pre-Tier-0 backend
    *  (or a test stub) simply leaves the mic on plain push-to-talk — absent reads as disabled. */
   stt_auto_stop?: SttAutoStopWire;
+  /** Client behavior (ISS-84): the clip upload's bound + retry budget. Optional so an older backend (or
+   *  a test stub) keeps the old single unbounded attempt — absent invents no number. */
+  stt_upload?: SttUploadWire;
   /** Client behavior (D63): how to split a reply for read-aloud. Optional so a pre-D63 backend (or a
    *  test stub) simply leaves the controller on its whole-message default. */
   tts_chunking?: TtsChunkingWire;

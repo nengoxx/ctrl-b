@@ -51,6 +51,9 @@ export function useComposer(): ComposerController {
     // R51 Tier 0 — the mic's silence auto-stop policy rides the same always-on probe as auto-send;
     // absent (older backend / stub) → undefined → plain push-to-talk.
     autoStop: voice.data?.stt_auto_stop,
+    // ISS-84 — the clip upload's bound + retry budget, off the same probe; absent (older backend /
+    // stub) → the old single unbounded attempt.
+    upload: voice.data?.stt_upload,
     // D71 S2.5 — phrase-by-phrase streaming dictation, off the same probe again. `live_ear` is the
     // EAR's own bit (the WS route's own terms; since S3.5 the dictation toggle alone opens it),
     // deliberately not `live`: dictation fills the composer and needs no mouth, so a TTS-less or

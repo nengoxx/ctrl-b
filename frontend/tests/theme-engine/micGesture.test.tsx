@@ -60,6 +60,8 @@ import { TOO_SHORT_MSG, useDictation } from "../../src/hooks/useDictation";
 import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
+import { resetCaptureOwners, resetLegHold } from "../../src/store/micRelease";
+import { resetUploadActivity } from "../../src/store/uploadActivity";
 import { pushToast } from "../../src/store/toast";
 import { endCall, useCallMount } from "../../src/store/liveCall";
 import { getUI, setUI } from "../../src/store/ui";
@@ -159,6 +161,9 @@ async function hold() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  resetLegHold();
+  resetCaptureOwners(); // ISS-84 — a case that ended mid-recording/upload leaves the TAB's capture owned
+  resetUploadActivity(); // …and its upload ACTIVITY (W1), which every instance's status paints
   vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
   setMediaDevices(true);
   mockStt(200, { text: "hello world" });
