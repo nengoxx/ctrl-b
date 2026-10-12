@@ -803,14 +803,7 @@ describe("the capsule track (§6.1/§6.2)", () => {
     // `.gc-card-face`, one per card.
     expect(
       [...container.querySelectorAll(".gc-track > .gc-card")].map((el) => el.className),
-      // `gc-host-hit` is the SEMANTIC host-control marker every opener carries since §12.6 ruling 5① —
-      // it is what GachaFleet's tap-outside listener exempts, so it belongs on the card unconditionally.
-    ).toEqual([
-      "gc-card gc-host-hit feat",
-      "gc-card gc-host-hit pair",
-      "gc-card gc-host-hit pair sleep",
-      "gc-card gc-host-hit wide",
-    ]);
+    ).toEqual(["gc-card feat", "gc-card pair", "gc-card pair sleep", "gc-card wide"]);
     expect(container.querySelectorAll(".gc-card > .gc-card-face")).toHaveLength(4);
   });
 
@@ -1018,16 +1011,23 @@ describe("the unit dossier (G2)", () => {
     expect(dossierName()).toBe("pegasus");
   });
 
-  it("tapping another capsule SWAPS the open dossier (catchOutside=false, the ruled precedent)", () => {
+  it("a tap on another capsule only CLOSES the open dossier; the next tap opens it (ISS-77)", () => {
+    // Owner-ruled 2026-10-10: the swap-on-tap `catchOutside={false}` was built for is gone. The sheet's
+    // own full-screen catcher sits over the whole fleet, so the tap aimed at another capsule lands on IT
+    // (jsdom does no hit-testing, so the catcher is clicked directly — it is what a real tap reaches).
     const { container } = render(<GachaFleet active />);
     act(() => {
       fireEvent.click(cards(container)[0]);
     });
     expect(dossierName()).toBe("pegasus");
     act(() => {
+      fireEvent.click(document.querySelector(".bs-catch")!);
+    });
+    expect(document.body.dataset.sheet).toBeUndefined(); // that tap only closed
+    act(() => {
       fireEvent.click(cards(container)[1]);
     });
-    expect(dossierName()).toBe("atlas");
+    expect(dossierName()).toBe("atlas"); // the second tap opens the other machine
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
   });
 
@@ -1359,8 +1359,8 @@ describe("the art showcase", () => {
   });
 
   it("a tap ANYWHERE closes the art — and leaves the dossier standing", () => {
-    // Two guarantees in one gesture: the overlay's own dismissal, and the dossier's tap-outside listener
-    // exempting it (without that exemption the same click would dismiss the sheet underneath).
+    // Two guarantees in one gesture: the overlay's own dismissal, and the dossier staying under it (the
+    // overlay is a sibling ABOVE `.bs-root`, so its tap never reaches the sheet's catcher — ISS-77).
     const { container } = render(<GachaFleet active />);
     openArt(container);
     act(() => {
@@ -1737,7 +1737,7 @@ describe("the reel REJECTS capsule input", () => {
   });
 });
 
-// ── DISMISSAL: the visible corner + tap-outside (owner rulings 2026-08-02) ───────────────────────────
+// ── DISMISSAL: the visible corner (owner ruling 2026-08-02) + tap-outside (ISS-77, owner 2026-10-10) ──
 describe("dismissing the dossier", () => {
   const cards = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-card")];
   const open = (c: HTMLElement, i = 0): void => {
@@ -1761,11 +1761,19 @@ describe("dismissing the dossier", () => {
     expect(document.body.dataset.sheet).toBeUndefined();
   });
 
-  it("a tap OUTSIDE closes it; a tap inside the sheet does not", () => {
+  it("a tap OUTSIDE closes it through the sheet's own catcher; a tap inside the sheet does not", () => {
+    // ISS-77: the primitive's full-screen `.bs-catch` (the conversations sheet's mechanism), mounted
+    // under the sheet inside `.bs-root` — not a document listener with an exemption list.
     const { container } = render(<GachaFleet active />);
     open(container);
+    const catcher = document.querySelector<HTMLElement>(".bs-root > .bs-catch")!;
+    expect(catcher).not.toBeNull();
+    // ONE name for the one action, shared with the sr-only close and the visible corner
+    expect(catcher.getAttribute("aria-label")).toBe(
+      document.querySelector(".bs-close-sr")!.textContent,
+    );
     act(() => {
-      fireEvent.click(container.querySelector(".gc-track-head")!);
+      fireEvent.click(catcher);
     });
     expect(document.body.dataset.sheet).toBeUndefined();
 
@@ -1776,21 +1784,20 @@ describe("dismissing the dossier", () => {
     expect(document.body.dataset.sheet).toBe("open"); // the sheet's own content is not "outside"
   });
 
-  it("the tap that OPENS it never closes it, and a card tap SWAPS without a close in between", () => {
-    // The flicker case: if the outside-close listener did not exempt the capsules, tapping B with A open
-    // would close then reopen — two sheet lifecycles for one gesture. The dialog must survive as ONE.
+  it("the tap that OPENS it never closes it — the catcher mounts with the sheet, after that tap", () => {
     const { container } = render(<GachaFleet active />);
+    expect(document.querySelector(".bs-catch")).toBeNull();
     open(container);
     expect(dossierName()).toBe("pegasus");
-    open(container, 1);
-    expect(dossierName()).toBe("atlas");
     expect(document.body.dataset.sheet).toBe("open");
-    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(document.querySelector(".bs-catch")).not.toBeNull();
   });
 
-  it("a MODAL above the sheet is not `outside` it (the dossier's own confirm dialog)", () => {
-    // The dossier's shutdown button raises the shared ConfirmDialog; a click on its Cancel would
-    // otherwise dismiss the sheet that spawned it.
+  it("nothing listens on the DOCUMENT any more: only the catcher closes it (ISS-77)", () => {
+    // The retired listener closed on any click outside its exemption list, so these three each closed
+    // it (or had to be exempted by name). With the catcher over the fleet a real tap cannot reach them;
+    // a click that does — a modal ABOVE the sheet (the dossier's own ConfirmDialog), the page body, the
+    // track's head — is simply not a dismissal.
     const { container } = render(<GachaFleet active />);
     open(container);
     const modal = document.createElement("div");
@@ -1800,19 +1807,14 @@ describe("dismissing the dossier", () => {
     act(() => {
       fireEvent.click(modal.querySelector("button")!);
     });
-    expect(document.body.dataset.sheet).toBe("open");
-    modal.remove();
-  });
-
-  it("ignores a click a handler has already consumed (the banner's drag-derived one)", () => {
-    const { container } = render(<GachaFleet active />);
-    open(container);
-    const consumed = new MouseEvent("click", { bubbles: true, cancelable: true });
     act(() => {
-      consumed.preventDefault();
-      container.querySelector(".gc-track-head")!.dispatchEvent(consumed);
+      fireEvent.click(document.body);
+    });
+    act(() => {
+      fireEvent.click(container.querySelector(".gc-track-head")!);
     });
     expect(document.body.dataset.sheet).toBe("open");
+    modal.remove();
   });
 });
 

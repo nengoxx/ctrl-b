@@ -992,6 +992,23 @@ as the G1 close).** Eleven commits `8c4c74f..294cc32`; end state
   `:scope[data-transition]::view-transition-*` matches fine inside `@scope` rooted on html ·
   a token contrast gate cannot see `opacity` blends — mute with tokens, not alpha.
 
+*As-built, session 76 (2026-10-12), ISS-77 — the tap-outside close re-ruled (owner, 2026-10-10):* **ANY tap
+outside the dossier closes it, another machine included, and that tap ONLY closes** — a second tap opens the
+other machine. On the cover layout the full-bleed hero and the cut-ins were all `.gc-host-hit`, so the
+document listener's exemption list left almost no pixel above the sheet that counted as outside (the poster's
+slices likewise). The G2 swap-on-tap is therefore RETIRED: `GachaFleet` drops `catchOutside={false}` and the
+document `click` listener with its exemption list, and the dossier uses the primitive's own full-screen
+`.bs-catch` (the conversations sheet's mechanism). The catcher lives inside `.bs-root` (z 40); the art
+showcase (`.gc-art-view`, z 46, a SIBLING of the sheet, no portal) and ConfirmDialog (50) / PromptModal (60)
+stay above it, so their taps never reach it — the showcase's tap-anywhere still closes only the art. The
+catcher mounts with the sheet, after the opening tap (the M3 `enterInstant` commit included), so it never eats
+that tap. The visible ✕, flick-down and Escape are unchanged. `.gc-host-hit` (§12.6 ruling 5①) lost its only
+reader, so it is REMOVED from the four carriers (card · promo hit · poster slice · cover card; the E0 fence
+snapshot changes by exactly that class). The 40 < 46 rung is pinned in `gachaDossier.test.tsx` ("stands on
+rung 46"). Tests: `gachaFleet.test.tsx` "a tap on another capsule only CLOSES…" + the
+"dismissing the dossier" block (catcher closes · opening tap survives · nothing listens on the document);
+the poster/cover opening-tap tests now close through `.bs-catch`.
+
 **§7.4 — G3 AS-BUILT (2026-08-03; ✅ code + reviews complete; ✅ CLOSED 2026-08-04 — owner
 device round PASSED wholesale, no fix wave needed).** Device-round verdicts (owner, Fennec,
 2026-08-04): M7 blur ramp smooth · 12.5px bubbles comfortable · oracle pin holds across appbar
@@ -3297,7 +3314,8 @@ focus-return-on-remote-row-removal nicety = a LOW E-slice note.
    move:** ① the outside-click exemption list (`GachaFleet` ~`:480`) is hardcoded to
    `.gc-card, .gc-slide-hit` — a semantic `.gc-host-hit` class goes on the capsule card AND both
    new layouts' host controls, and the listener exempts it (else the second tap's dossier closes
-   on its own opening click). ② the capsule↔dossier VIEW-TRANSITION MORPH stays **capsule-only by
+   on its own opening click). *(Superseded 2026-10-12, ISS-77: the listener is retired for the sheet's own
+   catcher — §7.3's ISS-77 as-built note; the marker is removed.)* ② the capsule↔dossier VIEW-TRANSITION MORPH stays **capsule-only by
    design** — the walked lab opens poster/cover dossiers with the plain non-VT path, and a morph
    clone sourced from a sheared clip-path has never been seen; poster/cover pass NO image to
    `openHostDossier`. A layout switch bumps the dossier generation and cleans pending morph prep

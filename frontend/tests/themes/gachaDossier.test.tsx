@@ -702,7 +702,10 @@ describe("the portrait button", () => {
     expect(Number(mine)).toBe(46);
     // BOTH bounds, read from the kit's own ladder rather than restated: `.bs-root` 40 < 46 <
     // `.modal-backdrop` 50. The upper one is the load-bearing half — a picture must never cover a
-    // question — and it is the one a future rung-shuffle would silently break.
+    // question — and it is the one a future rung-shuffle would silently break. The LOWER bound is
+    // load-bearing too since ISS-77: the dossier's tap-outside is the sheet's own catcher inside
+    // `.bs-root`, so 40 < 46 is what keeps a tap on the art (which closes only the art) off that catcher —
+    // jsdom does no hit-testing, so this source pin is the only guard of it.
     const kit = readFileSync(resolve(process.cwd(), "src/theme-engine/kit/kit.css"), "utf8");
     const rungOf = (selector: string): number => {
       const at = kit.slice(kit.indexOf(selector));

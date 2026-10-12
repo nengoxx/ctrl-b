@@ -222,11 +222,6 @@ describe("the cover resolves through the fleet Surface", () => {
     );
   });
 
-  it("marks every host control `.gc-host-hit` (the dossier's outside-click exemption, ruling 5①)", () => {
-    const { container } = render(<GachaFleet active />);
-    expect(cards(container).every((b) => b.classList.contains("gc-host-hit"))).toBe(true);
-  });
-
   it("wears the PER-UNIT hue by fleet POSITION, and the frame carries the ISSUE's own", () => {
     const { container } = render(<GachaFleet active />);
     expect(cards(container).map((b) => b.style.getPropertyValue("--cv-rar"))).toEqual([
@@ -313,8 +308,10 @@ describe("the cover's tap grammar", () => {
     const { container } = render(<GachaFleet active />);
     act(() => void fireEvent.click(heroCard(container)));
     expect(document.body.dataset.sheet).toBe("open");
-    // …and a real outside tap still closes it
-    act(() => void fireEvent.click(document.body));
+    // …and a real outside tap still closes it — the hero above the sheet included: the sheet's own
+    // catcher covers it (ISS-77; under the retired listener the full-bleed hero was exempt, so on this
+    // layout almost nothing counted as outside)
+    act(() => void fireEvent.click(document.querySelector(".bs-catch")!));
     expect(document.body.dataset.sheet).toBeUndefined();
   });
 
