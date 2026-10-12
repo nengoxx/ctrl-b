@@ -7482,6 +7482,36 @@ body[data-sheet="open"] .kit .kit-composer {
   overflow-y: auto;
   overscroll-behavior: contain; /* scrolling the body never chains to the page behind the sheet */
 }
+/* THE QUIET SCROLLBAR (ISS-74; the owner's scrollbar ruling 2026-10-10, recorded on ISS-81) — ONE shared rule
+ * for any kit scroller whose bar should stay out of the way: the sheet body (BottomSheet puts the class on
+ * `.bs-body`, so every sheet in every theme), next the shell scroller (ISS-81) and gacha's dossier services
+ * list (ISS-75). Never a second copy. WHY: Android Chrome's overlay bar appears when a freshly mounted
+ * scroller shows up and only starts fading after a real scroll, so a sheet opened sat with its bar painted.
+ * DESKTOP (fine pointer): a THIN bar (THEME_ENGINE's "thin + themed thumb"), invisible at rest, revealed
+ * while scrolling (`[data-scrolling]`, stamped by `lib/scrollingStamp.ts` — CSS can't see "is scrolling")
+ * and on hover (so it stays usable as a drag control). A transparent bar keeps its thin gutter, so nothing
+ * reflows when it shows. Chromium ≥121 and Firefox both honour the standard `scrollbar-*` properties —
+ * which in Chromium SUPERSEDE a theme's `::-webkit-scrollbar` styling for this scroller (and
+ * `scrollbar-color` inherits into nested scrollers): every kit sheet gets this thin gutter, and a theme
+ * that styled its bar re-colours the reveal thumb in its own sheet (vapor.css does, in its magenta). */
+.kit .kit-quiet-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.kit .kit-quiet-scrollbar:hover,
+.kit .kit-quiet-scrollbar[data-scrolling] {
+  scrollbar-color: var(--text-3) transparent;
+}
+/* PHONE (touch): hidden outright — the house idiom (the composer textarea, gacha's `.cv-stack`); the
+ * ::-webkit rule covers pre-121 Chromium / older WebKit. It still scrolls, with no position indicator. */
+@media (pointer: coarse) {
+  .kit .kit-quiet-scrollbar {
+    scrollbar-width: none;
+  }
+  .kit .kit-quiet-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
 /* sr-only — ONE recipe, five users: the sheet's close button (keyboard/AT parity without a visible ✕),
  * the tools menu's native agent radios (A6 — real radios for real arrow-key group semantics, with the
  * `.tools-row` beside them as the visual; its focus ring is in the tools block), the media gallery's

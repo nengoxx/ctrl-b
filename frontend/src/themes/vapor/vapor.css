@@ -690,6 +690,11 @@
   /* Chrome paints a light box where a horizontal and vertical scrollbar meet — a white flash against
      the dark theme at the end of any stray horizontal scrollbar. Make it transparent. */
   ::-webkit-scrollbar-corner { background: transparent; }
+  /* ISS-74 — the kit's quiet scrollbar (sheet bodies; kit.css `.kit-quiet-scrollbar`) sets a standard
+     `scrollbar-color`, which in Chromium ≥121 supersedes the `::-webkit-scrollbar` pair above for that
+     scroller. Its desktop REVEAL thumb therefore takes vapor's magenta here, so a vapor sheet keeps the
+     look; the rest state (transparent) and the touch arm (hidden) stay the kit's. */
+  .kit-quiet-scrollbar:hover, .kit-quiet-scrollbar[data-scrolling] { scrollbar-color: var(--magenta) transparent; }
   ::selection { background: var(--magenta); color: #fff; }
 }
 /* end @scope ([data-skin="vapor"]) */
