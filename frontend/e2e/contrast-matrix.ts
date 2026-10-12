@@ -27,7 +27,7 @@ export interface ThemeMatrix {
   bar: string[];
   /** An optional PER-THEME SETTINGS SEED (D52 G6): the `ui.themeSettings[<theme>]` overrides this row is
    *  probed under. It exists because a theme can own a palette axis of its own — gacha's dossier picker
-   *  (`body[data-gc-dossier]`, seven options) re-tints a whole surface without touching mode or accent, so
+   *  (`body[data-gc-dossier]`, eight options) re-tints a whole surface without touching mode or accent, so
    *  before this the harness had NO WAY TO EXPRESS it and four of five palettes went unmeasured.
    *
    *  The rows deliberately do NOT form a product: §4.4's "Gate coverage" ruling is 7 accent rows (dossier
@@ -94,23 +94,30 @@ export const CONTRAST_MATRIX: ThemeMatrix[] = [
 
 /** The extra rows the ACCENT-cross-MODE product cannot express: a theme's own palette axis, seeded through
  *  `ThemeMatrix.settings` (D52 G6, §4.4 "Gate coverage"). Each is the theme's DEFAULT accent + one value of
- *  its private axis — the other half of "8 accent rows + 7 dossier rows" (§4.4 ruled five; G6.1
- *  appended two).
+ *  its private axis — the other half of "8 accent rows + 8 dossier rows" (§4.4 ruled five; G6.1
+ *  appended two, ISS-76 one).
  *
  *  Kept as a separate export rather than folded into `CONTRAST_MATRIX` because that list has three other
  *  consumers (the kit-render sweep's `bar`, and two drift guards that assert it equals the registry's
  *  palettes exactly) — a settings row is not a palette row and must not appear in those. */
 export const SETTINGS_MATRIX: ThemeMatrix[] = [
   // gacha's DOSSIER picker (§4.4 family 3). `neon-purple` is the theme default and is therefore already
-  // covered by the seven accent rows above, so it is NOT repeated here — these are the other six (G6.1
-  // appended cyber-teal + forest-green, which the coverage guard in themeContract.test.ts demands).
-  ...["slip", "sunset-orange", "rose-pink", "aurora-violet", "cyber-teal", "forest-green"].map(
-    (p) => ({
-      theme: "gacha",
-      modes: ["dark"],
-      accents: ["arcade"], // the default accent: the dossier rows vary ONE axis at a time
-      bar: ["fleet", "agent", "conf"],
-      settings: { dossierPalette: p },
-    }),
-  ),
+  // covered by the seven accent rows above, so it is NOT repeated here — these are the other seven (G6.1
+  // appended cyber-teal + forest-green, ISS-76 eridu-blue — the coverage guard in themeContract.test.ts
+  // demands each).
+  ...[
+    "slip",
+    "sunset-orange",
+    "rose-pink",
+    "aurora-violet",
+    "cyber-teal",
+    "forest-green",
+    "eridu-blue",
+  ].map((p) => ({
+    theme: "gacha",
+    modes: ["dark"],
+    accents: ["arcade"], // the default accent: the dossier rows vary ONE axis at a time
+    bar: ["fleet", "agent", "conf"],
+    settings: { dossierPalette: p },
+  })),
 ];

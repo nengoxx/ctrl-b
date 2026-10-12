@@ -152,6 +152,10 @@ export const gacha: ThemeDef = {
     // shipped four are magenta/orange/rose/violet, i.e. the whole cool half of the wheel was unoccupied,
     // and these are the two remaining panels furthest from it (≥91° LCh hue clearance, where amber-gold's
     // fill sits 15° from sunset-orange's and midnight-blue's 31° from aurora-violet's).
+    //
+    // ISS-76 appended `eridu-blue` (label `Blue`, owner 2026-10-10): not a sampled panel but a palette
+    // DERIVED from the eridu accent block, so an Eridu page gets a sheet in its own blue family (Teal
+    // "looks a little bit off" there). Its derivation + measured gate values are on its tokens.css block.
     dossierPalette: {
       type: "seg",
       label: "Dossier",
@@ -164,6 +168,7 @@ export const gacha: ThemeDef = {
         { val: "aurora-violet", label: "Aurora", swatch: "#7e37a5" },
         { val: "cyber-teal", label: "Teal", swatch: "#007c8c" },
         { val: "forest-green", label: "Forest", swatch: "#337848" },
+        { val: "eridu-blue", label: "Blue", swatch: "#006ddc" },
       ],
       default: "neon-purple",
     },

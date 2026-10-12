@@ -448,6 +448,8 @@ describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)",
       // G6.1 — appended IN ORDER after aurora, so an existing owner selection keeps its position
       "cyber-teal",
       "forest-green",
+      // ISS-76 — the Eridu-derived blue, appended last for the same reason
+      "eridu-blue",
     ]);
     expect(options.map((o) => o.label)).toEqual([
       "Slip",
@@ -457,6 +459,7 @@ describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)",
       "Aurora",
       "Teal",
       "Forest",
+      "Blue",
     ]);
     expect(field?.type === "seg" && field.default).toBe("neon-purple");
     // every option carries its chip — the whole reason the §4.9 `swatch` slot was committed
@@ -471,6 +474,7 @@ describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)",
       ["aurora-violet", "#7e37a5"],
       ["cyber-teal", "#007c8c"],
       ["forest-green", "#337848"],
+      ["eridu-blue", "#006ddc"],
     ]) {
       expect(options.find((o) => o.val === val)?.swatch, `${val} chip`).toBe(swatch);
       const block = blockFor(tokens, `body[data-gc-dossier="${val}"]`) ?? "";
@@ -526,7 +530,7 @@ describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)",
   it("the darks share one block for the values the §4.4 table lists as shared", () => {
     // The selector list is EQUAL-specificity with the per-palette blocks on purpose (a
     // `:not([data-gc-dossier="slip"])` shorthand would outrank them), so it grows by one member per
-    // palette — G6.1 took it from four to six, and this pin is what makes a forgotten member fail loudly
+    // palette — G6.1 took it from four to six (ISS-76 to seven), and this pin is what makes a forgotten member fail loudly
     // instead of silently dropping that palette back to slip's ink/line/badge.
     const block = blockFor(
       tokens,
@@ -537,6 +541,7 @@ describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)",
         'body[data-gc-dossier="aurora-violet"]',
         'body[data-gc-dossier="cyber-teal"]',
         'body[data-gc-dossier="forest-green"]',
+        'body[data-gc-dossier="eridu-blue"]',
       ].join(",\n    "),
     );
     expect(block, "the shared dark-dossier block is missing").toBeTruthy();

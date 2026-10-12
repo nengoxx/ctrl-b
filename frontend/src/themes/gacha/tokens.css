@@ -19,8 +19,8 @@
  *     midnight + indigo (family 1, base ramp only) + ember + glacier + nebula + eridu + jade (family 2, the
  *     trio moves too; jade added at G6.2). An accent block NEVER writes a `--gc-dossier-*` token.
  *   · the DOSSIER axis (`body[data-gc-dossier]`, gacha-private — a `settings` seg stamped by GachaRoot) —
- *     SEVEN options: slip (the G2 light sheet; NO block at all, it is the absence of an override) + six
- *     dark palettes, default `neon-purple`. A dossier block writes ONLY `--gc-dossier-*`.
+ *     EIGHT options: slip (the G2 light sheet; NO block at all, it is the absence of an override) + seven
+ *     dark palettes (eridu-blue added by ISS-76), default `neon-purple`. A dossier block writes ONLY `--gc-dossier-*`.
  * The dossier SURFACE still READS four accent/global things by design (the top strip's `--gc-brand-fill`,
  * slip's sticker button `--accent-fill`/`--accent-ink`, the star badge's `--gc-star*`) — that crossing is
  * covered by the bounded cross-axis probes in e2e/contrast.spec.ts, not by a 7x5 matrix.
@@ -1182,12 +1182,13 @@
     }
 
     /* ══ THE DOSSIER AXIS (§4.4 family 3, G6) ═════════════════════════════════════════════════════════
-     * `body[data-gc-dossier]`, stamped by GachaRoot from the `dossierPalette` setting. SEVEN options:
+     * `body[data-gc-dossier]`, stamped by GachaRoot from the `dossierPalette` setting. EIGHT options:
      *   · `slip` — the shipped G2 light sheet. It has NO BLOCK: it is the ABSENCE of an override, not a
      *     seventh copy of the values already on `:scope`/`body` above.
-     *   · six DARK palettes, sampled from `design/prototypes/gacha/dossier palette example.png` and
+     *   · six DARK palettes sampled from `design/prototypes/gacha/dossier palette example.png` and
      *     NORMALISED so every gated pair passes (do not "restore" a normalised value toward the mock's
-     *     literal — the literals are what failed).
+     *     literal — the literals are what failed) — plus a SEVENTH, eridu-blue (ISS-76), which is not
+     *     sampled at all: it is DERIVED from the eridu ACCENT block's own values (see its block).
      *
      * SAMPLING METHOD (re-derived and VERIFIED at G6.1, so a next reader can reproduce any of these):
      * the 4x2 panel grid sits at `(14 + 384c, 40 + 506r)`, each panel 347x440. Panel-relative windows —
@@ -1202,7 +1203,7 @@
      *
      * THE SHARED HALF first (the §4.4 table's own "shared across all four" row, which G6.1's two cool
      * palettes join unchanged — neither needed a per-palette ink-2, the sunset precedent), as an explicit
-     * six-selector list rather than a `:not([data-gc-dossier="slip"])` shorthand: that shorthand carries
+     * selector list (seven since ISS-76) rather than a `:not([data-gc-dossier="slip"])` shorthand: that shorthand carries
      * HIGHER specificity than the per-palette blocks, which would make the per-palette overrides depend on
      * source order to win. Equal specificity + source order is the safe shape. */
     body[data-gc-dossier="neon-purple"],
@@ -1210,7 +1211,8 @@
     body[data-gc-dossier="rose-pink"],
     body[data-gc-dossier="aurora-violet"],
     body[data-gc-dossier="cyber-teal"],
-    body[data-gc-dossier="forest-green"] {
+    body[data-gc-dossier="forest-green"],
+    body[data-gc-dossier="eridu-blue"] {
       --gc-dossier-ink: #f4f2ff;
       /* THE INNER HAIRLINE (G6.3). Was a flat `#ffffff20`. In the mock the tile / row border is not white —
        * it is a dimmer member of the panel's own RIM (`--gc-dossier-outline`), which is why the components
@@ -1509,6 +1511,52 @@
       --gc-dossier-act-hi: #52b570;
       --gc-dossier-shadow: 0 -20px 80px #33784855;
       --gc-dossier-blank: #14302c;
+    }
+    /* ERIDU-BLUE (ISS-76, owner 2026-10-10: "a blue dossier palette, matched to the app's blue palette";
+     * label `Blue`). The ONE dark palette NOT sampled from the example sheet: it is DERIVED from the eridu
+     * ACCENT block above (brand trio #3a86ff / #2fd8f5 / #3fe9bd, radial crown #26305e → #0f1120 →
+     * #06070c, heading #67a2ff), so a gacha page on Eridu gets a sheet in its own family where Teal "looks
+     * a little bit off". The write-disjointness rule still holds — every value below is a LITERAL copy of
+     * (or a recipe over) an eridu value, never a var() reach across into the accent axis, so the sheet
+     * stays blue whatever accent is live. Derivation (reproducible; the owner eyeballs the result):
+     *  · SHEET = the eridu radial's own three stops, verbatim (crown · 48% stop · floor) — the app's
+     *    backdrop gradient carried onto the sheet, which keeps the "gradient at the top" the owner liked.
+     *  · FILL = eridu's brand-1 deepened in LCh at its OWN hue (285.3°): #3a86ff takes white at only 3.48,
+     *    so the top stop is L* 47 (#006ddc, 5.00 — the family's both-extremes ≥ 4.5 invariant, cyber-teal's
+     *    deepening by the hue-holding route, because an HSL deepen drifts the hue 9° toward violet) and the
+     *    bottom L* 38 (#0057b3, 6.96; a 37% luminance fall, mid-family between neon's 21% and teal's 50%).
+     *  · G6.1's recipe on that fill start: act-rim = lightened to 1.12× its luminance · act-hi = +0.18 HSL
+     *    lightness · shadow = the fill start at 55 · kicker = the accent. `blank` = the card composited on
+     *    `mid`, lightened 6% toward white.
+     *  · ACCENT / KICKER = eridu's `--gc-heading` (its own brand-1 lightened for text on dark) · LED = brand-1
+     *    itself · CARD = brand-1 lifted at 7% (aurora/rose's alpha) · NAME = brand-1 60% toward white ·
+     *    OUTLINE = brand-1 mixed 50% / 70% into the crown · INK-2 and LED-DIM = neon-purple's own (the
+     *    default's) HSL saturation + lightness rotated onto eridu's HSL hue (217°).
+     * Modelled against the gate's stacks before shipping: kicker/from 4.91 (the tightest) · ink-2 5.31
+     * over the caption stack · accent/card 5.51 · act-line 3.57 · led 4.06/3.73 · led-dim 3.86/3.55
+     * (card/hovered) · white on the fill 5.00/6.96. HUE CLEARANCE (the G6.1 rule the row asked to check):
+     * the fill sits at LCh 285°, 31.5° from aurora-violet's 316.6° — exactly midnight-blue's 31°, the
+     * clearance G6.1 passed over — and 24.5° from neon-purple's 309.6°; the owner's explicit ask outranks
+     * that rule, so it is recorded here rather than solved. */
+    body[data-gc-dossier="eridu-blue"] {
+      --gc-dossier-from: #26305e;
+      --gc-dossier-mid: #0f1120;
+      --gc-dossier-to: #06070c;
+      --gc-dossier-outline: #305bae;
+      --gc-dossier-outline-top: #346ccf;
+      --gc-dossier-card: #3a86ff12;
+      --gc-dossier-ink-2: #94aace;
+      --gc-dossier-name: #b0cfff;
+      --gc-dossier-accent: #67a2ff;
+      --gc-dossier-kicker: #67a2ff;
+      --gc-dossier-led: #3a86ff;
+      --gc-dossier-led-dim: #7087ab;
+      --gc-dossier-act-fill: linear-gradient(180deg, #006ddc, #0057b3);
+      --gc-dossier-act-ink: #ffffff;
+      --gc-dossier-act-rim: #0073e8;
+      --gc-dossier-act-hi: #399bff;
+      --gc-dossier-shadow: 0 -20px 80px #006ddc55;
+      --gc-dossier-blank: #20273c;
     }
 
     /* ══ THE NAME-FACE ALTERNATES (the `nameFont` picker, R17 rider 2026-08-06) ═══════════════════════

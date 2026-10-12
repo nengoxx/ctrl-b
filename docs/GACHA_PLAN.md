@@ -360,13 +360,17 @@ The four the owner shortlisted, sampled from `design/prototypes/gacha/dossier pa
   panels).** Setting key **`dossierPalette`** (gacha `settings` map, type `seg`), default
   **`neon-purple`**, options in this order:
   `slip` ("Slip") · `neon-purple` ("Neon") · `sunset-orange` ("Sunset") · `rose-pink` ("Rose")
-  · `aurora-violet` ("Aurora") · `cyber-teal` ("Teal") · `forest-green` ("Forest") — each with
+  · `aurora-violet` ("Aurora") · `cyber-teal` ("Teal") · `forest-green` ("Forest") · `eridu-blue`
+  ("Blue") — each with
   `swatch` = its action-fill start hex (slip's = its paper sheet top `--gc-dossier-from`
   value); value lands as `body[data-gc-dossier="<id>"]`
   (absent/`slip` = today's rules untouched). *(G6.1 pick rationale + the measured panels: the
   §7.7 G6.1 addendum. amber-gold was passed over — its accent is ΔE 9.5 from `--gc-star`, the
   eridu-carve-out collision class on the very surface that carries the stars; midnight-blue
-  sits inside neon/aurora's hue family. One block + one option row reverts either call.)* Each DARK option's tokens block sets, from its
+  sits inside neon/aurora's hue family. One block + one option row reverts either call.)*
+  *(AMENDED by ISS-76, owner 2026-10-10: `eridu-blue` appended — not a sampled panel but DERIVED
+  from the eridu accent block's values, swatch `#006ddc`; the derivation + gate values ride its
+  tokens.css block.)* Each DARK option's tokens block sets, from its
   table row + the shared list: `--gc-dossier-from/-to/-card/-ink/-ink-2/-line/-badge/
   -art-shadow` + minted **`--gc-dossier-kicker`** (its kicker column) + **`--gc-dossier-accent`**
   (its accent-ink column) + **`--gc-dossier-led`/`-led-dim`** (per the dots bullet) +
