@@ -31,8 +31,9 @@ import type { ResolvedArt } from "./roster";
 //     reachable: focus leaving the overlay would put the next Escape on the sheet beneath.
 //   · A TAP ANYWHERE closes (the owner's wording). The close button stops propagation so its own click
 //     dismisses ONCE — two calls would start two View Transitions, the second skipping the first.
-//   · The dossier's tap-outside listener exempts `.gc-art-view` (GachaFleet) — without that, the tap that
-//     dismisses the art would dismiss the dossier under it too.
+//   · The dossier's tap-outside is the sheet's own catcher (ISS-77), which lives inside `.bs-root` (z 40);
+//     this layer is a sibling at z 46, so the tap that dismisses the art lands HERE and never reaches the
+//     catcher — the dossier under it stays.
 export function GachaArtShowcase({
   hostName,
   art,

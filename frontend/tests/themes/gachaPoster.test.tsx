@@ -403,24 +403,20 @@ describe("select-then-act", () => {
     expect(dossierName()).toBe("solo");
   });
 
-  it("the OPENING tap does not dismiss the dossier it just opened (the `.gc-host-hit` exemption)", () => {
-    // Re-verified ON THE MORPH PATH (it is the shipped one now): the opening click is the same click the
-    // document listener sees, and the transition only changes WHEN the sheet commits — so the exemption
-    // has to hold with the callback landing a tick later, not just on the plain open. Since the
-    // amendment this is the FIRST tap, which makes it strictly harder: there is no earlier tap to have
-    // settled anything.
+  it("the OPENING tap does not dismiss the dossier it just opened (the catcher mounts after it)", () => {
+    // Re-verified ON THE MORPH PATH (it is the shipped one now): the transition only changes WHEN the
+    // sheet commits — a tick later, inside the update callback — and the sheet's own catcher (ISS-77)
+    // mounts WITH the sheet, so the opening tap has already landed on the slice by then.
     const vt = deferVT();
     const { container } = render(<GachaFleet active />);
     act(() => void fireEvent.click(slices(container)[2]));
     vt.run(0);
     expect(dossierName()).toBe("vault");
     expect(document.body.dataset.sheet).toBe("open");
-    // the tap-outside listener runs on the document; a slice is exempt by its semantic class
-    expect(slices(container)[2].classList.contains("gc-host-hit")).toBe(true);
-    // …and a real outside tap still closes it. Read through `body[data-sheet]` rather than through the
-    // dossier's presence: the sheet RETAINS its content for the 420 ms exit slide, so the h2 outlives
-    // the close by design.
-    act(() => void fireEvent.click(document.body));
+    // …and a real outside tap — which lands on the catcher, slices included — still closes it. Read
+    // through `body[data-sheet]` rather than through the dossier's presence: the sheet RETAINS its
+    // content for the 420 ms exit slide, so the h2 outlives the close by design.
+    act(() => void fireEvent.click(document.querySelector(".bs-catch")!));
     expect(document.body.dataset.sheet).toBeUndefined();
   });
 });

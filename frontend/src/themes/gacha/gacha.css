@@ -3155,10 +3155,14 @@
       mask-image: var(--gc-dossier-texture-mask);
     }
     /* The grab bar inverts with the surface: the kit's translucent-white grip is invisible on a light
-     * panel (the prototype's own dark handle at 30%). */
+     * panel (the prototype's own dark handle at 30%). OPAQUE, pre-mixed to that same 30% look (ISS-78):
+     * an `opacity` grip is see-through, and the G6.4 dot field above puts a dot row exactly on its centre
+     * line, so the dots showed INSIDE the bar. Mixed against `--gc-dossier-from` — the sheet's top stop,
+     * which is what the grip sits on (12px into a 3-stop ramp whose next stop is at 30%) — both inputs are
+     * opaque, so there is no alpha and the dots tuck under the handle: cosmos's own recipe (cosmos.css
+     * `.bs-grip`), the half of the texture port G6.4 left behind. */
     .bs-grip {
-      background: var(--gc-dossier-ink);
-      opacity: 0.3;
+      background: color-mix(in srgb, var(--gc-dossier-ink) 30%, var(--gc-dossier-from));
     }
     /* THE KEYBOARD FOCUS RING, re-coloured for this surface (G6). The kit's global ring is
      * `outline: 2px solid var(--accent)` — the NIGHT pink, which is exactly the token that measures 2.62
@@ -3264,7 +3268,9 @@
      * overlay — so on the open leg the badge exists in the new capture too, and a named element is lifted
      * OUT of the root snapshot and painted above it: the badge would float over the artwork it is supposed
      * to be behind. The reported artefact is the `detail` morph; `showcase` keeps the badge inside the page
-     * snapshot, where occlusion still works. */
+     * snapshot, where occlusion still works — on the OPEN leg and in every OLD capture. The CLOSE leg's new
+     * capture is the one exception (ISS-79, the showcase block below): there the badge must land ABOVE the
+     * returning portrait, so GachaFleet names it inline after the old capture. */
     :scope[data-transition="detail"] .gc-dossier .art-rar {
       view-transition-name: dossier-rar;
     }
@@ -3326,10 +3332,38 @@
     :scope[data-transition="showcase"] .gc-art-view img {
       view-transition-name: capsule-shell;
     }
+    /* THE BADGE ON THE CLOSE LEG (ISS-79). Named inline by GachaFleet's `closeShowcase` for the NEW
+     * capture only (never the old one, never the open leg — the `detail` block's note above), so this is
+     * a new-only group: the `detail` block's held fade, re-timed to this flight's 420 ms, brings the stars
+     * up over the last ~115 ms as the portrait lands instead of popping on top after the teardown.
+     * Opacity only (§14.11). */
+    :scope[data-transition="showcase"]::view-transition-new(dossier-rar) {
+      animation: gacha-rar-in 420ms both;
+    }
 
     .gc-dossier {
       position: relative; /* anchors the close corner below — and the G6.4 watermark */
-      padding-bottom: calc(2px + env(safe-area-inset-bottom));
+      /* the gesture-bar inset lives on `.gc-svcs` (ISS-75): see there */
+      padding-bottom: 2px;
+      /* ONLY THE SERVICES SCROLL (ISS-75). A machine with many services used to scroll the WHOLE body —
+       * cropping the portrait and carrying the ✕ away. So the scroll moves down one level: the kit body
+       * (made a column below, the kit primitive untouched) bounds this box to the capped sheet, the head /
+       * metrics / actions keep their size, and `.gc-svcs` is the one flexible scroller. The body keeps its
+       * own `overflow-y: auto` as the FALLBACK: when the fixed part plus the list's floor outgrows the cap
+       * (a short landscape viewport, the keyboard up) the content overflows this box and the body scrolls
+       * as before — never clipped. Children use padding, never margins, so leaving block flow collapses
+       * nothing; the two absolute children (the ✕, the watermark) are out of flow either way. */
+      display: flex;
+      flex-direction: column;
+      flex: 0 1 auto;
+      min-height: 0;
+    }
+    .bs-body:has(> .gc-dossier) {
+      display: flex;
+      flex-direction: column;
+    }
+    .gc-dossier > :not(.gc-svcs) {
+      flex-shrink: 0;
     }
     /* ── THE CHARACTER WATERMARK (G6.4, owner: "the character image as a background of the bottom sheet,
      *    like the dotted texture — faded, so it's visible, positioned center-right, in the empty zone
@@ -3860,9 +3894,37 @@
      * the `[data-pair]` token blocks and the component's `index` prop, which existed for nothing else. */
     .gc-svcs {
       display: grid;
+      /* rows keep their own height when the list is shorter than its content (a grid's default would
+       * stretch the tracks to fill a box the flex parent sized) */
+      align-content: start;
       gap: 7px;
-      padding: 0 14px 14px;
+      /* 4px on top (ISS-75): a scroll container clips its overflow, and the kit focus ring (2px outline
+       * + 2px offset) on the FIRST row would otherwise be cut at the list's top edge.
+       * The GESTURE-BAR INSET is here, not on `.gc-dossier` (where it was): this is the last in-flow box,
+       * so its bottom edge ends whatever scrolls — the list itself when it scrolls, or the BODY in the
+       * short-viewport fallback, where the dossier box is shrunk under its content and a padding on IT
+       * would sit mid-content and leave the last row under the bar. One term moved, no new rule; with no
+       * scrolling at all the total below the last row is unchanged (14 + 2 + inset). */
+      padding: 4px 14px calc(14px + env(safe-area-inset-bottom));
       position: relative; /* G6.4 — paints over the watermark (`.gc-dossier-mark`) */
+      /* THE ONE SCROLLER (ISS-75, see `.gc-dossier`). Its bar is the kit's quiet one
+       * (`.kit-quiet-scrollbar`, on the element; the stamp is GachaHostDetail's). NO
+       * `overscroll-behavior` here: at its end a drag CHAINS to the body — which is what lets the list
+       * hand the gesture over in the short-viewport fallback (phone landscape) — and the body's own
+       * `contain` (kit) still stops it at the page. Up to two rows it never shrinks at all: a short list
+       * is the sheet exactly as before, and in a short viewport the body's fallback scroll takes it. */
+      flex: 0 0 auto;
+      overflow-y: auto;
+    }
+    /* From a THIRD row on it gives way to the cap, down to a FLOOR of two rows (the row's "about two
+     * rows"): the tallest row content (the kit's service icon, or the 12px name at the shell's 1.5 line
+     * height) + 9px×2 padding + 1px×2 border, two of them, the 7px gap between and the list's own
+     * padding (4px top, 14px + the inset bottom — border-box). Gated on the third row so the floor can
+     * never GROW a shorter list. */
+    .gc-svcs:has(> :nth-child(3)) {
+      --gc-svc-row-h: calc(max(var(--svc-icon, 20px), 18px) + 20px);
+      flex-shrink: 1;
+      min-height: calc(2 * var(--gc-svc-row-h) + 7px + 4px + 14px + env(safe-area-inset-bottom));
     }
     .gc-svc {
       display: flex;

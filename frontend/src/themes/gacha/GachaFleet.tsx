@@ -241,10 +241,10 @@ export function GachaFleet({ active }: { active: boolean }) {
   }, []);
 
   // ── THE ART SHOWCASE (owner request 2026-08-02) — the dossier PORTRAIT, full screen. Two pieces of
-  //    state, held here because this is where the sheet, the morph machinery and the tap-outside listener
-  //    already live: WHETHER the overlay is up, and WHICH entrance carried it (`morph` = a View Transition
-  //    is flying the portrait; `fade` = the plain path, where the CSS opacity entrance stands in). Null is
-  //    closed — one variable, so "open" and "how it opened" can never disagree.
+  //    state, held here because this is where the sheet and the morph machinery already live: WHETHER
+  //    the overlay is up, and WHICH entrance carried it (`morph` = a View Transition is flying the
+  //    portrait; `fade` = the plain path, where the CSS opacity entrance stands in). Null is closed —
+  //    one variable, so "open" and "how it opened" can never disagree.
   const [showArt, setShowArt] = useState<"morph" | "fade" | null>(null);
   // THE SHOWCASE GENERATION — the dossier's `gen` discipline above, applied to this layer (Codex G2-close
   // M1). Its two transitions carry the same async hazard: the update callback runs at the next rendering
@@ -330,7 +330,7 @@ export function GachaFleet({ active }: { active: boolean }) {
       morphImg.style.setProperty("view-transition-name", "capsule-shell");
       const myPrep = { card: morphImg, avatar, badge };
       prep.current = myPrep;
-      runViewTransition(() => {
+      void runViewTransition(() => {
         // Restore ONLY while still the owner — a newer intent may have cleaned and RE-STAMPED these
         // same nodes, and the stale callback must not undo its work (M1). Ownership lost ⇒ the newer
         // intent already restored (or re-claimed) them; nothing here is leaked.
@@ -511,11 +511,11 @@ export function GachaFleet({ active }: { active: boolean }) {
     },
     [hosts],
   );
-  // Leaving the tab (or unmounting) CLOSES the dossier — the M3-confirm ruling: a nav tap is "outside"
-  // under the owner's tap-outside wording, so the click listener already closes on pointer navigation;
-  // clearing here makes keyboard/programmatic navigation behave identically instead of resurrecting the
-  // sheet on return. It also voids any morph still in flight (its callback would otherwise re-open a
-  // dossier over a screen the user has already left).
+  // Leaving the tab (or unmounting) CLOSES the dossier — the M3-confirm ruling: navigation is "outside"
+  // under the owner's tap-outside wording (and the open sheet's `.bs-root` covers the bottom tabs anyway,
+  // so its catcher takes a pointer tap there — ISS-77); clearing here makes keyboard/programmatic
+  // navigation close it too instead of resurrecting the sheet on return. It also voids any morph still
+  // in flight (its callback would otherwise re-open a dossier over a screen the user has already left).
   useEffect(() => {
     // The ref OBJECT is stable, so capturing it keeps the cleanup off a stale `.current` read.
     const ticket = gen;
@@ -616,7 +616,7 @@ export function GachaFleet({ active }: { active: boolean }) {
       return;
     }
     const avatar = document.querySelector<HTMLElement>(".gc-dossier .avatar");
-    runViewTransition(() => {
+    void runViewTransition(() => {
       // Void intent: touch NOTHING. The avatar this closed over may now belong to a different machine's
       // dossier (React re-uses the node across a swap) — suppressing it would leave that dossier's own
       // morph without a destination, and re-raising the overlay would put the art back over a screen the
@@ -641,7 +641,16 @@ export function GachaFleet({ active }: { active: boolean }) {
       return;
     }
     const myPrep = artPrep.current;
-    runViewTransition(() => {
+    // THE BADGE ON THE CLOSE LEG (ISS-79 — the G7 recipe, mirrored). The flying portrait is a named group,
+    // painted ABOVE the root snapshot for the whole flight, and the star lozenge is NOT named under
+    // `showcase` (gacha.css) — so it rides inside the root snapshot, hidden under the portrait, and pops
+    // on top in one frame when the pseudos are torn down. Named `dossier-rar` for the NEW capture only, it
+    // gets its own new-only group (appended after `capsule-shell`, which the old capture already
+    // registered, so it paints above the landing portrait) and gacha.css's held `gacha-rar-in` fades it up
+    // as the frame lands. NEVER in the old capture: there it sits under the opaque full-screen art, and as
+    // its own group it would float above that art from the first frame — hence set INSIDE the callback.
+    let badge: HTMLElement | null = null;
+    void runViewTransition(() => {
       // Release only what is still OURS: a teardown may have released it already, or a newer showcase may
       // have re-suppressed the very same avatar — stripping that would put two `capsule-shell` nodes in
       // its own closing capture.
@@ -650,8 +659,16 @@ export function GachaFleet({ active }: { active: boolean }) {
         myPrep.avatar.style.removeProperty("view-transition-name");
       }
       if (artGen.current !== mine) return; // a teardown, or a newer showcase, owns this layer now
+      badge = document.querySelector<HTMLElement>(".gc-dossier .art-rar");
+      badge?.style.setProperty("view-transition-name", "dossier-rar");
       setShowArt(null);
-    }, "showcase");
+    }, "showcase").then(() => {
+      // Drop it once the transition is over (finished OR skipped — a skipped one settles in microtasks,
+      // before a superseding transition's old capture). Only if it is still OUR value: a capsule morph's
+      // lingering-badge suppression may have claimed the same node with `none` meanwhile.
+      if (badge?.style.getPropertyValue("view-transition-name") === "dossier-rar")
+        badge.style.removeProperty("view-transition-name");
+    });
   }, [showArt, releaseArtName]);
   // THE ANDROID BACK GESTURE (ISS-53). The showcase is full-screen, so Back is its own dismissal — the
   // overlay's ✕ / tap / Escape all call the guard's closer, and `closeShowcase` runs in the guard's
@@ -668,49 +685,6 @@ export function GachaFleet({ active }: { active: boolean }) {
     const btn = document.querySelector<HTMLElement>(".gc-dossier .gc-art-btn");
     if (btn?.isConnected) btn.focus({ preventScroll: true });
   }, []);
-  // TAP-OUTSIDE DISMISS (owner ruling 2026-08-02). The primitive's own catcher stays OFF: it is a
-  // full-screen button, so it would eat the capsule tap that SWAPS the dossier before it ever reached the
-  // card. This is the same dismissal expressed as a document listener that names its exemptions — the
-  // sheet itself, a capsule card, a promo slide's hit area — and closes on anything else.
-  //
-  // Three deliberate choices:
-  //   · CLICK, not pointerdown: a pointerdown listener would dismiss on the first touch of a page SCROLL
-  //     or a banner swipe, which is a gesture, not a tap.
-  //   · the exemptions are why the OPENING tap can never close the sheet it just opened — every opener is
-  //     a card or a promo, so it is exempt by construction; no timestamp guard, nothing to tune.
-  //   · `defaultPrevented` is respected (the BottomSheet Escape convention): the banner marks the
-  //     synthetic click a finished DRAG produces, and that click must not double as a dismissal.
-  // The carousel's own controls (dots, prev/next) are NOT exempt — under the owner's wording they are
-  // outside, so tapping one closes the dossier and moves the strip. Flagged for the eyeball round.
-  useEffect(() => {
-    if (!sheetOpen) return;
-    const onClick = (e: MouseEvent) => {
-      if (e.defaultPrevented) return;
-      const target = e.target instanceof Element ? e.target : null;
-      // The sheet, the two things that OPEN one — and any layer standing ABOVE it: the dossier's own
-      // shutdown button raises the shared ConfirmDialog, and its portrait raises the art showcase.
-      // Dismissing the sheet under a surface it spawned (on the tap that dismisses THAT surface, no
-      // less) would be the wrong reading of "outside". Same cooperative posture the primitive's Escape
-      // handler takes toward a layer above it.
-      // `.gc-host-hit` is the SEMANTIC exemption (GACHA_PLAN §12.6 ruling 5①), replacing the hardcoded
-      // `.gc-card` this list used to name: every control that opens or SELECTS a machine wears it — the
-      // capsule card, the banner's promo hit, a poster slice — so a new fleet layout is exempt by
-      // construction. Without it the second tap of select-then-act would dismiss the dossier on the very
-      // click that opened it. `.gc-slide-hit` STAYS beside it, and is not redundant: the hero and scene
-      // slides render that class on an inert `div` which names no machine and therefore carries no
-      // `gc-host-hit` — dropping it would newly close the dossier on a tap in the banner's copy block,
-      // which is a behavior change this slice is not making.
-      if (
-        target?.closest(
-          ".bs-root, .gc-host-hit, .gc-slide-hit, .gc-art-view, .modal-backdrop, .pm-backdrop",
-        )
-      )
-        return;
-      closeDossier();
-    };
-    document.addEventListener("click", onClick);
-    return () => document.removeEventListener("click", onClick);
-  }, [sheetOpen, closeDossier]);
   // The LIVE selection while open (so polls update the sheet), the retained one through the slide-out.
   const detail = selHost ? { host: selHost, index: selIndex } : shown;
   // ONE resolution of the dossier's art, read by the portrait and by the showcase it opens (§5.3's one
@@ -834,16 +808,22 @@ export function GachaFleet({ active }: { active: boolean }) {
       </div>
 
       {/* THE UNIT DOSSIER — the shared C3 primitive, skinned by gacha.css into the theme's one light
-          surface. `catchOutside={false}` (the owner-ruled precedent): the track stays interactive, so
-          tapping another capsule SWAPS the dossier instead of costing a close-then-open; flick-down,
-          Escape or a tap on the sr-only close still dismiss it. The prototype's 520 ms spring is the
-          shared 420 ms lifecycle here (the §4.9 ledger's accepted deviation). */}
+          surface. TAP-OUTSIDE is the primitive's OWN catcher (ISS-77, owner-ruled 2026-10-10): ANY tap
+          outside the sheet closes it — another machine included — and that tap ONLY closes; a second tap
+          opens the other machine. It replaced `catchOutside={false}` + a document click listener with an
+          exemption list, under which the cover's full-bleed hero (and the poster's slices) left almost no
+          pixel above the sheet that counted as "outside". The catcher is a full-screen button inside
+          `.bs-root` (z 40), so it consumes the closing tap by construction; the layers ABOVE the sheet
+          (the art showcase at 46, ConfirmDialog 50, PromptModal 60) are siblings at higher rungs and take
+          their own taps first. It mounts WITH the sheet, after the opening tap, so it never eats that
+          tap (the M3 morph's `enterInstant` commit included). The ✕, flick-down and Escape are unchanged.
+          The prototype's 520 ms spring is the shared 420 ms lifecycle here (the §4.9 ledger's accepted
+          deviation). */}
       <BottomSheet
         open={sheetOpen}
         onClose={closeDossier}
         labelledBy={titleId}
         closeLabel={CLOSE_DOSSIER_LABEL}
-        catchOutside={false}
         initialSnap={getSheetSnap(SHEET_KEY)}
         onSnapChange={persistSheetSnap}
         enterInstant={morphOpen}

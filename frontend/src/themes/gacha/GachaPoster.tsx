@@ -208,7 +208,7 @@ export function GachaPoster({
                   key={host.id}
                   type="button"
                   className={
-                    "po-slice gc-host-hit" +
+                    "po-slice" +
                     (online ? "" : " asleep") +
                     (isPicked ? " picked" : "") +
                     (held ? " busy" : "") +

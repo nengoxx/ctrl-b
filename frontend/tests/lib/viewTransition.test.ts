@@ -98,12 +98,12 @@ afterEach(() => {
 describe("runViewTransition — the unsupported path (jsdom: no startViewTransition)", () => {
   it("applies the update synchronously", () => {
     const update = vi.fn();
-    runViewTransition(update);
+    void runViewTransition(update);
     expect(update).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT stamp html[data-transition] (nothing is transitioning)", () => {
-    runViewTransition(() => {}, "tab");
+    void runViewTransition(() => {}, "tab");
     expect(document.documentElement.dataset.transition).toBeUndefined();
   });
 });
@@ -113,7 +113,7 @@ describe("runViewTransition — reduced motion", () => {
     const vt = installFakeVT();
     setUI({ motion: "reduced" });
     const update = vi.fn();
-    runViewTransition(update, "tab");
+    void runViewTransition(update, "tab");
     expect(update).toHaveBeenCalledTimes(1); // still applied…
     expect(vt.calls).toBe(0); // …but never wrapped
     expect(document.documentElement.dataset.transition).toBeUndefined();
@@ -124,14 +124,14 @@ describe("runViewTransition — the supported path", () => {
   it("wraps the update in a transition and applies it synchronously", () => {
     const vt = installFakeVT();
     const update = vi.fn();
-    runViewTransition(update);
+    void runViewTransition(update);
     expect(vt.calls).toBe(1);
     expect(update).toHaveBeenCalledTimes(1); // flushSync ⇒ committed before we return
   });
 
   it("stamps html[data-transition] for the given type and clears it when the transition settles", async () => {
     const vt = installFakeVT();
-    runViewTransition(() => {}, "tab");
+    void runViewTransition(() => {}, "tab");
     expect(document.documentElement.dataset.transition).toBe("tab");
     vt.transitions[0].settle();
     await flushMicrotasks();
@@ -141,7 +141,7 @@ describe("runViewTransition — the supported path", () => {
   it("leaves the DOM applied and swallows a skipped transition's `ready` rejection", async () => {
     const vt = installFakeVT();
     const update = vi.fn();
-    runViewTransition(update);
+    void runViewTransition(update);
     vt.transitions[0].rejectReady(new Error("AbortError"));
     // The callback already ran, so the state is correct regardless of the rejection…
     expect(update).toHaveBeenCalledTimes(1);
@@ -151,13 +151,51 @@ describe("runViewTransition — the supported path", () => {
   });
 });
 
+// ── The returned TEARDOWN signal (ISS-79): additive — a promise that settles once the transition is over,
+//    never rejecting, after the wrapper's own cleanup; already resolved when no transition ran. ──
+describe("runViewTransition — the returned promise", () => {
+  it("resolves at once on the instant path (nothing is transitioning)", async () => {
+    const done = vi.fn();
+    void runViewTransition(() => {}, "showcase").then(done);
+    await flushMicrotasks();
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves only when the transition settles, after the stamp is cleared", async () => {
+    const vt = installFakeVT();
+    let stampAtDone: string | undefined = "unset";
+    const done = vi.fn(() => {
+      stampAtDone = document.documentElement.dataset.transition;
+    });
+    void runViewTransition(() => {}, "showcase").then(done);
+    await flushMicrotasks();
+    expect(done).not.toHaveBeenCalled(); // in flight
+    vt.transitions[0].settle();
+    await flushMicrotasks();
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(stampAtDone).toBeUndefined(); // the wrapper's cleanup ran first
+  });
+
+  it("RESOLVES (never rejects) when the transition is skipped or aborted", async () => {
+    const vt = installFakeVT();
+    const done = vi.fn();
+    const failed = vi.fn();
+    void runViewTransition(() => {}, "showcase").then(done, failed);
+    vt.transitions[0].rejectReady(new Error("AbortError"));
+    vt.transitions[0].rejectFinished(new Error("AbortError"));
+    await flushMicrotasks();
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(failed).not.toHaveBeenCalled();
+  });
+});
+
 // ── The hardening delta over the extracted block (D52: "catch BOTH `.ready` AND `.finished`, and make the
 //    `data-transition` cleanup race-safe"). Both cases are real: starting a second transition SKIPS the
 //    running one, which rejects BOTH its promises and settles them AFTER the newer one has stamped. ──
 describe("runViewTransition — hardening", () => {
   it("swallows a SKIPPED transition's `finished` rejection and still clears the stamp", async () => {
     const vt = installFakeVT();
-    runViewTransition(() => {}, "tab");
+    void runViewTransition(() => {}, "tab");
     expect(document.documentElement.dataset.transition).toBe("tab");
     // `.finally()` would re-throw here → an unhandled rejection (vitest fails the run on one); `.then(f,f)`
     // is what makes the cleanup total.
@@ -169,8 +207,8 @@ describe("runViewTransition — hardening", () => {
 
   it("an OLDER transition settling late cannot delete the NEWER one's stamp (the token guard)", async () => {
     const vt = installFakeVT();
-    runViewTransition(() => {}, "tab"); // T1 stamps "tab"
-    runViewTransition(() => {}, "detail"); // T2 supersedes → stamps "detail"
+    void runViewTransition(() => {}, "tab"); // T1 stamps "tab"
+    void runViewTransition(() => {}, "detail"); // T2 supersedes → stamps "detail"
     expect(document.documentElement.dataset.transition).toBe("detail");
 
     // T1 is the one the browser skipped; its promises settle now, long after T2 took over.
@@ -191,10 +229,10 @@ describe("runViewTransition — hardening", () => {
     // the theme swap's own root cross-fade ran under M2's `[data-transition="tab"]` keyframes. The retire
     // must land BEFORE `start()`, i.e. before this call returns — a microtask would already be too late.
     const vt = installFakeVT();
-    runViewTransition(() => {}, "tab");
+    void runViewTransition(() => {}, "tab");
     expect(document.documentElement.dataset.transition).toBe("tab");
     expect(vt.transitions[0].stampAtStart).toBe("tab"); // …and the typed stamp PRECEDED its capture
-    runViewTransition(() => {}); // no type → owns nothing, but clears what it supersedes
+    void runViewTransition(() => {}); // no type → owns nothing, but clears what it supersedes
     // The load-bearing assertion is the capture-time one: the fake records the attribute as it stood when
     // `startViewTransition` was ENTERED. Asserting only after the wrapper returned would also pass if the
     // retire happened after start() — exactly the regression this test exists to block (Codex confirm LOW).
@@ -213,8 +251,8 @@ describe("runViewTransition — hardening", () => {
 
   it("a TYPED transition started after an untyped one still stamps normally (the retire is not sticky)", async () => {
     const vt = installFakeVT();
-    runViewTransition(() => {}); // untyped: nothing stamped, no owner
-    runViewTransition(() => {}, "tab");
+    void runViewTransition(() => {}); // untyped: nothing stamped, no owner
+    void runViewTransition(() => {}, "tab");
     expect(document.documentElement.dataset.transition).toBe("tab");
     vt.transitions[1].settle();
     await flushMicrotasks();
@@ -230,36 +268,36 @@ describe("runViewTransition — hardening", () => {
 describe("skipActiveViewTransition — the type-scoped ownership fix", () => {
   it("a `tab` transition SURVIVES a `detail`-scoped skip (the probe's kill, in miniature)", () => {
     const vt = installFakeVT();
-    runViewTransition(() => {}, "tab");
+    void runViewTransition(() => {}, "tab");
     skipActiveViewTransition("detail");
     expect(vt.transitions[0].skipTransition).not.toHaveBeenCalled();
   });
 
   it("…and the OWNER of the kind still ends it", () => {
     const vt = installFakeVT();
-    runViewTransition(() => {}, "detail");
+    void runViewTransition(() => {}, "detail");
     skipActiveViewTransition("detail");
     expect(vt.transitions[0].skipTransition).toHaveBeenCalledTimes(1);
   });
 
   it("accepts several kinds — one teardown may own more than one (gacha's detail + showcase)", () => {
     const vt = installFakeVT();
-    runViewTransition(() => {}, "showcase");
+    void runViewTransition(() => {}, "showcase");
     skipActiveViewTransition("detail", "showcase");
     expect(vt.transitions[0].skipTransition).toHaveBeenCalledTimes(1);
   });
 
   it("an UNTYPED transition (the theme swap) is owned by nobody and can never be skipped", () => {
     const vt = installFakeVT();
-    runViewTransition(() => {});
+    void runViewTransition(() => {});
     skipActiveViewTransition("tab", "detail", "showcase");
     expect(vt.transitions[0].skipTransition).not.toHaveBeenCalled();
   });
 
   it("only the LATEST transition is skippable — a superseded one is already gone", async () => {
     const vt = installFakeVT();
-    runViewTransition(() => {}, "detail"); // T1
-    runViewTransition(() => {}, "tab"); // T2 supersedes it (the browser skipped T1 itself)
+    void runViewTransition(() => {}, "detail"); // T1
+    void runViewTransition(() => {}, "tab"); // T2 supersedes it (the browser skipped T1 itself)
     skipActiveViewTransition("detail");
     expect(vt.transitions[0].skipTransition).not.toHaveBeenCalled();
     expect(vt.transitions[1].skipTransition).not.toHaveBeenCalled();
@@ -267,7 +305,7 @@ describe("skipActiveViewTransition — the type-scoped ownership fix", () => {
 
   it("forgets a transition once it has settled (no stale handle held forever)", async () => {
     const vt = installFakeVT();
-    runViewTransition(() => {}, "detail");
+    void runViewTransition(() => {}, "detail");
     vt.transitions[0].settle();
     await flushMicrotasks();
     skipActiveViewTransition("detail");

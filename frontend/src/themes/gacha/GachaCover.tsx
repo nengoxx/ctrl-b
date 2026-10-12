@@ -350,7 +350,7 @@ export function GachaCover({
         type="button"
         data-gc-host={host.id}
         className={
-          "cv-card gc-host-hit" +
+          "cv-card" +
           (isHero ? " is-hero" : " is-cut") +
           (online ? "" : " asleep") +
           (held ? " busy" : "") +
