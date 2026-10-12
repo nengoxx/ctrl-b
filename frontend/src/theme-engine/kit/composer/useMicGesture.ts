@@ -613,6 +613,16 @@ export function useMicGesture(mic: ReturnType<typeof useDictation>, live: boolea
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLButtonElement>) => {
       if (e.button > 0) return; // secondary mouse buttons are not this gesture
+      // THE SENDING DOOR (ISS-83): the composers' `disabled` on the spinning button refuses `click`
+      // only — Chrome still dispatches POINTER events to a disabled form control, so on the owner's
+      // phone a press here started a dictation or a hold-to-call over the previous clip's POST.
+      // Refused before anything opens: no capture, no reducer `down`, no timer, no chrome. Its release
+      // still arms the click guard (`onPointerUp`), which is what swallows its trailing click when the
+      // POST lands first and the button is enabled again by the time the finger lifts. `sending` ONLY:
+      // `unavailable` keeps its door — the engine's `preflight` already refuses a dictation there, and
+      // hold-to-CALL never rode the clip door (refusing it would kill calls after a link drop — the
+      // car-wave council, ruling 6).
+      if (micRef.current.status === "sending") return;
       pointerSession.current = true;
       clearTimeout(guardTimer.current);
       // THE DEGRADED STATE, preserved exactly (owner-locked UX): with no secure context the mic can

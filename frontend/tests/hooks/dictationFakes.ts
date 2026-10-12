@@ -98,6 +98,21 @@ export function mockStt(status: number, body: unknown) {
   );
 }
 
+/** An STT door that holds its answer until the test gives it (ISS-83): the window a clip spends
+ *  `sending` — its POST in flight with the recorder already released — made something a case can sit
+ *  in. `answer()` lands the transcript. */
+export function pendingStt(body: unknown = { text: "hello world" }) {
+  let answer: (() => void) | undefined;
+  globalThis.fetch = vi.fn(
+    () =>
+      new Promise<Response>((resolve) => {
+        answer = () =>
+          resolve({ status: 200, ok: true, json: async () => body } as unknown as Response);
+      }),
+  );
+  return { answer: () => answer?.() };
+}
+
 /** Tap to start, wait until recording, tap to stop (which kicks off the async upload).
  *
  *  HELD PAST THE 1000 ms FLOOR by default (S0.5): `useDictation` now discards a clip shorter than

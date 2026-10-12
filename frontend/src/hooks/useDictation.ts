@@ -520,6 +520,17 @@ export function useDictation({
   liveCall?: LiveCallWire;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
+  /** The phase as of THIS instant (ISS-83) — the state above is what the UI paints, and it lags a
+   *  render; `start()` must refuse a press during a POST that runs with `recRef` already released, so
+   *  it reads the synchronous truth here. Written ONLY through `setPhaseNow`, the hook's one phase
+   *  writer. (ISS-84 will read it too, for the clip's Retry.) */
+  const phaseRef = useRef<Phase>("idle");
+  /** THE ONE PHASE WRITER (ISS-83): the ref synchronously, then the state — never one without the
+   *  other, so the refusal in `start()` and the painted button can never disagree. */
+  const setPhaseNow = useCallback((next: Phase) => {
+    phaseRef.current = next;
+    setPhase(next);
+  }, []);
   const [unavailable, setUnavailable] = useState(false);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -778,7 +789,7 @@ export function useDictation({
     async (mime: string, clip: Clip, slot: string, send = true) => {
       const blob = new Blob(clip.chunks, { type: mime });
       if (!blob.size) {
-        setPhase("idle");
+        setPhaseNow("idle");
         return;
       }
       // THE 1000 ms FLOOR — before the POST, never after: a blip costs no round trip, and the toast is
@@ -790,10 +801,10 @@ export function useDictation({
         // and any future consumer that registers nothing — keeps the toast.
         if (tooShortRef.current) tooShortRef.current();
         else pushToast(TOO_SHORT_MSG, "info");
-        setPhase("idle");
+        setPhaseNow("idle");
         return;
       }
-      setPhase("sending");
+      setPhaseNow("sending");
       // Filename extension follows the recorder's *actual* container (mime ↔ ext must agree — Whisper
       // routes by extension). `mime` strips codec params via extFromMime's substring checks.
       const form = new FormData();
@@ -823,10 +834,10 @@ export function useDictation({
         setUnavailable(true);
         pushToast("Voice servers unreachable", "err");
       } finally {
-        setPhase("idle");
+        setPhaseNow("idle");
       }
     },
-    [maybeAutoSend],
+    [maybeAutoSend, setPhaseNow],
   );
 
   /** Abort an in-flight `start()` (F5), reporting whether there WAS one. The caller then knows there is
@@ -880,7 +891,7 @@ export function useDictation({
         if (tailTimerRef.current !== undefined) return; // already settling — one tail per recording
         // The existing `sending` look from the release instant: the owner let go, and the button is
         // inert while the tail and whatever follows it run (a re-press gets `false` from `start()`).
-        setPhase("sending");
+        setPhaseNow("sending");
         tailTimerRef.current = setTimeout(() => {
           tailTimerRef.current = undefined;
           stopNow();
@@ -889,7 +900,7 @@ export function useDictation({
       }
       stopNow();
     },
-    [abortArming, stopNow],
+    [abortArming, stopNow, setPhaseNow],
   );
 
   /** Discard the recording: no transcript, no POST, no draft. The flag is consulted in the `onstop`
@@ -1007,8 +1018,10 @@ export function useDictation({
    * endpoint ledger rather than waking on the first final or on a count of them (F1, twice).
    *
    * IT RUNS TO COMPLETION EVEN IF THE COMPOSER UNMOUNTED MID-WAIT. Every outcome is a store write
-   * (`appendDraft`/`runComposer`/the upload), the `setPhase` calls are no-ops on a dead component, and
-   * the socket close is bounded on every path — the timeout fires whether or not anyone is watching.
+   * (`appendDraft`/`runComposer`/the upload); the React STATE update inside `setPhaseNow` is ineffective
+   * on a dead component (the retained closure still writes its private `phaseRef`, which nothing reads
+   * any more), and the socket close is bounded on every path — the timeout fires whether or not anyone
+   * is watching.
    *
    * @param s    the session, already detached from `streamRef` by the caller: it is closing out, and no
    *             later `stop()`/sweep may adopt it.
@@ -1020,7 +1033,7 @@ export function useDictation({
     async (s: StreamSession, mime: string, clip: Clip, released: () => void): Promise<void> => {
       // The existing `sending` phase, deliberately — the mic is inert and spinning while a phrase
       // lands, which is exactly what it already means. No new `MicStatus` value is owed.
-      setPhase("sending");
+      setPhaseNow("sending");
       s.uplink?.stop(); // no microphone audio may reach the ear past the release
       s.uplink = null;
       // ⓪ THE RELEASE DRAINS WHAT IS ALREADY CAPTURED, BEFORE THE FLUSH (S2.5 confirm round N1). The
@@ -1157,14 +1170,14 @@ export function useDictation({
         // it is simply dropped — it left the refs at `onstop` and nothing else holds it. A leg the view
         // swap ended (`navigated`) never auto-sends (§12.1 ④): the owner did not release it.
         if (s.stopReason !== "navigated") maybeAutoSend(s.slot);
-        setPhase("idle");
+        setPhaseNow("idle");
         return;
       }
       // Nothing was appended — the clip is the whole recording, uploaded exactly as it always was
       // (the 1000 ms floor, its teaching, the 502 greying, the toasts: all of it untouched).
       await upload(mime, clip, s.slot, s.stopReason !== "navigated");
     },
-    [ceilingMs, frameMs, maybeAutoSend, setPending, tailWaitMs, upload],
+    [ceilingMs, frameMs, maybeAutoSend, setPending, setPhaseNow, tailWaitMs, upload],
   );
 
   /**
@@ -1708,7 +1721,12 @@ export function useDictation({
     // …and so does a press while ANY recording's leg in this tab is still closing out (Phase 26 D5,
     // `store/micRelease.legClosing` — tab-wide, so a REMOUNTED composer sees its predecessor's release):
     // its leg would carry this tab's id and supersede that one mid-tail.
-    if (armRef.current || recRef.current || legClosing()) return false;
+    // …and so does a press while the PREVIOUS clip is still `sending` (ISS-83): the clip door's POST
+    // runs after `onstop` released `recRef`, and the streaming door's whole-clip fallback after
+    // `released()`, so neither guard above sees it — a recording armed in that window would have its
+    // phase flipped to idle under it by the upload's `finally`. Read from the ref: the state lags.
+    if (armRef.current || recRef.current || legClosing() || phaseRef.current === "sending")
+      return false;
     if (!preflight()) return false;
     activateAtRef.current = Date.now(); // the trail's `t_activate` (S11)
     // THE CONVERSATION THIS RECORDING BELONGS TO (Phase 27 S8, R35) — captured at the PRESS, before any
@@ -1820,7 +1838,7 @@ export function useDictation({
         // CANCELLED (S0.5): the same teardown, and then nothing — no blob, no POST, no draft.
         if (discardRef.current) {
           discardRef.current = false;
-          setPhase("idle");
+          setPhaseNow("idle");
           return;
         }
         // STREAMING (S2.5): the clip is PARKED, not uploaded — which of the two carries this
@@ -1866,7 +1884,7 @@ export function useDictation({
         startedAtRef.current = 0;
         releasedAtRef.current = 0;
         pushToast("Recording failed", "err");
-        setPhase("idle");
+        setPhaseNow("idle");
       };
       releasedAtRef.current = 0;
       liveOwedRef.current = true; // S11 — "go" is owed from here, said once the words-carrying path runs
@@ -1887,7 +1905,7 @@ export function useDictation({
         screen,
         () => recRef.current === rec && !discardRef.current && screenWantedRef.current,
       );
-      setPhase("recording");
+      setPhaseNow("recording");
       // ALWAYS armed (OF-3): the analyser is the METER first and the auto-stop's input second. The
       // policy toggle now lives inside the poll, so a recording with auto-stop off still behaves
       // exactly as it did pre-Tier-0 — nothing in here can stop it — and the level flows regardless.
@@ -1908,6 +1926,7 @@ export function useDictation({
     finishStream,
     route,
     inputDevice,
+    setPhaseNow,
   ]);
 
   /** Tap handler — the KEYBOARD/AT path since S0.5 (R69 §8.1: tap-to-start, tap-to-stop). idle → start,

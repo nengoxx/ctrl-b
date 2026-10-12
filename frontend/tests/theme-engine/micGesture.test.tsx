@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // THE MIC GESTURE'S WIRING (Phase 24 / S0.5 — LIVE_VOICE_PLAN §6, D71). The pure machine is pinned arm
@@ -49,13 +49,14 @@ import { ToolsMenuTrigger } from "../../src/theme-engine/kit/composer/toolsMenu/
 import {
   ACTIVATE_MS,
   CHIP_MS,
+  CLICK_GUARD_MS,
   LOCK_HINT_COUNT_MS,
   LOCK_HINT_MAX,
   LOCK_PX,
   VIB_START_MS,
   useMicGesture,
 } from "../../src/theme-engine/kit/composer/useMicGesture";
-import { TOO_SHORT_MSG, type useDictation } from "../../src/hooks/useDictation";
+import { TOO_SHORT_MSG, useDictation } from "../../src/hooks/useDictation";
 import { runComposer } from "../../src/lib/composer";
 import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
@@ -66,6 +67,7 @@ import {
   FakeMediaRecorder,
   gateMediaDevices,
   mockStt,
+  pendingStt,
   setMediaDevices,
 } from "../hooks/dictationFakes";
 
@@ -417,6 +419,37 @@ describe("Esc + the keyboard door (R69 §8.1/risk 5)", () => {
     expect(host.style.getPropertyValue("--mg-y")).toBe("306px"); // 690 + 32/2 − 400
   });
 
+  it("ISS-83 · a refused press that OUTLASTS the POST has its trailing click swallowed", async () => {
+    // The owner presses the spinner because they want to talk next, and a held press easily outlasts
+    // the POST: by the lift the button is enabled again, and its trailing click would reach the
+    // keyboard door — a hands-free recording, one step after the one the door refused. The release's
+    // click guard is what swallows it; the door refuses the press, never the guard.
+    const stt = pendingStt();
+    render(<KitComposer />);
+    await hold();
+    await tick(HELD_MS);
+    up();
+    await tick(CLICK_GUARD_MS + 10); // the first clip's POST is in flight, and its OWN guard has expired
+    // While sending the button is named for the transcription, so it is found by its class here.
+    const spinning = document.querySelector<HTMLButtonElement>(".kit-cbtn.mic.sending")!;
+    expect(spinning).not.toBeNull();
+    fireEvent.pointerDown(spinning, { pointerId: PID, button: 0, clientX: X0, clientY: Y0 }); // refused
+    await act(async () => {
+      stt.answer(); // the POST lands WHILE the finger is still down
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+    expect(mic().className).not.toContain("sending");
+    up();
+    fireEvent.click(mic()); // the trailing click, on a button that is enabled again
+    await tick(0);
+    expect(mic().className).not.toContain("rec"); // swallowed: no recording…
+    expect(callUp()).toBe(false); // …and no call
+    await tick(CLICK_GUARD_MS + 10);
+    fireEvent.click(mic()); // Enter/Space, past the guard
+    await tick(10);
+    expect(mic().className).toContain("rec"); // the keyboard door works again
+  });
+
   it("…and the swallow expires, so the next keyboard activation still works", async () => {
     render(<KitComposer />);
     down();
@@ -425,6 +458,52 @@ describe("Esc + the keyboard door (R69 §8.1/risk 5)", () => {
     fireEvent.click(mic());
     await tick(10);
     expect(mic().className).toContain("rec");
+  });
+});
+
+describe("ISS-83 · the ENGINE refuses a press while the previous clip is `sending`", () => {
+  it("`start()` resolves false during the clip's POST — the recorder is released, the phase is not", async () => {
+    // Driven against the REAL hook, under the gesture: the composers' door refuses the press first, so
+    // the only way to reach the engine's own guard is to call the verb it exposes. Without the phase
+    // check nothing else holds here — `onstop` released `recRef` before the POST began.
+    const stt = pendingStt();
+    // The opener `setMediaDevices(true)` installed in `beforeEach` is a spy: "the mic was never
+    // asked" is its call count.
+    const gumCalls = () => vi.mocked(navigator.mediaDevices).getUserMedia.mock.calls.length;
+    const { result } = renderHook(() =>
+      useDictation({ sttReady: true, statusStamp: 1, autoSend: false }),
+    );
+    let armed: boolean | undefined;
+    await act(async () => {
+      armed = await result.current.start();
+    });
+    expect(armed).toBe(true);
+    expect(result.current.status).toBe("recording");
+    await tick(HELD_MS);
+    act(() => result.current.stop("user")); // the release
+    await tick(10);
+    expect(result.current.status).toBe("sending");
+    expect(posts()).toBe(1); // the POST is out, and pending
+    const recorder = FakeMediaRecorder.last;
+    const opened = gumCalls();
+    await act(async () => {
+      armed = await result.current.start(); // press again
+    });
+    expect(armed).toBe(false);
+    expect(gumCalls()).toBe(opened); // the mic was never asked…
+    expect(FakeMediaRecorder.last).toBe(recorder); // …no second recorder exists…
+    expect(result.current.status).toBe("sending"); // …and the clip still owns the button
+    await act(async () => {
+      stt.answer();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+    expect(result.current.status).toBe("idle");
+    expect(getDraft()).toBe("hello world"); // the clip's transcript was never disturbed
+    await act(async () => {
+      armed = await result.current.start(); // the refusal is the window's, not a latch
+    });
+    expect(armed).toBe(true);
+    act(() => result.current.cancel());
   });
 });
 
