@@ -854,6 +854,14 @@ Conf home (settings, not agents; council refines the cut).
   cautionary tale); every affordance is visible (the Agnai posture).
 - **Entry points**: New + Import live on the section header (import under the §9 predicate).
   Empty state: a fresh install shows the default agent's card.
+  *As-built ISS-80 (2026-10-12, the owner's proposal): Import moved INSIDE the "add agent"
+  disclosure (`NewAgentRow`, below the slug/name form) — importing a card is a way of adding an
+  agent, and the disclosure is collapsed at rest. Before, the import block sat beside New above
+  the grid and mounted only once the tab-scoped `["settings"]` query landed (`roleplayOn` reads
+  false on `undefined`), so the first agents visit painted the grid and then pushed it down. Still
+  gated on `roleplayOn` (the entry-point ruling); still ONE hidden input + ONE `useImportAgent`
+  mutation (the mutation stays in `AgentsContent`, so a report still lands if an editor is opened
+  mid-import); a successful import collapses the disclosure; the report card stays above the grid.*
 - **Avatar smalls**: circle at list/picker sizes (the field's 50px circle convention); the
   card shows the portrait through its focal point.
 Styling per `VAPOR_PATTERNS.md`; theme dressing rides the existing surface rules (D31).

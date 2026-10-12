@@ -825,15 +825,56 @@ export function AgentRow(props: {
 /** The "add agent" disclosure — the gallery header's New affordance (D70 §8.4). Unchanged from the
  *  row it was inside the old list body: a slug + optional display name, scaffolded through the same
  *  `PUT /api/agents/{name}` every save uses, and the caller is told which slug landed so it can open
- *  the new agent straight away. */
+ *  the new agent straight away.
+ *
+ *  ISS-80 — it also carries the CHARACTER-CARD IMPORT (D70 §5): importing a card IS a way of adding an
+ *  agent, and the disclosure is collapsed at rest, so the gallery's top no longer grows when the
+ *  settings doc lands. The picker UI lives here; the mutation stays with the caller (`cardImport`). */
 export function NewAgentRow(props: {
   taken: readonly string[];
   onCreated: (slug: string) => void;
+  /** The card-import door, or absent when it must not show — the caller passes it only in roleplay
+   *  mode (D70's entry-point ruling). `onFile` runs the ONE import mutation and calls `onImported`
+   *  when it succeeds, which collapses this disclosure (unless the owner has typed into its form). */
+  cardImport?: { pending: boolean; onFile: (file: File, onImported: () => void) => void };
 }) {
   const saveAgent = useSaveAgent();
   const [adding, setAdding] = useState(false);
   const [newSlug, setNewSlug] = useState("");
   const [newTitle, setNewTitle] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  /** Open the ONE import picker with the door's filter (the comment at the input says why two). */
+  const pickCard = (accept: string) => {
+    const input = fileRef.current;
+    if (!input) return;
+    input.accept = accept;
+    input.click();
+  };
+  /** Close the disclosure and clear its form — cancel and a created agent alike. */
+  const reset = () => {
+    setAdding(false);
+    setNewSlug("");
+    setNewTitle("");
+  };
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // The form's LATEST values for the import's success callback, which closes over the render that
+  // picked the file — an upload can outlast several edits.
+  const formRef = useRef({ slug: "", title: "" });
+  useEffect(() => {
+    formRef.current = { slug: newSlug, title: newTitle };
+  });
+  /** ISS-80 — a successful import collapses the disclosure, but ONLY while its form is empty: a slow
+   *  import landing after the owner re-opened it and typed must not snap it shut and wipe the slug.
+   *  Collapsing unmounts the panel, so focus still INSIDE it (a keyboard user who Tabbed into the form
+   *  during the upload) moves to the disclosure's own trigger rather than falling to <body>; focus
+   *  that is anywhere else is left alone. */
+  const collapseAfterImport = () => {
+    if (formRef.current.slug !== "" || formRef.current.title !== "") return;
+    if (panelRef.current?.contains(document.activeElement))
+      triggerRef.current?.focus({ preventScroll: true });
+    setAdding(false);
+  };
 
   const commitNew = () => {
     const slug = newSlug.trim().toLowerCase();
@@ -844,9 +885,7 @@ export function NewAgentRow(props: {
       { name: slug, agent: { title: newTitle.trim() } },
       {
         onSuccess: () => {
-          setNewSlug("");
-          setNewTitle("");
-          setAdding(false);
+          reset();
           props.onCreated(slug);
         },
       },
@@ -855,7 +894,11 @@ export function NewAgentRow(props: {
 
   return (
     <div className={"mwrap add" + (adding ? " open" : "")}>
-      <div className="confrow" {...disclosureToggle(adding, () => setAdding(!adding))}>
+      <div
+        ref={triggerRef}
+        className="confrow"
+        {...disclosureToggle(adding, () => setAdding(!adding))}
+      >
         <div className="k">
           <div className="label">add agent</div>
           <div className="desc">scaffolds agents/&lt;slug&gt;/ (agent.yaml + SOUL.md)</div>
@@ -864,7 +907,7 @@ export function NewAgentRow(props: {
           ›
         </span>
       </div>
-      <div className="mconf">
+      <div className="mconf" ref={panelRef}>
         {adding && (
           <>
             <div className="mform">
@@ -886,14 +929,7 @@ export function NewAgentRow(props: {
             {/* .mfoot outside the .mform grid — the canonical double-button footer (matches the edit
                 form + MachineEditor); inside the grid it gets squeezed into the 90px label column. */}
             <div className="mfoot">
-              <button
-                type="button"
-                onClick={() => {
-                  setAdding(false);
-                  setNewSlug("");
-                  setNewTitle("");
-                }}
-              >
+              <button type="button" onClick={reset}>
                 cancel
               </button>
               <button
@@ -905,6 +941,58 @@ export function NewAgentRow(props: {
                 {saveAgent.isPending ? "creating…" : "create"}
               </button>
             </div>
+            {props.cardImport && (
+              <div className="agal-import">
+                {/* ONE hidden input, TWO doors — each sets `accept` just before opening the picker
+                    (the browser reads it at open time), so the handler and mutation stay single.
+                    `input.value` is reset in the handler so picking the SAME file twice still fires
+                    `change`.
+                    · The main button is `image/png` (2026-10-01, amending S5 F5's "no accept"): on
+                      Android, Chrome opens its own image picker ONLY when every accept type is an
+                      image (`SelectFileDialog.java`). Measured on the owner's phone (Android 10 /
+                      Chrome 154), a PNG picked from that picker's grid arrives whole; the generic
+                      one — no filter, or any mixed list (SillyTavern's included) — reported
+                      Downloads files at size 0 with an mtime ~0.4–1.1 s off, so a card arrived
+                      empty or was refused by the upload's 1 s mtime check. The image picker's own
+                      "browse" exit and Android 13+'s system Photo Picker are not covered — ISS-47.
+                      PNG cards are the common case (an APNG has not been checked).
+                    · The quiet link keeps S5 F5's NO filter for JSON / CHARX cards: a chooser given a
+                      filter GRAYS OUT what it cannot type-match (`.charx` is exactly the extension a
+                      share sheet mangles), and the backend sniffs magic bytes authoritatively. Its
+                      Downloads files still meet the mtime check — XHR (`putBytes`) gets them through
+                      when it passes; when it does not, a file manager (MiXplorer) is the workaround.
+                      ISS-47 holds the residuals. */}
+                <input
+                  ref={fileRef}
+                  type="file"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    // ISS-80 — a successful import collapses the disclosure (the report card above the
+                    // grid is the confirmation; the grid gains the new card).
+                    props.cardImport?.onFile(file, collapseAfterImport);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={props.cardImport.pending}
+                  onClick={() => pickCard("image/png")}
+                >
+                  {props.cardImport.pending ? "importing…" : "import a character card"}
+                </button>
+                <p className="agal-import-alt">
+                  <button
+                    type="button"
+                    disabled={props.cardImport.pending}
+                    onClick={() => pickCard("")}
+                  >
+                    or import from a .json / .charx file
+                  </button>
+                </p>
+              </div>
+            )}
           </>
         )}
       </div>

@@ -9295,11 +9295,18 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
  * behind one full-width outline button. The class is named for its own surface rather than shared so
  * neither surface reads as living inside the other's section. The recipe is the row's OWN button
  * (`>`): the card row also carries a quiet second door (`.agal-import-alt`, the JSON / CHARX picker —
- * AgentsTab says why), which wears the report's `.agrep-x` text-link recipe instead. ── */
+ * AgentsEditor's `NewAgentRow` says why), which wears the report's `.agrep-x` text-link recipe
+ * instead. ── */
 .kit .agal-import,
 .kit .lb-import {
   padding: 10px 12px;
   border-top: 1px solid var(--line);
+}
+/* ISS-80 — inside the "add agent" disclosure the block sits under `.mfoot`: the panel's own inset
+ * and its dashed divider, so the PNG button spans the same width as cancel/create. */
+.kit .mconf .agal-import {
+  padding-inline: 0;
+  border-top: 1px dashed var(--line);
 }
 .kit .agal-import > button,
 .kit .lb-import > button {
