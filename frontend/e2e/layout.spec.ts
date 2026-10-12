@@ -2257,8 +2257,9 @@ test("agent gallery — equal columns before any scroll (360px, six agents)", as
       }),
     }),
   );
-  // Roleplay ON, as the owner runs it: the actions card then carries both import doors under New, which
-  // is what lowers the grid into the band (with New alone it starts ~180px down and every card fits).
+  // Roleplay ON, as the owner runs it, and the "add agent" disclosure OPEN: since ISS-80 the two import
+  // doors live inside it (collapsed at rest), so its form + the doors are what lower the grid into the
+  // band (with the collapsed row alone it starts ~180px down and every card fits).
   await page.route("**/api/settings", (r) =>
     r.request().method() !== "GET"
       ? r.fallback()
@@ -2272,14 +2273,18 @@ test("agent gallery — equal columns before any scroll (360px, six agents)", as
   await page.locator(".kit-appbar .navmenu-launch").click();
   await expect(page.locator("#tab-agents")).toBeVisible();
   await expect(page.locator(".agal-grid .agal-cell")).toHaveCount(6);
+  await expect(page.locator(".agal-import")).toHaveCount(0); // ISS-80: nothing late above the grid
+  await page.getByRole("button", { name: /add agent/ }).click();
   await expect(page.locator(".agal-import")).toBeVisible();
   expect(await page.locator("#app-scroll").evaluate((el) => el.scrollTop)).toBe(0);
 
   // The arm's premise: start the grid too high (≲200px) and every card fits, nothing is skipped, and the
-  // old CSS passes too. Here it lands at ~270px, where the old CSS measured 202 · 114 · 202 · 114 · 202.
+  // old CSS passes too. It landed at ~270px under the pre-ISS-80 actions card (where the old CSS measured
+  // 202 · 114 · 202 · 114 · 202); the open disclosure puts it lower, so the ceiling is the first row still
+  // starting on screen (780px viewport, ~200px cards).
   const top = (await page.locator(".agal-grid").boundingBox())!.y;
   expect(top, "the grid starts outside the band the flash lives in").toBeGreaterThanOrEqual(240);
-  expect(top).toBeLessThanOrEqual(450);
+  expect(top).toBeLessThanOrEqual(520);
 
   const geo = await page.evaluate(() => {
     const grid = document.querySelector<HTMLElement>(".agal-grid")!;

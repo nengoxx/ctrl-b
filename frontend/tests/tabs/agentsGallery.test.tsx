@@ -353,6 +353,8 @@ describe("AgentsTab · card import (§5)", () => {
     warnings: ["the card's embedded lorebook was imported as 'lyra-book'"],
     post_history: "Stay in character.",
   };
+  /** ISS-80 — the import doors live INSIDE the "add agent" disclosure, which is collapsed at rest. */
+  const openAdd = () => fireEvent.click(screen.getByRole("button", { name: /add agent/ }));
   const pick = () => {
     const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
     fireEvent.change(input, {
@@ -363,11 +365,34 @@ describe("AgentsTab · card import (§5)", () => {
 
   it("the ENTRY POINT follows the roleplay mode, even though the FIELDS do not", () => {
     render(<AgentsTab active />);
+    openAdd();
+    expect(screen.getByLabelText("Slug")).toBeTruthy(); // the disclosure IS open — just no import
     expect(screen.queryByRole("button", { name: /import a character card/ })).toBeNull();
+    expect(document.querySelector('input[type="file"]')).toBeNull();
     cleanup();
     h.roleplayOn = true;
     render(<AgentsTab active />);
+    openAdd();
     expect(screen.getByRole("button", { name: /import a character card/ })).toBeTruthy();
+  });
+
+  // ISS-80 — the first agents visit painted the grid, THEN the tab-scoped settings doc landed, flipped
+  // `roleplayOn` true and mounted the import block ABOVE the grid, pushing it down. At rest the gallery's
+  // top is now just the collapsed "add agent" row in EITHER mode, so nothing there can arrive late.
+  it("at rest nothing above the grid depends on the roleplay mode — the import waits in the disclosure", () => {
+    h.roleplayOn = true;
+    render(<AgentsTab active />);
+    const actions = document.querySelector(".agal-actions")!;
+    expect(actions.querySelector(".agal-import")).toBeNull();
+    expect(screen.queryByRole("button", { name: /import a character card/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /add agent/ }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    openAdd();
+    // Inside the open disclosure, BELOW the slug/name form and its footer.
+    const imp = actions.querySelector(".agal-import")!;
+    const create = screen.getByRole("button", { name: "create" });
+    expect(create.compareDocumentPosition(imp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   // ISS-47 — the picker IS the fix on Android: only an image-only `accept` gets Chrome's image picker
@@ -376,6 +401,7 @@ describe("AgentsTab · card import (§5)", () => {
   it("the main door opens the PNG picker, the link the unfiltered one — through ONE input", () => {
     h.roleplayOn = true;
     render(<AgentsTab active />);
+    openAdd();
     const opened: string[] = [];
     const click = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (
       this: HTMLInputElement,
@@ -396,6 +422,7 @@ describe("AgentsTab · card import (§5)", () => {
     h.roleplayOn = true;
     h.importPending = true;
     render(<AgentsTab active />);
+    openAdd();
     expect(screen.getByRole("button", { name: /importing…/ }).hasAttribute("disabled")).toBe(true);
     expect(
       screen
@@ -407,6 +434,7 @@ describe("AgentsTab · card import (§5)", () => {
   it("sends the picked FILE and renders the report the server answered with", () => {
     h.roleplayOn = true;
     render(<AgentsTab active />);
+    openAdd();
     const input = pick();
     expect(input.value).toBe(""); // reset, so picking the SAME file twice still fires `change`
     const [file, opts] = h.importMutate.mock.calls[0] as [
@@ -416,6 +444,11 @@ describe("AgentsTab · card import (§5)", () => {
     expect(file.name).toBe("lyra.png");
 
     act(() => opts.onSuccess({ name: "lyra", report: REPORT }));
+    // ISS-80 — a successful import collapses the disclosure; the report above the grid confirms it.
+    expect(screen.getByRole("button", { name: /add agent/ }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(document.querySelector('input[type="file"]')).toBeNull();
     // Every half of the report is on screen — what mapped is the reassurance, what was stashed,
     // stripped or warned about is what the owner can learn no other way.
     expect(screen.getByText(/imported lyra/)).toBeTruthy();
@@ -428,6 +461,53 @@ describe("AgentsTab · card import (§5)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "dismiss" }));
     expect(screen.queryByText(/imported lyra/)).toBeNull();
+  });
+
+  /** The success callback the gallery handed the import mutation for the last pick. */
+  const succeed = () => {
+    const [, opts] = h.importMutate.mock.calls.at(-1) as [
+      File,
+      { onSuccess: (r: unknown) => void },
+    ];
+    act(() => opts.onSuccess({ name: "lyra", report: REPORT }));
+  };
+  const trigger = () => screen.getByRole("button", { name: /add agent/ });
+
+  // ISS-80 review — collapsing unmounts the panel; focus inside it must land on the trigger, not <body>.
+  it("focus INSIDE the closing panel moves to the disclosure's trigger on success", () => {
+    h.roleplayOn = true;
+    render(<AgentsTab active />);
+    openAdd();
+    pick();
+    screen.getByLabelText("Slug").focus(); // Tabbed into the form while the upload runs
+    succeed();
+    expect(trigger().getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it("focus ELSEWHERE is left alone when the import collapses the panel", () => {
+    h.roleplayOn = true;
+    render(<AgentsTab active />);
+    openAdd();
+    pick();
+    const talk = screen.getByRole("button", { name: /Talk to/ });
+    talk.focus();
+    succeed();
+    expect(trigger().getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(talk);
+  });
+
+  // ISS-80 review — a slow import must not snap shut a form the owner has typed into since.
+  it("an import landing after the owner TYPED leaves the panel open and the form intact", () => {
+    h.roleplayOn = true;
+    render(<AgentsTab active />);
+    openAdd();
+    pick();
+    fireEvent.change(screen.getByLabelText("Slug"), { target: { value: "coder" } });
+    succeed();
+    expect(screen.getByText(/imported lyra/)).toBeTruthy(); // the report still lands
+    expect(trigger().getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText<HTMLInputElement>("Slug").value).toBe("coder");
   });
 });
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { AgentRow, NewAgentRow } from "../components/AgentsEditor";
 import { FocalImg } from "../components/FocalImg";
@@ -213,14 +213,6 @@ export function AgentsContent() {
   const visible = active === "agents" || hosted.agents === active;
   const closeDetail = useOverlayBackGuard(open !== null && visible, () => setOpen(null));
   const importAgent = useImportAgent();
-  const fileRef = useRef<HTMLInputElement>(null);
-  /** Open the ONE import picker with the door's filter (the comment at the input says why two). */
-  const pickCard = (accept: string) => {
-    const input = fileRef.current;
-    if (!input) return;
-    input.accept = accept;
-    input.click();
-  };
   const [report, setReport] = useState<{ name: string; report: ImportReport } | null>(null);
   const { data: settings } = useSettings();
   // §9's predicate applied to the ENTRY POINT (the ruling): the FIELDS light up per-field whatever the
@@ -283,62 +275,30 @@ export function AgentsContent() {
             />
           )}
           <div className="conf-card agal-actions">
-            <NewAgentRow taken={specialists} onCreated={setOpen} />
-            {roleplayOn && (
-              <div className="agal-import">
-                {/* ONE hidden input, TWO doors — each sets `accept` just before opening the picker
-                    (the browser reads it at open time), so the handler and mutation stay single.
-                    `input.value` is reset in the handler so picking the SAME file twice still fires
-                    `change`.
-                    · The main button is `image/png` (2026-10-01, amending S5 F5's "no accept"): on
-                      Android, Chrome opens its own image picker ONLY when every accept type is an
-                      image (`SelectFileDialog.java`). Measured on the owner's phone (Android 10 /
-                      Chrome 154), a PNG picked from that picker's grid arrives whole; the generic
-                      one — no filter, or any mixed list (SillyTavern's included) — reported
-                      Downloads files at size 0 with an mtime ~0.4–1.1 s off, so a card arrived
-                      empty or was refused by the upload's 1 s mtime check. The image picker's own
-                      "browse" exit and Android 13+'s system Photo Picker are not covered — ISS-47.
-                      PNG cards are the common case (an APNG has not been checked).
-                    · The quiet link keeps S5 F5's NO filter for JSON / CHARX cards: a chooser given a
-                      filter GRAYS OUT what it cannot type-match (`.charx` is exactly the extension a
-                      share sheet mangles), and the backend sniffs magic bytes authoritatively. Its
-                      Downloads files still meet the mtime check — XHR (`putBytes`) gets them through
-                      when it passes; when it does not, a file manager (MiXplorer) is the workaround.
-                      ISS-47 holds the residuals. */}
-                <input
-                  ref={fileRef}
-                  type="file"
-                  hidden
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = "";
-                    if (!file) return;
-                    importAgent.mutate(file, {
-                      onSuccess: (res) => {
-                        setReport({ name: res.name, report: res.report });
-                        setOpen(null);
-                      },
-                    });
-                  }}
-                />
-                <button
-                  type="button"
-                  disabled={importAgent.isPending}
-                  onClick={() => pickCard("image/png")}
-                >
-                  {importAgent.isPending ? "importing…" : "import a character card"}
-                </button>
-                <p className="agal-import-alt">
-                  <button
-                    type="button"
-                    disabled={importAgent.isPending}
-                    onClick={() => pickCard("")}
-                  >
-                    or import from a .json / .charx file
-                  </button>
-                </p>
-              </div>
-            )}
+            {/* ISS-80 — the card import lives INSIDE the "add agent" disclosure (collapsed at rest), so
+                nothing above the grid waits on the settings doc: `roleplayOn` reads false until the
+                tab-scoped `["settings"]` query lands on the first visit, and the import block used to
+                appear ABOVE the grid a beat late and push it down. The mutation stays HERE (it outlives
+                the row, so a report still lands if an agent's editor is opened mid-import). */}
+            <NewAgentRow
+              taken={specialists}
+              onCreated={setOpen}
+              cardImport={
+                roleplayOn
+                  ? {
+                      pending: importAgent.isPending,
+                      onFile: (file, onImported) =>
+                        importAgent.mutate(file, {
+                          onSuccess: (res) => {
+                            setReport({ name: res.name, report: res.report });
+                            setOpen(null);
+                            onImported();
+                          },
+                        }),
+                    }
+                  : undefined
+              }
+            />
           </div>
           <ul className="agal-grid">
             {names.map((name) => (
