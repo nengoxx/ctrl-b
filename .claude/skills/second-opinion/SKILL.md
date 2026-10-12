@@ -269,6 +269,12 @@ item 9 applies — sol is sol).
 >    .venv/bin/python -m pytest -q` puts the worktree's `backend/` first on `sys.path`; `python tools/check.py` from the worktree
 >    does the same. Write the `-m` form into every worktree brief's gate line.
 >
+> 1g. **A `-z "$(cat prompt)"` prompt over ~128 KB fails with `nohup: Argument list too long` (burned 2026-10-12, session 76):** Linux caps ONE
+>    argv string at 128 KiB (`MAX_ARG_STRLEN`), so a brief that inlines a big diff (the ISS-73 round: 148 KB) never launches — the error lands
+>    in the `.err` file within a second and the `.md` stays 0 bytes. Session 75's 127 KB confirm prompt squeaked under by luck. Fix: the Hermes
+>    lane HAS a file tool — write the diff to a file and put a "read `<path>` IN FULL first" line where the inline diff was (the prompt drops to
+>    ~20 KB); keep inlining only for the tool-less Qwen lane (an HTTP body, no argv limit). Check `wc -c` of the prompt before every launch.
+>
 > **▲ STANDING RULE (owner, 2026-10-09): every lane mechanic that burns — a hang, a silent fallback, a self-matching
 > check, a lost output file — is written HERE, in this gotcha list, in the same session it happens, with the fix that
 > worked. The skill is where the next session reads before launching a lane; a gotcha that lives only in a memory file or
