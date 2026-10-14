@@ -13,7 +13,10 @@ the whole architecture in `ARCHITECTURE.md` (don't build ahead of the phase you'
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
-> **Status @ 2026-07-07 (HEAD `a9a91d5`):** Phases **0–8 are all done** —
+> **Live status @ 2026-10-14 → [`HANDOFF.md`](./HANDOFF.md) "What is DONE / what is LEFT"** — the one authoritative list;
+> each phase header below carries its own stamp. The 2026-07-07 block below is a dated SNAPSHOT, kept as history.
+>
+> **Status @ 2026-07-07 (HEAD `a9a91d5`) — SNAPSHOT:** Phases **0–8 are all done** —
 > Fleet, Actions, Services, Agent chat + full tool-loop, Skills/subagents, **Phase 5** (guarded `!`
 > shell), **Phase 6** (voice STT/TTS + mic + mini-player + HTTPS), and **Phase 7a–7e** (Conf:
 > settings/hosts/services/integrations/skills/agents/prompts/memory). **7e is fully complete** —
@@ -514,7 +517,7 @@ tools + confirm bubbles) are DONE.**
       + new **Server** group (host/port/poll/debug) wired to live data; `useSettings`/`useSaveSettings`
       + `putJSON`; dirty-tracked Save + toast. Appearance stays UI-store-only. **Owner D7 eyeball pending.**
 
-### Phase 7b — hosts/services CRUD ✅ DONE (commit pending)
+### Phase 7b — hosts/services CRUD ✅ DONE (`e325468`, 2026-05-29)
 - [x] Hosts CRUD: `POST/PUT/DELETE /api/hosts/{id}` (`api/hosts.py`) + Conf machine forms ported from
       Vapor (`components/MachineEditor.tsx`) + **net-new services sub-editor** (name/kind/port/path/
       autostart + per-host-OS start/stop/restart cmd; add/remove). **Dedicated endpoints** (not the
@@ -531,7 +534,7 @@ tools + confirm bubbles) are DONE.**
 - **Known limitation:** a comment physically *trailing a deleted element* is dropped with it (ruamel);
   leading section comments (the owner's style) survive. **Owner D7 eyeball pending** (@390px ×3 themes).
 
-### Phase 7c — integrations panel (D9) ✅ DONE (commit pending)
+### Phase 7c — integrations panel (D9) ✅ DONE (`455ae8c` + `7804212`, 2026-05-29)
 - [x] **7c-a — scalar integrations:** SearXNG / embeddings / open-terminal Conf groups via the
       existing `PUT /api/settings`; `reconfigure` extended with async `set_searxng`/`set_embeddings`/
       `set_open_terminal` single-source builders (rebuild client + repoint `app.state.*`/`deps.*`,
@@ -547,7 +550,7 @@ tools + confirm bubbles) are DONE.**
 - Tests: `test_integrations_7c.py` (scalar hot-apply, MCP CRUD + dirty + 409/404, rediscover busy/empty,
   registry removal). STT/TTS endpoints still deferred to Phase 6 voice. **Owner D7 eyeball pending.**
 
-### Phase 7d — skills/agents management (the A7 deferral) + per-tool descriptions ✅ DONE (commit pending)
+### Phase 7d — skills/agents management (the A7 deferral) + per-tool descriptions ✅ DONE (`c47bb1a` + `16c160f`, 2026-05-29)
 - [x] **7d-a — per-tool description overrides:** `Settings.tool_descriptions` + `runtime.apply_tool_descriptions`
       overlay onto the live registry specs (capturing originals so clearing restores the built-in),
       wired in lifespan/reconfigure/rediscover. Conf → **Agent tools** group edits them via `PUT
@@ -673,7 +676,7 @@ tools + confirm bubbles) are DONE.**
   - [x] **7e-f-3 — shared Approve-to-apply propose-UI (frontend) ✅ (shipped, `4b63f59`).** Render `data["proposed"]` from *both*
         `memory` and `skill_manage` as an Approve/Dismiss affordance on the tool bubble + an apply endpoint.
         Needs its own pre-flight over the AgentTab `.b.cmd` command bubble + confirm-resume flow.
-- [x] **7e-g — optional `AgentSelector` auto-rotate (D14) ✅ (shipped, `b7ce996`).** A swappable selector (mirrors
+- [x] **7e-g — optional `AgentSelector` auto-rotate (D14) ✅ (shipped, `b7ce996`; RETIRED 2026-10-09 by Phase 27 S5 `d7f9370` — D84 R24).** A swappable selector (mirrors
       `SkillSelector`) that auto-routes a turn to a specialist **when enabled** in settings — default
       off; explicit `/agent` + `spawn_subagents` stay primary. **Default algorithm =
       `KeywordAgentSelector`** (name + SOUL.md token overlap, mirroring `KeywordSkillSelector`; D15 #8);
@@ -1019,7 +1022,7 @@ stale numbering (D35–D37 went to the frontier theme track). The cross-slice co
       from `api/settings.py`; `always_eligible`) · `e080731` FE (the **always** bubble action + the
       `ApprovalsEditor` in `ToolCatalog` through the one `useSaveToolOverrides` write).
 
-## Phase 13 — Unified provider registry (A11) — **design LOCKED 2026-07-22 (owner-signed same day; the 2 Slice-1 interpretation calls ratified 2026-07-23) · spec = [`DECISIONS.md` D48](./DECISIONS.md) (build against it, NOT this list)**
+## Phase 13 — Unified provider registry (A11) — **design LOCKED 2026-07-22 (owner-signed same day; the 2 Slice-1 interpretation calls ratified 2026-07-23) · ✅ shipped v1.3.0 (2026-07-28) · spec = [`DECISIONS.md` D48](./DECISIONS.md) (build against it, NOT this list)**
 
 Retire the hardwired `inference.local`/`inference.cloud` pair + `VoiceEndpointCfg` slots + single-endpoint
 `EmbeddingsCfg`; replace with one top-level `providers:` registry (connections + name-keyed model catalog)
@@ -1182,7 +1185,7 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
       — closed-app delivery only) · ntfy · bots (E1).*
 - [ ] **Security hardening**: known_hosts pinning, per-action tokens, secret encryption-at-rest (G).
 
-## Phase 14 — Scheduled agent automations (A3) — **design LOCKED 2026-07-30 (owner-signed) · spec = [`AUTOMATIONS_PLAN.md`](./AUTOMATIONS_PLAN.md) + [`DECISIONS.md` D49](./DECISIONS.md) (build against those, NOT this list)**
+## Phase 14 — Scheduled agent automations (A3) — **design LOCKED 2026-07-30 (owner-signed) · ✅ shipped v1.4.4 (2026-07-30; v1.4.2/v1.4.3 burned) · spec = [`AUTOMATIONS_PLAN.md`](./AUTOMATIONS_PLAN.md) + [`DECISIONS.md` D49](./DECISIONS.md) (build against those, NOT this list)**
 
 Cron-scheduled headless agent runs: SQLite `automations`/`automation_runs`, a poll-and-claim
 lifespan loop + `cronsim`, runs riding the existing turn machinery, origin attribution, a Conf
@@ -1232,7 +1235,7 @@ Codex round → owner pause.
       notification class · the created-card rides `result.data.automation` (shape-validated) with
       an Open-in-Conf jump. PHASE 14 COMPLETE.**
 
-## Phase 15 — D2-A monitor loop + owner-device wake trigger — **design LOCKED 2026-07-31 ([`D50`](./DECISIONS.md) · research R12+R13; build against D50, not this list)**
+## Phase 15 — D2-A monitor loop + owner-device wake trigger — **design LOCKED 2026-07-31 ([`D50`](./DECISIONS.md) · research R12+R13; build against D50, not this list) · ✅ shipped v1.4.6 (2026-07-31; v1.4.5 burned)**
 
 - [x] **15a — MonitorService + fleet up/down:** the lifespan loop (A3 shape) · `monitor:` config
       section (as-built names: `poll_seconds: 30` cross-field-validated `>= server.poll_seconds`,
@@ -1334,7 +1337,7 @@ every ladder waiver retired.
       `CONTRACT_WAIVERS === {}`), the `layouts:["4-tab"]` **section waiver RETIRED** with real 2-/3-tab
       navigation+hosting tests, the **lazy flip measured (5.3 KiB gz) and DROPPED**, ledgers + docs closed.
 
-## Phase 17 — The gacha theme ("Capsule Arcade", H1) — **✅ DESIGN LOCKED 2026-08-02 (D52) · spec = [`GACHA_PLAN.md`](./GACHA_PLAN.md)**
+## Phase 17 — The gacha theme ("Capsule Arcade", H1) — **✅ DESIGN LOCKED 2026-08-02 (D52) · ✅ shipped v1.5.0 (2026-08-08; completed through v1.6.0, 2026-08-11) · spec = [`GACHA_PLAN.md`](./GACHA_PLAN.md)**
 
 The owner's FINISHED standalone prototype
 (`design/prototypes/gacha/uploads/prot/capsule-arcade/`, banked `37144c0`) becomes the 5th built
@@ -1362,7 +1365,7 @@ v1.5.0 is RESERVED for this theme's release.
 - [x] G6 palette variants per `GACHA_PLAN.md` §4.4 as amended 2026-08-06 (TWO pickers: seven accent variants incl. the re-derived eridu · the dossier picker slip+4 darks, neon-purple default, ✅ dark trial SIGNED OFF as a picker · wordmark → コントロール・ビー · NEW-ribbon demo on one random card · vapor-style dossier service dots) — ✅ CLOSED (as-built §7.7; owner-device-walked; boxes caught up 2026-08-12)
 - [x] Release as v1.5.0 (runbook §Release) — ✅ SHIPPED: v1.5.0 → v1.5.1 → v1.6.0 all released; prod = v1.6.0 since 2026-08-11 (box caught up 2026-08-12)
 
-## Phase 18 — The prompt system — **✅ DESIGN LOCKED 2026-08-15 ([`D56`](./DECISIONS.md)) · spec = [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md) (§6 council C-1..C-25 + §7 lean round L-1..L-11 are NORMATIVE)**
+## Phase 18 — The prompt system — **✅ DESIGN LOCKED 2026-08-15 ([`D56`](./DECISIONS.md)) · ✅ shipped v1.7.1 (2026-08-16; v1.7.0 burned) · spec = [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md) (§6 council C-1..C-25 + §7 lean round L-1..L-11 are NORMATIVE)**
 
 Every model-facing prompt (the C-1 table's ids) → one registry module + plain infallible
 `resolve()`, `prompts:{id:{override?,append?}}` on Settings, `{{name}}` zero-dep lenient
@@ -1381,7 +1384,7 @@ stamping (the eval seam), + the symbol-keyed AST backstop. Build against the pla
 Deliberately ordered BEHIND Phase 20 (owner, 2026-08-17; Phase 20 shipped — 19 is next in
 line). No boxes until its charter is ruled.
 
-## Phase 20 — Core Memory: the tier-2 long-term memory lane — **✅ DESIGN LOCKED 2026-08-17 ([`D57`](./DECISIONS.md)) · spec = [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (§13 council record; build against the plan, NOT this list)**
+## Phase 20 — Core Memory: the tier-2 long-term memory lane — **✅ DESIGN LOCKED 2026-08-17 ([`D57`](./DECISIONS.md)) · ✅ shipped v1.7.2 (2026-08-18; OFF by default) · spec = [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (§13 council record; build against the plan, NOT this list)**
 
 One shared Claude-Code-native corpus (`memories/core/`: bounded index + topic files) beside the
 untouched tier-1 stores; index-in-head + `core_memory` tool recall (no selector); proactive writes
@@ -1410,7 +1413,7 @@ go-ahead between slices; each passes `tools/check.py`.
       floor + zero-write refusal (plan **§14b**; `8637855`, 2026-08-17). **🏁 PHASE 20 BUILT +
       LIVE-DRIVEN on dev; remaining = the prod owner round (HANDOFF ▶▶ 2).**
 
-## Phase 21 — The media manager: per-destination art LIBRARIES · upload · crop · focal point · reorder — **✅ DESIGN LOCKED 2026-08-24 ([`D65`](./DECISIONS.md)) · spec = [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md) v2.1 (council round 2 CLOSED, both lenses final-RESOLVED; §12 = the slice ladder; build against the plan, NOT this list)**
+## Phase 21 — The media manager: per-destination art LIBRARIES · upload · crop · focal point · reorder — **✅ DESIGN LOCKED 2026-08-24 ([`D65`](./DECISIONS.md)) · ✅ shipped v1.7.7 (2026-08-27) · spec = [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md) v2.1 (council round 2 CLOSED, both lenses final-RESOLVED; §12 = the slice ladder; build against the plan, NOT this list)**
 
 Every custom-art destination becomes a **section with its own LIBRARY on disk** — upload, crop,
 focal point, drag-reorder, delete, without re-uploading to switch art. Uploads are purely additive,
@@ -1759,7 +1762,7 @@ displaced replies move to `message_alternates` (migration 7 — additive, rollba
 - [ ] *Seam, not this phase:* greeting swipes — `AgentDef.alt_greetings` seeded as `anchor_id NULL`
       variants with no model call (closes R87's "alt greetings inert"). Owner of record: ROADMAP A14.
 
-## Phase 26 — Live voice stops depending on Speaches: the wall-clock uplink guard · 16 kHz capture · the relay-owned VAD · batch ASR per door · the recording outlives its leg (and a reload) — **✏️ DESIGN RULED 2026-09-30 ([`D82`](./DECISIONS.md)); design council №1 closed (blind Opus 5.5 ∥ Emma, 28 rulings folded)** · spec = [`ASR_PLAN.md`](./ASR_PLAN.md) (§7 = the slice ladder; §3.10 = the stress-test amendments; §11 = the council record; build against the plan, NOT this list) · D82 ratified first, then two sessions on DEV, TWO releases (v1.7.11 = the six polish fixes + session A · v1.7.12 = session B; no config migration in either)
+## Phase 26 — Live voice stops depending on Speaches: the wall-clock uplink guard · 16 kHz capture · the relay-owned VAD · batch ASR per door · the recording outlives its leg (and a reload) — **✏️ DESIGN RULED 2026-09-30 ([`D82`](./DECISIONS.md)); design council №1 closed (blind Opus 5.5 ∥ Emma, 28 rulings folded) · session A ✅ BUILT + 🏁 LIVE v1.7.11 (2026-10-07) · session B IN PROGRESS — S6-i · S6-ii · S9's code · S7a merged; NEXT = TUNE (the corpus = 21 clips) → the S9 gate's owner-audio rows → S7b (THE FLIP) → S8 → S8b → S10 → v1.7.12 (v1.7.12 = after the ASR session B; J3/J4 are their own sessions, not a gate (owner 2026-10-09 `af198bc9`))** · spec = [`ASR_PLAN.md`](./ASR_PLAN.md) (§7 = the slice ladder; §3.10 = the stress-test amendments; §11 = the council record; build against the plan, NOT this list) · D82 ratified first, then two sessions on DEV, TWO releases (v1.7.11 = the six polish fixes + session A · v1.7.12 = session B; no config migration in either)
 
 This phase fixes the two live-voice failures R94 verified:
 - **dictation and calls die on 4G stalls.** The fix is the wall-clock bucket, plus the recording outliving its leg.
@@ -1768,7 +1771,7 @@ This phase fixes the two live-voice failures R94 verified:
 ctrl-b moves its ASR to parakeet-server: one machine-wide instance per door, shared by dev and prod. Speaches itself is
 never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-reviewer round, blind Opus 5.5 ∥ blind Emma** (owner directive).
 
-- [ ] **S5 — D82 ratified (THIS session, before A).**
+- [x] **S5 — D82 ratified (THIS session, before A).** ✅ RULED 2026-09-30 (D82; `13353b7`).
 
 **Session A — transport, the dictation rulings, 16 kHz capture (Speaches is still the ear):**
 - [x] S1 — Telemetry: an always-logged leg-end line, StopReason, close codes, the pacer-drop field, and the trail
@@ -1786,9 +1789,9 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
       native-rate fallback via the caller's own resume path (R96). ✅ `96fdc4e` (2026-10-01; `nativeRate`/`native_rate` on the
       trail lines; `fftSize` 1024 at 16 kHz). **Phone-card item still OWED** (the owner's round: EC-call/EC-media arms + a
       Fennec run — HANDOFF session 56).
-- [ ] D9 — The client's awaited-id set (closes LIVE_VOICE_PLAN OPEN-2).
-- [ ] D8 — The provisional early-call floor.
-- [ ] D5 — Slot takeover by the per-tab `sessionStorage` `client_id`; the slot is acquired after `start`.
+- [x] D9 — The client's awaited-id set (closes LIVE_VOICE_PLAN OPEN-2). ✅ `91c5669` (2026-10-02; in v1.7.11).
+- [x] D8 — The provisional early-call floor. ✅ `dab7e30` (2026-10-06; in v1.7.11).
+- [x] D5 — Slot takeover by the per-tab `sessionStorage` `client_id`; the slot is acquired after `start`. ✅ `8764c72` (2026-10-06; in v1.7.11).
 - [x] **Release v1.7.11** (the six polish fixes + session A) per `ASR_PLAN` §8.2.1 — the standard runbook §Release, no
       config step. Rollback: plain `update.sh v1.7.10`. **✅ LIVE 2026-10-07 10:40Z @ `bad0c99` (session 63; the dictation check passed first — trail `bec301ce`).**
 
@@ -1802,10 +1805,10 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
   - the prepass;
   - bounded PyAV decode;
   - the `voice` extra wired into install.sh, CI, bootstrap and the Windows scripts.
-- [x] S6-ii — **✅ CODE MERGED `64021d8` (session 64; Opus ∥ Emma CONFIRMED) — the owner's capture rounds still OWED (dev debug is ON)** — The debug-gated raw-audio capture (beside the trail, same gate and retention), `vad_replay.py`
+- [x] S6-ii — **✅ CODE MERGED `64021d8` (session 64; Opus ∥ Emma CONFIRMED) — the owner's capture rounds RAN: the corpus = 21 clips in `~/.ctrl-b-dev/asr-corpus/raw/` (the 2026-10-09 baseline call + 20 promoted 2026-10-14; dev debug is ON)** — The debug-gated raw-audio capture (beside the trail, same gate and retention), `vad_replay.py`
       (offline), `asr_corpus.py`, and SECURITY_MODEL §2.12. Then, with `debug` ON on dev, the owner's first capture rounds
       BUILD the reference set: there is no audio today.
-- [ ] S9 — **◐ CODE MERGED `76f5db5` + engines INSTALLED `5ce0536` + DEV CONFIG MOVED (session 64); OPEN = the bake-off (relaunch `~/.cache/tmp/ctrlb-session64/brief-bakeoff-S9.md`) + the §6.4 gate rows that need the owner's audio** — The host on the CLIP door:
+- [ ] S9 — **◐ CODE MERGED `76f5db5` + engines INSTALLED `5ce0536` + DEV CONFIG MOVED (session 64); the bake-off's no-owner-audio rows MEASURED `9a04b17` (ASR_PLAN §6.4.1, session 65); OPEN = the §6.4 gate rows that need the owner's audio** — The host on the CLIP door:
   - parakeet.cpp cloned beside Speaches;
   - machine-wide units + the runbook;
   - `transcribe(door)`, and the clip door = decode + pass + parakeet-clip;
@@ -1815,7 +1818,7 @@ never stopped or deleted; ctrl-b only un-configures it. **All slices: the two-re
     *(the no-owner-audio rows ✅ measured 2026-10-07 → ASR_PLAN §6.4.1; the owner-audio rows — pre-pass sweep · hand-read · real short answers · car/home — OPEN, so the S9 gate stays OPEN)*
 
   Dev config: stt → parakeet-clip, with live pinned to Speaches.
-- [ ] TUNE — Owner capture rounds → promote → offline replay sweeps judged by hand → the `VadParams` defaults settled.
+- [ ] TUNE — Owner capture rounds → promote → offline replay sweeps judged by hand → the `VadParams` defaults settled. **NEXT on this track** — the captures + promotion are DONE (21 clips incl. 2 noise-only negatives, 2026-10-14); the sweeps are not.
 - [x] S7a — The client half, INERT until `ready{clock:"leg"}`, shipped and reviewed first *(✅ `f44025f`, session 65, 2026-10-07 — blind Opus ∥ Emma both CONFIRMED SHIP; as-built: ASR_PLAN §7.2 row + `RULINGS.md` H1–H10 in the session-64 scratch)*:
   - `config.py` owns `turn_hold_ms` (S7b keeps only the server-side VAD/deadline keys);
   - `LiveDown` fields + validation;
@@ -1884,7 +1887,7 @@ council-closed, NOTHING BUILT; spec = ASR_PLAN §3.12, ladder = ASR_PLAN §7.3; 
   - reconnect-and-continue for dictation;
   - an Opus uplink.
 
-## Phase 27 — Conversations per agent + past conversations: two doors · the HOME agent (the rule) + a per-device responder (the exception) · per-agent lists · live status — **✏️ DESIGN RULED 2026-10-06 ([`D84`](./DECISIONS.md)); owner Q&A closed (R0–R46) + F1–F7, N1–N4, ON1–ON7; owner rulings F2 + ON4 RULED 2026-10-06 — F2 = reading A (plan §2), ON4 = (a) persist both (plan §6); council round 1: Opus NOT CONFIRMED (31 → 28 grounded) ∥ Emma NOT CONFIRMED (11) — ALL folded; round 2: Emma 11/11 closed + N1–N4 folded · Opus CONFIRMED WITH NOTES, notes folded → plan v2.2 · council CLOSED 2026-10-06 (Opus ∥ Emma CONFIRMED WITH NOTES on v2.2; notes folded v2.3–v2.4; F2 + ON4 folded → v2.5); NO open rulings; NOTHING BUILT; plan v2.7 after the session-69 completeness pass (Luna ∥ Sol 6.1 ∥ Opus 5.5 — §12.2/§12.3, all ruled); BUILD STARTED 2026-10-09 on the `phase27` worktree branch** · spec = [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) (self-contained: §1 = the rulings with their why; §2 = the principles + the behaviour spec B1–B19; §10 = the slice ladder; §12 = what is still open; §13 = the council record; Appendix §A = the seam map; build against the plan, NOT this list) · ROADMAP A15 · DB schema 7 → 8 (additive), no new config key
+## Phase 27 — Conversations per agent + past conversations: two doors · the HOME agent (the rule) + a per-device responder (the exception) · per-agent lists · live status — **✏️ DESIGN RULED 2026-10-06 ([`D84`](./DECISIONS.md)); owner Q&A closed (R0–R46) + F1–F7, N1–N4, ON1–ON7; owner rulings F2 + ON4 RULED 2026-10-06 — F2 = reading A (plan §2), ON4 = (a) persist both (plan §6); council round 1: Opus NOT CONFIRMED (31 → 28 grounded) ∥ Emma NOT CONFIRMED (11) — ALL folded; round 2: Emma 11/11 closed + N1–N4 folded · Opus CONFIRMED WITH NOTES, notes folded → plan v2.2 · council CLOSED 2026-10-06 (Opus ∥ Emma CONFIRMED WITH NOTES on v2.2; notes folded v2.3–v2.4; F2 + ON4 folded → v2.5); NO open rulings; plan v2.7 after the session-69 completeness pass (Luna ∥ Sol 6.1 ∥ Opus 5.5 — §12.2/§12.3, all ruled); BUILD STARTED 2026-10-09 on the `phase27` worktree branch · ✅ BUILT: S0–S10 merged `cecc66f` (2026-10-10) · S11 DONE + (c) `a304c533` (2026-10-14) · S12 DONE (2026-10-14) · OPEN = S13, the release** · spec = [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) (self-contained: §1 = the rulings with their why; §2 = the principles + the behaviour spec B1–B19; §10 = the slice ladder; §12 = what is still open; §13 = the council record; Appendix §A = the seam map; build against the plan, NOT this list) · ROADMAP A15 · DB schema 7 → 8 (additive), no new config key
 
 Every agent has its own conversations; picking an agent opens its latest one, `/agent <name>` switches who answers
 inside the open conversation until this device leaves it (a reload keeps it), and a per-agent sheet is the way back.
@@ -1898,7 +1901,7 @@ trigger + the `/opening` route), ISS-50, ISS-51/52 at the boundary, the global d
 - [x] **The owner's ruling on F2** (plan §2) — RULED 2026-10-06: **reading A** — with no override set, a responder runs on the HOME agent's AgentDef model + privilege (the reviewers recommended B; overruled). S2 builds the `_build_session` copy.
 - [x] **The owner's ruling on ON4** (plan §12) — RULED 2026-10-06: **(a) persist both** overrides per device in `ctrlb.chat` (the main seat recommended (c); overruled) — plan §6 "Overrides persist per device"; an elevation survives reloads, uncapped (SECURITY_MODEL §2.2).
 - [x] **Confirm round** (round 2): Emma 11/11 closed + N1–N4 · Opus CONFIRMED WITH NOTES — all folded → plan v2.2.
-- [x] S0 — Docs: D84 confirm-closed; DESIGN §12 + §13; SECURITY_MODEL (the delete route; the ON4 per-device privilege paragraph landed with the ruling); ISSUES ISS-49's line; R100 §1's per-account note.
+- [x] S0 — Docs (`7a94d05` on `phase27`, 2026-10-09): D84 confirm-closed; DESIGN §12 + §13; SECURITY_MODEL (the delete route; the ON4 per-device privilege paragraph landed with the ruling); ISSUES ISS-49's line; R100 §1's per-account note.
 - [x] S1 — Data + repo (`dd71679` on `phase27`, 2026-10-09): migration 8 (`seen_at` + the index), the idempotent NULL repairs on every connect, `ThreadRepo` filter/cursor/summaries/`set_title`/`set_seen`.
 - [x] S2 — Routes (S2a `5bb07e1` + S2b `315687a` on `phase27`, 2026-10-09; the agents-side cascade neither guards nor deletes an automation's archived rolling conversation — plan §4 step 1): `GET /api/threads?agent=` summaries + paging, `PATCH`/`DELETE /threads/{id}`, 404-not-mint, seam ② + `!cmd` pin the default (home greeting), `touch` on the owner send / exec pair, per-agent `status` on `GET /api/agents`, R40 in `_build_session` (F2 = A: a responder copied with the home agent's model + privilege), the ISS-52 slug check, `DELETE /api/agents/{name}?conversations=true` (F6; one DB transaction then best-effort files; retry completes the agent side, the boot sweep reclaims attachment dirs — N4, M1), the turn-guard pins.
 - [x] S3 — The `thread` EventBus frame (`7ef8690` on `phase27`, 2026-10-09; + the never-started drain-B backstop, plan §5 as-built): `running` · terminal states with `chained` · `seen`.
@@ -1909,9 +1912,10 @@ trigger + the `/opening` route), ISS-50, ISS-51/52 at the boundary, the global d
 - [x] S7b — The seen write (R30/O11/O10, H3, Sol F2), the `archived` view flag, 404 → toast → the home's latest (latched in a call, R29/R42/M8), the agent-delete count + second confirm → the F6 flag + N3 (R41), `useThreads` + the ONE stale bridge (S6's obligation), the e2e chain B1→B5 + B6 (`b426f14` on `phase27`, 2026-10-10; three-lane-closed; e2e 6/6 locally).
 - [x] S8 — Drafts + staged rail per conversation (two folds), dictation lands where it started. (`1428e68` on `phase27`, 2026-10-10; three-lane-closed — Sol DO NOT SHIP → two HIGHs on the rail commit fixed by the fresh-blob patch; the forward map; the pending carry).
 - [x] S9 — The sheet: the shared chat-header cluster first (S9a `b8a92e5`, byte-identical), then the per-home `BottomSheet`, rows, rename/delete, "Show older", the four-theme e2e (S9b `7d547d1` on `phase27`, 2026-10-10; a design round first — D1–D3 confirmed with seven changes; three-lane-closed — Opus F1 + Sol S9B-01 unified into the commit-time delete latch; Sol's confirm found S9B-04/05 in the wave's new code → a micro-wave → both re-confirmed SHIP; the pre-existing `layout.spec` e2e failure fixed; the full e2e 444/0).
-- [x] S10 — Live status client: the frame consumer, home-agent-named notifications (hidden only), the tap through all four seams + `?thread=`, roster dots (`696811b` on `phase27`, 2026-10-10; three-lane-closed — Opus F1–F3 · Sol S10-01…05 reproduced · Qwen one real LOW; one wave of nine; Opus CONFIRMED SHIP; **S10-C01 CLOSED `2501d94` (session 73, 2026-10-10: the hold-and-replay at `set()`, the store's one chokepoint + the silent visible M11 attach `foreignTurn`; Opus F1 the own drain-B steer turn stays loud; both confirms SHIP; FE 5042)** (plan §13 S10); the buffered chat answer gained `turn_id`; the visible two-device auto-TTS question recorded for S11).
-- [ ] S11 — The owner's device round (phone + desktop, dev) — B1–B19.
-- [ ] S12 — Close-out: as-built records, ISSUES ISS-49/50/51/52, ROADMAP A15 → BUILT, D75's SUPERSEDED pointer, HANDOFF pointer.
+- [x] S10 — Live status client: the frame consumer, home-agent-named notifications (hidden only), the tap through all four seams + `?thread=`, roster dots (`696811b` on `phase27`, 2026-10-10; three-lane-closed — Opus F1–F3 · Sol S10-01…05 reproduced · Qwen one real LOW; one wave of nine; Opus CONFIRMED SHIP; **S10-C01 CLOSED `2501d94` (session 73, 2026-10-10: the hold-and-replay at `set()`, the store's one chokepoint + the silent visible M11 attach `foreignTurn`; Opus F1 the own drain-B steer turn stays loud; both confirms SHIP; FE 5042)** (plan §13 S10); the buffered chat answer gained `turn_id`; the visible two-device auto-TTS question recorded for S11 — the two-devices check PASSED 2026-10-14).
+- [x] **THE SINGLE MERGE** `phase27` → `main` = `cecc66f` (2026-10-10, session 73; owner-ruled, plan §12.1 ⑪).
+- [x] S11 — The owner's device round (phone + desktop, dev) — B1–B19. ✅ DONE 2026-10-10 → 2026-10-14 on the merged tree: B1–B19 by eye PASS · the call PASS · two-devices PASS · (b) APPROVED (the sheet's look → ISS-72) · **(c) RULED SILENT → `a304c533`** (a reply carries its device; only that device auto-speaks it); ISS-50's live switch not yet run (the owner's "later think"); owed as the owner uses it: the (c) two-phone check (plan §13 "S11 as-built").
+- [x] S12 — Close-out: as-built records, ISSUES ISS-49/50/51/52, ROADMAP A15 → BUILT, D75's SUPERSEDED pointer, HANDOFF pointer. ✅ DONE 2026-10-14 (session 78; only ISS-50 was fixed by this phase — S4 `3926c3e`; ISS-49/51/52 were fixed before it, sessions 57/63; the worktree removed, `phase27` kept as the record — plan §13 "S12 as-built").
 - [ ] **S13 — Release** per the runbook §Release (DB schema 7 → 8, additive; no config step; rollback = plain `update.sh <previous tag>`).
 - [ ] *Recorded, not this phase (R32, R46):* AgentDef write-back of the mode (first) and privilege · a list TAB · search grouped by conversation · `pinned`/`muted`/mark-unread · per-agent `session_search` · cancel a notification seen elsewhere · a visible responder chip · group chats.
 

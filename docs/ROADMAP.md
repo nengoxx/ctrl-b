@@ -261,6 +261,9 @@ back to the analysis.
   "typed verbs beat menu picks" no longer applies: `/agent` and the row are the SAME write, last one
   wins; only the skill ticks stay one-shot (`store/composerSkills`), so the 409 residual and the
   verbs-beat-picks rule now concern the skills alone.
+  **Amended 2026-10-09 (D84, Phase 27 S7a `881ae7d`, merged `cecc66f`):** the sticky pin is GONE (`pinStickyAgent` deleted) —
+  a menu agent row now NAVIGATES to that agent's own conversation (`openAgentConversation`, `store/chat.ts`), and `/agent`
+  sets only who answers inside the open conversation (the responder, `setResponder`); see A15.
   Original seam note kept below for provenance — noted 2026-07-11 (owner, at the A2
   composer-surface eyeball): surface the selection control as a **menu in the composer**, at the
   controls **leading edge beside the plan pill**. The layout seam already exists and is additive:
@@ -306,7 +309,7 @@ back to the analysis.
 
 ---
 
-### A11. Unified provider registry — retire the local/cloud dichotomy (**design LOCKED 2026-07-22 → DECISIONS D48 · BOTH SLICES ✅ BUILT 2026-07-23 — chat, and voice+embeddings — plus the 2026-07-27 pre-release fix wave; still UNRELEASED, it ships with UPDATE_PLAN slice 8**)
+### A11. Unified provider registry — retire the local/cloud dichotomy (**design LOCKED 2026-07-22 → DECISIONS D48 · BOTH SLICES ✅ BUILT 2026-07-23 — chat, and voice+embeddings — plus the 2026-07-27 pre-release fix wave; 🏁 SHIPPED in v1.3.0 (2026-07-28)**)
 *(numbered A11, skipping A10, so the heavily-cited "ACA §4 A10" reasoning-budget id stays unambiguous)*
 
 - **Status:** the design session ran 2026-07-22 and the design is **LOCKED — owner-signed the same
@@ -385,7 +388,7 @@ back to the analysis.
   call); an Undo toast for delete (the stash can hold a `deleted` variant — an added column, not a
   sibling table).
 
-### A15. Past conversations + conversations per agent — the chat-app model (Telegram / Discord style) — **owner ask 2026-10-01 · "I will definitely want that" · ✏️ DESIGN RULED 2026-10-06 → [D84](./DECISIONS.md) / TODO Phase 27 / [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md)**
+### A15. Past conversations + conversations per agent — the chat-app model (Telegram / Discord style) — **owner ask 2026-10-01 · "I will definitely want that" · ✏️ DESIGN RULED 2026-10-06 → [D84](./DECISIONS.md) / TODO Phase 27 / [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) · ✅ BUILT — merged `cecc66f` 2026-10-10, S11 + (c) `a304c533` 2026-10-14; NOT RELEASED (S13 rides the next tag after v1.7.11)**
 
 - **Baseline, wanted REGARDLESS of the per-agent question (owner, 2026-10-01): PAST CONVERSATIONS.**
   *"Ideally, we should think about having past conversations regardless, because every other app like
@@ -439,7 +442,8 @@ back to the analysis.
     (likely: `/new` = a fresh conversation with the CURRENT agent);
   - **ISS-49's re-seat stops being a pick trigger** — the `PUT /threads/{id}/opening` route survives
     only for the recorded `alt_greetings` picker (same agent, another greeting). The owner chose to
-    ship ISS-49 first as the stopgap (2026-10-01), knowing this.
+    ship ISS-49 first as the stopgap (2026-10-01), knowing this. *(Superseded by R27: the route was
+    DELETED in Phase 27 S7a `881ae7d`; the `alt_greetings` picker re-adds one when built.)*
 - **Open questions for the design session:**
   1. **Per-message agent switching inside ONE conversation** (A7 — handing a fleet question to a
      specialist mid-chat): drop it, keep it for tool agents only, or turn it into a one-off
@@ -467,6 +471,10 @@ back to the analysis.
   owner rulings R0–R46) in [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md); build = TODO Phase 27 after the
   design council's confirm rounds.
   **→ Build started 2026-10-09 (Phase 27, plan v2.7, the `phase27` worktree branch).**
+  **→ ✅ BUILT:** S0–S10 + S10-C01 on `phase27`, THE SINGLE MERGE `cecc66f` (2026-10-10); S11 = the owner's device round
+  (2026-10-10 → 2026-10-14, PASS — the plan's §13 "S11 as-built"); the (c) micro-wave `a304c533` (2026-10-14); S12 = the docs
+  close-out (2026-10-14). OPEN = S13, the release — it rides v1.7.12 (v1.7.12 = after the ASR session B; J3/J4 are their own sessions, not a gate (owner 2026-10-09 `af198bc9`)). The per-agent sheet IS the past-conversations list (one list per agent, no
+  global list — R19). Later refinements: ISSUES ISS-72 · ISS-82.
 
 ## B. Memory (configurable, pluggable)
 

@@ -1087,7 +1087,9 @@ read-side only**), the A3/D49 pair `automations` + `automation_runs` (migration 
 their run ledger), `message_alternates` (migration 7, D81 — one row per VARIANT of an anchor's reply:
 `{id, thread_id, anchor_id → messages ON DELETE CASCADE (NULL reserved for the greeting-swipe seam), n,
 rows (JSON raw rows; NULL = the variant live in messages), created_at}`; per anchor 0 rows or N ≥ 2 with
-exactly one NULL), `schema_version`. `push_subscriptions` and `pending_actions` (for suspended confirms /
+exactly one NULL), `schema_version`. Migration 8 (D84, [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) §3) adds
+`threads.seen_at` + the per-agent index `idx_threads_agent_updated`, and the idempotent `_REPAIRS` pass (the `seen_at`
+backfill + the NULL-home repair) re-runs on every connect (`db.py`). `push_subscriptions` and `pending_actions` (for suspended confirms /
 notify-park) are **not built** — they "arrive with the phases that need them" (`db.py` module docstring).
 Migration application is **atomic per migration** (script + version stamp in one explicit
 transaction composed inside the script text; migrations author DDL/DML only — the runner owns
@@ -1109,9 +1111,9 @@ stash/swap/drop is one `transaction()`) (`services/conversation.py`), `EventServ
 `AutomationRepo` (`services/automations/repo.py` — one class for both automation tables).
 
 Migrations are **inline in `db.py`**, not a `schema.sql` file: `MIGRATIONS: list[tuple[int, str]]`
-(versions **1–7** today — 1 the base tables, 2 `messages.agent`, 3 `messages_fts`, 4 the event
+(versions **1–8** today — 1 the base tables, 2 `messages.agent`, 3 `messages_fts`, 4 the event
 attribution quartet, 5 the automations pair, 6 the per-model-call message metadata, 7 the D81 reply
-alternates) applied in order and
+alternates, 8 the D84 `threads.seen_at` + per-agent index) applied in order and
 tracked in `schema_version`. No ORM — hand-written SQL is enough at this scale and keeps the dep surface
 small (D2).
 
@@ -1332,7 +1334,7 @@ position, depth}` (both `POST /api/agent/chat` and `POST /api/exec`), not the ol
 `GET /api/events/stream` (fleet activity) is a separate feed off the EventBus.
 
 **The events feed + the `thread` frame (Phase 27 S3 — D84; [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) §5;
-ruled, not yet built).** `GET /api/events/stream` renders each persisted `Event` as `event: event` with `id: <event.id>`
+✅ BUILT — the server half S3 `7ef8690`, the client S10 `696811b`; merged `cecc66f`, 2026-10-10).** `GET /api/events/stream` renders each persisted `Event` as `event: event` with `id: <event.id>`
 (the action's `output` excluded) plus a `ping` keepalive. Phase 27 widens the EventBus to `Event | ThreadFrame` and adds a
 second, NON-persisted frame beside it — a conversation's live status:
 
@@ -1417,8 +1419,8 @@ interface Message { id:string; role:Role; parts:Part[]; ts:string; }
 - **Chat is *not* Query** — the thread list and each thread's messages live in `store/chat.ts`
   (fetched directly from `/api/threads[/{id}/messages]`), and a dedicated SSE reducer appends/patches
   parts by id into it; confirm/question parts render interactive controls that POST back.
-  **Amended by Phase 27 S9/S10 (D84; [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) §6 "Query vs store") — ruled,
-  not yet built:** the thread LIST becomes ordinary server state — `useQuery(['threads', agent])` in
+  **Amended by Phase 27 S9/S10 (D84; [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md) §6 "Query vs store") — ✅ BUILT
+  (S7b `b426f14` · S9b `7d547d1` · S10 `696811b`; merged `cecc66f`):** the thread LIST becomes ordinary server state — `useQuery(['threads', agent])` in
   `hooks/useThreads.ts` (the per-agent sheet's rows with their `label/preview/running/awaiting/unread`), and `['agents']`
   carries each agent's `summaries[name].status` (the roster dots); both are invalidated by the `thread` frame (§12) and
   by a local seen write. MESSAGES stay in `store/chat.ts` with the SSE reducer.
@@ -1542,8 +1544,8 @@ registry/Protocol design rather than hoped for.
   model-specific tokenizer dep); see §5.4.
 - ✅ **Resolved — plan persistence**: the latest `task_plan` call **rides the message history** (no
   `plans` table); reload + the model's context recover it.
-- ⏳ **AgentSelector auto-rotate algorithm** (D15 #8) — seam locked (off-by-default `agent.auto_rotate`,
-  `KeywordAgentSelector` default lean); concrete algorithm decided at the 7e-g build. *(Retires in Phase 27 S5,
-  CONVERSATIONS_PLAN §9.)*
+- ✅ **Retired — AgentSelector auto-rotate algorithm** (D15 #8) — seam locked (off-by-default `agent.auto_rotate`,
+  `KeywordAgentSelector` default lean); concrete algorithm decided at the 7e-g build. *(Retired in Phase 27 S5 `d7f9370`,
+  CONVERSATIONS_PLAN §9 — the two `AgentCfg` keys, the selector and the `AgentSelector` protocol are gone.)*
 - ⏳ **Real idle detection** mechanism for D1 (helper agent vs heuristic) — still the hard one.
 - ⏳ **OpenAPI→TS** type generation vs hand-written types.

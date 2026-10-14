@@ -370,6 +370,10 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   `store/chat` `reseatOpening`, latest-intent-wins behind the D81 `syncMessageRoute`) and from `/new`'s
   tail when the pick changed mid-mint; opening or hydrating a thread never re-seats. Named for the
   operation so the `alt_greetings` picker can add its greeting index to the same route.
+  **Superseded by Phase 27 (D84 — [`CONVERSATIONS_PLAN.md`](./CONVERSATIONS_PLAN.md)):** the two as-built records above are
+  history. S7a `881ae7d` retired the D75 tandem rule, `startNewThread`'s options + its re-seat tail, `pinStickyAgent`,
+  the whole ISS-49 client half, `PUT /api/threads/{id}/opening` and `ThreadRepo.set_agent` (a conversation's HOME agent
+  never moves; `/new` = the home's fresh conversation); S5 `d7f9370` retired `agent.auto_rotate` and its router.
   **The "reset the whole character" command — SEMANTICS RULED round 4, feature NOT v1:** a
   red button on the character's own detail that resets the agent to its default/as-imported
   values, **wipes THAT agent's memory files** (its memory dir; the specific agent's, nothing

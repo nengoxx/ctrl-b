@@ -183,7 +183,7 @@ Each credible mode gets **exactly one disposition**: a safe probe (temp `CTRLB_C
    artifact).
 2. **Opus subagent** (high, pinned brief): the deep audit — reads the subsystem end-to-end,
    runs the packet's measurements, drafts evidence (§2.1 a–d) + candidate findings.
-3. **Codex** (`gpt-5.6-sol` high, read-only sandbox): adversarial round with the complementary
+3. **The standing co-reviewer lane** (the `second-opinion` skill's model table — Hermes Sol `gpt-6.1-sol` since 2026-10-09; Codex `gpt-5.6-sol` high, read-only sandbox, when this was written): adversarial round with the complementary
    lens (correctness/failure-modes vs design/perf — inverted per packet as fits).
 4. **Main seat reconciles**: cross-checks findings against code + locked D-entries (a finding
    contradicting a D-entry needs a fact that breaks it, else the D-entry wins and the ruling is

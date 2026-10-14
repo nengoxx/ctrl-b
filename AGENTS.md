@@ -28,7 +28,9 @@ Current capabilities (the v1.0 app):
   privilege gate → confirm-bubble for med/high risk → execute → audit). Integrations: SearXNG web
   search, an MCP client (Streamable-HTTP + stdio), curated open-terminal shell/file tools, a generic
   OpenAPI provider, embeddings; plus **skills** and **agents/subagents**, tier-1 + tier-2 **memory**
-  (D57), and **composer attachments** (images/text/PDFs re-readable via `read_attachment`, D68).
+  (D57), **composer attachments** (images/text/PDFs re-readable via `read_attachment`, D68), and **conversations per
+  agent** (a never-moving HOME agent per conversation, the per-agent sheet, live status — D84; on `main` since
+  `cecc66f`, not on prod yet).
 - **Characters & lorebooks** — conversational characters ARE ordinary agents (V2/V3 card import,
   Voice/Duties assembly, the agent gallery + three-state backdrop) plus the roleplay-independent
   **lorebook** subsystem (D70).

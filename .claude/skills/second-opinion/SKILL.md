@@ -24,14 +24,14 @@ judge the result rather than adopting it.**
 
 | Situation | Use | Cost posture |
 |---|---|---|
-| Review of code/design **we wrote** — correctness, edge cases, failure modes | **Codex** (`gpt-5.6-sol`, high) | cheap — use freely |
+| Review of code/design **we wrote** — correctness, edge cases, failure modes | **the Hermes Sol lane** (`gpt-6.1-sol`, high, no profile — the DEFAULT since 2026-10-09, see THE HERMES REVIEW MODELS); the Codex CLI (`gpt-5.6-sol`) is the older path, when warranted | cheap — use freely |
 | Reading many files to answer a question | **`Explore`** subagent | cheap |
 | Bounded research on external projects / the field | **`general-purpose`** subagent (Opus 5.5 high) | the workforce — use freely |
 | Well-specified implementation from a pinned brief | **`general-purpose`** subagent (Opus 5.5 high) | the workforce — use freely |
 | Mechanical / operational work, runbook procedures, releases | **`general-purpose`** subagent (Opus 5.5 high) | the workforce — use freely |
 | An independent CLAUDE lens on the main seat's own design | **ONE Opus 5.5 subagent** briefed adversarially | occasional — the mirror of the old Fable tier |
 | **A CODE ROUND on a critical part** (security-relevant routes/parsers, chokepoints, migrations, wide refactors) — **owner rule 2026-09-26** | **BOTH, in parallel, on the SAME diff: a blind Opus 5.5 subagent (the independent reviewer) AND the Maya/Emma hermes lane (the non-Claude fresh lens)** — distinct emphasis, never partitioned; confirm with the reviewer that raised each finding (Opus by `SendMessage`, Maya by a fresh self-contained `-z`) | the default for anything that ships to prod |
-| **The THIRD lane on every Phase 27 review round (owner, 2026-10-09: "it earned its keep") — design AND code rounds** — the owner's local Qwen behind the `strata` endpoint on corsair (§The local lane below) | **Qwen3.8-Flash-Next IQ2_XS, THINKING ON, ~25–30 min, output to a file; launched as a SEPARATE lane beside Opus + Sol (never merged into their briefs), read LAST, every accepted finding re-verified in code like the others** — a heavily quantized model: never alone, never the deciding voice | free (the owner's own GPU) — Opus bills the Anthropic window, Sol the OpenAI one, Qwen neither |
+| **The THIRD lane on every Phase 27 review round (owner, 2026-10-09: "it earned its keep") — design AND code rounds** — the owner's local Qwen behind the `strata` endpoint on corsair (§The local lane below) | **Qwen3.8-Flash-Next (the quant corsair serves TODAY — `/v1/models`; IQ4_XS on 2026-10-14, IQ2_XS when measured), THINKING ON, ~25–30 min, output to a file; launched as a SEPARATE lane beside Opus + Sol (never merged into their briefs), read LAST, every accepted finding re-verified in code like the others** — a heavily quantized model: never alone, never the deciding voice | free (the owner's own GPU) — Opus bills the Anthropic window, Sol the OpenAI one, Qwen neither |
 | **Design, architecture, supervision, audits, a judgement call, a ruling** | **the MAIN SEAT (Fable 5) — never delegate** | — |
 
 **Standing owner directive (2026-07-22, reaffirmed 2026-07-26):** launch a Codex review **whenever
@@ -186,9 +186,9 @@ item 9 applies — sol is sol).
 > ### ▲ THE LOCAL LANE — Qwen3.8-Flash-Next via `strata` (owner ask 2026-10-09, session 69): a plausible THIRD reviewer, never trusted blindly
 >
 > **What it is.** The owner's own quantized model on corsair, served by llama.cpp behind ctrl-b's `strata` provider
-> (`http://corsair:18081/v1`, model `qwen3.8-flash-next-iq2_xs`, **262 144-token context**, no API key, OpenAI-compatible;
+> (`http://corsair:18081/v1`, model = whatever `curl -m 5 http://corsair:18081/v1/models` lists (it DRIFTS while the owner tests quants — read it first; 2026-10-14 = `qwen3.8-flash-next-bartowski-iq4_xs`; the `iq2_xs`/`iq3_xxs` weights were deleted 2026-10-13), **262 144-token context**, no API key, OpenAI-compatible;
 > corsair must be AWAKE — `curl -m 5 http://corsair:18081/v1/models` first). It is FREE and SLOW, has NO tools (paste the
-> artifact into the prompt), and is heavily quantized (IQ2_XS). Measured on the Phase 27 plan (136 KB ≈ 41k tokens):
+> artifact into the prompt), and is heavily quantized (IQ2_XS when measured; the served quant changes while the owner tests). Measured on the Phase 27 plan (136 KB ≈ 41k tokens):
 >
 > | Run | Result | Verdict as a reviewer |
 > |---|---|---|
@@ -201,7 +201,7 @@ item 9 applies — sol is sol).
 > import json, urllib.request
 > plan = open("docs/CONVERSATIONS_PLAN.md").read()           # the artifact, pasted verbatim
 > brief = f"...the review brief (same discipline as the paid lanes)...\n=== THE DOCUMENT BEGINS ===\n{plan}\n=== THE DOCUMENT ENDS ===\nNow write the review."
-> body = {"model": "qwen3.8-flash-next-iq2_xs", "messages": [{"role": "user", "content": brief}],
+> body = {"model": "qwen3.8-flash-next-bartowski-iq4_xs", "messages": [{"role": "user", "content": brief}],
 >         "temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0, "presence_penalty": 1.0,   # Qwen3 thinking-mode sampling; the penalty is THE loop breaker at this quant
 >         "max_tokens": 200000, "stream": False}                                                  # effectively unbounded inside the 262k ctx; the owner: "it's free"
 > req = urllib.request.Request("http://corsair:18081/v1/chat/completions", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})

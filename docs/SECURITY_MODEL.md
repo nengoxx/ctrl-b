@@ -113,9 +113,9 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
   (`DEFAULT_AGENT_NAME`), so a root conversation's override is never pruned by a roster refresh
   (CONVERSATIONS_PLAN §12.3 H1). While a conversation's home is UNKNOWN to the client (its pin read failed), a send
   carries NO override — a persisted, uncapped elevation never rides another home's conversation (§12.3 H6).
-  *(Ruled, not yet built — F2 lands with Phase 27 S2, the persistence with S7; until then today's global override is
-  session-only.)*
-- **The conversation mutation routes (Phase 27 S2, D84 — CONVERSATIONS_PLAN §4; ruled, not yet built).** A route that
+  *(✅ BUILT — F2 with Phase 27 S2b `315687a`, the persistence with S7a `881ae7d`; on `main` since the merge `cecc66f`,
+  2026-10-10.)*
+- **The conversation mutation routes (Phase 27 S2, D84 — CONVERSATIONS_PLAN §4; ✅ BUILT — S2a `5bb07e1` + S2b `315687a`, merged `cecc66f`).** A route that
   mutates a thread takes its per-thread turn marker first (D38: `_reserve_turn(…, "edit")` → `_revalidate_thread`; 409
   while a turn runs), and `backend/tests/test_turn_guard_invariant.py` pins that route by route. Phase 27 adds three:
   - `PATCH /api/threads/{id}` `{title?, seen_at?}` — **unguarded, by design:** `title` and `seen_at` are neither model
@@ -135,7 +135,7 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
 
   The invariant test's `_EXPECTED` gains `delete_thread` + `delete_agent` (each must call `_revalidate_thread` after its
   reserve) and `_MUTATION_MARKERS` gains `threads.delete(` + `threads.delete_many(`; in S7 the ISS-49
-  `PUT /api/threads/{id}/opening` route leaves both with `ThreadRepo.set_agent`.
+  `PUT /api/threads/{id}/opening` route left both with `ThreadRepo.set_agent` (S7a `881ae7d`).
 - **Risk levels** (`Risk`): `LOW` · `MED` · `HIGH`. Risk + the `confirm` flag are declared per action on its
   `ToolSpec` — the gate is data, not scattered `if`s.
 - A suspended call becomes `RunState.AWAITING_CONFIRM` and renders as the confirm bubble.

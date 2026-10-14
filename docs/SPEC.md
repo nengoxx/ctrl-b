@@ -31,7 +31,7 @@ design (D7) with a multi-theme engine on top (D28/D29/D31).
 |---|--------|-------------|--------|
 | P1 | **Fleet control** | Wake-on-LAN, ICMP liveness + latency, SSH shutdown/reboot, per-host service start/stop/restart, TCP service probes, open-service-URL, host/service CRUD from the UI | ✅ |
 | P2 | **Agent chat** | Streaming tool-loop chat (SSE), the full action registry as OpenAI tools, confirm-gated risky calls with suspend/resume, task plans (TodoWrite-style + clickable panel), clarifying questions, context compaction w/ selectable summarizer, per-message local/cloud switch, markdown replies, **composer attachments** (staged raw-body uploads → durable per-thread files → `read_attachment` re-reads + the per-hop no-vision strip, D68) | ✅ |
-| P3 | **Agent platform** | File-discovered **skills** (SKILL.md; user- & selector-invoked, toolset narrowing), folder-discovered **agents** (agent.yaml + SOUL.md persona; `/agent` switch + optional auto-routing), headless **subagents** (bounded parallel, privilege-clamped), **memory** — tier 1 (MEMORY/USER/STATE stores, cap headers, propose-or-auto-write, git-versioned) + the opt-in tier-2 **Core Memory** corpus (shared markdown index + on-demand topic reads via `core_memory`, D57), **session search** (FTS5), loop-discipline guards, self-managed skills (`skill_manage`), and **characters-are-agents** — the AgentDef expansion + universal Voice/Duties assembly, V2/V3 card import, the roleplay-independent **lorebook** subsystem, the agent gallery + three-state backdrop (D70) | ✅ |
+| P3 | **Agent platform** | File-discovered **skills** (SKILL.md; user- & selector-invoked, toolset narrowing), folder-discovered **agents** (agent.yaml + SOUL.md persona; per-agent **conversations** — a never-moving HOME agent + the `/agent` responder, D84; the optional auto-routing retired in Phase 27 S5 `d7f9370`), headless **subagents** (bounded parallel, privilege-clamped), **memory** — tier 1 (MEMORY/USER/STATE stores, cap headers, propose-or-auto-write, git-versioned) + the opt-in tier-2 **Core Memory** corpus (shared markdown index + on-demand topic reads via `core_memory`, D57), **session search** (FTS5), loop-discipline guards, self-managed skills (`skill_manage`), and **characters-are-agents** — the AgentDef expansion + universal Voice/Duties assembly, V2/V3 card import, the roleplay-independent **lorebook** subsystem, the agent gallery + three-state backdrop (D70) | ✅ |
 | P4 | **Integrations** | MCP client (streamable-HTTP + stdio), generic OpenAPI tool servers, open-terminal remote shell/files, SearXNG `web_search`, embeddings client (seam), per-tool overrides (description + tri-state agent access), between-turn rediscovery | ✅ |
 | P5 | **Voice** | Push-to-talk dictation (STT proxy, 5-state mic + the dual-mode hold/lock gesture), read-aloud TTS (per-bubble + auto-TTS, docked mini-player, blob cache) with **chunked read-along** synthesis (D63), primary→fallback failover per service, capability-probed UI, and **live voice / "call mode"** — the Speaches-realtime ear behind the app's one WebSocket relay, client-submitted turns, energy-gated barge-in, plus **phrase-streaming dictation** off the same ear (D71; `voice.live.enabled` ships ON since v1.7.8 — the S4 gate closed 2026-09-26) | ✅ |
 | P6 | **Config & ops** | Whole config editable in-app (masked secrets, comment-preserving writes, hot-apply), Tailscale Serve HTTPS toggle, live events feed + audit trail, guarded `!` shell escape hatch (opt-in), PWA install/update, the **media manager** — typed raw-body writes + per-destination art LIBRARIES, crop, focal point, drag reorder (D65) | ✅ |
@@ -138,7 +138,7 @@ flowchart TB
         perm["permissions.decide()"]
         bus["EventBus"]
         fo["failover()"]
-        protos["MemoryProvider · SkillProvider/Selector ·\nAgentSelector · Orchestrator (Protocols)"]
+        protos["MemoryProvider · SkillProvider/Selector ·\nOrchestrator (Protocols)"]
     end
     subgraph adapters["adapters/ — I/O, errors normalized to typed results"]
         ad["inference · ssh · wol · voice · mcp_client ·\nopenapi_tools · openterminal · searxng · embeddings"]
@@ -227,7 +227,7 @@ rebuilds only **between** turns (▹ ACA-17 closes the auto-path race).
 | Composition root + anti-drift construction seam | `main.py` + `runtime.py` | one construction site per adapter |
 | Registry | tools · themes · memory stores · proposables | "adding one = one row, never a switch statement" |
 | Chokepoint (single writer/path) | ActionService · `edit_config_yaml` · EventService | uniqueness verified by audit |
-| Strategy via Protocol (swappable defaults) | Skill/Agent selectors, MemoryProvider/Backup, Orchestrator | D11 |
+| Strategy via Protocol (swappable defaults) | the Skill selector (the Agent selector retired by Phase 27 S5/S7a — the HOME agent + responder, CONVERSATIONS_PLAN), MemoryProvider/Backup, Orchestrator | D11 |
 | Derived state doctrine | fleet/service status, tailscale state, skills/agents/memory | *config declares, probes derive, nothing recomputable stored* |
 | Single-flight TTL cache | Fleet/Service sweeps | N clients share one probe |
 | Failover primitive (value-agnostic) | `core/failover` async generator → inference (first-chunk probe + retry tier), voice | live typed retry/failover events (D43); degradation surfaced, never silent |
@@ -253,7 +253,7 @@ sequenceDiagram
     participant X as ActionService
 
     U->>A: POST /agent/chat {text, thread_id?, mode?, skills?, privilege?}
-    A->>A: thread ?: create · rediscover-if-dirty · resolve AgentDef (+auto-route◇)
+    A->>A: thread ?: create · rediscover-if-dirty · resolve AgentDef (the HOME agent, or the `agent` responder — D84)
     A-->>U: SSE: thread {threadId,title}
     A->>S: run_turn()
     S->>S: activate skills · persist user msg · arm reflection?
@@ -385,10 +385,11 @@ erDiagram
     THREADS {
         text id PK
         text title
-        text agent "sticky specialist (subagents: archived=1)"
+        text agent "the HOME agent - pinned at mint, never moves (D84) (subagents: archived=1)"
         text created_at
         text updated_at
         int archived
+        text seen_at "migration 8 (D84): when the owner last saw it - the unread predicate"
     }
     MESSAGES {
         text id PK
@@ -576,7 +577,8 @@ events ignored (forward-compatible).
 
 Dual-mode delivery (D17): same generator collected into one JSON payload when
 `agent.streaming=off`/client asks buffered. Second feed: `GET /api/events/stream` (fleet
-activity, EventBus, 15 s keepalive) with client auto-reconnect + reconcile.
+activity, EventBus, 15 s keepalive) with client auto-reconnect + reconcile; since Phase 27 it also carries the
+NON-persisted `thread` frame, a conversation's live status (D84 — DESIGN §12, CONVERSATIONS_PLAN §5).
 
 **The one WebSocket (D71 §3.2).** `WS /api/voice/live` is the codebase's only socket and is NOT an
 agent transport: the client sends one JSON `start` (`{type, sample_rate}`), then raw binary pcm16 LE
