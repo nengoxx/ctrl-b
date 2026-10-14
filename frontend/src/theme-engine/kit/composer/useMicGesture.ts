@@ -15,6 +15,7 @@ import { buzz } from "../../../lib/haptics";
 import { startCall } from "../../../store/liveCall";
 import { setMicCancel } from "../../../store/micCancel";
 import { getUI, setUI, useUISlice } from "../../../store/ui";
+import { SLOP_PX } from "../../../lib/gesture";
 
 // THE DUAL-MODE MIC GESTURE (Phase 24 / S0.5 — docs/LIVE_VOICE_PLAN.md §6, D71; every threshold traced
 // to docs/research/R69-hold-to-record-gesture.md). ONE button in the mic's existing slot in all three
@@ -47,9 +48,9 @@ import { getUI, setUI, useUISlice } from "../../../store/ui";
  *  400/500 ms platform long-press: no peer uses that for this control. */
 export const ACTIVATE_MS = 150;
 
-/** Movement that disqualifies a tap / commits the axis, px. R69 §4.1 [V] — AOSP `TOUCH_SLOP = 8` dp
- *  (iOS's 10 pt agrees to within a thumb). Telegram Web's zero slop is too strict for a thumb. */
-export const SLOP_PX = 8;
+/** Movement that disqualifies a tap / commits the axis — the house tap slop, defined once in
+ *  `lib/gesture` (R69 §4.1; shared with ISS-71's `usePointerTap`) and re-exported for this module's API. */
+export { SLOP_PX };
 
 /** Upward travel that LOCKS hands-free, px. R69 §1.4 [V] — Telegram's `dp(57)`, reachable in one thumb
  *  flick from a bottom-right button (Signal's 150 dp is a deliberate arm movement; field split, pinned). */

@@ -41,6 +41,7 @@ import { ChatThread } from "../../src/components/ChatThread";
 import type { FocalArt } from "../../src/lib/focalPosition";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
 import { AUTOMATIONS_GROUP_ID } from "../../src/hooks/useAutomations";
+import { TAP_CLICK_BUST_MS } from "../../src/hooks/usePointerTap";
 import {
   openThread,
   resetToThreadless,
@@ -1089,6 +1090,111 @@ describe("ChatThread — stick to bottom (ISS-66)", () => {
     p.userScroll(300);
     expect(pill()).not.toBeNull();
     p.userScroll(p.max() - 100);
+    expect(pill()).toBeNull();
+  });
+
+  // ISS-71 — the pill's tap rides the pointer sequence: Android Chrome swallows the CLICK of a tap that
+  // stops a fling, so the first tap used to only stop the chat. These pin the four arms of the rule.
+  const down = (x = 100, y = 100, pointerId = 7) =>
+    fireEvent.pointerDown(pill()!, { pointerId, button: 0, clientX: x, clientY: y });
+  const up = (x = 100, y = 100, pointerId = 7) =>
+    fireEvent.pointerUp(pill()!, { pointerId, button: 0, clientX: x, clientY: y });
+
+  it("ISS-71: a tap whose click never comes (the fling stop) still jumps — on the pointer release alone", async () => {
+    const p = await mount([msg("u0", "user", "hi"), msg("a1", "assistant", "hello")]);
+    p.userScroll(200);
+    p.grow(2600);
+    down();
+    up(103, 98); // inside the 8px slop
+    expect(p.pane.scrollTop).toBe(p.max());
+    expect(pill()).toBeNull();
+  });
+
+  it("ISS-71: an ordinary tap's trailing click is swallowed — it never reaches what lay under the vanished pill", async () => {
+    const p = await mount([msg("u0", "user", "hi"), msg("a1", "assistant", "hello")]);
+    p.userScroll(200);
+    down();
+    up();
+    expect(pill()).toBeNull();
+    const under = vi.fn();
+    document.body.addEventListener("click", under);
+    try {
+      fireEvent.click(document.body, { clientX: 101, clientY: 100 }); // the trailing click, same spot
+      expect(under).not.toHaveBeenCalled();
+    } finally {
+      document.body.removeEventListener("click", under);
+    }
+  });
+
+  it("ISS-71: a swipe that starts on the pill (past the slop) or a cancelled pointer does not jump", async () => {
+    const p = await mount([msg("u0", "user", "hi"), msg("a1", "assistant", "hello")]);
+    p.userScroll(200);
+    const parked = p.pane.scrollTop;
+    down();
+    up(100, 130); // a 30px drag
+    expect(p.pane.scrollTop).toBe(parked);
+    expect(pill()).not.toBeNull();
+    down();
+    fireEvent.pointerCancel(pill()!, { pointerId: 7 }); // the browser took the touch for a pan
+    up();
+    expect(p.pane.scrollTop).toBe(parked);
+    // …and another pointer's release is not this tap.
+    down(100, 100, 7);
+    up(100, 100, 8);
+    expect(p.pane.scrollTop).toBe(parked);
+    expect(pill()).not.toBeNull();
+  });
+
+  it("ISS-71: after a tap, what lies under the vanished pill gets no emulated mousedown/click for the window — then does", async () => {
+    // Opus №1 MED-1 (the mousedown would move focus — an `ask_user` input → the keyboard) + the main
+    // seat's ruling on the reviewers' split: the window holds through a second tap (the habitual
+    // double-tap must not reach a confirm button now under the pill), and ends on its timer.
+    const p = await mount([msg("u0", "user", "hi"), msg("a1", "assistant", "hello")]);
+    p.userScroll(200);
+    down();
+    up(); // a fling stop: no trailing click arrives
+    expect(pill()).toBeNull();
+    const under = vi.fn();
+    document.body.addEventListener("click", under);
+    try {
+      const md = new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 102,
+        clientY: 99,
+      });
+      document.body.dispatchEvent(md);
+      expect(md.defaultPrevented).toBe(true);
+      fireEvent.click(document.body, { clientX: 100, clientY: 100 }); // the habitual second tap
+      expect(under).not.toHaveBeenCalled();
+      fireEvent.click(document.body, { clientX: 200, clientY: 100 }); // a tap elsewhere is the owner's
+      expect(under).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, TAP_CLICK_BUST_MS + 50));
+      });
+      fireEvent.click(document.body, { clientX: 100, clientY: 100 }); // the window is over
+      expect(under).toHaveBeenCalledTimes(2);
+    } finally {
+      document.body.removeEventListener("click", under);
+    }
+  });
+
+  it("ISS-71 (Sol №1): a REJECTED press (a drag inside the pill) does not jump through its own click", async () => {
+    const p = await mount([msg("u0", "user", "hi"), msg("a1", "assistant", "hello")]);
+    p.userScroll(200);
+    const parked = p.pane.scrollTop;
+    down();
+    up(100, 112); // 12px — past the slop, still on the pill
+    fireEvent.click(pill()!, { clientX: 100, clientY: 112 }); // the click a mouse makes for it
+    expect(p.pane.scrollTop).toBe(parked);
+    expect(pill()).not.toBeNull();
+  });
+
+  it("ISS-71: a keyboard / assistive activation (a click with no pointer session) still jumps", async () => {
+    const p = await mount([msg("u0", "user", "hi"), msg("a1", "assistant", "hello")]);
+    p.userScroll(200);
+    fireEvent.click(pill()!);
+    expect(p.pane.scrollTop).toBe(p.max());
     expect(pill()).toBeNull();
   });
 

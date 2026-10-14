@@ -4432,7 +4432,7 @@ body[data-motion="full"] .kit .b-wrap.arrive > .b {
  * 12px`, the pad is 24px over its height). When the keyboard opens the pane shrinks and the pin rides it.
  * z 4: over the log (and the edge scrims at 3), under the composer's own popovers (5).
  *
- * THE BUTTON: a 40px round borderless disc (the squeeze pill's fill + shadow, at a thumb's size), tokens only, centred
+ * THE BUTTON: a 44px round borderless disc (the squeeze pill's fill + shadow, at a thumb's size), tokens only, centred
  * without a transform so the appear pop owns `transform`. Appear = the kit's one pop (`kit-btn-pop`,
  * transform/opacity, motion-gated to `full`; nothing under reduced — it simply appears). It leaves by
  * unmounting: the latch re-stuck, there is nothing left to point at. */
@@ -4451,8 +4451,10 @@ body[data-motion="full"] .kit .b-wrap.arrive > .b {
   left: 0;
   right: 0;
   margin-inline: auto;
-  width: 40px;
-  height: 40px;
+  /* 44px (ISS-71): was 40, under the 44–48px touch-target floor (WCAG 2.5.5 / Material's 48dp) — the
+   * owner's tap must land first time, coasting or not. */
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;

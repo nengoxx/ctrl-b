@@ -5,6 +5,7 @@ import { useAgentArt, type AgentArt } from "../hooks/useAgentArt";
 import type { AgentChat } from "../hooks/useAgentChat";
 import { AUTOMATIONS_GROUP_ID, fmtWhen } from "../hooks/useAutomations";
 import { useOverlayBackGuard } from "../hooks/useOverlayBackGuard";
+import { usePointerTap } from "../hooks/usePointerTap";
 import { toggle as playMessage, usePlayback, type Speaker } from "../lib/audioController";
 import { fillComposer } from "../lib/composer";
 import { modalKeyDown } from "../lib/focusTrap";
@@ -1016,6 +1017,10 @@ export function ChatThread({ active, chat, emptyState }: Props) {
     document.getElementById("chatlog")?.focus({ preventScroll: true });
     stickNow();
   };
+  // ISS-71 — the tap rides the POINTER sequence, not `click`: a tap that lands while the chat is still
+  // coasting after a fling has its click swallowed by Android Chrome (it only stops the fling), and the
+  // owner's rule is one tap always reaches the bottom, coasting or not. `usePointerTap` owns the why.
+  const jumpTap = usePointerTap(jump);
 
   useEffect(() => {
     // ONLY while this tab shows: the scroller is SHARED with every other section, and another section's
@@ -1141,7 +1146,7 @@ export function ChatThread({ active, chat, emptyState }: Props) {
           its floating nav), and it rides the pane when the keyboard shrinks it. The tab wrapper's display:none hides it off this section. */}
       {active && escaped && (
         <div className="kit-jump-pin">
-          <button type="button" className="kit-jump" aria-label="Jump to latest" onClick={jump}>
+          <button type="button" className="kit-jump" aria-label="Jump to latest" {...jumpTap}>
             <ArrowDownIcon />
           </button>
         </div>
