@@ -12,7 +12,7 @@ stream via `resume()`, which finishes that step and continues the loop (DESIGN �
 in the DB, so a dropped stream can reconnect and re-read.
 
 Event contract (DESIGN §12 subset emitted here):
-    message.start    {messageId, role, agent}   # agent = resolved AgentDef name (7e-c)
+    message.start    {messageId, role, agent, device}   # agent = resolved AgentDef name (7e-c); device = S11 (c)
     reasoning.delta  {messageId, delta}       # thinking model's chain-of-thought (dimmed)
     text.delta       {messageId, delta}       # answer content
     part.added       {messageId, part}        # a tool_call part — UI renders the command bubble
@@ -482,6 +482,7 @@ class AgentSession:
         origin: Origin = ORIGIN_USER_CHAT,
         message_actor: Actor = Actor.USER,
         question_policy: QuestionPolicy = "skip",
+        device: str | None = None,
     ) -> None:
         self._threads = threads
         self._messages = messages
@@ -543,6 +544,12 @@ class AgentSession:
         #: default IS today's behavior — subagents keep denying in place. An automation may pass
         #: `use_default`, which resolves an answer and lets the run continue.
         self._question_policy = question_policy
+        #: The device that asked for this turn (S11 (c), owner ruling 2026-10-14 — only that device
+        #: auto-speaks the reply), stamped on EVERY assistant message this session writes and on its
+        #: `message.start`, so the client judges the reply actually on screen, whichever path loaded it.
+        #: `None` for automations, subagents and a client that sent none (the client's unknown arm).
+        #: Bookkeeping only: never part of what `_assemble` sends the model, nor of the prompt stamps.
+        self._device = device
         # Context-window settings are per-agent (4.5): the AgentDef's `compaction` wins, else the
         # global default. A subagent inherits the parent's effective value (resolved at spawn).
         self._compaction_cfg = self._agent.compaction or settings.agent.compaction
@@ -2146,11 +2153,20 @@ class AgentSession:
             # iteration's heuristic delta is only what's appended after it (D42 anchored estimator).
             watermark = await self._watermark_id(thread)
             assistant = Message(
-                thread_id=thread.id, role="assistant", actor=AGENT_ACTOR, agent=self._agent.name
+                thread_id=thread.id,
+                role="assistant",
+                actor=AGENT_ACTOR,
+                agent=self._agent.name,
+                device=self._device,
             )
             yield AgentEvent(
                 "message.start",
-                {"messageId": assistant.id, "role": "assistant", "agent": self._agent.name},
+                {
+                    "messageId": assistant.id,
+                    "role": "assistant",
+                    "agent": self._agent.name,
+                    "device": self._device,
+                },
             )
 
             reasoning_buf: list[str] = []
@@ -2689,10 +2705,21 @@ class AgentSession:
             return msgs
 
         messages = await _assemble_wrap()
-        assistant = Message(thread_id=thread.id, role="assistant", actor=AGENT_ACTOR, agent=self._agent.name)
+        assistant = Message(
+            thread_id=thread.id,
+            role="assistant",
+            actor=AGENT_ACTOR,
+            agent=self._agent.name,
+            device=self._device,
+        )
         yield AgentEvent(
             "message.start",
-            {"messageId": assistant.id, "role": "assistant", "agent": self._agent.name},
+            {
+                "messageId": assistant.id,
+                "role": "assistant",
+                "agent": self._agent.name,
+                "device": self._device,
+            },
         )
         reasoning_buf: list[str] = []
         text_buf: list[str] = []

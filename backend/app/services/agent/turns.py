@@ -106,7 +106,8 @@ class TurnAccumulator:
     exists solely so a client that re-attaches DURING a backoff renders the "// retrying …" line
     instead of the dead spinner A6 exists to kill, rather than a replayable narration."""
 
-    #: The currently-streaming assistant message: `{id, role, agent}` or None between messages.
+    #: The currently-streaming assistant message: `{id, role, agent, device}` or None between messages.
+    #: `device` (S11 (c)) rides into the snapshot so a re-attaching client knows whose reply it renders.
     open_message: dict[str, Any] | None = None
     text_deltas: list[str] = field(default_factory=list)  # joined on snapshot (no O(n²))
     reasoning_deltas: list[str] = field(default_factory=list)
@@ -151,6 +152,7 @@ class TurnAccumulator:
                 "id": data.get("messageId"),
                 "role": data.get("role"),
                 "agent": data.get("agent"),
+                "device": data.get("device"),
             }
             self.text_deltas = []
             self.reasoning_deltas = []

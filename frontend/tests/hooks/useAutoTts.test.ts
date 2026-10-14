@@ -57,6 +57,8 @@ const h = vi.hoisted(() => {
     /** The agent resolver, ONE stable function (the real one is memoized): `lynette` is the
      *  conversational agent here, every other turn (the default included) an `agent`-duties one. */
     art: (name: string | null) => ({ actions: name === "lynette" }),
+    /** S11 (c) — THIS device's id (`lib/device`); `null` = storage refused one. */
+    own: null as string | null,
   };
 });
 
@@ -67,6 +69,11 @@ vi.mock("../../src/store/ui", () => ({
 vi.mock("../../src/hooks/useVoiceStatus", () => ({ useVoiceStatus: () => ({ data: h.voice }) }));
 // The one agent resolver (session-51 polish #6) — `h.art`, stable across renders like the real one.
 vi.mock("../../src/hooks/useAgentArt", () => ({ useAgentArt: () => h.art }));
+// S11 (c) — this device's id, driven per case; the shape check stays the real one.
+vi.mock("../../src/lib/device", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/lib/device")>()),
+  deviceId: () => h.own,
+}));
 vi.mock("../../src/lib/audioController", () => ({
   feedReadAlong: h.feed,
   endTurnSpeak: h.endTurn,
@@ -110,6 +117,12 @@ const said = (id: string, text: string): ChatMessage =>
 const thought = (id: string, text: string): ChatMessage =>
   message(id, "assistant", [{ type: "reasoning", text }]);
 
+/** S11 (c) — the two devices: this one, and the desktop beside it. */
+const OWN = "a".repeat(32);
+const OTHER = "b".repeat(32);
+/** A message stamped with the device that asked for it (the server's `message.start` / row `device`). */
+const from = (device: string, m: ChatMessage): ChatMessage => ({ ...m, device });
+
 /** Mount the hook the way the app does — before the turn starts, so the streaming EDGE is real. */
 function mount() {
   const view = renderHook(() => useAutoTts());
@@ -137,6 +150,7 @@ beforeEach(() => {
   h.stoppedId = null;
   h.playingId = null;
   h.playbackSubs = [];
+  h.own = OWN;
   setVisibility("visible");
 });
 // `globals: false` means RTL's auto-cleanup never registers: unmount each case's hook, or a previous
@@ -348,8 +362,9 @@ describe("useAutoTts — the per-turn abandon latch", () => {
     expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "One sentence. Two sentences.", AGENT);
   });
 
-  it("a FOREIGN turn (the visible M11 attach — `foreignTurn`) starts latched: no feed, no flush; the NEXT turn speaks again", () => {
+  it("a FOREIGN turn (the visible M11 attach — `foreignTurn`) whose replies name NO device is silent: no feed, no flush; the NEXT turn speaks again", () => {
     // Owner ruling 2026-10-10: two devices side by side must not both speak the turn one of them sent.
+    // S11 (c): these replies carry no device (an older server) — the UNKNOWN arm, where the flag decides.
     const step = mount();
     step("streaming", [user, said("d1", "From the desktop.")], true);
     step("streaming", [user, said("d1", "From the desktop. Still going.")], true);
@@ -512,7 +527,7 @@ describe("useAutoTts — the reply hold (ISS-73 ①)", () => {
     expect(held()).toBe(false);
   });
 
-  it("a FOREIGN turn is never held — it was born stopped", () => {
+  it("a FOREIGN turn (`foreignTurn`, device-less replies — the unknown arm) is never held", () => {
     setVisibility("hidden");
     const step = mount();
     step("streaming", [user, said("a1", "The other device's reply.")], true);
@@ -641,7 +656,7 @@ describe("useAutoTts — the reply hold (ISS-73 ①)", () => {
     expect(h.touch).toHaveBeenCalledTimes(2); // the end is not a frame of the stream
   });
 
-  it("a turn it would NOT hold for feeds no progress — a foreign turn's frames cannot keep another reason's hold alive (row 13)", () => {
+  it("a turn it would NOT hold for feeds no progress — a foreign (unknown-arm) turn's frames cannot keep another reason's hold alive (row 13)", () => {
     const step = mount();
     step("streaming", [user, said("a1", "Theirs")], true);
     step("streaming", [user, said("a1", "Theirs, still")], true);
@@ -683,5 +698,170 @@ describe("useAutoTts — the reply hold (ISS-73 ①)", () => {
     view.unmount();
     expect(held()).toBe(false);
     expect(h.playbackSubs).toHaveLength(0);
+  });
+});
+
+// --- S11 (c) — WHOSE REPLY: only the device that started a turn auto-speaks it (owner ruling 2026-10-14) ---
+// Each reply carries the device that asked for it; the hook judges the reply actually on screen, every
+// pass. The cases above use device-less replies (the unknown arm — the S10-C01 behaviour, unchanged).
+
+describe("useAutoTts — whose reply (S11 (c))", () => {
+  const BG = { keepalive: true, idle_s: 600 };
+  const held = (): boolean | undefined =>
+    h.hold.mock.calls.filter((c) => c[0] === "reply").at(-1)?.[1];
+  beforeEach(() => {
+    h.hold.mockClear();
+    h.touch.mockClear();
+  });
+
+  it("THIS device's reply is fed and flushed", () => {
+    const step = mount();
+    step("streaming", [user, from(OWN, said("a1", "Mine."))]);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "Mine.", AGENT);
+    step("idle", [user, from(OWN, said("a1", "Mine. All of it"))]);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Mine. All of it", AGENT);
+  });
+
+  it("ANOTHER device's reply is silent — no feed, no flush, no hold, no hold progress", () => {
+    h.voice = { ...h.voice, tts_background: BG };
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, from(OTHER, said("d1", "From the desktop."))]);
+    step("streaming", [user, from(OTHER, said("d1", "From the desktop. Still going."))]);
+    step("idle", [user, from(OTHER, said("d1", "From the desktop. Still going."))]);
+    expect(h.feed).not.toHaveBeenCalled();
+    expect(h.endTurn).not.toHaveBeenCalled();
+    expect(h.hold.mock.calls.some((c) => c[1] === true)).toBe(false);
+    expect(h.touch).not.toHaveBeenCalled();
+  });
+
+  it("a known device decides UNCONDITIONALLY: this device's reply under the M11 attach's `foreignTurn` still speaks (Sol H1)", () => {
+    const step = mount();
+    step("streaming", [user, from(OWN, said("a1", "Mine, re-attached."))], true);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "Mine, re-attached.", AGENT);
+    step("idle", [user, from(OWN, said("a1", "Mine, re-attached."))], true);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Mine, re-attached.", AGENT);
+  });
+
+  it("…and another device's reply is silent even with NO `foreignTurn` (the hidden page's return probe attaches loud)", () => {
+    const step = mount();
+    step("streaming", [user, from(OTHER, said("d1", "Theirs."))], false);
+    step("idle", [user, from(OTHER, said("d1", "Theirs."))], false);
+    expect(h.feed).not.toHaveBeenCalled();
+    expect(h.endTurn).not.toHaveBeenCalled();
+  });
+
+  it("this device with NO id (storage refused) is the unknown arm for every reply — never 'every device is foreign' (v4.1 Sol 3b)", () => {
+    h.own = null;
+    const step = mount();
+    step("streaming", [user, from(OTHER, said("d1", "Someone's."))]);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("d1", "Someone's.", AGENT);
+    step("idle", [user, from(OTHER, said("d1", "Someone's."))]);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("d1", "Someone's.", AGENT);
+  });
+
+  it("the LAST reply switching own → foreign mid-episode goes silent there, and the flush finishes the OWN reply with its CURRENT text (v4.1 Sol 3 ∥ Opus M1)", () => {
+    const step = mount();
+    step("streaming", [user, from(OWN, said("a1", "One."))]);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a1", "One.", AGENT);
+    // a dropped own stream's recovery hands the desktop's successor: it is now the last reply
+    const a1 = from(OWN, said("a1", "One. And the tail"));
+    step("streaming", [user, a1, from(OTHER, said("d2", "Theirs. Long."))]);
+    step("streaming", [user, a1, from(OTHER, said("d2", "Theirs. Long. Longer."))]);
+    expect(h.feed).toHaveBeenCalledTimes(1); // the foreign reply is never fed
+    step("idle", [user, a1, from(OTHER, said("d2", "Theirs. Long. Longer."))]);
+    // a1's read-along queue is CLOSED, with the text a1 has now — never d2
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "One. And the tail", AGENT);
+  });
+
+  it("…and foreign → own speaks: the reply that is this device's is fed and flushed", () => {
+    const step = mount();
+    const d1 = from(OTHER, said("d1", "Theirs."));
+    step("streaming", [user, d1]);
+    expect(h.feed).not.toHaveBeenCalled();
+    step("streaming", [user, d1, from(OWN, said("a2", "Mine."))]);
+    expect(h.feed).toHaveBeenCalledExactlyOnceWith("a2", "Mine.", AGENT);
+    step("idle", [user, d1, from(OWN, said("a2", "Mine."))]);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a2", "Mine.", AGENT);
+  });
+
+  it("a reload landing another device's COMPLETED reply under an own episode does not flush it", () => {
+    const step = mount();
+    step("streaming", [user, from(OWN, said("a1", "Part one."))]);
+    // the episode's end re-reads the floor: the desktop's finished reply now sits last
+    step("idle", [
+      user,
+      from(OWN, said("a1", "Part one. Part two")),
+      from(OTHER, said("d9", "The desktop's whole reply.")),
+    ]);
+    expect(h.endTurn).toHaveBeenCalledExactlyOnceWith("a1", "Part one. Part two", AGENT);
+    expect(h.endTurn).not.toHaveBeenCalledWith("d9", expect.anything(), expect.anything());
+  });
+
+  it("a foreign turn still THINKING (no text yet) holds nothing and feeds no progress — ownership does not wait for text (v4.1 Sol 2 ∥ Opus M2)", () => {
+    h.voice = { ...h.voice, tts_background: BG };
+    setVisibility("hidden");
+    const step = mount();
+    step("streaming", [user, from(OTHER, thought("d1", "Hmm."))]); // the probe's attach: not `foreignTurn`
+    step("streaming", [user, from(OTHER, thought("d1", "Hmm. Let me see."))]);
+    expect(h.hold.mock.calls.some((c) => c[1] === true)).toBe(false);
+    expect(h.touch).not.toHaveBeenCalled();
+    // …while this device's own thinking turn IS held (the same shape, the other owner)
+    step("idle", [user, from(OTHER, thought("d1", "Hmm. Let me see."))]);
+    step("streaming", [
+      user,
+      from(OTHER, thought("d1", "Hmm. Let me see.")),
+      user,
+      from(OWN, thought("a2", "Mine.")),
+    ]);
+    expect(held()).toBe(true);
+  });
+
+  it("own audio PLAYING on a hidden page keeps the hold when a reload lands another device's finished turn under it (code round MED (a))", () => {
+    h.voice = { ...h.voice, tts_background: BG };
+    setVisibility("hidden");
+    const step = mount();
+    const a1 = from(OWN, said("a1", "Mine."));
+    step("streaming", [user, a1]);
+    h.pendingId = "a1"; // a1's read-along is loading/playing
+    step("idle", [user, a1]);
+    expect(held()).toBe(true);
+    // the floor re-read lands the desktop's whole turn after a1 — still a1's audio pending
+    step("idle", [user, a1, user, from(OTHER, said("d9", "The desktop's reply."))]);
+    expect(held()).toBe(true);
+    h.pendingId = null; // …until a1's audio ends
+    step("idle", [user, a1, user, from(OTHER, said("d9", "The desktop's reply."))]);
+    expect(held()).toBe(false);
+  });
+
+  it("own stream DROPS while hidden and the recovery hands the other device's successor: a1's pending chunks keep the hold, the foreign frames feed no progress (code round MED (b))", () => {
+    h.voice = { ...h.voice, tts_background: BG };
+    setVisibility("hidden");
+    const step = mount();
+    const a1 = from(OWN, said("a1", "One."));
+    step("streaming", [user, a1]);
+    h.pendingId = "a1";
+    expect(held()).toBe(true);
+    h.touch.mockClear();
+    step("streaming", [user, a1, from(OTHER, thought("d2", "Hmm."))]);
+    step("streaming", [user, a1, from(OTHER, said("d2", "Theirs."))]);
+    expect(held()).toBe(true); // a1's chunks are still pending
+    expect(h.touch).not.toHaveBeenCalled(); // the foreign stream's frames are never progress
+    h.pendingId = null; // a1 finished: the foreign stream alone does not hold the page
+    step("streaming", [user, a1, from(OTHER, said("d2", "Theirs. More."))]);
+    expect(held()).toBe(false);
+  });
+
+  it("an owner STOP still latches across a same-reply reconnect (`abandoned` = the owner's stop alone)", () => {
+    const step = mount();
+    step("streaming", [user, from(OWN, said("a1", "One."))]);
+    expect(h.feed).toHaveBeenCalledTimes(1);
+    h.stops += 1; // the owner's stop
+    // the dropped stream's re-attach: a re-read floor + the snapshot — a NEW array, the SAME own reply
+    step("streaming", [user, from(OWN, said("a1", "One. Two."))]);
+    step("streaming", [user, from(OWN, said("a1", "One. Two. Three."))]);
+    expect(h.feed).toHaveBeenCalledTimes(1);
+    step("idle", [user, from(OWN, said("a1", "One. Two. Three."))]);
+    expect(h.endTurn).not.toHaveBeenCalled();
   });
 });

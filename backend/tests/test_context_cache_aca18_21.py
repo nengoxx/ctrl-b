@@ -467,6 +467,7 @@ def test_finalize_retains_toolset_with_tool_choice_none():
     # `_finalize` now threads `self._agent.model.max_tokens`/`.reasoning_effort` (D42 W4) → give the
     # stub agent a `model` shape carrying the unset defaults.
     s._agent = SimpleNamespace(name="default", model=SimpleNamespace(max_tokens=None, reasoning_effort=None))
+    s._device = None  # S11 (c) — the requesting device the wrap-up's assistant row is stamped with
     rec = _RecInference()
     s._inference = rec
 

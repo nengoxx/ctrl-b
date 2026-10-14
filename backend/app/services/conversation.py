@@ -369,7 +369,8 @@ class MessageRepo:
         row must keep writing `meta = NULL`, so the common case stays exactly as cheap as it was.
         `source` (D62, the routing record) is the second and follows the same rule, as do D81's
         `skills` (a user row's explicit `/skill` invocations) and `edited` (normally stamped in SQL by
-        `edit_text`; emitted here only so a model carrying it round-trips through `add`)."""
+        `edit_text`; emitted here only so a model carrying it round-trips through `add`), and S11 (c)'s
+        `device` (the device that asked for an assistant reply)."""
         if (
             msg.prompt_stamps is None
             and msg.usage is None
@@ -377,6 +378,7 @@ class MessageRepo:
             and msg.source is None
             and not msg.skills
             and msg.edited is None
+            and msg.device is None
         ):
             return None
         meta: dict[str, Any] = {
@@ -391,6 +393,8 @@ class MessageRepo:
             meta["skills"] = list(msg.skills)
         if msg.edited is not None:
             meta["edited"] = _iso(msg.edited)
+        if msg.device is not None:
+            meta["device"] = msg.device
         return json.dumps(meta, separators=(",", ":"))
 
     async def add(self, msg: Message) -> Message:
@@ -657,6 +661,7 @@ class MessageRepo:
             source=SourceInfo.model_validate(source) if source else None,  # D62; absent → None
             skills=meta.get("skills") or None,  # D81 rider; absent → None
             edited=meta.get("edited"),  # D81; absent (never edited) → None
+            device=meta.get("device"),  # S11 (c); absent (every pre-S11 row) → None
         )
 
 

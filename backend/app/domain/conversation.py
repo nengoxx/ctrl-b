@@ -296,6 +296,15 @@ class Message(BaseModel):
     #: model's ORIGINAL generation: an edited row must say so, for the disclosure and for the eval
     #: harness, which must not score human-altered text as the model's.
     edited: datetime | None = None
+    #: The DEVICE that asked for this assistant reply (S11 (c), owner ruling 2026-10-14: "only the device
+    #: that started a turn auto-speaks it") — the per-browser-profile id the client sends as
+    #: `X-Ctrlb-Device`, stamped by the session that writes the row (`AgentSession._device`). It sits on
+    #: the MESSAGE, not the turn, because auto-TTS decides per message, and a message reaches the client
+    #: the same way on every path (live `message.start`, the `turn.sync` snapshot, a history reload).
+    #: Rides `meta` like `steer`, emitted only when set; user rows, automations, legacy rows and a client
+    #: that sent no id load as `None` ⇒ the client's unknown arm (its pre-S11 behaviour). Never reaches
+    #: the model: `_assemble` reads parts, not this.
+    device: str | None = None
 
     def text(self) -> str:
         """The concatenated `text` parts (the durable answer, excluding reasoning)."""

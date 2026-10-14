@@ -61,6 +61,11 @@ class SteerEntry:
     #: message, which is the only place a thread id is in scope. One more optional field on the
     #: unified submission object, never a parallel id-keyed map (the extend-don't-migrate directive).
     attachments: list[str] = field(default_factory=list)
+    #: The device that sent this steer (S11 (c)), captured at enqueue like `mode`/`agent`: a drain-B
+    #: turn this head seeds is that device's turn, so its session stamps the replies with it (only that
+    #: device auto-speaks them). A mid-loop drain ignores it like the other params — the reply belongs
+    #: to the device whose message seeded the turn. `None` = the client sent none (the unknown arm).
+    device: str | None = None
     entry_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     created_at: datetime = field(default_factory=_now)
 

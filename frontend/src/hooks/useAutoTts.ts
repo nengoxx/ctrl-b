@@ -15,6 +15,7 @@ import {
   usePlayback,
   type Speaker,
 } from "../lib/audioController";
+import { deviceId, isDeviceId } from "../lib/device";
 import { useChat } from "../store/chat";
 import type { ChatMessage } from "../types";
 import { useUISlice } from "../store/ui";
@@ -46,33 +47,63 @@ import { useVoiceStatus } from "./useVoiceStatus";
 // never a chunk's own `ended`), a view swap (its reset reads `idle`). A LIVE CALL is excluded by the
 // controller itself (code round row 6 — one place for both reasons). The idle bound lives with the hold;
 // this hook feeds it PROGRESS: each applied stream frame (`touchHoldProgress`).
+//
+// S11 (c) — WHOSE REPLY (owner ruling 2026-10-14: "only the device that started a turn auto-speaks it;
+// any other device reads it with the play button"). Each assistant reply carries the DEVICE that asked
+// for it (`ChatMessage.device`, server-stamped), and ownership is judged HERE, per message, every pass —
+// where the speak decision itself is made — never as a per-turn flag that every path swapping the turn
+// under a streaming view would have to re-synchronise (design v4). `foreignReply` is the ONE predicate:
+// a reply naming a device is foreign iff that is not this device; a reply naming none (or this device
+// having no id) is the UNKNOWN arm, today's behaviour — the visible M11 attach's `foreignTurn` silences,
+// everything else is loud. A foreign reply is never fed, never flushed and never holds the page awake.
+// `abandoned` therefore means ONLY "the owner stopped this reply's audio" again.
 
 /** Sentence end or any line break — the boundaries `lib/ttsChunks` itself splits on. */
 const BOUNDARY = /[.!?…\n]/;
 
-/** The latest assistant turn's reply text — scanning back only to the user boundary, so we consider
- *  the *current* turn's final message, not an older reply. Returns null if that turn ended without
- *  text (a tool-only step), or — in buffered mode (D17) — while it's still the empty placeholder.
- *  This keeps auto-TTS from speaking a stale reply when the completion fires before the reload lands.
- *  Mid-stream it is the same answer one delta at a time, and its TEXT-part filter is what keeps
- *  reasoning and tool output out of the synth (the store keeps those as separate parts). */
-function finalReply(
-  messages: ChatMessage[],
-): { id: string; text: string; agent: string | null } | null {
+/** The current turn's NEWEST assistant message, textless included (thinking, a tool step) — scanning
+ *  back only to the user boundary, so an older reply is never this turn's. It is the reply OWNER the
+ *  hold and its progress feed judge (v4.1, Sol 2 ∥ Opus M2): ownership must not wait for text, or a
+ *  foreign turn still thinking would fall to the unknown arm and hold the page awake. */
+function replyOwner(messages: ChatMessage[]): ChatMessage | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m.role === "user") return null; // reached the turn start with no assistant text
-    if (m.role !== "assistant") continue;
-    const text = m.parts
-      .filter((p) => p.type === "text")
-      .map((p) => (p.type === "text" ? p.text : ""))
-      .join("")
-      .trim();
-    // D70 §8.5 — the turn's agent rides along so the read is spoken in ITS voice; null on a default
-    // turn, which is what makes the request omit the field and fall back to the global chain.
-    return text ? { id: m.id, text, agent: m.agent ?? null } : null;
+    if (m.role === "user") return null; // reached the turn start with no assistant message
+    if (m.role === "assistant") return m;
   }
   return null;
+}
+
+/** A message's spoken text: its TEXT parts only — what keeps reasoning and tool output out of the synth
+ *  (the store keeps those as separate parts). */
+function spokenText(m: ChatMessage): string {
+  return m.parts
+    .map((p) => (p.type === "text" ? p.text : ""))
+    .join("")
+    .trim();
+}
+
+/** The latest assistant turn's reply text — `replyOwner`'s message, when it bears text. Returns null if
+ *  that turn ended without text (a tool-only step), or — in buffered mode (D17) — while it's still the
+ *  empty placeholder. This keeps auto-TTS from speaking a stale reply when the completion fires before
+ *  the reload lands. Mid-stream it is the same answer one delta at a time. */
+function finalReply(
+  messages: ChatMessage[],
+): { id: string; text: string; agent: string | null; device: string | null } | null {
+  const m = replyOwner(messages);
+  const text = m ? spokenText(m) : "";
+  // D70 §8.5 — the turn's agent rides along so the read is spoken in ITS voice; null on a default
+  // turn, which is what makes the request omit the field and fall back to the global chain. S11 (c):
+  // the reply's device rides along so the gates below can judge whose reply it is.
+  return m && text ? { id: m.id, text, agent: m.agent ?? null, device: m.device ?? null } : null;
+}
+
+/** S11 (c) — THE predicate: is this reply another device's? A reply naming a device decides
+ *  unconditionally (v4.1 / Sol H1); a reply naming none, or this device having no id (v4.1, Sol 3b),
+ *  is the UNKNOWN arm — the S10-C01 fallback, `foreignTurn` (the visible M11 attach's mark). */
+function foreignReply(device: string | null | undefined, foreignTurn: boolean): boolean {
+  const own = deviceId();
+  return own !== null && isDeviceId(device) ? device !== own : foreignTurn;
 }
 
 export function useAutoTts(): void {
@@ -89,7 +120,14 @@ export function useAutoTts(): void {
   /** What this turn has fed: the message id, the exact markdown (the flush's fallback when the turn's
    *  last message never becomes text-bearing), and whether the player ever docked it — an undock
    *  after that is the "user stopped" gate D63 named but no controller flag expresses. */
-  const fed = useRef<{ id: string; text: string; speaker: Speaker; docked: boolean } | null>(null);
+  const fed = useRef<{
+    id: string;
+    text: string;
+    speaker: Speaker;
+    docked: boolean;
+    /** S11 (c) — the fed reply's device: the terminal flush re-judges it (v4.1, Sol 3 ∥ Opus M1). */
+    device: string | null;
+  } | null>(null);
   // WHO each reply is read as: the agent picks the voice, and its duties decide whether `*…*` spans are
   // roleplay actions the ear may drop (session-51 polish #6). Resolved through the one agent resolver
   // (the roster the bubbles already read), never a second roster query.
@@ -131,10 +169,9 @@ export function useAutoTts(): void {
       fed.current = null; // a new turn starts with clean read-along bookkeeping
       owned.current = null; // …and owns no audio yet (ISS-73 ①)
       mouthStopped.current = false;
-      // A turn the OTHER device started, attached here by the visible M11 re-attach, starts "already
-      // stopped" (owner ruling 2026-10-10 — two devices side by side must not both speak): the latch
-      // silences the feed AND the terminal flush. Every other turn starts loud (`foreignTurn` false).
-      abandoned.current = foreignTurn;
+      // Every turn starts un-stopped. S11 (c): a turn the OTHER device started is silenced per REPLY
+      // (`foreignReply`, below), no longer by pre-arming this latch — which is the owner's stop alone.
+      abandoned.current = false;
       turnStops.current = getTurnStops();
     }
     if (getTurnStops() !== turnStops.current) abandoned.current = true;
@@ -158,6 +195,7 @@ export function useAutoTts(): void {
       id: reply.id,
       text: reply.text,
       speaker: { agent: reply.agent, actions: agentArt(reply.agent).actions },
+      device: reply.device,
     };
     // The override's first bypass: `ttsAuto` (the AppBar toggle). It only ever ADDS a voice — this
     // gate never silences anything. (What DOES silence a pre-call reply is the call DOOR's one-time
@@ -172,8 +210,20 @@ export function useAutoTts(): void {
     if (was === "streaming" && (status === "idle" || status === "error")) {
       if (abandoned.current) return; // the user stopped this reply's audio — don't start it again
       // A final assistant message that never became text-bearing (a tool-only step, or one that
-      // errored before its first delta) would otherwise strand the preamble already being read.
-      const target = live ?? fed.current;
+      // errored before its first delta) would otherwise strand the preamble already being read — and
+      // so would a FOREIGN last reply (S11 (c), v4.1 Sol 3 ∥ Opus M1: a dropped own stream handed the
+      // other device's successor, a reload landing it): the flush then finishes the OWN reply it fed,
+      // with that reply's CURRENT text (not the last boundary-fed prefix). Each candidate is judged by
+      // the predicate itself; a foreign one is never spoken.
+      const own = fed.current;
+      const ownNow = own && messages.find((m) => m.id === own.id);
+      const fedTarget = own && { ...own, text: (ownNow && spokenText(ownNow)) || own.text };
+      const target =
+        live && !foreignReply(live.device, foreignTurn)
+          ? live
+          : fedTarget && !foreignReply(fedTarget.device, foreignTurn)
+            ? fedTarget
+            : null;
       if (!target || target.id === spokenId.current) return;
       spokenId.current = target.id;
       owned.current = target.id; // ISS-73 ①: the hold now waits on this reply's audio
@@ -193,7 +243,7 @@ export function useAutoTts(): void {
       abandoned.current
     )
       return;
-    if (!live) return;
+    if (!live || foreignReply(live.device, foreignTurn)) return; // S11 (c): not this device's reply
     const already = fed.current?.id === live.id ? fed.current.text.length : 0;
     if (!BOUNDARY.test(live.text.slice(already))) return;
     fed.current = {
@@ -201,6 +251,7 @@ export function useAutoTts(): void {
       text: live.text,
       speaker: live.speaker,
       docked: fed.current?.id === live.id && fed.current.docked,
+      device: live.device,
     };
     owned.current = live.id; // ISS-73 ①: what the hold waits on once the stream ends
     feedReadAlong(live.id, live.text, live.speaker);
@@ -229,7 +280,19 @@ export function useAutoTts(): void {
   // Declared AFTER the feeder's effect on purpose: effects run in order, so this pass reads the
   // `abandoned`/`owned` the feeder has just written for the same render.
   useEffect(() => {
-    const eligible = ttsOk && ttsAuto && holdKeep && !abandoned.current;
+    // S11 (c): a FOREIGN reply must not hold the page awake — judged on the turn's newest assistant
+    // message, text or not (`replyOwner`, v4.1 Sol 2 ∥ Opus M2); none yet ⇒ the unknown arm. But the
+    // hold is split (code round on 32276ea4, Opus ∥ Sol MED): audio this turn already OWNS keeps it
+    // eligible even when a foreign reply has since become newest (a reload landing the other device's
+    // turn under it; a dropped own stream's recovery handing over the successor) — `owned` is only ever
+    // set AFTER the feed/flush's foreign check, so it is this device's reply by construction.
+    const newestForeign = foreignReply(replyOwner(messages)?.device, foreignTurn);
+    const eligible =
+      ttsOk &&
+      ttsAuto &&
+      holdKeep &&
+      !abandoned.current &&
+      (owned.current !== null || !newestForeign);
     // PROGRESS for the hold's idle bound: a new `messages` array while streaming is a stream frame the
     // store applied (the store makes one per frame — the same fact the feeder's per-delta re-run rides).
     // Only for a turn this hook would hold for (rulings row 13, the Qwen lane's Q6): the bound is
@@ -238,11 +301,17 @@ export function useAutoTts(): void {
       status === "streaming" &&
       messages !== lastFrame.current &&
       eligible &&
+      !newestForeign && // a foreign stream's frames are never progress
       !mouthStopped.current
     )
       touchHoldProgress();
     lastFrame.current = messages;
-    hold.current = { eligible, streaming: status === "streaming", idleS: holdIdleS };
+    // A foreign stream ALONE never holds the page; the owned audio still does (`audioPending(owned)`).
+    hold.current = {
+      eligible,
+      streaming: status === "streaming" && !newestForeign,
+      idleS: holdIdleS,
+    };
     applyHold();
   }, [
     status,

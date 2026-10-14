@@ -136,10 +136,11 @@ def test_drain_b_seeded_turn_runs_under_head_params() -> None:
         captured: dict = {}
         orig_build = agent_api._build_session
 
-        def spy_build(state, thr, agent_name=None, privilege=None):
+        def spy_build(state, thr, agent_name=None, privilege=None, device=None):
             captured["agent"] = agent_name
             captured["privilege"] = privilege
-            return orig_build(state, thr, agent_name, privilege)
+            captured["device"] = device  # S11 (c): the head's captured device (none on this entry)
+            return orig_build(state, thr, agent_name, privilege, device=device)
 
         agent_api._build_session = spy_build
         try:
@@ -150,6 +151,7 @@ def test_drain_b_seeded_turn_runs_under_head_params() -> None:
         # The spawned turn runs under the head entry's OWN captured params (D41 §9), NOT ignored.
         assert captured["agent"] == "researcher"
         assert captured["privilege"] == Privilege.FULL
+        assert captured["device"] is None
         assert handle.mode == "cloud"  # the snapshot mode carried from the entry (D39)
 
 

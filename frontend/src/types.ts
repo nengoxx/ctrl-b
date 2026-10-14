@@ -362,6 +362,11 @@ export interface ChatMessage {
   tokens: number | null;
   compacted: boolean;
   agent?: string | null; // which AgentDef produced this assistant turn (7e-c); null on user/default
+  // S11 (c) — the DEVICE that asked for this assistant reply (`lib/device`), stamped by the server and
+  // read wherever `agent` is: live `message.start`, the `turn.sync` snapshot, the durable history dump.
+  // `useAutoTts` speaks a reply only on that device; null/absent (automations, older rows, a client that
+  // sent no id) is the UNKNOWN arm — the pre-S11 behaviour.
+  device?: string | null;
   // D62 — per-message serve attribution. Both arrive two ways that must agree: live on `message.end`,
   // and on the durable thread-load (the same `Message` dump). Absent on user turns, on every pre-D62
   // row, and on any message no model call produced → the plain who-line, no chip, no disclosure.

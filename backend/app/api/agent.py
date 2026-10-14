@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import shutil
 import time
 import uuid
@@ -372,6 +373,7 @@ def _build_session(
     agent_name: str | None = None,
     privilege: Privilege | None = None,
     automation: AutomationSnapshot | None = None,
+    device: str | None = None,
 ) -> AgentSession:
     """Build a session from `app.state` (NOT a Request) — the state-shaped core of `_session`, shared
     with the D41 drain-B spawn (`start_steer_turn`, which has only `state`, never a Request) and with the
@@ -395,6 +397,10 @@ def _build_session(
       * compaction state only for a ROLLING thread: those grow across runs and need the thrash machine;
         a fresh per-run thread cannot outlive its one turn, so a per-thread state entry would just leak.
       * `origin=automation` + the run id — the attribution D-4 threads through every action it takes.
+
+    `device` (S11 (c)) is the device that asked for the turn — `_session` reads it off the request, drain
+    B passes its committed head's — and the session stamps it on every assistant reply it writes, so only
+    that device auto-speaks them. The runner passes none: an automation's replies belong to no device.
 
     Kept as ONE builder on purpose (the no-parallel-implementation rule): a separate automation builder
     would be a second place for the steer/compaction/routing/skills wiring to drift."""
@@ -433,7 +439,21 @@ def _build_session(
         ),
         message_actor=Actor.USER if automation is None else Actor.AUTOMATION,
         question_policy="skip" if automation is None else automation.question_policy,
+        device=device,
     )
+
+
+#: A device id as the client mints it (`lib/device.ts`: 16 random bytes as lowercase hex) — the strict
+#: shape `_request_device` accepts. Anything else is dropped, never stored: the header is client-authored.
+_DEVICE_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _request_device(request: Request) -> str | None:
+    """The device that sent this request (S11 (c), owner ruling 2026-10-14: only the device that started a
+    turn auto-speaks it) — the `X-Ctrlb-Device` header `streamTurn` sends, or `None` when it is absent or
+    malformed. Bookkeeping, never a credential: it only decides which of the owner's own devices speaks."""
+    raw = request.headers.get("x-ctrlb-device")
+    return raw if raw is not None and _DEVICE_RE.fullmatch(raw) else None
 
 
 def _session(
@@ -448,8 +468,9 @@ def _session(
     `privilege` is the `/privilege` session override (A1/D16) — resume re-sends it so the continuation
     gates at the same level (a security stance, unlike `mode` which isn't carried). Resume passes the
     last assistant turn's `agent` here (D15 #5) so a suspended turn finishes on the agent that started
-    it."""
-    return _build_session(request.app.state, thread, agent_name, privilege)
+    it. The requesting device (S11 (c)) is read HERE, once, for every request-driven turn (chat · resume
+    · regenerate) — the replies it writes belong to the device that asked for them."""
+    return _build_session(request.app.state, thread, agent_name, privilege, device=_request_device(request))
 
 
 def _effective_stream(setting: str, requested: bool) -> bool:
@@ -918,7 +939,8 @@ async def start_steer_turn(state, thread: Thread, entries: list[SteerEntry]) -> 
     privilege: Privilege | None = None
     if head.privilege is not None and head.privilege in {p.value for p in Privilege}:
         privilege = Privilege(head.privilege)
-    session = _build_session(state, thread, agent_name=head.agent, privilege=privilege)
+    # S11 (c): the seeded turn is the COMMITTED head's device's — its replies are that device's to speak.
+    session = _build_session(state, thread, agent_name=head.agent, privilege=privilege, device=head.device)
     handle.mode = head.mode  # the turn's inference mode — the snapshot carries it (D39)
     events = session.run_turn(thread, head.text, mode=head.mode, skills=head.skills)
     _spawn_drain_task(state, thread, events, handle, state.settings.agent.turns)
@@ -1557,6 +1579,8 @@ async def chat(body: ChatRequest, request: Request) -> Response:
         # D68 (E7): the ids ride the entry UNCLAIMED — the drain claims them when it persists the
         # steer's message, so a send-while-streaming keeps its files instead of dropping them.
         attachments=body.attachments,
+        # S11 (c): the sending device rides the entry, so a drain-B turn it seeds speaks on that device.
+        device=_request_device(request),
     )
     # CAP-SHADOWS-STEER corner fix (D41 wave-1): check the LIVE holder synchronously BEFORE the reserve
     # — if a chat/resume turn already owns this thread, enqueue directly (never touching

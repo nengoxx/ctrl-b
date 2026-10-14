@@ -9,6 +9,7 @@ import type { CoreMemoryStatus } from "../hooks/useMemory";
 import { clearAudioCache, forgetMessage } from "../lib/audioController";
 import { publishNotify } from "../lib/notifyBus";
 import { DEFAULT_AGENT } from "../lib/agentSlug";
+import { deviceId } from "../lib/device";
 import { currentPlanOf } from "../lib/plan";
 import { PRIVILEGE_VALUES, type Privilege } from "../lib/privilege";
 import { displayName, offRoster, onRoster, rosterDefault, rosterLanded } from "../lib/roster";
@@ -97,6 +98,9 @@ interface ChatState {
   // on the idle → streaming edge for any patch that does not name it (the own-send writers), and every
   // other re-attach (cold load, reconnect, the interrupt paths) names it `false` — so it can never leak
   // into the owner's next turn, and the owner's own turn re-attached after an app kill still speaks.
+  // S11 (c): since each reply carries the DEVICE that asked for it, `useAutoTts` reads this flag only in
+  // its UNKNOWN arm — a reply with no device (an older server, a client that sent none); a reply that
+  // names a device is judged by that alone (v4.1 / Sol H1: a known device decides unconditionally).
   foreignTurn: boolean;
 }
 
@@ -2320,7 +2324,11 @@ export async function openAgentConversation(name: string): Promise<boolean> {
   return outcome === "opened";
 }
 
-function emptyAssistant(id: string, agent: string | null = null): ChatMessage {
+function emptyAssistant(
+  id: string,
+  agent: string | null = null,
+  device: string | null = null,
+): ChatMessage {
   return {
     id,
     thread_id: state.threadId ?? "",
@@ -2331,6 +2339,7 @@ function emptyAssistant(id: string, agent: string | null = null): ChatMessage {
     tokens: null,
     compacted: false,
     agent,
+    device,
     fresh: true,
   };
 }
@@ -2681,17 +2690,22 @@ function makeTurnReducer(ctx: TurnCtx) {
         // Per-turn agent attribution (7e-c): the server stamps which AgentDef is producing this
         // turn so a live specialist turn is labelled immediately, not only after a reload.
         const agent = str(data.agent) ?? null; // optional (server may send null)
+        // S11 (c): the device that asked for this reply — `useAutoTts` speaks it only on that device.
+        const device = str(data.device) ?? null;
         if (!ctx.claimed && ctx.placeholderId) {
           const pid = ctx.placeholderId;
           set({
             messages: state.messages.map((m) =>
-              m.id === pid ? { ...m, id, agent, local: undefined } : m,
+              m.id === pid ? { ...m, id, agent, device, local: undefined } : m,
             ),
             streamingId: id,
           });
           ctx.claimed = true;
         } else {
-          set({ messages: [...state.messages, emptyAssistant(id, agent)], streamingId: id });
+          set({
+            messages: [...state.messages, emptyAssistant(id, agent, device)],
+            streamingId: id,
+          });
         }
         break;
       }
@@ -2914,9 +2928,16 @@ async function streamTurn(
   let taken = false;
 
   try {
+    // S11 (c): THE one own-turn chokepoint (chat · steer · regenerate · resume) names this device, so
+    // the replies the turn writes carry it and only this device auto-speaks them. No id ⇒ no header.
+    const device = deviceId();
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        ...(device !== null ? { "X-Ctrlb-Device": device } : {}),
+      },
       body: JSON.stringify(body),
     });
     // 409 = another turn already holds this thread's marker (D38 busy-truth). This is NOT an error —
@@ -3271,6 +3292,7 @@ function overlaySyncMessage(
   text: string,
   reasoning: string,
   agent: string | null,
+  device: string | null,
 ): ChatMessage[] {
   const setParts = (parts: Part[]): Part[] => {
     const next = parts.slice();
@@ -3286,10 +3308,12 @@ function overlaySyncMessage(
   };
   if (messages.some((m) => m.id === id)) {
     return messages.map((m) =>
-      m.id === id ? { ...m, parts: setParts(m.parts), agent: m.agent ?? agent } : m,
+      m.id === id
+        ? { ...m, parts: setParts(m.parts), agent: m.agent ?? agent, device: m.device ?? device }
+        : m,
     );
   }
-  const bubble = emptyAssistant(id, agent);
+  const bubble = emptyAssistant(id, agent, device);
   bubble.parts = setParts([]);
   return [...messages, bubble];
 }
@@ -3383,7 +3407,8 @@ function overlaySyncCall(
  *
  * `foreign` (D84 §12.3 M11, owner ruling 2026-10-10) — ONLY the visible M11 attach passes true (through
  * `probeAndReattach` → `attachOrSettle`): the turn was started by ANOTHER device, so the go-live write
- * marks it `foreignTurn` and auto-TTS stays silent for it. Every other caller stays loud.
+ * marks it `foreignTurn` and auto-TTS stays silent for it. Every other caller stays loud. (S11 (c): the
+ * flag now decides only a reply that carries no device — `ChatState.foreignTurn`.)
  */
 export async function reattachTurn(
   threadId: string,
@@ -3438,6 +3463,7 @@ export async function reattachTurn(
           str(msg.text) ?? "",
           str(msg.reasoning) ?? "",
           str(msg.agent) ?? null,
+          str(msg.device) ?? null, // S11 (c) — whose reply this is, for `useAutoTts`
         );
       }
     }
