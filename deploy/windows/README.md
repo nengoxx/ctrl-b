@@ -10,8 +10,19 @@ landed with the 2026-06-30 repo reorg. The always-on Linux/systemd path is [`../
 - installs backend deps (`pip install -e backend[dev,voice]` — the check.py toolchain + the voice ear),
 - installs frontend deps + builds the production bundle (`frontend\dist`).
 
-Prereqs it checks for: **Node 20+** (`npm`) and **Python 3.14+** (with the `py` launcher). It
-warns if `config.yaml` (fleet/integrations/secrets) is missing from the app root.
+Prereqs (corrected 2026-10-14 — the script checks less than this line used to claim): it checks only that
+**`npm` exists**, never the Node version — install **Node ^20.19 or ≥22.12** yourself (Vite 7's floor; CI runs
+Node 24). It creates the venv with **Python 3.14+** (via the `py` launcher, preferring 3.14), but an EXISTING
+`backend\.venv` is reused whatever its Python version (`setup.ps1` only prints it) — delete it if it predates
+3.14. It runs the config preflight (`python -m app.config_migration --check`), refuses while something listens
+on :5433, then `--apply`. It warns if `config.yaml` (fleet/integrations/secrets) is missing from the app root.
+
+## Updating
+`git pull`, then **close the running dashboard** (its window, or `Stop-ScheduledTask -TaskName ctrl-b-dashboard`)
+and re-run **`setup.cmd`**: it re-installs the backend deps, migrates the config (refusing while :5433 is
+held), and rebuilds `frontend\dist`. It runs `npm ci` **only when `frontend\node_modules` is absent**, so after a
+pull that changes `package-lock.json` delete `node_modules` first. Then `start.cmd` (or let the autostart task
+start it at the next logon).
 
 ## Start it
 | Command | What it does |

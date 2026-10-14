@@ -53,7 +53,8 @@ strictly-future; disabled rows are never claimed and enable never reuses a stale
 - **Retention from day one:** `automations.keep_runs` — the runner prunes old run rows AND their
   fresh threads+messages in the same loop. (Hourly automation ≈ 8.7k archived, invisible,
   otherwise-unprunable threads/year.)
-- **DELETE:** 409 while a run is active; idle delete cascades run rows and their threads (incl.
+- **DELETE:** 409 while a run is active — or (as built) while a chat turn is live in ANY thread the
+  automation owns (`services/automations/service.py` `delete`); idle delete cascades run rows and their threads (incl.
   the rolling thread). Events are never deleted (append-only audit; dangling `run_id` is explicit
   and acceptable).
 - **Cap:** `max_count` counts ALL definitions; count+insert in ONE transaction in the shared
@@ -278,6 +279,41 @@ keep_runs: 50}` — all tunables, no magic numbers. Records in SQLite (rationale
   runs keep riding `action_failed` as before); the stream invalidates `["automations"]` +
   `["automation-runs", id]` off the same predicate, invalidation-first; the group header shows the
   unread sum. Tool description states recurring-only (decline one-shots) and standing-consent-at-FULL.
+
+## Operating behaviour (as built — consolidated 2026-10-14 from the code; nothing here changes the spec)
+
+Every rule below already follows from §D-1…§D-6; this section states the consequences in one place, each
+checked against the code on `main` (2026-10-14).
+
+- **Confirms are refused, never parked.** An unattended run's CONFIRM-gated call is DENIED in place and audited
+  `decision="policy"` (`services/agent/session.py`, the headless arm → `record_policy_denial`); `question_policy`
+  covers the `question` tool only. What a run may do per privilege: SECURITY_MODEL §2.14.
+- **One run at a time, server-wide; no queue.** While one run holds the arbiter, the poll tick returns at once
+  (`services/automations/runner.py` `tick`) and other due slots stay due. When it frees they are claimed
+  oldest-slot-first (at most 50 per tick, `repo.py` `due`), and lateness is measured with a fresh clock inside
+  the claim — **a slot now later than `misfire_grace_s` (300 s) is recorded `missed` and skipped**, so a run
+  longer than the grace can make other automations miss theirs. Run-now while busy → 409.
+- **Downtime and the master switch.** However many slots passed while the server was down — or while
+  `automations.enabled` was false (the poll loop idles; **run-now still works**, `api/automations.py`
+  `AutomationsDoc.enabled`) — each automation records ONE `missed` row (if its slot is older than the grace)
+  and advances to its next future fire. Nothing fires late, and `missed` writes no Event, so it raises no
+  notification.
+- **Turn cap.** If `agent.turns.max_active_turns` is already reached when a run starts, the run is recorded
+  `error` "… — the run was not started"; a busy run thread → the same. The slot is consumed.
+- **No retries.** A failed run is terminal; the next slot runs normally (pause-after-N is §Out of v1).
+- **Editing.** A PUT that leaves schedule and tz unchanged keeps the pending slot (editing the prompt does not
+  push the next run back); a `thread_mode` change is refused 409 while a turn is live in the rolling thread;
+  enabling an automation whose stored schedule or zone this build can no longer evaluate is refused 422 on
+  `schedule` (`service.py` `update` / `set_enabled`). Delete: see §D-1.
+- **Run threads are archived** (absent from the conversation list, reached from the run History): fresh =
+  `[automation] <name> · YYYY-MM-DD HH:MM` in the automation's own zone; rolling = `[automation] <name>`,
+  recreated if deleted (`runner.py` `_resolve_thread`). Their replies carry no device, so no device auto-speaks
+  them (`api/agent.py` `_session` builder).
+- **History shows 20 of the 50 kept.** `GET /api/automations/{id}/runs` defaults to the newest 20 (`?limit=`
+  1–200, `repo.py` `runs`); the Conf History sends no limit (`hooks/useAutomations.ts`), while `keep_runs`
+  retains 50.
+- **No Conf form for the runner's knobs.** `automations.*` (§D-7) is YAML / `CTRLB_AUTOMATIONS__…` only; the
+  Conf group manages the definitions.
 
 ## Out of v1 (recorded, additive later)
 

@@ -257,8 +257,10 @@ makes obsolete, so we do not build it to delete it.
 2. take the deployment flock, export CTRLB_DEPLOY_LOCK_HELD=1  (install.sh then does NOT re-lock —
                                                                 otherwise the child blocks on the parent)
 3. git fetch --tags; refuse if <tag> is absent on origin
-4. CI gate: refuse red/pending unless --force. `gh` missing or unreachable ⇒ warn and proceed —
-   "cannot check" is not "knowingly deploying red"
+4. CI gate: refuse red/pending unless --force. [AS BUILT — superseded by §17.3: the gate FAILS CLOSED —
+   `gh` missing, `gh` unable to list runs (auth/network), no push-event run matching tag + commit, or any
+   conclusion but success ⇒ REFUSE (exit 1) unless --force. The design line below is history.]
+   (design) `gh` missing or unreachable ⇒ warn and proceed — "cannot check" is not "knowingly deploying red"
 5. TARGET-VERSION PRECHECK, before checkout:
    git show <tag>:backend/app/config_migration/VERSION   (absent ⇒ 0)
    on-disk config_version > that ⇒ REFUSE, print the §Rollback CONFIG restore sequence
@@ -267,6 +269,14 @@ makes obsolete, so we do not build it to delete it.
 7. verify: git describe --exact-match == <tag>; /api/health version == X.Y.Z
 8. on failure: print the exact go-back command AND whether prod is currently STOPPED. No auto-revert.
 ```
+
+> **As built (verified 2026-10-14, `deploy/linux/update.sh`):** step 4 fails closed (above); step 8 reports the
+> OBSERVED unit state, never inferred from `is-active` (§17.3), and compares the on-disk marker before/after — but
+> **its after-read is broken ([ISS-90](./ISSUES.md), open):** the failure branch parses
+> `${now_line#config_version:}` WITHOUT `marker_value`, so the migrator's end-of-line comment makes every stamped
+> config read as version 0 and the report says "the config was NOT migrated … the tag revert alone is
+> sufficient" even after a run that migrated it. The precheck (step 5) uses `marker_value` correctly. The
+> runbook's §Rollback step 2 carries the caution until the one-token fix lands.
 
 Rollback is the same command (`update.sh v1.2.1`), which is why step 5 exists.
 
@@ -1004,8 +1014,9 @@ the operator when something fails.
   version of *this very file*; without the wrapper the shell could resume inside the new one.
 - **Refusals before anything moves:** not the prod tree (resolved with `pwd -P`, so a symlink cannot
   smuggle the workspace past it) · a dirty tree · a tag absent from origin · CI not green (`--force`
-  overrides; `gh` missing or no run found → warn and proceed, because *"cannot check" is not "knowingly
-  deploying red"*).
+  overrides). *(This bullet first said "`gh` missing or no run found → warn and proceed"; §17.3's HIGH
+  "Provenance and CI failed open" reversed that before release — **as built the gate fails closed** on a
+  missing or unauthenticated `gh`, no matching run, or any non-success conclusion, `update.sh` step 4.)*
 - **The lock is taken here and handed down**: `CTRLB_DEPLOY_LOCK_HELD="$lock"`, with `$lock` computed
   from the **identical `$CTRLB_HOME` default chain** `install.sh` uses — the path-equality bypass
   (§15.1) only matches if both spell it the same way, and a mismatch would deadlock the child on its
@@ -1019,7 +1030,10 @@ the operator when something fails.
 - **The failure message names the state, not a category:** it queries `is-active` to say whether prod is
   *running* (pre-cutover failure — the old version is still serving) or *STOPPED*, prints the exact
   go-back command, and — because it snapshots `backups/` before the run — if the config was migrated it
-  names **the exact backup file** to restore rather than describing one. No automatic revert: rolling
+  names **the exact backup file** to restore rather than describing one. *(Superseded, verified 2026-10-14: §17.3
+  replaced the `is-active` inference with the observed state and the backup check with a before/after marker
+  compare; the shipped report prints a generic `ls -t` listing, not one named file; and the marker compare's
+  after-read is broken — [ISS-90](./ISSUES.md), see the §5 as-built note.)* No automatic revert: rolling
   back is a decision, and doing it silently would hide which of those two states you are in.
 
 **The runbook rewrite — the release-blocking half.** `deploy/linux/README.md` §Rollback → CONFIG

@@ -669,7 +669,12 @@ backend is the source of truth on read; server-stamped last-write-wins on write;
 cache + offline truth.** For a single user this is the robust-simple shape — **no CRDT, no client clocks, no
 ETag/412, no Background Sync** (all over-engineering for one writer behind one authoritative backend).
 
-- **Backend.** A **typed `AppearanceCfg(BaseModel){theme:str; mode:str; accent:str; updated_at:datetime|None}`**
+- **Backend.** *(As built today, verified 2026-10-14: the synced unit grew past the original three fields —
+  `theme · mode · accent · motion · perf · theme_settings · kit_background_visible · appbar_subtitle_visible ·
+  chat_avatars_visible · agent_backdrop · pwa_icon_background`, one `updated_at` LWW stamp over all of them
+  (`hooks/useAppearance.ts`, `config.py` `AppearanceCfg`); `ui.appbarMode` · `ui.layout` · `ui.sectionPlacement` ·
+  `ui.ttsAuto` stay DEVICE-LOCAL, never synced. SPEC §6.3's `appearance` row is the current list.)* The original
+  design: a **typed `AppearanceCfg(BaseModel){theme:str; mode:str; accent:str; updated_at:datetime|None}`**
   block on the Settings config (`backend/app/config.py`) — typed, **not** `extra="allow"` (small known shape;
   the owner wants robust). Edited via the existing `PUT /api/settings` deep-merge (same path every setting uses;
   additive). The server stamps `updated_at` on write (its own clock → no cross-device skew).
@@ -2175,7 +2180,13 @@ rule: **no component imports**, and the `registry` is read at CALL time only, ne
 - **`TabDef` fields** (`theme-engine/types.ts`): `subLabel?` = an optional second label line under `lbl` on the
   tab bar (gacha's Japanese nav labels; the floating `NavMenu` is icon-only and ignores it) · `lazy?` = the
   generic lazy-mount flag (mounted only once its section first becomes active, then **kept mounted** so draft
-  state survives; `DefaultRoot` wraps it in `ErrorBoundary`+`Suspense`). Conf is the only `lazy` section today.
+  state survives; `DefaultRoot` wraps it in `ErrorBoundary`+`Suspense`). Conf and `agents` are the `lazy` sections
+  (`theme-engine/tabs.ts`; corrected 2026-10-14 — this line said Conf was the only one).
+- **Satellites (D70 §8.4a — recorded here 2026-10-14).** A satellite section belongs to no preset. Its placement is a
+  separate DEVICE-LOCAL lever, `ui.sectionPlacement[id]` (`conf` · `button` · `tab`; Conf → Appearance → Agents), composed
+  over the resolved preset at ONE seam, `layout.ts#composeLayout`: `conf` hosts it as a Conf group
+  (`HOSTED_AGENTS_GROUP_ID`), `button` puts it in the nav menu, and `tab` splices it onto the bar after its `after`
+  anchor (`agent`). `agents` is the only satellite (`SATELLITES`, default `conf`).
 - **Capability declaration:** `defaultLayout?` / `layouts?` on the `ThemeDef` (§14.3) — a seam for a theme whose
   presentation genuinely can't express a preset. vapor's ladder-owned `["4-tab"]` waiver retired at D51 V6.
 

@@ -28,6 +28,7 @@ prod's only ingress; it is its only **secure-context** one.
 | **Live/phrase-streaming dictation** | **degrades** | `AudioWorklet` is secure-context-only. The app detects it and falls back to standard whole-clip transcription with the toast *"Live dictation needs HTTPS — using standard transcription."* (`hooks/useDictation.ts` — the worklet gate) |
 | **Live voice / call mode** | **unavailable** | same worklet dependency for the uplink |
 | Notifications | hidden | the browser hides them on a plain-http origin (Conf says so inline) |
+| PWA install · offline shell · the update toast | unavailable | a service worker registers only on a secure context — the plain-http origin is a bookmark, never an installed app, and never shows "// new version available" |
 
 So the Firefox flag is a mic workaround, **not an HTTPS substitute** — the streaming voice paths need
 a real secure context. Use the `https://…ts.net` URL on any device you want voice on.
@@ -36,9 +37,10 @@ a real secure context. Use the `https://…ts.net` URL on any device you want vo
 
 ## Turning it on
 
-### The normal path — in the app (Conf → Access)
+### The normal path — in the app (Conf → Server → HTTPS access)
 
-**Phase 6c-2 / D20 shipped**: Conf carries an **HTTPS access (Tailscale Serve)** card — a live status
+**Phase 6c-2 / D20 shipped**: the **HTTPS access (Tailscale Serve)** card sits at the foot of the **Conf →
+Server** group (there is no "Access" group — corrected 2026-10-14) — a live status
 read straight from tailscaled, an Enable/Disable switch, and the `https://…ts.net` URL with a copy
 button. The switch runs the typed `tailscale_serve_enable` / `_disable` actions at USER/FULL, so every
 flip is audited as an Event. The port it fronts is `tailscale.target_port` (**default 5433**, the prod
@@ -70,7 +72,10 @@ may take a few seconds while Tailscale provisions the certificate.
 The dev backend (`:5434`) and the Vite server (`:5173`) are plain HTTP by design, so the mic does not
 work there. To give dev its own secure context, put it on a **different** port so prod's :443 is
 untouched. **Since 2026-09-25 the dev door fronts the DEV BACKEND serving its built `dist/`** (a
-prod-shaped page: no HMR socket, no reload-on-return — run `npm run build` after any FE change):
+prod-shaped page: no HMR socket, no reload-on-return — run `npm run build` after any FE change). The dev
+backend detects `frontend/dist` **once, at startup** (`backend/app/main.py`), so after the FIRST build restart
+`ctrl-b-dashboard-dev`, or :8443 answers API-only 404s. (`deploy/linux/serve-https.sh`'s comment still
+suggests `8443 → 5173`; the live door is `8443 → 5434`.)
 
 ```sh
 tailscale serve --bg --https=8443 5434    # https://emma.<tailnet>.ts.net:8443 → dev backend (built dist)
@@ -123,11 +128,13 @@ tailscale serve reset                     # clear everything Serve is doing
 - **If the dev :8443 door fronts Vite** its HMR socket may not connect cleanly through the proxy and
   the client reloads the page whenever that socket drops in the background — which is why the door
   fronts the dev backend's built `dist/` instead (above). Phone rounds want the built page.
-- **Laggy first transcription after idle** is the whisper model cold-loading, not HTTPS — keep the
-  Speaches model warm server-side (model TTL).
+- **Laggy first transcription after idle** is not HTTPS. On a Speaches target (prod's push-to-talk and
+  both instances' live ear today) it is the model cold-loading — keep it warm server-side (model TTL). The
+  `parakeet-*` engines (dev's clip door) load their model before they bind and never unload it, so there it is
+  more likely the clip door's own first pre-pass (the VAD model's cold session).
 - **Scan-to-open:** `qrencode -t ANSIUTF8 "$(tailscale serve status | grep -o 'https://[^ ]*' | head -1)"`
-  prints a QR in the terminal (`apt install qrencode`). The Conf → Access card's copy button is usually
-  easier.
+  prints a QR in the terminal (`apt install qrencode`). The copy button on Conf → Server's HTTPS access
+  card is usually easier.
 
 ---
 
@@ -135,8 +142,11 @@ tailscale serve reset                     # clear everything Serve is doing
 
 Open the `https://…ts.net` URL on the phone and confirm:
 
-- [ ] **Mic permission** prompts, then **record → stop → transcript fills the composer** (or sends, if
-      Conf → Voice · STT → Auto-send is on).
+- [ ] **Mic permission** prompts, then **hold the mic → speak → release → transcript fills the composer**
+      (or sends, if Conf → Voice · STT → Auto-send is on). Swipe up while holding to lock hands-free (tap to
+      stop); slide left to cancel; a clip under 1 s is discarded ("Too short — hold to record").
+- [ ] **Call mode** (when `voice.live.enabled`, the default): tap the mic to switch it to call mode, then
+      start a call — the call screen opens, what you say is heard and answered aloud; hang up returns to chat.
 - [ ] **Mic states** at phone width: idle look · red pulse while recording · mic **hidden** when STT is
       off in Conf · greyed + "voice servers unreachable" if the STT chain is down.
 - [ ] **TTS:** the per-bubble ▶ plays a reply; the **floating mini-player** (just below the header)

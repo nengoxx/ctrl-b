@@ -129,7 +129,9 @@ records this so the update chain's schema history stays honest.
   backend: `MEDIA_NS: Record<ns, MediaNsDef>` — roles with `kind`, static `keys`, per-role
   HINT text and per-role ADVISORY bounds (see below). A theme CONTRIBUTES its row; the `kit`
   row lives in the registry itself (no ThemeDef-shaped orphan). ConfTab renders
-  `applicableNs(activeTheme)` = the active theme's ns + the always-on `kit` ns — **this fixes
+  `applicableNs(activeTheme)` = the active theme's ns + the always-on `kit` ns (and, since D70, the always-on
+  `agents` ns — `alwaysOn: true` on both rows in `theme-engine/mediaRegistry.ts`; so gacha/frontier art is
+  manageable only while that theme is active) — **this fixes
   a real draft bug: gating the gallery on `ThemeDef.media` made the kit gallery unreachable
   under vapor/cosmos/minimal** (three of five themes) while their rows rendered icons.
   `ThemeDef.media` shrinks to the theme→ns link.
@@ -401,7 +403,8 @@ owns. Read that plan before touching the write path, the gallery, or anything th
    (MEDIA_MANAGER_PLAN §6).
 3. **`files` supersedes `order:` at the config fold (BUILT at S1, 2026-08-25).** `media.<ns>` moved
    to `media.namespaces.<ns>` (making room for `media.write`), and `roles.<role>.order: [names]`
-   became **`roles.<role>.files: [{name|bundled, key?, hidden?, focal?}]`** — ONE ordered list of
+   became **`roles.<role>.files: [{name|bundled, key?, hidden?, focal?}]`** (`focal` = `{x, y, rev, z?}` — `z`, the
+   zoom 1–4, added at D70 §13-S6b wave 3, `core/media.py` `MediaFocal`) — ONE ordered list of
    per-item objects, per the extend-don't-migrate directive, so the next per-item dimension is an
    additive field rather than a sibling map. §4's ns-generic `media:` model and its
    validate-against-the-registry rule survive intact; only the leaf shape changes, through an

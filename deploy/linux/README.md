@@ -12,7 +12,7 @@ Deploy the **ctrl-b dashboard** as **two isolated instances** + the **Claude Cod
 | Data root | `~/.ctrl-b` (real config + db + memories/skills/agents) | `~/.ctrl-b-dev` (own copy; seeded from prod once) |
 | Backend | `uvicorn :5433` serving built `dist` | `uvicorn :5434 --reload` |
 | Frontend | built into `dist` (built aside, swapped at cutover) | Vite `:5173` HMR → `/api` → `:5434` |
-| Ingress | **Tailscale Serve HTTPS :443** (mic works) **+ direct `http://emma:5433`** (LAN+tailnet — owner waiver 2026-07-10, SECURITY_MODEL §2.1; no mic over HTTP) | `http://emma:5173` (HTTP, no mic) |
+| Ingress | **Tailscale Serve HTTPS :443** (mic works) **+ direct `http://emma:5433`** (LAN+tailnet — owner waiver 2026-07-10, SECURITY_MODEL §2.1; no mic over HTTP) | `http://emma:5173` (Vite, HTTP, no mic) **+ the optional Serve door `https://emma.<tailnet>.ts.net:8443` → `127.0.0.1:5434`** (the dev backend serving the workspace's *built* `dist/` — mic works; `docs/HTTPS_TAILSCALE.md` §Optional). The SPA mounts only if `frontend/dist` existed when the dev unit started (`main.py`), so after the first `npm run build` restart `ctrl-b-dashboard-dev` |
 | Units | `ctrl-b-dashboard.service` (boot) | `ctrl-b-dashboard-dev.service` + `ctrl-b-dashboard-dev-web.service` — **ON-DEMAND** (owner amendment 2026-07-10): `systemctl --user start` them when iterating, stop when done |
 
 **Branch model (trunk-based):** ONE branch, **`main`** — always releasable (held by the git hooks + CI, which
@@ -41,8 +41,9 @@ deploy/
 │       ├── ctrl-b-dashboard-dev.service      # DEV backend (:5434 --reload, ~/.ctrl-b-dev) — on-demand
 │       ├── ctrl-b-dashboard-dev-web.service  # DEV Vite (:5173 → :5434) — on-demand
 │       └── ctrl-b-agent@.service             # TEMPLATE: the ALWAYS-ON Claude agents — instances
-│                                             #   @fable → tmux ctrl-b-fable (claude-fable-5, high)  ← MAIN seat (2026-07-28)
-│                                             #   @opus  → tmux ctrl-b-opus  (opus alias = latest Opus, high) ← workforce
+│                                             #   @fable → tmux ctrl-b-fable (claude-fable-5-1, high) ← MAIN seat (2026-07-28)
+│                                             #   @opus  → tmux ctrl-b-opus  (claude-opus-5-5, high)  ← workforce
+│                                             #   (explicit owner-tested pins, tools/start-claude.sh)
 └── windows/                  # the double-click Windows kit (setup/start/autostart)
 
 ../tools/                     # dev launchers (NOT deploy): start-claude.sh (Linux), claude-{fable,opus}.{ps1,cmd} (Windows), add-dev-worktree.sh
@@ -167,7 +168,17 @@ required for a working install, but each fixes a real degradation on this box:
   *enable* it — verify against your build's `llama-server --help`).
 
 ## The ASR engines (Phase 26 — `parakeet-live` / `parakeet-clip`, machine-wide, never `install.sh`'s)
-Live voice's ear and the clip door (push-to-talk + the whole-clip dictation fallback) transcribe on
+> **What serves traffic TODAY (verified 2026-10-14, `main` @ `9f405de2` / prod v1.7.11):** only
+> **`parakeet-clip`**, and only for **dev** (dev's `voice.stt` points at it; prod v1.7.11 predates the clip
+> door's decode and still sends push-to-talk to `emma-speaches`). **`parakeet-live` is installed for S7b ("the
+> flip") and serves nothing until then:** the live ear — calls and streaming dictation, on BOTH instances — is
+> still the **Speaches realtime WebSocket** (`services/voice_live.py` `realtime_url` dials `{base_url}/realtime`),
+> which parakeet-server cannot serve. **Do not point `voice.live` at `parakeet-live` before v1.7.12** — and a
+> blank `voice.live.provider` resolves like `voice.stt`, so on an install whose `voice.stt` is `parakeet-clip`
+> pin `voice.live.provider` to the Speaches provider explicitly (dev's config does), or calls fail. The
+> Speaches + PocketTTS units are documented in §The voice backends below.
+
+After S7b, live voice's ear and the clip door (push-to-talk + the whole-clip dictation fallback) transcribe on
 **two `parakeet-server` processes** (`mudler/parakeet.cpp` **v0.5.0**, MIT; weights
 `nvidia/parakeet-tdt-0.6b-v3`, CC-BY-4.0) — ASR_PLAN §3.7 / D82, set up in S9 on 2026-10-07. They are
 **machine-wide user units shared by dev, prod and anything else on the box** (R18/R19), exactly like
@@ -179,8 +190,8 @@ PocketTTS and Speaches:
 
 | Unit | Port | Door (ctrl-b provider) | Threads | Bind |
 |---|---|---|---|---|
-| `parakeet-live.service` | **9010** | `voice.live` — `parakeet-live` | 4 | 0.0.0.0 |
-| `parakeet-clip.service` | **9011** | `voice.stt` — `parakeet-clip` | 4 | 0.0.0.0 |
+| `parakeet-live.service` | **9010** | `voice.live` — `parakeet-live` (**from v1.7.12 / S7b — idle today**) | 4 | 0.0.0.0 |
+| `parakeet-clip.service` | **9011** | `voice.stt` — `parakeet-clip` (dev today; prod at v1.7.12) | 4 | 0.0.0.0 |
 
 - **Bind 0.0.0.0** per R10 (LAN trust, like Speaches :9000 — SECURITY_MODEL §2.1). No key exists; the
   engines take only WAV and expose transcription + `/health`.
@@ -301,21 +312,45 @@ bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.12                 # installs, st
 `/health` → stop `ctrl-b-dashboard` → restore `config.yaml.<UTCstamp>.pre-v1.7.12` → `update.sh v1.7.11`
 → verify. The engines stay up.
 
+## The voice backends (Speaches · PocketTTS — machine-wide, never `install.sh`'s)
+Like the parakeet units these are **user units shared by dev and prod**; `install.sh`/`update.sh` never touch
+them, a §Rollback never stops them, and a reinstall of the box must recreate them by hand. TTS chain on both
+instances today: **`emma-pockettts` → `emma-speaches` → `vault-alltalk`** (provider names in `config.yaml`).
+
+- **Speaches (:9000) — the live ear until v1.7.12, a TTS fallback, the v1.7.12 rollback target.** A local
+  fork, `~/github/speaches` @ **`fd4b956`** ("honour `turn_detection.prefix_padding_ms` as a slice-start
+  pre-roll" — what `voice.live.prefix_padding_ms` needs; its `master` is 4 commits ahead of its `origin/master`).
+  Unit `speaches.service` (`ExecStart=%h/.local/bin/speaches-serve`, `WorkingDirectory=%h/github/speaches`)
+  with **two drop-ins that live OUTSIDE every repo** under `~/.config/systemd/user/speaches.service.d/`:
+  `10-emma-amd-cpu.conf` (CPU-only ONNX/Whisper: excludes the TensorRT/CUDA providers,
+  `WHISPER__INFERENCE_DEVICE=cpu`, `int8`, 8 threads, 1 worker) and **`20-loopback-url.conf`
+  (`LOOPBACK_HOST_URL=http://127.0.0.1:9000`)** — the realtime path needs this one (the failure without it is
+  recorded in LIVE_VOICE_PLAN §7-S0). Health: `curl -s 127.0.0.1:9000/health`. Logs: `journalctl --user -u speaches`.
+- **PocketTTS (:8890) — the TTS primary.** `pockettts.service` (`~/github/PocketTTS.cpp/pocket-tts --server …
+  --port 8890`, voices under `~/.local/share/tts/voices/pocket`). It pads every clip with silence, which
+  `voice.tts.trim_silence` (default on) trims server-side. (`pockettts-official.service`, :8892, is a separate,
+  disabled experiment — not in either chain.) Logs: `journalctl --user -u pockettts`.
+
 ## The Claude agent services (development continues ON the box)
 The agents are first-class always-on services (owner decisions 2026-07-09 + 2026-07-10): the TEMPLATE
 unit **`ctrl-b-agent@.service`** is enabled by `install.sh dev` as **two boot instances** —
-`ctrl-b-agent@fable` (tmux **`ctrl-b-fable`**, `claude-fable-5`, effort high — **the MAIN seat since
-2026-07-28**: designs, supervises, rules, audits) and `ctrl-b-agent@opus` (tmux **`ctrl-b-opus`**, the
-`opus` alias = latest Opus, effort high — the subagent workforce + an interactive session when wanted). Each ensures its tmux session exists, running
+`ctrl-b-agent@fable` (tmux **`ctrl-b-fable`**, model **`claude-fable-5-1`**, effort high — **the MAIN seat
+since 2026-07-28**: designs, supervises, rules, audits) and `ctrl-b-agent@opus` (tmux **`ctrl-b-opus`**, model
+**`claude-opus-5-5`**, effort high — the subagent workforce + an interactive session when wanted). The ids are
+**explicit, owner-tested pins** in `tools/start-claude.sh` (the `fable`/`opus` aliases resolve there), never
+Claude Code's floating aliases — bump them only after the owner has tested a new version (CLAUDE.md). **Both
+run with `--permission-mode bypassPermissions` by default** (`PERM` in `start-claude.sh`). Each ensures its tmux session exists, running
 `claude --remote-control` in the **workspace** — attach over SSH or drive from claude.ai/code. On boot
 the launcher **waits (≤60s) for network connectivity before starting claude** — the remote-control
 channel registers at claude startup and does NOT retry, so an early start would come up invisible to
 the claude app (post-reboot finding 2026-07-10). Skipped gracefully if the `claude` CLI isn't installed yet.
 - **One writer at a time.** Both sessions share the one workspace tree — use one agent per task; a
   genuinely SIMULTANEOUS second writer takes its own worktree (`tools/add-dev-worktree.sh`), same as before.
-- **Effort/permission overrides (no edits to tracked files; the model is fixed per instance):**
-  `~/.config/ctrl-b/agent.env` (shared, e.g. `EFFORT=medium`) or `agent-fable.env`/`agent-opus.env`
-  (per-instance, wins) — then `systemctl --user restart ctrl-b-agent@<i>`.
+- **Effort/permission overrides (no edits to tracked files; the model is fixed per instance — `MODEL` there
+  is ignored):** `~/.config/ctrl-b/agent.env` (shared, e.g. `EFFORT=medium`, `PERM=…` to tighten the
+  permission mode) or `agent-fable.env`/`agent-opus.env` (per-instance, wins) — then `systemctl --user restart
+  ctrl-b-agent@<i>`. **Never set `PATH` in these files** — it overrides the unit's `Environment=PATH` and
+  `claude` stops resolving.
 - Manual/extra sessions: `tools/start-claude.sh [session] [dir] [opus|fable|<model-id>]` (default `opus`).
 - Crash-recovery of `claude` is the `while true` loop inside tmux; `systemctl --user restart
   ctrl-b-agent@<i>` recreates that instance's session from scratch (the other instance is untouched —
@@ -371,11 +406,15 @@ curl -sI -m5 localhost:5433/icon-192.png | grep -i 'content-type: image/png'   #
                                                       # answered as text/html means the SPA fallback ate it —
                                                       # a failure no status-code check can see (it 200s)
 # then spot-check https://emma.<tailnet>.ts.net on a device. Anything wrong → Rollback (below).
+# 7) DEVICES — each one shows "// new version available" (with **refresh**) on its NEXT app load; tapping
+#    refresh reloads every open ctrl-b tab. Nothing polls, so an installed PWA left open learns of the
+#    release only when it is reloaded or reopened (components/SwUpdatePrompt.tsx).
 ```
 **Config-shape migration (UPDATE_PLAN).** From the release that carries `providers:`, the config is
 migrated **by `install.sh` at the cutover** — with the service verifiably stopped — not lazily on some
-later write. It writes a timestamped 0600 copy to `~/.ctrl-b/backups/config.yaml.<UTCstamp>` first, and
-prints the path. The new build also **refuses to start** on a config it cannot migrate or load (exit 78,
+later write. **On a run that actually rewrites the config** it writes a timestamped 0600 copy to
+`~/.ctrl-b/backups/config.yaml.<UTCstamp>` first, and prints the path (an already-stamped config that needs
+nothing gets no copy — `config_migration/__init__.py` `apply`; these copies are never pruned). The new build also **refuses to start** on a config it cannot migrate or load (exit 78,
 terminal — the unit will not retry), naming the one command that fixes it in the journal.
 **Rolling back across that release REQUIRES the config restore in §Rollback → CONFIG** — a tag revert
 alone leaves the older build reading a config whose `providers:` it does not understand, and because its
@@ -387,6 +426,9 @@ if anything fails:
 ```bash
 bash ~/apps/ctrl-b/deploy/linux/update.sh vX.Y.Z          # --force only for an unverifiable CI state
 ```
+Its CI gate **fails closed**: `gh` missing or not authenticated on the prod box, no push-event run found for the
+tag + its commit, or any conclusion but `success` → it refuses (exit 1) unless you pass `--force`
+(`update.sh` step 4). So `gh` must be installed **and logged in** on the box that runs it.
 > **THE FIRST TIME, IT IS NOT THERE YET.** `update.sh` ships *in* the release that introduces it, so the
 > currently-deployed tag has no copy of it. For that one release, run the updater straight out of the
 > tag being deployed:
@@ -437,11 +479,18 @@ systemctl --user is-active ctrl-b-dashboard        # must print: inactive  (or: 
 
 # 2. CONFIG — MANDATORY when the release you are leaving migrated the config shape.
 #    Decide: does ~/.ctrl-b/config.yaml contain a `config_version:` line that the older tag predates?
-#    (`update.sh` refuses this rollback outright and tells you; so does its failure message, by name.)
+#    (`update.sh`'s compatibility precheck refuses a deploy whose tag cannot read the on-disk config.)
+#    ⚠ DO NOT TRUST `update.sh`'s FAILURE REPORT HERE (ISS-90, open): its failure branch reads the marker
+#    WITHOUT stripping the migrator's end-of-line comment (update.sh: `parse_version "${now_line#config_version:}"`,
+#    where the precheck correctly uses `marker_value`), so on any stamped config it prints "the config was NOT
+#    migrated … the tag revert alone is sufficient" EVEN WHEN THIS RUN MIGRATED IT — following that boots the
+#    old build with zero providers. Decide by comparing instead:
+grep -m1 '^config_version:' ~/.ctrl-b/config.yaml  # vs the old tag's: git -C ~/apps/ctrl-b show v(prev):backend/app/config_migration/VERSION
 ls -t ~/.ctrl-b/backups/config.yaml.*              # newest = the copy taken by the update you are undoing
 cp -p ~/.ctrl-b/backups/config.yaml.<UTCstamp> ~/.ctrl-b/config.yaml     # keeps 0600
-#    Not sure which file? The update's own failure message named it. Otherwise match the timestamp to
-#    the update you are undoing — do NOT assume "newest" if other runs happened since.
+#    Not sure which file? install.sh printed the backup path when it migrated (the failure report only
+#    prints a generic listing). Match the timestamp to the update you are undoing — do NOT assume
+#    "newest" if other runs happened since.
 
 # 3. DATA — only if the bad release's DB migrations mangled the database:
 rm -f ~/.ctrl-b/ctrlb.db-wal ~/.ctrl-b/ctrlb.db-shm     # stale sidecars MUST go (WAL mismatch = corruption)
@@ -471,16 +520,46 @@ destructive migrations land at the earliest one release after the code stopped u
 **GitHub down at promote time?** Prod can fetch the tag straight from the workspace over the filesystem:
 `git -C ~/apps/ctrl-b fetch ~/github/ctrl-b 'refs/tags/*:refs/tags/*'` — same commit, LAN-only.
 
+## Backups — what is kept, what is not, and a manual snapshot
+**Automatic.** (1) `install.sh prod` snapshots `~/.ctrl-b/ctrlb.db` before every cutover with SQLite's
+online backup (`sqlite3 .backup` — WAL-safe; a plain `cp` of a live WAL database is not), checks it with
+`PRAGMA integrity_check`, gzips it to `~/.ctrl-b/backups/ctrlb-YYYYmmdd-HHMMSS.db.gz`, and **keeps the newest
+10** (`CTRLB_BACKUP_KEEP=<n>` overrides). Prod only, and only when `ctrlb.db` exists; **dev never takes a
+snapshot.** (2) The config migration writes `~/.ctrl-b/backups/config.yaml.<UTCstamp>` (0600, fsync'd) only on a
+run that actually rewrites the config; those are never pruned.
+
+> ⚠ **The prune glob is `ctrlb-*.db.gz`** (`install.sh`, the `ls -1t "$BKD"/ctrlb-*.db.gz | tail -n +11 | xargs rm`
+> line), so a hand-made snapshot whose name starts with `ctrlb-` — e.g. `ctrlb-manual-pre-v1.7.10-….db.gz`,
+> which this box holds — **is pruned with the automatic ones** ([ISS-93](../../docs/ISSUES.md), open). Name
+> manual copies so they do not match, e.g. `manual-ctrlb-….db.gz`.
+
+**Not backed up at all:** everything else in the data root — `media/`, `calls/`, `lorebooks/`, `agents/`,
+`skills/`, `attachments/`, `SOUL.md`, and `memories/` (which has its own local git history, D26). A §Rollback
+restores SQLite and the config only.
+
+**A manual snapshot, any time** (safe while the service runs):
+```bash
+sqlite3 ~/.ctrl-b/ctrlb.db ".backup '$HOME/.ctrl-b/backups/manual-$(date +%Y%m%d-%H%M%S).db'"
+cp -p ~/.ctrl-b/config.yaml ~/.ctrl-b/backups/config.yaml.$(date -u +%Y%m%dT%H%M%SZ).manual
+tar -C ~/.ctrl-b -czf ~/ctrl-b-data-$(date +%F).tgz media calls lorebooks agents skills memories attachments
+```
+
 ## Fresh machine vs. emma (the installer handles both)
 The scripts are **portable** — every path resolves against the target user's `$HOME` and the systemd units are
 **templates** (`__REPO__`/`__CTRLB_HOME__`/`__NPM__`/`__NODEBIN__`/`__HOME__`/`__TMUX__` — all six rendered at
 `install.sh:227-228`) that `install.sh` renders to real paths, so this works for
 any user/host, not just `emma`.
-- **emma (workspace already exists):** just run `bootstrap.py` — the existing `~/github/ctrl-b` stays put
-  (fetched + fast-forwarded when clean); prod is cloned fresh at `~/apps/ctrl-b`.
+- **emma (workspace already exists):** `bootstrap.py` was the FIRST-deploy tool — the existing `~/github/ctrl-b`
+  stays put (fetched + fast-forwarded when clean); prod is cloned fresh at `~/apps/ctrl-b`.
+  > ⚠ **Re-running `bootstrap.py` on a box that is already deployed is an UNGUARDED release** ([ISS-94](../../docs/ISSUES.md),
+  > open): on an existing sparse prod tree its step 2 fetches and checks out the **highest `v*` tag by semver**
+  > (`bootstrap.py` `ensure_prod_tree`) and step 3 runs `install.sh prod` — none of `update.sh`'s refusals run
+  > (no tag-on-origin check, no CI release-gate check, no config-compatibility precheck), so it would land
+  > whatever the newest tag is, red or known-bad (v1.3.1, above). **To move a deployed prod, always use
+  > §Release / `update.sh`.**
 - **clean Linux box (nothing checked out):** just run `bootstrap.py` — it learns the GitHub URL from the local
   checkout and **clones** the prod tree (and the workspace with `--with-dev`).
-- **Prereqs on a fresh box:** `bootstrap.py` step 0 installs `git`+`tmux`+`sqlite3`, enables linger, sets the
+- **Prereqs on a fresh box:** `bootstrap.py` step 0 installs `git`+`tmux`+`sqlite3`+`python3-venv`, enables linger, sets the
   tailscale operator (apt/Ubuntu). It does **not** install Python/Node (versions matter) — `install.sh` checks
   for `git` / `python3` ≥3.14 / `node` / `npm` (+ `sqlite3` when there's a DB to snapshot) and **fails loudly
   with the exact install hint** if any is missing. On a non-apt distro, install git+tmux+sqlite3 yourself and
@@ -508,7 +587,8 @@ off (`sudo loginctl enable-linger $USER`), or `tailscale serve` needing the oper
   binds **0.0.0.0** (owner waiver 2026-07-10 — direct `http://emma:5433`; SECURITY_MODEL §2.1).
 - **Known waiver:** the DEV Vite server listens on **0.0.0.0:5173** (plain HTTP) so the phone can reach it
   over the tailnet — that also makes it LAN-visible. Deliberate for a trusted home LAN; the **DEV backend**
-  stays loopback-only, and prod's sole **HTTPS / secure-context (mic)** ingress is Tailscale Serve — but note
+  binds loopback only — but Vite proxies `/api` (WebSocket included), so the dev API is LAN-reachable through
+  :5173 while the pair runs (SECURITY_MODEL §2.1), and prod's sole **HTTPS / secure-context (mic)** ingress is Tailscale Serve — but note
   **PROD itself is LAN + tailnet reachable** on plain `http://emma:5433` by the same waiver (unit line
   `--host 0.0.0.0`), so Serve is not prod's only ingress.
 - `~/github/ctrl-b` is the **workspace** — where the agent(s) develop; it stays on `main` (the invariant).

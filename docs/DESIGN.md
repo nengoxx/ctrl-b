@@ -123,7 +123,7 @@ class RunState(StrEnum):            # an action/tool invocation lifecycle
 ```python
 # domain/host.py
 class Host(BaseModel):
-    id: str                          # stable slug; never the mutable name
+    id: str                          # slug of the name (config.py `_slug`) — a rename changes it (see below)
     name: str
     ip: str
     mac: str | None = None           # WOL impossible if None — surfaced, not crashed
@@ -162,7 +162,13 @@ class Service(BaseModel):
     # state is derived (port reachable / process check), not stored
 ```
 
-`Host.id` is a **stable slug** decoupled from `name` so renames don't orphan services/events.
+`Host.id` is a **slug of the name** (`config.py` `_slug` — lowercase, runs of non-alphanumerics → `-`), so it
+is stable across restarts and edits of every other field, but **a rename changes it** — and every service id
+under it (`{host_id}.{service_slug}`). Past Events keep the old id as their `target`; wake cooldowns and the
+monitor's per-host state re-baseline under the new one. *(Corrected 2026-10-14 — this paragraph used to say
+the id was decoupled from `name`; the code never did that, and `domain/host.py`'s docstring still says so.)*
+Two host names that slug the same are refused (409, `api/hosts.py`); service names are de-duplicated by their
+stripped name, not their slug, so two services whose names differ only in case/punctuation share one id.
 `mac=None` and `ssh_*=None` are first-class: actions needing them fail with a clear `ToolResult`
 (`DENIED`, "no MAC configured"), never an exception to the user.
 
@@ -299,8 +305,14 @@ def decide(spec: ToolSpec, privilege: Privilege, *, interactive: bool,
     return Decision.ALLOW   # low risk
 ```
 
-Headless (`interactive=False`): `CONFIRM` becomes **notify-and-park** (F1) or the automation's
-fallback (skip / default), never an interactive prompt.
+Headless (`interactive=False` — a subagent, or an unattended automation run): a `CONFIRM` decision is
+**DENIED in place** (`services/agent/session.py`, the `inv.needs_confirm and not self._interactive` arm) and
+audited through `ActionService.record_policy_denial` with `decision="policy"` and the run's `origin`/`run_id`,
+so the turn never stalls. `question_policy` governs the `question` tool only, never a confirm (AUTOMATIONS_PLAN
+§D-3). The sanctioned way to let an automation run a gated tool is authoring-time consent — `privilege: full`,
+`auto_low` for MED, or a D44 approval rule (SECURITY_MODEL §2.14). **◇ Not built:** notify-and-park (fire a
+notification and park the turn until answered) — the ROADMAP A2 "Notify when blocked" seam, AUTOMATIONS_PLAN
+§Out of v1. *(Corrected 2026-10-14: this paragraph described notify-and-park in the present tense.)*
 
 > **Persisted approvals (Slice 8, D44).** `decide()` owns the WHOLE ladder — the caller computes a
 > match, never a verdict (the `run_shell_allowed` precedent). Order: **policy DENY > `spec.confirm`
@@ -654,8 +666,9 @@ A turn can **suspend** (awaiting confirm or an answer). The session state persis
 - Resumption is a normal API call — **`POST /api/agent/resume`** `{thread_id, call_id, decision,
   confirm_token?, stream?}` (the answer rides `decision`) — that re-enters the loop from the suspended
   point, continuing as the last assistant turn's agent (D15 #5).
-- **Headless** automations never suspend interactively: a gated call triggers notify-and-park
-  (write a pending record + fire F1) or the automation's fallback policy.
+- **Headless** sessions (subagents, automations) never suspend: a CONFIRM-gated call resolves **DENIED in
+  place** and the model is told so; an automation's `question` follows its `question_policy` (`skip` = deny,
+  `use_default` = answer with the default) (§3 "Permission policy"). Notify-and-park is ◇ not built (ROADMAP A2).
 
 ### 5.4 Compaction
 
@@ -785,8 +798,9 @@ class Compactor:                          # services/agent/compaction.py — sta
 >   `reasoning.max_tokens` are mutually exclusive: `"off"` is absolute (→ `"none"`), else an explicit
 >   budget wins, else the effort ladder. Modeled params are first-class kwargs on
 >   `stream_chat`/`complete`; `extra_body` stays unmodeled-passthrough only.
->   `reasoning_tokens` is declared but v1 ships it **untranslated** (no OpenRouter-shape detection
->   exists — advisory no-op, recorded residual). Both consumers benefit: the agent's own calls *and*
+>   *(A sentence here used to say `reasoning_tokens` ships untranslated — superseded: it is translated
+>   per `api_mode` exactly as above, `adapters/inference.py` `_resolve_reasoning_budget` + the `api_mode`
+>   branches; corrected 2026-10-14.)* Both consumers benefit: the agent's own calls *and*
 >   the compaction summarizer (capped for free). Rule: never gate behaviour on a param taking effect.
 
 ### 5.5 Subagents & orchestration (concurrent, swappable)
@@ -847,8 +861,9 @@ class Orchestrator(Protocol):          # `deps` + (AgentDef, task) pairs — no 
 - **Deadlock avoidance.** The parent's **per-thread turn marker** (§10, ▹ ACA Slice 2) covers only
   the *parent's* thread; children use distinct thread ids, so spawning + awaiting children never
   contends with it. The parent `await`s the task group without holding anything a child needs.
-- **Streaming.** By default each child surfaces a single summarized `SubResult`; a verbose mode can
-  nest child events under a `subagent` SSE channel (off by default to keep the UI legible).
+- **Streaming.** Each child surfaces a single summarized `SubResult` (its `summary` clipped to 160 chars, its
+  full answer in `output`). **◇ Not built:** a verbose mode nesting child events under a `subagent` SSE channel
+  — no such frame exists (§12) and no ROADMAP entry carries it; it is a design sketch only.
 
 `Orchestrator` and `SkillSelector` are **`Protocol`s with a default impl** (D11) — the concrete
 algorithm (sequential vs parallel vs map-reduce, retry/voting, etc.) is decided in Phase 4 with
@@ -863,12 +878,16 @@ class Skill(BaseModel):
 class SkillProvider(Protocol):
     def list(self) -> list[Skill]: ...           # scans skills/<name>/SKILL.md
 class SkillSelector(Protocol):
-    def select(self, user_msg: str, skills: list[Skill]) -> list[Skill]: ...  # default: model-picks
+    def select(self, user_msg: str, skills: list[Skill]) -> list[Skill]: ...  # default: KeywordSkillSelector (token overlap, §17)
 ```
 Selected skills inject their `instructions` into the assembled prompt and may **narrow** the
 toolset to `allowed_tools` (never widen beyond the agent's allowlist or privilege).
 
 ### 5.7 Capability fallback (weak local models)
+
+> **◇ Not built — a design sketch, no code and no ROADMAP entry** (verified 2026-10-14: nothing in
+> `backend/app` parses a fenced action block). Every backend today is driven through native tool-calling; a
+> weak model that cannot call tools simply answers in text.
 
 If a backend can't do native tool-calling reliably (configurable / probed once), the runner switches
 to **prompted JSON**: the model emits a fenced action block, parsed into the same `ToolCallPart`
@@ -942,8 +961,13 @@ the tool's `Literal` keeps the model on known keys).
 > Memory editor. The tunables are still flat per D27; a `stores:{key:{cap,enabled}}` map is the named seam
 > once stores grow past a few.
 
-- **Files (under `$CTRLB_HOME`):** per-agent `agents/<name>/memories/MEMORY.md` + `STATE.md` (default agent
-  → root `memories/`) + a **global** `memories/USER.md`. `memories/` is gitignored.
+- **Files (under `$CTRLB_HOME/<memory.memory_dir>`, default `memories/` — the D26 git repo):** the root agent's
+  `MEMORY.md` + `STATE.md` and the **global** `USER.md` at its top; a specialist's `MEMORY.md` + `STATE.md` under
+  `agents/<slug>/` there (`services/agent/memory.py` `agent_memory_dir`; `AgentDef.memory_dir` overrides the
+  sub-path, still under the memory dir — an absolute or `..`-escaping value, or one overlapping a Core Memory
+  corpus root, falls back to the default). The pre-D26 `$CTRLB_HOME/agents/<slug>/memories/` location is
+  migrated once at startup (`migrate_legacy_specialist_memory`). `memories/` is gitignored by the ctrl-b repo.
+  *(Corrected 2026-10-14 — this bullet carried the pre-D26 layout.)*
 - **Injection:** `load_context()` output is emitted in `_assemble` **right after the appends**
   (as-built order: SOUL.md → appends → roster → **memory** → core index (D57) → skills → history),
   frozen per turn. Rendered **Hermes-style** — per-section usage header
@@ -1083,7 +1107,9 @@ Tables: `threads`, `messages` (parts as JSON column; **+ a nullable `agent` colu
 attribution quartet since migration v4: `origin` [immediate initiator, NOT NULL default
 `user_chat`] · `origin_id` · `run_id` [the transitive automation-ancestry key] · `decision` [why
 the gate allowed/denied]; reads coerce unknown values — `EventOriginKind`'s `unknown` sentinel is
-read-side only**), the A3/D49 pair `automations` + `automation_runs` (migration 5 — the definitions +
+read-side only; **kept indefinitely — nothing prunes `events`**, and there is no in-app log view: read it with
+`GET /api/events?limit=N`, newest first, N clamped to 1–500, each row with its full `output` (redacted where §11 says), which the
+live `GET /api/events/stream` feed omits — `services/events.py` `recent`**), the A3/D49 pair `automations` + `automation_runs` (migration 5 — the definitions +
 their run ledger), `message_alternates` (migration 7, D81 — one row per VARIANT of an anchor's reply:
 `{id, thread_id, anchor_id → messages ON DELETE CASCADE (NULL reserved for the greeting-swipe seam), n,
 rows (JSON raw rows; NULL = the variant live in messages), created_at}`; per anchor 0 rows or N ≥ 2 with
@@ -1188,9 +1214,13 @@ class Settings(BaseModel):
     the app **never rewrites it** (only `config.yaml`).
   Real environment variables take precedence over `.env`. Templates: `config.example.yaml` +
   `.env.example` (both committed, commented, no real secrets).
-- Secrets are `SecretStr`; `GET /api/settings` returns them **masked** (`"sk…34"`); a `PUT`
-  leaves a field unchanged if it's the masked sentinel (so editing other fields can't wipe a key).
-- **Atomic writes**: write `config.yaml.tmp` then `os.replace`. Validate before persisting; reject
+- Secrets are plain `str` fields at the config layer (`ProviderCfg.api_key`, `ComputerCfg.ssh_password`); only
+  the domain `Host` projection wraps `ssh_password` in `SecretStr`. `GET /api/settings` returns them **masked**
+  (`"sk…34"`); a `PUT` leaves a field unchanged when the incoming value is the mask, empty or `null`
+  (`config.py` `_is_unchanged_secret`) — so editing other fields can't wipe a key, and a stored secret cannot be
+  *cleared* through the API at all (delete the provider/host, or hand-edit).
+- **Atomic writes**: write `config.yaml.tmp` (created `O_EXCL|O_NOFOLLOW` at 0600) then `os.replace` — the file
+  itself is not fsync'd (the migration's backup is). Validate before persisting; reject
   with field-level errors. A successful `PUT` triggers a **hot reload** (rebuild affected
   singletons: clients, MCP connections, registries) without a restart where feasible.
 
@@ -1292,7 +1322,9 @@ rename can never orphan a section, an agent's `model`, or a fallback entry.
   gets a bounded, wire-visible same-endpoint retry first (`inference.retry_attempts`, fixed backoff curve —
   D43), then hops. On chain exhaustion → a `FailoverError` flattened to an `InferenceError` → friendly chat error,
   turn ends recoverably. `complete()`/voice keep straight next-hop (no retry tier).
-- **Redaction** (`core/redact.py`) runs on every `output`, `summary`, log line, and SSE payload.
+- **Redaction** (`core/redact.py`) runs where a capability calls it — as built: `run_shell` output (every config
+  secret), SSH action output/error (that host's password); **not** open-terminal output, and not an Event's
+  `summary` (`$ <command> — exit N`). Scope in SECURITY_MODEL §2.4.
 
 ---
 
@@ -1302,12 +1334,13 @@ rename can never orphan a section, an agent's `model`, or a fallback entry.
 `GET /api/agent/turns/{id}/stream`) emits ordered, id'd events the client reduces into the message list:
 
 ```
-event: message.start      data: {messageId, role, agent}       # agent = resolved AgentDef name (7e-c)
+event: thread             data: {threadId, title, agent}       # HEAD of every chat SSE stream (and the buffered JSON's head); agent = the conversation's HOME (D84 H6)
+event: message.start      data: {messageId, role, agent, device}  # agent = resolved AgentDef name (7e-c); device = the X-Ctrlb-Device of the request that started the turn (S11 (c)); null for automations/subagents
 event: reasoning.delta    data: {messageId, delta}             # thinking-model CoT (rendered dimmed)
 event: text.delta         data: {messageId, delta}
 event: part.added         data: {messageId, part}              # a tool_call part → command bubble
-event: tool.permission    data: {callId, tool, args, risk, token, prompt, alwaysEligible}  # confirm bubble; single-use token; alwaysEligible gates the "always" grant (D44)
-event: tool.question      data: {callId, tool, question, args} # A2 `question` builtin → answer bubble
+event: tool.permission    data: {callId, tool, title, args, risk, token, prompt, alwaysEligible, skills}  # confirm bubble; single-use token; alwaysEligible gates the "always" grant (D44); skills = the turn's active skills, pinned for the resume (M2/C-12)
+event: tool.question      data: {callId, tool, question, args, skills} # A2 `question` builtin → answer bubble
 event: tool.result        data: {callId, result}               # per-call; under the parallel prefix arrives in COMPLETION order (persistence keeps model order)
 event: steer.applied      data: {entryId, messageId, kind, text?}  # a mid-turn steer drained at the loop top (D41); text = message kind only, folded into turn.sync as steers[]
 event: notice             data: {text}                         # breadcrumbs: "// compacting…" (ACA-11) · routing notes (D43)
@@ -1316,8 +1349,14 @@ event: inference.failover data: {from, to, category}           # the chain dropp
 event: compaction         data: {removed, summaryId, truncated}
 event: message.end        data: {messageId, source?, usage?}  # D62 serve attribution: WHO served this turn + what the call cost (unknown at message.start; both keys omitted when the call produced neither)
 event: error              data: {message, retryable}
-event: done               data: {threadId, state}              # completed | suspended | capped | error
+event: done               data: {threadId, state}              # completed | suspended | capped | error | cancelled (Stop, D39 — services/agent/turns.py)
 ```
+
+**The device header (S11 (c), `a304c533`).** A request may carry `X-Ctrlb-Device: <32 lowercase hex>`
+(`frontend/src/lib/device.ts`; `api/agent.py` `_DEVICE_RE`); the session stamps it on every assistant message it
+writes (`ChatMessage.device`), so only that device auto-speaks the reply (`useAutoTts`). It is bookkeeping, never a
+credential; anything malformed is dropped (`None`). The buffered answer (`stream:false` / `agent.streaming: off`)
+is `{…head, …payload, turn_id}`.
 
 Plan updates have **no dedicated event** — they ride the `task_plan` tool's `tool.result` (manual
 edits go through `POST /api/agent/plan`). This inventory mirrors `session.py`'s emitter docstring —
@@ -1439,10 +1478,11 @@ interface Message { id:string; role:Role; parts:Part[]; ts:string; }
 **Fleet status:** client polls `GET /api/hosts` → `FleetService.status()` fan-out (gather+sem+timeout)
 → `HostStatus[]` (cached) → rows re-render; the hero "now monitoring" picks the featured host.
 
-**UI action (shutdown):** button → confirm dialog → `POST /api/actions/shutdown_host`
-`{args:{host_id}, confirm_token?}` → `decide()` = CONFIRM → server returns
-`{needs_confirm:true, confirm_token, prompt}` → client confirms → re-POST with the token →
-execute → `{needs_confirm:false, result, event}` (→ activity SSE) → row updates.
+**UI action (shutdown):** button → the client's confirm dialog FIRST (`hooks/useActions.ts` — shown only when
+the spec is `confirm` or risk `high`) → `POST /api/actions/shutdown_host` `{args:{host_id}}` → `decide()` =
+CONFIRM → server returns `{needs_confirm:true, confirm_token, prompt}` → the client re-POSTs with the token
+itself, no second dialog → execute → `{needs_confirm:false, result, event}` (→ activity SSE) → row updates.
+(So a MED action from the fleet UI would round-trip its token with no dialog at all — none exists today.)
 (`POST /api/tools/{name}` is a *different* surface: it invokes only `ui_exposed` **utility** tools —
 the Tools-tab cards, no confirm dance — and 404s anything else.)
 
@@ -1459,14 +1499,24 @@ the Tools-tab cards, no confirm dance — and 404s anything else.)
 `reconfigure`) → the call then runs exactly as `execute`. The rule is live *before* that execute, so
 `invoke` re-consults it and the run's own `Event.summary` already carries `[auto-allowed: …]`
 (benign — the run is both human-confirmed and now approval-covered). Every later identical call skips
-the bubble. Management: `GET /api/actions` carries each tool's live `approvals` list, and Conf → Tools
-(`ToolCatalog`) lists / revokes / widens them through the one `useSaveToolOverrides` write.
+the bubble. Management: `GET /api/actions` carries each tool's live `approvals` list, and the agent-tools catalog
+(`ToolCatalog` — in the Tools section, or in Conf's hosted Tools group on the 3/2-tab layouts) lists / revokes /
+widens them through the one `useSaveToolOverrides` write.
 
-**Voice:** push-to-talk → `MediaRecorder` blob → `POST /voice/stt` → text fills composer → normal
-chat turn → if auto-TTS, each finalized assistant text → `POST /voice/tts` → audio playback.
+**Voice (the clip door, as built on `main` since Phase 26 S9; prod v1.7.11 still forwards the raw clip):**
+hold the mic → `MediaRecorder` (webm/opus first) → `POST /api/voice/stt` (multipart + the required
+`X-Requested-With: ctrl-b`) → `services/voice_clip.py`: PyAV decode → 16 kHz mono → the pre-ASR pass
+(`voice.live.vad_model`; no speech ⇒ `{text:""}`, no ASR call) → per-chunk 16 kHz WAV → `VoiceClient.transcribe`
+walking the chain per chunk → text fills the composer (or sends, with `voice.stt.auto_send`) → normal chat turn.
+Streaming dictation and the call ride `WS /api/voice/live` instead (§12, LIVE_VOICE_PLAN). **Read-aloud:** the
+auto-TTS switch is `ui.ttsAuto` — per device, browser storage, default ON; with it on, only the device that sent
+the turn auto-speaks the reply (`ChatMessage.device`, `hooks/useAutoTts.ts`) → `POST /api/voice/tts` (chunked) →
+playback; every other device plays it with ▶.
 
 **Automation:** scheduler fires → `AgentSession` with `interactive=False`, the automation's agent +
-privilege → gated calls hit notify-park/fallback → results to a thread + Event → optional F1 notify.
+privilege → gated calls are DENIED in place (confirm) or resolved by `question_policy` (questions) → results to an
+archived run thread + one Event per terminal → the `automation_done` notification while the app is open (hidden
+page only).
 
 ---
 
@@ -1475,8 +1525,13 @@ privilege → gated calls hit notify-park/fallback → results to a thread + Eve
 - **Fleet:** host offline / DNS fail (status `error`, not crash); WOL with `mac=None` → DENIED;
   WOL to an already-on host (idempotent, report no-op); SSH auth fail / unknown host key / timeout →
   typed `ToolResult`; partial fleet (some pings time out) still returns the rest.
-- **run_shell:** kill on timeout (terminate process tree); **truncate** huge output (head+tail, note
-  bytes elided); redact secrets; per-OS shell (`cmd`/`pwsh` vs `bash`); never a detached GUI window.
+- **run_shell (as built — corrected 2026-10-14):** on `shell.timeout_s` the direct child (`bash -lc` /
+  `powershell -NoProfile -NonInteractive -Command`) is killed and reaped (`core/proc.py` `run_capture`) — **NOT
+  the process tree**: a command that forked keeps its children running, and the call returns only when they
+  close the output pipe (measured: a 1 s timeout on `sleep 8; echo hi` returned after 8.1 s). A timed-out run is
+  state `error` with `data.timed_out` and **no output** (what was captured is discarded). Output is redacted
+  (config secret values), then truncated to `max_output_chars` keeping the HEAD with a `… [truncated]` marker.
+  Never a detached GUI window. *(A process-group kill is the code fix — not built; [ISS-89](./ISSUES.md).)*
 - **Agent:** malformed tool args → error result fed back for self-correction; call to
   unknown/disabled tool → DENIED with reason; **multiple** tool calls per step; tool exception vs
   tool error-result both normalized; `max_iterations` cap → graceful stop; **context overflow
@@ -1486,27 +1541,31 @@ privilege → gated calls hit notify-park/fallback → results to a thread + Eve
   client disconnect → completed **and remaining** steps persist; **full turn survival + replay**
   shipped (ACA Slice 3, D39).
 - **Confirm/question:** stale confirm (host/world changed since proposal) → re-validate at execute,
-  re-confirm if drifted; confirm token single-use + TTL; headless + needs-input → notify-park or
-  fallback, with a max wait then auto-skip.
+  re-confirm if drifted; confirm token single-use + TTL; headless + needs-confirm → DENIED in place,
+  headless + `question` → `question_policy` (no park, no wait — §3).
 - **Compaction (D42):** summarizer backend down / transcript won't fit the summarizer window →
   truncation fallback; a fold that wouldn't shrink the live context → inflation-reject (no write);
   repeated rejects latch a per-thread breaker (one notice; manual `/compact` resets); never lose DB
   history; two floors (recent messages + `keep_recent_tokens`) plus suspend/`task_plan`/user-boundary
   snaps keep the tail intact.
-- **Subagents (concurrent):** bounded parallelism (per-agent + global semaphore, tree-wide); depth
-  **and** breadth limits + total-spawn counter to prevent fan-out explosion; **structured
-  concurrency** (one task group → parent cancel cancels all children, no orphans); one child's
-  failure is isolated (partial results aggregated, siblings continue); per-child timeout + batch
-  wall-clock budget; no privilege escalation beyond parent; result size cap; cycle guard; children
-  share the parent's resource semaphores (no SSH/connection multiplication); distinct child thread
-  ids to avoid per-thread-lock deadlock.
+- **Subagents (concurrent) — built:** bounded parallelism (per-agent + global semaphore, tree-wide); a depth
+  cap (`max_subagent_depth` — the only cycle guard) and a breadth cap (a batch over the agent's fan-out cap is
+  refused before any child resolves); **structured concurrency** (one task group → parent cancel cancels all
+  children, no orphans); one child's failure is isolated (partial results aggregated, siblings continue); a
+  per-child timeout (`agent.subagent_child_timeout_s`); no privilege escalation beyond parent (clamp); children
+  share the parent's resource semaphores (no SSH/connection multiplication); distinct child thread ids to
+  avoid per-thread-lock deadlock. **◇ Not built** (§5.5): a total-spawn counter, a batch wall-clock budget and a
+  result size cap (a child's full answer rides `SubResult.output`).
 - **MCP:** server slow/down → per-call timeout + tools marked unavailable (agent informed, not
   broken); **tool-name collisions** across servers → namespacing; arg schema drift → validate.
 - **Memory:** UI edit vs agent write race → file lock; vector store unavailable → degrade to file/none.
 - **Settings:** masked-secret sentinel preserves keys on PUT; invalid config rejected pre-write;
   backend switched mid-stream → applies next turn, current turn finishes on the old client.
 - **Time:** store **UTC**; format client-side. **IDs**: slugs/uuids, never display names.
-- **Automations:** overlapping schedules → skip if previous run still active (or queue, configurable).
+- **Automations:** concurrency is ONE run at a time across all automations (one global arbiter, no queue,
+  not configurable). A slot that comes due while another run holds the arbiter stays due and is claimed when it
+  frees; if it is then later than `automations.misfire_grace_s` it is recorded `missed` and skipped to the next
+  slot (`services/automations/runner.py` `tick`, `service.py` `claim`; AUTOMATIONS_PLAN §Operating behaviour).
 - **Secrets:** central redaction on outputs/logs/SSE; SSH passwords/keys never in `Event.output`.
 
 ---

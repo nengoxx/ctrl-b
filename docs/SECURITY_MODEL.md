@@ -53,16 +53,20 @@ authentication layer first.
 ## 2. The layers
 
 ### 2.1 Network — tailnet + trusted-LAN ingress
-- The backend's **code default** binds `127.0.0.1:5433` (`config.py` `ServerCfg.host`/`port`). **The
-  deployed PROD service binds `0.0.0.0:5433` — an OWNER WAIVER (2026-07-10, revising the original
+- **The bind is the launcher's, not the config's** (corrected 2026-10-14, [ISS-91](./ISSUES.md)): nothing passes
+  `server.host`/`server.port` to uvicorn (there is no `uvicorn.run`; the two keys only feed `/api/health` and
+  Conf's restart toast). The socket is the command line: `run.sh` / `start.ps1` bind `127.0.0.1:5433`, the dev
+  unit `127.0.0.1:5434`, and **the deployed PROD unit binds `0.0.0.0:5433` — an OWNER WAIVER (2026-07-10, revising the original
   loopback-only decision):** direct `http://emma:5433` from the LAN + tailnet, same trusted-home-LAN
   reasoning as the dev-mode exposure below (and prod is *narrower* than that long-accepted dev path —
   same API, minus Vite). HTTP has no secure context, so the mic still requires the Serve HTTPS URL.
   Nothing listens on a public interface either way. Egress to the fleet (SSH/ping/WOL) is separate and
   unaffected.
-- The only remote ingress is **Tailscale Serve**, which fronts the local app as
-  `https://<host>.<tailnet>.ts.net` with an auto-renewed Let's Encrypt cert (DECISIONS D1). It is
-  **tailnet-only** — you must be on the tailnet to reach it; nothing is published to the public internet.
+- The only **HTTPS** ingress — the only secure context, so the only door the mic works through — is
+  **Tailscale Serve**, which fronts the local app as `https://<host>.<tailnet>.ts.net` with an auto-renewed
+  Let's Encrypt cert (DECISIONS D1). It is **tailnet-only** — you must be on the tailnet to reach it; nothing
+  is published to the public internet. (Under the waiver above, plain `http://emma:5433` is ALSO reachable
+  over the tailnet; Serve is not prod's only ingress.)
 - **`debug` is off by default** (`ServerCfg.debug=False`) — an enabled debugger is a remote-code-execution
   surface. Keep it off for anything reachable.
 - **Dev-mode exposure (deliberate, documented — SYS-4).** The **dev** frontend is wider than prod: Vite binds
@@ -98,9 +102,21 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
   `Actor.USER, Privilege.FULL` (`api/access.py:50-52`), so the two `Risk.MED` Serve actions
   (`services/actions/tailscale.py:213,229`) run without a confirm bubble — enabling/disabling the owner's
   own HTTPS front door *is* the explicit user act, and re-confirming a toggle the owner just flipped in
-  Conf → Access buys nothing. The path is itself gated: the endpoint 403s unless `tailscale.enabled`
-  (D20), the actions are `ui_exposed=False`/`agent_exposed=False` (unreachable from the generic action
-  API and from the agent), and both are `idempotent`.
+  Conf → Server's *HTTPS access (Tailscale Serve)* card buys nothing. The path is itself gated: the endpoint
+  403s unless `tailscale.enabled` (D20), the actions are `ui_exposed=False`/`agent_exposed=False` (not
+  listed in the UI and never offered to the agent — but the generic action API still reaches them behind
+  a confirm token, see the next bullet), and both are `idempotent`.
+- **`ui_exposed` / `agent_exposed` are listing flags, not gates** (corrected 2026-10-14; ISS-88).
+  `POST /api/actions/{name}` resolves `name` against the WHOLE registry (`api/actions.py` `invoke_action` →
+  `ActionService.invoke`, whose defaults are `Actor.USER, Privilege.CONFIRM`) and runs it through `decide()`,
+  so **every registered tool is reachable there**, two-step for anything MED/HIGH/forced-confirm:
+  `tailscale_serve_enable`/`_disable` (MED → a confirm token), `run_shell` (DENIED unless
+  `shell.agent_exec_enabled`, then a confirm token — **independent of `shell.user_exec_enabled`**, which only
+  gates `POST /api/exec`), `terminal_*`, MCP/OpenAPI tools. `ui_exposed` decides only what the UI lists and
+  what `POST /api/tools/{name}` accepts (`api/tools.py` `_is_util_card`); `agent_exposed` decides what the
+  model is offered. Consistent with the trust model (the tailnet is the auth, §1), but "not in the UI" never
+  means "not callable". Whether the generic route should honour `ui_exposed` is an open owner call
+  ([ISS-88](./ISSUES.md)).
 - **The owner's `/privilege` override persists per DEVICE (Phase 27, D84 ON4 — owner, 2026-10-06).** An
   interactive owner may raise or lower a chat turn's privilege: `ChatRequest.privilege` is most-specific-wins,
   **no clamp** (the only clamp is `agent.subagent_clamp_privilege`, subagent ≤ parent). The `/privilege` and
@@ -190,6 +206,13 @@ provider/model name colliding with a secret-sentinel key is additionally rejecte
 introspects the whole `Settings` model and fails if a future secret-looking field is left unclassified,
 so the classification can't silently rot. (Tests: `backend/tests/test_secret_hygiene.py`.)
 
+**Where `redact()` actually runs (as built, verified 2026-10-14):** `run_shell` output is redacted against
+every config secret (`services/actions/shell.py` `_run`); an SSH action's output and error are redacted
+against **that host's** password only (`services/actions/_common.py`); **open-terminal output is NOT
+redacted** (`services/actions/terminal.py` has no `redact` call — it returns the remote terminal's text as
+is); and an Event's `summary` (`$ <command> — exit N`) is never redacted, so a secret typed into a command
+line lands in the event log verbatim.
+
 ### 2.5 Persisted approvals — "always allow" (D44, ACA Slice 8)
 
 The owner can make a confirm-gated call stop asking. An **approval** is an allow-only rule stored on the
@@ -236,7 +259,13 @@ decision**.
   forced-confirm. **Owner-configured-risk tools deliberately STAY approvable**: `terminal_exec` /
   `terminal_write_file` (risk from `open_terminal.exec_risk`/`write_risk`) and MCP/OpenAPI server `risk`.
   Their HIGH is the owner's own setting, and pinning them would break the deliberate `exec_risk: low`
-  escape — so the stance is explicit rather than accidental.
+  escape — so the stance is explicit rather than accidental. **The open-terminal risks are read ONCE, at
+  boot:** `register_openterminal` runs in the lifespan (`main.py`) and stamps `exec_risk`/`write_risk`/
+  `read_risk` onto the registered specs; a Conf save only swaps the HTTP client (`runtime.py`
+  `set_open_terminal`). So **a risk change — tightening `exec_risk` to `high` included — does not change
+  the gate until a restart**, and enabling a server whose `base_url` was empty at boot registers no tools
+  until then either; nothing flags it (`api/settings.py` `_RESTART_REQUIRED` covers `server.host/port/debug`
+  only — [ISS-92](./ISSUES.md)). Disabling IS live: the tools then answer DENIED.
 - **Actor-agnostic — the interactive→headless crossing is DELIBERATE.** One grant covers USER, AGENT and
   headless-subagent callers. A rule born from a chat bubble therefore also auto-allows the agent (and a
   headless subagent) re-running that exact call, with no second prompt. That is owner ruling ④, not an
@@ -360,7 +389,12 @@ any future unauthenticated write path.
   `.parts/` scratch dir → `fchmod 0644` → stream with a byte counter (`413` past
   `media.write.max_bytes`) → fsync → **`probe_image` header probe** (`415` when the bytes and the
   extension disagree) → `os.link` no-clobber (`409`, same filesystem so it stays atomic) → unlink the
-  temp → `fsync_dir`. **A rejected upload leaves zero bytes**, and a boot sweep empties those
+  temp → `fsync_dir`. **A second landing exists for edit-in-place** (the gallery's "Edit image", W10): with
+  an `X-Expected-Revision: <revision>` header the same ladder runs, then the existing file is overwritten
+  atomically by `os.replace` **only if it still answers to that revision** — a mismatch, a missing target or
+  an empty header value is a `412` ("the picture changed on the server — reopen it and try again"), never a
+  409, which already means "name taken" (`core/media.py` `UploadPart.finish`, `api/media.py`). It is the one
+  path that rewrites an existing owner file; it is preconditioned, not open. **A rejected upload leaves zero bytes**, and a boot sweep empties those
   `.parts/` dirs (registered roles of HEALTHY namespaces only). **A `.parts` that is a symlink — or a
   file — is refused at BOTH ends**: the sweep will not walk it, and the write path will not create a
   temp through it, because `mkdir(exist_ok=True)` accepts an existing link and `mkstemp` would then
@@ -374,7 +408,12 @@ any future unauthenticated write path.
   ARCHITECTURE §6.)
 - **Still no decoder on the server.** No Pillow, no decode, no re-encode, no thumbnails — header
   probes only. An untrusted-decoder surface was refused at D52 §10.4 and stays refused; all image
-  work (crop, resize, EXIF/GPS stripping, re-encode) happens in the **client's** worker.
+  work (crop, resize, EXIF/GPS stripping, re-encode) happens in the **client's** worker. **So the 64 MP
+  decode guard and the metadata strip are properties of the APP's pipeline, not of the endpoint**
+  (`theme-engine/mediaRegistry.ts` `UPLOAD_LIMITS`, `lib/imageExport.ts`): the server checks only the byte
+  cap (`media.write.max_bytes`) and the header signature, so a non-app client (curl, a script, an SSH copy)
+  can store any pixel count under the cap, and its bytes keep their EXIF/GPS, served as-is to the tailnet.
+  `maxPixels` is a front-end constant; only `max_bytes` is config.
 
 **Residuals this path made worth naming** (whole-API properties, not new holes; both recorded in
 [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) §8.2 for Phase 19):
@@ -657,9 +696,12 @@ half of a live call's diagnostic record; the relay writes its half in-process. F
   relay's `start` parse. **Bounded:** body ≤ 64 KB counted as it streams (413), ≤ 200 entries of
   ≤ 2 KB each (422), `voice.live.trail_keep` files kept. **No read endpoint.**
 
-Files: `$CTRLB_HOME/calls/<call_id>.jsonl` — a dictation's under `calls/dictation/` (Phase 26 S1; the
-batch's `mode` picks the directory from a fixed two-word vocabulary, never a path) — (dirs 0700, files
-0600) — the owner's transcripts (once, in the relay's `transcript` frames) and gate numbers; **no
+Files: `$CTRLB_HOME/calls/<call_id>.jsonl` — a dictation's under `calls/dictation/` (Phase 26 S1), the mouth's
+hidden-page playback probe under `calls/mouth/` (ISS-73 ①; written only through this route, never a leg), and
+the clip door's under `calls/clip/` (server-minted ids only, §2.12). The batch's `mode` picks the directory
+from a fixed vocabulary — `call` (default) · `dictation` · `mouth` (`services/call_trail.py`
+`ClientTrailMode`; `clip` is refused at the edge), never a path; each mode directory keeps its own
+`trail_keep` — (dirs 0700, files 0600) — the owner's transcripts (once, in the relay's `transcript` frames) and gate numbers; **no
 secrets** (the bearer canary is test-pinned). The relay's leg-end JOURNAL line (T1) carries counts and
 codes only — never transcript text (test-pinned).
 
@@ -755,6 +797,44 @@ compares each call segment against an enrolled per-route template. Design: [`ASR
 *(Ruled, not yet built — the routes, the template store and the source scan land with D85-S3 (ASR_PLAN §7.3); until then no
 template exists and no leg runs the owner check.)*
 
+### 2.14 Unattended runs — scheduled automations (D49; ✅ shipped v1.4.4, section added 2026-10-14)
+
+An automation runs the agent with nobody watching: the runner builds an ordinary session with
+`interactive=False`, `origin=automation` and the run's id (every Event it causes carries that `run_id`), and
+its replies carry no device, so no device auto-speaks them (`api/agent.py` `_session` builder; AUTOMATIONS_PLAN
+§D-3/§D-4). **The gate is the ordinary `decide()` ladder (§2.2). The one difference is what a `CONFIRM`
+becomes: DENIED in place**, audited with `decision="policy"` (`services/agent/session.py`, the
+`inv.needs_confirm and not self._interactive` arm → `ActionService.record_policy_denial`), so the turn never
+stalls and the refusal is in the event log. Nothing parks, nothing waits for the owner, nothing notifies
+before the run ends (notify-and-park is a recorded future, AUTOMATIONS_PLAN §Out of v1). `question_policy`
+governs the `question` tool only and never a confirm.
+
+So **the automation's privilege IS its authorization**, decided at authoring time:
+
+| Privilege of the run | What runs unattended |
+|---|---|
+| `readonly` | LOW tools only; a non-LOW `action`-category tool is DENIED outright, anything else that would ask is DENIED in place |
+| `confirm` | LOW tools; a MED/HIGH tool only when a D44 approval rule matches (§2.5); forced-confirm tools (`run_shell`, `shutdown_host`, `reboot_host`) never |
+| `auto_low` | LOW + MED; HIGH only when an approval matches; forced-confirm tools never |
+| `full` | **everything**, forced-confirm tools included — `run_shell` too, whatever `shell.agent_exec_enabled` says (§5), unless `shell.enabled: false` |
+
+- **Where the privilege comes from.** `AutomationDraft.privilege` — `null` (the default) means **the resolved
+  agent's own AgentDef level**, so an automation for an agent that is `full` runs at `full`. Only the REST /
+  Conf body can set it (`domain/automation.py`); the agent's `create_automation` tool cannot (its input omits
+  `privilege`, `services/agent/automation_tools.py`), and that tool is itself **refused in any non-interactive
+  context** (an automation run or any subagent), so a scheduled run cannot create more automations.
+- **Approvals are actor-agnostic (§2.5):** an "always allow" granted at a chat bubble also lets an automation
+  run that exact call.
+- **Fail-closed resolution.** A named agent is resolved STRICTLY at write and again at claim
+  (`services/automations/service.py` `resolve_agent_strict`): a deleted agent fails the run rather than
+  falling back to another agent's toolset; a stored privilege this build cannot read narrows to `READONLY`
+  (`services/automations/repo.py`).
+- **No auth beyond the tailnet (§1).** The REST surface is the owner's; `POST /api/automations/{id}/run-now`
+  is a bodyless POST and sits in the safelisted-POST class (§3).
+- **Concurrency is one run at a time, server-wide** (one arbiter, no queue): a slot that comes due while
+  another run holds it waits, and is recorded `missed` if it is then later than `automations.misfire_grace_s`
+  (`services/automations/runner.py` `tick`). Operating detail: AUTOMATIONS_PLAN §Operating behaviour.
+
 ---
 
 ## 3. Residual & accepted risks + known gaps
@@ -768,7 +848,7 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | **Confirm-tokens are in-memory** — a backend restart between mint and confirm orphaned the pending bubble | **closed (step 4b ✓ 2026-07-02)** | Robustness, not a breach — and no longer a gap: PRE_DEPLOY step 4b (J3) shipped server-side re-mint. The durable persisted `AWAITING_CONFIRM` call + the explicit `execute` are the confirmation, so `session.resume(execute)` re-mints via `ActionService.confirm_token_for()` and one click still works after a restart / 120 s expiry / reload. Test-locked by `test_confirm_recovery_j3.py`. (ACA Slice 1 later ruled the *orphan* token is CONSUMED on re-mint — §2.3.) |
 | Secret redaction / masking correctness | **test-locked (step 3 ✓)** | `test_secret_hygiene.py` proves every real secret is masked/collected/redacted, non-secrets never are, and the policy gate can't drift. Note redaction is still *best-effort within* the `env`/`headers` maps (secret-named entries only) — by design (§2.4). |
 | `paramiko` uses `AutoAddPolicy` (accepts unknown SSH host keys; no `known_hosts` pinning) | **accepted** | Acceptable only inside the trusted tailnet (`adapters/ssh.py`). Would need pinning if the boundary widened. |
-| Local shell (`!`) + agent `run_shell` = remote code execution by design | **accepted, off by default** | See §5. Gated + off by default; RCE is the point when enabled. |
+| Local shell (`!`) + agent `run_shell` = remote code execution by design | **accepted, off by default — with one exception** | See §5. Both toggles default off; RCE is the point when enabled. **The exception:** an agent at `FULL` privilege runs `run_shell` with no confirm even with `shell.agent_exec_enabled` off — only `shell.enabled: false` stops it ([ISS-87](./ISSUES.md), §5). |
 | `debug` = RCE surface | **accepted, off by default** | `ServerCfg.debug=False`; never enable on anything reachable. |
 | Dev Vite server exposes the API on the LAN (`0.0.0.0` + `/api` proxy) | **accepted, dev-only** | §2.1 dev-mode exposure; trusted home LAN. |
 | Prod backend on `0.0.0.0:5433` (LAN + tailnet, plain HTTP) | **accepted, owner waiver 2026-07-10** | §2.1; trusted home LAN; strictly narrower than the dev path above; Serve HTTPS remains for mic/secure-context. |
@@ -798,7 +878,17 @@ code. Upheld by:
 - **Display:** the config API read masks secret-keyed values (`mask_secrets`); a masked value round-trips back
   to the stored real secret on save, so editing config in the UI never blanks a secret. A mask with
   **nothing** to restore (a recreated/renamed provider, a hand-built PUT) is **dropped**, never written
-  as the credential — `looks_masked()` judges the shape alone (D48 amendment 2026-07-27).
+  as the credential — `looks_masked()` judges the shape alone (D48 amendment 2026-07-27). The other side
+  of that rule: an **empty, `null` or masked** incoming value KEEPS the stored secret
+  (`config.py` `_is_unchanged_secret`), so **a stored secret cannot be cleared through Conf / `PUT
+  /api/settings`** — delete the provider/host, or edit `config.yaml` by hand. At the config layer the
+  secrets are plain `str` fields; only the domain `Host` projection wraps `ssh_password` in `SecretStr`.
+- **The SSH password is also the sudo password.** POSIX shutdown/reboot run `sudo -S -p '' shutdown …` and
+  every service `cmd` containing `sudo` is rewritten to `sudo -S`, with the host's `ssh_password` fed on
+  **stdin** (`services/actions/shutdown.py` `_SHUTDOWN_CMD`, `services/actions/_common.py` `_prepare_sudo`) —
+  never on a command line; it is redacted from the captured output and the error. So that password must also
+  be the account's sudo password (or the commands get NOPASSWD); a refusal answers "sudo could not
+  authenticate …".
 - **Fingerprints:** anything published *beside* masked values must not function as an **offline
   verification oracle** for the raw secret — compute it from the masked values, or key it. A digest over
   the raw secrets served next to their `ab…yz` masks lets a guess be confirmed offline, with the mask
@@ -822,15 +912,37 @@ code. Upheld by:
 
 ## 5. The shell escape hatches (opt-in RCE)
 
-Two independent, **off-by-default** gates in `config.py ShellCfg`:
+Two independent, **off-by-default** toggles in `config.py ShellCfg`, under one master switch
+(**`shell.enabled`**, default on — when false every `run_shell` answers DENIED "local shell is disabled" at run
+time, whatever the caller, `services/actions/shell.py` `_run`):
 - **`user_exec_enabled`** (default **False**) — the `!<cmd>` composer escape hatch (`POST /api/exec`): the
   owner types a shell command that runs on the backend host. Pure RCE by design; off until you turn it on.
   *(When a `!` is **steered** into a busy turn (D41), this gate is re-checked **fail-closed at drain time**
   — the only place the command runs — so disabling the shell mid-queue drops the queued command; §3.)*
-- **`agent_exec_enabled`** (default **False**) — the agent's `run_shell` tool. Even when enabled, `decide()`
-  **denies `run_shell` unless the caller is `FULL` privilege** — so the agent can't reach raw shell casually.
-- Guardrails when enabled: cwd = `shell.workdir` (blank → `$CTRLB_HOME`), `timeout_s=60`, output capped at
-  `max_output_chars=6000`, and output redacted (§2.4).
+- **`agent_exec_enabled`** (default **False**) — the agent's `run_shell` tool, for callers **below `FULL`**
+  (corrected 2026-10-14 — the earlier text said the opposite; [ISS-87](./ISSUES.md)). `decide()` reads it only
+  below `FULL` (`core/permissions.py` `decide`, the first rule): **off** → `run_shell` is DENIED for a
+  `readonly`/`confirm`/`auto_low` caller; **on** → those callers get a confirm bubble on every call
+  (`run_shell` is pinned `confirm=True`, so no approval can skip it; a `readonly` caller stays denied by the
+  READONLY rule — `run_shell` is `category="action"`, risk HIGH). **A `FULL` caller is never gated by
+  this flag:** `decide()` returns ALLOW for `run_shell` at `FULL` with no confirm whether the flag is on or
+  off (pinned by `tests/test_shell_5.py::test_decide_gate_truth_table`). The exemption exists for the owner's
+  own `!<cmd>` path, which invokes `run_shell` at `FULL`, but it also covers an agent whose `privilege` is
+  `full` (by AgentDef, by an automation's `privilege: full`, or by the owner's per-device `/privilege full`).
+  **So the only off-switch for an agent at `FULL` is `shell.enabled: false`.** Treat `full` as "this agent
+  may run host shell". Making the toggle a hard gate at every privilege is the recommended code fix (its own
+  reviewed slice; not built).
+- **The generic action API is a third door:** with `agent_exec_enabled` on, `POST /api/actions/run_shell`
+  plus its confirm token runs a shell as `Actor.USER` even while `user_exec_enabled` is off (§2.2's listing-
+  flags bullet).
+- Guardrails when it runs: cwd = `shell.workdir` (blank → `$CTRLB_HOME`), `bash -lc <cmd>`
+  (`powershell -NoProfile -NonInteractive -Command <cmd>` on a Windows server), output redacted (§2.4) and
+  then truncated to `max_output_chars=6000` keeping the HEAD (`… [truncated]`). **`timeout_s=60` kills the
+  direct child only** (`core/proc.py` `run_capture`: `proc.kill()` then wait for EOF) — **not the process
+  tree**: a command that forked keeps its children running, and the call returns only when they close the
+  output pipe (measured: a 1 s timeout on `sleep 8; echo hi` returned after 8.1 s). A timed-out run is
+  state `error` with `data.timed_out` and **no output** — whatever was captured is discarded
+  ([ISS-89](./ISSUES.md); a process-group kill is the code fix, not built).
 
 Prefer a **typed action** over widening a raw shell path. The curated open-terminal tools (with per-op risk)
 are the intended way to give the agent shell-like reach, not the raw `!` escape.
@@ -839,12 +951,16 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
 
 ## 6. Safe-defaults checklist (verify before exposing on the tailnet)
 
-- [ ] Backend bind matches the §2.1 policy — code default `127.0.0.1`; the deployed PROD unit binds
-      `0.0.0.0` **per the 2026-07-10 owner waiver** (trusted home LAN + tailnet; never a public interface).
+- [ ] Backend bind matches the §2.1 policy — set by the launcher's `--host` (the by-hand launchers bind
+      `127.0.0.1`; the deployed PROD unit binds `0.0.0.0` **per the 2026-07-10 owner waiver** — trusted home
+      LAN + tailnet; never a public interface). `server.host` in `config.yaml` changes nothing.
 - [ ] `debug` = **off** (`ServerCfg.debug=False`).
 - [ ] Tailscale Serve HTTPS up; the app reachable **only** via `https://<host>.<tailnet>.ts.net`, nothing
       port-forwarded publicly.
-- [ ] `shell.user_exec_enabled` / `shell.agent_exec_enabled` set to what you actually intend (default off).
+- [ ] `shell.user_exec_enabled` / `shell.agent_exec_enabled` set to what you actually intend (default off) —
+      and remember neither stops an agent that runs at `full`: that takes `shell.enabled: false` (§5).
+- [ ] **Every agent / automation at `privilege: full` is one you meant** — `full` runs `run_shell` and every
+      forced-confirm tool without asking (§5, §2.14).
 - [ ] No secrets tracked in git: `config.yaml`, `.env`, `clients/`, `*_prompt.*` all gitignored.
 - [ ] MCP / OpenAPI tools reviewed + risk-annotated; no blanket `ALLOW`.
 - [ ] **`tool_overrides.<tool>.approvals` reviewed** (§2.5) — every standing "always allow" rule is one you

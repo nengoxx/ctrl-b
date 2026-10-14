@@ -1,18 +1,23 @@
-# ctrl-b config — copy to config.yaml (gitignored) and fill in.
-# Phase 0 reads only `server`; later phases add inference/voice/agents/hosts/mcp/... blocks
-# (see docs/DESIGN.md §9 and docs/SPEC.md §6.3). Unknown keys round-trip losslessly.
+# ctrl-b config — copy to $CTRLB_HOME/config.yaml (gitignored; with CTRLB_HOME unset, the repo root) and
+# fill in. Every key, its default and when a change applies: docs/user-guide/configuration-reference.md.
+# Unknown keys round-trip losslessly — which also means a MISSPELT key or section loads silently and does
+# nothing (no warning). Agents are FOLDERS ($CTRLB_HOME/agents/<name>/), never a list in this file.
 #
 # This file is the UI-managed source of truth and the ONLY home for secrets (per-host SSH creds,
 # per-provider API keys). `.env`'s CTRLB_<SECTION>__<KEY> overrides reach DECLARED, ONE-LEVEL scalars
 # only (e.g. CTRLB_SERVER__PORT) — they cannot address a credential, which lives two levels down at
 # providers.<name>.api_key. See .env.example.
 
-config_version: 1  # config shape version — managed by `python -m app.config_migration`
+config_version: 5  # config shape version — managed by `python -m app.config_migration`; don't edit
 
 server:
-  host: 127.0.0.1        # tailnet-only; front with Tailscale Serve for HTTPS (mic needs it)
-  port: 5433             # 5433 coexists with the live Flask app on 5432 until cutover
-  poll_seconds: 5        # fleet status poll cadence
+  # host/port are INERT (ISS-91): the listening socket comes from the uvicorn command line in the
+  # systemd unit / run.sh / start.ps1; these two only change what /api/health reports. To move the
+  # port, edit the unit's ExecStart (and tailscale.target_port).
+  host: 127.0.0.1
+  port: 5433
+  poll_seconds: 5        # fleet status poll cadence (cache TTL + the app's refresh); monitor.poll_seconds must be >= it
+  feature_cycle_seconds: 6  # how long the Fleet hero shows one online host before moving on
   debug: false           # keep false — debug is an RCE surface. ON also raises the `app` logger to
                          # DEBUG, which is what turns on the per-tick presence trail (the diagnostic
                          # for a drifted DHCP reservation).
@@ -25,7 +30,8 @@ server:
   # ⚠ A NAME MISSING FROM A NON-EMPTY LIST ANSWERS 400 ON EVERY ROUTE, THE CONF UI INCLUDED —
   # recovery is editing config.yaml by hand and restarting. So list every name AND address you
   # actually browse by, not just the pretty one. Entries are exact names or ONE leading `*.`
-  # wildcard; no ports (the Host's port is stripped before matching).
+  # wildcard; no ports (the Host's port is stripped before matching). Read at startup only — a change
+  # needs a restart, and Conf does not say so (ISS-92); there is no Conf form for it.
   # trusted_hosts:
   #   - emma                          # the bare hostname on the LAN
   #   - emma.lobster-vector.ts.net    # the Tailscale Serve name (Serve preserves Host end to end)
@@ -35,11 +41,12 @@ server:
   #   - 100.64.0.1                    # the tailnet (100.x) address literal — yours
 
 # Notifications (F1) — v1 is the FOREGROUND channel only: the PWA raises a browser notification from
-# the live streams it already holds, so the phone buzzes while the app is open or backgrounded. There
-# is no server-side sender (Web Push / ntfy / bot are ROADMAP F1 futures), and closed-app delivery is
-# NOT covered. Master `enabled` is the spam guard: while it's false nothing fires, whatever the
+# the live streams it already holds, and ONLY while the page is HIDDEN (another tab, another app, the
+# screen off with the PWA still running) — never while you are looking at it, and a `turn_done` is
+# skipped during a live call. There is no server-side sender (Web Push / ntfy / bot are ROADMAP F1
+# futures), so a closed app gets nothing. Master `enabled` is the spam guard: while it's false nothing fires, whatever the
 # per-event toggles say. Delivery also needs the browser permission (asked when you flip it on in
-# Conf → Notifications) and a secure context — i.e. reach the app over Tailscale Serve HTTPS, not
+# Conf) and a secure context — i.e. reach the app over Tailscale Serve HTTPS, not
 # plain http, exactly like the mic.
 # notifications:
 #   enabled: false
@@ -48,6 +55,7 @@ server:
 #     turn_done: true        # an agent turn finished / hit its step limit / errored
 #     action_failed: true    # a recorded action ended error / denied / timeout
 #     automation_done: true  # a scheduled (or run-now) automation run finished — however it ended
+#     host_up_down: true     # the monitor confirmed a host went down or came back
 
 # Fleet wake automation (ROADMAP D2) — BOTH triggers' tunables.
 #
@@ -91,6 +99,28 @@ server:
 #     start: "23:00"
 #     end: "07:00"
 
+# Fleet monitor (D2-A/D50) — the backend's own watcher. Every `poll_seconds` it reads the shared fleet
+# sweep and records a `host_down` / `host_up` Event once a host has missed `down_after_checks` checks in
+# a row / answered `up_after_checks` in a row (asymmetric on purpose: a false DOWN is noise, a false UP
+# is harmless). A check that could not be MADE counts as UNKNOWN and resets both counters. It is also
+# what drives `wake_on_presence` — off, nothing presence-driven fires. Applies live.
+# monitor:
+#   enabled: true
+#   poll_seconds: 30         # 1–3600; must be >= server.poll_seconds (else one cached sweep counts as several checks)
+#   down_after_checks: 3     # 1–100
+#   up_after_checks: 2       # 1–100
+
+# Scheduled automations (A3/D49) — the RUNNER's knobs only; the automations themselves live in the
+# database and are managed in Conf. One run at a time; a slot later than `misfire_grace_s` is recorded
+# `missed` and skipped. NONE of these keys has a Conf form — hand-edit and restart.
+# automations:
+#   enabled: true            # master switch for SCHEDULES; "run now" still works while it is false
+#   poll_seconds: 10         # how often the claim scan runs (1–3600)
+#   default_timeout_s: 300   # wall-clock limit for a run that sets none of its own (1–86400)
+#   max_count: 20            # how many automations may exist (1–500)
+#   misfire_grace_s: 300     # how late a slot may still fire (0–86400)
+#   keep_runs: 50            # run rows kept per automation; older ones go WITH their threads (1–1000)
+
 # Owner media (D52/D53 + D65's write path). The ART itself is FILES — drop them into
 # $CTRLB_HOME/media/<ns>/<role>/ over SSH, or upload them from Conf → the gallery; this block only
 # records what a folder listing cannot: the per-role PRIORITY list (`files`, one entry per picture:
@@ -107,8 +137,16 @@ server:
 #         characters:
 #           files:
 #             - name: lyra-2.png
+#               focal: {x: 0.5, y: 0.3, z: 1.5, rev: ""}   # framing point 0–1 (+ zoom); `rev` = the file
+#                                    # revision it was set on — a mismatch reads as reset. The gallery writes it
+#             - name: old-pic.webp
+#               hidden: true         # kept in the library, never used
+#             - name: atlas-alt.png
+#               key: atlas           # bind to a named-role key explicitly (default: the filename stem)
 #             - bundled: pegasus     # a shipped default, listed as a first-class library entry
-#       slots: {wallpaper: lyra-2}   # a pin: the value is a file STEM (or a bundled id)
+#       slots:
+#         wallpaper: {name: lyra-2.png}   # a pin: {name: <a file of the SOURCE role>} or {bundled: <shipped id>};
+#                                         # null = unpinned. Slots today: gacha `wallpaper` + `oracle` (from characters)
 
 # Composer attachments (D68) — files attached to a chat message. The FILES live under
 # $CTRLB_HOME/attachments/ (a flat `staging/` landing plus one directory per thread) and are written
@@ -129,6 +167,8 @@ server:
 #   max_files_per_message: 10
 #   max_file_mb: 10
 #   staging_orphan_hours: 24
+#   image_max_dimension: 2048    # the APP downscales a photo to this longest edge before upload
+#   image_quality: 0.85          # …and re-encodes it at this quality (0–1)
 #   max_inline_chars: 16000
 #   image_tokens: 1000
 #   max_images_per_request: 10
@@ -136,13 +176,14 @@ server:
 #   max_pdf_pages: 200
 #   max_extracted_chars: 400000
 
-# Tailscale Serve (Phase 6c-2, D20) — the in-app HTTPS toggle (Conf → Access). `serve` only, never
+# Tailscale Serve (Phase 6c-2, D20) — the in-app HTTPS toggle (the card at the bottom of Conf → Server). `serve` only, never
 # funnel (tailnet-only by construction). `target_port` = the local port Serve fronts: 5433 (the
 # default) is the backend-served prod SPA; set 5173 to front the dev Vite server instead. Also
 # settable from .env: CTRLB_TAILSCALE__TARGET_PORT=5173 (env wins over this file).
 # tailscale:
 #   enabled: true
 #   target_port: 5433
+#   timeout_s: 15              # subprocess timeout for each `tailscale` CLI call
 
 # Providers (A11/D48) — the top-level name-keyed CONNECTION map. Each entry is one OpenAI-compatible
 # server (base_url + api_mode + optional api_key + server-capacity knobs) carrying a name-keyed model
@@ -170,6 +211,10 @@ providers:
         extra_body: { cache_prompt: true, return_progress: true }
         # context_window: 16384      # D42: manual per-model window; unset = auto-probed from llama.cpp
         #                            # /props (config always wins over the probe; cloud has no probe)
+        # input_modalities: [text, image]  # D68: what the model accepts. OMITTED = TEXT-ONLY — an
+        #                            # attached image is replaced by an error note for this model
+        # max_tokens_field: max_tokens  # D46: per-model output-cap field (max_tokens | max_completion_tokens);
+        #                            # also settable on the provider; unset = derived from api_mode
   cloud:                            # the /cloud verb
     base_url: https://openrouter.ai/api/v1
     api_key: sk-or-v1-...           # optional; omitted = no-auth. Masked in the API; blank-keeps on PUT
@@ -207,20 +252,23 @@ providers:
   #   max_concurrent_requests: 1
   #   models:
   #     parakeet-tdt-0.6b-v3: {}
-  # parakeet-live:                  # the live ear's batch door (S7b): voice.live.provider
+  # parakeet-live:                  # RESERVED for the future live ear; serves NOTHING today — the call's ear
+  #                                 # dials a realtime /realtime endpoint (Speaches), see voice.live below
   #   base_url: http://127.0.0.1:9010/v1
   #   max_concurrent_requests: 1
   #   models:
   #     parakeet-tdt-0.6b-v3: {}
 
 inference:                          # request_timeout_s / system_prompt* / failover / retry_attempts STAY
-  provider: local                   # PRIMARY (flat); model omittable iff the catalog has exactly one model
+  provider: local                   # PRIMARY (flat); null = chat unconfigured
+  # model: minig+                   # omittable iff the provider's catalog has exactly one model
   request_timeout_s: 600
   connect_timeout_s: 5   # D83: give up REACHING an endpoint after this (refused/no route/silent host)
                          # and hop to the next — the 600 s above stays the read window once connected
   connect_cooldown_s: 60 # D83: an endpoint found unreachable is tried LAST for this long (never skipped;
                          # its first successful answer clears it early). 0 = off
-  system_prompt: ""      # optional; blank = the built-in ctrl-b assistant prompt
+  system_prompt: ""      # optional; blank = the built-in ctrl-b assistant prompt (the root SOUL.md wins over it)
+  system_prompt_append: ""  # added after whichever base prompt is active, for every agent (the agent's own append follows)
   failover: true
   retry_attempts: 2      # D43/Slice 7: CHAT-STREAM same-endpoint retry budget for TRANSIENT failures
                          # only (429 / 503 / Retry-After / llama.cpp busy-slot) — a busy-but-alive server
@@ -237,15 +285,21 @@ inference:                          # request_timeout_s / system_prompt* / failo
 # `threshold_tokens` fallback triggers instead. The `summarizer` is independently selectable — leave
 # mode/model blank to reuse the chat backend, or point it at a cheap/fast model.
 agent:
-  default_agent: ""          # name of the agents[] entry new threads use; blank = built-in default
-  global_subagent_limit: 6   # process-wide cap on concurrent subagents across the whole tree (4.5)
+  default_agent: ""          # "" = none set (a new thread gets the root/default agent) · "default" = the root,
+                             # explicitly · "<name>" = that $CTRLB_HOME/agents/<name>/ folder
+  default_title: ""          # display name for the root/default agent
+  global_subagent_limit: 6   # process-wide cap on concurrent subagents (4.5) — read at STARTUP: restart (ISS-92)
   subagent_clamp_privilege: true  # clamp a subagent's privilege to never exceed its parent's (4.5);
                                   # false lets a configured subagent run at a higher privilege
   subagent_child_timeout_s: 180   # per-child wall-clock cap for spawn_subagents (read live per fan-out)
   skills_enabled: true       # master switch for the skills subsystem (4.5)
-  skills_dir: skills         # dir scanned for <name>/SKILL.md (relative → alongside this config)
-  skill_min_overlap: 1       # min token overlap for a skill to match a turn (baked at startup)
-  skill_max_active: 2        # max skills that activate per turn (baked at startup)
+  skills_auto_write: true    # the agent may write SKILL.md itself; false → propose-only
+  skills_dir: skills         # dir scanned for <name>/SKILL.md (relative → $CTRLB_HOME, never follows
+                             # CTRLB_CONFIG). Read at startup: restart after changing it (ISS-92)
+  skill_min_overlap: 1       # min token overlap for a skill to match a turn (baked at startup: restart)
+  skill_max_active: 2        # max skills that activate per turn (baked at startup: restart)
+  streaming: auto            # auto | on | off — on = always stream (SSE), off = one buffered reply (a flaky link);
+                             # auto follows the request (the PWA always streams). A bare on/off is read correctly
   compaction:                # global context-window default; an agent/subagent can override it below
     enabled: true
     threshold_frac: 0.85     # D42: compact at this fraction of the endpoint's context window
@@ -263,7 +317,24 @@ agent:
       provider: ""           # a providers-map name; blank inherits the inference primary (D48)
       model: ""              # blank inherits the provider's model
       # max_tokens: 1024     # D42: optional output cap for the summary call (ModelRef call config)
-  # defaults:                # D43/Slice 7 — the AgentDef inheritance base (deep-merged into every agent).
+      # reasoning_effort: low  # off|minimal|low|medium|high|xhigh|max; blank = the backend default
+      # reasoning_tokens: 512  # explicit reasoning budget; ignored when reasoning_effort is "off"
+  # turns:                   # D39 — limits for running turns (no Conf form; read per turn)
+  #   max_active_turns: 4    # turns running at once across all threads; past it a send gets 409 busy
+  #   steer_queue_max: 8     # messages queued into one running turn; past it → 409 busy
+  #   ring_size: 2048        # per-turn replay ring (a reconnect cache, never the durability floor)
+  #   subscriber_queue_size: 256  # per-device fan-out queue; overflow detaches that device (it re-attaches)
+  #   terminal_cache_cap: 32 # finished turns remembered for a late re-attach…
+  #   linger_s: 60           # …and for how long
+  #   ping_s: 15             # chat SSE keepalive, INT seconds
+  #   send_timeout_s: 30     # drop a frozen reader without touching the turn
+  #   shutdown_grace_s: 5    # how long running turns get to stop at shutdown
+  # defaults:                # the AgentDef inheritance base (deep-merged into every agent; an agent.yaml field
+  #                          # wins). Any AgentDef field: model, privilege, tools, skills, guards, … — a
+  #                          # specialist never inherits title / greeting / alt_greetings / greeting_enabled.
+  #   model: { provider: local, model: "minig+", max_tokens: 4096, reasoning_effort: medium }
+  #   privilege: confirm     # readonly | confirm | auto_low | full — gates med/high-risk tools
+  #                          # D43/Slice 7:
   #                          # Failure-fallback model routing lives HERE as agent.defaults.routing (the
   #                          # global default — there is deliberately NO separate agent.routing; a per-agent
   #                          # agent.yaml `routing:` block overrides it). OFF by default (omit the block).
@@ -276,46 +347,19 @@ agent:
   #                          # worker (a visible // note each way; the D18 failover chain runs unchanged
   #                          # underneath — routing only picks who is asked FIRST). Subagents: inert.
 
-# Agent definitions (Phase 4.5, D11). Optional — with none configured a built-in default chat agent
-# is used (all agent-exposed tools, CONFIRM privilege, the chat model). Add entries to run/select
-# alternate agents (and to spawn them as subagents). Each is selectable per thread; one is default.
-#
-# Subagents INHERIT every parameter from the agent that spawns them — model, context-window
-# (compaction), privilege, tool/skill allowlists, iteration & fan-out caps. A subagent named in
-# spawn_subagents that you define below overrides ONLY the fields you set here (e.g. just prompt +
-# tools); everything else is inherited from the parent. With no named subagent, a child is a full
-# clone of the parent. (Privilege is still clamped to the parent unless subagent_clamp_privilege:false.)
-# Tool selection & the weak-model opt-out (Phase 4.5 skills + capability layer):
-#   A weak local model gets confused by a large, namespaced toolset (it hallucinates tool names like
-#   `mcp__fleet_ping` and falls back to web search). Skills fix this WITHOUT globally restricting the
-#   agent: an intent skill (skills/<name>/SKILL.md with `allowed_tools`) AUTO-ACTIVATES when the
-#   request matches its description (KeywordSkillSelector, the little-coder approach) and narrows the
-#   toolset for that turn. Keep `skills: "*"` so all intent skills can self-select.
-#   OPT OUT for a capable model: set `skills: []` on its agent — no auto-narrowing, it sees every tool
-#   and picks for itself (the Claude-Code approach). The selector itself is swappable (D11).
-# agents:
-#   - name: local              # weak local model — let intent skills auto-narrow the toolset
-#     model: { provider: local, model: "minig+" }
-#     tools: "*"               # full registry; skills narrow per-turn by intent
-#     skills: "*"              # all discovered skills may auto-activate (fleet, web-research, ...)
-#     privilege: confirm       # readonly | confirm | auto_low | full — gates med/high-risk tools
-#     # Loop-discipline guards (capability layer C1) — raise for a research-heavy agent:
-#     max_iterations: 16
-#     max_repeat_calls: 2          # identical (tool,args) calls before suppression
-#     max_calls_per_tool: 6        # total calls to any one tool per turn before refusal
-#     max_stall_iterations: 2      # consecutive no-progress iterations before a forced final answer
-#   - name: capable            # strong model — OPT OUT of auto-narrowing; full toolset, own judgment
-#     model: { provider: cloud, model: "anthropic/claude-sonnet-4.5" }
-#     # ModelRef call config (D42) — optional per-agent output/reasoning knobs (also in the Conf UI):
-#     #   model: { provider: cloud, model: "...", max_tokens: 4096, reasoning_effort: high }
-#     #   reasoning_effort ladder: off|minimal|low|medium|high|xhigh|max ("off" disables local
-#     #   thinking via chat_template_kwargs; unknown values are ignored by llama.cpp)
-#     tools: "*"
-#     skills: []               # <- the opt-out: no skill auto-selection / no tool narrowing
-#     max_calls_per_tool: 20   # a capable model can be trusted with a looser leash
-#   - name: researcher         # e.g. spawned as a subagent — set only what differs; rest inherits parent
-#     prompt: "You research topics with web tools and report concisely."
-#     tools: [web_search, "mcp__*"]
+# Agent definitions (D14/D15 #3) are FOLDERS, never a list in this file: each specialist is
+# $CTRLB_HOME/agents/<name>/agent.yaml (its AgentDef fields: title, model, tools, skills, privilege,
+# guards, compaction, routing, character fields, …) + SOUL.md (its persona). The root/default agent is
+# $CTRLB_HOME itself (its SOUL.md + `agent.defaults` above, no agent.yaml). Create and edit them in Conf;
+# a pasted `agents:` list here loads, does nothing, and warns nowhere. Field reference:
+# docs/user-guide/agents.md. A minimal agents/researcher/agent.yaml:
+#   model: { provider: cloud, model: gemini }
+#   tools: [web_search, "mcp__*"]
+#   skills: []               # opt out of intent-skill auto-narrowing (a capable model picks its own tools)
+#   privilege: confirm
+# Subagents INHERIT every parameter from the agent that spawns them; a named subagent overrides only
+# the fields its own agent.yaml sets. (Privilege is still clamped to the parent unless
+# agent.subagent_clamp_privilege: false.)
 
 # Agent memory. TIER 1 (D14/D15 #4, D26/D27) is the built-in file memory — per-agent MEMORY.md +
 # global USER.md/STATE.md under `memory_dir`, capped and injected every turn. It is on by default and
@@ -326,6 +370,24 @@ agent:
 # agent reads topics on demand. Living under `memory_dir` means the D26 git repo versions it for free
 # (an absolute root is honored but unversioned). `backend` is the ONLY switch — null = off.
 # memory:
+#   enabled: true              # master switch (gates tier 2 too)
+#   user_profile_enabled: true # inject + allow writes to the shared USER.md
+#   auto_write: true           # the agent may write memory itself; false → propose, you approve
+#   consolidation_nudge: false # near the cap, the block asks the agent to merge/prune before adding
+#   consolidation_nudge_pct: 80
+#   memory_dir: memories       # relative → $CTRLB_HOME; the D26 git repo root
+#   memory_char_limit: 2200    # per-agent MEMORY.md cap (chars)
+#   user_char_limit: 1375      # USER.md cap (chars)
+#   state_enabled: false       # D27: a per-agent STATE.md (mood/energy/lately) the agent rewrites
+#   state_char_limit: 600
+#   reflection_enabled: false  # D27: every N user turns, nudge the agent to save what is worth keeping
+#   reflection_interval: 10
+#   git_backup:                # D26: every memory write is committed; no Conf form
+#     enabled: true
+#     author_name: ctrl-b memory     # per-commit identity (your global git config is untouched)
+#     author_email: memory@ctrl-b.local
+#     commit_timeout_s: 10     # per git invocation
+#     reconcile_interval_s: 120  # sweep that commits your HAND edits to memory files; 0 = off (live)
 #   longterm:
 #     backend: null              # null = OFF (default) | "core"; future backends = new values
 #     core:
@@ -386,7 +448,7 @@ agent:
 # changes). `default_persona` is the one every agent talks to unless its own `agent.yaml` links
 # another with `persona: <key>`; "" → none (`{{user}}` is then "User"). A key that is not in the
 # library simply does not resolve — the next rung takes over.
-# `card_import` is what the V1/V2/V3 card importer will ACCEPT: the multipart body cap, the decoded
+# `card_import` is what the V1/V2/V3 card importer will ACCEPT: the upload body cap, the decoded
 # card JSON cap (that JSON is what ends up stashed in the agent's own file), and the CHARX zip's
 # bounds — member count, per-member size, and total uncompressed size, all checked against the
 # DECLARED sizes before anything is decompressed. Every one of them answers 413.
@@ -404,6 +466,39 @@ agent:
 #     charx_max_entry_bytes: 15000000
 #     charx_max_total_bytes: 50000000
 
+# Lorebooks (D70 §6) — books of entries injected when their keys come up. The BOOKS are files,
+# $CTRLB_HOME/lorebooks/<slug>.yaml, managed in Conf; this block is the globals only.
+# lorebooks:
+#   books: []                  # book slugs attached to EVERY agent (unioned with each agent's own list)
+#   scan_depth: 2              # prior messages scanned with the new one; 0 = only what you just said
+#   budget_chars: 4000         # per-turn cap on activated entry text; lowest priority evicted first
+#   max_import_bytes: 15000000 # book-import body cap (413 past it)
+#   include_names: true        # scan rows as "<speaker>: <text>" so a key naming a speaker fires; no Conf form
+
+# Prompt overrides (Phase 18, D56) — one entry per registered prompt id, edited in Conf. `override`
+# replaces the baked default; `append` is added after whichever base won. Blank = unset; deleting the
+# entry restores the default.
+# prompts:
+#   <prompt-id>:
+#     override: "…"
+#     append: "…"
+
+# Appearance (Phase 11) — the cross-device theme selection. Written by the app (server-stamped,
+# last write wins); you don't normally hand-edit it. null = "no choice yet" (the device keeps its own).
+# appearance:
+#   theme: cosmos
+#   mode: dark
+#   accent: violet
+#   motion: null               # full | reduced
+#   perf: null                 # frosted-bar blur: full | lite
+#   theme_settings: null       # {themeId: {option: value}}
+#   kit_background_visible: null
+#   appbar_subtitle_visible: null
+#   chat_avatars_visible: null
+#   agent_backdrop: null       # operator | full | off
+#   pwa_icon_background: null  # transparent | ink | night | orchid | paper
+#   updated_at: null           # server-stamped on each appearance write — never edit
+
 # Voice subsystem (Phase 6; A11/D48 Slice 2) — push-to-talk STT + read-aloud TTS. Each service POINTS at
 # the `providers` map above: a flat `provider` primary (+ `model`, omittable iff the catalog has exactly
 # one model) and an ordered `fallbacks` chain that ALWAYS walks on any failure (a down endpoint degrades;
@@ -416,8 +511,11 @@ voice:
     model: whisper         # named because the `voice` catalog has >1 model
     fallbacks: []          # ordered {provider, model?}; walks on any failure
     language: en           # force transcription language; "" → auto-detect (model.language wins if set)
-    vad_filter: true       # voice-activity detection: drop silence (avoids whisper silence-hallucinations)
-    hotwords: ""           # space-separated recognition bias (fleet names, jargon)
+    vad_filter: true       # ask a whisper-type server to drop silence — INERT on the current Parakeet and
+                           # Speaches targets (they ignore it / have no such field)
+    hotwords: ""           # space-separated recognition bias (fleet names, jargon) — whisper-type servers only
+    max_upload_bytes: 26214400  # largest clip accepted (25 MB); 413 past it
+    # extra_body: {}       # advanced: fields passed straight to the server (rarely needed)
     auto_send: false       # true → mic sends the transcript; false → fills the composer for review
     # Auto-stop dictation (R51 Tier 0) — the PWA ends the recording itself after a silence run, through
     # the same stop path as tapping the button (`auto_send` then applies unchanged). OFF = push-to-talk.
@@ -435,16 +533,20 @@ voice:
     model: kokoro
     fallbacks: []
     format: mp3            # response container (mp3|opus|aac|flac|wav|pcm); the model's format wins if set
+    max_text_chars: 4096   # longest text one synthesis request may carry (422 past it); chunk_max_chars must fit under it
     connect_timeout_s: 3
     timeout_s: 30
+    # extra_body: {}       # advanced: fields passed straight to the server
     # Chunked synthesis (D63) — the reply is split into speakable chunks that synth+play sequentially
     # on one <audio> element, so audio starts after the FIRST sentence instead of the whole clip.
     chunking: sentence     # off | paragraph | sentence ("off" = the pre-D63 whole-blob synth)
     chunk_format: opus     # per-chunk container; opus is sample-exact from a pipe (mp3 adds dead air)
-    chunk_min_words: 4     # merge floor — a chunk under BOTH floors keeps accumulating forward
+    chunk_min_words: 4     # merge floor — a chunk under EITHER floor keeps accumulating forward
     chunk_min_chars: 50
     chunk_max_chars: 400   # split at the last word boundary under this (must be <= max_text_chars)
     chunk_lookahead: 1     # synth-ahead depth (1 = synthesize chunk N+1 while N plays)
+    chunk_read_along: true # speak WHILE the reply streams, a sentence at a time (no effect under chunking: off)
+    trim_silence: true     # cut the digital-silence pad some servers add (PocketTTS); WAV only, server-side
     speak_actions: false   # D74: read roleplay actions (*he leans in*) aloud; false (default) DROPS those spans
                            # (bold still reads — emphasis is speech, a stage direction is not)
     # The hidden-page hold (ISS-73 ①) — while a reply (or a clip upload) is pending with the screen off or
@@ -456,15 +558,20 @@ voice:
   # pointer shape as stt/tts; leave `provider` blank and it resolves exactly like `voice.stt` (one
   # Speaches box serves both doors). ON since v1.7.8 (S4 closed 2026-09-26): the call rides the
   # realtime chain once one is configured; `enabled: false` turns the whole feature off.
+  # ⚠ The ear dials `<base_url>/realtime` on the chain's FIRST entry (no live failover). If voice.stt
+  # points at a parakeet-server (no /realtime), a blank provider here breaks calls — name a Speaches
+  # provider explicitly.
   live:
     enabled: true          # whole-feature toggle; `voice.enabled` above outranks it
-    # provider: voice      # blank → resolve like voice.stt (the common case)
+    # provider: voice      # blank → resolve like voice.stt (the common case — see the ⚠ above)
     # model: parakeet      # the realtime `model` query param; blank inherits stt's
+    # fallbacks: []        # accepted for the shared shape; a live session never moves to one
+    # extra_body: {}
     vad_threshold: 0.6     # Silero speech-probability floor (0.5–0.8; D76/R84 — its END threshold is this − 0.15); rides session.update
     silence_ms: 700        # silence run that ends an utterance (500–1200); rides session.update
     prefix_padding_ms: 300 # S11: pre-roll on the START of every speech segment (0–1000), so a phrase keeps
                            # its onset; rides session.update (the owned Speaches fork honours it)
-    turn_hold_ms: 0        # CLIENT (ISS-55): the call's THINKING PAUSE — after you stop, wait this long before
+    turn_hold_ms: 2500     # CLIENT (ISS-55): the call's THINKING PAUSE — after you stop, wait this long before
                            # sending what you said; talking again inside it joins the same message (and
                            # restarts the wait). Every reply starts this much later (0–10000; 0 = send at once)
     min_speech_ms: 300     # CLIENT interruption floor — speech shorter than this is not a barge-in
@@ -567,8 +674,8 @@ voice:
 # Embeddings backend (Phase 4f, D9; A11/D48 Slice 2). POINTS at the `providers` map — a flat `provider`
 # primary (+ `model`, omittable iff the catalog has exactly one model) and an ordered `fallbacks` chain of
 # {provider, model?} (embeddings gains failover for free). The connection + the vector size (`dim` on the
-# model) live on the referenced provider; only `enabled` + the SDK read window `timeout_s` are here. Powers
-# the vector MemoryProvider + semantic search when Phase 7 lands; no consumer before then.
+# model) live on the referenced provider; only `enabled` + the SDK read window `timeout_s` are here.
+# NOTHING reads it today (ISS-96): conversation search and Core Memory search are plain text search.
 embeddings:
   provider: cloud          # the connection; the `embed` model carries `dim` (see providers.cloud above)
   model: embed             # named because the `cloud` catalog has >1 model
@@ -591,6 +698,9 @@ searxng:
 # Risk is per-operation: reads (read/list/grep/glob) auto-run; exec + writes confirm by default —
 # it's arbitrary remote shell, so keep those gated unless you really trust it. `api_key` must match
 # the server's --api-key / OPEN_TERMINAL_API_KEY. Omit the block (or enabled:false) to disable.
+# The tools and their three risks are registered ONCE AT STARTUP (ISS-92): a risk change, or enabling /
+# configuring a base_url that was off/empty at boot, needs a restart — Conf does not say so. Disabling
+# is live (the tools then answer DENIED).
 open_terminal:
   base_url: http://192.168.1.160:9999
   api_key: changeme
@@ -600,6 +710,19 @@ open_terminal:
   exec_risk: high          # low | med | high  (HIGH → the agent confirms before running)
   write_risk: high
   read_risk: low
+
+# Guarded LOCAL shell (Phase 5) — on the machine that runs ctrl-b (open-terminal above is a REMOTE box).
+# Two independent doors, both OFF by default: `user_exec_enabled` = the `!<cmd>` composer escape hatch,
+# `agent_exec_enabled` = the agent's `run_shell` BELOW full privilege (off → denied, on → a confirm per
+# call). ⚠ An agent at FULL privilege runs `run_shell` with NO confirm whether agent_exec_enabled is on or
+# off (ISS-87) — the only switch that stops it there is `enabled: false`.
+# shell:
+#   enabled: true              # master switch; false → every run_shell / `!` is DENIED
+#   user_exec_enabled: false   # the `!<cmd>` composer escape hatch
+#   agent_exec_enabled: false  # the agent's run_shell below FULL privilege (see ⚠)
+#   workdir: ""                # cwd for commands; blank → $CTRLB_HOME
+#   timeout_s: 60              # kills the shell only — a child it forked keeps running (ISS-89)
+#   max_output_chars: 6000     # output is cut to this, keeping the HEAD
 
 # Generic OpenAPI/REST tool servers (Phase 4f) — the HTTP sibling of mcp_servers, for Open WebUI
 # "tool servers" or any service exposing an OpenAPI doc. Each operation becomes a tool
@@ -611,16 +734,22 @@ openapi_servers:
     # spec_url: http://192.168.1.160:8080/openapi.json   # … or set explicitly
     api_key: ""              # optional bearer token
     auth_scheme: Bearer      # header value prefix ("" → send the raw key)
+    # auth_header: Authorization # the header that carries it
+    # headers: {}              # extra headers (secret-looking names are masked in the API)
     risk: med                # risk for mutating ops; GET/HEAD always auto-run
     enabled: true
+    connect_timeout_s: 15
+    call_timeout_s: 60       # wall-clock cap for ONE whole tool call
     # include: [search, fetch]   # optional operationId/path allowlist
 
 # MCP servers the agent connects to as a client (Phase 4f, D9). Each server's tools are discovered
 # at startup and merged into the agent's toolset, namespaced `mcp__<server>__<tool>`. A down server
-# is skipped (its tools just won't be present that run) — it never blocks startup. `risk` gates ALL
-# of that server's tools: med/high → the agent confirms before each call (safe for remote tools);
-# set `low` for a server you trust to let its tools auto-run. Both transports are wired
-# (streamable_http + stdio, live-verified — Phase 4f).
+# is skipped (its tools just won't be present that run) — it never blocks startup. Risk is PER TOOL:
+# a tool the server annotates readOnlyHint runs LOW (auto-runs), destructiveHint runs HIGH (even on a
+# `low` server); every other tool takes the server's `risk` (med/high → the agent confirms; `low` lets
+# a trusted server's tools auto-run). Both transports are wired (streamable_http + stdio).
+# A Conf save of these (or of openapi_servers) applies at the NEXT chat turn, or at once with the
+# rediscover button; a generic settings PUT carrying the list does not trigger rediscovery.
 mcp_servers:
   - name: web-tools
     transport: streamable_http   # streamable_http | stdio
@@ -628,16 +757,23 @@ mcp_servers:
     # headers: { Authorization: "Bearer …" }   # optional, for an authenticated server
     risk: med                    # low | med | high
     enabled: true
+    connect_timeout_s: 10        # bounds discovery + each call's handshake
+    # call_timeout_s: 120        # per-call deadline; unset → connect_timeout_s
   # A stdio (local subprocess) server:
   # - name: filesystem
   #   transport: stdio
   #   command: npx
   #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
+  #   env: {}                    # the subprocess environment (secret-looking names are masked in the API)
   #   risk: high
 
 # The fleet, keyed by host name (the live wol_server_win.py `computers{}` shape — copy yours in).
-# Each host's stable id is a slug of its name. ssh_password is a secret: masked on API read,
-# never logged. Omit mac for hosts you won't Wake-on-LAN; omit ssh_* for ping-only hosts.
+# Each host's id is a slug of its name (so RENAMING a host changes its id and its services' ids).
+# ssh_password is a secret: masked on API read, never logged. Every field but `ip` is optional, and what
+# you omit disables that capability without an error — the buttons still render, and pressing one the
+# host can't do answers with a refusal ("no MAC configured …", "no SSH credentials configured …"). SSH
+# is PASSWORD auth only (no keys / ssh-agent), and the same password is fed to `sudo`. Edit hosts in
+# Conf → Computers (the generic settings PUT refuses `computers`) or here by hand.
 computers:
   pegasus:
     ip: 192.168.1.10
@@ -646,23 +782,33 @@ computers:
     ssh_password: changeme
     ssh_port: 22
     os_type: linux
-    role: nas
+    role: nas              # label on the host card + the agent's fleet roster line
+    # vpn_host: pegasus      # D47: MagicDNS name (preferred) or overlay IP — SSH failover + service links
+    #                        # when you browse over Tailscale; never pinged, probed or woken
+    # ssh_prefer_vpn: false  # true → try vpn_host before ip for SSH
     # wake_on_connect: true  # D2-B — WOL this box when you open the dashboard (needs the mac above)
+    # wake_on_presence: true # D2-A — WOL when one of your devices ARRIVES (needs mac + monitor.enabled)
+    # wake_presence_cooldown_s: 600  # per-host override of wake.presence_cooldown_s (0 = no cooldown)
+    # tags: []               # INERT (ISS-95): stored, read by nothing
+    # appearance: { frontier: { x: 0.4, y: 0.6 } }  # per-theme presentation blob; the theme owns its keys
     # Services nest under their host (Phase 3). Each gets a stable id "<host-slug>.<svc-slug>".
     # Liveness is DERIVED, not stored: the `port` is TCP-probed each poll (a port-less service
     # just tracks its host being up). The svc-row links to http://<ip>:<port><path> when online.
     # `cmd` holds the per-OS start/stop/restart commands — only the host's os_type variant runs;
-    # a missing one yields a clean "no <action> command configured" instead of an error.
+    # they are what the agent's start_service / stop_service / restart_service tools (and the services
+    # API) run — there is NO service button in the Fleet view. A missing one yields a clean
+    # "no <action> command configured" (DENIED) instead of an error.
     services:
       jellyfin:
         kind: jellyfin
         port: 8096
+        # autostart: false    # INERT (ISS-95): stored (Conf shows a switch), read by nothing
         cmd:
           start:   {linux: "sudo systemctl start jellyfin"}
           stop:    {linux: "sudo systemctl stop jellyfin"}
           restart: {linux: "sudo systemctl restart jellyfin"}
       syncthing:
-        port: 8384          # no cmd → shows status + URL only (no control actions)
+        port: 8384          # no cmd → status + URL only; the agent's service tools answer DENIED
   atlas:
     ip: 192.168.1.12
     mac: "6c:0b:84:ad:e1:0f"

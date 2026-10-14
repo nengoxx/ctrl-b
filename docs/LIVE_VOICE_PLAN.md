@@ -29,7 +29,7 @@ live probe, the four chat peers, the browser half) · [R68](./research/R68-live-
 | The ear (today) | `hooks/useDictation.ts` + `POST /api/voice/stt` | Push-to-talk whole-clip STT with failover; Tier 0 auto-stop (energy detector, config-driven, default OFF, **threshold never calibrated on the owner's phone**); `auto_send` already routes a transcript into the composer send path. |
 | The brain | `POST /agent/chat` · SSE turn stream · `POST /agent/turns/{id}/cancel` | Durable server-owned turns, persist-before-emit, 202-steer during a live turn (D41), idempotent scoped cancel. **Untouched by this feature** — the transcript enters through the same door dictation enters today. |
 | Voice config | `VoiceCfg` (`voice.stt`/`voice.tts`) + `GET /voice/status` | The delivery pattern for client voice policy (chunk policy, auto-stop) — `voice.live` rides the same route. |
-| Speaches | emma `:9000` — a **local fork**, `~/github/speaches` @ `e093d8b` (R68 §1: upstream frozen at the R51 pin for 5 months; +2 local commits incl. a Parakeet/VAD fix; the openapi `version` field is a hardcoded literal — pin by SHA) | `/v1/realtime` WS, **`intent=transcription`**: Silero server VAD + endpointing + whole-utterance finals. No partials, no truncate, no auto-interrupt (all three gaps re-verified unchanged, R68 §1.1). Resident STT = **Parakeet** (not Whisper). ⚠ posture: binds `0.0.0.0` with a placeholder API key (§5.2). **⚠ S0 (2026-09-12): realtime transcription REQUIRES `LOOPBACK_HOST_URL=http://127.0.0.1:9000` in the unit env — without it every `intent=transcription` session dies at close 1006 before any transcript (the bare-router ASGITransport defect, §7-S0 record). The owner-ruled fix lives OUTSIDE the repo: drop-in `~/.config/systemd/user/speaches.service.d/20-loopback-url.conf` (commented; delete to revert) — a Speaches reinstall MUST recreate it or live calls die.** |
+| Speaches | emma `:9000` — a **local fork**, `~/github/speaches` @ `e093d8b` at this table's date (**today, verified 2026-10-14: @ `fd4b956`** "honour `turn_detection.prefix_padding_ms` as a slice-start pre-roll", the S11 patch `prefix_padding_ms` needs — 4 local commits; runbook: `deploy/linux/README.md` §The voice backends) (R68 §1: upstream frozen at the R51 pin for 5 months; +2 local commits incl. a Parakeet/VAD fix; the openapi `version` field is a hardcoded literal — pin by SHA) | `/v1/realtime` WS, **`intent=transcription`**: Silero server VAD + endpointing + whole-utterance finals. No partials, no truncate, no auto-interrupt (all three gaps re-verified unchanged, R68 §1.1). Resident STT = **Parakeet** (not Whisper). ⚠ posture: binds `0.0.0.0` with a placeholder API key (§5.2). **⚠ S0 (2026-09-12): realtime transcription REQUIRES `LOOPBACK_HOST_URL=http://127.0.0.1:9000` in the unit env — without it every `intent=transcription` session dies at close 1006 before any transcript (the bare-router ASGITransport defect, §7-S0 record). The owner-ruled fix lives OUTSIDE the repo: drop-in `~/.config/systemd/user/speaches.service.d/20-loopback-url.conf` (commented; delete to revert) — a Speaches reinstall MUST recreate it or live calls die.** |
 | Agent art | `useActiveBackdrop` / agent summaries (D70) | The call overlay can wear the active character's art for free. |
 
 **The gap, stated once (R51):** ctrl-b has a first-class downlink and no continuous uplink — no
@@ -44,8 +44,10 @@ always-open audio channel, no VAD, no endpointing. Everything else already exist
   moments** (a thinking pause must not cut the utterance; a finished sentence must not hang) —
   "not flaky or unreliable".
 - Options/libraries surveyed before committing (R51 did this; R68 refreshes it).
-- Scope (R51/R14, stands): **screen-on, app-foreground, Wake Lock held** — the docked/handheld
+- Scope (R51/R14, as ratified 2026-09-11): **screen-on, app-foreground, Wake Lock held** — the docked/handheld
   call. Screen-off always-listening is a Capacitor-shell feature, out of scope, recorded in §C4.
+  **Superseded for the call by D73 S6 (§5.3):** the call SURVIVES a hidden/locked page by default
+  (`voice.live.background: true`); a wake word / always-listening with no call open stays out of scope.
 
 ## 2. The decision: architecture ① (R51 §9.3), client-submitted
 
@@ -227,7 +229,9 @@ exactly as for stt/tts (§5.1):
 | `background` · `background_keepalive` · `background_idle_s` | true · true · 600 | client | D73 S6: survive the screen-off/app-switch freeze; the idle hang-up |
 | `ring` · `captions` | true · true | client | The overlay: the face ring (one fixed anchor since ISS-32); the reply as captions |
 | `debug` | false | both | The in-call readout AND the D77 call trail (`$CTRLB_HOME/calls/`) — since Phase 26 S6-ii also each leg's AUDIO capture beside it (ASR_PLAN §6.1, SECURITY_MODEL §2.12); since S9 the CLIP door's too — the third trail mode `clip` (`calls/clip/<id>.jsonl` + `<id>-1.wav`, a server-minted id per push-to-talk upload; a dictation's whole-clip fallback joins that dictation's trail as leg 0) with `prepass`/`capture_open`/`asr` lines, never text (ASR_PLAN §5 T9/T10) |
-| `trail_keep` | 20 | server | D77 retention (bounded 1–500) per mode directory — calls · `dictation/` · `clip/` (S9); a pruned trail takes its captures |
+| `trail_keep` | 20 | server | D77 retention (bounded 1–500) per mode directory — calls · `dictation/` · `clip/` (S9) · `mouth/` (ISS-73 ①, the hidden-page playback probe — browser-written only); a pruned trail takes its captures |
+| `turn_hold_ms` | **2500** on `main` (owner 2026-10-09; shipped 0 from ISS-55 until v1.7.12, so prod v1.7.11's code default is still 0) | client | THE TURN HOLD (ISS-55, ASR_PLAN §3.5 ⑤): how long a TAKEN final waits before the turn is sent; a pause shorter than this joins the next segment into the SAME message, and every taken final restarts it. The reply starts `silence_ms` + this + ASR + TTFT after the owner stops; 0 = send at once; bounded 0–10000. Conf: Live call › "Thinking pause (ms)" (`config.py` `LiveCfg.turn_hold_ms`) |
+| `vad_model` | `silero-v6.2` | server | Phase 26 / D82 (ASR_PLAN §3.4.1 ⑤): which registered VAD model the relay-owned ear runs. **Today it governs only the clip door's pre-ASR pass** — the live leg is still Speaches' own VAD until S7b. Config-only (no Conf row, never delivered) |
 | `uplink_idle_s` | 15 | server | R86 LC-8: a leg with NO uplink audio this long (a frozen page, a dead ear — the client ships a frame every `frame_ms`, held/muted ones as silence) ends as a `session_limit`-class terminal instead of holding the slot to `max_session_s`; bounded 5–120, load-validated to outlast `tail_wait_ms` |
 | `dictation` · `tail_wait_ms` · `dictation_idle_s` · `dictation_max_s` | false · 2000 · 300 (0 = off) · 1790 | client | S2.5 streaming dictation on the same ear; the idle stop and the cap re-ruled by Phase 26 SP (R21 P1/P2): the cap is load-validated `< max_session_s` (the interim under Speaches' kill; S10 raises the pair to 1800 / 2100) |
 | `dictation_idle_margin_db` | 10.0 | client | Phase 26 SP (R21 P1): the hands-free idle stop's threshold, dB over the browser's own tracked noise floor (`levelGate`); a dead/digital-zero input counts as silence. Bounded 0–40 |
@@ -521,6 +525,15 @@ so interruption-and-friends are tweakable from the phone in one clearly-named pl
 stays `voice.live` — the extend-don't-migrate shape above is untouched; only the Conf grouping
 is its own section.)* `enabled: false` or no resolvable
 target → the call button is not rendered (the `VoiceClient.configured` pattern).
+**As built (verified 2026-10-14):** there is no separate call button — the call is entered THROUGH THE MIC
+(tap switches it to call mode, §6 entry), and the mic itself renders only when STT is up
+(`kit/composer/Composer.tsx`, `sttReady &&`). So the effective gate is `stt` ∧ the `live` bit: with STT
+unconfigured — or the backend's `[voice]` extra missing, which makes STT report unconfigured — there is no call
+entry even when `voice.live.enabled` is true. **A blank `provider` resolves like `voice.stt` (the YAML above):**
+the relay dials `{base_url}/realtime` (`services/voice_live.py` `realtime_url`), which parakeet-server does not
+have, so until S7b a blank `voice.live.provider` works only while `voice.stt` points at a Speaches box — once
+`voice.stt` moves to `parakeet-clip`, pin `voice.live.provider` to the Speaches provider (dev's config does), or
+every call fails.
 **Refinement 2026-09-12:** the render gate is live enabled + a resolvable realtime target
 **+ TTS configured** — the call needs the mouth, not just the ear — delivered as one `live`
 capability bit on `GET /voice/status` (the mic's `stt` bit pattern). The `voice.enabled`
@@ -564,6 +577,20 @@ context, reactive `unavailable` after a server error.
   flip in, a device move within it, an `earDead` rebuild), with the mouth held until it opens; a direct
   call-route start and a flip to media do not (ISS-54, R99).
 - The Tier 0 auto-stop path stays as-is — the call mode neither replaces nor requires it.
+- **A hidden page stops a STREAMING dictation (and a Tier-0 auto-stop recording) — by design** (owner ruling
+  2026-10-14, ISS-73 ② kept as is): the hide listener is armed when `voice.stt.auto_stop` is on or the
+  recording streams (`hooks/useDictation.ts`, `stop("page_hidden")`), and it runs the ORDINARY stop, so what was
+  said so far is transcribed, not discarded. A plain push-to-talk with auto-stop off arms no hide listener. A
+  call is the voice path that survives a locked phone. While a dictation records, the screen is held on (Wake
+  Lock, Phase 26 SP P3).
+- **A streaming leg lost after at least one phrase landed loses the rest — today:** "Voice connection lost —
+  the rest of that wasn't captured" (`LIVE_LOST_MSG`). Rule ③ (either/or) discards the whole-clip fallback once
+  a phrase has landed, and the suffix recovery (`from_ms`, ASR_PLAN §3.8) is S8 — not built. With no phrase
+  landed, the whole clip uploads as usual.
+- **The clip upload is bounded and retried (ISS-84, `8f4893d`):** one attempt may take
+  `max(voice.stt.upload_timeout_s, 2 × the clip's duration)`; at most `upload_attempts` attempts; 5xx or
+  exhaustion PARKS the clip in a Retry / Discard toast; a reload loses an in-flight clip but a boot notice says
+  so (`store/pendingClips.ts`). Detail: ASR_PLAN §3.8's "Built today" note.
 
 ## 6. The UI (VAPOR_PATTERNS governs; kit overlay contract) — **visual design RATIFIED (owner, 2026-09-11 visual round)**
 
@@ -610,7 +637,25 @@ phone-call look — the owner rejected it.
   "we can tweak it as we see it"; feel-round material, not a locked geometry.
 
 **Both modes keep the bottom cluster:** the live final-transcript line + **hang up** (reachable
-from every state, §4.2). Text-over-art legibility inherits the three-state-backdrop lessons
+from every state, §4.2).
+
+**The top deck (D74/D75/D76 — as built, recorded here 2026-10-14; `kit/CallOverlay.tsx`): three captioned
+pills above the ring.** **Sound** picks the route — `media` (EC off, follows Bluetooth like music) or `call`
+(platform AEC, phone-call mode). **Mic** picks the capture device (on Android this list IS the route picker).
+**Sensitivity** shows the live level against the floor and lets the owner pin a manual floor, or leave it on
+Auto. **All three act on THIS call only** — nothing is written to config (`useLiveCall.ts` `setRoute` /
+`setInputDevice` / `setFloorPin`: "neither writes config"); the pin dies with the call, and `voice.live.route` /
+`input_device` stay the next call's defaults. The one thing kept is the owner's learned voice level, stored per
+device × the GRANTED echo mode in browser storage (`store/voiceLevels.ts`) and written back when a capture is
+released. Sound and Mic are disabled while the call cannot re-route (`call.canRoute`).
+
+**Read-aloud ownership (S11 (c), `a304c533` — recorded here 2026-10-14).** Outside a call, the app-bar speaker
+and Conf → Voice · TTS → "Auto read-aloud" are one switch, `ui.ttsAuto`: **per device, browser storage, default
+ON**, never in `config.yaml`. With it on, only the device that SENT the turn auto-speaks the reply — each
+assistant message carries the sending device (`ChatMessage.device`, server-stamped from `X-Ctrlb-Device`), and
+`useAutoTts` judges ownership per message; every other device shows the reply silently, plays it with ▶, and
+never holds its page awake for it. A reply naming no device (older rows) keeps the pre-(c) behaviour; an
+automation's reply names none. Text-over-art legibility inherits the three-state-backdrop lessons
 (ROLEPLAY_PLAN §8.3a — the veil/scrim treatments, not new inventions).
 
 **The refinement round (owner-approved 2026-09-12) — call furniture, all ratified:**

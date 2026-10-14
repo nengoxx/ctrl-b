@@ -81,7 +81,7 @@ slot-in contract; vapor byte-frozen per the §14.15.3 ladder / D51). The origina
 | Profile | Launch | Notes |
 |---|---|---|
 | **Ubuntu 26 LTS** *(emma — dev + deploy host)* | `systemd` **user** units from `deploy/linux/systemd/` (`ctrl-b-dashboard.service` prod :5433, `ctrl-b-dashboard-dev{,-web}.service` on-demand); `--reload` ok for dev | **primary today**; the live topology (D32) |
-| **Windows 11** | `uvicorn app.main:app` via `.bat` / Task Scheduler — **no `--reload`** | frozen reference (corsair is a managed fleet host now); see gotcha below |
+| **Windows 11** | `deploy/windows/` `setup.cmd` + `start.cmd` (PowerShell `start.ps1` → `uvicorn app.main:app --host 127.0.0.1 --port 5433`); autostart = a Scheduled Task (`autostart-enable.cmd`) — **no `--reload`** | frozen reference (corsair is a managed fleet host now); see gotcha below |
 | **macOS** | `uvicorn app.main:app` (`--reload` ok for dev) | sibling POSIX path |
 | **Android / Termux** *(exp.)* | `uvicorn` in Termux + `termux-wake-lock` + foreground service, charger | phone = host; WOL only on its LAN; high port (no root) |
 
@@ -94,7 +94,8 @@ dev, to the Playwright suite (it runs against `vite preview`, which serves `dist
 every status-code health check for the app's whole life — see SYS-19.
 
 **Data root (`$CTRLB_HOME`, D15 #2).** All data — `config.yaml`, `ctrlb.db`, `SOUL.md`, `memories/`,
-`skills/`, `agents/` — lives under one relocatable root (env `CTRLB_HOME`; mirrors Hermes' `HERMES_HOME`).
+`skills/`, `agents/`, `media/`, `attachments/`, `lorebooks/`, `calls/`, `backups/` (the full listing: SPEC §6.2) —
+lives under one relocatable root (env `CTRLB_HOME`; mirrors Hermes' `HERMES_HOME`).
 Resolution: explicit `CTRLB_CONFIG`/`CTRLB_DB` override their specific path (back-compat + temp-config
 tests) → else derive from `CTRLB_HOME` → else today's project-root default. **emma/new installs set
 `CTRLB_HOME=~/.ctrl-b`**; corsair keeps working with nothing set.
@@ -128,11 +129,15 @@ Owned by **[`SECURITY_MODEL.md`](./SECURITY_MODEL.md)** (trust boundary, the `de
 confirm-tokens, secret handling, the safe-defaults checklist). Two load-bearing facts kept here
 because code/config comment-anchors cite "§7":
 
-1. **The bind.** The **code default** is `127.0.0.1:5433` (`config.py` `ServerCfg`). The **deployed
-   PROD service binds `0.0.0.0:5433` — an OWNER WAIVER (2026-07-10)**: direct `http://emma:5433`
-   from the trusted home LAN + tailnet, never a public interface
-   (`deploy/linux/systemd/ctrl-b-dashboard.service`). **Tailscale Serve** HTTPS remains the only
-   remote ingress and the only secure context (mic). Never widen beyond that — SECURITY_MODEL §2.1
-   is the full statement.
+1. **The bind.** The listen address is the **launcher's command line**, never `config.yaml`:
+   no code passes `server.host`/`server.port` to uvicorn (there is no `uvicorn.run`; the two keys only
+   feed `/api/health`'s `server.port` and Conf's "restart to apply" toast — `api/health.py`,
+   `api/settings.py` `_RESTART_REQUIRED`; [ISS-91](./ISSUES.md)). `run.sh` and `start.ps1` bind
+   `127.0.0.1:5433`, the dev unit `127.0.0.1:5434`, and the **deployed PROD unit `0.0.0.0:5433` — an OWNER
+   WAIVER (2026-07-10)**: direct `http://emma:5433` from the trusted home LAN + tailnet, never a public
+   interface (`deploy/linux/systemd/ctrl-b-dashboard.service`). To move a port, edit the unit's `ExecStart`
+   (and `tailscale.target_port`) and re-run `install.sh`. **Tailscale Serve** HTTPS is the only secure
+   context (mic) — not the only ingress: plain HTTP on :5433 is reachable over the LAN and the tailnet
+   under the waiver. Never widen beyond that — SECURITY_MODEL §2.1 is the full statement.
 2. **`debug=False` by default — an enabled debugger is a remote-code-execution surface**; never
    enable it on anything reachable.

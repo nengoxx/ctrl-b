@@ -168,6 +168,14 @@ Where the rate cannot be honoured (Firefox/Fennec < 148 throws at `createMediaSt
 native-rate context** — no worklet decimator. Every consumer already reads `ctx.sampleRate`; `MediaRecorder` records the
 stream, not the context.
 
+> **What runs where, dated (verified 2026-10-14 against `main` @ `9f405de2`, the dev + prod configs' provider names,
+> and the units):** the **clip door** runs the S9 decode + pre-ASR pass on `main` and is served by **`parakeet-clip`
+> on dev** (fallback `vault-speaches`); **prod v1.7.11 predates S9** and still forwards the raw clip to `emma-speaches`.
+> The **live door** (calls + streaming dictation) is **Speaches realtime on both instances** — the relay dials
+> `{base_url}/realtime` (`services/voice_live.py` `realtime_url`) and `VadSegmenter` is not on the live path until S7b;
+> `parakeet-live` is installed and idle. The **mouth** is `emma-pockettts` → `emma-speaches` → `vault-alltalk` on both.
+> In the table below, "Today" means the pre-D82 design baseline; the clip door's rows already read "after" since S9.
+
 | Concern | Today | After D82 |
 |---|---|---|
 | When speech starts/stops | Speaches (rescan) | relay `VadSegmenter` (§3.4) |
@@ -494,6 +502,11 @@ R95 §4) · the echo backstop · the voice learner · the overlay · the idle cl
   `voice.live.provider` collapses the doors** onto the stt chain (one instance, one mutex — a 30-min recovery would starve
   live): the registry logs the collapse once at info; it stays the fresh-install default, and emma configures both doors
   explicitly (S9 pins live to `emma-speaches` while stt moves; S7b moves live); a resolution warning fires when both doors share a PRIMARY.
+  **Until S7b the collapse is a FAILURE, not just a contention (as built, 2026-10-14):** the live door is still the Speaches
+  realtime WebSocket, so a blank `voice.live.provider` on an install whose `voice.stt` is `parakeet-clip` dials
+  parakeet-server's nonexistent `/realtime` and every call fails — pin `voice.live.provider` to the Speaches provider
+  explicitly (dev's config does). The `(default **10 s**)` above is the S7b value; today live's `timeout_s` is the
+  inherited `VoiceServiceCfg` default (30 s), bounding the wait for `session.created` (§4's stamp).
 - **Chains (council 16, flagged to the owner):** live = `[parakeet-live]` + `fallbacks: [parakeet-clip]` — the doors couple
   only on failure, visibly through the gate; clip = `[parakeet-clip, vault-speaches]` — that fallback pre-dates the
   phase; "fallbacks later" (R4) concerns NEW engines. Acceptance runs the recovery failure path once with fallbacks off.
@@ -530,6 +543,17 @@ R95 §4) · the echo backstop · the voice learner · the overlay · the idle cl
   Speaches keeps its 3.4–3.8 GB + swap while its unit runs — whether it keeps running is the owner's later call (R18).
 
 ### 3.8 Dictation: the recording outlives its leg (R94 §7.4, re-ruled by council 5)
+
+> **Status (stamped 2026-10-14): the design below is S8/S8b — NOT BUILT.** Built today: only the server's `?from_ms=`
+> on the clip door (S9) and a DIFFERENT, narrower failure contract — **ISS-84 (`8f4893d`)**: every clip (push-to-talk and
+> the whole-clip dictation fallback) goes through ONE bounded, retried upload. One attempt may take
+> `max(voice.stt.upload_timeout_s, 2 × the clip's duration)` (`useDictation.ts` `UPLOAD_REALTIME_FACTOR`); at most
+> `upload_attempts` attempts, backoff `min(horizon, 1 s · 2^(n−1))`; a link the browser knows is offline spends no attempt;
+> 2xx lands, 5xx or exhaustion PARKS the clip in a persistent Retry / Discard toast ("Clip didn't send"), other 4xx drop it;
+> other composers refuse a new recording meanwhile ("Still sending the last clip"). A reload or tab kill still loses an
+> in-flight clip, but a boot notice says so once (`store/pendingClips.ts`). A streaming leg lost after ≥ 1 phrase
+> loses the suffix today ("Voice connection lost — the rest of that wasn't captured", `LIVE_LOST_MSG`) — the recovery
+> below is what fixes it. No IndexedDB chunks, no Recover affordance, no `RECOVERY_TIMEOUT_MS` exist yet.
 
 - **Rule:** a dead or degraded leg **never** calls `stop()`; R70 ③ becomes "finals > 0 ⇒ recover the suffix". Degrade
   triggers: K1–K4, a socket loss, K2/K3 client closes, **and the first dictation `asr_error`** (council 4). On degrade the
@@ -982,6 +1006,14 @@ prod `voice.live` = `{debug, dictation, mic_hold}`; dev = `{allowed_origins, deb
 (council 26). The pre-tag check **reports** every stored `voice.live`/`voice.stt`/`voice.tts` value against the new
 bounds and the validator; a violation gets a clamp step (6), never a runtime repair.
 
+> **Built today vs after S7b (stamped 2026-10-14 — read this before trusting a default below).** The table states the
+> **v1.7.12 (post-S7b) values**. On `main` today the code has: `vad_threshold` 0.6 bounded **0.5–0.8** (not 0.1–0.95);
+> `prefix_padding_ms` **300** (not 500); live `timeout_s` the inherited **30** (not 10); **no `onset_ms` and no
+> `max_segment_s` keys**; `max_session_s` 1800 and `dictation_max_s` 1790 (the S10 bumps not made). Already built and
+> live: `vad_model` (the clip door's pre-pass only, until S7b wires the live door), `turn_hold_ms` 2500 (S7a),
+> `dictation_idle_s` 300, `dictation_idle_margin_db` (SP), per-mode `trail_keep`, the debug capture. The seven D85 keys
+> are NOT BUILT (v1.7.13). `LiveCfg` in `config.py` is the truth for any date.
+
 | Key (`voice.live.*` unless named) | Type · default · range | Reader | Conf | Change | Verdict |
 |---|---|---|---|---|---|
 | `vad_threshold` · `silence_ms` · `prefix_padding_ms` | 0.6 (**0.1–0.95**, was 0.5–0.8 — the scale is the model's, §3.4.1 ④) · 700 (500–1200) · **500** (was 300; 0–1000) | server | Live call › Speech detection | leave `session.update` → `act`, the VAD end, the pre-roll ring (P-5d) | bounds widened (S7b; a stored 0.5–0.8 value stays valid); the pre-roll default is unstored |
@@ -1090,7 +1122,8 @@ the reference is the owner's own reading of real audio.
 
 ### 6.2 The replay tool (`tools/vad_replay.py`, S6-ii; offline, never runtime)
 
-`vad_replay.py <wav…> [--model silero-v6.2|silero-v5.1.2] [--set onset_ms=… act=… silence_ms=…] [--variant m1] [--asr <config.yaml> [--door stt|live]]`
+`vad_replay.py <wav…> [--model silero-v6.2|silero-v5.1.2] [--set onset_ms=… act=… silence_ms=…] [--variant m1] [--prepass-sweep 0.3,0.5 | LO:HI:STEP] [--asr <config.yaml> [--door stt|live]]`
+*(`--prepass-sweep` — ✅ built with S9, the §6.4 pre-pass row: per act, each file's pass verdict + chunk bounds.)*
 
 - **It reuses the shipped code.** It imports the SHIPPED modules (the resampler, the `VadParams` policy,
   `VadSegmenter`, `prepass`) and re-implements nothing.
@@ -1143,7 +1176,8 @@ The hand-authored golden vectors (§3.4) are the unit tests. The tool is the ear
 - **The label format (D85-S2):** `labels/<clip>.json` = `{route_key, intervals: [{start_ms, end_ms, label: "owner" |
   "background", source?: "tv" | "radio" | "music" | "other"}]}`. A replayed segment takes the label covering ≥ 80 % of its voiced
   ms; anything else is `mixed` — reported (the owner-over-TV hole lives there), never in the matrix (N7).
-- **`tools/vad_replay.py --discriminate`** (D85-S2) runs the SHIPPED §3.12 stage over labelled captures and prints, per route:
+- **`tools/vad_replay.py --discriminate`** (D85-S2 — **◇ NOT BUILT**; the shipped tool has `--prepass-sweep`, `--asr`,
+  `--door`, `--model`, `--set`, `--variant`, no `--discriminate`) runs the SHIPPED §3.12 stage over labelled captures and prints, per route:
   - the confusion matrix (owner accepted / rejected × background accepted / rejected), counting **EVERY background segment** —
     an `unscored` one (under `gate_min_ms`, or with no scorer) counts as ACCEPTED, on its own "unscored background" row (R2-E:
     ISS-63's TV finals at 440/600 ms and ISS-65's music near 1.1–1.4 s fall there);

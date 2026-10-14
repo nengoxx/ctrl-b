@@ -64,7 +64,10 @@ descriptor** (council M1 — the difference is data, never implicit):
   bundled entries. Capabilities: upload · reorder/drag · set-active (= move-to-front) · In-use
   toggle · delete · framing.
 - **Pin-backed seat sections** — the D54 slots (gacha `wallpaper`/`hero`/`oracle`/`reel_figure`,
-  frontier `hero`, kit slots): a **read-only VIEW over the source library plus exactly one
+  frontier `hero`, kit slots). > **Superseded (W5/W6, 2026-08-26; noted inline 2026-10-14):** only gacha
+  `wallpaper` + `oracle` remain as seats (`core/media.py` `GACHA_SLOTS`; `FRONTIER_SLOTS` and `KIT_SLOTS` are
+  empty) — `hero`, `reel_figure`, frontier `hero` and the kit pins were removed; order is the only priority
+  system (§12's W5/W6 records). As designed: a **read-only VIEW over the source library plus exactly one
   write — the pin**. The tile action reads **"Use here"** (never "Set as active"); no upload,
   no drag, no delete, no In-use toggle, no framing from a seat (those belong to the source
   library's own section — one grid component reading capabilities, not two behaviors sharing a
@@ -306,8 +309,15 @@ duplicates (defect #4).
 PUT    /api/media/{ns}/files/{role}/{filename}      body = raw png|jpeg|webp bytes
     -> 201 MediaFile · 404 · 409 name exists (race guard) · 413 over media.write.max_bytes
        415 extension/bytes disagree · 422 filename/empty body
+PUT    … same path + `X-Expected-Revision: <revision>`  (the REPLACE arm — W10, the gallery's "Edit image")
+    -> 200 fresh MediaFile · 412 revision mismatch / target gone / empty header value
 DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
 ```
+
+*(The REPLACE arm was added at W10 and is recorded here 2026-10-14; it was only in §12's W10 record.)* The streamed
+bytes run the same ladder, then `os.replace` the existing file only if it still answers to that revision (the index
+row's token). 412, not 409, because 409 already means "name taken, mint the next suffix". No header = the
+create-only PUT, unchanged (`api/media.py` `media_upload`; `core/media.py` `UploadPart.finish`).
 
 - **Persist pipeline** (R55 §4.4, unchanged): mkstemp `.part` in the role dir → fchmod 0644 →
   stream+count → 413 → fsync → probe → 415 → `os.link` (no-clobber, 409) → unlink tmp →
@@ -334,7 +344,11 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
 - **Input guard:** 15 MB → header-parsed **64 MP** (Honor 20 = 48 MP; ≈ Chrome/Android RAM÷25 on
   6 GB; guards the PNG/WebP full-size decode path) → HEIC/TIFF/SVG refused by name →
   `createImageBitmap` proof. Named registry constants (customizable principle). Dimension reader
-  fenced by the shared fixture corpus.
+  fenced by the shared fixture corpus. **The 64 MP cap and the EXIF/GPS strip are the APP's pipeline, not the
+  endpoint's** — a non-app upload (curl, an SSH copy) keeps its metadata and has no pixel cap (SECURITY_MODEL
+  §2.7). **Android's generic picker reports size 0** for files it never measured (ISS-47): the shared
+  `sizeRefusal` (`lib/imageProbe.ts`) answers "this device reported that file as empty — if it isn't, pick it
+  again from the photo grid or through a file manager", for media uploads and attachments alike.
 - **Crop** (unchanged): react-easy-crop@6.2.3, free-ratio, confirm-untouched = "use as is",
   cancel unwinds; the crop centre seeds the focal point.
 - **Export** (unchanged): worker `OffscreenCanvas.convertToBlob`, `drawImage` never
@@ -360,7 +374,8 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
 - **Value:** per-item `{x, y}` 0..1 (2 decimals; absent = unset), `rev`-keyed (§2.2).
 - **Control:** fixed centre reticle over a pannable image (react-easy-crop reused; focal = crop
   centre, one line; no occlusion), tap-to-place coarse entry, transient rule-of-thirds flash.
-  **Flow:** upload seeds focal silently; editing = **"Set framing"** on the item detail —
+  **Flow:** upload seeds focal silently; editing = **"Set framing"** (shipped as **"Set focus"** — the sheet's
+  heading, `FramingSheet.tsx`; the owner's plainer word at the S6 round) on the item detail —
   editable any time. **Framing previews:** one small window per destination, geometry from the
   registry's preview descriptors — **declared coarse and captioned "previews are examples"**
   (Statamic's honesty; council M4 partial: preview aspects are approximations by design, the
@@ -385,9 +400,12 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
   roles are not, and which one surface takes the proportional degrade).
 - **Bundled entries are non-framable in v1** (Emma #6: converting a hand-tuned proportional
   value through the reticle produces a visible no-op-edit jump; a per-entry focus-mode edit
-  path is the recorded future).
+  path is the recorded future). **Superseded (noted inline 2026-10-14):** bundled entries became framable
+  at W10 (a STORED point is centred by construction, so it never meets the shipped proportional value;
+  the sheet's Clear restores it — `components/media/ItemDetail.tsx`).
 - Future recorded, not built: `z` zoom (additive field), per-destination crop overrides, region
-  hotspot (rejected for v1).
+  hotspot (rejected for v1). **Superseded for `z`:** built at D70 §13-S6b wave 3 (`MediaFocal.z`, zoom 1–4,
+  clamped, `1` folded to absent); per-destination crop overrides and region hotspots stay unbuilt.
 
 ## 6. The gallery (R59 + council folds)
 
@@ -550,7 +568,9 @@ state machine is explicit (Emma #8):** success holds the transform until the aut
 refetch lands; **error releases in `finally`** — snap back to the pre-drag order, clear
 autoscroll/transforms, keep the error toast; drag start is refused through a synchronous
 in-flight ref. ↑/↓ buttons stay (WCAG floor, ≥44 px) with move-to-top/bottom in the detail
-panel; both drag and buttons hidden where order is meaningless.
+panel; both drag and buttons hidden where order is meaningless. **As built (`components/useDragReorder.ts`):**
+on touch a BODY press becomes a drag after a **500 ms** long press (10 px slop abandons it); a HANDLE press
+after 6 px of movement.
 
 ## 8. The defect register (12 verified findings; fix homes — #8 re-ruled per §3)
 

@@ -122,7 +122,16 @@ npm run check-all   →  npm run typecheck  &&  eslint .  &&  stylelint "src/**/
 python tools/check.py            # full gate (pre-push): FE check-all + BE ruff, ruff format --check, pyright, pytest
 python tools/check.py --fast     # instant subset the pre-commit hook calls: ruff (lint+format) + FE prettier
 python tools/check.py --e2e      # full gate + Playwright e2e/a11y (the PRE-DEPLOY gate; heavy — build+preview+browser)
+python tools/check.py --backend  # backend checks only   (--backend / --frontend are mutually exclusive)
+python tools/check.py --frontend # frontend checks only
 ```
+
+**The runner contract (as built, `tools/check.py`; recorded 2026-10-14).** Exit codes: **0** green · **1** a check
+failed · **2** environment not ready (printed with the fix). `--e2e` runs **sequentially after** the parallel batch,
+with the full gate or `--frontend`; it is **silently skipped** with `--fast` or `--backend`
+(`run_e2e = args.e2e and not args.fast and not args.backend`). **The preflight is the same for every scope:**
+even `--backend` needs `npm` on PATH and `frontend/node_modules`, and even `--frontend` needs `backend/.venv` with
+the `[dev,voice]` extras (ruff/pytest/pyright + numpy/onnxruntime/av) — a backend-only contributor gets exit 2.
 
 **e2e gate (Phase-9/step-5):** the Playwright smoke + axe-a11y suite (`frontend/e2e/`) is **opt-in via `--e2e`**,
 NOT in the default/pre-push gate (it builds the dist + boots a browser, ~20-30s). It's the **pre-deploy gate** —

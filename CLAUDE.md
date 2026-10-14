@@ -29,6 +29,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | **Deployment profiles + `$CTRLB_HOME` + the OS-branch allowlist** (re-scoped — layers/data/API live in DESIGN/SPEC; its §1–§5 are pointer stubs). |
   | [`docs/DESIGN.md`](./docs/DESIGN.md) | Concrete code design: data structures, registry, agent loop, SSE wire protocol, extension cookbook. |
   | [`docs/SPEC.md`](./docs/SPEC.md) | Visual one-stop system spec (C4 diagrams, flows, inventories) — complements ARCHITECTURE/DESIGN; on conflict DECISIONS wins. |
+  | [`docs/user-guide/`](./docs/user-guide/README.md) | **The USER guide** (D86) — what a user sees and does, one page per surface (index = its README.md; `configuration-reference.md` = every key). The plans keep the design. |
   | [`docs/TODO.md`](./docs/TODO.md) | Phased checkbox plan — find the right phase, follow the slice. |
   | [`docs/ROADMAP.md`](./docs/ROADMAP.md) | **Future features** + the v1 seams to keep cheap. Start here for anything not in TODO. |
   | [`docs/THEME_ENGINE.md`](./docs/THEME_ENGINE.md) | The theme engine (Swappable Surfaces, D31) — read before themeable UI. |
@@ -153,9 +154,10 @@ icons = hand-inlined lucide geometry, the package is NOT a dep — AGENTS.md), t
 engine (`VAPOR_PATTERNS.md` governs net-new UI); **FastAPI +
 Uvicorn** backend; **typed-action registry** as the primary execution path plus a guarded `!`
 local-shell escape hatch (Phase 5, **built**; both `shell.*_exec_enabled` toggles default **OFF** —
-the user `!` path and the agent's `run_shell` alike, enable via Conf; open-terminal provides *remote*
-shell);
-**SQLite** for chat/memory/events + **YAML** for config; voice via OpenAI-compatible **STT/TTS** and
+the user `!` path and the agent's `run_shell` alike, enable via Conf — but the agent toggle governs agents
+BELOW `full` only: a `full` caller runs `run_shell` with no confirm whether it is on or off, and the only
+off-switch at `full` is `shell.enabled: false`, ISS-87; open-terminal provides *remote* shell);
+**SQLite** for chat/events/automations + **markdown in git** for memories (`memories/`; the schema's `memory` table is unused) + **YAML** for config; voice via OpenAI-compatible **STT/TTS** and
 chat via OpenAI-compatible **llama.cpp**/cloud. The owner connects from Android — keep changes
 testable at narrow viewport widths (mic needs HTTPS via Tailscale Serve).
 

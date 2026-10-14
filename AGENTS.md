@@ -27,7 +27,7 @@ Current capabilities (the v1.0 app):
   tools and runs them through the same gated `ActionService` the UI buttons use (validate → risk/
   privilege gate → confirm-bubble for med/high risk → execute → audit). Integrations: SearXNG web
   search, an MCP client (Streamable-HTTP + stdio), curated open-terminal shell/file tools, a generic
-  OpenAPI provider, embeddings; plus **skills** and **agents/subagents**, tier-1 + tier-2 **memory**
+  OpenAPI provider, an embeddings client (configured, but nothing consumes it yet — ISS-96); plus **skills** and **agents/subagents**, tier-1 + tier-2 **memory**
   (D57), **composer attachments** (images/text/PDFs re-readable via `read_attachment`, D68), and **conversations per
   agent** (a never-moving HOME agent per conversation, the per-agent sheet, live status — D84; on `main` since
   `cecc66f`, not on prod yet).
@@ -36,14 +36,16 @@ Current capabilities (the v1.0 app):
   **lorebook** subsystem (D70).
 - **Voice** — STT in / TTS out via OpenAI-compatible endpoints; push-to-talk mic (needs HTTPS);
   chunked read-along TTS (D63); and **live voice / call mode** — a Speaches-realtime ear behind the
-  app's one WebSocket relay, with phrase-streaming dictation (D71; `voice.live.enabled` ON since v1.7.8).
+  app's one WebSocket relay, with optional phrase-streaming dictation (D71; `voice.live.enabled` ON since
+  v1.7.8, `voice.live.dictation` OFF by default).
 - **Unattended** — scheduled **automations** (cron defs in SQLite + attributed headless runs, D49),
   the **fleet monitor** loop and the presence/LAN **wake triggers** (D50/D69).
 - **Media** — the owner's art library per namespace: upload, crop, focal point, reorder, through the
   one typed write path (D53/D65).
 - **Utilities** — the Tools tab registry (YouTube captions, etc.).
-- **Conf** — manage settings, hosts/services, integrations, agents, skills, prompts through the UI
-  (round-trips `config.yaml`); no hand-edited YAML for those.
+- **Conf** — manage settings, hosts/services, integrations, prompts through the UI (round-trips
+  `config.yaml`; a few keys are YAML-only — `docs/user-guide/configuration-reference.md`); agents, skills
+  and lorebooks round-trip their OWN files under `$CTRLB_HOME` (`agents/<slug>/`, `skills/`, `lorebooks/`).
 
 ---
 
@@ -57,15 +59,16 @@ backend/                FastAPI + Uvicorn service (port 5433). Layered:
   app/services/         ActionService (gate+audit), the agent loop (services/agent/), fleet, svc, …
   app/api/              FastAPI routers (JSON + SSE; one WS — voice `/live`, D71)
   app/config.py         config.yaml/.env loading; _PROJECT_ROOT = repo root; CTRLB_HOME relocates data
-  app/config_migration/ config-shape migrations (UPDATE_PLAN.md) — load-boundary fold + write-back
+  app/config_migration/ config-shape migration CLI (--check/--apply) + the import-time refusal (exit 78); UPDATE_PLAN.md
   app/runtime.py        the process-wide chokepoint: settings writes / reconfigure() / grant_approval
-  app/db.py             SQLite schema + migrations + connection handling (chat · memory · events)
+  app/db.py             SQLite schema + migrations + connection handling (chat · events · FTS · automations)
   app/assets/silero/    the vendored Silero VAD ONNX files (v6.2 + v5.1.2, SHA-pinned by a test) + LICENSE/provenance
   app/main.py           lifespan (db) + app.frontend() SPA serving of frontend/dist (D55; StaticFiles = media mounts only)
   tests/                pytest (count: QUALITY.md) — conftest auto-isolates CTRLB_HOME; temp configs via CTRLB_CONFIG/CTRLB_DB
   pyproject.toml        editable install (pip install -e .)
 frontend/               React 19 + TS + Vite 7 PWA. store/ hooks/ components/ tabs/ lib/ theme-engine/ themes/
 docs/                   HANDOFF (start here) · DECISIONS · ARCHITECTURE · DESIGN · SPEC · ROADMAP · TODO · THEME_ENGINE · audits (UI_AUDIT · SYSTEM_AUDIT · AGENT_CHAT_AUDIT · PROMPTS_AUDIT) · …
+docs/user-guide/        the USER guide (D86) — what a user sees and does, one page per surface, index = its README.md; the plans keep the design
 docs/research/          field-research dossiers (how OTHER projects solve a problem) — READ BEFORE re-running a deep research pass; RESEARCH.md is our own library-pin rationale, a different thing
 deploy/                 bootstrap.py (Win→Linux SSH orchestrator) + linux/ (systemd) + windows/ (double-click)
 tools/                  dev launchers (NOT deploy): start-claude.sh (Linux), claude-{fable,opus}.{ps1,cmd} (Windows), add-dev-worktree.sh
@@ -73,9 +76,9 @@ design/                 source design prototypes + the Vapor visual spec (design
 agents/   skills/        bundled agent definitions + file-discovered skills (read from CTRLB_HOME at runtime)
 config.yaml             ★ live config (gitignored). Copy from config.example.yaml. nested secrets, UI-managed
 config.example.yaml     template: computers{} + inference endpoints/keys + integrations
-.env.example            optional bootstrap (.env, gitignored): CTRLB_HOME/CONFIG/DB + CTRLB_<SECTION>__<KEY> overrides
-ctrlb.db                ★ SQLite (gitignored): chat / memory / events. Created on first run
-memories/               ★ agent memory (gitignored, personal data)
+.env.example            optional bootstrap (.env, gitignored, always the repo root's): CTRLB_CONFIG/DB (CTRLB_HOME works there too) + CTRLB_<SECTION>__<KEY> overrides
+ctrlb.db                ★ SQLite (gitignored): chat / events / automations. Created on first run
+memories/               ★ agent memory — markdown files in their own git repo (D26; gitignored, personal data)
 assets/                 local demo videos (gitignored — the README embeds a GitHub user-attachment)
 archive/                v0.1-flask/ (the old Flask app + scripts) · v0.1-inference/ · ui-prototypes/ (ws_*)
 ```
@@ -91,29 +94,31 @@ archive/                v0.1-flask/ (the old Flask app + scripts) · v0.1-infere
 = py314`; emma deploys native 3.14), venv at `backend/.venv`. Port **5433**.
 
 ```bash
-# Linux (the primary environment — emma) — --reload is safe here. Or just: deploy/linux/run.sh dev
-# On emma the dev instance already runs as systemd units (:5434 + Vite :5173) — restart those instead
-# of spawning duplicates:  systemctl --user restart ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web
+# Linux — --reload is safe here. Or just: deploy/linux/run.sh dev
+# On emma do NOT hand-run this: prod holds :5433, and the dev instance is the systemd units (:5434 +
+# Vite :5173) — drive those:  systemctl --user start|restart ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web
+# The two --ws-* flags are what every shipped launcher passes (the live WebSocket's keepalive horizon).
 cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev,voice]"
-.venv/bin/uvicorn app.main:app --reload --port 5433
+.venv/bin/uvicorn app.main:app --reload --port 5433 --ws-ping-interval 5 --ws-ping-timeout 5
 ```
 ```powershell
-# Windows (the frozen corsair clone; do NOT pass --reload — see §8 gotcha). [dev] = ruff/pyright/pytest
-# [voice] = onnxruntime/numpy/av (the Phase 26 ear) — gate-mandatory, check.py's preflight probes both extras
+# Windows (the frozen corsair clone; do NOT pass --reload — see §7 gotcha). [dev] = ruff/pyright/pytest
+# [voice] = onnxruntime/numpy/av — the clip door's decode + pre-ASR pass (without it STT reports
+# unconfigured: no mic, so no call button); gate-mandatory, check.py's preflight probes both extras
 cd backend; py -3 -m venv .venv; .venv\Scripts\python.exe -m pip install -e ".[dev,voice]"
-.venv\Scripts\python.exe -m uvicorn app.main:app --port 5433        # http://127.0.0.1:5433
+.venv\Scripts\python.exe -m uvicorn app.main:app --port 5433 --ws-ping-interval 5 --ws-ping-timeout 5   # http://127.0.0.1:5433
 .venv\Scripts\python.exe -m pytest -q                               # tests, the Windows spelling
 cd ..\frontend; npm install; npm run dev                            # http://localhost:5173 (proxies /api → 5433)
 ```
 
-- **One-command runners:** `deploy/linux/run.sh [prod|dev]` (manual) · `python deploy/bootstrap.py`
-  (Linux server, systemd + HTTPS — **executed 2026-07-10: v1.0.0 live on emma**) ·
+- **One-command runners:** `deploy/linux/run.sh [prod|dev]` (manual) · `backend/.venv/bin/python deploy/bootstrap.py`
+  (Linux server, systemd + HTTPS, the FIRST deploy only — a re-run skips `update.sh`'s checks, ISS-94 — **executed 2026-07-10: v1.0.0 live on emma**) ·
   `deploy/windows/start.cmd` (Windows). See [`deploy/README.md`](./deploy/README.md).
 - **Tests:** from `backend/`, `.venv/bin/python -m pytest -q`. Frontend: `npm test`
   (vitest) · `npm run test:e2e` (playwright) · `npm run build`.
 - **Quality harness:** one command answers "is the repo green?" — **`python tools/check.py`** (runs
   everything in parallel: BE `ruff` lint+format · `pyright` (type check) · `pytest`; FE `npm run
-  check-all` = `tsc` + ESLint + stylelint + Prettier + `vitest`). Flags: `--backend`/`--frontend`/`--fast`. The
+  check-all` = `tsc` + ESLint + stylelint + Prettier + `vitest`). Flags: `--backend`/`--frontend`/`--fast`/`--e2e`. The
   layered standard + conventions live in [`docs/QUALITY.md`](./docs/QUALITY.md); the sliced rollout is
   [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) §1 (1a–1d shipped). Backend pyright deps:
   `pip install -e "backend/.[dev,voice]"` (installs `pyright[nodejs]` + the voice ear the gate also needs).
@@ -134,16 +139,18 @@ A **decoupled** FastAPI service + SPA. The agent turn is **one async generator o
 transport (SSE today) drains *that* — it never re-implements the loop. UI buttons and agent tool-calls both
 route through the **same typed-action registry → `ActionService`** (validate → risk/privilege gate →
 execute → audit). Hosts/services/actions/events/agents are first-class Pydantic entities in `app/domain/`.
-SQLite holds chat/memory/events; YAML holds config (round-tripped by the Conf tab via a single write path).
+SQLite holds chat/events/automations (+ the chat FTS index); agent memory is markdown files in `memories/`
+(its own git repo, D26); YAML holds config (round-tripped by the Conf tab via a single write path).
 Streaming is **SSE** — *with one narrow exception*: **`WS /api/voice/live`**, the live-voice relay's
 continuous **media ingress** (D71 §3.2 — the only WebSocket in the codebase, admitted for audio frames
 only; everything else stays SSE down / HTTP up). `uvicorn` serves the API and the built `frontend/dist`
 (SPA fallback). Design detail: `docs/ARCHITECTURE.md` + `docs/DESIGN.md` + `docs/LIVE_VOICE_PLAN.md` (the call
 loop) + `docs/ASR_PLAN.md` (the ear: VAD, ASR, the uplink guard — D82).
 
-**OS-agnostic invariant.** Branch on the managed **host's** `os_type` (ping/SSH command shape), never on the
-*server's* OS. Server-OS branches are a **closed allowlist** (`fleet._ping_cmd` ping syntax · `run_shell`'s
-per-OS shell · `core/fsutil.fsync_dir` no-op · `tools/check.py`), pinned by `test_arch_invariants_qh9.py`. See
+**OS-agnostic invariant.** Branch on the managed **host's** `os_type` (shutdown/reboot syntax, service
+command variants), never on the *server's* OS — the ping syntax is the server's own (below).
+Server-OS branches are a **closed allowlist** (`fleet._ping_cmd` ping syntax · `run_shell`'s per-OS shell ·
+`core/fsutil.fsync_dir` no-op · `tools/check.py`), pinned by `test_arch_invariants_qh9.py`. See
 `docs/ARCHITECTURE.md §6` (the owner of this list).
 
 ---
@@ -156,8 +163,10 @@ copy paths from lucide.dev into a local `icons.tsx`, never re-add the package); 
 **theme-engine** (Swappable Surfaces, DECISIONS D31 —
 `docs/THEME_ENGINE.md`; cosmos default, per-theme fidelity D7, theme build records in their plan
 docs). Layers: `store/` (dep-free createStore) · `hooks/` ·
-`components/`/`tabs/` · `lib/`. Bottom-tab nav (Fleet/Agent/Utils/Conf), per-host service rows, a shared
-composer with push-to-talk + auto-TTS. Net-new UI follows `docs/VAPOR_PATTERNS.md`.
+`components/`/`tabs/` · `lib/`. Five sections (`theme-engine/tabs.ts`: fleet · chat · tools · conf + the
+`agents` gallery, a satellite hosted in Conf by default); how many sit on the bar is the per-device Layout
+lever (`theme-engine/layout.ts`; frontier + gacha default to 3, Tools folded into Conf). Per-host service
+rows, a shared composer (fleet + chat) with push-to-talk + auto-TTS. Net-new UI follows `docs/VAPOR_PATTERNS.md`.
 
 ---
 
@@ -170,16 +179,22 @@ The app's safety rests **entirely** on Tailscale + no open ports + single truste
 boundary it is permissive, but several things are genuinely dangerous and any agent must **preserve or
 improve — never weaken** them:
 
-- **No public bind, no auth removal, no Tailscale assumption removed.** The backend binds **127.0.0.1**
-  by code default; deployed prod binds `0.0.0.0:5433` under the 2026-07-10 owner waiver (LAN+tailnet
-  only — see `SECURITY_MODEL.md` §2.1), with **Tailscale Serve** HTTPS as the sole secure-context
+- **No public bind, no auth removal, no Tailscale assumption removed.** The bind is the uvicorn command
+  line (the units, `run.sh`, `start.ps1`) — `server.host`/`server.port` bind nothing (ISS-91). The
+  launchers bind **127.0.0.1**; deployed prod binds `0.0.0.0:5433` under the 2026-07-10 owner waiver
+  (LAN+tailnet only — see `SECURITY_MODEL.md` §2.1), with **Tailscale Serve** HTTPS as the sole secure-context
   (mic) ingress. Never widen beyond that. Egress (SSH/ping/WOL to the fleet) is unaffected by the bind.
 - **Typed actions are the primary execution path.** Agent + UI request named, allowlisted actions
   (`wake_host`, `shutdown_host`, `restart_service`, …) that pass the **risk/privilege gate**; med/high-risk
   calls **suspend on a confirm bubble**. The guarded `!` local-shell escape hatch **shipped** (Phase 5 —
-  the user types `!<cmd>` → `POST /api/exec`; the agent's own tool is `run_shell`), and **both gates
+  the user types `!<cmd>` → `POST /api/exec`; the agent's own tool is `run_shell`), and **both toggles
   default OFF**: `shell.user_exec_enabled` and `shell.agent_exec_enabled` are `False`
-  (`app/config.py` `ShellCfg`) — don't expose arbitrary shell beyond the tailnet, don't bypass the gate.
+  (`app/config.py` `ShellCfg`). **The agent toggle governs agents BELOW `full` only** — off → `run_shell`
+  DENIED, on → CONFIRM; a `full` caller runs it with no confirm whether the toggle is on or off
+  (`core/permissions.py::decide`, pinned by `tests/test_shell_5.py`), so the only off-switch at `full` is
+  `shell.enabled: false` (ISS-87). `ui_exposed` is a listing flag, not a gate: `POST /api/actions/{name}`
+  reaches every registered tool behind its confirm token (ISS-88). Don't expose arbitrary shell beyond
+  the tailnet, don't bypass the gate.
 - **Owner-file writes are raw-body `PUT` — never multipart, never `POST`.** Three routes write the
   owner's files: `PUT`/`DELETE /api/media/{ns}/files/{role}/{filename}` (D65), `PUT /api/attachments/
   staging/{filename}` (D68), and `PUT /api/agents/import` + `PUT /api/lorebooks/import` (D70). Their
