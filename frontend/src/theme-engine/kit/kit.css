@@ -7484,12 +7484,16 @@ body[data-sheet="open"] .kit .kit-composer {
 }
 /* THE QUIET SCROLLBAR (ISS-74; the owner's scrollbar ruling 2026-10-10, recorded on ISS-81) — ONE shared rule
  * for any kit scroller whose bar should stay out of the way: the sheet body (BottomSheet puts the class on
- * `.bs-body`, so every sheet in every theme), next the shell scroller (ISS-81) and gacha's dossier services
- * list (ISS-75). Never a second copy. WHY: Android Chrome's overlay bar appears when a freshly mounted
- * scroller shows up and only starts fading after a real scroll, so a sheet opened sat with its bar painted.
+ * `.bs-body`, so every sheet in every theme), the shell scroller `#app-scroll` (ISS-81 — every section body,
+ * the chat log included) and gacha's dossier services list (ISS-75). Never a second copy. WHY: Android
+ * Chrome's overlay bar appears when a freshly mounted scroller shows up and only starts fading after a real
+ * scroll, so a sheet opened sat with its bar painted.
  * DESKTOP (fine pointer): a THIN bar (THEME_ENGINE's "thin + themed thumb"), invisible at rest, revealed
  * while scrolling (`[data-scrolling]`, stamped by `lib/scrollingStamp.ts` — CSS can't see "is scrolling")
- * and on hover (so it stays usable as a drag control). A transparent bar keeps its thin gutter, so nothing
+ * and on hover (so it stays usable as a drag control) — except the SHELL (`:not(.kit-scroll)`): its box is
+ * the whole content pane, so a hover reveal would show the bar whenever the cursor is anywhere on the page;
+ * it reveals on scroll only, programmatic moves included (a restore, the chat's stick-to-bottom pin — the
+ * page moved, so the bar shows; ruled ISS-81). A transparent bar keeps its thin gutter, so nothing
  * reflows when it shows. Chromium ≥121 and Firefox both honour the standard `scrollbar-*` properties —
  * which in Chromium SUPERSEDE a theme's `::-webkit-scrollbar` styling for this scroller (and
  * `scrollbar-color` inherits into nested scrollers): every kit sheet gets this thin gutter, and a theme
@@ -7498,7 +7502,7 @@ body[data-sheet="open"] .kit .kit-composer {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
-.kit .kit-quiet-scrollbar:hover,
+.kit .kit-quiet-scrollbar:not(.kit-scroll):hover,
 .kit .kit-quiet-scrollbar[data-scrolling] {
   scrollbar-color: var(--text-3) transparent;
 }
@@ -7511,6 +7515,19 @@ body[data-sheet="open"] .kit .kit-composer {
   .kit .kit-quiet-scrollbar::-webkit-scrollbar {
     display: none;
   }
+}
+/* CONTAINMENT (ISS-81) — `scrollbar-color` INHERITS (`scrollbar-width` does not). On a sheet body that reaches
+ * a nested scroller or two; on the SHELL it would reach every scroller inside it (the chat's code blocks,
+ * Conf's lists, the media galleries, a sheet's nested lists — sheets mount inside the tab bodies): each
+ * would go transparent at rest and, in Chromium ≥121, lose its own `::-webkit-scrollbar` styling (a
+ * non-`auto` standard property on the element disables the legacy pseudo-elements for it). One reset at
+ * the first level stops the chain: `auto`
+ * is the initial value (UA/legacy styling applies again, and descendants inherit `auto`), and `:where()`
+ * keeps it at specificity (0,0,0), so any element's own rule — a nested quiet scroller, a theme's
+ * `.cv-stack` — still wins. The touch arm needs no reset: `scrollbar-width` + `::-webkit-scrollbar` are
+ * element-scoped. */
+:where(.kit .kit-scroll) > * {
+  scrollbar-color: auto;
 }
 /* sr-only — ONE recipe, five users: the sheet's close button (keyboard/AT parity without a visible ✕),
  * the tools menu's native agent radios (A6 — real radios for real arrow-key group semantics, with the

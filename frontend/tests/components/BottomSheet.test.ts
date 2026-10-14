@@ -290,7 +290,7 @@ describe("ISS-74 · the quiet sheet scrollbar", () => {
       ".kit .kit-quiet-scrollbar { scrollbar-width: thin; scrollbar-color: transparent transparent; }",
     );
     expect(css).toMatch(
-      /\.kit \.kit-quiet-scrollbar:hover, \.kit \.kit-quiet-scrollbar\[data-scrolling\] \{ scrollbar-color: var\(--text-3\) transparent; \}/,
+      /\.kit \.kit-quiet-scrollbar:not\(\.kit-scroll\):hover, \.kit \.kit-quiet-scrollbar\[data-scrolling\] \{ scrollbar-color: var\(--text-3\) transparent; \}/,
     );
     const touch = css.match(
       /@media \(pointer: coarse\) \{ \.kit \.kit-quiet-scrollbar \{[^}]*\}[^}]*\}/,
@@ -299,14 +299,29 @@ describe("ISS-74 · the quiet sheet scrollbar", () => {
     expect(touch?.[0]).toContain(".kit .kit-quiet-scrollbar::-webkit-scrollbar { display: none; }");
   });
 
+  // ISS-81 — the shell scroller wears the class too, and `scrollbar-color` inherits: without the first-level
+  // reset every nested scroller in the app would go transparent (and lose its `::-webkit-scrollbar` styling
+  // in Chromium ≥121). `:where()` keeps it at (0,0,0) so an element's own rule still wins. And the shell's
+  // box is the whole content pane, so its hover reveal is cut (`:not(.kit-scroll)`): it reveals on scroll.
+  it("kit.css: the shell's inheritance is contained at the first level, and the shell skips the hover reveal", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/theme-engine/kit/kit.css"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\s+/g, " ");
+    expect(css).toContain(":where(.kit .kit-scroll) > * { scrollbar-color: auto; }");
+    expect(css).not.toMatch(/\.kit-quiet-scrollbar:hover/); // no un-narrowed hover arm (the narrowed one: above)
+  });
+
   // The standard `scrollbar-*` properties supersede vapor's `::-webkit-scrollbar` keep in Chromium ≥121, so
-  // vapor re-colours the REVEAL thumb in its own sheet (@layer theme) — a vapor sheet keeps its magenta.
-  it("vapor.css: the quiet scrollbar's reveal thumb takes vapor's magenta", () => {
+  // vapor re-colours the REVEAL thumb in its own sheet (@layer theme) — a vapor sheet keeps its magenta. Its
+  // hover arm carries the kit's `:not(.kit-scroll)` (ISS-81): @layer theme outranks the kit, so a bare
+  // `:hover` there would reveal the shell's bar wherever the cursor sits.
+  it("vapor.css: the quiet scrollbar's reveal thumb takes vapor's magenta (the shell: on scroll only)", () => {
     const css = readFileSync(resolve(process.cwd(), "src/themes/vapor/vapor.css"), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\s+/g, " ");
     expect(css).toContain(
-      ".kit-quiet-scrollbar:hover, .kit-quiet-scrollbar[data-scrolling] { scrollbar-color: var(--magenta) transparent; }",
+      ".kit-quiet-scrollbar:not(.kit-scroll):hover, .kit-quiet-scrollbar[data-scrolling] { scrollbar-color: var(--magenta) transparent; }",
     );
+    expect(css).not.toMatch(/\.kit-quiet-scrollbar:hover/);
   });
 });

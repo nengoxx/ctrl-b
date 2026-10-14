@@ -693,8 +693,10 @@
   /* ISS-74 — the kit's quiet scrollbar (sheet bodies; kit.css `.kit-quiet-scrollbar`) sets a standard
      `scrollbar-color`, which in Chromium ≥121 supersedes the `::-webkit-scrollbar` pair above for that
      scroller. Its desktop REVEAL thumb therefore takes vapor's magenta here, so a vapor sheet keeps the
-     look; the rest state (transparent) and the touch arm (hidden) stay the kit's. */
-  .kit-quiet-scrollbar:hover, .kit-quiet-scrollbar[data-scrolling] { scrollbar-color: var(--magenta) transparent; }
+     look; the rest state (transparent) and the touch arm (hidden) stay the kit's. The hover arm skips the
+     shell (`:not(.kit-scroll)`, ISS-81) like the kit's does — @layer theme would otherwise outrank the kit's
+     narrowing and reveal the page bar wherever the cursor sits. */
+  .kit-quiet-scrollbar:not(.kit-scroll):hover, .kit-quiet-scrollbar[data-scrolling] { scrollbar-color: var(--magenta) transparent; }
   ::selection { background: var(--magenta); color: #fff; }
 }
 /* end @scope ([data-skin="vapor"]) */

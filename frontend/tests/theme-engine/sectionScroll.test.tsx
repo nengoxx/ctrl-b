@@ -36,6 +36,7 @@ Element.prototype.scrollTo = function (this: Element, x: number, y: number) {
 } as typeof Element.prototype.scrollTo;
 Element.prototype.scrollIntoView = vi.fn();
 
+import { SCROLL_IDLE_MS } from "../../src/lib/scrollingStamp";
 import { clearGroupScrollTarget, setGroupScrollTarget } from "../../src/store/groupScroll";
 import { setUI } from "../../src/store/ui";
 import { DefaultRoot } from "../../src/theme-engine/kit/DefaultRoot";
@@ -172,5 +173,76 @@ describe("DefaultRoot — per-section scroll restoration", () => {
     act(() => setUI({ ttsAuto: false })); // any unrelated store change → an extra commit
     go("fleet");
     expect(scroller.scrollTop).toBe(260);
+  });
+});
+
+// ISS-81 — the shell's scrollbar is quiet (kit.css `.kit-quiet-scrollbar`, the ISS-74 rule + stamp, reused):
+// hidden on touch; on a fine pointer invisible at rest and shown only while the pane scrolls, which CSS
+// can't see, so `attachScrollingStamp` marks the node. The stamp is bound to the scroller NODE's lifetime,
+// not to the per-section effect above — that one returns early on the chat tab, and the chat log scrolls
+// THIS scroller (ChatThread's `SCROLLER_ID = "app-scroll"`), so a per-tab stamp would miss the chat
+// entirely. Fake timers drive the idle window, as BottomSheet.test.ts does.
+describe("DefaultRoot — the shell's quiet scrollbar (ISS-81)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Advance the fake clock inside `act` (a block body: `act` of a non-void callback is a floating promise). */
+  const tick = (ms: number) =>
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+
+  /** `draw()`, then let its normalising scroll's stamp lapse so every arm starts at rest. */
+  function drawAtRest(): HTMLElement {
+    const scroller = draw();
+    tick(SCROLL_IDLE_MS);
+    expect(scroller.dataset.scrolling).toBeUndefined();
+    return scroller;
+  }
+
+  it("the shell scroller carries the shared quiet-scrollbar class", () => {
+    const scroller = drawAtRest();
+    expect(scroller.classList).toContain("kit-scroll");
+    expect(scroller.classList).toContain("kit-quiet-scrollbar");
+  });
+
+  it("stamps data-scrolling while the pane scrolls, clearing it after the idle window", () => {
+    const scroller = drawAtRest();
+    scrollTo(scroller, 120);
+    expect(scroller.dataset.scrolling).toBe("true");
+    tick(SCROLL_IDLE_MS - 1);
+    scrollTo(scroller, 160); // a still-running scroll re-arms the idle window
+    tick(SCROLL_IDLE_MS - 1);
+    expect(scroller.dataset.scrolling).toBe("true");
+    tick(1);
+    expect(scroller.dataset.scrolling).toBeUndefined();
+  });
+
+  // Ruling 1: the stamp must hold on the chat tab, where the per-section effect has returned early. jsdom
+  // fires no scroll event for ChatThread's `scrollTop` pin, so the move is driven explicitly — the same
+  // listener a real stick-to-bottom pin reaches (ruling 3: a programmatic move stamps; the page moved).
+  it("stamps on the CHAT tab too — the chat log scrolls the shell, not a scroller of its own", () => {
+    const scroller = drawAtRest();
+    go("agent");
+    tick(SCROLL_IDLE_MS); // any stamp from the section switch lapses
+    expect(scroller.dataset.scrolling).toBeUndefined();
+    scrollTo(scroller, 80);
+    expect(scroller.dataset.scrolling).toBe("true");
+    tick(SCROLL_IDLE_MS);
+    expect(scroller.dataset.scrolling).toBeUndefined();
+  });
+
+  it("unmount drops the stamp and the listener with the node", () => {
+    const scroller = drawAtRest();
+    scrollTo(scroller, 120);
+    expect(scroller.dataset.scrolling).toBe("true");
+    cleanup(); // unmount mid-scroll: the teardown drops the stamp and cancels the pending clear
+    expect(scroller.dataset.scrolling).toBeUndefined();
+    fireEvent.scroll(scroller); // the detached node no longer listens
+    expect(scroller.dataset.scrolling).toBeUndefined();
   });
 });

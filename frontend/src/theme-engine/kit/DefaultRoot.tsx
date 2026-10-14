@@ -22,6 +22,7 @@ import { useSections } from "../../hooks/useSections";
 import { endCall, useCallMount } from "../../store/liveCall";
 import { getGroupScrollTarget } from "../../store/groupScroll";
 import { prefetchOnIdle } from "../../lib/prefetch";
+import { attachScrollingStamp } from "../../lib/scrollingStamp";
 import { AgentTab } from "../../tabs/AgentTab";
 import { AgentsTabLazy } from "../../tabs/AgentsTab.lazy";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
@@ -283,6 +284,18 @@ export function DefaultRoot({
     // `restoredScrollRef` is a stable ref (lint can't see through the custom hook) — a dep for hygiene only.
   }, [tab, restoredScrollRef]);
 
+  // ISS-81 — the shell's scrollbar is quiet (`.kit-quiet-scrollbar`, kit.css): hidden outright on touch, and on
+  // a fine pointer invisible at rest, shown only while scrolling — which CSS can't see, so the shared stamp
+  // marks it. Bound to the scroller NODE's lifetime (rendered once per mount), NOT to the per-section effect
+  // above: that one re-attaches per tab and returns early on the chat tab, yet the chat log scrolls THIS
+  // scroller too (ChatThread's `SCROLLER_ID = "app-scroll"`, stickToBottom's per-chunk pin) — the stamp is a
+  // property of the node, not of a section. A programmatic move (a restore, a stick pin) stamps as well: the
+  // page moved, so the bar shows (ruled on the ISS-81 row).
+  useEffect(() => {
+    const el = scrollRef.current;
+    return el ? attachScrollingStamp(el) : undefined;
+  }, []);
+
   // Expose the sticky appbar height as `--appbar-h` so the Agent plan tab pins just below it. When the
   // appbar is hidden there's no `.kit-appbar` node → pin content at the top (0), not a stale height.
   useEffect(() => {
@@ -376,7 +389,7 @@ export function DefaultRoot({
         }
         ref={mainRef}
       >
-        <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
+        <div className="kit-scroll kit-quiet-scrollbar" id="app-scroll" ref={scrollRef}>
           {appbarShown(appbarMode) && (
             <KitAppBar
               brandMeta={brandMeta}
