@@ -646,8 +646,9 @@ export function GachaFleet({ active }: { active: boolean }) {
     // `showcase` (gacha.css) — so it rides inside the root snapshot, hidden under the portrait, and pops
     // on top in one frame when the pseudos are torn down. Named `dossier-rar` for the NEW capture only, it
     // gets its own new-only group (appended after `capsule-shell`, which the old capture already
-    // registered, so it paints above the landing portrait) and gacha.css's held `gacha-rar-in` fades it up
-    // as the frame lands. NEVER in the old capture: there it sits under the opaque full-screen art, and as
+    // registered, so it paints above the landing portrait) and gacha.css's `gacha-rar-early` brings it up
+    // over the first quarter of the flight, so it rides the collapse instead of appearing at the end
+    // (owner, 2026-10-14). NEVER in the old capture: there it sits under the opaque full-screen art, and as
     // its own group it would float above that art from the first frame — hence set INSIDE the callback.
     let badge: HTMLElement | null = null;
     void runViewTransition(() => {

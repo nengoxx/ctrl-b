@@ -882,11 +882,16 @@ describe("gacha G7 — the DRAWN rarity star (R16)", () => {
     expect(rules).toContain('[data-transition="detail"] .gc-dossier .art-rar');
     // ISS-79: under `showcase` CSS never NAMES it (the open leg and every old capture keep it inside the
     // root snapshot); GachaFleet names it inline for the close leg's new capture, and this is its fade —
-    // the `detail` hold, re-timed to the showcase's 420 ms flight.
+    // its OWN keyframe, up over the first quarter of the 420 ms flight (the owner's 2026-10-14 re-ruling:
+    // the `detail` hold left the stars appearing from nowhere at the end), never the `detail` hold.
     expect(rules).not.toContain('[data-transition="showcase"] .gc-dossier .art-rar');
     expect(
       ruleBlock(rules, '[data-transition="showcase"]::view-transition-new(dossier-rar) {'),
-    ).toContain("animation: gacha-rar-in 420ms both");
+    ).toContain("animation: gacha-rar-early 420ms both");
+    // (`ruleBlock` stops at the first brace pair, so the keyframes are pinned on the source directly.)
+    expect(rules).toMatch(
+      /@keyframes gacha-rar-early \{\s*0% \{\s*opacity: 0;\s*\}\s*25%,\s*100% \{\s*opacity: 1;\s*\}\s*\}/,
+    );
   });
 });
 

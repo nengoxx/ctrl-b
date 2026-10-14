@@ -3334,11 +3334,25 @@
     }
     /* THE BADGE ON THE CLOSE LEG (ISS-79). Named inline by GachaFleet's `closeShowcase` for the NEW
      * capture only (never the old one, never the open leg — the `detail` block's note above), so this is
-     * a new-only group: the `detail` block's held fade, re-timed to this flight's 420 ms, brings the stars
-     * up over the last ~115 ms as the portrait lands instead of popping on top after the teardown.
-     * Opacity only (§14.11). */
+     * a new-only group, painted ABOVE the landing portrait (it straddles the frame's corner, so under the
+     * image it would pop on top at the teardown — the original report). The stars come up at the START of
+     * the flight (owner, 2026-10-14): the first build re-used the `detail` hold and brought them up over
+     * the last ~115 ms, and with nothing on screen that was "the stars" until then they appeared from
+     * nowhere however that fade was timed. So they fade in over the first quarter of the 420 ms flight,
+     * at their final spot, over the still-large art — present for the whole collapse and simply there
+     * when the portrait lands. Its own keyframe, not `gacha-rar-in`: that one's hold is the `detail`
+     * morph's and stays. Opacity only (§14.11). */
     :scope[data-transition="showcase"]::view-transition-new(dossier-rar) {
-      animation: gacha-rar-in 420ms both;
+      animation: gacha-rar-early 420ms both;
+    }
+    @keyframes gacha-rar-early {
+      0% {
+        opacity: 0;
+      }
+      25%,
+      100% {
+        opacity: 1;
+      }
     }
 
     .gc-dossier {

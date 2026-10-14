@@ -1545,7 +1545,7 @@ describe("the art showcase's morph", () => {
 
   it("names the STAR badge for the close leg's NEW capture only, and drops it once it is over (ISS-79)", async () => {
     // The badge rode the root snapshot under the flying portrait and popped on top at teardown. Its own
-    // `dossier-rar` group (gacha.css's held fade) needs the name in the NEW capture — and NOT in the old
+    // `dossier-rar` group (gacha.css's `gacha-rar-early` fade) needs the name in the NEW capture — and NOT in the old
     // one, where it would float above the full-screen art. This variant of the mock settles `finished`
     // on demand, because the drop rides it (`runViewTransition`'s returned promise).
     const settles: (() => void)[] = [];
