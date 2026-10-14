@@ -82,8 +82,9 @@
 8. **Owner rulings this session:** never use `gpt-6-astra` (expensive, not good); strata stays the main backend; full usage available today.
 
 ### ▶▶ NEXT SESSION (in order)
-1. **ISS-73 ② — the dictation-through-a-lock fix:** the owner rules the shape (default ON + a Conf toggle is the proposal) → design → council (Opus ∥ Sol) → build → both reviewers → dev → the owner re-tests a lock mid-dictation.
-   **Still owed by the owner, as they use it:** ① locked and past ~60 s · a long locked call · ISS-84 (airplane mode mid-"sending"; past ~90 s → Retry/Discard; a reload while parked) · ISS-50 (switch agents mid-conversation, hear that the new one does not speak as the old) · the (c) answer.
+1. **S11-(c) BUILT `a304c533`** (merged, dev rebuilt; the record = CONVERSATIONS_PLAN §13 S10's (c) paragraph). **The owner's check:** two phones on one conversation, phone B LOCKED; send from phone A; unlock B while the reply still streams → B shows it, SILENT; your own turn after closing + reopening the app → still spoken. Older replies (before this build) carry no device → today's behaviour.
+2. **ISS-71 BUILT `618dcb7a`** (dev rebuilt) — the owner's phone check: fling up, tap ↓ while coasting → the first tap jumps.
+   **Still owed by the owner, as they use it:** ISS-73 ① locked and past ~60 s · a long locked call · ISS-84 (airplane mode mid-"sending"; past ~90 s → Retry/Discard; a reload while parked) · ISS-50 (switch agents mid-conversation).
 2. **S12 close-out** (docs only: as-built records · ISS-49/50/51/52 → FIXED · ROADMAP A15 → BUILT · D75's SUPERSEDED pointer · the §12 sweep · `git worktree remove ~/.cache/tmp/ctrlb-wt27`) → S13 = v1.7.12 (waits for J3 + J4 per the owner).
 3. **The ASR track:** the captures EXIST (item 6, last bullet) → the owner confirms the said-words → promote `--owner-only` → TUNE → the S9 gate's owner-audio rows → S7b (the flip) → S8 → S8b → S10.
 4. Deferred, the owner's call: ISS-71 · ISS-72 + ISS-82 (the refinement session) · the ⑤ responder-inheritance split and the six ⚑ defaults (open to re-rule after S11).
