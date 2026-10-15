@@ -31,7 +31,7 @@ judge the result rather than adopting it.**
 | Mechanical / operational work, runbook procedures, releases | **`general-purpose`** subagent (Opus 5.5 high) | the workforce — use freely |
 | An independent CLAUDE lens on the main seat's own design | **ONE Opus 5.5 subagent** briefed adversarially | occasional — the mirror of the old Fable tier |
 | **A CODE ROUND on a critical part** (security-relevant routes/parsers, chokepoints, migrations, wide refactors) — **owner rule 2026-09-26** | **BOTH, in parallel, on the SAME diff: a blind Opus 5.5 subagent (the independent reviewer) AND the Maya/Emma hermes lane (the non-Claude fresh lens)** — distinct emphasis, never partitioned; confirm with the reviewer that raised each finding (Opus by `SendMessage`, Maya by a fresh self-contained `-z`) | the default for anything that ships to prod |
-| **The THIRD lane on every Phase 27 review round (owner, 2026-10-09: "it earned its keep") — design AND code rounds** — the owner's local Qwen behind the `strata` endpoint on corsair (§The local lane below) | **Qwen3.8-Flash-Next (the quant corsair serves TODAY — `/v1/models`; IQ4_XS on 2026-10-14, IQ2_XS when measured), THINKING ON, ~25–30 min, output to a file; launched as a SEPARATE lane beside Opus + Sol (never merged into their briefs), read LAST, every accepted finding re-verified in code like the others** — a heavily quantized model: never alone, never the deciding voice | free (the owner's own GPU) — Opus bills the Anthropic window, Sol the OpenAI one, Qwen neither |
+| **The THIRD lane on every Phase 27 review round (owner, 2026-10-09: "it earned its keep") — design AND code rounds** — the owner's local Qwen behind the `strata` endpoint on corsair (§The local lane below) | **Qwen3.8-Flash-Next (the quant corsair serves TODAY — `/v1/models`; IQ4_XS on 2026-10-14, IQ2_XS when measured), THINKING ON, launched as a SEPARATE lane beside Opus + Sol (never merged into their briefs), read LAST, every accepted finding re-verified in code like the others** — DEFAULT FORM (owner, 2026-10-15): **a multi-turn reviewer through Claude Code with read tools** (§The local lane → "Default form"), ~30–35 min; the direct-HTTP closed-book form is the fast fallback (design rounds only). A heavily quantized model: never alone, never the deciding voice | free (the owner's own GPU) — Opus bills the Anthropic window, Sol the OpenAI one, Qwen neither |
 | **Design, architecture, supervision, audits, a judgement call, a ruling** | **the MAIN SEAT (Fable 5) — never delegate** | — |
 
 **Standing owner directive (2026-07-22, reaffirmed 2026-07-26):** launch a Codex review **whenever
@@ -187,8 +187,8 @@ item 9 applies — sol is sol).
 >
 > **What it is.** The owner's own quantized model on corsair, served by llama.cpp behind ctrl-b's `strata` provider
 > (`http://corsair:18081/v1`, model = whatever `curl -m 5 http://corsair:18081/v1/models` lists (it DRIFTS while the owner tests quants — read it first; 2026-10-14 = `qwen3.8-flash-next-bartowski-iq4_xs`; the `iq2_xs`/`iq3_xxs` weights were deleted 2026-10-13), **262 144-token context**, no API key, OpenAI-compatible;
-> corsair must be AWAKE — `curl -m 5 http://corsair:18081/v1/models` first). It is FREE and SLOW, has NO tools (paste the
-> artifact into the prompt), and is heavily quantized (IQ2_XS when measured; the served quant changes while the owner tests). Measured on the Phase 27 plan (136 KB ≈ 41k tokens):
+> corsair must be AWAKE — `curl -m 5 http://corsair:18081/v1/models` first). It is FREE and SLOW, has no tools in the HTTP fallback (paste the
+> artifact into the prompt there; the default Claude Code form below reads files itself), and is heavily quantized (IQ2_XS when measured; the served quant changes while the owner tests). Measured on the Phase 27 plan (136 KB ≈ 41k tokens):
 >
 > | Run | Result | Verdict as a reviewer |
 > |---|---|---|
@@ -196,7 +196,33 @@ item 9 applies — sol is sol).
 > | thinking OFF, 3 min, 3.4k tokens | 12 findings self-rated 0.3–0.6; 2 real wording catches, 9 misreadings; **no invented code facts** | a cheap stale-wording pass only |
 > | **thinking ON + Qwen's thinking-mode sampling + `presence_penalty 1.0`, 200k cap** — 22 min, 44.6k tokens | **8 findings, no loop: 2 REAL MEDs the four paid lanes had missed, 1 behavioural, 3 wording, 2 rejects; `DEPENDS ON CODE` marked honestly at ≤ 0.5** | **a genuine extra lane for design rounds** |
 >
-> **Recipe (the shape that worked — `~/.cache/tmp/ctrlb-session69/strata-review-think2.py` is the original):**
+> **DEFAULT FORM (owner, 2026-10-15): a multi-turn reviewer through Claude Code, with read tools.** Qwen is trained to work with tools; the closed-book HTTP form below underuses it. Measured 2026-10-15 on a spec-completeness review (eleven documents, ~250 KB): 14 turns, 12 `Read` calls, 32.7 min, 1 blocker / 7 major / 5 minor, no hallucinated quotes — about a third of what Opus found in 9.6 min, but four findings Opus missed were adopted. Evidence: `/home/emma/Documents/Maia/40 Projects/2026-10-13-model-harness-quality-comparison/assets/claude-code-qwen-vs-opus-review-20261015/comparison.md`. The brief is the same discipline as the paid lanes (point it at exact file paths; it reads them itself; SCOPE the already-ruled parts; a quote per finding; ≤ 12 findings). Run from the project cwd, isolated state, read-only tools, no turn cap, nothing persisted:
+>
+> ```bash
+> S=<scratchpad>; mkdir -p "$S/home" "$S/config"; printf '{"mcpServers":{}}\n' > "$S/empty-mcp.json"
+> M=$(curl -s -m 5 http://corsair:18081/v1/models | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"][0]["id"])')   # the served quant DRIFTS — never hardcode it
+> [ -n "$M" ] || { echo "strata down or corsair asleep"; exit 1; }
+> nohup env -i PATH="$PATH" USER=emma LOGNAME=emma LANG=C.UTF-8 HOME="$S/home" CLAUDE_CONFIG_DIR="$S/config" TMPDIR="$S/home" \
+>   ANTHROPIC_BASE_URL=http://corsair:18081 ANTHROPIC_AUTH_TOKEN=strata-local-no-auth \
+>   ANTHROPIC_MODEL="$M" ANTHROPIC_DEFAULT_OPUS_MODEL="$M" ANTHROPIC_DEFAULT_SONNET_MODEL="$M" ANTHROPIC_DEFAULT_HAIKU_MODEL="$M" ANTHROPIC_DEFAULT_FABLE_MODEL="$M" \
+>   CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 \
+>   CLAUDE_CODE_MAX_OUTPUT_TOKENS=65536 API_TIMEOUT_MS=3000000 CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS=3000000 CLAUDE_STREAM_IDLE_TIMEOUT_MS=3000000 \
+>   claude -p --model "$M" --effort xhigh --safe-mode --restricted \
+>   --settings '{"disableAllHooks":true,"permissions":{"deny":["mcp__*","Agent","Bash","Edit","Write","NotebookEdit","WebFetch","WebSearch"]}}' \
+>   --mcp-config "$S/empty-mcp.json" --strict-mcp-config \
+>   --tools 'Read,Glob,Grep' --allowedTools 'Read,Glob,Grep' \
+>   --disallowedTools 'mcp__*' Agent Bash Edit Write NotebookEdit WebFetch WebSearch \
+>   --permission-mode dontAsk --disable-slash-commands --no-chrome --no-session-persistence --prompt-suggestions false \
+>   --add-dir /path/outside/cwd/it/must/read \
+>   --output-format json < "$S/review-prompt.txt" > "$S/review-qwen.json" 2> "$S/review-qwen.err" &
+> QWEN_PID=$!
+> ```
+>
+> (`--add-dir`: repeat the flag once per directory outside the cwd that the brief names; delete the line if none.)
+>
+> Read the review from the `result` field of `review-qwen.json` (`python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["result"])' "$S/review-qwen.json"`), and `num_turns` / `duration_ms` / `usage` from the same file. Wait on the **output file** (`[ -s "$S/review-qwen.json" ]`) or the claude PID (`$QWEN_PID`), never on a pattern (gotcha 1e). Notes: `--restricted` confines reads to the cwd, so every other directory the brief names needs `--add-dir`; `CLAUDE_CODE_MAX_OUTPUT_TOKENS=65536` doubles the per-turn cap because in the 2026-10-15 run the first reasoning turn hit 32 768, Claude Code continued the conversation, and Qwen **restarted its analysis instead of resuming** — the final table came from the second pass and dropped findings the first pass had reached (two consecutive thinking-only turns is the signature — visible only in a stream-json harness capture, or as `num_turns` exceeding reads+1 in the json result; details in the vault comparison folder, `qwen-thinking-analysis.md`); the stderr line `[claude-code:unrecognized_model]` is the catalog warning, not an error; corsair's GPU is single-slot — ONE Qwen lane at a time, never during a benchmark campaign. **`--output-format stream-json --verbose` is NOT for reviews:** under a long local reasoning turn it emits tens of thousands of `system/thinking_tokens` progress events (12 MB for one 28-minute think, 94 % chrome) — use it only when inspecting the harness itself (thinking text, tool-call timing) for the harness-comparison project, and filter that event type out before retaining the stream. If a review runs too long, lower the effort (`--effort high`) before shortening the brief.
+>
+> **Fallback — direct HTTP, closed-book (fast; wording-pass quality, or when the Claude Code route is unavailable). The shape that worked — `~/.cache/tmp/ctrlb-session69/strata-review-think2.py` is the original:**
 > ```python
 > import json, urllib.request
 > plan = open("docs/CONVERSATIONS_PLAN.md").read()           # the artifact, pasted verbatim
@@ -213,14 +239,15 @@ item 9 applies — sol is sol).
 > bash wrapper — see the gotchas below); read ONLY the `content` into your context, never the reasoning dump (128 KB+).
 > No-think variant: add `"chat_template_kwargs": {"enable_thinking": False}` — 3 min, wording-pass quality only.
 >
-> **Brief adaptations for a tool-less small model:** say it cannot see the code and must write `DEPENDS ON CODE: <what would
+> **Brief adaptations for a tool-less small model (HTTP fallback only):** say it cannot see the code and must write `DEPENDS ON CODE: <what would
 > have to be true>` at ≤ 0.5 confidence for anything that does; list the already-ruled sections as SCOPE; demand a quote per
 > finding; cap it at ~12 findings ("prefer 3 real ones over 12 weak ones"). It followed all of that.
 >
-> **Posture (the owner's words: "don't blindly trust that model's opinion").** A FIFTH/sixth lane for DESIGN completeness
-> rounds when the owner wants more coverage — launch it in parallel with the paid lanes, read it last, and re-verify every
-> accepted finding in code yourself exactly as for the others. Never the deciding voice, never a code-round reviewer (it
-> cannot open files), never with thinking OFF for anything but wording. Record the run in the plan's council section like
+> **Posture (the owner's words: "don't blindly trust that model's opinion").** The THIRD lane on every Phase 27 round,
+> design and code (owner, 2026-10-09 / 2026-10-15) — launch it in parallel with the paid lanes, read it last, and re-verify every
+> accepted finding in code yourself exactly as for the others. Never the deciding voice; in the default (Claude Code) form it
+> CAN open files, so it sits on code rounds too, still read LAST and re-verified; the HTTP fallback cannot open files and is
+> never a code-round reviewer; never with thinking OFF for anything but wording. Record the run in the plan's council section like
 > any other lane (CONVERSATIONS_PLAN §12.4 is the first record).
 
 > ### ⚠ Two lane gotchas, both burned live on 2026-09-13 (the S2a confirm round)
@@ -273,7 +300,7 @@ item 9 applies — sol is sol).
 >    argv string at 128 KiB (`MAX_ARG_STRLEN`), so a brief that inlines a big diff (the ISS-73 round: 148 KB) never launches — the error lands
 >    in the `.err` file within a second and the `.md` stays 0 bytes. Session 75's 127 KB confirm prompt squeaked under by luck. Fix: the Hermes
 >    lane HAS a file tool — write the diff to a file and put a "read `<path>` IN FULL first" line where the inline diff was (the prompt drops to
->    ~20 KB); keep inlining only for the tool-less Qwen lane (an HTTP body, no argv limit). Check `wc -c` of the prompt before every launch.
+>    ~20 KB); keep inlining only for the Qwen HTTP fallback (an HTTP body, no argv limit). Check `wc -c` of the prompt before every launch.
 >
 > **▲ STANDING RULE (owner, 2026-10-09): every lane mechanic that burns — a hang, a silent fallback, a self-matching
 > check, a lost output file — is written HERE, in this gotcha list, in the same session it happens, with the fix that
