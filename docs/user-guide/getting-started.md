@@ -136,7 +136,7 @@ prepare the machine, is on the [Fleet](fleet.md) page.
 |---|---|---|---|
 | [`server.poll_seconds`](configuration-reference.md#server) | How often the fleet is pinged and the Fleet screen refreshes | 5 | live |
 | [`server.debug`](configuration-reference.md#server) | Debug logging | false | restart |
-| [`server.host` / `server.port`](configuration-reference.md#server) | Nothing that binds: the address comes from the uvicorn command line ([ISS-91](../ISSUES.md)) | 127.0.0.1 / 5433 | — |
+| [`server.host` / `server.port`](configuration-reference.md#server) | Nothing that binds: the address comes from the uvicorn command line ([ISS-91](../ISSUES.md)) | 127.0.0.1 / 5433 | inert |
 | [`tailscale.target_port`](configuration-reference.md#tailscale) | Which local port the Conf HTTPS card points Serve at | 5433 | live |
 | [`computers`](configuration-reference.md#computers) | Your machines (edit them in Conf → Computers) | none | live |
 

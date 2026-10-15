@@ -114,7 +114,7 @@ With **Conf → Shell → User exec** on, a composer line that starts with `!` r
 command **on the server itself** (not on a fleet machine), as the server's user, through `bash -lc`
 (`powershell -NoProfile -NonInteractive -Command` on a Windows server), in `shell.workdir` (blank =
 `$CTRLB_HOME`). The command and its output land in the conversation as a command bubble, and the
-agent reads them on its next turn. With no conversation open, a new one starts with the home agent,
+agent reads them on its next turn. With no conversation open, a new one is created with the agent new conversations start with (`agent.default_agent`; blank = the root agent),
 titled `! <command>`. If the agent is in the middle of a turn in that conversation, the command is
 queued and runs at the turn's next step; if something else holds the conversation you see
 `// a turn is already running on this thread — wait for it to finish`. With User exec off you see
@@ -160,7 +160,7 @@ startup, needs a server restart ([ISS-92](../ISSUES.md)).
 | [`notifications.enabled`, `notifications.events.*`](configuration-reference.md#notifications) | Phone notifications and their five types | off / all on | live |
 | [`shell.enabled`, `shell.user_exec_enabled`, `shell.agent_exec_enabled`](configuration-reference.md#shell) | The `!` path and the agent's `run_shell` (see above) | on / off / off | live |
 | [`shell.workdir`, `shell.timeout_s`, `shell.max_output_chars`](configuration-reference.md#shell) | Where commands run, when they are killed, how much output is kept | `$CTRLB_HOME` / 60 / 6000 | live |
-| [`open_terminal.*`](configuration-reference.md#open_terminal) | The remote-shell endpoint and its three risk levels | exec high · write high · read low | risks, and a first endpoint: restart; turning it off, or a new endpoint once the tools exist: live |
+| [`open_terminal.*`](configuration-reference.md#open_terminal) | The remote-shell endpoint and its three risk levels; changing an address that was already set, the token, and turning it off apply live ([ISS-92](../ISSUES.md)) | exec high · write high · read low | restart (not flagged) |
 | [`tailscale.enabled`](configuration-reference.md#tailscale) | The HTTPS card and **Discover from Tailscale** | on | live |
 
 ## Edge cases & limits

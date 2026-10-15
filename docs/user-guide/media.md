@@ -92,10 +92,10 @@ way you expect. Renaming a machine leaves its old picture unmatched. Rename the 
 
 | Setting | What it changes | Default | Applies |
 |---|---|---|---|
-| [`media.write.max_bytes`](configuration-reference.md#mediawrite) | The largest file one upload may be, checked by the server as it streams. There is no Conf form. | 15 MB | live (API); a hand edit of `config.yaml` needs a restart |
+| [`media.write.max_bytes`](configuration-reference.md#mediawrite) | The largest file one upload may be, checked by the server as it streams. There is no Conf form: a save through the settings API applies live, a hand edit of `config.yaml` needs a restart. | 15 MB | live |
 | [`media.namespaces.<ns>.roles.<role>.files`](configuration-reference.md#medianamespaces) | The library order, In use, focus points and name bindings. Written by the gallery; you rarely edit it by hand. | empty (bundled order) | live |
-| **Shared background** ([`appearance`](configuration-reference.md#appearance)) | Whether the shared Background picture paints. Themes with scenery of their own paint it on their own backdrop, under their own switch. | on | live, synced to all your devices |
-| **Agent backdrop** / **Chat avatars** ([`appearance`](configuration-reference.md#appearance)) | Where an agent's backdrop paints (operator strip · full · off), and whether replies lead with the agent's avatar. | operator / on | live, synced |
+| **Shared background** ([`appearance`](configuration-reference.md#appearance)) | Whether the shared Background picture paints. Themes with scenery of their own paint it on their own backdrop, under their own switch. Synced across your devices. | on | live |
+| **Agent backdrop** / **Chat avatars** ([`appearance`](configuration-reference.md#appearance)) | Where an agent's backdrop paints (operator strip · full · off), and whether replies lead with the agent's avatar. Synced across your devices. | operator / on | live |
 
 ## Edge cases & limits
 

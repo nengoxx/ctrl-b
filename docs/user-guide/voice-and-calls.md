@@ -199,7 +199,7 @@ when a call starts, so a change applies to the next call. Every key is described
 | [`voice.stt.auto_stop`](configuration-reference.md#voicestt) (+ `auto_stop_silence_s`, `auto_stop_threshold`) | End a clip after a run of silence. | off (3 s, 0.01) | live |
 | [`voice.stt.upload_timeout_s`](configuration-reference.md#voicestt) | Floor for one upload attempt; a long clip gets twice its own length. | 30 s | live |
 | [`voice.stt.upload_attempts`](configuration-reference.md#voicestt) | Tries before a clip waits in the Retry / Discard notice. | 3 | live |
-| [`voice.stt.language`](configuration-reference.md#voicestt) | Forces a transcription language on a Whisper server, and on the live ear (calls and live dictation). Parakeet ignores it. | `en` | live (the ear: next call) |
+| [`voice.stt.language`](configuration-reference.md#voicestt) | Forces a transcription language on a Whisper server, and on the live ear (calls and live dictation). Parakeet ignores it. Clip uploads use a change at once; the live ear reads it at the next call. | `en` | live |
 | [`voice.stt.vad_filter` / `hotwords`](configuration-reference.md#voicestt) | Whisper-only extras; no effect on Parakeet or the realtime ear. | on / blank | live |
 | [`voice.live.dictation`](configuration-reference.md#voicelive) | Live dictation (phrases as you speak). | off | next call |
 | [`voice.live.tail_wait_ms`](configuration-reference.md#voicelive) | How long a live dictation waits for your last phrase. | 2000 ms | next call |
@@ -222,7 +222,7 @@ when a call starts, so a change applies to the next call. Every key is described
 | [`voice.tts.chunking` / `chunk_read_along`](configuration-reference.md#voicetts) | Speak sentence by sentence, and start while the reply streams. | sentence / on | live |
 | [`voice.tts.speak_actions`](configuration-reference.md#voicetts) | Read `*actions*` aloud. | off | live |
 | [`voice.tts.background_keepalive` / `background_idle_s`](configuration-reference.md#voicetts) | **Speak while in the background**: keeps the page awake while a reply or clip upload is pending; how long without progress before it lets go. | on / 600 s | live |
-| **Auto read-aloud** (app-bar speaker) | Speak each reply you sent from this device. | on | live, this device only (stored in the browser, not in `config.yaml`) |
+| **Auto read-aloud** (app-bar speaker) | Speak each reply you sent from this device. Stored in the browser, not in `config.yaml`. | on | this device only |
 
 ## Edge cases & limits
 

@@ -55,10 +55,13 @@ The column uses these words:
 - **live**: the running server picks the change up as soon as you save. Settings the browser reads (call knobs, notification preferences, the fleet poll) reach the device that saved at once, and other devices on their next refresh, within about a minute.
 - **next chat turn**: read when the next agent turn starts. A turn already running finishes on the old value.
 - **next call**: read when a call or a streaming dictation starts. One already running keeps the values it started with.
-- **restart**: read once at startup, so restart the service (`systemctl --user restart ctrl-b-dashboard` on a server install). Conf says "restart to apply" only for `server.host`, `server.port` and `server.debug`. The other restart-only keys are marked "not flagged" below ([ISS-92](../ISSUES.md)).
+- **restart**: read once at startup, so restart the service (`systemctl --user restart ctrl-b-dashboard` on a server install). Conf says "restart to apply" only for `server.host`, `server.port` and `server.debug`.
+- **restart (not flagged)**: also takes effect at the next restart, but Conf shows no notice when you change it ([ISS-92](../ISSUES.md)).
 - **next app load**: the browser reads it when the app opens.
+- **this device only**: stored in the browser, not in `config.yaml`; it applies at once on that device, and your other devices keep their own value. (Only the guide's pages use it: those settings have no `config.yaml` key.)
+- **inert**: the key is accepted and saved, but nothing reads it, so changing it does nothing today.
 
-A **security gate** label marks a key that decides what can run on your machines. **Inert** marks a key that is stored but changes nothing today.
+A **security gate** label marks a key that decides what can run on your machines.
 
 ## config_version
 
@@ -93,7 +96,7 @@ The theme picker state. It is shared across your devices: the last write wins, a
 | `appbar_subtitle_visible` | bool or null | `null` | Whether the app bar shows the theme's subtitle line. The app's default is off. | live |
 | `chat_avatars_visible` | bool or null | `null` | Whether a reply's header shows the agent's avatar instead of a dot. The app's default is on. | live |
 | `agent_backdrop` | string or null | `null` | Where the agent's art appears: `operator`, `full` (the whole chat backdrop) or `off`. Unknown values fall back to `operator`. | live |
-| `pwa_icon_background` | string or null | `null` | The home-screen icon's backdrop: `transparent`, `ink`, `night`, `orchid` or `paper`. Anything else is refused. When an installed icon picks up the change depends on the platform. | live |
+| `pwa_icon_background` | string or null | `null` | The home-screen icon's backdrop: `transparent`, `ink`, `night`, `orchid` or `paper`. Anything else is refused. When an installed icon picks up the change depends on the platform. | next app load |
 | `updated_at` | timestamp | `null` | Set by the server on each appearance save. Don't edit it. | live |
 
 ## providers
@@ -133,19 +136,19 @@ Where chat goes. It points at `providers`.
 | `request_timeout_s` | number | `600` | How long to wait for a reply once connected. Thinking models are slow, so keep it generous. | next chat turn |
 | `connect_timeout_s` | number > 0 | `5` | How long to try to reach a server before moving to the next one in the chain. | next chat turn |
 | `connect_cooldown_s` | number ≥ 0 | `60` | After a server is found unreachable, it is tried last for this many seconds. It is never skipped, and its first successful answer clears the cooldown early. `0` turns this off. | next chat turn |
-| `system_prompt` | string | `""` | Replaces the built-in default agent prompt. Blank means the built-in prompt. The default agent's `SOUL.md` file wins over this. | next chat turn |
+| `system_prompt` | string | `""` | Replaces the built-in persona prompt for any agent without a `SOUL.md` of its own. Blank means the built-in prompt. An agent's `SOUL.md` (for the root agent (`default`), the one in your data folder) wins over this. | next chat turn |
 | `system_prompt_append` | string | `""` | Text added after whichever base prompt is active, for every agent. An agent's own append comes after it. | next chat turn |
 | `failover` | bool | `true` | On: walk the chain until one server answers. Off: use only the primary. | next chat turn |
 | `retry_attempts` | int ≥ 0 | `2` | How many times a busy or rate-limited server is retried before moving on (429, 503, a busy llama.cpp slot). `0` moves on at once. | next chat turn |
 
 ## agent
 
-Settings for the agent runtime. Agents themselves are **folders**, not config entries: `$CTRLB_HOME/agents/<name>/agent.yaml` plus `SOUL.md`, managed in Conf. The default agent is the data folder itself (its `SOUL.md`, with no `agent.yaml`). See [Agents](agents.md).
+Settings for the agent runtime. Agents themselves are **folders**, not config entries: `$CTRLB_HOME/agents/<name>/agent.yaml` plus `SOUL.md`, managed in Conf. The root agent (`default`) is the data folder itself (its `SOUL.md`, with no `agent.yaml`). See [Agents](agents.md).
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
-| `default_agent` | string | `""` | Which agent a new conversation uses. `""` means none is set, so a new conversation gets the default agent. `"default"` picks the default agent explicitly. `"<name>"` picks that `agents/` folder. An unknown name falls back to the default agent. | live |
-| `default_title` | string | `""` | Display name for the default agent. | live |
+| `default_agent` | string | `""` | The agent new conversations start with. `""` means none is set, so a new conversation gets the root agent (`default`). `"default"` picks the root agent explicitly. `"<name>"` picks that `agents/` folder. An unknown name falls back to the root agent. | live |
+| `default_title` | string | `""` | Display name for the root agent (`default`). | live |
 | `defaults` | map | `{}` | Values every agent inherits (agent fields such as model, privilege, tools, routing). An agent's own `agent.yaml` overrides them field by field. A specialist never inherits `title`, the greeting or the greeting switch. See [Agents](agents.md). | next chat turn |
 | `global_subagent_limit` | int | `6` | Maximum subagents running at once, across everything. | restart (not flagged) |
 | `subagent_clamp_privilege` | bool | `true` | While `true`, a subagent never runs at a higher privilege than the agent that started it; `false` lets it keep its own. **Security gate.** | live |
@@ -259,11 +262,11 @@ An embeddings client, configured but **not used by any feature today** ([ISS-96]
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
-| `provider` | string or null | `null` | Primary provider. `null` means off. | live |
-| `model` | string or null | `null` | Its model; omit when the provider has one model. | live |
-| `fallbacks` | list of `{provider, model?}` | `[]` | Fallback chain. Every `dim` set along the chain must agree, or the save is refused. | live |
-| `enabled` | bool | `true` | Off: the client reports not configured. | live |
-| `timeout_s` | number > 0 | `60` | Time limit for one call. | live |
+| `provider` | string or null | `null` | Primary provider. `null` means off. | inert |
+| `model` | string or null | `null` | Its model; omit when the provider has one model. | inert |
+| `fallbacks` | list of `{provider, model?}` | `[]` | Fallback chain. Every `dim` set along the chain must agree, or the save is refused. | inert |
+| `enabled` | bool | `true` | Off: the client reports not configured. | inert |
+| `timeout_s` | number > 0 | `60` | Time limit for one call. | inert |
 
 ## voice
 
@@ -287,7 +290,7 @@ The clip path: you hold the mic, the recording is uploaded, and the transcript l
 | `connect_timeout_s` | number > 0 | `3` | How long to try to reach a server before moving on. | live |
 | `timeout_s` | number > 0 | `30` | Time limit for one transcription once connected. | live |
 | `extra_body` | map | `{}` | Extra fields passed to the server as they are. Rarely needed. | live |
-| `language` | string | `en` | Transcription language; `""` means detect. A model's own `language` wins. Also sent to the live ear for calls and streaming dictation. Whether it is honoured depends on the server: the parakeet server ignores it. | live |
+| `language` | string | `en` | Transcription language; `""` means detect. A model's own `language` wins. Also sent to the live ear for calls and streaming dictation. Whether it is honoured depends on the server: the parakeet server ignores it. Clip uploads use a change at once; the live ear reads it at the next call. | live |
 | `vad_filter` | bool | `true` | Ask the server to skip silence. Only Whisper-type servers that support it use it; the current Parakeet and Speaches targets ignore it. | live |
 | `hotwords` | string | `""` | Space-separated words to bias recognition toward (host names, jargon). Only Whisper-type servers use it. | live |
 | `max_upload_bytes` | int > 0 | `26214400` (25 MB) | Largest clip accepted; a bigger one is refused with 413. | live |
@@ -399,12 +402,12 @@ The tools and their risk levels are registered **once, at startup**. A Conf chan
 |---|---|---|---|---|
 | `base_url` | string | `""` | Server root, no trailing slash. Empty at startup means no terminal tools until a restart; changing a URL that was already set applies at once. | live |
 | `api_key` | string | `""` | Bearer token. A secret. | live |
-| `enabled` | bool | `true` | Off at startup: no terminal tools until a restart. If it was on at startup, turning it off works at once (the tools refuse) and turning it back on works at once too. | live (restart if off at startup, not flagged) |
+| `enabled` | bool | `true` | Off at startup: no terminal tools until a restart. If it was on at startup, turning it off works at once (the tools refuse) and turning it back on works at once too. Conf shows no notice for the restart ([ISS-92](../ISSUES.md)). | live |
 | `timeout_s` | number | `30` | Time limit for one request. | live |
 | `default_wait_s` | number | `30` | How long `terminal_exec` waits for the command to finish before returning. | live |
 | `exec_risk` | `low` · `med` · `high` | `high` | Risk level of `terminal_exec`. High asks you to confirm, except at full privilege. **Security gate.** | restart (not flagged) |
 | `write_risk` | `low` · `med` · `high` | `high` | Risk level of file writes. **Security gate.** | restart (not flagged) |
-| `read_risk` | `low` · `med` · `high` | `low` | Risk level of reads, lists and searches. Low runs without asking. **Security gate.** | restart (not flagged) |
+| `read_risk` | `low` · `med` · `high` | `low` | Risk level of reads, lists and searches. Low runs without asking; raised, they ask like any other tool, and an "always allow" rule can cover them, even at read privilege (they are not fleet actions). **Security gate.** | restart (not flagged) |
 
 ## shell
 
@@ -640,8 +643,8 @@ Per-tool changes, keyed by tool name (`ping_host`, `mcp__web-tools__search_web`,
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
-| `<tool>.description` | string or null | `null` | Replaces the description the model sees. Blank restores the built-in one. | live |
-| `<tool>.agent_mode` | `core` · `enabled` · `disabled` or null | `null` | `core`: always offered, even when a skill narrows the tools. `enabled`: offered normally. `disabled`: never offered. `null`: the tool's own default. | live |
+| `<tool>.description` | string or null | `null` | Replaces the description the model sees. Blank restores the built-in one. | next chat turn |
+| `<tool>.agent_mode` | `core` · `enabled` · `disabled` or null | `null` | `core`: always offered, even when a skill narrows the tools. `enabled`: offered normally. `disabled`: never offered. `null`: the tool's own default. | next chat turn |
 | `<tool>.approvals` | list of `{args}` or null | `null` | Standing "always allow" rules. Each rule is `{args: {field: pattern}}` with string glob patterns; a field it leaves out matches anything. A rule with no `args` (or `args: null`) allows every call; `args: {}` matches only a call with no arguments (the catalog shows it as "no args"). A rule only turns a risk-based confirmation into an allow: it can never deny, and it never skips the confirmation that shutdown, reboot, `run_shell` and `create_automation` always ask for below full privilege (at read privilege shutdown, reboot and `run_shell` are refused outright, rule or not). Tapping "always" on a confirmation writes one. Unknown keys in a rule are refused. **Security gate.** | live |
 | `<tool>.max_calls` | int ≥ 1 or null | `null` | This tool's per-turn call limit, replacing the agent's general limit. | next chat turn |
 

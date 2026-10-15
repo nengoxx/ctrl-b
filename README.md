@@ -43,8 +43,8 @@ others open from the nav menu or live as a group inside Conf.
 |---|---|
 | **[Fleet](docs/user-guide/fleet.md)** | Live host cards (ping/online state, per-host **services** with TCP-probed liveness and a link while a service is up), wake-on-LAN, shutdown/reboot (which power buttons a card shows depends on the theme), expandable detail rows. Risky actions confirm before firing. Starting, stopping and restarting a service are **agent** tools, not buttons. |
 | **[Chat](docs/user-guide/chat.md)** | A tool-calling LLM chat wired to the same action registry the UI uses. Confirm bubbles for gated calls, a live **plan panel** (TodoWrite-style checklist), markdown replies with copy / send-to-composer, per-message provider switching (`/<provider>`), context **compaction** for long threads, **conversations per agent** (each agent keeps its own list, with a live status per conversation — D84), **attachments** (images/text/PDFs the agent can re-read). |
-| **[Tools](docs/user-guide/tools.md)** | One-shot utility tools (DNS trace, IP info, YouTube captions) — the same registry, UI-exposed — plus the catalog of the agent's tools. On a 3-tab layout (frontier and gacha by default) it is a group inside Conf. |
-| **[Agents](docs/user-guide/agents.md)** | The agent gallery. An agent is a folder (`agent.yaml` + `SOUL.md`); **[characters](docs/user-guide/characters-and-lorebooks.md)** are agents with imported V2/V3 cards and lorebooks. By default a group inside Conf; Conf → Appearance → Agents makes it a nav button or a bar tab. |
+| **[Tools](docs/user-guide/tools.md)** | One-shot utility tools (DNS resolve, IP lookup, YouTube captions) — the same registry, UI-exposed — plus the catalog of the agent's tools. On a 3-tab layout (frontier and gacha by default) it is a group inside Conf. |
+| **[Agents](docs/user-guide/agents.md)** | The agent gallery. An agent is a folder (`agent.yaml` + `SOUL.md`); **[characters](docs/user-guide/characters-and-lorebooks.md)** are agents with imported V1, V2 and V3 cards and lorebooks. By default a group inside Conf; Conf → Appearance → Agents makes it a nav button or a bar tab. |
 | **[Conf](docs/user-guide/conf.md)** | Most of `config.yaml` from the UI: computers & services, providers, inference/voice endpoints, integrations (MCP / OpenAPI / SearXNG / embeddings / open-terminal), skills, per-tool overrides, prompts, the memory panel, **[scheduled automations](docs/user-guide/automations.md)** (cron-driven agent runs with run history, D49), the **[media manager](docs/user-guide/media.md)** (upload · crop · focal point · per-destination art libraries, D65), notifications, **[Appearance](docs/user-guide/themes.md)**, and the HTTPS (Tailscale Serve) card at the foot of Conf → Server. A few keys are YAML-only ([the configuration reference](docs/user-guide/configuration-reference.md) says which). |
 
 **The agent** speaks to any OpenAI-compatible backend — local `llama.cpp` or a cloud router — and
@@ -71,11 +71,11 @@ each setting does, and the edge cases — one page per surface.
 |---|---|
 | [User guide index](docs/user-guide/README.md) | Start here: what ctrl-b is for and where everything is |
 | [Getting started](docs/user-guide/getting-started.md) | First run, opening it on your phone, installing the PWA, HTTPS for the mic, the five sections, what needs a restart |
-| [Fleet](docs/user-guide/fleet.md) | Host cards, wake / shut down / reboot and the confirm flow, what each host field enables, services, the monitor + notifications, the events feed, the `!` local shell, open-terminal |
+| [Fleet](docs/user-guide/fleet.md) | Host cards, wake / shut down / reboot and the confirm flow, what each host field enables, services, the monitor + notifications, the event log (read through the API; there is no in-app list), the `!` local shell, open-terminal |
 | [Chat](docs/user-guide/chat.md) | The composer and every command, attachments, conversations per agent, auto-speak, the agent's tools and privilege levels, memory, compaction, the providers chain, MCP + OpenAPI tool servers |
 | [Voice & calls](docs/user-guide/voice-and-calls.md) | The mic and its gestures, dictation, sending a clip, call mode and the in-call deck, barge-in, auto-speak, what survives a locked phone, TTS, the limits |
-| [Agents](docs/user-guide/agents.md) | Agents as folders, the gallery and editors, the HOME agent vs specialists, skills, subagents, macros, per-agent model and privilege, the persona library |
-| [Characters & lorebooks](docs/user-guide/characters-and-lorebooks.md) | V2/V3 card import/export, what a character is here, lorebook activation, the lorebook editor |
+| [Agents](docs/user-guide/agents.md) | Agents as folders, the gallery and editors, the root agent and specialists, skills, subagents, macros, per-agent model and privilege, the persona library |
+| [Characters & lorebooks](docs/user-guide/characters-and-lorebooks.md) | V1, V2 and V3 card import, card export, what a character is here, lorebook activation, the lorebook editor |
 | [Media](docs/user-guide/media.md) | Your own art: the gallery + media manager, libraries per destination, upload limits, crop + focal point, reorder, which image is live |
 | [Themes](docs/user-guide/themes.md) | The theme catalog, Appearance switches, composer skins, what syncs vs stays per device, PWA install/update/offline |
 | [Tools](docs/user-guide/tools.md) | The one-shot utilities + the agent tool catalog |
@@ -309,7 +309,7 @@ made with `cp` keeps its original mode until the first save.
 `privilege` (`readonly | confirm | auto_low | full`) decides which calls ask first: `confirm` (the default)
 asks for every med/high call, `auto_low` runs med calls without asking and asks only for high, `full` runs
 everything without asking (including `run_shell` — see [Security model](#security-model)), and `readonly`
-denies fleet actions above low risk (open-terminal's exec and write tools included; its reads run) but still
+denies fleet actions above low risk (open-terminal's exec and write tools included at their default `high` risk; its reads run at their default `low` — all three are `open_terminal.*_risk` knobs) but still
 asks for MCP / OpenAPI tools and the agent's own med tools. A tool whose designer forced a confirm asks below `full` whatever its risk. Details:
 [Chat](docs/user-guide/chat.md).
 

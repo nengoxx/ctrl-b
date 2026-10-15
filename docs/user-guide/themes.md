@@ -132,15 +132,15 @@ changes made offline are sent when you reconnect.
 
 | Setting | What it changes | Default | Applies |
 |---|---|---|---|
-| [`appearance.theme` / `mode` / `accent`](configuration-reference.md#appearance) | Theme, Mode and Palette. | cosmos / dark / violet | live, synced |
-| [`appearance.theme_settings`](configuration-reference.md#appearance) | Each theme's own options and its composer rows, kept per theme. | the theme's defaults | live, synced |
-| [`appearance.motion` / `perf`](configuration-reference.md#appearance) | Motion (full · reduced) and Blur (full · lite). | from the system once / full | live, synced |
-| [`appearance.kit_background_visible`](configuration-reference.md#appearance) | Shared background. | on | live, synced |
-| [`appearance.appbar_subtitle_visible`](configuration-reference.md#appearance) | Bar subtitle. | off | live, synced |
-| [`appearance.chat_avatars_visible`](configuration-reference.md#appearance) | Chat avatars. | on | live, synced |
-| [`appearance.agent_backdrop`](configuration-reference.md#appearance) | Agent backdrop (operator · full · off). | operator | live, synced |
-| [`appearance.pwa_icon_background`](configuration-reference.md#appearance) | App icon backdrop. | `transparent` (shown as **Clear**) | when the browser refreshes the installed app |
-| **App bar** · **Layout** · **Agents** placement | The bar and navigation shape. | On · Auto · Conf | live, this device only (not in `config.yaml`) |
+| [`appearance.theme` / `mode` / `accent`](configuration-reference.md#appearance) | Theme, Mode and Palette. Synced across your devices. | cosmos / dark / violet | live |
+| [`appearance.theme_settings`](configuration-reference.md#appearance) | Each theme's own options and its composer rows, kept per theme. Synced across your devices. | the theme's defaults | live |
+| [`appearance.motion` / `perf`](configuration-reference.md#appearance) | Motion (full · reduced) and Blur (full · lite). Synced across your devices. | from the system once / full | live |
+| [`appearance.kit_background_visible`](configuration-reference.md#appearance) | Shared background. Synced across your devices. | on | live |
+| [`appearance.appbar_subtitle_visible`](configuration-reference.md#appearance) | Bar subtitle. Synced across your devices. | off | live |
+| [`appearance.chat_avatars_visible`](configuration-reference.md#appearance) | Chat avatars. Synced across your devices. | on | live |
+| [`appearance.agent_backdrop`](configuration-reference.md#appearance) | Agent backdrop (operator · full · off). Synced across your devices. | operator | live |
+| [`appearance.pwa_icon_background`](configuration-reference.md#appearance) | App icon backdrop. Synced across your devices; an installed app picks it up when the browser refreshes its manifest. | `transparent` (shown as **Clear**) | next app load |
+| **App bar** · **Layout** · **Agents** placement | The bar and navigation shape. Stored in the browser, not in `config.yaml`. | On · Auto · Conf | this device only |
 
 The `appearance:` block in `config.yaml` is written by the app. You don't need to edit it by hand.
 

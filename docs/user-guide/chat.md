@@ -228,7 +228,7 @@ Each server also takes `enabled`, `connect_timeout_s` (10 s, for discovery and e
 | [`providers.<p>.models.<m>.context_window`](configuration-reference.md#providers) | The window compaction measures against | unset (asks llama.cpp) | next chat turn |
 | [`attachments.max_files_per_message`](configuration-reference.md#attachments) | Files per message | `10` | live |
 | [`attachments.max_file_mb`](configuration-reference.md#attachments) | Size of one file | `10` MB | live |
-| [`attachments.image_max_dimension` / `image_quality`](configuration-reference.md#attachments) | How photos are shrunk on your device before upload | `2048` px / `0.85` | live (the next file you pick) |
+| [`attachments.image_max_dimension` / `image_quality`](configuration-reference.md#attachments) | How photos are shrunk on your device before upload; used from the next file you pick | `2048` px / `0.85` | live |
 | [`attachments.max_inline_chars`](configuration-reference.md#attachments) | Text put into your message (and one `read_attachment` page) | `16000` | next chat turn |
 | [`attachments.resend`](configuration-reference.md#attachments) | Send earlier images again on later turns | `true` | next chat turn |
 | [`attachments.staging_orphan_hours`](configuration-reference.md#attachments) | How long an unsent upload is kept | `24` h | live |
@@ -242,12 +242,12 @@ Each server also takes `enabled`, `connect_timeout_s` (10 s, for discovery and e
 | [`memory.longterm.backend`](configuration-reference.md#memorylongterm) | `core` turns Core Memory on | `null` (off) | live |
 | [`memory.git_backup.*`](configuration-reference.md#memorygit_backup) | The memory folder's git history; `reconcile_interval_s` = how often hand edits are committed (`0` = never) | on, `120` s | live |
 | [`shell.enabled` / `user_exec_enabled` / `agent_exec_enabled`](configuration-reference.md#shell) | The `!` shell and `run_shell` — see the `run_shell` note above | `true` / `false` / `false` | live |
-| [`tool_overrides`](configuration-reference.md#tool_overrides) | Per-tool description, agent access, "always" grants, call cap (the Tools section) | none | grants live · the rest next chat turn |
-| [`mcp_servers` / `openapi_servers`](configuration-reference.md#mcp_servers) | Outside tool servers | none | next chat turn or **Rediscover tools** |
+| [`tool_overrides`](configuration-reference.md#tool_overrides) | Per-tool description, agent access, "always" grants, call cap (the Tools section); the grants apply live | none | next chat turn |
+| [`mcp_servers` / `openapi_servers`](configuration-reference.md#mcp_servers) | Outside tool servers; **Rediscover tools** applies them at once | none | next chat turn |
 | [`prompts`](configuration-reference.md#prompts) | Your overrides of built-in prompts (Conf → Prompts) | none | next chat turn |
 | [`searxng`](configuration-reference.md#searxng) | The SearXNG instance behind `web_search` (needs its JSON format on) | none | live |
-| [`open_terminal`](configuration-reference.md#open_terminal) | The remote terminal server and its per-operation risks | none; exec/write `high`, read `low` | address/token live · tools and risks **restart** ([ISS-92](../ISSUES.md)) |
-| [`embeddings`](configuration-reference.md#embeddings) | Points at a provider + model (its `dim` lives on the model) — nothing uses it yet ([ISS-96](../ISSUES.md)) | none | — |
+| [`open_terminal`](configuration-reference.md#open_terminal) | The remote terminal server and its per-operation risks; changing an address that was already set, the token, and turning it off apply live ([ISS-92](../ISSUES.md)) | none; exec/write `high`, read `low` | restart (not flagged) |
+| [`embeddings`](configuration-reference.md#embeddings) | Points at a provider + model (its `dim` lives on the model) — nothing uses it yet ([ISS-96](../ISSUES.md)) | none | inert |
 
 ## Edge cases & limits
 
@@ -255,7 +255,7 @@ Each server also takes `enabled`, `connect_timeout_s` (10 s, for discovery and e
 - **Two devices.** Conversations, unread state and replies are shared. Drafts, the `/agent` choice, privilege overrides and sticky providers are per device. Only the device that sent a message auto-speaks its reply. A message sent from a second device while a reply runs is queued into it.
 - **Busy limits.** A reply already running in a conversation and the queue full: `// a turn is already running on this thread — wait for it to finish`. More than 4 replies running at once: `// too many turns are running — wait for one to finish`.
 - **Step limit.** After 16 tool steps without a final answer the reply stops with `// reached the step limit — send a message to continue`. The agent's other loop guards (repeated identical calls, calls per tool, stalls) are in its form under **Limits**.
-- **An agent that no longer exists.** A deleted agent's conversations (if you kept them) are listed nowhere; re-creating an agent with the same name brings them back. A conversation still open on screen is answered by your default agent.
+- **An agent that no longer exists.** A deleted agent's conversations (if you kept them) are listed nowhere; re-creating an agent with the same name brings them back. A conversation still open on screen is answered by the agent new conversations start with (`agent.default_agent`; blank = the root agent).
 - **Unknown agent.** `/agent nobody` changes nothing and shows `No agent named "nobody"`. While the conversation's own agent is still loading, `/privilege` and a bare `/<provider>` refuse with `// this conversation's agent isn't known yet — try again in a moment`.
 - **Vision hint.** The rail's "can't see images" warning only knows your normal chain; with a `/<provider>` override in force it may be wrong.
 - **Android file picker.** A file picked from Downloads can be reported as 0 bytes; images then refuse in the page. Pick photos from the **Photos** door, or a file through a file manager ([ISS-47](../ISSUES.md)).

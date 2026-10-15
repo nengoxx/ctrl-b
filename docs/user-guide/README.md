@@ -7,7 +7,9 @@ they run, and talk to an AI agent that can do the same jobs for you, by text or 
 exposed to the internet: the tailnet is the only way in.
 
 This guide covers what you see and what you do. Each page follows the same order: what the feature
-is, how to use it, the settings that change it, and its edge cases and limits.
+is, how to use it, the settings that change it, its edge cases and limits, and last, under "Under the
+hood", pointers to the design docs. Troubleshooting and the configuration reference use their own
+layouts: they are lookup tables.
 
 ## Pages
 
@@ -17,7 +19,7 @@ is, how to use it, the settings that change it, and its edge cases and limits.
 | [Fleet](fleet.md) | Host cards, online status, wake / shut down / reboot and the confirm step, what each host field enables, services, the monitor and notifications, the `!` shell, open-terminal, Windows hosts |
 | [Chat](chat.md) | The composer and every command, attachments, conversations per agent, streaming and read-aloud, the tools the agent can call, privilege levels, memory, providers, MCP and OpenAPI tool servers |
 | [Voice and calls](voice-and-calls.md) | The mic button and its gestures, dictation, sending a clip, call mode and the call screen, auto-speak, what survives a locked phone, the voice limits |
-| [Agents](agents.md) | Agents as folders, the gallery and its editors, the home agent and specialists, greetings, skills, subagents, macros, per-agent model and privilege, the persona library |
+| [Agents](agents.md) | Agents as folders, the gallery and its editors, the root agent and specialists, greetings, skills, subagents, macros, per-agent model and privilege, the persona library |
 | [Characters and lorebooks](characters-and-lorebooks.md) | Character cards (import and export), what a character is in ctrl-b, lorebooks and how their entries activate |
 | [Media](media.md) | Your own images: the galleries, libraries per destination, uploads and their limits, crop and focus point, ordering, which image is live |
 | [Themes](themes.md) | The theme catalog, the Appearance switches, composer skins, what syncs across devices and what stays on one, installing and updating the app (PWA) |

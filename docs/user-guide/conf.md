@@ -24,14 +24,14 @@ left open. The groups, in order:
 | 06 | **Embeddings** | An embeddings endpoint. Nothing in the app uses it yet ([ISS-96](../ISSUES.md)). |
 | 07 | **Open-terminal** | The agent's remote shell on another machine. See [Fleet](fleet.md#open-terminal-a-remote-shell-for-the-agent). |
 | 08 | **Shell** | The `!` escape hatch and the agent's `run_shell`. See [Fleet](fleet.md#the--local-shell). |
-| 09 | **Voice · STT** | Speech-to-text, including the clip upload settings. |
+| 09 | **Voice · STT** | Speech-to-text, including the clip upload settings and live (streaming) dictation. See [Voice and calls](voice-and-calls.md). |
 | 10 | **Voice · TTS** | Text-to-speech, including **Auto read-aloud** (the same switch as the speaker in the app bar; per device). |
-| 11 | **Live call** | Call mode and streaming dictation. See [Voice and calls](voice-and-calls.md). |
+| 11 | **Live call** | Call mode. See [Voice and calls](voice-and-calls.md). |
 | 12 | **Notifications** | Phone notifications and their five event types. |
 | 13 | **MCP servers** | External tool servers (Model Context Protocol). See [Chat](chat.md). |
 | 14 | **OpenAPI tool servers** | External tools described by an OpenAPI document. |
-| 15 | **Agents** | The default agent, subagent limits, chat delivery and auto-compaction. See [Agents](agents.md). |
-| 16 | **Roleplay** | Roleplay mode, the character tools and your persona library. See [Characters and lorebooks](characters-and-lorebooks.md). |
+| 15 | **Agents** | **Default agent** (which agent new conversations start with), subagent limits, chat delivery and auto-compaction. See [Agents](agents.md). |
+| 16 | **Roleplay** | **Roleplay fields**, the character tools and your persona library. See [Characters and lorebooks](characters-and-lorebooks.md). |
 | 17 | **Lorebooks** | The books, their entries, import, and the scan and budget settings. |
 | 18 | **Automations** | Scheduled agent runs. See [Automations](automations.md). |
 | 19 | **Skills** | The skill files the agent can load. |
@@ -84,7 +84,7 @@ Almost every save applies to the running server at once. The exceptions:
 | Setting | What happens |
 |---|---|
 | `server.debug` | Needs a restart; Conf says so. |
-| `server.host`, `server.port` | Conf says "restart to apply", but a restart does not apply them either: the listening address comes from the uvicorn command line (the systemd unit, `run.sh`, `start.ps1`). `server.port` only changes what `/api/health` reports, and nothing reads `server.host` ([ISS-91](../ISSUES.md)). |
+| `server.host`, `server.port` | Conf says "restart to apply", but a restart does not apply them either: the listening address comes from the uvicorn command line (the systemd unit, `run.sh`, `start.cmd`). `server.port` only changes what `/api/health` reports, and nothing reads `server.host` ([ISS-91](../ISSUES.md)). |
 | `server.trusted_hosts` | Needs a restart, with no notice. It has no form in Conf (edit the file). |
 | Open-terminal **Enabled** (turning it on when it was off at startup), **Endpoint** (when there was none at startup), **Exec / Write / Read risk** | Needs a restart, with no notice: the tools and their risk levels are fixed when the server starts. Turning it off works at once, and so does turning it back on if it was on at startup ([ISS-92](../ISSUES.md)). |
 | `agent.skills_dir`, `agent.skill_min_overlap`, `agent.skill_max_active`, `agent.global_subagent_limit` | Need a restart, with no notice. After a `skills_dir` change, the skills list still shows the old folder while new skills are written to the new one ([ISS-92](../ISSUES.md)). |
@@ -136,7 +136,7 @@ Restoring is in [`deploy/linux/README.md`](../../deploy/linux/README.md) §Rollb
 | [`appearance`](configuration-reference.md#appearance) | Written by Conf → Appearance; synced across your devices | cosmos | live |
 | [`tailscale.enabled`, `tailscale.target_port`](configuration-reference.md#tailscale) | Whether the HTTPS card is active, and the port it fronts | on / 5433 | live |
 | [`server.debug`](configuration-reference.md#server) | Debug logging | false | restart |
-| [`server.trusted_hosts`](configuration-reference.md#server) | Which `Host` headers the server accepts (empty = any) | empty | restart |
+| [`server.trusted_hosts`](configuration-reference.md#server) | Which `Host` headers the server accepts (empty = any) | empty | restart (not flagged) |
 
 ## Edge cases & limits
 

@@ -11,7 +11,7 @@ Open the **Agents** section. Where it lives is your choice, per device, in Conf 
 - Every agent is a card: its portrait (or a letter tile when it has none), its name and its one-line description. A dot on the card means one of its conversations needs you, has a reply running, or is unread.
 - **Tap a card** to open its editor. **‹ all agents** — or your phone's Back gesture — returns to the grid.
 - **Talk** opens that agent's latest conversation, or starts a new one with its greeting if it has none.
-- The **default** pill on each card chooses which agent a conversation starts with when you start one without picking an agent. Tap a pressed pill to unset it; the root agent is then the default again. On a fresh install no pill is pressed.
+- The **default** pill on each card chooses which agent a conversation starts with when you start one without picking an agent. Tap a pressed pill to unset it; new conversations then start with the root agent again. On a fresh install no pill is pressed.
 - **Add agent** (at the top) asks for a **slug** — the folder name and the name you use in `/agent`, lowercase letters, digits, `-` and `_`, starting with a letter or digit, up to 64 characters — and an optional **display name**. With Conf → Roleplay → **Roleplay fields** on, the same disclosure also offers **Import character card** (see [Characters and lorebooks](characters-and-lorebooks.md)).
 
 ### The agent editor
@@ -116,10 +116,10 @@ An agent **is** a folder: `$CTRLB_HOME/agents/<slug>/` (`~/.ctrl-b/agents/` on a
 | [`inference.system_prompt`](configuration-reference.md#inference) | The persona of any agent without its own `SOUL.md` | built-in prompt | next chat turn |
 | [`inference.system_prompt_append`](configuration-reference.md#inference) | Instructions added to every agent that inherits the global append | `""` | next chat turn |
 | [`agent.skills_enabled`](configuration-reference.md#agent) | Skills on or off | `true` | next chat turn |
-| [`agent.skills_auto_write`](configuration-reference.md#agent) | Off = an agent's skill edits become proposals | `true` | next chat turn |
-| [`agent.skills_dir`](configuration-reference.md#agent) | The shared skills folder (relative to `$CTRLB_HOME`) | `skills` | **restart** ([ISS-92](../ISSUES.md)) |
-| [`agent.skill_min_overlap` / `skill_max_active`](configuration-reference.md#agent) | How many words must overlap / how many skills apply per message | `1` / `2` | **restart** ([ISS-92](../ISSUES.md)) |
-| [`agent.global_subagent_limit`](configuration-reference.md#agent) | Subagents at once across the server | `6` | **restart** ([ISS-92](../ISSUES.md)) |
+| [`agent.skills_auto_write`](configuration-reference.md#agent) | Off = an agent's skill edits become proposals | `true` | live |
+| [`agent.skills_dir`](configuration-reference.md#agent) | The shared skills folder (relative to `$CTRLB_HOME`) ([ISS-92](../ISSUES.md)) | `skills` | restart (not flagged) |
+| [`agent.skill_min_overlap` / `skill_max_active`](configuration-reference.md#agent) | How many words must overlap / how many skills apply per message ([ISS-92](../ISSUES.md)) | `1` / `2` | restart (not flagged) |
+| [`agent.global_subagent_limit`](configuration-reference.md#agent) | Subagents at once across the server ([ISS-92](../ISSUES.md)) | `6` | restart (not flagged) |
 | [`agent.subagent_clamp_privilege`](configuration-reference.md#agent) | While on, subagents never exceed their parent's privilege | `true` | live |
 | [`agent.subagent_child_timeout_s`](configuration-reference.md#agent) | Time limit per subagent | `180` s | live |
 | [`roleplay.enabled`](configuration-reference.md#roleplay) | Shows the character fields and the card import (display only) | `false` | live |
@@ -130,7 +130,7 @@ An agent **is** a folder: `$CTRLB_HOME/agents/<slug>/` (`~/.ctrl-b/agents/` on a
 - **Restart-only skill settings.** After changing `agent.skills_dir`, Conf → Skills keeps listing the old folder while new skills are written to the new one, until you restart ([ISS-92](../ISSUES.md)).
 - **A skill name with a space** can still be picked automatically, but it cannot be typed as `/<skill>` and the `/` suggestions skip it.
 - **Deleting an agent with a reply running.** When you also delete its conversations, the delete is refused while one of them has a reply running.
-- **Unknown names.** A conversation whose agent is gone is answered by your default agent; `/agent <unknown>` changes nothing.
+- **Unknown names.** A conversation whose agent is gone is answered by the agent new conversations start with (`agent.default_agent`; blank = the root agent); `/agent <unknown>` changes nothing.
 - **Character card import is hidden** until Conf → Roleplay → Roleplay fields is on.
 - **Gallery buttons.** The add-agent and import buttons sit close together and look alike ([ISS-85](../ISSUES.md)).
 

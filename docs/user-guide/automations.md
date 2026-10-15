@@ -18,7 +18,7 @@ Open **Conf → Automations** and tap **new automation**. The editor asks for:
 | **Prompt** | What the agent is told to do on each run. Required. |
 | **Schedule** | *Hourly* (at a minute), *Daily* (at a time), *Weekly* (on a day, at a time), or *Cron* for any 5-field expression (up to 200 characters). Below it you see the schedule in words and its next three run times, computed by the server. |
 | **Timezone** | An IANA name such as `Europe/Madrid`. Left blank, it takes the server's zone at the moment you save (`$TZ`, else `/etc/localtime`, else UTC) and stores it. |
-| **Agent** | Which agent runs it; *default* is the agent new conversations start with. A named agent must still exist when the run starts, or the run fails. |
+| **Agent** | Which agent runs it; *default* (shown with its name) is the agent new conversations start with (`agent.default_agent`; blank = the root agent), looked up again at each run. A named agent must still exist when the run starts, or the run fails. |
 | **Privilege** | *Agent's* (the agent's own level) or Read, Confirm, Auto-low, Full. This decides what the run may do; see below. |
 | **Questions** | What happens when the agent asks you a question: *Best guess* answers with the question's default (else its first choice, else "use your judgement"); *Skip* refuses the question. |
 | **Results** | *New thread*: every run gets its own conversation, which you can keep chatting in afterwards. *Continuing*: every run appends to one conversation that builds up context across runs; you can read it but not chat into it. |
@@ -76,7 +76,7 @@ automation's privilege is its permission:
 
 | Privilege | What the run can do |
 |---|---|
-| Read, Confirm | Only tools that run without asking: low-risk ones (ping, wake, web search, reading), plus any medium- or high-risk tool an "always allow" rule you saved in chat covers (at Read, only MCP and OpenAPI tools and starting a subagent; fleet and host actions above low risk stay blocked). Everything else that would ask is refused. |
+| Read, Confirm | Only tools that run without asking: low-risk ones (ping, wake, web search, reading), plus any medium- or high-risk tool an "always allow" rule you saved in chat covers (never shut down, reboot, `run_shell` or `create_automation`, which no rule covers; at Read, only tools that are not fleet or host actions: MCP and OpenAPI tools, starting a subagent, and open-terminal reads if you raised their risk; fleet and host actions above low risk stay blocked, including open-terminal exec and write at their default high risk). Everything else that would ask is refused. |
 | Auto-low | Also medium-risk tools (for example starting a subagent, restarting a service). High-risk tools are refused unless an "always allow" rule you saved in chat covers them. Shut down, reboot and `run_shell` are always refused. |
 | Full | Everything, including shut down, reboot and `run_shell`. |
 

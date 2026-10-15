@@ -76,7 +76,7 @@ Head entries sit with the agent's instructions. When the set of matching head en
 | Setting | What it changes | Default | Applies |
 |---|---|---|---|
 | [`roleplay.enabled`](configuration-reference.md#roleplay) | Shows the character fields and the card import | `false` | live |
-| [`roleplay.default_tools`](configuration-reference.md#roleplay) | The tools an imported character starts with, and the tools an agent gets when you switch its Duties to Talk ([Agents](agents.md#the-agent-editor)) | `[web_search]` | live (next import or switch) |
+| [`roleplay.default_tools`](configuration-reference.md#roleplay) | The tools an imported character starts with, and the tools an agent gets when you switch its Duties to Talk ([Agents](agents.md#the-agent-editor)); read at the next import or switch | `[web_search]` | live |
 | [`roleplay.card_import.*`](configuration-reference.md#roleplaycard_import) | Card size caps: file, card data, CHARX contents | 15 MB / 2 MB / … | live |
 | [`roleplay.personas` / `default_persona`](configuration-reference.md#roleplay) | Your personas — who `{{user}}` is ([Agents → Personas](agents.md#personas)) | none | next chat turn |
 | [`lorebooks.books`](configuration-reference.md#lorebooks) | Global lorebooks, read by every agent | none | next chat turn |
