@@ -30,6 +30,9 @@ deploy/linux/run.sh dev     # backend :5433 with auto-reload + the Vite dev serv
 **One command (Windows).** Double-click `deploy\windows\setup.cmd` once (venv, dependencies, app
 build), then `deploy\windows\start.cmd` (serves on `http://127.0.0.1:5433`). `start.cmd -Tailscale`
 also turns on HTTPS through Tailscale Serve; `start.cmd -Dev` starts the hot-reload dev server.
+To update, `git pull`, close the running dashboard, run `setup.cmd` again (it migrates the config
+and rebuilds the app), then `start.cmd`; details in
+[`deploy/windows/README.md`](../../deploy/windows/README.md).
 
 **By hand.** Two terminals:
 
@@ -115,7 +118,8 @@ How many sit on the bottom bar depends on **Conf → Appearance → Layout** (Au
 Tools becomes a group inside Conf; with 2, Conf moves into the nav menu as well. The agents gallery
 has its own setting, **Conf → Appearance → Agents**: *Conf* (a group inside Conf, the default),
 *Button* (in the nav menu) or *Tab* (its own place on the bar). Both settings are kept per device.
-Some themes rename the tabs: frontier shows *frontier · comms · tools · settings · cast*. The app
+Some themes rename the tabs: frontier shows *frontier · comms · tools · settings · cast*, and gacha
+*fleet · agent · tools · settings · cast*. The app
 reopens on the section you used last.
 
 ### 7. Add your first computer
@@ -141,8 +145,8 @@ prepare the machine, is on the [Fleet](fleet.md) page.
 Almost every change you save in Conf applies at once. These do not:
 
 - `server.debug` — Conf says "restart to apply".
-- `server.trusted_hosts`, the open-terminal settings (`enabled`, `base_url` and the three risk
-  levels), `agent.skills_dir`, `agent.skill_min_overlap`, `agent.skill_max_active` and
+- `server.trusted_hosts`, the open-terminal settings (the three risk levels, and `enabled` or
+  `base_url` when the terminal was off or had no address at startup), `agent.skills_dir`, `agent.skill_min_overlap`, `agent.skill_max_active` and
   `agent.global_subagent_limit`. They save without any restart notice, and take effect only after
   one ([ISS-92](../ISSUES.md)).
 - Anything in `.env`: it is read once, when the server starts.

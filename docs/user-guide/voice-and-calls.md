@@ -61,10 +61,13 @@ Clip uploads retry by themselves:
 - While the phone knows it is offline, the app waits for the link instead of using up attempts.
 - While a clip is sending, the mic shows a spinner. Pressing it again (in any composer) says *"Still
   sending the last clip"*.
-- If every attempt fails, or the server answers with an error, a sticky ***Clip didn't send*** notice
-  appears with **Retry** and **Discard**. Retry sends the same clip again.
-- If the server heard no speech, you see *"Didn't catch that — try again"*. Any other refusal shows
-  *"Transcription failed (code)"* and the clip is dropped.
+- If every attempt fails, the server answers with a server error (5xx), or its answer can't be read, a
+  sticky ***Clip didn't send*** notice appears with **Retry** and **Discard**. Retry sends the same clip
+  again.
+- If the server heard no speech, you see *"Didn't catch that — try again"*.
+- Any other refusal shows *"Transcription failed (code)"* and the clip is dropped, because sending it
+  again would not help. Examples: a clip over the upload size limit or longer than the dictation time
+  limit plus a minute (413), or audio the server can't decode (422).
 - If the whole speech-to-text chain is down (every server failed), the mic greys out as unavailable. It
   comes back on the next status check, for example when you return to the app or save Conf.
 
@@ -101,6 +104,25 @@ the call screen.
 - If a tool needs your approval, an **Allow / Deny** row appears on the call screen.
 - **Back** (the Android gesture) or **Escape** hangs up.
 
+### Notes on the call screen
+
+A short note under the phase line says when something went wrong. The common ones:
+
+| Note | What happened |
+|---|---|
+| *too quiet — didn't take that* | The ear produced words, but the mic heard almost nothing at that moment, so the words were dropped. Speak up and say it again. |
+| *(the reply's own words)* | Shown on the heard line: what the ear heard right after a reply matched the reply itself (its echo), so it was dropped. |
+| *couldn't send that — it's back in the composer* | The message was refused. Your words were put back in the composer. |
+| *not sure that sent — check the chat before repeating it* | The app can't tell whether the message reached the server. It is not sent again. |
+| *connection strained* | The link fell behind and some audio was dropped. It clears by itself. |
+| *that microphone wasn't available — using the default* | The mic you picked wouldn't open, so the call uses the default one. |
+| *the echo canceller didn't let go — audio may still be processed* | You picked **media**, but the phone kept its echo cancellation on. The call still works. |
+| *switching to call mode — about five seconds* | You switched **Sound** to **call**; the phone needs a few seconds to change mode. |
+| *the microphone stalled — anything said just now wasn't heard* | The mic stopped delivering sound and the call reopened it. If it stalls again on the same route, the call ends with *the microphone stopped*. |
+| *the microphone stopped* | The mic was lost: permission withdrawn, a phone call took it, or a headset change. The call ends. |
+| *the call was taken over by another ctrl-b session* | A copy of this tab started its own call or dictation. This call ends. |
+| *the last connection never let go* | Every redial was refused because the server still held this device's old connection. Wait a few seconds, then **Call again**. |
+
 ### The in-call deck: Sound, Mic, Sensitivity
 
 Three pills above the art change **this call only**. Nothing is saved, and the Conf settings stay the
@@ -115,6 +137,8 @@ defaults for the next call.
   A pin lasts only for this call. The level the call learns for your own voice is remembered on this
   device.
 
+The pills are greyed out while the call is connecting or reconnecting.
+
 ### Taking turns
 
 - **Thinking pause.** After you stop talking, the call waits **Thinking pause** (2500 ms) before sending
@@ -125,10 +149,15 @@ defaults for the next call.
   reply: always on the *call* route, and on *media* only when **Mic off while it speaks** leaves it open.
 - **The mic during a reply.** **Mic off while it speaks** (*auto*) closes the ear while the reply plays,
   unless the browser's echo cancellation is on. This stops the call from hearing its own voice.
+- **The connect tone.** When a call connects you hear a short rising tone (**Connect chirp**, on by
+  default). The call listens for it to measure how late your speaker or headset plays, and keeps the
+  mic closed that long after each reply. Turned off, the mic instead waits for the room to go quiet
+  after a reply.
 
 ### Read-aloud
 
-- Tap **▶** on any reply to hear it, and **⏸** to pause.
+- Tap **▶** on any reply to hear it, and **⏸** to pause. While a reply plays, a small player
+  shows the whole reply as a bar you can tap or drag to seek, the time left, and a ✕ to close it.
 - The **speaker** in the app bar turns **auto read-aloud** on or off. It is the same switch as **Conf →
   Voice · TTS → Auto read-aloud**. It is **on by default**, it is kept **per device**, and it only shows
   when text-to-speech is configured.
@@ -137,18 +166,24 @@ defaults for the next call.
 - **Read along** (on by default) starts speaking while the reply is still being written, sentence by
   sentence. Turned off, or with **Chunking** off, a reply is spoken once it finishes.
 - **Speak actions** (off by default) controls whether `*actions between asterisks*` are read aloud.
+- If a sentence fails to synthesize, it is skipped and the rest of the reply is still read; you see one
+  error per reply. With **Chunking** on, a reply longer than the per-message limit
+  (`voice.tts.max_text_chars`, 4096 characters) is read up to the limit, and you see *"Reply too long
+  to read in full — the tail was skipped"*.
+- When a fallback server reads a reply, or the server changes partway through one, you see *"Read aloud
+  by …"* naming it. On the normal path nothing is shown.
 
 ### Text-to-speech voices
 
 Speech comes from a primary text-to-speech provider plus ordered fallbacks, set in **Conf → Voice ·
 TTS**. If one fails, the next is tried. A typical setup is PocketTTS first, then Kokoro (served by
-Speaches), then AllTalk. The voice id and the playback speed are set per model, on the provider's model
+Speaches), then AllTalk. The voice id and the speaking speed are set per model, on the provider's model
 row.
 
 An agent can have its own voice: the **Voice** field in its editor takes a voice id from your
 text-to-speech server. The field shows while roleplay is on, or whenever it already has a value. Blank
-means the global voice. A wrong id shows up as an error on the first read-aloud, never as a silent
-switch to another voice. Out of the box no agent sets one.
+means the global voice. The id is sent as it is, and ctrl-b never swaps in a default for it: a server
+that doesn't know the id refuses, and you see the read-aloud error. Out of the box no agent sets one.
 
 ## Settings that affect it
 
@@ -164,7 +199,7 @@ when a call starts, so a change applies to the next call. Every key is described
 | [`voice.stt.auto_stop`](configuration-reference.md#voicestt) (+ `auto_stop_silence_s`, `auto_stop_threshold`) | End a clip after a run of silence. | off (3 s, 0.01) | live |
 | [`voice.stt.upload_timeout_s`](configuration-reference.md#voicestt) | Floor for one upload attempt; a long clip gets twice its own length. | 30 s | live |
 | [`voice.stt.upload_attempts`](configuration-reference.md#voicestt) | Tries before a clip waits in the Retry / Discard notice. | 3 | live |
-| [`voice.stt.language`](configuration-reference.md#voicestt) | Forces a transcription language on a Whisper server. Parakeet ignores it. | `en` | live |
+| [`voice.stt.language`](configuration-reference.md#voicestt) | Forces a transcription language on a Whisper server, and on the live ear (calls and live dictation). Parakeet ignores it. | `en` | live (the ear: next call) |
 | [`voice.stt.vad_filter` / `hotwords`](configuration-reference.md#voicestt) | Whisper-only extras; no effect on Parakeet or the realtime ear. | on / blank | live |
 | [`voice.live.dictation`](configuration-reference.md#voicelive) | Live dictation (phrases as you speak). | off | next call |
 | [`voice.live.tail_wait_ms`](configuration-reference.md#voicelive) | How long a live dictation waits for your last phrase. | 2000 ms | next call |
@@ -175,6 +210,7 @@ when a call starts, so a change applies to the next call. Every key is described
 | [`voice.live.turn_hold_ms`](configuration-reference.md#voicelive) | The **Thinking pause**. | 2500 ms | next call |
 | [`voice.live.barge_in`](configuration-reference.md#voicelive) | **Hands-free interruption**. | off | next call |
 | [`voice.live.mic_hold`](configuration-reference.md#voicelive) | **Mic off while it speaks** (auto · on · off). | auto | next call |
+| [`voice.live.chirp`](configuration-reference.md#voicelive) | **Connect chirp**: the tone that measures your speaker's delay. | on | next call |
 | [`voice.live.route` / `input_device`](configuration-reference.md#voicelive) | The default **Sound** route and **Mic** for a call. | media / system default | next call |
 | [`voice.live.ring` / `captions`](configuration-reference.md#voicelive) | The ring and the reply captions on the call screen. | on / on | next call |
 | [`voice.live.background`](configuration-reference.md#voicelive) | **Keep the call in the background** when you lock or switch apps. | on | next call |
@@ -208,7 +244,8 @@ when a call starts, so a change applies to the next call. Every key is described
   new one. A background call with nothing happening ends after 10 minutes (*"the call sat idle in the
   background"*). A pending approval pauses that clock.
 - **A dropped connection.** The call redials by itself for about 14 seconds before it gives up with *"lost
-  the connection"*. A live dictation that loses its connection after at least one phrase keeps what
+  the connection"*. Whatever you were saying when the link dropped is lost; a reply that was already
+  playing keeps playing. A live dictation that loses its connection after at least one phrase keeps what
   landed, but the rest is lost: *"Voice connection lost — the rest of that wasn't captured"*.
 - **If the speech servers are down.**
   - With the **live ear** down, a call can't connect and ends with **Call again**.
@@ -229,7 +266,8 @@ when a call starts, so a change applies to the next call. Every key is described
   trail to `$CTRLB_HOME/calls/<call-id>.jsonl`, plus a 16 kHz recording of what the ear heard (about 2 MB
   a minute, including anyone audible) as `<call-id>-<leg>.wav` beside it. Live dictations write to
   `calls/dictation/`, push-to-talk clips to `calls/clip/`, and the background-playback check to
-  `calls/mouth/`. The files are readable only by the server's user. Each folder keeps the newest
+  `calls/mouth/`. Call and live-dictation trails include the text of what the ear heard; a clip's trail
+  holds only timings. The files are readable only by the server's user. Each folder keeps the newest
   **Trails kept** (20). The file name is the call id, so the newest file is your last call:
   `ls -t $CTRLB_HOME/calls/ | head`. Trails are off by default.
 

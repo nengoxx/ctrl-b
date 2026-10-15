@@ -13,15 +13,17 @@ can call from chat, through the same permission gate.
 - **The dot** is the machine's online state: it answered (or did not answer) one ping from the
   server in the latest sweep. The sweep runs every `server.poll_seconds` (5 s by default) and is
   shared by every open device.
-- **The subtitle** is the machine's `role`, if you set one.
+- **The subtitle** is the machine's `role`, if you set one. There is no field for it in the editor:
+  write `role:` under the machine in `config.yaml` (the editor keeps it when you save).
 - **Services** are listed under the machine with their own dot: up when a TCP connection to the
   machine's address and the service's port succeeds. While a service is up, its row is a link to
-  `http://<address>:<port><path>`; while it is down, the row is not clickable. A machine that is
-  offline shows all its services offline without probing them.
+  `http://<address>:<port><path>`; while it is down, the row is not clickable. A service with no port
+  is not probed: it shows the machine's own state and has no link. A machine that is offline shows all
+  its services offline without probing them.
 - **Order.** The machine whose name matches the server's own hostname comes first (cosmos keeps
-  the order of your config instead). The featured card at the top cycles through the online
-  machines every `server.feature_cycle_seconds` (6 s), pausing while you hold a pick or are on
-  another section.
+  the order of your config instead). In vapor, the featured machine in the hero cycles through the
+  online machines every `server.feature_cycle_seconds` (6 s), pausing while you hold a pick or are on
+  another section; the other themes have no auto-cycle.
 
 ### The power controls (per theme)
 
@@ -31,9 +33,9 @@ shows.
 | Theme | Controls |
 |---|---|
 | minimal | Wake on an offline card, Shut down on an online one (no Reboot, no Ping) |
-| cosmos | Reboot, Shut down, Wake and Ping, in the machine's detail view |
-| vapor | On the row itself: Reboot and Shut down when online, Wake when offline; Ping in the expanded row |
-| frontier, gacha | Reboot, Shut down, Wake, in the machine's detail view |
+| cosmos | In the machine's detail view: Reboot and Shut down when online, Wake when offline, Ping always |
+| vapor | On the row itself: Reboot and Shut down when online, Wake when offline; Ping in the expanded row (the `› ssh` button beside it does nothing) |
+| frontier, gacha | In the machine's detail view: Reboot and Shut down when online, Wake when offline |
 
 There is no sleep or hibernate action. The buttons show whether or not the machine has the fields
 they need; pressing one it cannot do answers with a refusal toast (for example "no MAC configured
@@ -67,9 +69,9 @@ What each field enables:
 | **VPN host** | A second address (a MagicDNS name, or an overlay IP) used for SSH when the first address does not connect, and for service links when you open ctrl-b over Tailscale (every theme except minimal). Never pinged, probed or woken. |
 | **SSH via VPN first** | Tries the VPN host before the IP for SSH — for a machine whose LAN SSH is firewalled. |
 | **MAC** | Enables Wake. Without it, Wake answers "no MAC configured". |
-| **Wake when I connect** | Opening ctrl-b on any device wakes this machine if it looks offline (at most once per `wake.cooldown_s`, 5 minutes). Needs a MAC. |
+| **Wake when I connect** | Opening ctrl-b on any device wakes this machine if it looks offline (at most once per `wake.cooldown_s`, 5 minutes). It fires each time the app's live feed connects, so a reconnect counts too. Needs a MAC. |
 | **Wake when my phone connects** | Wakes this machine when one of your watched devices arrives (its Tailscale connects, or it reappears on the home Wi-Fi). Needs a MAC, the fleet monitor on, and your devices listed in **Conf → Server**. **Presence cooldown** overrides the global cooldown for this machine (blank = the global one, `0` = none). |
-| **SSH user**, **SSH port**, **SSH password** | Enable Shut down, Reboot and service commands. SSH is password-only: keys and an ssh-agent are never tried, so a user without a password counts as no credentials. On Linux and macOS the same password is used for `sudo`. A blank password field keeps the stored one. |
+| **SSH user**, **SSH port**, **SSH pass** | Enable Shut down, Reboot and service commands. SSH is password-only: keys and an ssh-agent are never tried, so a user without a password counts as no credentials. On Linux and macOS the same password is used for `sudo`. A blank password field keeps the stored one. |
 | **OS** | `linux`, `windows` or `macos`. Picks the shutdown, reboot and service command variant. It does not change how the machine is pinged (that follows the server's OS). |
 | **Services** | Name, kind, port, path, and optional start / stop / restart commands per OS. **Autostart** is stored but does nothing today ([ISS-95](../ISSUES.md)). |
 
@@ -96,7 +98,8 @@ To be told about these on your phone, turn on **Conf → Notifications** and all
 the browser asks. Notifications need HTTPS, and they appear **only while the app is hidden**
 (another app in front, the screen off with the app still running), never while you are looking at
 it and never once the app is closed. Five event types can be switched on or off: agent needs you,
-turn finished, action failed, automation finished, host up / down.
+turn finished, action failed, automation finished, host up / down. During a call, *turn finished*
+is not raised (you are hearing the reply).
 
 ### Events
 
@@ -111,8 +114,10 @@ With **Conf → Shell → User exec** on, a composer line that starts with `!` r
 command **on the server itself** (not on a fleet machine), as the server's user, through `bash -lc`
 (`powershell -NoProfile -NonInteractive -Command` on a Windows server), in `shell.workdir` (blank =
 `$CTRLB_HOME`). The command and its output land in the conversation as a command bubble, and the
-agent reads them on its next turn. If the agent is in the middle of a turn in that conversation,
-the command is queued and runs at the turn's next step. With User exec off you see
+agent reads them on its next turn. With no conversation open, a new one starts with the home agent,
+titled `! <command>`. If the agent is in the middle of a turn in that conversation, the command is
+queued and runs at the turn's next step; if something else holds the conversation you see
+`// a turn is already running on this thread — wait for it to finish`. With User exec off you see
 `// shell exec is disabled (Conf → Shell → user exec)`.
 
 **Agent run_shell** is a separate switch for the agent's own `run_shell` tool. It works differently
@@ -124,7 +129,8 @@ from what its label suggests ([ISS-87](../ISSUES.md)):
 - For an agent at **full** privilege (set in its `agent.yaml`, or by you with `/privilege full`):
   `run_shell` runs **without asking, whether the switch is on or off**.
 - The only off-switch that also covers full privilege is **Conf → Shell → Enabled** (`shell.enabled:
-  false`), which makes every `run_shell` answer "local shell is disabled".
+  false`), which makes every `run_shell` answer "local shell is disabled". It stops your `!`
+  commands too.
 
 Both User exec and Agent run_shell are off by default.
 
@@ -134,24 +140,27 @@ Open-terminal connects the agent to an [open-terminal](https://github.com/open-w
 server running on another machine, which gives it six tools there: run a command, read, write,
 list, grep and glob files. Set the **Endpoint** and **API key** in **Conf → Open-terminal**. By
 default running a command and writing a file ask you to confirm (risk *high*) and reading runs
-without asking (*low*). These tools are registered once, when the server starts: turning them off
-in Conf works at once (they answer as unconfigured), but changing a risk level, or setting an
-endpoint for the first time, needs a server restart ([ISS-92](../ISSUES.md)).
+without asking (*low*). Output is cut at 6000 characters, and a command still running when the
+wait window (`open_terminal.default_wait_s`, 30 s) ends comes back as "still running (id=…)" and
+carries on there. These tools are registered once, when the server starts: turning them off in Conf
+works at once (they answer as unconfigured), and a new endpoint or key applies at once while they
+exist; but changing a risk level, or turning open-terminal on when it was off or had no endpoint at
+startup, needs a server restart ([ISS-92](../ISSUES.md)).
 
 ## Settings that affect it
 
 | Setting | What it changes | Default | Applies |
 |---|---|---|---|
 | [`server.poll_seconds`](configuration-reference.md#server) | Ping sweep interval, and how often the Fleet screen refreshes | 5 | live |
-| [`server.feature_cycle_seconds`](configuration-reference.md#server) | How long the featured card stays on one machine | 6 | live |
+| [`server.feature_cycle_seconds`](configuration-reference.md#server) | How long vapor's featured machine stays on one machine | 6 | live |
 | [`computers.<name>.*`](configuration-reference.md#computers) | The fields in the table above | — | live |
 | [`wake.cooldown_s`](configuration-reference.md#wake) | Minimum seconds between two connect-wakes of one machine | 300 | live |
-| [`wake.presence_devices`, `wake.presence_cooldown_s`, `wake.quiet_hours`](configuration-reference.md#wake) | The watched devices, the presence-wake cooldown (3600 s), and a window in which a Wi-Fi arrival wakes nothing | none / 3600 / off | live |
+| [`wake.presence_devices`, `wake.presence_cooldown_s`, `wake.quiet_hours`](configuration-reference.md#wake) | The watched devices, the presence-wake cooldown (3600 s), and a window (the server's local time) in which a Wi-Fi arrival wakes nothing | none / 3600 / off | live |
 | [`monitor.enabled`, `monitor.poll_seconds`, `monitor.down_after_checks`, `monitor.up_after_checks`](configuration-reference.md#monitor) | The fleet monitor; its interval must be at least `server.poll_seconds` | on / 30 / 3 / 2 | live |
 | [`notifications.enabled`, `notifications.events.*`](configuration-reference.md#notifications) | Phone notifications and their five types | off / all on | live |
 | [`shell.enabled`, `shell.user_exec_enabled`, `shell.agent_exec_enabled`](configuration-reference.md#shell) | The `!` path and the agent's `run_shell` (see above) | on / off / off | live |
 | [`shell.workdir`, `shell.timeout_s`, `shell.max_output_chars`](configuration-reference.md#shell) | Where commands run, when they are killed, how much output is kept | `$CTRLB_HOME` / 60 / 6000 | live |
-| [`open_terminal.*`](configuration-reference.md#open_terminal) | The remote-shell endpoint and its three risk levels | exec high · write high · read low | restart (turning it off: live) |
+| [`open_terminal.*`](configuration-reference.md#open_terminal) | The remote-shell endpoint and its three risk levels | exec high · write high · read low | risks, and a first endpoint: restart; turning it off, or a new endpoint once the tools exist: live |
 | [`tailscale.enabled`](configuration-reference.md#tailscale) | The HTTPS card and **Discover from Tailscale** | on | live |
 
 ## Edge cases & limits
@@ -163,8 +172,10 @@ endpoint for the first time, needs a server restart ([ISS-92](../ISSUES.md)).
 - **A Windows machine shows offline while it is on.** Windows drops ping by default; allow inbound
   ICMP echo in its firewall.
 - **Preparing a Linux or macOS machine.** Password login over SSH for the SSH user, and either that
-  user's sudo password equal to the SSH password, or `NOPASSWD` for the commands. A refusal comes
-  back as "sudo could not authenticate — the SSH password must also be the sudo password …".
+  user's sudo password equal to the SSH password, or `NOPASSWD` for the commands. A button only
+  toasts "failed to shut down vega" (or "failed to reboot …"); the reason, for example "sudo could not
+  authenticate — the SSH password must also be the sudo password …", reaches the agent when it runs
+  the same action, and is not stored in the event.
 - **Preparing a Windows machine.** The OpenSSH Server feature with password authentication for an
   administrator account. Shutdown and reboot run `shutdown /s /f /t 0` and `shutdown /r /f /t 0`.
 - **Shutting down the server's own machine takes ctrl-b down with it.** Nothing warns you.
@@ -179,11 +190,13 @@ endpoint for the first time, needs a server restart ([ISS-92](../ISSUES.md)).
   the shell itself is killed: a command it started in the background keeps running, and the reply
   can arrive late ([ISS-89](../ISSUES.md)).
 - **Output redaction.** `!` and `run_shell` output has your config's secrets masked; SSH output has
-  the machine's password masked; open-terminal output is not masked.
+  the machine's password masked; open-terminal output is not masked ([ISS-98](../ISSUES.md)).
 - **"Not in the UI" does not mean "not callable".** The generic action API, `POST
   /api/actions/{name}`, can run any registered action, including the Tailscale Serve switches and
   `run_shell`, behind the confirm step ([ISS-88](../ISSUES.md)). With Agent run_shell on, that route
   runs a shell even while User exec is off.
+- **`!` in an automation's conversation** (one a repeating automation keeps writing to) is refused,
+  and the app shows the same `// shell exec is disabled` note even when User exec is on.
 - **Events are never deleted.** The events table grows for as long as the server runs.
 - **Notifications do not reach a closed app.** There is no push service yet.
 

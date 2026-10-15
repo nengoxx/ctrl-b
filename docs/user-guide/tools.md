@@ -45,8 +45,8 @@ row shows:
   the default *confirm* privilege and runs without asking at *auto_low* or *full*; `high` asks at
   every level below *full*. The levels are explained on the [Chat](chat.md) page.
 - **`confirm`**, on tools that always ask below *full* privilege, whatever rule you save
-  (shut down, reboot, `run_shell`, creating an automation). These rows have no "always allow"
-  editor.
+  (shut down, reboot, `run_shell`, creating an automation; at *read* privilege the first three are
+  refused instead). These rows have no "always allow" editor.
 - **`modified`**, when the row's access differs from the tool's default.
 - **the access control, core · on · off** (the default carries a dot):
   - **core** — every agent can always use it, even an agent whose own tool list leaves it out, and
@@ -61,7 +61,8 @@ row shows:
   `field = pattern` pairs, where the pattern may use `*` and `?`. A rule matches a call when every
   field it lists matches; fields it does not list can be anything. A rule you add here with no fields
   is shown as **any args** and allows every call of that tool. A rule shown as **no args** (written
-  by tapping **always** on a call that had no arguments) matches only a call with no arguments.
+  by tapping **always** on a call that had no arguments) matches only a call with no arguments. A
+  rule also covers unattended automation runs, not only chat.
 
 `run_shell` is shown read-only, marked "governed by Conf → Shell": its access is set there (see
 [Fleet](fleet.md#the--local-shell)).
@@ -97,8 +98,9 @@ per-tool cap) has no control here; set it in the file.
   moment". Try again when it finishes.
 - **"off" applies to the agent only.** A utility card still runs when you tap **run**; turning a
   card's access off stops only the agent from calling it.
-- **Always-allow rules do not cover `confirm` tools** and do nothing at *read* privilege for fleet
-  actions above low risk, which that level refuses outright. At *full* privilege nothing asks, so
+- **Always-allow rules do not cover `confirm` tools** and do nothing at *read* privilege for tools
+  in *fleet & service actions* above low risk (open-terminal's run and write among them), which that
+  level refuses outright. At *full* privilege nothing asks, so
   rules make no difference there.
 - **A tool that is hidden from the agent by design** (the HTTPS switches, for example) is not
   listed in the catalog at all.

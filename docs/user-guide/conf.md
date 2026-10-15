@@ -37,10 +37,13 @@ left open. The groups, in order:
 | 19 | **Skills** | The skill files the agent can load. |
 | 20 | **Memory** | The agent's memory files and core memory. |
 | 21 | **Computers** | Your machines. See [Fleet](fleet.md#adding-or-editing-a-computer). |
-| — | **Tools** | Only with a 3- or 2-tab layout: the Tools section, hosted here. |
-| — | **Agents · gallery** | Only when **Appearance → Agents** is *Conf* (the default): the gallery, hosted here. |
-| — | **Appearance** | Theme, mode, palette, the switches, layout, app bar. See [Themes](themes.md). |
-| — | media groups | One per image library you can manage right now: the shared ones always, a theme's own only while that theme is active. See [Media](media.md). |
+| 22… | **Tools** | Only with a 3- or 2-tab layout: the Tools section, hosted here. |
+| 22… | **Agents · gallery** | Only when **Appearance → Agents** is *Conf* (the default): the gallery, hosted here. |
+| 22… | **Appearance** | Theme, mode, palette, the switches, layout, app bar. See [Themes](themes.md). |
+| 22… | media groups | One per image library you can manage right now: the shared ones always, a theme's own only while that theme is active. See [Media](media.md). |
+
+The groups after Computers are numbered on from 22, in the order above, so their numbers shift with
+your layout and theme.
 
 ### Saving
 
@@ -83,7 +86,7 @@ Almost every save applies to the running server at once. The exceptions:
 | `server.debug` | Needs a restart; Conf says so. |
 | `server.host`, `server.port` | Conf says "restart to apply", but a restart does not apply them either: the listening address comes from the uvicorn command line (the systemd unit, `run.sh`, `start.ps1`). `server.port` only changes what `/api/health` reports, and nothing reads `server.host` ([ISS-91](../ISSUES.md)). |
 | `server.trusted_hosts` | Needs a restart, with no notice. It has no form in Conf (edit the file). |
-| Open-terminal **Enabled** (turning it on), **Endpoint** (when there was none at startup), **Exec / Write / Read risk** | Needs a restart, with no notice: the tools and their risk levels are fixed when the server starts. Turning it off works at once ([ISS-92](../ISSUES.md)). |
+| Open-terminal **Enabled** (turning it on when it was off at startup), **Endpoint** (when there was none at startup), **Exec / Write / Read risk** | Needs a restart, with no notice: the tools and their risk levels are fixed when the server starts. Turning it off works at once, and so does turning it back on if it was on at startup ([ISS-92](../ISSUES.md)). |
 | `agent.skills_dir`, `agent.skill_min_overlap`, `agent.skill_max_active`, `agent.global_subagent_limit` | Need a restart, with no notice. After a `skills_dir` change, the skills list still shows the old folder while new skills are written to the new one ([ISS-92](../ISSUES.md)). |
 | MCP and OpenAPI servers | Apply at the start of the next chat message (when no turn is running), or when you tap **Rediscover tools** at the foot of the OpenAPI group (refused while any conversation has a turn running). A server that was down at that moment stays missing until the next rediscovery. |
 
@@ -143,7 +146,10 @@ Restoring is in [`deploy/linux/README.md`](../../deploy/linux/README.md) §Rollb
 - **A misspelt key in `config.yaml` is silently ignored**, and so is an `agents:` list: agents are
   folders, managed in the gallery ([Agents](agents.md)).
 - **Some keys have no form** and are edited in the file only: the `automations:` runner settings,
-  `media.write.max_bytes`, `server.trusted_hosts`, `agent.turns`, `memory.git_backup`.
+  the `attachments:` limits, `media.write.max_bytes`, `server.trusted_hosts`, `agent.turns`,
+  `agent.skills_dir`, `agent.skill_min_overlap`, `agent.skill_max_active`,
+  `agent.skills_auto_write`, `memory.git_backup`, `lorebooks.include_names`, a model's
+  `input_modalities` and `voice.live.vad_model`.
 - **Saving the agent tool catalog** (Tools → agent tools) while any conversation has a turn running
   is refused with "agent is busy — try again in a moment".
 - **Two devices saving at once**: the last save wins, except for providers, which are refused on the

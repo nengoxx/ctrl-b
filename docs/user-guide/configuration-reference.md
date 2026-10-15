@@ -44,7 +44,7 @@ backend/.venv/bin/python -m app.config_migration --check   # read-only report
 backend/.venv/bin/python -m app.config_migration --apply   # migrate in place
 ```
 
-`--apply` first writes a timestamped copy (mode 0600) of your config to `$CTRLB_HOME/backups/`, then rewrites only the old keys, and stamps `config_version`. Those backups are never pruned. On a server install, the install and update scripts run this step for you; see [`deploy/linux/README.md`](../../deploy/linux/README.md).
+`--apply` first writes a timestamped copy (mode 0600) of your config to `$CTRLB_HOME/backups/`, then rewrites only the old keys, and stamps `config_version`. Those backups are never pruned. If an environment override you set targets a key a release has retired, `--check` and `--apply` refuse and name the variable: unset it, move its value into `config.yaml`, and run them again (at startup the server only logs an error about it, and the variable does nothing). On a server install, the install and update scripts run this step for you; see [`deploy/linux/README.md`](../../deploy/linux/README.md).
 
 ### When a change takes effect
 
@@ -73,7 +73,7 @@ A **security gate** label marks a key that decides what can run on your machines
 | `host` | string | `127.0.0.1` | **Inert: [ISS-91](../ISSUES.md).** It binds nothing. The listening address comes from the uvicorn command line in the service unit or launcher (`--host 0.0.0.0 --port 5433` in the server unit). Nothing reads the key except Conf's restart notice. | inert |
 | `port` | int | `5433` | **Inert: [ISS-91](../ISSUES.md).** Same as `host`: to move the port, change the unit's command line (and `tailscale.target_port`). The key only changes what `/api/health` reports. Conf's "restart to apply" notice for it is misleading, because a restart does not apply it either. | inert |
 | `poll_seconds` | int | `5` | How often the fleet status is refreshed: the server's ping and service-probe cache lifetime, and the app's refresh interval. `monitor.poll_seconds` must be at least this value, or the save is refused. | live |
-| `feature_cycle_seconds` | int | `6` | How long the Fleet hero shows one online host before moving to the next. | live |
+| `feature_cycle_seconds` | int | `6` | How long vapor's featured host (the hero) shows one online host before moving to the next. Other themes don't auto-cycle. | live |
 | `debug` | bool | `false` | Raises the app log to DEBUG, which shows the per-tick presence trail (useful when a phone's LAN address drifts). It enables no debugger and no error pages. | restart |
 | `trusted_hosts` | list of strings | `[]` | `Host` header allowlist, a defence against DNS rebinding. Empty means no check. Once it has entries, every other name gets `400 Invalid host header` on every route, Conf included, and the only way back is a hand edit. So list every name and address you browse by (the `ts.net` name, the bare hostname, `localhost`, `127.0.0.1`, the LAN and `100.x` addresses). Entries are exact names or one leading `*.` wildcard, with no port; a bare `*` is refused. No Conf form. **Security gate.** | restart (not flagged) |
 
@@ -151,7 +151,7 @@ Settings for the agent runtime. Agents themselves are **folders**, not config en
 | `subagent_clamp_privilege` | bool | `true` | While `true`, a subagent never runs at a higher privilege than the agent that started it; `false` lets it keep its own. **Security gate.** | live |
 | `skills_dir` | string | `skills` | Folder scanned for `<name>/SKILL.md`. A relative path resolves against `$CTRLB_HOME`, never against a `CTRLB_CONFIG` location. Until you restart, the skills list still reads the old folder while new skills are written to the new one. No Conf form. | restart (not flagged) |
 | `skills_enabled` | bool | `true` | Master switch for skills. | next chat turn |
-| `skills_auto_write` | bool | `true` | The agent may write skills itself. Off: it only proposes them. | next chat turn |
+| `skills_auto_write` | bool | `true` | The agent may write skills itself. Off: it only proposes them. No Conf form. | live |
 | `subagent_child_timeout_s` | number > 0 | `180` | Wall-clock limit for each subagent. | live |
 | `skill_min_overlap` | int ≥ 1 | `1` | Minimum word overlap between your message and a skill for the skill to activate. No Conf form. | restart (not flagged) |
 | `skill_max_active` | int ≥ 1 | `2` | Maximum skills active in one turn. No Conf form. | restart (not flagged) |
@@ -207,7 +207,7 @@ The agent's built-in file memory: a `MEMORY.md` per agent and a shared `USER.md`
 | `user_profile_enabled` | bool | `true` | Include, and allow writes to, the shared `USER.md`. | live |
 | `auto_write` | bool | `true` | The agent may write memory itself. Off: it proposes, and you approve. | live |
 | `consolidation_nudge` | bool | `false` | When a memory file is nearly full, the prompt asks the agent to merge and prune before adding. | next chat turn |
-| `consolidation_nudge_pct` | 1–100 | `80` | The fill level that triggers the nudge. | live |
+| `consolidation_nudge_pct` | 1–100 | `80` | The fill level that triggers the nudge. | next chat turn |
 | `memory_dir` | string | `memories` | The memory folder. Relative paths resolve against `$CTRLB_HOME`. | live |
 | `memory_char_limit` | int ≥ 1 | `2200` | Size cap of each agent's `MEMORY.md`, in characters. | live |
 | `user_char_limit` | int ≥ 1 | `1375` | Size cap of `USER.md`, in characters. | live |
@@ -287,7 +287,7 @@ The clip path: you hold the mic, the recording is uploaded, and the transcript l
 | `connect_timeout_s` | number > 0 | `3` | How long to try to reach a server before moving on. | live |
 | `timeout_s` | number > 0 | `30` | Time limit for one transcription once connected. | live |
 | `extra_body` | map | `{}` | Extra fields passed to the server as they are. Rarely needed. | live |
-| `language` | string | `en` | Transcription language; `""` means detect. A model's own `language` wins. Whether it is honoured depends on the server. | live |
+| `language` | string | `en` | Transcription language; `""` means detect. A model's own `language` wins. Also sent to the live ear for calls and streaming dictation. Whether it is honoured depends on the server: the parakeet server ignores it. | live |
 | `vad_filter` | bool | `true` | Ask the server to skip silence. Only Whisper-type servers that support it use it; the current Parakeet and Speaches targets ignore it. | live |
 | `hotwords` | string | `""` | Space-separated words to bias recognition toward (host names, jargon). Only Whisper-type servers use it. | live |
 | `max_upload_bytes` | int > 0 | `26214400` (25 MB) | Largest clip accepted; a bigger one is refused with 413. | live |
@@ -373,12 +373,12 @@ Keys marked *client* are read by the app on your phone. Keys marked *server* are
 | `background` | bool | `true` | *Client.* Keep the call when the screen goes off or you switch apps. Off: hiding the page ends the call. Closing the page always ends it. | next call |
 | `background_keepalive` | bool | `true` | *Client.* While a call runs in the background, play an inaudible tone so the phone doesn't freeze the page and leave the call deaf. Uses battery. | next call |
 | `background_idle_s` | 0–7200 | `600` | *Client.* A background call with no speech and no reply for this long ends itself. `0` turns this off. | next call |
-| `dictation` | bool | `false` | *Client.* Streaming dictation: the mic sends each phrase to the composer as you speak, over the same ear as calls. Independent of `enabled`. Off: the mic uses the clip path (`voice.stt`). | next call |
-| `tail_wait_ms` | 500–10000 | `2000` | *Client.* After you release, how long to wait for the last phrase. | next call |
-| `dictation_idle_s` | 0–1800 | `300` | *Client.* A locked (hands-free) dictation stops after this much silence; the last phrase is kept. `0` turns this off. It cannot fire in roughly the first 6 seconds. | next call |
-| `dictation_idle_margin_db` | 0–40 | `10` | *Client.* "Silence" for that stop means below the room noise plus this. | next call |
-| `dictation_max_s` | 10–1800 | `1790` | *Client.* Longest single dictation, held or locked. Must stay below `max_session_s`. | next call |
-| `release_tail_ms` | 0–1500 | `400` | *Client.* After you stop, keep recording this long so the last word isn't clipped. Applies to clip recordings too. `0` turns this off. | live |
+| `dictation` | bool | `false` | *Client.* Streaming dictation: the mic sends each phrase to the composer as you speak, over the same ear as calls. Independent of `enabled`. Off: the mic uses the clip path (`voice.stt`). Takes effect on the next recording after a Conf save. | next call |
+| `tail_wait_ms` | 500–10000 | `2000` | *Client.* After you release, how long to wait for the last phrase. Takes effect on the next recording after a Conf save. | next call |
+| `dictation_idle_s` | 0–1800 | `300` | *Client.* A locked (hands-free) dictation stops after this much silence; the last phrase is kept. `0` turns this off. It cannot fire in roughly the first 6 seconds. Takes effect on the next recording after a Conf save. | next call |
+| `dictation_idle_margin_db` | 0–40 | `10` | *Client.* "Silence" for that stop means below the room noise plus this. Takes effect on the next recording after a Conf save. | next call |
+| `dictation_max_s` | 10–1800 | `1790` | *Client.* Longest single dictation, held or locked. Must stay below `max_session_s`. Takes effect on the next recording after a Conf save. | next call |
+| `release_tail_ms` | 0–1500 | `400` | *Client.* After you stop, keep recording this long so the last word isn't clipped. Applies to clip recordings too. `0` turns this off. It is read when you stop, so a Conf save reaches even a recording already running. | live |
 | `frame_ms` | 10–200 | `40` | *Server.* Length of each audio frame the phone sends. | next call |
 | `max_session_s` | 10–7200 | `1800` | *Server.* Longest one live session may last. | next call |
 | `max_frame_bytes` | int > 0 | `32768` | *Server.* Largest audio frame accepted. | next call |
@@ -393,7 +393,7 @@ Keys marked *client* are read by the app on your phone. Keys marked *server* are
 
 An [open-terminal](https://github.com/open-webui/open-terminal) server gives the agent a shell and file tools on the machine it runs on: `terminal_exec`, read, write, list, grep and glob.
 
-The tools and their risk levels are registered **once, at startup**. A Conf change to a risk level does not change what asks for confirmation until you restart ([ISS-92](../ISSUES.md)). Turning `enabled` off works at once (the tools then refuse). Turning it on, or setting a `base_url` that was empty at startup, needs a restart.
+The tools and their risk levels are registered **once, at startup**. A Conf change to a risk level does not change what asks for confirmation until you restart ([ISS-92](../ISSUES.md)). Turning `enabled` off works at once (the tools then refuse), and turning it back on works at once too. If it was off at startup, or `base_url` was empty then, the tools do not exist until a restart.
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
@@ -427,7 +427,7 @@ The HTTPS switch: it runs `tailscale serve` on this machine, never `funnel`, so 
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
-| `enabled` | bool | `true` | Whether the HTTPS card and its actions work. | live |
+| `enabled` | bool | `true` | Off hides the HTTPS card and refuses its on/off requests. Serve itself is left as it is. | live |
 | `target_port` | int | `5433` | The local port Serve forwards to. `5433` is the server install's app. | live |
 | `timeout_s` | number | `15` | Time limit for each `tailscale` command. | live |
 
@@ -453,7 +453,7 @@ Browser notifications raised by the app itself from the live streams it already 
 
 Automatic Wake-on-LAN. Two triggers, both switched on per host (see [computers](#computers)):
 
-- **On connect** (`wake_on_connect`): opening the app wakes that host.
+- **On connect** (`wake_on_connect`): every time the app's live feed connects (opening the app, and each reconnect) that host is woken, at most once per `cooldown_s`.
 - **On presence** (`wake_on_presence`): one of your devices arriving wakes it. Arrival is seen on two sources: the device turning Tailscale on, or the device rejoining the home Wi-Fi. A device must have been away continuously for its damping time first, so a radio blip can't wake anything. Presence needs `monitor.enabled`.
 
 | key | type | default | what it does | applies |
@@ -534,7 +534,7 @@ A map keyed by namespace (`gacha`, `frontier`, `kit`, `agents`). Unknown namespa
 
 ## attachments
 
-Files you attach to a chat message. The app stores them under `$CTRLB_HOME/attachments/`.
+Files you attach to a chat message. The app stores them under `$CTRLB_HOME/attachments/`. There is no Conf form for these.
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
@@ -557,7 +557,7 @@ Settings shared by all characters. A character's own settings live in its agent 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
 | `enabled` | bool | `false` | Shows or hides the character fields in the app. Nothing else depends on it: a character keeps working with it off. | live |
-| `default_tools` | list of strings | `[web_search]` | The tool list given to a newly created or imported character. | live |
+| `default_tools` | list of strings | `[web_search]` | The tool list given to a newly created or imported character, and to an agent (not the default one) whose Duties you switch from Agent to Talk while it still has every tool. | live |
 | `default_persona` | string | `""` | The persona every agent talks to unless its `agent.yaml` names another with `persona:`. `""` means none. A key that isn't in the library is ignored. | next chat turn |
 
 ### roleplay.personas
@@ -642,7 +642,7 @@ Per-tool changes, keyed by tool name (`ping_host`, `mcp__web-tools__search_web`,
 |---|---|---|---|---|
 | `<tool>.description` | string or null | `null` | Replaces the description the model sees. Blank restores the built-in one. | live |
 | `<tool>.agent_mode` | `core` · `enabled` · `disabled` or null | `null` | `core`: always offered, even when a skill narrows the tools. `enabled`: offered normally. `disabled`: never offered. `null`: the tool's own default. | live |
-| `<tool>.approvals` | list of `{args}` or null | `null` | Standing "always allow" rules. Each rule is `{args: {field: pattern}}` with string glob patterns; a field it leaves out matches anything. A rule with no `args` (or `args: null`) allows every call; `args: {}` matches only a call with no arguments (the catalog shows it as "no args"). A rule only turns a risk-based confirmation into an allow: it can never deny, and it never skips the confirmation that shutdown, reboot and `run_shell` always ask for below full privilege. Tapping "always" on a confirmation writes one. Unknown keys in a rule are refused. **Security gate.** | live |
+| `<tool>.approvals` | list of `{args}` or null | `null` | Standing "always allow" rules. Each rule is `{args: {field: pattern}}` with string glob patterns; a field it leaves out matches anything. A rule with no `args` (or `args: null`) allows every call; `args: {}` matches only a call with no arguments (the catalog shows it as "no args"). A rule only turns a risk-based confirmation into an allow: it can never deny, and it never skips the confirmation that shutdown, reboot, `run_shell` and `create_automation` always ask for below full privilege (at read privilege shutdown, reboot and `run_shell` are refused outright, rule or not). Tapping "always" on a confirmation writes one. Unknown keys in a rule are refused. **Security gate.** | live |
 | `<tool>.max_calls` | int ≥ 1 or null | `null` | This tool's per-turn call limit, replacing the agent's general limit. | next chat turn |
 
 ## prompts
@@ -663,13 +663,13 @@ Your fleet, keyed by host name. Edit it in Conf → Computers or by hand; the ge
 | `<host>.ip` | string | required | The address that is pinged, probed and used for service links. A DNS or MagicDNS name works. | live |
 | `<host>.mac` | string or null | `null` | MAC address for Wake-on-LAN. | live |
 | `<host>.ssh_username` | string or null | `null` | SSH user for shutdown, reboot and service commands. | live |
-| `<host>.ssh_password` | string or null | `null` | SSH password. SSH uses passwords only (no keys), and the same password is fed to `sudo`. A secret. | live |
+| `<host>.ssh_password` | string or null | `null` | SSH password. SSH uses passwords only (no keys), the same password is fed to `sudo`, and a host key the server has not seen before is accepted without a check. A secret. | live |
 | `<host>.ssh_port` | int | `22` | SSH port. | live |
 | `<host>.os_type` | `linux` · `windows` · `macos` | `linux` | Decides the shutdown command and which `cmd` variant runs. Any other value is read as `linux`. | live |
-| `<host>.role` | string or null | `null` | A label shown on the host card and in the agent's fleet list. | live |
+| `<host>.role` | string or null | `null` | A label shown on the host card and in the agent's fleet list. The machine editor has no field for it: set it in `config.yaml`. | live |
 | `<host>.vpn_host` | string or null | `null` | The host's Tailscale name (preferred) or address. Used for SSH when `ip` fails, and for service links when you browse over Tailscale. Never pinged or woken. | live |
 | `<host>.ssh_prefer_vpn` | bool | `false` | Try `vpn_host` before `ip` for SSH. | live |
-| `<host>.wake_on_connect` | bool | `false` | Wake this host when you open the app. Needs `mac`. | live |
+| `<host>.wake_on_connect` | bool | `false` | Wake this host whenever the app's live feed connects (opening the app and every reconnect, within `wake.cooldown_s`). Needs `mac`. | live |
 | `<host>.wake_on_presence` | bool | `false` | Wake this host when one of your devices arrives. Needs `mac` and `monitor.enabled`. | live |
 | `<host>.wake_presence_cooldown_s` | int ≥ 0 or null | `null` | This host's own `wake.presence_cooldown_s`. `0`: no cooldown. | live |
 | `<host>.tags` | list of strings | `[]` | **Inert: [ISS-95](../ISSUES.md).** Stored, read by nothing. | inert |

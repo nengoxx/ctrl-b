@@ -19,7 +19,7 @@ Open the **Agents** section. Where it lives is your choice, per device, in Conf 
 Every field saves together with **save**. Fields you do not set are inherited (see [Where agents live](#where-agents-live)).
 
 - **Display name** and **Description** — what the gallery, the chat's name line and `{{char}}` show. Without a display name the slug is used.
-- **Duties** — **Agent** (tool-focused instructions) or **Talk** (conversational instructions). This only changes the guidance text the agent gets; what it may *do* is set by Tools, Skills and Privilege.
+- **Duties** — **Agent** (tool-focused instructions) or **Talk** (conversational instructions). This changes the guidance text the agent gets; what it may *do* is set by Tools, Skills and Privilege. One exception: switching an agent other than the root from **Agent** to **Talk** while it has every tool ticks only the tools in Conf → Roleplay → **Character tools** (`web_search` by default). You see it in **Tools** and can change it before you save.
 - **Backend** — the provider and model this agent runs on, plus **Max output tokens**, **Reasoning effort** and **Reasoning tokens**. Unset, it uses your primary from Conf → Inference. Either way the rest of your fallback chain still backs it up.
 - **Privilege** — Read, Confirm (default), Auto-low or Full. What each level allows is in [Chat → Privilege levels](chat.md#privilege-levels).
 - **Persona · SOUL.md** — who the agent is. This is the first thing in its instructions. An agent without one uses `inference.system_prompt` from Conf → Inference, else the built-in assistant prompt.
@@ -35,7 +35,7 @@ Every field saves together with **save**. Fields you do not set are inherited (s
 
 The footer has **remove**, **export** (a character card — saved changes only; it says **save first** while you have unsaved edits) and **save**.
 
-**Removing an agent** deletes its folder (`agent.yaml`, `SOUL.md`) and its memory folder. The lorebooks and images it uses stay in their libraries. An automation pinned to it stops working, and the report names it. If the agent has conversations you are asked a second time: **Delete** removes them too; cancel keeps them in the database, listed nowhere, and re-creating an agent with the same slug brings them back. The root agent cannot be removed.
+**Removing an agent** deletes its folder (`agent.yaml`, `SOUL.md`, an imported card's data, its own skills) and its memory folder — unless `agent.yaml` points its memory somewhere else (`memory_dir`), in which case that memory is kept. The lorebooks and images it uses stay in their libraries. An automation pinned to it stops working, and the report names it. If the agent has conversations you are asked a second time: **Delete** removes them too, with their attachments; cancel keeps them in the database, listed nowhere, and re-creating an agent with the same slug brings them back. The root agent cannot be removed.
 
 ### The root agent and specialists
 
@@ -71,7 +71,7 @@ A skill is a folder with a `SKILL.md`: optional frontmatter (`name`, `descriptio
 
 An agent can hand several independent sub-tasks to subagents with `spawn_subagents`; they run at the same time and their results come back to it.
 
-- At the default **Confirm** privilege you are asked before each fan-out (it is a medium-risk tool); at **Auto-low** or **Full** it runs without asking.
+- At the default **Confirm** privilege (and at **Read**) you are asked before each fan-out (it is a medium-risk tool); at **Auto-low** or **Full** it runs without asking. The bubble offers no **always**, but an always-allow rule you add for `spawn_subagents` in [Tools](tools.md#the-agent-tools-catalog) without any field lets every fan-out run unasked at any level.
 - Each subagent runs unattended, in its own hidden conversation: anything that would ask you is refused, and the subagent is told.
 - While `agent.subagent_clamp_privilege` is on (the default), a subagent never has more privilege than the agent that started it.
 - Limits: nesting depth (2) and fan-out (3) per agent, 6 at once across the whole server, and 180 seconds per subagent.
@@ -87,7 +87,7 @@ Placeholders in `{{…}}` are filled in when the prompt is built:
 
 They work in the persona, scenario, example dialogue, post-history, your persona's About, and lorebook keys and content; the greeting fills them once (above). Prompt append does not use them. Names are case-insensitive; one written wrong stays as literal text.
 
-`{{random}}`, `{{roll}}` and the time macros change every message. In the persona, scenario, example dialogue, your persona's About or a lorebook entry placed at the top, that makes the model server re-read the whole conversation on every message (its prompt cache cannot help). The editors warn you under such a field while you type, and card and lorebook imports count them in their report.
+`{{random}}`, `{{roll}}` and the time macros (`{{idle_duration}}` included) change every message. In the persona, scenario, example dialogue, your persona's About or a lorebook entry placed at the top, that makes the model server re-read the whole conversation on every message (its prompt cache cannot help). The editors warn you under such a field while you type, and card and lorebook imports count them in their report.
 
 ### Personas
 

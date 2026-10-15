@@ -29,12 +29,13 @@ opens.
 | Wake says "sent" but the machine stays off | The packet only reaches the server's own network segment, and the machine must have Wake-on-LAN enabled | Put the server on the same LAN; enable WoL in the BIOS and network driver (Windows: turn off Fast Startup) |
 | "no MAC configured for … — cannot wake" | The machine has no MAC | Add it in Conf → Computers |
 | "no SSH credentials configured for … — cannot shut down" | SSH user or password missing; SSH is password-only, keys are never used | Set both in Conf → Computers |
-| "sudo could not authenticate — the SSH password must also be the sudo password …" | Linux/macOS shutdown, reboot and `sudo` in service commands use the SSH password for sudo | Make them the same, or allow `NOPASSWD` for those commands |
+| Shut down or Reboot toasts only "failed to shut down …" / "failed to reboot …" | The SSH login or the command failed; the toast carries no reason. Often sudo: Linux/macOS shutdown, reboot and `sudo` in service commands use the SSH password for sudo | Ask the agent to run the same action: its result names the reason (for example "sudo could not authenticate — the SSH password must also be the sudo password …"). Make the passwords the same, or allow `NOPASSWD` for those commands |
 | A service has no start/stop button | There are none in any theme; service control is an agent tool | Ask the agent ([Fleet](fleet.md#services)) |
 | A service link opens the LAN address while you are away | minimal (the kit view) never rewrites links to the VPN host; the other themes do when ctrl-b is open over Tailscale | Set the machine's VPN host, and use another theme if you need it |
 | "it was not cancelled and may still be completing on the host" | An SSH action hit its time limit | Wait for the next poll before retrying |
 | Wake-on-connect or presence wake never fires | No MAC; the fleet monitor is off (presence); the machine looked online; a cooldown is running; quiet hours (Wi-Fi arrivals only) | Check those in Conf → Computers and Conf → Server |
 | `// shell exec is disabled (Conf → Shell → user exec)` | The `!` escape hatch is off (the default) | Turn on Conf → Shell → User exec |
+| The same note while User exec is on | The conversation belongs to a repeating automation, which refuses `!` | Run the command in another conversation |
 
 ## Conf and settings
 
@@ -43,7 +44,7 @@ opens.
 | A setting you edited in `config.yaml` does nothing | A misspelt key or section is silently ignored | Compare it with `config.example.yaml`, or check `GET /api/settings` |
 | An `agents:` list in `config.yaml` does nothing | Agents are folders, not a config list | Use the gallery ([Agents](agents.md)) |
 | Changing **Port** or **Bind host** in Conf did nothing, even after a restart | The listening address comes from the uvicorn command line; the port field only changes what `/api/health` reports, and the bind host field changes nothing ([ISS-91](../ISSUES.md)) | Change the systemd unit or the start script, and `tailscale.target_port` |
-| A saved setting has no effect, and no restart was asked for | One of the startup-only settings: open-terminal risks and endpoint, `trusted_hosts`, the skill and subagent limits, `skills_dir` ([ISS-92](../ISSUES.md)) | Restart the server |
+| A saved setting has no effect, and no restart was asked for | One of the startup-only settings: open-terminal risks (and its endpoint, if it had none at startup), `trusted_hosts`, the skill and subagent limits, `skills_dir` ([ISS-92](../ISSUES.md)) | Restart the server |
 | Save stays disabled under **can't save — resolve first:** | A reference to a removed provider or model, or invalid JSON in a field | Fix each listed item |
 | **Providers changed elsewhere — reload the tab …** | Another device saved providers since you opened Conf | Reload, redo the edit |
 | "agent is busy — try again in a moment" when saving the tool catalog | A turn is running in some conversation | Wait for it to finish |
@@ -125,7 +126,7 @@ opens.
 - `POST /api/actions/{name}` can run any registered action, including the ones the UI hides, behind
   the confirm step ([ISS-88](../ISSUES.md)).
 - A `!` or `run_shell` timeout kills only the shell, not what it started ([ISS-89](../ISSUES.md)).
-- Open-terminal output is not masked for secrets.
+- Open-terminal output is not masked for secrets ([ISS-98](../ISSUES.md)).
 
 **Settings and operations**
 - `update.sh` can report "config NOT migrated" after a run that did migrate; check the backups

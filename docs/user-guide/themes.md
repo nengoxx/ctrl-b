@@ -21,7 +21,7 @@ its own options, so they are still there when you come back to it.
 | **Vapor** | Vaporwave, with an animated sun-and-grid hero over the fleet. | dark | Vapor · Aqua · Ember | 4 tabs |
 | **Minimal** | A calm, plain skin over the standard layout, with one quiet accent. | dark · light | Cyan · Moss · Iris · Amber | 4 tabs |
 | **Frontier** | A badlands comic western. The fleet is a map, and chat has a floating rig stack. Its tabs read *frontier · comms · tools · settings · cast*. | dark (night) · light (day) | Coral · Amber · Magenta · Violet | 3 tabs |
-| **Gacha** | A capsule-arcade prize parlour, with a pickup banner, capsule cards and a unit dossier. Its tabs carry Japanese sub-labels. | dark | Arcade · Midnight · Indigo · Ember · Glacier · Nebula · Eridu · Jade | 3 tabs |
+| **Gacha** | A capsule-arcade prize parlour, with a pickup banner, capsule cards and a unit dossier. Its tabs read *fleet · agent · tools · settings · cast*, each with a Japanese sub-label. | dark | Arcade · Midnight · Indigo · Ember · Glacier · Nebula · Eridu · Jade | 3 tabs |
 
 The **Mode** row only appears for themes that have both modes (minimal and frontier). Vapor, cosmos
 and gacha are dark-only.
@@ -84,7 +84,7 @@ Every theme also offers four shared rows. Their defaults differ per theme:
 - **Agents**: where the character gallery lives. **Conf** (the default) makes it a group inside Conf,
   **Button** puts it in the nav menu, and **Tab** gives it its own seat on the bar.
 - **App icon backdrop**: the background baked into the installed home-screen icon (**Clear** · **Ink** ·
-  **Night** · **Orchid** · **Paper**). Chrome picks it up the next time it refreshes the installed app;
+  **Night** · **Orchid** · **Paper**; with **Clear**, Chrome fills the icon's background white). Chrome picks it up the next time it refreshes the installed app;
   approve it under the app's ⋮ menu if asked, or uninstall and re-add the app to apply it at once.
   Firefox bakes the icon at install and never updates it.
 
@@ -96,7 +96,8 @@ Appearance changes apply at once, with no Save button.
 |---|---|
 | Theme · Mode · Palette · each theme's own options (including the composer rows) · Motion · Blur · Shared background · Bar subtitle · Chat avatars · Agent backdrop · App icon backdrop | App bar · Layout · Agents placement · auto read-aloud (the app-bar speaker) · the section you were last on · which Conf groups are open |
 
-When two devices change synced settings, the later change wins. The app reopens on the section you
+When two devices change synced settings, the later change wins. If the server refuses a synced
+change, you see **Couldn't sync appearance**, and your other devices don't get that change. The app reopens on the section you
 last used.
 
 ### Install ctrl-b on your phone
@@ -138,7 +139,7 @@ changes made offline are sent when you reconnect.
 | [`appearance.appbar_subtitle_visible`](configuration-reference.md#appearance) | Bar subtitle. | off | live, synced |
 | [`appearance.chat_avatars_visible`](configuration-reference.md#appearance) | Chat avatars. | on | live, synced |
 | [`appearance.agent_backdrop`](configuration-reference.md#appearance) | Agent backdrop (operator · full · off). | operator | live, synced |
-| [`appearance.pwa_icon_background`](configuration-reference.md#appearance) | App icon backdrop. | clear | when the browser refreshes the installed app |
+| [`appearance.pwa_icon_background`](configuration-reference.md#appearance) | App icon backdrop. | `transparent` (shown as **Clear**) | when the browser refreshes the installed app |
 | **App bar** · **Layout** · **Agents** placement | The bar and navigation shape. | On · Auto · Conf | live, this device only (not in `config.yaml`) |
 
 The `appearance:` block in `config.yaml` is written by the app. You don't need to edit it by hand.

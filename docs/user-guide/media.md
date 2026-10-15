@@ -102,8 +102,10 @@ way you expect. Renaming a machine leaves its old picture unmatched. Rename the 
 - **A replaced picture can look stale once.** Pictures are cached on your device so the app works
   offline. A picture you replace under the same name, for example over SSH, is shown from the cache first
   and refreshed in the background, so the new one appears on the next view. A file you copy in shows up
-  once the gallery's listing refreshes, which happens when you come back to the app after a minute or
-  reopen it.
+  in the gallery the next time you enter Conf, which re-reads the folders each time. Elsewhere in the
+  app it appears once the listing refreshes: entering Conf refreshes it everywhere, and otherwise
+  theme art refreshes when you come back to the app more than a minute later, and the shared art after
+  ten minutes, or when you reload the app.
 - **"Empty" files from the Android picker.** Android's generic file picker sometimes reports a real photo
   as 0 bytes, and the app then says *"this device reported that file as empty"*. Pick it again from the
   photo grid or through a file manager. See [ISS-47](../ISSUES.md).

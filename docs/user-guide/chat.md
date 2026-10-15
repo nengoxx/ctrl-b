@@ -6,7 +6,7 @@ The chat section is where you talk to your agents. You type (or dictate) a messa
 
 ### Send a message
 
-- Tap the text field, type, and tap the send arrow. On a desktop keyboard **Enter** sends and **Shift+Enter** adds a new line.
+- Tap the text field, type, and tap the send arrow. **Enter** sends and **Shift+Enter** adds a new line. An Enter pressed while your keyboard is still composing a word (an input-method candidate) does not send.
 - While a reply streams, the send arrow turns into a **stop** square. Tap it to stop the reply.
 - If you send another message while the agent is still working, it does not start a second reply: it is **queued** into the running one and fed to the agent at its next step. A queued message shows muted with a **queued** chip; tap the chip to take it back. Tapping stop puts every queued line back in the text field.
 - Scrolled up in a long conversation? The **↓ Jump to latest** pill takes you back to the bottom on the first tap, even while the list is still coasting.
@@ -31,7 +31,7 @@ The first character of what you type decides where it goes.
 | `/help` | Lists every command, including your providers by name. |
 | anything else | A message to the agent. |
 
-If a name could mean two things, built-in commands win over skills, and skills win over providers. Typing `/` shows suggestions; `/agent ` and `/privilege ` suggest names and levels. An unknown command gets `// unknown command: /x — try /help` and is not sent to the agent.
+If a name could mean two things, built-in commands win over skills, and skills win over providers. Typing `/` shows suggestions; `/agent ` and `/privilege ` suggest names and levels. While the suggestions are open, the arrow keys move through them, **Tab** or **Enter** completes the highlighted one (Enter sends instead when what you typed already is that suggestion), and **Esc** closes them. An unknown command gets `// unknown command: /x — try /help` and is not sent to the agent.
 
 `/agent`, `/privilege` and a sticky `/<provider>` are remembered in this browser (they survive a reload). Your other devices keep their own.
 
@@ -84,7 +84,8 @@ The choice belongs to this conversation on this device: opening another conversa
 ### Replies: copy, retry, edit, delete
 
 - Tap a reply's name line to show its details: the model, token counts and speed, and the actions **retry**, **edit** and **delete**.
-- **Retry** writes a new version of the last reply. When there are several, **‹ n/count ›** flips between them; **›** on the last version writes another. If the reply ran a tool that is not safe to repeat, you are asked before it re-runs.
+- **Retry** writes a new version of the last reply. When there are several, **‹ n/count ›** flips between them; **›** on the last version writes another. A failed reply has its own **retry** under the error, which works the same way.
+- A new version does not undo what the old one did. If the reply you retry ran a tool that is not marked safe to repeat — a reboot, a service restart, a shell command, a memory or skill write, subagents, a new automation, any remote-terminal tool, an outside tool its server does not mark read-only or repeatable — you are asked first (**Retry this reply?**), because the new version may run it again. Read-only tools (including OpenAPI `GET`/`HEAD` operations) and the ones where a second run changes nothing (wake, start or stop a service, shutdown, the plan) retry without asking.
 - **Edit** changes a reply's text in place; the pencil on your own message edits it, and its editor also holds **Delete message**.
 - Code blocks have **copy** and **edit** (edit drops the code into the text field).
 - The name line shows which endpoint answered only when a fallback saved the reply, in a warning colour.
@@ -94,7 +95,7 @@ The choice belongs to this conversation on this device: opening another conversa
 When a tool needs your go-ahead, its bubble opens with **allow**, **always**, **edit** and **deny**.
 
 - **allow** runs it once. **deny** declines it; the agent is told.
-- **always** runs it and saves a standing grant for that exact call (same arguments). Revoke grants in the Tools section, under the tool. **always** is not offered for shutdown, reboot, `run_shell` and `create_automation` (they always ask below Full) or for calls with list-shaped arguments.
+- **always** runs it and saves a standing grant for that exact call (same arguments). Revoke grants in the [Tools](tools.md#the-agent-tools-catalog) section, under the tool. **always** is not offered for shutdown, reboot, `run_shell` and `create_automation` (they always ask below Full) or for calls with list-shaped arguments.
 - **edit** drops the command into the text field so you can change it.
 - When the agent asks you something (the `question` tool), answer in the bubble.
 - With memory auto-write off, a memory or skill change arrives as a proposal with **approve** / dismiss.
@@ -130,7 +131,9 @@ What happens when the agent calls a tool depends on the tool's risk and the priv
 | `mcp__<server>__<tool>` | A tool from an MCP server | per tool — see [Tool servers](#tool-servers-mcp-and-openapi) | | | |
 | `api__<server>__<operation>` | An operation from an OpenAPI server | per tool — see [Tool servers](#tool-servers-mcp-and-openapi) | | | |
 
-`run_shell`, today: it is refused for every caller when `shell.enabled` is off. Below Full it is refused while the agent shell toggle (`shell.agent_exec_enabled`) is off and asks when it is on. **At Full it runs without asking even when that toggle is off** — the only off switch at Full is `shell.enabled: false` ([ISS-87](../ISSUES.md)). Treat `full` as "this agent may run shell commands on the server".
+**Always-allow rules.** A medium- or high-risk tool also runs without asking when an always-allow rule you saved for it covers the call — at any level, except for what Read blocks. A rule with no fields covers every call of that tool. Rules never apply to shutdown, reboot, `run_shell` and `create_automation`. See [Tools](tools.md#the-agent-tools-catalog).
+
+`run_shell`, today: when `shell.enabled` is off, every run is refused. At Read it is always refused. At Confirm and Auto-low it is refused while the agent shell toggle (`shell.agent_exec_enabled`) is off and asks when it is on. **At Full it runs without asking even when that toggle is off** — the only off switch at Full is `shell.enabled: false` ([ISS-87](../ISSUES.md)). Treat `full` as "this agent may run shell commands on the server".
 
 Agents running unattended (automations, subagents) never get a bubble: anything that would ask is refused on the spot and the agent is told.
 
@@ -239,7 +242,7 @@ Each server also takes `enabled`, `connect_timeout_s` (10 s, for discovery and e
 | [`memory.longterm.backend`](configuration-reference.md#memorylongterm) | `core` turns Core Memory on | `null` (off) | live |
 | [`memory.git_backup.*`](configuration-reference.md#memorygit_backup) | The memory folder's git history; `reconcile_interval_s` = how often hand edits are committed (`0` = never) | on, `120` s | live |
 | [`shell.enabled` / `user_exec_enabled` / `agent_exec_enabled`](configuration-reference.md#shell) | The `!` shell and `run_shell` — see the `run_shell` note above | `true` / `false` / `false` | live |
-| [`tool_overrides`](configuration-reference.md#tool_overrides) | Per-tool description, agent access, "always" grants, call cap (the Tools section) | none | live |
+| [`tool_overrides`](configuration-reference.md#tool_overrides) | Per-tool description, agent access, "always" grants, call cap (the Tools section) | none | grants live · the rest next chat turn |
 | [`mcp_servers` / `openapi_servers`](configuration-reference.md#mcp_servers) | Outside tool servers | none | next chat turn or **Rediscover tools** |
 | [`prompts`](configuration-reference.md#prompts) | Your overrides of built-in prompts (Conf → Prompts) | none | next chat turn |
 | [`searxng`](configuration-reference.md#searxng) | The SearXNG instance behind `web_search` (needs its JSON format on) | none | live |

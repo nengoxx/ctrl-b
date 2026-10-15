@@ -24,7 +24,7 @@ Write-Host "== ctrl-b dashboard (v2) - Windows setup ==" -ForegroundColor Cyan
 Write-Host "app root: $ROOT"
 
 function Test-Cmd($n) { return [bool](Get-Command $n -ErrorAction SilentlyContinue) }
-if (-not (Test-Cmd npm))  { throw "npm not found - install Node 20+ from nodejs.org, then re-run." }
+if (-not (Test-Cmd npm))  { throw "npm not found - install Node 20.19+ or 22.12+ from nodejs.org (Vite 7 refuses older releases), then re-run." }
 
 # Backend venv: reuse an existing one (>=3.14), else create with the best available Python (prefer 3.14).
 function Resolve-Py {

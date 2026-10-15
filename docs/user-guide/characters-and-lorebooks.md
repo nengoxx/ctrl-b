@@ -45,10 +45,10 @@ A lorebook is a list of **entries**. Each entry has text (**Content**) and **Key
 How matching works:
 
 - **What is scanned:** your new message plus the last 2 chat messages before it (`lorebooks.scan_depth`; `0` = only your new message). Only chat text — no tool output, no attachment contents. Each message is scanned as `Name: text`, so a key that is a speaker's name fires on that speaker's lines (`lorebooks.include_names`).
-- **Keys are plain text**, never patterns. By default they ignore case and match whole words (**Case sensitive**, **Whole words** per entry). Macros such as `{{char}}` and `{{user}}` work in keys.
+- **Keys are plain text**, never patterns. By default they ignore case and match whole words (**Case sensitive**, **Whole words** per entry). A key of several words matches wherever that exact phrase appears, whole words or not. Macros such as `{{char}}` and `{{user}}` work in keys.
 - **Second gate** (optional): extra keys that must also match (**Gate logic** `and_any`) or must not match (`not_any`).
 - **Always on**: the entry is added on every reply, no keys needed.
-- An entry with no keys that is not **Always on** never fires.
+- An entry with no keys that is not **Always on** never fires, and neither does one whose content is empty once its macros are filled in.
 - **Where it goes:** **Position** `head` (beside the agent's instructions, the default) or `tail` (after the conversation, just before the post-history instructions).
 - **Budget:** at most 4,000 characters of entry text per reply (`lorebooks.budget_chars`), counted across head and tail together. Over the budget, the entries with the lowest **Priority** are dropped first; an entry without a priority uses its **Order** number. Survivors are placed by **Order**, lowest first.
 - **Which books:** the books attached to the agent, plus the **Global lorebooks** every agent reads. A book attached both ways counts once. A disabled book or entry is skipped.
@@ -69,14 +69,14 @@ Attach a book to one agent in its editor (**Lorebooks**), or to every agent unde
 
 ### Prompt cache and macros
 
-Head entries sit with the agent's instructions. When the set of matching head entries changes from one message to the next, the model server has to re-read the whole conversation instead of reusing its cache, which makes that reply slower to start on a local model. Tail entries only change the end. The same is true of macros that change every message (`{{random}}`, `{{roll}}`, the time macros) inside a head entry: the editor warns you under the entry while you type, and an import counts them. See [Agents → Macros](agents.md#macros).
+Head entries sit with the agent's instructions. When the set of matching head entries changes from one message to the next, the model server has to re-read the whole conversation instead of reusing its cache, which makes that reply slower to start on a local model. Tail entries only change the end. The same is true of macros that change every message (`{{random}}`, `{{roll}}`, the time macros, `{{idle_duration}}`) inside a head entry: the editor warns you under the entry while you type, and an import counts them. See [Agents → Macros](agents.md#macros).
 
 ## Settings that affect it
 
 | Setting | What it changes | Default | Applies |
 |---|---|---|---|
 | [`roleplay.enabled`](configuration-reference.md#roleplay) | Shows the character fields and the card import | `false` | live |
-| [`roleplay.default_tools`](configuration-reference.md#roleplay) | The tools an imported character starts with | `[web_search]` | live (next import) |
+| [`roleplay.default_tools`](configuration-reference.md#roleplay) | The tools an imported character starts with, and the tools an agent gets when you switch its Duties to Talk ([Agents](agents.md#the-agent-editor)) | `[web_search]` | live (next import or switch) |
 | [`roleplay.card_import.*`](configuration-reference.md#roleplaycard_import) | Card size caps: file, card data, CHARX contents | 15 MB / 2 MB / … | live |
 | [`roleplay.personas` / `default_persona`](configuration-reference.md#roleplay) | Your personas — who `{{user}}` is ([Agents → Personas](agents.md#personas)) | none | next chat turn |
 | [`lorebooks.books`](configuration-reference.md#lorebooks) | Global lorebooks, read by every agent | none | next chat turn |
