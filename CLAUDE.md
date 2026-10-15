@@ -189,10 +189,11 @@ whenever a review is warranted, small slices included.
 **Model versions are EXPLICIT, OWNER-TESTED PINS — never a floating alias (owner policy,
 2026-09-23).** New releases "are a little bit wonky" until tried by hand, so a launcher switches to
 a new version only after the owner has tested it. As of 2026-09-23: main seat `claude-fable-5-1`,
-workforce `claude-opus-5-5`. The pins live in `tools/start-claude.sh` (the `@fable`/`@opus`
-units), `~/script/fable` + `~/.config/systemd/user/claude-workspace.service` (the workspace
-session), and `~/.claude/settings.json` (`model` + `env.ANTHROPIC_DEFAULT_OPUS_MODEL`, which is
-what the Agent tool's `model: "opus"` resolves through). Bump all of them together, after the test.
+workforce `claude-opus-5-5`. The pins live in ONE place since 2026-10-15 (ISS-100):
+`~/.claude/settings.json` → `env.ANTHROPIC_DEFAULT_FABLE_MODEL` + `env.ANTHROPIC_DEFAULT_OPUS_MODEL`.
+Every launcher passes the bare `fable`/`opus` alias and Claude Code resolves it through those two
+keys — `tools/start-claude.sh` (the `@fable`/`@opus` units) and the Agent tool's `model: "opus"`
+alike. Bump them there, after the test; a running session keeps its model until it restarts.
 
 *(This inverts the 2026-07-24 arrangement, where Opus held the main seat and Fable was an on-request
 second opinion. The METHOD is unchanged — judgement in the main seat, execution in subagents; only

@@ -43,7 +43,7 @@ deploy/
 │       └── ctrl-b-agent@.service             # TEMPLATE: the ALWAYS-ON Claude agents — instances
 │                                             #   @fable → tmux ctrl-b-fable (claude-fable-5-1, high) ← MAIN seat (2026-07-28)
 │                                             #   @opus  → tmux ctrl-b-opus  (claude-opus-5-5, high)  ← workforce
-│                                             #   (explicit owner-tested pins, tools/start-claude.sh)
+│                                             #   (explicit owner-tested pins, ~/.claude/settings.json)
 └── windows/                  # the double-click Windows kit (setup/start/autostart)
 
 ../tools/                     # dev launchers (NOT deploy): start-claude.sh (Linux), claude-{fable,opus}.{ps1,cmd} (Windows), add-dev-worktree.sh
@@ -337,8 +337,11 @@ unit **`ctrl-b-agent@.service`** is enabled by `install.sh dev` as **two boot in
 `ctrl-b-agent@fable` (tmux **`ctrl-b-fable`**, model **`claude-fable-5-1`**, effort high — **the MAIN seat
 since 2026-07-28**: designs, supervises, rules, audits) and `ctrl-b-agent@opus` (tmux **`ctrl-b-opus`**, model
 **`claude-opus-5-5`**, effort high — the subagent workforce + an interactive session when wanted). The ids are
-**explicit, owner-tested pins** in `tools/start-claude.sh` (the `fable`/`opus` aliases resolve there), never
-Claude Code's floating aliases — bump them only after the owner has tested a new version (CLAUDE.md). **Both
+**explicit, owner-tested pins** in `~/.claude/settings.json` (`env.ANTHROPIC_DEFAULT_FABLE_MODEL` /
+`env.ANTHROPIC_DEFAULT_OPUS_MODEL`): `tools/start-claude.sh` passes the bare `fable`/`opus` alias and Claude Code
+resolves it through those keys (ISS-100, 2026-10-15) — bump them there, only after the owner has tested a new
+version (CLAUDE.md); a running session keeps its model until it restarts. Without the pins, Claude Code falls back
+to its own latest Fable/Opus. **Both
 run with `--permission-mode bypassPermissions` by default** (`PERM` in `start-claude.sh`). Each ensures its tmux session exists, running
 `claude --remote-control` in the **workspace** — attach over SSH or drive from claude.ai/code. On boot
 the launcher **waits (≤60s) for network connectivity before starting claude** — the remote-control

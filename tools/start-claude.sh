@@ -33,13 +33,10 @@ PERM="${PERM:-bypassPermissions}"
 # Friendly aliases. NOTE (owner 2026-07-28): the MAIN seat is now FABLE — Opus is the subagent
 # workforce; the systemd boot instances pass their model explicitly (@fable/@opus). This script's
 # bare default stays `opus` for back-compat of manual launches; pass `fable` for the main seat.
-# BOTH resolve to EXPLICIT, OWNER-TESTED ids (owner policy 2026-09-23: new releases are wonky
-# until tried by hand, so nothing here rides Claude Code's floating `opus`/`fable` aliases — bump
-# these two lines only after the owner has tested the new version). Full ids pass through.
-case "$MODEL" in
-  fable) MODEL="claude-fable-5-1" ;;
-  opus)  MODEL="claude-opus-5-5" ;;
-esac
+# `fable` / `opus` are passed to Claude Code as-is and resolve to the owner's EXPLICIT, OWNER-TESTED
+# pins in ~/.claude/settings.json (env.ANTHROPIC_DEFAULT_FABLE_MODEL / ANTHROPIC_DEFAULT_OPUS_MODEL —
+# owner policy 2026-09-23: new releases are wonky until tried by hand; one pin bump there moves every
+# launcher). Without those pins Claude Code falls back to its own latest Fable/Opus. Full ids pass through.
 
 command -v tmux  >/dev/null || { echo "tmux not found — sudo apt install -y tmux"; exit 1; }
 command -v claude >/dev/null || { echo "claude not found on PATH"; exit 1; }

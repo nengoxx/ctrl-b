@@ -252,7 +252,8 @@ snapshots named `ctrlb-*`, [ISS-93](./docs/ISSUES.md)), and renders the systemd 
 workspace — `ctrl-b-agent@fable` (`claude-fable-5-1` — **the main model**: designs, supervises, rules,
 audits) and `ctrl-b-agent@opus` (`claude-opus-5-5`, the subagent workforce that carries the heavy token
 work), each in its own tmux session. The model ids are explicit, owner-tested pins in
-`tools/start-claude.sh`; both run with `--permission-mode bypassPermissions` unless `PERM=` in
+`~/.claude/settings.json` (`env.ANTHROPIC_DEFAULT_FABLE_MODEL` / `ANTHROPIC_DEFAULT_OPUS_MODEL`, which resolve
+the `fable`/`opus` alias `tools/start-claude.sh` passes); both run with `--permission-mode bypassPermissions` unless `PERM=` in
 `~/.config/ctrl-b/agent-<i>.env` says otherwise. Connect to them:
 
 ```bash
