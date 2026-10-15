@@ -21,7 +21,7 @@ What you get:
 - **Greeting** (`first_mes`), **alternate greetings** (stored, not yet pickable), **example dialogue**, **scenario** and **post-history instructions**.
 - **Avatar** — the PNG itself (with the card data taken out), or the CHARX icon.
 - **The card's embedded lorebook**, if any, imported as a lorebook and attached to the new agent.
-- Safe defaults: **Talk** duties, only the tools ticked under Conf → Roleplay → **Character tools** (`web_search` by default), no skills, Confirm privilege. Widen them in the agent's editor.
+- Safe defaults: **Talk** duties, only the tools ticked under Conf → Roleplay → **Character tools** (`web_search` by default), no skills, and the privilege every agent inherits from `agent.defaults` (Confirm, unless you changed it). Widen them in the agent's editor.
 - **Scripts are removed.** Card fields that carry code or prompt rewriting for other apps (`customScripts`, `triggerscript`, `virtualscript`, `lowLevelAccess`, `regex_scripts`) are stripped wherever they sit, and the report lists them. In a CHARX archive only the card and its icon are ever opened.
 - Everything else the card carried is kept beside the agent (`card.json`), so an export can give it back.
 

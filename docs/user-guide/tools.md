@@ -59,8 +59,9 @@ row shows:
   tool without asking. Tapping **always** on a confirm bubble in chat adds an exact rule for that
   call; here you can see them, revoke one with **×**, or add your own: a rule is a set of
   `field = pattern` pairs, where the pattern may use `*` and `?`. A rule matches a call when every
-  field it lists matches; fields it does not list can be anything. A rule with no fields is shown
-  as **any args** and allows every call of that tool.
+  field it lists matches; fields it does not list can be anything. A rule you add here with no fields
+  is shown as **any args** and allows every call of that tool. A rule shown as **no args** (written
+  by tapping **always** on a call that had no arguments) matches only a call with no arguments.
 
 `run_shell` is shown read-only, marked "governed by Conf → Shell": its access is set there (see
 [Fleet](fleet.md#the--local-shell)).
@@ -85,7 +86,7 @@ per-tool cap) has no control here; set it in the file.
 | [`tool_overrides.<tool>.agent_mode`](configuration-reference.md#tool_overrides) | Whether the agent may use the tool (core · on · off) | the tool's own default | next chat turn |
 | [`tool_overrides.<tool>.description`](configuration-reference.md#tool_overrides) | The text the agent reads about the tool | the built-in text | next chat turn |
 | [`tool_overrides.<tool>.approvals`](configuration-reference.md#tool_overrides) | The always-allow rules | none | live |
-| [`tool_overrides.<tool>.max_calls`](configuration-reference.md#tool_overrides) | Per-turn call cap for this tool (file only) | the agent's per-tool cap | live |
+| [`tool_overrides.<tool>.max_calls`](configuration-reference.md#tool_overrides) | Per-turn call cap for this tool (file only) | the agent's per-tool cap | next chat turn |
 | [`shell.agent_exec_enabled`](configuration-reference.md#shell) | Access to `run_shell` (not set in this catalog) | off | live |
 | [`mcp_servers`, `openapi_servers`](configuration-reference.md#mcp_servers) | Which external tools appear in *mcp & openapi tools* | none | next chat turn |
 

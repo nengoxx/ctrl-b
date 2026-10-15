@@ -16,7 +16,7 @@ opens.
 | The server refuses to start and exits with code 78, printing "config migration required" | The release changed the config's shape | Run the command it prints (`… -m app.config_migration --apply`); `--check` first shows what would change. A copy of the old config goes to `$CTRLB_HOME/backups/` |
 | Exit 78 with "config preflight: …" | A config value, or a `CTRLB_*` environment override, is invalid (for example an override aimed at a list such as `CTRLB_PROVIDERS__…`, or a non-number port) | Fix the value the message names; remove the override |
 | Exit 78 on Windows and the dashboard never appears | The hidden autostart task retries three times and gives up silently | Run `start.cmd` by hand to see the message |
-| The phone cannot open the plain `http://` address | The one-command scripts listen on `127.0.0.1` only | Use the HTTPS address through Tailscale Serve ([Getting started](getting-started.md#4-give-it-https-and-open-it-on-your-phone)) |
+| The phone cannot open the plain `http://` address | The one-command scripts in production mode (`run.sh prod`, `start.cmd` without `-Dev`) listen on `127.0.0.1` only | Use the HTTPS address through Tailscale Serve ([Getting started](getting-started.md#4-give-it-https-and-open-it-on-your-phone)) |
 | A change in `.env` has no effect | `.env` is read once at startup, from the repository root (or the file `CTRLB_ENV` names); a variable already set in the real environment wins | Restart the server; check the real environment |
 
 ## Fleet
@@ -42,7 +42,7 @@ opens.
 |---|---|---|
 | A setting you edited in `config.yaml` does nothing | A misspelt key or section is silently ignored | Compare it with `config.example.yaml`, or check `GET /api/settings` |
 | An `agents:` list in `config.yaml` does nothing | Agents are folders, not a config list | Use the gallery ([Agents](agents.md)) |
-| Changing **Port** or **Bind host** in Conf did nothing, even after a restart | The listening address comes from the uvicorn command line; those fields only change what `/api/health` reports ([ISS-91](../ISSUES.md)) | Change the systemd unit or the start script, and `tailscale.target_port` |
+| Changing **Port** or **Bind host** in Conf did nothing, even after a restart | The listening address comes from the uvicorn command line; the port field only changes what `/api/health` reports, and the bind host field changes nothing ([ISS-91](../ISSUES.md)) | Change the systemd unit or the start script, and `tailscale.target_port` |
 | A saved setting has no effect, and no restart was asked for | One of the startup-only settings: open-terminal risks and endpoint, `trusted_hosts`, the skill and subagent limits, `skills_dir` ([ISS-92](../ISSUES.md)) | Restart the server |
 | Save stays disabled under **can't save — resolve first:** | A reference to a removed provider or model, or invalid JSON in a field | Fix each listed item |
 | **Providers changed elsewhere — reload the tab …** | Another device saved providers since you opened Conf | Reload, redo the edit |

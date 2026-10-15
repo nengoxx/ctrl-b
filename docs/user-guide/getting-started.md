@@ -86,8 +86,11 @@ Once the app is running you can also flip this from **Conf → Server → HTTPS 
 Serve)**, the card at the bottom of the Server group. The one-time Tailscale setup (MagicDNS,
 HTTPS certificates, the operator permission) is in [`HTTPS_TAILSCALE.md`](../HTTPS_TAILSCALE.md).
 
-Then, on your phone, open `https://<server>.<tailnet>.ts.net`. The one-command scripts listen on
-`127.0.0.1` only, so from another device Tailscale Serve is the way in.
+Then, on your phone, open `https://<server>.<tailnet>.ts.net`. The one-command scripts in their
+production mode (`run.sh prod`, `start.cmd` without `-Dev`) listen on `127.0.0.1` only, so from another
+device Tailscale Serve is the way in. Their dev mode is different: it starts Vite on `0.0.0.0:5173`,
+which passes the whole API through over plain HTTP to anyone on your LAN while it runs
+([security model](../SECURITY_MODEL.md) §2.1).
 
 ### 5. Install it as an app (optional)
 
@@ -128,7 +131,7 @@ prepare the machine, is on the [Fleet](fleet.md) page.
 | Setting | What it changes | Default | Applies |
 |---|---|---|---|
 | [`server.poll_seconds`](configuration-reference.md#server) | How often the fleet is pinged and the Fleet screen refreshes | 5 | live |
-| [`server.debug`](configuration-reference.md#server) | Verbose errors and debug logging | false | restart |
+| [`server.debug`](configuration-reference.md#server) | Debug logging | false | restart |
 | [`server.host` / `server.port`](configuration-reference.md#server) | Nothing that binds: the address comes from the uvicorn command line ([ISS-91](../ISSUES.md)) | 127.0.0.1 / 5433 | — |
 | [`tailscale.target_port`](configuration-reference.md#tailscale) | Which local port the Conf HTTPS card points Serve at | 5433 | live |
 | [`computers`](configuration-reference.md#computers) | Your machines (edit them in Conf → Computers) | none | live |

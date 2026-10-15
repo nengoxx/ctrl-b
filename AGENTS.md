@@ -190,7 +190,8 @@ improve — never weaken** them:
   the user types `!<cmd>` → `POST /api/exec`; the agent's own tool is `run_shell`), and **both toggles
   default OFF**: `shell.user_exec_enabled` and `shell.agent_exec_enabled` are `False`
   (`app/config.py` `ShellCfg`). **The agent toggle governs agents BELOW `full` only** — off → `run_shell`
-  DENIED, on → CONFIRM; a `full` caller runs it with no confirm whether the toggle is on or off
+  DENIED, on → CONFIRM at `confirm`/`auto_low` (`readonly` is DENIED either way: `run_shell` is a HIGH
+  `action`); a `full` caller runs it with no confirm whether the toggle is on or off
   (`core/permissions.py::decide`, pinned by `tests/test_shell_5.py`), so the only off-switch at `full` is
   `shell.enabled: false` (ISS-87). `ui_exposed` is a listing flag, not a gate: `POST /api/actions/{name}`
   reaches every registered tool behind its confirm token (ISS-88). Don't expose arbitrary shell beyond
@@ -209,7 +210,7 @@ improve — never weaken** them:
   loosen it, and don't route agent traffic through it. (SECURITY_MODEL §2.10.)
 - **SSH credentials + API keys live in `config.yaml`** (gitignored, masked on API read). Never commit or
   echo them. `paramiko` uses `AutoAddPolicy` — acceptable only inside the trusted tailnet.
-- **`debug` is off by default** (it's an RCE surface). Keep it off for anything reachable.
+- **`debug` is off by default.** It only raises the `app` logger to DEBUG (restart-required); it enables no debugger and no error pages.
 - **MCP/OpenAPI tool providers** are external surfaces — risk-annotate their tools; don't grant blanket ALLOW.
 
 When adding an execution path, prefer a new **typed action** over widening a raw path.

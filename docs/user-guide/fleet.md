@@ -31,7 +31,8 @@ shows.
 | Theme | Controls |
 |---|---|
 | minimal | Wake on an offline card, Shut down on an online one (no Reboot, no Ping) |
-| cosmos, vapor | Reboot, Shut down, Wake and Ping, in the machine's detail view |
+| cosmos | Reboot, Shut down, Wake and Ping, in the machine's detail view |
+| vapor | On the row itself: Reboot and Shut down when online, Wake when offline; Ping in the expanded row |
 | frontier, gacha | Reboot, Shut down, Wake, in the machine's detail view |
 
 There is no sleep or hibernate action. The buttons show whether or not the machine has the fields
@@ -117,8 +118,9 @@ the command is queued and runs at the turn's next step. With User exec off you s
 **Agent run_shell** is a separate switch for the agent's own `run_shell` tool. It works differently
 from what its label suggests ([ISS-87](../ISSUES.md)):
 
-- For an agent below **full** privilege: off = the tool is refused; on = you are asked to confirm
-  every call.
+- For an agent at **read** privilege: the tool is always refused, whatever the switch says.
+- For an agent at **confirm** or **auto-low** privilege: off = the tool is refused; on = you are asked
+  to confirm every call.
 - For an agent at **full** privilege (set in its `agent.yaml`, or by you with `/privilege full`):
   `run_shell` runs **without asking, whether the switch is on or off**.
 - The only off-switch that also covers full privilege is **Conf → Shell → Enabled** (`shell.enabled:

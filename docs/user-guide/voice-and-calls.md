@@ -166,9 +166,9 @@ when a call starts, so a change applies to the next call. Every key is described
 | [`voice.stt.upload_attempts`](configuration-reference.md#voicestt) | Tries before a clip waits in the Retry / Discard notice. | 3 | live |
 | [`voice.stt.language`](configuration-reference.md#voicestt) | Forces a transcription language on a Whisper server. Parakeet ignores it. | `en` | live |
 | [`voice.stt.vad_filter` / `hotwords`](configuration-reference.md#voicestt) | Whisper-only extras; no effect on Parakeet or the realtime ear. | on / blank | live |
-| [`voice.live.dictation`](configuration-reference.md#voicelive) | Live dictation (phrases as you speak). | off | live |
-| [`voice.live.tail_wait_ms`](configuration-reference.md#voicelive) | How long a live dictation waits for your last phrase. | 2000 ms | live |
-| [`voice.live.dictation_idle_s` / `dictation_max_s`](configuration-reference.md#voicelive) | Idle stop and time limit for a live dictation. | 300 s / 1790 s | live |
+| [`voice.live.dictation`](configuration-reference.md#voicelive) | Live dictation (phrases as you speak). | off | next call |
+| [`voice.live.tail_wait_ms`](configuration-reference.md#voicelive) | How long a live dictation waits for your last phrase. | 2000 ms | next call |
+| [`voice.live.dictation_idle_s` / `dictation_max_s`](configuration-reference.md#voicelive) | Idle stop and time limit for a live dictation. | 300 s / 1790 s | next call |
 | [`voice.live.release_tail_ms`](configuration-reference.md#voicelive) | Keeps recording briefly after you let go, so the last word isn't clipped. | 400 ms | live |
 | [`voice.live.enabled`](configuration-reference.md#voicelive) | Calls on or off. | on | next call |
 | [`voice.live.provider`](configuration-reference.md#voicelive) | The live speech server ("ear"). Blank means the same as `voice.stt`. | blank | next call |
@@ -232,9 +232,6 @@ when a call starts, so a change applies to the next call. Every key is described
   `calls/mouth/`. The files are readable only by the server's user. Each folder keeps the newest
   **Trails kept** (20). The file name is the call id, so the newest file is your last call:
   `ls -t $CTRLB_HOME/calls/ | head`. Trails are off by default.
-- **On v1.7.11** (the release before these changes): clip uploads are a single try with no Retry /
-  Discard, the thinking pause defaults to 0, every device auto-speaks every reply, a pending reply does
-  not keep a locked phone awake, and clip trails do not exist.
 
 ## Under the hood
 

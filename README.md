@@ -157,11 +157,12 @@ cross-device through the backend (last-write-wins).
 Full model: [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md). The short version:
 
 - **The tailnet is the auth.** Single user, no login. The listen address comes from the uvicorn
-  command line, not from `config.yaml`: the shipped launchers bind loopback (`127.0.0.1:5433`; the dev
-  unit `127.0.0.1:5434`), and the **deployed prod service binds `0.0.0.0:5433`** under a documented owner
+  command line, not from `config.yaml`: the shipped launchers bind the backend to loopback (`127.0.0.1:5433`;
+  the dev unit `127.0.0.1:5434`) — but their dev modes also start Vite on `0.0.0.0:5173`, which proxies the
+  whole API to the LAN over plain HTTP while it runs — and the **deployed prod service binds `0.0.0.0:5433`** under a documented owner
   waiver (2026-07-10 — trusted home LAN + tailnet, never a public interface;
-  [`SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) §2.1). `server.host` / `server.port` only change what
-  `/api/health` reports ([ISS-91](./docs/ISSUES.md)). Either way the remote ingress is
+  [`SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) §2.1). `server.host` / `server.port` bind nothing: `port` only
+  changes what `/api/health` reports, and nothing reads `host` ([ISS-91](./docs/ISSUES.md)). Either way the remote ingress is
   **Tailscale Serve** HTTPS (never Funnel — nothing public, by construction).
 - **Confirm gates, not auth.** Medium/high-risk actions suspend into an explicit confirm step
   (single-use, TTL'd tokens bound to the exact call) — a UX safety, deliberately not a security
@@ -174,8 +175,8 @@ Full model: [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md). The short vers
   by tests (`test_secret_hygiene.py`).
 - **Shell is opt-in RCE.** The `!` composer escape hatch (`shell.user_exec_enabled`) and the agent's
   `run_shell` (`shell.agent_exec_enabled`) are two independent off-by-default toggles. The agent toggle
-  governs agents **below** `full` privilege: off → `run_shell` is denied, on → every call asks first. An
-  agent running at `full` (by its `agent.yaml`, or your per-device `/privilege full`) runs `run_shell`
+  governs agents at `confirm`/`auto_low`: off → `run_shell` is denied, on → every call asks first (`readonly`
+  is denied either way). An agent running at `full` (by its `agent.yaml`, or your per-device `/privilege full`) runs `run_shell`
   with **no confirm whether the toggle is on or off** — the only off-switch at `full` is
   `shell.enabled: false` ([ISS-87](./docs/ISSUES.md)).
 
@@ -228,7 +229,8 @@ use generally) front the app with HTTPS: `tailscale serve --bg --https=443 5433`
 checkout drives the whole first deploy over SSH (it needs paramiko + PyYAML, which the backend venv has):
 
 ```bash
-backend/.venv/bin/python deploy/bootstrap.py            # prereqs → SFTP config.yaml → prod tree → install.sh → Tailscale HTTPS
+backend/.venv/bin/python deploy/bootstrap.py            # PROD only: prereqs → SFTP config.yaml → prod tree → install.sh prod → Tailscale HTTPS
+backend/.venv/bin/python deploy/bootstrap.py --with-dev # also the DEV workspace + install.sh dev (the dev instance + the agent units)
 backend/.venv/bin/python deploy/bootstrap.py --dry-run  # print the plan, change nothing
 ```
 
@@ -236,7 +238,7 @@ backend/.venv/bin/python deploy/bootstrap.py --dry-run  # print the plan, change
 tag and installs it without `update.sh`'s safety checks ([ISS-94](./docs/ISSUES.md)) — to move a
 deployed prod, follow the runbook's §Release.
 
-It sets up the **two-instance topology** ([`docs/DECISIONS.md`](./docs/DECISIONS.md) D32, amended
+With `--with-dev` it sets up the **two-instance topology** ([`docs/DECISIONS.md`](./docs/DECISIONS.md) D32, amended
 2026-07-09 — trunk-based): PROD = a clean sparse runtime clone at `~/apps/ctrl-b` pinned to a
 release **tag**, its own data dir (`~/.ctrl-b`), uvicorn :5433 behind Tailscale Serve :443; DEV =
 the workspace (a full checkout on `main` — the only branch) with isolated data (`~/.ctrl-b-dev`,
@@ -290,7 +292,8 @@ host lists, MCP servers, and **every provider credential**, which lives at `prov
 can't be set this way. An unknown key inside a section is logged as ineffective at startup; an override
 aimed at a map or list (`CTRLB_PROVIDERS__…`, `CTRLB_COMPUTERS__…`), at a list/nested field, or carrying a
 bad value makes the server **refuse to start** (exit 78, naming the path). **Secrets live in
-`config.yaml`**, which is `0600`, gitignored and UI-managed.
+`config.yaml`**, which is gitignored and UI-managed; the app's own saves leave it at `0600`, and a copy you
+made with `cp` keeps its original mode until the first save.
 
 **The three things to set first:**
 
@@ -306,8 +309,8 @@ bad value makes the server **refuse to start** (exit 78, naming the path). **Sec
 `privilege` (`readonly | confirm | auto_low | full`) decides which calls ask first: `confirm` (the default)
 asks for every med/high call, `auto_low` runs med calls without asking and asks only for high, `full` runs
 everything without asking (including `run_shell` — see [Security model](#security-model)), and `readonly`
-denies fleet actions above low risk but still asks for MCP / OpenAPI / open-terminal tools and the agent's
-own med tools. A tool whose designer forced a confirm asks below `full` whatever its risk. Details:
+denies fleet actions above low risk (open-terminal's exec and write tools included; its reads run) but still
+asks for MCP / OpenAPI tools and the agent's own med tools. A tool whose designer forced a confirm asks below `full` whatever its risk. Details:
 [Chat](docs/user-guide/chat.md).
 
 **Upgrading.** When a release changes the config's shape, the server refuses to start on the old file

@@ -17,7 +17,7 @@ ctrl-b keeps every setting in one YAML file, `config.yaml`. Conf edits that file
 
 A variable named `CTRLB_<SECTION>__<KEY>` (two underscores) overrides one key, and it wins over `config.yaml`. Example: `CTRLB_SERVER__POLL_SECONDS=10`.
 
-- It reaches **one level only**: a scalar key directly inside a section (`server.poll_seconds`, `tailscale.target_port`). It cannot reach `voice.live.*`, a provider, a host, or any secret.
+- It reaches **one level only**: a scalar key directly inside a section (`server.poll_seconds`, `tailscale.target_port`). It cannot reach `voice.live.*`, a provider, a host, or their credentials. The one secret it can set is `open_terminal.api_key` (`CTRLB_OPEN_TERMINAL__API_KEY`).
 - Names are case-insensitive. The value is a string that the schema converts.
 - An unknown key inside a section (`CTRLB_SERVER__NOPE`) is logged as ineffective and ignored.
 - An override aimed at a map or list section (`CTRLB_PROVIDERS__…`, `CTRLB_COMPUTERS__…`, `CTRLB_MCP_SERVERS__…`), at a list or nested field (`CTRLB_SERVER__TRUSTED_HOSTS`, `CTRLB_AGENT__COMPACTION`), or carrying a bad value (`CTRLB_SERVER__PORT=abc`) fails validation, and **the server refuses to start** (exit code 78; the message names the path).
@@ -70,11 +70,11 @@ A **security gate** label marks a key that decides what can run on your machines
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
-| `host` | string | `127.0.0.1` | **Inert: [ISS-91](../ISSUES.md).** It binds nothing. The listening address comes from the uvicorn command line in the service unit or launcher (`--host 0.0.0.0 --port 5433` in the server unit). The key only changes what `/api/health` reports. | inert |
-| `port` | int | `5433` | **Inert: [ISS-91](../ISSUES.md).** Same as `host`: to move the port, change the unit's command line (and `tailscale.target_port`). Conf's "restart to apply" notice for it is misleading, because a restart does not apply it either. | inert |
+| `host` | string | `127.0.0.1` | **Inert: [ISS-91](../ISSUES.md).** It binds nothing. The listening address comes from the uvicorn command line in the service unit or launcher (`--host 0.0.0.0 --port 5433` in the server unit). Nothing reads the key except Conf's restart notice. | inert |
+| `port` | int | `5433` | **Inert: [ISS-91](../ISSUES.md).** Same as `host`: to move the port, change the unit's command line (and `tailscale.target_port`). The key only changes what `/api/health` reports. Conf's "restart to apply" notice for it is misleading, because a restart does not apply it either. | inert |
 | `poll_seconds` | int | `5` | How often the fleet status is refreshed: the server's ping and service-probe cache lifetime, and the app's refresh interval. `monitor.poll_seconds` must be at least this value, or the save is refused. | live |
 | `feature_cycle_seconds` | int | `6` | How long the Fleet hero shows one online host before moving to the next. | live |
-| `debug` | bool | `false` | Debug mode. Keep it off: debug output is a code-execution risk. On also raises the app log to DEBUG, which shows the per-tick presence trail (useful when a phone's LAN address drifts). **Security gate.** | restart |
+| `debug` | bool | `false` | Raises the app log to DEBUG, which shows the per-tick presence trail (useful when a phone's LAN address drifts). It enables no debugger and no error pages. | restart |
 | `trusted_hosts` | list of strings | `[]` | `Host` header allowlist, a defence against DNS rebinding. Empty means no check. Once it has entries, every other name gets `400 Invalid host header` on every route, Conf included, and the only way back is a hand edit. So list every name and address you browse by (the `ts.net` name, the bare hostname, `localhost`, `127.0.0.1`, the LAN and `100.x` addresses). Entries are exact names or one leading `*.` wildcard, with no port; a bare `*` is refused. No Conf form. **Security gate.** | restart (not flagged) |
 
 ## appearance
@@ -127,16 +127,16 @@ Where chat goes. It points at `providers`.
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
-| `provider` | string or null | `null` | The primary provider. `null` means chat is not configured and every chat send is refused. | live |
-| `model` | string or null | `null` | The primary's model. You can omit it when that provider has exactly one model. | live |
-| `fallbacks` | list of `{provider, model?}` | `[]` | Ordered fallback chain, tried in turn when the one before fails. | live |
-| `request_timeout_s` | number | `600` | How long to wait for a reply once connected. Thinking models are slow, so keep it generous. | live |
-| `connect_timeout_s` | number > 0 | `5` | How long to try to reach a server before moving to the next one in the chain. | live |
-| `connect_cooldown_s` | number ≥ 0 | `60` | After a server is found unreachable, it is tried last for this many seconds. It is never skipped, and its first successful answer clears the cooldown early. `0` turns this off. | live |
+| `provider` | string or null | `null` | The primary provider. `null` means chat is not configured and every chat send is refused. | next chat turn |
+| `model` | string or null | `null` | The primary's model. You can omit it when that provider has exactly one model. | next chat turn |
+| `fallbacks` | list of `{provider, model?}` | `[]` | Ordered fallback chain, tried in turn when the one before fails. | next chat turn |
+| `request_timeout_s` | number | `600` | How long to wait for a reply once connected. Thinking models are slow, so keep it generous. | next chat turn |
+| `connect_timeout_s` | number > 0 | `5` | How long to try to reach a server before moving to the next one in the chain. | next chat turn |
+| `connect_cooldown_s` | number ≥ 0 | `60` | After a server is found unreachable, it is tried last for this many seconds. It is never skipped, and its first successful answer clears the cooldown early. `0` turns this off. | next chat turn |
 | `system_prompt` | string | `""` | Replaces the built-in default agent prompt. Blank means the built-in prompt. The default agent's `SOUL.md` file wins over this. | next chat turn |
 | `system_prompt_append` | string | `""` | Text added after whichever base prompt is active, for every agent. An agent's own append comes after it. | next chat turn |
-| `failover` | bool | `true` | On: walk the chain until one server answers. Off: use only the primary. | live |
-| `retry_attempts` | int ≥ 0 | `2` | How many times a busy or rate-limited server is retried before moving on (429, 503, a busy llama.cpp slot). `0` moves on at once. | live |
+| `failover` | bool | `true` | On: walk the chain until one server answers. Off: use only the primary. | next chat turn |
+| `retry_attempts` | int ≥ 0 | `2` | How many times a busy or rate-limited server is retried before moving on (429, 503, a busy llama.cpp slot). `0` moves on at once. | next chat turn |
 
 ## agent
 
@@ -144,15 +144,15 @@ Settings for the agent runtime. Agents themselves are **folders**, not config en
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
-| `default_agent` | string | `""` | Which agent a new conversation uses. `""` means none is set, so a new conversation gets the default agent. `"default"` picks the default agent explicitly. `"<name>"` picks that `agents/` folder. An unknown name falls back to the default agent. | next chat turn |
+| `default_agent` | string | `""` | Which agent a new conversation uses. `""` means none is set, so a new conversation gets the default agent. `"default"` picks the default agent explicitly. `"<name>"` picks that `agents/` folder. An unknown name falls back to the default agent. | live |
 | `default_title` | string | `""` | Display name for the default agent. | live |
 | `defaults` | map | `{}` | Values every agent inherits (agent fields such as model, privilege, tools, routing). An agent's own `agent.yaml` overrides them field by field. A specialist never inherits `title`, the greeting or the greeting switch. See [Agents](agents.md). | next chat turn |
 | `global_subagent_limit` | int | `6` | Maximum subagents running at once, across everything. | restart (not flagged) |
-| `subagent_clamp_privilege` | bool | `true` | A subagent can never run at a higher privilege than the agent that started it. **Security gate.** | next chat turn |
+| `subagent_clamp_privilege` | bool | `true` | While `true`, a subagent never runs at a higher privilege than the agent that started it; `false` lets it keep its own. **Security gate.** | live |
 | `skills_dir` | string | `skills` | Folder scanned for `<name>/SKILL.md`. A relative path resolves against `$CTRLB_HOME`, never against a `CTRLB_CONFIG` location. Until you restart, the skills list still reads the old folder while new skills are written to the new one. No Conf form. | restart (not flagged) |
 | `skills_enabled` | bool | `true` | Master switch for skills. | next chat turn |
 | `skills_auto_write` | bool | `true` | The agent may write skills itself. Off: it only proposes them. | next chat turn |
-| `subagent_child_timeout_s` | number > 0 | `180` | Wall-clock limit for each subagent. | next chat turn |
+| `subagent_child_timeout_s` | number > 0 | `180` | Wall-clock limit for each subagent. | live |
 | `skill_min_overlap` | int ≥ 1 | `1` | Minimum word overlap between your message and a skill for the skill to activate. No Conf form. | restart (not flagged) |
 | `skill_max_active` | int ≥ 1 | `2` | Maximum skills active in one turn. No Conf form. | restart (not flagged) |
 | `streaming` | `auto` · `on` · `off` | `auto` | How replies are delivered. `on` always streams, `off` always sends the whole reply at once (useful on a flaky link), and `auto` follows the app (which streams). A bare `on`/`off` in YAML is read correctly. | next chat turn |
@@ -187,8 +187,8 @@ Limits for running turns. There is no Conf form for these.
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
-| `max_active_turns` | int ≥ 1 | `4` | Turns that may run at once across all conversations. Past it, a send gets a "busy" answer and an automation run is not started. | next chat turn |
-| `steer_queue_max` | int ≥ 1 | `8` | Messages you can queue into a running turn. Past it, a send gets "busy". | next chat turn |
+| `max_active_turns` | int ≥ 1 | `4` | Turns that may run at once across all conversations. Past it, a send gets a "busy" answer and an automation run is not started. | live |
+| `steer_queue_max` | int ≥ 1 | `8` | Messages you can queue into a running turn. Past it, a send gets "busy". | live |
 | `ring_size` | int ≥ 1 | `2048` | Events kept per turn so a briefly disconnected device can catch up. A smaller ring only makes reconnects slower; nothing is lost. | next chat turn |
 | `subscriber_queue_size` | int ≥ 1 | `256` | Per-device event queue. A device that falls this far behind is disconnected and catches up on reconnect. | next chat turn |
 | `terminal_cache_cap` | int ≥ 1 | `32` | Finished turns remembered for a late reconnect. | next chat turn |
@@ -206,15 +206,15 @@ The agent's built-in file memory: a `MEMORY.md` per agent and a shared `USER.md`
 | `enabled` | bool | `true` | Master switch for memory, including the long-term slot below. | live |
 | `user_profile_enabled` | bool | `true` | Include, and allow writes to, the shared `USER.md`. | live |
 | `auto_write` | bool | `true` | The agent may write memory itself. Off: it proposes, and you approve. | live |
-| `consolidation_nudge` | bool | `false` | When a memory file is nearly full, the prompt asks the agent to merge and prune before adding. | live |
+| `consolidation_nudge` | bool | `false` | When a memory file is nearly full, the prompt asks the agent to merge and prune before adding. | next chat turn |
 | `consolidation_nudge_pct` | 1–100 | `80` | The fill level that triggers the nudge. | live |
 | `memory_dir` | string | `memories` | The memory folder. Relative paths resolve against `$CTRLB_HOME`. | live |
 | `memory_char_limit` | int ≥ 1 | `2200` | Size cap of each agent's `MEMORY.md`, in characters. | live |
 | `user_char_limit` | int ≥ 1 | `1375` | Size cap of `USER.md`, in characters. | live |
 | `state_enabled` | bool | `false` | A per-agent `STATE.md` (mood, energy, lately) that the agent rewrites and that rides beside its persona. | live |
 | `state_char_limit` | int ≥ 1 | `600` | Size cap of `STATE.md`. | live |
-| `reflection_enabled` | bool | `false` | Every few turns, ask the agent to save anything worth remembering. | live |
-| `reflection_interval` | int ≥ 1 | `10` | Your messages between reflection prompts. | live |
+| `reflection_enabled` | bool | `false` | Every few turns, ask the agent to save anything worth remembering. | next chat turn |
+| `reflection_interval` | int ≥ 1 | `10` | Your messages between reflection prompts. | next chat turn |
 
 ### memory.git_backup
 
@@ -338,7 +338,7 @@ Keys marked *client* are read by the app on your phone. Keys marked *server* are
 | `fallbacks` | list of `{provider, model?}` | `[]` | Accepted for the shared shape, but a live session never moves to a fallback. | next call |
 | `connect_timeout_s` | number > 0 | `3` | Time limit for opening the realtime connection. | next call |
 | `timeout_s` | number > 0 | `30` | Time limit for the realtime session to be ready once connected. | next call |
-| `extra_body` | map | `{}` | Shared shape; extra fields for the server. | next call |
+| `extra_body` | map | `{}` | **Inert.** Accepted for the shared shape, but the live relay never sends it. | inert |
 | `vad_threshold` | 0.5–0.8 | `0.6` | *Server.* How sure the speech detector must be that you are speaking. Sent to the speech server. | next call |
 | `silence_ms` | 500–1200 | `700` | *Server.* The silence that ends one spoken phrase. | next call |
 | `prefix_padding_ms` | 0–1000 | `300` | *Server.* Audio kept from just before each phrase, so its first sound isn't cut. | next call |
@@ -378,7 +378,7 @@ Keys marked *client* are read by the app on your phone. Keys marked *server* are
 | `dictation_idle_s` | 0–1800 | `300` | *Client.* A locked (hands-free) dictation stops after this much silence; the last phrase is kept. `0` turns this off. It cannot fire in roughly the first 6 seconds. | next call |
 | `dictation_idle_margin_db` | 0–40 | `10` | *Client.* "Silence" for that stop means below the room noise plus this. | next call |
 | `dictation_max_s` | 10–1800 | `1790` | *Client.* Longest single dictation, held or locked. Must stay below `max_session_s`. | next call |
-| `release_tail_ms` | 0–1500 | `400` | *Client.* After you stop, keep recording this long so the last word isn't clipped. Applies to clip recordings too. `0` turns this off. | next call |
+| `release_tail_ms` | 0–1500 | `400` | *Client.* After you stop, keep recording this long so the last word isn't clipped. Applies to clip recordings too. `0` turns this off. | live |
 | `frame_ms` | 10–200 | `40` | *Server.* Length of each audio frame the phone sends. | next call |
 | `max_session_s` | 10–7200 | `1800` | *Server.* Longest one live session may last. | next call |
 | `max_frame_bytes` | int > 0 | `32768` | *Server.* Largest audio frame accepted. | next call |
@@ -387,7 +387,7 @@ Keys marked *client* are read by the app on your phone. Keys marked *server* are
 | `start_timeout_s` | > 0, ≤ 60 | `5` | *Server.* How long a new connection may wait before it starts. | next call |
 | `uplink_idle_s` | 5–120 | `15` | *Server.* A session that sends no audio for this long is ended. Must be longer than `tail_wait_ms`. | next call |
 | `allowed_origins` | list of strings | `[]` | *Server.* Extra exact origins (`scheme://host[:port]`) allowed to open the live WebSocket, besides the app's own. Browsers don't protect WebSockets with CORS, so this check is the only one. **Security gate.** | next call |
-| `vad_model` | `silero-v6.2` · `silero-v5.1.2` | `silero-v6.2` | *Server.* The speech-detection model the server runs on each uploaded clip before transcription (read per upload). No Conf row, so only a hand edit and a restart change it; changing it means recalibrating `vad_threshold`. | live |
+| `vad_model` | `silero-v6.2` · `silero-v5.1.2` | `silero-v6.2` | *Server.* The speech-detection model the server runs on each uploaded clip before transcription (read per upload). No Conf row: a save through the settings API applies on the next upload, a hand edit needs a restart (as for every key). Changing it means recalibrating `vad_threshold`. | live |
 
 ## open_terminal
 
@@ -399,7 +399,7 @@ The tools and their risk levels are registered **once, at startup**. A Conf chan
 |---|---|---|---|---|
 | `base_url` | string | `""` | Server root, no trailing slash. Empty at startup means no terminal tools until a restart; changing a URL that was already set applies at once. | live |
 | `api_key` | string | `""` | Bearer token. A secret. | live |
-| `enabled` | bool | `true` | Off at startup: no terminal tools. Turning it off later works at once (the tools refuse); turning it back on needs a restart. | restart (not flagged) |
+| `enabled` | bool | `true` | Off at startup: no terminal tools until a restart. If it was on at startup, turning it off works at once (the tools refuse) and turning it back on works at once too. | live (restart if off at startup, not flagged) |
 | `timeout_s` | number | `30` | Time limit for one request. | live |
 | `default_wait_s` | number | `30` | How long `terminal_exec` waits for the command to finish before returning. | live |
 | `exec_risk` | `low` · `med` · `high` | `high` | Risk level of `terminal_exec`. High asks you to confirm, except at full privilege. **Security gate.** | restart (not flagged) |
@@ -410,7 +410,7 @@ The tools and their risk levels are registered **once, at startup**. A Conf chan
 
 A local shell on the machine that runs ctrl-b, with two independent doors: you typing `!<command>` in the composer, and the agent's `run_shell` tool. Both are **off by default**.
 
-**At full privilege the agent can run `run_shell` without a confirmation whether `agent_exec_enabled` is on or off.** Below full privilege, the toggle decides: off refuses `run_shell`, on asks you to confirm each call. The only switch that stops an agent at full privilege is `enabled: false` ([ISS-87](../ISSUES.md)).
+**At full privilege the agent can run `run_shell` without a confirmation whether `agent_exec_enabled` is on or off.** At read privilege `run_shell` is always refused. At confirm and auto-low, the toggle decides: off refuses `run_shell`, on asks you to confirm each call. The only switch that stops an agent at full privilege is `enabled: false` ([ISS-87](../ISSUES.md)).
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
@@ -530,7 +530,7 @@ A map keyed by namespace (`gacha`, `frontier`, `kit`, `agents`). Unknown namespa
 | `<ns>.roles.<role>.files[].key` | string or null | `null` | Binds the picture to a named item (e.g. a host), instead of matching by its filename stem. | live |
 | `<ns>.roles.<role>.files[].hidden` | bool | `false` | Kept in the library but never used. | live |
 | `<ns>.roles.<role>.files[].focal` | `{x, y, z?, rev?}` or null | `null` | The framing point: `x` and `y` from 0 to 1, and an optional zoom `z` (values are clamped to the allowed range; a zoom of 1 is stored as no zoom). `rev` ties the point to the file's current version: after the file is replaced, the framing reads as reset. The gallery writes all of this. | live |
-| `<ns>.slots.<slot>` | `{name}` · `{bundled}` · null | `{}` | A pin: one picture from another role shown in a fixed place. The only slots are `gacha`'s `wallpaper` and `oracle`, both pinning from `characters`. `null` means unpinned. | live |
+| `<ns>.slots.<slot>` | `{name}` · `{bundled}` · null | absent (unpinned) | A pin: one picture from another role shown in a fixed place. The only slots are `gacha`'s `wallpaper` and `oracle`, both pinning from `characters`. `null` or an absent slot means unpinned; an empty `{}` is refused. | live |
 
 ## attachments
 
@@ -642,7 +642,7 @@ Per-tool changes, keyed by tool name (`ping_host`, `mcp__web-tools__search_web`,
 |---|---|---|---|---|
 | `<tool>.description` | string or null | `null` | Replaces the description the model sees. Blank restores the built-in one. | live |
 | `<tool>.agent_mode` | `core` · `enabled` · `disabled` or null | `null` | `core`: always offered, even when a skill narrows the tools. `enabled`: offered normally. `disabled`: never offered. `null`: the tool's own default. | live |
-| `<tool>.approvals` | list of `{args}` or null | `null` | Standing "always allow" rules. Each rule is `{args: {field: pattern}}` with string glob patterns; a field it leaves out matches anything, and `{}` allows every call. A rule only turns a risk-based confirmation into an allow: it can never deny, and it never skips the confirmation that shutdown, reboot and `run_shell` always ask for below full privilege. Tapping "always" on a confirmation writes one. Unknown keys in a rule are refused. **Security gate.** | live |
+| `<tool>.approvals` | list of `{args}` or null | `null` | Standing "always allow" rules. Each rule is `{args: {field: pattern}}` with string glob patterns; a field it leaves out matches anything. A rule with no `args` (or `args: null`) allows every call; `args: {}` matches only a call with no arguments (the catalog shows it as "no args"). A rule only turns a risk-based confirmation into an allow: it can never deny, and it never skips the confirmation that shutdown, reboot and `run_shell` always ask for below full privilege. Tapping "always" on a confirmation writes one. Unknown keys in a rule are refused. **Security gate.** | live |
 | `<tool>.max_calls` | int ≥ 1 or null | `null` | This tool's per-turn call limit, replacing the agent's general limit. | next chat turn |
 
 ## prompts

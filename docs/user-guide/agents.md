@@ -73,7 +73,7 @@ An agent can hand several independent sub-tasks to subagents with `spawn_subagen
 
 - At the default **Confirm** privilege you are asked before each fan-out (it is a medium-risk tool); at **Auto-low** or **Full** it runs without asking.
 - Each subagent runs unattended, in its own hidden conversation: anything that would ask you is refused, and the subagent is told.
-- A subagent can never have more privilege than the agent that started it (`agent.subagent_clamp_privilege`).
+- While `agent.subagent_clamp_privilege` is on (the default), a subagent never has more privilege than the agent that started it.
 - Limits: nesting depth (2) and fan-out (3) per agent, 6 at once across the whole server, and 180 seconds per subagent.
 
 ### Macros
@@ -111,7 +111,7 @@ An agent **is** a folder: `$CTRLB_HOME/agents/<slug>/` (`~/.ctrl-b/agents/` on a
 | Setting | What it changes | Default | Applies |
 |---|---|---|---|
 | [`agent.default_agent`](configuration-reference.md#agent) | The agent new conversations start with (the gallery's **default** pill) — `""` none set, `default` the root, or a slug | `""` | live |
-| [`agent.default_title`](configuration-reference.md#agent) | The root agent's display name | `""` | next chat turn |
+| [`agent.default_title`](configuration-reference.md#agent) | The root agent's display name | `""` | live |
 | [`agent.defaults`](configuration-reference.md#agent) | Fields every agent inherits (model, privilege, tools, limits…) | none | next chat turn |
 | [`inference.system_prompt`](configuration-reference.md#inference) | The persona of any agent without its own `SOUL.md` | built-in prompt | next chat turn |
 | [`inference.system_prompt_append`](configuration-reference.md#inference) | Instructions added to every agent that inherits the global append | `""` | next chat turn |
@@ -120,7 +120,7 @@ An agent **is** a folder: `$CTRLB_HOME/agents/<slug>/` (`~/.ctrl-b/agents/` on a
 | [`agent.skills_dir`](configuration-reference.md#agent) | The shared skills folder (relative to `$CTRLB_HOME`) | `skills` | **restart** ([ISS-92](../ISSUES.md)) |
 | [`agent.skill_min_overlap` / `skill_max_active`](configuration-reference.md#agent) | How many words must overlap / how many skills apply per message | `1` / `2` | **restart** ([ISS-92](../ISSUES.md)) |
 | [`agent.global_subagent_limit`](configuration-reference.md#agent) | Subagents at once across the server | `6` | **restart** ([ISS-92](../ISSUES.md)) |
-| [`agent.subagent_clamp_privilege`](configuration-reference.md#agent) | Subagents never exceed their parent's privilege | `true` | live |
+| [`agent.subagent_clamp_privilege`](configuration-reference.md#agent) | While on, subagents never exceed their parent's privilege | `true` | live |
 | [`agent.subagent_child_timeout_s`](configuration-reference.md#agent) | Time limit per subagent | `180` s | live |
 | [`roleplay.enabled`](configuration-reference.md#roleplay) | Shows the character fields and the card import (display only) | `false` | live |
 | [`roleplay.personas` / `default_persona`](configuration-reference.md#roleplay) | Your persona library and the default one | none | next chat turn |

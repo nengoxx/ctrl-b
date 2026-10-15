@@ -81,7 +81,7 @@ Almost every save applies to the running server at once. The exceptions:
 | Setting | What happens |
 |---|---|
 | `server.debug` | Needs a restart; Conf says so. |
-| `server.host`, `server.port` | Conf says "restart to apply", but a restart does not apply them either: the listening address comes from the uvicorn command line (the systemd unit, `run.sh`, `start.ps1`). They only change what `/api/health` reports ([ISS-91](../ISSUES.md)). |
+| `server.host`, `server.port` | Conf says "restart to apply", but a restart does not apply them either: the listening address comes from the uvicorn command line (the systemd unit, `run.sh`, `start.ps1`). `server.port` only changes what `/api/health` reports, and nothing reads `server.host` ([ISS-91](../ISSUES.md)). |
 | `server.trusted_hosts` | Needs a restart, with no notice. It has no form in Conf (edit the file). |
 | Open-terminal **Enabled** (turning it on), **Endpoint** (when there was none at startup), **Exec / Write / Read risk** | Needs a restart, with no notice: the tools and their risk levels are fixed when the server starts. Turning it off works at once ([ISS-92](../ISSUES.md)). |
 | `agent.skills_dir`, `agent.skill_min_overlap`, `agent.skill_max_active`, `agent.global_subagent_limit` | Need a restart, with no notice. After a `skills_dir` change, the skills list still shows the old folder while new skills are written to the new one ([ISS-92](../ISSUES.md)). |
@@ -132,7 +132,7 @@ Restoring is in [`deploy/linux/README.md`](../../deploy/linux/README.md) §Rollb
 |---|---|---|---|
 | [`appearance`](configuration-reference.md#appearance) | Written by Conf → Appearance; synced across your devices | cosmos | live |
 | [`tailscale.enabled`, `tailscale.target_port`](configuration-reference.md#tailscale) | Whether the HTTPS card is active, and the port it fronts | on / 5433 | live |
-| [`server.debug`](configuration-reference.md#server) | Verbose errors and debug logging | false | restart |
+| [`server.debug`](configuration-reference.md#server) | Debug logging | false | restart |
 | [`server.trusted_hosts`](configuration-reference.md#server) | Which `Host` headers the server accepts (empty = any) | empty | restart |
 
 ## Edge cases & limits

@@ -30,7 +30,7 @@ Save, and the row shows the schedule and its next run (`· next <when>`, `· no 
 switch on the row turns it on or off without opening the editor.
 
 You can also ask the agent in chat to create one. It uses the `create_automation` tool, which asks
-you to confirm; the agent cannot set the privilege (it takes the agent's own), and only you can
+you to confirm below Full privilege (at Full it runs without asking); the agent cannot set the privilege (it takes the agent's own), and only you can
 change that in the editor.
 
 ### The schedule syntax
@@ -70,7 +70,7 @@ automation's privilege is its permission:
 
 | Privilege | What the run can do |
 |---|---|
-| Read, Confirm | Only tools that run without asking: low-risk ones (ping, wake, web search, reading). Everything that would ask is refused. |
+| Read, Confirm | Only tools that run without asking: low-risk ones (ping, wake, web search, reading), plus any medium- or high-risk tool an "always allow" rule you saved in chat covers (at Read, only MCP and OpenAPI tools and starting a subagent; fleet and host actions above low risk stay blocked). Everything else that would ask is refused. |
 | Auto-low | Also medium-risk tools (for example starting a subagent, restarting a service). High-risk tools are refused unless an "always allow" rule you saved in chat covers them. Shut down, reboot and `run_shell` are always refused. |
 | Full | Everything, including shut down, reboot and `run_shell`. |
 

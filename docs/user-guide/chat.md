@@ -1,6 +1,6 @@
 # Chat
 
-The chat section is where you talk to your agents. You type (or dictate) a message, the agent answers in a streamed reply, and along the way it can call tools: ping or wake a computer, search the web, read a file you attached, remember something for later. Every agent keeps its own list of conversations, the reply keeps running on the server if you lock your phone, and anything that could change a machine asks you first unless you have given the agent more privilege.
+The chat section is where you talk to your agents. You type (or dictate) a message, the agent answers in a streamed reply, and along the way it can call tools: ping or wake a computer, search the web, read a file you attached, remember something for later. Every agent keeps its own list of conversations, the reply keeps running on the server if you lock your phone, and anything medium- or high-risk (stopping a service, shutdown, reboot, shell) asks you first unless you have given the agent more privilege.
 
 ## How to use it
 
@@ -185,7 +185,7 @@ Conf → **MCP servers** and Conf → **OpenAPI tool servers** connect outside t
 
 - **MCP** — a server over HTTP (`url` + optional `headers`) or a local program (`stdio`: `command`, `args`, `env`). Its tools appear as `mcp__<server>__<tool>`.
 - **OpenAPI** — any service with an OpenAPI document (`spec_url`, or `base_url` + `/openapi.json`). Each operation becomes `api__<server>__<operationId>` (an operation without an id gets one built from its method and path). `include` limits it to the operation ids or paths you list. Auth: `api_key` with `auth_scheme` (default `Bearer`) in `auth_header` (default `Authorization`), plus any `headers`.
-- **Risk is per tool.** A server's `risk` (default `med`) is only its default. An MCP tool the server marks read-only runs without asking (low); one it marks destructive always asks below Full (high). Most servers mark nothing, so their tools take the server's `risk`. For OpenAPI, `GET` and `HEAD` operations are always low; the others take the server's `risk`. Set `risk: low` only on a server you trust.
+- **Risk is per tool.** A server's `risk` (default `med`) is only its default. An MCP tool the server marks read-only runs without asking (low); one it marks destructive is high risk and asks below Full, unless an "always allow" rule you saved covers the call. Most servers mark nothing, so their tools take the server's `risk`. For OpenAPI, `GET` and `HEAD` operations are always low; the others take the server's `risk`. Set `risk: low` only on a server you trust.
 - **When changes apply.** Saving a server change takes effect at the start of your next chat message (once no reply is running anywhere), or right away with **Rediscover tools** (refused while any reply is running). A server that is down when tools are discovered is skipped, and its tools stay missing until the next rediscovery — it does not come back on its own.
 - Tool names are cut to 64 characters, so two long names can collide.
 
@@ -229,14 +229,14 @@ Each server also takes `enabled`, `connect_timeout_s` (10 s, for discovery and e
 | [`attachments.max_inline_chars`](configuration-reference.md#attachments) | Text put into your message (and one `read_attachment` page) | `16000` | next chat turn |
 | [`attachments.resend`](configuration-reference.md#attachments) | Send earlier images again on later turns | `true` | next chat turn |
 | [`attachments.staging_orphan_hours`](configuration-reference.md#attachments) | How long an unsent upload is kept | `24` h | live |
-| [`memory.enabled`](configuration-reference.md#memory) | Memory on or off (also gates Core Memory) | `true` | next chat turn |
-| [`memory.auto_write`](configuration-reference.md#memory) | Off = memory changes become proposals you approve | `true` | next chat turn |
-| [`memory.user_profile_enabled`](configuration-reference.md#memory) | Read and write the shared `USER.md` | `true` | next chat turn |
-| [`memory.memory_char_limit` / `user_char_limit`](configuration-reference.md#memory) | Size caps of `MEMORY.md` / `USER.md` | `2200` / `1375` | next chat turn |
-| [`memory.state_enabled`](configuration-reference.md#memory) | Per-agent `STATE.md` | `false` | next chat turn |
+| [`memory.enabled`](configuration-reference.md#memory) | Memory on or off (also gates Core Memory) | `true` | live |
+| [`memory.auto_write`](configuration-reference.md#memory) | Off = memory changes become proposals you approve | `true` | live |
+| [`memory.user_profile_enabled`](configuration-reference.md#memory) | Read and write the shared `USER.md` | `true` | live |
+| [`memory.memory_char_limit` / `user_char_limit`](configuration-reference.md#memory) | Size caps of `MEMORY.md` / `USER.md` | `2200` / `1375` | live |
+| [`memory.state_enabled`](configuration-reference.md#memory) | Per-agent `STATE.md` | `false` | live |
 | [`memory.reflection_enabled`](configuration-reference.md#memory) | Periodic "save what matters" nudge | `false` | next chat turn |
 | [`memory.consolidation_nudge`](configuration-reference.md#memory) | Warn the agent near a cap | `false` | next chat turn |
-| [`memory.longterm.backend`](configuration-reference.md#memorylongterm) | `core` turns Core Memory on | `null` (off) | next chat turn |
+| [`memory.longterm.backend`](configuration-reference.md#memorylongterm) | `core` turns Core Memory on | `null` (off) | live |
 | [`memory.git_backup.*`](configuration-reference.md#memorygit_backup) | The memory folder's git history; `reconcile_interval_s` = how often hand edits are committed (`0` = never) | on, `120` s | live |
 | [`shell.enabled` / `user_exec_enabled` / `agent_exec_enabled`](configuration-reference.md#shell) | The `!` shell and `run_shell` — see the `run_shell` note above | `true` / `false` / `false` | live |
 | [`tool_overrides`](configuration-reference.md#tool_overrides) | Per-tool description, agent access, "always" grants, call cap (the Tools section) | none | live |

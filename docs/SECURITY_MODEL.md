@@ -20,7 +20,9 @@ The person who can reach the endpoint *is* the owner, by construction of the net
 **What the design defends against:**
 - **Accidental public exposure** — the app never binds a public interface; the only ingress is the tailnet.
 - **Secret leakage** — SSH passwords / API keys must never surface in a tool result, API response, log line,
-  or SSE frame, even when a command echoes them.
+  or SSE frame, even when a command echoes them — enforced by redacting the output of the commands ctrl-b
+  runs itself (the local shell, the SSH power/service commands, §2.4); open-terminal's output is NOT redacted
+  (ISS-98).
 - **Unintended destructive actions** — a medium/high-risk operation (shutdown, reboot, service stop) can't
   fire without an explicit second step (the confirm bubble), so a stray click or an over-eager agent turn
   can't silently take a machine down.
@@ -54,8 +56,8 @@ authentication layer first.
 
 ### 2.1 Network — tailnet + trusted-LAN ingress
 - **The bind is the launcher's, not the config's** (corrected 2026-10-14, [ISS-91](./ISSUES.md)): nothing passes
-  `server.host`/`server.port` to uvicorn (there is no `uvicorn.run`; the two keys only feed `/api/health` and
-  Conf's restart toast). The socket is the command line: `run.sh` / `start.ps1` bind `127.0.0.1:5433`, the dev
+  `server.host`/`server.port` to uvicorn (there is no `uvicorn.run`; `server.port` only feeds `/api/health`, and both
+  feed Conf's restart toast). The socket is the command line: `run.sh` / `start.ps1` bind `127.0.0.1:5433`, the dev
   unit `127.0.0.1:5434`, and **the deployed PROD unit binds `0.0.0.0:5433` — an OWNER WAIVER (2026-07-10, revising the original
   loopback-only decision):** direct `http://emma:5433` from the LAN + tailnet, same trusted-home-LAN
   reasoning as the dev-mode exposure below (and prod is *narrower* than that long-accepted dev path —
@@ -67,8 +69,9 @@ authentication layer first.
   Let's Encrypt cert (DECISIONS D1). It is **tailnet-only** — you must be on the tailnet to reach it; nothing
   is published to the public internet. (Under the waiver above, plain `http://emma:5433` is ALSO reachable
   over the tailnet; Serve is not prod's only ingress.)
-- **`debug` is off by default** (`ServerCfg.debug=False`) — an enabled debugger is a remote-code-execution
-  surface. Keep it off for anything reachable.
+- **`debug` is off by default** (`ServerCfg.debug=False`). It only raises the `app` logger to DEBUG at boot
+  (restart-required, `main.py` lifespan); FastAPI gets no debug flag, so it enables no debugger and no error
+  pages.
 - **Dev-mode exposure (deliberate, documented — SYS-4).** The **dev** frontend is wider than prod: Vite binds
   `0.0.0.0:5173` with `allowedHosts: true` and proxies `/api` → the loopback backend
   (the `server:` key in `frontend/vite.config.ts`). So while the dev server runs, anyone on the **local LAN** (not just the
@@ -97,7 +100,7 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
 
 - **Privilege levels** (`domain/enums.py Privilege`): `READONLY` · `CONFIRM` · `AUTO_LOW` · `FULL`. The UI
   runs at **`CONFIRM`**; the agent runs at the privilege its `AgentDef` declares (subagents are clamped to
-  the parent). So for the normal caller, every HIGH/confirm action **suspends** rather than firing.
+  the parent while `agent.subagent_clamp_privilege` is true, the default). So for the normal caller, every HIGH/confirm action **suspends** rather than firing.
   **One deliberate exception:** `POST /api/access/serve` invokes `tailscale_serve_enable`/`_disable` at
   `Actor.USER, Privilege.FULL` (`api/access.py:50-52`), so the two `Risk.MED` Serve actions
   (`services/actions/tailscale.py:213,229`) run without a confirm bubble — enabling/disabling the owner's
@@ -813,7 +816,7 @@ So **the automation's privilege IS its authorization**, decided at authoring tim
 
 | Privilege of the run | What runs unattended |
 |---|---|
-| `readonly` | LOW tools only; a non-LOW `action`-category tool is DENIED outright, anything else that would ask is DENIED in place |
+| `readonly` | LOW tools; a non-LOW `action`-category tool is DENIED outright; a MED/HIGH tool outside `action` (MCP/OpenAPI, `spawn_subagents`) only when a D44 approval rule matches (§2.5); anything else that would ask is DENIED in place |
 | `confirm` | LOW tools; a MED/HIGH tool only when a D44 approval rule matches (§2.5); forced-confirm tools (`run_shell`, `shutdown_host`, `reboot_host`) never |
 | `auto_low` | LOW + MED; HIGH only when an approval matches; forced-confirm tools never |
 | `full` | **everything**, forced-confirm tools included — `run_shell` too, whatever `shell.agent_exec_enabled` says (§5), unless `shell.enabled: false` |
