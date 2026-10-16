@@ -18,8 +18,8 @@ judge the result rather than adopting it.**
 > explicit owner-tested PINS (owner policy 2026-09-23): Opus 5.5 · Fable 5.1.** The Agent tool's
 > `model: "opus"` resolves through `~/.claude/settings.json` → `env.ANTHROPIC_DEFAULT_OPUS_MODEL`
 > (= `claude-opus-5-5`), so a new Opus reaches subagents only when the owner bumps that pin after
-> testing it — never on a Claude Code update. (`claude --model opus -p ok --output-format json | jq
-> .modelUsage` shows what a fresh process resolves to; a running session keeps its start-time
+> testing it — never on a Claude Code update. (The SAFE probe in gotcha 1h shows what a fresh process
+> resolves to — NEVER a bare `claude -p ok` from the repo; a running session keeps its start-time
 > mapping until it restarts.)
 
 | Situation | Use | Cost posture |
@@ -301,6 +301,24 @@ item 9 applies — sol is sol).
 >    in the `.err` file within a second and the `.md` stays 0 bytes. Session 75's 127 KB confirm prompt squeaked under by luck. Fix: the Hermes
 >    lane HAS a file tool — write the diff to a file and put a "read `<path>` IN FULL first" line where the inline diff was (the prompt drops to
 >    ~20 KB); keep inlining only for the Qwen HTTP fallback (an HTTP body, no argv limit). Check `wc -c` of the prompt before every launch.
+>
+> 1h. **`claude -p <anything>` started from the repo is a FULL HEADLESS AGENT SESSION, not a ping (burned 2026-10-16 — "the ghost
+>    session 79").** The ISS-100 acceptance check `claude --model fable -p ok --output-format json`, run from `~/github/ctrl-b`, loaded
+>    CLAUDE.md + the memory + the hooks in `auto` permission mode, read "ok" as "go ahead with HANDOFF's ▶▶▶ block", and worked 42 min
+>    on Fable with its own Opus + Sol lanes: five commits, a HANDOFF block, a memory file — while another session was editing the
+>    same tree (it swept that session's in-flight edits into its first commit). It is invisible to the owner: a `-p` run is not on
+>    remote control, so claude.ai/code never shows it — only `~/.claude/projects/<project>/<session-id>.jsonl` holds it. **The safe
+>    probe** (proven 2026-10-16: one turn, no tools, no hooks, nothing persisted, no project context):
+>    ```bash
+>    P=<scratchpad>/probe; mkdir -p "$P"; cd "$P" && claude --model opus -p 'Reply with the single word ok. Do nothing else.' \
+>      --max-turns 1 --tools '' --no-session-persistence --settings '{"disableAllHooks":true}' --output-format json \
+>      | jq -c '.modelUsage | keys'
+>    ```
+>    Rules: an EMPTY cwd outside the repo (no CLAUDE.md, no project memory); `--tools ''` + `--max-turns 1`; never `--safe-mode` for
+>    a pin check (it is not needed and muddies what is being tested); `modelUsage` may list a side model beside the asked one — read the
+>    asked alias's id. To prove the alias really reads the key, override it once in the SAME settings object (keep the hooks off):
+>    `--settings '{"disableAllHooks":true,"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-opus-4-8"}}'` must move the result. The same applies to ANY `claude -p` a lane or a script runs: give it an explicit task
+>    and a bounded tool set, and know which cwd it inherits.
 >
 > **▲ STANDING RULE (owner, 2026-10-09): every lane mechanic that burns — a hang, a silent fallback, a self-matching
 > check, a lost output file — is written HERE, in this gotcha list, in the same session it happens, with the fix that

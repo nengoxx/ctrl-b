@@ -15,7 +15,7 @@
 # mis-track the pre-existing server's PID). Crash-restart of claude itself is the `while true` loop
 # INSIDE the tmux session, not systemd.
 #
-# Effort/permission overrides WITHOUT editing anything tracked (model comes from %i, not env):
+# Effort/permission overrides WITHOUT editing anything tracked (the alias comes from %i, the id from ~/.claude/settings.json — never this env):
 #     ~/.config/ctrl-b/agent.env       shared by both instances (EFFORT=…, PERM=…)
 #     ~/.config/ctrl-b/agent-<i>.env   per-instance override (e.g. agent-opus.env), wins over the shared one
 # then:  systemctl --user restart ctrl-b-agent@<i>
@@ -42,7 +42,7 @@ WorkingDirectory=__REPO__
 # The user manager's default PATH lacks ~/.local/bin (where claude lives) — and when THIS unit is what
 # boots the tmux server, the inner shell inherits this environment, so it must find claude + node too.
 Environment=PATH=__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin
-# Optional owner overrides (EFFORT=…, PERM=…); absent files are fine. Model is fixed by %i.
+# Optional owner overrides (EFFORT=…, PERM=…); absent files are fine. The alias is fixed by %i; its id by ~/.claude/settings.json.
 # Do NOT set PATH in these files — it would override the Environment= line above and claude stops resolving.
 EnvironmentFile=-__HOME__/.config/ctrl-b/agent.env
 EnvironmentFile=-__HOME__/.config/ctrl-b/agent-%i.env

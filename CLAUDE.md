@@ -191,9 +191,15 @@ whenever a review is warranted, small slices included.
 a new version only after the owner has tested it. As of 2026-09-23: main seat `claude-fable-5-1`,
 workforce `claude-opus-5-5`. The pins live in ONE place since 2026-10-15 (ISS-100):
 `~/.claude/settings.json` → `env.ANTHROPIC_DEFAULT_FABLE_MODEL` + `env.ANTHROPIC_DEFAULT_OPUS_MODEL`.
-Every launcher passes the bare `fable`/`opus` alias and Claude Code resolves it through those two
+emma's launchers pass the bare `fable`/`opus` alias and Claude Code resolves it through those two
 keys — `tools/start-claude.sh` (the `@fable`/`@opus` units) and the Agent tool's `model: "opus"`
-alike. Bump them there, after the test; a running session keeps its model until it restarts.
+alike (the Windows launchers are not there yet — ISS-97 ④; the pins are per machine). Bump them
+there, after the test; a running session keeps its model until it restarts. **A missing key floats
+the alias to Claude Code's own latest model — a policy breach, silently** — and so does a project or
+local `.claude/settings{,.local}.json` (worktrees included) that sets the same keys, or a different
+`CLAUDE_CONFIG_DIR`: keep the keys in the user file only. To check what a fresh process resolves
+to, use the SAFE probe in the `second-opinion` skill (gotcha 1h) — never a bare `claude -p` from the
+repo (it starts a full agent session).
 
 *(This inverts the 2026-07-24 arrangement, where Opus held the main seat and Fable was an on-request
 second opinion. The METHOD is unchanged — judgement in the main seat, execution in subagents; only
