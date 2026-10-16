@@ -183,3 +183,5 @@ opens.
 ## Under the hood
 
 Design: the issue ledger [`docs/ISSUES.md`](../ISSUES.md) · the security boundary [`docs/SECURITY_MODEL.md`](../SECURITY_MODEL.md).
+
+On a server install, every service's log and what the server writes to disk are listed in the runbook's [§Logs](../../deploy/linux/README.md#logs).

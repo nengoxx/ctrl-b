@@ -76,8 +76,8 @@ automation's privilege is its permission:
 
 | Privilege | What the run can do |
 |---|---|
-| Read, Confirm | Only tools that run without asking: low-risk ones (ping, wake, web search, reading), plus any medium- or high-risk tool an "always allow" rule you saved in chat covers (never shut down, reboot, `run_shell` or `create_automation`, which no rule covers; at Read, only tools that are not fleet or host actions: MCP and OpenAPI tools, starting a subagent, and open-terminal reads if you raised their risk; fleet and host actions above low risk stay blocked, including open-terminal exec and write at their default high risk). Everything else that would ask is refused. |
-| Auto-low | Also medium-risk tools (for example starting a subagent, restarting a service). High-risk tools are refused unless an "always allow" rule you saved in chat covers them. Shut down, reboot and `run_shell` are always refused. |
+| Read, Confirm | Only tools that run without asking: low-risk ones (ping, wake, web search, reading), plus any medium- or high-risk tool a saved always-allow rule covers (from the chat bubble, or added in [Tools](tools.md#the-agent-tools-catalog); never shut down, reboot, `run_shell` or `create_automation`, which no rule covers; at Read, only tools that are not fleet or host actions: MCP and OpenAPI tools, starting a subagent (its rule must be added in Tools; a fieldless rule works, and the bubble offers no always), and open-terminal reads if you raised their risk; fleet and host actions above low risk stay blocked, including open-terminal exec and write at their default high risk). Everything else that would ask is refused. |
+| Auto-low | Also medium-risk tools (for example starting a subagent, restarting a service). High-risk tools are refused unless a saved always-allow rule covers them (from the chat bubble, or added in [Tools](tools.md#the-agent-tools-catalog)). Shut down, reboot and `run_shell` are always refused. |
 | Full | Everything, including shut down, reboot and `run_shell`. |
 
 The **Questions** setting covers questions only, never confirmations. An automation cannot create

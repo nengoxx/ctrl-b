@@ -74,6 +74,30 @@ one non-Fleet structural deviation any theme has, D29) · **HostDetail = reuse t
 Gotcha: frontier's **gradient accents** must live in `--accent-fill` — the `--accent` channel must
 parse as a plain `<color>` (§14.15.1 ⑨).
 
+### §0.1 The theme catalog (what ships; code = truth)
+
+One row per registered theme (`theme-engine/registry.ts`), every cell read from the theme's
+`themes/<id>/index.tsx` descriptor, its tab row in `theme-engine/tabs.ts`, and its Root. The default skin is
+**cosmos** (`DEFAULT_THEME`, `theme-engine/resolve.ts`). Values are setting **keys** and option **values**
+(the Appearance picker shows their labels); the user-facing version of this table, in labels, is the user
+guide's [Themes, appearance and the app](./user-guide/themes.md#pick-a-theme). If a cell here and the code
+disagree, the code wins and this table is stale.
+
+| Theme (`id` · label) | Modes (★ = `defaultMode`) | Palettes — `accent` ids (★ = `defaultAccent`) | Default layout → bar tabs (labels) | `composer` · `composerSkin` · `planPlacement` · `outlines` | Theme-specific settings (`key`: options, **default**) | Bespoke surfaces (via `DefaultRoot`'s `bodies` / slots) | Loading |
+|---|---|---|---|---|---|---|---|
+| `cosmos` · Cosmos (**the default**) | dark★ | `violet`★ · `cyan` · `green` · `amber` | `4-tab` (no `defaultLayout` declared → the `4-tab` fallback, `layout.ts#resolveLayout`) → fleet · chat · tools · conf | `stacked` · `outline` · `inline` · on | `moonStyle`: **cutout** \| carved · `banners` (switch, **on**) · `motionSpeed`: calm \| **normal** \| lively · `orbitStyle`: **perPlanet** \| rigid \| off · `liveness`: **pulse** \| halo \| both \| off · `serviceCue`: **data** \| visual \| off | the orbital Fleet (`CosmosFleet`, positioned by `present()`) + the `CosmosStarfield` canvas behind the shell (`kitBackground={false}`) | Root code-split (`loadRoot`); CSS (`tokens.css` + `cosmos.css`) and fonts loaded at runtime — on a cold boot by `ThemeProvider`, being the default |
+| `vapor` · Vapor | dark (no `modes`/`defaultMode` declared → dark) | `dark`★ (labelled "Vapor") · `aqua` · `ember` | `4-tab` → fleet · chat · tools · conf | `sheet` (labelled "Docked") · `outline` · `pinned` · on | `loz`: **logo** \| ring · `heroOn` (switch, **on**) · `skyline`: **city** \| mountains · `waveformOn` (switch, **on**) | the Fleet (`FleetTab`: hero scene, skyline, waveform, device rows) + the app-bar `brandMark` (`VaporMark`) | **eager**: the three sheets are static `@import`s in `theme/index.css`, `loadStyles` is a no-op, no `loadRoot` |
+| `minimal` · Minimal | dark★ · light | `cyan`★ · `moss` · `iris` · `amber` | `4-tab` (fallback) → fleet · chat · tools · conf | `stacked` · `outline` · `inline` · on | `density`: **comfortable** \| compact | none (`MinimalRoot` renders the plain `DefaultRoot` and stamps `body[data-density]`) | Root code-split; `tokens.css` + fonts at runtime |
+| `frontier` · Frontier | dark★ (night) · light (day) | `coral`★ · `amber` · `magenta` · `violet` | `3-tab` (tools hosted in Conf) → frontier · comms · settings | `stacked` · `bezel` · `inline` · off | none beyond the four shared axes | the Fleet map (`FrontierFleet`, positioned by `present()`) + the Agent (`FrontierAgent`) + the live-rig app-bar subtitle; owner art from media namespace `frontier`, bundled art via `assets` | Root code-split; `tokens.css` + `frontier.css` + fonts at runtime |
+| `gacha` · Gacha | dark★ | `arcade`★ · `midnight` · `indigo` · `ember` · `glacier` · `nebula` · `eridu` · `jade` | `3-tab` (tools hosted in Conf) → fleet · agent · settings, each with a Japanese sub-label (編成 · 案内 · 設定; tools ツール, cast キャラ) | `stacked` · `arcade` · `inline` · off | `dossierPalette`: slip \| **neon-purple** \| sunset-orange \| rose-pink \| aurora-violet \| cyber-teal \| forest-green \| eridu-blue · `nameFont`: **mincho** \| bungee \| maru · `cardNameFont`: mincho \| **bungee** \| maru · `fleetLayout`: **capsule** \| poster \| cover · `posterName`: plate \| **blade** (shown only while `fleetLayout` = poster — `showWhen`) · `starMode`: **five** \| three · `banner`: on \| **minimal** \| off · `wallpaper` (switch, **on**) · `oracle` (switch, **on**) | the Fleet (`GachaFleet`: capsule / poster / cover tracks, the pickup banner, the dossier) + the Agent (`GachaAgent`, the operator header) + the reel overlay (`GachaReel`, a Root sibling); owner art from media namespace `gacha`, bundled art via `assets` | Root code-split; `tokens.css` + `gacha.css` + the committed font subsets at runtime |
+
+Shared by every row: the composer's options are `stacked` · `sheet` · `line` (`kit/composer/setting.ts`), the
+skins `outline` · `glass` · `bezel` · `sleek` · `arcade` (`kit/axes.ts`), the plan `inline` · `pinned`
+(`kit/composer/plan/placement.ts`). Every theme supports every layout preset (no theme declares `layouts`), and
+the `agents` satellite (labelled agents, or cast on frontier and gacha) is hosted in Conf by default
+(`layout.ts` `SATELLITES`). A theme switch adopts the target's `defaultMode` / `defaultAccent`
+(`resolve.ts#defaultSwitchTarget`; a theme without a declared mode gets dark).
+
 ## 1. The prototypes (what was actually built)
 
 Six single-file HTML prototypes (~40 KB / 450–850 lines each), each a *complete* app in its own design

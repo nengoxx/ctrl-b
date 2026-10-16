@@ -1222,7 +1222,8 @@ class Settings(BaseModel):
 - **Atomic writes**: write `config.yaml.tmp` (created `O_EXCL|O_NOFOLLOW` at 0600) then `os.replace` — the file
   itself is not fsync'd (the migration's backup is). Validate before persisting; reject
   with field-level errors. A successful `PUT` triggers a **hot reload** (rebuild affected
-  singletons: clients, MCP connections, registries) without a restart where feasible.
+  singletons: clients, the tool overrides, the status caches — never the MCP/OpenAPI connections, §9.2) without
+  a restart where feasible.
 
 ### 9.1 The provider registry (A11/D48) — the one backend-selection seam
 
@@ -1247,6 +1248,88 @@ provider is therefore a first-class PUT transaction rather than a config edit �
 `{old: new}` (validated simple-bijective by `runtime.provider_rename_error`) drives
 `runtime._cascade_provider_renames`, which rewrites every referencing pointer in the merged config, so a
 rename can never orphan a section, an agent's `model`, or a fallback entry.
+
+### 9.2 The settings write API
+
+`api/settings.py` is the one GENERIC write path for `config.yaml`: thin by design, it validates the request and
+delegates to `config.py` (merge · mask · persist) and `runtime` (`apply_settings_patch` → `reconfigure`). The
+sequence diagram is [SPEC §5.3](./SPEC.md#53-settings-hot-apply-); when each key takes effect, per key, is the
+**applies** column of the user guide's
+[configuration reference](./user-guide/configuration-reference.md#when-a-change-takes-effect) (not repeated
+here). Secret masking on both legs is the "Secrets are plain `str`" rule in §9 above.
+
+**Reads.** `GET /api/settings` returns the whole config with secrets masked, plus an **`X-Providers-Rev`**
+header: `config.providers_rev`, the first 16 hex of a sha256 over the *masked* `providers` subtree, computed
+from the same object the body serializes (the same value `GET /api/providers` serves as `rev`). The Conf draft
+binds its concurrency base to this header. `GET /api/appearance` and `GET /api/notifications` are always-on
+read projections of one section each (an app-global consumer cannot wait for the Conf-scoped full read); both
+are written through the same `PUT`.
+
+**`PUT /api/settings` takes a partial patch** (a JSON object; anything else is a 422). The merge base is the
+live in-memory config, never the file:
+
+| The patch carries | What happens |
+|---|---|
+| an object (a section, a sub-section) | deep-merged key by key (`config.deep_merge`). A key absent from the patch is kept, so a map entry cannot be **removed** through this path, except in the two maps below |
+| a list or a scalar | replaces the stored value whole (`mcp_servers`, `server.trusted_hosts`, a section's `fallbacks`, …) |
+| `providers` | replaces the whole map, so deletes and renames survive. The patch must also carry **`providers_base`** equal to the current `X-Providers-Rev`; a stale or absent base is a **409** "providers changed elsewhere — refresh and re-apply". A rename rides **`provider_renames`** `{old: new}` (simple bijective, and only with `providers` in the same `PUT`, else 422) and cascades to every reference (§9.1). Both are transport fields, popped before the merge |
+| `prompts` | one-depth semantics: `{id: null}` deletes that entry, a non-null entry replaces the whole entry, blank fields are dropped; the resulting map replaces the stored one. A `prompts` that is not a map is a 422 |
+| `computers` or `roleplay.personas` | **422** naming the owning router (`ROUTER_OWNED`: `/api/hosts`, `/api/personas`). A deep-merge can only add, so a stale echo would resurrect an item deleted there |
+| `tool_overrides` | **409** "agent is busy — try again in a moment" while any turn holds a marker (key presence on the raw patch; nothing is written). The D44 "always allow" grant (`runtime.grant_approval`) calls `apply_settings_patch` directly and is exempt by design |
+| `config_version` | dropped silently: it is file metadata owned by `app.config_migration` |
+| `appearance` | `appearance.updated_at` is stamped on the server's clock (the last-write-wins channel, THEME_ENGINE §9.11) |
+
+**The sequence**, all under `runtime.settings_write_lock` (the one lock every config writer takes, at the
+outermost site): resolve the `prompts` sentinels → the `providers_base` 409 → the rename check (422) →
+`apply_settings_patch`: merge (`providers` / `prompts` replaced) → `unmask_secrets` against the stored values
+(rekeyed by identity for renamed providers) → rename cascade → `Settings.model_validate` (a 422 whose `detail`
+is `validation_detail`'s `{loc, msg, type}` list, never the rejected `input`) → provider resolution:
+**strict** (`resolve_strict`, a typed 422 `[{path, message}]`) only when the patch touches `providers`,
+`inference`, `agent`, `voice` or `embeddings`; otherwise lenient, and the same notices come back as
+`warnings` → persist only the changed leaves (`prune_unchanged` + `deep_set`; `providers`/`prompts` via
+`sync_mapping`) in one comment-preserving `edit_config_yaml` (atomic replace at 0600) → `reconfigure`. A hand
+edit elsewhere in the file therefore survives on disk but is not loaded by this path. The response is
+`{settings, restart_required, warnings, providers_rev}`: the masked post-write config, the
+`_RESTART_REQUIRED` paths this save actually changed, the non-fatal notices (plus the provider-name-shadowed-by-skill
+collisions), and the post-write fingerprint.
+
+**Hot-apply (`runtime.reconfigure`).** It first copies the new top-level fields onto the shared
+`app.state.settings` (`apply_settings_inplace`, on every save), so every holder that reads it lazily sees the new
+value at its next read; then it rebuilds only what changed:
+
+| Changed | Applied by |
+|---|---|
+| `providers`, `inference`, `voice`, `embeddings` | ONE `resolve_generation`, then `set_inference` / `set_voice` / `set_embeddings` for the affected clients (a `providers` change rebuilds all three); the new client is published first and the old one `retire()`d, so a turn, stream or call in flight finishes on the generation it captured and the next one takes the new |
+| `agent` (with no inference rebuild) | `clear_reasoning_demotions` (D46/F6) |
+| `searxng` · `open_terminal` | `set_searxng` · `set_open_terminal` (the HTTP client only) |
+| `tool_overrides` (and every save, while any registered tool computes its description from settings) | `apply_tool_overrides` on the live registry |
+| `server` · `computers` | `invalidate_status_caches` |
+
+**Restart.** `_RESTART_REQUIRED` = `server.host`, `server.port`, `server.debug`: they persist, and
+`restart_required` names the ones a save changed so Conf can say "restart to apply". `server.debug` sets the
+`app` logger's level once at boot; `host`/`port` bind nothing ([ISS-91](./ISSUES.md)). Some values are read
+once at boot and are **not** flagged ([ISS-92](./ISSUES.md)): the open-terminal tool set and its per-op risks
+(registered once in the lifespan; only the HTTP client hot-swaps), `server.trusted_hosts` (the middleware mounts
+at app construction), the skill selector's `agent.skills_dir` / `skill_min_overlap` / `skill_max_active`, and
+`agent.global_subagent_limit`.
+
+**The other config writers** hold the same lock and edit through the same `edit_config_yaml`, but they own
+shapes a deep-merge cannot express, and they re-read the **whole file** after writing. The host and persona
+routers then `reconfigure` it, so a pending hand edit goes live with them. The integrations router only copies
+the re-read file onto the shared settings (`apply_settings_inplace`, no `reconfigure`): a pending hand edit of a
+client-backed section (`providers`, `inference`, `voice`, `embeddings`, `searxng`, `open_terminal`) then
+shows in the settings, but its client is not rebuilt, and a later `PUT` diffs against the
+already-loaded value, so it stays stale until a restart unless that section is changed again:
+
+| Config path | Written by | After the write |
+|---|---|---|
+| `computers` | `/api/hosts` CRUD | `reconfigure(load_settings())` |
+| `roleplay.personas` | `/api/personas` CRUD | `reconfigure(load_settings())` |
+| `mcp_servers` · `openapi_servers` | `/api/integrations/{kind}` CRUD | `apply_settings_inplace(load_settings())` only (no `reconfigure`) + `integrations_dirty`: the tools are re-discovered before the next chat turn, or on `POST /api/integrations/rediscover` (409 while a turn runs) |
+
+The generic `PUT` does not refuse the two integration lists, but `reconfigure` has no integrations branch, so a
+list saved there is not re-discovered until something else flags it; Conf's MCP and OpenAPI editors use the
+router.
 
 ---
 

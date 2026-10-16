@@ -26,7 +26,9 @@ The person who can reach the endpoint *is* the owner, by construction of the net
 - **Unintended destructive actions** — at the default `confirm` privilege a medium/high-risk operation
   (shutdown, reboot, service stop) can't fire without an explicit second step (the confirm bubble), so a
   stray click or an over-eager agent turn can't silently take a machine down. The owner widens that on
-  purpose only: a standing approval rule (§2.5), the `auto_low` level (MED runs unasked) or `full` (§2.2).
+  purpose only: a standing approval rule (§2.5) or the `auto_low` level (MED runs unasked) waive the *risk-based*
+  confirm; a *designer-forced* confirm (shutdown, reboot, `run_shell`, `create_automation`) is waived by `full` alone (§2.2,
+  D44), and `readonly` denies every non-LOW fleet/host action whatever rules exist.
 
 **What it explicitly does NOT defend against (accepted non-goals):**
 - **A malicious actor already on the tailnet.** There are none by design — it's a personal tailnet with one

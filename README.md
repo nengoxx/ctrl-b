@@ -162,7 +162,7 @@ Full model: [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md). The short vers
   whole API to the LAN over plain HTTP while it runs — and the **deployed prod service binds `0.0.0.0:5433`** under a documented owner
   waiver (2026-07-10 — trusted home LAN + tailnet, never a public interface;
   [`SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) §2.1). `server.host` / `server.port` bind nothing: `port` only
-  changes what `/api/health` reports, and nothing reads `host` ([ISS-91](./docs/ISSUES.md)). Either way the remote ingress is
+  changes what `/api/health` reports, and `host` only feeds Conf's "restart to apply" flag ([ISS-91](./docs/ISSUES.md)). Either way the remote ingress is
   **Tailscale Serve** HTTPS (never Funnel — nothing public, by construction).
 - **Confirm gates, not auth.** Medium/high-risk actions suspend into an explicit confirm step
   (single-use, TTL'd tokens bound to the exact call) — a UX safety, deliberately not a security
@@ -246,6 +246,8 @@ backend :5434 + Vite :5173). `deploy/linux/install.sh [prod|dev]` is idempotent 
 snapshots the prod DB before cutover (keeping the newest 10 — the prune also deletes hand-made
 snapshots named `ctrlb-*`, [ISS-93](./docs/ISSUES.md)), and renders the systemd user units. Full runbook:
 [`deploy/linux/README.md`](./deploy/linux/README.md).
+
+Operating it: every unit's journal and what the app writes to disk are in the runbook's [§Logs](./deploy/linux/README.md#logs); each script's flags, environment overrides and refusals in its [§Script reference](./deploy/linux/README.md#script-reference).
 
 **Windows (auto-start):** `deploy\windows\autostart-enable.cmd` registers a logon task
 (`-Tailscale` re-applies HTTPS at logon too).

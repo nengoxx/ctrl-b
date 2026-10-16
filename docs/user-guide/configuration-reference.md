@@ -30,7 +30,7 @@ Most sections accept keys they don't know and keep them untouched (`server` drop
 ### How saving works
 
 - Conf saves only the values you changed. Your hand-written comments, quoting and line endings stay as they were. The file is replaced atomically (a temp file, then a rename).
-- A save never overwrites a hand edit you made to other keys. A hand edit you have not restarted for goes live early when you save a host, a persona or an integration, because those saves reload the whole file.
+- A save never overwrites a hand edit you made to other keys. A hand edit you have not restarted for goes live early when you save a host or a persona, because those saves reload the whole file; saving an integration also reloads it, but a hand edit to a connection section (providers, inference, voice, embeddings, SearXNG, open-terminal) then shows in Conf without taking effect until you restart.
 - **Secrets:** Conf shows a secret masked (`ab…yz`, or `••••` when it has four characters or fewer). Saving a secret field empty, `null`, or with the mask unchanged **keeps the stored secret**. You cannot clear a secret from Conf. To clear one, edit `config.yaml` by hand, or delete the provider or host.
 - A bad value is refused with an error and nothing is written. A hand edit that does not validate stops the server at startup (exit code 78) with a message naming the key.
 - Some maps have their own editor and are refused by the generic settings save: `computers` (the host editor in Conf → Computers) and `roleplay.personas` (the persona editor).
@@ -405,8 +405,8 @@ The tools and their risk levels are registered **once, at startup**. A Conf chan
 | `enabled` | bool | `true` | Off at startup: no terminal tools until a restart. If it was on at startup, turning it off works at once (the tools refuse) and turning it back on works at once too. Conf shows no notice for the restart ([ISS-92](../ISSUES.md)). | live |
 | `timeout_s` | number | `30` | Time limit for one request. | live |
 | `default_wait_s` | number | `30` | How long `terminal_exec` waits for the command to finish before returning. | live |
-| `exec_risk` | `low` · `med` · `high` | `high` | Risk level of `terminal_exec`. High asks you to confirm, except at full privilege. **Security gate.** | restart (not flagged) |
-| `write_risk` | `low` · `med` · `high` | `high` | Risk level of file writes. **Security gate.** | restart (not flagged) |
+| `exec_risk` | `low` · `med` · `high` | `high` | Risk level of `terminal_exec`. At high: denied at read privilege, asks at confirm and auto-low unless an always-allow rule matches, runs unasked at full. Low runs everywhere without asking. **Security gate.** | restart (not flagged) |
+| `write_risk` | `low` · `med` · `high` | `high` | Risk level of file writes. The same ladder as `exec_risk`. **Security gate.** | restart (not flagged) |
 | `read_risk` | `low` · `med` · `high` | `low` | Risk level of reads, lists and searches. Low runs without asking; raised, they ask like any other tool, and an "always allow" rule can cover them, even at read privilege (they are not fleet actions). **Security gate.** | restart (not flagged) |
 
 ## shell

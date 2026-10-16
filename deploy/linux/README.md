@@ -327,7 +327,9 @@ instances today: **`emma-pockettts` → `emma-speaches` → `vault-alltalk`** (p
   (`LOOPBACK_HOST_URL=http://127.0.0.1:9000`)** — the realtime path needs this one (the failure without it is
   recorded in LIVE_VOICE_PLAN §7-S0). Health: `curl -s 127.0.0.1:9000/health`. Logs: `journalctl --user -u speaches`.
 - **PocketTTS (:8890) — the TTS primary.** `pockettts.service` (`~/github/PocketTTS.cpp/pocket-tts --server …
-  --port 8890`, voices under `~/.local/share/tts/voices/pocket`). It pads every clip with silence, which
+  --port 8890`, voices under `~/.local/share/tts/voices/pocket`). The unit passes no `--host`, and the server
+  listens on **loopback only** (`127.0.0.1:8890` in `ss -ltnp`): both instances on this box reach it, but a TTS
+  consumer on another machine would need its own door to it. It pads every clip with silence, which
   `voice.tts.trim_silence` (default on) trims server-side. (`pockettts-official.service`, :8892, is a separate,
   disabled experiment — not in either chain.) Logs: `journalctl --user -u pockettts`.
 
@@ -546,6 +548,110 @@ sqlite3 ~/.ctrl-b/ctrlb.db ".backup '$HOME/.ctrl-b/backups/manual-$(date +%Y%m%d
 cp -p ~/.ctrl-b/config.yaml ~/.ctrl-b/backups/config.yaml.$(date -u +%Y%m%dT%H%M%SZ).manual
 tar -C ~/.ctrl-b -czf ~/ctrl-b-data-$(date +%F).tgz media calls lorebooks agents skills memories attachments
 ```
+
+## Logs
+Every unit writes to the **user journal**; the app keeps no log file of its own (one stderr handler,
+`logging.basicConfig` in `app/main.py`).
+```bash
+journalctl --user -u ctrl-b-dashboard -f                    # PROD backend: uvicorn + the app log + any start refusal
+journalctl --user -u ctrl-b-dashboard-dev -f                # DEV backend (see the --reload note below)
+journalctl --user -u ctrl-b-dashboard-dev-web -f            # DEV Vite :5173
+journalctl --user -u pockettts -u speaches -n 50            # the voice backends (§The voice backends)
+journalctl --user -u parakeet-live -u parakeet-clip -n 50   # the ASR engines: listen line + errors only (§The ASR engines)
+journalctl --user -u ctrl-b-agent@fable -u ctrl-b-agent@opus  # only the launcher's start line — see below
+```
+- **A refused start (exit 78)** — a config this build cannot migrate or load: the unit stops in `failed`
+  (`RestartPreventExitStatus=78`, no retry loop) and the journal says why (for a needed migration, the command to
+  run; for a bad value, the key). During a
+  release `install.sh` prints those journal lines itself (§Release, §If something fails).
+- **DEV `--reload` after a `git pull` that changes the config shape:** the reload worker refuses, but the
+  reloader parent keeps running, so `systemctl --user status ctrl-b-dashboard-dev` reads **`active
+  (running)`** while the port is dead, and the refusal is **only in this journal**. A restart turns it into a
+  visible `failed` (78); to fix it, stop both dev units and run `install.sh dev`, which migrates the dev config.
+  Prod has no `--reload`, so this cannot happen there.
+- **The agents:** each `ctrl-b-agent@<i>` is a oneshot that starts a tmux session, so its journal holds only the
+  launcher's lines. What `claude` prints lives in the session: `tmux attach -t ctrl-b-fable` (or `ctrl-b-opus`).
+- **More detail from the app:** `server.debug: true` raises the `app` logger to DEBUG (the root logger stays at
+  INFO), which adds the fleet monitor's per-tick presence line. It is read once at startup, so restart the unit
+  (Conf flags it "restart to apply").
+
+**What the app writes to disk itself** is not a log but data, under `$CTRLB_HOME`: the action/event history in
+`ctrlb.db` (`GET /api/events`), and — only while `voice.live.debug` is on — the **call trails** under
+`$CTRLB_HOME/calls/` (a call's `<call_id>.jsonl` at the top, live dictations in `dictation/`, push-to-talk clips
+in `clip/`, the browser's playback probe in `mouth/`; calls, dictations and clips each keep a `<call_id>-<leg>.wav`
+recording beside the trail, the playback probe none; the newest
+`voice.live.trail_keep` (default 20) per folder are kept). What a trail holds:
+[`docs/user-guide/voice-and-calls.md`](../../docs/user-guide/voice-and-calls.md#edge-cases--limits). Trails and
+recordings are not backed up (§Backups).
+
+## Script reference
+Each script's arguments, environment overrides and refusals, from its source. The procedures that drive them
+are §Release, §Rollback and §Deploy above; this section does not repeat them.
+
+**`deploy/linux/install.sh [prod|dev]`** — run ON the box, from the tree it installs (default `prod`; anything
+else prints the usage and exits 2). Builds and enables ONE instance; idempotent.
+- **Env overrides:** `REPO` (the tree; default `~/apps/ctrl-b` for prod, `~/github/ctrl-b` for dev) ·
+  `CTRLB_HOME` (default `~/.ctrl-b` / `~/.ctrl-b-dev`) · `CTRLB_BACKUP_KEEP` (prod DB snapshots kept, default 10 —
+  §Backups) · `SYSTEMD_USER_DIR` (where the units are rendered, default `~/.config/systemd/user`; for
+  rehearsals only — `systemctl` still talks to the real user manager).
+- **The lock:** `$CTRLB_HOME/.deploy.lock`, taken with `flock -n` (package `util-linux`); a second install or
+  update for the same instance exits 1 "already running". `update.sh` holds it and hands it down.
+- **Refusals (exit 1; the running service is untouched unless noted):** a missing prerequisite (`flock`
+  from `util-linux`, `git`, `python3` ≥ 3.14, `node`, `npm`; `tmux` for dev; on prod with an existing
+  `ctrlb.db`, `sqlite3` for the snapshot) · no `$CTRLB_HOME/config.yaml` (dev seeds one from
+  `~/.ctrl-b` the first time) · `python -m app.config_migration --check` fails, before the frontend build (the
+  CLI itself exits 78 for a config this build cannot migrate, 1 for an environmental failure; `install.sh`
+  exits 1 either way) · **dev:** `ctrl-b-dashboard-dev` is anything but `inactive`/`failed` (stop both dev
+  units first) · a `CTRLB_<SECTION>__<KEY>=` in a dashboard unit's `Environment=`, including a `systemctl --user
+  edit` drop-in (an `EnvironmentFile=` is not scanned) · **prod:** the service does not reach `inactive`/`failed`
+  within 10 s of the stop (the stop was already sent, so prod may be down) · **prod health gate** (45 s, after the cutover — prod is then on the new code):
+  `/api/health` must answer `status: ok`, from a `pid` equal to the unit's `MainPID`, with a `version` equal to
+  the checked-out tag; otherwise it exits 1 naming what it saw (and, for a dead service, §Rollback). The pid
+  check is skipped with a warning when the response carries no `pid` (an older build), and the version check
+  when the tree is not at an exact tag ("liveness only").
+- Dev without the `claude` CLI installs the dashboard units only (re-run after installing `claude` to add the
+  agents). Dev never snapshots the DB and never builds `dist`.
+
+**`deploy/linux/update.sh <tag> [--force]`** — PROD only; the standing release runner (§Release). `--force` is
+read as the second argument only.
+- **Env overrides:** `REPO` (must resolve to `~/apps/ctrl-b`, else refused) · `CTRLB_HOME` (default `~/.ctrl-b`).
+- **Refuses:** a tree that is not `~/apps/ctrl-b` · `CTRLB_CONFIG` set · a `.env` in the prod tree · local
+  changes in the prod tree · the lock held · a tag missing on origin · a CI release gate it cannot verify as
+  `success` (`gh` missing or not logged in, no push-event run for the tag and its commit, any other conclusion)
+  unless `--force` · a tag that cannot read the config's shape on disk, or an unstamped config already carrying
+  `providers:` against a pre-migration tag (exit 78) · a tag that predates the safe installer (it prints the
+  manual sequence instead — §Rollback).
+- **Exit codes:** 0 updated and verified · 1 refused or failed · 2 usage · 78 config incompatible with the tag.
+- On a failure after `install.sh` ran it prints the observed state and a rollback sequence; ⚠ its "config was
+  NOT migrated" line is wrong on a stamped config ([ISS-90](../../docs/ISSUES.md)) — decide as §Rollback step 2
+  says.
+
+**`deploy/bootstrap.py`** — the FIRST-deploy orchestrator, run from a checkout that holds `config.yaml`, with
+`backend/.venv/bin/python` (it imports paramiko + PyYAML). Its flags are listed under §Deploy A
+(`--dry-run` · `--no-prereqs` · `--no-serve` · `--with-dev` · `--claude-env` · `--overwrite-config`). They are
+plain membership tests on the command line, so a misspelt flag is **ignored silently** — check the printed plan
+(`--dry-run` connects to nothing). The target is `computers.emma` in `config.yaml`, else the first host with
+`os_type: linux` and an `ip`. On a failed `install.sh prod` it exits with that script's code. Re-running it on a
+deployed box is an unguarded release ([ISS-94](../../docs/ISSUES.md), §Fresh machine vs. emma).
+
+**`deploy/linux/serve-https.sh`** — no arguments: `tailscale serve --bg --https=443 5433` (prod), then prints
+`tailscale serve status`. Refuses (exit 1) when `tailscale` is missing or not connected; if `serve` needs
+privileges, run `sudo tailscale set --operator="$USER"` once. Its commented dev line names `5173`, but the live
+dev door is `:8443 → 5434` ([`docs/HTTPS_TAILSCALE.md`](../../docs/HTTPS_TAILSCALE.md#optional--https-for-the-dev-stack-too);
+[ISS-97](../../docs/ISSUES.md) ③). Off: §Stop / remove.
+
+**`deploy/linux/run.sh [prod|dev]`** — a foreground runner without systemd, from any directory (paths resolve
+from the script). `prod`: `npm ci` if `node_modules` is missing, `npm run build`, then uvicorn on
+`127.0.0.1:5433`; `dev`: uvicorn `127.0.0.1:5433 --reload` + Vite `:5173`. Both pass the same
+`--ws-ping-interval 5 --ws-ping-timeout 5` as the units. Needs `backend/.venv`; the data root is `CTRLB_HOME`
+if set, else the repo root. It binds `:5433`, the port prod's unit holds on emma. Usage error → exit 2.
+
+**`tools/start-claude.sh [session] [dir] [model]`** — what each `ctrl-b-agent@<i>` unit runs
+(`ctrl-b-<i>`, the workspace, `<i>`); by hand it starts an extra session. Defaults: session `ctrl-b`, dir
+`~/github/ctrl-b`, model `opus` (`fable` | `opus` | a full model id; the aliases resolve through the pins in
+`~/.claude/settings.json`). **Env:** `EFFORT` (default `high`) · `PERM` (default `bypassPermissions`) ·
+`MODEL` (used only when no third argument is given, so never by the units). A session that already exists is
+left alone (exit 0, with an attach hint). The per-instance overrides file is §The Claude agent services.
 
 ## Fresh machine vs. emma (the installer handles both)
 The scripts are **portable** — every path resolves against the target user's `$HOME` and the systemd units are
