@@ -10,7 +10,7 @@ judge the result rather than adopting it.**
 
 ## Which mechanism
 
-> **▶ MODEL LAYER INVERTED (owner, 2026-07-28).** The MAIN seat is now **Fable 5 on high** — it
+> **▶ MODEL LAYER INVERTED (owner, 2026-07-28).** The MAIN seat is now **Fable (5.1) on high** — it
 > designs, supervises, rules and audits. **Opus (high) subagents carry the heavy token work**:
 > implementation, research, mechanical and operational tasks. The table below is written for that
 > arrangement. *(Until 2026-07-28 it was the other way round — Opus main, Fable an on-request
