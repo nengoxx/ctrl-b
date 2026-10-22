@@ -64,7 +64,7 @@ backend/                FastAPI + Uvicorn service (port 5433). Layered:
   app/db.py             SQLite schema + migrations + connection handling (chat · events · FTS · automations)
   app/assets/silero/    the vendored Silero VAD ONNX files (v6.2 + v5.1.2, SHA-pinned by a test) + LICENSE/provenance
   app/main.py           lifespan (db) + app.frontend() SPA serving of frontend/dist (D55; StaticFiles = media mounts only)
-  tests/                pytest (count: QUALITY.md) — conftest auto-isolates CTRLB_HOME; temp configs via CTRLB_CONFIG/CTRLB_DB
+  tests/                pytest (count: QUALITY.md) — conftest auto-isolates CTRLB_HOME and routes every unqualified temp allocation into the test's tmp_path (or the suite home outside a test; ISS-99); temp configs via CTRLB_CONFIG/CTRLB_DB
   pyproject.toml        editable install (pip install -e .)
 frontend/               React 19 + TS + Vite 7 PWA. store/ hooks/ components/ tabs/ lib/ theme-engine/ themes/
 docs/                   HANDOFF (start here) · DECISIONS · ARCHITECTURE · DESIGN · SPEC · ROADMAP · TODO · THEME_ENGINE · audits (UI_AUDIT · SYSTEM_AUDIT · AGENT_CHAT_AUDIT · PROMPTS_AUDIT) · …

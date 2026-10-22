@@ -2,7 +2,9 @@
 
 **pytest-only** — conftest is discovered by pytest, never imported by the app; production path
 resolution (`config.home_path()`) is untouched. Scope: every test gets `CTRLB_HOME` pointed at a
-per-test temp dir, and any inherited `CTRLB_CONFIG`/`CTRLB_DB` from the invoking shell is cleared.
+per-test temp dir, any inherited `CTRLB_CONFIG`/`CTRLB_DB` from the invoking shell is cleared, and
+every unqualified tempfile allocation is routed into storage the suite removes — a test's
+`tmp_path/"tmp"` (pytest's retention), or the suite home outside a test (removed at exit) (ISS-99).
 
 Why: without this, a test that boots the app and forgets its own env isolation resolves
 `home_path()` to the **repo root** (config.py fallback) — proven 2026-07-07 to git-init a root
@@ -29,6 +31,7 @@ import atexit
 import os
 import shutil
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -44,6 +47,34 @@ os.environ["CTRLB_HOME"] = _SUITE_HOME
 os.environ["CTRLB_ENV"] = os.path.join(_SUITE_HOME, ".env-absent")
 os.environ.pop("CTRLB_CONFIG", None)
 os.environ.pop("CTRLB_DB", None)
+
+#: The env keys a process reads for its temp root: `TMPDIR` (POSIX; Python's first choice on every OS)
+#: and `TEMP`/`TMP` (Windows, and the tools that follow it). CPython's own test runner sets all three.
+TEMP_ENV_KEYS = ("TMPDIR", "TEMP", "TMP")
+
+
+def route_temp(mp: pytest.MonkeyPatch, root: Path) -> None:
+    """Point every unqualified tempfile allocation at `root` (ISS-99): this process's — through
+    `tempfile.tempdir`, because `gettempdir()` caches its first answer and ignores later env changes — and
+    every child process's, through `TEMP_ENV_KEYS`. A child started with a hand-built env that drops
+    these keys, and a caller passing its own `dir=`, are out of reach by construction."""
+    root.mkdir(exist_ok=True)
+    mp.setattr(tempfile, "tempdir", str(root))
+    for key in TEMP_ENV_KEYS:
+        mp.setenv(key, str(root))
+
+
+# ISS-99, the suite-wide half: anything allocated OUTSIDE a test — at import time, in a module- or
+# session-scoped fixture, by a thread that outlives the last test — lands in `_SUITE_HOME/tmp`, which the
+# atexit above removes. pytest's own basetemp is pinned to the REAL temp root FIRST (it is resolved
+# lazily, at the first `tmp_path`, from `PYTEST_DEBUG_TEMPROOT` or else `gettempdir()`): without the pin
+# it would follow the redirect into `_SUITE_HOME`, and the atexit would delete failed tests' evidence.
+# Only when unset or EMPTY, so a developer's own `PYTEST_DEBUG_TEMPROOT` (or `--basetemp`) still wins —
+# not `setdefault`: pytest reads an exported-but-empty value as unset (`from_env or gettempdir()`), so
+# `setdefault` would keep the "" and the basetemp would follow the redirect after all.
+if not os.environ.get("PYTEST_DEBUG_TEMPROOT"):
+    os.environ["PYTEST_DEBUG_TEMPROOT"] = tempfile.gettempdir()
+route_temp(pytest.MonkeyPatch(), Path(_SUITE_HOME) / "tmp")
 
 
 def inherited_override_names(environ) -> list[str]:
@@ -88,3 +119,15 @@ def _isolated_ctrlb_home(tmp_path, monkeypatch):
     # service env or .bashrc exports them) — tests that need one set their own explicitly.
     monkeypatch.delenv("CTRLB_CONFIG", raising=False)
     monkeypatch.delenv("CTRLB_DB", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _temp_under_tmp_path(tmp_path, monkeypatch):
+    """ISS-99, the per-test half: every unqualified tempfile allocation a test makes (`mkdtemp()` in a
+    helper, a child interpreter, a library writing into `TMPDIR`) lands in `tmp_path/"tmp"`, so pytest
+    owns its lifetime — removed with the test's `tmp_path` when it passes, kept as evidence when it fails
+    (`tmp_path_retention_policy`, backend/pyproject.toml). A subdirectory, so a test that lists its own
+    `tmp_path` sees one extra entry, `tmp/`, never loose files: `tmp_path` is NOT empty at test start, so a
+    test must not assert it empty nor `mkdir` `tmp_path/"tmp"` without `exist_ok` (none does today). The
+    shared `monkeypatch`, so its undo stays in one LIFO stack with any test's own patch of the same keys."""
+    route_temp(monkeypatch, tmp_path / "tmp")

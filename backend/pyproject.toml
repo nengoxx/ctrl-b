@@ -79,6 +79,12 @@ raw-options = { root = ".." }
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
+# pytest (QUALITY.md). ISS-99: a passing test's `tmp_path` — and everything conftest routes there — is
+# removed at its teardown, a green session's basetemp at exit; a failing test's stays as evidence for
+# the last 3 sessions (`tmp_path_retention_count`, default). Debugging: `-o tmp_path_retention_policy=all`.
+[tool.pytest]
+tmp_path_retention_policy = "failed"
+
 # ruff = the 2026 standard lint+format (replaces flake8/black/isort). Honors `# noqa` by default; RUF100
 # (unused-noqa) is NOT selected, so existing noqa comments are never touched. Run: `ruff check [--fix]` /
 # `ruff format [--check]`. E/F/I from the start; ASYNC+B pulled in 2026-07-16 (SYS-16); UP/SIM still
