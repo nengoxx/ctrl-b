@@ -166,27 +166,17 @@ most future features (privilege levels, automations, scheduled agents, wake word
 notifications, memory backends, …) have a v1 seam already designed there. Implement against that
 seam; if the seam is missing, propose one in `DECISIONS.md` (new D-entry) before coding.
 
-## Commit message footer
-
-End commit messages crediting the model that authored the change, e.g.:
-
-```
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-```
-
-(or `Claude Opus 5.5 <noreply@anthropic.com>` when running in the Opus session — emma boots BOTH
-agents: `ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b-fable` / `ctrl-b-opus`.
-**Match the model to the session you're in: `tmux display-message -p '#S'`.**)
-
 ## Who does what (owner, 2026-07-28)
+
+emma boots BOTH agent sessions — `ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b-fable` / `ctrl-b-opus`. **Match the model to the session you're in: `tmux display-message -p '#S'`.**
 
 **Fable (5.1) on high is the MAIN model** — it *supervises*: designs the work and the project
 itself, rules on conflicts, and audits. **Opus (5.5, high) subagents carry the heavy token work** —
 implementation from pinned briefs, research, mechanical and operational tasks (including
-runbook-driven releases). **The Hermes Sol lane (`gpt-6.1-sol` high, no profile; the default since 2026-10-09 — the `second-opinion` skill's model table; the Codex CLI `gpt-5.6-sol` when warranted)** stays the standing co-reviewer: launch it
+runbook-driven releases). **The Hermes Sol lane (`gpt-6.1-sol` high, profile `emma` run blind with `--ignore-rules`; the default since 2026-10-09 — the `second-opinion` skill's bindings section)** stays the standing co-reviewer: launch it
 whenever a review is warranted, small slices included.
 
-**Model versions are EXPLICIT, OWNER-TESTED PINS — never a floating alias (owner policy,
+**Model versions are EXPLICIT, OWNER-TESTED PINS — never a floating alias — for the SEATS that carry judgement, Fable and Opus; the lower models (Sonnet, Haiku) are never pinned and float to the latest on purpose, owner 2026-10-22 (owner policy,
 2026-09-23).** New releases "are a little bit wonky" until tried by hand, so a launcher switches to
 a new version only after the owner has tested it. As of 2026-09-23: main seat `claude-fable-5-1`,
 workforce `claude-opus-5-5`. The pins live in ONE place since 2026-10-15 (ISS-100):
@@ -203,5 +193,5 @@ repo (it starts a full agent session).
 
 *(This inverts the 2026-07-24 arrangement, where Opus held the main seat and Fable was an on-request
 second opinion. The METHOD is unchanged — judgement in the main seat, execution in subagents; only
-the occupants swapped. Full mechanics: the [`second-opinion`](.claude/skills/second-opinion/SKILL.md)
-skill; the standing rationale + build-brief bar: the `orchestrate-with-opus-subagents` memory.)*
+the occupants swapped. Full mechanics: the `second-opinion` skill (user-level, `~/.claude/skills/second-opinion/SKILL.md`; the old project copy = `docs/archive/second-opinion-SKILL-2026-10-16.md`, reference only);
+the standing rationale + build-brief bar: the `orchestrate-with-opus-subagents` memory.)*

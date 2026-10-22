@@ -13,9 +13,9 @@ commands):
 | `ctrl-b-agent@fable` | `ctrl-b-fable` | `fable` → `claude-fable-5-1` (the user-settings pin, ISS-100), effort high | **MAIN** (owner, 2026-07-28) — designs the work, rules on conflicts, audits |
 | `ctrl-b-agent@opus` | `ctrl-b-opus` | `opus` → `claude-opus-5-5` (the user-settings pin, ISS-100), effort high | the subagent **workforce** — implementation from pinned briefs, research, ops |
 
-Reviewers are not seats on the box: **the Hermes Sol lane (`gpt-6.1-sol` high, no profile)** is the standing co-reviewer
-(the Codex CLI `gpt-5.6-sol` when warranted), beside a blind Opus 5.5 subagent on every code change. Mechanics for both — invocation, output capture,
-how to judge what comes back — live in the [`second-opinion`](../../.claude/skills/second-opinion/SKILL.md)
+Reviewers are not seats on the box: **the Hermes Sol lane (`gpt-6.1-sol` high, profile `emma` run blind with `--ignore-rules`)** is the standing co-reviewer
+beside a blind Opus 5.5 subagent on every code change. Mechanics for both — invocation, output capture,
+how to judge what comes back — live in the user-level `second-opinion` (`~/.claude/skills/second-opinion/SKILL.md`; the old project copy = `docs/archive/second-opinion-SKILL-2026-10-16.md`)
 skill, which is canonical. Don't re-derive them here.
 
 ## The rules that actually matter
