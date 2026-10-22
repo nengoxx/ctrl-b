@@ -58,7 +58,7 @@ from app.config import Settings
 from app.core.attachments import StoredReadError
 from app.core.media import StoreWriteError
 from app.core.memory import MemoryProvider
-from app.core.permissions import Decision, decide
+from app.core.permissions import Decision, decide, run_shell_gate
 from app.core.skills import SkillProvider, SkillSelector
 from app.core.tool import UnknownTool
 from app.domain.agent import AgentDef, ModelRef
@@ -2500,8 +2500,10 @@ class AgentSession:
         Stop-harvest) is dropped just before the txn — the message branch's equivalent of the exec
         branch's claim-before-run count check (D68 MED-2).
 
-        **Exec entries** re-check `shell.user_exec_enabled` LIVE (D41 fail-closed: the enqueue check is
-        UX only; disabled at drain → drop the entry [`commit` it away] + a `notice`, and NEVER run it).
+        **Exec entries** re-check the USER shell gate (`run_shell_gate(…, Actor.USER)`: `shell.enabled` +
+        `shell.user_exec_enabled`) LIVE (D41 fail-closed: the enqueue check is UX only; closed at drain →
+        drop the entry [`commit` it away] + a `notice` naming the key, and NEVER run it; the `invoke`
+        chokepoint re-decides it regardless).
         Enabled → commit the entry off the queue FIRST (D41 MED-1 commit-before-run: for a shell command
         lost-on-crash beats double-run — a Stop/harvest mid-execution can no longer hand a running command
         back to the composer), THEN the SHARED `run_user_exec` (the same run_shell@FULL + atomic pair the
@@ -2596,11 +2598,13 @@ class AgentSession:
             else:  # exec
                 entry = entries[i]
                 i += 1
-                if not self._settings.shell.user_exec_enabled:
-                    # Fail-closed (D41): the enqueue-time gate is UX only. Disabled at DRAIN → drop the
+                if key := run_shell_gate(self._settings.shell, Actor.USER):
+                    # Fail-closed (D41): the enqueue-time gate is UX only. Closed at DRAIN → drop the
                     # queued command (commit it away) + a live breadcrumb; run_shell is NEVER invoked.
                     self._steer_source.commit([entry.entry_id])
-                    yield AgentEvent("notice", {"text": "// shell disabled — queued command dropped"})
+                    yield AgentEvent(
+                        "notice", {"text": f"// shell disabled ({key}) — queued command dropped"}
+                    )
                     continue
                 # ATOMIC CLAIM-BEFORE-RUN (D41 FIX 1, formerly MED-1 commit-before-run): claim the entry
                 # OFF the queue BEFORE run_user_exec AND verify the claim removed exactly it. `commit`
@@ -2856,7 +2860,8 @@ class AgentSession:
               (idempotent ≠ order-independent: `start_service`/`stop_service`/`shutdown_host` are
               idempotent but must never race a sibling read).
           (e) `decide(...) == ALLOW` — mirroring `ActionService.invoke`'s live arguments exactly
-              (`run_shell_allowed=self._settings.shell.agent_exec_enabled`, `interactive=`this turn's).
+              (`run_shell_allowed=run_shell_gate(self._settings.shell, AGENT_ACTOR) is None`,
+              `interactive=`this turn's).
 
         **Overlay-then-commit** (why this shape): the classifier must NOT mutate `guard` on the ≤1
         (serial) path, yet call *j*'s verdict must see the tentative admissions of calls *i<j* (so a
@@ -2876,8 +2881,8 @@ class AgentSession:
         ids = [cp.call_id for cp in calls]
         if len(set(ids)) != len(ids):
             return _BatchPlan(prefix=[], serial_from=0)
-        # Mirror `invoke`'s live run_shell gate value (read once — this walk is synchronous).
-        run_shell_allowed = self._settings.shell.agent_exec_enabled
+        # Mirror `invoke`'s live run_shell gate (the ONE predicate; read once — this walk is synchronous).
+        run_shell_allowed = run_shell_gate(self._settings.shell, AGENT_ACTOR) is None
         # LOCAL overlays: tentative in-walk increments, layered over the real guard for visibility to
         # later calls in the SAME batch, committed to `guard` only for a real (≥2) prefix.
         counts_overlay: dict[str, int] = {}

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from app.adapters.openterminal import OpenTerminalError
+from app.core.redact import clip
 from app.core.tool import FunctionTool, InvocationContext, ToolSpec
 from app.domain.enums import RunState
 from app.domain.result import ToolResult
@@ -35,12 +36,6 @@ def _unconfigured() -> ToolResult:
         state=RunState.DENIED,
         summary="open-terminal is not configured (set open_terminal.base_url + api_key in config)",
     )
-
-
-def _clip(text: str | None) -> str | None:
-    if text and len(text) > _MAX_OUTPUT_CHARS:
-        return text[:_MAX_OUTPUT_CHARS] + "\n… [truncated]"
-    return text
 
 
 # ── input models ──────────────────────────────────────────────────────────────────────────────
@@ -94,8 +89,8 @@ async def terminal_exec(inp: TerminalExecInput, ctx: InvocationContext) -> ToolR
     try:
         res = await client.execute(inp.command, cwd=inp.cwd)
     except OpenTerminalError as exc:
-        return ToolResult(state=RunState.ERROR, summary="terminal exec failed", error=str(exc)[:300])
-    output = _clip(_render_exec(res))
+        return ToolResult(state=RunState.ERROR, summary="terminal exec failed", error=clip(str(exc), 300))
+    output = clip(_render_exec(res), _MAX_OUTPUT_CHARS)
     status, code = res.get("status"), res.get("exit_code")
     data = {"id": res.get("id"), "status": status, "exit_code": code}
     if status == "running":
@@ -123,12 +118,14 @@ async def terminal_read_file(inp: TerminalReadInput, ctx: InvocationContext) -> 
     try:
         res = await client.read_file(inp.path, start_line=inp.start_line, end_line=inp.end_line)
     except OpenTerminalError as exc:
-        return ToolResult(state=RunState.ERROR, summary=f"could not read {inp.path}", error=str(exc)[:300])
+        return ToolResult(
+            state=RunState.ERROR, summary=f"could not read {inp.path}", error=clip(str(exc), 300)
+        )
     content = res.get("content") if isinstance(res, dict) else None
     return ToolResult(
         state=RunState.OK,
         summary=f"read {inp.path}",
-        output=_clip(content),
+        output=clip(content, _MAX_OUTPUT_CHARS) if content else content,
         data=res if isinstance(res, dict) else {},
     )
 
@@ -140,13 +137,13 @@ async def terminal_list(inp: TerminalListInput, ctx: InvocationContext) -> ToolR
     try:
         res = await client.list_dir(inp.directory)
     except OpenTerminalError as exc:
-        return ToolResult(state=RunState.ERROR, summary="could not list directory", error=str(exc)[:300])
+        return ToolResult(state=RunState.ERROR, summary="could not list directory", error=clip(str(exc), 300))
     entries = res.get("entries", []) if isinstance(res, dict) else []
     listing = "\n".join(f"{e.get('type', '?')[:1]} {e.get('name')}" for e in entries)
     return ToolResult(
         state=RunState.OK,
         summary=f"{res.get('dir', inp.directory or '.')} · {len(entries)} entries",
-        output=_clip(listing),
+        output=clip(listing, _MAX_OUTPUT_CHARS),
         data=res if isinstance(res, dict) else {},
     )
 
@@ -165,13 +162,13 @@ async def terminal_grep(inp: TerminalGrepInput, ctx: InvocationContext) -> ToolR
             max_results=inp.max_results,
         )
     except OpenTerminalError as exc:
-        return ToolResult(state=RunState.ERROR, summary="grep failed", error=str(exc)[:300])
+        return ToolResult(state=RunState.ERROR, summary="grep failed", error=clip(str(exc), 300))
     import json as _json
 
     return ToolResult(
         state=RunState.OK,
         summary=f"grep '{inp.query}'",
-        output=_clip(_json.dumps(res, indent=1)),
+        output=clip(_json.dumps(res, indent=1), _MAX_OUTPUT_CHARS),
         data=res if isinstance(res, dict) else {},
     )
 
@@ -183,13 +180,13 @@ async def terminal_glob(inp: TerminalGlobInput, ctx: InvocationContext) -> ToolR
     try:
         res = await client.glob(inp.pattern, path=inp.path, max_results=inp.max_results)
     except OpenTerminalError as exc:
-        return ToolResult(state=RunState.ERROR, summary="glob failed", error=str(exc)[:300])
+        return ToolResult(state=RunState.ERROR, summary="glob failed", error=clip(str(exc), 300))
     import json as _json
 
     return ToolResult(
         state=RunState.OK,
         summary=f"glob '{inp.pattern}'",
-        output=_clip(_json.dumps(res, indent=1)),
+        output=clip(_json.dumps(res, indent=1), _MAX_OUTPUT_CHARS),
         data=res if isinstance(res, dict) else {},
     )
 
@@ -201,7 +198,9 @@ async def terminal_write_file(inp: TerminalWriteInput, ctx: InvocationContext) -
     try:
         res = await client.write_file(inp.path, inp.content)
     except OpenTerminalError as exc:
-        return ToolResult(state=RunState.ERROR, summary=f"could not write {inp.path}", error=str(exc)[:300])
+        return ToolResult(
+            state=RunState.ERROR, summary=f"could not write {inp.path}", error=clip(str(exc), 300)
+        )
     return ToolResult(
         state=RunState.OK,
         summary=f"wrote {inp.path} ({len(inp.content)} chars)",

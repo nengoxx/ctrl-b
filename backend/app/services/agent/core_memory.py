@@ -84,13 +84,6 @@ _REASON_MAX_CHARS = 120
 #: free. A core root that would put its index or scan tree on top of one of these is refused.
 _TIER1_FILENAMES = frozenset(spec.filename for spec in STORES)
 
-#: Containment floor for the secret gate (§5): a configured value shorter than this is not
-#: identifiable by substring containment — 1-char placeholder API keys and short passwords are
-#: substrings of ordinary prose, so gating on them refuses every write against a realistic corpus
-#: (the first live drive, 2026-08-17). The same failure mode as the blank-skip, one step up; 8 is
-#: NIST SP 800-63B's password floor — anything shorter is unidentifiable as a leak by containment.
-_SECRET_MIN_CHARS = 8
-
 #: One index line: `- [Title](file.md) — hook` (the hook separator is optional and free-form).
 _INDEX_LINK = re.compile(r"^\s*[-*+]\s+\[([^\]]*)\]\(\s*([^)\s]*)\s*\)\s*(.*)$")
 
@@ -1053,16 +1046,17 @@ class CoreMemoryCorpus:
         tool scans only the replacement string, so a secret assembled across two edits slips a local
         check (R40 §7.4). A containment check on KNOWN values, not a scanner (shape detection is an
         explicit non-goal), and a recorded D27 divergence: tier 1 trusts curated memory, a shared
-        long-term corpus gets the rail — a BEST-EFFORT rail, not a boundary: values shorter than
-        `_SECRET_MIN_CHARS` (blank included) are skipped, because a 1-char placeholder key is a
+        long-term corpus gets the rail — a BEST-EFFORT rail, not a boundary: values shorter than the
+        redaction floor `redact.min_len` (default 8, NIST SP 800-63B's password floor; blank included)
+        are never collected by `Settings.secret_values()`, because a 1-char placeholder key is a
         substring of every file and refusing on it bricks the write path (the first live drive). The
         raw value is both measured and matched — stripping one side but not the other would let an
         8-char credential with edge whitespace skip the gate as "7 chars" (Codex fix-wave MED). The
         refusal never echoes the value; `index_of` names the file carrying the leak when it is NOT
         the content this call proposed (a pre-existing index leak reads as "your write is bad"
         otherwise — Codex fix-wave LOW)."""
-        for value in self._settings.secret_values():
-            if value.strip() and len(value) >= _SECRET_MIN_CHARS and value in text:
+        for value in self._settings.secret_values():  # already floored at `redact.min_len`
+            if value in text:
                 raise CoreMemoryError(
                     f"the resulting {index_of} still contains a value configured as a secret — "
                     "remove it there first, then retry this write."

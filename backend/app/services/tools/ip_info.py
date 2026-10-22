@@ -12,6 +12,7 @@ from __future__ import annotations
 import httpx
 from pydantic import BaseModel, Field
 
+from app.core.redact import clip
 from app.core.tool import InvocationContext, tool
 from app.domain.enums import RunState
 from app.domain.result import ToolResult
@@ -51,7 +52,7 @@ async def ip_info(inp: IpInfoInput, ctx: InvocationContext) -> ToolResult:
             resp.raise_for_status()
             data = resp.json()
     except (httpx.HTTPError, ValueError) as exc:
-        return ToolResult(state=RunState.ERROR, summary="IP lookup failed.", error=str(exc)[:300])
+        return ToolResult(state=RunState.ERROR, summary="IP lookup failed.", error=clip(str(exc), 300))
 
     if data.get("status") != "success":
         return ToolResult(

@@ -28,6 +28,7 @@ import httpx
 from pydantic import BaseModel
 
 from app.config import OpenApiServerCfg
+from app.core.redact import clip
 from app.core.tool import InvocationContext, ToolSpec
 from app.domain.enums import Risk, RunState
 from app.domain.result import ToolResult
@@ -238,7 +239,7 @@ class OpenApiToolProvider:
             resp.raise_for_status()
             payload: Any = resp.json() if resp.content else None
         except httpx.HTTPStatusError as exc:
-            detail = exc.response.text[:300]
+            detail = clip(exc.response.text, 300)
             return ToolResult(
                 state=RunState.ERROR, summary=f"{op.name} HTTP {exc.response.status_code}", error=detail
             )
@@ -248,13 +249,15 @@ class OpenApiToolProvider:
                 text = resp.text  # type: ignore[possibly-undefined]
                 payload = text
             except Exception:  # noqa: BLE001
-                return ToolResult(state=RunState.ERROR, summary=f"{op.name} failed", error=str(exc)[:300])
+                return ToolResult(
+                    state=RunState.ERROR, summary=f"{op.name} failed", error=clip(str(exc), 300)
+                )
 
         import json as _json
 
         output = payload if isinstance(payload, str) else _json.dumps(payload, indent=1, default=str)
-        if output and len(output) > _MAX_OUTPUT_CHARS:
-            output = output[:_MAX_OUTPUT_CHARS] + "\n… [truncated]"
+        if output:
+            output = clip(output, _MAX_OUTPUT_CHARS)
         return ToolResult(
             state=RunState.OK,
             summary=f"{op.name} ok" + (f" · {len(output)} chars" if output else ""),

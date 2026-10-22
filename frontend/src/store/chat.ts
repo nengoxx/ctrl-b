@@ -4240,9 +4240,10 @@ export async function runShell(command: string): Promise<void> {
       body: JSON.stringify({ command, thread_id: state.threadId }),
     });
     // M1 — a LEFT exec writes nothing into the view swapped in: no refusal note (403/409) either.
+    // 403 = the shell gate is closed; the server's `detail` names the key that closed it (ISS-105).
     if (res.status === 403) {
-      if (!viewMoved({ view }))
-        pushSystemNote("// shell exec is disabled (Conf → Shell → user exec)");
+      const detail = await busyDetail(res, "shell exec is disabled (Conf → Shell → user exec)");
+      if (!viewMoved({ view })) pushSystemNote("// " + detail); // checked AFTER the body read's await
       return;
     }
     // 409 = the thread's turn marker is held (D38) — busy, not broken; don't fall through to the

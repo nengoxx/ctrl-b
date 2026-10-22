@@ -1,6 +1,10 @@
 """Action API (Phase 2). `GET /api/actions` lists the registry; `POST /api/actions/{name}` runs
 an action with the confirm-token dance for high-risk ones (DESIGN.md §14).
 
+The UI's door: only `ui_exposed` tools are callable here; hidden tools 404 like unknown names (ISS-88)
+— `run_shell`, `tailscale_serve_*` and every agent-only tool are not reachable through it. The listing
+still shows everything (the ToolCatalog renders every tool's agent mode).
+
 The UI invokes as `Actor.USER` at `Privilege.CONFIRM`, which makes wake/ping run immediately and
 shutdown require a confirm token. The request body is `{ "args": {...}, "confirm_token": ... }`.
 """
@@ -51,6 +55,12 @@ async def invoke_action(name: str, body: InvokeRequest, request: Request) -> dic
     """Run an action. Returns either `{needs_confirm: true, confirm_token, ...}` (re-POST with the
     token to proceed) or `{needs_confirm: false, result, event}`."""
     svc = request.app.state.actions
+    try:
+        tool = svc.registry.get(name)
+    except UnknownTool:
+        tool = None
+    if tool is None or not tool.spec.ui_exposed:  # ISS-88: a hidden tool 404s exactly like an unknown one
+        raise HTTPException(status_code=404, detail=f"unknown action '{name}'")
     try:
         outcome = await svc.invoke(name, body.args, origin=ORIGIN_USER_CHAT, confirm_token=body.confirm_token)
     except UnknownTool:

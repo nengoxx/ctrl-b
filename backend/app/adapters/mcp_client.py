@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, AsyncIterator
 from pydantic import BaseModel
 
 from app.config import McpServerCfg
+from app.core.redact import clip
 from app.core.tool import InvocationContext, ToolSpec
 from app.domain.enums import Risk, RunState
 from app.domain.result import ToolResult
@@ -128,8 +129,8 @@ def _to_result(call_result, tool_name: str) -> ToolResult:
         text = getattr(c, "text", None)
         parts.append(text if text is not None else f"[{getattr(c, 'type', 'content')}]")
     output = "\n".join(p for p in parts if p).strip() or None
-    if output and len(output) > _MAX_OUTPUT_CHARS:
-        output = output[:_MAX_OUTPUT_CHARS] + "\n… [truncated]"
+    if output:
+        output = clip(output, _MAX_OUTPUT_CHARS)
 
     data: dict = {}
     structured = getattr(call_result, "structuredContent", None)
@@ -141,7 +142,7 @@ def _to_result(call_result, tool_name: str) -> ToolResult:
             state=RunState.ERROR,
             summary=f"{tool_name} reported an error",
             output=output,
-            error=(output or "tool error")[:300],
+            error=clip(output or "tool error", 300),
             data=data,
         )
     # MCP output is arbitrary (text, JSON, markdown) — a first-line snippet is unreliable, so the
@@ -271,7 +272,7 @@ class McpClient:
                     result = await session.call_tool(remote_name, args)
         except McpError as exc:  # config/transport-unsupported — surfaced before the op
             return ToolResult(
-                state=RunState.ERROR, summary=f"{remote_name} unavailable", error=str(exc)[:300]
+                state=RunState.ERROR, summary=f"{remote_name} unavailable", error=clip(str(exc), 300)
             )
         except Exception as exc:  # noqa: BLE001 — normalize any SDK/transport error, never raise
             # TimeoutError, or the anyio cancel-scope RuntimeError from a timeout mid-`initialize()`,
@@ -282,5 +283,7 @@ class McpClient:
                     summary=f"{remote_name} timed out",
                     error=f"MCP call exceeded {bound:.1f}s deadline",
                 )
-            return ToolResult(state=RunState.ERROR, summary=f"{remote_name} failed", error=str(exc)[:300])
+            return ToolResult(
+                state=RunState.ERROR, summary=f"{remote_name} failed", error=clip(str(exc), 300)
+            )
         return _to_result(result, remote_name)

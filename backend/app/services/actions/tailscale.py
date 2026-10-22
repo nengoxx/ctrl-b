@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from app.config import TailscaleCfg
 from app.core.proc import run_capture
+from app.core.redact import clip
 from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk, RunState
 from app.domain.result import ToolResult
@@ -80,7 +81,7 @@ async def resolve_status(cfg: TailscaleCfg) -> dict:
         out["reason"] = "tailscale not responding"
         return out
     if st.code != 0:
-        out["reason"] = st.output.strip()[:200] or f"tailscale status exit {st.code}"
+        out["reason"] = clip(st.output.strip(), 200) or f"tailscale status exit {st.code}"
         return out
     try:
         status = json.loads(st.output)
@@ -150,7 +151,7 @@ async def resolve_vpn_candidates(cfg: TailscaleCfg) -> dict:
     if st.timed_out:
         return {"ok": False, "reason": "tailscale not responding"}
     if st.code != 0:
-        return {"ok": False, "reason": st.output.strip()[:200] or f"tailscale status exit {st.code}"}
+        return {"ok": False, "reason": clip(st.output.strip(), 200) or f"tailscale status exit {st.code}"}
     try:
         status = json.loads(st.output)
     except json.JSONDecodeError:
@@ -195,7 +196,7 @@ async def _serve_cmd(ctx: InvocationContext, *, off: bool) -> ToolResult:
         return ToolResult(
             state=RunState.ERROR,
             summary="tailscale serve failed",
-            error=cap.output.strip()[:300] or f"exit {cap.code}",
+            error=clip(cap.output.strip(), 300) or f"exit {cap.code}",
         )
     verb = "disabled" if off else "enabled"
     return ToolResult(

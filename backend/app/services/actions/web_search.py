@@ -14,6 +14,7 @@ from dataclasses import asdict
 from pydantic import BaseModel, Field
 
 from app.adapters.searxng import SearxngError
+from app.core.redact import clip
 from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk, RunState
 from app.domain.result import ToolResult
@@ -65,7 +66,7 @@ async def web_search(inp: WebSearchInput, ctx: InvocationContext) -> ToolResult:
     try:
         results = await client.search(inp.query, count=inp.count, categories=inp.categories)
     except SearxngError as exc:
-        return ToolResult(state=RunState.ERROR, summary="web search failed", error=str(exc)[:300])
+        return ToolResult(state=RunState.ERROR, summary="web search failed", error=clip(str(exc), 300))
 
     data = {"query": inp.query, "results": [asdict(r) for r in results]}
     if not results:

@@ -27,7 +27,15 @@ if TYPE_CHECKING:
     from app.domain.agent import AgentDef
     from app.services.agent.core_memory import RecallState
 
-from app.core.permissions import NONE_CANON, Decision, approval_match, decide, exact_arg_pins
+from app.core.permissions import (
+    NONE_CANON,
+    Decision,
+    approval_match,
+    decide,
+    exact_arg_pins,
+    run_shell_gate,
+)
+from app.core.redact import redact_result
 from app.core.tool import InvocationContext, ToolRegistry, UnknownTool
 from app.domain.enums import Actor, Privilege, RunState
 from app.domain.event import DecisionReason, Event, Origin
@@ -176,21 +184,23 @@ class ActionService:
         if override is not None and override.approvals and not tool.spec.confirm:
             rule = approval_match(override.approvals, inp.model_dump(mode="json"))
 
-        # `run_shell` (Phase 5) is denied below FULL unless the owner opts the agent in via
-        # `shell.agent_exec_enabled`; the user `!` path invokes it at FULL, so this never blocks it.
+        # run_shell (Phase 5): the gate follows the ACTOR, not the privilege — `run_shell_gate` names the
+        # key that closes it (None = open); a FULL caller is no exception (ISS-87). `shell.enabled` is
+        # decided here too, before any confirm bubble (ISS-102).
+        closed_by = (
+            run_shell_gate(self._deps.settings.shell, actor) if tool.spec.name == "run_shell" else None
+        )
         decision = decide(
             tool.spec,
             privilege,
             interactive=interactive,
-            run_shell_allowed=self._deps.settings.shell.agent_exec_enabled,
+            run_shell_allowed=closed_by is None,
             approved=rule is not None,  # a matched approval downgrades a risk-derived CONFIRM to ALLOW
         )
 
         if decision is Decision.DENY:
-            result = ToolResult(
-                state=RunState.DENIED,
-                summary=f"{tool.spec.title} denied by policy (privilege={privilege.value})",
-            )
+            why = f"{closed_by} is off" if closed_by else f"privilege={privilege.value}"
+            result = ToolResult(state=RunState.DENIED, summary=f"{tool.spec.title} denied by policy ({why})")
             if summary_note:
                 result.summary = f"{result.summary}{summary_note}"
             event = await self._record(actor, name, raw_args, result, origin=origin, decision="policy")
@@ -327,6 +337,15 @@ class ActionService:
         origin: Origin,
         decision: DecisionReason,
     ) -> Event:
+        """The egress funnel + the audit row (below). Result writers OUTSIDE `invoke` never pass here:
+        the `/agent/apply` endpoint (it calls `redact_result` itself), the automation run bookkeeping
+        (`automations/service.py` — run-level rows, no tool output) and the session's synthesized
+        results for an `invoke` that RAISED (`unknown tool` / `invalid arguments` — the model's own
+        arguments echoed back, no tool output)."""
+        # The egress funnel: every `invoke` outcome passes here before it is returned, persisted, framed
+        # or audited — nothing leaves the gate unredacted (ISS-98; SECURITY_MODEL §2.4). The summary,
+        # output, error and `data` are masked in place; then the audit row.
+        redact_result(result, self._deps.settings.secret_values())
         event = Event(
             actor=actor,
             action=name,

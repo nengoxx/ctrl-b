@@ -713,16 +713,20 @@ open_terminal:
 
 # Guarded LOCAL shell (Phase 5) — on the machine that runs ctrl-b (open-terminal above is a REMOTE box).
 # Two independent doors, both OFF by default: `user_exec_enabled` = the `!<cmd>` composer escape hatch,
-# `agent_exec_enabled` = the agent's `run_shell` BELOW full privilege (off → denied, on → a confirm per
-# call). ⚠ An agent at FULL privilege runs `run_shell` with NO confirm whether agent_exec_enabled is on or
-# off (ISS-87) — the only switch that stops it there is `enabled: false`.
+# `agent_exec_enabled` = the agent's `run_shell` at EVERY privilege (off → denied; on → a confirm per call
+# below full, and an agent at full runs it unasked — ISS-87).
 # shell:
-#   enabled: true              # master switch; false → every run_shell / `!` is DENIED
+#   enabled: true              # master switch; false → every run_shell / `!` is DENIED, before any bubble
 #   user_exec_enabled: false   # the `!<cmd>` composer escape hatch
-#   agent_exec_enabled: false  # the agent's run_shell below FULL privilege (see ⚠)
+#   agent_exec_enabled: false  # the agent's run_shell (off → denied at every privilege)
 #   workdir: ""                # cwd for commands; blank → $CTRLB_HOME
 #   timeout_s: 60              # kills the shell only — a child it forked keeps running (ISS-89)
 #   max_output_chars: 6000     # output is cut to this, keeping the HEAD
+
+# Secret redaction: every tool result is masked against the secrets configured here before it is shown,
+# stored or sent to a model. Values shorter than `min_len` are never masked (a short value is ordinary text).
+redact:
+  min_len: 8                   # chars; 8 = the NIST password floor — shorter values are logged at startup
 
 # Generic OpenAPI/REST tool servers (Phase 4f) — the HTTP sibling of mcp_servers, for Open WebUI
 # "tool servers" or any service exposing an OpenAPI doc. Each operation becomes a tool

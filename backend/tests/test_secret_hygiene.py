@@ -232,7 +232,8 @@ def test_destructive_actions_keep_their_declared_gate() -> None:
 
 def test_decide_outcomes_for_the_gate() -> None:
     """The privilege ladder resolves as declared: HIGH/confirm suspends at CONFIRM, allows at FULL;
-    a mutating service action confirms at CONFIRM; run_shell is denied below FULL."""
+    a mutating service action confirms at CONFIRM; run_shell is denied whenever its gate is closed —
+    FULL included (ISS-87) — and allowed at FULL only through an open gate."""
     reg = build_registry()
     shutdown = reg.get("shutdown_host").spec
     assert decide(shutdown, Privilege.CONFIRM) is Decision.CONFIRM
@@ -244,8 +245,9 @@ def test_decide_outcomes_for_the_gate() -> None:
     assert decide(stop, Privilege.AUTO_LOW) is Decision.ALLOW
 
     shell = reg.get("run_shell").spec
-    assert decide(shell, Privilege.CONFIRM) is Decision.DENY  # no raw shell below FULL
-    assert decide(shell, Privilege.FULL) is Decision.ALLOW
+    assert decide(shell, Privilege.CONFIRM) is Decision.DENY  # closed gate (the default) → no raw shell
+    assert decide(shell, Privilege.FULL) is Decision.DENY  # …at FULL too (ISS-87)
+    assert decide(shell, Privilege.FULL, run_shell_allowed=True) is Decision.ALLOW
 
     ping = reg.get("ping_host").spec
     assert decide(ping, Privilege.READONLY) is Decision.ALLOW  # LOW-risk always allowed

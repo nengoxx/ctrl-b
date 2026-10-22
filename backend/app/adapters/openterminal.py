@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 
 from app.config import OpenTerminalCfg
+from app.core.redact import clip
 
 
 class OpenTerminalError(RuntimeError):
@@ -64,7 +65,7 @@ class OpenTerminalClient:
             try:
                 detail = exc.response.json().get("detail", "")
             except Exception:  # noqa: BLE001
-                detail = exc.response.text[:200]
+                detail = clip(exc.response.text, 200)
             raise OpenTerminalError(f"HTTP {exc.response.status_code}: {detail}") from exc
         except Exception as exc:  # noqa: BLE001 — normalize any transport error
             raise OpenTerminalError(str(exc)) from exc
